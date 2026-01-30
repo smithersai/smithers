@@ -44,6 +44,12 @@ from smithers.types import (
     WorkflowResult,
 )
 from smithers.workflow import SkipResult, Workflow, get_workflow_by_output
+from smithers.conditions import (
+    ConditionNotMetError,
+    ConditionPolicy,
+    evaluate_condition,
+    get_condition_policy,
+)
 
 if TYPE_CHECKING:
     pass
@@ -530,6 +536,66 @@ async def run_graph_with_store(
             await on_progress(WorkflowEvent(type="started", workflow_name=name))
 
         try:
+            # Check condition (if any) before proceeding
+            condition_policy = wf.condition_policy or get_condition_policy(wf.fn)
+            if condition_policy is not None:
+                deps_namespace = _dependency_namespace(wf, ctx.outputs)
+                condition_met = evaluate_condition(condition_policy, deps_namespace)
+
+                if not condition_met:
+                    skip_reason = condition_policy.skip_reason
+                    on_skip_action = condition_policy.on_skip
+
+                    if on_skip_action == "fail":
+                        raise ConditionNotMetError(name, skip_reason)
+                    elif on_skip_action == "default":
+                        # Return default value
+                        default_val = condition_policy.default_value
+                        ctx.outputs[name] = default_val
+                        ctx.statuses[name] = "skipped"
+                        ctx.results.append(
+                            WorkflowResult(name=name, output=default_val, cached=False, duration_ms=0.0)
+                        )
+                        await store.update_node_status(
+                            run_id, name, NodeStatus.SKIPPED, skip_reason=f"condition: {skip_reason}"
+                        )
+                        await _emit_event(
+                            store, run_id, name, "NodeSkipped",
+                            {"reason": f"condition: {skip_reason}", "default_returned": True}
+                        )
+                        if on_progress:
+                            await on_progress(
+                                WorkflowEvent(
+                                    type="skipped",
+                                    workflow_name=name,
+                                    message=f"Condition not met: {skip_reason}",
+                                )
+                            )
+                        return
+                    else:
+                        # Default: skip
+                        ctx.outputs[name] = None
+                        ctx.statuses[name] = "skipped"
+                        ctx.results.append(
+                            WorkflowResult(name=name, output=None, cached=False, duration_ms=0.0)
+                        )
+                        await store.update_node_status(
+                            run_id, name, NodeStatus.SKIPPED, skip_reason=f"condition: {skip_reason}"
+                        )
+                        await _emit_event(
+                            store, run_id, name, "NodeSkipped",
+                            {"reason": f"condition: {skip_reason}"}
+                        )
+                        if on_progress:
+                            await on_progress(
+                                WorkflowEvent(
+                                    type="skipped",
+                                    workflow_name=name,
+                                    message=f"Condition not met: {skip_reason}",
+                                )
+                            )
+                        return
+
             # Check cache
             cache_key = None
             input_hash_value = None
@@ -727,6 +793,23 @@ async def run_graph_with_store(
         except PauseExecution:
             # Re-raise PauseExecution to be handled at the outer level
             raise
+
+        except ConditionNotMetError as exc:
+            ctx.statuses[name] = "failed"
+            ctx.errors[name] = exc
+            await store.update_node_status(
+                run_id, name, NodeStatus.FAILED, error=exc
+            )
+            await _emit_event(
+                store, run_id, name, "NodeConditionFailed",
+                {"reason": exc.reason}
+            )
+            if on_progress:
+                await on_progress(
+                    WorkflowEvent(type="failed", workflow_name=name, message=str(exc))
+                )
+            if fail_fast:
+                raise
 
         except ApprovalRejected as exc:
             ctx.statuses[name] = "skipped"
@@ -1237,6 +1320,64 @@ async def resume_run(
             await on_progress(WorkflowEvent(type="started", workflow_name=name))
 
         try:
+            # Check condition (if any) before proceeding
+            condition_policy = wf.condition_policy or get_condition_policy(wf.fn)
+            if condition_policy is not None:
+                deps_namespace = _dependency_namespace(wf, ctx.outputs)
+                condition_met = evaluate_condition(condition_policy, deps_namespace)
+
+                if not condition_met:
+                    skip_reason = condition_policy.skip_reason
+                    on_skip_action = condition_policy.on_skip
+
+                    if on_skip_action == "fail":
+                        raise ConditionNotMetError(name, skip_reason)
+                    elif on_skip_action == "default":
+                        default_val = condition_policy.default_value
+                        ctx.outputs[name] = default_val
+                        ctx.statuses[name] = "skipped"
+                        ctx.results.append(
+                            WorkflowResult(name=name, output=default_val, cached=False, duration_ms=0.0)
+                        )
+                        await store.update_node_status(
+                            run_id, name, NodeStatus.SKIPPED, skip_reason=f"condition: {skip_reason}"
+                        )
+                        await _emit_event(
+                            store, run_id, name, "NodeSkipped",
+                            {"reason": f"condition: {skip_reason}", "default_returned": True}
+                        )
+                        if on_progress:
+                            await on_progress(
+                                WorkflowEvent(
+                                    type="skipped",
+                                    workflow_name=name,
+                                    message=f"Condition not met: {skip_reason}",
+                                )
+                            )
+                        return
+                    else:
+                        ctx.outputs[name] = None
+                        ctx.statuses[name] = "skipped"
+                        ctx.results.append(
+                            WorkflowResult(name=name, output=None, cached=False, duration_ms=0.0)
+                        )
+                        await store.update_node_status(
+                            run_id, name, NodeStatus.SKIPPED, skip_reason=f"condition: {skip_reason}"
+                        )
+                        await _emit_event(
+                            store, run_id, name, "NodeSkipped",
+                            {"reason": f"condition: {skip_reason}"}
+                        )
+                        if on_progress:
+                            await on_progress(
+                                WorkflowEvent(
+                                    type="skipped",
+                                    workflow_name=name,
+                                    message=f"Condition not met: {skip_reason}",
+                                )
+                            )
+                        return
+
             # Check cache
             cache_key = None
             input_hash_value = None
@@ -1421,6 +1562,23 @@ async def resume_run(
                 await on_progress(
                     WorkflowEvent(type="completed", workflow_name=name, duration_ms=duration_ms)
                 )
+
+        except ConditionNotMetError as exc:
+            ctx.statuses[name] = "failed"
+            ctx.errors[name] = exc
+            await store.update_node_status(
+                run_id, name, NodeStatus.FAILED, error=exc
+            )
+            await _emit_event(
+                store, run_id, name, "NodeConditionFailed",
+                {"reason": exc.reason}
+            )
+            if on_progress:
+                await on_progress(
+                    WorkflowEvent(type="failed", workflow_name=name, message=str(exc))
+                )
+            if fail_fast:
+                raise
 
         except ApprovalRejected as exc:
             ctx.statuses[name] = "skipped"

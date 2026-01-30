@@ -32,6 +32,11 @@ from smithers.types import (
     WorkflowResult,
 )
 from smithers.workflow import SkipResult, Workflow, get_workflow_by_output
+from smithers.conditions import (
+    ConditionNotMetError,
+    evaluate_condition,
+    get_condition_policy,
+)
 
 
 def build_graph(target: Workflow) -> WorkflowGraph:
@@ -186,6 +191,61 @@ async def run_graph(
             await on_progress(WorkflowEvent(type="started", workflow_name=name))
 
         try:
+            # Check condition (if any) before proceeding
+            condition_policy = wf.condition_policy or get_condition_policy(wf.fn)
+            if condition_policy is not None:
+                deps_namespace = _dependency_namespace(wf, outputs)
+                condition_met = evaluate_condition(condition_policy, deps_namespace)
+
+                if not condition_met:
+                    skip_reason = condition_policy.skip_reason
+                    on_skip_action = condition_policy.on_skip
+
+                    if on_skip_action == "fail":
+                        raise ConditionNotMetError(name, skip_reason)
+                    elif on_skip_action == "default":
+                        default_val = condition_policy.default_value
+                        outputs[name] = default_val
+                        statuses[name] = "skipped"
+                        results.append(
+                            WorkflowResult(
+                                name=name,
+                                output=default_val,
+                                cached=False,
+                                duration_ms=0.0,
+                            )
+                        )
+                        if on_progress:
+                            await on_progress(
+                                WorkflowEvent(
+                                    type="skipped",
+                                    workflow_name=name,
+                                    message=f"Condition not met: {skip_reason}",
+                                )
+                            )
+                        return
+                    else:
+                        # Default: skip
+                        outputs[name] = None
+                        statuses[name] = "skipped"
+                        results.append(
+                            WorkflowResult(
+                                name=name,
+                                output=None,
+                                cached=False,
+                                duration_ms=0.0,
+                            )
+                        )
+                        if on_progress:
+                            await on_progress(
+                                WorkflowEvent(
+                                    type="skipped",
+                                    workflow_name=name,
+                                    message=f"Condition not met: {skip_reason}",
+                                )
+                            )
+                        return
+
             cache_key = None
             input_hash = None
             if cache is not None and name not in invalidated and "*" not in invalidated:
