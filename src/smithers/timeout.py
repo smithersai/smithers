@@ -120,61 +120,8 @@ MEDIUM_TIMEOUT = TimeoutPolicy(timeout_seconds=120.0)
 LONG_TIMEOUT = TimeoutPolicy(timeout_seconds=600.0)
 
 
-class WorkflowTimeoutError(asyncio.TimeoutError):
-    """
-    Raised when a workflow exceeds its timeout limit.
-
-    Attributes:
-        workflow_name: Name of the workflow that timed out
-        timeout_seconds: The configured timeout in seconds
-        elapsed_seconds: Actual time elapsed before timeout
-        policy: The timeout policy that was violated
-    """
-
-    def __init__(
-        self,
-        workflow_name: str,
-        timeout_seconds: float,
-        elapsed_seconds: float,
-        policy: TimeoutPolicy | None = None,
-    ) -> None:
-        self.workflow_name = workflow_name
-        self.timeout_seconds = timeout_seconds
-        self.elapsed_seconds = elapsed_seconds
-        self.policy = policy
-        super().__init__(
-            f"Workflow '{workflow_name}' timed out after {elapsed_seconds:.2f}s "
-            f"(limit: {timeout_seconds:.2f}s)"
-        )
-
-
-class GraphTimeoutError(asyncio.TimeoutError):
-    """
-    Raised when graph execution exceeds its global timeout.
-
-    Attributes:
-        timeout_seconds: The configured global timeout in seconds
-        elapsed_seconds: Actual time elapsed
-        completed_nodes: List of nodes that completed before timeout
-        running_nodes: List of nodes that were running when timeout occurred
-    """
-
-    def __init__(
-        self,
-        timeout_seconds: float,
-        elapsed_seconds: float,
-        completed_nodes: list[str] | None = None,
-        running_nodes: list[str] | None = None,
-    ) -> None:
-        self.timeout_seconds = timeout_seconds
-        self.elapsed_seconds = elapsed_seconds
-        self.completed_nodes = completed_nodes or []
-        self.running_nodes = running_nodes or []
-        super().__init__(
-            f"Graph execution timed out after {elapsed_seconds:.2f}s "
-            f"(limit: {timeout_seconds:.2f}s). "
-            f"Completed: {len(self.completed_nodes)}, Running: {len(self.running_nodes)}"
-        )
+# Import error types from smithers.errors for consistency
+from smithers.errors import GraphTimeoutError, WorkflowTimeoutError
 
 
 def timeout(
@@ -312,7 +259,6 @@ async def execute_with_timeout(
             workflow_name=workflow_name,
             timeout_seconds=policy.timeout_seconds,
             elapsed_seconds=elapsed,
-            policy=policy,
         )
 
         if on_timeout_callback is not None:
