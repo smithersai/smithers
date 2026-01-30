@@ -150,6 +150,38 @@ def main() -> int:
         default=None,
     )
 
+    # stats command - show usage analytics
+    stats_parser = subparsers.add_parser("stats", help="Show LLM usage analytics")
+    stats_parser.add_argument("store", help="Path to SQLite store database")
+    stats_parser.add_argument("--run", default=None, help="Specific run ID to analyze")
+    stats_parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Number of days to include (default: 7)",
+    )
+    stats_parser.add_argument(
+        "--by-node",
+        action="store_true",
+        help="Include per-node breakdown",
+    )
+    stats_parser.add_argument(
+        "--by-model",
+        action="store_true",
+        help="Include per-model breakdown",
+    )
+    stats_parser.add_argument(
+        "--recalculate",
+        action="store_true",
+        help="Recalculate costs using current pricing",
+    )
+    stats_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format",
+    )
+
     # verify command - verify graph, cache, or run state
     verify_parser = subparsers.add_parser("verify", help="Verify system invariants")
     verify_sub = verify_parser.add_subparsers(dest="verify_command")
@@ -227,6 +259,8 @@ def main() -> int:
         return _resume_run(args)
     elif args.command == "verify":
         return _verify_command(args)
+    elif args.command == "stats":
+        return _show_stats(args)
 
     return 0
 
@@ -711,6 +745,119 @@ def _resume_run(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 4
+
+
+def _show_stats(args: argparse.Namespace) -> int:
+    """Show LLM usage analytics."""
+    from datetime import UTC, datetime
+
+    from smithers.analytics import UsageAnalytics
+    from smithers.store.sqlite import SqliteStore
+
+    store_path = Path(args.store)
+    if not store_path.exists():
+        print(f"Store not found: {args.store}", file=sys.stderr)
+        return 1
+
+    store = SqliteStore(store_path)
+
+    async def get_stats() -> dict[str, Any]:
+        await store.initialize()
+        analytics = UsageAnalytics(store)
+
+        result: dict[str, Any] = {}
+
+        if args.run:
+            # Get stats for a specific run
+            summary = await analytics.get_run_summary(
+                args.run,
+                include_by_node=args.by_node,
+                recalculate_costs=args.recalculate,
+            )
+            result["run_id"] = args.run
+            result["summary"] = summary.to_dict()
+
+            if args.by_model:
+                model_breakdown = await analytics.get_model_breakdown(args.run)
+                result["by_model"] = {k: v.to_dict() for k, v in model_breakdown.items()}
+        else:
+            # Get stats for the time period
+            since = datetime.now(UTC) - timedelta(days=args.days)
+            summary = await analytics.get_period_summary(
+                since=since,
+                recalculate_costs=args.recalculate,
+            )
+            result["period_days"] = args.days
+            result["summary"] = summary.to_dict()
+
+            if args.by_model:
+                model_breakdown = await analytics.get_model_breakdown(since=since)
+                result["by_model"] = {k: v.to_dict() for k, v in model_breakdown.items()}
+
+        return result
+
+    stats = asyncio.run(get_stats())
+
+    if args.format == "json":
+        print(json.dumps(stats, indent=2))
+    else:
+        _print_stats_text(stats, args)
+
+    return 0
+
+
+def _print_stats_text(stats: dict[str, Any], args: argparse.Namespace) -> None:
+    """Print stats in human-readable text format."""
+    print("LLM Usage Statistics")
+    print("=" * 50)
+
+    if "run_id" in stats:
+        print(f"Run ID: {stats['run_id']}")
+    else:
+        print(f"Period: Last {stats['period_days']} days")
+
+    summary = stats["summary"]
+    print()
+    print("Summary")
+    print("-" * 30)
+    print(f"  Total LLM Calls:    {summary['total_calls']:,}")
+    print(f"  Input Tokens:       {summary['total_input_tokens']:,}")
+    print(f"  Output Tokens:      {summary['total_output_tokens']:,}")
+    print(f"  Total Tokens:       {summary['total_tokens']:,}")
+    print(f"  Total Cost:         ${summary['total_cost_usd']:.4f}")
+
+    if summary["total_calls"] > 0:
+        print()
+        print("  Averages per Call:")
+        print(f"    Tokens:           {summary['avg_tokens_per_call']:.1f}")
+        print(f"    Cost:             ${summary['avg_cost_per_call']:.6f}")
+
+    if summary.get("models"):
+        print()
+        print("Models Used")
+        print("-" * 30)
+        for model, count in sorted(summary["models"].items(), key=lambda x: -x[1]):
+            print(f"  {model}: {count} calls")
+
+    if "by_model" in stats:
+        print()
+        print("Breakdown by Model")
+        print("-" * 30)
+        for model, model_stats in stats["by_model"].items():
+            print(f"\n  {model}")
+            print(f"    Calls:     {model_stats['total_calls']:,}")
+            print(f"    Tokens:    {model_stats['total_tokens']:,}")
+            print(f"    Cost:      ${model_stats['total_cost_usd']:.4f}")
+
+    if summary.get("by_node"):
+        print()
+        print("Breakdown by Node")
+        print("-" * 30)
+        for node_id, node_stats in summary["by_node"].items():
+            print(f"\n  {node_id}")
+            print(f"    Calls:     {node_stats['total_calls']:,}")
+            print(f"    Tokens:    {node_stats['total_tokens']:,}")
+            print(f"    Cost:      ${node_stats['total_cost_usd']:.4f}")
 
 
 def _verify_command(args: argparse.Namespace) -> int:
