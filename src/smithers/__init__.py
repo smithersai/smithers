@@ -61,7 +61,7 @@ from smithers.runtime import (
     get_current_context,
     runtime_context,
 )
-from smithers.store.sqlite import SqliteStore
+from smithers.store.sqlite import LoopIteration, SqliteStore
 from smithers.testing import (
     FakeLLMProvider,
     RecordingStore,
@@ -128,6 +128,7 @@ __all__ = [
     "GraphVerificationResult",
     "IssueCode",
     "IssueSeverity",
+    "LoopIteration",
     "ModelPricing",
     "NO_RETRY",
     "OutputVerificationResult",
