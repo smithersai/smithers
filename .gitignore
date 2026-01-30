@@ -68,3 +68,11 @@ smithers_cache.db
 *.tmp
 *.temp
 .cache/
+
+# Zig build artifacts
+.zig-cache/
+zig-cache/
+zig-out/
+
+# Xcode build
+macos/build/
