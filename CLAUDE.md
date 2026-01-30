@@ -18,6 +18,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design.
 
 - **Workflows** — Async functions decorated with `@workflow` that return Pydantic models
 - **Ralph Loops** — Declarative iteration via `ralph_loop()` that preserves DAG model
+- **Composition** — Build complex workflows with `chain`, `parallel`, `branch`, `map_workflow`, `reduce_workflow`
 - **Registry** — Maps output types to workflows for dependency resolution
 - **GraphBuilder** — Constructs frozen `WorkflowGraph` plans from workflows
 - **ExecutionEngine** — Runs graphs level-by-level with parallel execution
@@ -149,6 +150,35 @@ review_loop = ralph_loop(
     until=lambda r: r.approved,
     max_iterations=5,
 )
+```
+
+### Workflow Composition
+```python
+from smithers import chain, parallel, branch, map_workflow, compose_graphs
+
+# Chain workflows sequentially
+pipeline = chain(analyze, implement, test)
+
+# Run workflows in parallel and collect results
+class ReviewResults(BaseModel):
+    lint: LintOutput
+    test: TestOutput
+
+review = parallel(lint_workflow, test_workflow, collect_as=ReviewResults)
+
+# Conditional branching
+approval_flow = branch(
+    condition=lambda x: x.score > 80,
+    if_true=auto_approve,
+    if_false=manual_review,
+    input_type=ScoreOutput,
+)
+
+# Map over multiple inputs
+analyze_all = map_workflow(analyze_file)  # list[FileInput] -> list[FileAnalysis]
+
+# Merge multiple graphs
+combined = compose_graphs(graph1, graph2, target="deploy")
 ```
 
 ### Prometheus/OpenTelemetry Metrics
