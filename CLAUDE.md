@@ -25,6 +25,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design.
 - **ClaudeProvider** — LLM integration with tool loop and structured output
 - **Visualization** — Enhanced graph visualization with ASCII art, status colors, and real-time progress
 - **MetricsCollector** — Prometheus/OpenTelemetry metrics export for production monitoring
+- **WebSocketServer** — Real-time progress updates for web UIs via WebSocket
 
 ## Commands
 
@@ -169,6 +170,32 @@ record_workflow_run("my_workflow", "success", duration_seconds=1.5)
 record_llm_call("claude-3-opus", input_tokens=1000, output_tokens=500)
 ```
 
+### WebSocket Real-Time Updates
+```python
+from smithers import get_websocket_server, WebSocketServer
+
+# Get global server and start it
+server = get_websocket_server()
+await server.start(host="localhost", port=8765)
+
+# Server automatically subscribes to EventBus
+# All workflow events are broadcast to connected clients
+
+# Manually broadcast messages
+await server.broadcast({"type": "custom", "data": "hello"})
+
+# Send to specific client
+await server.send_to_client(client_id, {"type": "direct"})
+
+# Stop the server
+await server.stop()
+```
+
+Client protocol (JSON over WebSocket):
+- Subscribe to run: `{"action": "subscribe", "run_id": "run-123"}`
+- Filter events: `{"action": "filter", "event_types": ["NodeStarted", "NodeFinished"]}`
+- Ping/heartbeat: `{"action": "ping"}`
+
 ## System Invariants
 
 - **I1**: WorkflowGraph must be a DAG (cycle detection at plan time). Ralph loops are single nodes that internally iterate.
@@ -192,6 +219,9 @@ Core:
 - `pydantic>=2.0` — Data validation and schemas
 - `anthropic>=0.40` — Claude API client
 - `aiosqlite>=0.20` — Async SQLite for storage
+
+Optional:
+- `websockets>=12.0` — WebSocket server for real-time updates (install with `pip install smithers[websocket]`)
 
 Dev:
 - `pytest` / `pytest-asyncio` — Testing
