@@ -26,22 +26,31 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design.
 ## Commands
 
 ```bash
-# Install dependencies
-uv sync
+# Build everything
+zig build
 
-# Run tests
-uv run pytest
+# Run the app (Ghostty terminal)
+zig build run
 
-# Type check
-uv run pyright
+# Run Python tests
+zig build test
 
-# Lint
-uv run ruff check .
+# Type check Python
+zig build check
 
-# Format
-uv run ruff format .
+# Lint Python
+zig build lint
 
-# Run a workflow
+# Format all code
+zig build fmt
+
+# Build Ghostty only
+zig build ghostty
+
+# Clean build artifacts
+zig build clean
+
+# Run a workflow directly
 uv run python examples/01_hello_world.py
 ```
 
