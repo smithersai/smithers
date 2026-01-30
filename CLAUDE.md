@@ -24,6 +24,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design.
 - **SqliteStore** — Persistent cache, runs, events, approvals, and loop iterations
 - **ClaudeProvider** — LLM integration with tool loop and structured output
 - **Visualization** — Enhanced graph visualization with ASCII art, status colors, and real-time progress
+- **MetricsCollector** — Prometheus/OpenTelemetry metrics export for production monitoring
 
 ## Commands
 
@@ -146,6 +147,26 @@ review_loop = ralph_loop(
     until=lambda r: r.approved,
     max_iterations=5,
 )
+```
+
+### Prometheus/OpenTelemetry Metrics
+```python
+from smithers import get_metrics_collector, MetricsCollector
+
+# Get global collector and attach to EventBus
+collector = get_metrics_collector()
+collector.attach_to_event_bus()
+
+# Start HTTP server for Prometheus scraping
+collector.start_server(port=9090)  # http://localhost:9090/metrics
+
+# Or export manually
+print(collector.export_prometheus())
+
+# Convenience functions for manual recording
+from smithers import record_workflow_run, record_llm_call
+record_workflow_run("my_workflow", "success", duration_seconds=1.5)
+record_llm_call("claude-3-opus", input_tokens=1000, output_tokens=500)
 ```
 
 ## System Invariants
