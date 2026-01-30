@@ -182,6 +182,46 @@ def main() -> int:
         help="Output format",
     )
 
+    # ratelimit command - configure and view rate limits
+    ratelimit_parser = subparsers.add_parser("ratelimit", help="Configure and view rate limits")
+    ratelimit_sub = ratelimit_parser.add_subparsers(dest="ratelimit_command")
+
+    # ratelimit status
+    ratelimit_status_parser = ratelimit_sub.add_parser("status", help="Show current rate limit status")
+    ratelimit_status_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format",
+    )
+
+    # ratelimit configure
+    ratelimit_config_parser = ratelimit_sub.add_parser("configure", help="Configure rate limits")
+    ratelimit_config_parser.add_argument(
+        "--tier",
+        type=int,
+        choices=[1, 2, 3, 4],
+        help="Use Claude API tier preset (1-4)",
+    )
+    ratelimit_config_parser.add_argument(
+        "--rpm",
+        type=int,
+        help="Requests per minute limit",
+    )
+    ratelimit_config_parser.add_argument(
+        "--rps",
+        type=int,
+        help="Requests per second limit",
+    )
+    ratelimit_config_parser.add_argument(
+        "--tpm",
+        type=int,
+        help="Tokens per minute limit",
+    )
+
+    # ratelimit reset
+    ratelimit_sub.add_parser("reset", help="Reset rate limiter state and statistics")
+
     # verify command - verify graph, cache, or run state
     verify_parser = subparsers.add_parser("verify", help="Verify system invariants")
     verify_sub = verify_parser.add_subparsers(dest="verify_command")
@@ -261,6 +301,8 @@ def main() -> int:
         return _verify_command(args)
     elif args.command == "stats":
         return _show_stats(args)
+    elif args.command == "ratelimit":
+        return _ratelimit_command(args)
 
     return 0
 
@@ -1024,6 +1066,152 @@ def _verify_run(args: argparse.Namespace) -> int:
                 print(f"  [{issue.severity.value}] {issue.code.value}{node_str}: {issue.message}")
 
     return 0 if result.valid else 1
+
+
+def _ratelimit_command(args: argparse.Namespace) -> int:
+    """Handle ratelimit subcommands."""
+    if args.ratelimit_command == "status":
+        return _ratelimit_status(args)
+    elif args.ratelimit_command == "configure":
+        return _ratelimit_configure(args)
+    elif args.ratelimit_command == "reset":
+        return _ratelimit_reset(args)
+    else:
+        print("Unknown ratelimit command. Use: status, configure, or reset", file=sys.stderr)
+        return 1
+
+
+def _ratelimit_status(args: argparse.Namespace) -> int:
+    """Show current rate limit status."""
+    from smithers.ratelimit import get_rate_limiter
+
+    limiter = get_rate_limiter()
+
+    if limiter is None:
+        if args.format == "json":
+            print(json.dumps({"configured": False}))
+        else:
+            print("Rate Limiting Status")
+            print("=" * 40)
+            print("Status: Not configured")
+            print()
+            print("To configure rate limits:")
+            print("  smithers ratelimit configure --tier 1")
+            print("  smithers ratelimit configure --rpm 60 --tpm 100000")
+        return 0
+
+    stats = limiter.get_stats()
+    capacity = limiter.remaining_capacity()
+
+    if args.format == "json":
+        output = {
+            "configured": True,
+            "config": {
+                "requests_per_minute": limiter.config.requests_per_minute,
+                "requests_per_second": limiter.config.requests_per_second,
+                "tokens_per_minute": limiter.config.tokens_per_minute,
+                "strategy": limiter.config.strategy.value,
+                "on_exceeded": limiter.config.on_exceeded.value,
+            },
+            "stats": stats.to_dict(),
+            "remaining_capacity": capacity,
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        print("Rate Limiting Status")
+        print("=" * 40)
+        print("Status: Configured")
+        print()
+        print("Configuration")
+        print("-" * 30)
+        if limiter.config.requests_per_minute is not None:
+            print(f"  RPM Limit:    {limiter.config.requests_per_minute}")
+        if limiter.config.requests_per_second is not None:
+            print(f"  RPS Limit:    {limiter.config.requests_per_second}")
+        if limiter.config.tokens_per_minute is not None:
+            print(f"  TPM Limit:    {limiter.config.tokens_per_minute:,}")
+        print(f"  Strategy:     {limiter.config.strategy.value}")
+        print(f"  On Exceeded:  {limiter.config.on_exceeded.value}")
+        print()
+        print("Current Usage")
+        print("-" * 30)
+        print(f"  Requests in Window:  {stats.requests_in_window}")
+        print(f"  Tokens in Window:    {stats.tokens_in_window:,}")
+        if stats.rpm_utilization is not None:
+            print(f"  RPM Utilization:     {stats.rpm_utilization:.1f}%")
+        if stats.rps_utilization is not None:
+            print(f"  RPS Utilization:     {stats.rps_utilization:.1f}%")
+        if stats.tpm_utilization is not None:
+            print(f"  TPM Utilization:     {stats.tpm_utilization:.1f}%")
+        print()
+        print("Totals")
+        print("-" * 30)
+        print(f"  Total Requests:      {stats.total_requests:,}")
+        print(f"  Total Tokens:        {stats.total_tokens:,}")
+        print(f"  Total Waits:         {stats.total_waits}")
+        print(f"  Total Wait Time:     {stats.total_wait_time_ms:.1f}ms")
+        print()
+        print("Remaining Capacity")
+        print("-" * 30)
+        for key, value in capacity.items():
+            if value is not None:
+                label = key.replace("_", " ").title()
+                print(f"  {label}: {value:,}")
+
+    return 0
+
+
+def _ratelimit_configure(args: argparse.Namespace) -> int:
+    """Configure rate limits."""
+    from smithers.ratelimit import (
+        configure_claude_rate_limits,
+        create_rate_limiter,
+        set_rate_limiter,
+    )
+
+    if args.tier is not None:
+        limiter = configure_claude_rate_limits(tier=args.tier)
+        print(f"Configured rate limits for Claude API tier {args.tier}")
+        print(f"  RPM: {limiter.config.requests_per_minute}")
+        print(f"  TPM: {limiter.config.tokens_per_minute:,}")
+        return 0
+
+    if args.rpm is None and args.rps is None and args.tpm is None:
+        print("Must specify --tier or at least one of --rpm, --rps, --tpm", file=sys.stderr)
+        return 1
+
+    limiter = create_rate_limiter(
+        rpm=args.rpm,
+        rps=args.rps,
+        tpm=args.tpm,
+    )
+    set_rate_limiter(limiter)
+
+    print("Configured custom rate limits:")
+    if args.rpm is not None:
+        print(f"  RPM: {args.rpm}")
+    if args.rps is not None:
+        print(f"  RPS: {args.rps}")
+    if args.tpm is not None:
+        print(f"  TPM: {args.tpm:,}")
+
+    return 0
+
+
+def _ratelimit_reset(args: argparse.Namespace) -> int:
+    """Reset rate limiter state."""
+    from smithers.ratelimit import get_rate_limiter
+
+    limiter = get_rate_limiter()
+
+    if limiter is None:
+        print("No rate limiter configured")
+        return 0
+
+    limiter.reset()
+    print("Rate limiter state reset")
+
+    return 0
 
 
 _DEFAULT_WORKFLOW = """from pydantic import BaseModel

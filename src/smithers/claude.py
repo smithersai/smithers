@@ -1,10 +1,13 @@
-"""Claude LLM integration with automatic call tracking.
+"""Claude LLM integration with automatic call tracking and rate limiting.
 
 This module provides the claude() function for calling the Claude API
 with automatic tracking of LLM calls when running within a workflow graph.
 
 When a RuntimeContext is active (set by the ExecutionEngine), all calls
 to claude() are automatically recorded to SQLite for observability.
+
+Rate limiting is automatically applied when a rate limiter is configured
+via set_rate_limiter() or configure_claude_rate_limits().
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from pydantic import BaseModel, TypeAdapter
 from smithers.analytics import calculate_cost
 from smithers.config import get_config
 from smithers.errors import ClaudeError, RateLimitError, ToolError
+from smithers.ratelimit import get_rate_limiter
 from smithers.runtime import (
     record_llm_call_end,
     record_llm_call_start,
@@ -74,15 +78,21 @@ async def claude(
     If a FakeLLMProvider is active (via use_fake_llm context manager),
     it will be used instead of calling the real Claude API.
     """
-    # Check for fake provider first (for testing)
+    config = get_config()
+    model_name = model or config.model
+
+    # Apply rate limiting before anything else (including fake providers)
+    # This ensures tests can verify rate limiting behavior
+    rate_limiter = get_rate_limiter(model_name)
+    if rate_limiter is not None:
+        await rate_limiter.acquire()
+
+    # Check for fake provider (for testing)
     from smithers.testing.fakes import get_fake_llm_provider
 
     fake_provider = get_fake_llm_provider()
     if fake_provider is not None:
         return fake_provider.next_response(prompt, output, tools, system)
-
-    config = get_config()
-    model_name = model or config.model
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise ClaudeError("ANTHROPIC_API_KEY is not set")
