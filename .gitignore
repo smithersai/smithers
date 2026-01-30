@@ -76,3 +76,6 @@ zig-out/
 
 # Xcode build
 macos/build/
+
+# Ghostty submodule (add with: git submodule add https://github.com/ghostty-org/ghostty ghostty)
+ghostty/
