@@ -113,6 +113,18 @@ from smithers.visualization import (
     print_graph,
     visualize_graph,
 )
+from smithers.metrics import (
+    CounterMetric,
+    GaugeMetric,
+    HistogramMetric,
+    MetricsCollector,
+    get_metrics_collector,
+    record_llm_call,
+    record_tool_call,
+    record_workflow_run,
+    reset_metrics_collector,
+    set_metrics_collector,
+)
 from smithers.workflow import require_approval, require_approval_async, retry, skip, workflow
 
 __version__ = "0.1.0"
@@ -126,6 +138,17 @@ __all__ = [
     "create_progress_callback",
     "print_graph",
     "visualize_graph",
+    # Metrics
+    "CounterMetric",
+    "GaugeMetric",
+    "HistogramMetric",
+    "MetricsCollector",
+    "get_metrics_collector",
+    "record_llm_call",
+    "record_tool_call",
+    "record_workflow_run",
+    "reset_metrics_collector",
+    "set_metrics_collector",
     # Other exports
     "ApprovalRejected",
     "BudgetExceededAction",
