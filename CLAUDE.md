@@ -17,11 +17,13 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design.
 ## Key Components
 
 - **Workflows** — Async functions decorated with `@workflow` that return Pydantic models
+- **Ralph Loops** — Declarative iteration via `ralph_loop()` that preserves DAG model
 - **Registry** — Maps output types to workflows for dependency resolution
 - **GraphBuilder** — Constructs frozen `WorkflowGraph` plans from workflows
 - **ExecutionEngine** — Runs graphs level-by-level with parallel execution
-- **SqliteStore** — Persistent cache, runs, events, and approvals
+- **SqliteStore** — Persistent cache, runs, events, approvals, and loop iterations
 - **ClaudeProvider** — LLM integration with tool loop and structured output
+- **Visualization** — Enhanced graph visualization with ASCII art, status colors, and real-time progress
 
 ## Commands
 
@@ -127,14 +129,34 @@ graph = build_graph(final_workflow)  # Frozen plan
 result = await run_graph(graph, cache=SqliteCache("./cache.db"))
 ```
 
+### Ralph Loops (Declarative Iteration)
+```python
+from smithers import workflow, ralph_loop, claude
+
+@workflow
+async def review_and_revise(code: CodeOutput) -> CodeOutput:
+    review = await claude(f"Review: {code.code}", output=ReviewOutput)
+    if review.approved:
+        return CodeOutput(code=code.code, approved=True)
+    return await claude(f"Fix: {review.feedback}", output=CodeOutput)
+
+# Loop until approved (max 5 iterations)
+review_loop = ralph_loop(
+    review_and_revise,
+    until=lambda r: r.approved,
+    max_iterations=5,
+)
+```
+
 ## System Invariants
 
-- **I1**: WorkflowGraph must be a DAG (cycle detection at plan time)
+- **I1**: WorkflowGraph must be a DAG (cycle detection at plan time). Ralph loops are single nodes that internally iterate.
 - **I2**: Each node's output is validated at runtime (Pydantic TypeAdapter)
 - **I3**: Every node run is content-addressed: `cache_key = H(workflow_id + code_hash + input_hash + runtime_hash)`
 - **I4**: Every state transition is persisted to SQLite
 - **I5**: Cache entries must be schema-valid and hash-consistent
 - **I6**: Approvals are persisted gates; execution can pause and resume
+- **I7**: Ralph loop iterations are individually tracked with their own events and timing
 
 ## Testing
 
