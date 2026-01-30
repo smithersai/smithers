@@ -63,14 +63,38 @@ smithers graph workflow.py
 | Option | Description |
 |--------|-------------|
 | `-o, --output PATH` | Output file (default: stdout) |
-| `--format FORMAT` | Output format: `mermaid`, `dot`, `json` |
+| `--format FORMAT` | Output format (see formats below) |
 | `--workflow NAME` | Graph for specific workflow |
+| `--no-color` | Disable ANSI color output |
+| `--no-unicode` | Use ASCII-only characters |
+
+### Formats
+
+| Format | Description |
+|--------|-------------|
+| `mermaid` | Mermaid diagram (default) |
+| `mermaid-styled` | Mermaid with status-based styling |
+| `dot` | DOT format for Graphviz |
+| `json` | JSON for programmatic use |
+| `ascii` | ASCII art with status indicators |
+| `tree` | Tree view showing dependencies |
+| `table` | Table with node details |
+| `summary` | Brief execution summary |
 
 ### Examples
 
 ```bash
 # Print mermaid to stdout
 smithers graph workflow.py
+
+# ASCII art view for terminal
+smithers graph workflow.py --format ascii
+
+# Tree view showing dependency hierarchy
+smithers graph workflow.py --format tree
+
+# Table with node status
+smithers graph workflow.py --format table
 
 # Save to file
 smithers graph workflow.py -o graph.md
@@ -80,6 +104,12 @@ smithers graph workflow.py --format dot -o graph.dot
 
 # JSON for programmatic use
 smithers graph workflow.py --format json
+
+# ASCII output without colors
+smithers graph workflow.py --format ascii --no-color
+
+# ASCII-only characters (no Unicode)
+smithers graph workflow.py --format table --no-unicode
 ```
 
 ---
@@ -151,6 +181,278 @@ my-project/
 │   └── example.py
 ├── pyproject.toml
 └── README.md
+```
+
+---
+
+## `smithers watch`
+
+Tail events from a run in real-time.
+
+```bash
+smithers watch ./store.db --run <run-id>
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--run RUN_ID` | Run ID to watch (required) |
+| `--format FORMAT` | Output format: `text` or `json` |
+
+### Example
+
+```bash
+# Watch a running workflow
+smithers watch ./store.db --run abc-123
+
+# JSON output for parsing
+smithers watch ./store.db --run abc-123 --format json
+```
+
+---
+
+## `smithers inspect`
+
+Inspect run or node details.
+
+```bash
+smithers inspect ./store.db --run <run-id>
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--run RUN_ID` | Run ID to inspect (required) |
+| `--node NODE_ID` | Specific node to inspect |
+| `--format FORMAT` | Output format: `text` or `json` |
+
+### Examples
+
+```bash
+# Inspect a run
+smithers inspect ./store.db --run abc-123
+
+# Inspect a specific node
+smithers inspect ./store.db --run abc-123 --node analyze
+
+# JSON output
+smithers inspect ./store.db --run abc-123 --format json
+```
+
+---
+
+## `smithers runs`
+
+List execution runs.
+
+```bash
+smithers runs ./store.db
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--status STATUS` | Filter by status (PLANNED, RUNNING, SUCCESS, FAILED, CANCELLED, PAUSED) |
+| `--limit N` | Maximum runs to show (default: 20) |
+| `--format FORMAT` | Output format: `text` or `json` |
+
+### Examples
+
+```bash
+# List all runs
+smithers runs ./store.db
+
+# List only failed runs
+smithers runs ./store.db --status FAILED
+
+# JSON output
+smithers runs ./store.db --format json
+```
+
+---
+
+## `smithers approve`
+
+Approve or reject a pending workflow node.
+
+```bash
+smithers approve ./store.db --run <run-id> --node <node-id> --yes
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--run RUN_ID` | Run ID (required) |
+| `--node NODE_ID` | Node ID to approve (required) |
+| `--yes, -y` | Approve the node |
+| `--no, -n` | Reject the node |
+| `--user USER` | User making the decision |
+
+### Examples
+
+```bash
+# Approve a node
+smithers approve ./store.db --run abc-123 --node deploy --yes
+
+# Reject a node
+smithers approve ./store.db --run abc-123 --node deploy --no --user "admin"
+```
+
+---
+
+## `smithers resume`
+
+Resume a paused workflow run.
+
+```bash
+smithers resume ./store.db workflow.py --run <run-id>
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--run RUN_ID` | Run ID to resume (required) |
+| `--workflow NAME` | Target workflow name |
+| `--cache PATH` | Path to cache database |
+
+### Example
+
+```bash
+# Resume a paused run
+smithers resume ./store.db workflow.py --run abc-123
+```
+
+---
+
+## `smithers stats`
+
+Show LLM usage analytics.
+
+```bash
+smithers stats ./store.db
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--run RUN_ID` | Specific run ID to analyze |
+| `--days N` | Number of days to include (default: 7) |
+| `--by-node` | Include per-node breakdown |
+| `--by-model` | Include per-model breakdown |
+| `--recalculate` | Recalculate costs using current pricing |
+| `--format FORMAT` | Output format: `text` or `json` |
+
+### Examples
+
+```bash
+# Show stats for last 7 days
+smithers stats ./store.db
+
+# Stats for a specific run
+smithers stats ./store.db --run abc-123
+
+# Include detailed breakdowns
+smithers stats ./store.db --by-node --by-model
+
+# JSON output
+smithers stats ./store.db --format json
+```
+
+---
+
+## `smithers verify`
+
+Verify system invariants.
+
+### `smithers verify graph`
+
+Verify workflow graph invariants.
+
+```bash
+smithers verify graph workflow.py
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--workflow NAME` | Verify specific workflow |
+| `--format FORMAT` | Output format: `text` or `json` |
+
+### `smithers verify cache`
+
+Verify cache integrity.
+
+```bash
+smithers verify cache --cache ./cache.db
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--cache PATH` | Path to cache database (required) |
+| `--validate-schemas` | Validate entries against their schemas |
+| `--format FORMAT` | Output format: `text` or `json` |
+
+### `smithers verify run`
+
+Verify run state consistency.
+
+```bash
+smithers verify run ./store.db --run <run-id>
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--run RUN_ID` | Run ID to verify (required) |
+| `--format FORMAT` | Output format: `text` or `json` |
+
+---
+
+## `smithers ratelimit`
+
+Configure and view rate limits.
+
+### `smithers ratelimit status`
+
+Show current rate limit status.
+
+```bash
+smithers ratelimit status
+```
+
+### `smithers ratelimit configure`
+
+Configure rate limits.
+
+```bash
+smithers ratelimit configure --tier 2
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--tier N` | Use Claude API tier preset (1-4) |
+| `--rpm N` | Requests per minute limit |
+| `--rps N` | Requests per second limit |
+| `--tpm N` | Tokens per minute limit |
+
+### `smithers ratelimit reset`
+
+Reset rate limiter state and statistics.
+
+```bash
+smithers ratelimit reset
 ```
 
 ---
