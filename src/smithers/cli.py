@@ -61,9 +61,19 @@ def main() -> int:
     )
     graph_parser.add_argument(
         "--format",
-        choices=["mermaid", "dot", "json"],
+        choices=["mermaid", "mermaid-styled", "dot", "json", "ascii", "tree", "table", "summary"],
         default="mermaid",
-        help="Output format",
+        help="Output format (ascii/tree/table for terminal viewing)",
+    )
+    graph_parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable colored output (for ascii/tree/table formats)",
+    )
+    graph_parser.add_argument(
+        "--no-unicode",
+        action="store_true",
+        help="Use ASCII-only characters (for ascii/tree/table formats)",
     )
     graph_parser.add_argument(
         "--workflow",
@@ -334,6 +344,8 @@ def _run_workflow(args: argparse.Namespace) -> int:
 
 def _show_graph(args: argparse.Namespace) -> int:
     """Show workflow graph."""
+    from smithers.visualization import visualize_graph
+
     _load_module(args.file)
     workflow = _select_workflow(args.workflow)
     graph = build_graph(workflow)
@@ -341,9 +353,16 @@ def _show_graph(args: argparse.Namespace) -> int:
     output = ""
     if args.format == "mermaid":
         output = graph.mermaid()
+    elif args.format == "mermaid-styled":
+        output = visualize_graph(
+            graph,
+            format="mermaid",
+            use_colors=not args.no_color,
+            use_unicode=not args.no_unicode,
+        )
     elif args.format == "dot":
         output = _graph_to_dot(graph)
-    else:
+    elif args.format == "json":
         output = json.dumps(
             {
                 "root": graph.root,
@@ -359,6 +378,16 @@ def _show_graph(args: argparse.Namespace) -> int:
             },
             indent=2,
         )
+    elif args.format in ("ascii", "tree", "table", "summary"):
+        output = visualize_graph(
+            graph,
+            format=args.format,
+            use_colors=not args.no_color,
+            use_unicode=not args.no_unicode,
+        )
+    else:
+        print(f"Unknown format: {args.format}", file=sys.stderr)
+        return 1
 
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")
