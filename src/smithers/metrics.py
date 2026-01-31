@@ -35,9 +35,6 @@ Example usage:
 
 from __future__ import annotations
 
-import asyncio
-import time
-from collections import Counter as CounterDict
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -61,7 +58,7 @@ class MetricType(str, Enum):
 class MetricLabels:
     """Label set for a metric."""
 
-    labels: dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=lambda: {})
 
     def __hash__(self) -> int:
         return hash(frozenset(self.labels.items()))
@@ -85,7 +82,7 @@ class CounterMetric:
 
     name: str
     help_text: str
-    values: dict[MetricLabels, float] = field(default_factory=dict)
+    values: dict[MetricLabels, float] = field(default_factory=lambda: {})
 
     def inc(self, labels: dict[str, str] | None = None, value: float = 1.0) -> None:
         """Increment the counter."""
@@ -119,7 +116,7 @@ class GaugeMetric:
 
     name: str
     help_text: str
-    values: dict[MetricLabels, float] = field(default_factory=dict)
+    values: dict[MetricLabels, float] = field(default_factory=lambda: {})
 
     def set(self, value: float, labels: dict[str, str] | None = None) -> None:
         """Set the gauge value."""
@@ -174,7 +171,7 @@ class HistogramMetric:
     buckets: list[float] = field(
         default_factory=lambda: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
     )
-    observations: dict[MetricLabels, list[float]] = field(default_factory=dict)
+    observations: dict[MetricLabels, list[float]] = field(default_factory=lambda: {})
 
     def observe(self, value: float, labels: dict[str, str] | None = None) -> None:
         """Record an observation."""
@@ -212,7 +209,9 @@ class HistogramMetric:
             for bucket_le in self.buckets:
                 bucket_count = sum(1 for v in values if v <= bucket_le)
                 if label_prefix:
-                    lines.append(f'{self.name}_bucket{label_prefix},le="{bucket_le}"}} {bucket_count}')
+                    lines.append(
+                        f'{self.name}_bucket{label_prefix},le="{bucket_le}"}} {bucket_count}'
+                    )
                 else:
                     lines.append(f'{self.name}_bucket{{le="{bucket_le}"}} {bucket_count}')
 
@@ -698,6 +697,7 @@ class MetricsCollector:
 
         # Add a comment with metadata
         from datetime import UTC
+
         header = f"# Smithers metrics - exported at {datetime.now(UTC).isoformat()}"
         return header + "\n\n" + "\n\n".join(parts) if parts else header
 
@@ -762,8 +762,7 @@ class MetricsCollector:
             point: dict[str, Any] = {
                 "as_int": int(value),
                 "attributes": [
-                    {"key": k, "value": {"string_value": v}}
-                    for k, v in labels.labels.items()
+                    {"key": k, "value": {"string_value": v}} for k, v in labels.labels.items()
                 ],
             }
             data_points.append(point)
@@ -785,8 +784,7 @@ class MetricsCollector:
             point: dict[str, Any] = {
                 "as_double": value,
                 "attributes": [
-                    {"key": k, "value": {"string_value": v}}
-                    for k, v in labels.labels.items()
+                    {"key": k, "value": {"string_value": v}} for k, v in labels.labels.items()
                 ],
             }
             data_points.append(point)
@@ -812,8 +810,7 @@ class MetricsCollector:
                 "bucket_counts": bucket_counts,
                 "explicit_bounds": metric.buckets,
                 "attributes": [
-                    {"key": k, "value": {"string_value": v}}
-                    for k, v in labels.labels.items()
+                    {"key": k, "value": {"string_value": v}} for k, v in labels.labels.items()
                 ],
             }
             data_points.append(point)

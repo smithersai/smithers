@@ -103,11 +103,11 @@ class ClientConnection:
     id: str = field(default_factory=lambda: str(uuid4()))
     websocket: WebSocketProtocol | None = None
     connected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    subscribed_runs: set[str] = field(default_factory=set)
-    event_filter: set[str] = field(default_factory=set)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    subscribed_runs: set[str] = field(default_factory=lambda: set[str]())
+    event_filter: set[str] = field(default_factory=lambda: set[str]())
+    metadata: dict[str, Any] = field(default_factory=lambda: {})
     last_ping: datetime | None = None
-    _send_queue: asyncio.Queue[str] = field(default_factory=asyncio.Queue)
+    _send_queue: asyncio.Queue[str] = field(default_factory=lambda: asyncio.Queue[str]())
     _closed: bool = False
 
     async def send(self, message: str) -> bool:
@@ -426,11 +426,13 @@ class WebSocketServer:
         logger.debug(f"Client {client.id} connected")
 
         # Send welcome message
-        await client.send_json({
-            "type": "connected",
-            "client_id": client.id,
-            "server_time": datetime.now(UTC).isoformat(),
-        })
+        await client.send_json(
+            {
+                "type": "connected",
+                "client_id": client.id,
+                "server_time": datetime.now(UTC).isoformat(),
+            }
+        )
 
         try:
             async for message in self._receive_messages(websocket):
@@ -439,10 +441,12 @@ class WebSocketServer:
                     self._stats.messages_received += 1
                     await self._handle_client_message(client, data)
                 except json.JSONDecodeError:
-                    await client.send_json({
-                        "type": "error",
-                        "error": "Invalid JSON message",
-                    })
+                    await client.send_json(
+                        {
+                            "type": "error",
+                            "error": "Invalid JSON message",
+                        }
+                    )
                     self._stats.errors += 1
         except Exception as e:
             logger.debug(f"Client {client.id} connection error: {e}")
@@ -479,58 +483,72 @@ class WebSocketServer:
 
         if action == "ping":
             client.last_ping = datetime.now(UTC)
-            await client.send_json({
-                "type": "pong",
-                "server_time": datetime.now(UTC).isoformat(),
-            })
+            await client.send_json(
+                {
+                    "type": "pong",
+                    "server_time": datetime.now(UTC).isoformat(),
+                }
+            )
 
         elif action == "subscribe":
             run_id = data.get("run_id")
             if run_id:
                 client.subscribed_runs.add(run_id)
-                await client.send_json({
-                    "type": "subscribed",
-                    "run_id": run_id,
-                })
+                await client.send_json(
+                    {
+                        "type": "subscribed",
+                        "run_id": run_id,
+                    }
+                )
 
         elif action == "unsubscribe":
             run_id = data.get("run_id")
             if run_id:
                 client.subscribed_runs.discard(run_id)
-                await client.send_json({
-                    "type": "unsubscribed",
-                    "run_id": run_id,
-                })
+                await client.send_json(
+                    {
+                        "type": "unsubscribed",
+                        "run_id": run_id,
+                    }
+                )
 
         elif action == "subscribe_all":
             client.subscribed_runs.clear()
-            await client.send_json({
-                "type": "subscribed_all",
-            })
+            await client.send_json(
+                {
+                    "type": "subscribed_all",
+                }
+            )
 
         elif action == "filter":
             event_types = data.get("event_types", [])
             if isinstance(event_types, list):
                 client.event_filter = set(event_types)
-                await client.send_json({
-                    "type": "filter_set",
-                    "event_types": list(client.event_filter),
-                })
+                await client.send_json(
+                    {
+                        "type": "filter_set",
+                        "event_types": list(client.event_filter),
+                    }
+                )
 
         elif action == "clear_filter":
             client.event_filter.clear()
-            await client.send_json({
-                "type": "filter_cleared",
-            })
+            await client.send_json(
+                {
+                    "type": "filter_cleared",
+                }
+            )
 
         elif action == "status":
-            await client.send_json({
-                "type": "status",
-                "client_id": client.id,
-                "connected_at": client.connected_at.isoformat(),
-                "subscribed_runs": list(client.subscribed_runs),
-                "event_filter": list(client.event_filter),
-            })
+            await client.send_json(
+                {
+                    "type": "status",
+                    "client_id": client.id,
+                    "connected_at": client.connected_at.isoformat(),
+                    "subscribed_runs": list(client.subscribed_runs),
+                    "event_filter": list(client.event_filter),
+                }
+            )
 
         # Call custom handler if provided
         if self._custom_message_handler:
@@ -578,10 +596,12 @@ class WebSocketServer:
                 for client in list(self._clients.values()):
                     try:
                         # Send ping
-                        if not await client.send_json({
-                            "type": "heartbeat",
-                            "server_time": datetime.now(UTC).isoformat(),
-                        }):
+                        if not await client.send_json(
+                            {
+                                "type": "heartbeat",
+                                "server_time": datetime.now(UTC).isoformat(),
+                            }
+                        ):
                             self._clients.pop(client.id, None)
                     except Exception:
                         self._clients.pop(client.id, None)
@@ -633,7 +653,7 @@ class WebSocketMessage:
     """
 
     type: str
-    data: dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=lambda: {})
     run_id: str | None = None
     node_id: str | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))

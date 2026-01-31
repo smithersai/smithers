@@ -198,7 +198,7 @@ class GraphVisualization:
     """Enhanced visualization of a workflow graph."""
 
     graph: WorkflowGraph
-    node_states: dict[str, NodeState] = field(default_factory=dict)
+    node_states: dict[str, NodeState] = field(default_factory=lambda: {})
     use_colors: bool = True
     use_unicode: bool = True
 

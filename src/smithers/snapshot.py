@@ -133,7 +133,7 @@ class WorkflowSnapshot:
     content_hash: str
 
     # Optional metadata
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=lambda: {})
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -266,8 +266,8 @@ class GraphDiff:
     new_snapshot: WorkflowSnapshot
 
     # Change lists
-    node_changes: list[NodeChange] = field(default_factory=list)
-    edge_changes: list[EdgeChange] = field(default_factory=list)
+    node_changes: list[NodeChange] = field(default_factory=lambda: [])
+    edge_changes: list[EdgeChange] = field(default_factory=lambda: [])
 
     # Summary statistics
     nodes_added: int = 0
@@ -386,8 +386,8 @@ class GraphDiff:
                     if change.category == ChangeCategory.CODE:
                         lines.append(f"      {CYAN}Code changed{RESET}")
                     elif change.category == ChangeCategory.DEPENDENCY:
-                        old_deps = change.old_value or []
-                        new_deps = change.new_value or []
+                        old_deps: list[str] = change.old_value or []
+                        new_deps: list[str] = change.new_value or []
                         added = set(new_deps) - set(old_deps)
                         removed = set(old_deps) - set(new_deps)
                         if added:

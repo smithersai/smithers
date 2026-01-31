@@ -66,7 +66,7 @@ class Event:
     run_id: str
     node_id: str | None = None
     ts: datetime = field(default_factory=lambda: datetime.now(UTC))
-    payload: dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=lambda: {})
     event_id: int | None = None
 
     def with_payload(self, **kwargs: Any) -> Event:
