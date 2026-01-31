@@ -866,6 +866,44 @@ class TestCreateProgressCallback:
 class TestEdgeCases:
     """Tests for edge cases."""
 
+    def test_empty_graph_visualization(self):
+        """Test that visualization handles empty graphs gracefully.
+
+        An empty graph (no nodes) should not crash when visualizing with any format.
+        This tests the fix for a ValueError: max() iterable argument is empty bug.
+        """
+        from smithers.types import WorkflowGraph
+
+        # Create an empty graph with no nodes
+        empty_graph = WorkflowGraph(
+            root="empty",
+            nodes={},
+            edges=[],
+            levels=[],
+            workflows={},
+        )
+
+        # ASCII format should handle empty graph
+        output = visualize_graph(empty_graph, format="ascii", use_colors=False, use_unicode=False)
+        assert "empty graph" in output.lower() or "Workflow Graph" in output
+
+        # Table format should handle empty graph without crashing
+        output = visualize_graph(empty_graph, format="table", use_colors=False, use_unicode=False)
+        assert "Node" in output  # Headers should still be present
+        # Should not contain any node rows (just header)
+
+        # Tree format should handle empty graph
+        output = visualize_graph(empty_graph, format="tree", use_colors=False, use_unicode=False)
+        assert "Workflow Graph" in output
+
+        # Mermaid format should handle empty graph
+        output = visualize_graph(empty_graph, format="mermaid", use_colors=False, use_unicode=False)
+        assert "graph LR" in output
+
+        # Summary format should handle empty graph
+        output = visualize_graph(empty_graph, format="summary", use_colors=False, use_unicode=False)
+        assert "Total nodes: 0" in output
+
     def test_single_node_graph(self):
         """Test visualization of a single-node graph."""
         clear_registry()

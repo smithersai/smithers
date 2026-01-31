@@ -498,8 +498,8 @@ class GraphVisualization:
         """
         lines: list[str] = []
 
-        # Calculate column widths
-        name_width = max(len(n) for n in self.graph.nodes) + 2
+        # Calculate column widths (handle empty graph gracefully)
+        name_width = max(len(n) for n in self.graph.nodes) + 2 if self.graph.nodes else 0
         name_width = max(name_width, 12)
         status_width = 12
         duration_width = 10
