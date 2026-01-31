@@ -291,7 +291,9 @@ class TokenBudget:
 
         # Check output tokens
         if self.max_output_tokens is not None and self.used_output_tokens > self.max_output_tokens:
-            msg = f"Output token budget exceeded: {self.used_output_tokens}/{self.max_output_tokens}"
+            msg = (
+                f"Output token budget exceeded: {self.used_output_tokens}/{self.max_output_tokens}"
+            )
             messages.append(msg)
 
         # Check total tokens
@@ -694,8 +696,12 @@ class UsageAnalytics:
         )
 
         # Estimate calls remaining based on average
-        avg_input = summary.total_input_tokens / summary.total_calls if summary.total_calls > 0 else 0
-        avg_output = summary.total_output_tokens / summary.total_calls if summary.total_calls > 0 else 0
+        avg_input = (
+            summary.total_input_tokens / summary.total_calls if summary.total_calls > 0 else 0
+        )
+        avg_output = (
+            summary.total_output_tokens / summary.total_calls if summary.total_calls > 0 else 0
+        )
         avg_cost = summary.total_cost_usd / summary.total_calls if summary.total_calls > 0 else 0
 
         calls_remaining = None
@@ -785,13 +791,17 @@ async def get_daily_usage(
     results: list[dict[str, Any]] = []
 
     for i in range(days):
-        day_end = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+        day_end = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+            days=i
+        )
         day_start = day_end - timedelta(days=1)
 
         summary = await analytics.get_period_summary(since=day_start, until=day_end)
-        results.append({
-            "date": day_start.date().isoformat(),
-            **summary.to_dict(),
-        })
+        results.append(
+            {
+                "date": day_start.date().isoformat(),
+                **summary.to_dict(),
+            }
+        )
 
     return list(reversed(results))

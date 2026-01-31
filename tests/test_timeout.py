@@ -696,7 +696,9 @@ class TestTimeoutEvents:
             events = await store.get_events(run_id)
             event_types = [e.type for e in events]
             # Should have timeout-related events
-            assert "NodeTimedOut" in event_types or "NodeFailed" in event_types, f"Got events: {event_types}"
+            assert "NodeTimedOut" in event_types or "NodeFailed" in event_types, (
+                f"Got events: {event_types}"
+            )
 
     @pytest.mark.asyncio
     async def test_run_timeout_persisted_to_store(self, tmp_path):
@@ -725,7 +727,9 @@ class TestTimeoutEvents:
             events = await store.get_events(run_id)
             event_types = [e.type for e in events]
             # Should have run-level timeout or failed event
-            assert "RunTimedOut" in event_types or "RunFailed" in event_types, f"Got events: {event_types}"
+            assert "RunTimedOut" in event_types or "RunFailed" in event_types, (
+                f"Got events: {event_types}"
+            )
 
 
 # ============================================================================

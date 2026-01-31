@@ -70,8 +70,7 @@ def assert_graph_has_nodes(graph: WorkflowGraph, *expected_nodes: str) -> None:
     missing = expected_set - actual_nodes
     if missing:
         raise AssertionError(
-            f"Graph missing expected nodes: {missing}. "
-            f"Actual nodes: {actual_nodes}"
+            f"Graph missing expected nodes: {missing}. Actual nodes: {actual_nodes}"
         )
 
 
@@ -122,9 +121,7 @@ def assert_graph_levels(graph: WorkflowGraph, *expected_levels: list[str]) -> No
 
     for i, (actual, expected) in enumerate(zip(actual_levels, expected_sets)):
         if actual != expected:
-            raise AssertionError(
-                f"Level {i} mismatch: expected {expected}, got {actual}"
-            )
+            raise AssertionError(f"Level {i} mismatch: expected {expected}, got {actual}")
 
 
 def assert_workflow_produces(workflow: Workflow, output_type: type[BaseModel]) -> None:
@@ -284,6 +281,7 @@ class WorkflowTestCase:
     ):
         """Create a FakeLLMProvider with the given responses."""
         from smithers.testing.fakes import FakeLLMProvider
+
         return FakeLLMProvider(responses=responses)
 
     def create_fake_llm_by_type(
@@ -292,14 +290,17 @@ class WorkflowTestCase:
     ):
         """Create a FakeLLMProvider with type-based responses (for parallel execution)."""
         from smithers.testing.fakes import FakeLLMProvider
+
         return FakeLLMProvider(responses_by_type=responses_by_type)
 
     def use_fake(self, fake_provider):
         """Context manager to use a fake LLM provider."""
         from smithers.testing.fakes import use_fake_llm
+
         return use_fake_llm(fake_provider)
 
     def use_runtime(self, *, llm=None, tools=None):
         """Context manager to use fake providers."""
         from smithers.testing.fakes import use_runtime
+
         return use_runtime(llm=llm, tools=tools)

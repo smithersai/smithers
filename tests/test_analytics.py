@@ -439,23 +439,17 @@ class TestUsageAnalytics:
             run_id = await store.create_run("test-plan-hash", "target-node")
 
             # Record some LLM calls
-            call1 = await store.record_llm_call_start(
-                run_id, "node1", "claude-sonnet-4-20250514"
-            )
+            call1 = await store.record_llm_call_start(run_id, "node1", "claude-sonnet-4-20250514")
             await store.record_llm_call_end(
                 call1, input_tokens=1000, output_tokens=500, cost_usd=0.01
             )
 
-            call2 = await store.record_llm_call_start(
-                run_id, "node1", "claude-sonnet-4-20250514"
-            )
+            call2 = await store.record_llm_call_start(run_id, "node1", "claude-sonnet-4-20250514")
             await store.record_llm_call_end(
                 call2, input_tokens=2000, output_tokens=1000, cost_usd=0.02
             )
 
-            call3 = await store.record_llm_call_start(
-                run_id, "node2", "claude-opus-4-5-20251101"
-            )
+            call3 = await store.record_llm_call_start(run_id, "node2", "claude-opus-4-5-20251101")
             await store.record_llm_call_end(
                 call3, input_tokens=500, output_tokens=200, cost_usd=0.05
             )
@@ -535,9 +529,7 @@ class TestHelperFunctions:
             await store.initialize()
 
             run_id = await store.create_run("plan-hash", "target")
-            call_id = await store.record_llm_call_start(
-                run_id, "node1", "claude-sonnet-4-20250514"
-            )
+            call_id = await store.record_llm_call_start(run_id, "node1", "claude-sonnet-4-20250514")
             await store.record_llm_call_end(
                 call_id, input_tokens=1000, output_tokens=500, cost_usd=0.015
             )

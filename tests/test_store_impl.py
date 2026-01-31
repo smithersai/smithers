@@ -249,7 +249,9 @@ class TestNodeManagement:
         assert node.error_json is not None
         assert "Something went wrong" in node.error_json
 
-    async def test_update_node_error_includes_cause(self, tmp_path: Path, simple_graph: WorkflowGraph):
+    async def test_update_node_error_includes_cause(
+        self, tmp_path: Path, simple_graph: WorkflowGraph
+    ):
         """Should serialize exception causes for better diagnostics."""
         store = SqliteStore(tmp_path / "test.db")
         await store.initialize()

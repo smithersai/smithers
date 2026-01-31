@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -22,7 +21,7 @@ class VerifyTestOutput(BaseModel):
 @pytest.fixture
 def workflow_file(tmp_path: Path) -> Path:
     """Create a test workflow file."""
-    workflow_content = '''
+    workflow_content = """
 from pydantic import BaseModel
 from smithers import workflow
 
@@ -43,7 +42,7 @@ async def step_a() -> StepAOutput:
 @workflow
 async def step_b(a: StepAOutput) -> StepBOutput:
     return StepBOutput(count=len(a.value))
-'''
+"""
     workflow_path = tmp_path / "test_workflow.py"
     workflow_path.write_text(workflow_content)
     return workflow_path

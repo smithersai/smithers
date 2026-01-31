@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pickle
 import tempfile
 from pathlib import Path
 
@@ -12,11 +11,9 @@ from pydantic import BaseModel
 from smithers import SqliteCache, SqliteStore, build_graph, workflow
 from smithers.types import WorkflowGraph, WorkflowNode
 from smithers.verification import (
-    CacheVerificationResult,
     GraphVerificationResult,
     IssueCode,
     IssueSeverity,
-    OutputVerificationResult,
     VerificationIssue,
     verify_approval_state,
     verify_cache_entry,
@@ -378,9 +375,7 @@ class TestCacheVerification:
         result = await verify_cache_entry(temp_cache, "corrupt_key")
 
         assert result.valid is False
-        assert any(
-            i.code == IssueCode.CACHE_DESERIALIZATION_FAILED for i in result.issues
-        )
+        assert any(i.code == IssueCode.CACHE_DESERIALIZATION_FAILED for i in result.issues)
 
     @pytest.mark.asyncio
     async def test_verify_cache_integrity_all(self, temp_cache: SqliteCache) -> None:
@@ -396,9 +391,7 @@ class TestCacheVerification:
         assert all(r.valid for r in results)
 
     @pytest.mark.asyncio
-    async def test_verify_cache_integrity_with_schema(
-        self, temp_cache: SqliteCache
-    ) -> None:
+    async def test_verify_cache_integrity_with_schema(self, temp_cache: SqliteCache) -> None:
         """Test verify_cache_integrity with schema validation."""
         await temp_cache.set("key1", OutputA(value="a"), workflow_name="wf1")
         await temp_cache.set("key2", OutputB(count=1), workflow_name="wf2")
@@ -468,9 +461,7 @@ class TestRunStateVerification:
         assert any(i.code == IssueCode.STATE_NOT_PERSISTED for i in result.issues)
 
     @pytest.mark.asyncio
-    async def test_verify_inconsistent_run_state(
-        self, temp_store: SqliteStore
-    ) -> None:
+    async def test_verify_inconsistent_run_state(self, temp_store: SqliteStore) -> None:
         """Test detection of inconsistent run state."""
         from smithers.store.sqlite import NodeStatus, RunStatus
 
@@ -489,9 +480,7 @@ class TestRunStateVerification:
         assert any(i.code == IssueCode.STATE_INCONSISTENT for i in result.issues)
 
     @pytest.mark.asyncio
-    async def test_verify_paused_run_without_paused_node(
-        self, temp_store: SqliteStore
-    ) -> None:
+    async def test_verify_paused_run_without_paused_node(self, temp_store: SqliteStore) -> None:
         """Test detection of PAUSED run without PAUSED nodes."""
         from smithers.store.sqlite import NodeStatus, RunStatus
 
@@ -673,15 +662,9 @@ class TestGraphVerificationResult:
     def test_errors_property(self) -> None:
         """Test errors property filters correctly."""
         issues = [
-            VerificationIssue(
-                IssueCode.CYCLE_DETECTED, IssueSeverity.ERROR, "Error 1"
-            ),
-            VerificationIssue(
-                IssueCode.ORPHAN_NODE, IssueSeverity.WARNING, "Warning 1"
-            ),
-            VerificationIssue(
-                IssueCode.MISSING_DEPENDENCY, IssueSeverity.ERROR, "Error 2"
-            ),
+            VerificationIssue(IssueCode.CYCLE_DETECTED, IssueSeverity.ERROR, "Error 1"),
+            VerificationIssue(IssueCode.ORPHAN_NODE, IssueSeverity.WARNING, "Warning 1"),
+            VerificationIssue(IssueCode.MISSING_DEPENDENCY, IssueSeverity.ERROR, "Error 2"),
         ]
 
         result = GraphVerificationResult(valid=False, issues=issues)
@@ -693,11 +676,7 @@ class TestGraphVerificationResult:
         """Test summary for failed verification."""
         result = GraphVerificationResult(
             valid=False,
-            issues=[
-                VerificationIssue(
-                    IssueCode.CYCLE_DETECTED, IssueSeverity.ERROR, "Cycle"
-                )
-            ],
+            issues=[VerificationIssue(IssueCode.CYCLE_DETECTED, IssueSeverity.ERROR, "Cycle")],
             stats={"node_count": 3, "edge_count": 4, "level_count": 2},
         )
 

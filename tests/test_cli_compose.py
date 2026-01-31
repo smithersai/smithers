@@ -13,7 +13,7 @@ import pytest
 @pytest.fixture
 def simple_workflow_file(tmp_path: Path) -> Path:
     """Create a simple workflow file for testing."""
-    workflow_code = '''
+    workflow_code = """
 from pydantic import BaseModel
 from smithers import workflow
 
@@ -23,7 +23,7 @@ class OutputA(BaseModel):
 @workflow
 async def simple() -> OutputA:
     return OutputA(value="simple")
-'''
+"""
     file_path = tmp_path / "simple_workflow.py"
     file_path.write_text(workflow_code)
     return file_path
@@ -34,7 +34,7 @@ def chained_workflow_file(tmp_path: Path) -> Path:
     """Create a chained workflow file for testing."""
     # Note: For CLI to find the workflow, we need to register at least one
     # The chain itself doesn't auto-register, so we register the final step
-    workflow_code = '''
+    workflow_code = """
 from pydantic import BaseModel
 from smithers import workflow
 
@@ -51,7 +51,7 @@ async def step1() -> OutputA:
 @workflow
 async def step2(a: OutputA) -> OutputB:
     return OutputB(data=len(a.value))
-'''
+"""
     file_path = tmp_path / "chained_workflow.py"
     file_path.write_text(workflow_code)
     return file_path
@@ -60,7 +60,7 @@ async def step2(a: OutputA) -> OutputB:
 @pytest.fixture
 def multi_workflow_file_1(tmp_path: Path) -> Path:
     """Create first workflow file for merge testing."""
-    workflow_code = '''
+    workflow_code = """
 from pydantic import BaseModel
 from smithers import workflow
 
@@ -70,7 +70,7 @@ class AnalysisOutput(BaseModel):
 @workflow
 async def analyze() -> AnalysisOutput:
     return AnalysisOutput(result="analyzed")
-'''
+"""
     file_path = tmp_path / "workflow1.py"
     file_path.write_text(workflow_code)
     return file_path
@@ -79,7 +79,7 @@ async def analyze() -> AnalysisOutput:
 @pytest.fixture
 def multi_workflow_file_2(tmp_path: Path) -> Path:
     """Create second workflow file for merge testing."""
-    workflow_code = '''
+    workflow_code = """
 from pydantic import BaseModel
 from smithers import workflow
 
@@ -89,7 +89,7 @@ class ProcessOutput(BaseModel):
 @workflow
 async def process() -> ProcessOutput:
     return ProcessOutput(processed=True)
-'''
+"""
     file_path = tmp_path / "workflow2.py"
     file_path.write_text(workflow_code)
     return file_path
@@ -260,7 +260,9 @@ class TestComposeMergeCommand:
         # ASCII output should have some structure
         assert len(result.stdout) > 0
 
-    def test_compose_merge_with_output_file(self, simple_workflow_file: Path, tmp_path: Path) -> None:
+    def test_compose_merge_with_output_file(
+        self, simple_workflow_file: Path, tmp_path: Path
+    ) -> None:
         """Test compose merge with output file."""
         output_file = tmp_path / "merged_graph.md"
         result = subprocess.run(

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -447,6 +446,7 @@ class TestUseReplayProvider:
 
         with use_replay_provider(provider):
             from smithers.testing.fakes import get_fake_llm_provider
+
             # The replay provider is set as the fake provider
             fake = get_fake_llm_provider()
             assert fake is provider

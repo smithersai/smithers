@@ -194,13 +194,16 @@ class RecordingStore:
     async def recording_exists(self, recording_id: str) -> bool:
         """Check if a recording exists."""
         await self._ensure_initialized()
-        async with self._lock, aiosqlite.connect(self.path) as db:
-            async with db.execute(
+        async with (
+            self._lock,
+            aiosqlite.connect(self.path) as db,
+            db.execute(
                 "SELECT 1 FROM recordings WHERE recording_id = ?",
                 (recording_id,),
-            ) as cursor:
-                row = await cursor.fetchone()
-                return row is not None
+            ) as cursor,
+        ):
+            row = await cursor.fetchone()
+            return row is not None
 
     async def get_recording(self, recording_id: str) -> Recording | None:
         """Get a recording by ID."""
@@ -483,12 +486,12 @@ class RecordingLLMProvider:
         This method is called by the claude() function when recording is active.
         """
         # Import here to avoid circular imports
-        from smithers.claude import claude as real_claude
         import smithers.testing.fakes as fakes_module
+        from smithers.claude import claude as real_claude
 
         # Temporarily disable fake provider to call real Claude
-        old_provider = fakes_module._fake_llm_provider  # noqa: SLF001
-        fakes_module._fake_llm_provider = None  # noqa: SLF001
+        old_provider = fakes_module._fake_llm_provider
+        fakes_module._fake_llm_provider = None
 
         try:
             result = await real_claude(
@@ -537,7 +540,7 @@ class RecordingLLMProvider:
             return result
 
         finally:
-            fakes_module._fake_llm_provider = old_provider  # noqa: SLF001
+            fakes_module._fake_llm_provider = old_provider
 
 
 @dataclass
@@ -681,14 +684,14 @@ def use_replay_provider(provider: ReplayLLMProvider) -> Iterator[ReplayLLMProvid
     _replay_provider = provider
 
     # Set as fake LLM provider so claude() uses it
-    old_fake = fakes_module._fake_llm_provider  # noqa: SLF001
-    fakes_module._fake_llm_provider = provider  # type: ignore  # noqa: SLF001
+    old_fake = fakes_module._fake_llm_provider
+    fakes_module._fake_llm_provider = provider  # type: ignore
 
     try:
         yield provider
     finally:
         _replay_provider = old_provider
-        fakes_module._fake_llm_provider = old_fake  # noqa: SLF001
+        fakes_module._fake_llm_provider = old_fake
 
 
 @contextlib.asynccontextmanager

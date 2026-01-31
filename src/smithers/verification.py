@@ -96,7 +96,7 @@ def _empty_dict() -> dict[str, Any]:
     return {}
 
 
-def _empty_issue_list() -> list["VerificationIssue"]:
+def _empty_issue_list() -> list[VerificationIssue]:
     """Create an empty list for default_factory."""
     return []
 
@@ -516,9 +516,7 @@ async def verify_cache_entry(
                 return CacheVerificationResult(valid=False, issues=issues, cache_key=key)
 
             # Compute hash of deserialized value
-            computed_hash = hash_json(
-                value.model_dump() if hasattr(value, "model_dump") else value
-            )
+            computed_hash = hash_json(value.model_dump() if hasattr(value, "model_dump") else value)
 
             # Verify hash if provided
             if expected_hash is not None and computed_hash != expected_hash:

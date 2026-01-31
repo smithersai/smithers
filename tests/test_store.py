@@ -1,7 +1,7 @@
 """Tests for SqliteStore."""
 
-import pytest
 from pathlib import Path
+
 from pydantic import BaseModel
 
 from smithers.graph import build_graph
@@ -189,9 +189,7 @@ class TestNodeStatus:
         run_id = await store.create_run(graph)
 
         await store.update_node_status(run_id, "simple", NodeStatus.RUNNING)
-        await store.update_node_status(
-            run_id, "simple", NodeStatus.SUCCESS, cache_key="abc123"
-        )
+        await store.update_node_status(run_id, "simple", NodeStatus.SUCCESS, cache_key="abc123")
         node = await store.get_node(run_id, "simple")
         assert node is not None
         assert node.status == NodeStatus.SUCCESS
@@ -208,9 +206,7 @@ class TestNodeStatus:
         run_id = await store.create_run(graph)
 
         error = ValueError("Test error")
-        await store.update_node_status(
-            run_id, "simple", NodeStatus.FAILED, error=error
-        )
+        await store.update_node_status(run_id, "simple", NodeStatus.FAILED, error=error)
         node = await store.get_node(run_id, "simple")
         assert node is not None
         assert node.status == NodeStatus.FAILED
@@ -230,9 +226,7 @@ class TestEvents:
         graph = build_graph(simple)
         run_id = await store.create_run(graph)
 
-        event_id = await store.emit_event(
-            run_id, "simple", "CustomEvent", {"key": "value"}
-        )
+        event_id = await store.emit_event(run_id, "simple", "CustomEvent", {"key": "value"})
         assert event_id > 0
 
     async def test_get_events(self, tmp_path: Path) -> None:
@@ -423,9 +417,7 @@ class TestToolCallTracking:
         )
         assert tool_call_id > 0
 
-        await store.record_tool_call_end(
-            tool_call_id, output_json='{"content": "print(1)"}'
-        )
+        await store.record_tool_call_end(tool_call_id, output_json='{"content": "print(1)"}')
 
         calls = await store.get_tool_calls(run_id)
         assert len(calls) == 1
@@ -445,9 +437,7 @@ class TestToolCallTracking:
             run_id, "simple", "Read", '{"path": "/missing.py"}'
         )
 
-        await store.record_tool_call_end(
-            tool_call_id, error_json='{"error": "File not found"}'
-        )
+        await store.record_tool_call_end(tool_call_id, error_json='{"error": "File not found"}')
 
         calls = await store.get_tool_calls(run_id)
         assert len(calls) == 1

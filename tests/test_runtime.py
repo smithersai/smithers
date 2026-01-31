@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from smithers import build_graph, run_graph
+from smithers import build_graph
 from smithers.executor import run_graph_with_store
 from smithers.runtime import (
     RuntimeContext,
@@ -323,6 +323,7 @@ class TestExecutorRuntimeIntegration:
         @workflow
         async def analyze() -> AnalysisOutput:
             from smithers import claude
+
             return await claude("Analyze this", output=AnalysisOutput)
 
         fake = FakeLLMProvider(responses=[{"summary": "Test analysis"}])

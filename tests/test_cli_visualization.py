@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -13,7 +12,7 @@ import pytest
 @pytest.fixture
 def workflow_file(tmp_path: Path) -> Path:
     """Create a simple workflow file for testing."""
-    workflow_code = '''
+    workflow_code = """
 from pydantic import BaseModel
 from smithers import workflow
 
@@ -37,7 +36,7 @@ async def step_b(dep: OutputA) -> OutputB:
 @workflow
 async def step_c(b: OutputB) -> OutputC:
     return OutputC(value="c")
-'''
+"""
     file_path = tmp_path / "test_workflow.py"
     file_path.write_text(workflow_code)
     return file_path
@@ -49,7 +48,15 @@ class TestGraphCommand:
     def test_graph_mermaid_format(self, workflow_file: Path) -> None:
         """Test graph command with mermaid format."""
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--format", "mermaid"],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "mermaid",
+            ],
             capture_output=True,
             text=True,
         )
@@ -63,7 +70,15 @@ class TestGraphCommand:
     def test_graph_mermaid_styled_format(self, workflow_file: Path) -> None:
         """Test graph command with mermaid-styled format."""
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--format", "mermaid-styled"],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "mermaid-styled",
+            ],
             capture_output=True,
             text=True,
         )
@@ -98,12 +113,20 @@ class TestGraphCommand:
         assert "nodes" in data
         assert "edges" in data
         assert "levels" in data
-        assert "step_c" == data["root"]
+        assert data["root"] == "step_c"
 
     def test_graph_ascii_format(self, workflow_file: Path) -> None:
         """Test graph command with ascii format."""
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--format", "ascii"],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "ascii",
+            ],
             capture_output=True,
             text=True,
         )
@@ -129,7 +152,15 @@ class TestGraphCommand:
     def test_graph_table_format(self, workflow_file: Path) -> None:
         """Test graph command with table format."""
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--format", "table"],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "table",
+            ],
             capture_output=True,
             text=True,
         )
@@ -143,7 +174,15 @@ class TestGraphCommand:
     def test_graph_summary_format(self, workflow_file: Path) -> None:
         """Test graph command with summary format."""
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--format", "summary"],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "summary",
+            ],
             capture_output=True,
             text=True,
         )
@@ -154,7 +193,16 @@ class TestGraphCommand:
     def test_graph_no_color(self, workflow_file: Path) -> None:
         """Test graph command with --no-color flag."""
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--format", "ascii", "--no-color"],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "ascii",
+                "--no-color",
+            ],
             capture_output=True,
             text=True,
         )
@@ -165,7 +213,16 @@ class TestGraphCommand:
     def test_graph_no_unicode(self, workflow_file: Path) -> None:
         """Test graph command with --no-unicode flag."""
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--format", "table", "--no-unicode"],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "table",
+                "--no-unicode",
+            ],
             capture_output=True,
             text=True,
         )
@@ -177,7 +234,17 @@ class TestGraphCommand:
         """Test graph command with output file."""
         output_file = tmp_path / "graph_output.txt"
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--format", "ascii", "-o", str(output_file)],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "ascii",
+                "-o",
+                str(output_file),
+            ],
             capture_output=True,
             text=True,
         )
@@ -190,7 +257,17 @@ class TestGraphCommand:
     def test_graph_specific_workflow(self, workflow_file: Path) -> None:
         """Test graph command with specific workflow."""
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--format", "summary", "--workflow", "step_b"],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "summary",
+                "--workflow",
+                "step_b",
+            ],
             capture_output=True,
             text=True,
         )
@@ -210,7 +287,15 @@ class TestGraphCommand:
     def test_graph_nonexistent_workflow(self, workflow_file: Path) -> None:
         """Test graph command with nonexistent workflow name."""
         result = subprocess.run(
-            [sys.executable, "-m", "smithers.cli", "graph", str(workflow_file), "--workflow", "nonexistent"],
+            [
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--workflow",
+                "nonexistent",
+            ],
             capture_output=True,
             text=True,
         )
@@ -224,8 +309,15 @@ class TestGraphCombinedOptions:
         """Test ASCII format with no color and no unicode."""
         result = subprocess.run(
             [
-                sys.executable, "-m", "smithers.cli", "graph", str(workflow_file),
-                "--format", "ascii", "--no-color", "--no-unicode"
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "ascii",
+                "--no-color",
+                "--no-unicode",
             ],
             capture_output=True,
             text=True,
@@ -239,8 +331,15 @@ class TestGraphCombinedOptions:
         """Test tree format with both --no-color and --no-unicode."""
         result = subprocess.run(
             [
-                sys.executable, "-m", "smithers.cli", "graph", str(workflow_file),
-                "--format", "tree", "--no-color", "--no-unicode"
+                sys.executable,
+                "-m",
+                "smithers.cli",
+                "graph",
+                str(workflow_file),
+                "--format",
+                "tree",
+                "--no-color",
+                "--no-unicode",
             ],
             capture_output=True,
             text=True,

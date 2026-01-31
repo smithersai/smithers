@@ -6,13 +6,11 @@ import pytest
 from pydantic import BaseModel
 
 from smithers import (
-    RalphLoopConfig,
     RalphLoopWorkflow,
     build_graph,
     execute_ralph_loop,
     is_ralph_loop,
     ralph_loop,
-    run_graph,
     workflow,
 )
 from smithers.store.sqlite import SqliteStore
@@ -305,7 +303,9 @@ class TestRalphLoopWithStore:
         async def refine(doc: RefineOutput) -> RefineOutput:
             return RefineOutput(content=doc.content + " refined", quality=doc.quality + 0.5)
 
-        loop = ralph_loop(refine, until=lambda r: r.quality >= 0.8, max_iterations=5, register=False)
+        loop = ralph_loop(
+            refine, until=lambda r: r.quality >= 0.8, max_iterations=5, register=False
+        )
 
         run_id = await store.create_run("test-hash", "test-node")
         initial = RefineOutput(content="draft", quality=0.0)
@@ -329,7 +329,9 @@ class TestRalphLoopWithStore:
         async def refine(doc: RefineOutput) -> RefineOutput:
             return RefineOutput(content="done", quality=1.0)
 
-        loop = ralph_loop(refine, until=lambda r: r.quality >= 0.8, max_iterations=3, register=False)
+        loop = ralph_loop(
+            refine, until=lambda r: r.quality >= 0.8, max_iterations=3, register=False
+        )
 
         run_id = await store.create_run("test-hash", "test-node")
         initial = RefineOutput(content="draft", quality=0.0)
@@ -430,7 +432,9 @@ class TestRalphLoopCallbacks:
         async def refine(doc: RefineOutput) -> RefineOutput:
             return RefineOutput(content=doc.content + "+", quality=doc.quality + 0.4)
 
-        loop = ralph_loop(refine, until=lambda r: r.quality >= 0.8, max_iterations=5, register=False)
+        loop = ralph_loop(
+            refine, until=lambda r: r.quality >= 0.8, max_iterations=5, register=False
+        )
 
         async def on_iter(iteration: int, result: RefineOutput):
             iterations_seen.append((iteration, result.content))
@@ -465,9 +469,7 @@ class TestRalphLoopWithExecutor:
         async def improve(doc: InitialDoc) -> RefineOutput:
             nonlocal call_count
             call_count += 1
-            return RefineOutput(
-                content=doc.content + f" v{call_count}", quality=doc.quality + 0.4
-            )
+            return RefineOutput(content=doc.content + f" v{call_count}", quality=doc.quality + 0.4)
 
         loop = ralph_loop(
             improve,
@@ -576,9 +578,7 @@ class TestRalphLoopEdgeCases:
         async def refine(doc: RefineOutput) -> RefineOutput:
             return doc
 
-        loop = ralph_loop(
-            refine, until=lambda r: r.quality > 0.8, max_iterations=3, register=False
-        )
+        loop = ralph_loop(refine, until=lambda r: r.quality > 0.8, max_iterations=3, register=False)
 
         assert loop.loop_config.until_repr != ""
         assert "lambda" in loop.loop_config.until_repr or "condition" in loop.loop_config.until_repr

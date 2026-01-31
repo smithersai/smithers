@@ -7,6 +7,7 @@ from agentd.protocol.events import Event, EventType
 
 try:
     import anthropic
+
     HAS_ANTHROPIC = True
 except ImportError:
     HAS_ANTHROPIC = False
@@ -60,7 +61,7 @@ class AnthropicAgentAdapter(AgentAdapter):
                                         "tool_use_id": current_tool_use.id,
                                         "name": current_tool_use.name,
                                         "input": {},
-                                    }
+                                    },
                                 )
                                 emit(ev)
                                 yield ev
@@ -68,8 +69,7 @@ class AnthropicAgentAdapter(AgentAdapter):
                     case "content_block_delta":
                         if hasattr(event.delta, "text"):
                             ev = Event(
-                                type=EventType.ASSISTANT_DELTA,
-                                data={"text": event.delta.text}
+                                type=EventType.ASSISTANT_DELTA, data={"text": event.delta.text}
                             )
                             emit(ev)
                             yield ev
@@ -78,10 +78,7 @@ class AnthropicAgentAdapter(AgentAdapter):
                         if current_tool_use:
                             ev = Event(
                                 type=EventType.TOOL_END,
-                                data={
-                                    "tool_use_id": current_tool_use.id,
-                                    "status": "success"
-                                }
+                                data={"tool_use_id": current_tool_use.id, "status": "success"},
                             )
                             emit(ev)
                             yield ev
@@ -90,7 +87,7 @@ class AnthropicAgentAdapter(AgentAdapter):
                     case "message_stop":
                         ev = Event(
                             type=EventType.ASSISTANT_FINAL,
-                            data={"message_id": stream.current_message_snapshot.id}
+                            data={"message_id": stream.current_message_snapshot.id},
                         )
                         emit(ev)
                         yield ev

@@ -116,8 +116,9 @@ class TestCLIRateLimitCommands:
 
     def test_ratelimit_status_not_configured(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Test ratelimit status when not configured."""
-        from smithers.cli import main
         import sys
+
+        from smithers.cli import main
 
         original_argv = sys.argv
         try:
@@ -133,8 +134,9 @@ class TestCLIRateLimitCommands:
     def test_ratelimit_status_json_not_configured(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Test ratelimit status JSON format when not configured."""
         import json
-        from smithers.cli import main
         import sys
+
+        from smithers.cli import main
 
         original_argv = sys.argv
         try:
@@ -150,8 +152,9 @@ class TestCLIRateLimitCommands:
 
     def test_ratelimit_configure_tier(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Test configuring rate limits by tier."""
-        from smithers.cli import main
         import sys
+
+        from smithers.cli import main
 
         original_argv = sys.argv
         try:
@@ -171,8 +174,9 @@ class TestCLIRateLimitCommands:
 
     def test_ratelimit_configure_custom(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Test configuring custom rate limits."""
-        from smithers.cli import main
         import sys
+
+        from smithers.cli import main
 
         original_argv = sys.argv
         try:
@@ -193,8 +197,9 @@ class TestCLIRateLimitCommands:
 
     def test_ratelimit_configure_no_options(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Test configure fails without options."""
-        from smithers.cli import main
         import sys
+
+        from smithers.cli import main
 
         original_argv = sys.argv
         try:
@@ -209,14 +214,17 @@ class TestCLIRateLimitCommands:
 
     def test_ratelimit_status_configured(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Test ratelimit status when configured."""
-        from smithers.cli import main
         import sys
 
+        from smithers.cli import main
+
         # First configure
-        limiter = RateLimiter(RateLimitConfig(
-            requests_per_minute=60,
-            tokens_per_minute=100000,
-        ))
+        limiter = RateLimiter(
+            RateLimitConfig(
+                requests_per_minute=60,
+                tokens_per_minute=100000,
+            )
+        )
         set_rate_limiter(limiter)
 
         original_argv = sys.argv
@@ -234,13 +242,16 @@ class TestCLIRateLimitCommands:
     def test_ratelimit_status_json_configured(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Test ratelimit status JSON format when configured."""
         import json
-        from smithers.cli import main
         import sys
 
-        limiter = RateLimiter(RateLimitConfig(
-            requests_per_minute=60,
-            tokens_per_minute=100000,
-        ))
+        from smithers.cli import main
+
+        limiter = RateLimiter(
+            RateLimitConfig(
+                requests_per_minute=60,
+                tokens_per_minute=100000,
+            )
+        )
         set_rate_limiter(limiter)
 
         original_argv = sys.argv
@@ -260,8 +271,9 @@ class TestCLIRateLimitCommands:
     @pytest.mark.asyncio
     async def test_ratelimit_reset(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Test resetting rate limiter state."""
-        from smithers.cli import main
         import sys
+
+        from smithers.cli import main
 
         # Configure and use the limiter
         limiter = RateLimiter(RateLimitConfig(requests_per_minute=60))
@@ -288,8 +300,9 @@ class TestCLIRateLimitCommands:
 
     def test_ratelimit_reset_no_limiter(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Test reset when no limiter configured."""
-        from smithers.cli import main
         import sys
+
+        from smithers.cli import main
 
         original_argv = sys.argv
         try:
@@ -308,6 +321,7 @@ from pydantic import BaseModel
 
 class WorkflowTestOutput(BaseModel):
     """Output model for workflow rate limit tests."""
+
     value: str
 
 
@@ -318,12 +332,14 @@ class TestRateLimitWithWorkflow:
         """Reset state before each test."""
         reset_all_rate_limiters()
         from smithers.workflow import clear_registry
+
         clear_registry()
 
     def teardown_method(self) -> None:
         """Reset state after each test."""
         reset_all_rate_limiters()
         from smithers.workflow import clear_registry
+
         clear_registry()
 
     @pytest.mark.asyncio

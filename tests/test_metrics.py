@@ -2,13 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
-import time
-from datetime import datetime
 from http.client import HTTPConnection
-from threading import Thread
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -230,18 +224,31 @@ class TestMetricsCollector:
         collector = MetricsCollector()
         collector.record_run_started("my_workflow", "run-123")
 
-        assert collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "started"}) == 1.0
+        assert (
+            collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "started"})
+            == 1.0
+        )
         assert collector.active_runs.get() == 1.0
 
     def test_record_run_completed(self) -> None:
         """Test recording run completion."""
         collector = MetricsCollector()
         collector.record_run_started("my_workflow", "run-123")
-        collector.record_run_completed("my_workflow", "success", duration_seconds=1.5, run_id="run-123")
+        collector.record_run_completed(
+            "my_workflow", "success", duration_seconds=1.5, run_id="run-123"
+        )
 
-        assert collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "success"}) == 1.0
+        assert (
+            collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "success"})
+            == 1.0
+        )
         assert collector.active_runs.get() == 0.0
-        assert collector.workflow_duration_seconds.get_count({"workflow": "my_workflow", "status": "success"}) == 1
+        assert (
+            collector.workflow_duration_seconds.get_count(
+                {"workflow": "my_workflow", "status": "success"}
+            )
+            == 1
+        )
 
     def test_record_node_execution(self) -> None:
         """Test recording node execution."""
@@ -249,7 +256,12 @@ class TestMetricsCollector:
         collector.record_node_started("analyze", "my_workflow")
         collector.record_node_completed("analyze", "success", duration_seconds=0.5)
 
-        assert collector.node_executions_total.get({"node": "analyze", "workflow": "my_workflow", "status": "started"}) == 1.0
+        assert (
+            collector.node_executions_total.get(
+                {"node": "analyze", "workflow": "my_workflow", "status": "started"}
+            )
+            == 1.0
+        )
         assert collector.node_executions_total.get({"node": "analyze", "status": "success"}) == 1.0
 
     def test_record_cache_operations(self) -> None:
@@ -296,8 +308,18 @@ class TestMetricsCollector:
         collector.record_retry_attempt("node1", 1, "TimeoutError")
         collector.record_retry_attempt("node1", 2, "TimeoutError")
 
-        assert collector.retry_attempts_total.get({"node": "node1", "attempt": "1", "error_type": "TimeoutError"}) == 1.0
-        assert collector.retry_attempts_total.get({"node": "node1", "attempt": "2", "error_type": "TimeoutError"}) == 1.0
+        assert (
+            collector.retry_attempts_total.get(
+                {"node": "node1", "attempt": "1", "error_type": "TimeoutError"}
+            )
+            == 1.0
+        )
+        assert (
+            collector.retry_attempts_total.get(
+                {"node": "node1", "attempt": "2", "error_type": "TimeoutError"}
+            )
+            == 1.0
+        )
 
     def test_record_loop_iteration(self) -> None:
         """Test recording Ralph loop iterations."""
@@ -306,7 +328,10 @@ class TestMetricsCollector:
         collector.record_loop_iteration("review_loop", 1, "continue")
         collector.record_loop_iteration("review_loop", 2, "met")
 
-        assert collector.loop_iterations_total.get({"loop": "review_loop", "status": "continue"}) == 2.0
+        assert (
+            collector.loop_iterations_total.get({"loop": "review_loop", "status": "continue"})
+            == 2.0
+        )
         assert collector.loop_iterations_total.get({"loop": "review_loop", "status": "met"}) == 1.0
 
     def test_record_approvals(self) -> None:
@@ -334,7 +359,9 @@ class TestMetricsCollector:
 
         collector.reset()
 
-        assert collector.workflow_runs_total.get({"workflow": "workflow", "status": "started"}) == 0.0
+        assert (
+            collector.workflow_runs_total.get({"workflow": "workflow", "status": "started"}) == 0.0
+        )
         assert collector.active_runs.get() == 0.0
         assert collector.pending_approvals.get() == 0.0
         assert collector.llm_tokens_total.get({"model": "claude", "type": "input"}) == 0.0
@@ -411,7 +438,9 @@ class TestMetricsCollectorEventBus:
         assert collector._event_bus is None
 
     @pytest.mark.asyncio
-    async def test_run_started_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
+    async def test_run_started_event(
+        self, collector: MetricsCollector, event_bus: EventBus
+    ) -> None:
         """Test handling RunStarted event."""
         collector.attach_to_event_bus(event_bus)
 
@@ -422,11 +451,16 @@ class TestMetricsCollectorEventBus:
         )
         await event_bus.emit(event)
 
-        assert collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "started"}) == 1.0
+        assert (
+            collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "started"})
+            == 1.0
+        )
         assert collector.active_runs.get() == 1.0
 
     @pytest.mark.asyncio
-    async def test_run_finished_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
+    async def test_run_finished_event(
+        self, collector: MetricsCollector, event_bus: EventBus
+    ) -> None:
         """Test handling RunFinished event."""
         collector.attach_to_event_bus(event_bus)
 
@@ -440,11 +474,16 @@ class TestMetricsCollectorEventBus:
         )
         await event_bus.emit(event)
 
-        assert collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "success"}) == 1.0
+        assert (
+            collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "success"})
+            == 1.0
+        )
         assert collector.active_runs.get() == 0.0
 
     @pytest.mark.asyncio
-    async def test_node_started_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
+    async def test_node_started_event(
+        self, collector: MetricsCollector, event_bus: EventBus
+    ) -> None:
         """Test handling NodeStarted event."""
         collector.attach_to_event_bus(event_bus)
 
@@ -456,10 +495,17 @@ class TestMetricsCollectorEventBus:
         )
         await event_bus.emit(event)
 
-        assert collector.node_executions_total.get({"node": "analyze", "workflow": "my_workflow", "status": "started"}) == 1.0
+        assert (
+            collector.node_executions_total.get(
+                {"node": "analyze", "workflow": "my_workflow", "status": "started"}
+            )
+            == 1.0
+        )
 
     @pytest.mark.asyncio
-    async def test_node_finished_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
+    async def test_node_finished_event(
+        self, collector: MetricsCollector, event_bus: EventBus
+    ) -> None:
         """Test handling NodeFinished event."""
         collector.attach_to_event_bus(event_bus)
 
@@ -474,7 +520,9 @@ class TestMetricsCollectorEventBus:
         assert collector.node_executions_total.get({"node": "analyze", "status": "success"}) == 1.0
 
     @pytest.mark.asyncio
-    async def test_node_finished_cached_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
+    async def test_node_finished_cached_event(
+        self, collector: MetricsCollector, event_bus: EventBus
+    ) -> None:
         """Test handling NodeFinished event with cached=True."""
         collector.attach_to_event_bus(event_bus)
 
@@ -486,7 +534,12 @@ class TestMetricsCollectorEventBus:
         )
         await event_bus.emit(event)
 
-        assert collector.node_executions_total.get({"node": "analyze", "status": "cached", "cached": "true"}) == 1.0
+        assert (
+            collector.node_executions_total.get(
+                {"node": "analyze", "status": "cached", "cached": "true"}
+            )
+            == 1.0
+        )
 
     @pytest.mark.asyncio
     async def test_cache_hit_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
@@ -519,7 +572,9 @@ class TestMetricsCollectorEventBus:
         assert collector.cache_operations_total.get({"operation": "miss", "node": "analyze"}) == 1.0
 
     @pytest.mark.asyncio
-    async def test_llm_call_finished_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
+    async def test_llm_call_finished_event(
+        self, collector: MetricsCollector, event_bus: EventBus
+    ) -> None:
         """Test handling LLMCallFinished event."""
         collector.attach_to_event_bus(event_bus)
 
@@ -540,7 +595,9 @@ class TestMetricsCollectorEventBus:
         assert collector.llm_tokens_total.get({"model": "claude-3-opus", "type": "output"}) == 500.0
 
     @pytest.mark.asyncio
-    async def test_tool_call_finished_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
+    async def test_tool_call_finished_event(
+        self, collector: MetricsCollector, event_bus: EventBus
+    ) -> None:
         """Test handling ToolCallFinished event."""
         collector.attach_to_event_bus(event_bus)
 
@@ -552,10 +609,17 @@ class TestMetricsCollectorEventBus:
         )
         await event_bus.emit(event)
 
-        assert collector.tool_calls_total.get({"tool": "Bash", "status": "success", "node": "implement"}) == 1.0
+        assert (
+            collector.tool_calls_total.get(
+                {"tool": "Bash", "status": "success", "node": "implement"}
+            )
+            == 1.0
+        )
 
     @pytest.mark.asyncio
-    async def test_retry_scheduled_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
+    async def test_retry_scheduled_event(
+        self, collector: MetricsCollector, event_bus: EventBus
+    ) -> None:
         """Test handling RetryScheduled event."""
         collector.attach_to_event_bus(event_bus)
 
@@ -563,14 +627,25 @@ class TestMetricsCollectorEventBus:
             type=EventTypes.RETRY_SCHEDULED,
             run_id="run-123",
             node_id="flaky_node",
-            payload={"attempt": 2, "delay_seconds": 1.0, "error": "TimeoutError: request timed out"},
+            payload={
+                "attempt": 2,
+                "delay_seconds": 1.0,
+                "error": "TimeoutError: request timed out",
+            },
         )
         await event_bus.emit(event)
 
-        assert collector.retry_attempts_total.get({"node": "flaky_node", "attempt": "2", "error_type": "TimeoutError"}) == 1.0
+        assert (
+            collector.retry_attempts_total.get(
+                {"node": "flaky_node", "attempt": "2", "error_type": "TimeoutError"}
+            )
+            == 1.0
+        )
 
     @pytest.mark.asyncio
-    async def test_loop_iteration_finished_event(self, collector: MetricsCollector, event_bus: EventBus) -> None:
+    async def test_loop_iteration_finished_event(
+        self, collector: MetricsCollector, event_bus: EventBus
+    ) -> None:
         """Test handling LoopIterationFinished event."""
         collector.attach_to_event_bus(event_bus)
 
@@ -754,7 +829,10 @@ class TestConvenienceFunctions:
         record_workflow_run("my_workflow", "success", duration_seconds=1.5)
 
         collector = get_metrics_collector()
-        assert collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "success"}) == 1.0
+        assert (
+            collector.workflow_runs_total.get({"workflow": "my_workflow", "status": "success"})
+            == 1.0
+        )
 
     def test_record_llm_call(self) -> None:
         """Test record_llm_call convenience function."""

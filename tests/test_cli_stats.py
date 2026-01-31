@@ -28,16 +28,12 @@ class TestCliStats:
             await store.update_run_status(store.store.sqlite.RunStatus.RUNNING)
 
             # Record some LLM calls
-            call1 = await store.record_llm_call_start(
-                run_id, "node1", "claude-sonnet-4-20250514"
-            )
+            call1 = await store.record_llm_call_start(run_id, "node1", "claude-sonnet-4-20250514")
             await store.record_llm_call_end(
                 call1, input_tokens=1000, output_tokens=500, cost_usd=0.0105
             )
 
-            call2 = await store.record_llm_call_start(
-                run_id, "node2", "claude-opus-4-5-20251101"
-            )
+            call2 = await store.record_llm_call_start(run_id, "node2", "claude-opus-4-5-20251101")
             await store.record_llm_call_end(
                 call2, input_tokens=2000, output_tokens=1000, cost_usd=0.105
             )
@@ -65,9 +61,7 @@ class TestCliStats:
 
             # Create a run with LLM calls
             run_id = await store.create_run("plan-hash", "target")
-            call_id = await store.record_llm_call_start(
-                run_id, "node1", "claude-sonnet-4-20250514"
-            )
+            call_id = await store.record_llm_call_start(run_id, "node1", "claude-sonnet-4-20250514")
             await store.record_llm_call_end(
                 call_id, input_tokens=1000, output_tokens=500, cost_usd=0.0105
             )
@@ -90,17 +84,22 @@ class TestCliStats:
             await store.initialize()
 
             run_id = await store.create_run("plan-hash", "target")
-            call_id = await store.record_llm_call_start(
-                run_id, "node1", "claude-sonnet-4-20250514"
-            )
+            call_id = await store.record_llm_call_start(run_id, "node1", "claude-sonnet-4-20250514")
             await store.record_llm_call_end(
                 call_id, input_tokens=1000, output_tokens=500, cost_usd=0.015
             )
 
             result = subprocess.run(
                 [
-                    "uv", "run", "python", "-m", "smithers.cli",
-                    "stats", str(store_path), "--format", "json",
+                    "uv",
+                    "run",
+                    "python",
+                    "-m",
+                    "smithers.cli",
+                    "stats",
+                    str(store_path),
+                    "--format",
+                    "json",
                 ],
                 capture_output=True,
                 text=True,
@@ -123,17 +122,24 @@ class TestCliStats:
             await store.initialize()
 
             run_id = await store.create_run("plan-hash", "target")
-            call_id = await store.record_llm_call_start(
-                run_id, "node1", "claude-sonnet-4-20250514"
-            )
+            call_id = await store.record_llm_call_start(run_id, "node1", "claude-sonnet-4-20250514")
             await store.record_llm_call_end(
                 call_id, input_tokens=1000, output_tokens=500, cost_usd=0.015
             )
 
             result = subprocess.run(
                 [
-                    "uv", "run", "python", "-m", "smithers.cli",
-                    "stats", str(store_path), "--run", run_id, "--format", "json",
+                    "uv",
+                    "run",
+                    "python",
+                    "-m",
+                    "smithers.cli",
+                    "stats",
+                    str(store_path),
+                    "--run",
+                    run_id,
+                    "--format",
+                    "json",
                 ],
                 capture_output=True,
                 text=True,
@@ -155,24 +161,28 @@ class TestCliStats:
             run_id = await store.create_run("plan-hash", "target")
 
             # Add calls for different models
-            call1 = await store.record_llm_call_start(
-                run_id, "node1", "claude-sonnet-4-20250514"
-            )
+            call1 = await store.record_llm_call_start(run_id, "node1", "claude-sonnet-4-20250514")
             await store.record_llm_call_end(
                 call1, input_tokens=1000, output_tokens=500, cost_usd=0.015
             )
 
-            call2 = await store.record_llm_call_start(
-                run_id, "node2", "claude-opus-4-5-20251101"
-            )
+            call2 = await store.record_llm_call_start(run_id, "node2", "claude-opus-4-5-20251101")
             await store.record_llm_call_end(
                 call2, input_tokens=500, output_tokens=200, cost_usd=0.03
             )
 
             result = subprocess.run(
                 [
-                    "uv", "run", "python", "-m", "smithers.cli",
-                    "stats", str(store_path), "--by-model", "--format", "json",
+                    "uv",
+                    "run",
+                    "python",
+                    "-m",
+                    "smithers.cli",
+                    "stats",
+                    str(store_path),
+                    "--by-model",
+                    "--format",
+                    "json",
                 ],
                 capture_output=True,
                 text=True,
@@ -210,17 +220,22 @@ class TestCliStats:
             await store.initialize()
 
             run_id = await store.create_run("plan-hash", "target")
-            call_id = await store.record_llm_call_start(
-                run_id, "node1", "claude-sonnet-4-20250514"
-            )
+            call_id = await store.record_llm_call_start(run_id, "node1", "claude-sonnet-4-20250514")
             await store.record_llm_call_end(
                 call_id, input_tokens=1000, output_tokens=500, cost_usd=0.015
             )
 
             result = subprocess.run(
                 [
-                    "uv", "run", "python", "-m", "smithers.cli",
-                    "stats", str(store_path), "--days", "30",
+                    "uv",
+                    "run",
+                    "python",
+                    "-m",
+                    "smithers.cli",
+                    "stats",
+                    str(store_path),
+                    "--days",
+                    "30",
                 ],
                 capture_output=True,
                 text=True,

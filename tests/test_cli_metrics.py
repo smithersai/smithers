@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 import threading
 import time
 from http.client import HTTPConnection
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
 from smithers.cli import main
-from smithers.metrics import reset_metrics_collector, get_metrics_collector
+from smithers.metrics import get_metrics_collector, reset_metrics_collector
 
 
 @pytest.fixture(autouse=True)
@@ -77,8 +75,6 @@ class TestMetricsServeCommand:
     def test_serve_starts_and_stops(self) -> None:
         """Test that metrics serve starts and can be interrupted."""
         # We'll test this by running in a thread and simulating Ctrl+C
-        import signal
-        import os
 
         serve_started = threading.Event()
         serve_done = threading.Event()
@@ -88,6 +84,7 @@ class TestMetricsServeCommand:
             with patch("sys.argv", ["smithers", "metrics", "serve", "--port", "19091"]):
                 # Also patch the server to not actually block
                 from smithers.metrics import MetricsCollector
+
                 original_start = MetricsCollector.start_server
 
                 def mock_start(self, host="0.0.0.0", port=9090, daemon=True):
@@ -95,7 +92,7 @@ class TestMetricsServeCommand:
                     serve_started.set()
                     return server
 
-                with patch.object(MetricsCollector, 'start_server', mock_start):
+                with patch.object(MetricsCollector, "start_server", mock_start):
                     # Run with a timeout by raising KeyboardInterrupt after a short delay
                     def raise_keyboard_interrupt():
                         time.sleep(0.5)

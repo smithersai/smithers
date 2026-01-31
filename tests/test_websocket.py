@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -469,9 +467,7 @@ class TestWebSocketServer:
     @pytest.mark.asyncio
     async def test_event_bus_integration(self, event_bus: EventBus) -> None:
         """Test EventBus integration broadcasts events."""
-        server = WebSocketServer(
-            event_bus=event_bus, auto_subscribe=True, heartbeat_interval=0
-        )
+        server = WebSocketServer(event_bus=event_bus, auto_subscribe=True, heartbeat_interval=0)
 
         # Manually set running and subscribe
         server._running = True
@@ -791,7 +787,9 @@ class TestEventIntegration:
         # Emit various events
         await bus.emit(Event(type=EventTypes.RUN_STARTED, run_id="run-1"))
         await bus.emit(Event(type=EventTypes.NODE_STARTED, run_id="run-1", node_id="a"))
-        await bus.emit(Event(type=EventTypes.NODE_STARTED, run_id="run-2", node_id="b"))  # Wrong run
+        await bus.emit(
+            Event(type=EventTypes.NODE_STARTED, run_id="run-2", node_id="b")
+        )  # Wrong run
         await bus.emit(Event(type=EventTypes.NODE_FINISHED, run_id="run-1", node_id="a"))
         await bus.emit(Event(type=EventTypes.NODE_STARTED, run_id="run-1", node_id="c"))
 
@@ -881,7 +879,9 @@ class TestWebSocketServerMessageHandling:
         client = ClientConnection(websocket=ws)
 
         # Send filter with non-list value
-        await server._handle_client_message(client, {"action": "filter", "event_types": "not_a_list"})
+        await server._handle_client_message(
+            client, {"action": "filter", "event_types": "not_a_list"}
+        )
 
         # Should not crash, filter remains unchanged
         assert client.event_filter == set()

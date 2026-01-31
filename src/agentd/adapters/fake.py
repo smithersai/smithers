@@ -26,7 +26,12 @@ class FakeAgentAdapter(AgentAdapter):
         return [
             {"type": "assistant.delta", "text": "I'll help you with that. "},
             {"type": "assistant.delta", "text": "Let me analyze the code..."},
-            {"type": "tool.start", "tool_use_id": "t1", "name": "Read", "input": {"path": "/src/main.py"}},
+            {
+                "type": "tool.start",
+                "tool_use_id": "t1",
+                "name": "Read",
+                "input": {"path": "/src/main.py"},
+            },
             {"type": "tool.end", "tool_use_id": "t1", "status": "success"},
             {"type": "assistant.delta", "text": "\n\nI found the issue."},
             {"type": "assistant.final", "message_id": "m1"},

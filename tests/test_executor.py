@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from typing import Any
 
 import pytest
 from pydantic import BaseModel
@@ -164,9 +163,7 @@ class TestRunGraphWithStore:
         graph = build_graph(analyze)
         store = SqliteStore(store_path)
 
-        fake = FakeLLMProvider(
-            responses=[{"files": ["test.py"], "summary": "test analysis"}]
-        )
+        fake = FakeLLMProvider(responses=[{"files": ["test.py"], "summary": "test analysis"}])
 
         with use_fake_llm(fake):
             result = await run_graph_with_store(graph, store=store)
@@ -257,9 +254,7 @@ class TestRunGraphWithStore:
         graph = build_graph(simple)
         store = SqliteStore(store_path)
 
-        await run_graph_with_store(
-            graph, store=store, run_id="custom-run-123"
-        )
+        await run_graph_with_store(graph, store=store, run_id="custom-run-123")
 
         runs = await store.list_runs()
         assert runs[0].run_id == "custom-run-123"
@@ -358,9 +353,7 @@ class TestExecutorApprovals:
         graph = build_graph(deploy)
         store = SqliteStore(store_path)
 
-        result = await run_graph_with_store(
-            graph, store=store, auto_approve=True, return_all=True
-        )
+        result = await run_graph_with_store(graph, store=store, auto_approve=True, return_all=True)
 
         assert result.output.result == "deployed"
         assert len(result.approvals) == 1

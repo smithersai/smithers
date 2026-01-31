@@ -11,7 +11,6 @@ The SqliteStore is the system of record for all execution state as specified in 
 
 from pathlib import Path
 
-import pytest
 from pydantic import BaseModel
 
 from smithers import build_graph, workflow
@@ -488,9 +487,7 @@ class TestStatistics:
         run_id = await store.create_run(graph)
 
         # Update node status
-        await store.update_node_status(
-            run_id, "simple_workflow", NodeStatus.SUCCESS
-        )
+        await store.update_node_status(run_id, "simple_workflow", NodeStatus.SUCCESS)
 
         # Record LLM call
         call_id = await store.record_llm_call_start(run_id, "simple_workflow", "model")

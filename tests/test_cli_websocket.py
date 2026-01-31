@@ -16,8 +16,9 @@ class TestWebSocketStatusCommand:
 
     def test_status_text_format(self) -> None:
         """Test status command with text output."""
-        from smithers.cli import _websocket_status
         import argparse
+
+        from smithers.cli import _websocket_status
 
         # Create mock server
         mock_server = MagicMock(spec=WebSocketServer)
@@ -52,8 +53,9 @@ class TestWebSocketStatusCommand:
 
     def test_status_json_format(self) -> None:
         """Test status command with JSON output."""
-        from smithers.cli import _websocket_status
         import argparse
+
+        from smithers.cli import _websocket_status
 
         mock_server = MagicMock(spec=WebSocketServer)
         mock_server.is_running = True
@@ -91,8 +93,9 @@ class TestWebSocketCommandDispatch:
 
     def test_unknown_subcommand(self) -> None:
         """Test handling of unknown websocket subcommand."""
-        from smithers.cli import _websocket_command
         import argparse
+
+        from smithers.cli import _websocket_command
 
         args = argparse.Namespace(websocket_command="invalid")
 
@@ -105,8 +108,9 @@ class TestWebSocketCommandDispatch:
 
     def test_status_subcommand_dispatch(self) -> None:
         """Test that status subcommand dispatches correctly."""
-        from smithers.cli import _websocket_command
         import argparse
+
+        from smithers.cli import _websocket_command
 
         mock_server = MagicMock(spec=WebSocketServer)
         mock_server.is_running = False
@@ -127,7 +131,6 @@ class TestWebSocketServeCommand:
 
     def test_serve_missing_websockets_library(self) -> None:
         """Test serve command when websockets library is missing."""
-        from smithers.cli import _websocket_serve
         import argparse
 
         args = argparse.Namespace(
@@ -139,7 +142,9 @@ class TestWebSocketServeCommand:
 
         # Mock the import to fail
         with patch.dict("sys.modules", {"smithers.websocket": None}):
-            with patch("builtins.__import__", side_effect=ImportError("No module named 'websockets'")):
+            with patch(
+                "builtins.__import__", side_effect=ImportError("No module named 'websockets'")
+            ):
                 # This will actually try to import, we need to test the error handling
                 pass
 
@@ -150,7 +155,6 @@ class TestWebSocketServeCommand:
     async def test_serve_creates_server_with_heartbeat(self) -> None:
         """Test that serve creates server with correct heartbeat settings."""
         import argparse
-        from smithers.cli import _websocket_serve
 
         args = argparse.Namespace(
             host="localhost",
@@ -186,8 +190,9 @@ class TestWebSocketCLIIntegration:
 
     def test_main_dispatches_to_websocket(self) -> None:
         """Test that main() dispatches websocket command correctly."""
-        from smithers.cli import main
         import sys
+
+        from smithers.cli import main
 
         mock_server = MagicMock(spec=WebSocketServer)
         mock_server.is_running = False
@@ -203,8 +208,9 @@ class TestWebSocketCLIIntegration:
 
     def test_websocket_help(self) -> None:
         """Test that websocket help is available."""
-        from smithers.cli import main
         import sys
+
+        from smithers.cli import main
 
         with patch.object(sys, "argv", ["smithers", "websocket", "--help"]):
             with pytest.raises(SystemExit) as exc_info:
@@ -219,8 +225,9 @@ class TestServerStatsDisplay:
 
     def test_stats_with_zero_values(self) -> None:
         """Test displaying stats when all values are zero."""
-        from smithers.cli import _websocket_status
         import argparse
+
+        from smithers.cli import _websocket_status
 
         mock_server = MagicMock(spec=WebSocketServer)
         mock_server.is_running = False
@@ -240,8 +247,9 @@ class TestServerStatsDisplay:
 
     def test_stats_with_large_values(self) -> None:
         """Test displaying stats with large values."""
-        from smithers.cli import _websocket_status
         import argparse
+
+        from smithers.cli import _websocket_status
 
         mock_server = MagicMock(spec=WebSocketServer)
         mock_server.is_running = True
