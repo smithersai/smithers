@@ -119,6 +119,7 @@ class TestBuildGraph:
     def test_list_dependency_hashing_and_namespace(self):
         clear_registry()
         try:
+
             class Item(BaseModel):
                 value: int
 
@@ -143,5 +144,28 @@ class TestBuildGraph:
 
             deps = _dependency_namespace(consume, outputs)
             assert deps.items == [item]
+        finally:
+            clear_registry()
+
+
+class TestGraphCycleDetection:
+    """Tests for cycle detection in build_graph."""
+
+    def test_self_referential_workflow_raises_error(self):
+        """A workflow that depends on its own output type should raise a clear error."""
+        clear_registry()
+        try:
+
+            class RefineOutput(BaseModel):
+                value: str
+                iteration: int = 0
+
+            @workflow
+            async def refine(data: RefineOutput) -> RefineOutput:
+                return RefineOutput(value=data.value + "!", iteration=data.iteration + 1)
+
+            # This should raise a clear error, not infinite recursion
+            with pytest.raises(ValueError, match=r"self-referential|cycle|circular"):
+                build_graph(refine)
         finally:
             clear_registry()

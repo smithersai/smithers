@@ -10,15 +10,13 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from smithers._shared import (
-    build_kwargs as _build_kwargs,
-    compute_cache_key as _cache_key,
-    dependency_namespace as _dependency_namespace,
-    hash_inputs as _hash_inputs,
-    normalize_invalidate as _normalize_invalidate,
-    resolve_workflow as _resolve_workflow,
-    validate_output as _validate_output,
-)
+from smithers._shared import build_kwargs as _build_kwargs
+from smithers._shared import compute_cache_key as _cache_key
+from smithers._shared import dependency_namespace as _dependency_namespace
+from smithers._shared import hash_inputs as _hash_inputs
+from smithers._shared import normalize_invalidate as _normalize_invalidate
+from smithers._shared import resolve_workflow as _resolve_workflow
+from smithers._shared import validate_output as _validate_output
 from smithers.cache import Cache, SqliteCache
 from smithers.conditions import (
     ConditionNotMetError,
