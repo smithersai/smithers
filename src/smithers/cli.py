@@ -1515,9 +1515,10 @@ def _metrics_serve(args: argparse.Namespace) -> int:
     print("Press Ctrl+C to stop")
 
     try:
-        server = collector.start_server(host=args.host, port=args.port, daemon=False)
+        _server = collector.start_server(host=args.host, port=args.port, daemon=False)
         # The server runs in the main thread when daemon=False is passed
         # But start_server starts a daemon thread, so we need to wait
+        del _server  # Keep reference until shutdown to prevent GC
         import time
 
         while True:
@@ -1561,7 +1562,7 @@ def _websocket_command(args: argparse.Namespace) -> int:
 def _websocket_serve(args: argparse.Namespace) -> int:
     """Start the WebSocket server for real-time progress updates."""
     try:
-        from smithers.websocket import WebSocketServer, get_websocket_server
+        from smithers.websocket import WebSocketServer
     except ImportError:
         print("WebSocket support requires the 'websockets' package.", file=sys.stderr)
         print("Install it with: pip install smithers[websocket]", file=sys.stderr)
@@ -1847,25 +1848,23 @@ def _snapshot_list(args: argparse.Namespace) -> int:
     """List available snapshots."""
     from smithers.snapshot import SnapshotStore
 
-    store = SnapshotStore(args.store)
     store_path = Path(args.store)
 
+    # Check if store directory exists
     if not store_path.exists():
         print(f"Store not found: {args.store}", file=sys.stderr)
         return 1
 
-    # Find all workflows with snapshots
-    workflows: dict[str, list[str]] = {}
-    for filename in store_path.iterdir():
-        if filename.suffix == ".json":
-            # Parse name_version.json
-            name_parts = filename.stem.rsplit("_", 1)
-            if len(name_parts) == 2:
-                wf_name, version = name_parts
-                if args.workflow is None or wf_name == args.workflow:
-                    if wf_name not in workflows:
-                        workflows[wf_name] = []
-                    workflows[wf_name].append(version)
+    store = SnapshotStore(args.store)
+
+    # Use the store's list_workflows method
+    all_workflows = store.list_workflows()
+
+    # Filter by workflow name if specified
+    if args.workflow is not None:
+        workflows = {args.workflow: all_workflows.get(args.workflow, [])}
+    else:
+        workflows = all_workflows
 
     if args.format == "json":
         output = {
@@ -1874,7 +1873,7 @@ def _snapshot_list(args: argparse.Namespace) -> int:
         }
         print(json.dumps(output, indent=2))
     else:
-        if not workflows:
+        if not workflows or all(not v for v in workflows.values()):
             print("No snapshots found.")
             return 0
 

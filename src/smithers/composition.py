@@ -23,16 +23,14 @@ Example:
 from __future__ import annotations
 
 import hashlib
-import json
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, create_model
 
 from smithers.types import WorkflowGraph, WorkflowNode
-from smithers.workflow import Workflow, get_workflow_by_output, workflow as workflow_decorator
-
+from smithers.workflow import Workflow
 
 T = TypeVar("T", bound=BaseModel)
 U = TypeVar("U", bound=BaseModel)
@@ -44,7 +42,7 @@ class CompositionError(Exception):
     """Error during workflow composition."""
 
     message: str
-    workflows: list[str] = field(default_factory=list)
+    workflows: list[str] = field(default_factory=lambda: [])
 
     def __str__(self) -> str:
         if self.workflows:
@@ -444,9 +442,6 @@ def pipeline(
     # We build it by sequential binding
     pipeline_name = name or f"pipeline__{_hash_workflow_names([wf.name for wf in workflows])}"
 
-    # The final workflow in the chain
-    final = workflows[-1]
-
     # Bind each workflow to run after the previous
     current = workflows[0]
     for i in range(1, len(workflows)):
@@ -576,9 +571,7 @@ def branch(
         # Try to infer from branches
         true_inputs = list(if_true.input_types.values())
         false_inputs = list(if_false.input_types.values())
-        if true_inputs and false_inputs and true_inputs[0] == false_inputs[0]:
-            final_input_type = true_inputs[0]
-        elif true_inputs:
+        if (true_inputs and false_inputs and true_inputs[0] == false_inputs[0]) or true_inputs:
             final_input_type = true_inputs[0]
         elif false_inputs:
             final_input_type = false_inputs[0]
@@ -744,7 +737,6 @@ def reduce_workflow(
         combine_all = reduce_workflow(combine)
         # Now accepts list[Summary] and returns Summary
     """
-    from functools import reduce as functools_reduce
 
     if len(workflow.input_types) < 2:
         raise CompositionError(
