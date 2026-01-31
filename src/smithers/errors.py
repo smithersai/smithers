@@ -415,6 +415,15 @@ def _serialize_error(
     elif isinstance(error, RalphLoopInputError):
         payload["loop_name"] = error.loop_name
         payload["param_name"] = error.param_name
+    # Handle ConditionNotMetError without direct import to avoid circular dependency
+    # We use getattr to access attributes dynamically to avoid circular import with conditions.py
+    elif type(error).__name__ == "ConditionNotMetError":
+        workflow_name = getattr(error, "workflow_name", None)
+        if workflow_name is not None:
+            payload["workflow_name"] = workflow_name
+        reason = getattr(error, "reason", None)
+        if reason is not None:
+            payload["reason"] = reason
 
     if max_depth > 0:
         cause = error.__cause__ or (

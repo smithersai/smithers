@@ -587,6 +587,40 @@ class TestConditionNotMetError:
         assert "my_workflow" in str(err)
         assert "Custom reason" in str(err)
 
+    def test_inherits_from_smithers_error(self):
+        """ConditionNotMetError inherits from SmithersError for consistency."""
+        from smithers.errors import SmithersError
+
+        err = ConditionNotMetError("deploy", "Tests failed")
+        assert isinstance(err, SmithersError)
+        assert isinstance(err, Exception)
+
+    def test_error_serialization(self):
+        """ConditionNotMetError can be serialized for logging/storage."""
+        from smithers.errors import serialize_error
+
+        err = ConditionNotMetError("deploy_workflow", "Coverage below threshold")
+        serialized = serialize_error(err)
+
+        assert serialized["type"] == "ConditionNotMetError"
+        assert serialized["workflow_name"] == "deploy_workflow"
+        assert serialized["reason"] == "Coverage below threshold"
+        assert "Condition not met" in serialized["message"]
+
+    def test_error_can_be_caught_as_smithers_error(self):
+        """ConditionNotMetError can be caught as SmithersError."""
+        from smithers.errors import SmithersError
+
+        def raise_condition_error():
+            raise ConditionNotMetError("test_workflow", "Some reason")
+
+        # Should be catchable as SmithersError
+        try:
+            raise_condition_error()
+        except SmithersError as e:
+            assert e.workflow_name == "test_workflow"
+            assert e.reason == "Some reason"
+
 
 # ========================
 # Policy tests

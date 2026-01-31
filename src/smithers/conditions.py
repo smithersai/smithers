@@ -49,6 +49,8 @@ from typing import Any, ParamSpec, TypeVar
 
 from pydantic import BaseModel
 
+from smithers.errors import SmithersError
+
 P = ParamSpec("P")
 T = TypeVar("T", bound=BaseModel)
 
@@ -539,8 +541,25 @@ def never() -> Condition:
 # Error class for condition failures
 
 
-class ConditionNotMetError(Exception):
-    """Raised when a workflow condition is not met and on_skip="fail"."""
+class ConditionNotMetError(SmithersError):
+    """Raised when a workflow condition is not met and on_skip="fail".
+
+    Attributes:
+        workflow_name: Name of the workflow whose condition was not met.
+        reason: The skip_reason from the condition policy explaining why
+                the condition was not satisfied.
+
+    Example:
+        When a workflow has a condition that is not met::
+
+            @workflow
+            @when(lambda deps: deps.tests.passed, skip_reason="Tests failed", on_skip="fail")
+            async def deploy(tests: TestOutput) -> DeployOutput:
+                ...
+
+            # If tests.passed is False, this raises:
+            # ConditionNotMetError("deploy", "Tests failed")
+    """
 
     def __init__(self, workflow_name: str, reason: str) -> None:
         self.workflow_name = workflow_name
