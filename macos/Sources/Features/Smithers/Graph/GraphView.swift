@@ -111,20 +111,17 @@ struct GraphView: View {
 
             // Draw node label
             let text = labelForNode(node)
-            let textRect = CGRect(
+            let textPosition = CGPoint(
                 x: nodeRect.minX + 12,
-                y: nodeRect.minY + 8,
-                width: nodeRect.width - 24,
-                height: nodeRect.height - 16
+                y: nodeRect.minY + nodeRect.height / 2
             )
 
             context.draw(
                 Text(text)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                    .truncationMode(.tail),
-                in: textRect
+                    .foregroundColor(.primary),
+                at: textPosition,
+                anchor: .leading
             )
         }
     }

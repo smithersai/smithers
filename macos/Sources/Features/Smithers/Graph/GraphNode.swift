@@ -13,12 +13,16 @@ enum GraphNodeType: String, Codable {
 }
 
 /// A node in the session graph
-struct GraphNode: Identifiable, Codable {
+struct GraphNode: Identifiable, Codable, Equatable {
     let id: UUID
     let type: GraphNodeType
     let parentId: UUID?
     let timestamp: Date
     var data: [String: AnyCodable]
+
+    static func == (lhs: GraphNode, rhs: GraphNode) -> Bool {
+        lhs.id == rhs.id && lhs.type == rhs.type && lhs.parentId == rhs.parentId
+    }
 
     // Computed properties for common data fields
     var text: String? {

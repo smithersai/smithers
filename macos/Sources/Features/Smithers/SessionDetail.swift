@@ -14,29 +14,43 @@ struct SessionDetail: View {
     @State private var isTerminalDrawerOpen = false
     @State private var viewMode: SessionViewMode = .chat
     @State private var selectedNodeId: UUID?
+    @State private var selectedInspectorTab: InspectorTab = .stack
+    @State private var inspectorVisible: Bool = true
     @EnvironmentObject var ghostty: Ghostty.App
 
     var body: some View {
         if let session = session {
-            VStack(spacing: 0) {
-                // Header
-                sessionHeader(session)
+            HSplitView {
+                // Main content area
+                VStack(spacing: 0) {
+                    // Header
+                    sessionHeader(session)
 
-                Divider()
+                    Divider()
 
-                // Main content area - switch between chat and graph views
-                contentArea(session)
+                    // Main content area - switch between chat and graph views
+                    contentArea(session)
 
-                // Input bar at bottom
-                inputBar
+                    // Input bar at bottom
+                    inputBar
 
-                // Terminal drawer at the bottom
-                Divider()
-                TerminalDrawerView(
-                    manager: terminalManager,
-                    isOpen: $isTerminalDrawerOpen
-                )
-                .environmentObject(ghostty)
+                    // Terminal drawer at the bottom
+                    Divider()
+                    TerminalDrawerView(
+                        manager: terminalManager,
+                        isOpen: $isTerminalDrawerOpen
+                    )
+                    .environmentObject(ghostty)
+                }
+                .frame(minWidth: 500)
+
+                // Inspector panel (right side)
+                if inspectorVisible {
+                    SessionInspectorView(
+                        selectedTab: $selectedInspectorTab,
+                        selectedNodeId: $selectedNodeId
+                    )
+                }
             }
         } else {
             emptyState
@@ -81,6 +95,13 @@ struct SessionDetail: View {
                 }
                 .buttonStyle(.plain)
                 .help("Open Terminal")
+
+                Button(action: { inspectorVisible.toggle() }) {
+                    Image(systemName: inspectorVisible ? "sidebar.right" : "sidebar.right")
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(inspectorVisible ? .accentColor : .secondary)
+                .help(inspectorVisible ? "Hide Inspector" : "Show Inspector")
 
                 Button(action: {}) {
                     Image(systemName: "arrow.clockwise")
@@ -191,11 +212,20 @@ struct SessionDetail: View {
     }
 
     private func handleNodeSelection(_ nodeId: UUID) {
-        // TODO: Implement selection sync
         // When a node is selected in the graph view:
         // 1. Scroll the chat view to show the corresponding message
+        // TODO: Implement chat scroll sync
+
         // 2. Update the inspector panel to show node details
+        // Make inspector visible and switch to Tools or Run Details tab
+        if !inspectorVisible {
+            inspectorVisible = true
+        }
+        // Switch to Tools tab to show the selected node details
+        selectedInspectorTab = .tools
+
         // 3. If it's a tool invocation, optionally open the terminal to the correct CWD
+        // TODO: Check if node is a tool invocation and open terminal
         print("Node selected: \(nodeId)")
     }
 
