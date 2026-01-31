@@ -21,41 +21,45 @@ PROJECT_ROOT = Path(__file__).parent.parent
 # Focus areas that rotate - mix of implementation and maintenance
 # Implementation focuses (Smithers v2) come first, then maintenance
 FOCUSES = [
-    # === Implementation Focuses (Smithers v2) ===
-    "FOUNDATION",       # Wire core integration: adapters, persistence, reducers
+    # === Backend (Python) ===
     "AGENTD",           # Agent daemon: session management, tool execution, streaming
     "PROTOCOL",         # Event types, request/response, NDJSON serialization
     "STORAGE",          # SQLite tables, event sourcing, session persistence
-    "SWIFT_UI",         # Chat UI, message rendering, streaming display
-    "TERMINAL",         # Terminal drawer, PTY management, sandbox integration
-    "GRAPH_VIEW",       # Graph canvas, layout, selection sync
-    "CHECKPOINTS",      # JJ integration, checkpoint create/restore
-    "SKILLS",           # Skills registry, palette, execution pipeline
-    # === Maintenance Focuses ===
+    "FOUNDATION",       # Wire core integration: adapters → persistence → UI
+    # === Frontend (Swift) ===
+    "SWIFT_UI",         # SwiftUI: chat transcript, message rendering, tool cards
+    "SWIFT_TERMINAL",   # libghostty integration: terminal drawer, PTY, tabs
+    "SWIFT_GRAPH",      # Graph view: canvas, layout engine, selection sync
+    "SWIFT_INSPECTOR",  # Inspector panels: Stack, Diff, Todos, Browser, Tools
+    # === Features (Python + Swift) ===
+    "CHECKPOINTS",      # JJ integration: checkpoint create/restore, stack ops
+    "SKILLS",           # Skills system: registry, ⌘K palette, execution
+    "SEARCH",           # FTS search: SQLite indexing, global search UI
+    # === Maintenance ===
     "TESTING",          # Add missing tests, improve coverage, edge cases
     "TYPE_SAFETY",      # Fix pyright errors, improve type hints
-    "ERROR_HANDLING",   # Better error messages, proper exceptions
-    "PERFORMANCE",      # Profile and optimize slow paths
-    "DOCUMENTATION",    # Fix docstrings, update examples
     "BUG_HUNTING",      # Search for bugs, edge cases, race conditions
 ]
 
 # Focus descriptions for the prompt
 FOCUS_DESCRIPTIONS = {
-    "FOUNDATION": "Wire core integration: SessionManager → adapters, event persistence, graph reducers",
-    "AGENTD": "Agent daemon work: session management, tool execution pipeline, streaming events",
-    "PROTOCOL": "Protocol work: event types, request/response models, NDJSON serialization",
-    "STORAGE": "Storage work: SQLite tables (session_events), event sourcing, session persistence",
-    "SWIFT_UI": "Swift UI work: chat transcript, message rendering, streaming display, tool cards",
-    "TERMINAL": "Terminal work: terminal drawer, PTY management, tab UI, sandbox integration",
-    "GRAPH_VIEW": "Graph view work: canvas renderer, layout engine, pan/zoom, selection sync",
-    "CHECKPOINTS": "Checkpoint work: JJ wrapper service, checkpoint create/restore, stack operations",
-    "SKILLS": "Skills work: registry, ⌘K palette, execution pipeline, built-in skills",
-    "TESTING": "Add missing tests, improve coverage, ensure edge cases are handled",
+    # Backend (Python)
+    "AGENTD": "Python: Agent daemon - session management, tool execution pipeline, streaming events, adapter integration",
+    "PROTOCOL": "Python: Protocol - event types, request/response models, NDJSON serialization, schema validation",
+    "STORAGE": "Python: Storage - SQLite tables (session_events), event sourcing, session persistence, migrations",
+    "FOUNDATION": "Python: Wire core integration - SessionManager → adapters → event persistence → Swift bridge",
+    # Frontend (Swift)
+    "SWIFT_UI": "Swift: Chat UI - virtualized message list, markdown rendering, streaming text, tool cards, input bar",
+    "SWIFT_TERMINAL": "Swift: libghostty integration - terminal drawer, PTY attachment, tab management, CWD tracking",
+    "SWIFT_GRAPH": "Swift: Graph view - Canvas renderer, Sugiyama layout, pan/zoom, node selection, chat sync",
+    "SWIFT_INSPECTOR": "Swift: Inspector panels - Stack view, Diff viewer, Todos panel, Browser tab, Tool details",
+    # Features (Python + Swift)
+    "CHECKPOINTS": "Python+Swift: JJ integration - RepoStateService wrapper, checkpoint create/restore, stack UI",
+    "SKILLS": "Python+Swift: Skills system - registry, ⌘K palette, execution pipeline, Summarize/Plan/Rebase skills",
+    "SEARCH": "Python+Swift: Search - FTS5 indexing, global search UI, result navigation, match highlighting",
+    # Maintenance
+    "TESTING": "Add missing tests, improve coverage, ensure edge cases are handled (Python and Swift)",
     "TYPE_SAFETY": "Fix pyright errors, improve type hints, add generics where helpful",
-    "ERROR_HANDLING": "Better error messages, proper exception types, handle edge cases",
-    "PERFORMANCE": "Profile slow paths, reduce allocations, optimize hot paths",
-    "DOCUMENTATION": "Fix inaccurate docstrings, add missing docs, update examples",
     "BUG_HUNTING": "Search for bugs, edge cases, race conditions, security issues",
 }
 
@@ -113,7 +117,7 @@ uv run ruff format .             # Format
 ## Important
 
 - Read RALPH.md for the complete codebase map
-- Focus on Python unless Swift is specifically needed
+- Python focuses → Python code, Swift focuses → Swift code
 - Complete exactly ONE task, then stop
 - Quality over quantity
 - Always stay green
@@ -274,13 +278,13 @@ def main():
     args = parser.parse_args()
 
     # Determine which focuses to use
+    # Structure: Backend (4) + Frontend (4) + Features (3) + Maintenance (3)
     if args.implementation_only:
-        focuses = [f for f in FOCUSES if f in FOCUS_DESCRIPTIONS and "work" in FOCUS_DESCRIPTIONS[f].lower()]
-        # Implementation focuses (first 9)
-        focuses = FOCUSES[:9]
+        # Backend + Frontend + Features (first 11)
+        focuses = FOCUSES[:11]
     elif args.maintenance_only:
-        # Maintenance focuses (last 6)
-        focuses = FOCUSES[9:]
+        # Maintenance only (last 3)
+        focuses = FOCUSES[11:]
     else:
         focuses = FOCUSES
 

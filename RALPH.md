@@ -190,22 +190,38 @@ If ANY of these fail when you start, **fix them first** before doing anything el
 
 Agents rotate through these focus areas. Your assigned focus guides task selection, but **always fix broken builds/tests first**.
 
+### Backend (Python)
+
 | Focus | Description |
 |-------|-------------|
-| `FOUNDATION` | Wire core integration: adapters, persistence, reducers |
-| `AGENTD` | Agent daemon: session management, tool execution, streaming |
-| `PROTOCOL` | Event types, request/response, NDJSON serialization |
-| `STORAGE` | SQLite tables, event sourcing, session persistence |
-| `SWIFT_UI` | Chat UI, message rendering, streaming display |
-| `TERMINAL` | Terminal drawer, PTY management, sandbox integration |
-| `GRAPH_VIEW` | Graph canvas, layout, selection sync |
-| `CHECKPOINTS` | JJ integration, checkpoint create/restore |
-| `SKILLS` | Skills registry, palette, execution pipeline |
-| `TESTING` | Add missing tests, improve coverage, edge cases |
+| `AGENTD` | Agent daemon: session management, tool execution, streaming, adapter integration |
+| `PROTOCOL` | Event types, request/response, NDJSON serialization, schema validation |
+| `STORAGE` | SQLite tables (session_events), event sourcing, session persistence |
+| `FOUNDATION` | Wire core integration: adapters → persistence → Swift bridge |
+
+### Frontend (Swift + libghostty)
+
+| Focus | Description |
+|-------|-------------|
+| `SWIFT_UI` | Chat UI: virtualized message list, markdown rendering, streaming, tool cards |
+| `SWIFT_TERMINAL` | **libghostty integration**: terminal drawer, PTY attachment, tab management |
+| `SWIFT_GRAPH` | Graph view: Canvas renderer, Sugiyama layout, pan/zoom, selection sync |
+| `SWIFT_INSPECTOR` | Inspector panels: Stack, Diff, Todos, Browser, Tool details |
+
+### Features (Python + Swift)
+
+| Focus | Description |
+|-------|-------------|
+| `CHECKPOINTS` | JJ integration: RepoStateService, checkpoint create/restore, stack UI |
+| `SKILLS` | Skills system: registry, ⌘K palette, execution, built-in skills |
+| `SEARCH` | FTS search: SQLite indexing, global search UI, result navigation |
+
+### Maintenance
+
+| Focus | Description |
+|-------|-------------|
+| `TESTING` | Add missing tests, improve coverage, edge cases (Python + Swift) |
 | `TYPE_SAFETY` | Fix pyright errors, improve type hints |
-| `ERROR_HANDLING` | Better error messages, proper exceptions |
-| `PERFORMANCE` | Profile and optimize slow paths |
-| `DOCUMENTATION` | Fix docstrings, update examples |
 | `BUG_HUNTING` | Search for bugs, edge cases, race conditions |
 
 ---
@@ -218,7 +234,7 @@ Agents rotate through these focus areas. Your assigned focus guides task selecti
 4. **Fix failures first** — If you find failures, that IS your task
 5. **Read before write** — Understand existing code before changing
 6. **Atomic commits** — Each commit is self-contained and tested
-7. **Python focus** — Prioritize Python unless Swift is specifically needed
+7. **Match your focus** — Python focuses → Python code, Swift focuses → Swift code
 
 ---
 
