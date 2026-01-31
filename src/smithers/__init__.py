@@ -229,8 +229,11 @@ from smithers.websocket import (
     status_message,
 )
 from smithers.workflow import (
+    SkipResult,
     Workflow,
     clear_registry,
+    get_all_workflows,
+    get_workflow_by_output,
     require_approval,
     require_approval_async,
     retry,
@@ -327,6 +330,8 @@ __all__ = [
     "RetryPolicy",
     "RunStatus",
     "RuntimeContext",
+    # Workflow registry
+    "SkipResult",
     "SmithersTimeoutError",
     "SnapshotStore",
     "SqliteCache",
@@ -390,6 +395,7 @@ __all__ = [
     "field_in",
     "field_lt",
     "full_verification",
+    "get_all_workflows",
     "get_composition_info",
     "get_condition_policy",
     "get_current_context",
@@ -402,6 +408,7 @@ __all__ = [
     "get_run_cost",
     "get_run_tokens",
     "get_websocket_server",
+    "get_workflow_by_output",
     "has_attr",
     "has_condition",
     "hash_json",

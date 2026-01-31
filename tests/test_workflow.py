@@ -28,6 +28,25 @@ class TestPublicApiExports:
 
         assert public_clear_registry is clear_registry
 
+    def test_get_all_workflows_exported(self):
+        """Verify get_all_workflows is exported from smithers."""
+        from smithers import get_all_workflows as public_get_all_workflows
+
+        assert public_get_all_workflows is get_all_workflows
+
+    def test_get_workflow_by_output_exported(self):
+        """Verify get_workflow_by_output is exported from smithers."""
+        from smithers import get_workflow_by_output as public_get_workflow_by_output
+
+        assert public_get_workflow_by_output is get_workflow_by_output
+
+    def test_skip_result_exported(self):
+        """Verify SkipResult is exported from smithers."""
+        from smithers import SkipResult as PublicSkipResult
+        from smithers.workflow import SkipResult
+
+        assert PublicSkipResult is SkipResult
+
     def test_workflow_node_exported(self):
         """Verify WorkflowNode is exported from smithers."""
         from smithers import WorkflowNode
