@@ -115,7 +115,10 @@ pub fn build(b: *std.Build) !void {
     const all_step = b.step("all", "Build everything");
     all_step.dependOn(&uv_sync.step);
     all_step.dependOn(&ghostty_build.step);
-    all_step.dependOn(smitherskit_step);
+    // NOTE: SmithersKit is not included in default build because it requires
+    // linking against GhosttyKit, but the Xcode project links GhosttyKit directly.
+    // SmithersKit is a future abstraction layer for AI features.
+    // all_step.dependOn(smitherskit_step);
 
     b.default_step = all_step;
 
