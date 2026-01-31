@@ -740,6 +740,23 @@ class TestReduceWorkflow:
         assert "init" in result.content
         assert "x" in result.content
 
+    @pytest.mark.asyncio
+    async def test_reduce_empty_list_with_initial(self):
+        """Reduce of empty list with initial value returns initial."""
+
+        @workflow(register=False)
+        async def combine(a: Summary, b: Summary) -> Summary:
+            return Summary(content=f"{a.content}+{b.content}", count=a.count + b.count)
+
+        initial = Summary(content="empty_initial", count=42)
+        reduced = reduce_workflow(combine, initial=initial)
+
+        result = await reduced(items=[])
+
+        # Empty list with initial should return initial unchanged
+        assert result.content == "empty_initial"
+        assert result.count == 42
+
 
 # ============================================================================
 # get_composition_info tests
