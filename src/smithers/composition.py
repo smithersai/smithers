@@ -33,8 +33,6 @@ from smithers.types import WorkflowGraph, WorkflowNode
 from smithers.workflow import Workflow
 
 T = TypeVar("T", bound=BaseModel)
-U = TypeVar("U", bound=BaseModel)
-R = TypeVar("R", bound=BaseModel)
 
 
 @dataclass
@@ -144,7 +142,7 @@ def compose_graphs(
 
     # Merge nodes
     merged_nodes: dict[str, WorkflowNode] = {}
-    merged_workflows: dict[str, Workflow[Any, Any]] = {}
+    merged_workflows: dict[str, Workflow] = {}
 
     for graph in graphs:
         for node_name, node in graph.nodes.items():
@@ -189,9 +187,9 @@ def compose_graphs(
 
 
 def chain(
-    *workflows: Workflow[Any, Any],
+    *workflows: Workflow,
     name: str | None = None,
-) -> Workflow[Any, Any]:
+) -> Workflow:
     """
     Chain workflows sequentially, passing output to the next input.
 
@@ -273,10 +271,10 @@ def chain(
 
 
 def parallel(
-    *workflows: Workflow[Any, Any],
+    *workflows: Workflow,
     collect_as: type[T] | None = None,
     name: str | None = None,
-) -> Workflow[Any, T] | Workflow[Any, Any]:
+) -> Workflow:
     """
     Run multiple workflows in parallel and collect their results.
 
@@ -368,7 +366,7 @@ def parallel(
         # Run all workflows
         results: dict[str, Any] = {}
 
-        async def run_wf(wf: Workflow[Any, Any]) -> None:
+        async def run_wf(wf: Workflow) -> None:
             # Build kwargs for this workflow from available inputs
             wf_kwargs: dict[str, Any] = {}
             for param_name in wf.input_types:
@@ -411,9 +409,9 @@ def parallel(
 
 
 def pipeline(
-    *workflows: Workflow[Any, Any],
+    *workflows: Workflow,
     name: str | None = None,
-) -> Workflow[Any, Any]:
+) -> Workflow:
     """
     Create a linear pipeline from multiple workflows.
 
@@ -461,7 +459,7 @@ def subgraph(
     *,
     name: str | None = None,
     output_type: type[T] | None = None,
-) -> Workflow[Any, T]:
+) -> Workflow:
     """
     Wrap a complete WorkflowGraph as a single workflow node.
 
@@ -527,12 +525,12 @@ def subgraph(
 
 def branch(
     condition: Callable[[Any], bool],
-    if_true: Workflow[Any, T],
-    if_false: Workflow[Any, T],
+    if_true: Workflow,
+    if_false: Workflow,
     *,
     name: str | None = None,
     input_type: type[BaseModel] | None = None,
-) -> Workflow[Any, T]:
+) -> Workflow:
     """
     Create a branching workflow that chooses between two paths.
 
@@ -618,11 +616,11 @@ def branch(
 
 
 def map_workflow(
-    workflow: Workflow[Any, T],
+    workflow: Workflow,
     *,
     name: str | None = None,
     input_param: str | None = None,
-) -> Workflow[Any, Any]:
+) -> Workflow:
     """
     Create a workflow that maps over a list of inputs.
 
@@ -709,11 +707,11 @@ def map_workflow(
 
 
 def reduce_workflow(
-    workflow: Workflow[Any, T],
+    workflow: Workflow,
     *,
-    initial: T | None = None,
+    initial: BaseModel | None = None,
     name: str | None = None,
-) -> Workflow[Any, T]:
+) -> Workflow:
     """
     Create a workflow that reduces a list of inputs to a single output.
 
@@ -799,7 +797,7 @@ def _hash_workflow_names(names: list[str]) -> str:
     return hashlib.sha1(combined.encode()).hexdigest()[:8]
 
 
-def _create_alias_workflow(wf: Workflow[Any, Any], new_name: str) -> Workflow[Any, Any]:
+def _create_alias_workflow(wf: Workflow, new_name: str) -> Workflow:
     """Create a workflow with a new name but same behavior."""
     return Workflow(
         name=new_name,
@@ -881,7 +879,7 @@ def _compute_levels_for_target(
     return levels
 
 
-def get_composition_info(workflow: Workflow[Any, Any]) -> dict[str, Any]:
+def get_composition_info(workflow: Workflow) -> dict[str, Any]:
     """
     Get information about a composed workflow.
 
