@@ -145,6 +145,7 @@ class RateLimitStats:
 @dataclass
 class _TimestampedRequest:
     """A request with its timestamp for sliding window tracking."""
+
     timestamp: float
     tokens: int = 0
 
@@ -223,8 +224,7 @@ class RateLimiter:
             if requests_in_minute >= self.config.requests_per_minute:
                 # Find oldest request in window and wait until it expires
                 oldest = min(
-                    (req.timestamp for req in self._requests
-                     if req.timestamp >= now - 60.0),
+                    (req.timestamp for req in self._requests if req.timestamp >= now - 60.0),
                     default=now,
                 )
                 wait = (oldest + 60.0) - now
@@ -235,8 +235,7 @@ class RateLimiter:
             requests_in_second = self._count_requests_in_window(now, 1.0)
             if requests_in_second >= self.config.requests_per_second:
                 oldest = min(
-                    (req.timestamp for req in self._requests
-                     if req.timestamp >= now - 1.0),
+                    (req.timestamp for req in self._requests if req.timestamp >= now - 1.0),
                     default=now,
                 )
                 wait = (oldest + 1.0) - now
@@ -352,7 +351,10 @@ class RateLimiter:
             return wait_time
 
     def try_acquire(self, tokens: int = 0) -> bool:
-        """Try to acquire permission without waiting.
+        """Try to acquire permission without waiting (DEPRECATED - not thread-safe).
+
+        WARNING: This method is not thread-safe. Use try_acquire_async() instead
+        for async code, or ensure external synchronization when calling this method.
 
         Returns True if the request is allowed, False if rate limited.
         Does not record the request - use acquire() if you want to proceed.
@@ -367,6 +369,27 @@ class RateLimiter:
         self._cleanup_old_requests(now)
         wait_time = self._calculate_wait_time(now, tokens)
         return wait_time <= 0
+
+    async def try_acquire_async(self, tokens: int = 0) -> bool:
+        """Try to acquire permission without waiting (thread-safe async version).
+
+        This is the thread-safe async version of try_acquire. It properly
+        acquires the lock before checking rate limit state.
+
+        Returns True if the request is allowed, False if rate limited.
+        Does not record the request - use acquire() if you want to proceed.
+
+        Args:
+            tokens: Number of tokens this request will use
+
+        Returns:
+            True if the request would be allowed
+        """
+        async with self._lock:
+            now = time.monotonic()
+            self._cleanup_old_requests(now)
+            wait_time = self._calculate_wait_time(now, tokens)
+            return wait_time <= 0
 
     def get_stats(self) -> RateLimitStats:
         """Get current rate limiter statistics.
@@ -509,6 +532,7 @@ def reset_all_rate_limiters() -> None:
 
 
 # Convenience functions for common configurations
+
 
 def create_rate_limiter(
     *,

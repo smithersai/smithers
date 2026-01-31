@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import patch
 
 import pytest
 
 from smithers.ratelimit import (
     CLAUDE_TIER_1_LIMITS,
     CLAUDE_TIER_2_LIMITS,
-    RateLimiter,
     RateLimitConfig,
+    RateLimiter,
     RateLimitExceededAction,
     RateLimitExceededError,
     RateLimitStats,
@@ -168,10 +167,12 @@ class TestRateLimiterRPM:
     @pytest.mark.asyncio
     async def test_rpm_error_mode(self) -> None:
         """Test RPM limit with ERROR action."""
-        limiter = RateLimiter(RateLimitConfig(
-            requests_per_minute=2,
-            on_exceeded=RateLimitExceededAction.ERROR,
-        ))
+        limiter = RateLimiter(
+            RateLimitConfig(
+                requests_per_minute=2,
+                on_exceeded=RateLimitExceededAction.ERROR,
+            )
+        )
 
         await limiter.acquire()
         await limiter.acquire()
@@ -201,10 +202,12 @@ class TestRateLimiterRPS:
     @pytest.mark.asyncio
     async def test_rps_error_mode(self) -> None:
         """Test RPS limit with ERROR action."""
-        limiter = RateLimiter(RateLimitConfig(
-            requests_per_second=1,
-            on_exceeded=RateLimitExceededAction.ERROR,
-        ))
+        limiter = RateLimiter(
+            RateLimitConfig(
+                requests_per_second=1,
+                on_exceeded=RateLimitExceededAction.ERROR,
+            )
+        )
 
         await limiter.acquire()
 
@@ -232,10 +235,12 @@ class TestRateLimiterTPM:
     @pytest.mark.asyncio
     async def test_tpm_error_mode(self) -> None:
         """Test TPM limit with ERROR action."""
-        limiter = RateLimiter(RateLimitConfig(
-            tokens_per_minute=1000,
-            on_exceeded=RateLimitExceededAction.ERROR,
-        ))
+        limiter = RateLimiter(
+            RateLimitConfig(
+                tokens_per_minute=1000,
+                on_exceeded=RateLimitExceededAction.ERROR,
+            )
+        )
 
         await limiter.acquire(tokens=800)
 
@@ -251,10 +256,12 @@ class TestRateLimiterWaiting:
     @pytest.mark.asyncio
     async def test_wait_mode_actually_waits(self) -> None:
         """Test that WAIT mode actually delays."""
-        limiter = RateLimiter(RateLimitConfig(
-            requests_per_second=1,
-            on_exceeded=RateLimitExceededAction.WAIT,
-        ))
+        limiter = RateLimiter(
+            RateLimitConfig(
+                requests_per_second=1,
+                on_exceeded=RateLimitExceededAction.WAIT,
+            )
+        )
 
         await limiter.acquire()
 
@@ -268,10 +275,12 @@ class TestRateLimiterWaiting:
     @pytest.mark.asyncio
     async def test_wait_stats_tracked(self) -> None:
         """Test that wait statistics are tracked."""
-        limiter = RateLimiter(RateLimitConfig(
-            requests_per_second=1,
-            on_exceeded=RateLimitExceededAction.WAIT,
-        ))
+        limiter = RateLimiter(
+            RateLimitConfig(
+                requests_per_second=1,
+                on_exceeded=RateLimitExceededAction.WAIT,
+            )
+        )
 
         await limiter.acquire()
         await limiter.acquire()  # Will wait
@@ -518,10 +527,12 @@ class TestRateLimiterConcurrency:
     @pytest.mark.asyncio
     async def test_concurrent_acquire_with_limit(self) -> None:
         """Test concurrent acquire respects limits."""
-        limiter = RateLimiter(RateLimitConfig(
-            requests_per_second=5,
-            on_exceeded=RateLimitExceededAction.WAIT,
-        ))
+        limiter = RateLimiter(
+            RateLimitConfig(
+                requests_per_second=5,
+                on_exceeded=RateLimitExceededAction.WAIT,
+            )
+        )
 
         start = time.monotonic()
 
@@ -561,6 +572,7 @@ class TestRateLimiterWindowCleanup:
 
         # Add a request manually with old timestamp
         from smithers.ratelimit import _TimestampedRequest
+
         old_time = time.monotonic() - 120  # 2 minutes ago
         limiter._requests.append(_TimestampedRequest(timestamp=old_time, tokens=100))
 
@@ -600,10 +612,12 @@ class TestTokenBucketStrategy:
     @pytest.mark.asyncio
     async def test_token_bucket_basic(self) -> None:
         """Test basic token bucket behavior."""
-        limiter = RateLimiter(RateLimitConfig(
-            requests_per_minute=60,
-            strategy=RateLimitStrategy.TOKEN_BUCKET,
-        ))
+        limiter = RateLimiter(
+            RateLimitConfig(
+                requests_per_minute=60,
+                strategy=RateLimitStrategy.TOKEN_BUCKET,
+            )
+        )
 
         # Should allow initial burst
         for _ in range(5):
@@ -613,12 +627,60 @@ class TestTokenBucketStrategy:
     @pytest.mark.asyncio
     async def test_token_bucket_with_burst(self) -> None:
         """Test token bucket with burst allowance."""
-        limiter = RateLimiter(RateLimitConfig(
-            requests_per_minute=60,
-            strategy=RateLimitStrategy.TOKEN_BUCKET,
-            burst_allowance=2.0,  # Allow 2x burst
-        ))
+        limiter = RateLimiter(
+            RateLimitConfig(
+                requests_per_minute=60,
+                strategy=RateLimitStrategy.TOKEN_BUCKET,
+                burst_allowance=2.0,  # Allow 2x burst
+            )
+        )
 
         # Config allows up to 120 requests in burst (60 * 2)
         stats = limiter.get_stats()
         assert stats.total_requests == 0
+
+
+class TestTryAcquireThreadSafety:
+    """Tests for try_acquire thread safety."""
+
+    @pytest.mark.asyncio
+    async def test_try_acquire_is_thread_safe(self) -> None:
+        """Test that try_acquire is thread-safe under concurrent access.
+
+        This test verifies that concurrent calls to try_acquire don't
+        cause race conditions when cleaning up old requests.
+        """
+        limiter = RateLimiter(RateLimitConfig(requests_per_minute=100))
+
+        # Make some initial requests
+        for _ in range(10):
+            await limiter.acquire()
+
+        # Now run many concurrent try_acquire calls
+        async def try_many() -> list[bool]:
+            results: list[bool] = []
+            for _ in range(20):
+                results.append(await limiter.try_acquire_async())
+            return results
+
+        # Run multiple concurrent batches
+        tasks = [try_many() for _ in range(10)]
+        await asyncio.gather(*tasks)
+
+        # Should complete without errors and stats should be consistent
+        stats = limiter.get_stats()
+        assert stats.total_requests == 10  # Only the initial acquire calls count
+
+    @pytest.mark.asyncio
+    async def test_try_acquire_async_returns_correct_result(self) -> None:
+        """Test that try_acquire_async returns the same result as try_acquire."""
+        limiter = RateLimiter(RateLimitConfig(requests_per_minute=2))
+
+        # Initially should be allowed
+        assert await limiter.try_acquire_async() is True
+
+        # After 2 acquires, should be rate limited
+        await limiter.acquire()
+        await limiter.acquire()
+
+        assert await limiter.try_acquire_async() is False
