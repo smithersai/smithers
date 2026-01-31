@@ -197,7 +197,9 @@ def main() -> int:
     ratelimit_sub = ratelimit_parser.add_subparsers(dest="ratelimit_command")
 
     # ratelimit status
-    ratelimit_status_parser = ratelimit_sub.add_parser("status", help="Show current rate limit status")
+    ratelimit_status_parser = ratelimit_sub.add_parser(
+        "status", help="Show current rate limit status"
+    )
     ratelimit_status_parser.add_argument(
         "--format",
         choices=["text", "json"],
@@ -282,7 +284,9 @@ def main() -> int:
     metrics_sub = metrics_parser.add_subparsers(dest="metrics_command")
 
     # metrics serve
-    metrics_serve_parser = metrics_sub.add_parser("serve", help="Start metrics HTTP server for Prometheus scraping")
+    metrics_serve_parser = metrics_sub.add_parser(
+        "serve", help="Start metrics HTTP server for Prometheus scraping"
+    )
     metrics_serve_parser.add_argument(
         "--host",
         default="0.0.0.0",
@@ -310,7 +314,9 @@ def main() -> int:
     )
 
     # websocket command - start WebSocket server for real-time updates
-    websocket_parser = subparsers.add_parser("websocket", help="WebSocket server for real-time progress updates")
+    websocket_parser = subparsers.add_parser(
+        "websocket", help="WebSocket server for real-time progress updates"
+    )
     websocket_sub = websocket_parser.add_subparsers(dest="websocket_command")
 
     # websocket serve
@@ -339,7 +345,9 @@ def main() -> int:
     )
 
     # websocket status
-    websocket_status_parser = websocket_sub.add_parser("status", help="Show WebSocket server status")
+    websocket_status_parser = websocket_sub.add_parser(
+        "status", help="Show WebSocket server status"
+    )
     websocket_status_parser.add_argument(
         "--format",
         choices=["text", "json"],
@@ -352,7 +360,9 @@ def main() -> int:
     compose_sub = compose_parser.add_subparsers(dest="compose_command")
 
     # compose info
-    compose_info_parser = compose_sub.add_parser("info", help="Show composition information for a workflow")
+    compose_info_parser = compose_sub.add_parser(
+        "info", help="Show composition information for a workflow"
+    )
     compose_info_parser.add_argument("file", help="Path to the workflow file")
     compose_info_parser.add_argument(
         "--workflow",
@@ -367,7 +377,9 @@ def main() -> int:
     )
 
     # compose merge
-    compose_merge_parser = compose_sub.add_parser("merge", help="Merge multiple workflow files into a combined graph")
+    compose_merge_parser = compose_sub.add_parser(
+        "merge", help="Merge multiple workflow files into a combined graph"
+    )
     compose_merge_parser.add_argument("files", nargs="+", help="Paths to workflow files to merge")
     compose_merge_parser.add_argument(
         "--target",
@@ -384,6 +396,121 @@ def main() -> int:
         "--format",
         choices=["mermaid", "json", "ascii"],
         default="mermaid",
+        help="Output format",
+    )
+
+    # snapshot command - workflow versioning and comparison
+    snapshot_parser = subparsers.add_parser(
+        "snapshot", help="Workflow snapshot and version comparison"
+    )
+    snapshot_sub = snapshot_parser.add_subparsers(dest="snapshot_command")
+
+    # snapshot create
+    snapshot_create_parser = snapshot_sub.add_parser(
+        "create", help="Create a snapshot of a workflow graph"
+    )
+    snapshot_create_parser.add_argument("file", help="Path to the workflow file")
+    snapshot_create_parser.add_argument(
+        "--workflow",
+        help="Specific workflow to snapshot (default: last defined)",
+        default=None,
+    )
+    snapshot_create_parser.add_argument(
+        "--version",
+        "-v",
+        dest="snapshot_version",
+        help="Version string for the snapshot (default: 1.0.0)",
+        default="1.0.0",
+    )
+    snapshot_create_parser.add_argument(
+        "--description",
+        "-d",
+        help="Description of the snapshot",
+        default="",
+    )
+    snapshot_create_parser.add_argument(
+        "--output",
+        "-o",
+        help="Output file for the snapshot (default: stdout)",
+        default=None,
+    )
+    snapshot_create_parser.add_argument(
+        "--store",
+        help="Directory to store snapshots for versioning",
+        default=None,
+    )
+
+    # snapshot diff
+    snapshot_diff_parser = snapshot_sub.add_parser("diff", help="Compare two workflow snapshots")
+    snapshot_diff_parser.add_argument(
+        "old",
+        help="Path to old snapshot file or version (if --store is used)",
+    )
+    snapshot_diff_parser.add_argument(
+        "new",
+        help="Path to new snapshot file or version (if --store is used)",
+    )
+    snapshot_diff_parser.add_argument(
+        "--store",
+        help="Directory containing versioned snapshots",
+        default=None,
+    )
+    snapshot_diff_parser.add_argument(
+        "--workflow",
+        help="Workflow name (required when using --store)",
+        default=None,
+    )
+    snapshot_diff_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format",
+    )
+    snapshot_diff_parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable colored output",
+    )
+
+    # snapshot list
+    snapshot_list_parser = snapshot_sub.add_parser("list", help="List available snapshots")
+    snapshot_list_parser.add_argument(
+        "--store",
+        required=True,
+        help="Directory containing versioned snapshots",
+    )
+    snapshot_list_parser.add_argument(
+        "--workflow",
+        help="Filter by workflow name",
+        default=None,
+    )
+    snapshot_list_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format",
+    )
+
+    # snapshot show
+    snapshot_show_parser = snapshot_sub.add_parser("show", help="Show details of a snapshot")
+    snapshot_show_parser.add_argument(
+        "snapshot",
+        help="Path to snapshot file or version (if --store is used)",
+    )
+    snapshot_show_parser.add_argument(
+        "--store",
+        help="Directory containing versioned snapshots",
+        default=None,
+    )
+    snapshot_show_parser.add_argument(
+        "--workflow",
+        help="Workflow name (required when using --store)",
+        default=None,
+    )
+    snapshot_show_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
         help="Output format",
     )
 
@@ -429,6 +556,8 @@ def main() -> int:
         return _websocket_command(args)
     elif args.command == "compose":
         return _compose_command(args)
+    elif args.command == "snapshot":
+        return _snapshot_command(args)
 
     return 0
 
@@ -1372,13 +1501,14 @@ def _metrics_command(args: argparse.Namespace) -> int:
 
 def _metrics_serve(args: argparse.Namespace) -> int:
     """Start a metrics server for Prometheus scraping."""
-    from smithers.metrics import MetricsCollector, get_metrics_collector
+    from smithers.metrics import get_metrics_collector
 
     collector = get_metrics_collector()
 
     # Attach to event bus if a store is provided
     if args.store:
         from smithers.events import get_event_bus
+
         collector.attach_to_event_bus(get_event_bus())
 
     print(f"Starting metrics server on http://{args.host}:{args.port}/metrics")
@@ -1389,6 +1519,7 @@ def _metrics_serve(args: argparse.Namespace) -> int:
         # The server runs in the main thread when daemon=False is passed
         # But start_server starts a daemon thread, so we need to wait
         import time
+
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
@@ -1407,6 +1538,7 @@ def _metrics_export(args: argparse.Namespace) -> int:
         print(collector.export_prometheus())
     elif args.format == "opentelemetry":
         import json
+
         print(json.dumps(collector.export_opentelemetry(), indent=2))
     else:
         print(f"Unknown format: {args.format}", file=sys.stderr)
@@ -1530,9 +1662,9 @@ def _compose_info(args: argparse.Namespace) -> int:
         print("=" * 40)
         print(f"Name: {info['name']}")
         print(f"Composed: {info['is_composed']}")
-        if info['composition_type']:
+        if info["composition_type"]:
             print(f"Type: {info['composition_type']}")
-        if info['components']:
+        if info["components"]:
             print(f"Components: {', '.join(info['components'])}")
 
         # Additional workflow details
@@ -1541,7 +1673,9 @@ def _compose_info(args: argparse.Namespace) -> int:
         print("-" * 30)
         print(f"Output Type: {workflow.output_type.__name__}")
         if workflow.input_types:
-            print(f"Input Types: {', '.join(f'{k}: {v.__name__}' for k, v in workflow.input_types.items())}")
+            print(
+                f"Input Types: {', '.join(f'{k}: {v.__name__}' for k, v in workflow.input_types.items())}"
+            )
         if workflow.bound_args:
             print(f"Bound Arguments: {list(workflow.bound_args.keys())}")
         if workflow.bound_deps:
@@ -1605,6 +1739,217 @@ def _compose_merge(args: argparse.Namespace) -> int:
         print(f"Merged graph written to {args.output}")
     else:
         print(output)
+
+    return 0
+
+
+def _snapshot_command(args: argparse.Namespace) -> int:
+    """Handle snapshot subcommands."""
+    if args.snapshot_command == "create":
+        return _snapshot_create(args)
+    elif args.snapshot_command == "diff":
+        return _snapshot_diff(args)
+    elif args.snapshot_command == "list":
+        return _snapshot_list(args)
+    elif args.snapshot_command == "show":
+        return _snapshot_show(args)
+    else:
+        print("Unknown snapshot command. Use: create, diff, list, or show", file=sys.stderr)
+        return 1
+
+
+def _snapshot_create(args: argparse.Namespace) -> int:
+    """Create a snapshot of a workflow graph."""
+    from smithers.snapshot import SnapshotStore, create_snapshot
+
+    _load_module(args.file)
+    workflow = _select_workflow(args.workflow)
+    graph = build_graph(workflow)
+
+    snapshot = create_snapshot(
+        graph,
+        name=workflow.name,
+        version=args.snapshot_version,
+        description=args.description,
+    )
+
+    if args.store:
+        store = SnapshotStore(args.store)
+        path = store.save(snapshot)
+        print(f"Snapshot saved to: {path}")
+        print(f"  Name: {snapshot.name}")
+        print(f"  Version: {snapshot.version}")
+        print(f"  Nodes: {snapshot.node_count}")
+        print(f"  Edges: {snapshot.edge_count}")
+        print(f"  Hash: {snapshot.content_hash[:12]}...")
+        return 0
+
+    output = snapshot.to_json()
+    if args.output:
+        Path(args.output).write_text(output, encoding="utf-8")
+        print(f"Snapshot written to: {args.output}")
+    else:
+        print(output)
+
+    return 0
+
+
+def _snapshot_diff(args: argparse.Namespace) -> int:
+    """Compare two workflow snapshots."""
+    from smithers.snapshot import (
+        SnapshotStore,
+        diff_snapshots,
+        snapshot_from_json_file,
+    )
+
+    if args.store:
+        # Load from versioned store
+        if not args.workflow:
+            print("--workflow is required when using --store", file=sys.stderr)
+            return 1
+
+        store = SnapshotStore(args.store)
+        old_snapshot = store.load(args.workflow, args.old)
+        new_snapshot = store.load(args.workflow, args.new)
+
+        if old_snapshot is None:
+            print(f"Snapshot not found: {args.workflow} v{args.old}", file=sys.stderr)
+            return 1
+        if new_snapshot is None:
+            print(f"Snapshot not found: {args.workflow} v{args.new}", file=sys.stderr)
+            return 1
+    else:
+        # Load from files
+        old_path = Path(args.old)
+        new_path = Path(args.new)
+
+        if not old_path.exists():
+            print(f"Snapshot file not found: {args.old}", file=sys.stderr)
+            return 1
+        if not new_path.exists():
+            print(f"Snapshot file not found: {args.new}", file=sys.stderr)
+            return 1
+
+        old_snapshot = snapshot_from_json_file(args.old)
+        new_snapshot = snapshot_from_json_file(args.new)
+
+    diff = diff_snapshots(old_snapshot, new_snapshot)
+
+    if args.format == "json":
+        print(diff.to_json())
+    else:
+        print(diff.summary(use_colors=not args.no_color))
+
+    return 0 if not diff.has_breaking_changes else 1
+
+
+def _snapshot_list(args: argparse.Namespace) -> int:
+    """List available snapshots."""
+    from smithers.snapshot import SnapshotStore
+
+    store = SnapshotStore(args.store)
+    store_path = Path(args.store)
+
+    if not store_path.exists():
+        print(f"Store not found: {args.store}", file=sys.stderr)
+        return 1
+
+    # Find all workflows with snapshots
+    workflows: dict[str, list[str]] = {}
+    for filename in store_path.iterdir():
+        if filename.suffix == ".json":
+            # Parse name_version.json
+            name_parts = filename.stem.rsplit("_", 1)
+            if len(name_parts) == 2:
+                wf_name, version = name_parts
+                if args.workflow is None or wf_name == args.workflow:
+                    if wf_name not in workflows:
+                        workflows[wf_name] = []
+                    workflows[wf_name].append(version)
+
+    if args.format == "json":
+        output = {
+            "store": args.store,
+            "workflows": {name: sorted(versions) for name, versions in sorted(workflows.items())},
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        if not workflows:
+            print("No snapshots found.")
+            return 0
+
+        print("Workflow Snapshots")
+        print("=" * 50)
+        print(f"Store: {args.store}")
+        print()
+
+        for name, versions in sorted(workflows.items()):
+            print(f"{name}:")
+            for version in sorted(versions):
+                print(f"  - {version}")
+
+    return 0
+
+
+def _snapshot_show(args: argparse.Namespace) -> int:
+    """Show details of a snapshot."""
+    from smithers.snapshot import SnapshotStore, snapshot_from_json_file
+
+    if args.store:
+        if not args.workflow:
+            print("--workflow is required when using --store", file=sys.stderr)
+            return 1
+
+        store = SnapshotStore(args.store)
+        snapshot = store.load(args.workflow, args.snapshot)
+
+        if snapshot is None:
+            print(f"Snapshot not found: {args.workflow} v{args.snapshot}", file=sys.stderr)
+            return 1
+    else:
+        snapshot_path = Path(args.snapshot)
+        if not snapshot_path.exists():
+            print(f"Snapshot file not found: {args.snapshot}", file=sys.stderr)
+            return 1
+
+        snapshot = snapshot_from_json_file(args.snapshot)
+
+    if args.format == "json":
+        print(snapshot.to_json())
+    else:
+        print("Workflow Snapshot")
+        print("=" * 50)
+        print(f"Name:        {snapshot.name}")
+        print(f"Version:     {snapshot.version}")
+        print(f"Created:     {snapshot.created_at.isoformat()}")
+        print(f"Description: {snapshot.description or '(none)'}")
+        print(f"Root:        {snapshot.root}")
+        print(f"Content Hash: {snapshot.content_hash}")
+        print()
+        print("Statistics")
+        print("-" * 30)
+        print(f"  Nodes:  {snapshot.node_count}")
+        print(f"  Edges:  {snapshot.edge_count}")
+        print(f"  Levels: {snapshot.level_count}")
+        print()
+        print("Nodes")
+        print("-" * 30)
+        for node in snapshot.nodes:
+            deps = f" <- [{', '.join(node.dependencies)}]" if node.dependencies else ""
+            approval = " [requires approval]" if node.requires_approval else ""
+            print(f"  {node.name}: {node.output_type_name}{deps}{approval}")
+        print()
+        print("Execution Levels")
+        print("-" * 30)
+        for i, level in enumerate(snapshot.levels):
+            print(f"  Level {i}: {', '.join(level)}")
+
+        if snapshot.metadata:
+            print()
+            print("Metadata")
+            print("-" * 30)
+            for key, value in snapshot.metadata.items():
+                print(f"  {key}: {value}")
 
     return 0
 
