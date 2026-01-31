@@ -15,6 +15,7 @@ from smithers._shared import compute_cache_key as _cache_key
 from smithers._shared import dependency_namespace as _dependency_namespace
 from smithers._shared import hash_inputs as _hash_inputs
 from smithers._shared import normalize_invalidate as _normalize_invalidate
+from smithers._shared import prompt_for_approval as _prompt_for_approval
 from smithers._shared import resolve_workflow as _resolve_workflow
 from smithers._shared import validate_output as _validate_output
 from smithers.cache import Cache, SqliteCache
@@ -548,7 +549,4 @@ async def _maybe_require_approval(
     return True
 
 
-async def _prompt_for_approval(message: str) -> bool:
-    prompt = f"{message}\n\nProceed? [y/N]: "
-    response = await asyncio.to_thread(input, prompt)
-    return response.strip().lower() in {"y", "yes"}
+# Note: _prompt_for_approval is imported from _shared module as _prompt_for_approval

@@ -7,6 +7,7 @@ workflows, building kwargs, validating outputs, and computing hashes.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -253,3 +254,20 @@ def dependency_namespace(wf: Workflow, outputs: dict[str, Any]) -> SimpleNamespa
         else:
             data[param_name] = outputs.get(dep_wf.name)
     return SimpleNamespace(**data)
+
+
+async def prompt_for_approval(message: str) -> bool:
+    """Prompt the user for approval via stdin.
+
+    This is the shared implementation used by both graph.py and executor.py
+    for interactive approval prompts.
+
+    Args:
+        message: The approval message to display to the user.
+
+    Returns:
+        True if the user approves, False otherwise.
+    """
+    prompt = f"{message}\n\nProceed? [y/N]: "
+    response = await asyncio.to_thread(input, prompt)
+    return response.strip().lower() in {"y", "yes"}

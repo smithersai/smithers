@@ -41,6 +41,9 @@ from smithers._shared import (
     normalize_invalidate as _normalize_invalidate,
 )
 from smithers._shared import (
+    prompt_for_approval as _prompt_for_approval,
+)
+from smithers._shared import (
     resolve_workflow as _resolve_workflow,
 )
 from smithers._shared import (
@@ -1172,10 +1175,7 @@ async def _maybe_require_approval(
     return True
 
 
-async def _prompt_for_approval(message: str) -> bool:
-    prompt = f"{message}\n\nProceed? [y/N]: "
-    response = await asyncio.to_thread(input, prompt)
-    return response.strip().lower() in {"y", "yes"}
+# Note: _prompt_for_approval is imported from _shared module as _prompt_for_approval
 
 
 async def resume_run(
