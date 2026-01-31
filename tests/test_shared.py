@@ -622,3 +622,77 @@ class TestBuildKwargs:
 
         # Bound deps should be resolved
         assert "deps" in kwargs
+
+
+# =============================================================================
+# TypeAdapter caching tests
+# =============================================================================
+
+
+class TestTypeAdapterCaching:
+    """Tests for TypeAdapter caching in _get_type_adapter."""
+
+    def test_type_adapter_is_cached(self) -> None:
+        """TypeAdapter is cached and reused for the same type."""
+        from smithers._shared import _TYPE_ADAPTER_CACHE, _get_type_adapter
+
+        # Clear cache to ensure a clean test
+        _TYPE_ADAPTER_CACHE.clear()
+
+        # First call should create and cache the adapter
+        adapter1 = _get_type_adapter(OutputA)
+        # Second call should return the same cached adapter
+        adapter2 = _get_type_adapter(OutputA)
+
+        # Should be the same object (cached)
+        assert adapter1 is adapter2
+
+    def test_different_types_get_different_adapters(self) -> None:
+        """Different types get different cached adapters."""
+        from smithers._shared import _TYPE_ADAPTER_CACHE, _get_type_adapter
+
+        _TYPE_ADAPTER_CACHE.clear()
+
+        adapter_a = _get_type_adapter(OutputA)
+        adapter_b = _get_type_adapter(OutputB)
+
+        # Different types should have different adapters
+        assert adapter_a is not adapter_b
+
+    def test_cached_adapter_validates_correctly(self) -> None:
+        """Cached TypeAdapter still validates correctly."""
+        from smithers._shared import _TYPE_ADAPTER_CACHE, _get_type_adapter
+
+        _TYPE_ADAPTER_CACHE.clear()
+
+        adapter = _get_type_adapter(OutputA)
+
+        # Should validate correctly
+        result = adapter.validate_python({"value": "test"})
+        assert isinstance(result, OutputA)
+        assert result.value == "test"
+
+        # Validation should still work on second use
+        adapter2 = _get_type_adapter(OutputA)
+        result2 = adapter2.validate_python({"value": "test2"})
+        assert result2.value == "test2"
+
+    def test_validate_output_uses_cached_adapter(self) -> None:
+        """validate_output function uses the cached TypeAdapter."""
+        from smithers._shared import _TYPE_ADAPTER_CACHE
+
+        @workflow
+        async def cached_wf() -> OutputA:
+            return OutputA(value="cached")
+
+        _TYPE_ADAPTER_CACHE.clear()
+
+        # First validation should cache the adapter
+        validate_output(cached_wf, {"value": "first"})
+
+        # Adapter should now be in the cache
+        assert OutputA in _TYPE_ADAPTER_CACHE
+
+        # Second validation should reuse the cached adapter
+        result = validate_output(cached_wf, {"value": "second"})
+        assert result.value == "second"

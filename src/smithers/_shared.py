@@ -11,12 +11,18 @@ from collections.abc import Iterable
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 
 from smithers.errors import MissingProducerError
 from smithers.hashing import code_hash, hash_json
 from smithers.hashing import input_hash as compute_input_hash
 from smithers.workflow import Workflow, get_all_workflows, get_workflow_by_output
+
+# Cache TypeAdapters by output type to avoid repeated initialization overhead.
+# TypeAdapter initialization is expensive as it parses and compiles type schemas.
+# Output types are typically module-level classes that live for the program's lifetime,
+# so a regular dict is appropriate (no need for weak references).
+_TYPE_ADAPTER_CACHE: dict[type[BaseModel], TypeAdapter[BaseModel]] = {}
 
 if TYPE_CHECKING:
     from smithers.types import WorkflowGraph, WorkflowNode
@@ -117,6 +123,25 @@ def build_kwargs(wf: Workflow, outputs: dict[str, Any]) -> dict[str, Any]:
     return kwargs
 
 
+def _get_type_adapter(output_type: type[BaseModel]) -> TypeAdapter[BaseModel]:
+    """Get or create a cached TypeAdapter for the given output type.
+
+    TypeAdapter initialization is expensive as it involves parsing and compiling
+    type schemas. This function caches adapters to avoid repeated overhead.
+
+    Args:
+        output_type: The Pydantic model type to create an adapter for.
+
+    Returns:
+        A TypeAdapter instance for the given type.
+    """
+    adapter = _TYPE_ADAPTER_CACHE.get(output_type)
+    if adapter is None:
+        adapter = TypeAdapter(output_type)
+        _TYPE_ADAPTER_CACHE[output_type] = adapter
+    return adapter
+
+
 def validate_output(wf: Workflow, output: Any) -> Any:
     """Validate a workflow output against its declared type.
 
@@ -129,7 +154,7 @@ def validate_output(wf: Workflow, output: Any) -> Any:
     """
     if output is None and wf.output_optional:
         return None
-    adapter = TypeAdapter(wf.output_type)
+    adapter = _get_type_adapter(wf.output_type)
     return adapter.validate_python(output)
 
 
