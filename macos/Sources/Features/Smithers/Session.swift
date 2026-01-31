@@ -79,11 +79,47 @@ extension Session {
         )
         graph.addNode(assistantMsg1)
 
+        // Tool use: Read file
+        let toolUseRead = GraphNode(
+            id: UUID(),
+            type: .toolUse,
+            parentId: assistantMsg1.id,
+            timestamp: Date().addingTimeInterval(-285),
+            data: [
+                "tool_name": AnyCodable("Read"),
+                "status": AnyCodable("completed"),
+                "input": AnyCodable([
+                    "file_path": "/workspace/auth.py",
+                    "line_start": 1,
+                    "line_end": 100
+                ] as [String: Any]),
+                "duration": AnyCodable(0.42)
+            ]
+        )
+        graph.addNode(toolUseRead)
+        MockDataService.shared.registerNode(toolUseRead)
+
+        // Tool result: Read output
+        let toolResultRead = GraphNode(
+            id: UUID(),
+            type: .toolResult,
+            parentId: toolUseRead.id,
+            timestamp: Date().addingTimeInterval(-284),
+            data: [
+                "tool_name": AnyCodable("Read"),
+                "output": AnyCodable("def validate_token(token):\n    # Missing expiration check!\n    return token is not None\n\ndef authenticate(request):\n    token = request.headers.get('Authorization')\n    return validate_token(token)"),
+                "byte_count": AnyCodable(248),
+                "artifact_ref": AnyCodable("artifact://read-auth-py-001")
+            ]
+        )
+        graph.addNode(toolResultRead)
+        MockDataService.shared.registerNode(toolResultRead)
+
         // Another assistant message
         let assistantMsg2 = GraphNode(
             id: UUID(),
             type: .message,
-            parentId: assistantMsg1.id,
+            parentId: toolResultRead.id,
             timestamp: Date().addingTimeInterval(-240),
             data: [
                 "role": AnyCodable("assistant"),
@@ -92,11 +128,46 @@ extension Session {
         )
         graph.addNode(assistantMsg2)
 
+        // Tool use: Edit file
+        let toolUseEdit = GraphNode(
+            id: UUID(),
+            type: .toolUse,
+            parentId: assistantMsg2.id,
+            timestamp: Date().addingTimeInterval(-235),
+            data: [
+                "tool_name": AnyCodable("Edit"),
+                "status": AnyCodable("completed"),
+                "input": AnyCodable([
+                    "file_path": "/workspace/auth.py",
+                    "old_string": "def validate_token(token):\n    # Missing expiration check!\n    return token is not None",
+                    "new_string": "def validate_token(token):\n    if token is None:\n        return False\n    try:\n        expiry = token.get('exp')\n        return expiry > time.time()\n    except (KeyError, AttributeError):\n        return False"
+                ] as [String: Any]),
+                "duration": AnyCodable(0.18)
+            ]
+        )
+        graph.addNode(toolUseEdit)
+        MockDataService.shared.registerNode(toolUseEdit)
+
+        // Tool result: Edit success
+        let toolResultEdit = GraphNode(
+            id: UUID(),
+            type: .toolResult,
+            parentId: toolUseEdit.id,
+            timestamp: Date().addingTimeInterval(-234),
+            data: [
+                "tool_name": AnyCodable("Edit"),
+                "output": AnyCodable("Successfully edited /workspace/auth.py"),
+                "byte_count": AnyCodable(42)
+            ]
+        )
+        graph.addNode(toolResultEdit)
+        MockDataService.shared.registerNode(toolResultEdit)
+
         // User follow-up
         let userMsg2 = GraphNode(
             id: UUID(),
             type: .message,
-            parentId: assistantMsg2.id,
+            parentId: toolResultEdit.id,
             timestamp: Date().addingTimeInterval(-180),
             data: [
                 "role": AnyCodable("user"),
@@ -117,6 +188,41 @@ extension Session {
             ]
         )
         graph.addNode(assistantMsg3)
+
+        // Tool use: Run tests
+        let toolUseBash = GraphNode(
+            id: UUID(),
+            type: .toolUse,
+            parentId: assistantMsg3.id,
+            timestamp: Date().addingTimeInterval(-115),
+            data: [
+                "tool_name": AnyCodable("Bash"),
+                "status": AnyCodable("completed"),
+                "input": AnyCodable([
+                    "command": "pytest tests/test_auth.py -v",
+                    "cwd": "/workspace"
+                ] as [String: Any]),
+                "duration": AnyCodable(2.34)
+            ]
+        )
+        graph.addNode(toolUseBash)
+        MockDataService.shared.registerNode(toolUseBash)
+
+        // Tool result: Test output
+        let toolResultBash = GraphNode(
+            id: UUID(),
+            type: .toolResult,
+            parentId: toolUseBash.id,
+            timestamp: Date().addingTimeInterval(-112),
+            data: [
+                "tool_name": AnyCodable("Bash"),
+                "output": AnyCodable("============================= test session starts ==============================\ntests/test_auth.py::test_valid_token PASSED [ 33%]\ntests/test_auth.py::test_expired_token PASSED [ 66%]\ntests/test_auth.py::test_invalid_token PASSED [100%]\n\n============================== 3 passed in 0.12s ==============================="),
+                "byte_count": AnyCodable(312),
+                "artifact_ref": AnyCodable("artifact://bash-pytest-001")
+            ]
+        )
+        graph.addNode(toolResultBash)
+        MockDataService.shared.registerNode(toolResultBash)
 
         return graph
     }
