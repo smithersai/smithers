@@ -6,8 +6,9 @@ struct GraphView: View {
     @Binding var selectedNodeId: UUID?
 
     @State private var offset = CGSize.zero
+    @State private var previousOffset = CGSize.zero
     @State private var scale: CGFloat = 1.0
-    @State private var isDragging = false
+    @State private var previousScale: CGFloat = 1.0
     @State private var layoutResult: GraphLayoutResult?
 
     private let layoutEngine = GraphLayoutEngine()
@@ -131,21 +132,23 @@ struct GraphView: View {
     private var dragGesture: some Gesture {
         DragGesture()
             .onChanged { value in
-                isDragging = true
                 offset = CGSize(
-                    width: offset.width + value.translation.width,
-                    height: offset.height + value.translation.height
+                    width: previousOffset.width + value.translation.width,
+                    height: previousOffset.height + value.translation.height
                 )
             }
             .onEnded { _ in
-                isDragging = false
+                previousOffset = offset
             }
     }
 
     private var magnificationGesture: some Gesture {
         MagnificationGesture()
             .onChanged { value in
-                scale = max(0.5, min(2.0, value))
+                scale = max(0.5, min(2.0, previousScale * value))
+            }
+            .onEnded { _ in
+                previousScale = scale
             }
     }
 
