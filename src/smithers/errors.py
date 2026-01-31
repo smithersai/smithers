@@ -69,6 +69,139 @@ class ToolError(SmithersError):
         self.data = data
 
 
+class GraphBuildError(SmithersError, ValueError):
+    """Base class for errors during graph building.
+
+    Inherits from ValueError for backwards compatibility with code that
+    catches ValueError for graph building failures.
+    """
+
+
+class CycleError(GraphBuildError):
+    """Raised when a circular dependency is detected during graph building.
+
+    Attributes:
+        workflow_name: Name of the workflow where the cycle was detected
+        cycle_path: List of workflow names forming the cycle (if available)
+        message: Descriptive error message
+
+    Example:
+        A workflow that depends on its own output creates a cycle::
+
+            @workflow
+            async def refine(data: RefineOutput) -> RefineOutput:
+                ...  # This creates a self-referential cycle
+
+        Two workflows that depend on each other::
+
+            @workflow
+            async def a(b_out: BOutput) -> AOutput: ...
+
+            @workflow
+            async def b(a_out: AOutput) -> BOutput: ...
+    """
+
+    def __init__(
+        self,
+        workflow_name: str,
+        message: str | None = None,
+        *,
+        cycle_path: list[str] | None = None,
+    ) -> None:
+        self.workflow_name = workflow_name
+        self.cycle_path = cycle_path or []
+        if message is None:
+            if cycle_path:
+                message = (
+                    f"Circular dependency detected in workflow '{workflow_name}': "
+                    f"{' -> '.join(cycle_path)} -> {workflow_name}"
+                )
+            else:
+                message = f"Circular dependency detected involving workflow '{workflow_name}'"
+        super().__init__(message)
+
+
+class MissingProducerError(GraphBuildError):
+    """Raised when no workflow produces a required dependency type.
+
+    Attributes:
+        workflow_name: Name of the workflow with the missing dependency
+        param_name: Name of the parameter requiring the dependency
+        required_type: The type that no workflow produces
+        registered_types: List of currently registered output types (for debugging)
+
+    Example:
+        When a workflow depends on a type that no other workflow produces::
+
+            class OrphanType(BaseModel):
+                value: str
+
+            @workflow
+            async def needs_orphan(o: OrphanType) -> OutputType:
+                ...  # Raises MissingProducerError
+    """
+
+    def __init__(
+        self,
+        workflow_name: str,
+        param_name: str,
+        required_type: type,
+        *,
+        registered_types: list[str] | None = None,
+    ) -> None:
+        self.workflow_name = workflow_name
+        self.param_name = param_name
+        self.required_type = required_type
+        self.registered_types = registered_types or []
+        type_name = getattr(required_type, "__name__", str(required_type))
+        message = (
+            f"Workflow '{workflow_name}' depends on '{param_name}: {type_name}', "
+            f"but no workflow produces that type"
+        )
+        if registered_types:
+            message += f". Registered types: {', '.join(registered_types)}"
+        super().__init__(message)
+
+
+class DuplicateProducerError(GraphBuildError):
+    """Raised when multiple workflows produce the same output type.
+
+    Attributes:
+        output_type: The output type that has multiple producers
+        existing_workflow: Name of the already-registered workflow
+        new_workflow: Name of the workflow attempting to register
+
+    Example:
+        When two workflows are registered with the same output type::
+
+            @workflow
+            async def producer1() -> SharedOutput:
+                ...
+
+            @workflow  # Raises DuplicateProducerError
+            async def producer2() -> SharedOutput:
+                ...
+
+        To avoid this error, use `register=False` for one of the workflows.
+    """
+
+    def __init__(
+        self,
+        output_type: type,
+        existing_workflow: str,
+        new_workflow: str,
+    ) -> None:
+        self.output_type = output_type
+        self.existing_workflow = existing_workflow
+        self.new_workflow = new_workflow
+        type_name = getattr(output_type, "__name__", str(output_type))
+        super().__init__(
+            f"Multiple workflows produce {type_name}: "
+            f"'{existing_workflow}' and '{new_workflow}'. "
+            f"Use @workflow(register=False) for one of them, or use explicit binding."
+        )
+
+
 class SmithersTimeoutError(SmithersError):
     """Base class for timeout-related errors.
 
@@ -187,6 +320,22 @@ def _serialize_error(
             payload["completed_nodes"] = list(error.completed_nodes)
         if error.running_nodes:
             payload["running_nodes"] = list(error.running_nodes)
+    elif isinstance(error, CycleError):
+        payload["workflow_name"] = error.workflow_name
+        if error.cycle_path:
+            payload["cycle_path"] = list(error.cycle_path)
+    elif isinstance(error, MissingProducerError):
+        payload["workflow_name"] = error.workflow_name
+        payload["param_name"] = error.param_name
+        payload["required_type"] = getattr(
+            error.required_type, "__name__", str(error.required_type)
+        )
+        if error.registered_types:
+            payload["registered_types"] = list(error.registered_types)
+    elif isinstance(error, DuplicateProducerError):
+        payload["output_type"] = getattr(error.output_type, "__name__", str(error.output_type))
+        payload["existing_workflow"] = error.existing_workflow
+        payload["new_workflow"] = error.new_workflow
 
     if max_depth > 0:
         cause = error.__cause__ or (

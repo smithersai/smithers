@@ -7,7 +7,11 @@ import pytest
 from smithers.errors import (
     ApprovalRejected,
     ClaudeError,
+    CycleError,
+    DuplicateProducerError,
+    GraphBuildError,
     GraphTimeoutError,
+    MissingProducerError,
     RateLimitError,
     SmithersError,
     SmithersTimeoutError,
@@ -945,3 +949,248 @@ class TestSerializeError:
 
         # Context should be suppressed
         assert "cause" not in result
+
+
+# ============================================================================
+# GraphBuildError Tests
+# ============================================================================
+
+
+class TestGraphBuildError:
+    """Tests for GraphBuildError base class."""
+
+    def test_basic_creation(self) -> None:
+        """Test creating a basic GraphBuildError."""
+        error = GraphBuildError("Graph building failed")
+        assert str(error) == "Graph building failed"
+
+    def test_inherits_from_smithers_error(self) -> None:
+        """Test that GraphBuildError inherits from SmithersError."""
+        assert issubclass(GraphBuildError, SmithersError)
+
+    def test_inherits_from_value_error(self) -> None:
+        """Test that GraphBuildError inherits from ValueError for backwards compatibility."""
+        assert issubclass(GraphBuildError, ValueError)
+
+    def test_can_be_caught_as_value_error(self) -> None:
+        """Test that GraphBuildError can be caught as ValueError."""
+        with pytest.raises(ValueError):
+            raise GraphBuildError("test")
+
+    def test_can_be_caught_as_smithers_error(self) -> None:
+        """Test that GraphBuildError can be caught as SmithersError."""
+        with pytest.raises(SmithersError):
+            raise GraphBuildError("test")
+
+
+# ============================================================================
+# CycleError Tests
+# ============================================================================
+
+
+class TestCycleError:
+    """Tests for CycleError exception."""
+
+    def test_basic_creation(self) -> None:
+        """Test creating a basic CycleError."""
+        error = CycleError("my_workflow")
+        assert "my_workflow" in str(error)
+        assert error.workflow_name == "my_workflow"
+        assert error.cycle_path == []
+
+    def test_with_custom_message(self) -> None:
+        """Test CycleError with custom message."""
+        error = CycleError("my_workflow", "Custom cycle message")
+        assert str(error) == "Custom cycle message"
+        assert error.workflow_name == "my_workflow"
+
+    def test_with_cycle_path(self) -> None:
+        """Test CycleError with cycle path."""
+        path = ["a", "b", "c"]
+        error = CycleError("a", cycle_path=path)
+        assert error.cycle_path == path
+        assert "a -> b -> c -> a" in str(error)
+
+    def test_inherits_from_graph_build_error(self) -> None:
+        """Test that CycleError inherits from GraphBuildError."""
+        assert issubclass(CycleError, GraphBuildError)
+
+    def test_inherits_from_value_error(self) -> None:
+        """Test that CycleError inherits from ValueError for backwards compatibility."""
+        assert issubclass(CycleError, ValueError)
+
+    def test_can_be_caught_as_value_error(self) -> None:
+        """Test that CycleError can be caught as ValueError (backwards compatibility)."""
+        with pytest.raises(ValueError, match="Circular dependency"):
+            raise CycleError("workflow_a", cycle_path=["workflow_a", "workflow_b"])
+
+    def test_serialization(self) -> None:
+        """Test that CycleError serializes correctly."""
+        error = CycleError("my_workflow", cycle_path=["a", "b", "c"])
+        result = serialize_error(error)
+        assert result["type"] == "CycleError"
+        assert result["workflow_name"] == "my_workflow"
+        assert result["cycle_path"] == ["a", "b", "c"]
+
+
+# ============================================================================
+# MissingProducerError Tests
+# ============================================================================
+
+
+class TestMissingProducerError:
+    """Tests for MissingProducerError exception."""
+
+    def test_basic_creation(self) -> None:
+        """Test creating a basic MissingProducerError."""
+        error = MissingProducerError(
+            workflow_name="my_workflow",
+            param_name="input_data",
+            required_type=str,
+        )
+        assert "my_workflow" in str(error)
+        assert "input_data" in str(error)
+        assert "str" in str(error)
+        assert error.workflow_name == "my_workflow"
+        assert error.param_name == "input_data"
+        assert error.required_type is str
+
+    def test_with_registered_types(self) -> None:
+        """Test MissingProducerError with registered types for debugging."""
+        error = MissingProducerError(
+            workflow_name="my_workflow",
+            param_name="data",
+            required_type=str,
+            registered_types=["TypeA", "TypeB", "TypeC"],
+        )
+        assert error.registered_types == ["TypeA", "TypeB", "TypeC"]
+        assert "TypeA" in str(error)
+        assert "TypeB" in str(error)
+        assert "TypeC" in str(error)
+
+    def test_inherits_from_graph_build_error(self) -> None:
+        """Test that MissingProducerError inherits from GraphBuildError."""
+        assert issubclass(MissingProducerError, GraphBuildError)
+
+    def test_inherits_from_value_error(self) -> None:
+        """Test that MissingProducerError inherits from ValueError."""
+        assert issubclass(MissingProducerError, ValueError)
+
+    def test_can_be_caught_as_value_error(self) -> None:
+        """Test backwards compatibility with ValueError catching."""
+        with pytest.raises(ValueError, match="no workflow produces"):
+            raise MissingProducerError("wf", "param", str)
+
+    def test_serialization(self) -> None:
+        """Test that MissingProducerError serializes correctly."""
+        error = MissingProducerError(
+            workflow_name="my_workflow",
+            param_name="input",
+            required_type=int,
+            registered_types=["A", "B"],
+        )
+        result = serialize_error(error)
+        assert result["type"] == "MissingProducerError"
+        assert result["workflow_name"] == "my_workflow"
+        assert result["param_name"] == "input"
+        assert result["required_type"] == "int"
+        assert result["registered_types"] == ["A", "B"]
+
+
+# ============================================================================
+# DuplicateProducerError Tests
+# ============================================================================
+
+
+class TestDuplicateProducerError:
+    """Tests for DuplicateProducerError exception."""
+
+    def test_basic_creation(self) -> None:
+        """Test creating a basic DuplicateProducerError."""
+        error = DuplicateProducerError(
+            output_type=str,
+            existing_workflow="producer1",
+            new_workflow="producer2",
+        )
+        assert "producer1" in str(error)
+        assert "producer2" in str(error)
+        assert "str" in str(error)
+        assert error.output_type is str
+        assert error.existing_workflow == "producer1"
+        assert error.new_workflow == "producer2"
+
+    def test_message_contains_resolution_hint(self) -> None:
+        """Test that error message contains hint about register=False."""
+        error = DuplicateProducerError(str, "a", "b")
+        assert "register=False" in str(error)
+
+    def test_inherits_from_graph_build_error(self) -> None:
+        """Test that DuplicateProducerError inherits from GraphBuildError."""
+        assert issubclass(DuplicateProducerError, GraphBuildError)
+
+    def test_inherits_from_value_error(self) -> None:
+        """Test that DuplicateProducerError inherits from ValueError."""
+        assert issubclass(DuplicateProducerError, ValueError)
+
+    def test_can_be_caught_as_value_error(self) -> None:
+        """Test backwards compatibility with ValueError catching."""
+        with pytest.raises(ValueError, match="Multiple workflows produce"):
+            raise DuplicateProducerError(str, "wf1", "wf2")
+
+    def test_serialization(self) -> None:
+        """Test that DuplicateProducerError serializes correctly."""
+        error = DuplicateProducerError(
+            output_type=dict,
+            existing_workflow="existing",
+            new_workflow="new",
+        )
+        result = serialize_error(error)
+        assert result["type"] == "DuplicateProducerError"
+        assert result["output_type"] == "dict"
+        assert result["existing_workflow"] == "existing"
+        assert result["new_workflow"] == "new"
+
+
+# ============================================================================
+# Graph Build Error Integration Tests
+# ============================================================================
+
+
+class TestGraphBuildErrorIntegration:
+    """Integration tests for graph building errors."""
+
+    def test_all_graph_build_errors_are_value_errors(self) -> None:
+        """Verify all graph build errors can be caught as ValueError."""
+        errors: list[Exception] = [
+            GraphBuildError("base"),
+            CycleError("wf"),
+            MissingProducerError("wf", "p", str),
+            DuplicateProducerError(str, "a", "b"),
+        ]
+        for error in errors:
+            assert isinstance(error, ValueError)
+            assert isinstance(error, SmithersError)
+
+    def test_all_graph_build_errors_are_smithers_errors(self) -> None:
+        """Verify all graph build errors are SmithersErrors."""
+        errors: list[Exception] = [
+            GraphBuildError("base"),
+            CycleError("wf"),
+            MissingProducerError("wf", "p", str),
+            DuplicateProducerError(str, "a", "b"),
+        ]
+        for error in errors:
+            assert isinstance(error, SmithersError)
+
+    def test_catch_all_graph_build_errors_with_graph_build_error(self) -> None:
+        """Test that all graph build errors can be caught with GraphBuildError."""
+        for ErrorClass in [CycleError, MissingProducerError, DuplicateProducerError]:
+            try:
+                if ErrorClass == CycleError:
+                    raise CycleError("wf")
+                elif ErrorClass == MissingProducerError:
+                    raise MissingProducerError("wf", "p", str)
+                else:
+                    raise DuplicateProducerError(str, "a", "b")
+            except GraphBuildError:
+                pass  # Expected

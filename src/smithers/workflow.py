@@ -85,7 +85,7 @@ from typing import Any, ParamSpec, TypeVar, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
 
-from smithers.errors import ApprovalRejected
+from smithers.errors import ApprovalRejected, DuplicateProducerError
 from smithers.types import NO_RETRY, RetryPolicy
 
 P = ParamSpec("P")
@@ -332,8 +332,10 @@ def workflow(
         if register:
             if output_type in _registry:
                 existing = _registry[output_type]
-                raise ValueError(
-                    f"Multiple workflows produce {output_type.__name__}: {existing.name} and {func.__name__}"
+                raise DuplicateProducerError(
+                    output_type=output_type,
+                    existing_workflow=existing.name,
+                    new_workflow=func.__name__,
                 )
             _registry[wf.output_type] = wf
 

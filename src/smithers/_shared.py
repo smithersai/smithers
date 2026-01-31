@@ -13,9 +13,10 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import TypeAdapter
 
+from smithers.errors import MissingProducerError
 from smithers.hashing import code_hash, hash_json
 from smithers.hashing import input_hash as compute_input_hash
-from smithers.workflow import Workflow, get_workflow_by_output
+from smithers.workflow import Workflow, get_all_workflows, get_workflow_by_output
 
 if TYPE_CHECKING:
     from smithers.types import WorkflowGraph, WorkflowNode
@@ -46,9 +47,7 @@ def normalize_invalidate(
         elif isinstance(item, str):
             normalized.add(item)
         else:
-            raise TypeError(
-                "invalidate must contain workflow names (str) or Workflow objects"
-            )
+            raise TypeError("invalidate must contain workflow names (str) or Workflow objects")
     return normalized
 
 
@@ -103,9 +102,12 @@ def build_kwargs(wf: Workflow, outputs: dict[str, Any]) -> dict[str, Any]:
 
         dep_wf = get_workflow_by_output(param_type)
         if dep_wf is None:
-            raise ValueError(
-                f"Workflow '{wf.name}' depends on {param_type.__name__}, "
-                f"but no workflow produces that type"
+            registered = [t.__name__ for t in get_all_workflows()]
+            raise MissingProducerError(
+                workflow_name=wf.name,
+                param_name=param_name,
+                required_type=param_type,
+                registered_types=registered,
             )
         if wf.input_is_list.get(param_name, False):
             kwargs[param_name] = [outputs[dep_wf.name]]

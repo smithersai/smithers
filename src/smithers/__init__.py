@@ -64,7 +64,11 @@ from smithers.config import configure
 from smithers.errors import (
     ApprovalRejected,
     ClaudeError,
+    CycleError,
+    DuplicateProducerError,
+    GraphBuildError,
     GraphTimeoutError,
+    MissingProducerError,
     RateLimitError,
     SmithersTimeoutError,
     WorkflowError,
@@ -262,6 +266,9 @@ __all__ = [
     "ConnectionStats",
     # Metrics
     "CounterMetric",
+    # Graph building errors
+    "CycleError",
+    "DuplicateProducerError",
     "EdgeChange",
     "EmptyReduceError",
     "Event",
@@ -270,6 +277,7 @@ __all__ = [
     "ExecutionResult",
     "FakeLLMProvider",
     "GaugeMetric",
+    "GraphBuildError",
     "GraphDiff",
     "GraphMergeConflict",
     "GraphTimeoutError",
@@ -281,6 +289,7 @@ __all__ = [
     "IssueSeverity",
     "LoopIteration",
     "MetricsCollector",
+    "MissingProducerError",
     "ModelPricing",
     "NodeChange",
     "NodeSnapshot",

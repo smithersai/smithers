@@ -24,7 +24,7 @@ from smithers.conditions import (
     get_condition_policy,
 )
 from smithers.config import get_config
-from smithers.errors import ApprovalRejected, WorkflowError
+from smithers.errors import ApprovalRejected, CycleError, MissingProducerError, WorkflowError
 from smithers.types import (
     ApprovalRecord,
     DryRunPlan,
@@ -61,9 +61,11 @@ def build_graph(target: Workflow) -> WorkflowGraph:
         # Check for self-referential cycle before processing dependencies
         # A workflow that depends on its own output type creates a cycle
         if wf.name in workflows:
-            raise ValueError(
+            raise CycleError(
+                wf.name,
                 f"Workflow '{wf.name}' has a self-referential cycle: "
-                f"it depends on its own output type {wf.output_type.__name__}"
+                f"it depends on its own output type {wf.output_type.__name__}",
+                cycle_path=[wf.name],
             )
 
         workflows[wf.name] = wf
@@ -133,8 +135,13 @@ def _compute_levels(nodes: dict[str, WorkflowNode]) -> list[list[str]]:
         # Find all nodes with no remaining dependencies
         level = [name for name in remaining if in_degree[name] == 0]
         if not level:
-            # Circular dependency
-            raise ValueError(f"Circular dependency detected among: {remaining}")
+            # Circular dependency - find one of the involved workflows for the error
+            involved = list(remaining)
+            raise CycleError(
+                involved[0] if involved else "unknown",
+                f"Circular dependency detected among: {remaining}",
+                cycle_path=involved,
+            )
 
         levels.append(sorted(level))
 
@@ -460,9 +467,15 @@ def _resolve_dependencies_for_param(
         return None
     dep_wf = get_workflow_by_output(param_type)
     if dep_wf is None:
-        raise ValueError(
-            f"Workflow '{wf.name}' depends on {param_type.__name__}, "
-            f"but no workflow produces that type"
+        # Get list of registered types for better error message
+        from smithers.workflow import get_all_workflows
+
+        registered = [t.__name__ for t in get_all_workflows()]
+        raise MissingProducerError(
+            workflow_name=wf.name,
+            param_name=param_name,
+            required_type=param_type,
+            registered_types=registered,
         )
     return [dep_wf]
 
