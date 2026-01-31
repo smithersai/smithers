@@ -104,6 +104,8 @@ for i, level in enumerate(graph.levels):
 
 ## Visualization
 
+Smithers provides multiple visualization formats for workflow graphs.
+
 ### Mermaid Diagrams
 
 Generate a Mermaid diagram:
@@ -123,6 +125,63 @@ graph LR
     test --> deploy
 ```
 
+### Styled Mermaid
+
+Include status-based styling with colors:
+
+```bash
+smithers graph workflow.py --format mermaid-styled
+```
+
+### ASCII Art
+
+View graphs directly in the terminal:
+
+```bash
+smithers graph workflow.py --format ascii
+```
+
+Output:
+
+```
+┌──────────┐
+│ analyze  │ PENDING
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│implement │ PENDING
+└────┬─────┘
+     │
+     ├─────────────┐
+     ▼             ▼
+┌─────────┐  ┌─────────┐
+│  lint   │  │  test   │ PENDING
+└────┬────┘  └────┬────┘
+     │            │
+     └─────┬──────┘
+           ▼
+     ┌──────────┐
+     │  deploy  │ PENDING
+     └──────────┘
+```
+
+### Tree View
+
+Show dependency hierarchy:
+
+```bash
+smithers graph workflow.py --format tree
+```
+
+### Table Format
+
+Show node details in a table:
+
+```bash
+smithers graph workflow.py --format table
+```
+
 ### Ralph Loops in Diagrams
 
 Ralph loops are rendered with a self-referential edge:
@@ -140,6 +199,25 @@ graph LR
 from IPython.display import display, Markdown
 
 display(Markdown(f"```mermaid\n{graph.mermaid()}\n```"))
+```
+
+### CLI Options
+
+```bash
+# Save to file
+smithers graph workflow.py -o graph.md
+
+# DOT format for Graphviz
+smithers graph workflow.py --format dot -o graph.dot
+
+# JSON for programmatic use
+smithers graph workflow.py --format json
+
+# Disable colors
+smithers graph workflow.py --format ascii --no-color
+
+# ASCII-only (no Unicode)
+smithers graph workflow.py --format table --no-unicode
 ```
 
 ## Level Computation

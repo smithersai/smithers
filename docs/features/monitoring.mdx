@@ -1,0 +1,251 @@
+---
+title: Monitoring
+description: Prometheus metrics, WebSocket updates, and real-time observability
+---
+
+Smithers provides comprehensive monitoring capabilities for production deployments.
+
+## Prometheus Metrics
+
+Export metrics for scraping by Prometheus:
+
+```python
+from smithers import get_metrics_collector
+
+# Get the global metrics collector
+collector = get_metrics_collector()
+
+# Attach to the event bus to receive workflow events
+collector.attach_to_event_bus()
+
+# Start HTTP server for Prometheus scraping
+collector.start_server(port=9090)
+# Metrics available at http://localhost:9090/metrics
+```
+
+### Available Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `smithers_workflow_runs_total` | Counter | Total workflow runs by name and status |
+| `smithers_workflow_duration_seconds` | Histogram | Workflow execution duration |
+| `smithers_llm_calls_total` | Counter | LLM API calls by model |
+| `smithers_llm_tokens_total` | Counter | Token usage (input/output) by model |
+| `smithers_cache_hits_total` | Counter | Cache hits by workflow |
+| `smithers_cache_misses_total` | Counter | Cache misses by workflow |
+| `smithers_tool_calls_total` | Counter | Tool invocations by tool name |
+
+### Manual Recording
+
+Record metrics directly for custom instrumentation:
+
+```python
+from smithers import record_workflow_run, record_llm_call
+
+# Record a workflow run
+record_workflow_run(
+    workflow_name="my_workflow",
+    status="success",
+    duration_seconds=1.5,
+)
+
+# Record an LLM call
+record_llm_call(
+    model="claude-sonnet-4-20250514",
+    input_tokens=1000,
+    output_tokens=500,
+)
+```
+
+### Export Manually
+
+Get the Prometheus format without running a server:
+
+```python
+metrics_text = collector.export_prometheus()
+print(metrics_text)
+```
+
+## WebSocket Real-Time Updates
+
+Stream workflow events to connected clients:
+
+```python
+from smithers import get_websocket_server
+
+# Get the global WebSocket server
+server = get_websocket_server()
+
+# Start the server
+await server.start(host="localhost", port=8765)
+
+# Server automatically subscribes to the EventBus
+# All workflow events are broadcast to connected clients
+```
+
+### Client Protocol
+
+Clients communicate using JSON over WebSocket:
+
+#### Subscribe to a Run
+
+```json
+{"action": "subscribe", "run_id": "run-123"}
+```
+
+Only receive events for the specified run.
+
+#### Filter Events
+
+```json
+{
+  "action": "filter",
+  "event_types": ["NodeStarted", "NodeFinished", "NodeFailed"]
+}
+```
+
+Only receive events of the specified types.
+
+#### Heartbeat
+
+```json
+{"action": "ping"}
+```
+
+Server responds with `{"type": "pong"}`.
+
+### Server-Sent Events
+
+Events are broadcast as JSON:
+
+```json
+{
+  "type": "NodeStarted",
+  "run_id": "run-123",
+  "node_id": "analyze",
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+```
+
+### Manual Broadcast
+
+Send custom messages to all clients:
+
+```python
+await server.broadcast({"type": "custom", "data": "hello"})
+```
+
+Or to a specific client:
+
+```python
+await server.send_to_client(client_id, {"type": "direct", "message": "..."})
+```
+
+### Stop the Server
+
+```python
+await server.stop()
+```
+
+## Event Types
+
+All events are persisted to SQLite and broadcast via WebSocket:
+
+### Run Events
+
+| Event | Description |
+|-------|-------------|
+| `RunStarted` | Graph execution started |
+| `RunFinished` | Graph execution completed successfully |
+| `RunFailed` | Graph execution failed |
+| `RunPaused` | Execution paused (waiting for approval) |
+
+### Node Events
+
+| Event | Description |
+|-------|-------------|
+| `NodeReady` | Node dependencies satisfied |
+| `NodeStarted` | Node execution started |
+| `NodeFinished` | Node execution completed |
+| `NodeFailed` | Node execution failed |
+| `NodeCached` | Node result retrieved from cache |
+| `NodeSkipped` | Node skipped (conditional or timeout) |
+| `NodeTimedOut` | Node exceeded its timeout |
+
+### Ralph Loop Events
+
+| Event | Description |
+|-------|-------------|
+| `LoopIterationStarted` | Loop iteration began |
+| `LoopIterationFinished` | Loop iteration completed |
+| `LoopMaxIterationsReached` | Loop hit max iterations limit |
+
+### LLM/Tool Events
+
+| Event | Description |
+|-------|-------------|
+| `LLMCallStarted` | LLM API call initiated |
+| `LLMCallFinished` | LLM API call completed |
+| `ToolCallStarted` | Tool execution started |
+| `ToolCallFinished` | Tool execution completed |
+
+### Cache Events
+
+| Event | Description |
+|-------|-------------|
+| `CacheHit` | Cache lookup found valid entry |
+| `CacheMiss` | Cache lookup found no entry |
+| `CacheCorrupt` | Cache entry was invalid |
+
+### Approval Events
+
+| Event | Description |
+|-------|-------------|
+| `ApprovalRequested` | Waiting for human approval |
+| `ApprovalDecided` | Approval granted or rejected |
+
+## CLI Monitoring
+
+### Watch Events
+
+Tail events in real-time:
+
+```bash
+smithers watch ./store.db --run <run-id>
+```
+
+### Inspect Runs
+
+View run details:
+
+```bash
+smithers inspect ./store.db --run <run-id>
+```
+
+### Usage Statistics
+
+View LLM usage and costs:
+
+```bash
+smithers stats ./store.db --days 7 --by-model
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Prometheus in production">
+    Set up alerting on error rates and latency percentiles.
+  </Accordion>
+
+  <Accordion title="WebSocket for real-time UIs">
+    Use WebSocket updates for dashboards and progress displays.
+  </Accordion>
+
+  <Accordion title="Persist events for debugging">
+    Query SQLite events to debug past failures.
+  </Accordion>
+
+  <Accordion title="Monitor cache hit rates">
+    Low hit rates indicate unstable inputs or code changes.
+  </Accordion>
+</AccordionGroup>

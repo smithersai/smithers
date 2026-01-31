@@ -142,17 +142,64 @@ graph = build_graph(review_loop)
 
 Ralph loops preserve the DAG model — the loop is a single node that internally iterates. See [Ralph Loops](/concepts/ralph-loops) for details.
 
+## Retry Policy
+
+Configure automatic retries for workflows:
+
+```python
+from smithers import workflow, RetryPolicy
+
+@workflow
+async def flaky_api() -> ApiOutput:
+    ...
+
+# At execution time
+result = await run_graph(
+    graph,
+    retry_policy=RetryPolicy(
+        max_attempts=3,
+        backoff_seconds=5.0,
+        backoff_multiplier=2.0,
+        retry_on=(TimeoutError, ConnectionError),
+    ),
+)
+```
+
+### RetryPolicy Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_attempts` | `int` | `1` | Maximum number of attempts |
+| `backoff_seconds` | `float` | `0.0` | Initial delay between retries |
+| `backoff_multiplier` | `float` | `1.0` | Multiply delay after each attempt |
+| `retry_on` | `tuple[type]` | `()` | Exception types to retry on |
+
+## Timeout
+
+Set a timeout for a workflow:
+
+```python
+from smithers import workflow, timeout
+
+@workflow
+@timeout(seconds=30)
+async def quick_task() -> Output:
+    ...
+```
+
+See [Timeout Handling](/features/timeouts) for more details.
+
 ## Best Practices
 
 <AccordionGroup>
   <Accordion title="Keep workflows focused">
     Each workflow should do one thing well. Split complex tasks into multiple workflows.
   </Accordion>
-  
+
   <Accordion title="Use descriptive output types">
     Name your output types clearly: `CodeReviewOutput`, not `Output1`.
   </Accordion>
-  
+
   <Accordion title="Document with docstrings">
     Add docstrings to workflows — they help with debugging and documentation.
     ```python
@@ -162,8 +209,12 @@ Ralph loops preserve the DAG model — the loop is a single node that internally
         ...
     ```
   </Accordion>
-  
+
   <Accordion title="Use Ralph loops for iteration">
     Don't hide loops inside workflows. Use `ralph_loop` for visibility and tracking.
+  </Accordion>
+
+  <Accordion title="Set timeouts for LLM calls">
+    Always set timeouts to prevent runaway execution.
   </Accordion>
 </AccordionGroup>

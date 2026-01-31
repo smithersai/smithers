@@ -59,9 +59,7 @@ def validate_event(event_dict: dict[str, Any]) -> None:
         validator = Draft7Validator(PROTOCOL_SCHEMA)
         errors = list(validator.iter_errors(event_dict))
         if errors:
-            error_messages = [
-                f"{err.json_path}: {err.message}" for err in errors
-            ]
+            error_messages = [f"{err.json_path}: {err.message}" for err in errors]
             raise ValidationError(
                 f"Event validation failed: {'; '.join(error_messages)}",
                 error_messages,
@@ -96,9 +94,7 @@ def validate_request(request_dict: dict[str, Any]) -> None:
         validator = Draft7Validator(request_schema)
         errors = list(validator.iter_errors(request_dict))
         if errors:
-            error_messages = [
-                f"{err.json_path}: {err.message}" for err in errors
-            ]
+            error_messages = [f"{err.json_path}: {err.message}" for err in errors]
             raise ValidationError(
                 f"Request validation failed: {'; '.join(error_messages)}",
                 error_messages,

@@ -67,10 +67,7 @@ class TestSchemaValidation:
         with pytest.raises(ValidationError, match="timestamp"):
             validate_event(event)
 
-    @pytest.mark.skipif(
-        not VALIDATION_AVAILABLE,
-        reason="Requires jsonschema for full validation"
-    )
+    @pytest.mark.skipif(not VALIDATION_AVAILABLE, reason="Requires jsonschema for full validation")
     def test_validate_invalid_event_unknown_type(self):
         event = {
             "type": "unknown.type",
@@ -97,10 +94,7 @@ class TestSchemaValidation:
         with pytest.raises(ValidationError, match="id"):
             validate_request(request)
 
-    @pytest.mark.skipif(
-        not VALIDATION_AVAILABLE,
-        reason="Requires jsonschema for full validation"
-    )
+    @pytest.mark.skipif(not VALIDATION_AVAILABLE, reason="Requires jsonschema for full validation")
     def test_validate_invalid_request_unknown_method(self):
         request = {
             "id": "req-1",
@@ -208,10 +202,7 @@ class TestGoldenFixtures:
             validate_event(event_dict)
 
 
-@pytest.mark.skipif(
-    not VALIDATION_AVAILABLE,
-    reason="Requires jsonschema for full validation"
-)
+@pytest.mark.skipif(not VALIDATION_AVAILABLE, reason="Requires jsonschema for full validation")
 class TestEventDataRequirements:
     """Test specific data requirements for each event type."""
 
@@ -295,10 +286,7 @@ class TestEventDataRequirements:
             event.validate()
 
 
-@pytest.mark.skipif(
-    not VALIDATION_AVAILABLE,
-    reason="Requires jsonschema for full validation"
-)
+@pytest.mark.skipif(not VALIDATION_AVAILABLE, reason="Requires jsonschema for full validation")
 class TestRequestDataRequirements:
     """Test request method validation."""
 

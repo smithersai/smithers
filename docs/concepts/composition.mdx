@@ -1,0 +1,204 @@
+---
+title: Workflow Composition
+description: Build complex workflows with chain, parallel, branch, and map
+---
+
+Smithers provides composable primitives for building complex workflows from simpler ones.
+
+## Composition Primitives
+
+| Primitive | Description |
+|-----------|-------------|
+| `chain` | Execute workflows sequentially |
+| `parallel` | Run workflows concurrently and collect results |
+| `branch` | Conditional execution based on input |
+| `map_workflow` | Apply a workflow to multiple inputs |
+| `reduce_workflow` | Aggregate multiple outputs into one |
+| `compose_graphs` | Merge multiple graphs together |
+
+## Chain
+
+Execute workflows in sequence, passing outputs from one to the next:
+
+```python
+from smithers import chain
+
+# Create a pipeline: analyze -> implement -> test
+pipeline = chain(analyze, implement, test)
+
+# Build and run
+graph = build_graph(pipeline)
+result = await run_graph(graph)
+```
+
+The chain automatically wires outputs to inputs based on types.
+
+## Parallel
+
+Run multiple workflows concurrently and collect their results:
+
+```python
+from smithers import parallel
+from pydantic import BaseModel
+
+class ReviewResults(BaseModel):
+    lint: LintOutput
+    test: TestOutput
+    security: SecurityOutput
+
+# Run all three reviewers in parallel
+review = parallel(
+    lint_workflow,
+    test_workflow,
+    security_workflow,
+    collect_as=ReviewResults,
+)
+
+graph = build_graph(review)
+result = await run_graph(graph)
+
+print(result.lint)      # LintOutput
+print(result.test)      # TestOutput
+print(result.security)  # SecurityOutput
+```
+
+## Branch
+
+Conditional execution based on input:
+
+```python
+from smithers import branch
+
+# Route based on score
+approval_flow = branch(
+    condition=lambda x: x.score > 80,
+    if_true=auto_approve,
+    if_false=manual_review,
+    input_type=ScoreOutput,
+)
+
+graph = build_graph(approval_flow)
+```
+
+If `score > 80`, runs `auto_approve`. Otherwise, runs `manual_review`.
+
+## Map Workflow
+
+Apply a workflow to each item in a list:
+
+```python
+from smithers import map_workflow
+
+# Analyze each file independently
+analyze_all = map_workflow(analyze_file)
+
+# Input: list[FileInput] -> Output: list[FileAnalysis]
+```
+
+Each file analysis runs in parallel (respecting `max_concurrency`).
+
+## Reduce Workflow
+
+Aggregate multiple outputs into a single result:
+
+```python
+from smithers import reduce_workflow
+
+# Combine analyses into a summary
+summarize = reduce_workflow(
+    combine_analyses,
+    initial=AnalysisSummary(total=0, issues=[]),
+)
+```
+
+## Compose Graphs
+
+Merge multiple graphs together:
+
+```python
+from smithers import compose_graphs
+
+# Build individual graphs
+graph1 = build_graph(analyze)
+graph2 = build_graph(implement)
+
+# Combine with a target
+combined = compose_graphs(graph1, graph2, target="deploy")
+```
+
+## Complex Pipeline Example
+
+Combine primitives for sophisticated workflows:
+
+```python
+from smithers import chain, parallel, branch, map_workflow
+
+# Step 1: Analyze all files in parallel
+analyze_files = map_workflow(analyze_file)
+
+# Step 2: Branch based on severity
+class ReviewResults(BaseModel):
+    security: SecurityReview
+    performance: PerformanceReview
+
+review_pipeline = branch(
+    condition=lambda a: a.severity == "critical",
+    if_true=chain(
+        parallel(security_review, performance_review, collect_as=ReviewResults),
+        generate_urgent_report,
+    ),
+    if_false=generate_standard_report,
+    input_type=AnalysisOutput,
+)
+
+# Step 3: Full pipeline
+pipeline = chain(
+    analyze_files,
+    review_pipeline,
+    deploy,
+)
+
+graph = build_graph(pipeline)
+result = await run_graph(graph)
+```
+
+## When to Use Composition
+
+<AccordionGroup>
+  <Accordion title="Use chain for sequential steps">
+    When each step depends on the previous output.
+  </Accordion>
+
+  <Accordion title="Use parallel for independent work">
+    When multiple workflows can run at the same time.
+  </Accordion>
+
+  <Accordion title="Use branch for conditional logic">
+    When you need different paths based on runtime values.
+  </Accordion>
+
+  <Accordion title="Use map_workflow for batch processing">
+    When applying the same logic to multiple inputs.
+  </Accordion>
+</AccordionGroup>
+
+## Composition vs Dependencies
+
+You can achieve similar results with dependencies alone:
+
+```python
+# Using dependencies
+@workflow
+async def step1() -> A: ...
+
+@workflow
+async def step2(a: A) -> B: ...
+
+@workflow
+async def step3(b: B) -> C: ...
+```
+
+Composition is useful when:
+- Building reusable pipeline components
+- Dynamically constructing workflows
+- Creating higher-order workflow patterns

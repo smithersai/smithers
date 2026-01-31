@@ -3,7 +3,7 @@ title: Execution
 description: How Smithers executes workflow graphs
 ---
 
-The `run_graph` function executes a workflow graph, handling parallelism, caching, and error recovery. All execution state is persisted to SQLite for constant visibility.
+The `run_graph` function executes a workflow graph, handling parallelism, caching, timeouts, and error recovery. All execution state is persisted to SQLite for constant visibility.
 
 ## Basic Execution
 
@@ -45,6 +45,8 @@ result = await run_graph(
     graph,
     cache=SqliteCache("./cache.db"),  # Enable caching
     max_concurrency=4,                 # Limit parallel workers
+    timeout=300,                       # Global timeout in seconds
+    node_timeout=60,                   # Default per-node timeout
 )
 ```
 
@@ -72,6 +74,24 @@ Useful for:
 - Respecting API rate limits
 - Managing memory usage
 - Debugging parallel issues
+
+### `timeout`
+
+Set a global timeout for the entire graph execution:
+
+```python
+# Fail if entire run takes more than 5 minutes
+result = await run_graph(graph, timeout=300)
+```
+
+### `node_timeout`
+
+Set a default timeout for individual nodes:
+
+```python
+# Each node fails if it takes more than 60 seconds
+result = await run_graph(graph, node_timeout=60)
+```
 
 ## Data Flow
 
@@ -184,18 +204,113 @@ print(result.stats)
 # )
 ```
 
+## Timeout Handling
+
+Configure timeouts to prevent runaway execution:
+
+### Per-Workflow Timeout
+
+```python
+from smithers import workflow, timeout
+from datetime import timedelta
+
+@workflow
+@timeout(seconds=30)
+async def quick_task() -> Output:
+    ...
+
+# Or with timedelta
+@workflow
+@timeout(timedelta(minutes=5))
+async def longer_task() -> Output:
+    ...
+```
+
+### Timeout Behavior
+
+Configure what happens when a timeout occurs:
+
+```python
+# Default: fail the node
+@workflow
+@timeout(60, on_timeout="fail")
+async def critical_task() -> Output:
+    ...
+
+# Skip the node instead of failing
+@workflow
+@timeout(60, on_timeout="skip")
+async def optional_task() -> Output:
+    ...
+```
+
+Timeout events (`NodeTimedOut`, `RunTimedOut`) are logged to SQLite for debugging.
+
+## Real-Time Monitoring
+
+### WebSocket Updates
+
+Subscribe to real-time progress updates via WebSocket:
+
+```python
+from smithers import get_websocket_server
+
+# Start the WebSocket server
+server = get_websocket_server()
+await server.start(host="localhost", port=8765)
+
+# Run your graph - events are automatically broadcast
+result = await run_graph(graph)
+
+# Stop when done
+await server.stop()
+```
+
+Client protocol (JSON over WebSocket):
+- Subscribe to run: `{"action": "subscribe", "run_id": "run-123"}`
+- Filter events: `{"action": "filter", "event_types": ["NodeStarted", "NodeFinished"]}`
+- Ping/heartbeat: `{"action": "ping"}`
+
+### Prometheus Metrics
+
+Export metrics for production monitoring:
+
+```python
+from smithers import get_metrics_collector
+
+collector = get_metrics_collector()
+collector.attach_to_event_bus()
+
+# Start HTTP server for Prometheus scraping
+collector.start_server(port=9090)  # http://localhost:9090/metrics
+```
+
+Available metrics:
+- `smithers_workflow_runs_total` - Total workflow runs by status
+- `smithers_workflow_duration_seconds` - Workflow duration histogram
+- `smithers_llm_calls_total` - LLM calls by model
+- `smithers_llm_tokens_total` - Token usage by model
+
 ## Best Practices
 
 <AccordionGroup>
   <Accordion title="Always use caching in production">
     Caching dramatically speeds up re-runs and saves API costs.
   </Accordion>
-  
+
   <Accordion title="Set appropriate concurrency">
     Don't overwhelm APIs. Use `max_concurrency` to stay under rate limits.
   </Accordion>
-  
+
   <Accordion title="Handle errors gracefully">
     Wrap `run_graph` in try/except and log failed workflows.
+  </Accordion>
+
+  <Accordion title="Set timeouts for all workflows">
+    LLM calls can hang indefinitely. Always set reasonable timeouts.
+  </Accordion>
+
+  <Accordion title="Monitor in production">
+    Use Prometheus metrics and WebSocket updates for observability.
   </Accordion>
 </AccordionGroup>

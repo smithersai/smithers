@@ -112,15 +112,31 @@ Each iteration is tracked in SQLite with dedicated events:
 - `LoopIterationFinished` — Emitted when an iteration completes
 - `LoopMaxIterationsReached` — Emitted if max iterations hit
 
-Query iterations:
+### SQLite Schema
 
 ```sql
-SELECT * FROM loop_iterations 
+CREATE TABLE loop_iterations (
+  run_id TEXT NOT NULL,
+  loop_node_id TEXT NOT NULL,
+  iteration INTEGER NOT NULL,
+  input_hash TEXT NOT NULL,
+  output_hash TEXT,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  PRIMARY KEY (run_id, loop_node_id, iteration)
+);
+```
+
+### Query Iterations
+
+```sql
+SELECT * FROM loop_iterations
 WHERE run_id = ? AND loop_node_id = ?
 ORDER BY iteration;
 ```
 
-Monitor with the CLI:
+### Monitor with CLI
 
 ```bash
 smithers watch ./cache.db --run <run_id>
@@ -129,6 +145,10 @@ smithers watch ./cache.db --run <run_id>
 #        LoopIterationStarted {iteration: 1}
 #        ...
 ```
+
+### Iteration Caching
+
+Individual iterations can be cached by iteration index + input hash. This allows resuming loops from the last successful iteration after failures.
 
 ## Nested Loops
 

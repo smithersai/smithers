@@ -230,7 +230,9 @@ class TestSessionEvents:
         latest_before = await store.get_latest_event_id("test-session")
         assert latest_before is not None
 
-        event_id = await store.append_event("test-session", EventType.RUN_STARTED, {"run_id": "123"})
+        event_id = await store.append_event(
+            "test-session", EventType.RUN_STARTED, {"run_id": "123"}
+        )
 
         latest_after = await store.get_latest_event_id("test-session")
         assert latest_after == event_id
@@ -341,8 +343,7 @@ class TestConcurrency:
         """Should handle concurrent session creation safely."""
         # Create sessions concurrently
         tasks = [
-            store.create_session(f"/workspace{i}", session_id=f"session{i}")
-            for i in range(20)
+            store.create_session(f"/workspace{i}", session_id=f"session{i}") for i in range(20)
         ]
         session_ids = await asyncio.gather(*tasks)
 
@@ -392,8 +393,12 @@ class TestEventSourcing:
         # Simulate a conversation
         await store.append_event("test-session", EventType.RUN_STARTED, {"run_id": "run1"})
         await store.append_event("test-session", EventType.ASSISTANT_DELTA, {"text": "Hello"})
-        await store.append_event("test-session", EventType.TOOL_START, {"tool": "bash", "args": "ls"})
-        await store.append_event("test-session", EventType.TOOL_END, {"tool": "bash", "result": "file1.txt"})
+        await store.append_event(
+            "test-session", EventType.TOOL_START, {"tool": "bash", "args": "ls"}
+        )
+        await store.append_event(
+            "test-session", EventType.TOOL_END, {"tool": "bash", "result": "file1.txt"}
+        )
         await store.append_event("test-session", EventType.ASSISTANT_FINAL, {"text": "Done"})
         await store.append_event("test-session", EventType.RUN_FINISHED, {"run_id": "run1"})
 

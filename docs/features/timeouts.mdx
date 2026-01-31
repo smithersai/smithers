@@ -1,0 +1,187 @@
+---
+title: Timeout Handling
+description: Prevent runaway execution with per-workflow and global timeouts
+---
+
+Timeouts prevent workflows from running indefinitely. Smithers supports both per-workflow and global timeouts with configurable behavior.
+
+## Per-Workflow Timeout
+
+Use the `@timeout` decorator to set a timeout for a specific workflow:
+
+```python
+from smithers import workflow, timeout
+
+@workflow
+@timeout(seconds=30)
+async def quick_task() -> Output:
+    return await claude("Do something fast", output=Output)
+```
+
+### Using timedelta
+
+For more readable durations:
+
+```python
+from datetime import timedelta
+
+@workflow
+@timeout(timedelta(minutes=5))
+async def longer_task() -> Output:
+    ...
+
+@workflow
+@timeout(timedelta(hours=1))
+async def very_long_task() -> Output:
+    ...
+```
+
+## Timeout Behavior
+
+Configure what happens when a timeout occurs:
+
+### Fail (Default)
+
+The node fails and downstream nodes are skipped:
+
+```python
+@workflow
+@timeout(60, on_timeout="fail")
+async def critical_task() -> Output:
+    ...
+```
+
+### Skip
+
+The node is skipped, allowing the graph to continue:
+
+```python
+@workflow
+@timeout(60, on_timeout="skip")
+async def optional_task() -> Output:
+    ...
+```
+
+This is useful for non-critical workflows that shouldn't block the pipeline.
+
+## Global Graph Timeout
+
+Set a timeout for the entire graph execution:
+
+```python
+from smithers import run_graph_with_store
+
+# Entire run must complete within 5 minutes
+result = await run_graph_with_store(graph, timeout=300)
+```
+
+If the global timeout is reached, all running nodes are cancelled.
+
+## Default Node Timeout
+
+Set a default timeout for all nodes:
+
+```python
+result = await run_graph_with_store(
+    graph,
+    node_timeout=30,  # 30 seconds per node by default
+)
+```
+
+Per-workflow `@timeout` decorators override this default.
+
+## Timeout Events
+
+Timeouts emit events that are persisted to SQLite:
+
+| Event | Description |
+|-------|-------------|
+| `NodeTimedOut` | A single node exceeded its timeout |
+| `RunTimedOut` | The entire graph run exceeded its timeout |
+
+Query timeout events:
+
+```sql
+SELECT * FROM events
+WHERE type IN ('NodeTimedOut', 'RunTimedOut')
+ORDER BY ts DESC;
+```
+
+## Retry with Timeout
+
+Combine timeouts with retry policies:
+
+```python
+from smithers import workflow, timeout, RetryPolicy
+
+@workflow
+@timeout(30)
+async def flaky_api_call() -> Output:
+    ...
+
+# Configure retry at execution time
+result = await run_graph(
+    graph,
+    retry_policy=RetryPolicy(
+        max_attempts=3,
+        backoff_seconds=5,
+        retry_on=(TimeoutError,),
+    ),
+)
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always set timeouts for LLM calls">
+    LLM APIs can hang indefinitely. Set reasonable timeouts.
+  </Accordion>
+
+  <Accordion title="Use skip for optional workflows">
+    Non-critical workflows should use `on_timeout="skip"`.
+  </Accordion>
+
+  <Accordion title="Set global timeout as safety net">
+    Even with per-node timeouts, set a global timeout as a backstop.
+  </Accordion>
+
+  <Accordion title="Monitor timeout events">
+    Track timeout frequency to identify problematic workflows.
+  </Accordion>
+</AccordionGroup>
+
+## Common Patterns
+
+### Critical Path with Timeout
+
+```python
+@workflow
+@timeout(60, on_timeout="fail")
+async def critical_step() -> CriticalOutput:
+    """Must complete or the pipeline fails."""
+    ...
+
+@workflow
+@timeout(30, on_timeout="skip")
+async def optional_enrichment(data: CriticalOutput) -> EnrichedOutput:
+    """Nice to have but not required."""
+    ...
+```
+
+### Timeout with Fallback
+
+```python
+@workflow
+@timeout(10)
+async def fast_api_call() -> ApiOutput | None:
+    try:
+        return await external_api()
+    except TimeoutError:
+        return None
+
+@workflow
+async def process(api_result: ApiOutput | None) -> Result:
+    if api_result is None:
+        return Result(data=default_data)
+    return Result(data=api_result.data)
+```

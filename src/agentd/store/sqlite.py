@@ -401,7 +401,9 @@ class SessionStore:
         )
         return [
             Event(
-                type=EventType(record.type) if record.type in EventType.__members__.values() else EventType.ERROR,
+                type=EventType(record.type)
+                if record.type in EventType.__members__.values()
+                else EventType.ERROR,
                 data=record.payload,
                 timestamp=record.ts,
             )
@@ -418,10 +420,14 @@ class SessionStore:
             Number of events
         """
         await self._ensure_initialized()
-        async with self._lock, aiosqlite.connect(self.path) as db, db.execute(
-            "SELECT COUNT(*) FROM session_events WHERE session_id = ?",
-            (session_id,),
-        ) as cursor:
+        async with (
+            self._lock,
+            aiosqlite.connect(self.path) as db,
+            db.execute(
+                "SELECT COUNT(*) FROM session_events WHERE session_id = ?",
+                (session_id,),
+            ) as cursor,
+        ):
             row = await cursor.fetchone()
             return row[0] if row else 0
 
@@ -435,10 +441,14 @@ class SessionStore:
             The latest event ID, or None if no events exist
         """
         await self._ensure_initialized()
-        async with self._lock, aiosqlite.connect(self.path) as db, db.execute(
-            "SELECT MAX(id) FROM session_events WHERE session_id = ?",
-            (session_id,),
-        ) as cursor:
+        async with (
+            self._lock,
+            aiosqlite.connect(self.path) as db,
+            db.execute(
+                "SELECT MAX(id) FROM session_events WHERE session_id = ?",
+                (session_id,),
+            ) as cursor,
+        ):
             row = await cursor.fetchone()
             return row[0] if row and row[0] is not None else None
 

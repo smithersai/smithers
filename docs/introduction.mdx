@@ -49,6 +49,9 @@ Most agent frameworks are either too simple (single agent, no composition) or to
   <Card title="Fully Typed" icon="shield-check">
     Pydantic models define contracts. Catch errors at write-time.
   </Card>
+  <Card title="Workflow Composition" icon="sitemap">
+    Chain, parallel, branch, and map workflows with composable primitives.
+  </Card>
 </CardGroup>
 
 ## Core Philosophy
@@ -61,10 +64,23 @@ Smithers is built on three architectural principles:
 
 3. **Verification + visibility** — Every step is validated, hashed, logged, and queryable in near-real time.
 
+## System Invariants
+
+These are enforced by code and assertable in tests:
+
+- **I1**: A `WorkflowGraph` must be a DAG (cycle detection at plan time). Ralph loops are single nodes that internally iterate.
+- **I2**: Each node's declared output type is validated at runtime (Pydantic `TypeAdapter`).
+- **I3**: Every node run is content-addressed: `cache_key = H(workflow_id + code_hash + input_hash + runtime_hash)`.
+- **I4**: Every node state transition is persisted to SQLite (append-only events + current-state tables).
+- **I5**: Cache entries must be schema-valid and hash-consistent or treated as corrupt/miss.
+- **I6**: Approval is an explicit persisted gate; execution can pause and resume from SQLite.
+- **I7**: Ralph loop iterations are individually tracked with their own events and timing.
+- **I8**: Workflows timeout if exceeding configured limits; timeouts can fail, skip, or cancel the node.
+
 ## Inspired By
 
 - **Bazel** — Explicit dependencies, automatic parallelization, caching based on input hashing
-- **Pydantic** — Type-safe data validation and schemas  
+- **Pydantic** — Type-safe data validation and schemas
 - **SQLite** — Simple, reliable persistence as the source of truth
 
 ## Next Steps
@@ -75,5 +91,11 @@ Smithers is built on three architectural principles:
   </Card>
   <Card title="Core Concepts" icon="book" href="/concepts/workflows">
     Understand workflows, dependencies, and graphs
+  </Card>
+  <Card title="Composition" icon="sitemap" href="/concepts/composition">
+    Chain, parallel, and branch workflows
+  </Card>
+  <Card title="Ralph Loops" icon="rotate" href="/concepts/ralph-loops">
+    Declarative iteration for agentic workflows
   </Card>
 </CardGroup>
