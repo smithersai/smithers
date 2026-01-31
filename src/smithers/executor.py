@@ -84,10 +84,12 @@ if TYPE_CHECKING:
 
 
 def _is_ralph_loop(wf: Workflow) -> bool:
-    """Check if a workflow is a Ralph loop."""
-    from smithers.ralph_loop import is_ralph_loop
+    """Check if a workflow is a Ralph loop.
 
-    return is_ralph_loop(wf)
+    Checks for the presence of loop_config attribute which is unique to
+    RalphLoopWorkflow. This avoids the overhead of late imports on every call.
+    """
+    return getattr(wf, "loop_config", None) is not None
 
 
 async def _emit_event(

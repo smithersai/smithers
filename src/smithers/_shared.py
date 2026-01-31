@@ -95,7 +95,8 @@ def build_kwargs(wf: Workflow, outputs: dict[str, Any]) -> dict[str, Any]:
     Raises:
         ValueError: If a required dependency workflow is not found.
     """
-    kwargs = dict(wf.bound_args)
+    # Avoid allocating a new dict if bound_args is empty (common case)
+    kwargs: dict[str, Any] = dict(wf.bound_args) if wf.bound_args else {}
     for param_name, param_type in wf.input_types.items():
         if param_name in wf.bound_args:
             continue
