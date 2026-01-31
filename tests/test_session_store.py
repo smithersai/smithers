@@ -473,3 +473,198 @@ class TestDatabaseIntegrity:
         events = await store.get_events("test-session")
         assert len(events) >= 2
         assert all(e.session_id == "test-session" for e in events)
+
+
+class TestCheckpoints:
+    """Test checkpoint operations."""
+
+    @pytest.fixture
+    async def store(self, tmp_path):
+        """Create a temporary session store with a session."""
+        store = SessionStore(tmp_path / "sessions.db")
+        await store.initialize()
+        await store.create_session("/workspace", session_id="test-session")
+        return store
+
+    @pytest.mark.asyncio
+    async def test_create_checkpoint(self, store):
+        """Should create a new checkpoint."""
+        checkpoint = await store.create_checkpoint(
+            checkpoint_id="cp-123",
+            session_id="test-session",
+            jj_commit_id="abc123def456",
+            bookmark_name="checkpoint-cp-123",
+            message="Test checkpoint",
+        )
+
+        assert checkpoint.checkpoint_id == "cp-123"
+        assert checkpoint.session_id == "test-session"
+        assert checkpoint.jj_commit_id == "abc123def456"
+        assert checkpoint.bookmark_name == "checkpoint-cp-123"
+        assert checkpoint.message == "Test checkpoint"
+        assert checkpoint.session_node_id is None
+        assert checkpoint.created_at is not None
+
+    @pytest.mark.asyncio
+    async def test_create_checkpoint_with_node_id(self, store):
+        """Should create a checkpoint with session node ID."""
+        checkpoint = await store.create_checkpoint(
+            checkpoint_id="cp-456",
+            session_id="test-session",
+            jj_commit_id="xyz789",
+            bookmark_name="checkpoint-cp-456",
+            message="Checkpoint with node",
+            session_node_id="node-123",
+        )
+
+        assert checkpoint.session_node_id == "node-123"
+
+    @pytest.mark.asyncio
+    async def test_get_checkpoint(self, store):
+        """Should retrieve a checkpoint by ID."""
+        await store.create_checkpoint(
+            checkpoint_id="cp-789",
+            session_id="test-session",
+            jj_commit_id="commit123",
+            bookmark_name="checkpoint-cp-789",
+            message="Test checkpoint",
+        )
+
+        checkpoint = await store.get_checkpoint("cp-789")
+        assert checkpoint is not None
+        assert checkpoint.checkpoint_id == "cp-789"
+        assert checkpoint.jj_commit_id == "commit123"
+
+    @pytest.mark.asyncio
+    async def test_get_nonexistent_checkpoint(self, store):
+        """Getting a nonexistent checkpoint should return None."""
+        checkpoint = await store.get_checkpoint("nonexistent")
+        assert checkpoint is None
+
+    @pytest.mark.asyncio
+    async def test_list_checkpoints(self, store):
+        """Should list checkpoints for a session."""
+        # Create multiple checkpoints
+        await store.create_checkpoint(
+            checkpoint_id="cp-1",
+            session_id="test-session",
+            jj_commit_id="commit1",
+            bookmark_name="checkpoint-cp-1",
+            message="First checkpoint",
+        )
+        await asyncio.sleep(0.01)  # Ensure different timestamps
+        await store.create_checkpoint(
+            checkpoint_id="cp-2",
+            session_id="test-session",
+            jj_commit_id="commit2",
+            bookmark_name="checkpoint-cp-2",
+            message="Second checkpoint",
+        )
+        await asyncio.sleep(0.01)
+        await store.create_checkpoint(
+            checkpoint_id="cp-3",
+            session_id="test-session",
+            jj_commit_id="commit3",
+            bookmark_name="checkpoint-cp-3",
+            message="Third checkpoint",
+        )
+
+        checkpoints = await store.list_checkpoints("test-session")
+        assert len(checkpoints) == 3
+        # Should be ordered by most recent first
+        assert checkpoints[0].checkpoint_id == "cp-3"
+        assert checkpoints[1].checkpoint_id == "cp-2"
+        assert checkpoints[2].checkpoint_id == "cp-1"
+
+    @pytest.mark.asyncio
+    async def test_list_checkpoints_limit(self, store):
+        """Should respect limit parameter."""
+        for i in range(5):
+            await store.create_checkpoint(
+                checkpoint_id=f"cp-{i}",
+                session_id="test-session",
+                jj_commit_id=f"commit{i}",
+                bookmark_name=f"checkpoint-cp-{i}",
+                message=f"Checkpoint {i}",
+            )
+            await asyncio.sleep(0.01)
+
+        checkpoints = await store.list_checkpoints("test-session", limit=3)
+        assert len(checkpoints) == 3
+
+    @pytest.mark.asyncio
+    async def test_list_checkpoints_for_different_sessions(self, store, tmp_path):
+        """Should only list checkpoints for the specified session."""
+        # Create another session
+        await store.create_session("/workspace2", session_id="session2")
+
+        # Create checkpoints for both sessions
+        await store.create_checkpoint(
+            checkpoint_id="cp-session1",
+            session_id="test-session",
+            jj_commit_id="commit1",
+            bookmark_name="checkpoint-cp-session1",
+            message="Session 1 checkpoint",
+        )
+        await store.create_checkpoint(
+            checkpoint_id="cp-session2",
+            session_id="session2",
+            jj_commit_id="commit2",
+            bookmark_name="checkpoint-cp-session2",
+            message="Session 2 checkpoint",
+        )
+
+        # List checkpoints for test-session
+        checkpoints = await store.list_checkpoints("test-session")
+        assert len(checkpoints) == 1
+        assert checkpoints[0].checkpoint_id == "cp-session1"
+
+        # List checkpoints for session2
+        checkpoints = await store.list_checkpoints("session2")
+        assert len(checkpoints) == 1
+        assert checkpoints[0].checkpoint_id == "cp-session2"
+
+    @pytest.mark.asyncio
+    async def test_delete_checkpoint(self, store):
+        """Should delete a checkpoint."""
+        await store.create_checkpoint(
+            checkpoint_id="cp-delete",
+            session_id="test-session",
+            jj_commit_id="commit123",
+            bookmark_name="checkpoint-cp-delete",
+            message="To be deleted",
+        )
+
+        deleted = await store.delete_checkpoint("cp-delete")
+        assert deleted is True
+
+        checkpoint = await store.get_checkpoint("cp-delete")
+        assert checkpoint is None
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_checkpoint(self, store):
+        """Deleting a nonexistent checkpoint should return False."""
+        deleted = await store.delete_checkpoint("nonexistent")
+        assert deleted is False
+
+    @pytest.mark.asyncio
+    async def test_checkpoints_deleted_with_session(self, store):
+        """Checkpoints should be deleted when session is deleted."""
+        await store.create_checkpoint(
+            checkpoint_id="cp-cascade",
+            session_id="test-session",
+            jj_commit_id="commit123",
+            bookmark_name="checkpoint-cp-cascade",
+            message="Test cascade",
+        )
+
+        # Verify checkpoint exists
+        checkpoint = await store.get_checkpoint("cp-cascade")
+        assert checkpoint is not None
+
+        # Delete session
+        await store.delete_session("test-session")
+
+        # Checkpoint should be gone (cascade delete)
+        checkpoint = await store.get_checkpoint("cp-cascade")
+        assert checkpoint is None

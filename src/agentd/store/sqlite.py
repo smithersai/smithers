@@ -47,6 +47,19 @@ class SessionEventRecord:
     payload: dict[str, Any]
 
 
+@dataclass
+class CheckpointRecord:
+    """A checkpoint record from the database."""
+
+    checkpoint_id: str
+    session_id: str
+    session_node_id: str | None
+    jj_commit_id: str
+    bookmark_name: str
+    message: str
+    created_at: datetime
+
+
 # SQL schema for session tables
 _SCHEMA = """
 -- sessions: metadata for each session
@@ -67,11 +80,25 @@ CREATE TABLE IF NOT EXISTS session_events (
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+-- checkpoints: JJ checkpoint metadata
+CREATE TABLE IF NOT EXISTS checkpoints (
+    checkpoint_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    session_node_id TEXT,
+    jj_commit_id TEXT NOT NULL,
+    bookmark_name TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+
 -- indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_session_events_session_id ON session_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_events_ts ON session_events(ts);
 CREATE INDEX IF NOT EXISTS idx_session_events_type ON session_events(session_id, type);
 CREATE INDEX IF NOT EXISTS idx_sessions_last_active ON sessions(last_active_at);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_session_id ON checkpoints(session_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_created_at ON checkpoints(created_at);
 """
 
 
@@ -252,7 +279,7 @@ class SessionStore:
             True if the session was deleted, False if it didn't exist
         """
         await self._ensure_initialized()
-        async with self._lock, aiosqlite.connect(self.path) as db:
+        async with self._lock, self._connect() as db:
             cursor = await db.execute(
                 "DELETE FROM sessions WHERE id = ?",
                 (session_id,),
@@ -482,6 +509,138 @@ class SessionStore:
             "total_events": len(events),
             "event_counts": event_counts,
         }
+
+    # ==================== Checkpoint Operations ====================
+
+    async def create_checkpoint(
+        self,
+        checkpoint_id: str,
+        session_id: str,
+        jj_commit_id: str,
+        bookmark_name: str,
+        message: str,
+        *,
+        session_node_id: str | None = None,
+    ) -> CheckpointRecord:
+        """Create a new checkpoint record.
+
+        Args:
+            checkpoint_id: Unique checkpoint identifier
+            session_id: The session ID
+            jj_commit_id: JJ commit ID
+            bookmark_name: JJ bookmark name
+            message: Checkpoint description
+            session_node_id: Optional session graph node ID
+
+        Returns:
+            CheckpointRecord
+        """
+        await self._ensure_initialized()
+        now = _timestamp_now()
+
+        async with self._lock, self._connect() as db:
+            await db.execute(
+                """
+                INSERT INTO checkpoints (checkpoint_id, session_id, session_node_id, jj_commit_id, bookmark_name, message, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (checkpoint_id, session_id, session_node_id, jj_commit_id, bookmark_name, message, now),
+            )
+            await db.commit()
+
+        return CheckpointRecord(
+            checkpoint_id=checkpoint_id,
+            session_id=session_id,
+            session_node_id=session_node_id,
+            jj_commit_id=jj_commit_id,
+            bookmark_name=bookmark_name,
+            message=message,
+            created_at=_parse_timestamp(now) or datetime.now(UTC),
+        )
+
+    async def get_checkpoint(self, checkpoint_id: str) -> CheckpointRecord | None:
+        """Get a checkpoint by ID.
+
+        Args:
+            checkpoint_id: The checkpoint ID
+
+        Returns:
+            CheckpointRecord if found, None otherwise
+        """
+        await self._ensure_initialized()
+        async with self._lock, self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM checkpoints WHERE checkpoint_id = ?",
+                (checkpoint_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+
+            if row is None:
+                return None
+
+            return CheckpointRecord(
+                checkpoint_id=row["checkpoint_id"],
+                session_id=row["session_id"],
+                session_node_id=row["session_node_id"],
+                jj_commit_id=row["jj_commit_id"],
+                bookmark_name=row["bookmark_name"],
+                message=row["message"],
+                created_at=_parse_timestamp(row["created_at"]) or datetime.now(UTC),
+            )
+
+    async def list_checkpoints(
+        self, session_id: str, *, limit: int = 100
+    ) -> list[CheckpointRecord]:
+        """List checkpoints for a session, ordered by creation time.
+
+        Args:
+            session_id: The session ID
+            limit: Maximum number of checkpoints to return
+
+        Returns:
+            List of CheckpointRecord objects
+        """
+        await self._ensure_initialized()
+        async with self._lock, self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM checkpoints WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+                (session_id, limit),
+            ) as cursor:
+                rows = await cursor.fetchall()
+
+        return [
+            CheckpointRecord(
+                checkpoint_id=row["checkpoint_id"],
+                session_id=row["session_id"],
+                session_node_id=row["session_node_id"],
+                jj_commit_id=row["jj_commit_id"],
+                bookmark_name=row["bookmark_name"],
+                message=row["message"],
+                created_at=_parse_timestamp(row["created_at"]) or datetime.now(UTC),
+            )
+            for row in rows
+        ]
+
+    async def delete_checkpoint(self, checkpoint_id: str) -> bool:
+        """Delete a checkpoint.
+
+        Args:
+            checkpoint_id: The checkpoint ID
+
+        Returns:
+            True if the checkpoint was deleted, False if it didn't exist
+        """
+        await self._ensure_initialized()
+        async with self._lock, self._connect() as db:
+            cursor = await db.execute(
+                "DELETE FROM checkpoints WHERE checkpoint_id = ?",
+                (checkpoint_id,),
+            )
+            deleted = cursor.rowcount > 0
+            await db.commit()
+            return deleted
 
 
 def _timestamp_now() -> str:

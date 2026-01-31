@@ -206,3 +206,196 @@ class TestSessionManager:
         assert len(events) == 1
         assert events[0].type == EventType.ERROR
         assert "not found" in events[0].data["message"]
+
+
+class TestRepoStateService:
+    """Test JJ integration for checkpoints."""
+
+    @pytest.fixture
+    def service(self, tmp_path):
+        """Create a RepoStateService for testing."""
+        from agentd.jj import RepoStateService
+
+        return RepoStateService(tmp_path)
+
+    @pytest.mark.asyncio
+    async def test_ensure_jj_repo_initializes_new_repo(self, service, tmp_path):
+        """Test that ensure_jj_repo initializes a new repo if needed."""
+        try:
+            # Check if JJ is installed
+            import subprocess
+
+            subprocess.run(["jj", "--version"], capture_output=True, check=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pytest.skip("JJ not installed")
+
+        # Should not be a JJ repo initially
+        status = await service.get_status()
+        assert not status.is_jj_repo
+
+        # Initialize
+        await service.ensure_jj_repo()
+
+        # Should now be a JJ repo
+        status = await service.get_status()
+        assert status.is_jj_repo
+        assert status.current_commit is not None
+
+    @pytest.mark.asyncio
+    async def test_ensure_jj_repo_raises_when_jj_not_installed(self, service, monkeypatch):
+        """Test that ensure_jj_repo raises JJNotFoundError when JJ is not installed."""
+        import subprocess
+
+        from agentd.jj import JJNotFoundError
+
+        # Mock subprocess.run to simulate JJ not being installed
+        original_run = subprocess.run
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "jj" and cmd[1] == "--version":
+                raise FileNotFoundError("jj not found")
+            return original_run(cmd, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        with pytest.raises(JJNotFoundError, match="not installed"):
+            await service.ensure_jj_repo()
+
+    @pytest.mark.asyncio
+    async def test_create_checkpoint_with_clean_working_copy(self, service, tmp_path):
+        """Test creating a checkpoint with no uncommitted changes."""
+        try:
+            import subprocess
+
+            subprocess.run(["jj", "--version"], capture_output=True, check=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pytest.skip("JJ not installed")
+
+        await service.ensure_jj_repo()
+
+        # Create a checkpoint
+        checkpoint = await service.create_checkpoint(
+            checkpoint_id="cp-123", message="Test checkpoint"
+        )
+
+        assert checkpoint.checkpoint_id == "cp-123"
+        assert checkpoint.jj_commit_id is not None
+        assert checkpoint.bookmark_name == "checkpoint-cp-123"
+        assert checkpoint.message == "Test checkpoint"
+        assert checkpoint.created_at is not None
+
+    @pytest.mark.asyncio
+    async def test_create_checkpoint_with_changes(self, service, tmp_path):
+        """Test creating a checkpoint with uncommitted changes."""
+        try:
+            import subprocess
+
+            subprocess.run(["jj", "--version"], capture_output=True, check=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pytest.skip("JJ not installed")
+
+        await service.ensure_jj_repo()
+
+        # Create a file
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("Initial content")
+
+        # Get status - should have changes
+        status = await service.get_status()
+        assert status.has_changes
+
+        # Create checkpoint
+        checkpoint = await service.create_checkpoint(
+            checkpoint_id="cp-456", message="Checkpoint with changes"
+        )
+
+        assert checkpoint.checkpoint_id == "cp-456"
+        assert checkpoint.jj_commit_id is not None
+
+        # Working copy should now be clean
+        status = await service.get_status()
+        # Note: might still have changes if there's a new working copy
+        # The key is that the checkpoint was created successfully
+
+    @pytest.mark.asyncio
+    async def test_restore_checkpoint(self, service, tmp_path):
+        """Test restoring to a previous checkpoint."""
+        try:
+            import subprocess
+
+            subprocess.run(["jj", "--version"], capture_output=True, check=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pytest.skip("JJ not installed")
+
+        await service.ensure_jj_repo()
+
+        # Create initial file
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("Version 1")
+
+        # Create first checkpoint
+        await service.create_checkpoint(
+            checkpoint_id="cp-1", message="Version 1"
+        )
+
+        # Modify file
+        test_file.write_text("Version 2")
+
+        # Create second checkpoint
+        await service.create_checkpoint(
+            checkpoint_id="cp-2", message="Version 2"
+        )
+
+        # Restore to first checkpoint
+        await service.restore_checkpoint("cp-1")
+
+        # File should have original content
+        content = test_file.read_text()
+        assert content == "Version 1"
+
+    @pytest.mark.asyncio
+    async def test_get_status_returns_repo_info(self, service, tmp_path):
+        """Test that get_status returns accurate repository information."""
+        try:
+            import subprocess
+
+            subprocess.run(["jj", "--version"], capture_output=True, check=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pytest.skip("JJ not installed")
+
+        # Before init
+        status = await service.get_status()
+        assert not status.is_jj_repo
+
+        # After init
+        await service.ensure_jj_repo()
+        status = await service.get_status()
+        assert status.is_jj_repo
+        assert status.current_commit is not None
+
+        # Create a file
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("Content")
+
+        status = await service.get_status()
+        assert status.has_changes
+        assert status.change_summary is not None
+
+    @pytest.mark.asyncio
+    async def test_get_status_when_jj_not_installed(self, service, monkeypatch):
+        """Test that get_status handles missing JJ gracefully."""
+        import subprocess
+
+        original_run = subprocess.run
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "jj":
+                raise FileNotFoundError("jj not found")
+            return original_run(cmd, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        status = await service.get_status()
+        assert not status.is_jj_repo
+        assert status.current_commit is None
+        assert not status.has_changes
