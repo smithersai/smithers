@@ -108,6 +108,7 @@ class SessionGraph:
         self.root_ids: list[UUID] = []
         self._current_message_id: UUID | None = None  # Track current assistant message
         self._current_message_text: str = ""  # Accumulate streaming text
+        self._pending_tool_statuses: dict[str, str] = {}  # tool_use_id -> status
 
     def add_node(self, node: GraphNode) -> None:
         """Add a node to the graph."""
@@ -209,7 +210,11 @@ def reduce_events(events: list[dict[str, Any]]) -> SessionGraph:
 
         # Parse timestamp
         if isinstance(timestamp, str):
-            ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            try:
+                ts = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                # Fallback to current time for malformed timestamps
+                ts = datetime.now()
         elif isinstance(timestamp, datetime):
             ts = timestamp
         else:
@@ -272,16 +277,21 @@ def reduce_events(events: list[dict[str, Any]]) -> SessionGraph:
         elif event_type == "TOOL_START":
             # Tool invocation started
             node_id = next_node_id()
+            tool_use_id = data.get("tool_use_id")
+
+            # Check if we have a pending status from an out-of-order TOOL_END
+            status = graph._pending_tool_statuses.pop(tool_use_id, "running") if tool_use_id else "running"
+
             node = GraphNode(
                 id=node_id,
                 type=GraphNodeType.TOOL_USE,
                 parent_id=graph._current_message_id,
                 timestamp=ts,
                 data={
-                    "tool_use_id": data.get("tool_use_id"),
+                    "tool_use_id": tool_use_id,
                     "tool_name": data.get("name"),
                     "input": data.get("input", {}),
-                    "status": "running",
+                    "status": status,
                 },
             )
             graph.add_node(node)
@@ -289,13 +299,22 @@ def reduce_events(events: list[dict[str, Any]]) -> SessionGraph:
         elif event_type == "TOOL_END":
             # Tool completed - find the tool_use node and update it
             tool_use_id = data.get("tool_use_id")
+            status = data.get("status", "success")
+
+            # Try to find existing tool node
+            found = False
             for node in graph.nodes.values():
                 if (
                     node.type == GraphNodeType.TOOL_USE
                     and node.data.get("tool_use_id") == tool_use_id
                 ):
-                    node.data["status"] = data.get("status", "success")
+                    node.data["status"] = status
+                    found = True
                     break
+
+            # If tool node doesn't exist yet, store status for when TOOL_START arrives
+            if not found and tool_use_id:
+                graph._pending_tool_statuses[tool_use_id] = status
 
         elif event_type == "SESSION_CREATED":
             # Session created - no graph nodes needed

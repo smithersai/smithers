@@ -488,3 +488,336 @@ class TestReducer:
         chat = graph.project_to_chat()
         assert len(chat) == 2
         assert all(msg.role == "assistant" for msg in chat)
+
+
+class TestReducerEdgeCases:
+    """Tests for edge cases in the reducer."""
+
+    def test_orphaned_tool_end(self):
+        """Test TOOL_END without matching TOOL_START."""
+        events = [
+            {
+                "type": "RUN_STARTED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+            {
+                "type": "TOOL_END",
+                "data": {"tool_use_id": "nonexistent-tool", "status": "success"},
+                "timestamp": "2024-01-01T00:00:01Z",
+            },
+            {
+                "type": "RUN_FINISHED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:02Z",
+            },
+        ]
+
+        # Should not crash
+        graph = reduce_events(events)
+        assert len(graph.nodes) == 0  # No tool node created
+
+    def test_tool_start_missing_tool_use_id(self):
+        """Test TOOL_START with missing tool_use_id."""
+        events = [
+            {
+                "type": "RUN_STARTED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+            {
+                "type": "TOOL_START",
+                "data": {
+                    "name": "bash",
+                    "input": {"command": "ls"},
+                    # Missing tool_use_id
+                },
+                "timestamp": "2024-01-01T00:00:01Z",
+            },
+            {
+                "type": "RUN_FINISHED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:02Z",
+            },
+        ]
+
+        # Should not crash
+        graph = reduce_events(events)
+        tool_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.TOOL_USE]
+        assert len(tool_nodes) == 1
+        assert tool_nodes[0].data.get("tool_use_id") is None
+
+    def test_malformed_timestamp_string(self):
+        """Test event with invalid timestamp string."""
+        events = [
+            {
+                "type": "RUN_STARTED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "not-a-valid-timestamp",
+            },
+        ]
+
+        # Should fallback to current time without crashing
+        try:
+            graph = reduce_events(events)
+            # Should succeed even with bad timestamp
+            assert len(graph.nodes) == 0  # RUN_STARTED doesn't create nodes
+        except Exception:
+            # If it raises, make sure it's a timestamp parsing error
+            import pytest
+
+            pytest.fail("Should handle malformed timestamps gracefully")
+
+    def test_timestamp_with_z_suffix(self):
+        """Test that timestamps with Z suffix are parsed correctly."""
+        events = [
+            {
+                "type": "ASSISTANT_FINAL",
+                "data": {"text": "Hello"},
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+        ]
+
+        graph = reduce_events(events)
+        message_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.MESSAGE]
+        assert len(message_nodes) == 1
+        # Should parse without error
+
+    def test_timestamp_without_z_suffix(self):
+        """Test timestamps without Z suffix."""
+        events = [
+            {
+                "type": "ASSISTANT_FINAL",
+                "data": {"text": "Hello"},
+                "timestamp": "2024-01-01T00:00:00",
+            },
+        ]
+
+        graph = reduce_events(events)
+        message_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.MESSAGE]
+        assert len(message_nodes) == 1
+
+    def test_assistant_final_without_deltas(self):
+        """Test ASSISTANT_FINAL without prior ASSISTANT_DELTA (non-streaming)."""
+        events = [
+            {
+                "type": "RUN_STARTED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+            {
+                "type": "ASSISTANT_FINAL",
+                "data": {"text": "Complete message"},
+                "timestamp": "2024-01-01T00:00:01Z",
+            },
+            {
+                "type": "RUN_FINISHED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:02Z",
+            },
+        ]
+
+        graph = reduce_events(events)
+        message_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.MESSAGE]
+        assert len(message_nodes) == 1
+        assert message_nodes[0].text == "Complete message"
+        assert message_nodes[0].data.get("streaming") is False
+
+    def test_multiple_tool_uses_in_one_run(self):
+        """Test multiple tool uses in a single run."""
+        events = [
+            {
+                "type": "RUN_STARTED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+            {
+                "type": "TOOL_START",
+                "data": {
+                    "tool_use_id": "tool-1",
+                    "name": "bash",
+                    "input": {"command": "ls"},
+                },
+                "timestamp": "2024-01-01T00:00:01Z",
+            },
+            {
+                "type": "TOOL_START",
+                "data": {
+                    "tool_use_id": "tool-2",
+                    "name": "read",
+                    "input": {"path": "/test"},
+                },
+                "timestamp": "2024-01-01T00:00:02Z",
+            },
+            {
+                "type": "TOOL_END",
+                "data": {"tool_use_id": "tool-1", "status": "success"},
+                "timestamp": "2024-01-01T00:00:03Z",
+            },
+            {
+                "type": "TOOL_END",
+                "data": {"tool_use_id": "tool-2", "status": "error"},
+                "timestamp": "2024-01-01T00:00:04Z",
+            },
+            {
+                "type": "RUN_FINISHED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:05Z",
+            },
+        ]
+
+        graph = reduce_events(events)
+        tool_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.TOOL_USE]
+        assert len(tool_nodes) == 2
+
+        # Check both tools have correct status
+        tool_1 = next(n for n in tool_nodes if n.data.get("tool_use_id") == "tool-1")
+        tool_2 = next(n for n in tool_nodes if n.data.get("tool_use_id") == "tool-2")
+        assert tool_1.data.get("status") == "success"
+        assert tool_2.data.get("status") == "error"
+
+    def test_tool_end_out_of_order(self):
+        """Test TOOL_END arriving before TOOL_START (out of order)."""
+        events = [
+            {
+                "type": "RUN_STARTED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+            {
+                "type": "TOOL_END",
+                "data": {"tool_use_id": "tool-1", "status": "success"},
+                "timestamp": "2024-01-01T00:00:01Z",
+            },
+            {
+                "type": "TOOL_START",
+                "data": {
+                    "tool_use_id": "tool-1",
+                    "name": "bash",
+                    "input": {"command": "ls"},
+                },
+                "timestamp": "2024-01-01T00:00:02Z",
+            },
+            {
+                "type": "RUN_FINISHED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:03Z",
+            },
+        ]
+
+        # Should handle gracefully
+        graph = reduce_events(events)
+        tool_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.TOOL_USE]
+        assert len(tool_nodes) == 1
+        # Status should be set even though TOOL_END came first
+        assert tool_nodes[0].data.get("status") == "success"
+
+    def test_empty_event_data(self):
+        """Test events with missing or empty data fields."""
+        events = [
+            {
+                "type": "RUN_STARTED",
+                "data": {},
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+            {
+                "type": "ASSISTANT_DELTA",
+                "data": {},  # No text field
+                "timestamp": "2024-01-01T00:00:01Z",
+            },
+            {
+                "type": "ASSISTANT_FINAL",
+                "data": {},  # No text field
+                "timestamp": "2024-01-01T00:00:02Z",
+            },
+        ]
+
+        # Should not crash
+        graph = reduce_events(events)
+        message_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.MESSAGE]
+        assert len(message_nodes) == 1
+        assert message_nodes[0].text == ""  # Empty text
+
+    def test_unknown_event_type_ignored(self):
+        """Test that unknown event types are gracefully ignored."""
+        events = [
+            {
+                "type": "RUN_STARTED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+            {
+                "type": "UNKNOWN_EVENT_TYPE",
+                "data": {"some": "data"},
+                "timestamp": "2024-01-01T00:00:01Z",
+            },
+            {
+                "type": "ASSISTANT_FINAL",
+                "data": {"text": "Hello"},
+                "timestamp": "2024-01-01T00:00:02Z",
+            },
+            {
+                "type": "RUN_FINISHED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:03Z",
+            },
+        ]
+
+        # Should process successfully, ignoring unknown event
+        graph = reduce_events(events)
+        message_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.MESSAGE]
+        assert len(message_nodes) == 1
+        assert message_nodes[0].text == "Hello"
+
+    def test_compute_hash_stability(self):
+        """Test that compute_hash is stable across runs."""
+        from uuid import uuid4
+
+        graph1 = SessionGraph()
+        graph2 = SessionGraph()
+
+        # Add same nodes to both graphs
+        node_id = uuid4()
+        ts = datetime.now(UTC)
+
+        node1 = GraphNode(
+            id=node_id,
+            type=GraphNodeType.MESSAGE,
+            parent_id=None,
+            timestamp=ts,
+            data={"text": "Test", "role": "user"},
+        )
+
+        node2 = GraphNode(
+            id=node_id,
+            type=GraphNodeType.MESSAGE,
+            parent_id=None,
+            timestamp=ts,
+            data={"text": "Test", "role": "user"},
+        )
+
+        graph1.add_node(node1)
+        graph2.add_node(node2)
+
+        # Hashes should be identical
+        assert graph1.compute_hash() == graph2.compute_hash()
+
+    def test_run_finished_without_run_started(self):
+        """Test RUN_FINISHED without prior RUN_STARTED."""
+        events = [
+            {
+                "type": "ASSISTANT_FINAL",
+                "data": {"text": "Hello"},
+                "timestamp": "2024-01-01T00:00:00Z",
+            },
+            {
+                "type": "RUN_FINISHED",
+                "data": {"run_id": "run-1"},
+                "timestamp": "2024-01-01T00:00:01Z",
+            },
+        ]
+
+        # Should handle gracefully
+        graph = reduce_events(events)
+        message_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.MESSAGE]
+        assert len(message_nodes) == 1
