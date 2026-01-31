@@ -63,8 +63,8 @@ from smithers.events import Event, EventBus, Subscription, get_event_bus
 
 if TYPE_CHECKING:
     import websockets  # type: ignore[import-not-found]  # noqa: F401
-    from websockets.server import (
-        WebSocketServerProtocol,  # type: ignore[import-not-found]  # noqa: F401
+    from websockets.legacy.server import (
+        WebSocketServerProtocol,  # type: ignore[import-not-found]
     )
 
 logger = logging.getLogger(__name__)
@@ -73,11 +73,11 @@ logger = logging.getLogger(__name__)
 class WebSocketProtocol(Protocol):
     """Protocol for WebSocket connection objects."""
 
-    async def send(self, message: str) -> None:
+    async def send(self, message: str | bytes) -> None:
         """Send a message to the client."""
         ...
 
-    async def recv(self) -> str:
+    async def recv(self) -> str | bytes:
         """Receive a message from the client."""
         ...
 
@@ -269,7 +269,7 @@ class WebSocketServer:
             raise RuntimeError("WebSocket server is already running")
 
         try:
-            import websockets  # type: ignore[import-not-found]
+            from websockets.legacy.server import serve  # type: ignore[import-not-found]
         except ImportError as e:
             raise ImportError(
                 "websockets library required for WebSocket support. "
@@ -282,7 +282,7 @@ class WebSocketServer:
             self._event_subscription = bus.subscribe_all(self._on_event)
 
         # Start the WebSocket server
-        self._server = await websockets.serve(  # type: ignore[attr-defined]
+        self._server = await serve(
             self._handle_connection,
             host,
             port,
@@ -411,7 +411,7 @@ class WebSocketServer:
 
     async def _handle_connection(
         self,
-        websocket: WebSocketProtocol,
+        websocket: WebSocketProtocol | WebSocketServerProtocol,  # type: ignore[name-defined]
         path: str = "/",
     ) -> None:
         """Handle a new WebSocket connection."""
@@ -465,7 +465,11 @@ class WebSocketServer:
             while True:
                 try:
                     message = await websocket.recv()
-                    yield message  # type: ignore[misc]
+                    # Decode bytes to str if necessary
+                    if isinstance(message, bytes):
+                        yield message.decode("utf-8")
+                    else:
+                        yield message
                 except websockets.exceptions.ConnectionClosed:  # type: ignore[attr-defined]
                     break
         except ImportError:
