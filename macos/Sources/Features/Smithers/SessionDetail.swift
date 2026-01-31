@@ -3,6 +3,7 @@ import SwiftUI
 /// The main content area showing the selected session's terminal
 struct SessionDetail: View {
     let session: Session?
+    @State private var messageInput: String = ""
 
     var body: some View {
         if let session = session {
@@ -12,8 +13,8 @@ struct SessionDetail: View {
 
                 Divider()
 
-                // Terminal area (placeholder for now)
-                terminalPlaceholder(session)
+                // Chat area with messages
+                chatArea(session)
 
                 // Input bar at bottom
                 inputBar
@@ -70,70 +71,12 @@ struct SessionDetail: View {
         .background(Color(nsColor: .controlBackgroundColor))
     }
 
-    private func terminalPlaceholder(_ session: Session) -> some View {
-        // This is where SurfaceView will go
-        // For now, showing a placeholder that looks like a terminal
+    private func chatArea(_ session: Session) -> some View {
         ZStack {
             Color(nsColor: .textBackgroundColor)
 
-            VStack(alignment: .leading, spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        terminalLine("$ claude", isCommand: true)
-                        terminalLine("> What would you like to do?", isPrompt: true)
-                        terminalLine("> \(session.title)", isInput: true)
-                        terminalLine("")
-                        terminalLine("I'll help you with that. Let me look at the codebase...")
-                        terminalLine("")
-                        terminalLine("[Reading files...]", isDim: true)
-                        terminalLine("")
-                        terminalLine("I found the relevant code. Here's what I see:")
-                        terminalLine("")
-
-                        // Simulated code block
-                        Group {
-                            terminalLine("```typescript", isDim: true)
-                            terminalLine("  function authenticate(token: string) {")
-                            terminalLine("    // TODO: Fix validation")
-                            terminalLine("    return true;")
-                            terminalLine("  }")
-                            terminalLine("```", isDim: true)
-                        }
-
-                        terminalLine("")
-                        terminalLine("The issue is on line 3...")
-                        terminalLine("")
-                        terminalLine("$ _", isCursor: true)
-                    }
-                    .padding(16)
-                }
-
-                Spacer()
-            }
-            .font(.system(size: 13, design: .monospaced))
-            .foregroundColor(Color(nsColor: .textColor))
-        }
-    }
-
-    private func terminalLine(_ text: String, isCommand: Bool = false, isPrompt: Bool = false, isInput: Bool = false, isDim: Bool = false, isCursor: Bool = false) -> some View {
-        HStack(spacing: 0) {
-            if isCursor {
-                Text(text.dropLast())
-                Rectangle()
-                    .fill(Color.green)
-                    .frame(width: 8, height: 16)
-                    .opacity(0.8)
-            } else {
-                Text(text)
-                    .foregroundColor(
-                        isCommand ? .green :
-                        isPrompt ? .blue :
-                        isInput ? .purple :
-                        isDim ? .secondary :
-                        .primary
-                    )
-            }
-            Spacer()
+            // Render chat messages from the session graph
+            MessageList(messages: session.graph.projectToChat())
         }
     }
 
@@ -142,19 +85,32 @@ struct SessionDetail: View {
             Image(systemName: "terminal")
                 .foregroundColor(.secondary)
 
-            TextField("Type a message or command...", text: .constant(""))
+            TextField("Type a message or command...", text: $messageInput)
                 .textFieldStyle(.plain)
+                .onSubmit {
+                    sendMessage()
+                }
 
-            Button(action: {}) {
+            Button(action: sendMessage) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 24))
             }
             .buttonStyle(.plain)
-            .foregroundColor(.accentColor)
+            .foregroundColor(messageInput.isEmpty ? .secondary : .accentColor)
+            .disabled(messageInput.isEmpty)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    // MARK: - Actions
+
+    private func sendMessage() {
+        guard !messageInput.isEmpty else { return }
+        // TODO: Send message to agent daemon
+        print("Sending message: \(messageInput)")
+        messageInput = ""
     }
 
     private var emptyState: some View {
