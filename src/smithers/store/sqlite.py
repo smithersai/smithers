@@ -175,6 +175,21 @@ class LoopIteration:
     duration_ms: float | None = None
 
 
+@dataclass
+class SessionEvent:
+    """A record of an event in an agent session.
+
+    Session events are append-only logs that track all events
+    within agent sessions, enabling session replay and state recovery.
+    """
+
+    event_id: int
+    session_id: str
+    ts: datetime | None
+    type: str
+    payload_json: str
+
+
 # SQL schema for all tables
 _SCHEMA = """
 -- cache entries: content-addressed results
@@ -288,6 +303,15 @@ CREATE TABLE IF NOT EXISTS loop_iterations (
     PRIMARY KEY (run_id, loop_node_id, iteration)
 );
 
+-- session_events: append-only log for agent session events
+CREATE TABLE IF NOT EXISTS session_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    type TEXT NOT NULL,
+    payload_json TEXT NOT NULL
+);
+
 -- indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON events(run_id);
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
@@ -297,6 +321,8 @@ CREATE INDEX IF NOT EXISTS idx_tool_calls_run_id ON tool_calls(run_id);
 CREATE INDEX IF NOT EXISTS idx_cache_entries_workflow_id ON cache_entries(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_node_outputs_run_id ON node_outputs(run_id);
 CREATE INDEX IF NOT EXISTS idx_loop_iterations_run_id ON loop_iterations(run_id);
+CREATE INDEX IF NOT EXISTS idx_session_events_session_id ON session_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_events_ts ON session_events(ts);
 CREATE INDEX IF NOT EXISTS idx_loop_iterations_loop_node ON loop_iterations(run_id, loop_node_id);
 """
 
@@ -839,6 +865,111 @@ class SqliteStore:
                 for event in events:
                     yield event
                 break
+
+            await asyncio.sleep(poll_interval)
+
+    # ==================== Session Event Operations ====================
+
+    async def append_session_event(
+        self,
+        session_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> int:
+        """Append an event to a session's event log. Returns the event_id.
+
+        Args:
+            session_id: The session ID
+            event_type: The event type (e.g., "assistant.delta", "tool.start")
+            payload: Event payload data
+        """
+        await self._ensure_initialized()
+        now = _timestamp_now()
+        payload_json = json.dumps(payload, default=str)
+
+        async with self._lock, aiosqlite.connect(self.path) as db:
+            cursor = await db.execute(
+                """
+                    INSERT INTO session_events (session_id, ts, type, payload_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                (session_id, now, event_type, payload_json),
+            )
+            event_id = cursor.lastrowid
+            await db.commit()
+            return event_id or 0
+
+    async def get_session_events(
+        self,
+        session_id: str,
+        *,
+        event_type: str | None = None,
+        since_id: int | None = None,
+        since_ts: datetime | None = None,
+        limit: int = 1000,
+    ) -> list[SessionEvent]:
+        """Get events for a session, optionally filtered.
+
+        Args:
+            session_id: The session ID to query
+            event_type: Optional filter by event type
+            since_id: Optional filter for events after this ID
+            since_ts: Optional filter for events after this timestamp
+            limit: Maximum number of events to return
+        """
+        await self._ensure_initialized()
+        query = "SELECT * FROM session_events WHERE session_id = ?"
+        params: list[Any] = [session_id]
+
+        if event_type is not None:
+            query += " AND type = ?"
+            params.append(event_type)
+        if since_id is not None:
+            query += " AND event_id > ?"
+            params.append(since_id)
+        if since_ts is not None:
+            query += " AND ts > ?"
+            params.append(since_ts.isoformat())
+
+        query += " ORDER BY event_id ASC LIMIT ?"
+        params.append(limit)
+
+        async with self._lock, aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+
+        return [
+            SessionEvent(
+                event_id=row["event_id"],
+                session_id=row["session_id"],
+                ts=_parse_timestamp(row["ts"]),
+                type=row["type"],
+                payload_json=row["payload_json"],
+            )
+            for row in rows
+        ]
+
+    async def tail_session_events(
+        self,
+        session_id: str,
+        *,
+        since_id: int = 0,
+        poll_interval: float = 0.5,
+    ):
+        """Async generator that yields new session events as they arrive.
+
+        Args:
+            session_id: The session ID to tail
+            since_id: Start from events after this ID
+            poll_interval: How often to poll for new events in seconds
+        """
+        last_id = since_id
+        while True:
+            events = await self.get_session_events(session_id, since_id=last_id)
+            for event in events:
+                yield event
+                last_id = event.event_id
 
             await asyncio.sleep(poll_interval)
 

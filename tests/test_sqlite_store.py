@@ -302,6 +302,96 @@ class TestEventManagement:
         assert events[0].type == "NodeFinished"
 
 
+class TestSessionEvents:
+    """Tests for session event persistence."""
+
+    async def test_append_session_event(self, tmp_path: Path):
+        """Should append events to session log."""
+        store = SqliteStore(tmp_path / "test.db")
+        await store.initialize()
+
+        session_id = "session-123"
+        event_id = await store.append_session_event(
+            session_id,
+            "assistant.delta",
+            {"text": "Hello"},
+        )
+
+        assert event_id > 0
+
+    async def test_get_session_events(self, tmp_path: Path):
+        """Should retrieve events for a session."""
+        store = SqliteStore(tmp_path / "test.db")
+        await store.initialize()
+
+        session_id = "session-123"
+        await store.append_session_event(session_id, "run.started", {"run_id": "run-1"})
+        await store.append_session_event(session_id, "assistant.delta", {"text": "Hi"})
+        await store.append_session_event(session_id, "run.finished", {"run_id": "run-1"})
+
+        events = await store.get_session_events(session_id)
+        assert len(events) == 3
+        assert events[0].type == "run.started"
+        assert events[1].type == "assistant.delta"
+        assert events[2].type == "run.finished"
+
+    async def test_get_session_events_filtered_by_type(self, tmp_path: Path):
+        """Should filter session events by type."""
+        store = SqliteStore(tmp_path / "test.db")
+        await store.initialize()
+
+        session_id = "session-123"
+        await store.append_session_event(session_id, "assistant.delta", {"text": "Hello"})
+        await store.append_session_event(session_id, "tool.start", {"tool": "bash"})
+        await store.append_session_event(session_id, "assistant.delta", {"text": "World"})
+
+        events = await store.get_session_events(session_id, event_type="assistant.delta")
+        assert len(events) == 2
+        assert all(e.type == "assistant.delta" for e in events)
+
+    async def test_get_session_events_since_id(self, tmp_path: Path):
+        """Should support polling with since_id."""
+        store = SqliteStore(tmp_path / "test.db")
+        await store.initialize()
+
+        session_id = "session-123"
+        first_id = await store.append_session_event(session_id, "run.started", {})
+        await store.append_session_event(session_id, "assistant.delta", {"text": "Hi"})
+        await store.append_session_event(session_id, "run.finished", {})
+
+        # Get events after the first one
+        events = await store.get_session_events(session_id, since_id=first_id)
+        assert len(events) == 2
+        assert events[0].type == "assistant.delta"
+
+    async def test_get_session_events_limit(self, tmp_path: Path):
+        """Should respect limit parameter."""
+        store = SqliteStore(tmp_path / "test.db")
+        await store.initialize()
+
+        session_id = "session-123"
+        for i in range(5):
+            await store.append_session_event(session_id, "assistant.delta", {"text": f"msg{i}"})
+
+        events = await store.get_session_events(session_id, limit=3)
+        assert len(events) == 3
+
+    async def test_multiple_sessions_isolated(self, tmp_path: Path):
+        """Should isolate events between sessions."""
+        store = SqliteStore(tmp_path / "test.db")
+        await store.initialize()
+
+        await store.append_session_event("session-1", "assistant.delta", {"text": "A"})
+        await store.append_session_event("session-2", "assistant.delta", {"text": "B"})
+        await store.append_session_event("session-1", "assistant.delta", {"text": "C"})
+
+        events_1 = await store.get_session_events("session-1")
+        events_2 = await store.get_session_events("session-2")
+
+        assert len(events_1) == 2
+        assert len(events_2) == 1
+
+
 class TestApprovalManagement:
     """Tests for human-in-the-loop approval gates."""
 
