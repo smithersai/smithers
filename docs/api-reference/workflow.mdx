@@ -152,6 +152,81 @@ A `SkipResult` object that signals the workflow should be skipped.
 
 ---
 
+## `@timeout`
+
+Decorator to set a timeout for a workflow.
+
+```python
+from smithers import workflow, timeout
+
+@workflow
+@timeout(seconds=30)
+async def quick_task() -> Output:
+    ...
+```
+
+### Signature
+
+```python
+def timeout(
+    seconds: int | float | timedelta,
+    on_timeout: Literal["fail", "skip"] = "fail",
+) -> Callable
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `seconds` | `int \| float \| timedelta` | required | Timeout duration |
+| `on_timeout` | `"fail" \| "skip"` | `"fail"` | Behavior when timeout occurs |
+
+### Example
+
+```python
+from datetime import timedelta
+
+@workflow
+@timeout(timedelta(minutes=5))
+async def long_task() -> Output:
+    ...
+
+@workflow
+@timeout(30, on_timeout="skip")
+async def optional_task() -> Output:
+    ...
+```
+
+---
+
+## `RetryPolicy`
+
+Configure automatic retries for workflows.
+
+```python
+from smithers import RetryPolicy
+
+policy = RetryPolicy(
+    max_attempts=3,
+    backoff_seconds=5.0,
+    backoff_multiplier=2.0,
+    retry_on=(TimeoutError, ConnectionError),
+)
+
+result = await run_graph(graph, retry_policy=policy)
+```
+
+### Attributes
+
+| Attribute | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_attempts` | `int` | `1` | Maximum number of attempts |
+| `backoff_seconds` | `float` | `0.0` | Initial delay between retries |
+| `backoff_multiplier` | `float` | `1.0` | Multiply delay after each attempt |
+| `retry_on` | `tuple[type, ...]` | `()` | Exception types to retry on |
+
+---
+
 ## Registry Functions
 
 ### `get_workflow_by_output`

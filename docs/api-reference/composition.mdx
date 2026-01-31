@@ -1,0 +1,228 @@
+---
+title: Composition
+description: API reference for workflow composition functions
+---
+
+## `chain`
+
+Execute workflows sequentially, passing outputs from one to the next.
+
+```python
+from smithers import chain
+
+pipeline = chain(analyze, implement, test)
+```
+
+### Signature
+
+```python
+def chain(*workflows: Workflow) -> Workflow
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `*workflows` | `Workflow` | Workflows to chain together |
+
+### Returns
+
+A new `Workflow` that executes the inputs in sequence.
+
+---
+
+## `parallel`
+
+Run multiple workflows concurrently and collect results.
+
+```python
+from smithers import parallel
+
+review = parallel(
+    lint_workflow,
+    test_workflow,
+    security_workflow,
+    collect_as=ReviewResults,
+)
+```
+
+### Signature
+
+```python
+def parallel(
+    *workflows: Workflow,
+    collect_as: type[T],
+) -> Workflow[..., T]
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `*workflows` | `Workflow` | Workflows to run in parallel |
+| `collect_as` | `type[T]` | Pydantic model to collect results into |
+
+### Returns
+
+A new `Workflow` that runs all inputs in parallel and returns the collected results.
+
+### Example
+
+```python
+from pydantic import BaseModel
+
+class ReviewResults(BaseModel):
+    lint: LintOutput
+    test: TestOutput
+    security: SecurityOutput
+
+review = parallel(
+    lint_workflow,
+    test_workflow,
+    security_workflow,
+    collect_as=ReviewResults,
+)
+
+result = await run_graph(build_graph(review))
+print(result.lint)  # LintOutput
+```
+
+---
+
+## `branch`
+
+Conditional execution based on input.
+
+```python
+from smithers import branch
+
+flow = branch(
+    condition=lambda x: x.score > 80,
+    if_true=auto_approve,
+    if_false=manual_review,
+    input_type=ScoreOutput,
+)
+```
+
+### Signature
+
+```python
+def branch(
+    condition: Callable[[T], bool],
+    if_true: Workflow,
+    if_false: Workflow,
+    input_type: type[T],
+) -> Workflow
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `condition` | `Callable[[T], bool]` | Function to evaluate the condition |
+| `if_true` | `Workflow` | Workflow to run if condition is true |
+| `if_false` | `Workflow` | Workflow to run if condition is false |
+| `input_type` | `type[T]` | Type of the input to the condition |
+
+### Returns
+
+A new `Workflow` that routes to one of two branches based on the condition.
+
+---
+
+## `map_workflow`
+
+Apply a workflow to each item in a list.
+
+```python
+from smithers import map_workflow
+
+analyze_all = map_workflow(analyze_file)
+# Input: list[FileInput] -> Output: list[FileAnalysis]
+```
+
+### Signature
+
+```python
+def map_workflow(workflow: Workflow[T, R]) -> Workflow[list[T], list[R]]
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `workflow` | `Workflow[T, R]` | Workflow to apply to each item |
+
+### Returns
+
+A new `Workflow` that takes a list and returns a list of results.
+
+---
+
+## `reduce_workflow`
+
+Aggregate multiple outputs into a single result.
+
+```python
+from smithers import reduce_workflow
+
+summarize = reduce_workflow(
+    combine_analyses,
+    initial=AnalysisSummary(total=0, issues=[]),
+)
+```
+
+### Signature
+
+```python
+def reduce_workflow(
+    workflow: Workflow[[T, R], R],
+    initial: R,
+) -> Workflow[list[T], R]
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `workflow` | `Workflow` | Workflow that combines two values |
+| `initial` | `R` | Initial value for the reduction |
+
+### Returns
+
+A new `Workflow` that reduces a list to a single value.
+
+---
+
+## `compose_graphs`
+
+Merge multiple graphs together.
+
+```python
+from smithers import compose_graphs
+
+graph1 = build_graph(analyze)
+graph2 = build_graph(implement)
+
+combined = compose_graphs(graph1, graph2, target="deploy")
+```
+
+### Signature
+
+```python
+def compose_graphs(
+    *graphs: WorkflowGraph,
+    target: str,
+) -> WorkflowGraph
+```
+
+### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `*graphs` | `WorkflowGraph` | Graphs to merge |
+| `target` | `str` | Name of the target workflow in the merged graph |
+
+### Returns
+
+A new `WorkflowGraph` containing all nodes from the input graphs.

@@ -64,10 +64,11 @@
       "group": "Core Concepts",
       "pages": [
         "concepts/workflows",
-        "concepts/ralph-loops",
         "concepts/dependencies",
         "concepts/graph",
-        "concepts/execution"
+        "concepts/execution",
+        "concepts/composition",
+        "concepts/ralph-loops"
       ]
     },
     {
@@ -76,7 +77,9 @@
         "features/claude",
         "features/tools",
         "features/caching",
-        "features/human-in-the-loop"
+        "features/human-in-the-loop",
+        "features/timeouts",
+        "features/monitoring"
       ]
     },
     {
@@ -86,6 +89,8 @@
         "api-reference/claude",
         "api-reference/graph",
         "api-reference/cache",
+        "api-reference/composition",
+        "api-reference/monitoring",
         "api-reference/cli"
       ]
     },

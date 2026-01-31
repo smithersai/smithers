@@ -171,18 +171,49 @@ async def greet(
 
 Only parameters with Pydantic model types are treated as dependencies.
 
+## External Inputs
+
+Workflows can also accept external inputs (not from other workflows):
+
+```python
+@workflow
+async def analyze(file_path: str) -> AnalysisOutput:
+    return await claude(f"Analyze {file_path}", output=AnalysisOutput)
+
+# Provide external input at build time
+graph = build_graph(analyze, inputs={"file_path": "src/main.py"})
+```
+
+## Composition vs Dependencies
+
+For complex patterns, consider using [workflow composition](/concepts/composition):
+
+```python
+from smithers import chain, parallel
+
+# Instead of manual dependencies
+pipeline = chain(analyze, implement, test)
+
+# Or parallel execution
+review = parallel(lint, test, security, collect_as=ReviewOutput)
+```
+
 ## Best Practices
 
 <AccordionGroup>
   <Accordion title="Design outputs for reuse">
     Think about what other workflows might need. Include useful fields.
   </Accordion>
-  
+
   <Accordion title="Keep dependency chains shallow">
     Deep chains (A → B → C → D → E → F) are harder to debug. Consider parallelism.
   </Accordion>
-  
+
   <Accordion title="Use diamond patterns for parallelism">
     If two workflows can run in parallel, have them depend on the same upstream workflow.
+  </Accordion>
+
+  <Accordion title="Use composition for complex patterns">
+    When dependencies get complex, use `chain`, `parallel`, or `branch` for clarity.
   </Accordion>
 </AccordionGroup>

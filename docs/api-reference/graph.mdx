@@ -69,6 +69,13 @@ async def run_graph(
     graph: WorkflowGraph,
     cache: Cache | None = None,
     max_concurrency: int | None = None,
+    timeout: int | None = None,
+    node_timeout: int | None = None,
+    retry_policy: RetryPolicy | None = None,
+    fail_fast: bool = False,
+    on_progress: Callable[[WorkflowEvent], Awaitable[None]] | None = None,
+    dry_run: bool = False,
+    return_all: bool = False,
 ) -> Any
 ```
 
@@ -79,19 +86,49 @@ async def run_graph(
 | `graph` | `WorkflowGraph` | required | The graph to execute |
 | `cache` | `Cache \| None` | `None` | Cache for skipping unchanged workflows |
 | `max_concurrency` | `int \| None` | `None` | Max parallel workflows |
+| `timeout` | `int \| None` | `None` | Global timeout in seconds |
+| `node_timeout` | `int \| None` | `None` | Default per-node timeout |
+| `retry_policy` | `RetryPolicy \| None` | `None` | Retry policy for failed nodes |
+| `fail_fast` | `bool` | `False` | Stop all execution on first failure |
+| `on_progress` | `Callable` | `None` | Callback for progress events |
+| `dry_run` | `bool` | `False` | Preview execution without running |
+| `return_all` | `bool` | `False` | Return all outputs, not just root |
 
 ### Returns
 
-The output of the root (target) workflow.
+The output of the root (target) workflow. If `return_all=True`, returns an `ExecutionResult` with all outputs.
 
 ### Example
 
 ```python
-from smithers import SqliteCache
+from smithers import SqliteCache, RetryPolicy
 
 cache = SqliteCache("./cache.db")
-result = await run_graph(graph, cache=cache, max_concurrency=4)
+result = await run_graph(
+    graph,
+    cache=cache,
+    max_concurrency=4,
+    timeout=300,
+    node_timeout=60,
+    retry_policy=RetryPolicy(max_attempts=3),
+)
 ```
+
+## `run_graph_with_store`
+
+Execute a workflow graph with a persistent SQLite store.
+
+```python
+from smithers import run_graph_with_store
+
+result = await run_graph_with_store(
+    graph,
+    store_path="./smithers.db",
+    timeout=300,
+)
+```
+
+This variant persists all events, runs, and node states to SQLite for later inspection.
 
 ---
 

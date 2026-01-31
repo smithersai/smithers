@@ -1,0 +1,248 @@
+---
+title: Monitoring
+description: API reference for metrics and WebSocket monitoring
+---
+
+## MetricsCollector
+
+Collects and exports Prometheus metrics.
+
+```python
+from smithers import get_metrics_collector
+
+collector = get_metrics_collector()
+collector.attach_to_event_bus()
+collector.start_server(port=9090)
+```
+
+### `get_metrics_collector`
+
+Get the global metrics collector instance.
+
+```python
+def get_metrics_collector() -> MetricsCollector
+```
+
+### Methods
+
+#### `attach_to_event_bus`
+
+Subscribe to workflow events for automatic metric recording.
+
+```python
+collector.attach_to_event_bus()
+```
+
+#### `start_server`
+
+Start an HTTP server for Prometheus scraping.
+
+```python
+collector.start_server(port: int = 9090, host: str = "0.0.0.0")
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `port` | `int` | `9090` | Port to listen on |
+| `host` | `str` | `"0.0.0.0"` | Host to bind to |
+
+#### `export_prometheus`
+
+Export metrics in Prometheus format.
+
+```python
+metrics_text = collector.export_prometheus()
+```
+
+Returns a string in Prometheus exposition format.
+
+---
+
+## Recording Functions
+
+Record metrics manually for custom instrumentation.
+
+### `record_workflow_run`
+
+Record a workflow run.
+
+```python
+from smithers import record_workflow_run
+
+record_workflow_run(
+    workflow_name="my_workflow",
+    status="success",
+    duration_seconds=1.5,
+)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `workflow_name` | `str` | Name of the workflow |
+| `status` | `str` | Run status ("success", "failed", "cached") |
+| `duration_seconds` | `float` | Execution duration |
+
+### `record_llm_call`
+
+Record an LLM API call.
+
+```python
+from smithers import record_llm_call
+
+record_llm_call(
+    model="claude-sonnet-4-20250514",
+    input_tokens=1000,
+    output_tokens=500,
+)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `model` | `str` | Model name |
+| `input_tokens` | `int` | Number of input tokens |
+| `output_tokens` | `int` | Number of output tokens |
+
+---
+
+## WebSocketServer
+
+Real-time event streaming via WebSocket.
+
+```python
+from smithers import get_websocket_server
+
+server = get_websocket_server()
+await server.start(host="localhost", port=8765)
+```
+
+### `get_websocket_server`
+
+Get the global WebSocket server instance.
+
+```python
+def get_websocket_server() -> WebSocketServer
+```
+
+### Methods
+
+#### `start`
+
+Start the WebSocket server.
+
+```python
+await server.start(host: str = "localhost", port: int = 8765)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `host` | `str` | `"localhost"` | Host to bind to |
+| `port` | `int` | `8765` | Port to listen on |
+
+#### `stop`
+
+Stop the WebSocket server.
+
+```python
+await server.stop()
+```
+
+#### `broadcast`
+
+Send a message to all connected clients.
+
+```python
+await server.broadcast({"type": "custom", "data": "hello"})
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `message` | `dict` | JSON-serializable message |
+
+#### `send_to_client`
+
+Send a message to a specific client.
+
+```python
+await server.send_to_client(client_id, {"type": "direct", "message": "..."})
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `client_id` | `str` | Client identifier |
+| `message` | `dict` | JSON-serializable message |
+
+---
+
+## Client Protocol
+
+WebSocket clients communicate using JSON messages.
+
+### Actions
+
+| Action | Payload | Description |
+|--------|---------|-------------|
+| `subscribe` | `{"action": "subscribe", "run_id": "..."}` | Subscribe to a specific run |
+| `filter` | `{"action": "filter", "event_types": [...]}` | Filter event types |
+| `ping` | `{"action": "ping"}` | Heartbeat |
+
+### Server Events
+
+Events are broadcast as JSON objects:
+
+```json
+{
+  "type": "NodeStarted",
+  "run_id": "run-123",
+  "node_id": "analyze",
+  "timestamp": "2025-01-15T10:30:00Z"
+}
+```
+
+---
+
+## SqliteStore
+
+Persistent storage for runs, events, and approvals.
+
+```python
+from smithers import SqliteStore
+
+store = SqliteStore("./smithers.db")
+```
+
+### Methods
+
+#### `get_run`
+
+Get a run by ID.
+
+```python
+run = await store.get_run(run_id)
+```
+
+#### `list_runs`
+
+List all runs.
+
+```python
+runs = await store.list_runs(
+    status="SUCCESS",
+    limit=20,
+)
+```
+
+#### `get_events`
+
+Get events for a run.
+
+```python
+events = await store.get_events(run_id)
+```
+
+#### `get_node_state`
+
+Get the current state of a node.
+
+```python
+state = await store.get_node_state(run_id, node_id)
+```
