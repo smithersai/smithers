@@ -3,8 +3,9 @@
 import pytest
 from pydantic import BaseModel
 
-from smithers.graph import build_graph
-from smithers.workflow import workflow
+from smithers.graph import _dependency_namespace, _hash_inputs, build_graph
+from smithers.hashing import input_hash
+from smithers.workflow import clear_registry, workflow
 
 
 class A(BaseModel):
@@ -114,3 +115,33 @@ class TestBuildGraph:
 
         assert "graph LR" in mermaid
         assert "step1 --> step2" in mermaid
+
+    def test_list_dependency_hashing_and_namespace(self):
+        clear_registry()
+        try:
+            class Item(BaseModel):
+                value: int
+
+            class Summary(BaseModel):
+                total: int
+
+            @workflow
+            async def produce() -> Item:
+                return Item(value=1)
+
+            @workflow
+            async def consume(items: list[Item]) -> Summary:
+                return Summary(total=sum(item.value for item in items))
+
+            item = Item(value=1)
+            outputs = {"produce": item}
+
+            expected_inputs = {"bound_args": {}, "deps": {"items": [item]}}
+            expected_hash = input_hash(expected_inputs)
+
+            assert _hash_inputs(consume, outputs) == expected_hash
+
+            deps = _dependency_namespace(consume, outputs)
+            assert deps.items == [item]
+        finally:
+            clear_registry()
