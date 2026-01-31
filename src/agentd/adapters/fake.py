@@ -1,0 +1,60 @@
+"""Fake agent adapter for deterministic testing."""
+
+import asyncio
+from typing import Any, AsyncIterator, Callable
+
+from agentd.adapters.base import AgentAdapter, Message, ToolSpec
+from agentd.protocol.events import Event, EventType
+
+
+class FakeAgentAdapter(AgentAdapter):
+    """
+    Fake adapter that returns scripted responses.
+
+    Used for:
+    - UI development without API costs
+    - Integration tests
+    - Golden event log fixtures
+    """
+
+    def __init__(self, script: list[dict[str, Any]] | None = None):
+        self.script = script or self._default_script()
+        self._cancelled = False
+
+    def _default_script(self) -> list[dict[str, Any]]:
+        """Default script for demo purposes."""
+        return [
+            {"type": "assistant.delta", "text": "I'll help you with that. "},
+            {"type": "assistant.delta", "text": "Let me analyze the code..."},
+            {"type": "tool.start", "tool_use_id": "t1", "name": "Read", "input": {"path": "/src/main.py"}},
+            {"type": "tool.end", "tool_use_id": "t1", "status": "success"},
+            {"type": "assistant.delta", "text": "\n\nI found the issue."},
+            {"type": "assistant.final", "message_id": "m1"},
+        ]
+
+    async def run(
+        self,
+        messages: list[Message],
+        tools: list[ToolSpec],
+        emit: Callable[[Event], None],
+    ) -> AsyncIterator[Event]:
+        """Execute the scripted response."""
+        self._cancelled = False
+
+        for item in self.script:
+            if self._cancelled:
+                break
+
+            event_type = EventType(item["type"])
+            data = {k: v for k, v in item.items() if k != "type"}
+            event = Event(type=event_type, data=data)
+
+            emit(event)
+            yield event
+
+            # Simulate realistic timing
+            await asyncio.sleep(0.05)
+
+    async def cancel(self) -> None:
+        """Cancel the scripted run."""
+        self._cancelled = True
