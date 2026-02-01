@@ -221,7 +221,7 @@ def reduce_events(events: list[dict[str, Any]]) -> SessionGraph:
             ts = datetime.now()
 
         # Process event based on type
-        if event_type == "RUN_STARTED":
+        if event_type == "run.started" or event_type == "RUN_STARTED":
             # Run started - reset streaming state
             graph._current_message_id = None
             graph._current_message_text = ""
@@ -239,7 +239,7 @@ def reduce_events(events: list[dict[str, Any]]) -> SessionGraph:
             )
             graph.add_node(node)
 
-        elif event_type == "ASSISTANT_DELTA":
+        elif event_type == "assistant.delta" or event_type == "ASSISTANT_DELTA":
             # Streaming text delta
             text = data.get("text", "")
             graph._current_message_text += text
@@ -263,7 +263,7 @@ def reduce_events(events: list[dict[str, Any]]) -> SessionGraph:
                 if node:
                     node.data["text"] = graph._current_message_text
 
-        elif event_type == "ASSISTANT_FINAL":
+        elif event_type == "assistant.final" or event_type == "ASSISTANT_FINAL":
             # Assistant message complete
             text = data.get("text", "")
             if graph._current_message_id:
@@ -287,7 +287,7 @@ def reduce_events(events: list[dict[str, Any]]) -> SessionGraph:
                 )
                 graph.add_node(node)
 
-        elif event_type == "TOOL_START":
+        elif event_type == "tool.start" or event_type == "TOOL_START":
             # Tool invocation started
             node_id = next_node_id()
             tool_use_id = data.get("tool_use_id")
@@ -309,7 +309,7 @@ def reduce_events(events: list[dict[str, Any]]) -> SessionGraph:
             )
             graph.add_node(node)
 
-        elif event_type == "TOOL_END":
+        elif event_type == "tool.end" or event_type == "TOOL_END":
             # Tool completed - find the tool_use node and update it
             tool_use_id = data.get("tool_use_id")
             status = data.get("status", "success")
@@ -329,11 +329,11 @@ def reduce_events(events: list[dict[str, Any]]) -> SessionGraph:
             if not found and tool_use_id:
                 graph._pending_tool_statuses[tool_use_id] = status
 
-        elif event_type == "SESSION_CREATED":
+        elif event_type == "session.created" or event_type == "SESSION_CREATED":
             # Session created - no graph nodes needed
             pass
 
-        elif event_type == "RUN_FINISHED":
+        elif event_type == "run.finished" or event_type == "RUN_FINISHED":
             # Run finished - finalize streaming
             graph._current_message_id = None
             graph._current_message_text = ""

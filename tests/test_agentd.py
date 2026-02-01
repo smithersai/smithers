@@ -784,6 +784,90 @@ class TestSessionManager:
         assert loaded_count == 0
         assert len(session_manager.sessions) == 0
 
+    @pytest.mark.asyncio
+    async def test_end_to_end_event_persistence_and_graph_reduction(
+        self, fake_adapter, tmp_path
+    ):
+        """Test full end-to-end flow: SessionManager → Store → Reducer → Graph.
+
+        This test verifies the complete foundation:
+        1. SessionManager sends message through adapter
+        2. Events are emitted and persisted to store
+        3. Events can be loaded from store
+        4. Events can be reduced into a SessionGraph
+        5. SessionGraph can be projected to chat messages
+        """
+        from agentd.reducer import reduce_events
+        from agentd.session import SessionManager
+        from agentd.store.sqlite import SessionStore
+
+        # Create store
+        db_path = tmp_path / "test_e2e.db"
+        store = SessionStore(db_path)
+        await store.initialize()
+
+        # Create session manager with store
+        session_manager = SessionManager(adapter=fake_adapter, store=store)
+
+        # Create a session
+        session = await session_manager.create_session(str(tmp_path))
+
+        # Send a message (this will trigger adapter, emit events, and persist them)
+        await session_manager.send_message(
+            session_id=session.id, message="Hello, agent!", emit=lambda e: None
+        )
+
+        # Give async tasks time to complete
+        await asyncio.sleep(0.1)
+
+        # Step 1: Verify events were persisted to store
+        event_records = await store.get_events(session.id)
+        assert len(event_records) > 0, "Events should be persisted to store"
+
+        # Step 2: Convert stored events to protocol Event objects
+        protocol_events = await store.get_events_as_protocol_events(session.id)
+        assert len(protocol_events) > 0, "Should have protocol events"
+
+        # Step 3: Convert protocol events to reducer format (dict with type, data, timestamp)
+        reducer_events = [
+            {
+                "type": event.type.value,
+                "data": event.data,
+                "timestamp": event.timestamp.isoformat(),
+            }
+            for event in protocol_events
+        ]
+
+        # Step 4: Reduce events into a SessionGraph
+        graph = reduce_events(reducer_events)
+
+        # Step 5: Verify graph structure
+        assert len(graph.nodes) > 0, "Graph should have nodes"
+
+        # Should have at least one message node (user message + assistant deltas/final)
+        from agentd.reducer import GraphNodeType
+
+        message_nodes = [n for n in graph.nodes.values() if n.type == GraphNodeType.MESSAGE]
+        assert len(message_nodes) >= 1, "Should have at least one message node"
+
+        # Step 6: Project graph to chat messages
+        chat_messages = graph.project_to_chat()
+        assert len(chat_messages) >= 1, "Should have at least one chat message"
+
+        # Verify the assistant message content
+        assistant_messages = [msg for msg in chat_messages if msg.role == "assistant"]
+        assert len(assistant_messages) >= 1, "Should have assistant response"
+
+        # The fake adapter emits "Hello! " + "How can I help?"
+        assert "Hello" in assistant_messages[0].content
+        assert "help" in assistant_messages[0].content.lower()
+
+        # Step 7: Verify graph determinism
+        graph2 = reduce_events(reducer_events)
+        assert graph.compute_hash() == graph2.compute_hash(), (
+            "Reducer should be deterministic: same events → same graph hash"
+        )
+
 
 class TestAgentDaemonSessionList:
     """Test session.list request handling."""
