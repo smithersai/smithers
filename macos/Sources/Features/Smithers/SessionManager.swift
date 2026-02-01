@@ -418,8 +418,22 @@ class SessionManager: ObservableObject {
             }
 
         case .checkpointRestored:
-            // TODO: Handle checkpoint restoration in graph
-            break
+            // Add checkpoint restoration node to show the restore action
+            if let currentSessionIndex = currentActiveSessionIndex(),
+               let checkpointId = event.data["checkpoint_id"]?.value as? String {
+                let node = GraphNode(
+                    id: UUID(),
+                    type: .checkpoint,
+                    parentId: sessions[currentSessionIndex].graph.lastNodeId(),
+                    timestamp: Date(),
+                    data: [
+                        "checkpoint_id": AnyCodable(checkpointId),
+                        "label": AnyCodable("Restored to checkpoint"),
+                        "action": AnyCodable("restore")
+                    ]
+                )
+                sessions[currentSessionIndex].graph.addNode(node)
+            }
 
         case .skillStart:
             // Add skill run node
