@@ -166,7 +166,7 @@ struct SessionDetail: View {
             Color(nsColor: .textBackgroundColor)
 
             // Render chat messages from the session graph
-            MessageList(messages: session.graph.projectToChat())
+            MessageList(items: session.graph.projectToChat())
         }
     }
 
