@@ -13,6 +13,11 @@ class SessionManager: ObservableObject {
     private let sandboxMode: String
     private let agentBackend: String
 
+    /// The workspace root directory for this session manager
+    var workspace: String {
+        workspaceRoot
+    }
+
     init(
         workspaceRoot: String,
         sandboxMode: String = "host",

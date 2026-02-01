@@ -221,9 +221,8 @@ struct SessionDetail: View {
         // Open the drawer
         isTerminalDrawerOpen = true
 
-        // Open a new terminal tab or reuse existing
-        // TODO: Get the actual working directory from the session
-        let cwd = FileManager.default.homeDirectoryForCurrentUser
+        // Open a new terminal tab or reuse existing with the session's workspace root
+        let cwd = URL(fileURLWithPath: sessionManager.workspace)
         let tabId = terminalManager.reuseOrOpenTab(cwd: cwd, title: "Terminal")
 
         // Create the surface if needed
