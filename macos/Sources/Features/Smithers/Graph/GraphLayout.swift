@@ -100,7 +100,10 @@ class GraphLayoutEngine {
             assignLayers(root, layer: 0)
         }
 
-        // Step 3: Position nodes
+        // Step 3: Reduce edge crossings using barycenter heuristic
+        self.optimizeNodeOrdering(&layers, children: children, parents: parents)
+
+        // Step 4: Position nodes
         var layoutNodes: [LayoutNode] = []
         let nodeSize = CGSize(width: config.nodeWidth, height: config.nodeHeight)
 
@@ -124,7 +127,7 @@ class GraphLayoutEngine {
             }
         }
 
-        // Step 4: Create edges with simple routing
+        // Step 5: Create edges with simple routing
         var layoutEdges: [LayoutEdge] = []
         let nodeMap = Dictionary(uniqueKeysWithValues: layoutNodes.map { ($0.id, $0) })
 
@@ -166,7 +169,7 @@ class GraphLayoutEngine {
             ))
         }
 
-        // Step 5: Calculate bounds
+        // Step 6: Calculate bounds
         let maxX = layoutNodes.map { $0.position.x + $0.size.width }.max() ?? 0
         let maxY = layoutNodes.map { $0.position.y + $0.size.height }.max() ?? 0
         let bounds = CGRect(
@@ -181,5 +184,69 @@ class GraphLayoutEngine {
             edges: layoutEdges,
             bounds: bounds
         )
+    }
+
+    // MARK: - Crossing Reduction Helpers
+
+    /// Direction for barycenter ordering
+    private enum OrderDirection {
+        case up, down
+    }
+
+    /// Optimize node ordering within layers to reduce edge crossings
+    /// Uses the barycenter heuristic - positions nodes based on average position of neighbors
+    private func optimizeNodeOrdering(_ layers: inout [[UUID]], children: [UUID: [UUID]], parents: [UUID: UUID]) {
+        // Perform multiple passes to iteratively improve ordering
+        let passes = 4
+        for pass in 0..<passes {
+            // Alternate between top-down and bottom-up passes
+            if pass % 2 == 0 {
+                // Top-down: order based on children positions
+                for layerIndex in 0..<(layers.count - 1) {
+                    orderByBarycenter(&layers[layerIndex + 1], relativeTo: layers[layerIndex], children: children, parents: parents, direction: .down)
+                }
+            } else {
+                // Bottom-up: order based on parent positions
+                for layerIndex in (1..<layers.count).reversed() {
+                    orderByBarycenter(&layers[layerIndex], relativeTo: layers[layerIndex - 1], children: children, parents: parents, direction: .up)
+                }
+            }
+        }
+    }
+
+    /// Order nodes in a layer based on barycenter of connected nodes in adjacent layer
+    private func orderByBarycenter(_ layer: inout [UUID], relativeTo adjacentLayer: [UUID], children: [UUID: [UUID]], parents: [UUID: UUID], direction: OrderDirection) {
+        // Build position map for adjacent layer
+        var adjacentPositions: [UUID: Int] = [:]
+        for (index, nodeId) in adjacentLayer.enumerated() {
+            adjacentPositions[nodeId] = index
+        }
+
+        // Calculate barycenter for each node in current layer
+        var nodeBarycenters: [(UUID, Double)] = layer.map { nodeId in
+            var connectedPositions: [Int] = []
+
+            switch direction {
+            case .down:
+                // Connected to children in layer below
+                if let nodeChildren = children[nodeId] {
+                    connectedPositions = nodeChildren.compactMap { adjacentPositions[$0] }
+                }
+            case .up:
+                // Connected to parent in layer above
+                if let parentId = parents[nodeId], let parentPos = adjacentPositions[parentId] {
+                    connectedPositions = [parentPos]
+                }
+            }
+
+            let barycenter = connectedPositions.isEmpty ? Double(layer.count) / 2.0 : Double(connectedPositions.reduce(0, +)) / Double(connectedPositions.count)
+            return (nodeId, barycenter)
+        }
+
+        // Sort by barycenter
+        nodeBarycenters.sort { $0.1 < $1.1 }
+
+        // Update layer with new ordering
+        layer = nodeBarycenters.map { $0.0 }
     }
 }
