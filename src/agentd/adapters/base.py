@@ -1,7 +1,7 @@
 """Base class for agent adapters."""
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 from agentd.protocol.events import Event
@@ -24,7 +24,7 @@ class AgentAdapter(ABC):
         messages: list[Message],
         tools: list[ToolSpec],
         emit: Callable[[Event], None],
-    ) -> AsyncIterator[Event]:
+    ) -> AsyncGenerator[Event, None]:
         """
         Run the agent with given messages and tools.
 

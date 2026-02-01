@@ -1,7 +1,7 @@
 """Anthropic API adapter using raw anthropic client."""
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportAttributeAccessIssue=false
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import TYPE_CHECKING, Any
 
 from agentd.adapters.base import AgentAdapter, Message, ToolSpec
@@ -42,7 +42,7 @@ class AnthropicAgentAdapter(AgentAdapter):
         messages: list[Message],
         tools: list[ToolSpec],
         emit: Callable[[Event], None],
-    ) -> AsyncIterator[Event]:
+    ) -> AsyncGenerator[Event, None]:
         """Run the agent using Anthropic streaming API."""
         if anthropic is None:
             raise ImportError("anthropic package not installed")

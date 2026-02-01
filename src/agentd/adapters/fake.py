@@ -1,7 +1,7 @@
 """Fake agent adapter for deterministic testing."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 from agentd.adapters.base import AgentAdapter, Message, ToolSpec
@@ -43,7 +43,7 @@ class FakeAgentAdapter(AgentAdapter):
         messages: list[Message],
         tools: list[ToolSpec],
         emit: Callable[[Event], None],
-    ) -> AsyncIterator[Event]:
+    ) -> AsyncGenerator[Event, None]:
         """Execute the scripted response."""
         self._cancelled = False
 
