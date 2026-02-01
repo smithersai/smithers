@@ -580,8 +580,12 @@ async def _execute_node(
         if cache is not None and not is_invalidated:
             input_hash_value = _hash_inputs(wf, ctx.outputs)
             cache_key = _cache_key(wf, input_hash_value)
-            cached_value = await cache.get(cache_key)
-            if cached_value is not None:
+            cached_value_raw = await cache.get(cache_key)
+            if cached_value_raw is not None:
+                # Validate and reconstruct the Pydantic model from cached dict
+                # (Cache now stores JSON dicts for security, not pickled objects)
+                adapter = TypeAdapter(node.output_type)
+                cached_value = adapter.validate_python(cached_value_raw)
                 ctx.outputs[name] = cached_value
                 ctx.statuses[name] = "cached"
                 ctx.results.append(

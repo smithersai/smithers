@@ -257,3 +257,73 @@ class TestCacheWithWorkflows:
             result = await run_graph(graph, cache=cache, return_all=True)
             assert result.stats.workflows_cached == 1
             assert result.stats.workflows_executed == 0
+
+
+class TestCacheSecurity:
+    """Security tests for cache serialization."""
+
+    async def test_cache_rejects_arbitrary_pickle_objects(self, tmp_path: Path):
+        """Test that cache does not allow deserialization of arbitrary pickle objects.
+
+        This tests for CVE-like vulnerabilities where malicious pickle data could
+        execute arbitrary code during deserialization. The cache should only accept
+        JSON-serializable data structures.
+        """
+        import sqlite3
+
+        cache = SqliteCache(tmp_path / "test.db")
+        await cache._ensure_initialized()
+
+        # Create a malicious pickle payload that would execute code if deserialized
+        # This is a simplified example - real attacks could be more sophisticated
+        class MaliciousClass:
+            def __reduce__(self):
+                # This would execute arbitrary code if pickle.loads() is called
+                import os
+                return (os.system, ("echo pwned",))
+
+        malicious_obj = MaliciousClass()
+
+        # Directly insert malicious pickle data into the database
+        # (simulating a compromised cache file)
+        import pickle
+
+        malicious_pickle = pickle.dumps(malicious_obj)
+
+        conn = sqlite3.connect(tmp_path / "test.db")
+        conn.execute(
+            "INSERT INTO cache (key, value, created_at, accessed_at) VALUES (?, ?, ?, ?)",
+            ("malicious", malicious_pickle, "2024-01-01T00:00:00", "2024-01-01T00:00:00"),
+        )
+        conn.commit()
+        conn.close()
+
+        # Attempt to retrieve the malicious data
+        # With the fix, this should either:
+        # 1. Return None (safe handling)
+        # 2. Raise an exception that's caught (safe handling)
+        # 3. Not execute the malicious code (safe deserialization)
+        result = await cache.get("malicious")
+
+        # The key assertion: we should get None, not execute arbitrary code
+        assert result is None
+
+    async def test_cache_handles_corrupted_data(self, tmp_path: Path):
+        """Test that cache handles corrupted/invalid serialized data gracefully."""
+        import sqlite3
+
+        cache = SqliteCache(tmp_path / "test.db")
+        await cache._ensure_initialized()
+
+        # Insert invalid data directly
+        conn = sqlite3.connect(tmp_path / "test.db")
+        conn.execute(
+            "INSERT INTO cache (key, value, created_at, accessed_at) VALUES (?, ?, ?, ?)",
+            ("corrupted", b"invalid data that cannot be deserialized", "2024-01-01T00:00:00", "2024-01-01T00:00:00"),
+        )
+        conn.commit()
+        conn.close()
+
+        # Should return None, not crash
+        result = await cache.get("corrupted")
+        assert result is None

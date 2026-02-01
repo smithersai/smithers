@@ -33,7 +33,7 @@ Usage:
 
 from __future__ import annotations
 
-import pickle
+import json
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -501,9 +501,11 @@ async def verify_cache_entry(
                 )
                 return CacheVerificationResult(valid=False, issues=issues, cache_key=key)
 
-            # Try to deserialize
+            # Try to deserialize from JSON
             try:
-                value = pickle.loads(row["value"])
+                value_bytes = row["value"]
+                value_str = value_bytes.decode("utf-8")
+                value = json.loads(value_str)
             except Exception as exc:
                 issues.append(
                     VerificationIssue(
@@ -515,8 +517,8 @@ async def verify_cache_entry(
                 )
                 return CacheVerificationResult(valid=False, issues=issues, cache_key=key)
 
-            # Compute hash of deserialized value
-            computed_hash = hash_json(value.model_dump() if hasattr(value, "model_dump") else value)
+            # Compute hash of deserialized value (already a dict from JSON)
+            computed_hash = hash_json(value)
 
             # Verify hash if provided
             if expected_hash is not None and computed_hash != expected_hash:

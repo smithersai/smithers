@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import pickle
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from pydantic import BaseModel
 
 from smithers.config import get_config
 from smithers.types import CacheStats
@@ -79,7 +80,8 @@ class SqliteCache(Cache):
                     created_at TEXT,
                     accessed_at TEXT,
                     workflow_name TEXT,
-                    input_hash TEXT
+                    input_hash TEXT,
+                    output_type TEXT
                 )
                 """
             )
@@ -92,7 +94,7 @@ class SqliteCache(Cache):
         async with self._lock, aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
-                "SELECT value, created_at FROM cache WHERE key = ?",
+                "SELECT value, created_at, output_type FROM cache WHERE key = ?",
                 (key,),
             ) as cursor:
                 row = await cursor.fetchone()
@@ -114,8 +116,38 @@ class SqliteCache(Cache):
             await db.commit()
 
             try:
-                value = pickle.loads(row["value"])
+                # Deserialize from JSON instead of pickle for security
+                value_bytes = row["value"]
+                value_str = value_bytes.decode("utf-8")
+                value_dict = json.loads(value_str)
+
+                # Try to reconstruct the Pydantic model if type info is stored
+                # Check if output_type column exists (for backward compatibility)
+                try:
+                    output_type = row["output_type"]
+                except (KeyError, IndexError):
+                    output_type = None
+
+                if output_type:
+                    try:
+                        # Import and reconstruct the model type
+                        module_name, class_name = output_type.rsplit(".", 1)
+                        import importlib
+
+                        module = importlib.import_module(module_name)
+                        model_class = getattr(module, class_name)
+                        # Validate and reconstruct if it's a BaseModel
+                        if isinstance(model_class, type) and issubclass(model_class, BaseModel):
+                            value = model_class.model_validate(value_dict)
+                        else:
+                            value = value_dict
+                    except Exception:
+                        # If reconstruction fails, return the dict
+                        value = value_dict
+                else:
+                    value = value_dict
             except Exception:
+                # If deserialization fails, delete the corrupted entry
                 await db.execute("DELETE FROM cache WHERE key = ?", (key,))
                 await db.commit()
                 self._misses += 1
@@ -134,13 +166,33 @@ class SqliteCache(Cache):
     ) -> None:
         """Set a cached value."""
         await self._ensure_initialized()
-        payload = pickle.dumps(value)
+
+        # Serialize to JSON instead of pickle for security
+        # Convert Pydantic models to dict first and store type info
+        output_type_name = None
+        if isinstance(value, BaseModel):
+            value_dict = value.model_dump(mode="json")
+            # Store the fully qualified type name for reconstruction
+            output_type_name = f"{value.__class__.__module__}.{value.__class__.__name__}"
+        else:
+            value_dict = value
+
+        # Serialize to JSON bytes
+        try:
+            payload = json.dumps(value_dict).encode("utf-8")
+        except (TypeError, ValueError) as e:
+            # If value is not JSON-serializable, raise a clear error
+            raise TypeError(
+                f"Cache value must be JSON-serializable (Pydantic models or basic Python types). "
+                f"Got {type(value).__name__}: {e}"
+            ) from e
+
         async with self._lock, aiosqlite.connect(self.path) as db:
             await db.execute(
                 """
                     INSERT OR REPLACE INTO cache
-                        (key, value, created_at, accessed_at, workflow_name, input_hash)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                        (key, value, created_at, accessed_at, workflow_name, input_hash, output_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                 (
                     key,
@@ -149,6 +201,7 @@ class SqliteCache(Cache):
                     _timestamp_now(),
                     workflow_name,
                     input_hash,
+                    output_type_name,
                 ),
             )
             await db.commit()
