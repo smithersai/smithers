@@ -32,7 +32,12 @@ from pydantic import BaseModel, create_model
 from smithers.types import WorkflowGraph, WorkflowNode
 from smithers.workflow import Workflow
 
-T = TypeVar("T", bound=BaseModel)
+# Generic type variables for composition operations
+T = TypeVar("T", bound=BaseModel)  # Generic output type
+T_in = TypeVar("T_in", bound=BaseModel)  # Generic input type
+T_out = TypeVar("T_out", bound=BaseModel)  # Generic output type
+T_item = TypeVar("T_item", bound=BaseModel)  # Generic item type for map/reduce
+T_acc = TypeVar("T_acc", bound=BaseModel)  # Generic accumulator type for reduce
 
 
 @dataclass
@@ -524,12 +529,12 @@ def subgraph(
 
 
 def branch(
-    condition: Callable[[Any], bool],
+    condition: Callable[[T_in], bool],
     if_true: Workflow,
     if_false: Workflow,
     *,
     name: str | None = None,
-    input_type: type[BaseModel] | None = None,
+    input_type: type[T_in] | None = None,
 ) -> Workflow:
     """
     Create a branching workflow that chooses between two paths.
@@ -680,7 +685,7 @@ def map_workflow(
         if not isinstance(items, (list, tuple)):
             items = [items]
 
-        async def process_item(item: Any) -> Any:
+        async def process_item(item: BaseModel) -> BaseModel:
             item_kwargs = {**kwargs, param_name: item}
             return await workflow(**item_kwargs)
 
@@ -709,7 +714,7 @@ def map_workflow(
 def reduce_workflow(
     workflow: Workflow,
     *,
-    initial: BaseModel | None = None,
+    initial: T_acc | None = None,
     name: str | None = None,
 ) -> Workflow:
     """
