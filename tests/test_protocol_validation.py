@@ -123,6 +123,22 @@ class TestEventValidation:
         )
         event.validate()
 
+    def test_event_validate_session_list(self):
+        event = Event(
+            type=EventType.SESSION_LIST,
+            data={
+                "sessions": [
+                    {
+                        "id": "sess-1",
+                        "workspace_root": "/test",
+                        "created_at": "2024-01-01T00:00:00",
+                        "last_active_at": "2024-01-01T00:00:00",
+                    }
+                ]
+            },
+        )
+        event.validate()
+
     def test_event_validate_run_started(self):
         event = Event(
             type=EventType.RUN_STARTED,
@@ -281,6 +297,31 @@ class TestEventDataRequirements:
         event = Event(
             type=EventType.CHECKPOINT_CREATED,
             data={"checkpoint_id": "cp-1"},  # Missing label
+        )
+        with pytest.raises(ValidationError):
+            event.validate()
+
+    def test_session_list_requires_sessions_array(self):
+        event = Event(
+            type=EventType.SESSION_LIST,
+            data={},  # Missing sessions
+        )
+        with pytest.raises(ValidationError):
+            event.validate()
+
+    def test_session_list_session_requires_all_fields(self):
+        # Missing last_active_at
+        event = Event(
+            type=EventType.SESSION_LIST,
+            data={
+                "sessions": [
+                    {
+                        "id": "sess-1",
+                        "workspace_root": "/test",
+                        "created_at": "2024-01-01T00:00:00",
+                    }
+                ]
+            },
         )
         with pytest.raises(ValidationError):
             event.validate()

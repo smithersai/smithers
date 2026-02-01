@@ -15,6 +15,7 @@
             "daemon.ready",
             "daemon.error",
             "session.created",
+            "session.list",
             "session.closed",
             "run.started",
             "run.finished",
@@ -128,6 +129,35 @@
               "required": ["session_id"],
               "properties": {
                 "session_id": {"type": "string"}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "session_list_event": {
+      "allOf": [
+        {"$ref": "#/definitions/event"},
+        {
+          "properties": {
+            "type": {"const": "session.list"},
+            "data": {
+              "type": "object",
+              "required": ["sessions"],
+              "properties": {
+                "sessions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["id", "workspace_root", "created_at", "last_active_at"],
+                    "properties": {
+                      "id": {"type": "string"},
+                      "workspace_root": {"type": "string"},
+                      "created_at": {"type": "string", "format": "date-time"},
+                      "last_active_at": {"type": "string", "format": "date-time"}
+                    }
+                  }
+                }
               }
             }
           }
@@ -611,6 +641,7 @@
     {"$ref": "#/definitions/daemon_ready_event"},
     {"$ref": "#/definitions/daemon_error_event"},
     {"$ref": "#/definitions/session_created_event"},
+    {"$ref": "#/definitions/session_list_event"},
     {"$ref": "#/definitions/session_closed_event"},
     {"$ref": "#/definitions/run_started_event"},
     {"$ref": "#/definitions/run_finished_event"},
