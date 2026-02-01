@@ -37,7 +37,6 @@ T = TypeVar("T", bound=BaseModel)  # Generic output type
 T_in = TypeVar("T_in", bound=BaseModel)  # Generic input type
 T_out = TypeVar("T_out", bound=BaseModel)  # Generic output type
 T_item = TypeVar("T_item", bound=BaseModel)  # Generic item type for map/reduce
-T_acc = TypeVar("T_acc", bound=BaseModel)  # Generic accumulator type for reduce
 
 
 @dataclass
@@ -714,7 +713,7 @@ def map_workflow(
 def reduce_workflow(
     workflow: Workflow,
     *,
-    initial: T_acc | None = None,
+    initial: BaseModel | None = None,
     name: str | None = None,
 ) -> Workflow:
     """
