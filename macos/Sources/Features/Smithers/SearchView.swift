@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Result from a search query
-struct SearchResult: Identifiable {
+struct SearchResult: Identifiable, Equatable {
     let id: String
     let type: ResultType
     let title: String
@@ -104,7 +104,7 @@ struct SearchView: View {
             }
         }
         .frame(width: 600, height: 400)
-        .onChange(of: searchQuery) { _, newValue in
+        .onChange(of: searchQuery) { newValue in
             if !newValue.isEmpty {
                 performSearch()
             } else {

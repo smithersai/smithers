@@ -28,15 +28,18 @@ struct SmithersView: View {
                 }
             )
         }
-        .onChange(of: selectedSearchResult) { _, result in
+        .onChange(of: selectedSearchResult) { result in
             if let result = result {
                 // TODO: Navigate to the result in the session
                 print("Selected result: \(result.title)")
             }
         }
-        .onKeyPress(.init("f", modifiers: .command)) {
-            showSearch.toggle()
-            return .handled
+        .backport.onKeyPress("f") { modifiers in
+            if modifiers.contains(.command) {
+                showSearch.toggle()
+                return .handled
+            }
+            return .ignored
         }
     }
 
