@@ -1425,6 +1425,118 @@ class TestSkillsSystem:
         assert skill_events[2]["type"] == "skill.end"
         assert skill_events[2]["data"]["status"] == "success"
 
+    @pytest.mark.asyncio
+    async def test_session_manager_run_skill_with_exception(self, tmp_path):
+        """Test that SessionManager handles skill exceptions gracefully."""
+        from agentd.adapters.fake import FakeAgentAdapter
+        from agentd.protocol.events import Event, EventType
+        from agentd.session import SessionManager
+        from agentd.skills.base import Skill, SkillContext, SkillResult
+        from agentd.skills.registry import get_skill_registry
+
+        # Create a skill that always raises an exception
+        class FailingSkill(Skill):
+            @property
+            def skill_id(self) -> str:
+                return "failing_skill"
+
+            @property
+            def name(self) -> str:
+                return "Failing Skill"
+
+            @property
+            def description(self) -> str:
+                return "A skill that always fails"
+
+            async def execute(
+                self, context: SkillContext, args: str | None = None
+            ) -> SkillResult:
+                raise RuntimeError("Intentional failure for testing")
+
+        # Register the failing skill
+        registry = get_skill_registry()
+        failing_skill = FailingSkill()
+        registry.register(failing_skill)
+
+        try:
+            adapter = FakeAgentAdapter()
+            manager = SessionManager(adapter)
+
+            # Create a session
+            session = await manager.create_session(str(tmp_path))
+
+            # Track emitted events
+            events: list[Event] = []
+
+            def collect_event(event: Event) -> None:
+                events.append(event)
+
+            # Run the failing skill
+            await manager.run_skill(session.id, "failing_skill", emit=collect_event)
+
+            # Check that error events were emitted
+            assert len(events) == 2
+            assert events[0].type == EventType.SKILL_START
+            assert events[0].data["skill_id"] == "failing_skill"
+            assert events[1].type == EventType.SKILL_END
+            assert events[1].data["status"] == "error"
+            assert "Intentional failure for testing" in events[1].data["error"]
+
+        finally:
+            # Clean up - remove the failing skill from registry
+            registry._skills.pop("failing_skill", None)
+
+    @pytest.mark.asyncio
+    async def test_session_manager_run_skill_not_found(self, tmp_path):
+        """Test that SessionManager handles non-existent skills gracefully."""
+        from agentd.adapters.fake import FakeAgentAdapter
+        from agentd.protocol.events import Event, EventType
+        from agentd.session import SessionManager
+
+        adapter = FakeAgentAdapter()
+        manager = SessionManager(adapter)
+
+        # Create a session
+        session = await manager.create_session(str(tmp_path))
+
+        # Track emitted events
+        events: list[Event] = []
+
+        def collect_event(event: Event) -> None:
+            events.append(event)
+
+        # Run a non-existent skill
+        await manager.run_skill(session.id, "nonexistent_skill", emit=collect_event)
+
+        # Check that error event was emitted
+        assert len(events) == 1
+        assert events[0].type == EventType.ERROR
+        assert "Skill not found: nonexistent_skill" in events[0].data["message"]
+
+    @pytest.mark.asyncio
+    async def test_session_manager_run_skill_session_not_found(self, tmp_path):
+        """Test that SessionManager handles non-existent sessions gracefully."""
+        from agentd.adapters.fake import FakeAgentAdapter
+        from agentd.protocol.events import Event, EventType
+        from agentd.session import SessionManager
+
+        adapter = FakeAgentAdapter()
+        manager = SessionManager(adapter)
+
+        # Track emitted events
+        events: list[Event] = []
+
+        def collect_event(event: Event) -> None:
+            events.append(event)
+
+        # Run skill on non-existent session
+        await manager.run_skill("nonexistent-session", "summarize", emit=collect_event)
+
+        # Check that error event was emitted
+        assert len(events) == 1
+        assert events[0].type == EventType.ERROR
+        assert "Session not found: nonexistent-session" in events[0].data["message"]
+
 
 class TestSearchRequests:
     """Test search request handlers."""
