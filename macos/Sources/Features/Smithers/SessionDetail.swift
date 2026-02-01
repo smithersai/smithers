@@ -63,6 +63,13 @@ struct SessionDetail: View {
                     }
                 )
             }
+            .backport.onKeyPress("k") { modifiers in
+                if modifiers.contains(.command) {
+                    showSkillsPalette.toggle()
+                    return .handled
+                }
+                return .ignored
+            }
         } else {
             emptyState
         }
