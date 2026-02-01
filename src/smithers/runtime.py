@@ -23,7 +23,7 @@ Example usage within a workflow:
 
 from __future__ import annotations
 
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -71,7 +71,7 @@ def get_current_context() -> RuntimeContext | None:
     return _current_context.get()
 
 
-def set_current_context(ctx: RuntimeContext | None) -> Any:
+def set_current_context(ctx: RuntimeContext | None) -> Token[RuntimeContext | None]:
     """
     Set the current runtime context.
 
@@ -88,7 +88,7 @@ def set_current_context(ctx: RuntimeContext | None) -> Any:
     return _current_context.set(ctx)
 
 
-def reset_context(token: Any) -> None:
+def reset_context(token: Token[RuntimeContext | None]) -> None:
     """
     Reset the context to its previous value using a token.
 
@@ -109,14 +109,15 @@ class runtime_context:
 
     def __init__(self, ctx: RuntimeContext) -> None:
         self.ctx = ctx
-        self.token: Any = None
+        self.token: Token[RuntimeContext | None] | None = None
 
     def __enter__(self) -> RuntimeContext:
         self.token = set_current_context(self.ctx)
         return self.ctx
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        reset_context(self.token)
+        if self.token is not None:
+            reset_context(self.token)
 
 
 async def record_llm_call_start(
