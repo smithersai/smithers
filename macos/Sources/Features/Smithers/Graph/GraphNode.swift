@@ -121,23 +121,38 @@ class SessionGraph: ObservableObject {
                 // Find corresponding result if it exists
                 let resultNode = orderedNodes.first { result in
                     result.type == .toolResult &&
-                    (result.data["tool_use_id"]?.value as? String) == node.id.uuidString
+                    (result.parentId == node.id ||
+                     (result.data["tool_use_id"]?.value as? String) == node.id.uuidString)
                 }
 
                 let result: ToolResult?
                 if let resultNode = resultNode {
                     let success = (resultNode.data["success"]?.value as? Bool) ?? true
-                    let output = resultNode.text ?? ""
+                    let output = (resultNode.data["output"]?.value as? String) ?? resultNode.text ?? ""
                     result = ToolResult(success: success, fullOutput: output)
                 } else {
                     result = nil
                 }
 
-                let isRunning = (node.data["is_running"]?.value as? Bool) ?? false
+                // Extract tool input - try multiple formats
+                let inputText: String
+                if let inputDict = node.data["input"]?.value as? [String: Any] {
+                    // Format as key: value pairs
+                    inputText = inputDict.map { key, value in
+                        "\(key): \(value)"
+                    }.joined(separator: "\n")
+                } else if let inputStr = node.data["input"]?.value as? String {
+                    inputText = inputStr
+                } else {
+                    inputText = node.text ?? ""
+                }
+
+                let status = (node.data["status"]?.value as? String) ?? "pending"
+                let isRunning = status == "running"
                 items.append(.tool(ToolMessage(
                     id: node.id,
                     name: node.toolName ?? "Unknown",
-                    input: node.text ?? "",
+                    input: inputText,
                     result: result,
                     timestamp: node.timestamp,
                     isRunning: isRunning

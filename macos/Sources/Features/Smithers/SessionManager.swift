@@ -289,6 +289,7 @@ class SessionManager: ObservableObject {
                 }
 
                 // Add tool result node
+                let success = status == "completed" || status == "success"
                 let resultNode = GraphNode(
                     id: UUID(),
                     type: .toolResult,
@@ -298,7 +299,8 @@ class SessionManager: ObservableObject {
                         "tool_name": AnyCodable(event.data["tool_name"] ?? ""),
                         "output": AnyCodable(event.data["output"] ?? ""),
                         "byte_count": AnyCodable(event.data["byte_count"] ?? 0),
-                        "artifact_ref": AnyCodable(event.data["artifact_ref"] ?? "")
+                        "artifact_ref": AnyCodable(event.data["artifact_ref"] ?? ""),
+                        "success": AnyCodable(success)
                     ]
                 )
                 sessions[currentSessionIndex].graph.addNode(resultNode)
@@ -403,6 +405,7 @@ class SessionManager: ObservableObject {
             if let node = sessions[sessionIndex].graph.getNode(id: messageId) {
                 var updatedData = node.data
                 updatedData["text"] = AnyCodable(streamingMessageText)
+                updatedData["is_streaming"] = AnyCodable(true)
                 let updatedNode = GraphNode(
                     id: node.id,
                     type: node.type,
@@ -422,7 +425,8 @@ class SessionManager: ObservableObject {
                 timestamp: Date(),
                 data: [
                     "role": AnyCodable("assistant"),
-                    "text": AnyCodable(streamingMessageText)
+                    "text": AnyCodable(streamingMessageText),
+                    "is_streaming": AnyCodable(true)
                 ]
             )
             sessions[sessionIndex].graph.addNode(node)
@@ -431,6 +435,21 @@ class SessionManager: ObservableObject {
     }
 
     private func finalizeStreamingMessage(sessionIndex: Int) {
+        // Update the streaming message to mark it as complete
+        if let messageId = streamingMessageId,
+           let node = sessions[sessionIndex].graph.getNode(id: messageId) {
+            var updatedData = node.data
+            updatedData["is_streaming"] = AnyCodable(false)
+            let updatedNode = GraphNode(
+                id: node.id,
+                type: node.type,
+                parentId: node.parentId,
+                timestamp: node.timestamp,
+                data: updatedData
+            )
+            sessions[sessionIndex].graph.updateNode(updatedNode)
+        }
+
         // Clear streaming state
         streamingMessageId = nil
         streamingMessageText = ""
