@@ -1,0 +1,35 @@
+{
+  "name": "smithers",
+  "version": "0.1.0",
+  "description": "AI workflow orchestration with JSX",
+  "module": "src/index.ts",
+  "type": "module",
+  "bin": {
+    "smithers": "src/cli/index.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./jsx-runtime": "./src/jsx-runtime.ts",
+    "./jsx-dev-runtime": "./src/jsx-runtime.ts",
+    "./tools": "./src/tools/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "cli": "bun run src/cli/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.36",
+    "@types/react": "^19.2.10",
+    "ai": "^6.0.69",
+    "drizzle-orm": "^0.45.1",
+    "drizzle-zod": "^0.8.3",
+    "react": "^19.2.4",
+    "zod": "^4.3.6"
+  }
+}
