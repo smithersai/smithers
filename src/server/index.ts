@@ -166,9 +166,16 @@ export function startServer(opts: { port?: number; db?: BunSQLiteDatabase<any> }
           closed = true;
         });
         (async () => {
-          while (!closed && !res.writableEnded) {
-            await poll();
-            await new Promise((resolve) => setTimeout(resolve, 500));
+          try {
+            while (!closed && !res.writableEnded) {
+              await poll();
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+          } catch {
+            closed = true;
+            if (!res.writableEnded) {
+              res.end();
+            }
           }
         })();
         return;
