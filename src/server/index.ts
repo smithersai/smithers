@@ -75,9 +75,11 @@ export function startServer(opts: { port?: number; db?: BunSQLiteDatabase<any> }
           workflowPath: body.workflowPath,
         }).then((result) => {
           const id = result.runId;
-          const rec = runs.get(id);
-          if (rec) {
-            runs.delete(id);
+          if (serverDb) {
+            const rec = runs.get(id);
+            if (rec) {
+              runs.delete(id);
+            }
           }
         });
 
@@ -103,9 +105,11 @@ export function startServer(opts: { port?: number; db?: BunSQLiteDatabase<any> }
           signal: abort.signal,
           workflowPath: body.workflowPath,
         }).then(() => {
-          const rec = runs.get(runId);
-          if (rec) {
-            runs.delete(runId);
+          if (serverDb) {
+            const rec = runs.get(runId);
+            if (rec) {
+              runs.delete(runId);
+            }
           }
         });
 
@@ -144,10 +148,11 @@ export function startServer(opts: { port?: number; db?: BunSQLiteDatabase<any> }
         let lastSeq = Number(url.searchParams.get("afterSeq") ?? -1);
         if (!Number.isFinite(lastSeq)) lastSeq = -1;
         const poll = async () => {
-          if (closed) return;
+          if (closed || res.writableEnded) return;
           const events = await adapter.listEvents(runId, lastSeq, 200);
           for (const ev of events) {
             lastSeq = ev.seq;
+            if (res.writableEnded) break;
             res.write(`event: smithers\n`);
             res.write(`data: ${ev.payloadJson}\n\n`);
           }
@@ -157,12 +162,15 @@ export function startServer(opts: { port?: number; db?: BunSQLiteDatabase<any> }
             res.end();
           }
         };
-        const timer = setInterval(poll, 500);
         req.on("close", () => {
           closed = true;
-          clearInterval(timer);
         });
-        await poll();
+        (async () => {
+          while (!closed && !res.writableEnded) {
+            await poll();
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        })();
         return;
       }
 
