@@ -21,7 +21,7 @@ const DEFAULT_MAX_CONCURRENCY = 4;
 const STALE_ATTEMPT_MS = 15 * 60 * 1000;
 
 function resolveSchema(db: any): Record<string, any> {
-  return db?._?.schema ?? db?.schema ?? {};
+  return db?._?.fullSchema ?? db?._?.schema ?? db?.schema ?? {};
 }
 
 function getWorkflowNameFromXml(xml: any): string {
@@ -557,7 +557,7 @@ async function executeTask(
 
 export async function renderFrame<Schema>(workflow: SmithersWorkflow<Schema>, ctx: any): Promise<{ runId: string; frameNo: number; xml: any; tasks: TaskDescriptor[] }> {
   const renderer = new SmithersRenderer();
-  const result = await renderer.render(workflow.build(ctx), { ralphIterations: ctx?.iterations });
+  const result = await renderer.render(workflow.build(ctx), { ralphIterations: ctx?.iterations, defaultIteration: ctx?.iteration });
   return { runId: ctx.runId, frameNo: 0, xml: result.xml, tasks: result.tasks };
 }
 
@@ -695,6 +695,7 @@ export async function runWorkflow<Schema>(workflow: SmithersWorkflow<Schema>, op
       } else if (ralphs.length === 0) {
         defaultIteration = 0;
       }
+      const singleRalphId = ralphs.length === 1 ? ralphs[0]!.id : null;
 
       const ralphDoneMap = buildRalphDoneMap(ralphs, ralphState);
       const stateMap = await computeTaskStates(adapter, db, runId, tasks, eventBus, ralphDoneMap);
@@ -734,6 +735,9 @@ export async function runWorkflow<Schema>(workflow: SmithersWorkflow<Schema>, op
             if (state.iteration + 1 < ralph.maxIterations) {
               state.iteration += 1;
               ralphState.set(ralph.id, { ...state, done: false });
+              if (singleRalphId && ralph.id === singleRalphId) {
+                defaultIteration = state.iteration;
+              }
               await adapter.insertOrUpdateRalph({
                 runId,
                 ralphId: ralph.id,
@@ -785,6 +789,9 @@ export async function runWorkflow<Schema>(workflow: SmithersWorkflow<Schema>, op
       );
     }
   } catch (err) {
+    if (process.env.SMITHERS_DEBUG) {
+      console.error("[smithers] runWorkflow error", err);
+    }
     await adapter.updateRun(runId, { status: "failed", finishedAtMs: nowMs(), errorJson: JSON.stringify(err) });
     await eventBus.emitEventWithPersist({ type: "RunFailed", runId, error: err, timestampMs: nowMs() });
     return { runId, status: "failed" };
