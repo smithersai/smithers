@@ -151,3 +151,25 @@ describe("Approvals", () => {
     cleanup();
   });
 });
+
+describe("Renderer safeguards", () => {
+  test("duplicate task ids fail the run", async () => {
+    const { db, cleanup } = buildDb();
+    const workflow = smithers(db as any, (_ctx) => (
+      <Workflow name="dup">
+        <Sequence>
+          <Task id="dup" output={outputA}>
+            {{ value: 1 }}
+          </Task>
+          <Task id="dup" output={outputB}>
+            {{ value: 2 }}
+          </Task>
+        </Sequence>
+      </Workflow>
+    ));
+
+    const result = await runWorkflow(workflow, { input: {} });
+    expect(result.status).toBe("failed");
+    cleanup();
+  });
+});
