@@ -94,6 +94,9 @@ export function extractFromHost(root: HostNode | null, opts?: ExtractOptions): E
       const raw = node.rawProps || {};
       const nodeId = raw.id;
       if (!nodeId || typeof nodeId !== "string") {
+        if (process.env.SMITHERS_DEBUG) {
+          console.error("[smithers] Task missing id", { tag: node.tag, kind: node.kind, rawProps: raw, props: node.props });
+        }
         throw new Error("Task id is required and must be a string.");
       }
       if (seen.has(nodeId)) {
@@ -115,7 +118,7 @@ export function extractFromHost(root: HostNode | null, opts?: ExtractOptions): E
 
       const agent = raw.agent;
       const prompt = agent ? String(raw.children ?? "") : undefined;
-      const staticPayload = agent ? undefined : raw.children;
+      const staticPayload = agent ? undefined : (raw.__payload ?? raw.children);
 
       const parallelGroup = nextParallelStack[nextParallelStack.length - 1];
 
