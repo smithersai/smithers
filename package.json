@@ -11,14 +11,18 @@
     ".": "./src/index.ts",
     "./jsx-runtime": "./src/jsx-runtime.ts",
     "./jsx-dev-runtime": "./src/jsx-runtime.ts",
-    "./tools": "./src/tools/index.ts"
+    "./tools": "./src/tools/index.ts",
+    "./server": "./src/server/index.ts",
+    "./pi-plugin": "./src/pi-plugin/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "cli": "bun run src/cli/index.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/diff": "^5.2.0",
+    "@types/react-reconciler": "^0.28.9"
   },
   "peerDependencies": {
     "typescript": "^5"
