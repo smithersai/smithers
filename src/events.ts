@@ -8,16 +8,23 @@ export class EventBus extends EventEmitter {
   private logDir?: string;
   private db?: any;
 
-  constructor(opts: { db?: any; logDir?: string }) {
+  constructor(opts: { db?: any; logDir?: string; startSeq?: number }) {
     super();
     this.db = opts.db;
     this.logDir = opts.logDir;
+    this.seq = opts.startSeq ?? 0;
   }
 
   async emitEvent(event: SmithersEvent) {
     this.emit("event", event);
     if (this.db) {
-      await this.db.insertIntoEvents?.(event);
+      await this.db.insertEvent?.({
+        runId: event.runId,
+        seq: this.seq++,
+        timestampMs: event.timestampMs,
+        type: event.type,
+        payloadJson: JSON.stringify(event),
+      });
     }
   }
 
