@@ -74,16 +74,10 @@ const hostConfig: any = {
   },
   prepareUpdate(instance: HostElement, _type: string, oldProps: any, newProps: any) {
     if (oldProps === newProps) return null;
-    if (process.env.SMITHERS_DEBUG && instance.tag === "smithers:ralph") {
-      console.error("[smithers] prepareUpdate ralph", { oldProps, newProps });
-    }
     return newProps;
   },
   commitUpdate(instance: HostElement, _type: string, _oldProps: any, newProps: any) {
     if (!newProps || typeof newProps !== "object") return;
-    if (process.env.SMITHERS_DEBUG && instance.tag === "smithers:ralph") {
-      console.error("[smithers] commitUpdate ralph", { newProps });
-    }
     const next = createElement(instance.tag, newProps);
     instance.props = next.props;
     instance.rawProps = next.rawProps;
