@@ -12,6 +12,18 @@ export async function approveNode(adapter: SmithersDb, runId: string, nodeId: st
     note: note ?? null,
     decidedBy: decidedBy ?? null,
   });
+  await adapter.insertEventWithNextSeq({
+    runId,
+    timestampMs: nowMs(),
+    type: "ApprovalGranted",
+    payloadJson: JSON.stringify({
+      type: "ApprovalGranted",
+      runId,
+      nodeId,
+      iteration,
+      timestampMs: nowMs(),
+    }),
+  });
   await adapter.insertNode({
     runId,
     nodeId,
@@ -34,6 +46,18 @@ export async function denyNode(adapter: SmithersDb, runId: string, nodeId: strin
     decidedAtMs: nowMs(),
     note: note ?? null,
     decidedBy: decidedBy ?? null,
+  });
+  await adapter.insertEventWithNextSeq({
+    runId,
+    timestampMs: nowMs(),
+    type: "ApprovalDenied",
+    payloadJson: JSON.stringify({
+      type: "ApprovalDenied",
+      runId,
+      nodeId,
+      iteration,
+      timestampMs: nowMs(),
+    }),
   });
   await adapter.insertNode({
     runId,
