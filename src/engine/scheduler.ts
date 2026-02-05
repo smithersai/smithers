@@ -74,6 +74,9 @@ export function buildPlanTree(xml: XmlNode | null): { plan: PlanNode | null; ral
       if (!nodeId) return null;
       return { kind: "task", nodeId };
     }
+    if (tag === "smithers:workflow") {
+      return { kind: "sequence", children };
+    }
     if (tag === "smithers:sequence") {
       return { kind: "sequence", children };
     }

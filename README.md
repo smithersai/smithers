@@ -106,6 +106,8 @@ export default smithers(db, (ctx) => (
 smithers run workflow.tsx --input '{"description": "Fix auth bugs"}'
 ```
 
+Note: `<Workflow>` sequences its direct children by default, so `<Sequence>` is optional at the root.
+
 Note: output tables must include `runId` and `nodeId`. Looping tasks add `iteration`.
 
 ## How It Works
@@ -172,7 +174,7 @@ Recommended attempt table schema:
 - Tasks are executed in deterministic depth-first, left-to-right order of the React tree.
 - A task runs only when its output row for `(runId, nodeId[, iteration])` is missing or invalid.
 - Completed tasks are not re-run unless invalidated or explicitly forced.
-  If a task reads another node's output, ensure ordering with `<Sequence>`, `<Branch>`, or explicit guards, or the output may be missing.
+  `<Workflow>` children run as an implicit `<Sequence>`. For other ordering needs, use `<Sequence>`, `<Branch>`, or explicit guards, or the output may be missing.
 
 ### Output Tables and Keys
 
@@ -332,6 +334,8 @@ Root container.
 | `name`  | `string`  | Name of the workflow  |
 | `cache` | `boolean` | Enable output caching |
 
+`<Workflow>` treats its direct children as an implicit `<Sequence>` (left-to-right).
+
 ---
 
 ### `<Task>`
@@ -372,6 +376,8 @@ When rendering arrays or loops, use React `key` on `<Task>` or its wrapper for R
 ### `<Sequence>`
 
 Execute children one after another.
+
+`<Workflow>` already behaves like a sequence at the root, so `<Sequence>` is mainly for grouping or enforcing order inside other structures (e.g. `<Parallel>`).
 
 ```tsx
 <Sequence>
