@@ -48,3 +48,36 @@ SQLite files are the source of truth for runs and outputs.
 ## Upgrade Guidance
 - Internal tables are created automatically by `ensureSmithersTables`.
 - If schema changes are introduced, plan for a migration step (no migration runner is included yet).
+
+## Desktop App (apps/desktop)
+
+### Accessibility Features
+The desktop UI has been hardened for accessibility compliance:
+
+- **ARIA Labels**: All interactive elements (buttons, selects, dialogs) have descriptive `aria-label` attributes
+- **ARIA Roles**: Proper semantic roles (`menubar`, `menu`, `menuitem`, `dialog`, `tablist`, `tab`, `tabpanel`, `toolbar`, `listitem`, `status`, `alert`)
+- **Keyboard Navigation**:
+  - Skip link for jumping to main content
+  - Escape key closes all modals
+  - Enter/Space activates list items
+  - Tab navigation through all interactive elements
+  - Focus indicators on all focusable elements
+- **Screen Reader Support**:
+  - Live regions for notifications (`aria-live="polite"` and `aria-live="assertive"`)
+  - Hidden decorative elements (`aria-hidden="true"`)
+  - Screen-reader-only helper text (`.sr-only` class)
+- **Visual Accessibility**:
+  - WCAG AA compliant color contrast
+  - `prefers-reduced-motion` support
+  - `prefers-contrast: more` support for high contrast mode
+  - Minimum touch target sizes (32px)
+  - Visible focus rings on interactive elements
+
+### Desktop Security
+The desktop app follows production security practices:
+
+- **Path Sandboxing**: All file operations are constrained to `rootDir` with symlink protection
+- **Network Blocking**: Bash commands are blocked from making network requests by default
+- **Output Limits**: Tool outputs are truncated to prevent memory exhaustion
+- **Timeout Handling**: Long-running bash commands are terminated after timeout
+- **Secure Defaults**: Network access disabled, path traversal prevented
