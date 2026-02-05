@@ -210,56 +210,76 @@ class ChatPanel extends HTMLElement {
           border: 1px solid var(--border, #d4c9b5);
         }
 
+        .messages:empty::after {
+          content: "";
+          flex: 1;
+        }
+
         .input-area {
-          display: flex;
-          gap: 0.5rem;
-          padding: 1rem;
+          padding: 0.75rem 1rem 1rem;
+          background: var(--bg, #faf6ee);
           border-top: 1px solid var(--border, #d4c9b5);
+        }
+
+        .input-container {
+          display: flex;
+          align-items: flex-end;
+          border: 1px solid var(--border, #d4c9b5);
           background: var(--panel, #f5efe3);
+          transition: border-color 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .input-container:focus-within {
+          border-color: var(--info, #2a4a9e);
         }
 
         .input-area textarea {
           flex: 1;
-          padding: 0.75rem;
-          border: 1px solid var(--border, #d4c9b5);
-          border-radius: 0;
-          font-size: 0.875rem;
+          padding: 0.75rem 0.875rem;
+          border: none;
+          font-size: 0.8125rem;
+          line-height: 1.5;
           resize: none;
-          min-height: 2.5rem;
-          max-height: 10rem;
+          min-height: 2.25rem;
+          max-height: 8rem;
           font-family: inherit;
-          background: var(--bg, #faf6ee);
-          color: var(--text, #111);
-          transition: border-color 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+          background: transparent;
+          color: var(--text, #1b1a17);
+        }
+
+        .input-area textarea::placeholder {
+          color: var(--muted, #6f675a);
+          opacity: 0.6;
         }
 
         .input-area textarea:focus {
           outline: none;
-          border-color: var(--info, #2a4a9e);
         }
 
         .input-area button {
-          padding: 0.75rem 1.5rem;
-          background: var(--text, #111);
-          color: var(--bg, #fff);
-          border: 1px solid var(--text, #111);
-          border-radius: 0;
-          font-size: 0.875rem;
+          padding: 0.5rem 0.875rem;
+          margin: 0.375rem;
+          background: var(--text, #1b1a17);
+          color: var(--bg, #faf6ee);
+          border: none;
+          font-size: 0.6875rem;
           cursor: pointer;
           text-transform: uppercase;
-          letter-spacing: 0.08em;
-          font-weight: 500;
-          transition: background 120ms cubic-bezier(0.2, 0.8, 0.2, 1), border-color 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+          letter-spacing: 0.1em;
+          font-weight: 600;
+          font-family: inherit;
+          transition: opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+          flex-shrink: 0;
+          align-self: flex-end;
         }
 
         .input-area button:hover:not(:disabled) {
-          background: var(--muted, #666);
-          border-color: var(--muted, #666);
+          opacity: 0.8;
         }
 
         .input-area button:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
+          opacity: 0.25;
+          cursor: default;
         }
 
         .input-area button:active:not(:disabled) {
@@ -374,8 +394,10 @@ class ChatPanel extends HTMLElement {
       <div class="messages"></div>
 
       <div class="input-area">
-        <textarea placeholder="Type a message..."></textarea>
-        <button>Send</button>
+        <div class="input-container">
+          <textarea placeholder="Message..." rows="1"></textarea>
+          <button>Send</button>
+        </div>
       </div>
     `;
     this.messagesEl = this.shadowRoot.querySelector(".messages");
