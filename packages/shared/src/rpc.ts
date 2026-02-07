@@ -165,6 +165,8 @@ export type FrameSnapshotDTO = {
       kind: "Task" | "Sequence" | "Parallel" | "Branch" | "Ralph" | "Workflow" | "Unknown";
       state?: string;
       iteration?: number;
+      maxIterations?: number;
+      ralphId?: string;
     }>;
     edges: Array<{ from: string; to: string }>;
   };
@@ -187,6 +189,7 @@ export type RunAttemptsDTO = {
     errorJson?: string | null;
     jjPointer?: string | null;
     metaJson?: string | null;
+    responseText?: string | null;
   }>;
 };
 
@@ -208,6 +211,12 @@ export type ToolCallDTO = {
 export type RunToolCallsDTO = {
   runId: string;
   toolCalls: ToolCallDTO[];
+};
+
+export type DbQueryResultDTO = {
+  columns: string[];
+  rows: unknown[][];
+  rowCount: number;
 };
 
 export type AgentSettings = {
@@ -290,6 +299,7 @@ export type RpcProcedures = {
   getRunOutputs: { params: { runId: string }; response: RunOutputsDTO };
   getRunAttempts: { params: { runId: string }; response: RunAttemptsDTO };
   getRunToolCalls: { params: { runId: string }; response: RunToolCallsDTO };
+  queryRunDb: { params: { runId: string; sql: string }; response: DbQueryResultDTO };
   approveNode: {
     params: { runId: string; nodeId: string; iteration?: number; note?: string };
     response: { ok: true };
