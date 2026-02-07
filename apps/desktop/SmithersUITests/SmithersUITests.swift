@@ -19,28 +19,60 @@ final class SmithersUITests: XCTestCase {
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)
     }
 
-    // MARK: - Existing tests
+    // MARK: - Editor tests
 
     func testEditorIsVisible() throws {
-        launchApp()
+        let dir = try createTestDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        launchWithDirectory(dir)
+
+        // Click a file to show the editor
+        let list = app.outlines["FileTreeList"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let readme = list.staticTexts["FileTreeItem_README.md"]
+        XCTAssertTrue(readme.waitForExistence(timeout: 3))
+        readme.click()
+
         let editor = app.scrollViews["CodeEditor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5), "Editor should be visible")
     }
 
-    func testEditorContainsInitialText() throws {
-        launchApp()
+    func testEditorShowsFileContents() throws {
+        let dir = try createTestDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        launchWithDirectory(dir)
+
+        let list = app.outlines["FileTreeList"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let readme = list.staticTexts["FileTreeItem_README.md"]
+        XCTAssertTrue(readme.waitForExistence(timeout: 3))
+        readme.click()
+
         let editor = app.scrollViews["CodeEditor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
 
         let textView = editor.textViews.firstMatch
         XCTAssertTrue(textView.exists, "Text view should exist inside editor")
 
-        let value = textView.value as? String ?? ""
-        XCTAssertTrue(value.contains("Hello, Smithers!"), "Editor should contain initial text, got: \(value)")
+        let predicate = NSPredicate(format: "value CONTAINS %@", "# Test README")
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: textView)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed, "Editor should show file contents")
     }
 
     func testCanTypeInEditor() throws {
-        launchApp()
+        let dir = try createTestDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        launchWithDirectory(dir)
+
+        let list = app.outlines["FileTreeList"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let readme = list.staticTexts["FileTreeItem_README.md"]
+        XCTAssertTrue(readme.waitForExistence(timeout: 3))
+        readme.click()
+
         let editor = app.scrollViews["CodeEditor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
 
