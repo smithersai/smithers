@@ -10,7 +10,9 @@
 		0C05E6AADE3512F5D270FAA9 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A587502DE9B721579B6AA7E8 /* ContentView.swift */; };
 		22BEE97BFB1F9A4C429B890C /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDA054A9F51B9E7A05B82A6 /* FileItem.swift */; };
 		56E0C4F8A774687D95109231 /* STTextView in Frameworks */ = {isa = PBXBuildFile; productRef = BCCC2DB99045FD4E0BB74356 /* STTextView */; };
+		5ABB60B92EC6C1196FD011C8 /* WorkspaceStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B483B2FA9B2637CEF152C961 /* WorkspaceStateTests.swift */; };
 		D368B89C3C6D1E043269717D /* SmithersUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D3FD80488838D7B4EA877A /* SmithersUITests.swift */; };
+		D6D345869F56D936D4DAC6C7 /* FileItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45514CF0D8DAE09DCD5BAD3F /* FileItemTests.swift */; };
 		D847AE7F6B476F8419133C57 /* FileTreeSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9E16E717471B60BCA71C6C /* FileTreeSidebar.swift */; };
 		E961693CD21DFE7F4E5350E1 /* WorkspaceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E71D95313FFB398DA0EB4A5 /* WorkspaceState.swift */; };
 		EE4DDAC29B154BBC0A2B7A80 /* SmithersApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1A5DC923E5D8AE13DED3C7 /* SmithersApp.swift */; };
@@ -24,16 +26,26 @@
 			remoteGlobalIDString = CA69C1381571362EAA29915F;
 			remoteInfo = Smithers;
 		};
+		BC3368BF066364F516428F44 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EB1BB2D82C81E455A1ECE9EC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CA69C1381571362EAA29915F;
+			remoteInfo = Smithers;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		45514CF0D8DAE09DCD5BAD3F /* FileItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItemTests.swift; sourceTree = "<group>"; };
 		4B9E16E717471B60BCA71C6C /* FileTreeSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTreeSidebar.swift; sourceTree = "<group>"; };
+		591F1587F588E50EA4BECE81 /* SmithersTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SmithersTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7697BC04474DE2DF6A25E1A2 /* Smithers.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Smithers.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E71D95313FFB398DA0EB4A5 /* WorkspaceState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceState.swift; sourceTree = "<group>"; };
 		96D3FD80488838D7B4EA877A /* SmithersUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmithersUITests.swift; sourceTree = "<group>"; };
 		A587502DE9B721579B6AA7E8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AB403FF3EE585DFE8FB62A66 /* SmithersUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SmithersUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		ACDA054A9F51B9E7A05B82A6 /* FileItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItem.swift; sourceTree = "<group>"; };
+		B483B2FA9B2637CEF152C961 /* WorkspaceStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceStateTests.swift; sourceTree = "<group>"; };
 		BB1A5DC923E5D8AE13DED3C7 /* SmithersApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmithersApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -61,6 +73,15 @@
 			path = Smithers;
 			sourceTree = "<group>";
 		};
+		06CDD3364C66536BE9E3B8C9 /* SmithersTests */ = {
+			isa = PBXGroup;
+			children = (
+				45514CF0D8DAE09DCD5BAD3F /* FileItemTests.swift */,
+				B483B2FA9B2637CEF152C961 /* WorkspaceStateTests.swift */,
+			);
+			path = SmithersTests;
+			sourceTree = "<group>";
+		};
 		132A3D2F0FCBB82BCACD12B5 /* SmithersUITests */ = {
 			isa = PBXGroup;
 			children = (
@@ -73,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				7697BC04474DE2DF6A25E1A2 /* Smithers.app */,
+				591F1587F588E50EA4BECE81 /* SmithersTests.xctest */,
 				AB403FF3EE585DFE8FB62A66 /* SmithersUITests.xctest */,
 			);
 			name = Products;
@@ -82,6 +104,7 @@
 			isa = PBXGroup;
 			children = (
 				03415619D7C7DBE6F4E8C481 /* Smithers */,
+				06CDD3364C66536BE9E3B8C9 /* SmithersTests */,
 				132A3D2F0FCBB82BCACD12B5 /* SmithersUITests */,
 				614D2D3AA110DFE27B45BB2F /* Products */,
 			);
@@ -127,6 +150,24 @@
 			productReference = 7697BC04474DE2DF6A25E1A2 /* Smithers.app */;
 			productType = "com.apple.product-type.application";
 		};
+		CF606B52E1FA039CBCF0A5EE /* SmithersTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 791FD3FA2ABBD8194F96E162 /* Build configuration list for PBXNativeTarget "SmithersTests" */;
+			buildPhases = (
+				E0509D93C691547A39692EED /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E046B3ED79E0C6830B8E4FA7 /* PBXTargetDependency */,
+			);
+			name = SmithersTests;
+			packageProductDependencies = (
+			);
+			productName = SmithersTests;
+			productReference = 591F1587F588E50EA4BECE81 /* SmithersTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -141,6 +182,9 @@
 						TestTargetID = CA69C1381571362EAA29915F;
 					};
 					CA69C1381571362EAA29915F = {
+						ProvisioningStyle = Automatic;
+					};
+					CF606B52E1FA039CBCF0A5EE = {
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -163,6 +207,7 @@
 			projectRoot = "";
 			targets = (
 				CA69C1381571362EAA29915F /* Smithers */,
+				CF606B52E1FA039CBCF0A5EE /* SmithersTests */,
 				9C70400BD938B4F7A06F95E3 /* SmithersUITests */,
 			);
 		};
@@ -189,6 +234,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E0509D93C691547A39692EED /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D6D345869F56D936D4DAC6C7 /* FileItemTests.swift in Sources */,
+				5ABB60B92EC6C1196FD011C8 /* WorkspaceStateTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -196,6 +250,11 @@
 			isa = PBXTargetDependency;
 			target = CA69C1381571362EAA29915F /* Smithers */;
 			targetProxy = 68C009D72D7AE2BE4C7B818E /* PBXContainerItemProxy */;
+		};
+		E046B3ED79E0C6830B8E4FA7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CA69C1381571362EAA29915F /* Smithers */;
+			targetProxy = BC3368BF066364F516428F44 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -207,6 +266,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -257,6 +317,25 @@
 			};
 			name = Release;
 		};
+		622B539CCE98AAAF0B7CB218 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.smithers.desktop.tests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.10;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Smithers.app/Contents/MacOS/Smithers";
+			};
+			name = Release;
+		};
 		855A63BCA8B92A847EA8701C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -264,6 +343,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -339,6 +419,25 @@
 			};
 			name = Debug;
 		};
+		D57F75F48408658666FA9305 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.smithers.desktop.tests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.10;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Smithers.app/Contents/MacOS/Smithers";
+			};
+			name = Debug;
+		};
 		EB7CB7A726A72C6411E3BA4D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -403,6 +502,15 @@
 			buildConfigurations = (
 				194AB6FF4BB51E3AB7088EE8 /* Debug */,
 				3B39279C9B96FB8D62E97E77 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		791FD3FA2ABBD8194F96E162 /* Build configuration list for PBXNativeTarget "SmithersTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D57F75F48408658666FA9305 /* Debug */,
+				622B539CCE98AAAF0B7CB218 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
