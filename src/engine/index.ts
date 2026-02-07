@@ -19,11 +19,32 @@ import { getJjPointer } from "../vcs/jj";
 import { eq, getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
 import { dirname, resolve } from "node:path";
+import { spawn as nodeSpawn } from "node:child_process";
+import { platform } from "node:os";
 
 const DEFAULT_MAX_CONCURRENCY = 4;
 const STALE_ATTEMPT_MS = 15 * 60 * 1000;
 const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 200_000;
+
+/** Prevent macOS idle sleep while a workflow is running. No-op on other platforms. */
+function acquireCaffeinate(): { release: () => void } {
+  if (platform() !== "darwin") return { release: () => {} };
+  try {
+    const child = nodeSpawn("caffeinate", ["-i", "-w", String(process.pid)], {
+      stdio: "ignore",
+      detached: true,
+    });
+    child.unref();
+    return {
+      release: () => {
+        try { child.kill(); } catch {}
+      },
+    };
+  } catch {
+    return { release: () => {} };
+  }
+}
 
 function coercePositiveInt(value: unknown, fallback: number): number {
   const num = typeof value === "number" ? value : Number(value);
@@ -452,6 +473,7 @@ async function executeTask(
   let payload: any = null;
   let cached = false;
   let cacheKey: string | null = null;
+  let responseText: string | null = null;
 
   try {
     if (cacheEnabled) {
@@ -519,8 +541,9 @@ async function executeTask(
             });
           },
         );
+        responseText = (result as any).text ?? null;
         let output: any;
-        
+
         // Try structured output first (wrapping in try/catch since getters may throw)
         try {
           if ((result as any)._output !== undefined && (result as any)._output !== null) {
@@ -752,6 +775,7 @@ async function executeTask(
       finishedAtMs: nowMs(),
       jjPointer,
       cached: cached ? 1 : 0,
+      responseText,
     });
     await adapter.insertNode({
       runId,
@@ -777,6 +801,7 @@ async function executeTask(
       state: "failed",
       finishedAtMs: nowMs(),
       errorJson: JSON.stringify(errorToJson(err)),
+      responseText,
     });
     await adapter.insertNode({
       runId,
@@ -844,6 +869,7 @@ export async function runWorkflow<Schema>(workflow: SmithersWorkflow<Schema>, op
     eventBus.on("event", (e: SmithersEvent) => opts.onProgress?.(e));
   }
 
+  const wakeLock = acquireCaffeinate();
   try {
     const existingRun = await adapter.getRun(runId);
     if (!opts.resume) {
@@ -1011,7 +1037,7 @@ export async function runWorkflow<Schema>(workflow: SmithersWorkflow<Schema>, op
         if (blockingFailed) {
           await adapter.updateRun(runId, { status: "failed", finishedAtMs: nowMs() });
           await eventBus.emitEventWithPersist({ type: "RunFailed", runId, error: "Task failed", timestampMs: nowMs() });
-          return { runId, status: "failed" };
+          return { runId, status: "failed", error: "Task failed" };
         }
 
         if (schedule.readyRalphs.length > 0) {
@@ -1036,7 +1062,7 @@ export async function runWorkflow<Schema>(workflow: SmithersWorkflow<Schema>, op
             if (ralph.onMaxReached === "fail") {
               await adapter.updateRun(runId, { status: "failed", finishedAtMs: nowMs(), errorJson: JSON.stringify({ code: "RALPH_MAX_REACHED", ralphId: ralph.id }) });
               await eventBus.emitEventWithPersist({ type: "RunFailed", runId, error: { code: "RALPH_MAX_REACHED", ralphId: ralph.id }, timestampMs: nowMs() });
-              return { runId, status: "failed" };
+              return { runId, status: "failed", error: { code: "RALPH_MAX_REACHED", ralphId: ralph.id } };
             }
             ralphState.set(ralph.id, { ...state, done: true });
             await adapter.insertOrUpdateRalph({
@@ -1083,10 +1109,13 @@ export async function runWorkflow<Schema>(workflow: SmithersWorkflow<Schema>, op
     }
   } catch (err) {
     if (process.env.SMITHERS_DEBUG) {
-      console.log("[smithers] runWorkflow error", err);
+      console.error("[smithers] runWorkflow error", err);
     }
-    await adapter.updateRun(runId, { status: "failed", finishedAtMs: nowMs(), errorJson: JSON.stringify(errorToJson(err)) });
-    await eventBus.emitEventWithPersist({ type: "RunFailed", runId, error: errorToJson(err), timestampMs: nowMs() });
-    return { runId, status: "failed" };
+    const errorInfo = errorToJson(err);
+    await adapter.updateRun(runId, { status: "failed", finishedAtMs: nowMs(), errorJson: JSON.stringify(errorInfo) });
+    await eventBus.emitEventWithPersist({ type: "RunFailed", runId, error: errorInfo, timestampMs: nowMs() });
+    return { runId, status: "failed", error: errorInfo };
+  } finally {
+    wakeLock.release();
   }
 }
