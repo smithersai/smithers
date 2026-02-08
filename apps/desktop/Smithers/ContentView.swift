@@ -6,35 +6,37 @@ struct CodeEditor: NSViewRepresentable {
     @Binding var text: String
     var language: SupportedLanguage?
     var fileURL: URL?
+    var theme: AppTheme
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = STTextView.scrollableTextView()
         let textView = scrollView.documentView as! STTextView
 
         textView.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
-        textView.backgroundColor = NSColor(red: 0.11, green: 0.12, blue: 0.14, alpha: 1)
-        textView.insertionPointColor = .white
+        textView.backgroundColor = theme.background
+        textView.insertionPointColor = theme.foreground
         textView.highlightSelectedLine = true
-        textView.selectedLineHighlightColor = NSColor(white: 0.18, alpha: 1)
+        textView.selectedLineHighlightColor = theme.lineHighlight
         textView.widthTracksTextView = true
-        textView.textColor = .white
+        textView.textColor = theme.foreground
         textView.delegate = context.coordinator
         let rulerView = STLineNumberRulerView(textView: textView)
-        rulerView.backgroundColor = NSColor(red: 0.11, green: 0.12, blue: 0.14, alpha: 1)
-        rulerView.textColor = NSColor(white: 0.35, alpha: 1)
+        rulerView.backgroundColor = theme.lineNumberBackground
+        rulerView.textColor = theme.lineNumberForeground
         rulerView.highlightSelectedLine = true
-        rulerView.selectedLineTextColor = NSColor(white: 0.55, alpha: 1)
+        rulerView.selectedLineTextColor = theme.lineNumberSelectedForeground
         rulerView.drawSeparator = false
         rulerView.rulerInsets = STRulerInsets(leading: 8, trailing: 8)
         scrollView.verticalRulerView = rulerView
         scrollView.rulersVisible = true
 
-        scrollView.backgroundColor = NSColor(red: 0.11, green: 0.12, blue: 0.14, alpha: 1)
+        scrollView.backgroundColor = theme.background
         scrollView.scrollerStyle = .overlay
         scrollView.setAccessibilityIdentifier("CodeEditor")
         textView.setAccessibilityIdentifier("CodeEditorTextView")
 
         context.coordinator.loadFile(text: text, language: language, fileURL: fileURL, textView: textView)
+        context.coordinator.appliedTheme = theme
 
         return scrollView
     }
@@ -42,6 +44,13 @@ struct CodeEditor: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? STTextView else { return }
         let coord = context.coordinator
+        coord.parent = self
+
+        if coord.appliedTheme != theme {
+            let previousTheme = coord.appliedTheme
+            applyTheme(theme, previousTheme: previousTheme, to: textView, scrollView: scrollView)
+            coord.appliedTheme = theme
+        }
 
         if coord.currentFileURL != fileURL {
             coord.loadFile(text: text, language: language, fileURL: fileURL, textView: textView)
@@ -59,6 +68,41 @@ struct CodeEditor: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
+    private func applyTheme(_ theme: AppTheme, previousTheme: AppTheme?, to textView: STTextView, scrollView: NSScrollView) {
+        textView.backgroundColor = theme.background
+        textView.insertionPointColor = theme.foreground
+        textView.selectedLineHighlightColor = theme.lineHighlight
+        textView.textColor = theme.foreground
+        var typing = textView.typingAttributes
+        typing[.foregroundColor] = theme.foreground
+        textView.typingAttributes = typing
+        if let rulerView = scrollView.verticalRulerView as? STLineNumberRulerView {
+            rulerView.backgroundColor = theme.lineNumberBackground
+            rulerView.textColor = theme.lineNumberForeground
+            rulerView.selectedLineTextColor = theme.lineNumberSelectedForeground
+        }
+        scrollView.backgroundColor = theme.background
+
+        guard let previousTheme,
+              !previousTheme.foreground.isApproximatelyEqual(to: theme.foreground) else { return }
+        updateExistingTextColor(from: previousTheme.foreground, to: theme.foreground, textView: textView)
+    }
+
+    private func updateExistingTextColor(from oldColor: NSColor, to newColor: NSColor, textView: STTextView) {
+        guard let storage = (textView.textContentManager as? NSTextContentStorage)?.textStorage else { return }
+        let fullRange = NSRange(location: 0, length: storage.length)
+        guard fullRange.length > 0 else { return }
+
+        storage.beginEditing()
+        storage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
+            guard let color = value as? NSColor else { return }
+            if color.isApproximatelyEqual(to: oldColor) {
+                storage.addAttribute(.foregroundColor, value: newColor, range: range)
+            }
+        }
+        storage.endEditing()
+    }
+
     @MainActor class Coordinator: NSObject, STTextViewDelegate {
         var parent: CodeEditor
         var ignoreNextChange = false
@@ -67,6 +111,7 @@ struct CodeEditor: NSViewRepresentable {
         private var highlighterCache: [String: TreeSitterHighlighter] = [:]
         private var highlightWorkItem: DispatchWorkItem?
         fileprivate var lastAppliedText: String = ""
+        var appliedTheme: AppTheme?
 
         init(parent: CodeEditor) {
             self.parent = parent
@@ -93,7 +138,7 @@ struct CodeEditor: NSViewRepresentable {
 
         func setTextViewContent(_ textView: STTextView, text: String) {
             let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.white,
+                .foregroundColor: parent.theme.foreground,
                 .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
             ]
             textView.setAttributedString(NSAttributedString(string: text, attributes: attrs))
@@ -147,6 +192,7 @@ struct ContentView: View {
                     if !workspace.openFiles.isEmpty {
                         TabBar(workspace: workspace)
                         Divider()
+                            .background(workspace.theme.dividerColor)
                     }
                     if let selectedURL = workspace.selectedFileURL {
                         if workspace.isChatURL(selectedURL) {
@@ -161,7 +207,7 @@ struct ContentView: View {
                             }
                     } else if workspace.isDiffURL(selectedURL) {
                         if let tab = workspace.diffTab(for: selectedURL) {
-                            DiffViewer(title: tab.title, summary: tab.summary, diff: tab.diff)
+                            DiffViewer(title: tab.title, summary: tab.summary, diff: tab.diff, theme: workspace.theme)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             emptyEditor
@@ -175,7 +221,12 @@ struct ContentView: View {
                                 nvimPlaceholder
                             }
                         } else {
-                            CodeEditor(text: $workspace.editorText, language: workspace.currentLanguage, fileURL: workspace.selectedFileURL)
+                            CodeEditor(
+                                text: $workspace.editorText,
+                                language: workspace.currentLanguage,
+                                fileURL: workspace.selectedFileURL,
+                                theme: workspace.theme
+                            )
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
@@ -203,6 +254,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: workspace.isCommandPalettePresented)
+        .background(workspace.theme.backgroundColor)
     }
 
     private var emptyEditor: some View {
@@ -215,7 +267,7 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: NSColor(red: 0.11, green: 0.12, blue: 0.14, alpha: 1)))
+        .background(workspace.theme.backgroundColor)
     }
 
     private var nvimPlaceholder: some View {
@@ -227,7 +279,7 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: NSColor(red: 0.11, green: 0.12, blue: 0.14, alpha: 1)))
+        .background(workspace.theme.backgroundColor)
     }
 }
 
@@ -235,6 +287,7 @@ struct TabBar: View {
     @ObservedObject var workspace: WorkspaceState
 
     var body: some View {
+        let theme = workspace.theme
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -246,6 +299,7 @@ struct TabBar: View {
                             TerminalTabBarItem(
                                 view: view,
                                 isSelected: url == workspace.selectedFileURL,
+                                theme: theme,
                                 onSelect: { workspace.selectFile(url) },
                                 onClose: { workspace.closeFile(url) }
                             )
@@ -257,6 +311,7 @@ struct TabBar: View {
                                 subtitle: isChat ? "Current chat" : (diffSubtitle ?? workspace.displayPath(for: url)),
                                 icon: isChat ? "bubble.left.and.bubble.right" : (isDiff ? "arrow.left.and.right" : iconForFile(url.lastPathComponent)),
                                 isSelected: url == workspace.selectedFileURL,
+                                theme: theme,
                                 onSelect: {
                                     workspace.selectFile(url)
                                 },
@@ -293,13 +348,14 @@ struct TabBar: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(theme.mutedForegroundColor)
             }
             .buttonStyle(.borderless)
             .help("All tabs")
             .padding(.trailing, 8)
         }
         .accessibilityIdentifier("EditorTabBar")
-        .background(Color(nsColor: NSColor(red: 0.10, green: 0.11, blue: 0.13, alpha: 1)))
+        .background(theme.tabBarBackgroundColor)
     }
 
     private func tabTitle(for url: URL) -> String {
@@ -335,6 +391,7 @@ struct TabBarItem: View {
     let subtitle: String
     let icon: String
     let isSelected: Bool
+    let theme: AppTheme
     let onSelect: () -> Void
     let onClose: () -> Void
 
@@ -342,15 +399,16 @@ struct TabBarItem: View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(theme.mutedForegroundColor)
             Text(title)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .foregroundStyle(isSelected ? theme.tabSelectedForegroundColor : theme.tabForegroundColor)
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(theme.mutedForegroundColor)
                     .padding(4)
             }
             .buttonStyle(.plain)
@@ -360,11 +418,11 @@ struct TabBarItem: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isSelected ? Color.white.opacity(0.10) : Color.clear)
+                .fill(isSelected ? theme.tabSelectedBackgroundColor : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(Color.white.opacity(isSelected ? 0.12 : 0.05))
+                .strokeBorder(isSelected ? theme.tabBorderColor : theme.tabBorderColor.opacity(0.6))
         )
         .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .onTapGesture(perform: onSelect)
