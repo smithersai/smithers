@@ -8,10 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		0014938A815F4EEBDC1841C6 /* TerminalTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8E92E8F75CDE76BB1DEF23 /* TerminalTabView.swift */; };
+		065D08F24951EE3B904B2EE1 /* NvimRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6AC51F4F81DE3B6D41A9158 /* NvimRPC.swift */; };
 		0C05E6AADE3512F5D270FAA9 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A587502DE9B721579B6AA7E8 /* ContentView.swift */; };
-		C1D2E3F4A5B6C7D8E9F0A1B2 /* DiffViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A2B3C4D5E6F708192A3B4C /* DiffViewer.swift */; };
-		71981AD552664596BE0DAC22 /* LinkifiedText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A248D79E4EA41D7A1AC4ACF /* LinkifiedText.swift */; };
 		22BEE97BFB1F9A4C429B890C /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDA054A9F51B9E7A05B82A6 /* FileItem.swift */; };
+		256BEABEF9D0E3ED51A8BDFD /* JSONRPCTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F35C80E0660E789DB10C42 /* JSONRPCTransport.swift */; };
+		2728B7D935DEEA0A779284D4 /* LinkifiedText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3058C4909A162A396D9E98FF /* LinkifiedText.swift */; };
 		2749E06B1E41C146E6D27323 /* TreeSitterZig in Frameworks */ = {isa = PBXBuildFile; productRef = 60A0059EA0C9738353738CFF /* TreeSitterZig */; };
 		347D1A8C57AA9E0CD6678892 /* GhosttyTerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8933CC7D6E370077FDBD3EFA /* GhosttyTerminalView.swift */; };
 		35AB982D94BA82ED0F30704C /* GhosttyKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = C0F3384268C43DE31057DAB0 /* GhosttyKit.xcframework */; };
@@ -22,6 +23,7 @@
 		56E0C4F8A774687D95109231 /* STTextView in Frameworks */ = {isa = PBXBuildFile; productRef = BCCC2DB99045FD4E0BB74356 /* STTextView */; };
 		5ABB60B92EC6C1196FD011C8 /* WorkspaceStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B483B2FA9B2637CEF152C961 /* WorkspaceStateTests.swift */; };
 		67F5438271AA5B872B678981 /* TreeSitterMarkdown in Frameworks */ = {isa = PBXBuildFile; productRef = 7BF7D938AA1BAD0114E556D5 /* TreeSitterMarkdown */; };
+		7A9DD80FB83AC7BB5F40265B /* CodexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D82BDDA83CCB8DBEB56D54FD /* CodexService.swift */; };
 		827DA68E8C67210C3B80676D /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 57C3BB899D6CDDE86B893FB1 /* TreeSitterSwift */; };
 		95E3F61267434DC0C9ADB1BA /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A8E6F66E4C4CD4D5146948B /* CommandPaletteView.swift */; };
 		A76F12075AE0E86A6DFB2DB7 /* TreeSitterJavaScript in Frameworks */ = {isa = PBXBuildFile; productRef = B05DE54B2293CC4A5B0DE351 /* TreeSitterJavaScript */; };
@@ -34,14 +36,13 @@
 		D368B89C3C6D1E043269717D /* SmithersUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D3FD80488838D7B4EA877A /* SmithersUITests.swift */; };
 		D6D345869F56D936D4DAC6C7 /* FileItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45514CF0D8DAE09DCD5BAD3F /* FileItemTests.swift */; };
 		D847AE7F6B476F8419133C57 /* FileTreeSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B9E16E717471B60BCA71C6C /* FileTreeSidebar.swift */; };
+		E0AB0E5FF1667F065428B456 /* NvimController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19942FCCF8B2D42A46DD182E /* NvimController.swift */; };
 		E0B5AA2644ACEB3F09564D8D /* TreeSitterPython in Frameworks */ = {isa = PBXBuildFile; productRef = B78F739DAF624E44FEE7D498 /* TreeSitterPython */; };
 		E6DE57D1991DDFDA11E56E27 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E3D84544EAEC72C20ACBBF32 /* Carbon.framework */; };
 		E961693CD21DFE7F4E5350E1 /* WorkspaceState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E71D95313FFB398DA0EB4A5 /* WorkspaceState.swift */; };
+		EBD5AF0A2D7E3CDC0F10DB6D /* TmuxKeyHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28E4708D9C09F3165A80FF50 /* TmuxKeyHandler.swift */; };
+		ECF16677A59FB88A7F227A6F /* DiffViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9572518B7D0E5B512928D696 /* DiffViewer.swift */; };
 		EE4DDAC29B154BBC0A2B7A80 /* SmithersApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1A5DC923E5D8AE13DED3C7 /* SmithersApp.swift */; };
-		EB197FFE9A434A75BCF12C22 /* TmuxKeyHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80478212DC834F63A7B8CF24 /* TmuxKeyHandler.swift */; };
-		ABACB4B72CCD4AAB8E2F933B /* CodexService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC296DAEB06D4191A6F56D12 /* CodexService.swift */; };
-		A13576224B374B25B8B046B7 /* JSONRPCTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15F77533734642C384DF9E07 /* JSONRPCTransport.swift */; };
-		278BA09B325F4A019AA5146D /* NvimRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B7B0A3CEDD946A7958E71BB /* NvimRPC.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,16 +65,18 @@
 /* Begin PBXFileReference section */
 		0A8E6F66E4C4CD4D5146948B /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
 		0D40426E1854161EE406410C /* GhosttyInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyInput.swift; sourceTree = "<group>"; };
-		F1A2B3C4D5E6F708192A3B4C /* DiffViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffViewer.swift; sourceTree = "<group>"; };
+		19942FCCF8B2D42A46DD182E /* NvimController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NvimController.swift; sourceTree = "<group>"; };
+		28E4708D9C09F3165A80FF50 /* TmuxKeyHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxKeyHandler.swift; sourceTree = "<group>"; };
+		3058C4909A162A396D9E98FF /* LinkifiedText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkifiedText.swift; sourceTree = "<group>"; };
 		3D8E92E8F75CDE76BB1DEF23 /* TerminalTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTabView.swift; sourceTree = "<group>"; };
 		45514CF0D8DAE09DCD5BAD3F /* FileItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItemTests.swift; sourceTree = "<group>"; };
+		48F35C80E0660E789DB10C42 /* JSONRPCTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONRPCTransport.swift; sourceTree = "<group>"; };
 		4B9E16E717471B60BCA71C6C /* FileTreeSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTreeSidebar.swift; sourceTree = "<group>"; };
 		591F1587F588E50EA4BECE81 /* SmithersTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SmithersTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7697BC04474DE2DF6A25E1A2 /* Smithers.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Smithers.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E71D95313FFB398DA0EB4A5 /* WorkspaceState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceState.swift; sourceTree = "<group>"; };
-		80478212DC834F63A7B8CF24 /* TmuxKeyHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxKeyHandler.swift; sourceTree = "<group>"; };
 		8933CC7D6E370077FDBD3EFA /* GhosttyTerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyTerminalView.swift; sourceTree = "<group>"; };
-		9A248D79E4EA41D7A1AC4ACF /* LinkifiedText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkifiedText.swift; sourceTree = "<group>"; };
+		9572518B7D0E5B512928D696 /* DiffViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiffViewer.swift; sourceTree = "<group>"; };
 		96D3FD80488838D7B4EA877A /* SmithersUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmithersUITests.swift; sourceTree = "<group>"; };
 		A38D8B6B25D2C2C75BB72E7F /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		A587502DE9B721579B6AA7E8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -83,11 +86,10 @@
 		BB1A5DC923E5D8AE13DED3C7 /* SmithersApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmithersApp.swift; sourceTree = "<group>"; };
 		C0F3384268C43DE31057DAB0 /* GhosttyKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GhosttyKit.xcframework; path = ../../ghostty/macos/GhosttyKit.xcframework; sourceTree = "<group>"; };
 		C4132A0BEE89C42A7FB1DC59 /* GhosttyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyApp.swift; sourceTree = "<group>"; };
+		C6AC51F4F81DE3B6D41A9158 /* NvimRPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NvimRPC.swift; sourceTree = "<group>"; };
+		D82BDDA83CCB8DBEB56D54FD /* CodexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexService.swift; sourceTree = "<group>"; };
 		E3D84544EAEC72C20ACBBF32 /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = Carbon.framework; sourceTree = "<group>"; };
 		F334689F6A985085943312B6 /* SyntaxHighlighting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighting.swift; sourceTree = "<group>"; };
-		BC296DAEB06D4191A6F56D12 /* CodexService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexService.swift; sourceTree = "<group>"; };
-		15F77533734642C384DF9E07 /* JSONRPCTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONRPCTransport.swift; sourceTree = "<group>"; };
-		3B7B0A3CEDD946A7958E71BB /* NvimRPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NvimRPC.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,23 +121,24 @@
 			isa = PBXGroup;
 			children = (
 				A38D8B6B25D2C2C75BB72E7F /* ChatView.swift */,
-				F1A2B3C4D5E6F708192A3B4C /* DiffViewer.swift */,
+				D82BDDA83CCB8DBEB56D54FD /* CodexService.swift */,
 				0A8E6F66E4C4CD4D5146948B /* CommandPaletteView.swift */,
 				A587502DE9B721579B6AA7E8 /* ContentView.swift */,
+				9572518B7D0E5B512928D696 /* DiffViewer.swift */,
 				ACDA054A9F51B9E7A05B82A6 /* FileItem.swift */,
 				4B9E16E717471B60BCA71C6C /* FileTreeSidebar.swift */,
 				C4132A0BEE89C42A7FB1DC59 /* GhosttyApp.swift */,
 				0D40426E1854161EE406410C /* GhosttyInput.swift */,
 				8933CC7D6E370077FDBD3EFA /* GhosttyTerminalView.swift */,
-				9A248D79E4EA41D7A1AC4ACF /* LinkifiedText.swift */,
+				48F35C80E0660E789DB10C42 /* JSONRPCTransport.swift */,
+				3058C4909A162A396D9E98FF /* LinkifiedText.swift */,
+				19942FCCF8B2D42A46DD182E /* NvimController.swift */,
+				C6AC51F4F81DE3B6D41A9158 /* NvimRPC.swift */,
 				BB1A5DC923E5D8AE13DED3C7 /* SmithersApp.swift */,
 				F334689F6A985085943312B6 /* SyntaxHighlighting.swift */,
 				3D8E92E8F75CDE76BB1DEF23 /* TerminalTabView.swift */,
-				80478212DC834F63A7B8CF24 /* TmuxKeyHandler.swift */,
+				28E4708D9C09F3165A80FF50 /* TmuxKeyHandler.swift */,
 				7E71D95313FFB398DA0EB4A5 /* WorkspaceState.swift */,
-				BC296DAEB06D4191A6F56D12 /* CodexService.swift */,
-				15F77533734642C384DF9E07 /* JSONRPCTransport.swift */,
-				3B7B0A3CEDD946A7958E71BB /* NvimRPC.swift */,
 			);
 			path = Smithers;
 			sourceTree = "<group>";
@@ -326,23 +329,24 @@
 			buildActionMask = 2147483647;
 			files = (
 				42506BE8E2FFDF6DA22F5DF6 /* ChatView.swift in Sources */,
-				C1D2E3F4A5B6C7D8E9F0A1B2 /* DiffViewer.swift in Sources */,
+				7A9DD80FB83AC7BB5F40265B /* CodexService.swift in Sources */,
 				95E3F61267434DC0C9ADB1BA /* CommandPaletteView.swift in Sources */,
 				0C05E6AADE3512F5D270FAA9 /* ContentView.swift in Sources */,
+				ECF16677A59FB88A7F227A6F /* DiffViewer.swift in Sources */,
 				22BEE97BFB1F9A4C429B890C /* FileItem.swift in Sources */,
 				D847AE7F6B476F8419133C57 /* FileTreeSidebar.swift in Sources */,
 				C66EA0974D863D458B0A171C /* GhosttyApp.swift in Sources */,
 				427411B9ECBC36148CC91061 /* GhosttyInput.swift in Sources */,
 				347D1A8C57AA9E0CD6678892 /* GhosttyTerminalView.swift in Sources */,
-				71981AD552664596BE0DAC22 /* LinkifiedText.swift in Sources */,
+				256BEABEF9D0E3ED51A8BDFD /* JSONRPCTransport.swift in Sources */,
+				2728B7D935DEEA0A779284D4 /* LinkifiedText.swift in Sources */,
+				E0AB0E5FF1667F065428B456 /* NvimController.swift in Sources */,
+				065D08F24951EE3B904B2EE1 /* NvimRPC.swift in Sources */,
 				EE4DDAC29B154BBC0A2B7A80 /* SmithersApp.swift in Sources */,
 				CD146869D7D4DD80FFEE3187 /* SyntaxHighlighting.swift in Sources */,
 				0014938A815F4EEBDC1841C6 /* TerminalTabView.swift in Sources */,
-				EB197FFE9A434A75BCF12C22 /* TmuxKeyHandler.swift in Sources */,
+				EBD5AF0A2D7E3CDC0F10DB6D /* TmuxKeyHandler.swift in Sources */,
 				E961693CD21DFE7F4E5350E1 /* WorkspaceState.swift in Sources */,
-				ABACB4B72CCD4AAB8E2F933B /* CodexService.swift in Sources */,
-				A13576224B374B25B8B046B7 /* JSONRPCTransport.swift in Sources */,
-				278BA09B325F4A019AA5146D /* NvimRPC.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
