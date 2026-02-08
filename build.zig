@@ -4,6 +4,15 @@ pub fn build(b: *std.Build) void {
     // zig build dev — build and launch the app
     const dev_step = b.step("dev", "Build and launch the Smithers macOS app");
 
+    const build_codex = b.addSystemCommand(&.{
+        "cargo",
+        "build",
+        "--release",
+        "-p",
+        "codex-app-server",
+    });
+    build_codex.cwd = b.path("codex/codex-rs");
+
     const xcodebuild_app = b.addSystemCommand(&.{
         "xcodebuild",
         "-project",
@@ -16,6 +25,7 @@ pub fn build(b: *std.Build) void {
         "apps/desktop/.build/xcode",
         "build",
     });
+    xcodebuild_app.step.dependOn(&build_codex.step);
 
     const open_app = b.addSystemCommand(&.{
         "open",

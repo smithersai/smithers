@@ -117,8 +117,9 @@ final class WorkspaceStateTests: XCTestCase {
         ws.openDirectory(tmpDir)
         ws.selectFile(file)
 
-        XCTAssertEqual(ws.openFiles.count, 1)
-        XCTAssertEqual(ws.openFiles[0], file)
+        XCTAssertEqual(ws.openFiles.count, 2)
+        XCTAssertTrue(ws.isChatURL(ws.openFiles[0]))
+        XCTAssertEqual(ws.openFiles[1], file)
         XCTAssertEqual(ws.selectedFileURL, file)
     }
 
@@ -138,8 +139,9 @@ final class WorkspaceStateTests: XCTestCase {
 
         ws.closeFile(fileB)
 
-        XCTAssertEqual(ws.openFiles.count, 1)
-        XCTAssertEqual(ws.openFiles[0], fileA)
+        XCTAssertEqual(ws.openFiles.count, 2)
+        XCTAssertTrue(ws.isChatURL(ws.openFiles[0]))
+        XCTAssertEqual(ws.openFiles[1], fileA)
         XCTAssertEqual(ws.selectedFileURL, fileA)
     }
 }
