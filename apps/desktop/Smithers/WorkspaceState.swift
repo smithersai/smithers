@@ -223,6 +223,9 @@ class WorkspaceState: ObservableObject {
         currentLanguage = SupportedLanguage.fromFileName(url.lastPathComponent)
         fileLoadTask?.cancel()
         if let cached = openFileContents[url] {
+            if savedFileContents[url] == nil {
+                savedFileContents[url] = cached
+            }
             setEditorText(cached)
             return
         }
