@@ -84,8 +84,12 @@ class WorkspaceState: ObservableObject {
                   !isChatURL(selectedFileURL),
                   !isTerminalURL(selectedFileURL)
             else { return }
+            let wasModified = isNativeFileModified(selectedFileURL)
             openFileContents[selectedFileURL] = editorText
-            updateWindowTitle()
+            let nowModified = isNativeFileModified(selectedFileURL)
+            if wasModified != nowModified {
+                updateWindowTitle()
+            }
         }
     }
     @Published var currentLanguage: SupportedLanguage?
