@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Dispatch
 
 final class TmuxKeyHandler {
     private weak var workspace: WorkspaceState?
@@ -27,9 +28,6 @@ final class TmuxKeyHandler {
     }
 
     private func handle(_ event: NSEvent) -> NSEvent? {
-        if isTerminalResponderActive() {
-            return event
-        }
         if isPrefix(event) {
             activatePrefix()
             return nil
@@ -41,7 +39,7 @@ final class TmuxKeyHandler {
         prefixResetItem = nil
 
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if mods.contains(.command) || mods.contains(.option) || mods.contains(.control) {
+        if mods.contains(.command) || mods.contains(.option) {
             return event
         }
 
@@ -56,7 +54,7 @@ final class TmuxKeyHandler {
 
         switch key {
         case "c":
-            trigger { $0.showCommandPalette() }
+            trigger { $0.openTerminal() }
             return nil
         case "n":
             trigger { $0.selectNextTab() }
@@ -74,7 +72,7 @@ final class TmuxKeyHandler {
             trigger { $0.selectTab(index: 9) }
             return nil
         default:
-            return event
+            return nil
         }
     }
 
@@ -97,12 +95,7 @@ final class TmuxKeyHandler {
         DispatchQueue.main.asyncAfter(deadline: .now() + prefixTimeout, execute: item)
     }
 
-    private func isTerminalResponderActive() -> Bool {
-        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
-        return responder is GhosttyTerminalView
-    }
-
-    private func trigger(_ action: @escaping (WorkspaceState) -> Void) {
+    private func trigger(_ action: @MainActor @escaping (WorkspaceState) -> Void) {
         guard let workspace else { return }
         Task { @MainActor in
             action(workspace)
