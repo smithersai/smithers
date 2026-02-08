@@ -217,6 +217,16 @@ final class NvimController {
         return parseModifiedBuffers(response)
     }
 
+    func saveCurrent() async throws {
+        await waitUntilReady()
+        _ = try await rpc.request("nvim_command", params: [.string("write")])
+    }
+
+    func saveAll() async throws {
+        await waitUntilReady()
+        _ = try await rpc.request("nvim_command", params: [.string("wall")])
+    }
+
     private func connectWithRetry() async throws {
         var lastError: Error?
         for _ in 0..<200 {

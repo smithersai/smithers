@@ -30,6 +30,16 @@ struct SmithersApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
         .commands {
+            CommandGroup(replacing: .saveItem) {
+                Button("Save") {
+                    workspace.saveCurrentFile()
+                }
+                .keyboardShortcut("S", modifiers: [.command])
+                Button("Save All") {
+                    workspace.saveAllFiles()
+                }
+                .keyboardShortcut("S", modifiers: [.command, .shift])
+            }
             CommandGroup(after: .newItem) {
                 Button("Open Folder...") {
                     workspace.openFolderPanel()

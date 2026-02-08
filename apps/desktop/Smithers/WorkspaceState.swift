@@ -651,6 +651,82 @@ class WorkspaceState: ObservableObject {
         diffTabs[url]
     }
 
+    func saveAllFiles() {
+        if isNvimModeEnabled {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let controller = try await self.ensureNvimStarted()
+                    try await controller.saveAll()
+                    let buffers = try await controller.listModifiedBuffers()
+                    self.setNvimModifiedBuffers(buffers)
+                } catch {
+                    self.appendErrorMessage("Save failed: \(error.localizedDescription)")
+                }
+            }
+            return
+        }
+        saveAllNativeFiles()
+    }
+
+    func saveCurrentFile() {
+        guard let selectedFileURL, isRegularFileURL(selectedFileURL) else { return }
+        if isNvimModeEnabled {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let controller = try await self.ensureNvimStarted()
+                    try await controller.saveCurrent()
+                    let buffers = try await controller.listModifiedBuffers()
+                    self.setNvimModifiedBuffers(buffers)
+                } catch {
+                    self.appendErrorMessage("Save failed: \(error.localizedDescription)")
+                }
+            }
+            return
+        }
+        saveNativeFile(selectedFileURL)
+    }
+
+    private func saveAllNativeFiles() {
+        var didSave = false
+        for url in openFiles where isRegularFileURL(url) {
+            let normalized = url.standardizedFileURL
+            guard let content = openFileContents[normalized] ?? openFileContents[url] else { continue }
+            if let saved = savedFileContents[normalized] ?? savedFileContents[url],
+               saved == content {
+                continue
+            }
+            do {
+                try content.write(to: normalized, atomically: true, encoding: .utf8)
+                savedFileContents[normalized] = content
+                savedFileContents[url] = content
+                didSave = true
+            } catch {
+                appendErrorMessage("Failed to save \(displayPath(for: normalized)): \(error.localizedDescription)")
+            }
+        }
+        if didSave {
+            updateWindowTitle()
+        }
+    }
+
+    private func saveNativeFile(_ url: URL) {
+        let normalized = url.standardizedFileURL
+        let content = openFileContents[normalized] ?? openFileContents[url]
+            ?? (selectedFileURL == normalized ? editorText : nil)
+        guard let content else { return }
+        do {
+            try content.write(to: normalized, atomically: true, encoding: .utf8)
+            savedFileContents[normalized] = content
+            savedFileContents[url] = content
+            openFileContents[normalized] = content
+            updateWindowTitle()
+        } catch {
+            appendErrorMessage("Failed to save \(displayPath(for: normalized)): \(error.localizedDescription)")
+        }
+    }
+
     private func openFileInNvim(_ url: URL, line: Int?, column: Int?) {
         let normalizedURL = url.standardizedFileURL
         Self.debugLog("[WorkspaceState] openFileInNvim: \(normalizedURL.path)")
@@ -994,6 +1070,14 @@ class WorkspaceState: ObservableObject {
                 icon: "terminal",
                 action: { [weak self] in
                     self?.toggleNvimMode()
+                }
+            ),
+            PaletteCommand(
+                id: "save-all",
+                title: "Save All",
+                icon: "square.and.arrow.down",
+                action: { [weak self] in
+                    self?.saveAllFiles()
                 }
             ),
             PaletteCommand(
