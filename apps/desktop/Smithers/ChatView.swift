@@ -334,10 +334,26 @@ struct ChatView: View {
             }
         }
         .sheet(item: $workspace.activeDiffPreview) { preview in
-            DiffViewer(title: preview.title, summary: preview.summary, diff: preview.diff)
+            DiffViewer(
+                title: preview.title,
+                summary: preview.summary,
+                diff: preview.diff,
+                onOpenInTab: {
+                    workspace.openDiffTab(title: preview.title, summary: preview.summary, diff: preview.diff)
+                    workspace.activeDiffPreview = nil
+                }
+            )
         }
         .sheet(item: $workspace.activeSessionDiff) { snapshot in
-            DiffViewer(title: snapshot.title, summary: snapshot.summary, diff: snapshot.diff)
+            DiffViewer(
+                title: snapshot.title,
+                summary: snapshot.summary,
+                diff: snapshot.diff,
+                onOpenInTab: {
+                    workspace.openDiffTab(title: snapshot.title, summary: snapshot.summary, diff: snapshot.diff)
+                    workspace.activeSessionDiff = nil
+                }
+            )
         }
     }
 }

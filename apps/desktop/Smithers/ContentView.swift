@@ -153,6 +153,13 @@ struct ContentView: View {
                         } else {
                             emptyEditor
                         }
+                    } else if workspace.isDiffURL(selectedURL) {
+                        if let tab = workspace.diffTab(for: selectedURL) {
+                            DiffViewer(title: tab.title, summary: tab.summary, diff: tab.diff)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            emptyEditor
+                        }
                     } else {
                         CodeEditor(text: $workspace.editorText, language: workspace.currentLanguage, fileURL: workspace.selectedFileURL)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -202,6 +209,7 @@ struct TabBar: View {
             HStack(spacing: 6) {
                 ForEach(workspace.openFiles, id: \.self) { url in
                     let isChat = workspace.isChatURL(url)
+                    let isDiff = workspace.isDiffURL(url)
                     if workspace.isTerminalURL(url),
                        let view = workspace.terminalViews[url] {
                         TerminalTabBarItem(
@@ -211,10 +219,12 @@ struct TabBar: View {
                             onClose: { workspace.closeFile(url) }
                         )
                     } else {
+                        let diffInfo = isDiff ? workspace.diffTab(for: url) : nil
+                        let diffSubtitle = diffInfo?.summary.isEmpty == false ? diffInfo?.summary : "Diff view"
                         TabBarItem(
-                            title: isChat ? "Chat" : url.lastPathComponent,
-                            subtitle: workspace.displayPath(for: url),
-                            icon: isChat ? "bubble.left.and.bubble.right" : iconForFile(url.lastPathComponent),
+                            title: isChat ? "Chat" : (diffInfo?.title ?? url.lastPathComponent),
+                            subtitle: isChat ? "Current chat" : (diffSubtitle ?? workspace.displayPath(for: url)),
+                            icon: isChat ? "bubble.left.and.bubble.right" : (isDiff ? "arrow.left.and.right" : iconForFile(url.lastPathComponent)),
                             isSelected: url == workspace.selectedFileURL,
                             onSelect: {
                                 workspace.selectFile(url)

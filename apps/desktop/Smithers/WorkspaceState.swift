@@ -23,6 +23,13 @@ struct PaletteCommand: Identifiable {
     let action: () -> Void
 }
 
+struct DiffTab: Identifiable, Hashable {
+    let id: URL
+    let title: String
+    let summary: String
+    let diff: String
+}
+
 @MainActor
 class WorkspaceState: ObservableObject {
     @Published var rootDirectory: URL?
@@ -54,6 +61,7 @@ class WorkspaceState: ObservableObject {
     @Published var activeDiffPreview: DiffPreview?
     @Published var activeSessionDiff: SessionDiffSnapshot?
     @Published private(set) var sessionDiffSnapshot: SessionDiffSnapshot?
+    @Published var diffTabs: [URL: DiffTab] = [:]
     @Published var chatDraft: String = ""
     @Published var isTurnInProgress: Bool = false
     @Published var isCommandPalettePresented: Bool = false
@@ -76,6 +84,7 @@ class WorkspaceState: ObservableObject {
     private static let chatURL = URL(string: "smithers-chat://current")!
     private static let terminalScheme = "smithers-terminal"
     private static let openFileScheme = "smithers-open-file"
+    private static let diffScheme = "smithers-diff"
     private var terminalCounter = 0
     private let ghosttyApp = GhosttyApp.shared
     private var codexService: CodexService?
@@ -111,6 +120,7 @@ class WorkspaceState: ObservableObject {
         turnDiffs = [:]
         turnDiffOrder = []
         streamingTurnDiffs = [:]
+        diffTabs = [:]
         openChat()
         rebuildFileIndex()
         startCodexService(cwd: url.path)
@@ -122,6 +132,12 @@ class WorkspaceState: ObservableObject {
             return
         }
         if isTerminalURL(url) {
+            selectedFileURL = url
+            currentLanguage = nil
+            setEditorText("")
+            return
+        }
+        if isDiffURL(url) {
             selectedFileURL = url
             currentLanguage = nil
             setEditorText("")
@@ -162,6 +178,8 @@ class WorkspaceState: ObservableObject {
         openFiles.remove(at: index)
         if isTerminalURL(url) {
             closeTerminal(url)
+        } else if isDiffURL(url) {
+            diffTabs.removeValue(forKey: url)
         } else {
             openFileContents.removeValue(forKey: url)
         }
@@ -185,6 +203,14 @@ class WorkspaceState: ObservableObject {
 
     func isTerminalURL(_ url: URL) -> Bool {
         url.scheme == Self.terminalScheme
+    }
+
+    func isDiffURL(_ url: URL) -> Bool {
+        url.scheme == Self.diffScheme
+    }
+
+    func diffTab(for url: URL) -> DiffTab? {
+        diffTabs[url]
     }
 
     func makeOpenFileURL(path: String, line: Int?, column: Int?) -> URL? {
@@ -300,6 +326,9 @@ class WorkspaceState: ObservableObject {
         }
         if isTerminalURL(url) {
             return terminalViews[url]?.pwd ?? "Terminal"
+        }
+        if isDiffURL(url) {
+            return diffTabs[url]?.title ?? "Diff"
         }
         guard let rootDirectory else { return url.lastPathComponent }
         let rootPath = rootDirectory.path
@@ -721,6 +750,24 @@ class WorkspaceState: ObservableObject {
         guard let snapshot = sessionDiffSnapshot else { return }
         activeDiffPreview = nil
         activeSessionDiff = snapshot
+    }
+
+    func openDiffTab(title: String, summary: String?, diff: String) {
+        let id = UUID().uuidString
+        guard let url = URL(string: "\(Self.diffScheme)://\(id)") else { return }
+        let tab = DiffTab(
+            id: url,
+            title: title,
+            summary: summary ?? "",
+            diff: diff
+        )
+        diffTabs[url] = tab
+        if !openFiles.contains(url) {
+            openFiles.append(url)
+        }
+        selectedFileURL = url
+        currentLanguage = nil
+        setEditorText("")
     }
 
     private func looksLikeUnifiedDiff(_ text: String) -> Bool {

@@ -5,6 +5,7 @@ struct DiffViewer: View {
     let summary: String?
     let diff: String
     let document: DiffDocument
+    let onOpenInTab: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var selectedFileId: String?
@@ -13,10 +14,11 @@ struct DiffViewer: View {
     @State private var hunkIndex: Int = 0
     @State private var scrollTarget: String?
 
-    init(title: String, summary: String?, diff: String) {
+    init(title: String, summary: String?, diff: String, onOpenInTab: (() -> Void)? = nil) {
         self.title = title
         self.summary = summary
         self.diff = diff
+        self.onOpenInTab = onOpenInTab
         self.document = DiffParser.parse(diff)
         _selectedFileId = State(initialValue: document.files.first?.id)
     }
@@ -31,6 +33,10 @@ struct DiffViewer: View {
                 hunkState: hunkState,
                 onJumpPrev: { jumpHunk(-1) },
                 onJumpNext: { jumpHunk(1) },
+                onOpenInTab: onOpenInTab == nil ? nil : {
+                    onOpenInTab?()
+                    dismiss()
+                },
                 onClose: { dismiss() }
             )
 
@@ -92,6 +98,7 @@ private struct DiffViewerHeader: View {
     let hunkState: HunkNavigatorState
     let onJumpPrev: () -> Void
     let onJumpNext: () -> Void
+    let onOpenInTab: (() -> Void)?
     let onClose: () -> Void
 
     var body: some View {
@@ -142,6 +149,17 @@ private struct DiffViewerHeader: View {
                     .font(.system(size: 11, weight: .medium))
             }
             .toggleStyle(.switch)
+
+            if let onOpenInTab {
+                Button {
+                    onOpenInTab()
+                } label: {
+                    Label("Full Screen", systemImage: "arrow.up.left.and.arrow.down.right")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Open in a new tab")
+            }
 
             Button("Close") {
                 onClose()
