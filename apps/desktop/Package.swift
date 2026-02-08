@@ -43,11 +43,11 @@ let package = Package(
                 .product(name: "TreeSitterRust", package: "tree-sitter-rust"),
                 .product(name: "TreeSitterGo", package: "tree-sitter-go"),
             ],
+            path: "Smithers",
             linkerSettings: [
                 .linkedLibrary("stdc++"),
                 .linkedFramework("Carbon"),
-            ],
-            path: "Smithers"
+            ]
         ),
     ]
 )
