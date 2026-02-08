@@ -43,6 +43,17 @@ class WorkspaceState: ObservableObject {
         }
     }
 
+    private enum CloseContext {
+        case tab(URL)
+        case window
+        case application
+    }
+
+    private enum CloseDecision {
+        case deny
+        case allow(force: Bool)
+    }
+
     @Published var rootDirectory: URL?
     @Published var fileTree: [FileItem] = []
     @Published var openFiles: [URL] = []
@@ -50,6 +61,7 @@ class WorkspaceState: ObservableObject {
     @Published var terminalViews: [URL: GhosttyTerminalView] = [:]
     @Published private(set) var nvimTerminalView: GhosttyTerminalView?
     @Published private(set) var nvimCurrentFilePath: String?
+    @Published private(set) var nvimModifiedBuffers: [NvimModifiedBuffer] = []
     @Published var editorText: String = """
     func hello() {
         print("Hello, Smithers!")
@@ -94,6 +106,7 @@ class WorkspaceState: ObservableObject {
     private var openFileContents: [URL: String] = [:]
     private var suppressEditorTextUpdate = false
     private var suppressSelectionSync = false
+    private var closeGuardsBypassed = false
     private var turnDiffs: [String: String] = [:]
     private var turnDiffOrder: [String] = []
     private var streamingTurnDiffs: [String: String] = [:]
@@ -211,7 +224,24 @@ class WorkspaceState: ObservableObject {
         }
     }
 
+    func requestCloseFile(_ url: URL) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let decision = await self.closeDecisionForTab(url)
+            switch decision {
+            case .deny:
+                return
+            case .allow(let force):
+                self.closeFile(url, force: force)
+            }
+        }
+    }
+
     func closeFile(_ url: URL) {
+        closeFile(url, force: false)
+    }
+
+    private func closeFile(_ url: URL, force: Bool) {
         guard let index = openFiles.firstIndex(of: url) else { return }
         if isNvimModeEnabled && isRegularFileURL(url) {
             let wasSelected = selectedFileURL == url
@@ -223,7 +253,7 @@ class WorkspaceState: ObservableObject {
                 setEditorText("")
             }
             Task { [weak self] in
-                await self?.nvimController?.closeFile(url)
+                await self?.nvimController?.closeFile(url, force: force)
             }
             return
         }
@@ -413,6 +443,7 @@ class WorkspaceState: ObservableObject {
     private func disableNvimMode() {
         isNvimModeEnabled = false
         stopNvim()
+        theme = .default
         if let selectedFileURL, isRegularFileURL(selectedFileURL) {
             selectFile(selectedFileURL)
         }
