@@ -845,6 +845,88 @@ final class NvimController {
                         needsFloatingUpdate = true
                     }
                 }
+            case "cmdline_show":
+                for tuple in tuples {
+                    guard case let .array(items) = tuple else { continue }
+                    let chunks = parseTextChunks(items.first)
+                    let pos = Int(max(0, parseInt(items.count > 1 ? items[1] : nil) ?? 0))
+                    let firstc = parseFirstc(items.count > 2 ? items[2] : nil)
+                    let prompt = items.count > 3 ? (items[3].stringValue ?? "") : ""
+                    let indent = Int(max(0, parseInt(items.count > 4 ? items[4] : nil) ?? 0))
+                    let level = Int(max(0, parseInt(items.count > 5 ? items[5] : nil) ?? 0))
+                    let state = NvimCmdlineState(
+                        isVisible: true,
+                        level: level,
+                        prompt: prompt,
+                        firstc: firstc,
+                        indent: indent,
+                        cursorPos: pos,
+                        chunks: chunks
+                    )
+                    workspace?.handleNvimCmdlineShow(state)
+                }
+            case "cmdline_pos":
+                for tuple in tuples {
+                    guard case let .array(items) = tuple else { continue }
+                    guard let pos = parseInt(items.first) else { continue }
+                    let level = Int(max(0, parseInt(items.count > 1 ? items[1] : nil) ?? 0))
+                    workspace?.handleNvimCmdlinePos(Int(pos), level: level)
+                }
+            case "cmdline_hide":
+                workspace?.handleNvimCmdlineHide()
+            case "popupmenu_show":
+                for tuple in tuples {
+                    guard case let .array(items) = tuple, items.count >= 5 else { continue }
+                    let menuItems = parsePopupmenuItems(items[0])
+                    let selected = Int(parseInt(items[1]) ?? -1)
+                    let row = Int(parseInt(items[2]) ?? 0)
+                    let col = Int(parseInt(items[3]) ?? 0)
+                    let grid = Int(parseInt(items[4]) ?? 0)
+                    let state = NvimPopupMenuState(
+                        isVisible: true,
+                        items: menuItems,
+                        selected: selected,
+                        row: row,
+                        col: col,
+                        grid: grid
+                    )
+                    workspace?.handleNvimPopupmenuShow(state)
+                }
+            case "popupmenu_select":
+                for tuple in tuples {
+                    guard case let .array(items) = tuple, let selected = parseInt(items.first) else { continue }
+                    workspace?.handleNvimPopupmenuSelect(Int(selected))
+                }
+            case "popupmenu_hide":
+                workspace?.handleNvimPopupmenuHide()
+            case "msg_show":
+                for tuple in tuples {
+                    guard case let .array(items) = tuple else { continue }
+                    let kind = items.first?.stringValue ?? ""
+                    let chunks = parseTextChunks(items.count > 1 ? items[1] : nil)
+                    let replaceLast = parseBool(items.count > 2 ? items[2] : nil) ?? false
+                    workspace?.handleNvimMessageShow(kind: kind, chunks: chunks, replaceLast: replaceLast)
+                }
+            case "msg_clear":
+                workspace?.handleNvimMessageClear()
+            case "msg_showmode":
+                for tuple in tuples {
+                    guard case let .array(items) = tuple else { continue }
+                    let chunks = parseTextChunks(items.first)
+                    workspace?.handleNvimMessageShowMode(chunks)
+                }
+            case "msg_showcmd":
+                for tuple in tuples {
+                    guard case let .array(items) = tuple else { continue }
+                    let chunks = parseTextChunks(items.first)
+                    workspace?.handleNvimMessageShowCmd(chunks)
+                }
+            case "msg_ruler":
+                for tuple in tuples {
+                    guard case let .array(items) = tuple else { continue }
+                    let chunks = parseTextChunks(items.first)
+                    workspace?.handleNvimMessageRuler(chunks)
+                }
             case "flush":
                 if needsFloatingUpdate {
                     publishFloatingWindowsIfNeeded()

@@ -1640,6 +1640,8 @@ class WorkspaceState: ObservableObject {
             closeTerminal(url)
         } else if isDiffURL(url) {
             diffTabs.removeValue(forKey: url)
+        } else if isWebviewURL(url) {
+            closeWebview(url)
         } else {
             openFileContents.removeValue(forKey: url)
             savedFileContents.removeValue(forKey: url)
@@ -4239,9 +4241,16 @@ class WorkspaceState: ObservableObject {
     }
 
     func openTerminal() {
+        _ = openTerminal(command: nil, cwd: nil)
+    }
+
+    @discardableResult
+    func openTerminal(command: String?, cwd: String?) -> URL {
         let url = URL(string: "\(Self.terminalScheme)://\(terminalCounter)")!
         terminalCounter += 1
-        let workingDirectory = rootDirectory?.path ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let workingDirectory = cwd
+            ?? rootDirectory?.path
+            ?? FileManager.default.homeDirectoryForCurrentUser.path
         let view = GhosttyTerminalView(app: ghosttyApp, workingDirectory: workingDirectory, optionAsMeta: optionAsMeta)
         view.onClose = { [weak self] in
             self?.closeFile(url)
@@ -4251,6 +4260,13 @@ class WorkspaceState: ObservableObject {
         selectedFileURL = url
         currentLanguage = nil
         setEditorText("")
+        if let command, !command.isEmpty {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                view.sendText(command + "\n")
+            }
+        }
+        return url
     }
 
     private func buildCommandList() -> [PaletteCommand] {
