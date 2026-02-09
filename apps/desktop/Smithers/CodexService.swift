@@ -108,11 +108,19 @@ final class CodexService: ObservableObject {
         isRunning = false
     }
 
-    func sendMessage(_ text: String) async throws {
+    func sendMessage(_ text: String, images: [ChatImage] = []) async throws {
         guard let transport, isRunning else { throw ServiceError.notRunning }
         guard let threadId else { throw ServiceError.threadUnavailable }
 
-        let params = TurnStartParams(threadId: threadId, input: [UserInput.text(text)])
+        var input: [UserInput] = []
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            input.append(UserInput.text(trimmed))
+        }
+        for image in images {
+            input.append(UserInput.image(image.payloadDataURL()))
+        }
+        let params = TurnStartParams(threadId: threadId, input: input)
         let response: TurnStartResponse = try await transport.sendRequest(
             method: "turn/start",
             params: params,
@@ -563,20 +571,46 @@ enum SandboxMode: String, Encodable {
 
 struct UserInput: Encodable {
     let type: String
-    let text: String
+    let text: String?
+    let url: String?
 
     static func text(_ text: String) -> UserInput {
-        UserInput(type: "text", text: text)
+        UserInput(type: "text", text: text, url: nil)
+    }
+
+    static func image(_ url: String) -> UserInput {
+        UserInput(type: "image", text: nil, url: url)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case url
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        if let text {
+            try container.encode(text, forKey: .text)
+        }
+        if let url {
+            try container.encode(url, forKey: .url)
+        }
     }
 }
 
 enum UserInputPayload: Decodable {
     case text(String)
+    case image(String)
+    case localImage(String)
     case other
 
     private enum CodingKeys: String, CodingKey {
         case type
         case text
+        case url
+        case path
     }
 
     init(from decoder: Decoder) throws {
@@ -586,6 +620,12 @@ enum UserInputPayload: Decodable {
         case "text":
             let text = (try? container.decode(String.self, forKey: .text)) ?? ""
             self = .text(text)
+        case "image":
+            let url = (try? container.decode(String.self, forKey: .url)) ?? ""
+            self = .image(url)
+        case "localImage":
+            let path = (try? container.decode(String.self, forKey: .path)) ?? ""
+            self = .localImage(path)
         default:
             self = .other
         }
