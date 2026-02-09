@@ -1,6 +1,6 @@
 import Foundation
 
-struct SkillItem: Identifiable, Hashable {
+struct SkillItem: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let description: String
@@ -45,7 +45,7 @@ struct SkillItem: Identifiable, Hashable {
     }
 }
 
-enum SkillScope: String, CaseIterable, Codable {
+enum SkillScope: String, CaseIterable, Codable, Sendable {
     case project = "Project"
     case user = "User"
     case admin = "Admin"
@@ -61,7 +61,7 @@ enum SkillScope: String, CaseIterable, Codable {
     }
 }
 
-struct SkillRegistryEntry: Identifiable, Hashable {
+struct SkillRegistryEntry: Identifiable, Hashable, Sendable {
     let id: String
     let name: String
     let description: String

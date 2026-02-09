@@ -1,6 +1,6 @@
 import Foundation
 
-enum SkillInstallSource: Hashable {
+enum SkillInstallSource: Hashable, Sendable {
     case registry(entry: SkillRegistryEntry)
     case git(url: String, skillName: String?)
     case local(path: String, skillName: String?)
@@ -32,7 +32,7 @@ enum SkillInstallError: Error, LocalizedError {
     }
 }
 
-struct SkillInstallResult {
+struct SkillInstallResult: Sendable {
     let skill: SkillItem
     let scripts: [URL]
 }
