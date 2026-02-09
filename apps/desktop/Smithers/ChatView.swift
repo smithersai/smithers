@@ -395,6 +395,8 @@ enum CommandExecutionStatus: Hashable {
 struct ChatView: View {
     @ObservedObject var workspace: WorkspaceState
     @FocusState private var inputFocused: Bool
+    @State private var selectedImage: ChatImage?
+    @State private var isDropTargeted = false
 
     var body: some View {
         let theme = workspace.theme
@@ -403,7 +405,11 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(workspace.chatMessages) { message in
-                            ChatBubble(message: message, workspace: workspace)
+                            ChatBubble(
+                                message: message,
+                                workspace: workspace,
+                                onSelectImage: { selectedImage = $0 }
+                            )
                                 .id(message.id)
                                 .transition(.asymmetric(
                                     insertion: .move(edge: message.role == .user ? .trailing : .leading)
@@ -431,18 +437,43 @@ struct ChatView: View {
                 .background(theme.dividerColor)
 
             HStack(spacing: 8) {
-                TextField("Message...", text: $workspace.chatDraft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1...4)
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(theme.inputFieldBackgroundColor)
-                    )
-                    .focused($inputFocused)
-                    .onSubmit {
-                        workspace.sendChatMessage()
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Message...", text: $workspace.chatDraft, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...4)
+                        .focused($inputFocused)
+                        .onSubmit {
+                            workspace.sendChatMessage()
+                        }
+                        .onPasteCommand { _ in
+                            workspace.handleChatImagePaste()
+                        }
+
+                    if !workspace.chatDraftImages.isEmpty {
+                        ChatImageStrip(
+                            images: workspace.chatDraftImages,
+                            maxHeight: 72,
+                            theme: theme,
+                            showsBorder: true,
+                            onSelect: { selectedImage = $0 }
+                        )
                     }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(theme.inputFieldBackgroundColor)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(isDropTargeted ? theme.accentColor : Color.clear, lineWidth: 1)
+                )
+                .onDrop(
+                    of: [UTType.image.identifier, UTType.fileURL.identifier],
+                    isTargeted: $isDropTargeted
+                ) { providers in
+                    workspace.handleChatImageDrop(providers: providers)
+                }
 
                 if workspace.isTurnInProgress {
                     Button("Interrupt") {
@@ -505,12 +536,20 @@ struct ChatView: View {
                 }
             )
         }
+        .overlay {
+            if let image = selectedImage {
+                ChatImageOverlay(image: image) {
+                    selectedImage = nil
+                }
+            }
+        }
     }
 }
 
 struct ChatBubble: View {
     let message: ChatMessage
     @ObservedObject var workspace: WorkspaceState
+    let onSelectImage: (ChatImage) -> Void
     @State private var isHovered = false
     @State private var showActions = false
     private static let timeFormatter: DateFormatter = {
@@ -638,13 +677,27 @@ struct ChatBubble: View {
     private var bubbleContent: some View {
         switch message.kind {
         case .text(let text):
-            LinkifiedText(
-                workspace: workspace,
-                text: message.isStreaming ? text + " ..." : text,
-                font: .system(size: 13, weight: .regular),
-                baseColor: .primary,
-                selectionEnabled: true
-            )
+            VStack(alignment: .leading, spacing: 6) {
+                if !text.isEmpty || message.isStreaming {
+                    LinkifiedText(
+                        workspace: workspace,
+                        text: message.isStreaming ? text + " ..." : text,
+                        font: .system(size: 13, weight: .regular),
+                        baseColor: .primary,
+                        selectionEnabled: true
+                    )
+                }
+
+                if !message.images.isEmpty {
+                    ChatImageStrip(
+                        images: message.images,
+                        maxHeight: 140,
+                        theme: workspace.theme,
+                        showsBorder: message.role == .user,
+                        onSelect: onSelectImage
+                    )
+                }
+            }
         case .status(let text):
             LinkifiedText(
                 workspace: workspace,
@@ -697,6 +750,97 @@ struct ChatBubble: View {
         case .starterPrompt(let title, let suggestions):
             StarterPromptView(title: title, suggestions: suggestions, workspace: workspace)
         }
+    }
+}
+
+struct ChatImageStrip: View {
+    let images: [ChatImage]
+    let maxHeight: CGFloat
+    let theme: AppTheme
+    let showsBorder: Bool
+    let onSelect: (ChatImage) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(images) { image in
+                    ChatImageThumbnail(
+                        image: image,
+                        maxHeight: maxHeight,
+                        theme: theme,
+                        showsBorder: showsBorder
+                    )
+                    .onTapGesture {
+                        onSelect(image)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct ChatImageThumbnail: View {
+    let image: ChatImage
+    let maxHeight: CGFloat
+    let theme: AppTheme
+    let showsBorder: Bool
+
+    var body: some View {
+        Image(nsImage: image.thumbnail)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(maxHeight: maxHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(showsBorder ? theme.dividerColor : Color.clear, lineWidth: 1)
+            )
+    }
+}
+
+struct ChatImageOverlay: View {
+    let image: ChatImage
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    onClose()
+                }
+
+            if let fullImage = image.fullImage {
+                GeometryReader { proxy in
+                    let maxWidth = proxy.size.width * 0.9
+                    let maxHeight = proxy.size.height * 0.9
+                    Image(nsImage: fullImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: maxWidth, maxHeight: maxHeight)
+                        .shadow(radius: 20)
+                        .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                }
+            }
+
+            VStack {
+                HStack {
+                    Spacer()
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.9))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(16)
+                }
+                Spacer()
+            }
+        }
+        .transition(.opacity)
     }
 }
 

@@ -191,6 +191,7 @@ class WorkspaceState: ObservableObject {
     @Published private(set) var sessionDiffSnapshot: SessionDiffSnapshot?
     @Published var diffTabs: [URL: DiffTab] = [:]
     @Published var chatDraft: String = ""
+    @Published var chatDraftImages: [ChatImage] = []
     @Published var isTurnInProgress: Bool = false
     @Published var isCommandPalettePresented: Bool = false
     @Published var isSearchPresented: Bool = false
@@ -2373,15 +2374,17 @@ class WorkspaceState: ObservableObject {
 
     func sendChatMessage() {
         let text = chatDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let images = chatDraftImages
+        guard !text.isEmpty || !images.isEmpty else { return }
         chatDraft = ""
-        sendChatMessage(text: text)
+        chatDraftImages = []
+        sendChatMessage(text: text, images: images)
     }
 
-    func sendChatMessage(text: String) {
+    func sendChatMessage(text: String, images: [ChatImage] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        chatMessages.append(ChatMessage(role: .user, kind: .text(trimmed)))
+        guard !trimmed.isEmpty || !images.isEmpty else { return }
+        chatMessages.append(ChatMessage(role: .user, kind: .text(trimmed), images: images))
         guard let codexService else {
             appendErrorMessage("Codex service is not running.")
             return
@@ -2390,7 +2393,7 @@ class WorkspaceState: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await codexService.sendMessage(trimmed)
+                try await codexService.sendMessage(trimmed, images: images)
             } catch {
                 self.appendErrorMessage("Failed to send message: \(error.localizedDescription)")
                 self.isTurnInProgress = false
@@ -2494,7 +2497,7 @@ class WorkspaceState: ObservableObject {
             showToast("No user message to retry.")
             return
         }
-        sendChatMessage(text: text)
+        sendChatMessage(text: text, images: userMessage.images)
     }
 
     func canEditMessage(_ message: ChatMessage) -> Bool {
@@ -2518,11 +2521,13 @@ class WorkspaceState: ObservableObject {
                 let success = await self.forkChatInternal(turnId: turnId)
                 if success {
                     self.chatDraft = text
+                    self.chatDraftImages = message.images
                     self.openChat()
                 }
             }
         } else {
             chatDraft = text
+            chatDraftImages = message.images
             openChat()
         }
     }
