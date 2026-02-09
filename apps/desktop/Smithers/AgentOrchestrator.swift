@@ -15,6 +15,7 @@ class AgentOrchestrator: ObservableObject {
     private var agentCodexServices: [String: CodexService] = [:]
     private var agentEventTasks: [String: Task<Void, Never>] = [:]
     private var agentActiveTurnIds: [String: String] = [:]
+    private var mergeWorkspaceService: JJService?
     private var preferences: VCSPreferences
 
     init(mainWorkspace: URL, jjService: JJService, snapshotStore: JJSnapshotStore, preferences: VCSPreferences) {
@@ -183,14 +184,16 @@ class AgentOrchestrator: ObservableObject {
         try? await snapshotStore.logMergeQueueAction(agentId: agentId, action: "merge_started")
 
         do {
+            let mergeJJ = try await ensureMergeWorkspace()
+
             // Create a merge commit: jj new trunk() <change>
-            _ = try await jjService.runMerge(
+            _ = try await mergeJJ.runMerge(
                 trunk: "trunk()",
                 changeId: entry.changeId
             )
 
             // Step 2: Check for conflicts
-            let status = try await jjService.status()
+            let status = try await mergeJJ.status()
             if !status.conflicts.isEmpty {
                 mergeQueue.updateStatus(agentId: agentId, status: .conflicted)
                 try? await snapshotStore.logMergeQueueAction(
@@ -205,7 +208,7 @@ class AgentOrchestrator: ObservableObject {
                 try? await snapshotStore.updateAgentStatus(id: agentId, status: .conflicted)
 
                 // Undo the failed merge
-                try? await jjService.undo()
+                try? await mergeJJ.undo()
                 return
             }
 
@@ -214,7 +217,7 @@ class AgentOrchestrator: ObservableObject {
                 mergeQueue.updateStatus(agentId: agentId, status: .testing)
                 try? await snapshotStore.logMergeQueueAction(agentId: agentId, action: "test_started")
 
-                let testResult = await runTestCommand(testCommand)
+                let testResult = await runTestCommand(testCommand, in: mergeJJ.workingDirectory)
 
                 if testResult.passed {
                     try? await snapshotStore.logMergeQueueAction(agentId: agentId, action: "test_passed")
@@ -232,7 +235,7 @@ class AgentOrchestrator: ObservableObject {
                     try? await snapshotStore.updateAgentStatus(id: agentId, status: .failed, testOutput: testResult.output)
 
                     // Undo the failed merge
-                    try? await jjService.undo()
+                    try? await mergeJJ.undo()
                     return
                 }
             }
@@ -358,9 +361,9 @@ class AgentOrchestrator: ObservableObject {
         }.value
     }
 
-    private func runTestCommand(_ command: String) async -> TestResult {
+    private func runTestCommand(_ command: String, in directory: URL) async -> TestResult {
         let start = Date()
-        let wd = mainWorkspace
+        let wd = directory
 
         return await Task.detached {
             let process = Process()
@@ -407,6 +410,26 @@ class AgentOrchestrator: ObservableObject {
                 )
             }
         }.value
+    }
+
+    private func ensureMergeWorkspace() async throws -> JJService {
+        if let mergeWorkspaceService {
+            return mergeWorkspaceService
+        }
+        let basePath = preferences.agentWorkspaceBasePath.map { URL(fileURLWithPath: $0) }
+            ?? mainWorkspace.deletingLastPathComponent()
+        let mergePath = basePath.appendingPathComponent("smithers-merge")
+        let mergeJJ = JJService(workingDirectory: mergePath)
+        if mergeJJ.detectVCS() == .none {
+            _ = try await jjService.workspaceAdd(
+                path: mergePath.path,
+                revision: "trunk()",
+                description: "smithers: merge workspace"
+            )
+            _ = mergeJJ.detectVCS()
+        }
+        mergeWorkspaceService = mergeJJ
+        return mergeJJ
     }
 
     private func startAgentEventListener(agentId: String, codexService: CodexService) {
