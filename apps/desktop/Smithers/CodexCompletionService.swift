@@ -108,10 +108,13 @@ final class CodexCompletionService {
             self.activeRequest = nil
         case .turnCompleted(let turnId, let status):
             guard turnId == activeRequest.turnId else { return }
-            if status != "completed" {
-                activeRequest.finish(.failure(CompletionError.turnFailed(status)))
+            if status == "completed" {
+                activeRequest.finish(.success(activeRequest.buffer))
                 self.activeRequest = nil
+                return
             }
+            activeRequest.finish(.failure(CompletionError.turnFailed(status)))
+            self.activeRequest = nil
         case .error(let message):
             activeRequest.finish(.failure(CompletionError.serviceError(message)))
             self.activeRequest = nil
