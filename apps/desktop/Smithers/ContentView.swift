@@ -194,6 +194,43 @@ struct CodeEditor: NSViewRepresentable {
         updateExistingTextColor(from: previousTheme.foreground, to: theme.foreground, textView: textView)
     }
 
+    private func updateLineNumberFont(_ font: NSFont, scrollView: NSScrollView) {
+        guard let rulerView = scrollView.verticalRulerView as? STLineNumberRulerView else { return }
+        rulerView.font = Self.lineNumberFont(for: font)
+        rulerView.invalidateHashMarks()
+    }
+
+    private static func lineNumberFont(for font: NSFont) -> NSFont {
+        let features: [[NSFontDescriptor.FeatureKey: Int]] = [
+            [
+                .typeIdentifier: kTextSpacingType,
+                .selectorIdentifier: kMonospacedTextSelector,
+            ],
+            [
+                .typeIdentifier: kNumberSpacingType,
+                .selectorIdentifier: kMonospacedNumbersSelector,
+            ],
+            [
+                .typeIdentifier: kNumberCaseType,
+                .selectorIdentifier: kUpperCaseNumbersSelector,
+            ],
+            [
+                .typeIdentifier: kStylisticAlternativesType,
+                .selectorIdentifier: kStylisticAltOneOnSelector,
+            ],
+            [
+                .typeIdentifier: kStylisticAlternativesType,
+                .selectorIdentifier: kStylisticAltTwoOnSelector,
+            ],
+            [
+                .typeIdentifier: kTypographicExtrasType,
+                .selectorIdentifier: kSlashedZeroOnSelector,
+            ],
+        ]
+        let descriptor = font.fontDescriptor.addingAttributes([.featureSettings: features])
+        return NSFont(descriptor: descriptor, size: font.pointSize) ?? font
+    }
+
     private func updateExistingTextColor(from oldColor: NSColor, to newColor: NSColor, textView: STTextView) {
         guard let storage = (textView.textContentManager as? NSTextContentStorage)?.textStorage else { return }
         let fullRange = NSRange(location: 0, length: storage.length)
@@ -216,13 +253,19 @@ struct CodeEditor: NSViewRepresentable {
         var currentFileURL: URL?
         weak var scrollView: NSScrollView?
         weak var textView: STTextView?
+        private weak var lineNumberView: STLineNumberRulerView?
         private var scrollObserver: Any?
+        private var magnificationRecognizer: NSMagnificationGestureRecognizer?
         private var highlighterCache: [String: TreeSitterHighlighter] = [:]
         private var highlightWorkItem: DispatchWorkItem?
         fileprivate var lastAppliedText: String = ""
         var appliedTheme: AppTheme?
         var appliedFont: NSFont?
         private var bracketHighlightRanges: [NSRange] = []
+        private var pinchStartFontSize: Double = 0
+        private var pinchStartFont: NSFont?
+        private var liveFontSize: Double?
+        private var isPinching = false
 
         init(parent: CodeEditor) {
             self.parent = parent
@@ -237,6 +280,15 @@ struct CodeEditor: NSViewRepresentable {
         func attach(scrollView: NSScrollView, textView: STTextView) {
             self.scrollView = scrollView
             self.textView = textView
+            self.lineNumberView = scrollView.verticalRulerView as? STLineNumberRulerView
+            if magnificationRecognizer == nil {
+                let recognizer = NSMagnificationGestureRecognizer(
+                    target: self,
+                    action: #selector(handleMagnification(_:))
+                )
+                scrollView.addGestureRecognizer(recognizer)
+                magnificationRecognizer = recognizer
+            }
             scrollObserver = NotificationCenter.default.addObserver(
                 forName: NSView.boundsDidChangeNotification,
                 object: scrollView.contentView,
@@ -664,6 +716,57 @@ struct ContentView: View {
         .animation(.spring(duration: 0.25, bounce: 0.15), value: workspace.isCommandPalettePresented)
         .animation(.easeInOut(duration: 0.2), value: workspace.isProgressBarVisible)
         .background(workspace.theme.backgroundColor)
+    }
+
+    private func pane<Content: View>(_ content: Content, pane: FocusedPane) -> some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(FocusRing(isActive: focusedPane == pane, theme: workspace.theme))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                focusedPane = pane
+            }
+    }
+
+    private var editorView: some View {
+        ZStack(alignment: .trailing) {
+            HStack(spacing: 0) {
+                CodeEditor(
+                    text: $workspace.editorText,
+                    selectionRequest: $workspace.pendingSelection,
+                    scrollMetrics: $editorScrollMetrics,
+                    language: workspace.currentLanguage,
+                    fileURL: workspace.selectedFileURL,
+                    theme: workspace.theme,
+                    font: workspace.editorFont,
+                    saveViewState: { url, scrollOrigin, selection in
+                        editorViewStates[url] = EditorViewState(
+                            scrollOrigin: scrollOrigin,
+                            selectionRange: selection
+                        )
+                    },
+                    loadViewState: { url in
+                        editorViewStates[url]
+                    },
+                    onCursorMove: { line, column in
+                        workspace.cursorLine = line
+                        workspace.cursorColumn = column
+                        focusedPane = .editor
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                MinimapView(metrics: editorScrollMetrics, theme: workspace.theme)
+                    .frame(width: 70)
+            }
+
+            if workspace.isEditorLoading {
+                EditorSkeleton(theme: workspace.theme)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: workspace.isEditorLoading)
     }
 
     private var emptyEditor: some View {
