@@ -1086,6 +1086,7 @@ struct CodeEditor: NSViewRepresentable {
         }
 
         func updateGhostView(textView: STTextView) {
+            ensureGhostTextView(textView: textView)
             guard let ghostTextView else { return }
             guard !ghostText.isEmpty, let anchor = ghostAnchor else {
                 ghostTextView.ghostText = ""
