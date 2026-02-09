@@ -697,6 +697,7 @@ class WorkspaceState: ObservableObject {
         clearSearchPreview()
         searchErrorMessage = nil
         isSearchPresented = false
+        isShortcutsPanelVisible = false
         recentEditTimestamps = [:]
         recentEditEntries = []
         activeDiffPreview = nil
@@ -1280,6 +1281,7 @@ class WorkspaceState: ObservableObject {
     }
 
     func handleNvimModeChange(rawMode: String) {
+        guard isNvimModeEnabled else { return }
         let mapped = Self.mapNvimMode(rawMode)
         if nvimMode != mapped {
             nvimMode = mapped
@@ -2290,6 +2292,10 @@ class WorkspaceState: ObservableObject {
             }
             button.toolTip = context.representedURL?.path
         }
+    }
+
+    func refreshWindowTitle() {
+        updateWindowTitle()
     }
 
     private func buildWindowTitleContext() -> (title: String, representedURL: URL?, isEdited: Bool) {
