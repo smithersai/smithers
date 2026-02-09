@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import Foundation
 import UniformTypeIdentifiers
+import WebKit
 
 struct FileIndexEntry: Identifiable, Hashable, Sendable {
     let id: URL
@@ -98,6 +99,34 @@ struct DiffTab: Identifiable, Hashable {
     let title: String
     let summary: String
     let diff: String
+}
+
+struct WebviewTab: Identifiable, Hashable {
+    let id: URL
+    var title: String
+    var url: URL
+}
+
+enum OverlayType: String, Codable {
+    case chat
+    case progress
+    case panel
+}
+
+enum OverlayPosition: String, Codable {
+    case bottom
+    case center
+    case top
+}
+
+struct OverlayContent: Identifiable {
+    let id: String
+    let type: OverlayType
+    let message: String
+    let title: String?
+    let position: OverlayPosition
+    var progress: Double?
+    var dismissAfter: TimeInterval?
 }
 
 enum NvimFailureKind: String {
@@ -247,6 +276,8 @@ class WorkspaceState: ObservableObject {
     @Published var activeSessionDiff: SessionDiffSnapshot?
     @Published private(set) var sessionDiffSnapshot: SessionDiffSnapshot?
     @Published var diffTabs: [URL: DiffTab] = [:]
+    @Published var webviewTabs: [URL: WebviewTab] = [:]
+    @Published var activeOverlay: OverlayContent?
     @Published var chatDraft: String = ""
     @Published var chatDraftImages: [ChatImage] = []
     @Published var isTurnInProgress: Bool = false
@@ -5545,13 +5576,13 @@ class WorkspaceState: ObservableObject {
             maxPrefix: 4_000,
             maxSuffix: 2_000
         )
-        let openFiles = openFiles
+        let openFilePaths = openFiles
             .filter { isRegularFileURL($0) }
             .map { Self.relativePath(for: $0, rootPath: rootPath) }
             .prefix(20)
-        let openFilesSummary = openFiles.isEmpty
+        let openFilesSummary = openFilePaths.isEmpty
             ? "(none)"
-            : openFiles.map { "- \($0)" }.joined(separator: "\n")
+            : openFilePaths.map { "- \($0)" }.joined(separator: "\n")
         let recentEdits = fileURL.flatMap { recentEditLocations[$0] } ?? []
         let recentEditsSummary: String
         if recentEdits.isEmpty {
