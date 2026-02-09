@@ -29,6 +29,8 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
         working-directory: apps/desktop
+      - name: Check desktop package sync
+        run: python3 scripts/check-desktop-package-sync.py
       - name: Build webview
         run: bun run build:webview
         working-directory: apps/desktop
