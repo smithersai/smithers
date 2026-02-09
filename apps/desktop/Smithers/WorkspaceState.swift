@@ -29,6 +29,13 @@ struct RecentFolderEntry: Identifiable, Hashable {
     let displayPath: String
 }
 
+struct RecentEditEntry: Identifiable, Hashable {
+    let id: URL
+    let url: URL
+    let displayPath: String
+    let lastEdited: Date
+}
+
 struct DiffTab: Identifiable, Hashable {
     let id: URL
     let title: String
@@ -101,6 +108,7 @@ class WorkspaceState: ObservableObject {
                 updateWindowTitle()
             }
             scheduleAutoSaveIfNeeded(for: selectedFileURL)
+            updateRecentEdit(for: selectedFileURL)
         }
     }
     @Published var currentLanguage: SupportedLanguage?
@@ -148,6 +156,7 @@ class WorkspaceState: ObservableObject {
     @Published private(set) var paletteCommands: [PaletteCommand] = []
     @Published private(set) var recentFileEntries: [FileIndexEntry] = []
     @Published private(set) var recentFolderEntries: [RecentFolderEntry] = []
+    @Published private(set) var recentEditEntries: [RecentEditEntry] = []
     @Published var toastMessage: String?
     private var fileLoadTask: Task<Void, Never>?
     private var fileIndex: [FileIndexEntry] = []
@@ -161,6 +170,7 @@ class WorkspaceState: ObservableObject {
     private var windowHiddenForNvim = false
     private var recentFileURLs: [URL] = []
     private var recentFolderURLs: [URL] = []
+    private var recentEditTimestamps: [URL: Date] = [:]
     private var toastTask: Task<Void, Never>?
     private var toastToken: Int = 0
     private var autoSaveTask: Task<Void, Never>?
@@ -179,6 +189,7 @@ class WorkspaceState: ObservableObject {
     private static let recentFilesKey = "smithers.recentFiles"
     private static let recentFoldersKey = "smithers.recentFolders"
     private static let maxRecentItems = 10
+    private static let maxRecentEdits = 10
     private static let autoSaveEnabledKey = "smithers.autoSaveEnabled"
     private static let autoSaveIntervalKey = "smithers.autoSaveInterval"
     private static let defaultAutoSaveInterval: TimeInterval = 5
@@ -699,6 +710,9 @@ class WorkspaceState: ObservableObject {
         let bufferId = buffer ?? 0
         let entry = NvimModifiedBuffer(buffer: bufferId, name: name, listed: listed, url: url)
         updateModifiedEntry(entry, modified: modified)
+        if modified, let url {
+            updateRecentEdit(for: url)
+        }
     }
 
     func isNvimBufferModified(_ url: URL) -> Bool {
@@ -1209,6 +1223,34 @@ class WorkspaceState: ObservableObject {
             guard fileExists(at: url, isDirectory: true) else { return nil }
             return RecentFolderEntry(id: url, url: url, displayPath: Self.abbreviatedPath(url.path))
         }
+    }
+
+    private func updateRecentEdit(for url: URL) {
+        let normalized = url.standardizedFileURL
+        recentEditTimestamps[normalized] = Date()
+        refreshRecentEditEntries()
+    }
+
+    private func refreshRecentEditEntries() {
+        var entries: [RecentEditEntry] = []
+        entries.reserveCapacity(Self.maxRecentEdits)
+        let sorted = recentEditTimestamps.sorted { $0.value > $1.value }
+        var urlsToRemove: [URL] = []
+        for (url, date) in sorted {
+            guard fileExists(at: url, isDirectory: false) else {
+                urlsToRemove.append(url)
+                continue
+            }
+            let displayPath = recentDisplayPath(for: url)
+            entries.append(RecentEditEntry(id: url, url: url, displayPath: displayPath, lastEdited: date))
+            if entries.count >= Self.maxRecentEdits {
+                break
+            }
+        }
+        for url in urlsToRemove {
+            recentEditTimestamps.removeValue(forKey: url)
+        }
+        recentEditEntries = entries
     }
 
     private func recentDisplayPath(for url: URL) -> String {
