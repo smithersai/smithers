@@ -106,7 +106,6 @@ final class FileItemTests: XCTestCase {
     // MARK: - Phase 5: replaceChildren
 
     func testReplaceChildrenReplacesTargetFolder() {
-        let rootURL = URL(fileURLWithPath: "/root")
         let folderURL = URL(fileURLWithPath: "/root/folder")
         let newChild = FileItem(id: URL(fileURLWithPath: "/root/folder/a.txt"), name: "a.txt", isFolder: false, children: nil)
 

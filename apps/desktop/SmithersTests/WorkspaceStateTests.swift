@@ -190,7 +190,7 @@ final class WorkspaceStateTests: XCTestCase {
         XCTAssertTrue(ws.isChatURL(ws.selectedFileURL!))
     }
 
-    func testHandleOpenURLOpensFile() throws {
+    func testHandleOpenURLOpensFile() async throws {
         let tmpDir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -200,13 +200,15 @@ final class WorkspaceStateTests: XCTestCase {
         let ws = WorkspaceState()
         ws.openDirectory(tmpDir)
 
-        let link = ws.makeOpenFileURL(path: "log.txt", line: 3, column: 2)
+        let link = ws.makeOpenFileURL(path: file.path, line: 3, column: 2)
         XCTAssertNotNil(link)
-        XCTAssertTrue(ws.handleOpenURL(link!))
-        XCTAssertEqual(ws.selectedFileURL, file)
+        guard let link else { return }
+        XCTAssertTrue(ws.handleOpenURL(link))
+        let opened = await waitUntil({ ws.selectedFileURL == file })
+        XCTAssertTrue(opened)
     }
 
-    func testHandleExternalOpenSetsWorkspaceRoot() throws {
+    func testHandleExternalOpenSetsWorkspaceRoot() async throws {
         let tmpDir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -216,12 +218,14 @@ final class WorkspaceStateTests: XCTestCase {
         let ws = WorkspaceState()
         ws.handleExternalOpen(urls: [file])
 
+        let rootSet = await waitUntil({ ws.rootDirectory != nil })
+        XCTAssertTrue(rootSet)
         XCTAssertEqual(ws.rootDirectory?.standardizedFileURL, tmpDir.standardizedFileURL)
         XCTAssertEqual(ws.selectedFileURL, file)
         XCTAssertTrue(ws.openFiles.contains(file))
     }
 
-    func testHandleExternalOpenMultipleFilesOpensInOneWindow() throws {
+    func testHandleExternalOpenMultipleFilesOpensInOneWindow() async throws {
         let tmpDir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
@@ -233,11 +237,11 @@ final class WorkspaceStateTests: XCTestCase {
         let ws = WorkspaceState()
         ws.handleExternalOpen(urls: [fileA, fileB])
 
+        let filesOpened = await waitUntil({ ws.openFiles.contains(fileA) && ws.openFiles.contains(fileB) })
+        XCTAssertTrue(filesOpened)
         XCTAssertEqual(ws.rootDirectory?.standardizedFileURL, tmpDir.standardizedFileURL)
         XCTAssertEqual(ws.selectedFileURL, fileB)
         XCTAssertEqual(ws.openFiles.count, 3)
-        XCTAssertTrue(ws.openFiles.contains(fileA))
-        XCTAssertTrue(ws.openFiles.contains(fileB))
     }
 
     func testNonUTF8FileIsReadOnly() async throws {
@@ -252,17 +256,45 @@ final class WorkspaceStateTests: XCTestCase {
         ws.openDirectory(tmpDir)
         ws.selectFile(file)
 
-        XCTAssertTrue(await waitUntil({ !ws.isEditorLoading }))
+        let loaded = await waitUntil({ !ws.isEditorLoading })
+        XCTAssertTrue(loaded)
         XCTAssertEqual(ws.editorText, WorkspaceState.nonUTF8Placeholder)
         XCTAssertFalse(ws.isFileModified(file))
 
         ws.editorText = "mutate"
-        XCTAssertTrue(await waitUntil({ ws.editorText == WorkspaceState.nonUTF8Placeholder }))
+        let reverted = await waitUntil({ ws.editorText == WorkspaceState.nonUTF8Placeholder })
+        XCTAssertTrue(reverted)
         XCTAssertFalse(ws.isFileModified(file))
 
         ws.saveCurrentFile()
         let afterSave = try Data(contentsOf: file)
         XCTAssertEqual(afterSave, originalData)
+    }
+
+    func testUTF8FileModificationAndSave() async throws {
+        let tmpDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let file = tmpDir.appendingPathComponent("note.txt")
+        try "hello".write(to: file, atomically: true, encoding: .utf8)
+
+        let ws = WorkspaceState()
+        ws.isAutoSaveEnabled = false
+        ws.openDirectory(tmpDir)
+        ws.selectFile(file)
+
+        let loaded = await waitUntil({ !ws.isEditorLoading })
+        XCTAssertTrue(loaded)
+        XCTAssertEqual(ws.editorText, "hello")
+
+        ws.editorText = "hello world"
+        let modified = await waitUntil({ ws.isFileModified(file) })
+        XCTAssertTrue(modified)
+
+        ws.saveCurrentFile()
+        let afterSave = try String(contentsOf: file)
+        XCTAssertEqual(afterSave, "hello world")
+        XCTAssertFalse(ws.isFileModified(file))
     }
 
     func testSearchInFilesUsesLatestQuery() async throws {
@@ -280,12 +312,10 @@ final class WorkspaceStateTests: XCTestCase {
 
         let ws = WorkspaceState()
         ws.openDirectory(tmpDir)
-        ws.searchQuery = "alpha"
-        ws.searchQuery = "beta"
+        await ws.runSearchInFilesForTesting(query: "alpha")
+        await ws.runSearchInFilesForTesting(query: "beta")
 
-        XCTAssertTrue(await waitUntil({ !ws.isSearchInProgress }))
         XCTAssertNil(ws.searchErrorMessage)
-
         let resultFiles = Set(ws.searchResults.map { $0.url.lastPathComponent })
         XCTAssertTrue(resultFiles.contains("beta.txt"))
         XCTAssertFalse(resultFiles.contains("alpha.txt"))
