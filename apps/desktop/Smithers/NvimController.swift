@@ -33,6 +33,7 @@ final class NvimController {
     private let rpc = NvimRPC()
     private weak var workspace: WorkspaceState?
     private let socketPath: String
+    private let logFilePath: String?
     private(set) var terminalView: GhosttyTerminalView
     private var notificationsTask: Task<Void, Never>?
     private var isRunning = false
@@ -63,13 +64,19 @@ final class NvimController {
         ghosttyApp: GhosttyApp,
         workingDirectory: String,
         nvimPath: String,
-        optionAsMeta: OptionAsMeta
+        optionAsMeta: OptionAsMeta,
+        logFilePath: String? = nil
     ) {
         self.workspace = workspace
         let socketURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("smithers-nvim-\(UUID().uuidString).sock")
         socketPath = socketURL.path
-        let command = "\(Self.shellEscape(nvimPath)) --listen \(Self.shellEscape(socketPath))"
+        self.logFilePath = logFilePath
+        let command = Self.buildCommand(
+            nvimPath: nvimPath,
+            socketPath: socketPath,
+            logFilePath: logFilePath
+        )
         terminalView = GhosttyTerminalView(
             app: ghosttyApp,
             workingDirectory: workingDirectory,
@@ -224,6 +231,64 @@ final class NvimController {
         return out
         """
         let response = try await rpc.request("nvim_exec_lua", params: [.string(script), .array([])])
+        return parseModifiedBuffers(response)
+    }
+
+    func listModifiedBuffersInTab(containing url: URL) async throws -> [NvimModifiedBuffer] {
+        await waitUntilReady()
+        let normalizedURL = url.standardizedFileURL
+        let path = normalizedURL.path
+        let buf = bufferByURL[normalizedURL] ?? 0
+        let script = """
+        local path, buf = ...
+        if buf == 0 then
+          buf = vim.fn.bufnr(path)
+        end
+        if buf == 0 then
+          return {}
+        end
+
+        local function maybe_add(out, seen, target)
+          if seen[target] then
+            return
+          end
+          seen[target] = true
+          if vim.api.nvim_buf_is_loaded(target) and vim.bo[target].modified then
+            local name = vim.api.nvim_buf_get_name(target)
+            local listed = vim.bo[target].buflisted
+            table.insert(out, { buf = target, name = name, listed = listed })
+          end
+        end
+
+        local tab_to_close = nil
+        for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+          for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+            if vim.api.nvim_win_get_buf(win) == buf then
+              tab_to_close = tab
+              break
+            end
+          end
+          if tab_to_close then break end
+        end
+
+        local out = {}
+        local seen = {}
+        if tab_to_close == nil then
+          maybe_add(out, seen, buf)
+          return out
+        end
+
+        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab_to_close)) do
+          local wbuf = vim.api.nvim_win_get_buf(win)
+          maybe_add(out, seen, wbuf)
+        end
+        return out
+        """
+        let params: [MsgPackValue] = [
+            .string(path),
+            .int(buf),
+        ]
+        let response = try await rpc.request("nvim_exec_lua", params: [.string(script), .array(params)])
         return parseModifiedBuffers(response)
     }
 
@@ -740,6 +805,19 @@ final class NvimController {
             return candidate
         }
         return nil
+    }
+
+    private static func buildCommand(nvimPath: String, socketPath: String, logFilePath: String?) -> String {
+        var parts: [String] = []
+        if let logFilePath, !logFilePath.isEmpty {
+            parts.append("env")
+            parts.append("NVIM_LOG_FILE=\(shellEscape(logFilePath))")
+            parts.append("NVIM_LOG_LEVEL=INFO")
+        }
+        parts.append(shellEscape(nvimPath))
+        parts.append("--listen")
+        parts.append(shellEscape(socketPath))
+        return parts.joined(separator: " ")
     }
 
     private static func shellEscape(_ value: String) -> String {
