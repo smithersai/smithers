@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Foundation
 
 struct PreferencesView: View {
     @ObservedObject var workspace: WorkspaceState
@@ -108,6 +109,31 @@ struct PreferencesView: View {
                             .font(.system(size: Typography.base, weight: .semibold))
                     }
                 }
+                Toggle("Enable ligatures", isOn: $workspace.editorLigaturesEnabled)
+                HStack {
+                    Text("Line spacing")
+                    Spacer()
+                    Stepper(
+                        value: $workspace.editorLineSpacing,
+                        in: WorkspaceState.editorLineSpacingRange,
+                        step: 0.5
+                    ) {
+                        Text(String(format: "%.1f pt", workspace.editorLineSpacing))
+                            .font(.system(size: Typography.base, weight: .semibold))
+                    }
+                }
+                HStack {
+                    Text("Character spacing")
+                    Spacer()
+                    Stepper(
+                        value: $workspace.editorCharacterSpacing,
+                        in: WorkspaceState.editorCharacterSpacingRange,
+                        step: 0.5
+                    ) {
+                        Text(String(format: "%.1f pt", workspace.editorCharacterSpacing))
+                            .font(.system(size: Typography.base, weight: .semibold))
+                    }
+                }
             }
 
             Section("Appearance") {
@@ -201,6 +227,54 @@ struct PreferencesView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+            }
+
+            Section("Floating Windows") {
+                Toggle("Blur background", isOn: $workspace.nvimFloatingBlurEnabled)
+                HStack {
+                    Text("Blur Radius")
+                    Spacer()
+                    Slider(
+                        value: $workspace.nvimFloatingBlurRadius,
+                        in: WorkspaceState.floatingBlurRadiusRange,
+                        step: 1
+                    )
+                    .frame(maxWidth: 140)
+                    Text("\(Int(workspace.nvimFloatingBlurRadius)) pt")
+                        .font(.system(size: Typography.s, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .disabled(!workspace.nvimFloatingBlurEnabled)
+
+                Toggle("Shadow", isOn: $workspace.nvimFloatingShadowEnabled)
+                HStack {
+                    Text("Shadow Radius")
+                    Spacer()
+                    Slider(
+                        value: $workspace.nvimFloatingShadowRadius,
+                        in: WorkspaceState.floatingShadowRadiusRange,
+                        step: 1
+                    )
+                    .frame(maxWidth: 140)
+                    Text("\(Int(workspace.nvimFloatingShadowRadius)) pt")
+                        .font(.system(size: Typography.s, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .disabled(!workspace.nvimFloatingShadowEnabled)
+
+                HStack {
+                    Text("Corner Radius")
+                    Spacer()
+                    Slider(
+                        value: $workspace.nvimFloatingCornerRadius,
+                        in: WorkspaceState.floatingCornerRadiusRange,
+                        step: 1
+                    )
+                    .frame(maxWidth: 140)
+                    Text("\(Int(workspace.nvimFloatingCornerRadius)) pt")
+                        .font(.system(size: Typography.s, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
