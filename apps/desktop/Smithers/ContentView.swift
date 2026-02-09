@@ -4,6 +4,7 @@ import STTextView
 
 struct CodeEditor: NSViewRepresentable {
     @Binding var text: String
+    @Binding var selectionRequest: EditorSelection?
     var language: SupportedLanguage?
     var fileURL: URL?
     var theme: AppTheme
@@ -62,10 +63,53 @@ struct CodeEditor: NSViewRepresentable {
             coord.setTextViewContent(textView, text: text)
             coord.scheduleHighlight(textView: textView, text: text, delay: 0)
         }
+
+        applySelectionRequest(textView: textView)
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
+    }
+
+    private func applySelectionRequest(textView: STTextView) {
+        guard let selection = selectionRequest else { return }
+        guard selection.url.standardizedFileURL == fileURL?.standardizedFileURL else { return }
+        let currentText = textView.attributedString().string
+        if selection.line > 1 {
+            let lineCount = currentText.reduce(1) { count, ch in
+                ch == "\n" ? count + 1 : count
+            }
+            if lineCount < selection.line {
+                return
+            }
+        }
+        if let range = rangeForLineColumn(text: currentText, line: selection.line, column: selection.column) {
+            textView.setSelectedRange(range)
+            textView.scrollRangeToVisible(range)
+        }
+        DispatchQueue.main.async {
+            selectionRequest = nil
+        }
+    }
+
+    private func rangeForLineColumn(text: String, line: Int, column: Int) -> NSRange? {
+        guard line > 0 else { return nil }
+        let nsText = text as NSString
+        var currentLine = 1
+        var index = 0
+        while currentLine < line && index < nsText.length {
+            let range = nsText.lineRange(for: NSRange(location: index, length: 0))
+            index = NSMaxRange(range)
+            currentLine += 1
+        }
+        if index > nsText.length {
+            return NSRange(location: nsText.length, length: 0)
+        }
+        let lineRange = nsText.lineRange(for: NSRange(location: index, length: 0))
+        let columnOffset = max(0, column - 1)
+        let lineEnd = max(lineRange.location, NSMaxRange(lineRange) - 1)
+        let target = min(index + columnOffset, lineEnd)
+        return NSRange(location: target, length: 0)
     }
 
     private func applyTheme(_ theme: AppTheme, previousTheme: AppTheme?, to textView: STTextView, scrollView: NSScrollView) {
@@ -223,6 +267,7 @@ struct ContentView: View {
                             } else {
                                 CodeEditor(
                                     text: $workspace.editorText,
+                                    selectionRequest: $workspace.pendingSelection,
                                     language: workspace.currentLanguage,
                                     fileURL: workspace.selectedFileURL,
                                     theme: workspace.theme

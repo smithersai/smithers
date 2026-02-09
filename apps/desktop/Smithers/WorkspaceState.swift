@@ -36,6 +36,12 @@ struct RecentEditEntry: Identifiable, Hashable {
     let lastEdited: Date
 }
 
+struct EditorSelection: Hashable, Sendable {
+    let url: URL
+    let line: Int
+    let column: Int
+}
+
 struct DiffTab: Identifiable, Hashable {
     let id: URL
     let title: String
@@ -158,6 +164,7 @@ class WorkspaceState: ObservableObject {
     @Published private(set) var recentFolderEntries: [RecentFolderEntry] = []
     @Published private(set) var recentEditEntries: [RecentEditEntry] = []
     @Published var toastMessage: String?
+    @Published var pendingSelection: EditorSelection?
     private var fileLoadTask: Task<Void, Never>?
     private var fileIndex: [FileIndexEntry] = []
     private var fileIndexTask: Task<Void, Never>?
@@ -1076,8 +1083,23 @@ class WorkspaceState: ObservableObject {
             openFileInNvim(resolved, line: line, column: column)
         } else {
             selectFile(resolved)
+            if let line {
+                pendingSelection = EditorSelection(url: resolved, line: line, column: column ?? 1)
+            }
         }
         return true
+    }
+
+    func openFileAtLocation(_ url: URL, line: Int, column: Int) {
+        if isNvimModeEnabled {
+            if selectedFileURL != url {
+                suppressSelectionSync = true
+            }
+            openFileInNvim(url, line: line, column: column)
+            return
+        }
+        selectFile(url)
+        pendingSelection = EditorSelection(url: url, line: line, column: column)
     }
 
     func closeSelectedTab() {
