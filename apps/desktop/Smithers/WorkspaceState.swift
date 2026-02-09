@@ -3856,13 +3856,13 @@ class WorkspaceState: ObservableObject {
         }
         let root = rootDirectory
         let targetChatId = activeChatId
+        resetChatForNewThread()
+        openChat(id: targetChatId, title: chatSessions[targetChatId]?.title, select: true)
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let threadId = try await codexService.startNewThread(cwd: root.path)
-                self.resetChatForNewThread()
                 self.updateActiveThreadId(threadId)
-                self.openChat(id: targetChatId, title: self.chatSessions[targetChatId]?.title, select: true)
             } catch {
                 self.appendErrorMessage("Failed to start new chat: \(error.localizedDescription)")
             }
