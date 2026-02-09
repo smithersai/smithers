@@ -466,13 +466,20 @@ final class NvimRPC: @unchecked Sendable {
     // doesn't exist yet, NWConnection enters .waiting instead of .failed.
     // We treat it as an error so connectWithRetry can retry.
     func connect(to socketPath: String) async throws {
-        self.connection?.cancel()
-        self.connection = nil
+        queue.sync {
+            self.connection?.cancel()
+            self.connection = nil
+            self.failAllPending(NvimRPCError.disconnected)
+            self.buffer.removeAll(keepingCapacity: true)
+            self.decoder = MsgPackDecoder()
+        }
 
         let endpoint = NWEndpoint.unix(path: socketPath)
         let parameters = NWParameters.tcp
         let connection = NWConnection(to: endpoint, using: parameters)
-        self.connection = connection
+        queue.sync {
+            self.connection = connection
+        }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             final class ResumeGate {
                 private let lock = NSLock()
@@ -519,7 +526,7 @@ final class NvimRPC: @unchecked Sendable {
     }
 
     func request(_ method: String, params: [MsgPackValue]) async throws -> MsgPackValue {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<MsgPackValue, Error>) in
             queue.async { [weak self] in
                 guard let self, let connection = self.connection else {
                     continuation.resume(throwing: NvimRPCError.disconnected)
@@ -537,26 +544,36 @@ final class NvimRPC: @unchecked Sendable {
                 let data = MsgPackEncoder.encode(message)
                 connection.send(content: data, completion: .contentProcessed { error in
                     if let error {
-                        self.pending.removeValue(forKey: msgid)
-                        continuation.resume(throwing: error)
+                        if let pending = self.pending.removeValue(forKey: msgid) {
+                            pending.resume(throwing: error)
+                        }
                     }
                 })
             }
         }
     }
 
-    func notify(_ method: String, params: [MsgPackValue]) throws {
-        guard let connection else {
-            throw NvimRPCError.disconnected
-        }
-        let message: MsgPackValue = .array([
-            .int(2),
-            .string(method),
-            .array(params),
-        ])
-        let data = MsgPackEncoder.encode(message)
-        queue.async {
-            connection.send(content: data, completion: .contentProcessed { _ in })
+    func notify(_ method: String, params: [MsgPackValue]) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async { [weak self] in
+                guard let self, let connection = self.connection else {
+                    continuation.resume(throwing: NvimRPCError.disconnected)
+                    return
+                }
+                let message: MsgPackValue = .array([
+                    .int(2),
+                    .string(method),
+                    .array(params),
+                ])
+                let data = MsgPackEncoder.encode(message)
+                connection.send(content: data, completion: .contentProcessed { error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                })
+            }
         }
     }
 
