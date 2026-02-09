@@ -509,7 +509,7 @@ private struct CommandPalettePanel: View {
         case .file(let url):
             workspace.selectFile(url)
         case .folder(let url):
-            workspace.openDirectory(url)
+            workspace.requestOpenDirectory(url)
         }
         workspace.hideCommandPalette()
     }
