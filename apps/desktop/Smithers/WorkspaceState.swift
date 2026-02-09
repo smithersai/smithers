@@ -680,6 +680,8 @@ class WorkspaceState: ObservableObject {
     private var recentEditLocations: [URL: [EditorEditLocation]] = [:]
     private var fileOpenObservers: [UUID: (URL) -> Void] = [:]
     private var fileCloseObservers: [UUID: (URL) -> Void] = [:]
+    private var webviewViews: [URL: WKWebView] = [:]
+    private var webviewTitleObservers: [URL: NSKeyValueObservation] = [:]
     private var toastTask: Task<Void, Never>?
     private var toastToken: Int = 0
     private var overlayTask: Task<Void, Never>?
@@ -1509,6 +1511,13 @@ class WorkspaceState: ObservableObject {
             return
         }
         if isDiffURL(url) {
+            selectedFileURL = url
+            currentLanguage = nil
+            isEditorLoading = false
+            setEditorText("")
+            return
+        }
+        if isWebviewURL(url) {
             selectedFileURL = url
             currentLanguage = nil
             isEditorLoading = false
@@ -2590,7 +2599,7 @@ class WorkspaceState: ObservableObject {
     }
 
     func isRegularFileURL(_ url: URL) -> Bool {
-        !isChatURL(url) && !isTerminalURL(url) && !isDiffURL(url)
+        !isChatURL(url) && !isTerminalURL(url) && !isDiffURL(url) && !isWebviewURL(url)
     }
 
     func isFileModified(_ url: URL) -> Bool {
@@ -2609,8 +2618,20 @@ class WorkspaceState: ObservableObject {
         url.scheme == Self.diffScheme
     }
 
+    func isWebviewURL(_ url: URL) -> Bool {
+        url.scheme == Self.webviewScheme
+    }
+
     func diffTab(for url: URL) -> DiffTab? {
         diffTabs[url]
+    }
+
+    func webviewTab(for url: URL) -> WebviewTab? {
+        webviewTabs[url]
+    }
+
+    func webviewView(for url: URL) -> WKWebView? {
+        webviewViews[url]
     }
 
     func saveAllFiles() {
@@ -3540,6 +3561,9 @@ class WorkspaceState: ObservableObject {
         }
         if isDiffURL(url) {
             return diffTabs[url]?.title ?? "Diff"
+        }
+        if isWebviewURL(url) {
+            return webviewTabs[url]?.title ?? "Webview"
         }
         guard let rootDirectory else { return url.lastPathComponent }
         let rootPath = rootDirectory.path
