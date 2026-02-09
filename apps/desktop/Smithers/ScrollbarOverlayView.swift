@@ -59,6 +59,11 @@ final class ScrollbarOverlayView: NSView {
         return nil
     }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard alphaValue > 0.01 else { return nil }
+        return super.hitTest(point)
+    }
+
     override func updateTrackingAreas() {
         if let tracking {
             removeTrackingArea(tracking)

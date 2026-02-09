@@ -39,3 +39,22 @@ enum OptionAsMeta: String, CaseIterable, Identifiable, Codable {
         }
     }
 }
+
+enum ScrollbarVisibilityMode: String, CaseIterable, Identifiable, Codable {
+    case automatic
+    case whenScrolling
+    case always
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .automatic:
+            return "Automatic"
+        case .whenScrolling:
+            return "When Scrolling"
+        case .always:
+            return "Always"
+        }
+    }
+}
