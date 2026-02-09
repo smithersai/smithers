@@ -3,6 +3,7 @@ import Dispatch
 import AppKit
 import STTextView
 import SwiftTreeSitter
+import QuartzCore
 
 import TreeSitterSwift
 import TreeSitterJavaScript
@@ -208,6 +209,7 @@ final class TreeSitterHighlighter {
         let fullRange = NSRange(location: 0, length: (source as NSString).length)
         guard let storage = (textView.textContentManager as? NSTextContentStorage)?.textStorage else { return }
 
+        let startTime: CFTimeInterval? = PerformanceMonitor.shared.isActive ? CACurrentMediaTime() : nil
         storage.beginEditing()
         storage.addAttributes(baseAttributes, range: fullRange)
         textView.typingAttributes = baseAttributes
@@ -235,6 +237,9 @@ final class TreeSitterHighlighter {
         }
 
         storage.endEditing()
+        if let startTime {
+            PerformanceMonitor.shared.recordHighlight(duration: CACurrentMediaTime() - startTime)
+        }
     }
 
     private func collectErrorRanges(from tree: MutableTree) -> [NSRange] {
