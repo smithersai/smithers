@@ -46,30 +46,30 @@ final class GhosttyFrameScheduler {
             lastActivityTime = now
         }
         lastRenderRequestTime = now
-        startDisplayLinkLocked()
         os_unfair_lock_unlock(&lock)
+        updateDisplayLinkState()
     }
 
     func noteInputActivity() {
         let now = CACurrentMediaTime()
         os_unfair_lock_lock(&lock)
         lastActivityTime = now
-        updateDisplayLinkStateLocked()
         os_unfair_lock_unlock(&lock)
+        updateDisplayLinkState()
     }
 
     func setVisible(_ visible: Bool) {
         os_unfair_lock_lock(&lock)
         isVisible = visible
-        updateDisplayLinkStateLocked()
         os_unfair_lock_unlock(&lock)
+        updateDisplayLinkState()
     }
 
     func setOccluded(_ occluded: Bool) {
         os_unfair_lock_lock(&lock)
         isOccluded = occluded
-        updateDisplayLinkStateLocked()
         os_unfair_lock_unlock(&lock)
+        updateDisplayLinkState()
     }
 
     func updateDisplay(_ screen: NSScreen?) {
@@ -158,6 +158,7 @@ final class GhosttyFrameScheduler {
     }
 
     private func finishDraw(duration: CFTimeInterval) {
+        var shouldUpdate = false
         os_unfair_lock_lock(&lock)
         drawScheduled = false
         let now = CACurrentMediaTime()
@@ -167,9 +168,12 @@ final class GhosttyFrameScheduler {
             lastPresentTime = now
         }
         if !pendingRender {
-            updateDisplayLinkStateLocked()
+            shouldUpdate = true
         }
         os_unfair_lock_unlock(&lock)
+        if shouldUpdate {
+            updateDisplayLinkState()
+        }
     }
 
     private func activeIntervalLocked() -> CFTimeInterval {
@@ -191,8 +195,12 @@ final class GhosttyFrameScheduler {
         refreshHz = refreshHz == 0 ? clamped : (refreshHz * 0.9 + clamped * 0.1)
     }
 
-    private func startDisplayLinkLocked() {
-        guard let displayLink, !CVDisplayLinkIsRunning(displayLink), isVisible, !isOccluded else { return }
+    private func startDisplayLink() {
+        guard let displayLink, !CVDisplayLinkIsRunning(displayLink) else { return }
+        os_unfair_lock_lock(&lock)
+        let shouldStart = isVisible && !isOccluded
+        os_unfair_lock_unlock(&lock)
+        guard shouldStart else { return }
         CVDisplayLinkStart(displayLink)
     }
 
@@ -202,17 +210,23 @@ final class GhosttyFrameScheduler {
         }
     }
 
-    private func updateDisplayLinkStateLocked() {
-        guard isVisible, !isOccluded else {
-            stopDisplayLink()
-            resetTimingLocked()
-            return
-        }
-        if pendingRender || drawScheduled {
-            startDisplayLinkLocked()
+    private func updateDisplayLinkState() {
+        var shouldStart = false
+        var shouldStop = false
+
+        os_unfair_lock_lock(&lock)
+        if isVisible && !isOccluded && (pendingRender || drawScheduled) {
+            shouldStart = true
         } else {
-            stopDisplayLink()
+            shouldStop = true
             resetTimingLocked()
+        }
+        os_unfair_lock_unlock(&lock)
+
+        if shouldStart {
+            startDisplayLink()
+        } else if shouldStop {
+            stopDisplayLink()
         }
     }
 
