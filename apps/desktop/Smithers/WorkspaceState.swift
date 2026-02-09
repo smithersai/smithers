@@ -709,7 +709,7 @@ class WorkspaceState: ObservableObject {
     private var streamingTurnDiffs: [String: String] = [:]
     private var suppressChatHistoryPersistence = false
     private var chatSessions: [String: ChatSessionState] = [:]
-    private var activeChatId: String = Self.mainChatId
+    private var activeChatId: String = WorkspaceState.mainChatId
     private let skillScanner = SkillScanner()
     private let skillRegistryClient = SkillRegistryClient()
     private let skillInstaller = SkillInstaller()
@@ -1278,6 +1278,7 @@ class WorkspaceState: ObservableObject {
         rebuildFileIndex()
         startCodexService(cwd: url.path, resumeThreadId: storedThreadId)
         startCompletionService(cwd: url.path)
+        refreshSkills(force: true)
         suppressSessionPersistence = false
         persistSessionStateIfNeeded()
         applyWindowFrameForCurrentWorkspace()
@@ -1327,6 +1328,17 @@ class WorkspaceState: ObservableObject {
         let url: URL
         let line: Int?
         let column: Int?
+    }
+
+    private enum WebviewEvalError: LocalizedError {
+        case missingWebview
+
+        var errorDescription: String? {
+            switch self {
+            case .missingWebview:
+                return "webview not found"
+            }
+        }
     }
 
     private func handleExternalOpen(urls: [URL], focus: ExternalOpenFocus?) async {
@@ -3976,10 +3988,11 @@ class WorkspaceState: ObservableObject {
             return
         }
         isTurnInProgress = true
+        let skillInputs = buildSkillInstructionInputs()
         Task { [weak self] in
             guard let self else { return }
             do {
-                _ = try await codexService.sendMessage(trimmed, images: images)
+                _ = try await codexService.sendMessage(trimmed, images: images, extraInputs: skillInputs)
             } catch {
                 self.appendErrorMessage("Failed to send message: \(error.localizedDescription)")
                 self.isTurnInProgress = false
@@ -4531,6 +4544,51 @@ class WorkspaceState: ObservableObject {
                 shortcut: nil,
                 action: { [weak self] in
                     self?.openChat()
+                }
+            ),
+            PaletteCommand(
+                id: "skills-browse",
+                title: "Skills: Browse",
+                icon: "sparkles",
+                shortcut: nil,
+                action: { [weak self] in
+                    self?.showSkillBrowser()
+                }
+            ),
+            PaletteCommand(
+                id: "skills-add",
+                title: "Skills: Add",
+                icon: "square.and.arrow.down",
+                shortcut: nil,
+                action: { [weak self] in
+                    self?.showSkillBrowser()
+                }
+            ),
+            PaletteCommand(
+                id: "skills-manage",
+                title: "Skills: Manage",
+                icon: "list.bullet",
+                shortcut: nil,
+                action: { [weak self] in
+                    self?.showSkillManager()
+                }
+            ),
+            PaletteCommand(
+                id: "skills-create",
+                title: "Skills: Create",
+                icon: "plus.square",
+                shortcut: nil,
+                action: { [weak self] in
+                    self?.showSkillCreator()
+                }
+            ),
+            PaletteCommand(
+                id: "skills-use",
+                title: "Skills: Use",
+                icon: "wand.and.stars",
+                shortcut: nil,
+                action: { [weak self] in
+                    self?.showSkillUse()
                 }
             ),
         ]
@@ -5686,20 +5744,20 @@ class WorkspaceState: ObservableObject {
         return webviewTabs[tabId]?.url
     }
 
-    func evaluateWebviewJavaScript(_ script: String, tabId: URL) async -> Result<String, String> {
+    func evaluateWebviewJavaScript(_ script: String, tabId: URL) async -> Result<String, Error> {
         guard let webView = webviewView(for: tabId) else {
-            return .failure("webview not found")
+            return .failure(WebviewEvalError.missingWebview)
         }
         return await withCheckedContinuation { continuation in
             webView.evaluateJavaScript(script) { result, error in
                 if let error {
-                    continuation.resume(returning: .failure(error.localizedDescription))
+                    continuation.resume(returning: .failure(error))
                     return
                 }
                 if let result {
                     continuation.resume(returning: .success(String(describing: result)))
                 } else {
-                    continuation.resume(returning: .success("")) 
+                    continuation.resume(returning: .success(""))
                 }
             }
         }
@@ -5823,9 +5881,10 @@ class WorkspaceState: ObservableObject {
         setEditorText("")
     }
 
-    private func openChat(id: String = Self.mainChatId, title: String? = nil, select: Bool = true) {
-        let url = Self.chatURL(for: id)
-        _ = ensureChatSession(id: id, title: title)
+    private func openChat(id: String? = nil, title: String? = nil, select: Bool = true) {
+        let resolvedId = id ?? WorkspaceState.mainChatId
+        let url = Self.chatURL(for: resolvedId)
+        _ = ensureChatSession(id: resolvedId, title: title)
         if !openFiles.contains(url) {
             openFiles.insert(url, at: 0)
         }
@@ -6122,21 +6181,23 @@ Recent edits:
     ) {
         let root = rootDirectory
         showToast(title)
-        Task.detached { [weak self] in
-            guard let self else { return }
+        Task.detached { [root, source, scope] in
+            let installer = SkillInstaller()
             do {
-                _ = try self.skillInstaller.install(
+                _ = try installer.install(
                     source: source,
                     scope: scope,
                     rootDirectory: root,
                     confirmScripts: nil
                 )
-                await MainActor.run {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
                     self.showToast("Skill installed")
                     self.refreshSkills(force: true)
                 }
             } catch {
-                await MainActor.run {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
                     self.appendErrorMessage("Skill install failed: \(error.localizedDescription)")
                     self.showToast("Install failed")
                 }
