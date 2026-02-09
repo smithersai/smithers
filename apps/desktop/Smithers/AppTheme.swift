@@ -236,14 +236,28 @@ extension NSColor {
         if cleaned.hasPrefix("0x") || cleaned.hasPrefix("0X") {
             cleaned = String(cleaned.dropFirst(2))
         }
-        guard cleaned.count == 6 else { return nil }
+        guard cleaned.count == 6 || cleaned.count == 8 else { return nil }
         let scanner = Scanner(string: cleaned)
-        var rgb: UInt64 = 0
-        guard scanner.scanHexInt64(&rgb) else { return nil }
-        let r = CGFloat((rgb >> 16) & 0xFF) / 255.0
-        let g = CGFloat((rgb >> 8) & 0xFF) / 255.0
-        let b = CGFloat(rgb & 0xFF) / 255.0
-        return NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
+        var value: UInt64 = 0
+        guard scanner.scanHexInt64(&value) else { return nil }
+        let hasAlpha = cleaned.count == 8
+        let r = CGFloat((value >> (hasAlpha ? 24 : 16)) & 0xFF) / 255.0
+        let g = CGFloat((value >> (hasAlpha ? 16 : 8)) & 0xFF) / 255.0
+        let b = CGFloat((value >> (hasAlpha ? 8 : 0)) & 0xFF) / 255.0
+        let a = hasAlpha ? CGFloat(value & 0xFF) / 255.0 : 1
+        return NSColor(srgbRed: r, green: g, blue: b, alpha: a)
+    }
+
+    func toHexString(includeAlpha: Bool = true) -> String? {
+        guard let rgb = usingColorSpace(.sRGB) else { return nil }
+        let r = Int(round(rgb.redComponent * 255))
+        let g = Int(round(rgb.greenComponent * 255))
+        let b = Int(round(rgb.blueComponent * 255))
+        if includeAlpha {
+            let a = Int(round(rgb.alphaComponent * 255))
+            return String(format: "%02X%02X%02X%02X", r, g, b, a)
+        }
+        return String(format: "%02X%02X%02X", r, g, b)
     }
 
     var luminance: CGFloat {
