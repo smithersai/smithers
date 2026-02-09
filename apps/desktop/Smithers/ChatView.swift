@@ -19,12 +19,14 @@ struct ChatMessage: Identifiable, Hashable {
     let role: Role
     var kind: Kind
     var isStreaming: Bool
+    var turnId: String?
 
-    init(role: Role, kind: Kind, isStreaming: Bool = false) {
+    init(role: Role, kind: Kind, isStreaming: Bool = false, turnId: String? = nil) {
         self.id = UUID()
         self.role = role
         self.kind = kind
         self.isStreaming = isStreaming
+        self.turnId = turnId
     }
 
     var commandItemId: String? {
@@ -273,11 +275,17 @@ struct ChatView: View {
                         ForEach(workspace.chatMessages) { message in
                             ChatBubble(message: message, workspace: workspace)
                                 .id(message.id)
+                                .transition(.asymmetric(
+                                    insertion: .move(edge: message.role == .user ? .trailing : .leading)
+                                        .combined(with: .opacity),
+                                    removal: .opacity
+                                ))
                         }
                         if workspace.isTurnInProgress {
                             ThinkingRow()
                         }
                     }
+                    .animation(.spring(duration: 0.3, bounce: 0.1), value: workspace.chatMessages.count)
                     .padding(16)
                 }
                 .background(theme.backgroundColor)
@@ -321,6 +329,13 @@ struct ChatView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
+
+                Button("New Chat") {
+                    workspace.startNewChat()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(workspace.isTurnInProgress)
 
                 Button("Send") {
                     workspace.sendChatMessage()
