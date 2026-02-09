@@ -143,7 +143,9 @@ final class NvimFloatingWindowOverlayView: NSView {
         gridMetricsObserver = nil
         guard let terminalView else { return }
         gridMetricsObserver = terminalView.addGridMetricsObserver { [weak self] _ in
-            self?.needsLayout = true
+            DispatchQueue.main.async {
+                self?.needsLayout = true
+            }
         }
     }
 

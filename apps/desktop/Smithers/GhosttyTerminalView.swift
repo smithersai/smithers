@@ -72,15 +72,21 @@ final class GhosttyTerminalView: NSView, ObservableObject, NSTextInputClient {
     deinit {
         windowObservers.forEach { NotificationCenter.default.removeObserver($0) }
         windowObservers.removeAll()
-        frameScheduler.setVisible(false)
-        if let surface {
-            DispatchQueue.main.async {
-                ghostty_surface_free(surface)
+        shutdown()
+    }
+
+    func shutdown() {
+        if Thread.isMainThread {
+            shutdownOnMain()
+        } else {
+            DispatchQueue.main.sync {
+                self.shutdownOnMain()
             }
         }
     }
 
-    func shutdown() {
+    private func shutdownOnMain() {
+        assert(Thread.isMainThread)
         if let surface {
             ghostty_surface_free(surface)
             self.surface = nil
@@ -112,6 +118,7 @@ final class GhosttyTerminalView: NSView, ObservableObject, NSTextInputClient {
     }
 
     func addGridMetricsObserver(_ handler: @escaping (GhosttyGridMetrics) -> Void) -> UUID {
+        assert(Thread.isMainThread)
         let token = UUID()
         gridMetricsObservers[token] = handler
         if let metrics = gridMetrics() {
@@ -121,6 +128,7 @@ final class GhosttyTerminalView: NSView, ObservableObject, NSTextInputClient {
     }
 
     func removeGridMetricsObserver(_ token: UUID) {
+        assert(Thread.isMainThread)
         gridMetricsObservers.removeValue(forKey: token)
     }
 
@@ -482,14 +490,20 @@ final class GhosttyTerminalView: NSView, ObservableObject, NSTextInputClient {
     }
 
     func markedRange() -> NSRange {
-        guard markedTextStorage.length > 0 else { return NSRange() }
-        return NSRange(0..<(markedTextStorage.length))
+        guard markedTextStorage.length > 0 else {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        return NSRange(location: 0, length: markedTextStorage.length)
     }
 
     func selectedRange() -> NSRange {
-        guard let surface else { return NSRange() }
+        guard let surface else {
+            return NSRange(location: NSNotFound, length: 0)
+        }
         var text = ghostty_text_s()
-        guard ghostty_surface_read_selection(surface, &text) else { return NSRange() }
+        guard ghostty_surface_read_selection(surface, &text) else {
+            return NSRange(location: NSNotFound, length: 0)
+        }
         defer { ghostty_surface_free_text(surface, &text) }
         return NSRange(location: Int(text.offset_start), length: Int(text.offset_len))
     }
@@ -512,7 +526,9 @@ final class GhosttyTerminalView: NSView, ObservableObject, NSTextInputClient {
     func unmarkText() {
         if markedTextStorage.length > 0 {
             markedTextStorage.mutableString.setString("")
-            syncPreedit()
+            if keyTextAccumulator == nil {
+                syncPreedit()
+            }
         }
     }
 
@@ -521,13 +537,8 @@ final class GhosttyTerminalView: NSView, ObservableObject, NSTextInputClient {
     }
 
     func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
-        guard let surface else { return nil }
-        guard range.length > 0 else { return nil }
-
-        var text = ghostty_text_s()
-        guard ghostty_surface_read_selection(surface, &text) else { return nil }
-        defer { ghostty_surface_free_text(surface, &text) }
-        return NSAttributedString(string: String(cString: text.text))
+        actualRange?.pointee = NSRange(location: NSNotFound, length: 0)
+        return nil
     }
 
     func characterIndex(for point: NSPoint) -> Int {
@@ -582,6 +593,46 @@ final class GhosttyTerminalView: NSView, ObservableObject, NSTextInputClient {
         }
 
         sendText(chars, surface: surface)
+    }
+
+    // MARK: - Screen Buffer Reading
+
+    /// Read the currently visible viewport text from this terminal.
+    func readViewportText() -> String? {
+        guard let surface else { return nil }
+        let sel = ghostty_selection_s(
+            top_left: ghostty_point_s(
+                tag: GHOSTTY_POINT_VIEWPORT,
+                coord: GHOSTTY_POINT_COORD_TOP_LEFT,
+                x: 0, y: 0),
+            bottom_right: ghostty_point_s(
+                tag: GHOSTTY_POINT_VIEWPORT,
+                coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+                x: 0, y: 0),
+            rectangle: false)
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, sel, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        return String(cString: text.text)
+    }
+
+    /// Read the entire scrollback buffer from this terminal.
+    func readScreenText() -> String? {
+        guard let surface else { return nil }
+        let sel = ghostty_selection_s(
+            top_left: ghostty_point_s(
+                tag: GHOSTTY_POINT_SCREEN,
+                coord: GHOSTTY_POINT_COORD_TOP_LEFT,
+                x: 0, y: 0),
+            bottom_right: ghostty_point_s(
+                tag: GHOSTTY_POINT_SCREEN,
+                coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT,
+                x: 0, y: 0),
+            rectangle: false)
+        var text = ghostty_text_s()
+        guard ghostty_surface_read_text(surface, sel, &text) else { return nil }
+        defer { ghostty_surface_free_text(surface, &text) }
+        return String(cString: text.text)
     }
 
     // MARK: - Helpers
@@ -658,8 +709,10 @@ final class GhosttyTerminalView: NSView, ObservableObject, NSTextInputClient {
     }
 
     private func notifyGridMetricsChange() {
+        assert(Thread.isMainThread)
         guard !gridMetricsObservers.isEmpty, let metrics = gridMetrics() else { return }
-        for handler in gridMetricsObservers.values {
+        let handlers = Array(gridMetricsObservers.values)
+        for handler in handlers {
             handler(metrics)
         }
     }

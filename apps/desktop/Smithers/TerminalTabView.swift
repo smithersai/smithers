@@ -51,10 +51,10 @@ struct TerminalTabView: NSViewRepresentable {
         }
     }
 
-    private func makeFloatingOverlayView() -> NvimFloatingWindowOverlayView? {
-        guard let effects = floatingWindowEffects else { return nil }
+    private func makeFloatingOverlayView() -> NvimFloatingWindowOverlayView {
         let overlayView = NvimFloatingWindowOverlayView()
         overlayView.terminalView = view
+        let effects = floatingWindowEffects ?? .empty
         overlayView.effects = effects
         overlayView.isHidden = effects.windows.isEmpty || !effects.isActive
         return overlayView
