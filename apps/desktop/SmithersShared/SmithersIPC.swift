@@ -1,23 +1,23 @@
 import Foundation
 import Darwin
 
-enum SmithersIPC {
-    static var socketPath: String {
+public enum SmithersIPC {
+    public static var socketPath: String {
         "/tmp/smithers-\(getuid()).sock"
     }
 
-    static var socketURL: URL {
+    public static var socketURL: URL {
         URL(fileURLWithPath: socketPath)
     }
 }
 
-struct SmithersIPCOpenItem: Codable {
-    let path: String
-    let line: Int?
-    let column: Int?
-    let wait: Bool?
+public struct SmithersIPCOpenItem: Codable {
+    public let path: String
+    public let line: Int?
+    public let column: Int?
+    public let wait: Bool?
 
-    init(path: String, line: Int? = nil, column: Int? = nil, wait: Bool? = nil) {
+    public init(path: String, line: Int? = nil, column: Int? = nil, wait: Bool? = nil) {
         self.path = path
         self.line = line
         self.column = column
@@ -25,16 +25,25 @@ struct SmithersIPCOpenItem: Codable {
     }
 }
 
-struct SmithersIPCRequest: Codable {
-    let items: [SmithersIPCOpenItem]
+public struct SmithersIPCRequest: Codable {
+    public let items: [SmithersIPCOpenItem]
+
+    public init(items: [SmithersIPCOpenItem]) {
+        self.items = items
+    }
 }
 
-struct SmithersIPCResponse: Codable {
-    enum Status: String, Codable {
+public struct SmithersIPCResponse: Codable {
+    public enum Status: String, Codable {
         case ok
         case error
     }
 
-    let status: Status
-    let message: String?
+    public let status: Status
+    public let message: String?
+
+    public init(status: Status, message: String? = nil) {
+        self.status = status
+        self.message = message
+    }
 }
