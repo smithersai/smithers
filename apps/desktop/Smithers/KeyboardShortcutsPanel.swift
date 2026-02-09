@@ -7,13 +7,17 @@ private struct ShortcutContextState: Hashable {
     let nvimEnabled: Bool
     let nvimMode: NvimModeKind
 
+    var primaryCategory: ShortcutCategory? {
+        if prefixActive { return .tabs }
+        if commandPaletteOpen { return .commandPalette }
+        if searchOpen { return .search }
+        if nvimEnabled { return .neovim }
+        return nil
+    }
+
     var activeCategories: Set<ShortcutCategory> {
-        var active: Set<ShortcutCategory> = []
-        if prefixActive { active.insert(.tabs) }
-        if commandPaletteOpen { active.insert(.commandPalette) }
-        if searchOpen { active.insert(.search) }
-        if nvimEnabled { active.insert(.neovim) }
-        return active
+        guard let primaryCategory else { return [] }
+        return [primaryCategory]
     }
 
     var animationKey: String {
@@ -169,7 +173,7 @@ private struct ShortcutRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(entry.keys)
-                .font(.system(size: Typography.s, weight: .semibold, design: .monospaced))
+                .font(.system(size: Typography.s, weight: .medium, design: .monospaced))
                 .foregroundStyle(theme.foregroundColor.opacity(0.75))
                 .frame(minWidth: 48, alignment: .leading)
             Text(entry.label)
