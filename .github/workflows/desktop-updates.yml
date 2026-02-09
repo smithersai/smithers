@@ -1,0 +1,142 @@
+name: Desktop Updates
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: macos-14
+    env:
+      APP_NAME: Smithers
+      RELEASE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
+      SNAPSHOT_FEED_URL: https://github.com/${{ github.repository }}/releases/download/snapshot/appcast.xml
+      SPARKLE_TOOL_VERSION: 2.8.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select update channel
+        id: channel
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "channel=release" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "marketing_version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=snapshot" >> "$GITHUB_OUTPUT"
+            echo "tag=snapshot" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import signing certificate
+        uses: apple-actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+
+      - name: Build signed app
+        id: build
+        env:
+          SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
+          SPARKLE_FEED_URL: ${{ env.RELEASE_FEED_URL }}
+          SPARKLE_SNAPSHOT_FEED_URL: ${{ env.SNAPSHOT_FEED_URL }}
+          DEVELOPMENT_TEAM: ${{ secrets.MACOS_TEAM_ID }}
+          CODE_SIGN_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          DERIVED_DATA="$RUNNER_TEMP/DerivedData"
+          BUILD_SETTINGS=(
+            "SPARKLE_PUBLIC_KEY=$SPARKLE_PUBLIC_KEY"
+            "SPARKLE_FEED_URL=$SPARKLE_FEED_URL"
+            "SPARKLE_SNAPSHOT_FEED_URL=$SPARKLE_SNAPSHOT_FEED_URL"
+            "CURRENT_PROJECT_VERSION=${GITHUB_RUN_NUMBER}"
+            "CODE_SIGN_STYLE=Manual"
+            "CODE_SIGN_IDENTITY=$CODE_SIGN_IDENTITY"
+            "DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM"
+          )
+          if [[ "${{ steps.channel.outputs.channel }}" == "release" ]]; then
+            BUILD_SETTINGS+=("MARKETING_VERSION=${{ steps.channel.outputs.marketing_version }}")
+          fi
+          xcodebuild \
+            -project apps/desktop/Smithers.xcodeproj \
+            -scheme Smithers \
+            -configuration Release \
+            -derivedDataPath "$DERIVED_DATA" \
+            build \
+            "${BUILD_SETTINGS[@]}"
+          echo "derived_data=$DERIVED_DATA" >> "$GITHUB_OUTPUT"
+
+      - name: Package and sign update
+        id: package
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          DERIVED_DATA="${{ steps.build.outputs.derived_data }}"
+          APP_PATH="$DERIVED_DATA/Build/Products/Release/${APP_NAME}.app"
+          DIST_DIR="$RUNNER_TEMP/dist"
+          mkdir -p "$DIST_DIR"
+
+          ZIP_PATH="$DIST_DIR/${APP_NAME}.app.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
+
+          curl -L "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_TOOL_VERSION}/Sparkle-${SPARKLE_TOOL_VERSION}.tar.xz" \
+            -o "$RUNNER_TEMP/sparkle.tar.xz"
+          tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP"
+          SIGN_UPDATE="$RUNNER_TEMP/Sparkle-${SPARKLE_TOOL_VERSION}/bin/sign_update"
+
+          ED_SIGNATURE=$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" --ed-key-file - -p "$ZIP_PATH")
+          LENGTH=$(stat -f%z "$ZIP_PATH")
+          INFO_PLIST="$APP_PATH/Contents/Info.plist"
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST")
+          BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$INFO_PLIST")
+          PUBDATE=$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S %z")
+
+          DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ steps.channel.outputs.tag }}/${APP_NAME}.app.zip"
+          APPCAST_PATH="$DIST_DIR/appcast.xml"
+          cat > "$APPCAST_PATH" <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <channel>
+              <title>${APP_NAME} Updates</title>
+              <link>${DOWNLOAD_URL}</link>
+              <description>${APP_NAME} desktop updates</description>
+              <language>en</language>
+              <item>
+                <title>Version ${VERSION}</title>
+                <pubDate>${PUBDATE}</pubDate>
+                <enclosure url="${DOWNLOAD_URL}" sparkle:version="${BUILD}" sparkle:shortVersionString="${VERSION}" length="${LENGTH}" type="application/octet-stream" sparkle:edSignature="${ED_SIGNATURE}"/>
+              </item>
+            </channel>
+          </rss>
+          EOF
+
+          echo "dist_dir=$DIST_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release feed
+        if: steps.channel.outputs.channel == 'release'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.channel.outputs.tag }}
+          name: ${{ env.APP_NAME }} ${{ steps.channel.outputs.tag }}
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
+          artifacts: ${{ steps.package.outputs.dist_dir }}/${{ env.APP_NAME }}.app.zip,${{ steps.package.outputs.dist_dir }}/appcast.xml
+
+      - name: Publish snapshot feed
+        if: steps.channel.outputs.channel == 'snapshot'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: snapshot
+          name: ${{ env.APP_NAME }} Snapshot
+          commit: ${{ github.sha }}
+          prerelease: true
+          allowUpdates: true
+          replacesArtifacts: true
+          artifacts: ${{ steps.package.outputs.dist_dir }}/${{ env.APP_NAME }}.app.zip,${{ steps.package.outputs.dist_dir }}/appcast.xml
