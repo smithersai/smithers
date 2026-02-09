@@ -2,14 +2,20 @@ import SwiftUI
 
 @main
 struct SmithersApp: App {
-    @StateObject private var workspace = WorkspaceState()
+    @StateObject private var workspace: WorkspaceState
     @NSApplicationDelegateAdaptor(SmithersAppDelegate.self) private var appDelegate
-    @State private var tmuxKeyHandler: TmuxKeyHandler?
+    @StateObject private var tmuxKeyHandler: TmuxKeyHandler
     @State private var windowCloseDelegate = WindowCloseDelegate()
+
+    init() {
+        let workspace = WorkspaceState()
+        _workspace = StateObject(wrappedValue: workspace)
+        _tmuxKeyHandler = StateObject(wrappedValue: TmuxKeyHandler(workspace: workspace))
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(workspace: workspace)
+            ContentView(workspace: workspace, tmuxKeyHandler: tmuxKeyHandler)
                 .preferredColorScheme(workspace.theme.colorScheme)
                 .tint(workspace.theme.accentColor)
                 .frame(minWidth: 700, minHeight: 400)
@@ -23,9 +29,7 @@ struct SmithersApp: App {
                     windowCloseDelegate.workspace = workspace
                     setInitialWindowSize()
                     configureWindowChrome()
-                    let handler = TmuxKeyHandler(workspace: workspace)
-                    handler.install()
-                    tmuxKeyHandler = handler
+                    tmuxKeyHandler.install()
                 }
         }
         .windowStyle(.hiddenTitleBar)
@@ -60,6 +64,10 @@ struct SmithersApp: App {
                     workspace.toggleNvimMode()
                 }
                 .keyboardShortcut("N", modifiers: [.command, .shift])
+                Button("Toggle Keyboard Shortcuts") {
+                    workspace.toggleShortcutsPanel()
+                }
+                .keyboardShortcut("/", modifiers: [.command])
             }
             CommandGroup(replacing: .printItem) {
                 Button("Go to File...") {

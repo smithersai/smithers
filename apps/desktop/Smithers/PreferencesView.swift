@@ -22,7 +22,13 @@ struct PreferencesView: View {
                         step: 1
                     ) {
                         Text("\(Int(workspace.editorFontSize)) pt")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: Typography.base, weight: .semibold))
+                    }
+                }
+                Picker("Scrollbar", selection: $workspace.scrollbarVisibilityMode) {
+                    ForEach(ScrollbarVisibilityMode.allCases) { mode in
+                        Text(mode.label)
+                            .tag(mode)
                     }
                 }
             }
@@ -31,14 +37,14 @@ struct PreferencesView: View {
                 HStack(spacing: 8) {
                     TextField("/path/to/nvim", text: $workspace.preferredNvimPath)
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(.system(size: Typography.base, design: .monospaced))
                     Button("Choose...") {
                         workspace.chooseNvimPath()
                     }
                 }
                 HStack {
                     Text(workspace.nvimPathStatusMessage)
-                        .font(.system(size: 11))
+                        .font(.system(size: Typography.s))
                         .foregroundStyle(workspace.nvimPathStatusIsError ? Color.red : Color.secondary)
                     Spacer()
                     Button("Use Default") {
