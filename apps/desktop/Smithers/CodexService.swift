@@ -117,11 +117,15 @@ final class CodexService: ObservableObject {
     }
 
     @discardableResult
-    func sendMessage(_ text: String, images: [ChatImage] = []) async throws -> String {
+    func sendMessage(
+        _ text: String,
+        images: [ChatImage] = [],
+        extraInputs: [UserInput] = []
+    ) async throws -> String {
         guard let transport, isRunning else { throw ServiceError.notRunning }
         guard let threadId else { throw ServiceError.threadUnavailable }
 
-        var input: [UserInput] = []
+        var input: [UserInput] = extraInputs
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             input.append(UserInput.text(trimmed))
@@ -366,7 +370,7 @@ final class CodexService: ObservableObject {
         threadId = response.thread.id
     }
 
-    private func resumeThread(threadId: String, cwd: String) async throws -> ThreadSnapshot {
+    func resumeThread(threadId: String, cwd: String) async throws -> ThreadSnapshot {
         guard let transport else { throw ServiceError.notRunning }
 
         let params = ThreadResumeParams(
@@ -622,19 +626,31 @@ struct UserInput: Encodable {
     let type: String
     let text: String?
     let url: String?
+    let name: String?
+    let path: String?
 
     static func text(_ text: String) -> UserInput {
-        UserInput(type: "text", text: text, url: nil)
+        UserInput(type: "text", text: text, url: nil, name: nil, path: nil)
     }
 
     static func image(_ url: String) -> UserInput {
-        UserInput(type: "image", text: nil, url: url)
+        UserInput(type: "image", text: nil, url: url, name: nil, path: nil)
+    }
+
+    static func skill(name: String, path: String) -> UserInput {
+        UserInput(type: "skill", text: nil, url: nil, name: name, path: path)
+    }
+
+    static func mention(name: String, path: String) -> UserInput {
+        UserInput(type: "mention", text: nil, url: nil, name: name, path: path)
     }
 
     private enum CodingKeys: String, CodingKey {
         case type
         case text
         case url
+        case name
+        case path
     }
 
     func encode(to encoder: Encoder) throws {
@@ -645,6 +661,12 @@ struct UserInput: Encodable {
         }
         if let url {
             try container.encode(url, forKey: .url)
+        }
+        if let name {
+            try container.encode(name, forKey: .name)
+        }
+        if let path {
+            try container.encode(path, forKey: .path)
         }
     }
 }
