@@ -29,6 +29,9 @@ struct FileTreeSidebar: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(theme.secondaryBackgroundColor)
+            } else if workspace.isSearchPresented {
+                SearchPanelView(workspace: workspace)
+                    .background(theme.secondaryBackgroundColor)
             } else {
                 List(selection: $workspace.selectedFileURL) {
                     Section(workspace.rootDirectory?.lastPathComponent.uppercased() ?? "FILES") {

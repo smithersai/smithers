@@ -10,8 +10,10 @@
 		0014938A815F4EEBDC1841C6 /* TerminalTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8E92E8F75CDE76BB1DEF23 /* TerminalTabView.swift */; };
 		065D08F24951EE3B904B2EE1 /* NvimRPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6AC51F4F81DE3B6D41A9158 /* NvimRPC.swift */; };
 		0C05E6AADE3512F5D270FAA9 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A587502DE9B721579B6AA7E8 /* ContentView.swift */; };
+		B87427DA6DD742408834D140 /* CloseGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE9B1D18FCAC4177A7857A97 /* CloseGuard.swift */; };
 		1A2E8C8FC2EE8A371E638889 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30D457DAEFDA4AFD49D91FC1 /* AppTheme.swift */; };
 		22BEE97BFB1F9A4C429B890C /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACDA054A9F51B9E7A05B82A6 /* FileItem.swift */; };
+		42DD95BDC0ED4E9FA1154B21 /* SearchPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9DE67E9341D4ADCAF32FDEC /* SearchPanelView.swift */; };
 		256BEABEF9D0E3ED51A8BDFD /* JSONRPCTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F35C80E0660E789DB10C42 /* JSONRPCTransport.swift */; };
 		2728B7D935DEEA0A779284D4 /* LinkifiedText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3058C4909A162A396D9E98FF /* LinkifiedText.swift */; };
 		2749E06B1E41C146E6D27323 /* TreeSitterZig in Frameworks */ = {isa = PBXBuildFile; productRef = 60A0059EA0C9738353738CFF /* TreeSitterZig */; };
@@ -65,7 +67,9 @@
 
 /* Begin PBXFileReference section */
 		0A8E6F66E4C4CD4D5146948B /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
+		FE9B1D18FCAC4177A7857A97 /* CloseGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloseGuard.swift; sourceTree = "<group>"; };
 		0D40426E1854161EE406410C /* GhosttyInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyInput.swift; sourceTree = "<group>"; };
+		E9DE67E9341D4ADCAF32FDEC /* SearchPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPanelView.swift; sourceTree = "<group>"; };
 		19942FCCF8B2D42A46DD182E /* NvimController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NvimController.swift; sourceTree = "<group>"; };
 		28E4708D9C09F3165A80FF50 /* TmuxKeyHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TmuxKeyHandler.swift; sourceTree = "<group>"; };
 		3058C4909A162A396D9E98FF /* LinkifiedText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkifiedText.swift; sourceTree = "<group>"; };
@@ -124,6 +128,7 @@
 			children = (
 				30D457DAEFDA4AFD49D91FC1 /* AppTheme.swift */,
 				A38D8B6B25D2C2C75BB72E7F /* ChatView.swift */,
+				FE9B1D18FCAC4177A7857A97 /* CloseGuard.swift */,
 				D82BDDA83CCB8DBEB56D54FD /* CodexService.swift */,
 				0A8E6F66E4C4CD4D5146948B /* CommandPaletteView.swift */,
 				A587502DE9B721579B6AA7E8 /* ContentView.swift */,
@@ -137,6 +142,7 @@
 				3058C4909A162A396D9E98FF /* LinkifiedText.swift */,
 				19942FCCF8B2D42A46DD182E /* NvimController.swift */,
 				C6AC51F4F81DE3B6D41A9158 /* NvimRPC.swift */,
+				E9DE67E9341D4ADCAF32FDEC /* SearchPanelView.swift */,
 				BB1A5DC923E5D8AE13DED3C7 /* SmithersApp.swift */,
 				F334689F6A985085943312B6 /* SyntaxHighlighting.swift */,
 				3D8E92E8F75CDE76BB1DEF23 /* TerminalTabView.swift */,
@@ -333,6 +339,7 @@
 			files = (
 				1A2E8C8FC2EE8A371E638889 /* AppTheme.swift in Sources */,
 				42506BE8E2FFDF6DA22F5DF6 /* ChatView.swift in Sources */,
+				B87427DA6DD742408834D140 /* CloseGuard.swift in Sources */,
 				7A9DD80FB83AC7BB5F40265B /* CodexService.swift in Sources */,
 				95E3F61267434DC0C9ADB1BA /* CommandPaletteView.swift in Sources */,
 				0C05E6AADE3512F5D270FAA9 /* ContentView.swift in Sources */,
@@ -346,6 +353,7 @@
 				2728B7D935DEEA0A779284D4 /* LinkifiedText.swift in Sources */,
 				E0AB0E5FF1667F065428B456 /* NvimController.swift in Sources */,
 				065D08F24951EE3B904B2EE1 /* NvimRPC.swift in Sources */,
+				42DD95BDC0ED4E9FA1154B21 /* SearchPanelView.swift in Sources */,
 				EE4DDAC29B154BBC0A2B7A80 /* SmithersApp.swift in Sources */,
 				CD146869D7D4DD80FFEE3187 /* SyntaxHighlighting.swift in Sources */,
 				0014938A815F4EEBDC1841C6 /* TerminalTabView.swift in Sources */,

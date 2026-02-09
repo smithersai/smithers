@@ -36,10 +36,29 @@ struct RecentEditEntry: Identifiable, Hashable {
     let lastEdited: Date
 }
 
+struct SearchMatch: Identifiable, Hashable, Sendable {
+    let id = UUID()
+    let lineNumber: Int
+    let column: Int
+    let lineText: String
+}
+
+struct SearchResult: Identifiable, Hashable, Sendable {
+    let id = UUID()
+    let url: URL
+    let displayPath: String
+    var matches: [SearchMatch]
+}
+
 struct EditorSelection: Hashable, Sendable {
     let url: URL
     let line: Int
     let column: Int
+}
+
+private enum SearchOutcome {
+    case success([SearchResult])
+    case failure(String)
 }
 
 struct DiffTab: Identifiable, Hashable {
@@ -131,6 +150,7 @@ class WorkspaceState: ObservableObject {
     @Published var chatDraft: String = ""
     @Published var isTurnInProgress: Bool = false
     @Published var isCommandPalettePresented: Bool = false
+    @Published var isSearchPresented: Bool = false
     @Published var isNvimModeEnabled: Bool = false
     @Published var isAutoSaveEnabled: Bool = UserDefaults.standard.bool(
         forKey: WorkspaceState.autoSaveEnabledKey
@@ -158,8 +178,16 @@ class WorkspaceState: ObservableObject {
             scheduleSearch()
         }
     }
+    @Published var searchQuery: String = "" {
+        didSet {
+            scheduleSearchInFiles()
+        }
+    }
     @Published private(set) var fileSearchResults: [FileIndexEntry] = []
     @Published private(set) var paletteCommands: [PaletteCommand] = []
+    @Published private(set) var searchResults: [SearchResult] = []
+    @Published var isSearchInProgress: Bool = false
+    @Published var searchErrorMessage: String?
     @Published private(set) var recentFileEntries: [FileIndexEntry] = []
     @Published private(set) var recentFolderEntries: [RecentFolderEntry] = []
     @Published private(set) var recentEditEntries: [RecentEditEntry] = []
@@ -169,6 +197,8 @@ class WorkspaceState: ObservableObject {
     private var fileIndex: [FileIndexEntry] = []
     private var fileIndexTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
+    private var searchInFilesTask: Task<Void, Never>?
+    private var searchInFilesToken: Int = 0
     private var openFileContents: [URL: String] = [:]
     private var savedFileContents: [URL: String] = [:]
     private var suppressEditorTextUpdate = false
@@ -197,6 +227,7 @@ class WorkspaceState: ObservableObject {
     private static let recentFoldersKey = "smithers.recentFolders"
     private static let maxRecentItems = 10
     private static let maxRecentEdits = 10
+    private static let maxSearchMatches = 1000
     private static let autoSaveEnabledKey = "smithers.autoSaveEnabled"
     private static let autoSaveIntervalKey = "smithers.autoSaveInterval"
     private static let defaultAutoSaveInterval: TimeInterval = 5
@@ -279,6 +310,10 @@ class WorkspaceState: ObservableObject {
         savedFileContents = [:]
         fileIndex = []
         fileSearchResults = []
+        searchQuery = ""
+        searchResults = []
+        searchErrorMessage = nil
+        isSearchPresented = false
         activeDiffPreview = nil
         activeSessionDiff = nil
         sessionDiffSnapshot = nil
@@ -1090,6 +1125,10 @@ class WorkspaceState: ObservableObject {
         return true
     }
 
+    func openSearchResult(_ result: SearchResult, match: SearchMatch) {
+        openFileAtLocation(result.url, line: match.lineNumber, column: match.column)
+    }
+
     func openFileAtLocation(_ url: URL, line: Int, column: Int) {
         if isNvimModeEnabled {
             if selectedFileURL != url {
@@ -1179,6 +1218,20 @@ class WorkspaceState: ObservableObject {
 
     func hideCommandPalette() {
         isCommandPalettePresented = false
+    }
+
+    func showSearchPanel() {
+        guard rootDirectory != nil else {
+            openFolderPanel()
+            return
+        }
+        isSearchPresented = true
+        searchErrorMessage = nil
+        scheduleSearchInFiles()
+    }
+
+    func hideSearchPanel() {
+        isSearchPresented = false
     }
 
     func expandFolder(_ item: FileItem) {
@@ -1630,6 +1683,14 @@ class WorkspaceState: ObservableObject {
                 }
             ),
             PaletteCommand(
+                id: "search-in-files",
+                title: "Search in Files...",
+                icon: "magnifyingglass",
+                action: { [weak self] in
+                    self?.showSearchPanel()
+                }
+            ),
+            PaletteCommand(
                 id: "close-others",
                 title: "Close Other Tabs",
                 icon: "xmark",
@@ -1780,6 +1841,47 @@ class WorkspaceState: ObservableObject {
         }
     }
 
+    private func scheduleSearchInFiles() {
+        searchInFilesTask?.cancel()
+        let rawQuery = searchQuery
+        let trimmedQuery = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let rootDirectory else {
+            searchResults = []
+            isSearchInProgress = false
+            return
+        }
+        if trimmedQuery.isEmpty {
+            searchResults = []
+            searchErrorMessage = nil
+            isSearchInProgress = false
+            return
+        }
+        isSearchInProgress = true
+        searchErrorMessage = nil
+        searchInFilesToken += 1
+        let token = searchInFilesToken
+        let rootPath = rootDirectory.path
+        searchInFilesTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard let self, !Task.isCancelled else { return }
+            let result = await Task.detached(priority: .userInitiated) {
+                Self.runRipgrep(query: trimmedQuery, rootPath: rootPath)
+            }.value
+            await MainActor.run {
+                guard token == self.searchInFilesToken else { return }
+                switch result {
+                case .success(let results):
+                    self.searchResults = results
+                    self.searchErrorMessage = nil
+                case .failure(let message):
+                    self.searchResults = []
+                    self.searchErrorMessage = message
+                }
+                self.isSearchInProgress = false
+            }
+        }
+    }
+
     nonisolated private static func scoreMatch(query: String, in text: String) -> Int? {
         if let range = text.range(of: query) {
             let offset = text.distance(from: text.startIndex, to: range.lowerBound)
@@ -1795,6 +1897,121 @@ class WorkspaceState: ObservableObject {
             searchIndex = text.index(after: found)
         }
         return 1000 + score
+    }
+
+    nonisolated private static func runRipgrep(
+        query: String,
+        rootPath: String
+    ) -> SearchOutcome {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["rg", "--json", "--smart-case", "--", query]
+        process.currentDirectoryURL = URL(fileURLWithPath: rootPath)
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+        } catch {
+            return .failure("Ripgrep (rg) not available.")
+        }
+
+        // Read stderr concurrently to prevent pipe buffer deadlock
+        var errorData = Data()
+        let errorGroup = DispatchGroup()
+        errorGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            errorGroup.leave()
+        }
+
+        // Read stdout incrementally, stop after maxSearchMatches
+        var results: [SearchResult] = []
+        var indexByPath: [String: Int] = [:]
+        var matchCount = 0
+        let rootURL = URL(fileURLWithPath: rootPath)
+        let handle = outputPipe.fileHandleForReading
+
+        var remainder = Data()
+        let chunkSize = 65_536
+        var hitLimit = false
+
+        while !hitLimit {
+            let chunk = handle.readData(ofLength: chunkSize)
+            if chunk.isEmpty { break }
+            remainder.append(chunk)
+
+            while let newlineIndex = remainder.firstIndex(of: UInt8(ascii: "\n")) {
+                let lineData = remainder[remainder.startIndex..<newlineIndex]
+                remainder = remainder[(newlineIndex + 1)...]
+
+                guard let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                      let type = json["type"] as? String,
+                      type == "match",
+                      let data = json["data"] as? [String: Any],
+                      let path = (data["path"] as? [String: Any])?["text"] as? String,
+                      let lineNumber = (data["line_number"] as? NSNumber)?.intValue,
+                      let lineText = (data["lines"] as? [String: Any])?["text"] as? String,
+                      let submatches = data["submatches"] as? [[String: Any]],
+                      let firstMatch = submatches.first,
+                      let column = (firstMatch["start"] as? NSNumber)?.intValue
+                else { continue }
+
+                let fileURL: URL
+                if path.hasPrefix("/") {
+                    fileURL = URL(fileURLWithPath: path).standardizedFileURL
+                } else {
+                    fileURL = URL(fileURLWithPath: path, relativeTo: rootURL).standardizedFileURL
+                }
+                let displayPath = relativePath(for: fileURL, rootPath: rootPath)
+                let trimmedLine = lineText.trimmingCharacters(in: .newlines)
+                let match = SearchMatch(lineNumber: lineNumber, column: column + 1, lineText: trimmedLine)
+                if let index = indexByPath[path] {
+                    results[index].matches.append(match)
+                } else {
+                    let result = SearchResult(url: fileURL, displayPath: displayPath, matches: [match])
+                    results.append(result)
+                    indexByPath[path] = results.count - 1
+                }
+                matchCount += 1
+                if matchCount >= Self.maxSearchMatches {
+                    hitLimit = true
+                    break
+                }
+            }
+        }
+
+        if hitLimit {
+            process.terminate()
+            // Drain remaining pipe data to prevent SIGPIPE
+            _ = handle.readDataToEndOfFile()
+        }
+
+        errorGroup.wait()
+        process.waitUntilExit()
+
+        // rg exit code 1 = no matches, 2+ = error
+        if process.terminationStatus == 1 {
+            return .success([])
+        }
+        if process.terminationStatus != 0 && !hitLimit {
+            let message = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .failure(message?.isEmpty == false ? message! : "Search failed.")
+        }
+
+        return .success(results)
+    }
+
+    nonisolated private static func relativePath(for url: URL, rootPath: String) -> String {
+        let fullPath = url.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : "\(rootPath)/"
+        if fullPath.hasPrefix(prefix) {
+            return String(fullPath.dropFirst(prefix.count))
+        }
+        return url.lastPathComponent
     }
 
     private func startCodexService(cwd: String) {

@@ -62,6 +62,12 @@ struct SmithersApp: App {
                 }
                 .keyboardShortcut("P", modifiers: [.command])
             }
+            CommandGroup(after: .textEditing) {
+                Button("Find in Files...") {
+                    workspace.showSearchPanel()
+                }
+                .keyboardShortcut("F", modifiers: [.command, .shift])
+            }
         }
     }
 
