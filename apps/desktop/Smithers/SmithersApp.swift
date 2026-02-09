@@ -74,21 +74,31 @@ struct SmithersApp: App {
     }
 
     private func setInitialWindowSize() {
+        applyInitialWindowSize(retryCount: 5)
+    }
+
+    private func applyInitialWindowSize(retryCount: Int) {
         DispatchQueue.main.async {
             guard let screen = NSScreen.main else { return }
+            guard let window = NSApp.windows.first(where: { $0.isKeyWindow || $0.isMainWindow }) ?? NSApp.windows.first else {
+                if retryCount > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        applyInitialWindowSize(retryCount: retryCount - 1)
+                    }
+                }
+                return
+            }
             let screenFrame = screen.visibleFrame
             let width = screenFrame.width * 0.85
             let height = screenFrame.height * 0.85
             let x = screenFrame.origin.x + (screenFrame.width - width) / 2
             let y = screenFrame.origin.y + (screenFrame.height - height) / 2
-            if let window = NSApp.windows.first(where: { $0.isKeyWindow || $0.isMainWindow }) {
-                if let savedFrame = WindowCloseDelegate.loadWindowFrame() {
-                    window.setFrame(adjustedFrame(savedFrame), display: true)
-                } else {
-                    window.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
-                }
-                workspace.showWindowAfterLaunch()
+            if let savedFrame = WindowCloseDelegate.loadWindowFrame() {
+                window.setFrame(adjustedFrame(savedFrame), display: true)
+            } else {
+                window.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
             }
+            workspace.showWindowAfterLaunch()
         }
     }
 
