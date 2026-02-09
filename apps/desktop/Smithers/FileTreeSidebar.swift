@@ -10,7 +10,7 @@ struct FileTreeSidebar: View {
                 VStack(spacing: 16) {
                     Image(systemName: "folder.badge.plus")
                         .font(.system(size: 36))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                     Text("No Folder Open")
                         .font(.title3)
                         .foregroundStyle(.secondary)
@@ -34,7 +34,7 @@ struct FileTreeSidebar: View {
                     .background(theme.secondaryBackgroundColor)
             } else {
                 List(selection: $workspace.selectedFileURL) {
-                    Section(workspace.rootDirectory?.lastPathComponent.uppercased() ?? "FILES") {
+                    Section(workspace.rootDirectory?.lastPathComponent ?? "Files") {
                         ForEach(workspace.fileTree) { item in
                             FileTreeRow(item: item, workspace: workspace)
                         }
@@ -59,6 +59,7 @@ struct FileTreeRow: View {
     let item: FileItem
     @ObservedObject var workspace: WorkspaceState
     @State private var isExpanded = false
+    @State private var isHovered = false
 
     var body: some View {
         if item.isFolder {
@@ -85,14 +86,18 @@ struct FileTreeRow: View {
             Text(item.name)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            Spacer()
         }
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
+        .background(isHovered ? workspace.theme.selectionBackgroundColor.opacity(0.3) : Color.clear)
         .onTapGesture {
             if !isExpanded {
                 workspace.expandFolder(item)
             }
             isExpanded.toggle()
         }
+        .onHover { isHovered = $0 }
         .accessibilityIdentifier("FileTreeItem_\(item.name)")
 
         if isExpanded, let children = item.children {
@@ -100,6 +105,7 @@ struct FileTreeRow: View {
             ForEach(visibleChildren) { child in
                 FileTreeRow(item: child, workspace: workspace)
                     .padding(.leading, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
     }
@@ -111,7 +117,7 @@ struct FileTreeRow: View {
                 .truncationMode(.middle)
         } icon: {
             Image(systemName: iconForFile(item.name))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(colorForFile(item.name)?.opacity(0.8) ?? .secondary)
                 .font(.system(size: 13))
         }
     }
