@@ -101,6 +101,7 @@ final class TreeSitterHighlighter {
         static let emphasis = NSColor(white: 0.85, alpha: 1)
         static let strong = NSColor(white: 0.95, alpha: 1)
         static let escape = NSColor(red: 0.35, green: 0.75, blue: 0.78, alpha: 1)
+        static let diagnostic = NSColor.systemRed
     }
 
     private static let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -163,22 +164,30 @@ final class TreeSitterHighlighter {
 
         parseQueue.async { [weak self, weak textView] in
             guard let self else { return }
-            let highlights = self.computeHighlights(text: source, parser: self.parser, query: query)
+            guard let tree = self.parser.parse(source) else { return }
+            let highlights = self.computeHighlights(tree: tree, query: query, text: source)
+            let errorRanges = self.collectErrorRanges(from: tree)
             var inlineHighlights: [HighlightSpan] = []
             if shouldInline, let inlineParser = self.inlineParser, let inlineQuery = self.inlineQuery {
-                inlineHighlights = self.computeHighlights(text: source, parser: inlineParser, query: inlineQuery)
+                if let inlineTree = inlineParser.parse(source) {
+                    inlineHighlights = self.computeHighlights(tree: inlineTree, query: inlineQuery, text: source)
+                }
             }
 
             DispatchQueue.main.async { [weak self, weak textView] in
                 guard let self, let textView else { return }
                 guard currentID == self.requestID else { return }
-                self.applyHighlights(highlights + inlineHighlights, source: source, textView: textView)
+                self.applyHighlights(
+                    highlights + inlineHighlights,
+                    errorRanges: errorRanges,
+                    source: source,
+                    textView: textView
+                )
             }
         }
     }
 
-    private func computeHighlights(text: String, parser: Parser, query: Query) -> [HighlightSpan] {
-        guard let tree = parser.parse(text) else { return [] }
+    private func computeHighlights(tree: MutableTree, query: Query, text: String) -> [HighlightSpan] {
         let cursor = query.execute(in: tree)
         let highlights = cursor
             .resolve(with: .init(string: text))
@@ -186,7 +195,12 @@ final class TreeSitterHighlighter {
         return highlights.map { HighlightSpan(name: $0.name, range: $0.range) }
     }
 
-    private func applyHighlights(_ highlights: [HighlightSpan], source: String, textView: STTextView) {
+    private func applyHighlights(
+        _ highlights: [HighlightSpan],
+        errorRanges: [NSRange],
+        source: String,
+        textView: STTextView
+    ) {
         let fullRange = NSRange(location: 0, length: (source as NSString).length)
         guard let storage = (textView.textContentManager as? NSTextContentStorage)?.textStorage else { return }
 
@@ -208,7 +222,35 @@ final class TreeSitterHighlighter {
             }
         }
 
+        for range in errorRanges {
+            guard range.location >= 0, range.location < fullRange.length else { continue }
+            let clampedLength = min(max(1, range.length), fullRange.length - range.location)
+            let safeRange = NSRange(location: range.location, length: clampedLength)
+            storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: safeRange)
+            storage.addAttribute(.underlineColor, value: Palette.diagnostic, range: safeRange)
+        }
+
         storage.endEditing()
+    }
+
+    private func collectErrorRanges(from tree: MutableTree) -> [NSRange] {
+        guard let root = tree.rootNode else { return [] }
+        var ranges: [NSRange] = []
+        collectErrorNodes(node: root, ranges: &ranges)
+        return ranges
+    }
+
+    private func collectErrorNodes(node: Node, ranges: inout [NSRange]) {
+        let isError = node.isMissing || node.nodeType == "ERROR"
+        if isError {
+            ranges.append(node.range)
+        }
+        guard node.hasError else { return }
+        node.enumerateChildren { child in
+            if child.hasError || child.isMissing || child.nodeType == "ERROR" {
+                collectErrorNodes(node: child, ranges: &ranges)
+            }
+        }
     }
 
     private static func colorForCapture(_ name: String) -> NSColor? {
