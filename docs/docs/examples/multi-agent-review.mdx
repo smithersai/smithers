@@ -1,0 +1,92 @@
+---
+title: Multi-Agent Review
+description: Run two reviewers in parallel and aggregate results.
+---
+
+```tsx
+// workflow.tsx
+import { smithers, Workflow, Task, Sequence, Parallel } from "smithers";
+import { agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+
+const inputTable = sqliteTable("input", {
+  runId: text("run_id").primaryKey(),
+  description: text("description").notNull(),
+});
+
+const reviewTable = sqliteTable(
+  "review",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    approved: integer("approved", { mode: "boolean" }).notNull(),
+    feedback: text("feedback").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const outputTable = sqliteTable(
+  "output",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    approved: integer("approved", { mode: "boolean" }).notNull(),
+    summary: text("summary").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const schema = { input: inputTable, output: outputTable, review: reviewTable };
+const db = drizzle("./workflow.db", { schema });
+
+const reviewerA = agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  system: "Return JSON with { approved: boolean, feedback: string }",
+});
+
+const reviewerB = agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  system: "Return JSON with { approved: boolean, feedback: string }",
+});
+
+export default smithers(db, (ctx) => (
+  <Workflow name="multi-agent-review">
+    <Sequence>
+      <Parallel>
+        <Task id="review-claude" output={schema.review} agent={reviewerA}>
+          {`Review: ${ctx.input.description}`}
+        </Task>
+        <Task id="review-codex" output={schema.review} agent={reviewerB}>
+          {`Review: ${ctx.input.description}`}
+        </Task>
+      </Parallel>
+
+      <Task id="summary" output={schema.output}>
+        {{
+          approved:
+            Boolean(ctx.outputMaybe(schema.review, { nodeId: "review-claude" })?.approved) &&
+            Boolean(ctx.outputMaybe(schema.review, { nodeId: "review-codex" })?.approved),
+          summary: [
+            ctx.outputMaybe(schema.review, { nodeId: "review-claude" })?.feedback ?? "",
+            ctx.outputMaybe(schema.review, { nodeId: "review-codex" })?.feedback ?? "",
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+        }}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+Run it:
+
+```bash
+smithers run workflow.tsx --input '{"description":"Review the auth changes"}'
+```

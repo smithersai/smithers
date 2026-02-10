@@ -1,0 +1,47 @@
+---
+title: Types
+description: Core Smithers types.
+---
+
+```ts
+export type SmithersWorkflowOptions = {
+  cache?: boolean;
+};
+
+export type SmithersWorkflow<Schema> = {
+  db: unknown;
+  build: (ctx: SmithersCtx<Schema>) => React.ReactElement;
+  opts: SmithersWorkflowOptions;
+};
+
+export type RunOptions = {
+  runId?: string;
+  input: Record<string, unknown>;
+  maxConcurrency?: number;
+  onProgress?: (e: SmithersEvent) => void;
+  signal?: AbortSignal;
+  resume?: boolean;
+  workflowPath?: string;
+  rootDir?: string;
+  logDir?: string | null;
+  allowNetwork?: boolean;
+  maxOutputBytes?: number;
+  toolTimeoutMs?: number;
+};
+
+export type RunResult = {
+  runId: string;
+  status: "finished" | "failed" | "cancelled" | "waiting-approval";
+  output?: unknown;
+  error?: unknown;
+};
+
+export type GraphSnapshot = {
+  runId: string;
+  frameNo: number;
+  xml: XmlNode | null;
+  tasks: TaskDescriptor[];
+};
+```
+
+See `SmithersEvent`, `TaskDescriptor`, `WorkflowProps`, and component prop types in `smithers` exports.

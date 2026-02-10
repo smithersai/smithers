@@ -1,0 +1,30 @@
+---
+title: CLI
+description: Run, inspect, and control workflows from the command line.
+---
+
+The `smithers` CLI ships with the package.
+
+**Commands**
+
+```bash
+smithers run <workflow.tsx> [--input JSON] [--run-id ID] [--max-concurrency N]
+smithers resume <workflow.tsx> --run-id ID
+smithers approve <workflow.tsx> --run-id ID --node-id ID [--iteration N] [--note TEXT] [--decided-by TEXT]
+smithers deny <workflow.tsx> --run-id ID --node-id ID [--iteration N] [--note TEXT] [--decided-by TEXT]
+smithers status <workflow.tsx> --run-id ID
+smithers frames <workflow.tsx> --run-id ID [--tail N]
+smithers list <workflow.tsx> [--limit N] [--status STATUS]
+smithers graph <workflow.tsx> [--run-id ID] [--input JSON]
+smithers revert <workflow.tsx> --run-id ID --node-id ID [--attempt N] [--iteration N]
+```
+
+**Run options**
+
+- `--root PATH` root directory for the tool sandbox (default: workflow dir)
+- `--log-dir PATH` event log directory (default: `.smithers/executions/<runId>/logs`)
+- `--no-log` disable event log output
+- `--allow-network` allow network access for the `bash` tool
+- `--max-output-bytes N` cap tool output bytes (default: 200000)
+- `--tool-timeout-ms N` tool timeout in ms (default: 60000)
+- `--version`, `-v` print version

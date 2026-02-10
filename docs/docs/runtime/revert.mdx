@@ -1,0 +1,15 @@
+---
+title: Revert to Attempt
+description: Rewind a workspace to a previous attempt (JJ required).
+---
+
+Smithers records a JJ pointer at the end of each attempt when JJ is installed. You can revert the workspace to a specific attempt using the CLI.
+
+```bash
+smithers revert workflow.tsx --run-id <id> --node-id <id> --attempt 1 --iteration 0
+```
+
+Notes:
+
+- JJ must be installed and available in PATH.
+- If no JJ pointer was recorded for the attempt, revert will fail.

@@ -1,0 +1,55 @@
+---
+title: Approvals
+description: Gate tasks on human review.
+---
+
+Set `needsApproval` on a task to require explicit approval before execution continues.
+
+```tsx
+// workflow.tsx
+import { smithers, Workflow, Task } from "smithers";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { sqliteTable, text, primaryKey } from "drizzle-orm/sqlite-core";
+
+const inputTable = sqliteTable("input", {
+  runId: text("run_id").primaryKey(),
+});
+
+const deployTable = sqliteTable(
+  "deploy",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    url: text("url").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const schema = { input: inputTable, output: deployTable, deploy: deployTable };
+const db = drizzle("./workflow.db", { schema });
+
+export default smithers(db, () => (
+  <Workflow name="approvals">
+    <Task id="deploy" output={schema.deploy} needsApproval>
+      {{ url: "https://prod.example" }}
+    </Task>
+  </Workflow>
+));
+```
+
+Behavior:
+
+- The node enters `waiting-approval`
+- An `ApprovalRequested` event is emitted
+- The run status becomes `waiting-approval` when no other runnable work exists
+
+Approve or deny with the CLI:
+
+```bash
+smithers approve workflow.tsx --run-id <id> --node-id deploy
+smithers deny workflow.tsx --run-id <id> --node-id deploy
+```
+
+On deny, the node transitions to `skipped` unless `continueOnFail=false`, in which case it becomes `failed`.

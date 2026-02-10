@@ -1,0 +1,59 @@
+---
+title: Tools Agent
+description: Use built-in file tools with an agent task.
+---
+
+```tsx
+// workflow.tsx
+import { smithers, Workflow, Task } from "smithers";
+import { agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { read, grep } from "smithers/tools";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { sqliteTable, text, primaryKey } from "drizzle-orm/sqlite-core";
+
+const inputTable = sqliteTable("input", {
+  runId: text("run_id").primaryKey(),
+  root: text("root").notNull(),
+  pattern: text("pattern").notNull(),
+});
+
+const reportTable = sqliteTable(
+  "report",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    matches: text("matches", { mode: "json" }).$type<string[]>(),
+    summary: text("summary").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const schema = { input: inputTable, output: reportTable, report: reportTable };
+const db = drizzle("./workflow.db", { schema });
+
+const toolAgent = agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, grep },
+  system: "Use tools to gather evidence. Return JSON with matches and summary.",
+});
+
+export default smithers(db, (ctx) => (
+  <Workflow name="tools-agent">
+    <Task id="report" output={schema.report} agent={toolAgent}>
+      {`Search for pattern "${ctx.input.pattern}" under ${ctx.input.root}.
+Use grep/read as needed and return JSON with:
+- matches (string[])
+- summary (string)`}
+    </Task>
+  </Workflow>
+));
+```
+
+Run it:
+
+```bash
+smithers run workflow.tsx --input '{"root":".","pattern":"TODO"}' --root .
+```

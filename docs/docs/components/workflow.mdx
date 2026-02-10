@@ -1,0 +1,49 @@
+---
+title: <Workflow>
+description: Root container for a Smithers workflow.
+---
+
+`<Workflow>` is the root container. It renders its direct children as an implicit sequence.
+
+```tsx
+// workflow.tsx
+import { smithers, Workflow, Task } from "smithers";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+
+const inputTable = sqliteTable("input", {
+  runId: text("run_id").primaryKey(),
+  title: text("title").notNull(),
+});
+
+const summaryTable = sqliteTable(
+  "summary",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    ok: integer("ok", { mode: "boolean" }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const schema = { input: inputTable, output: summaryTable, summary: summaryTable };
+const db = drizzle("./workflow.db", { schema });
+
+export default smithers(db, () => (
+  <Workflow name="my-workflow" cache>
+    <Task id="summary" output={schema.summary}>
+      {{ ok: true }}
+    </Task>
+  </Workflow>
+));
+```
+
+**Props**
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Workflow name |
+| `cache` | `boolean` | Enable per-node caching |
+| `children` | `ReactNode` | Child nodes |

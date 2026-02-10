@@ -1,0 +1,67 @@
+---
+title: Renderer Internals
+description: How Smithers turns JSX into tasks and XML snapshots.
+---
+
+<Warning>
+  Advanced: this is internal architecture. You do not need it to use Smithers.
+</Warning>
+
+Smithers uses a custom React reconciler to turn your JSX into an in-memory tree, then extracts task descriptors and an XML snapshot.
+
+## Pipeline
+
+```
+JSX (Workflow/Task/Sequence/...)
+  ↓ React reconciler (react-reconciler)
+Host tree (HostNode)
+  ↓ extractFromHost()
+XML snapshot + TaskDescriptor[]
+  ↓ scheduler
+Runnable tasks
+```
+
+### Key pieces
+
+- `src/dom/renderer.ts` implements the reconciler host config
+- `src/dom/extract.ts` walks the host tree and builds:
+  - `XmlNode` tree for snapshots
+  - `TaskDescriptor[]` for the engine
+- `src/engine/scheduler.ts` uses the XML to decide runnable nodes
+
+### How elements map
+
+| JSX element | Host tag |
+| --- | --- |
+| `<Workflow>` | `smithers:workflow` |
+| `<Task>` | `smithers:task` |
+| `<Sequence>` | `smithers:sequence` |
+| `<Parallel>` | `smithers:parallel` |
+| `<Branch>` | `smithers:branch` |
+| `<Ralph>` | `smithers:ralph` |
+
+### Task extraction
+
+When `extractFromHost` encounters a `smithers:task` node, it builds a `TaskDescriptor` including:
+
+- `nodeId` (from `Task` id)
+- `iteration` (from `<Ralph>` loop state)
+- `outputTable` and `outputTableName`
+- `agent` and `prompt` (for agent tasks)
+- `staticPayload` (for static tasks)
+- `skipIf`, `needsApproval`, `retries`, `timeoutMs`, `continueOnFail`
+
+### XML snapshots
+
+`renderFrame(...)` returns:
+
+- `xml`: serialized view of the tree
+- `tasks`: extracted descriptors
+
+This XML is also stored in `_smithers_frames` for inspection and debugging.
+
+## Why React?
+
+- Familiar component model
+- Deterministic diffing/reconciliation
+- Easy composition of control-flow nodes (`Sequence`, `Parallel`, `Ralph`)

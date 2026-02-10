@@ -1,0 +1,28 @@
+---
+title: VCS Integration
+description: JJ snapshots and revert support.
+---
+
+Smithers integrates with JJ (Jujutsu) by recording a `jjPointer` for each task attempt when JJ is installed.
+
+## Requirements
+
+```bash
+brew install jj
+```
+
+If JJ is not installed, `jjPointer` fields are recorded as `null` and revert is unavailable.
+
+## Revert to an attempt
+
+```bash
+smithers revert workflow.tsx --run-id <id> --node-id <id> --attempt 1 --iteration 0
+```
+
+## Where JJ pointers live
+
+Pointers are stored per attempt in `_smithers_attempts.jj_pointer`.
+
+```bash
+sqlite3 workflow.db "SELECT run_id, node_id, iteration, attempt, jj_pointer FROM _smithers_attempts WHERE run_id = '<id>';"
+```

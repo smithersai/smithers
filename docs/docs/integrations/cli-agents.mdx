@@ -1,0 +1,24 @@
+---
+title: CLI Agents
+description: Run external CLI models as Smithers agents.
+---
+
+Smithers ships optional CLI-backed agents that implement the AI SDK agent interface.
+
+```ts
+import { CodexAgent, ClaudeCodeAgent, GeminiAgent } from "smithers";
+
+const codex = new CodexAgent({ model: "gpt-5" });
+const claude = new ClaudeCodeAgent({ model: "claude-sonnet-4-20250514" });
+const gemini = new GeminiAgent({ model: "gemini-2.0-flash" });
+```
+
+Use them like any other agent:
+
+```tsx
+<Task id="analysis" output={schema.analysis} agent={codex}>
+  {`Analyze: ${ctx.input.description}`}
+</Task>
+```
+
+Each class forwards options to the corresponding CLI tool (`codex`, `claude`, `gemini`). Ensure the CLI is installed and available in PATH.

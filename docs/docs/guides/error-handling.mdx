@@ -1,0 +1,80 @@
+---
+title: Error Handling
+description: Retries, timeouts, and graceful degradation.
+---
+
+Smithers exposes error handling primitives directly on `<Task>`.
+
+- `retries`: retry count on failure (default 0)
+- `timeoutMs`: per-task timeout
+- `continueOnFail`: allow the run to continue if this task fails
+- `skipIf`: skip execution based on current context
+
+## Example
+
+```tsx
+// workflow.tsx
+import { smithers, Workflow, Task, Branch } from "smithers";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+
+const inputTable = sqliteTable("input", {
+  runId: text("run_id").primaryKey(),
+  target: text("target").notNull(),
+});
+
+const riskyTable = sqliteTable(
+  "risky",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    ok: integer("ok", { mode: "boolean" }).notNull(),
+    message: text("message").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const outputTable = sqliteTable(
+  "output",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    summary: text("summary").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const schema = { input: inputTable, output: outputTable, risky: riskyTable };
+const db = drizzle("./workflow.db", { schema });
+
+export default smithers(db, (ctx) => {
+  const risky = ctx.outputMaybe(schema.risky, { nodeId: "risky" });
+  const ok = risky?.ok ?? false;
+
+  return (
+    <Workflow name="error-handling">
+      <Task id="risky" output={schema.risky} retries={2} timeoutMs={60_000}>
+        {{ ok: true, message: "Completed" }}
+      </Task>
+
+      <Branch
+        if={ok}
+        then={
+          <Task id="summary" output={schema.output}>
+            {{ summary: "All good" }}
+          </Task>
+        }
+        else={
+          <Task id="summary" output={schema.output}>
+            {{ summary: "Fallback path" }}
+          </Task>
+        }
+      />
+    </Workflow>
+  );
+});
+```

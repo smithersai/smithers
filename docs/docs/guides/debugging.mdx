@@ -1,0 +1,43 @@
+---
+title: Debugging
+description: Inspect runs, frames, and internal state.
+---
+
+## CLI inspection
+
+```bash
+smithers status workflow.tsx --run-id <id>
+smithers frames workflow.tsx --run-id <id> --tail 20
+smithers list workflow.tsx --limit 50 --status running
+smithers graph workflow.tsx --run-id <id>
+```
+
+## Logs
+
+By default, Smithers writes NDJSON events to:
+
+```
+.smithers/executions/<runId>/logs/stream.ndjson
+```
+
+Inspect with:
+
+```bash
+tail -f .smithers/executions/<runId>/logs/stream.ndjson
+```
+
+## SQLite inspection (advanced)
+
+Smithers stores internal state in `_smithers_*` tables. You can query them directly:
+
+```bash
+sqlite3 workflow.db "SELECT * FROM _smithers_runs ORDER BY created_at_ms DESC LIMIT 5;"
+sqlite3 workflow.db "SELECT * FROM _smithers_nodes WHERE run_id = '<id>' ORDER BY updated_at_ms DESC;"
+sqlite3 workflow.db "SELECT * FROM _smithers_attempts WHERE run_id = '<id>' ORDER BY started_at_ms DESC;"
+```
+
+## Common issues
+
+- **Run stuck at `waiting-approval`**: approve/deny the node with `smithers approve` or `smithers deny`.
+- **Duplicate task ids**: task ids must be unique per workflow frame; duplicates fail deterministically.
+- **Missing output rows**: ensure your output table includes `runId` and `nodeId` (and `iteration` for loops).

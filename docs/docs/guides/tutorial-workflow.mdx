@@ -1,0 +1,455 @@
+---
+title: Tutorial: Workflow Project
+description: Build a Smithers workflow using the recommended project patterns.
+---
+
+This tutorial builds a small workflow project that follows the same structure used in production Smithers workflows.
+
+**Project layout**
+
+```
+my-workflow/
+  package.json
+  bunfig.toml
+  preload.ts
+  drizzle.config.ts
+  drizzle/0000_init.sql
+  db.ts
+  agents.ts
+  system-prompt.ts
+  workflow.tsx
+  components/
+    Discover.tsx
+    Discover.schema.ts
+    Implement.tsx
+    Implement.schema.ts
+    Report.tsx
+    Report.schema.ts
+  prompts/
+    discover.mdx
+    implement.mdx
+  lib/
+    render.ts
+    ctx.ts
+    coerce.ts
+```
+
+**1) Dependencies**
+
+```json
+// package.json
+{
+  "name": "my-workflow",
+  "type": "module",
+  "scripts": {
+    "start": "bun run workflow.tsx",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "ai": "^6.0.69",
+    "@ai-sdk/anthropic": "^3.0.36",
+    "@mdx-js/esbuild": "^3.1.1",
+    "@mdx-js/mdx": "^3.1.1",
+    "@types/mdx": "^2.0.13",
+    "drizzle-orm": "^0.45.1",
+    "drizzle-zod": "^0.8.3",
+    "react-dom": "^19.2.4",
+    "smithers": "^0.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.2",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "drizzle-kit": "^0.31.1",
+    "typescript": "^5.9.3"
+  }
+}
+```
+
+Enable MDX imports in Bun:
+
+```toml
+# bunfig.toml
+preload = ["./preload.ts"]
+```
+
+```ts
+// preload.ts
+import { plugin, type BunPlugin } from "bun";
+import mdx from "@mdx-js/esbuild";
+
+plugin(mdx() as unknown as BunPlugin);
+```
+
+**2) Database and migrations**
+
+```ts
+// components/Discover.schema.ts
+import { z } from "zod";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+
+export const discoverTable = sqliteTable(
+  "discover",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    iteration: integer("iteration").notNull().default(0),
+    tickets: text("tickets", { mode: "json" }).$type<any[]>().notNull(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.runId, t.nodeId, t.iteration] }) }),
+);
+
+export const ticketSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+});
+
+export const discoverOutputSchema = z.object({
+  tickets: z.array(ticketSchema).max(3),
+});
+```
+
+```ts
+// components/Implement.schema.ts
+import { z } from "zod";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+
+export const implementTable = sqliteTable(
+  "implement",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    iteration: integer("iteration").notNull().default(0),
+    summary: text("summary").notNull(),
+    filesChanged: text("files_changed", { mode: "json" }).$type<string[]>(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.runId, t.nodeId, t.iteration] }) }),
+);
+
+export const implementOutputSchema = z.object({
+  summary: z.string(),
+  filesChanged: z.array(z.string()).optional(),
+});
+```
+
+```ts
+// components/Report.schema.ts
+import { sqliteTable, text, primaryKey } from "drizzle-orm/sqlite-core";
+
+export const reportTable = sqliteTable(
+  "report",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    summary: text("summary").notNull(),
+  },
+  (t) => ({ pk: primaryKey({ columns: [t.runId, t.nodeId] }) }),
+);
+```
+
+```ts
+// drizzle.config.ts
+import type { Config } from "drizzle-kit";
+
+export default {
+  dialect: "sqlite",
+  schema: "./components/*.schema.ts",
+  out: "./drizzle",
+  dbCredentials: {
+    url: "./workflow.db",
+  },
+} satisfies Config;
+```
+
+```sql
+-- drizzle/0000_init.sql
+CREATE TABLE IF NOT EXISTS input (
+  run_id TEXT PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS discover (
+  run_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  iteration INTEGER NOT NULL DEFAULT 0,
+  tickets TEXT NOT NULL,
+  PRIMARY KEY (run_id, node_id, iteration)
+);
+
+CREATE TABLE IF NOT EXISTS implement (
+  run_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  iteration INTEGER NOT NULL DEFAULT 0,
+  summary TEXT NOT NULL,
+  files_changed TEXT,
+  PRIMARY KEY (run_id, node_id, iteration)
+);
+
+CREATE TABLE IF NOT EXISTS report (
+  run_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  PRIMARY KEY (run_id, node_id)
+);
+```
+
+```ts
+// db.ts
+import { resolve } from "node:path";
+import { Database } from "bun:sqlite";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+import { discoverTable } from "./components/Discover.schema";
+import { implementTable } from "./components/Implement.schema";
+import { reportTable } from "./components/Report.schema";
+
+const inputTable = sqliteTable("input", {
+  runId: text("run_id").primaryKey(),
+});
+
+export const schema = {
+  input: inputTable,
+  discover: discoverTable,
+  implement: implementTable,
+  output: reportTable,
+};
+
+const DB_PATH = resolve(new URL("./workflow.db", import.meta.url).pathname);
+const MIGRATIONS_PATH = resolve(new URL("./drizzle", import.meta.url).pathname);
+
+const sqlite = new Database(DB_PATH);
+sqlite.exec("PRAGMA journal_mode = WAL");
+sqlite.exec("PRAGMA foreign_keys = ON");
+
+export const db = drizzle(sqlite, { schema });
+
+migrate(db, { migrationsFolder: MIGRATIONS_PATH });
+```
+
+**3) Agents and system prompt**
+
+```ts
+// system-prompt.ts
+export const SYSTEM_PROMPT = `You are a senior software engineer.
+Return strictly valid JSON matching the provided schema.`;
+```
+
+```ts
+// agents.ts
+import { agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { ClaudeCodeAgent } from "smithers";
+import { SYSTEM_PROMPT } from "./system-prompt";
+
+const USE_CLI = process.env.USE_CLI_AGENTS === "1";
+const MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
+
+const claudeApi = agent({
+  model: anthropic(MODEL),
+  instructions: SYSTEM_PROMPT,
+});
+
+const claudeCli = new ClaudeCodeAgent({
+  model: MODEL,
+  systemPrompt: SYSTEM_PROMPT,
+});
+
+export const claude = USE_CLI ? claudeCli : claudeApi;
+```
+
+**4) Helpers**
+
+```ts
+// lib/render.ts
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import type { MDXContent } from "mdx/types";
+
+export function render(Component: MDXContent, props: Record<string, any> = {}): string {
+  const html = renderToStaticMarkup(React.createElement(Component, props));
+  return html
+    .replace(/<\/?(p|div|h[1-6]|li|ul|ol|pre|blockquote|section)[^>]*>/gi, "\n")
+    .replace(/<br\s*\/?>(?!\n)/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, "/")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+```
+
+```ts
+// lib/ctx.ts
+import type { SmithersCtx } from "smithers";
+import type { SQLiteTable } from "drizzle-orm/sqlite-core";
+
+export type WorkflowCtx = SmithersCtx<any>;
+
+export function typedOutput<T>(ctx: WorkflowCtx, table: SQLiteTable, args: { nodeId: string }): T | undefined {
+  const rows = (ctx.outputs as any)(table) as any[] | undefined;
+  if (!rows?.length) return undefined;
+  let latest: any;
+  let latestIteration = -Infinity;
+  for (const row of rows) {
+    if (!row || row.nodeId !== args.nodeId) continue;
+    const iter = Number.isFinite(Number(row.iteration)) ? Number(row.iteration) : 0;
+    if (!latest || iter >= latestIteration) {
+      latest = row;
+      latestIteration = iter;
+    }
+  }
+  return latest as T | undefined;
+}
+```
+
+```ts
+// lib/coerce.ts
+import { z } from "zod";
+
+export function coerceJsonArray<T>(raw: unknown, item: z.ZodType<T>): T[] {
+  if (raw == null) return [];
+  let value = raw;
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return []; }
+  }
+  const result = z.array(item).safeParse(value);
+  return result.success ? result.data : [];
+}
+```
+
+**5) Prompts and components**
+
+```mdx
+<!-- prompts/discover.mdx -->
+Find the next 1-3 tickets to implement.
+Return JSON matching this schema:
+{props.schema}
+```
+
+```mdx
+<!-- prompts/implement.mdx -->
+Implement this ticket:
+- ID: {props.ticket.id}
+- Title: {props.ticket.title}
+- Description: {props.ticket.description}
+
+Return JSON with fields:
+- summary (string)
+- filesChanged (string[])
+```
+
+```tsx
+// components/Discover.tsx
+import { Task } from "smithers";
+import { render } from "../lib/render";
+import { claude } from "../agents";
+import DiscoverPrompt from "../prompts/discover.mdx";
+import { discoverTable, discoverOutputSchema } from "./Discover.schema";
+
+const schemaExample = {
+  tickets: [{ id: "ticket-id", title: "Title", description: "Details" }],
+};
+
+export function Discover() {
+  const prompt = render(DiscoverPrompt, {
+    schema: JSON.stringify(schemaExample, null, 2),
+  });
+
+  return (
+    <Task id="discover" output={discoverTable} outputSchema={discoverOutputSchema} agent={claude}>
+      {prompt}
+    </Task>
+  );
+}
+```
+
+```tsx
+// components/Implement.tsx
+import { Task } from "smithers";
+import { render } from "../lib/render";
+import { claude } from "../agents";
+import ImplementPrompt from "../prompts/implement.mdx";
+import { implementTable, implementOutputSchema } from "./Implement.schema";
+
+export function Implement({ ticket }: { ticket: { id: string; title: string; description: string } }) {
+  const prompt = render(ImplementPrompt, { ticket });
+
+  return (
+    <Task
+      id={`${ticket.id}:implement`}
+      output={implementTable}
+      outputSchema={implementOutputSchema}
+      agent={claude}
+    >
+      {prompt}
+    </Task>
+  );
+}
+```
+
+```tsx
+// components/Report.tsx
+import { Task } from "smithers";
+import { reportTable } from "./Report.schema";
+
+export function Report({ summary }: { summary: string }) {
+  return (
+    <Task id="report" output={reportTable}>
+      {{ summary }}
+    </Task>
+  );
+}
+```
+
+**6) Workflow**
+
+```tsx
+// workflow.tsx
+import { smithers, Workflow, Sequence } from "smithers";
+import { db } from "./db";
+import { Discover } from "./components/Discover";
+import { Implement } from "./components/Implement";
+import { Report } from "./components/Report";
+import { discoverTable, ticketSchema } from "./components/Discover.schema";
+import { coerceJsonArray } from "./lib/coerce";
+import { typedOutput } from "./lib/ctx";
+
+export default smithers(db, (ctx) => {
+  const discover = typedOutput<{ tickets: unknown }>(ctx, discoverTable, { nodeId: "discover" });
+  const tickets = coerceJsonArray(discover?.tickets, ticketSchema);
+  const needsDiscovery = tickets.length === 0;
+
+  return (
+    <Workflow name="tutorial-workflow">
+      <Sequence>
+        {needsDiscovery ? <Discover /> : null}
+        {tickets.map((ticket) => (
+          <Implement key={ticket.id} ticket={ticket} />
+        ))}
+        <Report summary={`Implemented ${tickets.length} ticket(s).`} />
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+**7) Run the workflow**
+
+```bash
+bun install
+bun run smithers run workflow.tsx --input '{}'
+```
+
+Notes:
+
+- `skipIf` is evaluated at render time. Use conditional rendering or sequencing instead of `skipIf` for tasks that should run after prerequisites.
+- Smithers validates outputs against your Drizzle table schema. Zod schemas are still useful for prompt templates and JSON examples.

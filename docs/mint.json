@@ -1,0 +1,68 @@
+{
+  "name": "Smithers",
+  "theme": "mint",
+  "colors": {
+    "primary": "#1F6FEB"
+  },
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "introduction",
+        "installation",
+        "quickstart"
+      ]
+    },
+    {
+      "group": "Core Concepts",
+      "pages": [
+        "concepts/execution-model",
+        "concepts/data-model",
+        "concepts/context",
+        "concepts/approvals",
+        "concepts/caching"
+      ]
+    },
+    {
+      "group": "Components",
+      "pages": [
+        "components/workflow",
+        "components/task",
+        "components/sequence",
+        "components/parallel",
+        "components/branch",
+        "components/ralph"
+      ]
+    },
+    {
+      "group": "Runtime",
+      "pages": [
+        "runtime/run-workflow",
+        "runtime/render-frame",
+        "runtime/events",
+        "runtime/revert"
+      ]
+    },
+    {
+      "group": "CLI",
+      "pages": [
+        "cli/overview"
+      ]
+    },
+    {
+      "group": "Integrations",
+      "pages": [
+        "integrations/tools",
+        "integrations/cli-agents",
+        "integrations/server",
+        "integrations/pi-plugin"
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "reference/types"
+      ]
+    }
+  ]
+}

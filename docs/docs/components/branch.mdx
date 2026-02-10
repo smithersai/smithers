@@ -1,0 +1,86 @@
+---
+title: <Branch>
+description: Conditional branching in the workflow.
+---
+
+```tsx
+// workflow.tsx
+import { smithers, Workflow, Task, Branch } from "smithers";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+
+const inputTable = sqliteTable("input", {
+  runId: text("run_id").primaryKey(),
+});
+
+const testTable = sqliteTable(
+  "test",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    passed: integer("passed", { mode: "boolean" }).notNull(),
+    error: text("error"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const deployTable = sqliteTable(
+  "deploy",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    url: text("url").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const fixTable = sqliteTable(
+  "fix",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    note: text("note").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const schema = { input: inputTable, output: deployTable, test: testTable, deploy: deployTable, fix: fixTable };
+const db = drizzle("./workflow.db", { schema });
+
+export default smithers(db, (ctx) => (
+  <Workflow name="branch">
+    <Task id="test" output={schema.test}>
+      {{ passed: true, error: null }}
+    </Task>
+
+    <Branch
+      if={ctx.output(schema.test, { nodeId: "test" }).passed}
+      then={
+        <Task id="deploy" output={schema.deploy}>
+          {{ url: "https://prod.app" }}
+        </Task>
+      }
+      else={
+        <Task id="fix" output={schema.fix}>
+          {{ note: "Fix the failing tests" }}
+        </Task>
+      }
+    />
+  </Workflow>
+));
+```
+
+**Props**
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `if` | `boolean` | Condition to evaluate |
+| `then` | `ReactElement` | Execute if true |
+| `else` | `ReactElement` | Execute if false (optional) |
+| `skipIf` | `boolean` | Skip entire branch if true |

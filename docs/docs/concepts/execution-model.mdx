@@ -1,0 +1,34 @@
+---
+title: Execution Model
+description: How Smithers renders and executes workflows.
+---
+
+Smithers is built on React, but execution is deterministic and side-effect-free during render.
+
+**Render vs. Execute**
+
+- Render is pure: Smithers renders your JSX tree into a task graph.
+- Execute is separate: Smithers selects runnable nodes and executes them in the engine phase.
+- Outputs are written to SQLite and the tree re-renders until no runnable nodes remain.
+
+**Deterministic Ordering**
+
+- Tasks are scheduled in deterministic depth-first, left-to-right order of the React tree.
+- A task runs only when its output row for `(runId, nodeId[, iteration])` is missing or invalid.
+- Completed tasks are not re-run unless invalidated or explicitly forced.
+
+**Node States**
+
+| State | Description |
+| --- | --- |
+| `pending` | Known, not yet started |
+| `waiting-approval` | Awaiting human approval |
+| `in-progress` | Currently executing |
+| `finished` | Completed successfully |
+| `failed` | Completed with error (after retries) |
+| `cancelled` | Unmounted or cancelled while in progress |
+| `skipped` | Skipped by `skipIf` or branch not taken |
+
+**Retries**
+
+Retries create multiple attempts for the same node. A retry never overwrites previous attempts; the latest attempt determines the node state.

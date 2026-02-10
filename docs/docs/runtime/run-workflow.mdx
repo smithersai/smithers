@@ -1,0 +1,42 @@
+---
+title: runWorkflow
+description: Execute a workflow programmatically.
+---
+
+Use `smithers(...)` to build a workflow and `runWorkflow(...)` to execute it.
+
+```ts
+import { smithers, runWorkflow } from "smithers";
+import workflow from "./workflow";
+
+const result = await runWorkflow(workflow, {
+  input: { description: "Fix bugs" },
+  onProgress: (event) => console.log(event.type),
+});
+
+console.log(result.status);
+```
+
+**RunOptions**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `input` | `object` | Input row (without `runId`) |
+| `runId` | `string` | Provide a run id (optional) |
+| `resume` | `boolean` | Resume an existing run |
+| `maxConcurrency` | `number` | Max parallel tasks |
+| `onProgress` | `(e: SmithersEvent) => void` | Event callback |
+| `signal` | `AbortSignal` | Cancel a run |
+| `workflowPath` | `string` | Absolute or relative workflow path |
+| `rootDir` | `string` | Tool sandbox root (default: workflow dir) |
+| `logDir` | `string | null` | Event log directory (null disables logs) |
+| `allowNetwork` | `boolean` | Allow network for the `bash` tool |
+| `maxOutputBytes` | `number` | Tool output cap |
+| `toolTimeoutMs` | `number` | Tool timeout in ms |
+
+**RunResult**
+
+- `runId`: run id
+- `status`: `finished | failed | cancelled | waiting-approval`
+- `output`: rows from `schema.output` (if present)
+- `error`: error info if failed

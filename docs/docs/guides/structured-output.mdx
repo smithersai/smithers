@@ -1,0 +1,62 @@
+---
+title: Structured Output
+description: Get typed, validated outputs using your Drizzle schema.
+---
+
+Smithers validates task outputs against the Drizzle table schema. For agent tasks, instruct the model to return JSON that matches the table shape. Smithers will retry with schema guidance if validation fails.
+
+## Example
+
+```tsx
+// workflow.tsx
+import { smithers, Workflow, Task } from "smithers";
+import { agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+
+const inputTable = sqliteTable("input", {
+  runId: text("run_id").primaryKey(),
+  target: text("target").notNull(),
+});
+
+const analysisTable = sqliteTable(
+  "analysis",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    summary: text("summary").notNull(),
+    issues: text("issues", { mode: "json" }).$type<string[]>(),
+    risk: integer("risk").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const schema = { input: inputTable, output: analysisTable, analysis: analysisTable };
+const db = drizzle("./workflow.db", { schema });
+
+const analyst = agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  system: "Return JSON that matches the schema exactly.",
+});
+
+export default smithers(db, (ctx) => (
+  <Workflow name="structured-output">
+    <Task id="analyze" output={schema.analysis} agent={analyst}>
+      {`Analyze ${ctx.input.target}.
+Return JSON with:
+- summary (string)
+- issues (string[])
+- risk (number)`}
+    </Task>
+  </Workflow>
+));
+```
+
+## Tips
+
+- Keep the prompt explicit about required fields and types.
+- Use JSON arrays for list fields defined with `{ mode: "json" }`.
+- Smithers automatically fills `runId`, `nodeId`, and `iteration`.

@@ -1,0 +1,62 @@
+---
+title: <Sequence>
+description: Execute children one after another.
+---
+
+```tsx
+// workflow.tsx
+import { smithers, Workflow, Task, Sequence } from "smithers";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+
+const inputTable = sqliteTable("input", {
+  runId: text("run_id").primaryKey(),
+});
+
+const step1Table = sqliteTable(
+  "step1",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    done: integer("done", { mode: "boolean" }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const step2Table = sqliteTable(
+  "step2",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    done: integer("done", { mode: "boolean" }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const schema = { input: inputTable, output: step2Table, step1: step1Table, step2: step2Table };
+const db = drizzle("./workflow.db", { schema });
+
+export default smithers(db, () => (
+  <Workflow name="sequence">
+    <Sequence>
+      <Task id="step1" output={schema.step1}>
+        {{ done: true }}
+      </Task>
+      <Task id="step2" output={schema.step2}>
+        {{ done: true }}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+**Props**
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `skipIf` | `boolean` | Skip all children if true |
+| `children` | `ReactNode` | Child nodes |

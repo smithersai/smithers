@@ -1,0 +1,45 @@
+---
+title: Data Model
+description: Inputs, outputs, and table requirements.
+---
+
+Smithers stores all state in SQLite tables defined with Drizzle.
+
+**Reserved Tables**
+
+- `schema.input` is the workflow input table. Smithers inserts a row per run.
+- `schema.output` is the workflow output table. Smithers returns rows from this table when a run finishes.
+
+**Required Columns**
+
+All output tables must include:
+
+- `runId` (string)
+- `nodeId` (string)
+- `iteration` (integer, optional; required for looping tasks)
+
+Primary key conventions:
+
+- `(runId, nodeId)` for non-loop tasks
+- `(runId, nodeId, iteration)` for `<Ralph>` tasks
+
+Example:
+
+```ts
+const reportTable = sqliteTable(
+  "report",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    iteration: integer("iteration").notNull().default(0),
+    summary: text("summary").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId, t.iteration] }),
+  }),
+);
+```
+
+**Validation**
+
+Smithers validates task outputs against the table schema. For agent tasks, the model must return JSON that matches the output schema.
