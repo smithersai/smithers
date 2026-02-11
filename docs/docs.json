@@ -5,91 +5,93 @@
   "colors": {
     "primary": "#1F6FEB"
   },
-  "navigation": [
-    {
-      "group": "Getting Started",
-      "pages": [
-        "introduction",
-        "installation",
-        "quickstart"
-      ]
-    },
-    {
-      "group": "Core Concepts",
-      "pages": [
-        "concepts/execution-model",
-        "concepts/data-model",
-        "concepts/context",
-        "concepts/approvals",
-        "concepts/caching",
-        "concepts/renderer-internals"
-      ]
-    },
-    {
-      "group": "Components",
-      "pages": [
-        "components/workflow",
-        "components/task",
-        "components/sequence",
-        "components/parallel",
-        "components/branch",
-        "components/ralph"
-      ]
-    },
-    {
-      "group": "Guides",
-      "pages": [
-        "guides/tutorial-workflow",
-        "guides/structured-output",
-        "guides/error-handling",
-        "guides/patterns",
-        "guides/resumability",
-        "guides/debugging",
-        "guides/monitoring-logs",
-        "guides/best-practices",
-        "guides/vcs"
-      ]
-    },
-    {
-      "group": "Runtime",
-      "pages": [
-        "runtime/run-workflow",
-        "runtime/render-frame",
-        "runtime/events",
-        "runtime/revert"
-      ]
-    },
-    {
-      "group": "CLI",
-      "pages": [
-        "cli/overview"
-      ]
-    },
-    {
-      "group": "Integrations",
-      "pages": [
-        "integrations/tools",
-        "integrations/cli-agents",
-        "integrations/server",
-        "integrations/pi-plugin"
-      ]
-    },
-    {
-      "group": "Examples",
-      "pages": [
-        "examples/hello-world",
-        "examples/dynamic-plan",
-        "examples/ralph-loop",
-        "examples/multi-agent-review",
-        "examples/approval-gate",
-        "examples/tools-agent"
-      ]
-    },
-    {
-      "group": "Reference",
-      "pages": [
-        "reference/types"
-      ]
-    }
-  ]
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting Started",
+        "pages": [
+          "introduction",
+          "installation",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Core Concepts",
+        "pages": [
+          "concepts/execution-model",
+          "concepts/data-model",
+          "concepts/context",
+          "concepts/approvals",
+          "concepts/caching",
+          "concepts/renderer-internals"
+        ]
+      },
+      {
+        "group": "Components",
+        "pages": [
+          "components/workflow",
+          "components/task",
+          "components/sequence",
+          "components/parallel",
+          "components/branch",
+          "components/ralph"
+        ]
+      },
+      {
+        "group": "Guides",
+        "pages": [
+          "guides/tutorial-workflow",
+          "guides/structured-output",
+          "guides/error-handling",
+          "guides/patterns",
+          "guides/resumability",
+          "guides/debugging",
+          "guides/monitoring-logs",
+          "guides/best-practices",
+          "guides/vcs"
+        ]
+      },
+      {
+        "group": "Runtime",
+        "pages": [
+          "runtime/run-workflow",
+          "runtime/render-frame",
+          "runtime/events",
+          "runtime/revert"
+        ]
+      },
+      {
+        "group": "CLI",
+        "pages": [
+          "cli/overview"
+        ]
+      },
+      {
+        "group": "Integrations",
+        "pages": [
+          "integrations/tools",
+          "integrations/cli-agents",
+          "integrations/server",
+          "integrations/pi-plugin"
+        ]
+      },
+      {
+        "group": "Examples",
+        "pages": [
+          "examples/hello-world",
+          "examples/dynamic-plan",
+          "examples/ralph-loop",
+          "examples/multi-agent-review",
+          "examples/approval-gate",
+          "examples/tools-agent"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/types"
+        ]
+      }
+    ]
+  }
 }
