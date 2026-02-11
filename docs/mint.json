@@ -21,7 +21,8 @@
         "concepts/data-model",
         "concepts/context",
         "concepts/approvals",
-        "concepts/caching"
+        "concepts/caching",
+        "concepts/renderer-internals"
       ]
     },
     {
@@ -33,6 +34,20 @@
         "components/parallel",
         "components/branch",
         "components/ralph"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "guides/tutorial-workflow",
+        "guides/structured-output",
+        "guides/error-handling",
+        "guides/patterns",
+        "guides/resumability",
+        "guides/debugging",
+        "guides/monitoring-logs",
+        "guides/best-practices",
+        "guides/vcs"
       ]
     },
     {
@@ -57,6 +72,17 @@
         "integrations/cli-agents",
         "integrations/server",
         "integrations/pi-plugin"
+      ]
+    },
+    {
+      "group": "Examples",
+      "pages": [
+        "examples/hello-world",
+        "examples/dynamic-plan",
+        "examples/ralph-loop",
+        "examples/multi-agent-review",
+        "examples/approval-gate",
+        "examples/tools-agent"
       ]
     },
     {
