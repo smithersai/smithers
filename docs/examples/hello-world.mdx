@@ -1,0 +1,65 @@
+---
+title: Hello World
+description: A minimal workflow with a single agent task that generates a greeting.
+---
+
+# Hello World
+
+The simplest possible Smithers workflow: a single task that uses an agent to generate a personalized greeting.
+
+## Workflow Definition
+
+```tsx
+// hello-world.tsx
+import { createSmithers, Task, Sequence } from "smithers-orchestrator";
+import { agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+// 1. Define your schema
+const { Workflow, smithers } = createSmithers({
+  greeting: z.object({
+    message: z.string(),
+  }),
+});
+
+// 2. Create an agent
+const greeter = agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  system: "You are a friendly greeter. Respond with a short, warm greeting.",
+});
+
+// 3. Build the workflow
+export default smithers((ctx) => (
+  <Workflow name="hello-world">
+    <Sequence>
+      <Task id="greet" output="greeting" agent={greeter}>
+        Generate a warm greeting for someone named Alice.
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+## Running the Workflow
+
+```bash
+smithers run hello-world.tsx --input '{}'
+```
+
+Output:
+
+```
+[hello-world] Starting run abc123
+[greet] Running...
+[greet] Done -> { message: "Hello Alice! Welcome — it's wonderful to have you here!" }
+[hello-world] Completed
+```
+
+## What's Happening
+
+1. **`createSmithers`** registers a `greeting` table with a `message` field. Smithers automatically creates the backing storage.
+2. **`Task`** sends the prompt to the agent and persists the structured output into the `greeting` table.
+3. **`Sequence`** ensures tasks run in order (here there is only one, but it is good practice to wrap tasks in a Sequence for clarity).
+
+Because every task output is persisted to the database, the workflow is fully resumable. If it crashes after the `greet` task completes, re-running it will skip straight to the end.

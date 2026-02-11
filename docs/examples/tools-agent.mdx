@@ -1,0 +1,128 @@
+---
+title: Tools Agent
+description: An agent that uses built-in tools (read, grep, bash) to search a codebase and return structured results.
+---
+
+# Tools Agent
+
+Smithers agents can be given **tools** that let them interact with the filesystem and shell. This is useful for tasks like codebase analysis, log searching, or automated refactoring. The built-in tools from `smithers-orchestrator/tools` provide `read`, `grep`, and `bash` capabilities.
+
+## Workflow Definition
+
+```tsx
+// tools-agent.tsx
+import { createSmithers, Task, Sequence } from "smithers-orchestrator";
+import { agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { tools } from "smithers-orchestrator/tools";
+import { z } from "zod";
+
+const { Workflow, smithers } = createSmithers({
+  searchResult: z.object({
+    matches: z.array(
+      z.object({
+        file: z.string(),
+        line: z.number(),
+        content: z.string(),
+      })
+    ),
+    summary: z.string(),
+    recommendation: z.string(),
+  }),
+});
+
+const codeSearchAgent = agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  system: `You are a codebase analysis agent. Use the provided tools to search
+through source code and answer questions. Always back up your findings with
+specific file paths and line numbers.`,
+  tools,
+});
+
+export default smithers((ctx) => (
+  <Workflow name="tools-agent">
+    <Sequence>
+      <Task
+        id="search"
+        output="searchResult"
+        agent={codeSearchAgent}
+        timeoutMs={60_000}
+        retries={2}
+      >
+        Search the current repository for all usages of deprecated API calls
+        matching the pattern "legacyAuth". For each match, record the file path,
+        line number, and the matching line content. Then provide a summary of how
+        widespread the usage is and a recommendation for migration.
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+## Running the Workflow
+
+```bash
+smithers run tools-agent.tsx --input '{}'
+```
+
+Example output showing the agent using tools internally:
+
+```
+[tools-agent] Starting run pqr678
+[search] Running...
+  [tool:grep] pattern="legacyAuth" path="." -> 4 matches
+  [tool:read] file="src/auth/login.ts" lines=42-50
+  [tool:read] file="src/middleware/session.ts" lines=18-25
+[search] Done -> {
+  matches: [
+    { file: "src/auth/login.ts", line: 45, content: "const session = legacyAuth.createSession(user);" },
+    { file: "src/auth/login.ts", line: 48, content: "legacyAuth.setToken(session.token);" },
+    { file: "src/middleware/session.ts", line: 20, content: "if (legacyAuth.verify(token)) {" },
+    { file: "src/middleware/session.ts", line: 23, content: "legacyAuth.refresh(token);" }
+  ],
+  summary: "4 usages across 2 files (auth/login.ts and middleware/session.ts).",
+  recommendation: "Replace legacyAuth with the new AuthService class. Start with session.ts since it has fewer call sites."
+}
+[tools-agent] Completed
+```
+
+## Available Built-in Tools
+
+Import all tools at once or pick individual ones:
+
+```tsx
+// Import all tools
+import { tools } from "smithers-orchestrator/tools";
+
+// Or import individually
+import { read, grep, bash } from "smithers-orchestrator/tools";
+```
+
+| Tool | Description |
+|------|-------------|
+| `read` | Read file contents by path. Supports line ranges for large files. |
+| `grep` | Search file contents with regex patterns. Returns matching files, lines, and context. |
+| `bash` | Execute shell commands. Useful for running build tools, git, or custom scripts. |
+
+## Task Props for Robustness
+
+This example uses two additional props that are helpful when agents use tools:
+
+| Prop | Value | Description |
+|------|-------|-------------|
+| `timeoutMs` | `60_000` | Kill the task if it takes longer than 60 seconds. Tool-using agents can sometimes loop, so a timeout is a good safety net. |
+| `retries` | `2` | Retry the task up to 2 times on failure. If `grep` finds no results on the first pass (e.g., due to a typo in the pattern), the agent gets another chance. |
+
+Other useful props for tool-agent tasks:
+
+```tsx
+<Task
+  id="search"
+  output="searchResult"
+  agent={codeSearchAgent}
+  timeoutMs={60_000}
+  retries={2}
+  continueOnFail  // workflow continues even if this task exhausts retries
+  meta={{ pattern: "legacyAuth" }}  // arbitrary metadata stored with the task
+>
+```

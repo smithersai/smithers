@@ -1,0 +1,117 @@
+---
+title: Dynamic Plan
+description: A workflow that analyzes input and branches between a simple or complex execution path based on the analysis result.
+---
+
+# Dynamic Plan
+
+This example shows how to use **Branch** to choose between two execution paths at runtime. An analyzer agent classifies the task complexity, and the workflow routes to either a quick fix or a multi-step plan accordingly.
+
+## Workflow Definition
+
+```tsx
+// dynamic-plan.tsx
+import { createSmithers, Task, Sequence, Branch } from "smithers-orchestrator";
+import { agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, smithers } = createSmithers({
+  analysis: z.object({
+    summary: z.string(),
+    complexity: z.enum(["low", "high"]),
+  }),
+  plan: z.object({
+    steps: z.array(z.string()),
+  }),
+  result: z.object({
+    output: z.string(),
+  }),
+});
+
+const analyzer = agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  system:
+    "Analyze the given task. Determine if it is low or high complexity. Return a short summary and a complexity rating.",
+});
+
+const planner = agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  system: "Break the task into concrete, ordered steps.",
+});
+
+const implementer = agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  system: "Implement the requested task and return the result.",
+});
+
+export default smithers((ctx) => {
+  const analysis = ctx.outputMaybe("analysis", { nodeId: "analyze" });
+  const isComplex = analysis?.complexity === "high";
+
+  return (
+    <Workflow name="dynamic-plan">
+      <Sequence>
+        {/* Step 1: Analyze the task */}
+        <Task id="analyze" output="analysis" agent={analyzer}>
+          Analyze this task and classify its complexity: "Refactor the authentication
+          module to support OAuth2 and SAML providers."
+        </Task>
+
+        {/* Step 2: Branch based on complexity */}
+        <Branch
+          if={isComplex}
+          then={
+            <Sequence>
+              <Task id="plan" output="plan" agent={planner}>
+                Create a step-by-step plan for: {analysis?.summary}
+              </Task>
+              <Task id="implement" output="result" agent={implementer}>
+                Execute these steps:{" "}
+                {ctx
+                  .outputMaybe("plan", { nodeId: "plan" })
+                  ?.steps.join(", ")}
+              </Task>
+            </Sequence>
+          }
+          else={
+            <Task id="implement" output="result" agent={implementer}>
+              Quick implementation for: {analysis?.summary}
+            </Task>
+          }
+        />
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## Running the Workflow
+
+```bash
+smithers run dynamic-plan.tsx --input '{}'
+```
+
+If the analyzer returns `complexity: "high"`, the workflow takes the planning path:
+
+```
+[dynamic-plan] Starting run def456
+[analyze] Done -> { summary: "Refactor auth to support OAuth2 + SAML", complexity: "high" }
+[plan] Done -> { steps: ["Abstract provider interface", "Implement OAuth2", "Implement SAML", "Add tests"] }
+[implement] Done -> { output: "Refactored auth module with provider abstraction..." }
+[dynamic-plan] Completed
+```
+
+If it returns `complexity: "low"`, the planner is skipped entirely:
+
+```
+[analyze] Done -> { summary: "Minor auth tweak", complexity: "low" }
+[implement] Done -> { output: "Applied quick fix..." }
+```
+
+## How Branch Works
+
+- The `if` prop is evaluated each time the workflow re-renders.
+- Only the matching branch (`then` or `else`) is mounted and executed.
+- Since `analysis` is `undefined` before the `analyze` task completes, the Branch is not reached until the Sequence reaches it, which only happens after `analyze` finishes.
+- The workflow is fully resumable: if it crashes during the `implement` task, re-running picks up from where it left off because `analyze` and `plan` outputs are already persisted.

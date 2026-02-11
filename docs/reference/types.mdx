@@ -1,0 +1,677 @@
+---
+title: Type Reference
+description: Complete reference for all exported Smithers types, including workflow definitions, run configuration, task descriptors, events, and component props.
+---
+
+This page documents every public type exported by the `smithers-orchestrator` package.
+
+## Workflow Types
+
+### SmithersWorkflow\<Schema\>
+
+The top-level workflow definition object, returned by `createSmithers` and consumed by `runWorkflow` and the server.
+
+```ts
+type SmithersWorkflow<Schema> = {
+  db: unknown;
+  build: (ctx: SmithersCtx<Schema>) => React.ReactElement;
+  opts: SmithersWorkflowOptions;
+  schemaRegistry?: Map<string, SchemaRegistryEntry>;
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `db` | `unknown` | The Drizzle ORM database instance (typically `BunSQLiteDatabase`) |
+| `build` | `(ctx: SmithersCtx<Schema>) => ReactElement` | Function that renders the workflow JSX tree given a context |
+| `opts` | `SmithersWorkflowOptions` | Workflow-level options |
+| `schemaRegistry` | `Map<string, SchemaRegistryEntry>` | Optional map of output table names to their schema entries |
+
+---
+
+### SmithersWorkflowOptions
+
+Options set at the workflow definition level.
+
+```ts
+type SmithersWorkflowOptions = {
+  cache?: boolean;
+};
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `cache` | `boolean` | `undefined` | When true, enables caching of task outputs across runs with the same inputs |
+
+---
+
+### SchemaRegistryEntry
+
+An entry in the workflow's schema registry, mapping a table name to its Drizzle table and Zod validation schema.
+
+```ts
+type SchemaRegistryEntry = {
+  table: any;
+  zodSchema: import("zod").ZodObject<any>;
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `table` | `any` | The Drizzle ORM table definition |
+| `zodSchema` | `ZodObject<any>` | The Zod schema used for output validation |
+
+---
+
+## Context Types
+
+### SmithersCtx\<Schema\>
+
+The context object passed to the workflow `build` function. Provides access to run state, input data, and output accessors.
+
+```ts
+interface SmithersCtx<Schema> {
+  runId: string;
+  iteration: number;
+  iterations?: Record<string, number>;
+  input: Schema extends { input: infer T } ? T : never;
+  outputs: OutputAccessor<Schema>;
+
+  output<T extends keyof Schema>(
+    table: Schema[T],
+    key: OutputKey,
+  ): InferRow<Schema[T]>;
+
+  outputMaybe<T extends keyof Schema>(
+    table: Schema[T],
+    key: OutputKey,
+  ): InferRow<Schema[T]> | undefined;
+
+  latest(table: any, nodeId: string): any;
+
+  latestArray(value: unknown, schema: import("zod").ZodType): any[];
+
+  iterationCount(table: any, nodeId: string): number;
+}
+```
+
+| Field / Method | Type | Description |
+|---|---|---|
+| `runId` | `string` | The current workflow run ID |
+| `iteration` | `number` | The current Ralph loop iteration (0 for non-looped tasks) |
+| `iterations` | `Record<string, number>` | Map of Ralph IDs to their current iteration count |
+| `input` | Inferred from Schema | The typed input data passed to `runWorkflow` |
+| `outputs` | `OutputAccessor<Schema>` | Callable accessor for all output rows from a table |
+| `output(table, key)` | `InferRow<T>` | Get a specific output row by table and key. **Throws** if the output does not exist. |
+| `outputMaybe(table, key)` | `InferRow<T> \| undefined` | Get a specific output row, returning `undefined` if not found |
+| `latest(table, nodeId)` | `any` | Get the latest output row for a `nodeId` (highest iteration) |
+| `latestArray(value, schema)` | `any[]` | Parse/validate an array field using a Zod schema, dropping invalid items |
+| `iterationCount(table, nodeId)` | `number` | Count distinct iterations for a `nodeId` in a table |
+
+---
+
+### OutputKey
+
+Identifies a specific task output by node ID and optional iteration.
+
+```ts
+type OutputKey = {
+  nodeId: string;
+  iteration?: number;
+};
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `nodeId` | `string` | -- | The task node ID |
+| `iteration` | `number` | `0` | The Ralph loop iteration |
+
+---
+
+### OutputAccessor\<Schema\>
+
+A callable object that retrieves output rows. Can be called as a function or accessed as a property.
+
+```ts
+type OutputAccessor<Schema> = ((table: any) => any[]) & Record<string, any[]>;
+```
+
+---
+
+### InferRow\<TTable\>
+
+Utility type that extracts the select row type from a Drizzle table.
+
+```ts
+type InferRow<TTable> = TTable extends { $inferSelect: infer R } ? R : never;
+```
+
+---
+
+## Run Types
+
+### RunOptions
+
+Options passed to `runWorkflow` to configure execution.
+
+```ts
+type RunOptions = {
+  runId?: string;
+  input: Record<string, unknown>;
+  maxConcurrency?: number;
+  onProgress?: (e: SmithersEvent) => void;
+  signal?: AbortSignal;
+  resume?: boolean;
+  workflowPath?: string;
+  rootDir?: string;
+  logDir?: string | null;
+  allowNetwork?: boolean;
+  maxOutputBytes?: number;
+  toolTimeoutMs?: number;
+};
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `runId` | `string` | Auto-generated | Custom run identifier |
+| `input` | `Record<string, unknown>` | -- | Input data for the workflow (required) |
+| `maxConcurrency` | `number` | `undefined` | Maximum number of tasks to execute in parallel |
+| `onProgress` | `(e: SmithersEvent) => void` | `undefined` | Callback invoked for every lifecycle event |
+| `signal` | `AbortSignal` | `undefined` | Signal to cancel the run |
+| `resume` | `boolean` | `false` | Resume from the last checkpoint instead of starting fresh |
+| `workflowPath` | `string` | `undefined` | Path to the workflow file (used for tool context) |
+| `rootDir` | `string` | `undefined` | Sandbox root directory for tools |
+| `logDir` | `string \| null` | `undefined` | Directory for event log files (`stream.ndjson`) |
+| `allowNetwork` | `boolean` | `false` | Allow network access in the `bash` tool |
+| `maxOutputBytes` | `number` | `200000` | Maximum output bytes for tool calls |
+| `toolTimeoutMs` | `number` | `60000` | Timeout for tool executions in milliseconds |
+
+---
+
+### RunResult
+
+The result returned when a workflow run completes.
+
+```ts
+type RunResult = {
+  runId: string;
+  status: "finished" | "failed" | "cancelled" | "waiting-approval";
+  output?: unknown;
+  error?: unknown;
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `runId` | `string` | The run identifier |
+| `status` | `string` | Terminal status of the run |
+| `output` | `unknown` | Final output data (if finished successfully) |
+| `error` | `unknown` | Error details (if failed) |
+
+---
+
+### RunStatus
+
+The possible states of a workflow run.
+
+```ts
+type RunStatus =
+  | "running"
+  | "waiting-approval"
+  | "finished"
+  | "failed"
+  | "cancelled";
+```
+
+| Value | Description |
+|---|---|
+| `"running"` | The workflow is actively executing tasks |
+| `"waiting-approval"` | A task with `needsApproval` is waiting for human approval or denial |
+| `"finished"` | All tasks completed successfully |
+| `"failed"` | A task failed and was not recoverable |
+| `"cancelled"` | The run was cancelled via `AbortSignal` or the cancel API |
+
+---
+
+## Task Types
+
+### TaskDescriptor
+
+The internal representation of a task extracted from the JSX tree. This is what the engine schedules and executes.
+
+```ts
+type TaskDescriptor = {
+  nodeId: string;
+  ordinal: number;
+  iteration: number;
+  ralphId?: string;
+
+  outputTable: Table | null;
+  outputTableName: string;
+  outputSchema?: import("zod").ZodObject<any>;
+
+  parallelGroupId?: string;
+  parallelMaxConcurrency?: number;
+
+  needsApproval: boolean;
+  skipIf: boolean;
+  retries: number;
+  timeoutMs: number | null;
+  continueOnFail: boolean;
+
+  agent?: AgentLike;
+  prompt?: string;
+  staticPayload?: unknown;
+
+  label?: string;
+  meta?: Record<string, unknown>;
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `nodeId` | `string` | Unique identifier for this task (from the `id` prop) |
+| `ordinal` | `number` | Position in the execution order (depth-first traversal) |
+| `iteration` | `number` | Current Ralph loop iteration |
+| `ralphId` | `string` | ID of the parent Ralph loop (if any) |
+| `outputTable` | `Table \| null` | Drizzle table for persisting the output |
+| `outputTableName` | `string` | Name of the output table |
+| `outputSchema` | `ZodObject<any>` | Optional Zod schema for validating agent output |
+| `parallelGroupId` | `string` | ID of the parent `<Parallel>` group (if any) |
+| `parallelMaxConcurrency` | `number` | Max concurrency limit from the parent `<Parallel>` |
+| `needsApproval` | `boolean` | Whether the task requires human approval before execution |
+| `skipIf` | `boolean` | Whether this task should be skipped |
+| `retries` | `number` | Number of retry attempts on failure |
+| `timeoutMs` | `number \| null` | Task-level timeout in milliseconds |
+| `continueOnFail` | `boolean` | Whether to continue the workflow if this task fails |
+| `agent` | `AgentLike` | The AI agent assigned to execute this task |
+| `prompt` | `string` | The prompt text for the agent (from task children) |
+| `staticPayload` | `unknown` | Pre-computed payload (for non-agent tasks) |
+| `label` | `string` | Human-readable label for display |
+| `meta` | `Record<string, unknown>` | Arbitrary metadata attached to the task |
+
+---
+
+### AgentLike
+
+Type alias for any object that implements the AI SDK `Agent` interface.
+
+```ts
+type AgentLike = Agent<any, any, any>;
+```
+
+---
+
+## Graph Types
+
+### GraphSnapshot
+
+A snapshot of the workflow graph at a specific render frame.
+
+```ts
+type GraphSnapshot = {
+  runId: string;
+  frameNo: number;
+  xml: XmlNode | null;
+  tasks: TaskDescriptor[];
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `runId` | `string` | The run identifier |
+| `frameNo` | `number` | The render frame number (monotonically increasing) |
+| `xml` | `XmlNode \| null` | The rendered XML tree representation |
+| `tasks` | `TaskDescriptor[]` | Ordered list of tasks extracted from the tree |
+
+---
+
+### XmlNode
+
+A node in the internal XML tree representation. Either an element or text node.
+
+```ts
+type XmlNode = XmlElement | XmlText;
+```
+
+---
+
+### XmlElement
+
+An element node in the XML tree.
+
+```ts
+type XmlElement = {
+  kind: "element";
+  tag: string;
+  props: Record<string, string>;
+  children: XmlNode[];
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `kind` | `"element"` | Discriminant tag |
+| `tag` | `string` | Element tag name (e.g., `"Workflow"`, `"Task"`, `"Parallel"`) |
+| `props` | `Record<string, string>` | Element attributes |
+| `children` | `XmlNode[]` | Child nodes |
+
+---
+
+### XmlText
+
+A text node in the XML tree.
+
+```ts
+type XmlText = {
+  kind: "text";
+  text: string;
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `kind` | `"text"` | Discriminant tag |
+| `text` | `string` | Text content |
+
+---
+
+## Event Types
+
+### SmithersEvent
+
+A discriminated union of all lifecycle events emitted during workflow execution. Every event includes `runId` and `timestampMs` fields.
+
+```ts
+type SmithersEvent =
+  | RunStarted
+  | RunStatusChanged
+  | RunFinished
+  | RunFailed
+  | RunCancelled
+  | FrameCommitted
+  | NodePending
+  | NodeStarted
+  | NodeFinished
+  | NodeFailed
+  | NodeCancelled
+  | NodeSkipped
+  | NodeRetrying
+  | NodeWaitingApproval
+  | ApprovalRequested
+  | ApprovalGranted
+  | ApprovalDenied
+  | ToolCallStarted
+  | ToolCallFinished
+  | NodeOutput
+  | RevertStarted
+  | RevertFinished;
+```
+
+#### Run Events
+
+| Event Type | Fields | Description |
+|---|---|---|
+| `RunStarted` | `runId`, `timestampMs` | Workflow execution has begun |
+| `RunStatusChanged` | `runId`, `status: RunStatus`, `timestampMs` | Run status transition |
+| `RunFinished` | `runId`, `timestampMs` | All tasks completed successfully |
+| `RunFailed` | `runId`, `error: unknown`, `timestampMs` | Workflow failed with an error |
+| `RunCancelled` | `runId`, `timestampMs` | Workflow was cancelled |
+
+#### Frame Events
+
+| Event Type | Fields | Description |
+|---|---|---|
+| `FrameCommitted` | `runId`, `frameNo: number`, `xmlHash: string`, `timestampMs` | A render frame was persisted to the database |
+
+#### Node Events
+
+| Event Type | Fields | Description |
+|---|---|---|
+| `NodePending` | `runId`, `nodeId`, `iteration`, `timestampMs` | Task is queued for execution |
+| `NodeStarted` | `runId`, `nodeId`, `iteration`, `attempt`, `timestampMs` | Task execution began |
+| `NodeFinished` | `runId`, `nodeId`, `iteration`, `attempt`, `timestampMs` | Task completed successfully |
+| `NodeFailed` | `runId`, `nodeId`, `iteration`, `attempt`, `error: unknown`, `timestampMs` | Task failed with an error |
+| `NodeCancelled` | `runId`, `nodeId`, `iteration`, `attempt?`, `reason?`, `timestampMs` | Task was cancelled |
+| `NodeSkipped` | `runId`, `nodeId`, `iteration`, `timestampMs` | Task was skipped (due to `skipIf`) |
+| `NodeRetrying` | `runId`, `nodeId`, `iteration`, `attempt`, `timestampMs` | Task is being retried after a failure |
+
+#### Approval Events
+
+| Event Type | Fields | Description |
+|---|---|---|
+| `NodeWaitingApproval` | `runId`, `nodeId`, `iteration`, `timestampMs` | Task is waiting for human approval |
+| `ApprovalRequested` | `runId`, `nodeId`, `iteration`, `timestampMs` | Approval was formally requested |
+| `ApprovalGranted` | `runId`, `nodeId`, `iteration`, `timestampMs` | Human approved the task |
+| `ApprovalDenied` | `runId`, `nodeId`, `iteration`, `timestampMs` | Human denied the task |
+
+#### Tool Events
+
+| Event Type | Fields | Description |
+|---|---|---|
+| `ToolCallStarted` | `runId`, `nodeId`, `iteration`, `attempt`, `toolName`, `seq`, `timestampMs` | An agent tool call began |
+| `ToolCallFinished` | `runId`, `nodeId`, `iteration`, `attempt`, `toolName`, `seq`, `status: "success" \| "error"`, `timestampMs` | An agent tool call completed |
+
+#### Output Events
+
+| Event Type | Fields | Description |
+|---|---|---|
+| `NodeOutput` | `runId`, `nodeId`, `iteration`, `attempt`, `text`, `stream: "stdout" \| "stderr"`, `timestampMs` | Agent produced output text |
+
+#### Revert Events
+
+| Event Type | Fields | Description |
+|---|---|---|
+| `RevertStarted` | `runId`, `nodeId`, `iteration`, `attempt`, `jjPointer`, `timestampMs` | A version control revert operation started |
+| `RevertFinished` | `runId`, `nodeId`, `iteration`, `attempt`, `jjPointer`, `success`, `error?`, `timestampMs` | A version control revert operation completed |
+
+---
+
+## Component Props
+
+### WorkflowProps
+
+Props for the `<Workflow>` component.
+
+```ts
+type WorkflowProps = {
+  name: string;
+  cache?: boolean;
+  children?: React.ReactNode;
+};
+```
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | Yes | Workflow name used in logging and the database |
+| `cache` | `boolean` | No | Enable output caching for this workflow |
+| `children` | `ReactNode` | No | Child components (tasks, sequences, parallels, etc.) |
+
+---
+
+### TaskProps\<Row\>
+
+Props for the `<Task>` component.
+
+```ts
+type TaskProps<Row> = {
+  key?: string;
+  id: string;
+  output: Table | string;
+  outputSchema?: import("zod").ZodObject<any>;
+  agent?: AgentLike;
+  skipIf?: boolean;
+  needsApproval?: boolean;
+  timeoutMs?: number;
+  retries?: number;
+  continueOnFail?: boolean;
+  label?: string;
+  meta?: Record<string, unknown>;
+  children: string | Row | React.ReactNode;
+};
+```
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | Unique task identifier within the workflow |
+| `output` | `Table \| string` | Yes | Drizzle table or table name for persisting results |
+| `outputSchema` | `ZodObject<any>` | No | Zod schema for validating agent output |
+| `agent` | `AgentLike` | No | AI agent to execute the task |
+| `skipIf` | `boolean` | No | Skip this task when true |
+| `needsApproval` | `boolean` | No | Pause for human approval before execution |
+| `timeoutMs` | `number` | No | Task-level timeout in milliseconds |
+| `retries` | `number` | No | Number of retry attempts on failure (default: 0) |
+| `continueOnFail` | `boolean` | No | Continue the workflow even if this task fails |
+| `label` | `string` | No | Human-readable label |
+| `meta` | `Record<string, unknown>` | No | Arbitrary metadata |
+| `children` | `string \| Row \| ReactNode` | Yes | Prompt text, static payload, or nested elements |
+
+---
+
+### SequenceProps
+
+Props for the `<Sequence>` component. Tasks inside a sequence execute in order.
+
+```ts
+type SequenceProps = {
+  skipIf?: boolean;
+  children?: React.ReactNode;
+};
+```
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `skipIf` | `boolean` | No | Skip the entire sequence when true |
+| `children` | `ReactNode` | No | Child tasks or components |
+
+---
+
+### ParallelProps
+
+Props for the `<Parallel>` component. Tasks inside a parallel group execute concurrently.
+
+```ts
+type ParallelProps = {
+  maxConcurrency?: number;
+  skipIf?: boolean;
+  children?: React.ReactNode;
+};
+```
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `maxConcurrency` | `number` | No | Maximum number of concurrent tasks in this group |
+| `skipIf` | `boolean` | No | Skip the entire parallel group when true |
+| `children` | `ReactNode` | No | Child tasks or components |
+
+---
+
+### BranchProps
+
+Props for the `<Branch>` component. Conditionally renders one of two branches.
+
+```ts
+type BranchProps = {
+  if: boolean;
+  then: React.ReactElement;
+  else?: React.ReactElement;
+  skipIf?: boolean;
+};
+```
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `if` | `boolean` | Yes | Condition to evaluate |
+| `then` | `ReactElement` | Yes | Element to render when condition is true |
+| `else` | `ReactElement` | No | Element to render when condition is false |
+| `skipIf` | `boolean` | No | Skip the branch entirely when true |
+
+---
+
+### RalphProps
+
+Props for the `<Ralph>` component. Loops its children until a condition is met.
+
+```ts
+type RalphProps = {
+  id?: string;
+  until: boolean;
+  maxIterations?: number;
+  onMaxReached?: "fail" | "return-last";
+  skipIf?: boolean;
+  children?: React.ReactNode;
+};
+```
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | No | Unique identifier for the Ralph loop (auto-generated if omitted) |
+| `until` | `boolean` | Yes | Exit condition. When `true`, the loop stops. |
+| `maxIterations` | `number` | No | Maximum number of loop iterations |
+| `onMaxReached` | `"fail" \| "return-last"` | No | Behavior when `maxIterations` is exceeded: fail the run or return the last successful output |
+| `skipIf` | `boolean` | No | Skip the loop entirely when true |
+| `children` | `ReactNode` | No | Child tasks executed each iteration |
+
+---
+
+## Error Types
+
+### SmithersError
+
+Standard error shape returned by the HTTP server.
+
+```ts
+type SmithersError = {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `code` | `string` | Machine-readable error code (e.g., `"INVALID_REQUEST"`, `"UNAUTHORIZED"`) |
+| `message` | `string` | Human-readable error description |
+| `details` | `Record<string, unknown>` | Optional additional error context |
+
+---
+
+## Server Types
+
+### ServerOptions
+
+Options for `startServer`. See the [HTTP Server](/docs/integrations/server) page for full details.
+
+```ts
+type ServerOptions = {
+  port?: number;
+  db?: BunSQLiteDatabase<any>;
+  authToken?: string;
+  maxBodyBytes?: number;
+  rootDir?: string;
+  allowNetwork?: boolean;
+};
+```
+
+---
+
+## Tool Context Types
+
+### ToolContext
+
+Internal context provided to tools via `AsyncLocalStorage`. Not typically used directly.
+
+```ts
+type ToolContext = {
+  db: SmithersDb;
+  runId: string;
+  nodeId: string;
+  iteration: number;
+  attempt: number;
+  rootDir: string;
+  allowNetwork: boolean;
+  maxOutputBytes: number;
+  timeoutMs: number;
+  seq: number;
+};
+```

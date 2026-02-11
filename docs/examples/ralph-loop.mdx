@@ -1,0 +1,120 @@
+---
+title: Ralph Loop
+description: An iterative review loop using Ralph, where an agent writes code and a reviewer evaluates it until approved or max iterations.
+---
+
+# Ralph Loop
+
+**Ralph** is the looping primitive in Smithers. It re-executes its children until a condition is met or a maximum iteration count is reached. This example demonstrates a write-then-review cycle: one agent writes code, another reviews it, and the loop continues until the reviewer approves.
+
+## Workflow Definition
+
+```tsx
+// ralph-loop.tsx
+import { createSmithers, Task, Sequence, Ralph } from "smithers-orchestrator";
+import { agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, smithers } = createSmithers({
+  code: z.object({
+    source: z.string(),
+    language: z.string(),
+  }),
+  review: z.object({
+    approved: z.boolean(),
+    feedback: z.string(),
+  }),
+  finalOutput: z.object({
+    source: z.string(),
+    iterations: z.number(),
+  }),
+});
+
+const coder = agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  system:
+    "You are an expert programmer. Write or revise code based on the given requirements and feedback.",
+});
+
+const reviewer = agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  system:
+    "You are a strict code reviewer. Evaluate the code for correctness, style, and edge cases. Set approved to true only if the code is production-ready.",
+});
+
+export default smithers((ctx) => {
+  const latestReview = ctx.outputMaybe("review", { nodeId: "review" });
+  const latestCode = ctx.outputMaybe("code", { nodeId: "write" });
+
+  return (
+    <Workflow name="ralph-loop">
+      <Sequence>
+        <Ralph
+          id="revision-loop"
+          until={latestReview?.approved === true}
+          maxIterations={5}
+          onMaxReached="return-last"
+        >
+          <Sequence>
+            <Task id="write" output="code" agent={coder}>
+              Write a TypeScript function that debounces an input function.
+              {latestReview
+                ? ` Revise based on this feedback: ${latestReview.feedback}`
+                : ""}
+            </Task>
+
+            <Task id="review" output="review" agent={reviewer}>
+              Review this code for correctness and edge cases:
+              {"\n\n```" + (latestCode?.language ?? "ts") + "\n"}
+              {latestCode?.source ?? "// no code yet"}
+              {"\n```"}
+            </Task>
+          </Sequence>
+        </Ralph>
+
+        {/* After the loop ends, emit the final result */}
+        <Task id="final" output="finalOutput">
+          {{
+            source: latestCode?.source ?? "",
+            iterations: ctx.iterationCount("code", "write"),
+          }}
+        </Task>
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## Running the Workflow
+
+```bash
+smithers run ralph-loop.tsx --input '{}'
+```
+
+Example output showing two iterations before approval:
+
+```
+[ralph-loop] Starting run ghi789
+[revision-loop] Iteration 1
+  [write] Done -> { source: "function debounce(fn, ms) { ... }", language: "ts" }
+  [review] Done -> { approved: false, feedback: "Missing generic types; no cancel method." }
+[revision-loop] Iteration 2
+  [write] Done -> { source: "function debounce<T>(fn: T, ms: number) { ... cancel() ... }", language: "ts" }
+  [review] Done -> { approved: true, feedback: "Looks good. Generics and cancel are correct." }
+[final] Done -> { source: "function debounce<T>(...) { ... }", iterations: 2 }
+[ralph-loop] Completed
+```
+
+## How Ralph Works
+
+| Prop | Description |
+|------|-------------|
+| `id` | Unique identifier for the loop node. |
+| `until` | A boolean expression. When `true`, the loop stops. |
+| `maxIterations` | Safety cap on iterations (default: 5). |
+| `onMaxReached` | `"fail"` throws an error; `"return-last"` exits gracefully with the last output. |
+
+- Each iteration re-renders the children with updated context. The `ctx.outputMaybe` calls always return the latest value from the most recent iteration.
+- Use `ctx.iterationCount(table, nodeId)` to find out how many times a particular task has executed.
+- All intermediate outputs are persisted, so the loop is resumable. If the workflow crashes mid-iteration, it restarts from the last incomplete task within the current iteration.
