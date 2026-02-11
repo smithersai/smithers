@@ -96,22 +96,22 @@ Define your AI agents using the Vercel AI SDK. You can use any provider, but thi
 
 ```tsx
 // workflow.tsx (continued)
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 
-const analyst = agent({
+const analyst = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a senior code reviewer. Analyze code for bugs, security issues, and quality problems. Return structured JSON.",
+  instructions: "You are a senior code reviewer. Analyze code for bugs, security issues, and quality problems. Return structured JSON.",
 });
 
-const fixer = agent({
+const fixer = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a senior engineer who writes minimal, correct fixes. Return structured JSON with a unified diff patch.",
+  instructions: "You are a senior engineer who writes minimal, correct fixes. Return structured JSON with a unified diff patch.",
 });
 
-const reporter = agent({
+const reporter = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a technical writer. Summarize code review findings into a clear report. Return structured JSON.",
+  instructions: "You are a technical writer. Summarize code review findings into a clear report. Return structured JSON.",
 });
 ```
 
@@ -286,9 +286,9 @@ To give your agents access to the filesystem, add built-in tools:
 ```tsx
 import { read, grep, bash } from "smithers-orchestrator/tools";
 
-const analyst = agent({
+const analyst = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a senior code reviewer.",
+  instructions: "You are a senior code reviewer.",
   tools: { read, grep, bash },
 });
 ```

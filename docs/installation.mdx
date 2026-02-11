@@ -19,7 +19,7 @@ This installs:
 | Package | Purpose |
 |---|---|
 | `smithers-orchestrator` | Core framework: components, engine, CLI, JSX runtime |
-| `ai` | Vercel AI SDK -- provides the `agent()` function and model abstractions |
+| `ai` | Vercel AI SDK -- provides the `ToolLoopAgent` class and model abstractions |
 | `@ai-sdk/anthropic` | Anthropic provider for Claude models (swap for any Vercel AI SDK provider) |
 | `zod` | Schema validation for task outputs (v4) |
 
@@ -88,7 +88,7 @@ Create a minimal `workflow.tsx` to confirm everything is wired up:
 
 ```tsx
 import { createSmithers, Task, runWorkflow } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -96,9 +96,9 @@ const { Workflow, smithers } = createSmithers({
   greeting: z.object({ message: z.string() }),
 });
 
-const greeter = agent({
+const greeter = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are friendly. Return JSON with a 'message' field.",
+  instructions: "You are friendly. Return JSON with a 'message' field.",
 });
 
 const workflow = smithers((ctx) => (

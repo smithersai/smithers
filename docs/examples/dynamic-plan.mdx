@@ -12,7 +12,7 @@ This example shows how to use **Branch** to choose between two execution paths a
 ```tsx
 // dynamic-plan.tsx
 import { createSmithers, Task, Sequence, Branch } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -29,20 +29,20 @@ const { Workflow, smithers } = createSmithers({
   }),
 });
 
-const analyzer = agent({
+const analyzer = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system:
+  instructions:
     "Analyze the given task. Determine if it is low or high complexity. Return a short summary and a complexity rating.",
 });
 
-const planner = agent({
+const planner = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system: "Break the task into concrete, ordered steps.",
+  instructions: "Break the task into concrete, ordered steps.",
 });
 
-const implementer = agent({
+const implementer = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system: "Implement the requested task and return the result.",
+  instructions: "Implement the requested task and return the result.",
 });
 
 export default smithers((ctx) => {

@@ -11,7 +11,7 @@ When you use `createSmithers`, each Zod schema becomes an output table. The agen
 
 ```tsx
 import { createSmithers, Task } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -23,9 +23,9 @@ const { Workflow, smithers } = createSmithers({
   }),
 });
 
-const analyst = agent({
+const analyst = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "Return JSON matching the schema exactly.",
+  instructions: "Return JSON matching the schema exactly.",
 });
 
 export default smithers((ctx) => (

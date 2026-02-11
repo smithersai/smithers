@@ -12,7 +12,7 @@ This example runs two independent reviewer agents at the same time using **Paral
 ```tsx
 // multi-agent-review.tsx
 import { createSmithers, Task, Sequence, Parallel } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -27,21 +27,21 @@ const { Workflow, smithers } = createSmithers({
   }),
 });
 
-const securityReviewer = agent({
+const securityReviewer = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system:
+  instructions:
     "You are a security-focused code reviewer. Look for vulnerabilities, injection risks, and auth issues. Return your verdict and detailed feedback.",
 });
 
-const qualityReviewer = agent({
+const qualityReviewer = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system:
+  instructions:
     "You are a code quality reviewer. Evaluate readability, test coverage, error handling, and adherence to best practices. Return your verdict and detailed feedback.",
 });
 
-const aggregator = agent({
+const aggregator = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system:
+  instructions:
     "You receive two code reviews. Synthesize them into a single verdict. Approve only if both reviewers approve.",
 });
 

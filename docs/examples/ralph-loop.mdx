@@ -12,7 +12,7 @@ description: An iterative review loop using Ralph, where an agent writes code an
 ```tsx
 // ralph-loop.tsx
 import { createSmithers, Task, Sequence, Ralph } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -31,15 +31,15 @@ const { Workflow, smithers } = createSmithers({
   }),
 });
 
-const coder = agent({
+const coder = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system:
+  instructions:
     "You are an expert programmer. Write or revise code based on the given requirements and feedback.",
 });
 
-const reviewer = agent({
+const reviewer = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system:
+  instructions:
     "You are a strict code reviewer. Evaluate the code for correctness, style, and edge cases. Set approved to true only if the code is production-ready.",
 });
 

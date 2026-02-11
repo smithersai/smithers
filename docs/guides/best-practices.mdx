@@ -227,7 +227,7 @@ Here is a full example combining these practices -- a review loop with structure
 
 ```tsx
 import { createSmithers, Task, Sequence, Ralph } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, grep, bash, edit, write } from "smithers-orchestrator/tools";
 import { z } from "zod";
@@ -252,15 +252,15 @@ const { Workflow, smithers } = createSmithers({
   }),
 });
 
-const implementer = agent({
+const implementer = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a senior engineer. Implement changes, run tests, and return structured JSON.",
+  instructions: "You are a senior engineer. Implement changes, run tests, and return structured JSON.",
   tools: { read, grep, bash, edit, write },
 });
 
-const reviewer = agent({
+const reviewer = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a strict code reviewer. Return structured JSON with your assessment.",
+  instructions: "You are a strict code reviewer. Return structured JSON with your assessment.",
   tools: { read, grep },
 });
 

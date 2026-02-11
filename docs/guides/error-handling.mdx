@@ -91,7 +91,7 @@ Use `<Branch>` to route execution based on the outcome of a previous task. This 
 
 ```tsx
 import { createSmithers, Task, Sequence, Branch } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -105,9 +105,9 @@ const { Workflow, smithers } = createSmithers({
   }),
 });
 
-const riskyAgent = agent({
+const riskyAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "Attempt the operation. Return JSON with ok (boolean) and message (string).",
+  instructions: "Attempt the operation. Return JSON with ok (boolean) and message (string).",
 });
 
 export default smithers((ctx) => {

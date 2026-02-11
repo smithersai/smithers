@@ -12,7 +12,7 @@ Smithers supports **human-in-the-loop** workflows with the `needsApproval` prop.
 ```tsx
 // approval-gate.tsx
 import { createSmithers, Task, Sequence } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -27,15 +27,15 @@ const { Workflow, smithers } = createSmithers({
   }),
 });
 
-const writer = agent({
+const writer = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system:
+  instructions:
     "You are a technical writer. Draft a blog post with a title and full content based on the given topic.",
 });
 
-const publisher = agent({
+const publisher = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system:
+  instructions:
     "You are a publishing agent. Take the approved draft and return a URL and timestamp for the published post.",
 });
 
@@ -114,20 +114,30 @@ smithers deny approval-gate.tsx --run-id mno345 --node-id publish
 
 ## Listing Pending Approvals
 
-To see all workflows waiting for human input:
+To see runs waiting for human input, filter by status:
 
 ```bash
-smithers pending
+smithers list approval-gate.tsx --status waiting-approval
 ```
 
+Example output:
+
+```json
+[
+  {
+    "runId": "mno345",
+    "workflowName": "approval-gate",
+    "status": "waiting-approval",
+    "createdAtMs": 1760120000000
+  }
+]
 ```
-RUN ID     WORKFLOW        NODE      LABEL                PAUSED SINCE
-mno345     approval-gate   publish   Publish blog post    2 minutes ago
-```
+
+If you need per-node labels (like `Publish blog post`), query `_smithers_nodes` for the run ID and node ID.
 
 ## How It Works
 
 - `needsApproval` is a boolean prop on `Task`. When `true`, the orchestrator persists the workflow state and exits before running that task.
 - The workflow is fully deterministic: re-running after approval replays all prior completed tasks from the database and continues from the approval point.
-- The `label` prop provides a human-readable description shown in the pending approvals list.
+- The `label` prop provides a human-readable description stored with the node metadata (query `_smithers_nodes` if you need it).
 - Denial is permanent for that run. To retry, start a new run.

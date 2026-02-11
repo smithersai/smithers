@@ -174,7 +174,7 @@ type RunOptions = {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `runId` | `string` | Auto-generated | Custom run identifier |
-| `input` | `Record<string, unknown>` | -- | Input data for the workflow (required) |
+| `input` | `Record<string, unknown>` | -- | Input data for the workflow (required). In the manual API it should match the `input` table schema; in the schema-driven API it is stored as a JSON payload. |
 | `maxConcurrency` | `number` | `undefined` | Maximum number of tasks to execute in parallel |
 | `onProgress` | `(e: SmithersEvent) => void` | `undefined` | Callback invoked for every lifecycle event |
 | `signal` | `AbortSignal` | `undefined` | Signal to cancel the run |

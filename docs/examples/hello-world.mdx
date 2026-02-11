@@ -12,7 +12,7 @@ The simplest possible Smithers workflow: a single task that uses an agent to gen
 ```tsx
 // hello-world.tsx
 import { createSmithers, Task, Sequence } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -24,9 +24,9 @@ const { Workflow, smithers } = createSmithers({
 });
 
 // 2. Create an agent
-const greeter = agent({
+const greeter = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system: "You are a friendly greeter. Respond with a short, warm greeting.",
+  instructions: "You are a friendly greeter. Respond with a short, warm greeting.",
 });
 
 // 3. Build the workflow

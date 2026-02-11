@@ -55,7 +55,7 @@ For prototyping or simple workflows, keep everything in one file:
 ```tsx
 // workflow.tsx
 import { createSmithers, Task } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -64,9 +64,9 @@ const { Workflow, smithers } = createSmithers({
   report: z.object({ title: z.string(), body: z.string() }),
 });
 
-const analyst = agent({
+const analyst = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a code analyst. Return structured JSON.",
+  instructions: "You are a code analyst. Return structured JSON.",
 });
 
 export default smithers((ctx) => (
@@ -174,26 +174,26 @@ Centralize agent setup in `agents.ts`. This makes it easy to swap between API an
 
 ```ts
 // agents.ts
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, grep, bash, edit, write } from "smithers-orchestrator/tools";
 
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
 
-export const analyst = agent({
+export const analyst = new Agent({
   model: anthropic(MODEL),
-  system: "You are a senior code analyst. Return structured JSON.",
+  instructions: "You are a senior code analyst. Return structured JSON.",
 });
 
-export const implementer = agent({
+export const implementer = new Agent({
   model: anthropic(MODEL),
-  system: "You are a senior engineer. Implement changes and return structured JSON.",
+  instructions: "You are a senior engineer. Implement changes and return structured JSON.",
   tools: { read, grep, bash, edit, write },
 });
 
-export const reviewer = agent({
+export const reviewer = new Agent({
   model: anthropic(MODEL),
-  system: "You are a strict code reviewer. Return structured JSON with approval status.",
+  instructions: "You are a strict code reviewer. Return structured JSON with approval status.",
   tools: { read, grep },
 });
 ```

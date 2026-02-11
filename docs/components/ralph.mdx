@@ -8,7 +8,7 @@ description: Iterative loop that re-executes its children until a condition is m
 ## Import
 
 ```tsx
-import { Ralph } from "smithers";
+import { Ralph } from "smithers-orchestrator";
 ```
 
 ## Props
@@ -121,8 +121,8 @@ When `id` is omitted, Smithers generates a stable id from the element's position
 ## Full example
 
 ```tsx
-import { smithers, Workflow, Task, Ralph } from "smithers";
-import { agent } from "ai";
+import { smithers, Workflow, Task, Ralph } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
@@ -149,9 +149,9 @@ const reviewTable = sqliteTable(
 const schema = { input: inputTable, output: reviewTable, review: reviewTable };
 const db = drizzle("./workflow.db", { schema });
 
-const reviewAgent = agent({
+const reviewAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a thorough code reviewer.",
+  instructions: "You are a thorough code reviewer.",
 });
 
 export default smithers(db, (ctx) => (

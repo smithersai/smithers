@@ -12,7 +12,7 @@ Smithers persists all workflow state -- inputs, outputs, execution metadata, app
 Define your output shapes as Zod schemas and let Smithers handle everything: database creation, table generation, and Drizzle configuration.
 
 ```ts
-import { createSmithers } from "smithers";
+import { createSmithers } from "smithers-orchestrator";
 import { z } from "zod";
 
 const { Workflow, useCtx, smithers, db, tables } = createSmithers({
@@ -32,8 +32,10 @@ What happens under the hood:
 1. Each Zod schema is converted to a Drizzle `sqliteTable` via `zodToTable()`. The table name is the snake_case version of the key (e.g., `discover` stays `discover`, `researchResult` becomes `research_result`).
 2. Standard columns `runId`, `nodeId`, and `iteration` are prepended automatically with a composite primary key of `(runId, nodeId, iteration)`.
 3. A SQLite database is created at `./smithers.db` (or the path you specify with `{ dbPath: "..." }`).
-4. `CREATE TABLE IF NOT EXISTS` statements are executed for each table, including a bare `input` table with just `run_id`.
+4. `CREATE TABLE IF NOT EXISTS` statements are executed for each table, including an `input` table that stores the run input as JSON in a `payload` column.
 5. A schema registry maps string keys (like `"discover"`) to their Drizzle tables and Zod schemas, so `<Task output="discover">` resolves at runtime.
+
+In schema-driven mode, `ctx.input` is the decoded payload object (not the raw input row).
 
 Zod-to-column mapping:
 
@@ -57,7 +59,7 @@ Tasks reference outputs by string key:
 For full control, provide your own Drizzle database instance with manually defined tables.
 
 ```ts
-import { smithers } from "smithers";
+import { smithers } from "smithers-orchestrator";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
 

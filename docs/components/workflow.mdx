@@ -8,7 +8,7 @@ description: Root container that defines a named, cacheable workflow with implic
 ## Import
 
 ```tsx
-import { Workflow } from "smithers";
+import { Workflow } from "smithers-orchestrator";
 ```
 
 ## Props
@@ -61,8 +61,8 @@ If `expensive-step` has already completed and its output is in the database, re-
 ## Full example
 
 ```tsx
-import { smithers, Workflow, Task, Sequence } from "smithers";
-import { agent } from "ai";
+import { smithers, Workflow, Task, Sequence } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import {
@@ -110,9 +110,9 @@ const schema = {
 
 const db = drizzle("./workflow.db", { schema });
 
-const researcher = agent({
+const researcher = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a research assistant.",
+  instructions: "You are a research assistant.",
 });
 
 export default smithers(db, (ctx) => (

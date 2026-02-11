@@ -12,7 +12,7 @@ Smithers agents can be given **tools** that let them interact with the filesyste
 ```tsx
 // tools-agent.tsx
 import { createSmithers, Task, Sequence } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { tools } from "smithers-orchestrator/tools";
 import { z } from "zod";
@@ -31,9 +31,9 @@ const { Workflow, smithers } = createSmithers({
   }),
 });
 
-const codeSearchAgent = agent({
+const codeSearchAgent = new Agent({
   model: anthropic("claude-sonnet-4-5-20250929"),
-  system: `You are a codebase analysis agent. Use the provided tools to search
+  instructions: `You are a codebase analysis agent. Use the provided tools to search
 through source code and answer questions. Always back up your findings with
 specific file paths and line numbers.`,
   tools,

@@ -10,7 +10,7 @@ Smithers supports human-in-the-loop workflows through an approval system. Any ta
 Set the `needsApproval` prop on a `<Task>` to gate it:
 
 ```tsx
-import { smithers, Workflow, Task, Sequence } from "smithers";
+import { smithers, Workflow, Task, Sequence } from "smithers-orchestrator";
 
 export default smithers(db, (ctx) => (
   <Workflow name="deploy-pipeline">
@@ -74,7 +74,7 @@ The approval system emits these events, all available through the `onProgress` c
 Listen for approval events to trigger notifications:
 
 ```ts
-import { runWorkflow } from "smithers";
+import { runWorkflow } from "smithers-orchestrator";
 
 const result = await runWorkflow(workflow, {
   input: { repo: "my-app" },

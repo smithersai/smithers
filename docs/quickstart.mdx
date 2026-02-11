@@ -11,7 +11,7 @@ Create a file called `workflow.tsx`:
 
 ```tsx
 import { createSmithers, Task } from "smithers-orchestrator";
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 
@@ -35,14 +35,14 @@ const { Workflow, smithers } = createSmithers({
 });
 
 // 3. Define your agents using the Vercel AI SDK
-const researcher = agent({
+const researcher = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a research assistant. Provide a concise summary and 3-5 key points.",
+  instructions: "You are a research assistant. Provide a concise summary and 3-5 key points.",
 });
 
-const writer = agent({
+const writer = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a technical writer. Write clear, engaging content.",
+  instructions: "You are a technical writer. Write clear, engaging content.",
 });
 
 // 4. Build the workflow -- tasks inside <Workflow> run sequentially

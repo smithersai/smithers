@@ -94,7 +94,7 @@ Note: nested Ralph is not currently supported, but the `iterations` map is still
 
 ### `input`
 
-The input row for the current run, typed from `schema.input`. This is the data passed to `runWorkflow(workflow, { input: { description: "..." } })`.
+The input object for the current run. In the manual API, this is the row from `schema.input`. In the schema-driven API, it is the decoded JSON payload that was passed to `runWorkflow(workflow, { input: { ... } })`.
 
 ```tsx
 <Task id="analyze" output={schema.analyze} agent={agent}>

@@ -43,7 +43,7 @@ function runWorkflow<Schema>(
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `input` | `Record<string, unknown>` | **(required)** | Input data for the run. Must be a JSON object matching the workflow's input schema. The `runId` key is injected automatically. |
+| `input` | `Record<string, unknown>` | **(required)** | Input data for the run. Must be a JSON object. In the manual API it should match the `input` table schema; in the schema-driven API it is stored as a JSON payload. The `runId` key is injected automatically. |
 | `runId` | `string` | Auto-generated | Provide a deterministic run ID. If omitted, a new unique ID is generated. |
 | `resume` | `boolean` | `false` | Resume an existing run instead of starting a new one. Requires `runId`. Skips already-completed tasks and picks up from the last checkpoint. |
 | `maxConcurrency` | `number` | `4` | Maximum number of tasks that can execute in parallel at any given time. Also respects per-group limits set by `<Parallel maxConcurrency>`. |

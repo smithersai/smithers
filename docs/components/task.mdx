@@ -11,7 +11,7 @@ description: A single executable node that produces output, either by calling an
 ## Import
 
 ```tsx
-import { Task } from "smithers";
+import { Task } from "smithers-orchestrator";
 ```
 
 ## Props
@@ -39,12 +39,12 @@ When the `agent` prop is provided, the task sends its children as a prompt to th
 Children can be a plain string, a template literal, or a React/MDX element. In all cases, children are rendered to plain markdown text before being passed to the agent.
 
 ```tsx
-import { agent } from "ai";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 
-const codeAgent = agent({
+const codeAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a senior software engineer.",
+  instructions: "You are a senior software engineer.",
 });
 
 // String prompt
@@ -129,8 +129,8 @@ Both forms are equivalent when the schema is set up correctly. The string form i
 ## Full example
 
 ```tsx
-import { smithers, Workflow, Task, Sequence } from "smithers";
-import { agent } from "ai";
+import { smithers, Workflow, Task, Sequence } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
@@ -173,9 +173,9 @@ const schema = {
 
 const db = drizzle("./workflow.db", { schema });
 
-const codeAgent = agent({
+const codeAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  system: "You are a senior software engineer.",
+  instructions: "You are a senior software engineer.",
 });
 
 export default smithers(db, (ctx) => (
