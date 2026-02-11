@@ -12,10 +12,11 @@ You are taking over the Smithers v2 implementation in this repo. The previous ag
 - Server and CLI exist, minimal but usable.
 
 ## Repo map / key files
-- `src/types.ts`: core types (XmlNode, TaskDescriptor, events, props, ctx).
-- `src/components.ts`: JSX components (`Workflow`, `Task`, `Sequence`, `Parallel`, `Branch`, `Ralph`).
+- `src/types.ts`: core types (XmlNode, TaskDescriptor, events, props, ctx, SchemaRegistryEntry).
+- `src/components.ts`: JSX components (`Workflow`, `Task`, `Sequence`, `Parallel`, `Branch`, `Ralph`). Task now renders JSX/MDX children to markdown via `renderToStaticMarkup`.
+- `src/context.ts`: `buildContext()` with `latest()`, `latestArray()`, `iterationCount()` helpers; `createSmithersContext()` for React context + `useCtx()` hook.
 - `src/dom/renderer.ts`: React reconciler host config; commits to host tree.
-- `src/dom/extract.ts`: converts host tree to XML AST + extracts TaskDescriptor[]; enforces unique task ids.
+- `src/dom/extract.ts`: converts host tree to XML AST + extracts TaskDescriptor[]; enforces unique task ids. Supports string output keys (resolved later via schema registry).
 - `src/utils/xml.ts`: canonical XML serialization.
 - `src/db/internal-schema.ts`: Drizzle table definitions for internal tables.
 - `src/db/ensure.ts`: `ensureSmithersTables` (raw SQL) for internal tables.
@@ -24,14 +25,18 @@ You are taking over the Smithers v2 implementation in this repo. The previous ag
 - `src/db/schema-signature.ts`: schema signature hashing.
 - `src/db/snapshot.ts`: loads input + outputs snapshot for render.
 - `src/engine/scheduler.ts`: builds plan tree from XML, deterministic scheduling, sequence/parallel/ralph gating (ralph until only).
-- `src/engine/index.ts`: main engine loop; runWorkflow + renderFrame.
+- `src/engine/index.ts`: main engine loop; runWorkflow + renderFrame. Resolves string output keys via schema registry. Auto-retries with Zod error + schema description on validation failure.
 - `src/engine/approvals.ts`: approve/deny helpers.
 - `src/tools/index.ts`: built-in tools + logging via tool context.
 - `src/tools/context.ts`: AsyncLocalStorage tool context.
 - `src/server/index.ts`: minimal HTTP server with SSE; run/resume/cancel/approve/deny/status/frames.
 - `src/cli/index.ts`: CLI wrapper.
 - `src/pi-plugin/index.ts`: minimal pi plugin using server HTTP API.
-- `src/index.ts`: public API exports.
+- `src/mdx-components.ts`: MDX component overrides that render markdown via React Fragments (no HTML tags).
+- `src/mdx-plugin.ts`: Bun plugin for `@mdx-js/esbuild` MDX compilation.
+- `src/zod-to-table.ts`: `zodToTable()` and `zodToCreateTableSQL()` for auto-generating Drizzle tables from Zod schemas.
+- `src/zod-to-example.ts`: `zodSchemaToJsonExample()` for generating JSON examples from Zod schemas.
+- `src/index.ts`: public API exports including `createSmithers()` (schema-driven and db-based overloads).
 
 ## Runtime semantics currently implemented
 - Task ids are required; nodeId = id (no hashing).
@@ -41,6 +46,11 @@ You are taking over the Smithers v2 implementation in this repo. The previous ag
 - Sequence gating: only first non-terminal child in a sequence is runnable.
 - Parallel: enforced via task descriptor metadata + per-group maxConcurrency.
 - Ralph: only supports a single top-level loop. Iteration stored globally in engine, increments if no runnable nodes and `until` false. **Nested Ralph is NOT fully supported.**
+- Task `output` prop accepts either a Drizzle table object or a string key. String keys are resolved at runtime via the workflow's `schemaRegistry`.
+- Task `children` can be a string, an output object, or a React element (JSX/MDX). React elements are rendered to markdown via `renderToStaticMarkup` with `markdownComponents`.
+- When `outputSchema` is provided and children is a React element, the schema JSON example is auto-injected as a `schema` prop.
+- On schema validation failure with `retries > 0`, the retry prompt is augmented with the Zod error message and schema description.
+- `createSmithers(zodSchemas)` auto-creates SQLite db, Drizzle tables, and a schema registry. Returns `{ Workflow, useCtx, smithers, db, tables }`.
 
 ## What’s simplified / missing
 1. **Ralph loop**
@@ -99,4 +109,8 @@ You are taking over the Smithers v2 implementation in this repo. The previous ag
 ## Where to start editing
 - Ralph iteration: `src/components.ts`, `src/runtime/iteration.ts`, `src/dom/extract.ts`, `src/engine/index.ts`, `src/engine/scheduler.ts`.
 - Server DB-run listing: `src/server/index.ts`, `src/db/adapter.ts`, `src/db/internal-schema.ts`.
+- Schema-driven API: `src/index.ts` (`createSmithers`), `src/zod-to-table.ts`, `src/zod-to-example.ts`.
+- MDX support: `src/mdx-components.ts`, `src/mdx-plugin.ts`, `src/components.ts` (`renderChildrenToText`).
+- Context helpers: `src/context.ts` (`latest`, `latestArray`, `iterationCount`, `createSmithersContext`).
+- String output keys: `src/dom/extract.ts`, `src/engine/index.ts` (schema registry resolution), `src/types.ts`.
 

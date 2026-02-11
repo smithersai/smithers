@@ -23,6 +23,65 @@ or see https://martinvonz.github.io/jj/latest/install/ (if JJ is not installed, 
 
 ## Quick Start
 
+### Schema-Driven (Recommended)
+
+The simplest way to use Smithers. Define Zod schemas for your outputs and let the framework handle SQLite, Drizzle tables, and storage automatically.
+
+```tsx
+// workflow.tsx
+import { createSmithers, Task, Sequence } from "smithers";
+import { agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+// Define output schemas with Zod
+const analyzeSchema = z.object({
+  summary: z.string(),
+  files: z.array(z.string()),
+});
+
+const reviewSchema = z.object({
+  approved: z.boolean(),
+});
+
+// createSmithers auto-creates SQLite db + Drizzle tables from Zod schemas
+const { Workflow, useCtx, smithers } = createSmithers({
+  analyze: analyzeSchema,
+  review: reviewSchema,
+});
+
+// Create agents
+const codeAgent = agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  system: "You are a senior software engineer.",
+});
+
+const reviewAgent = agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  system: "You are a code reviewer.",
+});
+
+// Export workflow — use string keys for output instead of table objects
+export default smithers((ctx) => (
+  <Workflow name="example">
+    <Task id="analyze" output="analyze" outputSchema={analyzeSchema} agent={codeAgent}>
+      {`Analyze: ${ctx.input.description}`}
+    </Task>
+    <Task id="review" output="review" outputSchema={reviewSchema} agent={reviewAgent}>
+      {`Review: ${ctx.output("analyze", { nodeId: "analyze" }).summary}`}
+    </Task>
+  </Workflow>
+));
+```
+
+```bash
+smithers run workflow.tsx --input '{"description": "Fix auth bugs"}'
+```
+
+### Manual Mode (Advanced)
+
+If you need full control over the database and table definitions, use the original `smithers()` API:
+
 ```tsx
 // workflow.tsx
 import { smithers, Workflow, Task, Sequence } from "smithers";
@@ -36,7 +95,7 @@ import {
   primaryKey,
 } from "drizzle-orm/sqlite-core";
 
-// Define tables
+// Define tables manually
 const inputTable = sqliteTable("input", {
   runId: text("run_id").primaryKey(),
   description: text("description").notNull(),
@@ -100,10 +159,6 @@ export default smithers(db, (ctx) => (
     </Sequence>
   </Workflow>
 ));
-```
-
-```bash
-smithers run workflow.tsx --input '{"description": "Fix auth bugs"}'
 ```
 
 Note: `<Workflow>` sequences its direct children by default, so `<Sequence>` is optional at the root.
@@ -201,6 +256,10 @@ Rules:
 - For agent tasks, the model must return JSON that matches the output schema.
 - Validation uses `drizzle-zod` schemas derived from the table definition.
 - On validation failure, the attempt is marked failed and the node may retry.
+
+### Auto-Retry with Schema Feedback
+
+When a task fails schema validation (with `retries > 0`), Smithers automatically augments the retry prompt with the Zod validation error and a description of the expected schema, helping the agent self-correct.
 
 ### React Execution Contract
 
@@ -303,17 +362,45 @@ If any input changes, the cache is invalidated.
 ctx.input; // input row
 
 ctx.outputs.analyze; // array of rows for this table
-ctx.output(schema.analyze, { nodeId: "analyze" }); // specific row
+ctx.output(schema.analyze, { nodeId: "analyze" }); // specific row (by table object)
+ctx.output("analyze", { nodeId: "analyze" }); // specific row (by string key)
 ctx.output(schema.output, { nodeId: "review", iteration: 2 }); // loop iteration row
 
 ctx.runId; // current run ID
 ctx.iteration; // current loop iteration (inside <Ralph>)
 ctx.iterations; // per-Ralph iteration map (keyed by Ralph id)
 
-If multiple `<Ralph>` loops exist, use `ctx.iterations[ralphId]`. `ctx.iteration` is only set when a single loop is present.
+// New helpers
+ctx.latest(schema.analyze, "analyze"); // latest row for nodeId (highest iteration)
+ctx.latest("analyze", "analyze"); // same, using string key
+ctx.latestArray(value, zodSchema); // parse + validate an array field, dropping invalid items
+ctx.iterationCount(schema.analyze, "analyze"); // count distinct iterations for a nodeId
 ```
 
+If multiple `<Ralph>` loops exist, use `ctx.iterations[ralphId]`. `ctx.iteration` is only set when a single loop is present.
+
 Use `ctx.output(...)` for deterministic access to a specific row. Use `ctx.outputs.<table>` when you need to scan or aggregate multiple rows.
+
+### `useCtx()` Hook
+
+When using `createSmithers()`, you get a `useCtx()` hook for accessing the context inside React components:
+
+```tsx
+const { Workflow, useCtx, smithers } = createSmithers({ ... });
+
+function MyPrompt() {
+  const ctx = useCtx();
+  return <>{`Analyze: ${ctx.input.description}`}</>;
+}
+
+export default smithers((ctx) => (
+  <Workflow name="example">
+    <Task id="analyze" output="analyze" agent={codeAgent}>
+      <MyPrompt />
+    </Task>
+  </Workflow>
+));
+```
 
 ---
 
@@ -342,7 +429,7 @@ Root container.
 
 A single task node.
 
-- With `agent` prop: children is a prompt string, Smithers calls the agent
+- With `agent` prop: children is a prompt (string, JSX, or MDX component), Smithers calls the agent
 - Without `agent`: children is the output object directly
 
 ```tsx
@@ -351,25 +438,38 @@ A single task node.
   {`Analyze: ${ctx.input.description}`}
 </Task>
 
+// Agent task - string output key (with createSmithers)
+<Task id="analyze" output="analyze" outputSchema={analyzeSchema} agent={codeAgent}>
+  {`Analyze: ${ctx.input.description}`}
+</Task>
+
+// Agent task - JSX/MDX prompt (rendered to markdown automatically)
+<Task id="analyze" output="analyze" outputSchema={analyzeSchema} agent={codeAgent}>
+  <AnalyzePrompt />
+</Task>
+
 // Hardcoded task - output directly
 <Task id="setup" output={schema.setup}>
   {{ files: fs.readdirSync("./src") }}
 </Task>
 ```
 
-| Prop             | Type      | Description                                     |
-| ---------------- | --------- | ----------------------------------------------- | ---------------------------------------------- |
-| `id`             | `string`  | Stable identity for this node (required)        |
-| `output`         | `Table`   | Drizzle table from schema (e.g. schema.analyze) |
-| `agent`          | `Agent`   | AI SDK agent (if provided, children → prompt)   |
-| `skipIf`         | `boolean` | Skip if true                                    |
-| `needsApproval`  | `boolean` | Require human approval                          |
-| `timeoutMs`      | `number`  | Max duration in ms before failing               |
-| `retries`        | `number`  | Retry count on failure (default: 0)             |
-| `continueOnFail` | `boolean` | Continue workflow if task fails                 |
-| `children`       | `string   | Output`                                         | Prompt string (with agent) or output (without) |
+| Prop             | Type                    | Description                                                          |
+| ---------------- | ----------------------- | -------------------------------------------------------------------- |
+| `id`             | `string`                | Stable identity for this node (required)                             |
+| `output`         | `Table \| string`       | Drizzle table or string key (resolved via schema registry)           |
+| `outputSchema`   | `ZodObject`             | Optional Zod schema for structured output validation                 |
+| `agent`          | `Agent`                 | AI SDK agent (if provided, children -> prompt)                       |
+| `skipIf`         | `boolean`               | Skip if true                                                         |
+| `needsApproval`  | `boolean`               | Require human approval                                               |
+| `timeoutMs`      | `number`                | Max duration in ms before failing                                    |
+| `retries`        | `number`                | Retry count on failure (default: 0)                                  |
+| `continueOnFail` | `boolean`               | Continue workflow if task fails                                      |
+| `children`       | `string \| Row \| JSX`  | Prompt (with agent) or output (without). JSX is rendered to markdown |
 
 When rendering arrays or loops, use React `key` on `<Task>` or its wrapper for React list stability. NodeId is still derived solely from `id`.
+
+When `outputSchema` is provided and children is a React element, the schema is automatically injected as a JSON example into the prompt.
 
 ---
 
@@ -538,6 +638,131 @@ startServer({
 - Set `authToken` (or `SMITHERS_API_KEY`) in server mode.
 - Provide a `db` option to enable `/v1/runs` listing and a central run registry.
 - Review `docs/production.md` for limits, security, and operational guidance.
+
+---
+
+## `createSmithers()` API
+
+`createSmithers()` is the recommended way to set up a workflow. It accepts either Zod schemas (schema-driven mode) or a pre-configured Drizzle db (manual mode).
+
+### Schema-Driven Mode
+
+Pass a record of Zod schemas. Smithers auto-creates the SQLite database, generates Drizzle tables (with `runId`, `nodeId`, `iteration` columns), and manages the schema registry.
+
+```tsx
+import { createSmithers, Task } from "smithers";
+import { z } from "zod";
+
+const { Workflow, useCtx, smithers, db, tables } = createSmithers(
+  {
+    discover: z.object({ topics: z.array(z.string()) }),
+    research: z.object({ summary: z.string(), sources: z.array(z.string()) }),
+  },
+  { dbPath: "./my-workflow.db" }, // optional, defaults to ./smithers.db
+);
+```
+
+Returns:
+
+| Property   | Type                  | Description                                           |
+| ---------- | --------------------- | ----------------------------------------------------- |
+| `Workflow` | Component             | Workflow root (wraps context provider)                 |
+| `useCtx`   | `() => SmithersCtx`   | React hook for accessing workflow context              |
+| `smithers` | Function              | Creates a runnable workflow (pass to `runWorkflow`)    |
+| `db`       | `BunSQLiteDatabase`   | The auto-created Drizzle database instance             |
+| `tables`   | `Record<string, any>` | Generated Drizzle table objects, keyed by schema name  |
+
+Tasks use string keys for `output` instead of table objects:
+
+```tsx
+<Task id="discover" output="discover" outputSchema={discoverSchema} agent={myAgent}>
+  ...
+</Task>
+```
+
+### Manual Mode
+
+Pass an existing Drizzle db instance for full control over table definitions:
+
+```tsx
+import { createSmithers } from "smithers";
+
+const { Workflow, useCtx, smithers } = createSmithers(db);
+```
+
+---
+
+## MDX Support
+
+Smithers supports MDX files as task prompts. MDX content is automatically rendered to clean markdown text (not HTML) using custom components.
+
+### Setup
+
+Register the MDX plugin in your workflow entry file:
+
+```tsx
+import { mdxPlugin } from "smithers";
+
+// Register before importing .mdx files
+mdxPlugin();
+```
+
+### Usage
+
+```mdx
+{/* prompts/analyze.mdx */}
+# Analysis Task
+
+Analyze the codebase in **{props.directory}**.
+
+## Focus Areas
+
+- {props.focus}
+- Code quality
+- Security
+```
+
+```tsx
+import AnalyzePrompt from "./prompts/analyze.mdx";
+
+<Task id="analyze" output="analyze" agent={codeAgent}>
+  <AnalyzePrompt directory="./src" focus="performance" />
+</Task>
+```
+
+The MDX component is rendered to markdown via `renderToStaticMarkup` with `markdownComponents` that output plain text instead of HTML tags.
+
+### Utilities
+
+```tsx
+import { markdownComponents, renderMdx } from "smithers";
+
+// Render an MDX component to markdown string manually
+const md = renderMdx(MyMdxComponent, { someProp: "value" });
+```
+
+---
+
+## Zod Utilities
+
+Smithers exports utilities for working with Zod schemas:
+
+```tsx
+import { zodToTable, zodToCreateTableSQL, zodSchemaToJsonExample, unwrapZodType } from "smithers";
+
+// Generate a Drizzle sqliteTable from a Zod object schema
+const table = zodToTable("my_table", myZodSchema);
+
+// Generate CREATE TABLE SQL from a Zod schema
+const sql = zodToCreateTableSQL("my_table", myZodSchema);
+
+// Generate a JSON example from a Zod schema (for prompt injection)
+const example = zodSchemaToJsonExample(myZodSchema);
+// => '{ "name": "string", "age": 0, "active": false }'
+
+// Unwrap nullable/optional/default wrappers to get the base Zod type
+const base = unwrapZodType(z.string().nullable().optional());
+```
 
 ---
 
