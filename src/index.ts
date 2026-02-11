@@ -143,6 +143,7 @@ function createSmithersFromSchemas<
   const tables: Record<string, any> = {};
   const inputTable = sqliteTable("input", {
     runId: text("run_id").primaryKey(),
+    payload: text("payload", { mode: "json" }).$type<Record<string, unknown>>(),
   });
 
   for (const [name, zodSchema] of Object.entries(schemas)) {
@@ -157,7 +158,16 @@ function createSmithersFromSchemas<
   sqlite.exec("PRAGMA foreign_keys = ON");
 
   // 3. Auto-create tables using CREATE TABLE IF NOT EXISTS
-  sqlite.exec(`CREATE TABLE IF NOT EXISTS "input" (run_id TEXT PRIMARY KEY)`);
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS "input" (run_id TEXT PRIMARY KEY, payload TEXT)`);
+  try {
+    const cols = sqlite.query(`PRAGMA table_info("input")`).all() as Array<{ name?: string }>;
+    const hasPayload = cols.some((col) => col?.name === "payload");
+    if (!hasPayload) {
+      sqlite.exec(`ALTER TABLE "input" ADD COLUMN payload TEXT`);
+    }
+  } catch {
+    // ignore - older SQLite or permission issues; input payload remains best-effort
+  }
 
   for (const [name, zodSchema] of Object.entries(schemas)) {
     const tableName = camelToSnake(name);

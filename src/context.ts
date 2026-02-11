@@ -7,6 +7,24 @@ export type OutputSnapshot = {
   [tableName: string]: Array<any>;
 };
 
+function normalizeInputRow(input: any) {
+  if (!input || typeof input !== "object") return input;
+  if (!("payload" in input)) return input;
+  const keys = Object.keys(input);
+  const payloadOnly = keys.every((key) => key === "runId" || key === "payload");
+  if (!payloadOnly) return input;
+  const payload = (input as any).payload;
+  if (payload == null) return {};
+  if (typeof payload === "string") {
+    try {
+      return JSON.parse(payload);
+    } catch {
+      return payload;
+    }
+  }
+  return payload;
+}
+
 export function buildContext<Schema>(opts: {
   runId: string;
   iteration: number;
@@ -15,6 +33,7 @@ export function buildContext<Schema>(opts: {
   outputs: OutputSnapshot;
 }): SmithersCtx<Schema> {
   const { runId, iteration, iterations, input, outputs } = opts;
+  const normalizedInput = normalizeInputRow(input);
 
   const outputsFn: any = (table: any) => {
     const name = typeof table === "string" ? table : getTableName(table);
@@ -48,7 +67,7 @@ export function buildContext<Schema>(opts: {
     runId,
     iteration,
     iterations,
-    input,
+    input: normalizedInput,
     outputs: outputsFn,
     output<T extends keyof Schema>(table: Schema[T], key: OutputKey): InferRow<Schema[T]> {
       const row = resolveRow<InferRow<Schema[T]>>(table as any, key);

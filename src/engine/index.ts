@@ -52,6 +52,17 @@ function coercePositiveInt(value: unknown, fallback: number): number {
   return Math.floor(num);
 }
 
+function buildInputRow(inputTable: any, runId: string, input: Record<string, unknown>) {
+  const cols = getTableColumns(inputTable as any) as Record<string, any>;
+  const keys = Object.keys(cols);
+  const hasPayload = keys.includes("payload");
+  const payloadOnly = hasPayload && keys.every((key) => key === "runId" || key === "payload");
+  if (payloadOnly) {
+    return { runId, payload: input };
+  }
+  return { runId, ...input };
+}
+
 function resolveRootDir(opts: RunOptions, workflowPath?: string | null): string {
   if (opts.rootDir) return resolve(opts.rootDir);
   if (workflowPath) return resolve(dirname(workflowPath));
@@ -955,7 +966,7 @@ export async function runWorkflow<Schema>(workflow: SmithersWorkflow<Schema>, op
       if ("runId" in opts.input && (opts.input as any).runId !== runId) {
         throw new SmithersError("INVALID_INPUT", "Input runId does not match provided runId");
       }
-      const inputRow = { runId, ...opts.input };
+      const inputRow = buildInputRow(inputTable as any, runId, opts.input);
       const validation = validateInput(inputTable as any, inputRow);
       if (!validation.ok) {
         throw new SmithersError("INVALID_INPUT", "Input does not match schema", {
