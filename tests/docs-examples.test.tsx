@@ -1,0 +1,292 @@
+/** @jsxImportSource smithers */
+import { describe, expect, test } from "bun:test";
+import { Branch, Parallel, Ralph, Sequence, Task, Workflow } from "../src/components";
+import { SmithersRenderer } from "../src/dom/renderer";
+import { createSmithers, runWorkflow, smithers } from "../src/index";
+import { createTestDb } from "./helpers";
+import { ddl, outputA, outputB, schema as testSchema } from "./schema";
+import { SmithersDb } from "../src/db/adapter";
+import { loadOutputs } from "../src/db/snapshot";
+import { read } from "../src/tools";
+import { buildContext } from "../src/context";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { z } from "zod";
+
+describe("docs examples (renderer)", () => {
+  test("Branch selects the active path and Parallel metadata is assigned", async () => {
+    const renderer = new SmithersRenderer();
+    const result = await renderer.render(
+      <Workflow name="example">
+        <Branch
+          if={true}
+          then={
+            <Task id="then-task" output={outputA}>
+              {{ value: 1 }}
+            </Task>
+          }
+          else={
+            <Task id="else-task" output={outputB}>
+              {{ value: 2 }}
+            </Task>
+          }
+        />
+        <Parallel maxConcurrency={2}>
+          <Task id="p1" output={outputA}>
+            {{ value: 3 }}
+          </Task>
+          <Task id="p2" output={outputB}>
+            {{ value: 4 }}
+          </Task>
+        </Parallel>
+      </Workflow>,
+    );
+
+    const nodeIds = result.tasks.map((task) => task.nodeId);
+    expect(nodeIds).toContain("then-task");
+    expect(nodeIds).not.toContain("else-task");
+
+    const parallelTasks = result.tasks.filter((task) => task.nodeId.startsWith("p"));
+    expect(parallelTasks.length).toBe(2);
+    const groupIds = new Set(parallelTasks.map((task) => task.parallelGroupId));
+    expect(groupIds.size).toBe(1);
+    expect(parallelTasks[0]?.parallelMaxConcurrency).toBe(2);
+  });
+
+  test("Task props map into descriptors", async () => {
+    const renderer = new SmithersRenderer();
+    const result = await renderer.render(
+      <Workflow name="props">
+        <Task
+          id="t"
+          output={outputA}
+          retries={2}
+          timeoutMs={1234}
+          continueOnFail
+          needsApproval
+          label="Publish blog post"
+          meta={{ pattern: "legacyAuth" }}
+          skipIf
+        >
+          {{ value: 5 }}
+        </Task>
+      </Workflow>,
+    );
+
+    const task = result.tasks[0]!;
+    expect(task.retries).toBe(2);
+    expect(task.timeoutMs).toBe(1234);
+    expect(task.continueOnFail).toBe(true);
+    expect(task.needsApproval).toBe(true);
+    expect(task.label).toBe("Publish blog post");
+    expect(task.meta).toEqual({ pattern: "legacyAuth" });
+    expect(task.skipIf).toBe(true);
+  });
+
+  test("Ralph iteration selection uses provided state", async () => {
+    const renderer = new SmithersRenderer();
+    const result = await renderer.render(
+      <Workflow name="loop">
+        <Ralph id="review-loop" until={false}>
+          <Task id="review" output={outputA}>
+            {{ value: 1 }}
+          </Task>
+        </Ralph>
+      </Workflow>,
+      { ralphIterations: { "review-loop": 2 } },
+    );
+
+    const task = result.tasks[0]!;
+    expect(task.iteration).toBe(2);
+    expect(task.ralphId).toBe("review-loop");
+  });
+});
+
+describe("docs examples (engine)", () => {
+  test("schema-driven input payload is exposed via ctx.input", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "smithers-input-"));
+    const dbPath = join(dir, "smithers.db");
+    const { Workflow, Task, smithers: build } = createSmithers(
+      {
+        output: z.object({ echo: z.string() }),
+      },
+      { dbPath },
+    );
+
+    const workflow = build((ctx) => (
+      <Workflow name="schema-input">
+        <Task id="echo" output="output">
+          {{ echo: String(ctx.input.message) }}
+        </Task>
+      </Workflow>
+    ));
+
+    try {
+      const result = await runWorkflow(workflow, { input: { message: "hello" }, runId: "input-test" });
+      expect(result.status).toBe("finished");
+      const rows = result.output as Array<{ echo: string }>;
+      expect(rows?.[0]?.echo).toBe("hello");
+    } finally {
+      try {
+        (workflow.db as any)?.$client?.close?.();
+      } catch {}
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  test("retries re-run a failing agent", async () => {
+    const { db, cleanup } = createTestDb(testSchema, ddl);
+    let calls = 0;
+    const flakyAgent = {
+      id: "flaky",
+      tools: {},
+      async generate() {
+        calls += 1;
+        if (calls === 1) {
+          throw new Error("boom");
+        }
+        return { output: { value: 7 } };
+      },
+    };
+
+    try {
+      const workflow = smithers(db, () => (
+        <Workflow name="retries">
+          <Task id="flaky" output={outputA} agent={flakyAgent} retries={1}>
+            Retry me
+          </Task>
+        </Workflow>
+      ));
+
+      const result = await runWorkflow(workflow, { input: {}, runId: "retry-run" });
+      expect(result.status).toBe("finished");
+      expect(calls).toBe(2);
+
+      const adapter = new SmithersDb(db as any);
+      const attempts = await adapter.listAttempts(result.runId, "flaky", 0);
+      expect(attempts.length).toBe(2);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("continueOnFail allows downstream tasks to execute", async () => {
+    const { db, cleanup } = createTestDb(testSchema, ddl);
+    const failingAgent = {
+      id: "fail",
+      tools: {},
+      async generate() {
+        throw new Error("fail");
+      },
+    };
+
+    try {
+      const workflow = smithers(db, () => (
+        <Workflow name="continue">
+          <Sequence>
+            <Task id="fail" output={outputA} agent={failingAgent} continueOnFail>
+              Fail
+            </Task>
+            <Task id="ok" output={outputB}>
+              {{ value: 2 }}
+            </Task>
+          </Sequence>
+        </Workflow>
+      ));
+
+      const result = await runWorkflow(workflow, { input: {}, runId: "continue-run" });
+      expect(result.status).toBe("finished");
+
+      const outputs = await loadOutputs(db as any, testSchema, result.runId);
+      expect(outputs.outputB?.[0]?.value).toBe(2);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("timeoutMs is forwarded to agent.generate", async () => {
+    const { db, cleanup } = createTestDb(testSchema, ddl);
+    let seenTimeout: number | undefined;
+    const timedAgent = {
+      id: "timed",
+      tools: {},
+      async generate(options: { timeout?: { totalMs: number } }) {
+        seenTimeout = options.timeout?.totalMs;
+        return { output: { value: 1 } };
+      },
+    };
+
+    try {
+      const workflow = smithers(db, () => (
+        <Workflow name="timeout">
+          <Task id="timed" output={outputA} agent={timedAgent} timeoutMs={1234}>
+            Timing
+          </Task>
+        </Workflow>
+      ));
+
+      const result = await runWorkflow(workflow, { input: {}, runId: "timeout-run" });
+      expect(result.status).toBe("finished");
+      expect(seenTimeout).toBe(1234);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("tool context allows built-in tools to run", async () => {
+    const { db, cleanup } = createTestDb(testSchema, ddl);
+    const dir = mkdtempSync(join(tmpdir(), "smithers-tools-"));
+    const filePath = join(dir, "sample.txt");
+    writeFileSync(filePath, "hello", "utf8");
+
+    const toolAgent = {
+      id: "tool-reader",
+      tools: { read },
+      async generate() {
+        const content = await read.execute({ path: "sample.txt" });
+        return { output: { value: content.length } };
+      },
+    };
+
+    try {
+      const workflow = smithers(db, () => (
+        <Workflow name="tools">
+          <Task id="read" output={outputA} agent={toolAgent}>
+            Read file
+          </Task>
+        </Workflow>
+      ));
+
+      const result = await runWorkflow(workflow, { input: {}, runId: "tools-run", rootDir: dir });
+      expect(result.status).toBe("finished");
+
+      const outputs = await loadOutputs(db as any, testSchema, result.runId);
+      expect(outputs.outputA?.[0]?.value).toBe(5);
+    } finally {
+      cleanup();
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  test("latest returns the highest-iteration output row", () => {
+    const ctx = buildContext({
+      runId: "latest-run",
+      iteration: 0,
+      input: {},
+      outputs: {
+        output_a: [
+          { runId: "latest-run", nodeId: "review", iteration: 0, value: 1 },
+          { runId: "latest-run", nodeId: "review", iteration: 2, value: 3 },
+        ],
+      },
+    });
+
+    const latest = ctx.latest(outputA, "review");
+    expect(latest.value).toBe(3);
+  });
+});
