@@ -672,6 +672,146 @@ await runWorkflow(workflow, {
 });
 ```
 
+## Source Code Reference
+
+Raw source files on GitHub for reading implementation details. Use these when docs aren't enough.
+
+Base URL: `https://github.com/evmts/smithers/blob/main/`
+
+### Core
+
+| File | Description |
+|------|-------------|
+| [src/index.ts](https://github.com/evmts/smithers/blob/main/src/index.ts) | Main entry point. `createSmithers()`, `smithers()`, `runWorkflow()`, `renderFrame()` |
+| [src/types.ts](https://github.com/evmts/smithers/blob/main/src/types.ts) | All core types: `SmithersWorkflow`, `SmithersCtx`, `TaskDescriptor`, `RunOptions`, `RunResult`, `AgentLike`, `GraphSnapshot` |
+| [src/components.ts](https://github.com/evmts/smithers/blob/main/src/components.ts) | JSX components: `Workflow`, `Task`, `Sequence`, `Parallel`, `Branch`, `Ralph` |
+| [src/context.ts](https://github.com/evmts/smithers/blob/main/src/context.ts) | `SmithersContext` React context and `useCtx()` hook |
+| [src/events.ts](https://github.com/evmts/smithers/blob/main/src/events.ts) | Event types and lifecycle event definitions |
+| [src/jsx-runtime.ts](https://github.com/evmts/smithers/blob/main/src/jsx-runtime.ts) | Custom JSX runtime for `jsxImportSource: "smithers-orchestrator"` |
+
+### Engine
+
+| File | Description |
+|------|-------------|
+| [src/engine/index.ts](https://github.com/evmts/smithers/blob/main/src/engine/index.ts) | Core execution engine: render-schedule-execute-persist loop, agent invocation, retry logic |
+| [src/engine/scheduler.ts](https://github.com/evmts/smithers/blob/main/src/engine/scheduler.ts) | Task scheduling: determines which tasks are ready, handles Sequence/Parallel/Ralph ordering |
+| [src/engine/approvals.ts](https://github.com/evmts/smithers/blob/main/src/engine/approvals.ts) | Human-in-the-loop approval/denial operations |
+
+### DOM / Renderer
+
+| File | Description |
+|------|-------------|
+| [src/dom/renderer.ts](https://github.com/evmts/smithers/blob/main/src/dom/renderer.ts) | Custom React reconciler: renders JSX workflow tree into `TaskDescriptor[]` and XML snapshots |
+| [src/dom/extract.ts](https://github.com/evmts/smithers/blob/main/src/dom/extract.ts) | Walks reconciler host nodes to extract `TaskDescriptor[]` for the scheduler |
+
+### Database
+
+| File | Description |
+|------|-------------|
+| [src/db/adapter.ts](https://github.com/evmts/smithers/blob/main/src/db/adapter.ts) | Drizzle ORM database adapter wrapping Bun SQLite |
+| [src/db/ensure.ts](https://github.com/evmts/smithers/blob/main/src/db/ensure.ts) | Auto-creates internal tables (`smithers_attempts`, `smithers_cache`, etc.) |
+| [src/db/snapshot.ts](https://github.com/evmts/smithers/blob/main/src/db/snapshot.ts) | Loads persisted outputs for workflow re-rendering |
+| [src/db/output.ts](https://github.com/evmts/smithers/blob/main/src/db/output.ts) | Writes task outputs to schema-driven tables |
+| [src/db/internal-schema.ts](https://github.com/evmts/smithers/blob/main/src/db/internal-schema.ts) | Drizzle schema for internal tables (attempts, cache, tool calls) |
+| [src/db/input.ts](https://github.com/evmts/smithers/blob/main/src/db/input.ts) | Loads workflow input from database |
+| [src/db/schema-signature.ts](https://github.com/evmts/smithers/blob/main/src/db/schema-signature.ts) | Schema hashing for cache invalidation |
+
+### Schema Utilities
+
+| File | Description |
+|------|-------------|
+| [src/zod-to-table.ts](https://github.com/evmts/smithers/blob/main/src/zod-to-table.ts) | Converts Zod schemas to Drizzle table definitions + raw `CREATE TABLE` SQL |
+| [src/zod-to-example.ts](https://github.com/evmts/smithers/blob/main/src/zod-to-example.ts) | Converts Zod schemas to example JSON (injected as `{props.schema}` in prompts) |
+
+### Agents
+
+| File | Description |
+|------|-------------|
+| [src/agents/cli.ts](https://github.com/evmts/smithers/blob/main/src/agents/cli.ts) | CLI agent wrappers: `ClaudeCodeAgent`, `CodexAgent`, `GeminiAgent` |
+
+### Tools
+
+| File | Description |
+|------|-------------|
+| [src/tools/index.ts](https://github.com/evmts/smithers/blob/main/src/tools/index.ts) | Sandboxed tools: `read`, `write`, `edit`, `grep`, `bash` |
+| [src/tools/context.ts](https://github.com/evmts/smithers/blob/main/src/tools/context.ts) | Tool execution context (rootDir sandboxing, audit logging) |
+| [src/tools/utils.ts](https://github.com/evmts/smithers/blob/main/src/tools/utils.ts) | Tool utility functions |
+
+### VCS
+
+| File | Description |
+|------|-------------|
+| [src/vcs/jj.ts](https://github.com/evmts/smithers/blob/main/src/vcs/jj.ts) | Jujutsu VCS adapter: workspace snapshots, diffs, revert operations |
+
+### MDX
+
+| File | Description |
+|------|-------------|
+| [src/mdx-plugin.ts](https://github.com/evmts/smithers/blob/main/src/mdx-plugin.ts) | Bun preload plugin for `.mdx` imports |
+| [src/mdx-components.ts](https://github.com/evmts/smithers/blob/main/src/mdx-components.ts) | Default MDX components and `renderMdx()` utility |
+
+### Server & PI Plugin
+
+| File | Description |
+|------|-------------|
+| [src/server/index.ts](https://github.com/evmts/smithers/blob/main/src/server/index.ts) | HTTP server: REST API for runs, SSE event streaming, approval endpoints |
+| [src/pi-plugin/index.ts](https://github.com/evmts/smithers/blob/main/src/pi-plugin/index.ts) | Lightweight HTTP client for remote Smithers interaction |
+
+### CLI
+
+| File | Description |
+|------|-------------|
+| [src/cli/index.ts](https://github.com/evmts/smithers/blob/main/src/cli/index.ts) | CLI binary: `smithers run`, `resume`, `approve`, `deny`, `status`, `frames`, `list`, `graph`, `revert` |
+
+### Revert
+
+| File | Description |
+|------|-------------|
+| [src/revert.ts](https://github.com/evmts/smithers/blob/main/src/revert.ts) | Workspace revert logic using JJ snapshots |
+
+### Utilities
+
+| File | Description |
+|------|-------------|
+| [src/utils/errors.ts](https://github.com/evmts/smithers/blob/main/src/utils/errors.ts) | Error types and handling |
+| [src/utils/hash.ts](https://github.com/evmts/smithers/blob/main/src/utils/hash.ts) | SHA-256 hashing for content-addressed caching |
+| [src/utils/ids.ts](https://github.com/evmts/smithers/blob/main/src/utils/ids.ts) | Run ID and attempt ID generation |
+| [src/utils/tree-ids.ts](https://github.com/evmts/smithers/blob/main/src/utils/tree-ids.ts) | Deterministic node ID computation from JSX tree position |
+| [src/utils/time.ts](https://github.com/evmts/smithers/blob/main/src/utils/time.ts) | Time utilities |
+| [src/utils/xml.ts](https://github.com/evmts/smithers/blob/main/src/utils/xml.ts) | XML serialization for graph snapshots |
+
+### Tests
+
+| File | Description |
+|------|-------------|
+| [tests/engine.test.tsx](https://github.com/evmts/smithers/blob/main/tests/engine.test.tsx) | Engine tests: Ralph iteration, Sequence/Parallel execution, resume, skipIf, timeouts, approvals |
+| [tests/renderer.test.tsx](https://github.com/evmts/smithers/blob/main/tests/renderer.test.tsx) | Renderer tests: reconciler updates, prop changes |
+| [tests/docs-examples.test.tsx](https://github.com/evmts/smithers/blob/main/tests/docs-examples.test.tsx) | Documentation examples as runnable tests: Branch, Parallel, `createSmithers()`, context API |
+| [tests/cli.test.ts](https://github.com/evmts/smithers/blob/main/tests/cli.test.ts) | CLI command tests |
+| [tests/server.test.ts](https://github.com/evmts/smithers/blob/main/tests/server.test.ts) | HTTP server tests |
+| [tests/tools.test.ts](https://github.com/evmts/smithers/blob/main/tests/tools.test.ts) | Sandboxed tools tests: read, grep, bash, symlink protection |
+| [tests/pi-plugin.test.ts](https://github.com/evmts/smithers/blob/main/tests/pi-plugin.test.ts) | PI plugin client tests |
+| [tests/jj-workspace.test.ts](https://github.com/evmts/smithers/blob/main/tests/jj-workspace.test.ts) | JJ VCS workspace integration tests |
+| [tests/revert.test.ts](https://github.com/evmts/smithers/blob/main/tests/revert.test.ts) | Workflow revert tests |
+| [tests/helpers.ts](https://github.com/evmts/smithers/blob/main/tests/helpers.ts) | Test utilities: `createTestDb()`, `sleep()` |
+| [tests/schema.ts](https://github.com/evmts/smithers/blob/main/tests/schema.ts) | Shared test schema and DDL |
+| [tests/fixtures/test-workflow.tsx](https://github.com/evmts/smithers/blob/main/tests/fixtures/test-workflow.tsx) | Test workflow fixture |
+| [tests/fixtures/approval-workflow.tsx](https://github.com/evmts/smithers/blob/main/tests/fixtures/approval-workflow.tsx) | Approval workflow test fixture |
+
+### Examples
+
+| File | Description |
+|------|-------------|
+| [examples/simple-workflow.tsx](https://github.com/evmts/smithers/blob/main/examples/simple-workflow.tsx) | Minimal two-step workflow: research → write article (uses old Drizzle API) |
+| [examples/code-review-loop.tsx](https://github.com/evmts/smithers/blob/main/examples/code-review-loop.tsx) | Review-fix Ralph loop with sandboxed tools (uses old Drizzle API) |
+
+### Config
+
+| File | Description |
+|------|-------------|
+| [package.json](https://github.com/evmts/smithers/blob/main/package.json) | Package config, exports map, dependencies |
+| [tsconfig.json](https://github.com/evmts/smithers/blob/main/tsconfig.json) | TypeScript configuration |
+
 ## Docs
 
 ### Getting Started
