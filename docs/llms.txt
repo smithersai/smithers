@@ -14,6 +14,41 @@ Smithers is a TypeScript framework for building deterministic, resumable AI work
 For the complete documentation with all code examples, API references, and guides, see:
 - [llms-full.txt](https://smithers.sh/llms-full.txt): Complete inline documentation (~76k tokens)
 
+## Recommended Models
+
+### Codex (gpt-5.3-codex) -- Primary implementation agent
+- **Best for**: Writing code, implementing features, fixing bugs, refactoring
+- **Reasoning effort**: `high` (default). Use `xhigh` for especially complex tasks.
+- **CLI**: `CodexAgent` -- use if you have a Codex subscription
+- **AI SDK**: `openai("gpt-5.3-codex")` via `@ai-sdk/openai` -- use if you prefer API billing
+
+### Claude (claude-opus-4-6) -- Planning, review, and tool calling
+- **Best for**: Research, planning, code review, reporting, tool-calling tasks, orchestration logic
+- **CLI**: `ClaudeCodeAgent` -- use if you have a Claude Code subscription
+- **AI SDK**: `anthropic("claude-opus-4-6")` via `@ai-sdk/anthropic` -- use if you prefer API billing
+
+### Claude Sonnet (claude-sonnet-4-5-20250929) -- Simple tasks
+- **Best for**: Simple tool calling, lightweight reviews, report generation, tasks where a cheaper/faster model suffices
+- Use Sonnet when the task is straightforward and doesn't need deep reasoning
+
+### When to use which
+- **Implementing code** → Codex (strongest at code generation)
+- **Reviewing code** → Claude Opus or Codex (run both in parallel for best results)
+- **Research & planning** → Claude Opus (strongest at reasoning about architecture)
+- **Simple tool calls** → Claude Sonnet (fast, cheap, good enough)
+- **Validation (running tests)** → Codex (good at interpreting build output)
+
+### CLI vs AI SDK
+
+Use **CLI agents** (`ClaudeCodeAgent`, `CodexAgent`) when:
+- You have a subscription and want to use it
+- You want the agent's native tool ecosystem (file editing, shell, etc.)
+
+Use **AI SDK agents** (`ToolLoopAgent` from `ai`) when:
+- You want API billing instead of subscription
+- You want sandboxed tools from `smithers-orchestrator/tools`
+- You need more control over tool definitions
+
 ## Quick Start
 
 ```bash
@@ -32,12 +67,12 @@ const { Workflow, smithers } = createSmithers({
 });
 
 const analyst = new Agent({
-  model: anthropic("claude-sonnet-4-20250514"),
+  model: anthropic("claude-sonnet-4-5-20250929"),
   instructions: "You are a code analyst. Return structured JSON.",
 });
 
 const fixer = new Agent({
-  model: anthropic("claude-sonnet-4-20250514"),
+  model: anthropic("claude-sonnet-4-5-20250929"),
   instructions: "You are a senior engineer who writes minimal, correct fixes.",
 });
 
@@ -97,6 +132,544 @@ import { runWorkflow, resume, approve, deny, streamEvents, getStatus } from "smi
     "jsxImportSource": "smithers-orchestrator"
   }
 }
+```
+
+## Recommended Project Structure
+
+For non-trivial workflows, we strongly recommend this file structure with **one component per step**, **MDX prompts**, and **Zod schema files**:
+
+```
+scripts/my-workflow/
+  workflow.tsx          # Root workflow -- thin, just composition
+  smithers.ts           # createSmithers() + schema registry
+  agents.ts             # Agent definitions (CLI + API SDK)
+  config.ts             # Shared constants (max iterations, etc.)
+  system-prompt.ts      # Build system prompt from MDX + docs
+  preload.ts            # MDX plugin registration
+  bunfig.toml           # preload = ["./preload.ts"]
+  package.json
+  tsconfig.json
+  run.sh                # Shell script to launch workflow
+  components/
+    index.ts            # Re-export all components
+    Discover.tsx        # Component
+    Discover.schema.ts  # Zod schema for output
+    Discover.mdx        # Prompt template (MDX)
+    Implement.tsx
+    Implement.schema.ts
+    Implement.mdx
+    Validate.tsx
+    Validate.schema.ts
+    Validate.mdx
+    Review.tsx
+    Review.schema.ts
+    Review.mdx
+    ReviewFix.tsx
+    ReviewFix.schema.ts
+    ReviewFix.mdx
+    Report.tsx
+    Report.schema.ts
+    Report.mdx
+    TicketPipeline.tsx   # Composed pipeline per ticket
+    ValidationLoop.tsx   # Ralph loop: implement->validate->review->fix
+  prompts/
+    system-prompt.mdx    # Master system prompt template
+    *.md                 # Domain-specific context docs
+```
+
+### Why this structure?
+
+- **MDX prompts**: Prompts are `.mdx` files with JSX interpolation (`{props.ticketId}`), keeping prompt engineering separate from orchestration logic
+- **Schema files**: Each step has a `.schema.ts` with a Zod schema, ensuring structured output validation and auto-creating SQLite tables
+- **One component per step**: Each step (Discover, Implement, Review, etc.) is a React component in its own file, making workflows composable and testable
+- **Thin workflow.tsx**: The root file just composes components -- all logic lives in components
+
+### Key files explained
+
+**`smithers.ts`** -- Schema registry and typed exports:
+
+```ts
+import { createSmithers } from "smithers";
+import { DiscoverOutput } from "./components/Discover.schema";
+import { ImplementOutput } from "./components/Implement.schema";
+import { ValidateOutput } from "./components/Validate.schema";
+import { ReviewOutput } from "./components/Review.schema";
+import { ReviewFixOutput } from "./components/ReviewFix.schema";
+import { ReportOutput } from "./components/Report.schema";
+
+export const { Workflow, Task, useCtx, smithers, tables } = createSmithers({
+  discover: DiscoverOutput,
+  implement: ImplementOutput,
+  validate: ValidateOutput,
+  review: ReviewOutput,
+  reviewFix: ReviewFixOutput,
+  report: ReportOutput,
+}, { dbPath: "./my-workflow.db" });
+```
+
+**`agents.ts`** -- Dual CLI/API agent setup:
+
+```ts
+import { ToolLoopAgent as Agent, stepCountIs, type ToolSet } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { openai } from "@ai-sdk/openai";
+import { ClaudeCodeAgent, CodexAgent } from "smithers";
+import { tools as smithersTools } from "smithers/tools";
+import { SYSTEM_PROMPT } from "./system-prompt";
+
+const tools = smithersTools as ToolSet;
+const USE_CLI = process.env.USE_CLI_AGENTS !== "0" && process.env.USE_CLI_AGENTS !== "false";
+const UNSAFE = process.env.SMITHERS_UNSAFE === "1";
+
+// --- Codex (implementation agent) ---
+const CODEX_MODEL = process.env.CODEX_MODEL ?? "gpt-5.3-codex";
+
+const codexApi = new Agent({
+  model: openai(CODEX_MODEL),
+  tools,
+  instructions: SYSTEM_PROMPT,
+  stopWhen: stepCountIs(100),
+  maxOutputTokens: 8192,
+});
+
+const codexCli = new CodexAgent({
+  model: CODEX_MODEL,
+  systemPrompt: SYSTEM_PROMPT,
+  yolo: UNSAFE,
+  config: { model_reasoning_effort: "high" },
+  timeoutMs: 30 * 60 * 1000,
+});
+
+export const codex = USE_CLI ? codexCli : codexApi;
+
+// --- Claude (review/planning agent) ---
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-6";
+
+const claudeApi = new Agent({
+  model: anthropic(CLAUDE_MODEL),
+  tools,
+  instructions: SYSTEM_PROMPT,
+  stopWhen: stepCountIs(100),
+  maxOutputTokens: 8192,
+});
+
+const claudeCli = new ClaudeCodeAgent({
+  model: CLAUDE_MODEL,
+  systemPrompt: SYSTEM_PROMPT,
+  dangerouslySkipPermissions: UNSAFE,
+  timeoutMs: 30 * 60 * 1000,
+});
+
+export const claude = USE_CLI ? claudeCli : claudeApi;
+```
+
+**`preload.ts`** + **`bunfig.toml`** -- Enable MDX imports:
+
+```ts
+// preload.ts
+import { mdxPlugin } from "smithers/mdx-plugin";
+mdxPlugin();
+```
+
+```toml
+# bunfig.toml
+preload = ["./preload.ts"]
+```
+
+**`system-prompt.ts`** -- Build rich system prompts from MDX with injected docs:
+
+```ts
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { renderMdx } from "smithers";
+import SystemPromptMdx from "./prompts/system-prompt.mdx";
+
+const ROOT = resolve(new URL("../..", import.meta.url).pathname);
+
+function readDoc(path: string): string {
+  try { return readFileSync(resolve(ROOT, path), "utf8"); }
+  catch { return `[Could not read ${path}]`; }
+}
+
+const ClaudeMd = () => readDoc("CLAUDE.md");
+const Architecture = () => readDoc("docs/architecture.md");
+
+export const SYSTEM_PROMPT = renderMdx(SystemPromptMdx, {
+  components: { ClaudeMd, Architecture },
+});
+```
+
+The corresponding `prompts/system-prompt.mdx` uses those components as JSX tags to compose the full system prompt:
+
+```mdx
+# My Project
+
+You are building [project description].
+
+## Project Conventions
+
+<ClaudeMd />
+
+## Architecture
+
+<Architecture />
+
+## JSON Output Requirement
+
+MUST end response with JSON object in code fence. Format specified in task prompt.
+```
+
+This pattern lets you:
+- Keep domain knowledge in standalone `.md` files (reusable across workflows)
+- Compose them into a single system prompt via MDX component injection
+- Share the same system prompt across all agents in the workflow
+- Add/remove context sections without editing prompt text
+
+For per-step prompts (e.g., `Implement.mdx`, `Review.mdx`), use `{props.*}` interpolation to inject dynamic data from the workflow context:
+
+```mdx
+IMPLEMENTATION -- Ticket: {props.ticketId}
+
+{props.ticketDescription}
+
+{props.previousAttempt
+  ? `PREVIOUS ATTEMPT FAILED:\n${props.previousAttempt.failingSummary}\nFix the issues above.`
+  : ""}
+
+**REQUIRED OUTPUT** -- JSON matching this schema:
+{props.schema}
+```
+
+The `{props.schema}` variable is auto-injected by Smithers with the Zod schema description for the task's output table, so agents know exactly what JSON structure to produce.
+
+## Common Patterns
+
+### Pattern 1: Dynamic Ticket Discovery
+
+**For large projects (>20 tasks)**, prefer dynamic ticket discovery over hardcoding a task list. An agent explores the codebase, compares current state to specs, and generates tickets at runtime. This lets the project evolve naturally as tickets are completed.
+
+```tsx
+// workflow.tsx -- Dynamic discovery
+export default smithers((ctx) => {
+  const discoverOutput = ctx.latest(tables.discover, "discover-codex");
+  const unfinishedTickets = ctx
+    .latestArray(discoverOutput?.tickets, Ticket)
+    .filter((t) => !ctx.latest(tables.report, `${t.id}:report`)) as Ticket[];
+
+  return (
+    <Workflow name="my-project">
+      <Sequence>
+        <Branch if={unfinishedTickets.length === 0} then={<Discover />} />
+        {unfinishedTickets.map((ticket) => (
+          <TicketPipeline key={ticket.id} ticket={ticket} />
+        ))}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+The Discover component runs an agent that analyzes the codebase and generates the next batch of tickets as structured JSON. When all tickets complete, the workflow re-renders, Discover runs again, and finds the next batch. This continues until the agent reports no more work.
+
+**For smaller/well-defined projects (<20 tasks)**, hardcoding tasks is fine:
+
+```tsx
+// Hardcoded task list -- good for focused features
+const phases = [
+  { id: "auth-types", name: "Add auth types" },
+  { id: "auth-middleware", name: "Add auth middleware" },
+  { id: "auth-routes", name: "Add auth routes" },
+  { id: "auth-tests", name: "Add auth tests" },
+];
+
+export default smithers((ctx) => (
+  <Workflow name="add-auth">
+    <Sequence>
+      {phases.map(({ id, name }) => (
+        <Sequence key={id}>
+          <Task id={`${id}:implement`} output={tables.implement} agent={codex}>
+            {`Implement: ${name}`}
+          </Task>
+          <Task id={`${id}:test`} output={tables.validate} agent={codex}>
+            {`Validate: run tests for ${name}`}
+          </Task>
+        </Sequence>
+      ))}
+    </Sequence>
+  </Workflow>
+));
+```
+
+### Pattern 2: Implement-Review Ralph Loop
+
+**Strongly recommended.** Wrap implementation in a Ralph loop with validation and review. This catches issues early and forces agents to fix them before moving on.
+
+```tsx
+// ValidationLoop.tsx
+import { Ralph, Sequence } from "smithers";
+
+export function ValidationLoop({ ticket }: { ticket: Ticket }) {
+  const ctx = useCtx();
+  const ticketId = ticket.id;
+
+  const claudeReview = ctx.latest(tables.review, `${ticketId}:review-claude`) as ReviewOutput | undefined;
+  const codexReview = ctx.latest(tables.review, `${ticketId}:review-codex`) as ReviewOutput | undefined;
+
+  const allApproved = !!claudeReview?.approved && !!codexReview?.approved;
+
+  return (
+    <Ralph
+      id={`${ticketId}:impl-review-loop`}
+      until={allApproved}
+      maxIterations={3}
+      onMaxReached="return-last"
+    >
+      <Sequence>
+        <Implement ticket={ticket} />
+        <Validate ticket={ticket} />
+        <Review ticket={ticket} />
+        <ReviewFix ticket={ticket} />
+      </Sequence>
+    </Ralph>
+  );
+}
+```
+
+The loop runs: implement → validate (run tests) → review (check quality) → fix (address issues). It repeats until both reviewers approve or `maxIterations` is hit.
+
+### Pattern 3: Parallel Multi-Agent Review
+
+Run multiple reviewers in parallel for higher-quality feedback. Use `continueOnFail` so one reviewer timing out doesn't block the other.
+
+```tsx
+// Review.tsx
+export function Review({ ticket }: { ticket: Ticket }) {
+  const ctx = useCtx();
+  const ticketId = ticket.id;
+  const latestValidate = ctx.latest(tables.validate, `${ticketId}:validate`) as ValidateOutput | undefined;
+
+  if (!latestValidate?.allPassed) return null; // Skip review if tests fail
+
+  return (
+    <Parallel>
+      <Task id={`${ticketId}:review-claude`} output={tables.review} agent={claude}
+            timeoutMs={15 * 60 * 1000} continueOnFail>
+        <ReviewPrompt ticketId={ticketId} reviewer="claude" />
+      </Task>
+      <Task id={`${ticketId}:review-codex`} output={tables.review} agent={codex}
+            timeoutMs={15 * 60 * 1000} continueOnFail>
+        <ReviewPrompt ticketId={ticketId} reviewer="codex" />
+      </Task>
+    </Parallel>
+  );
+}
+```
+
+### Pattern 4: Pipeline per Ticket
+
+Compose steps into a per-ticket pipeline, with `skipIf` for completed tickets so resume works correctly.
+
+```tsx
+// TicketPipeline.tsx
+export function TicketPipeline({ ticket }: { ticket: Ticket }) {
+  const ctx = useCtx();
+  const latestReport = ctx.latest(tables.report, `${ticket.id}:report`) as ReportOutput | undefined;
+  const ticketComplete = latestReport != null;
+
+  return (
+    <Sequence key={ticket.id} skipIf={ticketComplete}>
+      <Research ticket={ticket} />
+      <Plan ticket={ticket} />
+      <ValidationLoop ticket={ticket} />
+      <Report ticket={ticket} />
+    </Sequence>
+  );
+}
+```
+
+### Pattern 5: MDX Prompt with Props
+
+Use MDX files for prompts with interpolated props. This keeps prompts readable and separates prompt engineering from orchestration logic.
+
+```
+// Implement.mdx
+IMPLEMENTATION -- Ticket: {props.ticketId} -- {props.ticketTitle}
+
+TICKET DESCRIPTION:
+{props.ticketDescription}
+
+ACCEPTANCE CRITERIA:
+- {props.acceptanceCriteria}
+
+{props.previousImplementation ? `\nPREVIOUS ATTEMPT:\n${props.previousImplementation.whatWasDone}\nFix issues from previous attempt.` : ""}
+
+{props.reviewFixes ? `\nREVIEW FIXES NEEDED:\n${props.reviewFixes}` : ""}
+
+**REQUIRED OUTPUT** -- JSON matching this schema:
+{props.schema}
+```
+
+The corresponding component imports the MDX and passes props:
+
+```tsx
+// Implement.tsx
+import { Task } from "../smithers";
+import { codex } from "../agents";
+import ImplementPrompt from "./Implement.mdx";
+
+export function Implement({ ticket }: { ticket: Ticket }) {
+  const ctx = useCtx();
+  const ticketId = ticket.id;
+  const latestValidate = ctx.latest(tables.validate, `${ticketId}:validate`) as ValidateOutput | undefined;
+
+  return (
+    <Task id={`${ticketId}:implement`} output={tables.implement} agent={codex} timeoutMs={45 * 60 * 1000}>
+      <ImplementPrompt
+        ticketId={ticketId}
+        ticketTitle={ticket.title}
+        ticketDescription={ticket.description}
+        acceptanceCriteria={ticket.acceptanceCriteria?.join("\n- ") ?? ""}
+        validationFeedback={latestValidate ? {
+          allPassed: latestValidate.allPassed,
+          failingSummary: latestValidate.failingSummary ?? null,
+        } : null}
+      />
+    </Task>
+  );
+}
+```
+
+### Pattern 6: Zod Schema per Step
+
+Every step gets a dedicated schema file. Schemas auto-create SQLite tables and validate agent output.
+
+```ts
+// Implement.schema.ts
+import { z } from "zod";
+
+export const ImplementOutput = z.object({
+  filesCreated: z.array(z.string()).nullable().describe("Files created"),
+  filesModified: z.array(z.string()).nullable().describe("Files modified"),
+  commitMessages: z.array(z.string()).describe("Git commit messages made"),
+  whatWasDone: z.string().describe("Detailed description of what was implemented"),
+  testsWritten: z.array(z.string()).describe("Test files written"),
+  allTestsPassing: z.boolean().describe("Whether all tests pass"),
+  testOutput: z.string().describe("Output from running tests"),
+});
+export type ImplementOutput = z.infer<typeof ImplementOutput>;
+```
+
+### Pattern 7: Multi-Pass Refinement with Sprint Tracking
+
+For very large projects, wrap the entire workflow in a Ralph loop with a pass tracker. Each pass discovers new work, implements it, and advances a counter.
+
+```tsx
+export default smithers((ctx) => {
+  const passTracker = ctx.latest(tables.output, "sprint-tracker") as { sprintsCompleted?: number } | undefined;
+  const currentSprint = passTracker?.sprintsCompleted ?? 0;
+  const projectComplete = /* check completion condition */;
+
+  return (
+    <Workflow name="large-project">
+      <Ralph until={projectComplete} maxIterations={25} onMaxReached="return-last">
+        <Sequence>
+          {/* Sprint work here -- discover, implement, test, review */}
+          <Task id="sprint-tracker" output={tables.output}>
+            {{ sprintsCompleted: currentSprint + 1, summary: `Sprint ${currentSprint + 1} complete.` }}
+          </Task>
+        </Sequence>
+      </Ralph>
+    </Workflow>
+  );
+});
+```
+
+## Monitoring & Debugging
+
+### SQLite Inspection
+
+All workflow state is persisted in SQLite. Query it directly to monitor progress:
+
+```bash
+# See all completed tasks
+sqlite3 my-workflow.db "SELECT node_id, status, created_at FROM smithers_attempts ORDER BY created_at DESC"
+
+# Check outputs for a specific step
+sqlite3 my-workflow.db "SELECT * FROM implement WHERE node_id LIKE '%:implement' ORDER BY created_at DESC LIMIT 5"
+
+# Count iterations per task (useful for Ralph loops)
+sqlite3 my-workflow.db "SELECT node_id, COUNT(*) as iterations FROM smithers_attempts WHERE status='completed' GROUP BY node_id"
+
+# See review approval status
+sqlite3 my-workflow.db "SELECT node_id, json_extract(data, '$.approved') as approved, json_extract(data, '$.feedback') as feedback FROM review"
+```
+
+### JJ (Jujutsu) VCS Integration
+
+Smithers auto-snapshots the workspace with JJ before each task executes. This enables:
+
+- **Reverting** to any previous task's state: `bunx smithers revert <run-id> --to <attempt-id>`
+- **Diffing** between task attempts to see what an agent actually changed
+- **Crash recovery** -- if an agent corrupts the workspace, revert and retry
+
+```bash
+# See JJ snapshots created by smithers
+jj log --no-pager | head -40
+
+# Diff what an agent changed during a specific task
+jj diff -r <change-id>
+
+# Revert workspace to state before a task ran
+bunx smithers revert <run-id> --to <attempt-id>
+```
+
+### CLI Status Commands
+
+```bash
+# Check workflow status
+bunx smithers status workflow.tsx
+
+# See execution frames (what the workflow graph looks like at each render)
+bunx smithers frames workflow.tsx
+
+# List all runs
+bunx smithers list workflow.tsx
+
+# Visualize the execution graph
+bunx smithers graph workflow.tsx
+```
+
+### NDJSON Logs
+
+Smithers writes NDJSON event logs to `.smithers/logs/`. Each line is a JSON event:
+
+```bash
+# Tail live events
+tail -f .smithers/logs/*.ndjson | jq .
+
+# Filter to task completions
+cat .smithers/logs/*.ndjson | jq 'select(.type == "task:completed")'
+
+# See errors
+cat .smithers/logs/*.ndjson | jq 'select(.type == "task:failed")'
+```
+
+### Programmatic Monitoring
+
+Use the `onProgress` callback for real-time monitoring:
+
+```ts
+await runWorkflow(workflow, {
+  input: {},
+  onProgress: (event) => {
+    if (event.type === "task:completed") {
+      console.log(`Completed: ${event.nodeId}`);
+    }
+    if (event.type === "task:failed") {
+      console.error(`Failed: ${event.nodeId}`, event.error);
+    }
+  },
+});
 ```
 
 ## Docs
