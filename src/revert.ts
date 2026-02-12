@@ -51,7 +51,7 @@ export async function revertToAttempt(
   });
 
   // Revert must target the same repository/worktree where the attempt ran.
-  const cwd: string | undefined = (attemptRow as any).jjCwd ?? undefined;
+  const cwd: string | undefined = attemptRow.jjCwd ?? undefined;
   const result = await revertToJjPointer(jjPointer, cwd);
 
   onProgress?.({

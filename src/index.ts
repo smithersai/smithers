@@ -290,8 +290,9 @@ export async function runWorkflow<Schema>(
 export async function renderFrame<Schema>(
   workflow: SmithersWorkflow<Schema>,
   ctx: any,
+  opts?: { baseRootDir?: string },
 ): Promise<GraphSnapshot> {
-  const snap = await renderFrameEngine(workflow, ctx);
+  const snap = await renderFrameEngine(workflow, ctx, opts);
   return {
     runId: snap.runId,
     frameNo: snap.frameNo,

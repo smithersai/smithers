@@ -530,8 +530,8 @@ async function executeTask(
     finishedAtMs: null,
     errorJson: null,
     jjPointer: null,
-      jjCwd: desc.worktreePath ?? toolConfig.rootDir,
-      cached: false,
+    jjCwd: desc.worktreePath ?? toolConfig.rootDir,
+    cached: false,
     metaJson: JSON.stringify({
       prompt: desc.prompt ?? null,
       staticPayload: desc.staticPayload ?? null,
@@ -596,8 +596,8 @@ async function executeTask(
       }
     }
 
-    if (!payload) {
-      let taskRoot = toolConfig.rootDir;
+  if (!payload) {
+    const taskRoot = desc.worktreePath ?? toolConfig.rootDir;
       if (desc.agent) {
         const result = await runWithToolContext(
           {
@@ -982,7 +982,7 @@ async function executeTask(
       state: "finished",
       finishedAtMs: nowMs(),
       jjPointer,
-      cached: cached ? 1 : 0,
+      cached,
       responseText,
     });
     await adapter.insertNode({
@@ -1055,6 +1055,7 @@ async function executeTask(
 export async function renderFrame<Schema>(
   workflow: SmithersWorkflow<Schema>,
   ctx: any,
+  opts?: { baseRootDir?: string },
 ): Promise<{
   runId: string;
   frameNo: number;
@@ -1064,6 +1065,7 @@ export async function renderFrame<Schema>(
   const renderer = new SmithersRenderer();
   const result = await renderer.render(workflow.build(ctx), {
     ralphIterations: ctx?.iterations,
+    baseRootDir: opts?.baseRootDir,
     defaultIteration: ctx?.iteration,
   });
 

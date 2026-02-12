@@ -36,17 +36,28 @@ export async function runJj(
       let stderr = "";
       child.stdout?.on("data", (chunk) => (stdout += chunk.toString("utf8")));
       child.stderr?.on("data", (chunk) => (stderr += chunk.toString("utf8")));
+
+      // Guard against resolving twice if both 'error' and 'close' fire.
+      let settled = false;
+      function safeResolve(res: RunJjResult) {
+        if (settled) return;
+        settled = true;
+        resolve(res);
+      }
+
       child.on("error", (err) => {
         // When jj isn't installed or cannot spawn, normalize to code 127
-        resolve({
+        safeResolve({
           code: 127,
           stdout: "",
-          stderr: err.message || "spawn error",
+          stderr: err instanceof Error ? err.message : String(err),
         });
       });
       child.on("close", (code, signal) => {
-        const withSignal = signal ? `terminated by signal ${signal}` : stderr;
-        resolve({ code: code ?? 1, stdout, stderr: withSignal });
+        const withSignal = signal
+          ? (stderr ? stderr + "\n" : "") + `terminated by signal ${signal}`
+          : stderr;
+        safeResolve({ code: code ?? 1, stdout, stderr: withSignal });
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -98,7 +109,9 @@ export async function revertToJjPointer(
  */
 export async function isJjRepo(cwd?: string): Promise<boolean> {
   // `jj log -r @` is stable across JJ versions; success implies in-repo
-  const res = await runJj(["log", "-r", "@", "-n", "1", "--no-graph"], { cwd });
+  const res = await runJj(["log", "-r", "@", "-n", "1", "--no-graph"], {
+    cwd,
+  });
   return res.code === 0;
 }
 
@@ -138,6 +151,9 @@ export async function workspaceAdd(
   // Alt 3: explicit --wc-path form seen in some versions
   attempts.push(["workspace", "add", "--wc-path", path, name, ...revTail]);
 
+  // NOTE: Failed attempts may leave partial state (e.g., directories);
+  // callers should clean up on final failure.
+
   let lastErr = "";
   for (const args of attempts) {
     const res = await runJj(args, { cwd: opts.cwd });
@@ -154,19 +170,35 @@ export type WorkspaceInfo = {
 };
 
 /**
- * List existing workspaces, parsing human output heuristically.
+ * List existing workspaces using a JJ template for structured output.
+ * Falls back to parsing human output if `-T` is unavailable.
  */
 export async function workspaceList(cwd?: string): Promise<WorkspaceInfo[]> {
-  // Prefer structured output to avoid version-specific human formats
-  const res = await runJj(["workspace", "list", "-T", 'name ++ "\\n"'], {
+  // Preferred: structured names via template
+  let res = await runJj(["workspace", "list", "-T", 'name ++ "\\n"'], {
     cwd,
   });
+  if (res.code === 0) {
+    const lines = res.stdout
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    return lines.map((name) => ({ name, path: null, selected: false }));
+  }
+
+  // Fallback: plain human format; try to detect current selection by leading '* '
+  res = await runJj(["workspace", "list"], { cwd });
   if (res.code !== 0) return [];
-  const lines = res.stdout
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-  return lines.map((name) => ({ name, path: null, selected: false }));
+  const rows: WorkspaceInfo[] = [];
+  for (const raw of res.stdout.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const selected = line.startsWith("*");
+    const name = selected ? line.replace(/^\*\s*/, "").trim() : line;
+    if (!name) continue;
+    rows.push({ name, path: null, selected });
+  }
+  return rows;
 }
 
 /**

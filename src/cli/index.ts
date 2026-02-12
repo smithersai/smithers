@@ -4,12 +4,12 @@ import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { runWorkflow, renderFrame, resolveSchema } from "../engine";
 import { approveNode, denyNode } from "../engine/approvals";
-import { SmithersDb } from "../db/adapter";
-import { ensureSmithersTables } from "../db/ensure";
 import { loadInput, loadOutputs } from "../db/snapshot";
+import { ensureSmithersTables } from "../db/ensure";
+import { SmithersDb } from "../db/adapter";
 import { buildContext } from "../context";
-import { revertToAttempt } from "../revert";
 import type { SmithersWorkflow } from "../types";
+import { revertToAttempt } from "../revert";
 
 async function loadWorkflow(path: string): Promise<SmithersWorkflow<any>> {
   const abs = resolve(process.cwd(), path);
@@ -388,7 +388,9 @@ Run options:
         : {};
     const outputs = await loadOutputs(workflow.db as any, schema, runId);
     const ctx = buildContext({ runId, iteration: 0, input: inputRow, outputs });
-    const snap = await renderFrame(workflow, ctx);
+    const resolvedWorkflowPath = resolve(process.cwd(), workflowPath);
+    const baseRootDir = dirname(resolvedWorkflowPath);
+    const snap = await renderFrame(workflow, ctx, { baseRootDir });
     console.log(JSON.stringify(snap, null, 2));
     process.exit(0);
   }

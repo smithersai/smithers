@@ -85,7 +85,7 @@ export function extractFromHost(
        * Stack of active <Worktree> contexts (outermost -> innermost).
        * The top of the stack controls the effective root override for tasks.
        */
-      worktreeStack: { id: string; path: string; baseRev?: string }[];
+      worktreeStack: { id: string; path: string }[];
     },
   ) {
     if (node.kind === "text") return;

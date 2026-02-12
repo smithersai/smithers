@@ -43,6 +43,8 @@ export function ensureSmithersTables(db: BunSQLiteDatabase<any>): void {
       finished_at_ms INTEGER,
       error_json TEXT,
       jj_pointer TEXT,
+      response_text TEXT,
+      jj_cwd TEXT,
       cached INTEGER DEFAULT 0,
       meta_json TEXT,
       PRIMARY KEY (run_id, node_id, iteration, attempt)
