@@ -1,8 +1,36 @@
 /** @jsxImportSource smithers */
+import React from "react";
 import { describe, expect, test } from "bun:test";
 import { SmithersRenderer } from "../src/dom/renderer";
 import { Task, Workflow } from "../src/components";
 import { outputA } from "./schema";
+
+const fakeAgent: any = {
+  id: "fake",
+  tools: {},
+  generate: async () => ({ output: { value: 1 } }),
+};
+
+describe("MDX prompt error handling", () => {
+  test("throws when agent task prompt element has invalid type", async () => {
+    const renderer = new SmithersRenderer();
+    // Simulate an unloaded MDX import: a React element whose type is a module
+    // object instead of a component function, e.g. { default: "/path/to.mdx" }
+    const brokenMdx = React.createElement(
+      { default: "/path/to/Prompt.mdx" } as any,
+      {},
+    );
+    await expect(
+      renderer.render(
+        <Workflow name="w">
+          <Task id="t" output={outputA} agent={fakeAgent}>
+            {brokenMdx}
+          </Task>
+        </Workflow>,
+      ),
+    ).rejects.toThrow("Task prompt could not be rendered");
+  });
+});
 
 describe("renderer updates", () => {
   test("commitUpdate applies new props", async () => {

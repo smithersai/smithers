@@ -189,9 +189,11 @@ const reconciler = Reconciler(hostConfig);
 export class SmithersRenderer {
   private container: HostContainer;
   private root: any;
+  private _renderError: unknown = null;
 
   constructor() {
     this.container = { root: null };
+
     this.root = (reconciler as any).createContainer(
       this.container,
       0,
@@ -199,16 +201,20 @@ export class SmithersRenderer {
       false,
       null,
       "",
-      (reconciler as any).defaultOnUncaughtError,
-      (reconciler as any).defaultOnCaughtError,
-      (reconciler as any).defaultOnRecoverableError,
+      (error: unknown) => { this._renderError ??= error; }, // onUncaughtError — propagate
+      () => {}, // onCaughtError — handled by error boundary
+      () => {}, // onRecoverableError — React auto-recovered
       null,
     );
   }
 
   async render(element: React.ReactElement, opts?: ExtractOptions) {
+    this._renderError = null;
     (reconciler as any).updateContainerSync(element, this.root, null, () => {});
     (reconciler as any).flushSyncWork();
+    if (this._renderError) {
+      throw this._renderError;
+    }
     return extractFromHost(this.container.root, opts);
   }
 

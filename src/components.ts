@@ -44,6 +44,18 @@ function renderChildrenToText(children: any): string {
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   } catch {
+    // When children is a React element whose type is not a valid component
+    // (string tag or function), fail loudly instead of degrading to
+    // "[object Object]". Common cause: uncompiled MDX import.
+    if (
+      React.isValidElement(children) &&
+      typeof (children as any).type !== "string" &&
+      typeof (children as any).type !== "function"
+    ) {
+      throw new Error(
+        `Task prompt could not be rendered: element type is "${typeof (children as any).type}", expected a string or component function`,
+      );
+    }
     return String(children ?? "");
   }
 }
