@@ -1089,8 +1089,7 @@ export class CodexAgent extends BaseCliAgent {
     let schemaCleanupFile: string | null = null;
     if (!this.opts.outputSchema && params.options?.outputSchema) {
       try {
-        const { zodToJsonSchema } = await import("zod-to-json-schema");
-        const jsonSchema = zodToJsonSchema(params.options.outputSchema);
+        const jsonSchema = params.options.outputSchema.toJSONSchema();
         const schemaFile = join(
           tmpdir(),
           `smithers-schema-${randomUUID()}.json`,
@@ -1099,7 +1098,7 @@ export class CodexAgent extends BaseCliAgent {
         pushFlag(args, "--output-schema", schemaFile);
         schemaCleanupFile = schemaFile;
       } catch {
-        // zod-to-json-schema not available or conversion failed, skip auto-wiring
+        // Schema conversion failed (e.g. unrepresentable types), skip auto-wiring
       }
     }
 
