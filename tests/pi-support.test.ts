@@ -281,4 +281,113 @@ import { afterEach, describe, expect, test } from "bun:test";
        await rm(fake.dir, { recursive: true, force: true });
      }
    });
+
+   test("PiAgent json mode extracts text from turn_end in NDJSON stream", async () => {
+     // Simulates real pi --mode json output: NDJSON stream with session metadata first,
+     // then message events, then turn_end containing the actual response.
+     const fake = await makeFakePi(`
+ const lines = [
+   JSON.stringify({ type: "session", version: 3, id: "test-session-id", timestamp: "2026-02-15T18:00:00.000Z", cwd: "/tmp" }),
+   JSON.stringify({ type: "agent_start" }),
+   JSON.stringify({ type: "turn_start" }),
+   JSON.stringify({ type: "message_start", message: { role: "user", content: [{ type: "text", text: "Hello" }] } }),
+   JSON.stringify({ type: "message_end", message: { role: "user", content: [{ type: "text", text: "Hello" }] } }),
+   JSON.stringify({ type: "message_start", message: { role: "assistant", content: [] } }),
+   JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Here is" } }),
+   JSON.stringify({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " your data" } }),
+   JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "Here is your data" }] } }),
+   JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: "Here is your data" }], stopReason: "stop" } }),
+   JSON.stringify({ type: "agent_end" })
+ ];
+ process.stdout.write(lines.join("\\n") + "\\n");
+ `);
+
+     try {
+       process.env.PATH = `${fake.dir}:${originalPath}`;
+
+       const agent = new PiAgent({
+         mode: "json",
+         model: "test-model",
+         env: { PATH: process.env.PATH! },
+       });
+
+       const result = await agent.generate({
+         messages: [{ role: "user", content: "Hello" }],
+       });
+
+       // Should extract text from turn_end, not from first JSON (session metadata)
+       expect(result.text).toBe("Here is your data");
+       // First JSON should NOT be parsed as output (would have "type: session")
+       expect(result.output).not.toHaveProperty("type", "session");
+     } finally {
+       await rm(fake.dir, { recursive: true, force: true });
+     }
+   });
+
+   test("PiAgent json mode extracts JSON from text content in turn_end", async () => {
+     // Simulates pi output where the agent returns JSON in the text content
+     const fake = await makeFakePi(`
+ const lines = [
+   JSON.stringify({ type: "session", version: 3, id: "test-session-id" }),
+   JSON.stringify({ type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: '{"v":1,"tickets":[{"id":"task-1","title":"First task"}],"batchComplete":true}' }], stopReason: "stop" } }),
+   JSON.stringify({ type: "agent_end" })
+ ];
+ process.stdout.write(lines.join("\\n") + "\\n");
+ `);
+
+     try {
+       process.env.PATH = `${fake.dir}:${originalPath}`;
+
+       const agent = new PiAgent({
+         mode: "json",
+         model: "test-model",
+         env: { PATH: process.env.PATH! },
+       });
+
+       const result = await agent.generate({
+         messages: [{ role: "user", content: "Generate JSON" }],
+       });
+
+       expect(result.text).toContain('"v":1');
+       expect(result.output).toEqual({
+         v: 1,
+         tickets: [{ id: "task-1", title: "First task" }],
+         batchComplete: true,
+       });
+     } finally {
+       await rm(fake.dir, { recursive: true, force: true });
+     }
+   });
+
+   test("PiAgent json mode extracts text from agent_end when turn_end missing", async () => {
+     // Edge case: agent_end has messages array if turn_end is not present
+     const fake = await makeFakePi(`
+ const lines = [
+   JSON.stringify({ type: "session", version: 3, id: "test-session-id" }),
+   JSON.stringify({ type: "agent_end", messages: [
+     { role: "user", content: [{ type: "text", text: "Hello" }] },
+     { role: "assistant", content: [{ type: "text", text: "Response from agent_end" }] }
+   ]})
+ ];
+ process.stdout.write(lines.join("\\n") + "\\n");
+ `);
+
+     try {
+       process.env.PATH = `${fake.dir}:${originalPath}`;
+
+       const agent = new PiAgent({
+         mode: "json",
+         model: "test-model",
+         env: { PATH: process.env.PATH! },
+       });
+
+       const result = await agent.generate({
+         messages: [{ role: "user", content: "Hello" }],
+       });
+
+       expect(result.text).toBe("Response from agent_end");
+     } finally {
+       await rm(fake.dir, { recursive: true, force: true });
+     }
+   });
  });
