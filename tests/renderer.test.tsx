@@ -2,14 +2,13 @@
 import { describe, expect, test } from "bun:test";
 import { SmithersRenderer } from "../src/dom/renderer";
 import { Task, Workflow } from "../src/components";
-import { outputA } from "./schema";
 
 describe("renderer updates", () => {
   test("commitUpdate applies new props", async () => {
     const renderer = new SmithersRenderer();
     const first = await renderer.render(
       <Workflow name="w">
-        <Task id="t" output={outputA} skipIf>
+        <Task id="t" output="outputA" skipIf>
           {{ value: 1 }}
         </Task>
       </Workflow>,
@@ -19,7 +18,7 @@ describe("renderer updates", () => {
 
     const second = await renderer.render(
       <Workflow name="w">
-        <Task id="t" output={outputA} skipIf={false}>
+        <Task id="t" output="outputA" skipIf={false}>
           {{ value: 2 }}
         </Task>
       </Workflow>,

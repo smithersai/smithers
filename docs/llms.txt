@@ -387,10 +387,10 @@ export default smithers((ctx) => (
     <Sequence>
       {phases.map(({ id, name }) => (
         <Sequence key={id}>
-          <Task id={`${id}:implement`} output={tables.implement} agent={codex}>
+          <Task id={`${id}:implement`} output={outputs.implement} agent={codex}>
             {`Implement: ${name}`}
           </Task>
-          <Task id={`${id}:test`} output={tables.validate} agent={codex}>
+          <Task id={`${id}:test`} output={outputs.validate} agent={codex}>
             {`Validate: run tests for ${name}`}
           </Task>
         </Sequence>
@@ -452,11 +452,11 @@ export function Review({ ticket }: { ticket: Ticket }) {
 
   return (
     <Parallel>
-      <Task id={`${ticketId}:review-claude`} output={tables.review} agent={claude}
+      <Task id={`${ticketId}:review-claude`} output={outputs.review} agent={claude}
             timeoutMs={15 * 60 * 1000} continueOnFail>
         <ReviewPrompt ticketId={ticketId} reviewer="claude" />
       </Task>
-      <Task id={`${ticketId}:review-codex`} output={tables.review} agent={codex}
+      <Task id={`${ticketId}:review-codex`} output={outputs.review} agent={codex}
             timeoutMs={15 * 60 * 1000} continueOnFail>
         <ReviewPrompt ticketId={ticketId} reviewer="codex" />
       </Task>
@@ -523,7 +523,7 @@ export function Implement({ ticket }: { ticket: Ticket }) {
   const latestValidate = ctx.latest(tables.validate, `${ticketId}:validate`) as ValidateOutput | undefined;
 
   return (
-    <Task id={`${ticketId}:implement`} output={tables.implement} agent={codex} timeoutMs={45 * 60 * 1000}>
+    <Task id={`${ticketId}:implement`} output={outputs.implement} agent={codex} timeoutMs={45 * 60 * 1000}>
       <ImplementPrompt
         ticketId={ticketId}
         ticketTitle={ticket.title}
@@ -574,7 +574,7 @@ export default smithers((ctx) => {
       <Ralph until={projectComplete} maxIterations={25} onMaxReached="return-last">
         <Sequence>
           {/* Sprint work here -- discover, implement, test, review */}
-          <Task id="sprint-tracker" output={tables.output}>
+          <Task id="sprint-tracker" output={outputs.output}>
             {{ sprintsCompleted: currentSprint + 1, summary: `Sprint ${currentSprint + 1} complete.` }}
           </Task>
         </Sequence>

@@ -126,7 +126,7 @@ export function Review({ ticket }: { ticket: Ticket }) {
     <Parallel>
       <Task
         id={`${ticketId}:review-claude`}
-        output={tables.review}
+        output={outputs.review}
         agent={claude}
         timeoutMs={15 * 60 * 1000}
         continueOnFail
@@ -135,7 +135,7 @@ export function Review({ ticket }: { ticket: Ticket }) {
       </Task>
       <Task
         id={`${ticketId}:review-codex`}
-        output={tables.review}
+        output={outputs.review}
         agent={codex}
         timeoutMs={15 * 60 * 1000}
         continueOnFail
@@ -173,7 +173,7 @@ export function Implement({ ticket }: { ticket: Ticket }) {
   ];
 
   return (
-    <Task id={`${ticketId}:implement`} output={tables.implement} agent={codex} timeoutMs={45 * 60 * 1000}>
+    <Task id={`${ticketId}:implement`} output={outputs.implement} agent={codex} timeoutMs={45 * 60 * 1000}>
       <ImplementPrompt
         ticketId={ticketId}
         ticketTitle={ticket.title}
@@ -211,7 +211,7 @@ export function ReviewFix({ ticket }: { ticket: Ticket }) {
   return (
     <Task
       id={`${ticketId}:review-fix`}
-      output={tables.reviewFix}
+      output={outputs.reviewFix}
       agent={codex}
       skipIf={allApproved || allIssues.length === 0}
     >

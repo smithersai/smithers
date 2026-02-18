@@ -688,7 +688,7 @@ const db = drizzle("./workflow.db", { schema });
 
 export default smithers(db, (ctx) => (
   <Workflow name="manual">
-    <Task id="analyze" output={schema.analyze} agent={agent}>
+    <Task id="analyze" output={outputs.analyze} agent={agent}>
       {`Analyze: ${ctx.input.description}`}
     </Task>
   </Workflow>
@@ -698,7 +698,7 @@ export default smithers(db, (ctx) => (
 Tasks reference outputs by Drizzle table object:
 
 ```tsx
-<Task id="analyze" output={schema.analyze} agent={agent}>
+<Task id="analyze" output={outputs.analyze} agent={agent}>
 ```
 
 ## Required Columns
@@ -1373,7 +1373,7 @@ There are two ways to enable caching:
 
 ```tsx
 <Workflow name="my-workflow" cache>
-  <Task id="analyze" output={schema.analyze} agent={agent}>
+  <Task id="analyze" output={outputs.analyze} agent={agent}>
     {prompt}
   </Task>
 </Workflow>
@@ -1905,10 +1905,10 @@ const researcher = new Agent({
 
 export default smithers(db, (ctx) => (
   <Workflow name="research-pipeline" cache>
-    <Task id="research" output={schema.research} agent={researcher}>
+    <Task id="research" output={outputs.research} agent={researcher}>
       {`Research the topic: ${ctx.input.topic}`}
     </Task>
-    <Task id="summary" output={schema.summary}>
+    <Task id="summary" output={outputs.summary}>
       {{ summary: "Workflow complete." }}
     </Task>
   </Workflow>
@@ -2292,13 +2292,13 @@ import { Parallel } from "smithers-orchestrator";
 ```tsx
 <Workflow name="checks">
   <Parallel>
-    <Task id="lint" output={schema.lint}>
+    <Task id="lint" output={outputs.lint}>
       {{ errors: 0 }}
     </Task>
-    <Task id="typecheck" output={schema.typecheck}>
+    <Task id="typecheck" output={outputs.typecheck}>
       {{ passed: true }}
     </Task>
-    <Task id="test" output={schema.test}>
+    <Task id="test" output={outputs.test}>
       {{ passed: true }}
     </Task>
   </Parallel>

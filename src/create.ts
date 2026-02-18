@@ -11,7 +11,6 @@ import React from "react";
 import { createSmithersContext } from "./context";
 import { Workflow as BaseWorkflow, Task as BaseTask } from "./components";
 import type { TaskProps } from "./types";
-import { getTableName } from "drizzle-orm";
 import { zodToTable, zodToCreateTableSQL, camelToSnake } from "./zod-to-table";
 import type { z } from "zod";
 
@@ -25,6 +24,7 @@ export type CreateSmithersApi<Schema = any> = {
   ) => SmithersWorkflow<Schema>;
   db: BunSQLiteDatabase<any>;
   tables: { [K in keyof Schema]: any };
+  outputs: { [K in keyof Schema]: Schema[K] };
 };
 
 /**
@@ -32,14 +32,14 @@ export type CreateSmithersApi<Schema = any> = {
  *
  * @example
  * ```ts
- * const { Workflow, useCtx, smithers } = createSmithers({
+ * const { Workflow, Task, smithers, outputs } = createSmithers({
  *   discover: discoverOutputSchema,
  *   research: researchOutputSchema,
  * });
  *
  * export default smithers((ctx) => (
  *   <Workflow name="my-workflow">
- *     <Task id="discover" output="discover" agent={myAgent}>...</Task>
+ *     <Task id="discover" output={outputs.discover} agent={myAgent}>...</Task>
  *   </Workflow>
  * ));
  * ```
@@ -103,13 +103,10 @@ export function createSmithers<
     schemaRegistry.set(name, { table: tables[name], zodSchema });
   }
 
-  // 6. Build reverse lookup: Drizzle table name → Zod schema
-  const tableNameToZodSchema = new Map<string, z.ZodObject<any>>();
+  // 6. Build reverse lookup: ZodObject reference → schema key name
+  const zodToKeyName = new Map<z.ZodObject<any>, string>();
   for (const [name, zodSchema] of Object.entries(schemas)) {
-    const tableName = camelToSnake(name);
-    tableNameToZodSchema.set(tableName, zodSchema);
-    // Also map the original key name for string-keyed outputs
-    tableNameToZodSchema.set(name, zodSchema);
+    zodToKeyName.set(zodSchema, name);
   }
 
   // 7. Context + hooks
@@ -125,30 +122,10 @@ export function createSmithers<
   }
 
   /**
-   * Task wrapper that auto-injects outputSchema from the schema registry
-   * when output is a Drizzle table or string key and outputSchema is not
-   * explicitly provided.
+   * Task wrapper that resolves ZodObject output references against the
+   * schema registry by reference equality, injecting the outputSchema.
    */
   function Task<Row>(props: TaskProps<Row>) {
-    if (!props.outputSchema && props.output) {
-      let tableName: string | undefined;
-      if (typeof props.output === "string") {
-        tableName = props.output;
-      } else {
-        try {
-          tableName = getTableName(props.output as any);
-        } catch {}
-      }
-      if (tableName) {
-        const zodSchema = tableNameToZodSchema.get(tableName);
-        if (zodSchema) {
-          return React.createElement(BaseTask, {
-            ...props,
-            outputSchema: zodSchema,
-          } as any);
-        }
-      }
-    }
     return React.createElement(BaseTask, props as any);
   }
 
@@ -164,6 +141,7 @@ export function createSmithers<
       },
       opts: smithersOpts ?? {},
       schemaRegistry,
+      zodToKeyName,
     } as SmithersWorkflow<any>;
   }
 
@@ -174,5 +152,6 @@ export function createSmithers<
     smithers: boundSmithers,
     db,
     tables: tables as { [K in keyof Schemas]: any },
+    outputs: schemas as { [K in keyof Schemas]: Schemas[K] },
   };
 }

@@ -63,11 +63,12 @@ function renderChildrenToText(children: any): string {
 export function Task<Row>(props: TaskProps<Row>) {
   const { children, agent, ...rest } = props as any;
   if (agent) {
-    // Auto-inject `schema` prop into React element children when outputSchema is present
+    // Auto-inject `schema` prop into React element children when output is a ZodObject
     let childElement = children;
-    if (React.isValidElement(children) && props.outputSchema) {
+    const outputIsZod = props.output && typeof props.output !== "string";
+    if (React.isValidElement(children) && outputIsZod) {
       childElement = React.cloneElement(children as React.ReactElement<any>, {
-        schema: zodSchemaToJsonExample(props.outputSchema),
+        schema: zodSchemaToJsonExample(props.output as any),
       });
     }
     const prompt = renderChildrenToText(childElement);

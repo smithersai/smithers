@@ -1,7 +1,5 @@
 import React from "react";
-import type { SmithersCtx, OutputKey, InferRow } from "./types";
-import { getTableName } from "drizzle-orm";
-import { getTableColumns } from "drizzle-orm/utils";
+import type { SmithersCtx, OutputKey } from "./types";
 
 export type OutputSnapshot = {
   [tableName: string]: Array<any>;
@@ -35,30 +33,18 @@ export function buildContext<Schema>(opts: {
   const { runId, iteration, iterations, input, outputs } = opts;
   const normalizedInput = normalizeInputRow(input);
 
-  const outputsFn: any = (table: any) => {
-    const name = typeof table === "string" ? table : getTableName(table);
-    return outputs[name] ?? [];
+  const outputsFn: any = (table: string) => {
+    return outputs[table] ?? [];
   };
 
   for (const [name, rows] of Object.entries(outputs)) {
     outputsFn[name] = rows;
   }
 
-  function resolveRow<T>(table: any, key: OutputKey): T | undefined {
-    let name: string;
-    let hasIteration: boolean;
-    if (typeof table === "string") {
-      name = table;
-      hasIteration = true; // string-keyed tables always have iteration (auto-generated)
-    } else {
-      name = getTableName(table);
-      const cols = getTableColumns(table as any) as Record<string, any>;
-      hasIteration = Boolean(cols.iteration);
-    }
-    const rows = outputs[name] ?? [];
+  function resolveRow<T>(table: string, key: OutputKey): T | undefined {
+    const rows = outputs[table] ?? [];
     return rows.find((row) => {
       if (row.nodeId !== key.nodeId) return false;
-      if (!hasIteration) return true;
       return (row.iteration ?? 0) === (key.iteration ?? iteration);
     });
   }
@@ -81,9 +67,8 @@ export function buildContext<Schema>(opts: {
     outputMaybe(table: any, key: OutputKey): any {
       return resolveRow(table, key);
     },
-    latest(table: any, nodeId: string): any {
-      const name = typeof table === "string" ? table : getTableName(table);
-      const tableRows = outputs[name] ?? [];
+    latest(table: string, nodeId: string): any {
+      const tableRows = outputs[table] ?? [];
       let best: any = undefined;
       let bestIteration = -Infinity;
       for (const row of tableRows) {
@@ -122,9 +107,8 @@ export function buildContext<Schema>(opts: {
       }
       return result;
     },
-    iterationCount(table: any, nodeId: string): number {
-      const name = typeof table === "string" ? table : getTableName(table);
-      const tableRows = outputs[name] ?? [];
+    iterationCount(table: string, nodeId: string): number {
+      const tableRows = outputs[table] ?? [];
       const seen = new Set<number>();
       for (const row of tableRows) {
         if (!row || row.nodeId !== nodeId) continue;

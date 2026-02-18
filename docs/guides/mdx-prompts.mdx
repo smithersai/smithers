@@ -63,7 +63,7 @@ import ReviewPrompt from "./Review.mdx";
 
 export function Review({ ticket }) {
   return (
-    <Task id={`${ticket.id}:review`} output={tables.review} agent={claude}>
+    <Task id={`${ticket.id}:review`} output={outputs.review} agent={claude}>
       <ReviewPrompt
         ticketId={ticket.id}
         ticketTitle={ticket.title}

@@ -9,7 +9,7 @@ import {
   runWorkflow,
 } from "../src/index.ts";
 import { createTestSmithers, sleep } from "./helpers";
-import { outputSchemas, outputC } from "./schema";
+import { outputSchemas } from "./schema";
 
 function buildSmithers() {
   return createTestSmithers(outputSchemas);
@@ -21,10 +21,10 @@ describe("<MergeQueue>", () => {
     const res = await renderer.render(
       <Workflow name="mq-id">
         <MergeQueue id="my-queue">
-          <Task id="a" output={outputC}>
+          <Task id="a" output="outputC">
             {{ value: 1 }}
           </Task>
-          <Task id="b" output={outputC}>
+          <Task id="b" output="outputC">
             {{ value: 2 }}
           </Task>
         </MergeQueue>
@@ -40,10 +40,10 @@ describe("<MergeQueue>", () => {
     const res = await renderer.render(
       <Workflow name="mq">
         <MergeQueue>
-          <Task id="m1" output={outputC}>
+          <Task id="m1" output="outputC">
             {{ value: 1 }}
           </Task>
-          <Task id="m2" output={outputC}>
+          <Task id="m2" output="outputC">
             {{ value: 2 }}
           </Task>
         </MergeQueue>
@@ -64,7 +64,7 @@ describe("<MergeQueue>", () => {
     const res = await renderer.render(
       <Workflow name="mq">
         <MergeQueue skipIf>
-          <Task id="m1" output={outputC}>
+          <Task id="m1" output="outputC">
             {{ value: 1 }}
           </Task>
         </MergeQueue>
@@ -192,10 +192,10 @@ describe("<MergeQueue>", () => {
     const renderer = new SmithersRenderer();
     const baseChildren = (
       <>
-        <Task id="e1" output={outputC}>
+        <Task id="e1" output="outputC">
           {{ value: 1 }}
         </Task>
-        <Task id="e2" output={outputC}>
+        <Task id="e2" output="outputC">
           {{ value: 2 }}
         </Task>
       </>

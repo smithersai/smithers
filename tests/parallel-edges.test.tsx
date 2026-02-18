@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { SmithersRenderer } from "../src/dom/renderer";
 import { Parallel, Task, Workflow, runWorkflow } from "../src/index.ts";
 import { createTestSmithers, sleep } from "./helpers";
-import { outputSchemas, outputC } from "./schema";
+import { outputSchemas } from "./schema";
 
 function buildSmithers() {
   return createTestSmithers(outputSchemas);
@@ -14,10 +14,10 @@ describe("<Parallel> edge maxConcurrency semantics", () => {
     const renderer = new SmithersRenderer();
     const base = (
       <>
-        <Task id="p1" output={outputC}>
+        <Task id="p1" output="outputC">
           {{ value: 1 }}
         </Task>
-        <Task id="p2" output={outputC}>
+        <Task id="p2" output="outputC">
           {{ value: 2 }}
         </Task>
       </>

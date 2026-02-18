@@ -50,7 +50,7 @@ export function Implement({ ticket }: ImplementProps) {
   return (
     <Task
       id={`${ticketId}:implement`}
-      output={tables.implement}
+      output={outputs.implement}
       agent={codex}
       timeoutMs={45 * 60 * 1000}
     >

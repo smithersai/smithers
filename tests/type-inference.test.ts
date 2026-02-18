@@ -70,11 +70,18 @@ const schemas = {
   report: reportSchema,
 };
 
-const { smithers, useCtx, tables } = createSmithers(schemas);
+const { smithers, useCtx, tables, outputs } = createSmithers(schemas);
 
 // Verify `tables` has the correct keys
 type TablesKeys = keyof typeof tables;
 type _AssertTablesKeys = Expect<Equal<TablesKeys, "analysis" | "fix" | "report">>;
+
+// Verify `outputs` has the correct keys and types (pass-through of schemas)
+type OutputsKeys = keyof typeof outputs;
+type _AssertOutputsKeys = Expect<Equal<OutputsKeys, "analysis" | "fix" | "report">>;
+type _AssertOutputsAnalysis = Expect<Equal<typeof outputs.analysis, typeof analysisSchema>>;
+type _AssertOutputsFix = Expect<Equal<typeof outputs.fix, typeof fixSchema>>;
+type _AssertOutputsReport = Expect<Equal<typeof outputs.report, typeof reportSchema>>;
 
 // ─── SmithersCtx inference via createSmithers ──────────────────────
 
@@ -89,6 +96,12 @@ describe("createSmithers type inference", () => {
     expect("analysis" in tables).toBe(true);
     expect("fix" in tables).toBe(true);
     expect("report" in tables).toBe(true);
+  });
+
+  test("outputs returns the original Zod schemas", () => {
+    expect(outputs.analysis).toBe(analysisSchema);
+    expect(outputs.fix).toBe(fixSchema);
+    expect(outputs.report).toBe(reportSchema);
   });
 
   test("useCtx returns typed context", () => {

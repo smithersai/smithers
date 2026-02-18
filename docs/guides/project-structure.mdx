@@ -283,7 +283,7 @@ export function Implement({ ticket }: { ticket: Ticket }) {
   const latestValidate = ctx.latest(tables.validate, `${ticketId}:validate`);
 
   return (
-    <Task id={`${ticketId}:implement`} output={tables.implement} agent={codex} timeoutMs={45 * 60 * 1000}>
+    <Task id={`${ticketId}:implement`} output={outputs.implement} agent={codex} timeoutMs={45 * 60 * 1000}>
       <ImplementPrompt
         ticketId={ticketId}
         ticketTitle={ticket.title}

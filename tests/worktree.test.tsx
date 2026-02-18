@@ -9,7 +9,6 @@ import {
   Worktree,
   Workflow,
 } from "../src/components";
-import { outputA } from "./schema";
 
 describe("<Worktree>", () => {
   test("attaches worktreeId/worktreePath to nested tasks", async () => {
@@ -17,7 +16,7 @@ describe("<Worktree>", () => {
     const res = await renderer.render(
       <Workflow name="w">
         <Worktree id="wt" path="./subdir">
-          <Task id="t" output={outputA}>
+          <Task id="t" output="outputA">
             {{ value: 1 }}
           </Task>
         </Worktree>
@@ -35,7 +34,7 @@ describe("<Worktree>", () => {
     const res = await renderer.render(
       <Workflow name="w">
         <Worktree path="./x" skipIf>
-          <Task id="t" output={outputA}>
+          <Task id="t" output="outputA">
             {{ value: 1 }}
           </Task>
         </Worktree>
@@ -51,12 +50,12 @@ describe("<Worktree>", () => {
         <Workflow name="w">
           <Sequence>
             <Worktree id="dup" path="./a">
-              <Task id="a" output={outputA}>
+              <Task id="a" output="outputA">
                 {{ value: 1 }}
               </Task>
             </Worktree>
             <Worktree id="dup" path="./b">
-              <Task id="b" output={outputA}>
+              <Task id="b" output="outputA">
                 {{ value: 2 }}
               </Task>
             </Worktree>
@@ -99,7 +98,7 @@ describe("<Worktree>", () => {
     const res = await renderer.render(
       <Workflow name="w">
         <Worktree id="r" path={rel}>
-          <Task id="rt" output={outputA}>
+          <Task id="rt" output="outputA">
             {{ value: 1 }}
           </Task>
         </Worktree>
@@ -117,7 +116,7 @@ describe("<Worktree>", () => {
     const res = await renderer.render(
       <Workflow name="w">
         <Worktree id="abs" path={abs}>
-          <Task id="at" output={outputA}>
+          <Task id="at" output="outputA">
             {{ value: 1 }}
           </Task>
         </Worktree>
@@ -137,7 +136,7 @@ describe("<Worktree>", () => {
       <Workflow name="w">
         <Worktree id="outer" path={outer}>
           <Worktree id="inner" path={inner}>
-            <Task id="t" output={outputA}>
+            <Task id="t" output="outputA">
               {{ value: 1 }}
             </Task>
           </Worktree>
@@ -155,7 +154,7 @@ describe("<Worktree>", () => {
     const renderer = new SmithersRenderer();
     const res = await renderer.render(
       <Workflow name="w">
-        <Task id="t" output={outputA}>
+        <Task id="t" output="outputA">
           {{ value: 1 }}
         </Task>
       </Workflow>,

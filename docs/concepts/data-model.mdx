@@ -87,7 +87,7 @@ const db = drizzle("./workflow.db", { schema });
 
 export default smithers(db, (ctx) => (
   <Workflow name="manual">
-    <Task id="analyze" output={schema.analyze} agent={agent}>
+    <Task id="analyze" output={outputs.analyze} agent={agent}>
       {`Analyze: ${ctx.input.description}`}
     </Task>
   </Workflow>
@@ -97,7 +97,7 @@ export default smithers(db, (ctx) => (
 Tasks reference outputs by Drizzle table object:
 
 ```tsx
-<Task id="analyze" output={schema.analyze} agent={agent}>
+<Task id="analyze" output={outputs.analyze} agent={agent}>
 ```
 
 ## Required Columns

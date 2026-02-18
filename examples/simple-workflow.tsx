@@ -1,54 +1,24 @@
-import { smithers, Workflow, Task, Sequence } from "smithers-orchestrator";
+import { createSmithers, Sequence } from "smithers-orchestrator";
 import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import {
-  sqliteTable,
-  text,
-  integer,
-  primaryKey,
-} from "drizzle-orm/sqlite-core";
+import { z } from "zod";
 
-// Define tables
-const inputTable = sqliteTable("input", {
-  runId: text("run_id").primaryKey(),
-  topic: text("topic").notNull(),
+// Define Zod schemas
+const researchSchema = z.object({
+  summary: z.string(),
+  keyPoints: z.array(z.string()),
 });
 
-const researchTable = sqliteTable(
-  "research",
-  {
-    runId: text("run_id").notNull(),
-    nodeId: text("node_id").notNull(),
-    summary: text("summary").notNull(),
-    keyPoints: text("key_points", { mode: "json" }).$type<string[]>(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
-  })
-);
+const outputSchema = z.object({
+  article: z.string(),
+  wordCount: z.number(),
+});
 
-const outputTable = sqliteTable(
-  "output",
-  {
-    runId: text("run_id").notNull(),
-    nodeId: text("node_id").notNull(),
-    article: text("article").notNull(),
-    wordCount: integer("word_count").notNull(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
-  })
-);
-
-// Schema and db
-export const schema = {
-  input: inputTable,
-  output: outputTable,
-  research: researchTable,
-};
-
-export const db = drizzle("./examples/simple-workflow.db", { schema });
+// Create smithers with schema-driven API
+const { Workflow, Task, smithers, outputs } = createSmithers({
+  research: researchSchema,
+  output: outputSchema,
+});
 
 // Create agents
 const researchAgent = new Agent({
@@ -62,17 +32,16 @@ const writerAgent = new Agent({
 });
 
 // Export workflow
-// TODO: Properly type ctx once smithers() infers SmithersCtx<Schema>; using any here for now.
-export default smithers(db, (ctx: any) => (
+export default smithers((ctx) => (
   <Workflow name="simple-example">
     <Sequence>
-      <Task id="research" output={schema.research} agent={researchAgent}>
+      <Task id="research" output={outputs.research} agent={researchAgent}>
         {`Research this topic and provide a summary with 3-5 key points: ${ctx.input.topic}`}
       </Task>
-      <Task id="write" output={schema.output} agent={writerAgent}>
+      <Task id="write" output={outputs.output} agent={writerAgent}>
         {`Write a short article based on this research:
-Summary: ${ctx.output(schema.research, { nodeId: "research" }).summary}
-Key Points: ${JSON.stringify(ctx.output(schema.research, { nodeId: "research" }).keyPoints)}`}
+Summary: ${ctx.output("research", { nodeId: "research" }).summary}
+Key Points: ${JSON.stringify(ctx.output("research", { nodeId: "research" }).keyPoints)}`}
       </Task>
     </Sequence>
   </Workflow>

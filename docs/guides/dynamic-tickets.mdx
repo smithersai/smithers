@@ -83,7 +83,7 @@ export function Discover() {
     : null;
 
   return (
-    <Task id="discover-codex" output={tables.discover} agent={codex}>
+    <Task id="discover-codex" output={outputs.discover} agent={codex}>
       <DiscoverPrompt previousRun={previousRun} />
     </Task>
   );
@@ -177,10 +177,10 @@ export default smithers((ctx) => (
     <Sequence>
       {tasks.map(({ id, name, description }) => (
         <Sequence key={id}>
-          <Task id={`${id}:implement`} output={tables.implement} agent={codex}>
+          <Task id={`${id}:implement`} output={outputs.implement} agent={codex}>
             {`Implement: ${name}\n\n${description}`}
           </Task>
-          <Task id={`${id}:validate`} output={tables.validate} agent={codex}>
+          <Task id={`${id}:validate`} output={outputs.validate} agent={codex}>
             {`Run tests for: ${name}`}
           </Task>
         </Sequence>
@@ -207,7 +207,7 @@ export default smithers((ctx) => {
         <Sequence>
           <Discover />
           {/* ... ticket pipelines ... */}
-          <Task id="sprint-tracker" output={tables.output}>
+          <Task id="sprint-tracker" output={outputs.output}>
             {{ sprintsCompleted: currentSprint + 1 }}
           </Task>
         </Sequence>

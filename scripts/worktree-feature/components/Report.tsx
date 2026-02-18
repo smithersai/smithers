@@ -39,7 +39,7 @@ export function Report({ ticket }: ReportProps) {
   return (
     <Task
       id={`${ticketId}:report`}
-      output={tables.report}
+      output={outputs.report}
       agent={claude}
       skipIf={!allApproved && !loopExhausted}
     >

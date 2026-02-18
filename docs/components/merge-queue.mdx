@@ -23,9 +23,9 @@ import { MergeQueue } from "smithers";
 ### Default single-lane
 ```tsx
 <MergeQueue>
-  <Task id="lint" output={outputC}>{{ value: 1 }}</Task>
-  <Task id="build" output={outputC}>{{ value: 2 }}</Task>
-  <Task id="test" output={outputC}>{{ value: 3 }}</Task>
+  <Task id="lint" output={outputs.outputC}>{{ value: 1 }}</Task>
+  <Task id="build" output={outputs.outputC}>{{ value: 2 }}</Task>
+  <Task id="test" output={outputs.outputC}>{{ value: 3 }}</Task>
 </MergeQueue>
 ```
 
@@ -33,7 +33,7 @@ import { MergeQueue } from "smithers";
 ```tsx
 <MergeQueue maxConcurrency={2}>
   {items.map((it, i) => (
-    <Task key={i} id={`t${i}`} output={outputC}>{{ value: i }}</Task>
+    <Task key={i} id={`t${i}`} output={outputs.outputC}>{{ value: i }}</Task>
   ))}
 </MergeQueue>
 ```
@@ -43,10 +43,10 @@ import { MergeQueue } from "smithers";
 <Parallel maxConcurrency={3}>
   <MergeQueue>
     {items.map((it, i) => (
-      <Task key={i} id={`q${i}`} output={outputC}>{{ value: i }}</Task>
+      <Task key={i} id={`q${i}`} output={outputs.outputC}>{{ value: i }}</Task>
     ))}
   </MergeQueue>
-  <Task id="other" output={outputC}>{{ value: 99 }}</Task>
+  <Task id="other" output={outputs.outputC}>{{ value: 99 }}</Task>
 </Parallel>
 ```
 

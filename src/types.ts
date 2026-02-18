@@ -1,4 +1,3 @@
-import type { Table } from "drizzle-orm";
 import type React from "react";
 import type { z } from "zod";
 
@@ -26,9 +25,9 @@ export type TaskDescriptor = {
   worktreeId?: string;
   worktreePath?: string;
 
-  outputTable: Table | null;
+  outputTable: any | null;
   outputTableName: string;
-  outputSchema?: import("zod").ZodObject<any>; // Optional Zod schema for agent output
+  outputSchema?: import("zod").ZodObject<any>;
 
   /**
    * When task is nested under a <Parallel> or <MergeQueue> group,
@@ -129,6 +128,8 @@ export type SmithersWorkflow<Schema> = {
   build: (ctx: SmithersCtx<Schema>) => React.ReactElement;
   opts: SmithersWorkflowOptions;
   schemaRegistry?: Map<string, SchemaRegistryEntry>;
+  /** Reverse lookup: ZodObject reference → schema key name */
+  zodToKeyName?: Map<import("zod").ZodObject<any>, string>;
 };
 
 export interface SmithersCtx<Schema> {
@@ -138,38 +139,23 @@ export interface SmithersCtx<Schema> {
   input: Schema extends { input: infer T } ? T : Record<string, unknown>;
   outputs: OutputAccessor<Schema>;
 
-  /** String-key overload (schema-driven API): infers return type from Zod schema. */
+  /** Get an output row by string key and output key. Throws if not found. */
   output<K extends keyof Schema & string>(
     table: K,
     key: OutputKey,
   ): InferOutputEntry<Schema[K]>;
-  /** Drizzle table overload (db-based API): infers return type from Drizzle $inferSelect. */
-  output<TTable extends { $inferSelect: any }>(
-    table: TTable,
-    key: OutputKey,
-  ): InferRow<TTable>;
 
-  /** String-key overload (schema-driven API): infers return type from Zod schema. */
+  /** Get an output row by string key and output key. Returns undefined if not found. */
   outputMaybe<K extends keyof Schema & string>(
     table: K,
     key: OutputKey,
   ): InferOutputEntry<Schema[K]> | undefined;
-  /** Drizzle table overload (db-based API): infers return type from Drizzle $inferSelect. */
-  outputMaybe<TTable extends { $inferSelect: any }>(
-    table: TTable,
-    key: OutputKey,
-  ): InferRow<TTable> | undefined;
 
-  /** String-key overload: get the latest output row for a nodeId (highest iteration). */
+  /** Get the latest output row for a nodeId (highest iteration). */
   latest<K extends keyof Schema & string>(
     table: K,
     nodeId: string,
   ): InferOutputEntry<Schema[K]> | undefined;
-  /** Drizzle table overload: get the latest output row for a nodeId (highest iteration). */
-  latest<TTable extends { $inferSelect: any }>(
-    table: TTable,
-    nodeId: string,
-  ): InferRow<TTable> | undefined;
 
   /** Get latest output row, then safely parse/validate an array field using a Zod schema. Drops invalid items. */
   latestArray(value: unknown, schema: import("zod").ZodType): any[];
@@ -180,7 +166,6 @@ export interface SmithersCtx<Schema> {
 
 export type OutputAccessor<Schema> = {
   <K extends keyof Schema & string>(table: K): Array<InferOutputEntry<Schema[K]>>;
-  <TTable extends { $inferSelect: any }>(table: TTable): Array<InferRow<TTable>>;
 } & {
   [K in keyof Schema & string]: Array<InferOutputEntry<Schema[K]>>;
 };
@@ -362,8 +347,7 @@ export type WorkflowProps = {
 export type TaskProps<Row> = {
   key?: string;
   id: string;
-  output: Table | string;
-  outputSchema?: import("zod").ZodObject<any>; // Optional Zod schema for agent output
+  output: import("zod").ZodObject<any> | string;
   agent?: AgentLike;
   skipIf?: boolean;
   needsApproval?: boolean;

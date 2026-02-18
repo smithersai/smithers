@@ -153,6 +153,54 @@ export function resolveSchema(db: any): Record<string, any> {
   return filtered;
 }
 
+/**
+ * Resolve task output references:
+ * - ZodObject on outputSchema with empty outputTableName → look up via zodToKeyName
+ * - String key on outputTableName → look up via schemaRegistry
+ * Both paths set outputTable, outputTableName, and outputSchema on the descriptor.
+ */
+function resolveTaskOutputs(tasks: TaskDescriptor[], workflow: SmithersWorkflow<any>) {
+  for (const task of tasks) {
+    // Already resolved (has a table)
+    if (task.outputTable) continue;
+
+    // ZodObject reference: outputSchema is set but outputTableName is empty
+    if (task.outputSchema && !task.outputTableName && workflow.zodToKeyName) {
+      const keyName = workflow.zodToKeyName.get(task.outputSchema);
+      if (keyName && workflow.schemaRegistry) {
+        const entry = workflow.schemaRegistry.get(keyName);
+        if (entry) {
+          task.outputTable = entry.table;
+          task.outputTableName = keyName;
+        }
+      }
+      if (!task.outputTable) {
+        throw new SmithersError(
+          "UNKNOWN_OUTPUT_SCHEMA",
+          `Task "${task.nodeId}" uses an output ZodObject that is not registered in createSmithers()`,
+        );
+      }
+      continue;
+    }
+
+    // String key: outputTableName is set
+    if (task.outputTableName && workflow.schemaRegistry) {
+      const entry = workflow.schemaRegistry.get(task.outputTableName);
+      if (entry) {
+        task.outputTable = entry.table;
+        if (!task.outputSchema) {
+          task.outputSchema = entry.zodSchema;
+        }
+      } else {
+        throw new SmithersError(
+          "UNKNOWN_OUTPUT_KEY",
+          `Task "${task.nodeId}" uses output key "${task.outputTableName}" which is not in the schema registry`,
+        );
+      }
+    }
+  }
+}
+
 function getWorkflowNameFromXml(xml: any): string {
   if (!xml || xml.kind !== "element") return "workflow";
   if (xml.tag !== "smithers:workflow") return "workflow";
@@ -1090,20 +1138,8 @@ export async function renderFrame<Schema>(
     defaultIteration: ctx?.iteration,
   });
 
-  // Resolve string-keyed output tasks using the schema registry
-  if (workflow.schemaRegistry) {
-    for (const task of result.tasks) {
-      if (!task.outputTable && task.outputTableName) {
-        const entry = workflow.schemaRegistry.get(task.outputTableName);
-        if (entry) {
-          task.outputTable = entry.table;
-          if (!task.outputSchema) {
-            task.outputSchema = entry.zodSchema;
-          }
-        }
-      }
-    }
-  }
+  // Resolve output tasks: ZodObject references via zodToKeyName, string keys via schemaRegistry
+  resolveTaskOutputs(result.tasks, workflow);
 
   return { runId: ctx.runId, frameNo: 0, xml: result.xml, tasks: result.tasks };
 }
@@ -1310,25 +1346,8 @@ export async function runWorkflow<Schema>(
       const xmlJson = canonicalizeXml(xml);
       const xmlHash = sha256Hex(xmlJson);
 
-      // Resolve string-keyed output tasks using the schema registry
-      if (workflow.schemaRegistry) {
-        for (const task of tasks) {
-          if (!task.outputTable && task.outputTableName) {
-            const entry = workflow.schemaRegistry.get(task.outputTableName);
-            if (entry) {
-              task.outputTable = entry.table;
-              if (!task.outputSchema) {
-                task.outputSchema = entry.zodSchema;
-              }
-            } else {
-              throw new SmithersError(
-                "UNKNOWN_OUTPUT_KEY",
-                `Task "${task.nodeId}" uses output key "${task.outputTableName}" which is not in the schema registry`,
-              );
-            }
-          }
-        }
-      }
+      // Resolve output tasks: ZodObject references via zodToKeyName, string keys via schemaRegistry
+      resolveTaskOutputs(tasks, workflow);
 
       const workflowName = getWorkflowNameFromXml(xml);
       const cacheEnabled =

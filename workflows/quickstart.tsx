@@ -88,10 +88,10 @@ const briefAgent = new Agent({
 export default smithers(db, (ctx) => (
   <Workflow name="quickstart">
     <Sequence>
-      <Task id="plan" output={schema.plan} agent={planAgent}>
+      <Task id="plan" output={outputs.plan} agent={planAgent}>
         {`Create a short plan for this goal:\n${ctx.input.goal}`}
       </Task>
-      <Task id="brief" output={schema.brief} agent={briefAgent}>
+      <Task id="brief" output={outputs.brief} agent={briefAgent}>
         {`Goal: ${ctx.input.goal}
 Plan summary: ${ctx.output(schema.plan, { nodeId: "plan" }).summary}
 Steps: ${JSON.stringify(ctx.output(schema.plan, { nodeId: "plan" }).steps)}

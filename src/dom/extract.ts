@@ -1,5 +1,4 @@
 import type { XmlNode, XmlElement, TaskDescriptor } from "../types";
-import { getTableName } from "drizzle-orm";
 import { resolveStableId } from "../utils/tree-ids";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import {
@@ -194,19 +193,18 @@ export function extractFromHost(
 
       const outputRaw = raw.output;
       if (!outputRaw) {
-        throw new Error(`Task ${nodeId} is missing output table.`);
+        throw new Error(`Task ${nodeId} is missing output.`);
       }
 
-      // Support both Drizzle table objects and string keys
-      let outputTable: any;
+      // Support both ZodObject schemas and string keys
+      let outputTable: any = null;
       let outputTableName: string;
       if (typeof outputRaw === "string") {
         // String key — will be resolved by the engine via schemaRegistry
-        outputTable = null;
         outputTableName = outputRaw;
       } else {
-        outputTable = outputRaw;
-        outputTableName = getTableName(outputRaw as any);
+        // ZodObject — engine will resolve table + name via zodToKeyName map
+        outputTableName = "";
       }
       const needsApproval = Boolean(raw.needsApproval);
       const skipIf = Boolean(raw.skipIf);
@@ -243,7 +241,7 @@ export function extractFromHost(
         worktreePath: topWorktree?.path,
         outputTable,
         outputTableName,
-        outputSchema: raw.outputSchema, // Pass through custom output schema
+        outputSchema: typeof outputRaw === "string" ? undefined : outputRaw,
         needsApproval,
         skipIf,
         retries,

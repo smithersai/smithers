@@ -22,16 +22,16 @@ import { Worktree, Task, Parallel, MergeQueue } from "smithers";
 
 ```tsx
 <Worktree path="/tmp/smithers/wt-a">
-  <Task id="build" output={outputC}>{{ value: 1 }}</Task>
-  <Task id="test" output={outputC}>{{ value: 2 }}</Task>
+  <Task id="build" output={outputs.outputC}>{{ value: 1 }}</Task>
+  <Task id="test" output={outputs.outputC}>{{ value: 2 }}</Task>
   <MergeQueue>
-    <Task id="apply" output={outputC}>{{ value: 3 }}</Task>
+    <Task id="apply" output={outputs.outputC}>{{ value: 3 }}</Task>
   </MergeQueue>
   <Parallel maxConcurrency={2}>
-    <Task id="lint" output={outputC}>{{ value: 4 }}</Task>
+    <Task id="lint" output={outputs.outputC}>{{ value: 4 }}</Task>
   </Parallel>
-  <Task id="package" output={outputC}>{{ value: 5 }}</Task>
-  <Task id="release" output={outputC}>{{ value: 6 }}</Task>
+  <Task id="package" output={outputs.outputC}>{{ value: 5 }}</Task>
+  <Task id="release" output={outputs.outputC}>{{ value: 6 }}</Task>
 </Worktree>
 ```
 
@@ -49,9 +49,9 @@ Nested `<Worktree>` components are supported. The innermost worktree in scope fo
 
 ```tsx
 <Worktree id="outer" path="/tmp/wt-outer">
-  <Task id="a" output={outputC}>{{ value: "outer" }}</Task>
+  <Task id="a" output={outputs.outputC}>{{ value: "outer" }}</Task>
   <Worktree id="inner" path="./nested">
-    <Task id="b" output={outputC}>{{ value: "inner" }}</Task>
+    <Task id="b" output={outputs.outputC}>{{ value: "inner" }}</Task>
   </Worktree>
 </Worktree>
 ```
@@ -64,7 +64,7 @@ Worktrees compose with concurrency primitives. For example, queue serialized pat
 <Worktree path="/tmp/wt-queue">
   <MergeQueue>
     {prs.map((pr) => (
-      <Task key={pr.id} id={`apply-${pr.id}`} output={outputC}>
+      <Task key={pr.id} id={`apply-${pr.id}`} output={outputs.outputC}>
         {{ value: pr.id }}
       </Task>
     ))}

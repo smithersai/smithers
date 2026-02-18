@@ -117,10 +117,10 @@ const researcher = new Agent({
 
 export default smithers(db, (ctx) => (
   <Workflow name="research-pipeline" cache>
-    <Task id="research" output={schema.research} agent={researcher}>
+    <Task id="research" output={outputs.research} agent={researcher}>
       {`Research the topic: ${ctx.input.topic}`}
     </Task>
-    <Task id="summary" output={schema.summary}>
+    <Task id="summary" output={outputs.summary}>
       {{ summary: "Workflow complete." }}
     </Task>
   </Workflow>

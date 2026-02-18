@@ -19,7 +19,7 @@ export function Validate({ ticket }: ValidateProps) {
   return (
     <Task
       id={`${ticketId}:validate`}
-      output={tables.validate}
+      output={outputs.validate}
       agent={codex}
       timeoutMs={20 * 60 * 1000}
     >

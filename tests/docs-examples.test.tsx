@@ -11,7 +11,7 @@ import {
 import { SmithersRenderer } from "../src/dom/renderer";
 import { createSmithers, runWorkflow } from "../src/index";
 import { createTestSmithers } from "./helpers";
-import { outputA, outputB, outputSchemas } from "./schema";
+import { outputSchemas } from "./schema";
 import { SmithersDb } from "../src/db/adapter";
 import { read } from "../src/tools";
 import { buildContext } from "../src/context";
@@ -28,21 +28,21 @@ describe("docs examples (renderer)", () => {
         <Branch
           if={true}
           then={
-            <Task id="then-task" output={outputA}>
+            <Task id="then-task" output="outputA">
               {{ value: 1 }}
             </Task>
           }
           else={
-            <Task id="else-task" output={outputB}>
+            <Task id="else-task" output="outputB">
               {{ value: 2 }}
             </Task>
           }
         />
         <Parallel maxConcurrency={2}>
-          <Task id="p1" output={outputA}>
+          <Task id="p1" output="outputA">
             {{ value: 3 }}
           </Task>
-          <Task id="p2" output={outputB}>
+          <Task id="p2" output="outputB">
             {{ value: 4 }}
           </Task>
         </Parallel>
@@ -68,7 +68,7 @@ describe("docs examples (renderer)", () => {
       <Workflow name="props">
         <Task
           id="t"
-          output={outputA}
+          output="outputA"
           retries={2}
           timeoutMs={1234}
           continueOnFail
@@ -97,7 +97,7 @@ describe("docs examples (renderer)", () => {
     const result = await renderer.render(
       <Workflow name="loop">
         <Ralph id="review-loop" until={false}>
-          <Task id="review" output={outputA}>
+          <Task id="review" output="outputA">
             {{ value: 1 }}
           </Task>
         </Ralph>
@@ -307,19 +307,19 @@ describe("docs examples (engine)", () => {
   });
 
   test("latest returns the highest-iteration output row", () => {
-    const ctx = buildContext({
+    const ctx = buildContext<{ outputA: z.ZodObject<{ value: z.ZodNumber }> }>({
       runId: "latest-run",
       iteration: 0,
       input: {},
       outputs: {
-        output_a: [
+        outputA: [
           { runId: "latest-run", nodeId: "review", iteration: 0, value: 1 },
           { runId: "latest-run", nodeId: "review", iteration: 2, value: 3 },
         ],
       },
     });
 
-    const latest = ctx.latest(outputA, "review");
+    const latest = ctx.latest("outputA", "review");
     expect(latest!.value).toBe(3);
   });
 });

@@ -40,7 +40,7 @@ export function Review({ ticket }: ReviewProps) {
     <Parallel>
       <Task
         id={`${ticketId}:review-claude`}
-        output={tables.review}
+        output={outputs.review}
         agent={claude}
         timeoutMs={15 * 60 * 1000}
         continueOnFail
@@ -50,7 +50,7 @@ export function Review({ ticket }: ReviewProps) {
 
       <Task
         id={`${ticketId}:review-codex`}
-        output={tables.review}
+        output={outputs.review}
         agent={codex}
         timeoutMs={15 * 60 * 1000}
         continueOnFail

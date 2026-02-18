@@ -46,7 +46,7 @@ export function ReviewFix({ ticket }: ReviewFixProps) {
   return (
     <Task
       id={`${ticketId}:review-fix`}
-      output={tables.reviewFix}
+      output={outputs.reviewFix}
       agent={codex}
       skipIf={!validationPassed || allApproved || allReviewIssues.length === 0}
     >
