@@ -258,26 +258,7 @@ function resolveTaskOutputs(tasks: TaskDescriptor[], workflow: SmithersWorkflow<
     const raw = task.outputSchema;
     if (!raw) continue;
 
-    // Case 1: raw is a Drizzle table (has SQL column metadata)
-    let tableName: string | undefined;
-    try {
-      tableName = getTableName(raw as any);
-    } catch {
-      // Not a Drizzle table
-    }
-    if (tableName && workflow.schemaRegistry) {
-      // Drizzle table passed directly — use it as the output table
-      task.outputTable = raw;
-      task.outputTableName = tableName;
-      // Resolve the original Zod schema for stricter validation
-      const entry = workflow.schemaRegistry.get(tableName);
-      if (entry?.zodSchema) {
-        task.outputSchema = entry.zodSchema;
-      }
-      continue;
-    }
-
-    // Case 2: raw is a ZodObject — resolve via zodToKeyName
+    // Resolve ZodObject via zodToKeyName
     if (workflow.zodToKeyName) {
       const keyName = workflow.zodToKeyName.get(raw);
       if (keyName && workflow.schemaRegistry) {
@@ -1451,6 +1432,7 @@ export async function runWorkflow<Schema>(
         iterations: ralphIterationsObject(ralphState),
         input: inputRow,
         outputs,
+        zodToKeyName: workflow.zodToKeyName,
       });
 
       const { xml, tasks, mountedTaskIds } = await renderer.render(

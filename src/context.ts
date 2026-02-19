@@ -29,8 +29,9 @@ export function buildContext<Schema>(opts: {
   iterations?: Record<string, number>;
   input: any;
   outputs: OutputSnapshot;
+  zodToKeyName?: Map<any, string>;
 }): SmithersCtx<Schema> {
-  const { runId, iteration, iterations, input, outputs } = opts;
+  const { runId, iteration, iterations, input, outputs, zodToKeyName } = opts;
   const normalizedInput = normalizeInputRow(input);
 
   const outputsFn: any = (table: string) => {
@@ -43,13 +44,11 @@ export function buildContext<Schema>(opts: {
 
   function resolveTableName(table: any): string {
     if (typeof table === "string") return table;
-    // Drizzle table object — extract the SQL table name
-    try {
-      const { getTableName } = require("drizzle-orm");
-      return getTableName(table);
-    } catch {}
-    // Fallback: check common Drizzle internal properties
-    if (table?._ && typeof table._.name === "string") return table._.name;
+    // Zod schema — resolve via zodToKeyName map
+    if (zodToKeyName) {
+      const key = zodToKeyName.get(table);
+      if (key) return key;
+    }
     return String(table);
   }
 
