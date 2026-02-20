@@ -72,10 +72,6 @@ describe("Worktree runtime", () => {
 
     const result = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
     try {
-      if (result.status !== "finished") {
-        // Temporary debug aid for flaky VCS environments.
-        console.log("worktree fallback failure", result);
-      }
       expect(result.status).toBe("finished");
       expect(existsSync(linkedPath)).toBe(true);
     } finally {
@@ -106,10 +102,6 @@ describe("Worktree runtime", () => {
 
     try {
       const first = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
-      if (first.status !== "finished") {
-        // Temporary debug aid for flaky VCS environments.
-        console.log("worktree recreate first run failure", first);
-      }
       expect(first.status).toBe("finished");
       expect(existsSync(linkedPath)).toBe(true);
 
