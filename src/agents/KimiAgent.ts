@@ -47,7 +47,7 @@ export class KimiAgent extends BaseCliAgent {
     args.push("--print");
 
     // Output format
-    const outputFormat = this.opts.outputFormat ?? "text";
+    const outputFormat = this.opts.outputFormat ?? "stream-json";
     pushFlag(args, "--output-format", outputFormat);
 
     // Other flags
@@ -55,9 +55,8 @@ export class KimiAgent extends BaseCliAgent {
     pushFlag(args, "--session", this.opts.session);
     if (this.opts.continue) args.push("--continue");
     pushFlag(args, "--model", this.opts.model ?? this.model);
-    if (this.opts.thinking !== undefined) {
-      args.push(this.opts.thinking ? "--thinking" : "--no-thinking");
-    }
+    const thinking = this.opts.thinking ?? true;
+    args.push(thinking ? "--thinking" : "--no-thinking");
     if (this.opts.finalMessageOnly) args.push("--final-message-only");
     if (this.opts.quiet) args.push("--quiet");
     pushFlag(args, "--agent", this.opts.agent);
