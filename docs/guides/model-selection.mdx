@@ -56,10 +56,10 @@ Smithers supports two ways to run each model:
 
 ### CLI Agents (subscription-based)
 
-Use `ClaudeCodeAgent` and `CodexAgent` when you have a Claude Code or Codex subscription. The agent runs as a subprocess using the CLI binary, which provides its native tool ecosystem (file editing, shell access, etc.).
+Use `ClaudeCodeAgent`, `CodexAgent`, and `KimiAgent` when you have a subscription to the respective service. The agent runs as a subprocess using the CLI binary, which provides its native tool ecosystem (file editing, shell access, etc.).
 
 ```ts
-import { ClaudeCodeAgent, CodexAgent } from "smithers-orchestrator";
+import { ClaudeCodeAgent, CodexAgent, KimiAgent } from "smithers-orchestrator";
 
 const claude = new ClaudeCodeAgent({
   model: "claude-opus-4-6",
@@ -73,6 +73,13 @@ const codex = new CodexAgent({
   systemPrompt: SYSTEM_PROMPT,
   yolo: true,
   config: { model_reasoning_effort: "high" },
+  timeoutMs: 30 * 60 * 1000,
+});
+
+const kimi = new KimiAgent({
+  model: "kimi-latest",
+  systemPrompt: SYSTEM_PROMPT,
+  thinking: true,
   timeoutMs: 30 * 60 * 1000,
 });
 ```
@@ -111,7 +118,7 @@ The recommended pattern is to define both CLI and API versions and switch with a
 import { ToolLoopAgent as Agent, stepCountIs, type ToolSet } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
-import { ClaudeCodeAgent, CodexAgent } from "smithers-orchestrator";
+import { ClaudeCodeAgent, CodexAgent, KimiAgent } from "smithers-orchestrator";
 import { tools as smithersTools } from "smithers-orchestrator";
 import { SYSTEM_PROMPT } from "./system-prompt";
 
@@ -159,6 +166,18 @@ const claudeCli = new ClaudeCodeAgent({
 });
 
 export const claude = USE_CLI ? claudeCli : claudeApi;
+
+// --- Kimi ---
+const KIMI_MODEL = process.env.KIMI_MODEL ?? "kimi-latest";
+
+const kimiCli = new KimiAgent({
+  model: KIMI_MODEL,
+  systemPrompt: SYSTEM_PROMPT,
+  thinking: true,
+  timeoutMs: 30 * 60 * 1000,
+});
+
+export const kimi = kimiCli; // Kimi is CLI-only
 ```
 
 Switch between modes at launch:
@@ -206,5 +225,5 @@ const codex = new CodexAgent({
 ## Next Steps
 
 - [Implement-Review Loop](/guides/review-loop) -- The recommended review loop pattern.
-- [CLI Agents](/integrations/cli-agents) -- Full reference for ClaudeCodeAgent, CodexAgent, GeminiAgent.
+- [CLI Agents](/integrations/cli-agents) -- Full reference for ClaudeCodeAgent, CodexAgent, GeminiAgent, PiAgent, KimiAgent.
 - [Built-in Tools](/integrations/tools) -- Sandboxed tools for AI SDK agents.

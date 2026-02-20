@@ -33,6 +33,7 @@ export {
   CodexAgent,
   GeminiAgent,
   PiAgent,
+  KimiAgent,
 } from "./agents";
 export type {
   PiExtensionUiRequest,

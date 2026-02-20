@@ -1,6 +1,6 @@
 ---
 title: CLI Agents
-description: Run external AI CLI tools (Claude Code, Codex, Gemini CLI, PI) as drop-in Smithers agents that implement the AI SDK agent interface.
+description: Run external AI CLI tools (Claude Code, Codex, Gemini CLI, PI, Kimi) as drop-in Smithers agents that implement the AI SDK agent interface.
 ---
 
 Smithers ships CLI-backed agent classes that wrap external AI command-line tools. Each agent implements the AI SDK `Agent` interface, so they work as drop-in replacements anywhere you would use an AI SDK agent -- including in `<Task>` components.
@@ -15,6 +15,7 @@ import {
   CodexAgent,
   GeminiAgent,
   PiAgent,
+  KimiAgent,
   type PiAgentOptions,
   type PiExtensionUiRequest,
   type PiExtensionUiResponse,
@@ -31,16 +32,18 @@ Each agent requires its corresponding CLI tool installed and available in the sy
 | `CodexAgent` | `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) |
 | `GeminiAgent` | `gemini` | [Gemini CLI](https://github.com/google-gemini/gemini-cli) |
 | `PiAgent` | `pi` | [PI Coding Agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) |
+| `KimiAgent` | `kimi` | [Kimi CLI](https://moonshotai.github.io/kimi-cli/) |
 
 ## Quick Start
 
 ```ts
-import { ClaudeCodeAgent, CodexAgent, GeminiAgent, PiAgent } from "smithers-orchestrator";
+import { ClaudeCodeAgent, CodexAgent, GeminiAgent, PiAgent, KimiAgent } from "smithers-orchestrator";
 
 const claude = new ClaudeCodeAgent({ model: "claude-sonnet-4-20250514" });
 const codex = new CodexAgent({ model: "gpt-4.1" });
 const gemini = new GeminiAgent({ model: "gemini-2.5-pro" });
 const pi = new PiAgent({ provider: "openai", model: "gpt-5.2-codex" });
+const kimi = new KimiAgent({ model: "kimi-latest" });
 ```
 
 Use them in workflows like any other agent:
@@ -338,6 +341,64 @@ type PiAgentOptions = BaseCliAgentOptions & {
 | `noSession` | Disable session persistence (defaults to `true` unless session flags are set) |
 
 **Input handling:** In `text`/`json` modes, the prompt is passed as a positional PI message argument and `files` are emitted as `@path` arguments. In `rpc` mode, the prompt is sent as a JSON `prompt` command over stdin (file args are not supported). Text mode defaults to `--print` and omits `--mode`, while `json`/`rpc` modes set `--mode` and do not pass `--print`.
+
+---
+
+## KimiAgent
+
+Wraps the `kimi` CLI using `--print` mode for non-interactive execution.
+
+```ts
+const kimi = new KimiAgent({
+  model: "kimi-latest",
+  thinking: true,
+  timeoutMs: 300_000,
+});
+```
+
+### Kimi-Specific Options
+
+```ts
+type KimiAgentOptions = BaseCliAgentOptions & {
+  workDir?: string;
+  session?: string;
+  continue?: boolean;
+  thinking?: boolean;
+  outputFormat?: "text" | "stream-json";
+  finalMessageOnly?: boolean;
+  quiet?: boolean;
+  agent?: "default" | "okabe";
+  agentFile?: string;
+  mcpConfigFile?: string[];
+  mcpConfig?: string[];
+  skillsDir?: string;
+  maxStepsPerTurn?: number;
+  maxRetriesPerStep?: number;
+  maxRalphIterations?: number;
+  verbose?: boolean;
+  debug?: boolean;
+};
+```
+
+**Key options:**
+
+| Option | Description |
+|---|---|
+| `thinking` | Enable/disable thinking mode |
+| `outputFormat` | Output format: `"text"` or `"stream-json"` (default: `"text"`) |
+| `finalMessageOnly` | Only print the final assistant message |
+| `quiet` | Alias for `--print --output-format text --final-message-only` |
+| `agent` | Builtin agent spec: `"default"` or `"okabe"` |
+| `agentFile` | Path to custom agent specification file |
+| `skillsDir` | Path to skills directory |
+| `mcpConfigFile` | MCP config file(s) to load |
+| `maxStepsPerTurn` | Maximum number of steps in one turn |
+| `maxRetriesPerStep` | Maximum number of retries in one step |
+| `maxRalphIterations` | Extra iterations after the first turn in Ralph mode |
+
+**Yolo mode behavior:** When `yolo` is `true` (the default), the agent passes `--print` which implicitly adds `--yolo`.
+
+**Input handling:** The prompt (with system prompt prepended) is passed via the `--prompt` flag.
 
 ---
 
