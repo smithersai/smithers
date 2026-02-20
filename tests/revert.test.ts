@@ -5,7 +5,7 @@ import { revertToJjPointer, getJjPointer } from "../src/vcs/jj";
 import { revertToAttempt, type RevertResult } from "../src/revert";
 import { createTestDb } from "./helpers";
 import { schema, ddl } from "./schema";
-import type { SmithersEvent } from "../src/types";
+import type { SmithersEvent } from "../src";
 
 function buildDb() {
   const result = createTestDb(schema, ddl);

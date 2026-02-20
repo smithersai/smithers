@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { applyConcurrencyLimits } from "../src/engine/index.ts";
-import type { TaskDescriptor } from "../src/types";
+import type { TaskDescriptor } from "../src";
 
 function td(id: string, group?: string, cap?: number): TaskDescriptor {
   return {

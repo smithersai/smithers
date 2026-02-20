@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { XmlElement } from "../src/types";
+import type { XmlElement } from "../src";
 import { buildPlanTree } from "../src/engine/scheduler";
 import { el } from "./helpers";
 

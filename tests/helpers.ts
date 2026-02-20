@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import type { XmlElement } from "../src/types";
+import type { XmlElement } from "../src";
 import { createSmithers } from "../src/index";
 import type { z } from "zod";
 

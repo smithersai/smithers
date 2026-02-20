@@ -8,7 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { createSmithers } from "../src/index.ts";
 import { z } from "zod";
-import type { SmithersCtx, InferOutputEntry } from "../src/types.ts";
+import type { SmithersCtx, InferOutputEntry } from "../src/index.ts";
 
 // ─── Schema fixtures ───────────────────────────────────────────────
 
