@@ -46,6 +46,8 @@ export type TaskDescriptor = {
   continueOnFail: boolean;
 
   agent?: AgentLike;
+  /** Fallback agent used on retry when the primary agent fails (e.g. rate-limited). */
+  fallbackAgent?: AgentLike;
   prompt?: string;
   staticPayload?: unknown;
   computeFn?: () => unknown | Promise<unknown>;
@@ -349,6 +351,8 @@ export type TaskProps<Row> = {
   id: string;
   output: import("zod").ZodObject<any>;
   agent?: AgentLike;
+  /** Fallback agent used on retry when the primary agent fails (e.g. rate-limited). */
+  fallbackAgent?: AgentLike;
   skipIf?: boolean;
   needsApproval?: boolean;
   timeoutMs?: number;

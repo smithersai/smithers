@@ -207,6 +207,7 @@ export function extractFromHost(
       const continueOnFail = Boolean(raw.continueOnFail);
 
       const agent = raw.agent;
+      const fallbackAgent = raw.fallbackAgent;
       const kind = raw.__smithersKind;
       const isAgent = kind === "agent" || Boolean(agent);
       const prompt = isAgent ? String(raw.children ?? "") : undefined;
@@ -241,6 +242,7 @@ export function extractFromHost(
         timeoutMs,
         continueOnFail,
         agent,
+        fallbackAgent,
         prompt,
         staticPayload,
         computeFn,

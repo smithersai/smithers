@@ -726,6 +726,8 @@ async function executeTask(
 
     if (!payload) {
       if (desc.agent) {
+        // Use fallback agent on retry attempts when available
+        const effectiveAgent = (attemptNo > 0 && desc.fallbackAgent) ? desc.fallbackAgent : desc.agent;
         const result = await runWithToolContext(
           {
             db: adapter,
@@ -745,7 +747,7 @@ async function executeTask(
             // and avoids costly retry round-trips when the agent forgets to output JSON.
             let effectivePrompt = desc.prompt ?? "";
             if (desc.outputTable) {
-              const schemaDesc = describeSchemaShape(desc.outputTable as any);
+              const schemaDesc = describeSchemaShape(desc.outputTable as any, desc.outputSchema);
               effectivePrompt += [
                 "",
                 "",
@@ -768,7 +770,7 @@ async function executeTask(
                 timestampMs: nowMs(),
               });
             };
-            return (desc.agent as any).generate({
+            return (effectiveAgent as any).generate({
               options: undefined as any,
               prompt: effectivePrompt,
               timeout: desc.timeoutMs ? { totalMs: desc.timeoutMs } : undefined,
@@ -925,7 +927,7 @@ async function executeTask(
 
           // If no JSON found, send a follow-up prompt asking for just the JSON with schema info
           if (output === undefined && desc.agent) {
-            const schemaDesc = describeSchemaShape(desc.outputTable as any);
+            const schemaDesc = describeSchemaShape(desc.outputTable as any, desc.outputSchema);
             const jsonPrompt = [
               `You have completed your task. Now you MUST output ONLY a valid JSON object (no other text) with exactly these fields and types:`,
               schemaDesc,
@@ -1049,7 +1051,7 @@ async function executeTask(
       let schemaRetry = 0;
       while (!validation.ok && desc.agent && schemaRetry < MAX_SCHEMA_RETRIES) {
         schemaRetry++;
-        const schemaDesc = describeSchemaShape(desc.outputTable as any);
+        const schemaDesc = describeSchemaShape(desc.outputTable as any, desc.outputSchema);
         const zodIssues =
           validation.error?.issues
             ?.map(
