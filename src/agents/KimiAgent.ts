@@ -46,9 +46,14 @@ export class KimiAgent extends BaseCliAgent {
     // Note: --print implicitly adds --yolo
     args.push("--print");
 
-    // Output format
-    const outputFormat = this.opts.outputFormat ?? "stream-json";
+    // Output format — use text with --final-message-only to get only the
+    // model's final response without tool call outputs mixed in.
+    const outputFormat = this.opts.outputFormat ?? "text";
     pushFlag(args, "--output-format", outputFormat);
+    // When using text format, --final-message-only ensures we only get
+    // the model's final response, not intermediate tool output.
+    const finalMessageOnly = this.opts.finalMessageOnly ?? (outputFormat === "text");
+    if (finalMessageOnly) args.push("--final-message-only");
 
     // Other flags
     pushFlag(args, "--work-dir", this.opts.workDir ?? params.cwd);
@@ -76,7 +81,10 @@ export class KimiAgent extends BaseCliAgent {
     const systemPrefix = params.systemPrompt
       ? `${params.systemPrompt}\n\n`
       : "";
-    const fullPrompt = `${systemPrefix}${params.prompt ?? ""}`;
+    const jsonReminder = params.prompt?.includes("REQUIRED OUTPUT")
+      ? "\n\nREMINDER: Your response MUST end with a ```json code fence containing the required JSON object. Do NOT skip this step — the pipeline will reject your response without it.\n"
+      : "";
+    const fullPrompt = `${systemPrefix}${params.prompt ?? ""}${jsonReminder}`;
 
     // Pass prompt via --prompt flag
     pushFlag(args, "--prompt", fullPrompt);

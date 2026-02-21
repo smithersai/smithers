@@ -190,6 +190,7 @@ export function extractTextFromJsonValue(value: any): string | undefined {
       .join("");
     if (parts.trim()) return parts;
   }
+  if (value.response) return extractTextFromJsonValue(value.response);
   if (value.message) return extractTextFromJsonValue(value.message);
   if (value.result) return extractTextFromJsonValue(value.result);
   if (value.output) return extractTextFromJsonValue(value.output);
@@ -780,6 +781,7 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
         outputFormat === "json" || outputFormat === "stream-json"
           ? (extractTextFromJsonPayload(rawText) ?? rawText)
           : rawText;
+
       const output = tryParseJson(extractedText);
       return buildGenerateResult(
         extractedText,

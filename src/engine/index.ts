@@ -802,14 +802,22 @@ async function executeTask(
             let effectivePrompt = desc.prompt ?? "";
             if (desc.outputTable) {
               const schemaDesc = describeSchemaShape(desc.outputTable as any, desc.outputSchema);
-              effectivePrompt += [
-                "",
-                "",
+              const jsonInstructions = [
                 "**REQUIRED OUTPUT** — You MUST end your response with a JSON object in a code fence matching this schema:",
                 "```json",
                 schemaDesc,
                 "```",
                 "Output the JSON at the END of your response. The workflow will fail without it.",
+              ].join("\n");
+              // Prepend a brief reminder at the top AND append full instructions at the end.
+              // This ensures models with long outputs don't lose track of the JSON requirement.
+              effectivePrompt = [
+                "IMPORTANT: After completing the task below, you MUST output a JSON object in a ```json code fence at the very end of your response. Do NOT forget this — the workflow fails without it.",
+                "",
+                effectivePrompt,
+                "",
+                "",
+                jsonInstructions,
               ].join("\n");
             }
             const emitOutput = (text: string, stream: "stdout" | "stderr") => {
@@ -998,8 +1006,16 @@ async function executeTask(
           // If no JSON found, send a follow-up prompt asking for just the JSON with schema info
           if (output === undefined && desc.agent) {
             const schemaDesc = describeSchemaShape(desc.outputTable as any, desc.outputSchema);
+            // Include a truncated summary of the original response so the model has context
+            const responseSummary = text.length > 2000
+              ? text.slice(0, 1000) + "\n...[truncated]...\n" + text.slice(-1000)
+              : text;
             const jsonPrompt = [
-              `You have completed your task. Now you MUST output ONLY a valid JSON object (no other text) with exactly these fields and types:`,
+              `You previously completed a task and produced this response (possibly truncated):`,
+              ``,
+              responseSummary,
+              ``,
+              `Now you MUST output ONLY a valid JSON object (no other text) summarizing your work above, with exactly these fields and types:`,
               schemaDesc,
               ``,
               `Output ONLY the JSON object, nothing else.`,
@@ -1043,7 +1059,8 @@ async function executeTask(
             console.log(
               `[JSON Debug] finishReason=${finishReason}, text.length=${text.length}, steps.count=${debugSteps.length}`,
             );
-            console.log(`[JSON Debug] text preview: ${text.slice(0, 300)}`);
+            console.log(`[JSON Debug] text start: ${text.slice(0, 300)}`);
+            console.log(`[JSON Debug] text end: ${text.slice(-500)}`);
             console.log(
               `[JSON Debug] last step text: ${debugSteps[debugSteps.length - 1]?.text?.slice(0, 500) ?? "none"}`,
             );

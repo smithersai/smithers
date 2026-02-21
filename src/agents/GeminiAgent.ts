@@ -40,7 +40,10 @@ export class GeminiAgent extends BaseCliAgent {
   }) {
     const args: string[] = [];
     const yoloEnabled = this.opts.yolo ?? this.yolo;
-    const outputFormat = this.opts.outputFormat ?? "text";
+    // Default to "json" output format to separate model responses from tool
+    // output text. With "text" format, tool call results (file contents etc.)
+    // are concatenated into the response, making JSON extraction unreliable.
+    const outputFormat = this.opts.outputFormat ?? "json";
 
     if (this.opts.debug) args.push("--debug");
     pushFlag(args, "--model", this.opts.model ?? this.model);
@@ -70,7 +73,12 @@ export class GeminiAgent extends BaseCliAgent {
     const systemPrefix = params.systemPrompt
       ? `${params.systemPrompt}\n\n`
       : "";
-    const fullPrompt = `${systemPrefix}${params.prompt ?? ""}`;
+    // Reinforce JSON output requirement in the prompt for Gemini models which
+    // tend to forget structured output instructions on long responses.
+    const jsonReminder = params.prompt?.includes("REQUIRED OUTPUT")
+      ? "\n\nREMINDER: Your response MUST end with a ```json code fence containing the required JSON object. Do NOT skip this step — the pipeline will reject your response without it.\n"
+      : "";
+    const fullPrompt = `${systemPrefix}${params.prompt ?? ""}${jsonReminder}`;
     args.push("--prompt", fullPrompt);
 
     return {
