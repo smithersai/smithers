@@ -29,6 +29,7 @@ export {
 
 // Agents
 export {
+  AmpAgent,
   ClaudeCodeAgent,
   CodexAgent,
   GeminiAgent,
