@@ -96,7 +96,7 @@ async function main() {
 
 Commands:
   run <workflow.tsx> [--input JSON] [--run-id ID] [--max-concurrency N]
-  resume <workflow.tsx> --run-id ID
+  resume <workflow.tsx> --run-id ID [--force]
   approve <workflow.tsx> --run-id ID --node-id ID [--iteration N] [--note TEXT] [--decided-by TEXT]
   deny <workflow.tsx> --run-id ID --node-id ID [--iteration N] [--note TEXT] [--decided-by TEXT]
   status <workflow.tsx> --run-id ID
@@ -161,6 +161,12 @@ Run options:
       const existing = await adapter.getRun(runId);
       if (resume && !existing) {
         console.error(`Run not found: ${runId}`);
+        process.exit(4);
+      }
+      if (resume && existing?.status === "running" && !args.force) {
+        console.error(
+          `Run is still marked running: ${runId}. Use --force to resume anyway.`,
+        );
         process.exit(4);
       }
       if (!resume && existing) {
@@ -229,6 +235,19 @@ Run options:
           break;
       }
     };
+    const abort = new AbortController();
+    let signalHandled = false;
+    const handleSignal = (signal: string) => {
+      if (signalHandled) return;
+      signalHandled = true;
+      process.stderr.write(`
+[smithers] received ${signal}, cancelling run...
+`);
+      abort.abort();
+    };
+    process.once("SIGINT", () => handleSignal("SIGINT"));
+    process.once("SIGTERM", () => handleSignal("SIGTERM"));
+
     const result = await runWorkflow(workflow, {
       input,
       runId,
@@ -241,6 +260,7 @@ Run options:
       maxOutputBytes,
       toolTimeoutMs,
       onProgress,
+      signal: abort.signal,
     });
     console.log(JSON.stringify(result, null, 2));
     process.exit(
