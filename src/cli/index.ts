@@ -112,6 +112,7 @@ Run options:
   --no-log               Disable event log file output
   --allow-network        Allow network access for bash tool
   --max-output-bytes N   Max tool output bytes (default: 200000)
+  --hot                  Enable hot module replacement (watch & reload workflow on file changes)
   --tool-timeout-ms N    Tool timeout in ms (default: 60000)
   --version, -v          Print version
 `);
@@ -130,8 +131,14 @@ Run options:
       process.exit(4);
     }
     const resolvedWorkflowPath = resolve(process.cwd(), workflowPath);
+    if (args.hot) {
+      process.env.SMITHERS_HOT = "1";
+    }
     const workflow = await loadWorkflow(workflowPath);
     ensureSmithersTables(workflow.db as any);
+    if (args.hot) {
+      process.stderr.write(`[hot] Hot reload enabled\n`);
+    }
 
     // Register cleanup to close the SQLite connection before process exit.
     // This prevents libsqlite3 fatal "unfinalized statement" errors that
@@ -245,6 +252,26 @@ Run options:
         case "FrameCommitted":
           // Don't print frame commits - too noisy
           break;
+        case "WorkflowReloadDetected":
+          process.stderr.write(
+            `[${ts}] ⟳ File change detected: ${(event as any).changedFiles?.length ?? 0} file(s)\n`,
+          );
+          break;
+        case "WorkflowReloaded":
+          process.stderr.write(
+            `[${ts}] ⟳ Workflow reloaded (generation ${(event as any).generation})\n`,
+          );
+          break;
+        case "WorkflowReloadFailed":
+          process.stderr.write(
+            `[${ts}] ⚠ Workflow reload failed: ${typeof (event as any).error === "string" ? (event as any).error : ((event as any).error?.message ?? "unknown")}\n`,
+          );
+          break;
+        case "WorkflowReloadUnsafe":
+          process.stderr.write(
+            `[${ts}] ⚠ Workflow reload blocked: ${(event as any).reason}\n`,
+          );
+          break;
       }
     };
     const result = await runWorkflow(workflow, {
@@ -258,6 +285,7 @@ Run options:
       allowNetwork: Boolean(args["allow-network"]),
       maxOutputBytes,
       toolTimeoutMs,
+      hot: Boolean(args["hot"]),
       onProgress,
     });
     console.log(JSON.stringify(result, null, 2));

@@ -71,6 +71,7 @@
           "guides/error-handling",
           "guides/patterns",
           "guides/resumability",
+          "guides/hot-reload",
           "guides/debugging",
           "guides/monitoring-logs",
           "guides/best-practices",

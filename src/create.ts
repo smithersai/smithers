@@ -13,7 +13,27 @@ import type { WorkflowProps, TaskProps } from "./components";
 import { zodToTable } from "./zodToTable";
 import { zodToCreateTableSQL } from "./zodToCreateTableSQL";
 import { camelToSnake } from "./camelToSnake";
+import { resolve } from "node:path";
 import type { z } from "zod";
+
+type HotCacheEntry = {
+  api: CreateSmithersApi<any>;
+  schemaSig: string;
+};
+const hotCache = new Map<string, HotCacheEntry>();
+
+function computeSchemaSig(
+  schemas: Record<string, any>,
+  dbPath: string,
+): string {
+  const parts: string[] = [dbPath];
+  for (const name of Object.keys(schemas).sort()) {
+    const tableName = camelToSnake(name);
+    const ddl = zodToCreateTableSQL(tableName, schemas[name]);
+    parts.push(`${name}:${ddl}`);
+  }
+  return parts.join("\n");
+}
 
 export type CreateSmithersApi<Schema = any> = {
   Workflow: (props: WorkflowProps) => React.ReactElement;
@@ -51,6 +71,23 @@ export function createSmithers<
   schemas: Schemas,
   opts?: { dbPath?: string; journalMode?: string },
 ): CreateSmithersApi<Schemas> {
+  const dbPath = opts?.dbPath ?? "./smithers.db";
+  const absDbPath = resolve(process.cwd(), dbPath);
+
+  if (process.env.SMITHERS_HOT === "1") {
+    const sig = computeSchemaSig(schemas as Record<string, any>, absDbPath);
+    const cached = hotCache.get(absDbPath);
+    if (cached) {
+      if (cached.schemaSig !== sig) {
+        throw new Error(
+          "[smithers hot] Schema change detected; restart required to apply schema changes.",
+        );
+      }
+      return cached.api as any;
+    }
+    // Will cache after creating the API below
+  }
+
   // 1. Generate Drizzle tables from Zod schemas
   const tables: Record<string, any> = {};
   const inputTable = sqliteTable("input", {
@@ -64,9 +101,9 @@ export function createSmithers<
   }
 
   // 2. Create SQLite db
-  const dbPath = opts?.dbPath ?? "./smithers.db";
   const sqlite = new Database(dbPath);
   sqlite.exec(`PRAGMA journal_mode = ${opts?.journalMode ?? "WAL"}`);
+  sqlite.exec("PRAGMA busy_timeout = 5000");
   sqlite.exec("PRAGMA foreign_keys = ON");
 
   // Register a process-exit hook to explicitly close the Database.
@@ -158,13 +195,20 @@ export function createSmithers<
     } as SmithersWorkflow<any>;
   }
 
-  return {
+  const api = {
     Workflow,
     Task,
     useCtx,
     smithers: boundSmithers,
     db,
-    tables: tables as { [K in keyof Schemas]: any },
-    outputs: schemas as { [K in keyof Schemas]: Schemas[K] },
+    tables: tables as any,
+    outputs: schemas as any,
   };
+
+  if (process.env.SMITHERS_HOT === "1") {
+    const sig = computeSchemaSig(schemas as Record<string, any>, absDbPath);
+    hotCache.set(absDbPath, { api: api as any, schemaSig: sig });
+  }
+
+  return api;
 }

@@ -11,6 +11,7 @@
 * Re-renders the workflow after each step
 * Resumes exactly where it left off after crashes
 * Supports subscriptions
+* Hot-reloads workflow code on file save (prompts, config, components) without restarting
 
 There is no hidden in-memory state. Every task result is stored as:
 
@@ -225,6 +226,36 @@ smithers resume workflow.tsx --run-id abc123
 smithers list workflow.tsx
 smithers approve workflow.tsx --run-id abc123 --node-id review
 ```
+
+## Hot Module Replacement
+
+Edit your workflow files while a run is executing. Smithers watches your source tree and hot-reloads changes on save — prompts, config, agent settings, and component structure — without restarting the process or losing run state.
+
+```bash
+smithers run workflow.tsx --hot
+```
+
+In-flight tasks continue with their original code. Only newly scheduled tasks pick up the changes.
+
+```
+[00:05:12] ⟳ File change detected: 1 file(s)
+[00:05:12] ⟳ Workflow reloaded (generation 1)
+[00:05:13] → implement-cat-12 (attempt 1, iteration 0)
+```
+
+**What you can change live:**
+
+* Prompt strings and `.md`/`.mdx` prompt files
+* Focus lists, config values, concurrency settings
+* Agent models, timeouts, system prompts
+* JSX tree structure (add/remove/reorder tasks)
+
+**What requires a restart:**
+
+* Output schema changes (Zod shapes)
+* Database path changes
+
+See the [Hot Reload Guide](/guides/hot-reload) for details.
 
 ---
 

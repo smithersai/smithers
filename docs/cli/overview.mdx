@@ -30,6 +30,7 @@ smithers run <workflow.tsx> [options]
 | `--allow-network` | Allow the built-in `bash` tool to make network requests. **Note:** This flag only applies to Smithers' built-in tools. CLI agent wrappers (`ClaudeCodeAgent`, `CodexAgent`, `GeminiAgent`) manage their own sandboxing independently -- use the agent's own sandbox options (e.g. `sandbox: "read-only"` for CodexAgent) to control their network access. |
 | `--max-output-bytes N` | Maximum bytes a single tool call can return. Default: `200000`. |
 | `--tool-timeout-ms N` | Maximum wall-clock time per tool call in milliseconds. Default: `60000`. |
+| `--hot` | Enable hot module replacement. Watches workflow source files and reloads on change without restarting. See [Hot Reload](/guides/hot-reload). |
 
 **Example:**
 
@@ -49,7 +50,7 @@ Resume a paused or crashed run. Smithers reloads persisted state from SQLite and
 smithers resume <workflow.tsx> --run-id ID [options]
 ```
 
-Accepts the same options as `run` (except `--input`, which is loaded from the database).
+Accepts the same options as `run` (except `--input`, which is loaded from the database). Use `--hot` to enable hot reload during resumed runs.
 
 **Example:**
 
@@ -289,6 +290,7 @@ These options apply to `run` and `resume` commands:
 | `--max-concurrency N` | Maximum number of tasks running in parallel. | `4` |
 | `--input JSON` | Input data as a JSON string (for `run` only). | `{}` |
 | `--run-id ID` | Explicit run identifier. | Auto-generated |
+| `--hot` | Enable [hot module replacement](/guides/hot-reload). Watches workflow files and reloads on save. In-flight tasks continue; new tasks use updated code. | Disabled |
 | `--version`, `-v` | Print version and exit. | -- |
 | `--help`, `-h` | Print help and exit. | -- |
 

@@ -39,6 +39,8 @@ import { eq, getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
 import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
+import { HotWorkflowController } from "../hot/HotWorkflowController";
+import type { HotReloadOptions } from "../RunOptions";
 import { spawn as nodeSpawn } from "node:child_process";
 import { platform } from "node:os";
 
@@ -123,14 +125,22 @@ async function ensureWorktree(
   worktreePath: string,
   branch?: string,
 ): Promise<void> {
-  if (createdWorktrees.has(worktreePath)) {
-    if (existsSync(worktreePath)) return;
-    // Process-global cache can become stale if the path is later deleted.
-    createdWorktrees.delete(worktreePath);
-  }
   if (existsSync(worktreePath)) {
+    // Worktree exists — rebase onto latest main so work starts from tip.
+    const vcs = findVcsRoot(rootDir);
+    if (vcs?.type === "jj") {
+      const { runJj } = await import("../vcs/jj");
+      await runJj(["git", "fetch"], { cwd: worktreePath });
+      await runJj(["rebase", "-d", "main"], { cwd: worktreePath });
+    } else if (vcs?.type === "git") {
+      await runGitCommand(worktreePath, ["fetch", "origin"]);
+      await runGitCommand(worktreePath, ["rebase", "origin/main"]);
+    }
     createdWorktrees.add(worktreePath);
     return;
+  }
+  if (createdWorktrees.has(worktreePath)) {
+    createdWorktrees.delete(worktreePath);
   }
 
   // Walk up from rootDir to find the actual VCS root
@@ -294,6 +304,12 @@ function resolveLogDir(
     return resolve(rootDir, logDir);
   }
   return resolve(rootDir, ".smithers", "executions", runId, "logs");
+}
+
+function normalizeHotOptions(hot: boolean | HotReloadOptions | undefined): HotReloadOptions & { enabled: boolean } {
+  if (!hot) return { enabled: false };
+  if (hot === true) return { enabled: true };
+  return { enabled: true, ...hot };
 }
 
 function assertInputObject(input: unknown) {
@@ -1480,6 +1496,11 @@ export async function runWorkflow<Schema>(
     eventBus.on("event", (e: SmithersEvent) => opts.onProgress?.(e));
   }
 
+  const hotOpts = normalizeHotOptions(opts.hot);
+  let hotController: HotWorkflowController | null = null;
+  let hotPendingFiles: string[] | null = null;
+  let workflowRef = workflow;
+
   const wakeLock = acquireCaffeinate();
   try {
     const existingRun = await adapter.getRun(runId);
@@ -1607,6 +1628,9 @@ export async function runWorkflow<Schema>(
     const renderer = new SmithersRenderer();
     let frameNo = (await adapter.getLastFrame(runId))?.frameNo ?? 0;
     let defaultIteration = 0;
+    // Track in-flight task promises across loop iterations so we
+    // wait for them before declaring the run finished.
+    const inflight = new Set<Promise<void>>();
     if (opts.resume) {
       const nodes = await adapter.listNodes(runId);
       const maxIteration = nodes.reduce(
@@ -1618,6 +1642,15 @@ export async function runWorkflow<Schema>(
     const ralphState: RalphStateMap = buildRalphStateMap(
       await adapter.listRalph(runId),
     );
+
+    if (hotOpts.enabled && (resolvedWorkflowPath ?? opts.workflowPath)) {
+      process.env.SMITHERS_HOT = "1";
+      hotController = new HotWorkflowController(
+        resolvedWorkflowPath ?? opts.workflowPath!,
+        hotOpts,
+      );
+      await hotController.init();
+    }
 
     while (true) {
       if (opts.signal?.aborted) {
@@ -1631,6 +1664,64 @@ export async function runWorkflow<Schema>(
           timestampMs: nowMs(),
         });
         return { runId, status: "cancelled" };
+      }
+
+      // Process pending hot reload
+      if (hotController && hotPendingFiles) {
+        const result = await hotController.reload(hotPendingFiles);
+        hotPendingFiles = null;
+
+        switch (result.type) {
+          case "reloaded":
+            workflowRef = { ...workflowRef, build: result.newBuild };
+            await eventBus.emitEventWithPersist({
+              type: "WorkflowReloaded",
+              runId,
+              generation: result.generation,
+              changedFiles: result.changedFiles,
+              timestampMs: nowMs(),
+            });
+            opts.onProgress?.({
+              type: "WorkflowReloaded",
+              runId,
+              generation: result.generation,
+              changedFiles: result.changedFiles,
+              timestampMs: nowMs(),
+            });
+            break;
+          case "failed":
+            await eventBus.emitEventWithPersist({
+              type: "WorkflowReloadFailed",
+              runId,
+              error: result.error instanceof Error ? result.error.message : String(result.error),
+              changedFiles: result.changedFiles,
+              timestampMs: nowMs(),
+            });
+            opts.onProgress?.({
+              type: "WorkflowReloadFailed",
+              runId,
+              error: result.error instanceof Error ? result.error.message : String(result.error),
+              changedFiles: result.changedFiles,
+              timestampMs: nowMs(),
+            });
+            break;
+          case "unsafe":
+            await eventBus.emitEventWithPersist({
+              type: "WorkflowReloadUnsafe",
+              runId,
+              reason: result.reason,
+              changedFiles: result.changedFiles,
+              timestampMs: nowMs(),
+            });
+            opts.onProgress?.({
+              type: "WorkflowReloadUnsafe",
+              runId,
+              reason: result.reason,
+              changedFiles: result.changedFiles,
+              timestampMs: nowMs(),
+            });
+            break;
+        }
       }
 
       const inputRow = await loadInput(db, inputTable, runId);
@@ -1647,7 +1738,7 @@ export async function runWorkflow<Schema>(
       });
 
       const { xml, tasks, mountedTaskIds } = await renderer.render(
-        workflow.build(ctx),
+        workflowRef.build(ctx),
         {
           ralphIterations,
           defaultIteration,
@@ -1698,6 +1789,7 @@ export async function runWorkflow<Schema>(
       const inProgress = await adapter.listInProgressAttempts(runId);
       const mountedSet = new Set(mountedTaskIds);
       if (
+        !hotOpts.enabled &&
         inProgress.some(
           (a: any) => !mountedSet.has(`${a.nodeId}::${a.iteration ?? 0}`),
         )
@@ -1747,6 +1839,25 @@ export async function runWorkflow<Schema>(
       );
 
       if (runnable.length === 0) {
+        // If tasks are still in-flight, wait for one to finish then
+        // loop back to re-evaluate instead of declaring the run done.
+        if (inflight.size > 0) {
+          {
+            const waitables: Promise<any>[] = [...inflight];
+            if (hotController) {
+              waitables.push(
+                hotController.wait().then((files) => {
+                  hotPendingFiles = files;
+                }),
+              );
+            }
+            if (waitables.length > 0) {
+              await Promise.race(waitables);
+            }
+          }
+          continue;
+        }
+
         if (schedule.waitingApprovalExists) {
           await adapter.updateRun(runId, { status: "waiting-approval" });
           await eventBus.emitEventWithPersist({
@@ -1870,22 +1981,37 @@ export async function runWorkflow<Schema>(
         toolTimeoutMs,
       };
 
-      await Promise.all(
-        runnable.map((task) =>
-          executeTask(
-            adapter,
-            db,
-            runId,
-            task,
-            eventBus,
-            toolConfig,
-            workflowName,
-            cacheEnabled,
-            opts.signal,
-            disabledAgents,
-          ),
-        ),
-      );
+      // Launch new tasks and track them in the persistent inflight set.
+      for (const task of runnable) {
+        const p = executeTask(
+          adapter,
+          db,
+          runId,
+          task,
+          eventBus,
+          toolConfig,
+          workflowName,
+          cacheEnabled,
+          opts.signal,
+          disabledAgents,
+        ).finally(() => inflight.delete(p));
+        inflight.add(p);
+      }
+      // Wait for at least one task to finish, then loop back to
+      // re-render and schedule newly runnable tasks.
+      {
+        const waitables: Promise<any>[] = [...inflight];
+        if (hotController) {
+          waitables.push(
+            hotController.wait().then((files) => {
+              hotPendingFiles = files;
+            }),
+          );
+        }
+        if (waitables.length > 0) {
+          await Promise.race(waitables);
+        }
+      }
     }
   } catch (err) {
     if (process.env.SMITHERS_DEBUG) {
@@ -1905,6 +2031,7 @@ export async function runWorkflow<Schema>(
     });
     return { runId, status: "failed", error: errorInfo };
   } finally {
+    await hotController?.close();
     wakeLock.release();
   }
 }

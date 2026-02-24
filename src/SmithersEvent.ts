@@ -152,4 +152,31 @@ export type SmithersEvent =
       success: boolean;
       error?: string;
       timestampMs: number;
+    }
+  | {
+      type: "WorkflowReloadDetected";
+      runId: string;
+      changedFiles: string[];
+      timestampMs: number;
+    }
+  | {
+      type: "WorkflowReloaded";
+      runId: string;
+      generation: number;
+      changedFiles: string[];
+      timestampMs: number;
+    }
+  | {
+      type: "WorkflowReloadFailed";
+      runId: string;
+      error: unknown;
+      changedFiles: string[];
+      timestampMs: number;
+    }
+  | {
+      type: "WorkflowReloadUnsafe";
+      runId: string;
+      reason: string;
+      changedFiles: string[];
+      timestampMs: number;
     };

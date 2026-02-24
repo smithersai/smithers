@@ -396,6 +396,71 @@ A workspace revert operation completed.
 }
 ```
 
+### Hot Reload
+
+These events are emitted when [hot module replacement](/guides/hot-reload) is enabled.
+
+#### WorkflowReloadDetected
+
+Emitted when file changes are detected in the watched source tree.
+
+```ts
+{
+  type: "WorkflowReloadDetected",
+  runId: string,
+  changedFiles: string[],
+  timestampMs: number
+}
+```
+
+#### WorkflowReloaded
+
+Emitted when the workflow module has been successfully reloaded.
+
+```ts
+{
+  type: "WorkflowReloaded",
+  runId: string,
+  generation: number,
+  changedFiles: string[],
+  timestampMs: number
+}
+```
+
+`generation` is a monotonically increasing counter that tracks how many successful reloads have occurred during this run.
+
+#### WorkflowReloadFailed
+
+Emitted when a reload attempt fails (syntax error, import error, runtime error at module scope).
+
+```ts
+{
+  type: "WorkflowReloadFailed",
+  runId: string,
+  error: unknown,
+  changedFiles: string[],
+  timestampMs: number
+}
+```
+
+The engine continues running with the previous valid workflow code. Fix the error and save again to retry.
+
+#### WorkflowReloadUnsafe
+
+Emitted when a reload is blocked because it would change the database schema.
+
+```ts
+{
+  type: "WorkflowReloadUnsafe",
+  runId: string,
+  reason: string,
+  changedFiles: string[],
+  timestampMs: number
+}
+```
+
+Schema changes (adding/removing output schemas, changing Zod shapes, changing `dbPath`) require a process restart.
+
 ## Event Type Reference
 
 Quick reference table of all event types and their extra fields (beyond `type`, `runId`, `timestampMs`):
@@ -424,6 +489,10 @@ Quick reference table of all event types and their extra fields (beyond `type`, 
 | `NodeOutput` | `nodeId`, `iteration`, `attempt`, `text`, `stream` |
 | `RevertStarted` | `nodeId`, `iteration`, `attempt`, `jjPointer` |
 | `RevertFinished` | `nodeId`, `iteration`, `attempt`, `jjPointer`, `success`, `error?` |
+| `WorkflowReloadDetected` | `changedFiles` |
+| `WorkflowReloaded` | `generation`, `changedFiles` |
+| `WorkflowReloadFailed` | `error`, `changedFiles` |
+| `WorkflowReloadUnsafe` | `reason`, `changedFiles` |
 
 ## Persistence
 
