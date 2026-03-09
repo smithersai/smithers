@@ -17,7 +17,8 @@
     "./server": "./src/server/index.ts",
     "./pi-plugin": "./src/pi-plugin/index.ts",
     "./mdx-plugin": "./src/mdx-plugin.ts",
-    "./dom/renderer": "./src/dom/renderer.ts"
+    "./dom/renderer": "./src/dom/renderer.ts",
+    "./linear": "./src/linear/index.ts"
   },
   "files": [
     "src/",
@@ -63,6 +64,7 @@
     "react-dom": "^19.2.4",
     "react-reconciler": "^0.31.0",
     "zod": "^4.3.6",
+    "@linear/sdk": "^76.0.0",
     "@types/react-dom": "^19.2.3",
     "@types/react-reconciler": "^0.28.9"
   },

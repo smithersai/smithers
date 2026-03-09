@@ -85,6 +85,10 @@ export type { HostContainer } from "./dom/renderer";
 export { revertToAttempt } from "./revert";
 export type { RevertOptions, RevertResult } from "./revert";
 
+// Linear
+export { useLinear, linearTools, getLinearClient } from "./linear/index";
+export type { LinearIssue, LinearTeam, LinearComment } from "./linear/index";
+
 // Utilities
 export { mdxPlugin } from "./mdx-plugin";
 export { markdownComponents } from "./markdownComponents";
