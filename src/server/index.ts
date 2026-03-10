@@ -338,9 +338,7 @@ function buildMirrorOnProgress(
           break;
       }
     })().catch((err) => {
-      if (process.env.SMITHERS_DEBUG) {
-        console.error("[smithers] mirror event error", err);
-      }
+      console.error("[smithers] mirror event error:", err);
     });
   };
 }
@@ -489,9 +487,7 @@ export function startServer(opts: ServerOptions = {}) {
             }
           })
           .catch((err) => {
-            if (process.env.SMITHERS_DEBUG) {
-              console.error("[smithers] server run error", err);
-            }
+            console.error("[smithers] server run error:", err);
             if (serverDb) {
               runs.delete(runId);
             }
@@ -584,9 +580,7 @@ export function startServer(opts: ServerOptions = {}) {
             }
           })
           .catch((err) => {
-            if (process.env.SMITHERS_DEBUG) {
-              console.error("[smithers] server resume error", err);
-            }
+            console.error("[smithers] server resume error:", err);
             if (serverDb) {
               runs.delete(runId);
             }

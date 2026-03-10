@@ -1369,6 +1369,7 @@ async function executeTask(
       });
       return;
     }
+    console.error(`[smithers] Task "${desc.nodeId}" failed (attempt ${attemptNo + 1}/${desc.retries + 1}):`, err instanceof Error ? err.message : err);
     await adapter.updateAttempt(runId, desc.nodeId, desc.iteration, attemptNo, {
       state: "failed",
       finishedAtMs: nowMs(),
@@ -1906,12 +1907,15 @@ export async function runWorkflow<Schema>(
           return { runId, status: "waiting-approval" };
         }
 
-        const blockingFailed = tasks.some((t) => {
+        const failedTasks = tasks.filter((t) => {
           const state = stateMap.get(buildStateKey(t.nodeId, t.iteration));
           return state === "failed" && !t.continueOnFail;
         });
 
-        if (blockingFailed) {
+        if (failedTasks.length > 0) {
+          const failedIds = failedTasks.map((t) => t.nodeId);
+          const errorMsg = `Task(s) failed: ${failedIds.join(", ")}`;
+          console.error(`[smithers] ${errorMsg}`);
           await adapter.updateRun(runId, {
             status: "failed",
             finishedAtMs: nowMs(),
@@ -1919,10 +1923,10 @@ export async function runWorkflow<Schema>(
           await eventBus.emitEventWithPersist({
             type: "RunFailed",
             runId,
-            error: "Task failed",
+            error: errorMsg,
             timestampMs: nowMs(),
           });
-          return { runId, status: "failed", error: "Task failed" };
+          return { runId, status: "failed", error: errorMsg };
         }
 
         if (schedule.readyRalphs.length > 0) {
@@ -2051,9 +2055,7 @@ export async function runWorkflow<Schema>(
       }
     }
   } catch (err) {
-    if (process.env.SMITHERS_DEBUG) {
-      console.error("[smithers] runWorkflow error", err);
-    }
+    console.error("[smithers] runWorkflow error:", err);
     const errorInfo = errorToJson(err);
     await adapter.updateRun(runId, {
       status: "failed",
