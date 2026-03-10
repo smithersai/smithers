@@ -55,18 +55,21 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.36",
+    "@effect/platform": "^0.94.5",
+    "@effect/platform-bun": "^0.87.1",
+    "@linear/sdk": "^76.0.0",
     "@mdx-js/esbuild": "^3.1.1",
+    "@types/react-dom": "^19.2.3",
+    "@types/react-reconciler": "^0.28.9",
     "ai": "^6.0.69",
     "diff": "^5.2.0",
     "drizzle-orm": "^0.45.1",
     "drizzle-zod": "^0.8.3",
+    "effect": "^3.19.19",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-reconciler": "^0.31.0",
-    "zod": "^4.3.6",
-    "@linear/sdk": "^76.0.0",
-    "@types/react-dom": "^19.2.3",
-    "@types/react-reconciler": "^0.28.9"
+    "zod": "^4.3.6"
   },
   "peerDependencies": {
     "typescript": "^5"
