@@ -7,6 +7,8 @@ export class EventBus extends EventEmitter {
   private seq = 0;
   private logDir?: string;
   private db?: any;
+  private persistTail: Promise<void> = Promise.resolve();
+  private persistError: unknown = null;
 
   constructor(opts: { db?: any; logDir?: string; startSeq?: number }) {
     super();
@@ -27,9 +29,37 @@ export class EventBus extends EventEmitter {
     await this.persist(event);
   }
 
+  emitEventQueued(event: SmithersEvent): Promise<void> {
+    this.emit("event", event);
+    return this.enqueuePersist(event);
+  }
+
+  async flush(): Promise<void> {
+    await this.persistTail;
+    if (this.persistError) {
+      const err = this.persistError;
+      this.persistError = null;
+      throw err;
+    }
+  }
+
   async persist(event: SmithersEvent) {
     await this.persistDb(event);
-    await this.persistLog(event);
+    try {
+      await this.persistLog(event);
+    } catch (error) {
+      console.warn(
+        `[smithers] failed to append event log: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private enqueuePersist(event: SmithersEvent): Promise<void> {
+    const task = this.persistTail.then(() => this.persist(event));
+    this.persistTail = task.catch((error) => {
+      this.persistError = error;
+    });
+    return task;
   }
 
   private async persistDb(event: SmithersEvent) {

@@ -18,6 +18,7 @@ import {
 } from "../db/output";
 import { validateInput } from "../db/input";
 import { schemaSignature } from "../db/schema-signature";
+import { withSqliteWriteRetry } from "../db/write-retry";
 import { canonicalizeXml } from "../utils/xml";
 import { sha256Hex } from "../utils/hash";
 import { nowMs } from "../utils/time";
@@ -39,9 +40,11 @@ import { eq, getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
 import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { HotWorkflowController } from "../hot/HotWorkflowController";
 import type { HotReloadOptions } from "../RunOptions";
 import { spawn as nodeSpawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { platform } from "node:os";
 
 /**
@@ -85,16 +88,18 @@ function abortPromise(signal?: AbortSignal): Promise<never> | null {
 async function runGitCommand(
   cwd: string,
   args: string[],
-): Promise<{ code: number; stderr: string }> {
-  return await new Promise<{ code: number; stderr: string }>((res) => {
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return await new Promise<{ code: number; stdout: string; stderr: string }>((res) => {
     const child = nodeSpawn("git", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    let stdout = "";
     let stderr = "";
+    child.stdout?.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
-    child.on("error", (err) => res({ code: 127, stderr: err.message }));
-    child.on("close", (code) => res({ code: code ?? 1, stderr }));
+    child.on("error", (err) => res({ code: 127, stdout: "", stderr: err.message }));
+    child.on("close", (code) => res({ code: code ?? 1, stdout, stderr }));
   });
 }
 
@@ -241,6 +246,16 @@ const DEFAULT_MAX_CONCURRENCY = 4;
 const STALE_ATTEMPT_MS = 15 * 60 * 1000;
 const DEFAULT_TOOL_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes — agents need time for builds/tests
 const DEFAULT_MAX_OUTPUT_BYTES = 200_000;
+const RUN_HEARTBEAT_MS = 1_000;
+const RUN_HEARTBEAT_STALE_MS = 5_000;
+const RUN_CANCEL_POLL_MS = 250;
+
+type RunDurabilityMetadata = {
+  workflowHash: string | null;
+  vcsType: "git" | "jj" | null;
+  vcsRoot: string | null;
+  vcsRevision: string | null;
+};
 
 /** Prevent macOS idle sleep while a workflow is running. No-op on other platforms. */
 function acquireCaffeinate(): { release: () => void } {
@@ -304,6 +319,178 @@ function resolveLogDir(
     return resolve(rootDir, logDir);
   }
   return resolve(rootDir, ".smithers", "executions", runId, "logs");
+}
+
+async function readWorkflowHash(
+  workflowPath: string | null,
+): Promise<string | null> {
+  if (!workflowPath) return null;
+  try {
+    const raw = await readFile(workflowPath, "utf8");
+    return sha256Hex(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function getGitPointer(cwd: string): Promise<string | null> {
+  const res = await runGitCommand(cwd, ["rev-parse", "HEAD"]);
+  if (res.code !== 0) return null;
+  const out = res.stdout.trim();
+  return out ? out : null;
+}
+
+async function getRunDurabilityMetadata(
+  workflowPath: string | null,
+  rootDir: string,
+): Promise<RunDurabilityMetadata> {
+  const workflowHash = await readWorkflowHash(workflowPath);
+  const vcs = findVcsRoot(rootDir);
+  if (!vcs) {
+    return {
+      workflowHash,
+      vcsType: null,
+      vcsRoot: null,
+      vcsRevision: null,
+    };
+  }
+
+  const vcsRevision =
+    vcs.type === "jj"
+      ? await getJjPointer(rootDir)
+      : await getGitPointer(rootDir);
+
+  return {
+    workflowHash,
+    vcsType: vcs.type,
+    vcsRoot: vcs.root,
+    vcsRevision,
+  };
+}
+
+function assertResumeDurabilityMetadata(
+  existingRun: any,
+  current: RunDurabilityMetadata,
+  workflowPath: string | null,
+) {
+  const mismatches: string[] = [];
+
+  if (
+    existingRun.workflowPath &&
+    workflowPath &&
+    resolve(existingRun.workflowPath) !== resolve(workflowPath)
+  ) {
+    mismatches.push("workflow path changed");
+  }
+  if (
+    existingRun.workflowHash &&
+    current.workflowHash &&
+    existingRun.workflowHash !== current.workflowHash
+  ) {
+    mismatches.push("workflow file contents changed");
+  }
+  if (
+    existingRun.vcsType &&
+    current.vcsType &&
+    existingRun.vcsType !== current.vcsType
+  ) {
+    mismatches.push("VCS type changed");
+  }
+  if (
+    existingRun.vcsRoot &&
+    current.vcsRoot &&
+    resolve(existingRun.vcsRoot) !== resolve(current.vcsRoot)
+  ) {
+    mismatches.push("VCS root changed");
+  }
+  if (
+    existingRun.vcsRevision &&
+    current.vcsRevision &&
+    existingRun.vcsRevision !== current.vcsRevision
+  ) {
+    mismatches.push("VCS revision changed");
+  }
+
+  if (mismatches.length > 0) {
+    throw new SmithersError(
+      "RESUME_METADATA_MISMATCH",
+      `Cannot resume run because durable metadata changed: ${mismatches.join(", ")}`,
+      {
+        existing: {
+          workflowPath: existingRun.workflowPath ?? null,
+          workflowHash: existingRun.workflowHash ?? null,
+          vcsType: existingRun.vcsType ?? null,
+          vcsRoot: existingRun.vcsRoot ?? null,
+          vcsRevision: existingRun.vcsRevision ?? null,
+        },
+        current,
+      },
+    );
+  }
+}
+
+function wireAbortSignal(controller: AbortController, signal?: AbortSignal) {
+  if (!signal) return () => {};
+  if (signal.aborted) {
+    controller.abort();
+    return () => {};
+  }
+  const onAbort = () => controller.abort();
+  signal.addEventListener("abort", onAbort, { once: true });
+  return () => signal.removeEventListener("abort", onAbort);
+}
+
+function startRunSupervisor(
+  adapter: SmithersDb,
+  runId: string,
+  runtimeOwnerId: string,
+  controller: AbortController,
+) {
+  let closed = false;
+
+  const heartbeat = setInterval(() => {
+    if (closed || controller.signal.aborted) return;
+    void adapter.heartbeatRun(runId, runtimeOwnerId, nowMs()).catch((error) => {
+      console.warn(
+        `[smithers] failed to persist run heartbeat: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+  }, RUN_HEARTBEAT_MS);
+
+  const cancelWatcher = (async () => {
+    while (!closed && !controller.signal.aborted) {
+      try {
+        const run = await adapter.getRun(runId);
+        if (run?.cancelRequestedAtMs) {
+          controller.abort();
+          return;
+        }
+      } catch (error) {
+        console.warn(
+          `[smithers] failed to poll run cancel state: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      await Bun.sleep(RUN_CANCEL_POLL_MS);
+    }
+  })();
+
+  return async () => {
+    closed = true;
+    clearInterval(heartbeat);
+    await cancelWatcher.catch(() => undefined);
+  };
+}
+
+export function isRunHeartbeatFresh(
+  run: { status?: string | null; heartbeatAtMs?: number | null } | null | undefined,
+  now = nowMs(),
+): boolean {
+  return Boolean(
+    run &&
+      run.status === "running" &&
+      typeof run.heartbeatAtMs === "number" &&
+      now - run.heartbeatAtMs <= RUN_HEARTBEAT_STALE_MS,
+  );
 }
 
 function normalizeHotOptions(hot: boolean | HotReloadOptions | undefined): HotReloadOptions & { enabled: boolean } {
@@ -887,7 +1074,7 @@ async function executeTask(
               ].join("\n");
             }
             const emitOutput = (text: string, stream: "stdout" | "stderr") => {
-              eventBus.emit("event", {
+              void eventBus.emitEventQueued({
                 type: "NodeOutput",
                 runId,
                 nodeId: desc.nodeId,
@@ -1289,6 +1476,7 @@ async function executeTask(
       payload = validation.data;
     }
 
+    await eventBus.flush();
     await upsertOutputRow(
       db,
       desc.outputTable as any,
@@ -1341,6 +1529,14 @@ async function executeTask(
       timestampMs: nowMs(),
     });
   } catch (err) {
+    try {
+      await eventBus.flush();
+    } catch (flushError) {
+      console.error(
+        `[smithers] Failed to flush queued events for "${desc.nodeId}":`,
+        flushError instanceof Error ? flushError.message : flushError,
+      );
+    }
     if (signal?.aborted || isAbortError(err)) {
       await adapter.updateAttempt(runId, desc.nodeId, desc.iteration, attemptNo, {
         state: "cancelled",
@@ -1486,6 +1682,14 @@ export async function runWorkflow<Schema>(
     DEFAULT_TOOL_TIMEOUT_MS,
   );
   const allowNetwork = Boolean(opts.allowNetwork);
+  const runtimeOwnerId = randomUUID();
+  const runAbortController = new AbortController();
+  const detachAbort = wireAbortSignal(runAbortController, opts.signal);
+  let stopSupervisor = async () => {};
+  const runMetadata = await getRunDurabilityMetadata(
+    resolvedWorkflowPath,
+    rootDir,
+  );
 
   const lastSeq = await adapter.getLastEventSeq(runId);
   const eventBus = new EventBus({
@@ -1505,6 +1709,9 @@ export async function runWorkflow<Schema>(
   const wakeLock = acquireCaffeinate();
   try {
     const existingRun = await adapter.getRun(runId);
+    if (opts.resume && existingRun) {
+      assertResumeDurabilityMetadata(existingRun, runMetadata, resolvedWorkflowPath);
+    }
     if (!opts.resume) {
       assertInputObject(opts.input);
       if ("runId" in opts.input && (opts.input as any).runId !== runId) {
@@ -1526,9 +1733,14 @@ export async function runWorkflow<Schema>(
       }
       const insertQuery = db.insert(inputTable).values(inputRow);
       if (typeof insertQuery.onConflictDoNothing === "function") {
-        await insertQuery.onConflictDoNothing();
+        await withSqliteWriteRetry(
+          () => db.insert(inputTable).values(inputRow).onConflictDoNothing(),
+          { label: "insert input row" },
+        );
       } else {
-        await insertQuery;
+        await withSqliteWriteRetry(() => db.insert(inputTable).values(inputRow), {
+          label: "insert input row",
+        });
       }
     } else {
       const existingInput = await loadInput(db, inputTable, runId);
@@ -1545,10 +1757,17 @@ export async function runWorkflow<Schema>(
         runId,
         workflowName: "workflow",
         workflowPath: resolvedWorkflowPath ?? opts.workflowPath ?? null,
+        workflowHash: runMetadata.workflowHash,
         status: "running",
         createdAtMs: nowMs(),
         startedAtMs: nowMs(),
         finishedAtMs: null,
+        heartbeatAtMs: nowMs(),
+        runtimeOwnerId,
+        cancelRequestedAtMs: null,
+        vcsType: runMetadata.vcsType,
+        vcsRoot: runMetadata.vcsRoot,
+        vcsRevision: runMetadata.vcsRevision,
         errorJson: null,
         configJson: JSON.stringify({
           maxConcurrency,
@@ -1562,13 +1781,35 @@ export async function runWorkflow<Schema>(
       await adapter.updateRun(runId, {
         status: "running",
         startedAtMs: existingRun.startedAtMs ?? nowMs(),
+        finishedAtMs: null,
+        heartbeatAtMs: nowMs(),
+        runtimeOwnerId,
+        cancelRequestedAtMs: null,
         workflowPath:
           resolvedWorkflowPath ??
           opts.workflowPath ??
           existingRun.workflowPath ??
           null,
+        workflowHash: runMetadata.workflowHash ?? existingRun.workflowHash ?? null,
+        vcsType: runMetadata.vcsType ?? existingRun.vcsType ?? null,
+        vcsRoot: runMetadata.vcsRoot ?? existingRun.vcsRoot ?? null,
+        vcsRevision: runMetadata.vcsRevision ?? existingRun.vcsRevision ?? null,
+        errorJson: null,
+        configJson: JSON.stringify({
+          maxConcurrency,
+          rootDir,
+          allowNetwork,
+          maxOutputBytes,
+          toolTimeoutMs,
+        }),
       });
     }
+    stopSupervisor = startRunSupervisor(
+      adapter,
+      runId,
+      runtimeOwnerId,
+      runAbortController,
+    );
 
     await eventBus.emitEventWithPersist({
       type: "RunStarted",
@@ -1577,25 +1818,6 @@ export async function runWorkflow<Schema>(
     });
 
     await cancelStaleAttempts(adapter, runId);
-
-    // Cancel orphaned in-progress attempts from previous runs (killed processes)
-    {
-      const allInProgress = await adapter.listAllInProgressAttempts();
-      const now = nowMs();
-      for (const attempt of allInProgress) {
-        if (attempt.runId === runId) continue;
-        await adapter.updateAttempt(
-          attempt.runId,
-          attempt.nodeId,
-          attempt.iteration,
-          attempt.attempt,
-          {
-            state: "cancelled",
-            finishedAtMs: now,
-          },
-        );
-      }
-    }
 
     if (opts.resume) {
       // On resume, cancel ALL in-progress attempts since the previous process is dead
@@ -1654,10 +1876,13 @@ export async function runWorkflow<Schema>(
     }
 
     while (true) {
-      if (opts.signal?.aborted) {
+      if (runAbortController.signal.aborted) {
         await adapter.updateRun(runId, {
           status: "cancelled",
           finishedAtMs: nowMs(),
+          heartbeatAtMs: null,
+          runtimeOwnerId: null,
+          cancelRequestedAtMs: null,
         });
         await eventBus.emitEventWithPersist({
           type: "RunCancelled",
@@ -1897,7 +2122,12 @@ export async function runWorkflow<Schema>(
         }
 
         if (schedule.waitingApprovalExists) {
-          await adapter.updateRun(runId, { status: "waiting-approval" });
+          await adapter.updateRun(runId, {
+            status: "waiting-approval",
+            heartbeatAtMs: null,
+            runtimeOwnerId: null,
+            cancelRequestedAtMs: null,
+          });
           await eventBus.emitEventWithPersist({
             type: "RunStatusChanged",
             runId,
@@ -1919,6 +2149,9 @@ export async function runWorkflow<Schema>(
           await adapter.updateRun(runId, {
             status: "failed",
             finishedAtMs: nowMs(),
+            heartbeatAtMs: null,
+            runtimeOwnerId: null,
+            cancelRequestedAtMs: null,
           });
           await eventBus.emitEventWithPersist({
             type: "RunFailed",
@@ -1955,6 +2188,9 @@ export async function runWorkflow<Schema>(
               await adapter.updateRun(runId, {
                 status: "failed",
                 finishedAtMs: nowMs(),
+                heartbeatAtMs: null,
+                runtimeOwnerId: null,
+                cancelRequestedAtMs: null,
                 errorJson: JSON.stringify({
                   code: "RALPH_MAX_REACHED",
                   ralphId: ralph.id,
@@ -1987,6 +2223,9 @@ export async function runWorkflow<Schema>(
         await adapter.updateRun(runId, {
           status: "finished",
           finishedAtMs: nowMs(),
+          heartbeatAtMs: null,
+          runtimeOwnerId: null,
+          cancelRequestedAtMs: null,
         });
         await eventBus.emitEventWithPersist({
           type: "RunFinished",
@@ -2033,7 +2272,7 @@ export async function runWorkflow<Schema>(
           toolConfig,
           workflowName,
           cacheEnabled,
-          opts.signal,
+          runAbortController.signal,
           disabledAgents,
         ).finally(() => inflight.delete(p));
         inflight.add(p);
@@ -2060,6 +2299,9 @@ export async function runWorkflow<Schema>(
     await adapter.updateRun(runId, {
       status: "failed",
       finishedAtMs: nowMs(),
+      heartbeatAtMs: null,
+      runtimeOwnerId: null,
+      cancelRequestedAtMs: null,
       errorJson: JSON.stringify(errorInfo),
     });
     await eventBus.emitEventWithPersist({
@@ -2070,6 +2312,8 @@ export async function runWorkflow<Schema>(
     });
     return { runId, status: "failed", error: errorInfo };
   } finally {
+    await stopSupervisor();
+    detachAbort();
     await hotController?.close();
     wakeLock.release();
   }

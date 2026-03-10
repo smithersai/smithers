@@ -81,23 +81,23 @@ const fakeAgent = {
     writeFileSync(
       workflowPath,
       `/** @jsxImportSource smithers */
-import { createSmithers, Workflow, Task, Sequence } from "smithers";
-import { z } from "zod";
-${slowAgent}
-
-const { smithers } = createSmithers(
-  { outputA: z.object({ value: z.number() }) },
-  { dbPath: "${dbPath}" },
-);
-
-export default smithers((ctx) => (
-  <Workflow name="${name}">
-    <Task id="task1" output="outputA"${agentProp}${approvalProp}>
-      ${options.slow ? "run task" : "{{ value: 42 }}"}
-    </Task>
-  </Workflow>
-));
-`
+	import { createSmithers } from "smithers";
+	import { z } from "zod";
+	${slowAgent}
+	
+	const { smithers, Workflow, Task, outputs } = createSmithers(
+	  { outputA: z.object({ value: z.number() }) },
+	  { dbPath: "${dbPath}" },
+	);
+	
+	export default smithers((ctx) => (
+	  <Workflow name="${name}">
+	    <Task id="task1" output={outputs.outputA}${agentProp}${approvalProp}>
+	      ${options.slow ? "run task" : "{{ value: 42 }}"}
+	    </Task>
+	  </Workflow>
+	));
+	`
     );
     return workflowPath;
   }

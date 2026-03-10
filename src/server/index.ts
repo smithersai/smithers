@@ -1,7 +1,7 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 import { resolve, dirname, sep, basename } from "node:path";
-import { runWorkflow } from "../engine";
+import { isRunHeartbeatFresh, runWorkflow } from "../engine";
 import { newRunId } from "../utils/ids";
 import type { SmithersWorkflow } from "../SmithersWorkflow";
 import type { SmithersEvent } from "../SmithersEvent";
@@ -186,21 +186,28 @@ function buildMirrorOnProgress(
 ) {
   if (!adapter) return undefined;
   let runInserted = false;
-  const ensureRun = async () => {
-    if (runInserted) return;
-    await adapter.insertRun({
-      runId,
-      workflowName,
-      workflowPath,
-      status: "running",
-      createdAtMs: nowMs(),
-      startedAtMs: nowMs(),
-      finishedAtMs: null,
-      errorJson: null,
-      configJson,
-    });
-    runInserted = true;
-  };
+      const ensureRun = async () => {
+        if (runInserted) return;
+        await adapter.insertRun({
+          runId,
+          workflowName,
+          workflowPath,
+          workflowHash: null,
+          status: "running",
+          createdAtMs: nowMs(),
+          startedAtMs: nowMs(),
+          finishedAtMs: null,
+          heartbeatAtMs: eventLoopNow(),
+          runtimeOwnerId: null,
+          cancelRequestedAtMs: null,
+          vcsType: null,
+          vcsRoot: null,
+          vcsRevision: null,
+          errorJson: null,
+          configJson,
+        });
+        runInserted = true;
+      };
 
   return (event: SmithersEvent) => {
     void (async () => {
@@ -216,6 +223,8 @@ function buildMirrorOnProgress(
           await adapter.updateRun(runId, {
             status: "running",
             startedAtMs: event.timestampMs,
+            heartbeatAtMs: event.timestampMs,
+            cancelRequestedAtMs: null,
           });
           break;
         case "RunStatusChanged":
@@ -225,12 +234,18 @@ function buildMirrorOnProgress(
           await adapter.updateRun(runId, {
             status: "finished",
             finishedAtMs: event.timestampMs,
+            heartbeatAtMs: null,
+            runtimeOwnerId: null,
+            cancelRequestedAtMs: null,
           });
           break;
         case "RunFailed":
           await adapter.updateRun(runId, {
             status: "failed",
             finishedAtMs: event.timestampMs,
+            heartbeatAtMs: null,
+            runtimeOwnerId: null,
+            cancelRequestedAtMs: null,
             errorJson: JSON.stringify(errorToJson(event.error)),
           });
           break;
@@ -238,6 +253,9 @@ function buildMirrorOnProgress(
           await adapter.updateRun(runId, {
             status: "cancelled",
             finishedAtMs: event.timestampMs,
+            heartbeatAtMs: null,
+            runtimeOwnerId: null,
+            cancelRequestedAtMs: null,
           });
           break;
         case "NodePending":
@@ -343,6 +361,10 @@ function buildMirrorOnProgress(
   };
 }
 
+function eventLoopNow() {
+  return nowMs();
+}
+
 export type ServerOptions = {
   port?: number;
   db?: BunSQLiteDatabase<any>;
@@ -428,15 +450,7 @@ export function startServer(opts: ServerOptions = {}) {
         const runId = body.runId ?? newRunId();
         const adapter = new SmithersDb(workflow.db as any);
         const existing = await adapter.getRun(runId);
-        const inMemory = runs.get(runId);
-        if (inMemory && !body.resume) {
-          throw new HttpError(
-            409,
-            "RUN_IN_PROGRESS",
-            "Run is already in progress",
-          );
-        }
-        if (body.resume && inMemory && existing?.status === "running") {
+        if (body.resume && existing && isRunHeartbeatFresh(existing)) {
           return sendJson(res, 200, { runId, status: "running" });
         }
         if (existing && !body.resume) {
@@ -479,18 +493,13 @@ export function startServer(opts: ServerOptions = {}) {
         })
           .then((result) => {
             const id = result.runId;
-            if (serverDb) {
-              const rec = runs.get(id);
-              if (rec) {
-                runs.delete(id);
-              }
+            if (serverDb || result.status !== "waiting-approval") {
+              runs.delete(id);
             }
           })
           .catch((err) => {
             console.error("[smithers] server run error:", err);
-            if (serverDb) {
-              runs.delete(runId);
-            }
+            runs.delete(runId);
           });
 
         sendJson(res, 200, { runId });
@@ -539,7 +548,7 @@ export function startServer(opts: ServerOptions = {}) {
         if (!existing) {
           throw new HttpError(404, "RUN_NOT_FOUND", "Run id does not exist");
         }
-        if (existing.status === "running" && runs.has(runId)) {
+        if (isRunHeartbeatFresh(existing)) {
           return sendJson(res, 200, { runId, status: "running" });
         }
         const abort = new AbortController();
@@ -571,19 +580,14 @@ export function startServer(opts: ServerOptions = {}) {
           allowNetwork,
           onProgress: mirrorOnProgress,
         })
-          .then(() => {
-            if (serverDb) {
-              const rec = runs.get(runId);
-              if (rec) {
-                runs.delete(runId);
-              }
+          .then((result) => {
+            if (serverDb || result.status !== "waiting-approval") {
+              runs.delete(runId);
             }
           })
           .catch((err) => {
             console.error("[smithers] server resume error:", err);
-            if (serverDb) {
-              runs.delete(runId);
-            }
+            runs.delete(runId);
           });
 
         sendJson(res, 200, { runId });
@@ -593,13 +597,26 @@ export function startServer(opts: ServerOptions = {}) {
       const cancelMatch = url.pathname.match(/^\/v1\/runs\/([^/]+)\/cancel$/);
       if (method === "POST" && cancelMatch) {
         const runId = cancelMatch[1]!;
+        const adapter = adapterForRun(runId);
         const record = runs.get(runId);
-        if (!record) {
+        if (!adapter) {
           return sendJson(res, 404, {
             error: { code: "NOT_FOUND", message: "Run not found" },
           });
         }
-        record.abort.abort();
+        const run = await adapter.getRun(runId);
+        if (!run) {
+          return sendJson(res, 404, {
+            error: { code: "NOT_FOUND", message: "Run not found" },
+          });
+        }
+        if (run.status !== "running" || !isRunHeartbeatFresh(run)) {
+          return sendJson(res, 409, {
+            error: { code: "RUN_NOT_ACTIVE", message: "Run is not currently active" },
+          });
+        }
+        await adapter.requestRunCancel(runId, nowMs());
+        record?.abort.abort();
         return sendJson(res, 200, { runId });
       }
 
@@ -821,6 +838,15 @@ export function startServer(opts: ServerOptions = {}) {
           message: err?.message ?? "Unknown error",
         },
       });
+    }
+  });
+
+  server.on("close", () => {
+    for (const [runId, record] of runs) {
+      try {
+        record.abort.abort();
+      } catch {}
+      runs.delete(runId);
     }
   });
 
