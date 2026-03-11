@@ -1,5 +1,7 @@
 # Mr. Burns Specification
 
+> Status note: this document describes the target product direction. For implementation-accurate docs, use `README.md`, `docs/codebase-layout.md`, and `docs/daemon-api-reference.md`.
+
 ## Document type
 
 Reference-style product and technical specification for the first implementation of **Mr. Burns**.
