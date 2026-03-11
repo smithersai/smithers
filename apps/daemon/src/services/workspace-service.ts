@@ -20,7 +20,10 @@ import {
   isGitRepository,
 } from "@/services/git-service"
 import { ensureDefaultWorkflowTemplates } from "@/services/workflow-service"
+import { getLogger } from "@/logging/logger"
 import { HttpError } from "@/utils/http-error"
+
+const logger = getLogger().child({ component: "workspace.service" })
 
 function slugifyWorkspaceName(name: string) {
   return name
@@ -85,7 +88,7 @@ export function initializeWorkspaceService() {
       defaultAgent: DEFAULT_AGENT,
     })
   } catch (error) {
-    console.warn("Failed to seed initial workspace", error)
+    logger.warn({ event: "workspace.seed_failed", err: error }, "Failed to seed initial workspace")
   }
 }
 
@@ -133,7 +136,7 @@ export function createWorkspace(input: CreateWorkspaceInput) {
   const persistedWorkspace = insertWorkspaceRow(workspace)
 
   if (input.sourceType === "create") {
-    ensureDefaultWorkflowTemplates(persistedWorkspace.id)
+    ensureDefaultWorkflowTemplates(persistedWorkspace.id, input.workflowTemplateIds)
   }
 
   return persistedWorkspace
