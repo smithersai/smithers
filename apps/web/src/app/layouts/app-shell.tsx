@@ -1,15 +1,61 @@
-import { Outlet, useLocation } from "react-router-dom"
+import type { LucideIcon } from "lucide-react"
+import {
+  ChevronRightIcon,
+  FolderIcon,
+  FolderPlusIcon,
+  InboxIcon,
+  LayoutDashboardIcon,
+  PlayIcon,
+  Settings2Icon,
+  SettingsIcon,
+  ShieldCheckIcon,
+} from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { NavLink, Outlet, useLocation } from "react-router-dom"
 
-import { SidebarNav } from "@/components/app-shell/sidebar-nav"
-import { WorkspaceSelector } from "@/components/app-shell/workspace-selector"
-import { Badge } from "@/components/ui/badge"
+import mrBurnsAvatar from "@/assets/mr-burns.png"
+import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarSeparator,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
 import { useActiveWorkspace } from "@/features/workspaces/hooks/use-active-workspace"
 
-const globalItems = [
-  { label: "Workflows", to: "/workflows" },
-  { label: "Add workspace", to: "/workspaces/new" },
-  { label: "Settings", to: "/settings" },
+type SidebarItem = {
+  label: string
+  to: string
+  icon: LucideIcon
+  exact?: boolean
+}
+
+const globalItems: SidebarItem[] = [
+  { label: "Inbox", to: "/inbox", icon: InboxIcon, exact: true },
 ]
+
+const settingsItem: SidebarItem = {
+  label: "Settings",
+  to: "/settings",
+  icon: SettingsIcon,
+  exact: true,
+}
 
 function toTitleCase(value: string) {
   return value
@@ -51,6 +97,10 @@ function buildBreadcrumbs(pathname: string, workspaceName?: string) {
     return ["Settings"]
   }
 
+  if (segments[0] === "inbox") {
+    return ["Inbox"]
+  }
+
   if (segments[0] === "w") {
     const workspaceCrumbs = [workspaceName ?? "Workspace"]
 
@@ -64,37 +114,216 @@ function buildBreadcrumbs(pathname: string, workspaceName?: string) {
   return segments.map((segment) => toTitleCase(segment))
 }
 
+function isPathActive(pathname: string, item: SidebarItem) {
+  if (item.exact) {
+    return pathname === item.to
+  }
+
+  return pathname === item.to || pathname.startsWith(`${item.to}/`)
+}
+
+function getWorkspaceNavItems(workspaceId: string): SidebarItem[] {
+  return [
+    {
+      label: "Overview",
+      to: `/w/${workspaceId}/overview`,
+      icon: LayoutDashboardIcon,
+      exact: true,
+    },
+    {
+      label: "Workflows",
+      to: `/w/${workspaceId}/workflows`,
+      icon: FolderIcon,
+    },
+    {
+      label: "Runs",
+      to: `/w/${workspaceId}/runs`,
+      icon: PlayIcon,
+    },
+    {
+      label: "Approvals",
+      to: `/w/${workspaceId}/approvals`,
+      icon: ShieldCheckIcon,
+    },
+    {
+      label: "Settings",
+      to: `/w/${workspaceId}/settings`,
+      icon: Settings2Icon,
+    },
+  ]
+}
+
 export function AppShell() {
   const location = useLocation()
-  const { workspace } = useActiveWorkspace()
+  const { workspace, workspaces, isLoading } = useActiveWorkspace()
+  const [expandedWorkspaceIds, setExpandedWorkspaceIds] = useState<Record<string, boolean>>({})
   const breadcrumbs = buildBreadcrumbs(location.pathname, workspace?.name)
 
+  const routeWorkspaceId = useMemo(() => {
+    const match = location.pathname.match(/^\/w\/([^/]+)/)
+    return match?.[1] ?? null
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!routeWorkspaceId) {
+      return
+    }
+
+    setExpandedWorkspaceIds((current) => {
+      if (current[routeWorkspaceId]) {
+        return current
+      }
+
+      return {
+        ...current,
+        [routeWorkspaceId]: true,
+      }
+    })
+  }, [routeWorkspaceId])
+
   return (
-    <div className="grid min-h-screen grid-cols-[18rem_1fr] bg-background text-foreground">
-      <aside className="border-r bg-sidebar">
-        <div className="flex h-full flex-col gap-6 p-4">
-          <div className="flex items-center gap-3 px-2 py-1">
-            <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border bg-background">
-              <img
-                src="/icons/app-icon-alt.png"
-                alt="Mr. Burns"
-                className="h-full w-full object-cover object-top"
-              />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="font-semibold">Mr. Burns</span>
-              <span className="text-xs text-muted-foreground">Smither&apos;s Manager</span>
-            </div>
-          </div>
+    <SidebarProvider className="h-svh min-h-0 overflow-hidden">
+      <Sidebar collapsible="icon" variant="sidebar">
+        <SidebarHeader>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton size="lg" tooltip="Mr. Burns">
+                <div className="h-8 w-8 shrink-0 overflow-hidden rounded-md border bg-background">
+                  <img src={mrBurnsAvatar} alt="Mr. Burns" className="h-full w-full object-cover object-top" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-semibold">Mr. Burns</span>
+                  <span className="truncate text-xs text-muted-foreground">Smither&apos;s Manager</span>
+                </div>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Global</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {globalItems.map((item) => (
+                  <SidebarMenuItem key={item.to}>
+                    <SidebarMenuButton
+                      isActive={isPathActive(location.pathname, item)}
+                      render={<NavLink to={item.to} />}
+                      tooltip={item.label}
+                    >
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+          <SidebarSeparator />
+          <SidebarGroup>
+            <SidebarGroupLabel>Workspaces</SidebarGroupLabel>
+            <SidebarGroupAction
+              render={<NavLink to="/workspaces/new" />}
+              title="Add workspace"
+              aria-label="Add workspace"
+            >
+              <FolderPlusIcon />
+            </SidebarGroupAction>
+            <SidebarGroupContent className="space-y-2">
+              {isLoading ? (
+                <p className="px-2 text-xs text-sidebar-foreground/70">Loading workspaces…</p>
+              ) : null}
 
-          <SidebarNav title="Global" items={globalItems} />
-          <WorkspaceSelector />
-        </div>
-      </aside>
+              {!isLoading && workspaces.length === 0 ? (
+                <div className="space-y-2 rounded-lg border border-dashed border-sidebar-border px-3 py-2 group-data-[collapsible=icon]:hidden">
+                  <p className="text-xs text-sidebar-foreground/70">No workspaces yet.</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    render={<NavLink to="/workspaces/new" />}
+                  >
+                    Add workspace
+                  </Button>
+                </div>
+              ) : null}
 
-      <div className="flex min-h-screen flex-col">
-        <header className="flex items-center justify-between border-b px-6 py-4">
+              <SidebarMenu>
+                {workspaces.map((entry) => {
+                  const workspaceItems = getWorkspaceNavItems(entry.id)
+                  const isWorkspaceActive = location.pathname.startsWith(`/w/${entry.id}`)
+                  const isOpen = expandedWorkspaceIds[entry.id] ?? isWorkspaceActive
+
+                  return (
+                    <Collapsible
+                      key={entry.id}
+                      open={isOpen}
+                      onOpenChange={(open) => {
+                        setExpandedWorkspaceIds((current) => ({
+                          ...current,
+                          [entry.id]: open,
+                        }))
+                      }}
+                    >
+                      <SidebarMenuItem>
+                        <CollapsibleTrigger
+                          render={
+                            <SidebarMenuButton
+                              isActive={isWorkspaceActive}
+                              tooltip={entry.name}
+                              className="justify-start"
+                            />
+                          }
+                        >
+                          <ChevronRightIcon
+                            className={`size-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                          />
+                          <FolderIcon />
+                          <span>{entry.name}</span>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <SidebarMenuSub>
+                            {workspaceItems.map((item) => (
+                              <SidebarMenuSubItem key={item.to}>
+                                <SidebarMenuSubButton
+                                  isActive={isPathActive(location.pathname, item)}
+                                  render={<NavLink to={item.to} />}
+                                >
+                                  <item.icon />
+                                  <span>{item.label}</span>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            ))}
+                          </SidebarMenuSub>
+                        </CollapsibleContent>
+                      </SidebarMenuItem>
+                    </Collapsible>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={isPathActive(location.pathname, settingsItem)}
+                render={<NavLink to={settingsItem.to} />}
+                tooltip={settingsItem.label}
+              >
+                <settingsItem.icon />
+                <span>{settingsItem.label}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+        <SidebarRail />
+      </Sidebar>
+      <SidebarInset className="h-full min-h-0 overflow-hidden bg-background text-foreground">
+        <header className="flex shrink-0 items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
+            <SidebarTrigger className="-ml-1" />
             <div className="flex items-center gap-2 text-sm font-medium">
               {breadcrumbs.map((crumb, index) => (
                 <div key={`${crumb}-${index}`} className="flex items-center gap-2">
@@ -104,14 +333,11 @@ export function AppShell() {
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">Inbox 3</Badge>
-          </div>
         </header>
-        <main className="min-h-0 flex-1">
+        <main className="min-h-0 flex-1 overflow-hidden">
           <Outlet />
         </main>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }
