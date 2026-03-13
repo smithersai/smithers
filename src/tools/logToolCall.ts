@@ -1,9 +1,11 @@
+import { Effect } from "effect";
 import { nowMs } from "../utils/time";
 import { sha256Hex } from "../utils/hash";
 import { errorToJson } from "../utils/errors";
 import { getToolContext, nextToolSeq } from "./context";
+import { runPromise } from "../effect/runtime";
 
-export async function logToolCall(
+export function logToolCallEffect(
   toolName: string,
   input: unknown,
   output: unknown,
@@ -12,7 +14,7 @@ export async function logToolCall(
   startedAtMs?: number,
 ) {
   const ctx = getToolContext();
-  if (!ctx) return;
+  if (!ctx) return Effect.void;
   const seq = nextToolSeq(ctx);
   const started = startedAtMs ?? nowMs();
   const finished = nowMs();
@@ -20,7 +22,7 @@ export async function logToolCall(
   const inputJson = safeJson(input, maxLogBytes);
   const outputJson = safeJson(output, maxLogBytes);
   const errorJson = error ? safeJson(errorToJson(error), maxLogBytes) : null;
-  await ctx.db.insertToolCall({
+  return ctx.db.insertToolCallEffect({
     runId: ctx.runId,
     nodeId: ctx.nodeId,
     iteration: ctx.iteration,
@@ -33,7 +35,30 @@ export async function logToolCall(
     finishedAtMs: finished,
     status,
     errorJson,
-  });
+  }).pipe(
+    Effect.annotateLogs({
+      runId: ctx.runId,
+      nodeId: ctx.nodeId,
+      iteration: ctx.iteration,
+      attempt: ctx.attempt,
+      toolName,
+      toolStatus: status,
+    }),
+    Effect.withLogSpan(`tool:${toolName}:log`),
+  );
+}
+
+export async function logToolCall(
+  toolName: string,
+  input: unknown,
+  output: unknown,
+  status: "success" | "error",
+  error?: unknown,
+  startedAtMs?: number,
+) {
+  await runPromise(
+    logToolCallEffect(toolName, input, output, status, error, startedAtMs),
+  );
 }
 
 export function truncateToBytes(text: string, maxBytes: number): string {

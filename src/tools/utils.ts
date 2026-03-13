@@ -1,5 +1,6 @@
 import { resolve, isAbsolute, sep, dirname } from "node:path";
 import { realpath } from "node:fs/promises";
+import { fromPromise } from "../effect/interop";
 
 export function resolveSandboxPath(rootDir: string, inputPath: string): string {
   if (!inputPath || typeof inputPath !== "string") {
@@ -42,4 +43,13 @@ export async function assertPathWithinRoot(
       current = parent;
     }
   }
+}
+
+export function assertPathWithinRootEffect(
+  rootDir: string,
+  resolvedPath: string,
+) {
+  return fromPromise("assert path within root", () =>
+    assertPathWithinRoot(rootDir, resolvedPath),
+  );
 }

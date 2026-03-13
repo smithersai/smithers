@@ -1,43 +1,61 @@
 import { tool, zodSchema } from "ai";
+import * as FileSystem from "@effect/platform/FileSystem";
+import { Effect } from "effect";
 import { z } from "zod";
-import { promises as fs } from "node:fs";
 import { dirname } from "node:path";
 import { nowMs } from "../utils/time";
 import { sha256Hex } from "../utils/hash";
-import { resolveSandboxPath, assertPathWithinRoot } from "./utils";
+import { fromSync } from "../effect/interop";
+import { runPromise } from "../effect/runtime";
+import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";
-import { logToolCall } from "./logToolCall";
+import { logToolCallEffect } from "./logToolCall";
+
+export function writeToolEffect(path: string, content: string) {
+  const ctx = getToolContext();
+  const root = ctx?.rootDir ?? process.cwd();
+  const started = nowMs();
+  const max = ctx?.maxOutputBytes ?? 200_000;
+  const contentBytes = Buffer.byteLength(content, "utf8");
+  const logInput = { path, contentBytes, contentHash: sha256Hex(content) };
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const resolved = yield* fromSync("resolve sandbox path", () =>
+      resolveSandboxPath(root, path),
+    );
+    yield* assertPathWithinRootEffect(root, resolved);
+    if (contentBytes > max) {
+      throw new Error(`Content too large (${contentBytes} bytes)`);
+    }
+    yield* fs.makeDirectory(dirname(resolved), { recursive: true });
+    yield* fs.writeFileString(resolved, content, { flag: "w" });
+    yield* logToolCallEffect(
+      "write",
+      logInput,
+      { ok: true },
+      "success",
+      undefined,
+      started,
+    );
+    return "ok";
+  }).pipe(
+    Effect.annotateLogs({
+      toolName: "write",
+      toolPath: path,
+      rootDir: root,
+      contentBytes,
+    }),
+    Effect.withLogSpan("tool:write"),
+    Effect.tapError((error) =>
+      logToolCallEffect("write", logInput, null, "error", error, started),
+    ),
+  );
+}
 
 export const write = tool({
   description: "Write a file",
   inputSchema: zodSchema(z.object({ path: z.string(), content: z.string() })),
   execute: async ({ path, content }: { path: string; content: string }) => {
-    const ctx = getToolContext();
-    const root = ctx?.rootDir ?? process.cwd();
-    const started = nowMs();
-    const max = ctx?.maxOutputBytes ?? 200_000;
-    const contentBytes = Buffer.byteLength(content, "utf8");
-    const logInput = { path, contentBytes, contentHash: sha256Hex(content) };
-    try {
-      const resolved = resolveSandboxPath(root, path);
-      await assertPathWithinRoot(root, resolved);
-      if (contentBytes > max) {
-        throw new Error(`Content too large (${contentBytes} bytes)`);
-      }
-      await fs.mkdir(dirname(resolved), { recursive: true });
-      await fs.writeFile(resolved, content, "utf8");
-      await logToolCall(
-        "write",
-        logInput,
-        { ok: true },
-        "success",
-        undefined,
-        started,
-      );
-      return "ok";
-    } catch (err) {
-      await logToolCall("write", logInput, null, "error", err, started);
-      throw err;
-    }
+    return runPromise(writeToolEffect(path, content));
   },
 });
