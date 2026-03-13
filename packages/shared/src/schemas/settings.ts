@@ -31,6 +31,25 @@ export const settingsSchema = z.object({
 
 export type Settings = z.infer<typeof settingsSchema>
 
+export const settingsReconcileSummarySchema = z.object({
+  managedRuntimeSettingsChanged: z.boolean().default(false),
+  managedModeChanged: z.boolean().default(false),
+  affectedManagedWorkspaces: z.number().int().nonnegative().default(0),
+  restartedManagedWorkspaces: z.number().int().nonnegative().default(0),
+  stoppedManagedWorkspaces: z.number().int().nonnegative().default(0),
+  daemonSettingsChanged: z.boolean().default(false),
+  daemonRestartScheduled: z.boolean().default(false),
+})
+
+export type SettingsReconcileSummary = z.infer<typeof settingsReconcileSummarySchema>
+
+export const settingsMutationResultSchema = z.object({
+  settings: settingsSchema,
+  reconcileSummary: settingsReconcileSummarySchema,
+})
+
+export type SettingsMutationResult = z.infer<typeof settingsMutationResultSchema>
+
 export const updateSettingsInputSchema = z.object({
   workspaceRoot: z.string().trim().min(1),
   defaultAgent: z.string().trim().min(1),

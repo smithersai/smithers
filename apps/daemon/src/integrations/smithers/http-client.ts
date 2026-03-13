@@ -1,5 +1,4 @@
-import { getSettings } from "@/services/settings-service"
-import { getSettingsWithSensitiveValues } from "@/services/settings-service"
+import { buildSmithersAuthHeaders } from "@/services/smithers-runtime-config-service"
 import { HttpError } from "@/utils/http-error"
 
 function buildSmithersUrl(baseUrl: string, pathname: string, searchParams?: URLSearchParams) {
@@ -49,13 +48,7 @@ function extractErrorMessage(payload: unknown): string | null {
 }
 
 async function requestJson<T>(baseUrl: string, pathname: string, init?: RequestInit): Promise<T> {
-  const { settings, smithersAuthToken } = getSettingsWithSensitiveValues()
-  const authHeaders: Record<string, string> =
-    settings.hasSmithersAuthToken && smithersAuthToken
-      ? settings.smithersAuthMode === "x-smithers-key"
-        ? { "x-smithers-key": smithersAuthToken }
-        : { authorization: `Bearer ${smithersAuthToken}` }
-      : {}
+  const authHeaders = buildSmithersAuthHeaders()
 
   const response = await fetch(buildSmithersUrl(baseUrl, pathname), {
     ...init,
@@ -133,6 +126,7 @@ export async function streamSmithersRunEvents(
   signal?: AbortSignal
 ) {
   const searchParams = new URLSearchParams()
+  const authHeaders = buildSmithersAuthHeaders()
   if (afterSeq !== undefined) {
     searchParams.set("afterSeq", String(afterSeq))
   }
@@ -142,6 +136,7 @@ export async function streamSmithersRunEvents(
     {
       headers: {
         accept: "text/event-stream",
+        ...authHeaders,
       },
       signal,
     }

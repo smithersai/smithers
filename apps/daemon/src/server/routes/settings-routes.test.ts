@@ -65,16 +65,21 @@ describe("settings routes", () => {
 
     expect(updateResponse.status).toBe(200)
     expect(await updateResponse.json()).toMatchObject({
-      workspaceRoot: "/tmp/burns-workspaces",
-      defaultAgent: "Codex",
-      smithersBaseUrl: "https://smithers.example.com",
-      allowNetwork: true,
-      smithersManagedPerWorkspace: true,
-      smithersAuthMode: "x-smithers-key",
-      hasSmithersAuthToken: true,
-      rootDirPolicy: "process-default",
-      diagnosticsLogLevel: "debug",
-      diagnosticsPrettyLogs: true,
+      settings: {
+        workspaceRoot: "/tmp/burns-workspaces",
+        defaultAgent: "Codex",
+        smithersBaseUrl: "https://smithers.example.com",
+        allowNetwork: true,
+        smithersManagedPerWorkspace: true,
+        smithersAuthMode: "x-smithers-key",
+        hasSmithersAuthToken: true,
+        rootDirPolicy: "process-default",
+        diagnosticsLogLevel: "debug",
+        diagnosticsPrettyLogs: true,
+      },
+      reconcileSummary: {
+        managedRuntimeSettingsChanged: true,
+      },
     })
 
     const getResponse = await app.fetch(new Request("http://localhost:7332/api/settings"))
@@ -113,9 +118,16 @@ describe("settings routes", () => {
     )
     expect(resetResponse.status).toBe(200)
     const resetPayload = (await resetResponse.json()) as Record<string, unknown>
-    expect(resetPayload.hasSmithersAuthToken).toBe(false)
-    expect(resetPayload.allowNetwork).toBe(false)
-    expect(resetPayload.rootDirPolicy).toBe("workspace-root")
+    expect(resetPayload).toMatchObject({
+      settings: {
+        hasSmithersAuthToken: false,
+        allowNetwork: false,
+        rootDirPolicy: "workspace-root",
+      },
+      reconcileSummary: {
+        managedRuntimeSettingsChanged: true,
+      },
+    })
 
     const onboardingResponse = await app.fetch(
       new Request("http://localhost:7332/api/onboarding-status")

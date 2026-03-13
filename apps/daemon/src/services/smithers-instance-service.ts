@@ -4,19 +4,22 @@ import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import type { Workspace } from "@burns/shared"
+import type { Settings, SettingsReconcileSummary, Workspace } from "@burns/shared"
 
 import {
   DEFAULT_SMITHERS_MAX_WORKSPACE_INSTANCES,
   DEFAULT_SMITHERS_PORT_BASE,
 } from "@/config/app-config"
-import { getDefaultSmithersManagedPerWorkspace } from "@/config/settings-defaults"
 import { getLogger } from "@/logging/logger"
+import {
+  getBurnsSmithersRuntimeDefaults,
+  haveManagedRuntimeSettingsChanged,
+  resolveWorkspaceSmithersRuntimeConfig,
+} from "@/services/smithers-runtime-config-service"
 import {
   ensureWorkspaceSmithersLayout,
   getManagedSmithersDbPath,
 } from "@/services/workspace-layout"
-import { getSettings } from "@/services/settings-service"
 import { getWorkspace } from "@/services/workspace-service"
 import { HttpError } from "@/utils/http-error"
 
@@ -96,19 +99,19 @@ function resolveBunExecutable() {
 }
 
 function isManagedModeEnabled() {
-  return getSettings().smithersManagedPerWorkspace ?? getDefaultSmithersManagedPerWorkspace()
+  return getBurnsSmithersRuntimeDefaults().smithersManagedPerWorkspace
 }
 
 function resolveFallbackBaseUrl() {
-  return getSettings().smithersBaseUrl
+  return getBurnsSmithersRuntimeDefaults().smithersBaseUrl
 }
 
 function getAllowNetworkSetting() {
-  return getSettings().allowNetwork
+  return getBurnsSmithersRuntimeDefaults().allowNetwork
 }
 
 function getRootDirPolicySetting() {
-  return getSettings().rootDirPolicy
+  return getBurnsSmithersRuntimeDefaults().rootDirPolicy
 }
 
 function getSmithersPortBase() {
@@ -625,6 +628,15 @@ export function getSmithersBaseUrlSettingValue() {
   return resolveFallbackBaseUrl()
 }
 
+export function getWorkspaceSmithersRuntimeConfig(workspaceId: string) {
+  const workspace = assertWorkspaceRecord(workspaceId)
+  const record = instances.get(workspaceId)
+  const managedBaseUrl =
+    workspace.runtimeMode === "burns-managed" && isManagedModeEnabled() ? (record?.baseUrl ?? null) : null
+
+  return resolveWorkspaceSmithersRuntimeConfig(workspace, { managedBaseUrl })
+}
+
 export function startWorkspaceSmithersInBackground(workspace: Workspace) {
   if (workspace.runtimeMode === "self-managed") {
     return
@@ -801,4 +813,70 @@ export async function shutdownWorkspaceSmithersInstances() {
   })
 
   await Promise.allSettled(stopTasks)
+}
+
+export async function reconcileManagedWorkspaceRuntimeAfterSettingsChange(
+  previousSettings: Settings,
+  nextSettings: Settings
+): Promise<SettingsReconcileSummary> {
+  const managedRuntimeSettingsChanged = haveManagedRuntimeSettingsChanged(previousSettings, nextSettings)
+  const managedModeChanged =
+    previousSettings.smithersManagedPerWorkspace !== nextSettings.smithersManagedPerWorkspace
+
+  if (!managedRuntimeSettingsChanged) {
+    return {
+      managedRuntimeSettingsChanged,
+      managedModeChanged,
+      affectedManagedWorkspaces: 0,
+      restartedManagedWorkspaces: 0,
+      stoppedManagedWorkspaces: 0,
+    }
+  }
+
+  const activeManagedRecords = [...instances.values()].filter(
+    (record) => record.workspace.runtimeMode !== "self-managed" && (record.status !== "stopped" || record.process !== null)
+  )
+
+  if (!nextSettings.smithersManagedPerWorkspace) {
+    const stopResults = await Promise.allSettled(
+      activeManagedRecords.map(async (record) => {
+        await stopRecord(record)
+      })
+    )
+
+    return {
+      managedRuntimeSettingsChanged,
+      managedModeChanged,
+      affectedManagedWorkspaces: activeManagedRecords.length,
+      restartedManagedWorkspaces: 0,
+      stoppedManagedWorkspaces: stopResults.filter((result) => result.status === "fulfilled").length,
+    }
+  }
+
+  if (!previousSettings.smithersManagedPerWorkspace) {
+    return {
+      managedRuntimeSettingsChanged,
+      managedModeChanged,
+      affectedManagedWorkspaces: 0,
+      restartedManagedWorkspaces: 0,
+      stoppedManagedWorkspaces: 0,
+    }
+  }
+
+  const restartResults = await Promise.allSettled(
+    activeManagedRecords.map(async (record) => {
+      record.restartCount += 1
+      await stopRecord(record)
+      record.stopRequested = false
+      await startRecord(record)
+    })
+  )
+
+  return {
+    managedRuntimeSettingsChanged,
+    managedModeChanged,
+    affectedManagedWorkspaces: activeManagedRecords.length,
+    restartedManagedWorkspaces: restartResults.filter((result) => result.status === "fulfilled").length,
+    stoppedManagedWorkspaces: 0,
+  }
 }

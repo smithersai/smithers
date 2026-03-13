@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { rootDirPolicySchema, smithersAuthModeSchema } from "./settings"
+
 export const workspaceHealthStatusSchema = z.enum([
   "healthy",
   "degraded",
@@ -43,6 +45,32 @@ export const workspaceServerStatusSchema = z.object({
   crashCount: z.number().int().nonnegative(),
   port: z.number().int().positive().nullable(),
   baseUrl: z.string().nullable(),
+})
+
+export const workspaceSmithersManagementModeSchema = z.enum([
+  "self-managed",
+  "burns-managed",
+  "disabled",
+])
+
+export const workspaceSmithersBaseUrlSourceSchema = z.enum([
+  "workspace",
+  "global-setting",
+  "managed-instance",
+  "pending-managed-instance",
+])
+
+export const workspaceSmithersRuntimeConfigSchema = z.object({
+  workspaceId: z.string(),
+  workspaceRuntimeMode: workspaceRuntimeModeSchema,
+  managementMode: workspaceSmithersManagementModeSchema,
+  baseUrl: z.string().nullable(),
+  baseUrlSource: workspaceSmithersBaseUrlSourceSchema,
+  allowNetwork: z.boolean(),
+  rootDirPolicy: rootDirPolicySchema,
+  smithersAuthMode: smithersAuthModeSchema,
+  hasSmithersAuthToken: z.boolean(),
+  canAutoRestart: z.boolean(),
 })
 
 export const deleteWorkspaceInputSchema = z.object({
@@ -94,6 +122,9 @@ export type WorkspaceRuntimeMode = z.infer<typeof workspaceRuntimeModeSchema>
 export type WorkspaceDeleteMode = z.infer<typeof workspaceDeleteModeSchema>
 export type WorkspaceServerProcessState = z.infer<typeof workspaceServerProcessStateSchema>
 export type WorkspaceServerStatus = z.infer<typeof workspaceServerStatusSchema>
+export type WorkspaceSmithersManagementMode = z.infer<typeof workspaceSmithersManagementModeSchema>
+export type WorkspaceSmithersBaseUrlSource = z.infer<typeof workspaceSmithersBaseUrlSourceSchema>
+export type WorkspaceSmithersRuntimeConfig = z.infer<typeof workspaceSmithersRuntimeConfigSchema>
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>
 export type DeleteWorkspaceInput = z.infer<typeof deleteWorkspaceInputSchema>
 export type DeleteWorkspaceResult = z.infer<typeof deleteWorkspaceResultSchema>

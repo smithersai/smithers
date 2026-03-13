@@ -40,7 +40,10 @@ import {
 import { useDeleteWorkflow } from "@/features/workflows/hooks/use-delete-workflow"
 import { useCancelRun } from "@/features/runs/hooks/use-cancel-run"
 import { useResumeRun } from "@/features/runs/hooks/use-resume-run"
+import { useOpenWorkflowFolder } from "@/features/workflows/hooks/use-open-workflow-folder"
+import { useCopyWorkflowCdCommand } from "@/features/workflows/hooks/use-copy-workflow-cd-command"
 import { useWorkflows } from "@/features/workflows/hooks/use-workflows"
+import { useRuntimeContext } from "@/features/system/hooks/use-runtime-context"
 import { useActiveWorkspace } from "@/features/workspaces/hooks/use-active-workspace"
 
 type SidebarItem = {
@@ -221,8 +224,13 @@ export function AppShell() {
   )
   const workflowsBasePath = routeWorkspaceId ? `/w/${routeWorkspaceId}/workflows` : "/"
   const runsBasePath = routeWorkspaceId ? `/w/${routeWorkspaceId}/runs` : "/"
+  const { data: runtimeContext } = useRuntimeContext()
+  const canOpenFolder = runtimeContext?.capabilities.openNativeFolderPicker ?? false
+  const canCopyWorkflowCdCommand = runtimeContext?.capabilities.openTerminal ?? false
   const { data: workflowBreadcrumbs = [] } = useWorkflows(routeWorkspaceId ?? undefined)
   const deleteWorkflow = useDeleteWorkflow(routeWorkspaceId ?? undefined)
+  const openWorkflowFolder = useOpenWorkflowFolder(routeWorkspaceId, routeWorkflowId)
+  const copyWorkflowCdCommand = useCopyWorkflowCdCommand(routeWorkspaceId, routeWorkflowId)
   const resumeRun = useResumeRun(routeWorkspaceId ?? undefined, routeRunId ?? undefined)
   const cancelRun = useCancelRun(routeWorkspaceId ?? undefined, routeRunId ?? undefined)
   const workflowName = useMemo(
@@ -443,35 +451,55 @@ export function AppShell() {
                 </Button>
               ) : null}
               {routeWorkflowId ? (
-                <Button
-                  variant="destructive"
-                  disabled={deleteWorkflow.isPending}
-                  onClick={() => {
-                    const confirmed = window.confirm(
-                      `Delete workflow "${workflowName ?? routeWorkflowId}"? This removes its workflow folder from disk.`
-                    )
-                    if (!confirmed) {
-                      return
-                    }
+                <>
+                  {canOpenFolder ? (
+                    <Button
+                      variant="outline"
+                      disabled={openWorkflowFolder.isPending}
+                      onClick={() => openWorkflowFolder.mutate()}
+                    >
+                      {openWorkflowFolder.isPending ? "Opening folder…" : "Open Folder"}
+                    </Button>
+                  ) : null}
+                  {canCopyWorkflowCdCommand ? (
+                    <Button
+                      variant="outline"
+                      disabled={copyWorkflowCdCommand.isPending}
+                      onClick={() => copyWorkflowCdCommand.mutate()}
+                    >
+                      {copyWorkflowCdCommand.isPending ? "Copying cd command…" : "Copy cd Command"}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="destructive"
+                    disabled={deleteWorkflow.isPending}
+                    onClick={() => {
+                      const confirmed = window.confirm(
+                        `Delete workflow "${workflowName ?? routeWorkflowId}"? This removes its workflow folder from disk.`
+                      )
+                      if (!confirmed) {
+                        return
+                      }
 
-                    deleteWorkflow.mutate(routeWorkflowId, {
-                      onSuccess: () => {
-                        const remainingWorkflows = workflowBreadcrumbs.filter(
-                          (workflow) => workflow.id !== routeWorkflowId
-                        )
-                        const nextWorkflow = remainingWorkflows[0]
-                        if (!nextWorkflow) {
-                          navigate(workflowsBasePath)
-                          return
-                        }
+                      deleteWorkflow.mutate(routeWorkflowId, {
+                        onSuccess: () => {
+                          const remainingWorkflows = workflowBreadcrumbs.filter(
+                            (workflow) => workflow.id !== routeWorkflowId
+                          )
+                          const nextWorkflow = remainingWorkflows[0]
+                          if (!nextWorkflow) {
+                            navigate(workflowsBasePath)
+                            return
+                          }
 
-                        navigate(`${workflowsBasePath}/${nextWorkflow.id}`)
-                      },
-                    })
-                  }}
-                >
-                  {deleteWorkflow.isPending ? "Deleting…" : "Delete workflow"}
-                </Button>
+                          navigate(`${workflowsBasePath}/${nextWorkflow.id}`)
+                        },
+                      })
+                    }}
+                  >
+                    {deleteWorkflow.isPending ? "Deleting…" : "Delete workflow"}
+                  </Button>
+                </>
               ) : null}
             </div>
           ) : null}

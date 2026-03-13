@@ -4,6 +4,7 @@ import { describe, expect, it } from "bun:test"
 
 import { insertWorkspaceRow } from "@/db/repositories/workspace-repository"
 import { createApp } from "@/server/app"
+import { handleWorkflowRoutes } from "@/server/routes/workflow-routes"
 import { resolveTestWorkspacePath } from "@/testing/test-workspace-path"
 
 function seedWorkspace() {
@@ -311,6 +312,94 @@ describe("workflow routes", () => {
       mode: "inferred",
       entryTaskId: "analyze",
       fields: [{ key: "question", label: "Question", type: "string" }],
+    })
+  })
+
+  it("opens a workflow folder path on localhost requests", async () => {
+    const app = createApp()
+    const workspaceId = seedWorkspace()
+
+    const saveResponse = await app.fetch(
+      new Request(`http://localhost:7332/api/workspaces/${workspaceId}/workflows/custom-flow`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: validWorkflowSource }),
+      })
+    )
+    expect(saveResponse.status).toBe(200)
+
+    let openedPath = ""
+    const response = await handleWorkflowRoutes(
+      new Request(
+        `http://localhost:7332/api/workspaces/${workspaceId}/workflows/custom-flow/open-folder`,
+        {
+          method: "POST",
+        }
+      ),
+      `/api/workspaces/${workspaceId}/workflows/custom-flow/open-folder`,
+      { openWorkflowFolder: (directoryPath) => {
+        openedPath = directoryPath
+      } }
+    )
+
+    expect(response?.status).toBe(204)
+    expect(openedPath).toBeTruthy()
+  })
+
+  it("provides a cd command for a workflow path on local requests", async () => {
+    const app = createApp()
+    const workspaceId = seedWorkspace()
+
+    const saveResponse = await app.fetch(
+      new Request(`http://localhost:7332/api/workspaces/${workspaceId}/workflows/custom-flow`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: validWorkflowSource }),
+      })
+    )
+    expect(saveResponse.status).toBe(200)
+
+    const response = await handleWorkflowRoutes(
+      new Request(
+        `http://localhost:7332/api/workspaces/${workspaceId}/workflows/custom-flow/cd-command`,
+        {
+          method: "POST",
+        }
+      ),
+      `/api/workspaces/${workspaceId}/workflows/custom-flow/cd-command`
+    )
+
+    expect(response?.status).toBe(200)
+    expect(await response?.json()).toMatchObject({
+      command: expect.stringContaining("custom-flow"),
+    })
+  })
+
+  it("blocks workflow cd command from non-localhost requests", async () => {
+    const app = createApp()
+    const workspaceId = seedWorkspace()
+
+    const saveResponse = await app.fetch(
+      new Request(`http://localhost:7332/api/workspaces/${workspaceId}/workflows/custom-flow`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: validWorkflowSource }),
+      })
+    )
+    expect(saveResponse.status).toBe(200)
+
+    const response = await handleWorkflowRoutes(
+      new Request(`http://example.com/api/workspaces/${workspaceId}/workflows/custom-flow/cd-command`, {
+        method: "POST",
+      }),
+      `/api/workspaces/${workspaceId}/workflows/custom-flow/cd-command`,
+      {}
+    )
+
+    expect(response?.status).toBe(403)
+    expect(await response?.json()).toEqual({
+      error: "Workflow command actions are only available on local daemon URLs.",
+      details: null,
     })
   })
 })

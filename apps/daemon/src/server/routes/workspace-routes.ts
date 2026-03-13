@@ -1,6 +1,7 @@
 import { createWorkspaceInputSchema, deleteWorkspaceInputSchema } from "@burns/shared"
 
 import {
+  getWorkspaceSmithersRuntimeConfig,
   getWorkspaceSmithersServerStatus,
   restartWorkspaceSmithersServer,
   startWorkspaceSmithersServer,
@@ -37,6 +38,11 @@ export async function handleWorkspaceRoutes(request: Request, pathname: string) 
     )
     if (workspaceServerStatusMatch && request.method === "GET") {
       return Response.json(await getWorkspaceSmithersServerStatus(workspaceServerStatusMatch[1]))
+    }
+
+    const workspaceRuntimeConfigMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/runtime-config$/)
+    if (workspaceRuntimeConfigMatch && request.method === "GET") {
+      return Response.json(getWorkspaceSmithersRuntimeConfig(workspaceRuntimeConfigMatch[1]))
     }
 
     const workspaceServerActionMatch = pathname.match(

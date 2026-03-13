@@ -1,5 +1,10 @@
+import {
+  burnsRuntimeContextSchema,
+  type BurnsRuntimeContext,
+} from "@burns/shared"
 import { pickDirectoryWithNativeDialog } from "@/services/native-folder-picker-service"
 import { validateSmithersBaseUrl } from "@/services/smithers-validation-service"
+import { buildRuntimeContext, isLoopbackHost } from "@/runtime-context"
 import { HttpError, toErrorResponse } from "@/utils/http-error"
 
 type HandleSystemRoutesOptions = {
@@ -9,10 +14,6 @@ type HandleSystemRoutesOptions = {
     status: number | null
     message: string
   }>
-}
-
-function isLoopbackHost(hostname: string) {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
 }
 
 export async function handleSystemRoutes(
@@ -37,6 +38,18 @@ export async function handleSystemRoutes(
       const validateUrl = options.validateSmithersUrl ?? validateSmithersBaseUrl
       const validation = await validateUrl(baseUrl)
       return Response.json(validation)
+    }
+
+    if (pathname === "/api/system/runtime-context" && request.method === "GET") {
+      const requestUrl = new URL(request.url)
+      const runtimeContext: BurnsRuntimeContext = burnsRuntimeContextSchema.parse(
+        buildRuntimeContext({
+          runtimeMode: process.env.BURNS_RUNTIME_MODE,
+          requestHostname: requestUrl.hostname,
+        })
+      )
+
+      return Response.json(runtimeContext)
     }
 
     return null

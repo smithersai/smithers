@@ -5,9 +5,13 @@ import {
   factoryResetAppState,
   getOnboardingStatus,
   getSettings,
+  getSettingsWithSensitiveValues,
+  haveDaemonSettingsChanged,
   resetSettings,
   updateSettings,
 } from "@/services/settings-service"
+import { scheduleDaemonRestart } from "@/services/daemon-runtime-control-service"
+import { reconcileManagedWorkspaceRuntimeAfterSettingsChange } from "@/services/smithers-instance-service"
 import { toErrorResponse } from "@/utils/http-error"
 
 export async function handleSettingsRoutes(request: Request, pathname: string) {
@@ -17,13 +21,43 @@ export async function handleSettingsRoutes(request: Request, pathname: string) {
     }
 
     if (pathname === "/api/settings" && request.method === "PUT") {
+      const previousSettings = getSettingsWithSensitiveValues().settings
       const requestBody = await request.json().catch(() => null)
       const input = updateSettingsInputSchema.parse(requestBody)
-      return Response.json(updateSettings(input))
+      const settings = updateSettings(input)
+      const reconcileSummary = await reconcileManagedWorkspaceRuntimeAfterSettingsChange(
+        previousSettings,
+        settings
+      )
+      const daemonSettingsChanged = haveDaemonSettingsChanged(previousSettings, settings)
+      const daemonRestartScheduled = daemonSettingsChanged ? scheduleDaemonRestart() : false
+      return Response.json({
+        settings,
+        reconcileSummary: {
+          ...reconcileSummary,
+          daemonSettingsChanged,
+          daemonRestartScheduled,
+        },
+      })
     }
 
     if (pathname === "/api/settings/reset" && request.method === "POST") {
-      return Response.json(resetSettings())
+      const previousSettings = getSettingsWithSensitiveValues().settings
+      const settings = resetSettings()
+      const reconcileSummary = await reconcileManagedWorkspaceRuntimeAfterSettingsChange(
+        previousSettings,
+        settings
+      )
+      const daemonSettingsChanged = haveDaemonSettingsChanged(previousSettings, settings)
+      const daemonRestartScheduled = daemonSettingsChanged ? scheduleDaemonRestart() : false
+      return Response.json({
+        settings,
+        reconcileSummary: {
+          ...reconcileSummary,
+          daemonSettingsChanged,
+          daemonRestartScheduled,
+        },
+      })
     }
 
     if (pathname === "/api/settings/factory-reset" && request.method === "POST") {

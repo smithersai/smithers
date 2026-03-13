@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import type { SettingsMutationResult } from "@burns/shared"
 import { useFactoryReset } from "@/features/settings/hooks/use-factory-reset"
 import { useResetSettings } from "@/features/settings/hooks/use-reset-settings"
 import { useSettings } from "@/features/settings/hooks/use-settings"
@@ -114,6 +115,32 @@ function SettingsSelect({
   )
 }
 
+function formatSettingsSaveMessage(action: "saved" | "reset", result: SettingsMutationResult) {
+  const baseMessage = action === "saved" ? "Settings saved." : "Defaults restored."
+  const { reconcileSummary } = result
+  const daemonRestartMessage = reconcileSummary.daemonRestartScheduled
+    ? " Burns daemon restart scheduled to apply logging changes."
+    : reconcileSummary.daemonSettingsChanged
+      ? " Restart Burns daemon to apply logging changes."
+      : ""
+
+  if (!reconcileSummary.managedRuntimeSettingsChanged) {
+    return `${baseMessage}${daemonRestartMessage}`
+  }
+
+  if (reconcileSummary.stoppedManagedWorkspaces > 0) {
+    const suffix = reconcileSummary.stoppedManagedWorkspaces === 1 ? "" : "s"
+    return `${baseMessage} Stopped ${reconcileSummary.stoppedManagedWorkspaces} managed Smithers runtime${suffix}.${daemonRestartMessage}`
+  }
+
+  if (reconcileSummary.restartedManagedWorkspaces > 0) {
+    const suffix = reconcileSummary.restartedManagedWorkspaces === 1 ? "" : "s"
+    return `${baseMessage} Restarted ${reconcileSummary.restartedManagedWorkspaces} managed Smithers runtime${suffix}.${daemonRestartMessage}`
+  }
+
+  return `${baseMessage} Managed Smithers runtime settings changed, but no running managed runtimes needed reconciliation.${daemonRestartMessage}`
+}
+
 export function SettingsPage() {
   const navigate = useNavigate()
   const { data: settings, isLoading } = useSettings()
@@ -168,16 +195,16 @@ export function SettingsPage() {
       buildUpdateSettingsInput(currentFormValues, { clearSmithersAuthToken })
     )
 
-    setFormValues(settingsToFormValues(updatedSettings))
-    setSaveMessage("Settings saved.")
+    setFormValues(settingsToFormValues(updatedSettings.settings))
+    setSaveMessage(formatSettingsSaveMessage("saved", updatedSettings))
     setClearSmithersAuthToken(false)
   }
 
   async function handleReset() {
     const resetResult = await resetSettings.mutateAsync()
-    setFormValues(settingsToFormValues(resetResult))
+    setFormValues(settingsToFormValues(resetResult.settings))
     setClearSmithersAuthToken(false)
-    setSaveMessage("Defaults restored.")
+    setSaveMessage(formatSettingsSaveMessage("reset", resetResult))
   }
 
   async function handleFactoryReset() {
@@ -263,7 +290,7 @@ export function SettingsPage() {
 
             <FormRow
               label="Managed Smithers"
-              description="When enabled, Burns supervises one Smithers HTTP server per managed workspace."
+              description="When enabled, Burns supervises one Smithers HTTP server per managed workspace and reconciles running managed runtimes automatically when needed."
             >
               <SettingsSelect
                 value={currentFormValues.smithersManagedPerWorkspace}
@@ -276,7 +303,7 @@ export function SettingsPage() {
 
             <FormRow
               label="Allow network"
-              description="Applied to Burns-managed Smithers instances by default."
+              description="Applied to Burns-managed Smithers instances. Saving restarts running managed runtimes when this changes."
             >
               <SettingsSelect
                 value={currentFormValues.allowNetwork}
@@ -344,7 +371,7 @@ export function SettingsPage() {
 
             <FormRow
               label="rootDir policy"
-              description="`Workspace root` keeps Burns-managed Smithers scoped to the current workspace."
+              description="`Workspace root` keeps Burns-managed Smithers scoped to the current workspace. Saving restarts running managed runtimes when this changes."
             >
               <SettingsSelect
                 value={currentFormValues.rootDirPolicy}

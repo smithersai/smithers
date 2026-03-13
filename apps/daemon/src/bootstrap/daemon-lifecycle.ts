@@ -1,6 +1,7 @@
-import { getLogger, type BurnsLogger } from "@/logging/logger"
+import { getLogger, resetLogger, type BurnsLogger } from "@/logging/logger"
 import { createApp, type DaemonApp } from "@/server/app"
 import { DAEMON_HEALTH_PATH } from "@/server/routes/health-routes"
+import { registerDaemonRestartHandler } from "@/services/daemon-runtime-control-service"
 import {
   shutdownWorkspaceSmithersInstances,
   warmWorkspaceSmithersInstances,
@@ -35,6 +36,7 @@ export type DaemonRuntimeHandle = {
 type DaemonLifecycle = {
   start: (options?: DaemonStartOptions) => Promise<DaemonRuntimeHandle>
   stop: (options?: DaemonStopOptions) => Promise<void>
+  restart: (options?: DaemonStartOptions) => Promise<DaemonRuntimeHandle>
   getRuntime: () => DaemonRuntimeHandle | null
 }
 
@@ -60,7 +62,6 @@ function defaultServe(options: DaemonApp & { idleTimeout: number }): DaemonServe
 }
 
 export function createDaemonLifecycle(dependencies: DaemonLifecycleDependencies = {}): DaemonLifecycle {
-  const logger = (dependencies.logger ?? getLogger()).child({ component: "bootstrap" })
   const now = dependencies.now ?? Date.now
   const buildApp = dependencies.createApp ?? createApp
   const serve = dependencies.serve ?? defaultServe
@@ -75,6 +76,10 @@ export function createDaemonLifecycle(dependencies: DaemonLifecycleDependencies 
   let startPromise: Promise<DaemonRuntimeHandle> | null = null
   let stopPromise: Promise<void> | null = null
 
+  function createLifecycleLogger() {
+    return (dependencies.logger ?? getLogger()).child({ component: "bootstrap" })
+  }
+
   async function start(options: DaemonStartOptions = {}) {
     if (runtime) {
       return runtime
@@ -85,6 +90,7 @@ export function createDaemonLifecycle(dependencies: DaemonLifecycleDependencies 
     }
 
     startPromise = (async () => {
+      const logger = createLifecycleLogger()
       logger.info({ event: "daemon.startup.begin" }, "Starting Burns daemon")
 
       try {
@@ -144,6 +150,7 @@ export function createDaemonLifecycle(dependencies: DaemonLifecycleDependencies 
     const signal = options.signal ?? "programmatic"
 
     stopPromise = (async () => {
+      const logger = createLifecycleLogger()
       if (startPromise && !runtime) {
         try {
           await startPromise
@@ -162,6 +169,9 @@ export function createDaemonLifecycle(dependencies: DaemonLifecycleDependencies 
         await shutdownWorkspaceInstances()
         runtime.server.stop(true)
         runtime = null
+        if (!dependencies.logger) {
+          resetLogger()
+        }
         logger.info({ event: "daemon.shutdown.complete", signal }, "Burns daemon stopped")
       } catch (error) {
         logger.error(
@@ -177,6 +187,12 @@ export function createDaemonLifecycle(dependencies: DaemonLifecycleDependencies 
     return stopPromise
   }
 
+  async function restart(options: DaemonStartOptions = {}) {
+    const nextPort = options.port ?? runtime?.port
+    await stop({ signal: "programmatic" })
+    return await start({ port: nextPort })
+  }
+
   function getRuntime() {
     return runtime
   }
@@ -184,6 +200,7 @@ export function createDaemonLifecycle(dependencies: DaemonLifecycleDependencies 
   return {
     start,
     stop,
+    restart,
     getRuntime,
   }
 }
@@ -192,6 +209,11 @@ const daemonLifecycle = createDaemonLifecycle()
 
 export const startDaemon = daemonLifecycle.start
 export const stopDaemon = daemonLifecycle.stop
+export const restartDaemon = daemonLifecycle.restart
 export const getDaemonRuntime = daemonLifecycle.getRuntime
+
+registerDaemonRestartHandler(async () => {
+  await daemonLifecycle.restart()
+})
 
 export type { DaemonStartOptions, DaemonStopOptions, DaemonStopSignal }

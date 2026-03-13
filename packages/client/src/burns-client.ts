@@ -17,8 +17,10 @@ import {
   runSchema,
   type ResumeRunInput,
   type Settings,
+  type SettingsMutationResult,
   type StartRunInput,
   settingsSchema,
+  settingsMutationResultSchema,
   type UpdateSettingsInput,
   updateSettingsInputSchema,
   type OnboardingStatus,
@@ -38,8 +40,11 @@ import {
   workflowDocumentSchema,
   workflowLaunchFieldsResponseSchema,
   workflowSchema,
+  burnsRuntimeContextSchema,
   type Workspace,
+  type WorkspaceSmithersRuntimeConfig,
   type WorkspaceServerStatus,
+  workspaceSmithersRuntimeConfigSchema,
   workspaceServerStatusSchema,
   workspaceSchema,
 } from "@burns/shared"
@@ -57,6 +62,10 @@ const agentCliListSchema = z.array(agentCliSchema)
 const runListSchema = z.array(runSchema)
 const runEventListSchema = z.array(runEventSchema)
 const approvalListSchema = z.array(approvalSchema)
+const runtimeContextSchema = burnsRuntimeContextSchema
+const workflowCdCommandDtoSchema = z.object({
+  command: z.string(),
+})
 const nativeFolderPickerResponseSchema = z.object({
   path: z.string().nullable(),
 })
@@ -148,6 +157,13 @@ export class BurnsClient {
     return workspaceServerStatusDtoSchema.parse(data)
   }
 
+  async getWorkspaceSmithersRuntimeConfig(
+    workspaceId: string
+  ): Promise<WorkspaceSmithersRuntimeConfig> {
+    const data = await this.request<unknown>(`/api/workspaces/${workspaceId}/runtime-config`)
+    return workspaceSmithersRuntimeConfigSchema.parse(data)
+  }
+
   async startWorkspaceServer(workspaceId: string): Promise<WorkspaceServerStatus> {
     const data = await this.request<unknown>(`/api/workspaces/${workspaceId}/server/start`, {
       method: "POST",
@@ -174,21 +190,21 @@ export class BurnsClient {
     return settingsSchema.parse(data)
   }
 
-  async updateSettings(input: UpdateSettingsInput): Promise<Settings> {
+  async updateSettings(input: UpdateSettingsInput): Promise<SettingsMutationResult> {
     const data = await this.request<unknown>("/api/settings", {
       method: "PUT",
       body: JSON.stringify(updateSettingsInputSchema.parse(input)),
     })
 
-    return settingsSchema.parse(data)
+    return settingsMutationResultSchema.parse(data)
   }
 
-  async resetSettings(): Promise<Settings> {
+  async resetSettings(): Promise<SettingsMutationResult> {
     const data = await this.request<unknown>("/api/settings/reset", {
       method: "POST",
     })
 
-    return settingsSchema.parse(data)
+    return settingsMutationResultSchema.parse(data)
   }
 
   async getOnboardingStatus(): Promise<OnboardingStatus> {
@@ -216,6 +232,28 @@ export class BurnsClient {
     })
 
     return nativeFolderPickerResponseSchema.parse(data).path
+  }
+
+  async openWorkflowFolder(workspaceId: string, workflowId: string) {
+    await this.request(`/api/workspaces/${workspaceId}/workflows/${workflowId}/open-folder`, {
+      method: "POST",
+    })
+  }
+
+  async getWorkflowCdCommand(workspaceId: string, workflowId: string): Promise<string> {
+    const data = await this.request<unknown>(
+      `/api/workspaces/${workspaceId}/workflows/${workflowId}/cd-command`,
+      {
+        method: "POST",
+      }
+    )
+
+    return workflowCdCommandDtoSchema.parse(data).command
+  }
+
+  async getRuntimeContext() {
+    const data = await this.request<unknown>("/api/system/runtime-context")
+    return runtimeContextSchema.parse(data)
   }
 
   async validateSmithersUrl(baseUrl: string): Promise<{

@@ -13,6 +13,7 @@ export function useUpdateSettings() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["settings"] }),
         queryClient.invalidateQueries({ queryKey: ["onboarding-status"] }),
+        queryClient.invalidateQueries({ queryKey: ["workspace-server-status"] }),
       ])
     },
   })

@@ -60,6 +60,30 @@ describe("workspace routes", () => {
     })
   })
 
+  it("returns effective workspace runtime config", async () => {
+    const app = createApp()
+    const workspaceId = seedWorkspace({
+      runtimeMode: "self-managed",
+      smithersBaseUrl: "http://127.0.0.1:8123",
+    })
+
+    const response = await app.fetch(
+      new Request(`http://localhost:7332/api/workspaces/${workspaceId}/runtime-config`, {
+        method: "GET",
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      workspaceId,
+      workspaceRuntimeMode: "self-managed",
+      managementMode: "self-managed",
+      baseUrl: "http://127.0.0.1:8123",
+      baseUrlSource: "workspace",
+      canAutoRestart: false,
+    })
+  })
+
   it("supports server control actions", async () => {
     const app = createApp()
     const workspaceId = seedWorkspace()

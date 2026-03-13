@@ -5,6 +5,12 @@ import { resolveDaemonLifecyclePath } from "./paths"
 
 export const DEFAULT_DAEMON_API_URL = "http://localhost:7332"
 
+function ensureCliRuntimeMode() {
+  if (!process.env.BURNS_RUNTIME_MODE) {
+    process.env.BURNS_RUNTIME_MODE = "cli"
+  }
+}
+
 async function ensureEntrypointExists(entrypointPath: string) {
   try {
     await access(entrypointPath)
@@ -36,6 +42,7 @@ function isDaemonLifecycleModule(value: unknown): value is DaemonLifecycleModule
 }
 
 export async function startDaemonFromLifecycle() {
+  ensureCliRuntimeMode()
   const lifecyclePath = resolveDaemonLifecyclePath()
   await ensureEntrypointExists(lifecyclePath)
 

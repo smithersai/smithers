@@ -9,6 +9,7 @@ import {
 } from "@burns/shared"
 
 import type { AgentCliEvent } from "@/agents/BaseCliAgent"
+import { openWorkflowFolder } from "@/services/workflow-open-service"
 import {
   deleteWorkflow,
   editWorkflowFromPrompt,
@@ -16,10 +17,12 @@ import {
   getWorkflowFile,
   getWorkflow,
   getWorkflowLaunchFields,
+  getWorkflowDirectoryPath,
   listWorkflowFiles,
   listWorkflows,
   saveWorkflow,
 } from "@/services/workflow-service"
+import { buildRuntimeContext } from "@/runtime-context"
 import { HttpError, toErrorResponse } from "@/utils/http-error"
 
 function getErrorMessage(error: unknown) {
@@ -142,7 +145,20 @@ function createWorkflowAuthoringStreamResponse(
   })
 }
 
-export async function handleWorkflowRoutes(request: Request, pathname: string) {
+type WorkflowRouteOptions = {
+  openWorkflowFolder?: (directoryPath: string) => void
+}
+
+function toCdCommand(workflowDirectoryPath: string) {
+  const escapedPath = workflowDirectoryPath.replaceAll('"', "\\\"")
+  return `cd "${escapedPath}"`
+}
+
+export async function handleWorkflowRoutes(
+  request: Request,
+  pathname: string,
+  options: WorkflowRouteOptions = {}
+) {
   try {
     const workflowGenerateStreamMatch = pathname.match(
       /^\/api\/workspaces\/([^/]+)\/workflows\/generate\/stream$/
@@ -290,6 +306,53 @@ export async function handleWorkflowRoutes(request: Request, pathname: string) {
           getWorkflowLaunchFields(workflowLaunchFieldsMatch[1], workflowLaunchFieldsMatch[2])
         )
       )
+    }
+
+    const workflowOpenFolderMatch = pathname.match(
+      /^\/api\/workspaces\/([^/]+)\/workflows\/([^/]+)\/open-folder$/
+    )
+    if (workflowOpenFolderMatch && request.method === "POST") {
+      const workspaceId = workflowOpenFolderMatch[1]
+      const workflowId = workflowOpenFolderMatch[2]
+      const requestUrl = new URL(request.url)
+      const runtimeContext = buildRuntimeContext({
+        runtimeMode: process.env.BURNS_RUNTIME_MODE,
+        requestHostname: requestUrl.hostname,
+      })
+
+      if (!runtimeContext.capabilities.openNativeFolderPicker) {
+        throw new HttpError(
+          403,
+          "Workflow folder actions are only available on local daemon URLs."
+        )
+      }
+
+      const workflowDirectoryPath = getWorkflowDirectoryPath(workspaceId, workflowId)
+      const openFolder = options.openWorkflowFolder ?? ((targetPath) => {
+        openWorkflowFolder(targetPath)
+      })
+      openFolder(workflowDirectoryPath)
+      return new Response(null, { status: 204 })
+    }
+
+    const workflowCdCommandMatch = pathname.match(
+      /^\/api\/workspaces\/([^/]+)\/workflows\/([^/]+)\/cd-command$/
+    )
+    if (workflowCdCommandMatch && request.method === "POST") {
+      const workspaceId = workflowCdCommandMatch[1]
+      const workflowId = workflowCdCommandMatch[2]
+      const requestUrl = new URL(request.url)
+      const runtimeContext = buildRuntimeContext({
+        runtimeMode: process.env.BURNS_RUNTIME_MODE,
+        requestHostname: requestUrl.hostname,
+      })
+
+      if (!runtimeContext.capabilities.openTerminal) {
+        throw new HttpError(403, "Workflow command actions are only available on local daemon URLs.")
+      }
+
+      const workflowDirectoryPath = getWorkflowDirectoryPath(workspaceId, workflowId)
+      return Response.json({ command: toCdCommand(workflowDirectoryPath) })
     }
 
     if (workflowDetailMatch && request.method === "GET") {

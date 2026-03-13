@@ -520,7 +520,7 @@ function getWorkflowFilePath(workspaceId: string, workflowId: string) {
   throw new HttpError(404, `Workflow not found: ${workflowId}`)
 }
 
-function getWorkflowDirectoryPath(workspaceId: string, workflowId: string) {
+export function getWorkflowDirectoryPath(workspaceId: string, workflowId: string) {
   const workflowRoot = getWorkflowRoot(workspaceId)
   const workflowDirectoryPath = path.join(workflowRoot, workflowId)
 

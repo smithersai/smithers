@@ -102,6 +102,13 @@ export function getSettingsWithSensitiveValues() {
   }
 }
 
+export function haveDaemonSettingsChanged(previous: Settings, next: Settings) {
+  return (
+    previous.diagnosticsLogLevel !== next.diagnosticsLogLevel ||
+    previous.diagnosticsPrettyLogs !== next.diagnosticsPrettyLogs
+  )
+}
+
 export function updateSettings(input: UpdateSettingsInput) {
   const currentRow = findSettingsRow()
   const currentSettings = getSettings()

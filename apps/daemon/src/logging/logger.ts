@@ -88,3 +88,7 @@ export function getLogger(): BurnsLogger {
 
   return rootLogger
 }
+
+export function resetLogger() {
+  rootLogger = null
+}
