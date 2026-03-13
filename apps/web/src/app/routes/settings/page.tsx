@@ -187,8 +187,8 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-col p-6">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-6">
         <Card>
           <CardHeader>
             <CardTitle>General</CardTitle>

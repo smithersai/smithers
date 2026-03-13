@@ -60,6 +60,10 @@ describe("workflow authoring prompts", () => {
     expect(prompt).toContain("codex | Codex | command: codex")
     expect(prompt).toContain("createSmithers")
     expect(prompt).toContain("output={outputs.<schemaKey>}")
+    expect(prompt).toContain("Define reusable agents")
+    expect(prompt).toContain("ClaudeCodeAgent")
+    expect(prompt).toContain("CodexAgent")
+    expect(prompt).toContain("<Ralph")
     for (const link of guideLinks) {
       expect(prompt).toContain(link)
     }
@@ -84,6 +88,9 @@ describe("workflow authoring prompts", () => {
     expect(prompt).toContain("Selected authoring CLI agent for this run: codex")
     expect(prompt).toContain("overwrite that same file")
     expect(prompt).toContain("output={outputs.<schemaKey>}")
+    expect(prompt).toContain("shared prompt constants")
+    expect(prompt).toContain("ClaudeCodeAgent")
+    expect(prompt).toContain("CodexAgent")
     for (const link of guideLinks) {
       expect(prompt).toContain(link)
     }
@@ -109,6 +116,9 @@ describe("workflow authoring prompts", () => {
     expect(prompt).toContain("Selected authoring CLI agent for this run: codex")
     expect(prompt).toContain("Validation error to fix")
     expect(prompt).toContain("output={outputs.<schemaKey>}")
+    expect(prompt).toContain("define them explicitly")
+    expect(prompt).toContain("ClaudeCodeAgent")
+    expect(prompt).toContain("CodexAgent")
     for (const link of guideLinks) {
       expect(prompt).toContain(link)
     }

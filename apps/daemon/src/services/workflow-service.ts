@@ -17,27 +17,84 @@ import { getWorkspace } from "@/services/workspace-service"
 import { HttpError } from "@/utils/http-error"
 import { slugify } from "@/utils/slugify"
 
-const workflowPromptScaffold = `import { createSmithers, Sequence } from "smithers-orchestrator"
+const workflowPromptScaffold = `import { ClaudeCodeAgent, CodexAgent, createSmithers, Ralph, Sequence } from "smithers-orchestrator"
 import { z } from "zod"
 
 const { Workflow, Task, smithers, outputs } = createSmithers({
-  plan: z.object({ summary: z.string() }),
-  implement: z.object({ summary: z.string() }),
-  validate: z.object({ summary: z.string() }),
+  plan: z.object({
+    summary: z.string(),
+    acceptanceCriteria: z.array(z.string()),
+  }),
+  implement: z.object({
+    summary: z.string(),
+    filesChanged: z.array(z.string()),
+  }),
+  validate: z.object({
+    allPassed: z.boolean(),
+    summary: z.string(),
+  }),
+  review: z.object({
+    approved: z.boolean(),
+    findings: z.array(z.string()),
+  }),
+})
+
+const SHARED_SYSTEM_PROMPT =
+  "You are working inside a real repository. Preserve stable task IDs, keep the workflow coherent, and return only schema-matching JSON."
+
+const plannerAgent = new ClaudeCodeAgent({
+  model: "claude-sonnet-4-5-20250929",
+  permissionMode: "bypassPermissions",
+  timeoutMs: 10 * 60 * 1000,
+  systemPrompt: SHARED_SYSTEM_PROMPT,
+})
+
+const implementationAgent = new CodexAgent({
+  model: "gpt-5.3-codex",
+  sandbox: "workspace-write",
+  fullAuto: true,
+  timeoutMs: 20 * 60 * 1000,
+  config: { model_reasoning_effort: "high" },
+  systemPrompt: SHARED_SYSTEM_PROMPT,
+})
+
+const reviewAgent = new ClaudeCodeAgent({
+  model: "claude-opus-4-6",
+  permissionMode: "bypassPermissions",
+  timeoutMs: 10 * 60 * 1000,
+  systemPrompt: SHARED_SYSTEM_PROMPT,
 })
 
 export default smithers((ctx) => (
   <Workflow name="example-workflow">
     <Sequence>
-      <Task id="plan" output={outputs.plan}>
-        {{ summary: \`Plan for input: \${JSON.stringify(ctx.input ?? {})}\` }}
+      <Task id="plan" output={outputs.plan} agent={plannerAgent} timeoutMs={10 * 60 * 1000} retries={1}>
+        {[
+          "Create a plan for: " + String(ctx.input?.request ?? "the requested change") + ".",
+          "",
+          "Return only JSON that matches the plan schema.",
+        ].join("\\n")}
       </Task>
-      <Task id="implement" output={outputs.implement}>
-        {{ summary: "Implementation complete." }}
-      </Task>
-      <Task id="validate" output={outputs.validate}>
-        {{ summary: "Validation complete." }}
-      </Task>
+      <Ralph id="implement-review-loop" until={Boolean(ctx.outputMaybe("review", { nodeId: "review" })?.approved)} maxIterations={3} onMaxReached="return-last">
+        <Sequence>
+          <Task id="implement" output={outputs.implement} agent={implementationAgent} timeoutMs={20 * 60 * 1000}>
+            {[
+              "Implement the plan.",
+              "",
+              "Acceptance criteria:",
+              JSON.stringify(ctx.outputMaybe("plan", { nodeId: "plan" })?.acceptanceCriteria ?? [], null, 2),
+              "",
+              "Return only JSON that matches the implement schema.",
+            ].join("\\n")}
+          </Task>
+          <Task id="validate" output={outputs.validate} agent={implementationAgent} timeoutMs={10 * 60 * 1000} retries={1}>
+            {"Run the relevant validation for the latest implementation and return only JSON that matches the validate schema."}
+          </Task>
+          <Task id="review" output={outputs.review} agent={reviewAgent} timeoutMs={10 * 60 * 1000} skipIf={!ctx.outputMaybe("validate", { nodeId: "validate" })?.allPassed}>
+            {"Review the latest implementation only when validation passed. Return only JSON that matches the review schema."}
+          </Task>
+        </Sequence>
+      </Ralph>
     </Sequence>
   </Workflow>
 ))`
@@ -60,6 +117,7 @@ const smithersGuideDigest = [
   "- Patterns: use Sequence/Parallel/Branch/Ralph intentionally; choose deterministic node IDs and explicit control flow.",
   "- Project structure: for Burns, keep the primary workflow in the requested target file unless the user explicitly asks for a multi-file component split.",
   "- Best practices: keep prompts task-specific, preserve stable task IDs, keep tasks composable, and avoid hidden side effects.",
+  "- Prefer explicit reusable agent definitions and shared prompt constants near the top of the file instead of inline ad-hoc agent setup.",
   "- Model selection: use stronger models for planning/review-heavy tasks and faster models for straightforward transform tasks.",
   "- Review loop: when quality gates are requested, model them with bounded Ralph loops and explicit stop conditions.",
   "- MDX prompts: only use MDX prompt files when the user asks for prompt externalization or workflow complexity justifies it.",
@@ -73,6 +131,7 @@ const smithersSyntaxReference = [
   "Smithers syntax quick reference:",
   "- Core setup: import { createSmithers, Sequence, Parallel, Branch, Ralph } from \"smithers-orchestrator\" and define schemas in createSmithers({...}).",
   "- Workflow skeleton: export default smithers((ctx) => (<Workflow name=\"...\">...</Workflow>)).",
+  "- Agent setup: define reusable agents once (for example planner/reviewer/implementer) and then reference them from tasks.",
   "- Task contract: every <Task> must have a stable id and output wired as output={outputs.<schemaKey>}.",
   "- Launch inputs: read user-provided run input via ctx.input.<field>; if optional, use nullish defaults (ctx.input.<field> ?? <default>).",
   "- Cross-task references: use ctx.output(\"schemaKey\", { nodeId: \"task-id\" }) for required upstream output and ctx.outputMaybe(...) for optional flow.",
@@ -95,22 +154,24 @@ const smithersFeatureImplementationFlowExample = [
   "  review: z.object({ approved: z.boolean(), feedback: z.string().optional() }),",
   "})",
   "",
+  "const implementationAgent = new CodexAgent({ model: \"gpt-5.3-codex\", sandbox: \"workspace-write\", fullAuto: true })",
+  "const reviewAgent = new ClaudeCodeAgent({ model: \"claude-opus-4-6\", permissionMode: \"bypassPermissions\" })",
+  "",
   "export default smithers((ctx) => (",
   "  <Workflow name=\"feature-flow\">",
   "    <Sequence>",
   "      <Task id=\"plan\" output={outputs.plan}>",
   "        {{ summary: `Plan for ${ctx.input.feature}`, steps: [\"analyze\", \"implement\", \"test\"] }}",
   "      </Task>",
-  "      <Task id=\"implement\" output={outputs.implement}>",
+  "      <Task id=\"implement\" output={outputs.implement} agent={implementationAgent}>",
   "        {{ summary: \"Implemented feature\", filesChanged: [\"src/feature.ts\"] }}",
   "      </Task>",
-  "      <Task id=\"validate\" output={outputs.validate}>",
+  "      <Task id=\"validate\" output={outputs.validate} agent={implementationAgent}>",
   "        {{ passed: true, notes: [\"typecheck passed\", \"tests passed\"] }}",
   "      </Task>",
-  "      <Branch",
-  "        if={!ctx.output(\"validate\", { nodeId: \"validate\" }).passed}",
-  "        then={<Task id=\"repair\" output={outputs.implement}>{{ summary: \"Repair\", filesChanged: [] }}</Task>}",
-  "      />",
+  "      <Task id=\"review\" output={outputs.review} agent={reviewAgent} skipIf={!ctx.output(\"validate\", { nodeId: \"validate\" }).passed}>",
+  "        {{ approved: true, feedback: \"\", }}",
+  "      </Task>",
   "    </Sequence>",
   "  </Workflow>",
   "))",
@@ -312,6 +373,7 @@ export function buildWorkflowGenerationPrompt(params: {
     "Do not use a bare global smithers symbol. Always define it from createSmithers(...).",
     "Always import createSmithers from smithers-orchestrator and z from zod.",
     "Always define output schemas and reference outputs with output={outputs.<schemaKey>}.",
+    "Define reusable agents and any shared prompt constants near the top of the file when agent-driven tasks are involved.",
     "Create any missing folders needed for the target file.",
     buildAvailableAgentCliDigest({
       selectedAgentId: params.selectedAgentId,
@@ -355,6 +417,7 @@ export function buildWorkflowEditPrompt(params: {
     "Do not use a bare global smithers symbol. Always define it from createSmithers(...).",
     "Always import createSmithers from smithers-orchestrator and z from zod.",
     "Always define output schemas and reference outputs with output={outputs.<schemaKey>}.",
+    "Keep reusable agents and shared prompt constants explicit instead of burying them inside task bodies.",
     buildAvailableAgentCliDigest({
       selectedAgentId: params.selectedAgentId,
       availableAgentClis: params.availableAgentClis,
@@ -393,6 +456,7 @@ export function buildWorkflowRepairPrompt(params: {
     "The file must import createSmithers from smithers-orchestrator and z from zod.",
     "The file must define smithers via createSmithers(...) and default export smithers((ctx) => (...)).",
     "Every task output must use output={outputs.<schemaKey>}.",
+    "If the workflow uses agents, define them explicitly and keep the prompts/schema contract coherent.",
     buildAvailableAgentCliDigest({
       selectedAgentId: params.selectedAgentId,
       availableAgentClis: params.availableAgentClis,
