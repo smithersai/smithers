@@ -29,6 +29,7 @@ import {
 import { WorkflowEditorPane } from "@/components/code-editor/workflow-editor-pane"
 import { Card, CardContent } from "@/components/ui/card"
 import { useAgentClis } from "@/features/agents/hooks/use-agent-clis"
+import { WorkflowAuthoringConversationPanel } from "@/features/workflows/components/workflow-authoring-conversation-panel"
 import { useEditWorkflow } from "@/features/workflows/hooks/use-edit-workflow"
 import { useWorkflowFile } from "@/features/workflows/hooks/use-workflow-file"
 import { useWorkflowFiles } from "@/features/workflows/hooks/use-workflow-files"
@@ -362,11 +363,22 @@ export function WorkflowDetailPage() {
         </Card>
 
         <div className="flex min-w-0 flex-col gap-0 xl:min-h-0 xl:overflow-hidden">
-          <WorkflowEditorPane
-            workflow={workflowDocument ?? null}
-            sourceOverride={workflowSourceOverride}
-            fileName={selectedPath ?? "workflow.tsx"}
-          />
+          {editWorkflow.isPending ? (
+            <Card className="m-0 gap-0 rounded-none border border-border border-l-0 py-2 pl-0 pr-2 ring-0 xl:h-full xl:min-h-0 xl:flex xl:flex-col">
+              <CardContent className="flex flex-1 flex-col gap-3 overflow-hidden px-0 xl:min-h-0">
+                <WorkflowAuthoringConversationPanel
+                  isStreaming={editWorkflow.isPending}
+                  items={editWorkflow.conversationItems}
+                />
+              </CardContent>
+            </Card>
+          ) : (
+            <WorkflowEditorPane
+              workflow={workflowDocument ?? null}
+              sourceOverride={workflowSourceOverride}
+              fileName={selectedPath ?? "workflow.tsx"}
+            />
+          )}
         </div>
       </div>
     </div>
