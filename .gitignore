@@ -14,3 +14,4 @@ apps/daemon/.data/
 .sqlite-shm
 .sqlite-wal
 .vscode
+.tmp/
