@@ -4,11 +4,22 @@ import { resolveDesktopDataRoot } from "./desktop-data-root"
 
 export const DEFAULT_DESKTOP_DAEMON_URL = "http://localhost:7332"
 export const DAEMON_HEALTH_PATH = "/api/health"
+const DEFAULT_ALLOW_ATTACH_TO_EXISTING = false
 
 export type DesktopDaemonRuntimeHandle = {
   source: "spawned" | "existing"
   url: string
   stop: () => Promise<void>
+}
+
+export class DesktopDaemonAlreadyRunningError extends Error {
+  readonly daemonUrl: string
+
+  constructor(daemonUrl: string) {
+    super(`Burns is already running at ${daemonUrl}. Close the existing Burns instance and retry.`)
+    this.name = "DesktopDaemonAlreadyRunningError"
+    this.daemonUrl = daemonUrl
+  }
 }
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -17,6 +28,24 @@ type ResolveDesktopDaemonRuntimeOptions = {
   daemonUrlEnv?: string
   fetchImpl?: FetchLike
   start?: () => Promise<DaemonRuntimeHandle>
+  allowAttachToExisting?: boolean
+}
+
+function parseBooleanEnv(value: string | undefined): boolean | null {
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase()
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false
+  }
+
+  return null
 }
 
 async function loadStartDaemon() {
@@ -118,16 +147,29 @@ function buildExternalDaemonRuntime(url: string): DesktopDaemonRuntimeHandle {
   }
 }
 
+function resolveAllowAttachToExisting(rawValue: boolean | undefined): boolean {
+  if (typeof rawValue === "boolean") {
+    return rawValue
+  }
+
+  return parseBooleanEnv(process.env.BURNS_DESKTOP_ALLOW_ATTACH_EXISTING) ??
+    DEFAULT_ALLOW_ATTACH_TO_EXISTING
+}
+
 export async function resolveDesktopDaemonRuntime(
   options: ResolveDesktopDaemonRuntimeOptions = {}
 ): Promise<DesktopDaemonRuntimeHandle> {
   const fetchImpl = options.fetchImpl ?? fetch
+  const allowAttachToExisting = resolveAllowAttachToExisting(options.allowAttachToExisting)
   const candidates = buildDaemonUrlCandidates(
     options.daemonUrlEnv ?? process.env.BURNS_DESKTOP_DAEMON_URL
   )
 
   const existingDaemonUrl = await findReachableDaemonUrl(candidates, fetchImpl)
   if (existingDaemonUrl) {
+    if (!allowAttachToExisting) {
+      throw new DesktopDaemonAlreadyRunningError(existingDaemonUrl)
+    }
     return buildExternalDaemonRuntime(existingDaemonUrl)
   }
 
@@ -149,6 +191,9 @@ export async function resolveDesktopDaemonRuntime(
       retryDelayMs: 250,
     })
     if (daemonUrlAfterPortConflict) {
+      if (!allowAttachToExisting) {
+        throw new DesktopDaemonAlreadyRunningError(daemonUrlAfterPortConflict)
+      }
       return buildExternalDaemonRuntime(daemonUrlAfterPortConflict)
     }
 

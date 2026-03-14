@@ -2,6 +2,11 @@ import Electrobun, { BrowserWindow, Utils } from "electrobun/bun"
 import { appendFileSync } from "node:fs"
 
 import {
+  buildDesktopStartupErrorInitScript,
+} from "@burns/shared"
+
+import {
+  DesktopDaemonAlreadyRunningError,
   resolveDesktopDaemonRuntime,
   type DesktopDaemonRuntimeHandle,
 } from "./daemon-runtime"
@@ -67,6 +72,42 @@ function injectRuntimeConfig(window: BrowserWindow, daemonApiUrl: string) {
   window.webview.executeJavascript(script)
 }
 
+function injectStartupError(window: BrowserWindow, error: DesktopDaemonAlreadyRunningError) {
+  const script = buildDesktopStartupErrorInitScript({
+    title: "Burns is already running",
+    message:
+      "Another Burns daemon is already listening on the configured desktop port. Close that instance and retry.",
+    details: `Daemon URL: ${error.daemonUrl}`,
+  })
+  window.webview.executeJavascript(script)
+}
+
+function createMainWindow(sourceUrl: string) {
+  const mainWindow = new BrowserWindow({
+    title: "Burns",
+    url: sourceUrl,
+    renderer: "native",
+    frame: {
+      x: 160,
+      y: 90,
+      width: 1360,
+      height: 900,
+    },
+  })
+  debugLog(`createMainWindow: window created id=${mainWindow.id}`)
+
+  // Force a visible, focused frame in dev/runtime in case previous window state
+  // or multi-display coordinates place it off-screen.
+  mainWindow.setFrame(160, 90, 1360, 900)
+  debugLog("createMainWindow: setFrame(160, 90, 1360, 900)")
+  mainWindow.show()
+  debugLog("createMainWindow: show()")
+  mainWindow.focus()
+  debugLog("createMainWindow: focus()")
+
+  return mainWindow
+}
+
 function handleBeforeQuit(event: unknown) {
   debugLog("handleBeforeQuit: event received")
   if (shouldQuitAfterCleanup || !daemonRuntime) {
@@ -86,32 +127,12 @@ function handleBeforeQuit(event: unknown) {
 
 async function startDesktopShell() {
   debugLog("startDesktopShell: begin")
-  daemonRuntime = await resolveDesktopDaemonRuntime()
-  debugLog(`startDesktopShell: daemon resolved source=${daemonRuntime.source} url=${daemonRuntime.url}`)
   const sourceUrl = await resolveDesktopSourceUrl()
   debugLog(`startDesktopShell: sourceUrl=${sourceUrl}`)
+  daemonRuntime = await resolveDesktopDaemonRuntime()
+  debugLog(`startDesktopShell: daemon resolved source=${daemonRuntime.source} url=${daemonRuntime.url}`)
 
-  const mainWindow = new BrowserWindow({
-    title: "Burns",
-    url: sourceUrl,
-    renderer: "native",
-    frame: {
-      x: 160,
-      y: 90,
-      width: 1360,
-      height: 900,
-    },
-  })
-  debugLog(`startDesktopShell: window created id=${mainWindow.id}`)
-
-  // Force a visible, focused frame in dev/runtime in case previous window state
-  // or multi-display coordinates place it off-screen.
-  mainWindow.setFrame(160, 90, 1360, 900)
-  debugLog("startDesktopShell: setFrame(160, 90, 1360, 900)")
-  mainWindow.show()
-  debugLog("startDesktopShell: show()")
-  mainWindow.focus()
-  debugLog("startDesktopShell: focus()")
+  const mainWindow = createMainWindow(sourceUrl)
 
   mainWindow.webview.on("dom-ready", () => {
     debugLog("mainWindow.webview: dom-ready")
@@ -136,8 +157,24 @@ async function startDesktopShell() {
   )
 }
 
+async function showDesktopStartupBlockedWindow(error: DesktopDaemonAlreadyRunningError) {
+  const sourceUrl = await resolveDesktopSourceUrl()
+  debugLog(`showDesktopStartupBlockedWindow: sourceUrl=${sourceUrl}`)
+  const mainWindow = createMainWindow(sourceUrl)
+  mainWindow.webview.on("dom-ready", () => {
+    debugLog("showDesktopStartupBlockedWindow: dom-ready")
+    injectStartupError(mainWindow, error)
+  })
+  console.error("[desktop] Burns is already running", { daemonUrl: error.daemonUrl })
+}
+
 startDesktopShell().catch(async (error: unknown) => {
   debugLog(`startDesktopShell: failed ${(error as Error)?.message ?? String(error)}`)
+  if (error instanceof DesktopDaemonAlreadyRunningError) {
+    await showDesktopStartupBlockedWindow(error)
+    return
+  }
+
   const message = error instanceof Error ? error.message : String(error)
   console.error("[desktop] Failed to start desktop shell", error)
 

@@ -4,12 +4,14 @@ type AppCrashScreenProps = {
   title?: string
   message?: string
   details?: string | null
+  showGoHomeButton?: boolean
 }
 
 export function AppCrashScreen({
   title = "Burns hit an unexpected error",
   message = "The app could not finish rendering. Reload the window to try again.",
   details = null,
+  showGoHomeButton = true,
 }: AppCrashScreenProps) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
@@ -25,9 +27,11 @@ export function AppCrashScreen({
         ) : null}
         <div className="mt-6 flex items-center gap-2">
           <Button onClick={() => window.location.reload()}>Reload</Button>
-          <Button variant="outline" onClick={() => window.location.assign("/")}>
-            Go Home
-          </Button>
+          {showGoHomeButton ? (
+            <Button variant="outline" onClick={() => window.location.assign("/")}>
+              Go Home
+            </Button>
+          ) : null}
         </div>
       </div>
     </div>

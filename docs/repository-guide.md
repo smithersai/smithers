@@ -32,7 +32,7 @@ Implemented today:
 - Approval decision APIs (`approve`, `deny`) wired from UI
 - Managed per-workspace Smithers server lifecycle (startup, crash restart, graceful shutdown)
 - Workspace server control APIs (`start`, `restart`, `stop`, `status`)
-- Desktop shell that attaches to an existing daemon or spawns one in-process
+- Desktop shell that spawns a daemon in-process by default and blocks startup if another Burns daemon is already bound to the configured desktop URL
 - CLI runtime that can start the daemon and serve built web assets
 
 ## Prerequisites
@@ -143,7 +143,7 @@ Desktop and CLI artifact assembly is script-driven through `scripts/release`.
 
 ## Runtime Data Layout
 
-The daemon stores local state under `BURNS_DATA_ROOT` when that env var is set. Otherwise the default data root is `apps/daemon/.data`.
+The daemon stores local state under `BURNS_DATA_ROOT` when that env var is set. Otherwise the default data root is `~/.burns`.
 
 - SQLite DB: `<data-root>/burns.sqlite`
 - Managed workspace root: `<data-root>/workspaces`

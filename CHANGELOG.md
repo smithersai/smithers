@@ -21,6 +21,8 @@ The format follows Keep a Changelog and this project currently tracks SemVer-sty
 
 - Hardened canary/stable workflows with runtime smoke checks, strict artifact collection, and artifact integrity verification.
 - Updated release docs and README entries for new smoke and release artifact commands.
+- Changed desktop mode to share the default `~/.burns` app data root with CLI/direct daemon runs, while keeping `BURNS_DESKTOP_DATA_ROOT` as an explicit desktop-only override.
+- Changed packaged desktop startup to fail closed when another Burns daemon is already listening on the configured desktop URL, while `bun run dev` still opts into attaching to an existing daemon for local development.
 - Added local workspace `Open Folder` and `Copy Path` actions, and changed workflow path copying to return the raw folder path instead of a `cd` command.
 - Replaced the read-only settings page with editable forms that save daemon defaults and preserve existing workspaces during reset.
 - Removed automatic default-workspace seeding so first-run users land in onboarding instead of a precreated workspace.

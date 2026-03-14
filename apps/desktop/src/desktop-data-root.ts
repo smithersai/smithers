@@ -14,26 +14,11 @@ export function resolveDesktopDataRoot(options: ResolveDesktopDataRootOptions = 
     return path.resolve(configuredDataRoot)
   }
 
+  const sharedDataRoot = env.BURNS_DATA_ROOT?.trim()
+  if (sharedDataRoot) {
+    return path.resolve(sharedDataRoot)
+  }
+
   const homeDirectory = options.homeDirectory ?? homedir()
-  const platform = options.platform ?? process.platform
-
-  if (platform === "darwin") {
-    return path.join(homeDirectory, "Library", "Application Support", "Burns")
-  }
-
-  if (platform === "win32") {
-    const appDataDirectory = env.APPDATA?.trim()
-    if (appDataDirectory) {
-      return path.join(appDataDirectory, "Burns")
-    }
-
-    return path.join(homeDirectory, "AppData", "Roaming", "Burns")
-  }
-
-  const xdgDataHome = env.XDG_DATA_HOME?.trim()
-  if (xdgDataHome) {
-    return path.join(xdgDataHome, "Burns")
-  }
-
-  return path.join(homeDirectory, ".local", "share", "Burns")
+  return path.join(homeDirectory, ".burns")
 }
