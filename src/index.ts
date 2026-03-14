@@ -14,6 +14,12 @@ export type { SmithersCtx } from "./SmithersCtx";
 export type { OutputAccessor, InferRow, InferOutputEntry } from "./OutputAccessor";
 export type { SmithersEvent } from "./SmithersEvent";
 export type { SmithersError } from "./SmithersError";
+export type {
+  ResolvedSmithersObservabilityOptions,
+  SmithersLogFormat,
+  SmithersObservabilityOptions,
+  SmithersObservabilityService,
+} from "./observability";
 
 // Components
 export {
@@ -23,6 +29,7 @@ export {
   Parallel,
   MergeQueue,
   Branch,
+  Loop,
   Ralph,
   Worktree,
 } from "./components";
@@ -73,6 +80,41 @@ export { tools, read, write, edit, grep, bash } from "./tools/index";
 // Server
 export { startServer } from "./server/index";
 export type { ServerOptions } from "./server/index";
+
+// Observability
+export {
+  SmithersObservability,
+  createSmithersObservabilityLayer,
+  createSmithersOtelLayer,
+  createSmithersRuntimeLayer,
+  smithersMetrics,
+  trackSmithersEvent,
+  activeNodes,
+  activeRuns,
+  approvalsDenied,
+  approvalsGranted,
+  approvalsRequested,
+  attemptDuration,
+  cacheHits,
+  cacheMisses,
+  dbQueryDuration,
+  dbRetries,
+  hotReloadDuration,
+  hotReloadFailures,
+  hotReloads,
+  httpRequestDuration,
+  httpRequests,
+  nodeDuration,
+  nodesFailed,
+  nodesFinished,
+  nodesStarted,
+  resolveSmithersObservabilityOptions,
+  runsTotal,
+  schedulerQueueDepth,
+  toolCallsTotal,
+  toolDuration,
+  vcsDuration,
+} from "./observability";
 
 // DB
 export { SmithersDb } from "./db/adapter";

@@ -1,6 +1,6 @@
 import React from "react";
 
-export type RalphProps = {
+export type LoopProps = {
   id?: string;
   until: boolean;
   maxIterations?: number;
@@ -9,7 +9,13 @@ export type RalphProps = {
   children?: React.ReactNode;
 };
 
-export function Ralph(props: RalphProps) {
+export function Loop(props: LoopProps) {
   if (props.skipIf) return null;
   return React.createElement("smithers:ralph", props, props.children);
 }
+
+/** @deprecated Use `Loop` instead. */
+export type RalphProps = LoopProps;
+
+/** @deprecated Use `Loop` instead. */
+export const Ralph = Loop;

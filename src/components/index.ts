@@ -16,8 +16,8 @@ export type { MergeQueueProps } from "./MergeQueue";
 export { Branch } from "./Branch";
 export type { BranchProps } from "./Branch";
 
-export { Ralph } from "./Ralph";
-export type { RalphProps } from "./Ralph";
+export { Loop, Ralph } from "./Ralph";
+export type { LoopProps, RalphProps } from "./Ralph";
 
 export { Worktree } from "./Worktree";
 export type { WorktreeProps } from "./Worktree";
