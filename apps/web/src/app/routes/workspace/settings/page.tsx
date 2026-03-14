@@ -48,7 +48,7 @@ export function WorkspaceSettingsPage() {
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="h-full overflow-y-auto">
       <div className="grid gap-4 p-6">
         <ServerHealthCard
           workspace={workspace}
