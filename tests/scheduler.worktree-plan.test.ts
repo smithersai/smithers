@@ -58,15 +58,30 @@ describe("scheduler: buildPlanTree — <Worktree>", () => {
     ]);
     const states = new Map<string, any>();
     const ralph = new Map<string, any>();
+    const retryWait = new Map<string, number>();
 
     // Initially, only wa/wb should be runnable; "after" gated by sequence
-    let s = scheduleTasks(plan!, states as any, desc as any, ralph as any);
+    let s = scheduleTasks(
+      plan!,
+      states as any,
+      desc as any,
+      ralph as any,
+      retryWait,
+      0,
+    );
     expect(s.runnable.map((t) => t.nodeId).sort()).toEqual(["wa", "wb"]);
 
     // Mark wa/wb finished; now "after" becomes runnable
     states.set("wa::0", "finished");
     states.set("wb::0", "finished");
-    s = scheduleTasks(plan!, states as any, desc as any, ralph as any);
+    s = scheduleTasks(
+      plan!,
+      states as any,
+      desc as any,
+      ralph as any,
+      retryWait,
+      0,
+    );
     expect(s.runnable.map((t) => t.nodeId)).toEqual(["after"]);
   });
 
@@ -93,7 +108,14 @@ describe("scheduler: buildPlanTree — <Worktree>", () => {
     ]);
     const states = new Map<string, any>();
     const ralph = new Map<string, any>();
-    const s = scheduleTasks(plan!, states as any, desc as any, ralph as any);
+    const s = scheduleTasks(
+      plan!,
+      states as any,
+      desc as any,
+      ralph as any,
+      new Map(),
+      0,
+    );
     expect(s.runnable.map((t) => t.nodeId).sort()).toEqual([
       "peer",
       "wa",
@@ -166,7 +188,14 @@ describe("scheduler: per-group concurrency caps in scheduleTasks()", () => {
     ]);
     const states = new Map<string, any>([[key("a", 0), "in-progress"]]);
     const ralph = new Map<string, any>();
-    const s = scheduleTasks(plan!, states as any, desc as any, ralph as any);
+    const s = scheduleTasks(
+      plan!,
+      states as any,
+      desc as any,
+      ralph as any,
+      new Map(),
+      0,
+    );
     // Only one of b/c should be runnable due to remaining group capacity = 1
     expect(s.runnable.length).toBe(1);
     expect(s.runnable[0]!.nodeId).toBe("b");
@@ -186,7 +215,14 @@ describe("scheduler: per-group concurrency caps in scheduleTasks()", () => {
     ]);
     const states = new Map<string, any>();
     const ralph = new Map<string, any>();
-    const s = scheduleTasks(plan!, states as any, desc as any, ralph as any);
+    const s = scheduleTasks(
+      plan!,
+      states as any,
+      desc as any,
+      ralph as any,
+      new Map(),
+      0,
+    );
     expect(s.runnable.length).toBe(1);
     expect(s.runnable[0]!.nodeId).toBe("m1");
   });

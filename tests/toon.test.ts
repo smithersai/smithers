@@ -1,8 +1,11 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { Database } from "bun:sqlite";
+import { Effect, Layer } from "effect";
 import { Smithers } from "../src";
+import { Greeter } from "./fixtures/toon-services";
+import { getCounter, resetCounter } from "./fixtures/toon-cache-handler";
 
 function makeTempDb() {
   const dir = mkdtempSync(join(tmpdir(), "smithers-toon-"));
@@ -76,4 +79,112 @@ test("loadToon imports component libraries", async () => {
     summary: expect.stringContaining("Ship the hotfix"),
     tags: expect.arrayContaining(["ship", "the"]),
   });
+});
+
+test("loadToon imports Effect services for run blocks", async () => {
+  const dbPath = makeTempDb();
+  const workflow = Smithers.loadToon("tests/fixtures/toon-services.toon");
+  const result = await Effect.runPromise(
+    workflow
+      .execute({ name: "Sam" })
+      .pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Smithers.sqlite({ filename: dbPath }),
+            Layer.succeed(Greeter, {
+              greet: (name) => Effect.succeed(`Hello ${name}`),
+            }),
+          ),
+        ),
+      ),
+  );
+  expect(result).toEqual({ message: "Hello Sam" });
+});
+
+test("loadToon supports workflow imports", async () => {
+  const dbPath = makeTempDb();
+  const workflow = Smithers.loadToon(
+    "tests/fixtures/toon-workflow-import.toon",
+  );
+  const result = await Effect.runPromise(
+    workflow
+      .execute({ topic: "Bun" })
+      .pipe(Effect.provide(Smithers.sqlite({ filename: dbPath }))),
+  );
+  expect(result).toEqual({
+    report: expect.stringContaining("Researching Bun"),
+  });
+});
+
+test("loadToon supports plugin-defined node kinds", async () => {
+  const dbPath = makeTempDb();
+  const workflow = Smithers.loadToon(
+    "tests/fixtures/toon-plugin-workflow.toon",
+  );
+  const result = await Effect.runPromise(
+    workflow
+      .execute({ name: "Ignored" })
+      .pipe(Effect.provide(Smithers.sqlite({ filename: dbPath }))),
+  );
+  expect(result).toEqual({ value: "HELLO!" });
+});
+
+test("loadToon caches steps using cache.by and cache.version", async () => {
+  resetCounter();
+  const dbPath = makeTempDb();
+  const workflow = Smithers.loadToon("tests/fixtures/toon-cache.toon");
+  const run = (key: string) =>
+    Effect.runPromise(
+      workflow
+        .execute({ key })
+        .pipe(Effect.provide(Smithers.sqlite({ filename: dbPath }))),
+    );
+
+  const first = await run("alpha");
+  expect(first).toEqual({ count: 1, key: "alpha" });
+  expect(getCounter()).toBe(1);
+
+  const second = await run("alpha");
+  expect(second).toEqual({ count: 1, key: "alpha" });
+  expect(getCounter()).toBe(1);
+
+  const third = await run("beta");
+  expect(third).toEqual({ count: 2, key: "beta" });
+  expect(getCounter()).toBe(2);
+});
+
+test("loadToon respects retry backoff delays", async () => {
+  const dbPath = makeTempDb();
+  const workflow = Smithers.loadToon("tests/fixtures/toon-retry.toon");
+  const result = await Effect.runPromise(
+    workflow
+      .execute({ name: "Retry" })
+      .pipe(Effect.provide(Smithers.sqlite({ filename: dbPath }))),
+  );
+  expect(result).toEqual({ ok: true });
+
+  const sqlite = new Database(dbPath);
+  try {
+    const rows = sqlite
+      .query(
+        "select attempt, started_at_ms as startedAtMs, finished_at_ms as finishedAtMs from _smithers_attempts where node_id = ? order by attempt asc",
+      )
+      .all("flaky") as Array<{
+      attempt: number;
+      startedAtMs: number;
+      finishedAtMs: number;
+    }>;
+    expect(rows.length).toBe(3);
+    const first = rows[0]!;
+    const second = rows[1]!;
+    const third = rows[2]!;
+    expect(typeof first.finishedAtMs).toBe("number");
+    expect(typeof second.startedAtMs).toBe("number");
+    const delay1 = second.startedAtMs - first.finishedAtMs;
+    const delay2 = third.startedAtMs - second.finishedAtMs;
+    expect(delay1).toBeGreaterThanOrEqual(20);
+    expect(delay2).toBeGreaterThanOrEqual(20);
+  } finally {
+    sqlite.close();
+  }
 });
