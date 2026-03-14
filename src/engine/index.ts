@@ -38,7 +38,8 @@ import { getJjPointer } from "../vcs/jj";
 import { z } from "zod";
 import { eq, getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
-import { Effect } from "effect";
+import { Effect, Metric } from "effect";
+import { cacheHits, cacheMisses, nodeDuration, attemptDuration, schedulerQueueDepth } from "../effect/metrics";
 import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -942,6 +943,7 @@ async function executeTask(
   signal?: AbortSignal,
   disabledAgents?: Set<any>,
 ) {
+  const taskStartMs = performance.now();
   const attempts = await adapter.listAttempts(
     runId,
     desc.nodeId,
@@ -1048,6 +1050,7 @@ async function executeTask(
         if (valid.ok) {
           payload = valid.data;
           cached = true;
+          void runPromise(Metric.increment(cacheHits));
           logInfo("cache hit for task output", {
             runId,
             nodeId: desc.nodeId,
@@ -1055,7 +1058,11 @@ async function executeTask(
             attempt: attemptNo,
             cacheKey,
           }, "engine:task-cache");
+        } else {
+          void runPromise(Metric.increment(cacheMisses));
         }
+      } else {
+        void runPromise(Metric.increment(cacheMisses));
       }
     }
 
@@ -1566,6 +1573,11 @@ async function executeTask(
       attempt: attemptNo,
       timestampMs: nowMs(),
     });
+    const taskElapsedMs = performance.now() - taskStartMs;
+    void runPromise(Effect.all([
+      Metric.update(nodeDuration, taskElapsedMs),
+      Metric.update(attemptDuration, taskElapsedMs),
+    ], { discard: true }));
     logInfo("task execution finished", {
       runId,
       nodeId: desc.nodeId,
@@ -1573,6 +1585,7 @@ async function executeTask(
       attempt: attemptNo,
       cached,
       jjPointer,
+      durationMs: Math.round(taskElapsedMs),
     }, "engine:task");
   } catch (err) {
     try {

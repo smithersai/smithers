@@ -1,8 +1,9 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
-import { Effect } from "effect";
+import { Effect, Metric } from "effect";
 import { fromPromise, fromSync } from "../effect/interop";
 import { runPromise } from "../effect/runtime";
+import { dbQueryDuration } from "../effect/metrics";
 import {
   smithersRuns,
   smithersNodes,
@@ -23,7 +24,12 @@ export class SmithersDb {
     label: string,
     operation: () => PromiseLike<A>,
   ): Effect.Effect<A, Error> {
-    return fromPromise(label, operation).pipe(
+    return Effect.gen(function* () {
+      const start = performance.now();
+      const result = yield* fromPromise(label, operation);
+      yield* Metric.update(dbQueryDuration, performance.now() - start);
+      return result;
+    }).pipe(
       Effect.annotateLogs({ dbOperation: label }),
       Effect.withLogSpan(`db:${label}`),
     );
@@ -33,10 +39,15 @@ export class SmithersDb {
     label: string,
     operation: () => PromiseLike<A>,
   ): Effect.Effect<A, Error> {
-    return withSqliteWriteRetryEffect(
-      () => fromPromise(label, operation),
-      { label },
-    ).pipe(
+    return Effect.gen(function* () {
+      const start = performance.now();
+      const result = yield* withSqliteWriteRetryEffect(
+        () => fromPromise(label, operation),
+        { label },
+      );
+      yield* Metric.update(dbQueryDuration, performance.now() - start);
+      return result;
+    }).pipe(
       Effect.annotateLogs({ dbOperation: label }),
       Effect.withLogSpan(`db:${label}`),
     );

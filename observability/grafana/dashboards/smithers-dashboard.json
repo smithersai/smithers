@@ -1,0 +1,453 @@
+{
+  "uid": "smithers-overview",
+  "title": "Smithers Overview",
+  "tags": ["smithers", "ai", "orchestration"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "editable": true,
+  "panels": [
+    {
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Active Runs",
+      "id": 2,
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "smithers_smithers_runs_active", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 10 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Total Runs",
+      "id": 3,
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "smithers_smithers_runs_total", "refId": "A" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" } } },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Active Nodes",
+      "id": 4,
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "smithers_smithers_nodes_active", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Node Success Rate",
+      "id": 5,
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "(smithers_smithers_nodes_finished / (smithers_smithers_nodes_finished + smithers_smithers_nodes_failed > 0)) * 100 or vector(100)",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 90 },
+              { "color": "green", "value": 99 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "min": 0,
+          "max": 100
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Cache Hit Rate",
+      "id": 6,
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "(smithers_smithers_cache_hits / (smithers_smithers_cache_hits + smithers_smithers_cache_misses > 0)) * 100 or vector(0)",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "green", "value": 70 }
+            ]
+          },
+          "color": { "mode": "thresholds" },
+          "min": 0,
+          "max": 100
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "type": "stat",
+      "title": "DB Retries",
+      "id": 7,
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "smithers_smithers_db_retries", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      }
+    },
+
+    {
+      "type": "row",
+      "title": "Runs & Nodes",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "Node Throughput",
+      "id": 11,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(smithers_smithers_nodes_started[5m])", "legendFormat": "Started", "refId": "A" },
+        { "expr": "rate(smithers_smithers_nodes_finished[5m])", "legendFormat": "Finished", "refId": "B" },
+        { "expr": "rate(smithers_smithers_nodes_failed[5m])", "legendFormat": "Failed", "refId": "C" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "gradientMode": "scheme" },
+          "color": { "mode": "palette-classic" },
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["mean", "max"] }
+      }
+    },
+    {
+      "type": "heatmap",
+      "title": "Node Duration",
+      "id": 12,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(increase(smithers_smithers_node_duration_ms_bucket[5m])) by (le)",
+        "legendFormat": "{{le}}",
+        "refId": "A",
+        "format": "heatmap"
+      }],
+      "options": {
+        "calculate": false,
+        "yAxis": { "unit": "ms" },
+        "color": { "mode": "scheme", "scheme": "Oranges", "steps": 64 },
+        "cellGap": 1
+      }
+    },
+
+    {
+      "type": "row",
+      "title": "Tools",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 20
+    },
+    {
+      "type": "timeseries",
+      "title": "Tool Call Rate",
+      "id": 21,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "rate(smithers_smithers_tool_calls_total[5m])",
+        "legendFormat": "Tool Calls / sec",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+          "color": { "mode": "fixed", "fixedColor": "purple" },
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "type": "heatmap",
+      "title": "Tool Duration",
+      "id": 22,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(increase(smithers_smithers_tool_duration_ms_bucket[5m])) by (le)",
+        "legendFormat": "{{le}}",
+        "refId": "A",
+        "format": "heatmap"
+      }],
+      "options": {
+        "calculate": false,
+        "yAxis": { "unit": "ms" },
+        "color": { "mode": "scheme", "scheme": "Blues", "steps": 64 },
+        "cellGap": 1
+      }
+    },
+
+    {
+      "type": "row",
+      "title": "Infrastructure",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 30
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Request Latency",
+      "id": 31,
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(smithers_smithers_http_request_duration_ms_bucket[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(smithers_smithers_http_request_duration_ms_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(smithers_smithers_http_request_duration_ms_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 5 },
+          "color": { "mode": "palette-classic" },
+          "unit": "ms"
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "type": "heatmap",
+      "title": "DB Query Duration",
+      "id": 32,
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "sum(increase(smithers_smithers_db_query_ms_bucket[5m])) by (le)",
+        "legendFormat": "{{le}}",
+        "refId": "A",
+        "format": "heatmap"
+      }],
+      "options": {
+        "calculate": false,
+        "yAxis": { "unit": "ms" },
+        "color": { "mode": "scheme", "scheme": "Greens", "steps": 64 },
+        "cellGap": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "VCS & Hot Reload",
+      "id": 33,
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(smithers_smithers_hot_reloads[5m])",
+          "legendFormat": "Hot Reloads / sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(smithers_smithers_hot_reload_failures[5m])",
+          "legendFormat": "Reload Failures / sec",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(smithers_smithers_vcs_duration_ms_bucket[5m])) by (le))",
+          "legendFormat": "VCS p95 (ms)",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+
+    {
+      "type": "row",
+      "title": "Approvals",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 40
+    },
+    {
+      "type": "timeseries",
+      "title": "Approval Flow",
+      "id": 41,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(smithers_smithers_approvals_requested[5m])", "legendFormat": "Requested", "refId": "A" },
+        { "expr": "rate(smithers_smithers_approvals_granted[5m])", "legendFormat": "Granted", "refId": "B" },
+        { "expr": "rate(smithers_smithers_approvals_denied[5m])", "legendFormat": "Denied", "refId": "C" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 50 },
+          "color": { "mode": "palette-classic" },
+          "unit": "ops"
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Request Rate",
+      "id": 42,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{
+        "expr": "rate(smithers_smithers_http_requests[5m])",
+        "legendFormat": "Requests / sec",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "gradientMode": "scheme" },
+          "color": { "mode": "fixed", "fixedColor": "green" },
+          "unit": "reqps"
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+
+    {
+      "type": "row",
+      "title": "Traces",
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "id": 50,
+      "panels": [
+        {
+          "type": "traces",
+          "title": "Recent Traces",
+          "id": 51,
+          "gridPos": { "h": 12, "w": 24, "x": 0, "y": 42 },
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "targets": [{
+            "datasource": { "type": "tempo", "uid": "tempo" },
+            "queryType": "traceqlSearch",
+            "limit": 20,
+            "tableType": "traces",
+            "filters": [
+              { "id": "service-name", "tag": "service.name", "operator": "=", "value": ["smithers"], "scope": "resource" }
+            ],
+            "refId": "A"
+          }]
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import * as Command from "@effect/platform/Command";
-import { Effect, Fiber, Stream } from "effect";
+import { Effect, Fiber, Metric, Stream } from "effect";
 import { runPromise } from "../effect/runtime";
+import { vcsDuration } from "../effect/metrics";
 
 /**
  * Cross-version-safe JJ helpers.
@@ -43,6 +44,7 @@ export function runJjEffect(
 
   return Effect.scoped(
     Effect.gen(function* () {
+      const start = performance.now();
       yield* Effect.logDebug(`jj ${args.join(" ")}`);
       const process = yield* Command.start(command);
       const stdoutFiber = yield* Effect.fork(collectUtf8(process.stdout));
@@ -50,6 +52,7 @@ export function runJjEffect(
       const exitCode = yield* process.exitCode;
       const stdout = yield* Fiber.join(stdoutFiber);
       const stderr = yield* Fiber.join(stderrFiber);
+      yield* Metric.update(vcsDuration, performance.now() - start);
       return {
         code: Number(exitCode as unknown as number),
         stdout,

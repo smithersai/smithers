@@ -1,9 +1,10 @@
-import { Effect } from "effect";
+import { Effect, Metric } from "effect";
 import { nowMs } from "../utils/time";
 import { sha256Hex } from "../utils/hash";
 import { errorToJson } from "../utils/errors";
 import { getToolContext, nextToolSeq } from "./context";
 import { runPromise } from "../effect/runtime";
+import { toolDuration } from "../effect/metrics";
 
 export function logToolCallEffect(
   toolName: string,
@@ -18,24 +19,28 @@ export function logToolCallEffect(
   const seq = nextToolSeq(ctx);
   const started = startedAtMs ?? nowMs();
   const finished = nowMs();
+  const durationMs = finished - started;
   const maxLogBytes = ctx.maxOutputBytes ?? 200_000;
   const inputJson = safeJson(input, maxLogBytes);
   const outputJson = safeJson(output, maxLogBytes);
   const errorJson = error ? safeJson(errorToJson(error), maxLogBytes) : null;
-  return ctx.db.insertToolCallEffect({
-    runId: ctx.runId,
-    nodeId: ctx.nodeId,
-    iteration: ctx.iteration,
-    attempt: ctx.attempt,
-    seq,
-    toolName,
-    inputJson,
-    outputJson,
-    startedAtMs: started,
-    finishedAtMs: finished,
-    status,
-    errorJson,
-  }).pipe(
+  return Metric.update(toolDuration, durationMs).pipe(
+    Effect.andThen(
+      ctx.db.insertToolCallEffect({
+        runId: ctx.runId,
+        nodeId: ctx.nodeId,
+        iteration: ctx.iteration,
+        attempt: ctx.attempt,
+        seq,
+        toolName,
+        inputJson,
+        outputJson,
+        startedAtMs: started,
+        finishedAtMs: finished,
+        status,
+        errorJson,
+      }),
+    ),
     Effect.annotateLogs({
       runId: ctx.runId,
       nodeId: ctx.nodeId,

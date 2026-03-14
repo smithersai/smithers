@@ -10,9 +10,11 @@ import {
 } from "./overlay";
 import type { SmithersWorkflow } from "../SmithersWorkflow";
 import type { HotReloadOptions } from "../RunOptions";
+import { Metric } from "effect";
 import { fromPromise } from "../effect/interop";
 import { logInfo, logWarning } from "../effect/logging";
 import { runPromise } from "../effect/runtime";
+import { hotReloads, hotReloadFailures, hotReloadDuration } from "../effect/metrics";
 
 export type HotReloadEvent =
   | { type: "reloaded"; generation: number; changedFiles: string[]; newBuild: SmithersWorkflow<any>["build"] }
@@ -115,6 +117,7 @@ export class HotWorkflowController {
     const gen = this.generation;
 
     return Effect.gen(this, function* () {
+      const reloadStart = performance.now();
       try {
         const genDir = yield* buildOverlayEffect(this.hotRoot, this.outDir, gen);
         const overlayEntry = resolveOverlayEntry(
@@ -157,6 +160,8 @@ export class HotWorkflowController {
         }
 
         yield* cleanupGenerationsEffect(this.outDir, this.maxGenerations);
+        yield* Metric.increment(hotReloads);
+        yield* Metric.update(hotReloadDuration, performance.now() - reloadStart);
         logInfo("reloaded hot workflow generation", {
           entryPath: this.entryPath,
           generation: gen,
@@ -169,6 +174,7 @@ export class HotWorkflowController {
           newBuild: workflow.build,
         } satisfies HotReloadEvent;
       } catch (err: any) {
+        yield* Metric.increment(hotReloadFailures);
         if (err?.message?.includes("Schema change detected")) {
           logWarning("hot workflow reload marked unsafe", {
             entryPath: this.entryPath,

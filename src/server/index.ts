@@ -8,9 +8,11 @@ import type { SmithersWorkflow } from "../SmithersWorkflow";
 import type { SmithersEvent } from "../SmithersEvent";
 import { SmithersDb } from "../db/adapter";
 import { ensureSmithersTables } from "../db/ensure";
+import { Metric } from "effect";
 import { fromPromise } from "../effect/interop";
 import { logError, logInfo, logWarning } from "../effect/logging";
 import { runPromise, runSync } from "../effect/runtime";
+import { httpRequests, httpRequestDuration } from "../effect/metrics";
 import { approveNode, denyNode } from "../engine/approvals";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { nowMs } from "../utils/time";
@@ -154,6 +156,7 @@ function sendJson(res: ServerResponse, status: number, payload: any) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.end(JSON.stringify(payload));
+  void runPromise(Metric.increment(httpRequests));
 }
 
 function assertAuth(req: IncomingMessage, authToken?: string) {
@@ -441,6 +444,7 @@ function startServerInternal(opts: ServerOptions = {}) {
     hasServerDb: Boolean(serverDb),
   }, "server:start");
   const server = createServer(async (req, res) => {
+    const requestStart = performance.now();
     try {
       assertAuth(req, authToken);
       const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
@@ -950,6 +954,8 @@ function startServerInternal(opts: ServerOptions = {}) {
           message: err?.message ?? "Unknown error",
         },
       });
+    } finally {
+      void runPromise(Metric.update(httpRequestDuration, performance.now() - requestStart));
     }
   });
 

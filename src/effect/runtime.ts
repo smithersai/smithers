@@ -1,52 +1,7 @@
-import * as BunContext from "@effect/platform-bun/BunContext";
-import { Cause, Effect, Exit, Layer, Logger, LogLevel, ManagedRuntime } from "effect";
+import { Cause, Effect, Exit, ManagedRuntime } from "effect";
+import { createSmithersRuntimeLayer } from "../observability";
 
-function resolveLogLevel(
-  value: string | undefined,
-): LogLevel.LogLevel {
-  switch ((value ?? "").toLowerCase()) {
-    case "none":
-      return LogLevel.None;
-    case "trace":
-      return LogLevel.Trace;
-    case "debug":
-      return LogLevel.Debug;
-    case "warning":
-    case "warn":
-      return LogLevel.Warning;
-    case "error":
-      return LogLevel.Error;
-    case "fatal":
-      return LogLevel.Fatal;
-    case "all":
-      return LogLevel.All;
-    case "info":
-    default:
-      return LogLevel.Info;
-  }
-}
-
-function resolveLogger() {
-  switch ((process.env.SMITHERS_LOG_FORMAT ?? "").toLowerCase()) {
-    case "json":
-      return Logger.withLeveledConsole(Logger.jsonLogger);
-    case "pretty":
-      return Logger.prettyLogger();
-    case "string":
-      return Logger.withLeveledConsole(Logger.stringLogger);
-    case "logfmt":
-    default:
-      return Logger.withLeveledConsole(Logger.logfmtLogger);
-  }
-}
-
-const SmithersRuntimeLayer = Layer.mergeAll(
-  BunContext.layer,
-  Logger.replace(Logger.defaultLogger, resolveLogger()),
-  Logger.minimumLogLevel(
-    resolveLogLevel(process.env.SMITHERS_LOG_LEVEL),
-  ),
-);
+const SmithersRuntimeLayer = createSmithersRuntimeLayer();
 
 const runtime = ManagedRuntime.make(SmithersRuntimeLayer);
 

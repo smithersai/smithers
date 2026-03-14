@@ -1,5 +1,6 @@
-import { Effect } from "effect";
+import { Effect, Metric } from "effect";
 import { runPromise } from "../effect/runtime";
+import { dbRetries } from "../effect/metrics";
 
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_BASE_DELAY_MS = 50;
@@ -59,6 +60,7 @@ export function withSqliteWriteRetryEffect<A>(
         }
         const delayMs = computeDelayMs(attempt, baseDelayMs, maxDelayMs);
         return Effect.gen(function* () {
+          yield* Metric.increment(dbRetries);
           yield* Effect.logWarning(
             `${label} failed with ${describeSqliteWriteError(error)}; retrying in ${delayMs}ms (${attempt}/${maxAttempts})`,
           );

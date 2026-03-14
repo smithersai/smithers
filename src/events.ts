@@ -5,6 +5,7 @@ import { Effect } from "effect";
 import type { SmithersEvent } from "./SmithersEvent";
 import { fromPromise } from "./effect/interop";
 import { runPromise } from "./effect/runtime";
+import { trackEvent } from "./effect/metrics";
 
 export class EventBus extends EventEmitter {
   private seq = 0;
@@ -23,6 +24,7 @@ export class EventBus extends EventEmitter {
   emitEventEffect(event: SmithersEvent) {
     return Effect.gen(this, function* () {
       yield* Effect.sync(() => this.emit("event", event));
+      yield* trackEvent(event);
       if (this.db) {
         yield* this.persistDbEffect(event);
       }
