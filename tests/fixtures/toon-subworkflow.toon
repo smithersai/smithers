@@ -1,0 +1,11 @@
+name: toon-subworkflow
+
+input:
+  topic: string
+
+steps:
+  - id: research
+    run: |
+      return { summary: `Researching ${input.topic}` };
+    output:
+      summary: string

@@ -1,0 +1,20 @@
+imports:
+  services:
+    - from: "./toon-services.ts"
+      use: [Greeter]
+
+name: toon-services
+
+input:
+  name: string
+
+steps:
+  - id: greet
+    run: |
+      return Effect.gen(function* () {
+        const greeter = yield* Greeter;
+        const message = yield* greeter.greet(input.name);
+        return { message };
+      });
+    output:
+      message: string
