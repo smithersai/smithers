@@ -2,6 +2,8 @@
 
 ElectroBun desktop shell package for Burns.
 
+For the contributor onboarding path, start with the repo [README](../../README.md), [Getting Started for Smithers Developers](../../docs/getting-started-smithers-developers.md), and [Contributing](../../CONTRIBUTING.md). This package README stays focused on desktop-specific runtime behavior.
+
 ## What this package does
 
 - Starts a desktop shell from Bun entrypoint: `src/main.ts`
@@ -59,5 +61,6 @@ Environment controls:
 ## Notes
 
 - `bun run dev` sets `BURNS_DESKTOP_ALLOW_ATTACH_EXISTING=1` so desktop development can reuse a CLI-run daemon.
+- Packaged desktop startup blocks when another Burns daemon is already running on the configured desktop URL. Dev mode relaxes this so you can attach to an existing daemon during local development.
 - Uses official `electrobun/bun` APIs directly (`BrowserWindow`, app events, native dialogs).
 - Bundles tray icons from `apps/desktop/assets/tray/favicon-black.png` and `apps/desktop/assets/tray/favicon-white.png`.

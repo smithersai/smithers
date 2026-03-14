@@ -2,6 +2,8 @@
 
 This document is the developer-facing map of the Burns repository: what is here, how to run it, and where to look first when you need to change something.
 
+Use [README](../README.md) for orientation and first-run setup, [Getting Started for Smithers Developers](./getting-started-smithers-developers.md) for the newcomer tutorial path, and [Contributing](../CONTRIBUTING.md) for the day-to-day contributor workflow. This guide stays focused on repo structure, commands, and runtime reference details.
+
 ## Repo Overview
 
 Burns is a Bun monorepo with:
@@ -88,6 +90,8 @@ Other entry points:
 bun run desktop:dev
 bun run cli:start
 ```
+
+For contributor-oriented guidance on when to use the desktop loop versus the standard daemon + web loop, see [Contributing](../CONTRIBUTING.md). For desktop-specific runtime details, see [apps/desktop/README.md](../apps/desktop/README.md).
 
 ## Root Scripts
 

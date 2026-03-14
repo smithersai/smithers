@@ -17,11 +17,14 @@ The format follows Keep a Changelog and this project currently tracks SemVer-sty
 - Added a first-run onboarding wizard that redirects new users into app setup before the first workspace flow.
 - Added a `Factory Reset` settings action that forgets all Burns state and returns the app to onboarding without deleting repo folders.
 - Added aggregate daemon tray status with shared schema/client support for desktop background mode.
+- Added a contributor-first documentation path with a Smithers-oriented getting started guide and a root `CONTRIBUTING.md`.
 
 ### Changed
 
 - Hardened canary/stable workflows with runtime smoke checks, strict artifact collection, and artifact integrity verification.
+- Simplified first-run onboarding by removing the `rootDir` choice and renaming the final step to `Smithers Settings`.
 - Updated release docs and README entries for new smoke and release artifact commands.
+- Reworked the root README and docs index to emphasize onboarding, contributor quick start, desktop development, and where to find deeper reference docs.
 - Changed the desktop shell to stay alive in the tray after closing the main window, using bundled black/white tray icons and native tray actions for opening Burns, pending approvals, running workflows, and `Exit (Stop Server)`.
 - Changed desktop mode to share the default `~/.burns` app data root with CLI/direct daemon runs, while keeping `BURNS_DESKTOP_DATA_ROOT` as an explicit desktop-only override.
 - Changed packaged desktop startup to fail closed when another Burns daemon is already listening on the configured desktop URL, while `bun run dev` still opts into attaching to an existing daemon for local development.

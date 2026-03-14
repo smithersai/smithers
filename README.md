@@ -13,15 +13,74 @@ Burns gives you one place to work with AI workflows that live inside real reposi
 - Generate and revise workflows with local agent CLIs such as `codex` and `claude`
 - Launch runs, stream events, inspect frames, and resume or cancel work
 - Handle human approval gates without leaving the app
-- Run as a web app, desktop shell, or CLI-backed local runtime
+- Run Burns as a web app, desktop shell, or CLI-backed local runtime
 
-## What Burns does
+## Burns for Smithers users
 
-Burns sits on top of Smithers and adds the operator-facing layer around it.
+If you already know Smithers, Burns is the layer around it.
 
-Smithers handles workflow execution, persistence, validation, and resumability. Burns handles the workspace model, workflow authoring surfaces, local runtime supervision, approvals, and the UI for operating all of it.
+- Smithers owns workflow execution, persistence, validation, resumability, and approval-aware orchestration.
+- Burns owns workspace registration, workflow authoring surfaces, local runtime supervision, event viewing, approvals UI, and the web/desktop shells used to operate workflows.
 
-This makes Burns useful when you want more than `smithers run workflow.tsx`. It is for cases where you need to manage multiple repositories, inspect workflow files, guide authors toward good workflow structure, and supervise long-running local runs from a single control plane.
+Burns is useful when `smithers run workflow.tsx` is no longer enough on its own. Use it when you want to manage multiple repos, browse workflow files, guide workflow authoring from a UI, or supervise long-running local runs from one place.
+
+## Quick Start For Contributors
+
+Install dependencies:
+
+```bash
+bun install
+```
+
+Start the daemon:
+
+```bash
+bun run dev:daemon
+```
+
+Start the web app in a second terminal:
+
+```bash
+bun run dev:web
+```
+
+Open `http://localhost:5173`.
+
+Optional desktop loop:
+
+```bash
+bun run desktop:dev
+```
+
+By default the web app talks to the daemon at `http://localhost:7332`.
+
+## Choose Your Runtime
+
+### Web dev loop
+
+Use this for most backend and UI changes.
+
+- Run `bun run dev:daemon`
+- Run `bun run dev:web`
+- Open `http://localhost:5173`
+
+### Desktop dev loop
+
+Use this when you need to test the shell, tray behavior, startup rules, or injected runtime config.
+
+- Run `bun run desktop:dev`
+- Desktop dev mode allows attaching to an already running Burns daemon
+- Set `BURNS_DESKTOP_DEV_SOURCE=vite` to load a live Vite server instead of bundled views
+- Set `BURNS_DESKTOP_DEV_VITE_URL=http://localhost:5173` to point desktop mode at a custom Vite URL
+- Set `BURNS_DESKTOP_FORCE_API_URL=http://localhost:7332` to override the injected daemon API URL
+
+### CLI runtime
+
+Use this when you want Burns without the desktop shell.
+
+```bash
+bun run cli:start
+```
 
 ## How It Works
 
@@ -52,34 +111,14 @@ This makes Burns useful when you want more than `smithers run workflow.tsx`. It 
 - **React + Vite** for the primary UI
 - **ElectroBun** for the desktop shell
 
-## Run Locally
-
-```bash
-bun install
-bun run dev:daemon
-```
-
-In a second terminal:
-
-```bash
-bun run dev:web
-```
-
-Open `http://localhost:5173`. The web app talks to the daemon at `http://localhost:7332` by default.
-
-Other entry points:
-
-```bash
-bun run desktop:dev
-bun run cli:start
-```
-
 ## Current State
 
 Today Burns includes workspace onboarding, workspace overview quick actions, workflow browsing, AI-assisted workflow generation and editing, launch-field inference, Smithers-backed run APIs, approvals, managed per-workspace Smithers processes, desktop/CLI runtime shells, and a background desktop tray mode with aggregated pending/running workflow counts.
 
-## For Developers
+## Where To Look Next
 
+- [Getting Started for Smithers Developers](./docs/getting-started-smithers-developers.md)
+- [Contributing Guide](./CONTRIBUTING.md)
 - [Repository Guide](./docs/repository-guide.md)
 - [Documentation Index](./docs/README.md)
 - [Codebase Layout](./docs/codebase-layout.md)
