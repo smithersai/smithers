@@ -1,5 +1,11 @@
 export { BaseCliAgent } from "./BaseCliAgent";
 
+export { AnthropicAgent } from "./AnthropicAgent";
+export type { AnthropicAgentOptions } from "./AnthropicAgent";
+
+export { OpenAIAgent } from "./OpenAIAgent";
+export type { OpenAIAgentOptions } from "./OpenAIAgent";
+
 export { AmpAgent } from "./AmpAgent";
 
 export { ClaudeCodeAgent } from "./ClaudeCodeAgent";

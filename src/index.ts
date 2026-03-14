@@ -23,6 +23,8 @@ export type {
 
 // Components
 export {
+  Approval,
+  approvalDecisionSchema,
   Workflow,
   Task,
   Sequence,
@@ -33,9 +35,16 @@ export {
   Ralph,
   Worktree,
 } from "./components";
+export type {
+  ApprovalDecision,
+  ApprovalProps,
+  ApprovalRequest,
+} from "./components";
 
 // Agents
 export {
+  AnthropicAgent,
+  OpenAIAgent,
   AmpAgent,
   ClaudeCodeAgent,
   CodexAgent,
@@ -45,6 +54,8 @@ export {
   ForgeAgent,
 } from "./agents";
 export type {
+  AnthropicAgentOptions,
+  OpenAIAgentOptions,
   PiExtensionUiRequest,
   PiExtensionUiResponse,
   PiAgentOptions,
@@ -115,6 +126,14 @@ export {
   toolDuration,
   vcsDuration,
 } from "./observability";
+
+// Effect builder
+export { Smithers } from "./effect/builder";
+export type {
+  BuiltSmithersWorkflow,
+  ComponentDefinition,
+  SmithersSqliteOptions,
+} from "./effect/builder";
 
 // DB
 export { SmithersDb } from "./db/adapter";
