@@ -60,6 +60,7 @@
     "@effect/opentelemetry": "^0.61.0",
     "@effect/platform": "^0.94.5",
     "@effect/platform-bun": "^0.87.1",
+    "@effect/sql": "^0.49.0",
     "@linear/sdk": "^76.0.0",
     "@mdx-js/esbuild": "^3.1.1",
     "@opentelemetry/api": "^1.9.0",
@@ -78,18 +79,20 @@
     "drizzle-orm": "^0.45.1",
     "drizzle-zod": "^0.8.3",
     "effect": "^3.19.19",
+    "incur": "^0.3.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-reconciler": "^0.31.0",
+    "yaml": "^2.8.2",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@types/bun": "latest",
     "@types/diff": "^5.2.0",
-    "@types/react": "^19.2.10",
-    "@playwright/test": "^1.52.0"
+    "@types/react": "^19.2.10"
   }
 }
