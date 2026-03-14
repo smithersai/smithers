@@ -19,6 +19,7 @@ export function WorkflowEditorPane({
   sourceOverride,
   fileName = "workflow.tsx",
   filePath,
+  readOnly = false,
   workspaceId,
   workflowId,
   onDirtyChange,
@@ -27,6 +28,7 @@ export function WorkflowEditorPane({
   sourceOverride?: string | null
   fileName?: string
   filePath?: string
+  readOnly?: boolean
   workspaceId?: string
   workflowId?: string
   onDirtyChange?: (isDirty: boolean) => void
@@ -36,7 +38,7 @@ export function WorkflowEditorPane({
   const saveWorkflow = useSaveWorkflow(workspaceId, workflowId)
   const [isEditing, setIsEditing] = useState(false)
   const [draftSource, setDraftSource] = useState("")
-  const canEdit = Boolean(source && workspaceId && workflowId && selectedFilePath)
+  const canEdit = Boolean(source && workspaceId && workflowId && selectedFilePath && !readOnly)
   const isDirty = isEditing && draftSource !== (source ?? "")
 
   useEffect(() => {

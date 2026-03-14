@@ -48,12 +48,14 @@ import { useAgentClis } from "@/features/agents/hooks/use-agent-clis"
 import { useActiveWorkspace } from "@/features/workspaces/hooks/use-active-workspace"
 import { WorkflowAuthoringConversationPanel } from "@/features/workflows/components/workflow-authoring-conversation-panel"
 import { useGenerateWorkflow } from "@/features/workflows/hooks/use-generate-workflow"
+import { canEditWorkspaceWorkflows } from "@/features/workflows/lib/access"
 
 export function NewWorkflowPage() {
   const navigate = useNavigate()
   const { workspace, workspaceId } = useActiveWorkspace()
   const { data: agentClis = [], isLoading: isAgentListLoading } = useAgentClis()
   const generateWorkflow = useGenerateWorkflow(workspace?.id)
+  const canEditWorkflows = canEditWorkspaceWorkflows(workspace)
 
   const [name, setName] = useState("issue-to-pr")
   const [prompt, setPrompt] = useState(
@@ -111,6 +113,23 @@ export function NewWorkflowPage() {
     }
     navigate(`/w/${workspaceId}/workflows/${generatedWorkflow.id}`, { replace: true })
   }, [generatedWorkflow, generateWorkflow.isPending, navigate, workspaceId])
+
+  if (!canEditWorkflows) {
+    return (
+      <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-x-hidden">
+        <div className="grid gap-4 p-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Workflow generator</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              Self-managed workspaces are read-only in Burns. Use the source repository to create or modify workflows, and Burns will discover them here.
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-x-hidden xl:overflow-y-hidden">

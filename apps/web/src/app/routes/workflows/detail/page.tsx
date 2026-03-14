@@ -35,6 +35,7 @@ import { useWorkflowFile } from "@/features/workflows/hooks/use-workflow-file"
 import { useWorkflowFiles } from "@/features/workflows/hooks/use-workflow-files"
 import { useWorkflow } from "@/features/workflows/hooks/use-workflow"
 import { useWorkflows } from "@/features/workflows/hooks/use-workflows"
+import { canEditWorkspaceWorkflows } from "@/features/workflows/lib/access"
 import { useActiveWorkspace } from "@/features/workspaces/hooks/use-active-workspace"
 
 type WorkflowTreeNode =
@@ -165,6 +166,7 @@ export function WorkflowDetailPage() {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("")
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false)
   const [hasUnsavedEditorChanges, setHasUnsavedEditorChanges] = useState(false)
+  const canEditWorkflows = canEditWorkspaceWorkflows(workspace)
 
   const workflowsBasePath = workspaceId ? `/w/${workspaceId}/workflows` : "/"
   const resolvedSelectedAgentId = selectedAgentId || agentClis[0]?.id || ""
@@ -323,73 +325,79 @@ export function WorkflowDetailPage() {
               )}
             </div>
 
-            <div className="space-y-2">
-              <PromptInput onSubmit={handleAgentSubmit}>
-                <PromptInputBody>
-                  <PromptInputTextarea
-                    className="min-h-24"
-                    value={prompt}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    placeholder="Describe how this workflow should change"
-                  />
-                </PromptInputBody>
-                <PromptInputFooter>
-                  <PromptInputTools className="min-w-0 flex-1">
-                    <ModelSelector open={isModelSelectorOpen} onOpenChange={setIsModelSelectorOpen}>
-                      <ModelSelectorTrigger
-                        render={
-                          <PromptInputButton
-                            className="max-w-full justify-start overflow-hidden"
-                            size="sm"
-                          />
-                        }
-                      >
-                        {selectedAgent ? (
-                          <>
-                            <ModelSelectorLogo provider={selectedAgent.logoProvider} />
-                            <ModelSelectorName className="truncate">{selectedAgent.name}</ModelSelectorName>
-                          </>
-                        ) : (
-                          <ModelSelectorName>Select agent</ModelSelectorName>
-                        )}
-                      </ModelSelectorTrigger>
-                      <ModelSelectorContent title="Installed agent CLIs">
-                        <ModelSelectorInput placeholder="Search installed agent CLIs..." />
-                        <ModelSelectorList>
-                          <ModelSelectorEmpty>No installed agent CLIs found.</ModelSelectorEmpty>
-                          <ModelSelectorGroup heading="Installed agent CLIs">
-                            {agentClis.map((agent) => (
-                              <ModelSelectorItem
-                                key={agent.id}
-                                value={agent.id}
-                                onSelect={() => {
-                                  setSelectedAgentId(agent.id)
-                                  setIsModelSelectorOpen(false)
-                                }}
-                              >
-                                <ModelSelectorLogo provider={agent.logoProvider} />
-                                <ModelSelectorName>{agent.name}</ModelSelectorName>
-                                {resolvedSelectedAgentId === agent.id ? (
-                                  <CheckIcon className="ml-auto" data-icon="inline-end" />
-                                ) : null}
-                              </ModelSelectorItem>
-                            ))}
-                          </ModelSelectorGroup>
-                        </ModelSelectorList>
-                      </ModelSelectorContent>
-                    </ModelSelector>
-                  </PromptInputTools>
-                  <PromptInputSubmit
-                    disabled={
-                      !workflowId || !prompt.trim() || !resolvedSelectedAgentId || isAgentListLoading
-                    }
-                    onStop={editWorkflow.cancel}
-                    status={submitStatus}
-                  />
-                </PromptInputFooter>
-              </PromptInput>
-              {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
-            </div>
+            {canEditWorkflows ? (
+              <div className="space-y-2">
+                <PromptInput onSubmit={handleAgentSubmit}>
+                  <PromptInputBody>
+                    <PromptInputTextarea
+                      className="min-h-24"
+                      value={prompt}
+                      onChange={(event) => setPrompt(event.target.value)}
+                      placeholder="Describe how this workflow should change"
+                    />
+                  </PromptInputBody>
+                  <PromptInputFooter>
+                    <PromptInputTools className="min-w-0 flex-1">
+                      <ModelSelector open={isModelSelectorOpen} onOpenChange={setIsModelSelectorOpen}>
+                        <ModelSelectorTrigger
+                          render={
+                            <PromptInputButton
+                              className="max-w-full justify-start overflow-hidden"
+                              size="sm"
+                            />
+                          }
+                        >
+                          {selectedAgent ? (
+                            <>
+                              <ModelSelectorLogo provider={selectedAgent.logoProvider} />
+                              <ModelSelectorName className="truncate">{selectedAgent.name}</ModelSelectorName>
+                            </>
+                          ) : (
+                            <ModelSelectorName>Select agent</ModelSelectorName>
+                          )}
+                        </ModelSelectorTrigger>
+                        <ModelSelectorContent title="Installed agent CLIs">
+                          <ModelSelectorInput placeholder="Search installed agent CLIs..." />
+                          <ModelSelectorList>
+                            <ModelSelectorEmpty>No installed agent CLIs found.</ModelSelectorEmpty>
+                            <ModelSelectorGroup heading="Installed agent CLIs">
+                              {agentClis.map((agent) => (
+                                <ModelSelectorItem
+                                  key={agent.id}
+                                  value={agent.id}
+                                  onSelect={() => {
+                                    setSelectedAgentId(agent.id)
+                                    setIsModelSelectorOpen(false)
+                                  }}
+                                >
+                                  <ModelSelectorLogo provider={agent.logoProvider} />
+                                  <ModelSelectorName>{agent.name}</ModelSelectorName>
+                                  {resolvedSelectedAgentId === agent.id ? (
+                                    <CheckIcon className="ml-auto" data-icon="inline-end" />
+                                  ) : null}
+                                </ModelSelectorItem>
+                              ))}
+                            </ModelSelectorGroup>
+                          </ModelSelectorList>
+                        </ModelSelectorContent>
+                      </ModelSelector>
+                    </PromptInputTools>
+                    <PromptInputSubmit
+                      disabled={
+                        !workflowId || !prompt.trim() || !resolvedSelectedAgentId || isAgentListLoading
+                      }
+                      onStop={editWorkflow.cancel}
+                      status={submitStatus}
+                    />
+                  </PromptInputFooter>
+                </PromptInput>
+                {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+              </div>
+            ) : (
+              <p className="px-1 text-sm text-muted-foreground">
+                Self-managed workflows are read-only in Burns. You can browse discovered files and run them here, but edit them in the source repository.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -409,6 +417,7 @@ export function WorkflowDetailPage() {
               sourceOverride={workflowSourceOverride}
               fileName={selectedPath ?? "workflow.tsx"}
               filePath={selectedPath}
+              readOnly={!canEditWorkflows}
               workspaceId={workspaceId}
               workflowId={workflowId}
               onDirtyChange={setHasUnsavedEditorChanges}
