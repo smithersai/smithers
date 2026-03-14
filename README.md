@@ -54,34 +54,6 @@ bun run desktop:dev
 
 By default the web app talks to the daemon at `http://localhost:7332`.
 
-## Choose Your Runtime
-
-### Web dev loop
-
-Use this for most backend and UI changes.
-
-- Run `bun run dev:daemon`
-- Run `bun run dev:web`
-- Open `http://localhost:5173`
-
-### Desktop dev loop
-
-Use this when you need to test the shell, tray behavior, startup rules, or injected runtime config.
-
-- Run `bun run desktop:dev`
-- Desktop dev mode allows attaching to an already running Burns daemon
-- Set `BURNS_DESKTOP_DEV_SOURCE=vite` to load a live Vite server instead of bundled views
-- Set `BURNS_DESKTOP_DEV_VITE_URL=http://localhost:5173` to point desktop mode at a custom Vite URL
-- Set `BURNS_DESKTOP_FORCE_API_URL=http://localhost:7332` to override the injected daemon API URL
-
-### CLI runtime
-
-Use this when you want Burns without the desktop shell.
-
-```bash
-bun run cli:start
-```
-
 ## How It Works
 
 1. Add or create a repository as a Burns workspace.
@@ -114,6 +86,34 @@ bun run cli:start
 ## Current State
 
 Today Burns includes workspace onboarding, workspace overview quick actions, workflow browsing, AI-assisted workflow generation and editing, launch-field inference, Smithers-backed run APIs, approvals, managed per-workspace Smithers processes, desktop/CLI runtime shells, and a background desktop tray mode with aggregated pending/running workflow counts.
+
+## Choose Your Runtime
+
+### Web dev loop
+
+Use this for most backend and UI changes.
+
+- Run `bun run dev:daemon`
+- Run `bun run dev:web`
+- Open `http://localhost:5173`
+
+### Desktop dev loop
+
+Use this when you need to test the shell, tray behavior, startup rules, or injected runtime config.
+
+- Run `bun run desktop:dev`
+- Desktop dev mode allows attaching to an already running Burns daemon
+- Set `BURNS_DESKTOP_DEV_SOURCE=vite` to load a live Vite server instead of bundled views
+- Set `BURNS_DESKTOP_DEV_VITE_URL=http://localhost:5173` to point desktop mode at a custom Vite URL
+- Set `BURNS_DESKTOP_FORCE_API_URL=http://localhost:7332` to override the injected daemon API URL
+
+### CLI runtime
+
+Use this when you want Burns without the desktop shell.
+
+```bash
+bun run cli:start
+```
 
 ## Where To Look Next
 
