@@ -80,6 +80,9 @@ export default smithers((ctx) => {
             "Issue description:",
             String(ctx.input?.issueDescription ?? "No issue description provided."),
             "",
+            "Additional context:",
+            String(ctx.input?.context ?? "No additional context provided."),
+            "",
             "Return only JSON that matches the plan schema.",
           ].join("\\n")}
         </Task>
@@ -97,6 +100,9 @@ export default smithers((ctx) => {
                 "",
                 "Acceptance criteria:",
                 JSON.stringify(latestPlan?.acceptanceCriteria ?? [], null, 2),
+                "",
+                "Known risks to account for:",
+                JSON.stringify(latestPlan?.risks ?? [], null, 2),
                 "",
                 "Prior validation failures:",
                 JSON.stringify(latestValidation?.failingChecks ?? [], null, 2),
@@ -147,7 +153,7 @@ export default smithers((ctx) => {
   },
   {
     id: "pr-feedback",
-    source: `import { ClaudeCodeAgent, CodexAgent, createSmithers, Parallel, Sequence } from "smithers-orchestrator"
+    source: `import { ClaudeCodeAgent, CodexAgent, createSmithers, Ralph, Sequence } from "smithers-orchestrator"
 import { z } from "zod"
 
 const { Workflow, Task, smithers, outputs } = createSmithers({
@@ -165,6 +171,12 @@ const { Workflow, Task, smithers, outputs } = createSmithers({
     allPassed: z.boolean(),
     summary: z.string(),
     checksRun: z.array(z.string()),
+    failingChecks: z.array(z.string()),
+  }),
+  reviewFixes: z.object({
+    approved: z.boolean(),
+    summary: z.string(),
+    findings: z.array(z.string()),
   }),
   summarize: z.object({
     summary: z.string(),
@@ -194,6 +206,8 @@ const implementationAgent = new CodexAgent({
 export default smithers((ctx) => {
   const analyzedFeedback = ctx.outputMaybe("analyzeFeedback", { nodeId: "analyze-feedback" })
   const validationResult = ctx.outputMaybe("validateFixes", { nodeId: "validate-fixes" })
+  const reviewResult = ctx.outputMaybe("reviewFixes", { nodeId: "review-fixes" })
+  const fixesApproved = Boolean(validationResult?.allPassed && reviewResult?.approved)
 
   return (
     <Workflow name="pr-feedback">
@@ -217,42 +231,77 @@ export default smithers((ctx) => {
           ].join("\\n")}
         </Task>
 
-        <Parallel>
-          <Task
-            id="implement-fixes"
-            output={outputs.implementFixes}
-            agent={implementationAgent}
-            timeoutMs={20 * 60 * 1000}
-          >
-            {[
-              "Implement the requested changes.",
-              "",
-              "Requested changes:",
-              JSON.stringify(analyzedFeedback?.requestedChanges ?? [], null, 2),
-              "",
-              "Return only JSON that matches the implementFixes schema.",
-            ].join("\\n")}
-          </Task>
+        <Ralph id="feedback-fix-loop" until={fixesApproved} maxIterations={3} onMaxReached="return-last">
+          <Sequence>
+            <Task
+              id="implement-fixes"
+              output={outputs.implementFixes}
+              agent={implementationAgent}
+              timeoutMs={20 * 60 * 1000}
+            >
+              {[
+                "Implement the requested pull request changes.",
+                "",
+                "Requested changes:",
+                JSON.stringify(analyzedFeedback?.requestedChanges ?? [], null, 2),
+                "",
+                "Risky areas to double-check:",
+                JSON.stringify(analyzedFeedback?.riskyAreas ?? [], null, 2),
+                "",
+                "Prior validation failures:",
+                JSON.stringify(validationResult?.failingChecks ?? [], null, 2),
+                "",
+                "Prior review findings:",
+                JSON.stringify(reviewResult?.findings ?? [], null, 2),
+                "",
+                "Return only JSON that matches the implementFixes schema.",
+              ].join("\\n")}
+            </Task>
 
-          <Task
-            id="validate-fixes"
-            output={outputs.validateFixes}
-            agent={implementationAgent}
-            timeoutMs={10 * 60 * 1000}
-            retries={1}
-          >
-            {"Run the relevant validation for the pull request fixes, then return only JSON that matches the validateFixes schema."}
-          </Task>
-        </Parallel>
+            <Task
+              id="validate-fixes"
+              output={outputs.validateFixes}
+              agent={implementationAgent}
+              timeoutMs={10 * 60 * 1000}
+              retries={1}
+            >
+              {[
+                "Run the relevant validation for the latest pull request fixes.",
+                "",
+                "Addressed comments so far:",
+                JSON.stringify(
+                  ctx.outputMaybe("implementFixes", { nodeId: "implement-fixes" })?.addressedComments ?? [],
+                  null,
+                  2
+                ),
+                "",
+                "Return only JSON that matches the validateFixes schema.",
+              ].join("\\n")}
+            </Task>
+
+            <Task
+              id="review-fixes"
+              output={outputs.reviewFixes}
+              agent={analysisAgent}
+              timeoutMs={10 * 60 * 1000}
+              skipIf={!validationResult?.allPassed}
+            >
+              {"Review the latest pull request changes only if validation passed. Focus on correctness, regressions, and any feedback that is still unaddressed. Return only JSON that matches the reviewFixes schema."}
+            </Task>
+          </Sequence>
+        </Ralph>
 
         <Task id="summarize" output={outputs.summarize}>
           {{
-            summary: validationResult?.allPassed
-              ? "Feedback addressed and validation passed."
-              : "Feedback addressed, but validation still needs attention.",
-            followUps: validationResult?.allPassed
+            summary: fixesApproved
+              ? "Feedback addressed, validation passed, and review approved."
+              : "Feedback processing finished without full validation and review approval.",
+            followUps: fixesApproved
               ? ["Reply to reviewers with the validation summary", "Request re-review"]
-              : ["Inspect failing checks", "Apply another fix pass before requesting review"],
+              : [
+                  "Inspect the latest validation failures and review findings",
+                  "Run another fix iteration before requesting review again",
+                ],
           }}
         </Task>
       </Sequence>
@@ -270,16 +319,23 @@ const { Workflow, Task, smithers, outputs } = createSmithers({
     summary: z.string(),
     rolloutPlan: z.array(z.string()),
     risks: z.array(z.string()),
+    rollbackPlan: z.array(z.string()),
   }),
   runPreflight: z.object({
     ready: z.boolean(),
     summary: z.string(),
     checksRun: z.array(z.string()),
+    blockers: z.array(z.string()),
+    evidence: z.array(z.string()),
   }),
   deploy: z.object({
     summary: z.string(),
     deployedAt: z.string(),
     followUps: z.array(z.string()),
+  }),
+  summarize: z.object({
+    summary: z.string(),
+    nextSteps: z.array(z.string()),
   }),
 })
 
@@ -305,6 +361,7 @@ const deployAgent = new CodexAgent({
 export default smithers((ctx) => {
   const releasePreparation = ctx.outputMaybe("prepareRelease", { nodeId: "prepare-release" })
   const preflight = ctx.outputMaybe("runPreflight", { nodeId: "run-preflight" })
+  const deployment = ctx.outputMaybe("deploy", { nodeId: "deploy" })
 
   return (
     <Workflow name="approval-gate">
@@ -324,6 +381,9 @@ export default smithers((ctx) => {
             "Environment:",
             String(ctx.input?.environment ?? "production"),
             "",
+            "Release notes:",
+            String(ctx.input?.releaseNotes ?? "No release notes provided."),
+            "",
             "Return only JSON that matches the prepareRelease schema.",
           ].join("\\n")}
         </Task>
@@ -336,10 +396,15 @@ export default smithers((ctx) => {
           retries={1}
         >
           {[
-            "Run preflight validation for the pending release and return only JSON that matches the runPreflight schema.",
+            "Run preflight validation for the pending release.",
             "",
             "Rollout plan:",
             JSON.stringify(releasePreparation?.rolloutPlan ?? [], null, 2),
+            "",
+            "Risks:",
+            JSON.stringify(releasePreparation?.risks ?? [], null, 2),
+            "",
+            "Return only JSON that matches the runPreflight schema.",
           ].join("\\n")}
         </Task>
 
@@ -358,10 +423,33 @@ export default smithers((ctx) => {
             "Release preparation:",
             String(releasePreparation?.summary ?? "No preparation summary available."),
             "",
+            "Rollback plan:",
+            JSON.stringify(releasePreparation?.rollbackPlan ?? [], null, 2),
+            "",
             "Preflight summary:",
             String(preflight?.summary ?? "Preflight did not complete."),
             "",
+            "Preflight evidence:",
+            JSON.stringify(preflight?.evidence ?? [], null, 2),
+            "",
             "Return only JSON that matches the deploy schema.",
+          ].join("\\n")}
+        </Task>
+
+        <Task id="summarize" output={outputs.summarize}>
+          {[
+            "Summarize the deployment outcome and next steps.",
+            "",
+            "Release summary:",
+            String(releasePreparation?.summary ?? "No release preparation summary available."),
+            "",
+            "Preflight blockers:",
+            JSON.stringify(preflight?.blockers ?? [], null, 2),
+            "",
+            "Deployment summary:",
+            String(deployment?.summary ?? "Deployment did not run."),
+            "",
+            "Return only JSON that matches the summarize schema.",
           ].join("\\n")}
         </Task>
       </Sequence>
