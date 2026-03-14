@@ -15,7 +15,7 @@ import { SmithersDb } from "../src/db/adapter";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { bash } from "../src/tools";
+import { bash, read } from "../src/tools";
 
 describe("docs: renderFrame", () => {
   test("renderFrame is pure and does not execute tasks", async () => {
@@ -271,6 +271,43 @@ describe("docs: runWorkflow", () => {
 
     const result = await runWorkflow(workflow, { input: {}, allowNetwork: false });
     expect(result.status).toBe("failed");
+    cleanup();
+  });
+
+  test("maxOutputBytes propagates to tool execution", async () => {
+    const root = mkdtempSync(join(tmpdir(), "smithers-max-bytes-"));
+    const bigPath = join(root, "big.txt");
+    await Bun.write(bigPath, "x".repeat(64));
+
+    const { smithers, outputs, cleanup } = createTestSmithers({
+      output: z.object({ value: z.number() }),
+    });
+
+    const agent: any = {
+      id: "max-bytes",
+      tools: { read },
+      async generate() {
+        await read.execute({ path: "big.txt" });
+        return { output: { value: 1 } };
+      },
+    };
+
+    const workflow = smithers(() => (
+      <Workflow name="max-bytes">
+        <Task id="read" output={outputs.output} agent={agent}>
+          Read file.
+        </Task>
+      </Workflow>
+    ));
+
+    const result = await runWorkflow(workflow, {
+      input: {},
+      rootDir: root,
+      maxOutputBytes: 16,
+    });
+    expect(result.status).toBe("failed");
+
+    rmSync(root, { recursive: true, force: true });
     cleanup();
   });
 
