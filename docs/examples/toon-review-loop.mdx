@@ -41,7 +41,7 @@ steps[4]:
     children[2]:
       - id: review
         agent: reviewer
-        prompt: "Review the following article for accuracy, clarity, and completeness.\n\nTitle: {draft.title}\nContent: {draft.content}\n\n{#if loop.iteration > 1}\nPrevious feedback was: {review.feedback}\nCheck if the issues were addressed.\n{/if}\n\nRespond with whether the article is approved and any remaining feedback."
+        prompt: "Review the following article for accuracy, clarity, and completeness.\n\nTitle: {draft.title}\nContent: {draft.content}\n\n{loop.iteration > 1 ? 'Previous feedback was: ' + review.feedback + '\nCheck if the issues were addressed.\n' : ''}Respond with whether the article is approved and any remaining feedback."
         output:
           approved: boolean
           feedback: string
@@ -87,7 +87,7 @@ smithers approve review-loop.toon --execution-id <id> --gate publish-gate --note
 - **`kind: loop`** repeats the review/revise cycle up to 3 times
 - **`until:`** stops the loop when the reviewer approves
 - **`skipIf:`** skips revision when the review is already approved
-- **`{#if loop.iteration > 1}`** adds context about previous feedback on subsequent iterations
+- **Ternary expression** conditionally adds previous feedback on subsequent iterations
 - **`kind: approval`** suspends execution for human review
 - **`onDeny: fail`** causes the workflow to fail if the approval is denied
 - **Durable state**: if the process restarts during the loop or while waiting for approval, Smithers resumes from persisted state

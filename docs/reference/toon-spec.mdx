@@ -257,16 +257,11 @@ Interpolation occurs inside `prompt:`, `request:`, `skipIf:`, `until:`, `conditi
 | `params.field` | `{params.content}` | Component parameter |
 | `loop.iteration` | `{loop.iteration}` | Current loop iteration (1-based) |
 | `id` | `{id}` | Caller id (inside components) |
+| Ternary | `{input.score > 7 ? 'good' : 'bad'}` | Conditional value |
+| Method call | `{input.tags.join(', ')}` | Result of method |
+| String concat | `{'Hello ' + input.name}` | Concatenated string |
 
-### Conditional Blocks
-
-```
-{#if expression}
-  content
-{/if}
-```
-
-The `expression` supports `==`, `!=`, `>`, `<`, `>=`, `<=`, and `&&`, `||` operators.
+Expressions inside `{}` are evaluated as JavaScript. All standard operators, ternaries, and method calls are supported.
 
 ## Duration Syntax
 

@@ -6263,16 +6263,32 @@ prompt: "Return a JSON object like {{key: value}}.\nThe input topic is {input.to
 
 `{{` becomes `{` and `}}` becomes `}` in the final prompt text.
 
-## Conditional Sections
+## Expressions
 
-Use `{#if}` blocks for conditional prompt sections:
+Interpolation braces `{...}` evaluate full JavaScript expressions — ternaries, method calls, and string concatenation all work:
 
 ```toon
 steps[1]:
   - id: fix
-    prompt: "Fix the bug described below.\n\n{#if input.priority == \"high\"}\nURGENT: This is a high-priority fix. Minimize the blast radius.\n{/if}\n\nDescription: {input.description}"
+    prompt: "Fix the bug described below.\n\n{input.priority == 'high' ? 'URGENT: This is a high-priority fix. Minimize the blast radius.\n' : ''}Description: {input.description}"
     output:
       patch: string
+```
+
+### Ternaries
+
+Use ternary expressions for conditional content:
+
+```toon
+prompt: "{input.tags.length > 0 ? 'Tags: ' + input.tags.join(', ') : 'No tags provided.'}"
+```
+
+### Method Calls
+
+Call methods on interpolated values:
+
+```toon
+prompt: "Keywords: {input.tags.join(', ')}\nTitle: {draft.title.toUpperCase()}"
 ```
 
 ## Referencing Loop State
@@ -6285,7 +6301,7 @@ steps[1]:
     until: "{review.approved}"
     children[1]:
       - id: review
-        prompt: "Review this content.\nThis is iteration {loop.iteration}.\n{#if loop.iteration > 1}\nPrevious feedback: {review.feedback}\n{/if}"
+        prompt: "Review this content.\nThis is iteration {loop.iteration}.\n{loop.iteration > 1 ? 'Previous feedback: ' + review.feedback : ''}"
         output:
           approved: boolean
           feedback: string
@@ -6313,7 +6329,7 @@ components:
 
 **Keep prompts focused.** Each step should have a single clear instruction. Split complex tasks across multiple steps.
 
-**Use interpolation for data, not logic.** If you need complex string manipulation, use an inline `run:` block to prepare the data, then reference its output in a downstream prompt.
+**Keep expressions readable.** Ternaries and method calls work inside `{}`, but if an expression gets complex, use an inline `run:` block to prepare the data and reference its output in a downstream prompt.
 
 **Leverage multi-line.** Use quoted strings with `\n` to write clear, well-structured multi-line prompts.
 
@@ -6893,7 +6909,7 @@ steps[4]:
     children[2]:
       - id: review
         agent: reviewer
-        prompt: "Review the following article for accuracy, clarity, and completeness.\n\nTitle: {draft.title}\nContent: {draft.content}\n\n{#if loop.iteration > 1}\nPrevious feedback was: {review.feedback}\nCheck if the issues were addressed.\n{/if}\n\nRespond with whether the article is approved and any remaining feedback."
+        prompt: "Review the following article for accuracy, clarity, and completeness.\n\nTitle: {draft.title}\nContent: {draft.content}\n\n{loop.iteration > 1 ? 'Previous feedback was: ' + review.feedback + '\nCheck if the issues were addressed.\n' : ''}Respond with whether the article is approved and any remaining feedback."
         output:
           approved: boolean
           feedback: string
@@ -6939,7 +6955,7 @@ smithers approve review-loop.toon --execution-id <id> --gate publish-gate --note
 - **`kind: loop`** repeats the review/revise cycle up to 3 times
 - **`until:`** stops the loop when the reviewer approves
 - **`skipIf:`** skips revision when the review is already approved
-- **`{#if loop.iteration > 1}`** adds context about previous feedback on subsequent iterations
+- **Ternary expression** conditionally adds previous feedback on subsequent iterations
 - **`kind: approval`** suspends execution for human review
 - **`onDeny: fail`** causes the workflow to fail if the approval is denied
 - **Durable state**: if the process restarts during the loop or while waiting for approval, Smithers resumes from persisted state
@@ -7342,16 +7358,11 @@ Interpolation occurs inside `prompt:`, `request:`, `skipIf:`, `until:`, `conditi
 | `params.field` | `{params.content}` | Component parameter |
 | `loop.iteration` | `{loop.iteration}` | Current loop iteration (1-based) |
 | `id` | `{id}` | Caller id (inside components) |
+| Ternary | `{input.score > 7 ? 'good' : 'bad'}` | Conditional value |
+| Method call | `{input.tags.join(', ')}` | Result of method |
+| String concat | `{'Hello ' + input.name}` | Concatenated string |
 
-### Conditional Blocks
-
-```
-{#if expression}
-  content
-{/if}
-```
-
-The `expression` supports `==`, `!=`, `>`, `<`, `>=`, `<=`, and `&&`, `||` operators.
+Expressions inside `{}` are evaluated as JavaScript. All standard operators, ternaries, and method calls are supported.
 
 ## Duration Syntax
 
