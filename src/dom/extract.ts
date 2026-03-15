@@ -262,11 +262,11 @@ export function extractFromHost(
         : undefined;
       const needs =
         raw.needs && typeof raw.needs === "object" && !Array.isArray(raw.needs)
-          ? Object.fromEntries(
+          ? (Object.fromEntries(
               Object.entries(raw.needs).filter(
                 ([, value]) => typeof value === "string",
               ),
-            )
+            ) as Record<string, string>)
           : undefined;
 
       const parallelGroup = nextParallelStack[nextParallelStack.length - 1];

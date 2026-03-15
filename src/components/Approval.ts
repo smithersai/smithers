@@ -18,12 +18,20 @@ export type ApprovalRequest = {
   metadata?: Record<string, unknown>;
 };
 
-export type ApprovalProps<Row = ApprovalDecision> = {
+/** Valid output targets for Approval: Zod schema, Drizzle table, or string key. */
+type OutputTarget = import("zod").ZodObject<any> | { $inferSelect: any } | string;
+
+export type ApprovalProps<Row = ApprovalDecision, Output extends OutputTarget = OutputTarget> = {
   id: string;
-  output: any;
+  /** Where to persist the approval decision. Pass a Zod schema from `outputs` (recommended), a Drizzle table, or a string key. */
+  output: Output;
   outputSchema?: import("zod").ZodObject<any>;
   request: ApprovalRequest;
   onDeny?: "fail" | "continue" | "skip";
+  /** Explicit dependency on other task node IDs. */
+  dependsOn?: string[];
+  /** Named dependencies on other tasks. Keys become context keys, values are task node IDs. */
+  needs?: Record<string, string>;
   skipIf?: boolean;
   timeoutMs?: number;
   retries?: number;

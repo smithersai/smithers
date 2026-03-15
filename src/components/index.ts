@@ -12,7 +12,7 @@ export type {
 } from "./Approval";
 
 export { Task } from "./Task";
-export type { TaskProps } from "./Task";
+export type { TaskProps, OutputTarget } from "./Task";
 
 export { Sequence } from "./Sequence";
 export type { SequenceProps } from "./Sequence";

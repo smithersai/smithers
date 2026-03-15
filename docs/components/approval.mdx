@@ -1,0 +1,122 @@
+---
+title: <Approval>
+description: A first-class JSX approval node that pauses durably and resolves to an ApprovalDecision value.
+---
+
+<Warning>
+  **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+</Warning>
+
+`<Approval>` is the explicit approval-node counterpart to `$.approval()` in the Effect builder and `kind: approval` in TOON.
+
+It pauses the workflow until a human approves or denies the node, then writes an `ApprovalDecision` row to the configured output table:
+
+```ts
+type ApprovalDecision = {
+  approved: boolean;
+  note: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+};
+```
+
+## Import
+
+```tsx
+import { Approval, approvalDecisionSchema } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | **(required)** | Stable node id. Must be unique within the workflow. |
+| `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to persist the `ApprovalDecision` output. Pass a Zod schema from `outputs` (recommended), a Drizzle table, or a string key. |
+| `outputSchema` | `z.ZodObject` | `approvalDecisionSchema` | Override the decision schema when using the manual DB API. |
+| `request` | `{ title: string; summary?: string; metadata?: Record<string, unknown> }` | **(required)** | Human-facing approval request metadata. `title` becomes the node label; `summary` and `metadata` are stored in task metadata. |
+| `onDeny` | `"fail" \| "continue" \| "skip"` | `"fail"` | What happens after a denial. `"continue"` and `"skip"` still persist a denial decision object. |
+| `skipIf` | `boolean` | `false` | Skip the approval node entirely. |
+| `label` | `string` | `request.title` | Optional display label override. |
+| `meta` | `Record<string, unknown>` | `undefined` | Additional metadata merged with `request.summary` / `request.metadata`. |
+
+## Schema-driven Example
+
+```tsx
+import {
+  Approval,
+  Sequence,
+  Task,
+  Workflow,
+  approvalDecisionSchema,
+  createSmithers,
+} from "smithers-orchestrator";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  publishApproval: approvalDecisionSchema,
+  publishResult: z.object({
+    status: z.enum(["published", "rejected"]),
+  }),
+});
+
+export default smithers((ctx) => {
+  const decision = ctx.outputMaybe(outputs.publishApproval, {
+    nodeId: "approve-publish",
+  });
+
+  return (
+    <Workflow name="publish-flow">
+      <Sequence>
+        <Approval
+          id="approve-publish"
+          output={outputs.publishApproval}
+          request={{
+            title: "Publish the draft?",
+            summary: "Human review is required before production publish.",
+            metadata: { channel: "blog" },
+          }}
+          onDeny="continue"
+        />
+
+        {decision ? (
+          <Task id="record-decision" output={outputs.publishResult}>
+            {{
+              status: decision.approved ? "published" : "rejected",
+            }}
+          </Task>
+        ) : null}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## Manual API Example
+
+When you use the lower-level manual JSX API, pass `outputSchema={approvalDecisionSchema}` if your `output` prop is a Drizzle table instead of a schema key.
+
+```tsx
+<Approval
+  id="approve-deploy"
+  output={deployApprovalTable}
+  outputSchema={approvalDecisionSchema}
+  request={{
+    title: "Deploy to production?",
+    summary: "Build 2026.03.15 passed all checks.",
+  }}
+/>
+```
+
+## Behavior
+
+- The workflow enters `waiting-approval` when the node is reached.
+- `smithers approve` or `smithers deny` updates the approval record durably.
+- On resume, the node resolves to a decision object and downstream JSX can branch on that value.
+- `onDeny="fail"` behaves like a hard gate.
+- `onDeny="continue"` lets you branch explicitly on `decision.approved`.
+
+## When to Use `<Approval>` vs `needsApproval`
+
+Use `<Approval>` when the approval is a real workflow node whose decision should be persisted as data and reused by downstream logic.
+
+Use `needsApproval` on `<Task>` when you only need a simple pause before the task runs and you do not need a separate decision value in the graph.

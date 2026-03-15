@@ -39,10 +39,13 @@ function computeSchemaSig(
   return parts.join("\n");
 }
 
+/** Union of all Zod schema values registered in the schema, constrained to ZodObject. */
+type SchemaOutput<Schema> = Extract<Schema[keyof Schema], z.ZodObject<any>>;
+
 export type CreateSmithersApi<Schema = any> = {
   Workflow: (props: WorkflowProps) => React.ReactElement;
-  Approval: <Row>(props: ApprovalProps<Row>) => React.ReactElement;
-  Task: <Row>(props: TaskProps<Row>) => React.ReactElement;
+  Approval: <Row>(props: ApprovalProps<Row, SchemaOutput<Schema>>) => React.ReactElement;
+  Task: <Row>(props: TaskProps<Row, SchemaOutput<Schema>>) => React.ReactElement;
   useCtx: () => SmithersCtx<Schema>;
   smithers: (
     build: (ctx: SmithersCtx<Schema>) => React.ReactElement,

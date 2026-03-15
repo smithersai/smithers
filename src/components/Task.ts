@@ -6,12 +6,20 @@ import type { AgentLike } from "../AgentLike";
 import type { CachePolicy } from "../CachePolicy";
 import type { RetryPolicy } from "../RetryPolicy";
 
-export type TaskProps<Row> = {
+/**
+ * Valid output targets: a Zod schema (recommended with createSmithers),
+ * a Drizzle table object, or a string key (escape hatch).
+ */
+export type OutputTarget = import("zod").ZodObject<any> | { $inferSelect: any } | string;
+
+export type TaskProps<Row, Output extends OutputTarget = OutputTarget> = {
   key?: string;
   id: string;
-  output: any;
+  /** Where to store the task's result. Pass a Zod schema from `outputs` (recommended), a Drizzle table, or a string key. */
+  output: Output;
   /**
    * Optional Zod schema describing the expected agent output shape.
+   * When `output` is already a ZodObject this is inferred automatically.
    * Used for validation and to inject schema examples into MDX prompts.
    */
   outputSchema?: import("zod").ZodObject<any>;
@@ -19,6 +27,10 @@ export type TaskProps<Row> = {
   agent?: AgentLike | AgentLike[];
   /** Convenience alias for a single retry fallback without exposing array syntax in JSX. */
   fallbackAgent?: AgentLike;
+  /** Explicit dependency on other task node IDs. The task will not run until all listed tasks complete. */
+  dependsOn?: string[];
+  /** Named dependencies on other tasks. Keys become context keys, values are task node IDs. */
+  needs?: Record<string, string>;
   skipIf?: boolean;
   needsApproval?: boolean;
   timeoutMs?: number;

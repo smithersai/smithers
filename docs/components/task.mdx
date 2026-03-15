@@ -13,6 +13,8 @@ description: A single executable node that produces output by calling an AI agen
 - **Compute mode** -- when children is a function (`() => Row` or `() => Promise<Row>`) and no `agent` is provided, the function is called at execution time and its return value is used as the output.
 - **Static mode** -- when children is a plain value and no `agent` is provided, children are treated as the literal output payload and written directly to the database.
 
+For simple human gates, `<Task needsApproval>` still works. When the approval should be an explicit node with its own decision output, use [`<Approval>`](/components/approval).
+
 ## Import
 
 ```tsx
@@ -24,9 +26,11 @@ import { Task } from "smithers-orchestrator";
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
 | `id` | `string` | **(required)** | Stable node identity. Must be unique within the workflow. Duplicate ids throw an error at render time. |
-| `output` | `Table \| string` | **(required)** | Where to store the task's result. Pass a Drizzle table object directly, or a string key that resolves via the schema registry. |
-| `outputSchema` | `z.ZodObject` | `undefined` | Optional Zod schema describing the expected agent output structure. When provided with a React element child, the schema example is auto-injected via a `schema` prop. |
+| `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to store the task's result. Pass a Zod schema from the `outputs` object (recommended), a Drizzle table, or a string key. When using `createSmithers`, this is type-checked against the registered schemas. |
+| `outputSchema` | `z.ZodObject` | `undefined` | Optional Zod schema describing the expected agent output structure. When `output` is already a Zod schema this is inferred automatically. When provided with a React element child, the schema example is auto-injected via a `schema` prop. |
 | `agent` | `AgentLike` | `undefined` | An AI SDK agent. When present, the task runs in agent mode and children become the prompt. |
+| `dependsOn` | `string[]` | `undefined` | Explicit dependency on other task node IDs. The task will not run until all listed tasks complete. |
+| `needs` | `Record<string, string>` | `undefined` | Named dependencies on other tasks. Keys become context keys, values are task node IDs. |
 | `key` | `string` | `undefined` | React key for the element (standard React prop). |
 | `skipIf` | `boolean` | `false` | When `true`, the task is skipped during execution. |
 | `needsApproval` | `boolean` | `false` | When `true`, the runtime pauses before executing and waits for approval. |
@@ -53,13 +57,13 @@ const codeAgent = new Agent({
 });
 
 // String prompt
-<Task id="analyze" output="analyze" agent={codeAgent}>
+<Task id="analyze" output={outputs.analyze} agent={codeAgent}>
   {`Analyze the codebase in ${ctx.input.repoPath}`}
 </Task>
 
 // MDX/JSX prompt (rendered to markdown)
-<Task id="review" output="review" agent={reviewAgent}>
-  <ReviewPrompt code={ctx.output("analyze", { nodeId: "analyze" }).code} />
+<Task id="review" output={outputs.review} agent={reviewAgent}>
+  <ReviewPrompt code={ctx.output(outputs.analyze, { nodeId: "analyze" }).code} />
 </Task>
 ```
 
@@ -76,9 +80,15 @@ const analysisSchema = z.object({
   files: z.array(z.string()),
 });
 
+// When `output` is a Zod schema, outputSchema is inferred automatically.
+<Task id="analyze" output={outputs.analysis} agent={codeAgent}>
+  <AnalysisPrompt repo={ctx.input.repoPath} />
+</Task>
+
+// You can still pass outputSchema explicitly to override:
 <Task
   id="analyze"
-  output="analyze"
+  output={outputs.analysis}
   agent={codeAgent}
   outputSchema={analysisSchema}
 >
@@ -96,12 +106,12 @@ The callback can be synchronous or asynchronous. All task props (`timeoutMs`, `r
 
 ```tsx
 // Sync callback
-<Task id="calculate" output="results">
+<Task id="calculate" output={outputs.results}>
   {() => ({ total: items.length, status: "complete" })}
 </Task>
 
 // Async callback — run shell commands
-<Task id="validate" output="validate" timeoutMs={30000} retries={1}>
+<Task id="validate" output={outputs.validate} timeoutMs={30000} retries={1}>
   {async () => {
     const testResult = await $`bun test`.quiet();
     const typeResult = await $`tsc --noEmit`.quiet();
@@ -121,14 +131,14 @@ When no `agent` prop is provided and children is not a function, children are tr
 
 ```tsx
 // Object payload
-<Task id="config" output="config">
+<Task id="config" output={outputs.config}>
   {{ environment: "production", debug: false }}
 </Task>
 
 // Computed payload from upstream output
-<Task id="summary" output="summary">
+<Task id="summary" output={outputs.summary}>
   {{
-    total: ctx.output("results", { nodeId: "results" }).count,
+    total: ctx.output(outputs.results, { nodeId: "results" }).count,
     status: "complete",
   }}
 </Task>
@@ -138,27 +148,67 @@ In static mode, the children value is stored as-is in the `staticPayload` field 
 
 ## Output resolution
 
-The `output` prop accepts two forms:
+The `output` prop accepts three forms:
+
+**Zod schema from `outputs` (recommended)** -- pass the schema reference returned by `createSmithers`. This is type-checked at compile time and the engine resolves it to the correct table via `zodToKeyName`.
+
+```tsx
+const { outputs } = createSmithers({ results: z.object({ done: z.boolean() }) });
+
+<Task id="step" output={outputs.results}>
+  {{ done: true }}
+</Task>
+```
 
 **Drizzle table object (manual API)** -- pass the table directly. The runtime calls `getTableName()` to determine the storage destination.
 
 ```tsx
-<Task id="step" output="myTable">
+<Task id="step" output={myDrizzleTable}>
   {{ done: true }}
 </Task>
 ```
 
-**String key (schema-driven API)** -- pass a string that matches a key in the schema registry. The engine resolves the string to the corresponding table at execution time.
+**String key (escape hatch)** -- pass a string that matches a key in the schema registry. The engine resolves the string to the corresponding table at execution time. This form is not type-checked and should be avoided in favor of schema references.
 
 ```tsx
-<Task id="step" output="myTable">
+<Task id="step" output="results">
   {{ done: true }}
 </Task>
 ```
 
-Both forms are equivalent when the schema is set up correctly. The string form is more concise and works well with schema-driven workflows.
-
 ## Full example
+
+### Schema-driven (recommended)
+
+```tsx
+import { createSmithers, Workflow, Task, Sequence } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: z.object({ summary: z.string() }),
+  setup: z.object({ files: z.array(z.string()) }),
+});
+
+const codeAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a senior software engineer.",
+});
+
+export default smithers((ctx) => (
+  <Workflow name="tasks-demo">
+    <Task id="analyze" output={outputs.analysis} agent={codeAgent}>
+      {`Analyze: ${ctx.input.description}`}
+    </Task>
+    <Task id="setup" output={outputs.setup}>
+      {{ files: ["README.md", "package.json"] }}
+    </Task>
+  </Workflow>
+));
+```
+
+### Manual Drizzle tables
 
 ```tsx
 import { smithers, Workflow, Task, Sequence } from "smithers-orchestrator";
@@ -166,11 +216,6 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
-
-const inputTable = sqliteTable("input", {
-  runId: text("run_id").primaryKey(),
-  description: text("description").notNull(),
-});
 
 const analyzeTable = sqliteTable(
   "analyze",
@@ -196,14 +241,7 @@ const setupTable = sqliteTable(
   }),
 );
 
-const schema = {
-  input: inputTable,
-  output: analyzeTable,
-  analyze: analyzeTable,
-  setup: setupTable,
-};
-
-const db = drizzle("./workflow.db", { schema });
+const db = drizzle("./workflow.db", { schema: { analyze: analyzeTable, setup: setupTable } });
 
 const codeAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
@@ -212,10 +250,10 @@ const codeAgent = new Agent({
 
 export default smithers(db, (ctx) => (
   <Workflow name="tasks-demo">
-    <Task id="analyze" output="analyze" agent={codeAgent}>
+    <Task id="analyze" output={analyzeTable} agent={codeAgent}>
       {`Analyze: ${ctx.input.description}`}
     </Task>
-    <Task id="setup" output="setup">
+    <Task id="setup" output={setupTable}>
       {{ files: ["README.md", "package.json"] }}
     </Task>
   </Workflow>
