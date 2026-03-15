@@ -58,11 +58,10 @@ agents:
 input:
   name: string
 
-steps:
+steps[1]:
   - id: greet
     agent: assistant
-    prompt: |
-      Say hello to {input.name}.
+    prompt: "Say hello to {input.name}."
     output:
       message: string
 ```
@@ -102,10 +101,10 @@ Then reference them from your `.toon` file:
 
 ```toon
 imports:
-  plugins:
-    - from: "smithers-plugin-anthropic"
+  plugins[1]:
+    - from: smithers-plugin-anthropic
       config:
-        defaultModel: "claude-sonnet-4-20250514"
+        defaultModel: claude-sonnet-4-20250514
 ```
 
 Plugins are loaded when Smithers compiles the `.toon` file. They can register providers, node kinds, interpolation helpers, and supporting services.

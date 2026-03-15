@@ -28,14 +28,13 @@ This compiles to the same `Schema` validation as the Effect builder API. Invalid
 Each step declares its output shape inline:
 
 ```toon
-steps:
+steps[1]:
   - id: analyze
-    prompt: |
-      Analyze this bug: {input.description}
+    prompt: "Analyze this bug: {input.description}"
     output:
       summary: string
       severity: "low" | "medium" | "high"
-      affectedFiles: string[]
+      affectedFiles: "string[]"
 ```
 
 Smithers generates a persisted `Model` from this declaration and manages the SQLite storage automatically.
@@ -51,7 +50,7 @@ TOON supports these field types:
 | Boolean | `boolean` | `Schema.Boolean` |
 | String literal | `"value"` | `Schema.Literal("value")` |
 | Union literal | `"a" \| "b" \| "c"` | `Schema.Literal("a", "b", "c")` |
-| Array | `string[]` | `Schema.Array(Schema.String)` |
+| Array | `"string[]"` | `Schema.Array(Schema.String)` |
 | Optional | `string?` | `Schema.optional(Schema.String)` |
 | Object | nested block | nested `Schema.Struct` |
 
@@ -60,13 +59,12 @@ TOON supports these field types:
 Nest objects by indenting:
 
 ```toon
-steps:
+steps[1]:
   - id: plan
-    prompt: |
-      Create a fix plan for: {input.description}
+    prompt: "Create a fix plan for: {input.description}"
     output:
       plan:
-        steps: string[]
+        steps: "string[]"
         estimatedHours: number
         risk: "low" | "medium" | "high"
       metadata:
@@ -83,7 +81,7 @@ input:
   ticketId: string
   description: string
   assignee: string?
-  labels: string[]?
+  labels: "string[]?"
 ```
 
 Optional fields compile to `Schema.optional(...)` and are `undefined` when not provided.
@@ -94,17 +92,16 @@ For complex or shared schemas, import them from TypeScript:
 
 ```toon
 imports:
-  schemas:
-    - from: "./schemas.ts"
-      use: [TicketInput, AnalysisOutput]
+  schemas[1]:
+    - from: ./schemas.ts
+      use[2]: TicketInput,AnalysisOutput
 
 name: bugfix
 input: TicketInput
 
-steps:
+steps[1]:
   - id: analyze
-    prompt: |
-      Analyze: {input.description}
+    prompt: "Analyze: {input.description}"
     output: AnalysisOutput
 ```
 
@@ -136,15 +133,13 @@ schemas:
     approved: boolean
     feedback: string
 
-steps:
+steps[2]:
   - id: initial-review
-    prompt: |
-      Review the initial draft.
+    prompt: "Review the initial draft."
     output: Review
 
   - id: final-review
-    prompt: |
-      Review the final draft.
+    prompt: "Review the final draft."
     output: Review
 ```
 
@@ -155,10 +150,9 @@ Smithers tracks step identity separately from model identity, so two steps can s
 Use `[]` suffix on an object type:
 
 ```toon
-steps:
+steps[1]:
   - id: find-bugs
-    prompt: |
-      Find all bugs in {input.repo}.
+    prompt: "Find all bugs in {input.repo}."
     output:
       bugs:
         - file: string

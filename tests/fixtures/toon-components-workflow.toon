@@ -1,33 +1,23 @@
 imports:
-  components:
-    - from: "./toon-components-lib.toon"
-      use: [Summarize]
-
+  components[1]:
+    - from: ./toon-components-lib.toon
+      use[1]: Summarize
 name: component-workflow
-
 input:
   brief: string
-
-steps:
+steps[3]:
   - id: draft
-    run: |
-      return { content: `${input.brief} -- draft` };
+    run: "return { content: `${input.brief} -- draft` };\n"
     output:
       content: string
-
   - id: synopsis
     kind: component
     use: Summarize
     with:
       text: "{draft.content}"
-
   - id: finalize
-    needs: [synopsis_summary, synopsis_tags]
-    run: |
-      return {
-        summary: synopsis_summary.summary,
-        tags: synopsis_tags.tags,
-      };
+    needs[2]: synopsis_summary,synopsis_tags
+    run: "return {\n  summary: synopsis_summary.summary,\n  tags: synopsis_tags.tags,\n};\n"
     output:
       summary: string
-      tags: string[]
+      tags: "string[]"

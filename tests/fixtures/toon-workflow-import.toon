@@ -1,23 +1,17 @@
 imports:
-  workflows:
-    - from: "./toon-subworkflow.toon"
-      as: research
-
+  workflows[1]{from,as}:
+    ./toon-subworkflow.toon,research
 name: toon-workflow-import
-
 input:
   topic: string
-
-steps:
+steps[2]:
   - id: do_research
     kind: workflow
     use: research
     input:
       topic: "{input.topic}"
-
   - id: report
-    needs: [do_research]
-    run: |
-      return { report: `Report: ${do_research.summary}` };
+    needs[1]: do_research
+    run: "return { report: `Report: ${do_research.summary}` };\n"
     output:
       report: string

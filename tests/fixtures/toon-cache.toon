@@ -1,14 +1,12 @@
 name: toon-cache
-
 input:
   key: string
-
-steps:
+steps[1]:
   - id: compute
-    handler: "./toon-cache-handler.ts#compute"
+    handler: ./toon-cache-handler.ts#compute
     output:
       count: number
       key: string
     cache:
-      by: [input.key]
-      version: "v1"
+      by[1]: input.key
+      version: v1

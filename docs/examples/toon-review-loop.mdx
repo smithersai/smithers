@@ -25,18 +25,10 @@ input:
   topic: string
   targetAudience: string
 
-steps:
+steps[4]:
   - id: draft
     agent: writer
-    prompt: |
-      Write a technical article about {input.topic}
-      for {input.targetAudience}.
-
-      Include:
-      - Introduction
-      - Key concepts
-      - Practical examples
-      - Conclusion
+    prompt: "Write a technical article about {input.topic}\nfor {input.targetAudience}.\n\nInclude:\n- Introduction\n- Key concepts\n- Practical examples\n- Conclusion"
     output:
       title: string
       content: string
@@ -46,21 +38,10 @@ steps:
     maxIterations: 3
     until: "{review.approved} == true"
     onMaxReached: return-last
-    children:
+    children[2]:
       - id: review
         agent: reviewer
-        prompt: |
-          Review the following article for accuracy, clarity, and completeness.
-
-          Title: {draft.title}
-          Content: {draft.content}
-
-          {#if loop.iteration > 1}
-          Previous feedback was: {review.feedback}
-          Check if the issues were addressed.
-          {/if}
-
-          Respond with whether the article is approved and any remaining feedback.
+        prompt: "Review the following article for accuracy, clarity, and completeness.\n\nTitle: {draft.title}\nContent: {draft.content}\n\n{#if loop.iteration > 1}\nPrevious feedback was: {review.feedback}\nCheck if the issues were addressed.\n{/if}\n\nRespond with whether the article is approved and any remaining feedback."
         output:
           approved: boolean
           feedback: string
@@ -68,12 +49,7 @@ steps:
 
       - id: revise
         agent: writer
-        prompt: |
-          Revise this article based on the review feedback.
-
-          Original: {draft.content}
-          Feedback: {review.feedback}
-          Score: {review.score}/10
+        prompt: "Revise this article based on the review feedback.\n\nOriginal: {draft.content}\nFeedback: {review.feedback}\nScore: {review.score}/10"
         output:
           title: string
           content: string
@@ -83,18 +59,12 @@ steps:
     id: publish-gate
     request:
       title: "Publish '{draft.title}'?"
-      summary: |
-        Review score: {review.score}/10
-        Iterations: {loop.iteration}
+      summary: "Review score: {review.score}/10\nIterations: {loop.iteration}"
     onDeny: fail
 
   - id: publish
-    needs: [publish-gate]
-    run: |
-      return {
-        url: `https://blog.example.com/${draft.title.toLowerCase().replace(/ /g, '-')}`,
-        publishedAt: new Date().toISOString(),
-      };
+    needs[1]: publish-gate
+    run: "return {\n  url: `https://blog.example.com/${draft.title.toLowerCase().replace(/ /g, '-')}`,\n  publishedAt: new Date().toISOString(),\n};"
     output:
       url: string
       publishedAt: string

@@ -17,12 +17,10 @@ agents:
     subscription: true
     instructions: You are a senior software engineer.
 
-steps:
+steps[1]:
   - id: analyze
     agent: coder
-    prompt: |
-      Analyze the bug described below.
-      Description: {input.description}
+    prompt: "Analyze the bug described below.\nDescription: {input.description}"
     output:
       summary: string
       severity: "low" | "medium" | "high"
@@ -49,10 +47,9 @@ Steps execute sequentially by default (top to bottom). A step can reference outp
 ### Retry Policy
 
 ```toon
-steps:
+steps[1]:
   - id: flaky-api
-    prompt: |
-      Call the external API.
+    prompt: "Call the external API."
     output:
       result: string
     retry:
@@ -64,10 +61,9 @@ steps:
 ### Timeout
 
 ```toon
-steps:
+steps[1]:
   - id: slow-step
-    prompt: |
-      Process a large dataset.
+    prompt: "Process a large dataset."
     output:
       status: string
     timeout: 5m
@@ -78,11 +74,11 @@ steps:
 Steps are sequential by default. Use an explicit `sequence` node when you need to group steps inside a `parallel` block:
 
 ```toon
-steps:
+steps[1]:
   - kind: parallel
-    children:
+    children[2]:
       - kind: sequence
-        children:
+        children[2]:
           - id: step-a
             prompt: Do A.
             output:
@@ -102,9 +98,9 @@ steps:
 Execute steps concurrently:
 
 ```toon
-steps:
+steps[2]:
   - kind: parallel
-    children:
+    children[2]:
       - id: research-web
         prompt: Search the web for {input.topic}.
         output:
@@ -116,10 +112,7 @@ steps:
           findings: string
 
   - id: combine
-    prompt: |
-      Combine these findings:
-      Web: {research-web.findings}
-      Docs: {research-docs.findings}
+    prompt: "Combine these findings:\nWeb: {research-web.findings}\nDocs: {research-docs.findings}"
     output:
       summary: string
 ```
@@ -127,10 +120,10 @@ steps:
 ### Concurrency Limit
 
 ```toon
-steps:
+steps[1]:
   - kind: parallel
     maxConcurrency: 2
-    children:
+    children[3]:
       - id: task-1
         # ...
       - id: task-2
@@ -144,7 +137,7 @@ steps:
 Repeat steps until a condition is met:
 
 ```toon
-steps:
+steps[2]:
   - id: draft
     prompt: Write a first draft about {input.topic}.
     output:
@@ -154,19 +147,15 @@ steps:
     id: review-loop
     maxIterations: 5
     until: "{review.approved} == true"
-    children:
+    children[2]:
       - id: review
-        prompt: |
-          Review this draft:
-          {draft.content}
+        prompt: "Review this draft:\n{draft.content}"
         output:
           approved: boolean
           feedback: string
 
       - id: revise
-        prompt: |
-          Revise the draft based on feedback:
-          {review.feedback}
+        prompt: "Revise the draft based on feedback:\n{review.feedback}"
         output:
           content: string
         skipIf: "{review.approved}"
@@ -187,7 +176,7 @@ steps:
 Suspend execution for human review:
 
 ```toon
-steps:
+steps[3]:
   - id: build
     prompt: Build the deployment package.
     output:
@@ -196,14 +185,14 @@ steps:
 
   - kind: approval
     id: approve-deploy
-    needs: [build]
+    needs[1]: build
     request:
       title: "Deploy {build.version}?"
       summary: "Commit {build.commitSha} passed all checks."
     onDeny: fail
 
   - id: deploy
-    needs: [build, approve-deploy]
+    needs[2]: build,approve-deploy
     prompt: Deploy version {build.version}.
     output:
       url: string
@@ -223,7 +212,7 @@ steps:
 Choose between paths based on a condition:
 
 ```toon
-steps:
+steps[2]:
   - id: classify
     prompt: Classify the severity of {input.description}.
     output:
@@ -231,12 +220,12 @@ steps:
 
   - kind: branch
     condition: "{classify.severity} == 'high'"
-    then:
+    then[1]:
       - id: escalate
         prompt: Escalate to senior engineer.
         output:
           action: string
-    else:
+    else[1]:
       - id: auto-fix
         prompt: Generate an automated fix.
         output:
@@ -248,15 +237,14 @@ steps:
 Execute steps in an isolated JJ worktree:
 
 ```toon
-steps:
+steps[1]:
   - kind: worktree
     path: ./feature-branch
-    children:
+    children[1]:
       - id: implement
-        prompt: |
-          Implement the feature described in {input.spec}.
+        prompt: "Implement the feature described in {input.spec}."
         output:
-          files: string[]
+          files: "string[]"
           summary: string
 ```
 
@@ -267,18 +255,18 @@ The worktree is created before the children execute and cleaned up after.
 Node kinds can be nested freely:
 
 ```toon
-steps:
+steps[1]:
   - kind: parallel
-    children:
+    children[2]:
       - kind: sequence
-        children:
+        children[2]:
           - id: a
             prompt: Do A.
             output:
               result: string
           - kind: loop
             until: "{check.done}"
-            children:
+            children[1]:
               - id: check
                 prompt: Check status.
                 output:

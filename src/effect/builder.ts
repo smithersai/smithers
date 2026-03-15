@@ -16,7 +16,7 @@ import {
 } from "effect";
 import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import React from "react";
-import { parse as parseYaml } from "yaml";
+import { decode as parseToon } from "@toon-format/toon";
 import type { AgentLike } from "../AgentLike";
 import type { CachePolicy } from "../CachePolicy";
 import type { RetryPolicy } from "../RetryPolicy";
@@ -1740,7 +1740,10 @@ async function buildAgentFromConfig(name: string, config: Record<string, any>): 
   }
   switch (type) {
     case "anthropic":
-      return new AnthropicAgent(opts);
+      if (!opts.model) {
+        throw new Error(`Agent "${name}" (type: anthropic) requires "model"`);
+      }
+      return new AnthropicAgent(opts as any);
     case "claude-code":
       return new ClaudeCodeAgent(opts);
     case "codex":
@@ -1748,7 +1751,10 @@ async function buildAgentFromConfig(name: string, config: Record<string, any>): 
     case "gemini":
       return new GeminiAgent(opts);
     case "openai":
-      return new OpenAIAgent(opts);
+      if (!opts.model) {
+        throw new Error(`Agent "${name}" (type: openai) requires "model"`);
+      }
+      return new OpenAIAgent(opts as any);
     case "pi":
       return new PiAgent(opts);
     case "kimi":
@@ -1942,7 +1948,7 @@ async function loadToonModule(absPath: string): Promise<{
   if (cached) return cached;
   const promise = (async () => {
     const rawText = readFileSync(absPath, "utf8");
-    const data = parseYaml(rawText);
+    const data = parseToon(rawText);
     if (!isRecord(data)) {
       throw new Error(`Invalid TOON file: ${absPath}`);
     }
@@ -2437,7 +2443,7 @@ async function compileToon(absPath: string): Promise<{
   pluginLayers: Layer<never, never, never>[];
 }> {
   const rawText = readFileSync(absPath, "utf8");
-  const data = parseYaml(rawText);
+  const data = parseToon(rawText);
   if (!isRecord(data)) {
     throw new Error(`Invalid TOON file: ${absPath}`);
   }

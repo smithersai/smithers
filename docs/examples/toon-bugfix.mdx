@@ -9,9 +9,9 @@ A multi-step bugfix workflow that imports schemas from TypeScript and uses inlin
 
 ```toon
 imports:
-  schemas:
-    - from: "./schemas.ts"
-      use: [TicketInput]
+  schemas[1]:
+    - from: ./schemas.ts
+      use[1]: TicketInput
 
 name: bugfix
 agents:
@@ -23,62 +23,33 @@ agents:
 
 input: TicketInput
 
-steps:
+steps[4]:
   - id: fetch-context
-    run: |
-      const response = await fetch(
-        `https://api.linear.app/tickets/${input.ticketId}`,
-        { headers: { Authorization: `Bearer ${process.env.LINEAR_API_KEY}` } }
-      );
-      const data = await response.json();
-      return {
-        title: data.title,
-        body: data.description,
-        labels: data.labels.map(l => l.name),
-      };
+    run: "const response = await fetch(\n  `https://api.linear.app/tickets/${input.ticketId}`,\n  { headers: { Authorization: `Bearer ${process.env.LINEAR_API_KEY}` } }\n);\nconst data = await response.json();\nreturn {\n  title: data.title,\n  body: data.description,\n  labels: data.labels.map(l => l.name),\n};"
     output:
       title: string
       body: string
-      labels: string[]
+      labels: "string[]"
 
   - id: analyze
     agent: coder
-    prompt: |
-      You are a senior software engineer.
-
-      Analyze the following bug report and identify the root cause,
-      affected systems, and suggested fix approach.
-
-      Title: {fetch-context.title}
-      Description: {fetch-context.body}
-      Labels: {fetch-context.labels}
-
-      Original report: {input.description}
+    prompt: "You are a senior software engineer.\n\nAnalyze the following bug report and identify the root cause,\naffected systems, and suggested fix approach.\n\nTitle: {fetch-context.title}\nDescription: {fetch-context.body}\nLabels: {fetch-context.labels}\n\nOriginal report: {input.description}"
     output:
       rootCause: string
-      affectedFiles: string[]
+      affectedFiles: "string[]"
       severity: "low" | "medium" | "high"
       suggestedApproach: string
 
   - id: generate-fix
     agent: coder
-    prompt: |
-      Based on this analysis, generate a code fix.
-
-      Root cause: {analyze.rootCause}
-      Affected files: {analyze.affectedFiles}
-      Approach: {analyze.suggestedApproach}
+    prompt: "Based on this analysis, generate a code fix.\n\nRoot cause: {analyze.rootCause}\nAffected files: {analyze.affectedFiles}\nApproach: {analyze.suggestedApproach}"
     output:
       patch: string
       explanation: string
-      testSuggestions: string[]
+      testSuggestions: "string[]"
 
   - id: format-output
-    run: |
-      return {
-        summary: `## ${fetch-context.title}\n\n**Severity:** ${analyze.severity}\n\n**Root Cause:** ${analyze.rootCause}\n\n**Fix:**\n\`\`\`\n${generate-fix.patch}\n\`\`\`\n\n${generate-fix.explanation}`,
-        filesChanged: analyze.affectedFiles.length,
-      };
+    run: "return {\n  summary: `## ${fetch-context.title}\\n\\n**Severity:** ${analyze.severity}\\n\\n**Root Cause:** ${analyze.rootCause}\\n\\n**Fix:**\\n\\`\\`\\`\\n${generate-fix.patch}\\n\\`\\`\\`\\n\\n${generate-fix.explanation}`,\n  filesChanged: analyze.affectedFiles.length,\n};"
     output:
       summary: string
       filesChanged: number

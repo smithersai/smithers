@@ -12,7 +12,7 @@ Prompts are the core of most TOON workflows. The `prompt:` field on a step defin
 ## Basic Prompt
 
 ```toon
-steps:
+steps[1]:
   - id: greet
     prompt: Say hello to {input.name}.
     output:
@@ -21,28 +21,19 @@ steps:
 
 ## Multi-line Prompts
 
-Use YAML's `|` (literal block) syntax for multi-line prompts:
+Multi-line prompts in TOON are written as quoted strings with `\n` escape sequences for newlines:
 
 ```toon
-steps:
+steps[1]:
   - id: analyze
-    prompt: |
-      You are a senior software engineer.
-
-      Analyze the following bug report and identify:
-      1. Root cause
-      2. Affected systems
-      3. Suggested fix
-
-      Bug report:
-      {input.description}
+    prompt: "You are a senior software engineer.\n\nAnalyze the following bug report and identify:\n1. Root cause\n2. Affected systems\n3. Suggested fix\n\nBug report:\n{input.description}"
     output:
       rootCause: string
-      affectedSystems: string[]
+      affectedSystems: "string[]"
       suggestedFix: string
 ```
 
-The `|` preserves newlines. Each line is included exactly as written.
+The `\n` sequences are converted to newlines when the prompt is sent to the agent.
 
 ## Interpolation
 
@@ -51,26 +42,19 @@ Use `{expression}` to inject values into prompts:
 ### Workflow Input
 
 ```toon
-prompt: |
-  Research the topic: {input.topic}
-  Priority: {input.priority}
+prompt: "Research the topic: {input.topic}\nPriority: {input.priority}"
 ```
 
 ### Upstream Step Outputs
 
 ```toon
-prompt: |
-  Based on the analysis:
-  Summary: {analyze.summary}
-  Severity: {analyze.severity}
+prompt: "Based on the analysis:\nSummary: {analyze.summary}\nSeverity: {analyze.severity}"
 ```
 
 ### Nested Fields
 
 ```toon
-prompt: |
-  Deploy to {config.deployment.environment}
-  Region: {config.deployment.region}
+prompt: "Deploy to {config.deployment.environment}\nRegion: {config.deployment.region}"
 ```
 
 ### Array Values
@@ -78,18 +62,13 @@ prompt: |
 Arrays are interpolated as comma-separated values by default:
 
 ```toon
-prompt: |
-  The key points are: {research.keyPoints}
+prompt: "The key points are: {research.keyPoints}"
 ```
 
 For more control, reference individual items or use them in a list context:
 
 ```toon
-prompt: |
-  Key findings:
-  {research.keyPoints}
-
-  Please elaborate on each point above.
+prompt: "Key findings:\n{research.keyPoints}\n\nPlease elaborate on each point above."
 ```
 
 ## Escaping Braces
@@ -97,9 +76,7 @@ prompt: |
 Use double braces to output a literal brace:
 
 ```toon
-prompt: |
-  Return a JSON object like {{key: value}}.
-  The input topic is {input.topic}.
+prompt: "Return a JSON object like {{key: value}}.\nThe input topic is {input.topic}."
 ```
 
 `{{` becomes `{` and `}}` becomes `}` in the final prompt text.
@@ -109,16 +86,9 @@ prompt: |
 Use `{#if}` blocks for conditional prompt sections:
 
 ```toon
-steps:
+steps[1]:
   - id: fix
-    prompt: |
-      Fix the bug described below.
-
-      {#if input.priority == "high"}
-      URGENT: This is a high-priority fix. Minimize the blast radius.
-      {/if}
-
-      Description: {input.description}
+    prompt: "Fix the bug described below.\n\n{#if input.priority == \"high\"}\nURGENT: This is a high-priority fix. Minimize the blast radius.\n{/if}\n\nDescription: {input.description}"
     output:
       patch: string
 ```
@@ -128,17 +98,12 @@ steps:
 Inside a loop, reference the current iteration's data:
 
 ```toon
-steps:
+steps[1]:
   - kind: loop
     until: "{review.approved}"
-    children:
+    children[1]:
       - id: review
-        prompt: |
-          Review this content.
-          This is iteration {loop.iteration}.
-          {#if loop.iteration > 1}
-          Previous feedback: {review.feedback}
-          {/if}
+        prompt: "Review this content.\nThis is iteration {loop.iteration}.\n{#if loop.iteration > 1}\nPrevious feedback: {review.feedback}\n{/if}"
         output:
           approved: boolean
           feedback: string
@@ -154,11 +119,9 @@ components:
     params:
       content: string
       role: string
-    steps:
+    steps[1]:
       - id: "{id}-review"
-        prompt: |
-          You are {params.role}.
-          Review: {params.content}
+        prompt: "You are {params.role}.\nReview: {params.content}"
         output:
           approved: boolean
           feedback: string
@@ -170,19 +133,16 @@ components:
 
 **Use interpolation for data, not logic.** If you need complex string manipulation, use an inline `run:` block to prepare the data, then reference its output in a downstream prompt.
 
-**Leverage multi-line.** The `|` syntax makes prompts readable. Avoid cramming everything onto one line.
+**Leverage multi-line.** Use quoted strings with `\n` to write clear, well-structured multi-line prompts.
 
 **Reference specific fields.** Instead of passing an entire object, reference the specific fields the model needs:
 
 ```toon
 # Prefer this
-prompt: |
-  Summary: {analysis.summary}
-  Severity: {analysis.severity}
+prompt: "Summary: {analysis.summary}\nSeverity: {analysis.severity}"
 
 # Over this
-prompt: |
-  Analysis: {analysis}
+prompt: "Analysis: {analysis}"
 ```
 
 ## Next Steps

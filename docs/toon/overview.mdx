@@ -7,7 +7,7 @@ TOON is the primary way to define Smithers workflows. A `.toon` file is a declar
 
 ## What Is a TOON File?
 
-A `.toon` file describes a workflow as structured YAML-like blocks with embedded prompts and optional inline TypeScript. Smithers compiles it into a typed workflow graph at build time.
+A `.toon` file describes a workflow as structured TOON blocks with embedded prompts and optional inline TypeScript. Smithers compiles it into a typed workflow graph at build time.
 
 ```toon
 name: hello-world
@@ -21,12 +21,10 @@ agents:
 input:
   greeting: string
 
-steps:
+steps[1]:
   - id: greet
     agent: assistant
-    prompt: |
-      Say hello to the user.
-      Their greeting was: {input.greeting}
+    prompt: "Say hello to the user.\nTheir greeting was: {input.greeting}"
     output:
       message: string
 ```
@@ -77,22 +75,17 @@ agents:
 input:
   topic: string
 
-steps:
+steps[2]:
   - id: research
     agent: researcher
-    prompt: |
-      Research the following topic and provide a summary with key points.
-      Topic: {input.topic}
+    prompt: "Research the following topic and provide a summary with key points.\nTopic: {input.topic}"
     output:
       summary: string
-      keyPoints: string[]
+      keyPoints: "string[]"
 
   - id: report
     agent: writer
-    prompt: |
-      Write a report based on this research.
-      Summary: {research.summary}
-      Key points: {research.keyPoints}
+    prompt: "Write a report based on this research.\nSummary: {research.summary}\nKey points: {research.keyPoints}"
     output:
       title: string
       body: string
@@ -110,9 +103,9 @@ Steps execute sequentially by default. TOON supports the same control flow primi
 Run steps concurrently with `kind: parallel`:
 
 ```toon
-steps:
+steps[2]:
   - kind: parallel
-    children:
+    children[2]:
       - id: research-web
         agent: researcher
         prompt: Search the web for {input.topic}.
@@ -127,10 +120,7 @@ steps:
 
   - id: combine
     agent: writer
-    prompt: |
-      Combine findings:
-      Web: {research-web.findings}
-      Docs: {research-docs.findings}
+    prompt: "Combine findings:\nWeb: {research-web.findings}\nDocs: {research-docs.findings}"
     output:
       summary: string
 ```
@@ -142,7 +132,7 @@ This is the TOON equivalent of `<Parallel>` in JSX or `$.parallel()` in the Effe
 Repeat steps until a condition is met with `kind: loop` (equivalent to `<Loop>` in JSX):
 
 ```toon
-steps:
+steps[2]:
   - id: draft
     agent: writer
     prompt: Write a first draft about {input.topic}.
@@ -153,19 +143,17 @@ steps:
     id: review-cycle
     maxIterations: 5
     until: "{review.approved} == true"
-    children:
+    children[2]:
       - id: review
         agent: reviewer
-        prompt: |
-          Review this draft: {draft.content}
+        prompt: "Review this draft: {draft.content}"
         output:
           approved: boolean
           feedback: string
 
       - id: revise
         agent: writer
-        prompt: |
-          Revise based on feedback: {review.feedback}
+        prompt: "Revise based on feedback: {review.feedback}"
         output:
           content: string
         skipIf: "{review.approved}"
@@ -176,7 +164,7 @@ steps:
 Choose between paths with `kind: branch` (equivalent to `<Branch>` in JSX):
 
 ```toon
-steps:
+steps[2]:
   - id: triage
     agent: coder
     prompt: Classify the severity of this issue.
@@ -185,13 +173,13 @@ steps:
 
   - kind: branch
     condition: "{triage.severity} == 'high'"
-    then:
+    then[1]:
       - id: escalate
         agent: coder
         prompt: Escalate to senior engineer.
         output:
           action: string
-    else:
+    else[1]:
       - id: auto-fix
         agent: coder
         prompt: Generate an automated fix.
@@ -204,7 +192,7 @@ steps:
 Suspend execution for human review with `kind: approval`:
 
 ```toon
-steps:
+steps[3]:
   - id: build
     agent: coder
     prompt: Build the deployment package.
@@ -219,9 +207,8 @@ steps:
     onDeny: fail
 
   - id: deploy
-    needs: [approve-deploy]
-    run: |
-      return { url: "https://app.example.com", deployedAt: new Date().toISOString() };
+    needs[1]: approve-deploy
+    run: "return { url: \"https://app.example.com\", deployedAt: new Date().toISOString() };"
     output:
       url: string
       deployedAt: string
@@ -262,7 +249,7 @@ agents:
     model: claude-opus-4-6
     subscription: true
     instructions: You are a thorough code reviewer.
-    tools: [read, grep]
+    tools[2]: read,grep
 
   fast-coder:
     type: codex
@@ -279,12 +266,12 @@ Each agent has:
 ### Using agents in steps
 
 ```toon
-steps:
+steps[2]:
   - id: implement
     agent: coder
     prompt: Implement the feature described in {input.spec}.
     output:
-      files: string[]
+      files: "string[]"
 
   - id: review
     agent: reviewer
@@ -302,9 +289,9 @@ You can also import agents defined in TypeScript:
 
 ```toon
 imports:
-  agents:
-    - from: "./agents.ts"
-      use: [coder, reviewer]
+  agents[1]:
+    - from: ./agents.ts
+      use[2]: coder,reviewer
 ```
 
 This lets you share agent configurations across workflows or use agents with custom setup that can't be expressed in TOON syntax.

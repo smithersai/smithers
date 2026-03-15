@@ -11,14 +11,14 @@ Import `Schema.Class` or `Model.Class` definitions for use as input or output ty
 
 ```toon
 imports:
-  schemas:
-    - from: "./schemas.ts"
-      use: [TicketInput, AnalysisOutput, ReviewOutput]
+  schemas[1]:
+    - from: ./schemas.ts
+      use[3]: TicketInput,AnalysisOutput,ReviewOutput
 
 name: bugfix
 input: TicketInput
 
-steps:
+steps[2]:
   - id: analyze
     prompt: Analyze {input.description}.
     output: AnalysisOutput
@@ -34,15 +34,15 @@ Import Effect services to make them available in `handler:` functions and `run:`
 
 ```toon
 imports:
-  services:
-    - from: "./services/coder.ts"
-      use: [Coder]
-    - from: "./services/jj.ts"
-      use: [JJ]
+  services[2]:
+    - from: ./services/coder.ts
+      use[1]: Coder
+    - from: ./services/jj.ts
+      use[1]: JJ
 
-steps:
+steps[1]:
   - id: fix
-    handler: "./handlers/fix.ts#applyFix"
+    handler: ./handlers/fix.ts#applyFix
     output:
       patch: string
 ```
@@ -55,13 +55,13 @@ Import reusable components from other `.toon` files:
 
 ```toon
 imports:
-  components:
-    - from: "./shared/review-cycle.toon"
-      use: [ReviewCycle]
-    - from: "./shared/deploy-gate.toon"
-      use: [GuardedDeploy]
+  components[2]:
+    - from: ./shared/review-cycle.toon
+      use[1]: ReviewCycle
+    - from: ./shared/deploy-gate.toon
+      use[1]: GuardedDeploy
 
-steps:
+steps[1]:
   - id: review
     kind: component
     use: ReviewCycle
@@ -76,11 +76,11 @@ Import an entire `.toon` file as a sub-workflow:
 
 ```toon
 imports:
-  workflows:
-    - from: "./sub-workflows/research.toon"
+  workflows[1]:
+    - from: ./sub-workflows/research.toon
       as: research
 
-steps:
+steps[2]:
   - id: do-research
     kind: workflow
     use: research
@@ -88,9 +88,7 @@ steps:
       topic: "{input.topic}"
 
   - id: report
-    prompt: |
-      Write a report based on:
-      {do-research.summary}
+    prompt: "Write a report based on:\n{do-research.summary}"
     output:
       report: string
 ```
@@ -101,13 +99,13 @@ Plugins extend TOON with custom node kinds, model providers, or services. Regist
 
 ```toon
 imports:
-  plugins:
-    - from: "smithers-plugin-anthropic"
+  plugins[2]:
+    - from: smithers-plugin-anthropic
       config:
-        defaultModel: "claude-opus-4-6"
-    - from: "smithers-plugin-linear"
+        defaultModel: claude-opus-4-6
+    - from: smithers-plugin-linear
       config:
-        team: "ENG"
+        team: ENG
 ```
 
 Plugins are loaded at build time and can:
@@ -136,8 +134,8 @@ Package imports (without `./`) resolve from `node_modules`:
 
 ```toon
 imports:
-  plugins:
-    - from: "smithers-plugin-anthropic"
+  plugins[1]:
+    - from: smithers-plugin-anthropic
 ```
 
 ## Multiple Import Sources
@@ -146,17 +144,17 @@ Combine different import types freely:
 
 ```toon
 imports:
-  schemas:
-    - from: "./schemas.ts"
-      use: [Input, Output]
-  services:
-    - from: "./services/index.ts"
-      use: [Coder, Reviewer, Deployer]
-  components:
-    - from: "./shared/patterns.toon"
-      use: [ReviewLoop, DeployGate]
-  plugins:
-    - from: "smithers-plugin-anthropic"
+  schemas[1]:
+    - from: ./schemas.ts
+      use[2]: Input,Output
+  services[1]:
+    - from: ./services/index.ts
+      use[3]: Coder,Reviewer,Deployer
+  components[1]:
+    - from: ./shared/patterns.toon
+      use[2]: ReviewLoop,DeployGate
+  plugins[1]:
+    - from: smithers-plugin-anthropic
 ```
 
 ## Next Steps

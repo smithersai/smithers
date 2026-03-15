@@ -1,0 +1,343 @@
+---
+title: TOON Specification
+description: Formal specification of the .toon file format — all top-level keys, node kinds, field types, and interpolation grammar.
+---
+
+This page is the formal reference for the `.toon` file format. For tutorials, see the [TOON Overview](/toon/overview).
+
+## File Structure
+
+A `.toon` file is a TOON (Token-Oriented Object Notation) document with the following top-level keys:
+
+```toon
+imports:        # optional — external schemas, services, components, plugins, agents
+name:           # required — workflow name
+agents:         # required — named agent declarations
+input:          # required — input schema
+schemas:        # optional — reusable output schemas
+components:     # optional — reusable step groups
+steps:          # required — the workflow graph
+```
+
+## Top-Level Keys
+
+### `name`
+
+**Required.** String. The workflow identifier used in persistence, logs, CLI, and API.
+
+```toon
+name: bugfix-pipeline
+```
+
+### `input`
+
+**Required.** Either an inline schema block or a reference to an imported `Schema.Class`.
+
+**Inline:**
+```toon
+input:
+  ticketId: string
+  description: string
+```
+
+**Imported:**
+```toon
+input: TicketInput
+```
+
+### `agents`
+
+**Required** (for workflows with `prompt:` steps). Named agent declarations.
+
+```toon
+agents:
+  coder:
+    type: claude-code
+    model: claude-opus-4-6
+    subscription: true
+    instructions: You are a senior software engineer.
+
+  reviewer:
+    type: codex
+    model: gpt-5.4
+    fullAuto: true
+```
+
+Each agent has:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `type` | string | yes | Agent runtime: `claude-code`, `codex`, `gemini`, `pi`, `kimi`, `forge`, `api` |
+| `model` | string | yes | Model identifier |
+| `instructions` | string | no | System prompt / persona |
+| `tools` | "string[]" | no | Tool names the agent can use |
+| `subscription` | boolean | no | Use subscription billing (Claude Code) |
+| `timeoutMs` | number | no | Hard timeout in milliseconds |
+| `idleTimeoutMs` | number | no | Inactivity timeout in milliseconds |
+
+Additional type-specific fields are passed through to the underlying agent constructor (e.g., `fullAuto` for Codex, `permissionMode` for Claude Code, `sandbox` for Gemini).
+
+### `schemas`
+
+**Optional.** Named output schemas that can be referenced by multiple steps.
+
+```toon
+schemas:
+  Review:
+    approved: boolean
+    feedback: string
+```
+
+### `components`
+
+**Optional.** Named, parameterized step groups.
+
+```toon
+components:
+  ReviewCycle:
+    params:
+      content: string
+    steps[1]:
+      - id: "{id}-review"
+        prompt: Review {params.content}.
+        output:
+          approved: boolean
+```
+
+### `steps`
+
+**Required.** Array of nodes that define the workflow graph.
+
+### `imports`
+
+**Optional.** Object with sub-keys: `schemas`, `services`, `components`, `workflows`, `plugins`, `agents`.
+
+## Field Types
+
+| TOON Syntax | Semantics | Effect Equivalent |
+| --- | --- | --- |
+| `string` | UTF-8 string | `Schema.String` |
+| `number` | IEEE 754 double | `Schema.Number` |
+| `boolean` | `true` or `false` | `Schema.Boolean` |
+| `"a"` | String literal | `Schema.Literal("a")` |
+| `"a" \| "b"` | String literal union | `Schema.Literal("a", "b")` |
+| `"string[]"` | Array of strings | `Schema.Array(Schema.String)` |
+| `"number[]"` | Array of numbers | `Schema.Array(Schema.Number)` |
+| `string?` | Optional string | `Schema.optional(Schema.String)` |
+| `T?` | Optional T | `Schema.optional(T)` |
+| nested block | Struct | `Schema.Struct({...})` |
+| `- field: type` | Array of objects | `Schema.Array(Schema.Struct({...}))` |
+
+## Node Kinds
+
+Every entry in `steps:` is a node. Nodes are either **steps** (default) or **control-flow nodes** (identified by `kind:`).
+
+### Step Node (default)
+
+```toon
+- id: analyze            # required — unique identifier
+  agent: coder            # required for prompt steps — references a declared agent
+  prompt: ...             # prompt text (mutually exclusive with run/handler)
+  run: ...                # inline TypeScript (mutually exclusive with prompt/handler)
+  handler: ...            # TypeScript function reference (mutually exclusive with prompt/run)
+  output: ...             # required — output schema (inline or reference)
+  needs[2]: step-id-1,step-id-2  # optional — explicit dependencies
+  retry:                  # optional — retry policy
+    maxAttempts: 3
+    backoff: exponential | linear | fixed
+    initialDelay: 250ms
+  timeout: 5m             # optional — step timeout
+  cache:                  # optional — cache policy
+    by[1]: field
+    version: "v1"
+  skipIf: "expression"    # optional — skip condition
+```
+
+### `kind: sequence`
+
+```toon
+- kind: sequence
+  children[2]:
+    - id: a
+      ...
+    - id: b
+      ...
+```
+
+### `kind: parallel`
+
+```toon
+- kind: parallel
+  maxConcurrency: 2       # optional — defaults to unlimited
+  children[2]:
+    - id: x
+      ...
+    - id: y
+      ...
+```
+
+### `kind: loop`
+
+```toon
+- kind: loop
+  id: review-loop         # optional — loop identifier
+  until: "expression"     # required — stop condition
+  maxIterations: 5        # optional — safety limit (default: 5)
+  onMaxReached: fail | return-last  # optional — default: return-last
+  children[1]:
+    - id: check
+      ...
+```
+
+### `kind: approval`
+
+```toon
+- kind: approval
+  id: approve-deploy      # required — gate identifier
+  needs[1]: build         # optional — dependencies
+  request:                # required — approval request
+    title: "Deploy?"
+    summary: "Details..."
+  onDeny: fail | continue | skip  # optional — default: fail
+```
+
+### `kind: branch`
+
+```toon
+- kind: branch
+  condition: "expression" # required — branch condition
+  then[1]:                # required — steps if true
+    - id: a
+      ...
+  else[1]:                # optional — steps if false
+    - id: b
+      ...
+```
+
+### `kind: worktree`
+
+```toon
+- kind: worktree
+  path: ./feature         # required — worktree path
+  children[1]:
+    - id: implement
+      ...
+```
+
+### `kind: component`
+
+```toon
+- id: my-review           # required — caller id (used for ID interpolation)
+  kind: component
+  use: ReviewCycle         # required — component name
+  with:                    # required — parameter values
+    content: "{draft.content}"
+    reviewer: "tech lead"
+```
+
+## Interpolation Grammar
+
+Interpolation occurs inside `prompt:`, `request:`, `skipIf:`, `until:`, `condition:`, and component `with:` values.
+
+### Syntax
+
+```
+{expression}     — interpolate a value
+{{               — literal {
+}}               — literal }
+```
+
+### Expression Forms
+
+| Form | Example | Resolves To |
+| --- | --- | --- |
+| `input.field` | `{input.topic}` | Workflow input field |
+| `stepId.field` | `{analyze.summary}` | Upstream step output field |
+| `stepId.nested.field` | `{config.deploy.env}` | Nested output field |
+| `params.field` | `{params.content}` | Component parameter |
+| `loop.iteration` | `{loop.iteration}` | Current loop iteration (1-based) |
+| `id` | `{id}` | Caller id (inside components) |
+
+### Conditional Blocks
+
+```
+{#if expression}
+  content
+{/if}
+```
+
+The `expression` supports `==`, `!=`, `>`, `<`, `>=`, `<=`, and `&&`, `||` operators.
+
+## Duration Syntax
+
+Timeouts and delays use duration strings:
+
+| Format | Example |
+| --- | --- |
+| Milliseconds | `250ms` |
+| Seconds | `30s` |
+| Minutes | `5m` |
+| Hours | `1h` |
+
+## Import Blocks
+
+### Schema Import
+
+```toon
+imports:
+  schemas[1]:
+    - from: ./path.ts
+      use[1]: TypeName
+```
+
+### Service Import
+
+```toon
+imports:
+  services[1]:
+    - from: ./path.ts
+      use[1]: ServiceTag
+```
+
+### Component Import
+
+```toon
+imports:
+  components[1]:
+    - from: ./path.toon
+      use[1]: ComponentName
+```
+
+### Workflow Import
+
+```toon
+imports:
+  workflows[1]:
+    - from: ./path.toon
+      as: aliasName
+```
+
+### Plugin Import
+
+```toon
+imports:
+  plugins[1]:
+    - from: package-name
+      config:
+        key: value
+```
+
+## Execution Semantics
+
+- Steps in `steps:` execute **sequentially** by default (top to bottom)
+- `kind: parallel` children execute **concurrently**
+- `kind: sequence` is explicit sequential grouping (useful inside parallel)
+- `kind: loop` repeats children until `until:` is true or `maxIterations` is reached
+- `kind: approval` **suspends** execution durably
+- `kind: branch` takes one path based on `condition:`
+- Dependencies declared in `needs:` are resolved before the step runs
+- Implicit dependencies from `{stepId.field}` interpolation are also resolved
+
+## Compilation Target
+
+A `.toon` file compiles to the same `WorkflowNode` graph as the Effect builder API. At runtime, there is no behavioral difference between a TOON workflow and an Effect builder workflow.

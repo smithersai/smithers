@@ -1,15 +1,9 @@
 name: toon-retry
-
 input:
   name: string
-
-steps:
+steps[1]:
   - id: flaky
-    run: |
-      if (attempt < 3) {
-        throw new Error("flaky");
-      }
-      return { ok: true };
+    run: "if (attempt < 3) {\n  throw new Error(\"flaky\");\n}\nreturn { ok: true };\n"
     output:
       ok: boolean
     retry:

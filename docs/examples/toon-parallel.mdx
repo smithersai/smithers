@@ -23,7 +23,7 @@ agents:
 
 input:
   topic: string
-  sources: string[]
+  sources: "string[]"
 
 components:
   Summarizer:
@@ -31,51 +31,40 @@ components:
       content: string
       maxWords: number
       style: "bullet" | "prose"
-    steps:
+    steps[1]:
       - id: "{id}-summarize"
         agent: writer
-        prompt: |
-          Summarize the following content in at most {params.maxWords} words.
-          Style: {params.style}
-
-          Content:
-          {params.content}
+        prompt: "Summarize the following content in at most {params.maxWords} words.\nStyle: {params.style}\n\nContent:\n{params.content}"
         output:
           summary: string
           wordCount: number
 
-steps:
+steps[3]:
   - kind: parallel
-    children:
+    children[3]:
       - id: research-web
         agent: researcher
-        prompt: |
-          Search the web for recent information about: {input.topic}
-          Focus on authoritative sources and recent developments.
+        prompt: "Search the web for recent information about: {input.topic}\nFocus on authoritative sources and recent developments."
         output:
           findings: string
-          sources: string[]
+          sources: "string[]"
 
       - id: research-academic
         agent: researcher
-        prompt: |
-          Search academic papers and technical publications about: {input.topic}
-          Focus on peer-reviewed sources and foundational work.
+        prompt: "Search academic papers and technical publications about: {input.topic}\nFocus on peer-reviewed sources and foundational work."
         output:
           findings: string
-          papers: string[]
+          papers: "string[]"
 
       - id: research-community
         agent: researcher
-        prompt: |
-          Search developer communities (forums, blogs, discussions) about: {input.topic}
-          Focus on practical experience and common pitfalls.
+        prompt: "Search developer communities (forums, blogs, discussions) about: {input.topic}\nFocus on practical experience and common pitfalls."
         output:
           findings: string
-          discussions: string[]
+          discussions: "string[]"
 
   - kind: parallel
-    children:
+    children[3]:
       - id: web-summary
         kind: component
         use: Summarizer
@@ -102,23 +91,11 @@ steps:
 
   - id: final-report
     agent: writer
-    prompt: |
-      Synthesize these research summaries into a comprehensive report.
-
-      Web Research:
-      {web-summary-summarize.summary}
-
-      Academic Research:
-      {academic-summary-summarize.summary}
-
-      Community Insights:
-      {community-summary-summarize.summary}
-
-      Write a cohesive report that covers all perspectives.
+    prompt: "Synthesize these research summaries into a comprehensive report.\n\nWeb Research:\n{web-summary-summarize.summary}\n\nAcademic Research:\n{academic-summary-summarize.summary}\n\nCommunity Insights:\n{community-summary-summarize.summary}\n\nWrite a cohesive report that covers all perspectives."
     output:
       title: string
       report: string
-      keyTakeaways: string[]
+      keyTakeaways: "string[]"
       totalSources: number
 ```
 

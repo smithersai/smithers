@@ -1,28 +1,20 @@
 imports:
-  agents:
-    - from: "./toon-agent.ts"
-      use: [researcher, writer]
-
+  agents[1]:
+    - from: ./toon-agent.ts
+      use[2]: researcher,writer
 name: research-report
-
 input:
   topic: string
-
-steps:
+steps[2]:
   - id: research
     agent: researcher
-    prompt: |
-      Research the topic.
-      Topic: {input.topic}
+    prompt: "Research the topic.\nTopic: {input.topic}\n"
     output:
       summary: string
-      keyPoints: string[]
-
+      keyPoints: "string[]"
   - id: report
     agent: writer
-    prompt: |
-      Summary: {research.summary}
-      Key points: {research.keyPoints}
+    prompt: "Summary: {research.summary}\nKey points: {research.keyPoints}\n"
     output:
       title: string
       body: string

@@ -1,15 +1,10 @@
 imports:
-  plugins:
-    - from: "./toon-plugin.ts"
+  plugins[1]:
+    - from: ./toon-plugin.ts
       config:
-        suffix: "!"
-
+        suffix: !
 name: toon-plugin-workflow
-
 input:
   name: string
-
-steps:
-  - kind: shout
-    id: shout
-    text: "hello"
+steps[1]{kind,id,text}:
+  shout,shout,hello

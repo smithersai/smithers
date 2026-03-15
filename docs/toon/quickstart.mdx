@@ -26,23 +26,17 @@ agents:
 input:
   topic: string
 
-steps:
+steps[2]:
   - id: research
     agent: researcher
-    prompt: |
-      Research the following topic and provide a summary with key points.
-      Topic: {input.topic}
+    prompt: "Research the following topic and provide a summary with key points.\nTopic: {input.topic}"
     output:
       summary: string
-      keyPoints: string[]
+      keyPoints: "string[]"
 
   - id: report
     agent: writer
-    prompt: |
-      Write a concise report based on this research.
-
-      Summary: {research.summary}
-      Key points: {research.keyPoints}
+    prompt: "Write a concise report based on this research.\n\nSummary: {research.summary}\nKey points: {research.keyPoints}"
     output:
       title: string
       body: string
