@@ -61,7 +61,29 @@ That starts:
 - Grafana on `http://localhost:3000`
 - Tempo on `http://localhost:3200`
 
-The collector exports metrics on `:8889`, Prometheus scrapes that endpoint, and Grafana comes pre-provisioned with a Smithers dashboard. Smithers itself does not expose a direct Prometheus `/metrics` endpoint in this setup; the collector is the bridge.
+The collector exports metrics on `:8889`, Prometheus scrapes that endpoint, and Grafana comes pre-provisioned with a Smithers dashboard.
+
+If you use the built-in Smithers HTTP server, it also exposes a direct Prometheus endpoint at `GET /metrics`.
+
+## Direct Prometheus Endpoint
+
+The built-in server returns Prometheus text exposition on `/metrics`:
+
+```bash
+curl http://localhost:7331/metrics
+```
+
+If you want to expose the same metrics from a custom server, Smithers also exports a renderer:
+
+```ts
+import {
+  prometheusContentType,
+  renderPrometheusMetrics,
+} from "smithers-orchestrator/observability";
+
+const body = renderPrometheusMetrics();
+// return body with Content-Type: prometheusContentType
+```
 
 ## Built-in Smithers Metrics
 

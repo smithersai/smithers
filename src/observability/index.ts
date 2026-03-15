@@ -121,14 +121,20 @@ function mergePrometheusLabels(
 }
 
 function metricLabels(metricKey: any): ReadonlyArray<[string, string]> {
-  const tags = Array.isArray(metricKey?.tags) ? metricKey.tags : [];
+  const tags: any[] = Array.isArray(metricKey?.tags) ? metricKey.tags : [];
   return tags
-    .map((tag) => [String(tag.key), String(tag.value)] as [string, string])
-    .sort(([left], [right]) => left.localeCompare(right));
+    .map((tag: any) => [String(tag.key), String(tag.value)] as [string, string])
+    .sort(
+      ([left]: [string, string], [right]: [string, string]) =>
+        left.localeCompare(right),
+    );
 }
 
 function metricHelp(metricKey: any): string | undefined {
-  const description = Option.getOrElse(metricKey?.description, () => "");
+  const description = Option.getOrElse(
+    metricKey?.description as Option.Option<string>,
+    () => "",
+  );
   return description.trim() ? description : undefined;
 }
 
@@ -237,12 +243,11 @@ export function renderPrometheusMetrics(): string {
       metric.lines.push(
         `${name}${mergePrometheusLabels(labels, [["quantile", "min"]])} ${formatPrometheusNumber(metricState.min)}`,
       );
-      for (const [quantile, value] of metricState.quantiles as Map<
-        number,
-        { _tag: string; value?: number }
+      for (const [quantile, value] of metricState.quantiles as ReadonlyArray<
+        readonly [number, Option.Option<number>]
       >) {
         metric.lines.push(
-          `${name}${mergePrometheusLabels(labels, [["quantile", String(quantile)]])} ${formatPrometheusNumber(value?._tag === "Some" ? value.value ?? 0 : 0)}`,
+          `${name}${mergePrometheusLabels(labels, [["quantile", String(quantile)]])} ${formatPrometheusNumber(Option.getOrElse(value, () => 0))}`,
         );
       }
       metric.lines.push(
@@ -441,8 +446,6 @@ export {
   nodesFailed,
   nodesFinished,
   nodesStarted,
-  prometheusContentType,
-  renderPrometheusMetrics,
   runsTotal,
   schedulerQueueDepth,
   toolCallsTotal,
