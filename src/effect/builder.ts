@@ -2024,10 +2024,9 @@ function compileNode(node: any, env: ToonEnv): BuilderNode {
     if (!id) throw new Error("Approval node missing id");
     if (env.seenIds.has(id)) throw new Error(`Duplicate step id "${id}"`);
     env.seenIds.add(id);
-    const needsRaw = Array.isArray(node.needs) ? node.needs : [];
     const deps = new Set<string>();
-    for (const dep of needsRaw) {
-      if (typeof dep === "string") deps.add(String(applyComponentId(dep, env.componentId)));
+    for (const dep of coerceUseList(node.needs)) {
+      deps.add(String(applyComponentId(dep, env.componentId)));
     }
     const titleTemplate = applyComponentId(node.request?.title ?? "", env.componentId) as string;
     const summaryTemplate = node.request?.summary
@@ -2096,9 +2095,9 @@ function compileNode(node: any, env: ToonEnv): BuilderNode {
   }
 
   const deps = new Set<string>();
-  const needsRaw = Array.isArray(node.needs) ? node.needs : [];
+  const needsRaw = coerceUseList(node.needs);
   for (const dep of needsRaw) {
-    if (typeof dep === "string") deps.add(String(applyComponentId(dep, env.componentId)));
+    deps.add(String(applyComponentId(dep, env.componentId)));
   }
 
   if (prompt) {
@@ -2202,22 +2201,27 @@ function compileNode(node: any, env: ToonEnv): BuilderNode {
     };
   }
 
+  // Support retry as: number, {maxAttempts, backoff, initialDelay}, or flat maxAttempts field
+  const retrySource = node.retry;
+  const flatMaxAttempts = typeof node.maxAttempts === "number" ? node.maxAttempts : undefined;
   const retryCount =
-    typeof node.retry === "number"
-      ? Math.max(0, Math.floor(node.retry))
-      : typeof node.retry?.maxAttempts === "number"
-        ? Math.max(0, Math.floor(node.retry.maxAttempts - 1))
-        : undefined;
+    typeof retrySource === "number"
+      ? Math.max(0, Math.floor(retrySource))
+      : typeof retrySource?.maxAttempts === "number"
+        ? Math.max(0, Math.floor(retrySource.maxAttempts - 1))
+        : flatMaxAttempts !== undefined
+          ? Math.max(0, Math.floor(flatMaxAttempts - 1))
+          : undefined;
   const retryPolicy: RetryPolicy | undefined =
-    node.retry && typeof node.retry === "object"
+    retrySource && typeof retrySource === "object"
       ? {
           backoff:
-            node.retry.backoff === "exponential" ||
-            node.retry.backoff === "linear" ||
-            node.retry.backoff === "fixed"
-              ? node.retry.backoff
+            retrySource.backoff === "exponential" ||
+            retrySource.backoff === "linear" ||
+            retrySource.backoff === "fixed"
+              ? retrySource.backoff
               : undefined,
-          initialDelayMs: durationToMs(node.retry.initialDelay) ?? undefined,
+          initialDelayMs: durationToMs(retrySource.initialDelay) ?? undefined,
         }
       : undefined;
 

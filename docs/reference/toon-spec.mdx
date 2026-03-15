@@ -156,25 +156,32 @@ Every entry in `steps:` is a node. Nodes are either **steps** (default) or **con
 ### Step Node (default)
 
 ```toon
-- id: analyze            # required — unique identifier
-  agent: coder            # required for prompt steps — references a declared agent
-  prompt: ...             # prompt text (mutually exclusive with run/handler)
-  run: ...                # inline TypeScript (mutually exclusive with prompt/handler)
-  handler: ...            # TypeScript function reference (mutually exclusive with prompt/run)
-  output: ...             # required — output schema (inline or reference)
-  needs[2]: step-id-1,step-id-2  # optional — explicit dependencies
-  retry:                  # optional — retry policy
-    maxAttempts: 3
-    backoff: exponential | linear | fixed
-    initialDelay: 250ms
-  timeout: 5m             # optional — step timeout
-  cache:                  # optional — cache policy
-    by[1]: field
-    version: "v1"
-  skipIf: "expression"    # optional — skip condition
+- id: analyze
+  agent: coder
+  prompt: Analyze the code.
+  output: AnalysisOutput
+  needs[2]: step-id-1,step-id-2
+  maxAttempts: 3
+  timeout: 5m
+  skipIf: "expression"
 ```
 
 Each step must define exactly one of `prompt`, `run`, or `handler`.
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Unique step identifier |
+| `agent` | string | for prompt | References a declared agent |
+| `prompt` | string | no | Prompt text (mutually exclusive with run/handler) |
+| `run` | string | no | Inline TypeScript (mutually exclusive with prompt/handler) |
+| `handler` | string | no | TypeScript function reference (mutually exclusive with prompt/run) |
+| `output` | schema/string | yes | Output schema — inline block or named reference |
+| `needs` | string/array | no | Explicit dependencies on other step ids |
+| `maxAttempts` | number | no | Retry count (flat alternative to nested `retry:` block) |
+| `retry` | object | no | Retry policy with `maxAttempts`, `backoff`, `initialDelay` |
+| `timeout` | duration | no | Step timeout (e.g. `5m`, `30s`) |
+| `cache` | object | no | Cache policy with `by` and `version` |
+| `skipIf` | string | no | Condition expression to skip the step |
 
 #### `handler` (advanced)
 
