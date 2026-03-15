@@ -13,16 +13,17 @@ bunx smithers <command> [options]
 
 ### run
 
-Execute a workflow from a `.tsx` file.
+Execute a workflow from a `.tsx` or `.toon` file.
 
 ```bash
-smithers run <workflow.tsx> [options]
+smithers run <workflow.tsx | workflow.toon> [options]
 ```
 
 | Option | Description |
 |---|---|
 | `--input JSON` | Input data as a JSON string. Parsed and passed to `runWorkflow`. |
 | `--run-id ID` | Provide a specific run ID. Must not already exist (use `resume` for existing runs). |
+| `--resume` | Resume a previous run instead of starting fresh. Requires `--run-id`. This is an alternative to the standalone `smithers resume` command. |
 | `--max-concurrency N` | Maximum parallel tasks. Default: `4`. |
 | `--root PATH` | Root directory for the tool sandbox. Default: the workflow file's directory. |
 | `--log-dir PATH` | Directory for NDJSON event logs. Relative to root. Default: `.smithers/executions/<runId>/logs`. |
@@ -47,15 +48,27 @@ The command prints the `RunResult` as JSON to stdout and exits with the appropri
 Resume a paused or crashed run. Smithers reloads persisted state from SQLite and continues from the last checkpoint.
 
 ```bash
-smithers resume <workflow.tsx> --run-id ID [options]
+smithers resume <workflow.tsx | workflow.toon> --run-id ID [options]
 ```
 
-Accepts the same options as `run` (except `--input`, which is loaded from the database). Use `--hot` to enable hot reload during resumed runs.
+Accepts the same options as `run`. Use `--hot` to enable hot reload during resumed runs.
+
+| Option | Description |
+|---|---|
+| `--run-id ID` | **(required)** Run ID to resume. |
+| `--input JSON` | Input data as a JSON string. Overrides the input persisted in the database. |
+| `--force` | Resume even if the run is still marked as running. Without this flag, resuming a run with status `"running"` will fail. |
 
 **Example:**
 
 ```bash
 smithers resume workflow.tsx --run-id abc123
+```
+
+Force-resume a run that is still marked as running (e.g. after a crash):
+
+```bash
+smithers resume workflow.tsx --run-id abc123 --force
 ```
 
 ---
@@ -288,8 +301,10 @@ These options apply to `run` and `resume` commands:
 | `--max-output-bytes N` | Maximum bytes returned from a single tool call. | `200000` |
 | `--tool-timeout-ms N` | Maximum time in milliseconds for a single tool call. | `60000` |
 | `--max-concurrency N` | Maximum number of tasks running in parallel. | `4` |
-| `--input JSON` | Input data as a JSON string (for `run` only). | `{}` |
+| `--input JSON` | Input data as a JSON string. For `run`, provides the initial input; for `resume`, overrides the persisted input. | `{}` |
 | `--run-id ID` | Explicit run identifier. | Auto-generated |
+| `--resume` | Resume a previous run via the `run` command (requires `--run-id`). | Disabled |
+| `--force` | Resume even if the run is still marked as running (for `resume` only). | Disabled |
 | `--hot` | Enable [hot module replacement](/guides/hot-reload). Watches workflow files and reloads on save. In-flight tasks continue; new tasks use updated code. | Disabled |
 | `--version`, `-v` | Print version and exit. | -- |
 | `--help`, `-h` | Print help and exit. | -- |
@@ -306,7 +321,11 @@ These options apply to `run` and `resume` commands:
 
 ## Workflow File
 
-Every command (except `--version` and `--help`) takes a `<workflow.tsx>` path as its first positional argument. This file must have a default export that is a `SmithersWorkflow` object, typically created by calling `smithers(...)`.
+Every command (except `--version` and `--help`) takes a workflow path as its first positional argument. Smithers supports two workflow formats:
+
+### `.tsx` workflows
+
+A `.tsx` file must have a default export that is a `SmithersWorkflow` object, typically created by calling `smithers(...)`.
 
 ```tsx
 // workflow.tsx
@@ -324,6 +343,17 @@ export default smithers((ctx) => (
 ```
 
 The workflow file is dynamically imported at runtime, so it can use any TypeScript features supported by Bun.
+
+### `.toon` workflows
+
+A `.toon` file defines a workflow using the TOON declarative format. When a `.toon` file is passed to `run` or `resume`, Smithers loads it via `Smithers.loadToon()` and stores its database at `smithers.db` in the same directory as the workflow file.
+
+```bash
+smithers run workflow.toon --input '{"description": "Fix auth bug"}'
+smithers resume workflow.toon --run-id abc123
+```
+
+See the [TOON documentation](/concepts/toon) for the full `.toon` file format reference.
 
 ## Typical Workflow
 

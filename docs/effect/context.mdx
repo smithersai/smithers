@@ -39,16 +39,19 @@ The `run` argument is the step context.
 
 ## Step Context Interface
 
+The source type is named `BuilderStepContext` (also referred to as `StepContext` in some older docs).
+
 Conceptually, Smithers provides something like:
 
 ```ts
-type StepContext<Input, Needs> = {
+type BuilderStepContext<Input, Needs> = {
   readonly input: Input;
   readonly executionId: string;
   readonly stepId: string;
   readonly attempt: number;
   readonly signal: AbortSignal;
   readonly iteration: number;
+  readonly loop: { iteration: number };
 } & Needs;
 ```
 
@@ -139,6 +142,10 @@ An `AbortSignal` that fires when:
 ### `iteration`
 
 For looped workflows, this identifies the current durable iteration. For non-loop steps, it is usually `0`.
+
+### `loop`
+
+An object with loop metadata: `{ iteration: number }`. Provides structured access to the current loop iteration. This is available on every step context; for non-looped steps, `loop.iteration` is `0`.
 
 ## No Hook API
 

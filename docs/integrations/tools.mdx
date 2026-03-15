@@ -223,26 +223,20 @@ Execute a shell command.
 
 By default, the `bash` tool blocks commands that access the network. This is controlled by the `allowNetwork` option in `RunOptions`, the CLI (`--allow-network`), or the server configuration.
 
-When `allowNetwork` is `false` (the default), the following are blocked:
+When `allowNetwork` is `false` (the default), the tool checks whether the command string (executable + arguments joined together) contains any blocked fragment. If a match is found, the command is rejected with an error.
 
-**Blocked executables:**
+**Blocked fragments:**
 
-| Category | Commands |
+| Category | Blocked strings |
 |---|---|
 | HTTP clients | `curl`, `wget` |
-| Remote shells | `ssh`, `scp`, `sftp`, `ftp`, `telnet` |
-| Network tools | `nc` / `netcat`, `ping`, `traceroute`, `dig`, `nslookup`, `nmap`, `openssl` |
-| Package managers | `npm`, `bun`, `pip`, `pip3`, `pnpm`, `yarn`, `apt`, `apt-get`, `brew`, `cargo`, `go`, `gem` |
+| URL prefixes | `http://`, `https://` |
+| Package managers | `npm`, `bun`, `pip` |
 | Version control (remote ops) | `git push`, `git pull`, `git fetch`, `git clone`, `git remote` |
-| Other | `hg`, `svn`, `powershell`, `pwsh` |
 
-**URL detection:** Any argument containing `://`, `www.`, `http://`, `https://`, `ws://`, `wss://`, `git@`, or `ssh://` is blocked.
+Git remote operations are only checked when `git` appears in the command string. Local `git` commands (e.g., `git status`, `git diff`, `git log`) are allowed even when network access is disabled.
 
-**IP detection:** Arguments matching an IP address pattern (e.g., `192.168.1.1:8080`) are blocked.
-
-**Proxy detection:** Arguments containing `--proxy`, `http_proxy`, or `https_proxy` are blocked.
-
-Local `git` commands (e.g., `git status`, `git diff`, `git log`) are allowed even when network access is disabled.
+> **Note:** The current blocked list is intentionally minimal. Additional commands and detection patterns (e.g., remote shells, network utilities, proxy arguments) may be blocked in future versions.
 
 **Example:**
 

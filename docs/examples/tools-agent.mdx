@@ -5,7 +5,7 @@ description: An agent that uses built-in tools (read, grep, bash) to search a co
 
 # Tools Agent
 
-Smithers agents can be given **tools** that let them interact with the filesystem and shell. This is useful for tasks like codebase analysis, log searching, or automated refactoring. The built-in tools from `smithers-orchestrator` provide `read`, `grep`, and `bash` capabilities.
+Smithers agents can be given **tools** that let them interact with the filesystem and shell. This is useful for tasks like codebase analysis, log searching, or automated refactoring. The built-in tools from `smithers-orchestrator` provide `read`, `write`, `edit`, `grep`, and `bash` capabilities.
 
 ## Workflow Definition
 
@@ -95,12 +95,14 @@ Import all tools at once or pick individual ones:
 import { tools } from "smithers-orchestrator";
 
 // Or import individually
-import { read, grep, bash } from "smithers-orchestrator";
+import { read, write, edit, grep, bash } from "smithers-orchestrator";
 ```
 
 | Tool | Description |
 |------|-------------|
 | `read` | Read file contents by path. Supports line ranges for large files. |
+| `write` | Write content to a file by path. Creates the file if it does not exist. |
+| `edit` | Apply targeted edits to a file using search-and-replace. Safer than full rewrites for small changes. |
 | `grep` | Search file contents with regex patterns. Returns matching files, lines, and context. |
 | `bash` | Execute shell commands. Useful for running build tools, git, or custom scripts. |
 

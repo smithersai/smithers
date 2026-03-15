@@ -35,7 +35,14 @@ import { Approval, approvalDecisionSchema } from "smithers-orchestrator";
 | `outputSchema` | `z.ZodObject` | `approvalDecisionSchema` | Override the decision schema when using the manual DB API. |
 | `request` | `{ title: string; summary?: string; metadata?: Record<string, unknown> }` | **(required)** | Human-facing approval request metadata. `title` becomes the node label; `summary` and `metadata` are stored in task metadata. |
 | `onDeny` | `"fail" \| "continue" \| "skip"` | `"fail"` | What happens after a denial. `"continue"` and `"skip"` still persist a denial decision object. |
+| `dependsOn` | `string[]` | `undefined` | Explicit dependency on other task node IDs. The approval will not run until all listed tasks complete. |
+| `needs` | `Record<string, string>` | `undefined` | Named dependencies on other tasks. Keys become context keys, values are task node IDs. |
 | `skipIf` | `boolean` | `false` | Skip the approval node entirely. |
+| `timeoutMs` | `number` | `undefined` | Maximum time in milliseconds to wait for an approval decision. The node fails if it exceeds this duration. |
+| `retries` | `number` | `0` | Number of retry attempts on failure before the node is marked as failed. |
+| `retryPolicy` | `RetryPolicy` | `undefined` | Retry timing configuration. `{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }`. Controls the delay between retry attempts. |
+| `continueOnFail` | `boolean` | `false` | When `true`, the workflow continues executing subsequent nodes even if this approval fails. |
+| `cache` | `CachePolicy` | `undefined` | Caching configuration. `{ by?: (ctx) => unknown, version?: string }`. When provided, the engine can skip re-execution if a cached result with the same key and version exists. |
 | `label` | `string` | `request.title` | Optional display label override. |
 | `meta` | `Record<string, unknown>` | `undefined` | Additional metadata merged with `request.summary` / `request.metadata`. |
 

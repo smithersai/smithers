@@ -71,7 +71,7 @@ import { ReviewOutput } from "./components/Review.schema";
 import { ReviewFixOutput } from "./components/ReviewFix.schema";
 import { ReportOutput } from "./components/Report.schema";
 
-export const { Workflow, Task, useCtx, smithers, tables } = createSmithers({
+export const { Workflow, Task, useCtx, smithers, tables, outputs } = createSmithers({
   discover: DiscoverOutput,
   implement: ImplementOutput,
   validate: ValidateOutput,
@@ -272,7 +272,7 @@ The `{props.schema}` variable is auto-injected by Smithers with a JSON example g
 ### 3. Component (`Component.tsx`)
 
 ```tsx
-import { Task, useCtx, tables } from "../smithers";
+import { Task, useCtx, tables, outputs } from "../smithers";
 import { codex } from "../agents";
 import ImplementPrompt from "./Implement.mdx";
 import type { Ticket } from "./Discover.schema";

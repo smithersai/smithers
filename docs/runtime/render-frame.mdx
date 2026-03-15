@@ -28,13 +28,20 @@ console.log(snapshot.xml);           // XML tree representation
 ```ts
 function renderFrame<Schema>(
   workflow: SmithersWorkflow<Schema>,
-  ctx: RenderContext,
+  ctx: {
+    runId: string;
+    iteration: number;
+    iterations?: Record<string, number>;
+    input: object;
+    outputs: object;
+  },
+  opts?: { baseRootDir?: string },
 ): Promise<GraphSnapshot>;
 ```
 
-### RenderContext
+### Context Object
 
-The second argument is a context object that provides the data your workflow's JSX tree needs to render. It mirrors the `SmithersCtx` that `runWorkflow` builds internally.
+The second argument is a plain object that provides the data your workflow's JSX tree needs to render. It mirrors the `SmithersCtx` that `runWorkflow` builds internally. The parameter is typed as `any` in source, but it expects the shape shown above.
 
 | Field | Type | Description |
 |---|---|---|
@@ -43,6 +50,12 @@ The second argument is a context object that provides the data your workflow's J
 | `iterations` | `Record<string, number>` | Per-loop iteration counts, keyed by loop ID. Optional. |
 | `input` | `object` | The input data the workflow expects from `ctx.input`. |
 | `outputs` | `object` | Previously computed outputs, keyed by table name. Pass `{}` to render the initial state. |
+
+### Options (third argument)
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `baseRootDir` | `string` | `undefined` | Base root directory used to resolve relative paths inside the workflow tree. |
 
 ## GraphSnapshot
 
@@ -92,21 +105,31 @@ type TaskDescriptor = {
   ordinal: number;
   iteration: number;
   ralphId?: string;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  worktreeId?: string;
+  worktreePath?: string;
+  worktreeBranch?: string;
 
   outputTable: Table | null;
   outputTableName: string;
+  outputRef?: ZodObject<any>;
   outputSchema?: ZodObject<any>;
 
   parallelGroupId?: string;
   parallelMaxConcurrency?: number;
 
   needsApproval: boolean;
+  approvalMode?: "gate" | "decision";
+  approvalOnDeny?: "fail" | "continue" | "skip";
   skipIf: boolean;
   retries: number;
+  retryPolicy?: RetryPolicy;
   timeoutMs: number | null;
   continueOnFail: boolean;
+  cachePolicy?: CachePolicy;
 
-  agent?: AgentLike;
+  agent?: AgentLike | AgentLike[];
   prompt?: string;
   staticPayload?: unknown;
   computeFn?: () => unknown | Promise<unknown>;
@@ -122,17 +145,27 @@ type TaskDescriptor = {
 | `ordinal` | Position in the task list (0-indexed). |
 | `iteration` | The loop iteration this task belongs to. |
 | `ralphId` | The ID of the enclosing `<Loop>` component, if any. |
+| `dependsOn` | Array of node IDs this task explicitly depends on. |
+| `needs` | Named dependencies. Keys become context keys, values are task node IDs. |
+| `worktreeId` | ID of the git worktree assigned to this task. |
+| `worktreePath` | Filesystem path to the git worktree. |
+| `worktreeBranch` | Branch name for the git worktree. |
 | `outputTable` | The Drizzle table object for the task's output. |
 | `outputTableName` | String name of the output table. |
+| `outputRef` | Zod schema reference from the `<Task>` `output` prop (used for schema resolution). |
 | `outputSchema` | Optional Zod schema for validating agent output. |
 | `parallelGroupId` | ID of the `<Parallel>` group this task belongs to. |
 | `parallelMaxConcurrency` | Per-group concurrency limit from the enclosing `<Parallel>`. |
 | `needsApproval` | Whether this task requires human approval before executing. |
+| `approvalMode` | Approval style: `"gate"` pauses before execution, `"decision"` records a decision. |
+| `approvalOnDeny` | Behavior when approval is denied: `"fail"`, `"continue"`, or `"skip"`. |
 | `skipIf` | Whether this task should be skipped. |
 | `retries` | Number of retry attempts on failure. |
+| `retryPolicy` | Retry backoff configuration (`{ backoff?, initialDelayMs? }`). |
 | `timeoutMs` | Per-task timeout in milliseconds, or `null` for the global default. |
 | `continueOnFail` | Whether the workflow continues if this task fails. |
-| `agent` | The AI agent assigned to this task. |
+| `cachePolicy` | Cache configuration (`{ by?, version? }`). |
+| `agent` | The AI agent (or array of agents for fallback) assigned to this task. |
 | `prompt` | The resolved prompt string (from `<Task>` children). |
 | `staticPayload` | Static output data (for tasks without an agent). |
 | `computeFn` | Callback function invoked at execution time (for compute tasks). |

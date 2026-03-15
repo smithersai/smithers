@@ -28,7 +28,8 @@ import { Task } from "smithers-orchestrator";
 | `id` | `string` | **(required)** | Stable node identity. Must be unique within the workflow. Duplicate ids throw an error at render time. |
 | `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to store the task's result. Pass a Zod schema from the `outputs` object (recommended), a Drizzle table, or a string key. When using `createSmithers`, this is type-checked against the registered schemas. |
 | `outputSchema` | `z.ZodObject` | `undefined` | Optional Zod schema describing the expected agent output structure. When `output` is already a Zod schema this is inferred automatically. When provided with a React element child, the schema example is auto-injected via a `schema` prop. |
-| `agent` | `AgentLike` | `undefined` | An AI SDK agent. When present, the task runs in agent mode and children become the prompt. |
+| `agent` | `AgentLike \| AgentLike[]` | `undefined` | An AI SDK agent or array of agents `[primary, fallback1, fallback2, ...]`. When present, the task runs in agent mode and children become the prompt. When an array is provided, agents are tried in order on retries. |
+| `fallbackAgent` | `AgentLike` | `undefined` | Convenience alias for a single retry fallback agent. Appended to the `agent` chain without requiring array syntax in JSX. |
 | `dependsOn` | `string[]` | `undefined` | Explicit dependency on other task node IDs. The task will not run until all listed tasks complete. |
 | `needs` | `Record<string, string>` | `undefined` | Named dependencies on other tasks. Keys become context keys, values are task node IDs. |
 | `key` | `string` | `undefined` | React key for the element (standard React prop). |
@@ -36,7 +37,9 @@ import { Task } from "smithers-orchestrator";
 | `needsApproval` | `boolean` | `false` | When `true`, the runtime pauses before executing and waits for approval. |
 | `timeoutMs` | `number` | `undefined` | Maximum execution time in milliseconds. The task fails if it exceeds this duration. |
 | `retries` | `number` | `0` | Number of retry attempts on failure before the task is marked as failed. |
+| `retryPolicy` | `RetryPolicy` | `undefined` | Retry timing configuration. `{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }`. Controls the delay between retry attempts. |
 | `continueOnFail` | `boolean` | `false` | When `true`, the workflow continues executing subsequent tasks even if this task fails. |
+| `cache` | `CachePolicy` | `undefined` | Caching configuration. `{ by?: (ctx) => unknown, version?: string }`. When provided, the engine can skip re-execution if a cached result with the same key and version exists. |
 | `label` | `string` | `undefined` | Human-readable label for UI display and metadata. |
 | `meta` | `Record<string, unknown>` | `undefined` | Arbitrary metadata attached to the task descriptor. |
 | `children` | `string \| Row \| (() => Row \| Promise<Row>) \| ReactNode` | **(required)** | In agent mode: the prompt text or JSX that renders to markdown. In compute mode: a callback function invoked at execution time. In static mode: the output object or value. |

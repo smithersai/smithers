@@ -16,13 +16,13 @@ Use the Effect builder when you want full control over typed step handles, `Cont
 Install the core builder dependencies:
 
 ```bash
-bun add smithers-orchestrator effect @effect/sql @effect/sql-sqlite-bun
+bun add smithers-orchestrator effect @effect/sql drizzle-orm
 ```
 
-If you plan to call hosted models through Effect services, add the provider packages you need. For example:
+If you plan to call hosted models, add the Vercel AI SDK packages you need. For example:
 
 ```bash
-bun add @effect/ai @effect/ai-anthropic
+bun add ai @ai-sdk/anthropic
 ```
 
 ## What Each Package Does
@@ -32,8 +32,8 @@ bun add @effect/ai @effect/ai-anthropic
 | `smithers-orchestrator` | Workflow builder, durable runtime, SQLite helpers, CLI |
 | `effect` | `Effect`, `Layer`, `Context.Tag`, `Schedule`, and `Schema` |
 | `@effect/sql` | `Model` and typed SQL integration |
-| `@effect/sql-sqlite-bun` | SQLite client layer for Bun |
-| `@effect/ai` + provider packages | Optional model integrations |
+| `drizzle-orm` | SQLite client layer (uses `bun:sqlite` under the hood) |
+| `ai` + `@ai-sdk/anthropic` | Optional model integrations via the Vercel AI SDK |
 
 ## Minimal TypeScript Setup
 

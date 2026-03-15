@@ -28,6 +28,12 @@ import {
 import { useLinear, linearTools, startWebhookServer } from "smithers-orchestrator/linear";
 ```
 
+> **Subpath-only exports:** Some symbols are only available from `smithers-orchestrator/linear` and are *not* re-exported from the main `smithers-orchestrator` barrel:
+>
+> - `resetLinearClient` — clears the cached Linear SDK client (useful in tests)
+> - Individual tool functions: `linearListIssues`, `linearGetIssue`, `linearUpdateIssue`, `linearAddComment`, `linearListTeams`
+> - Types: `LinearProject`, `LinearIssueStatus`, `ListIssuesParams`
+
 ## useLinear
 
 A hook that returns typed operations for interacting with Linear. All return values are plain serializable objects (not SDK lazy models), safe to pass between tasks.
@@ -85,13 +91,15 @@ Post a markdown comment on an issue.
 const commentId = await linear.addComment(issue.id, "## Done\nShipped in v1.2.0");
 ```
 
-### listComments
+### listComments <span style={{opacity:0.6}}>(programmatic only)</span>
 
 Fetch all comments on an issue.
 
 ```ts
 const comments = await linear.listComments(issue.id);
 ```
+
+> `listComments` is only available as a programmatic method on the `useLinear()` hook. There is no corresponding agent tool in `linearTools`.
 
 ### listTeams
 
@@ -102,7 +110,7 @@ const teams = await linear.listTeams();
 const team = teams.find(t => t.key === "ENG");
 ```
 
-### listProjects
+### listProjects <span style={{opacity:0.6}}>(programmatic only)</span>
 
 List all projects in the workspace.
 
@@ -110,7 +118,9 @@ List all projects in the workspace.
 const projects = await linear.listProjects();
 ```
 
-### listIssueStatuses
+> `listProjects` is only available as a programmatic method on the `useLinear()` hook. There is no corresponding agent tool in `linearTools`.
+
+### listIssueStatuses <span style={{opacity:0.6}}>(programmatic only)</span>
 
 List all workflow states for a team.
 
@@ -118,6 +128,8 @@ List all workflow states for a team.
 const statuses = await linear.listIssueStatuses(team.id);
 const inProgress = statuses.find(s => s.name === "In Progress");
 ```
+
+> `listIssueStatuses` is only available as a programmatic method on the `useLinear()` hook. There is no corresponding agent tool in `linearTools`.
 
 ## linearTools
 
@@ -145,6 +157,27 @@ const triageAgent = new Agent({
 | `linearUpdateIssue` | Update an issue's state |
 | `linearAddComment` | Add a comment to an issue |
 | `linearListTeams` | List all workspace teams |
+
+### Importing individual tools
+
+If you only need a subset of Linear tools, you can import them individually from the subpath instead of using the bundled `linearTools` object:
+
+```ts
+import {
+  linearListIssues,
+  linearGetIssue,
+  linearUpdateIssue,
+  linearAddComment,
+  linearListTeams,
+} from "smithers-orchestrator/linear";
+
+const agent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { linearListIssues, linearGetIssue, read, grep },
+});
+```
+
+> These individual tool exports are only available from `smithers-orchestrator/linear`, not from the main `smithers-orchestrator` barrel.
 
 ## Types
 
@@ -360,4 +393,12 @@ const client = getLinearClient();
 const viewer = await client.viewer;
 ```
 
-The client is a lazy singleton — it's created once on first access using `LINEAR_API_KEY` and cached for the process lifetime. Call `resetLinearClient()` to clear the cache (useful in tests).
+The client is a lazy singleton — it's created once on first access using `LINEAR_API_KEY` and cached for the process lifetime. Call `resetLinearClient()` to clear the cache (useful in tests):
+
+```ts
+import { resetLinearClient } from "smithers-orchestrator/linear";
+
+resetLinearClient();
+```
+
+> `resetLinearClient` is only available from `smithers-orchestrator/linear`, not from the main barrel export.

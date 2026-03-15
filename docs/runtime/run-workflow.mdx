@@ -55,6 +55,19 @@ function runWorkflow<Schema>(
 | `allowNetwork` | `boolean` | `false` | Whether the `bash` tool is permitted to make network requests. |
 | `maxOutputBytes` | `number` | `200000` | Maximum number of bytes a single tool call can return. Output is truncated beyond this limit. |
 | `toolTimeoutMs` | `number` | `60000` | Maximum wall-clock time (in milliseconds) for a single tool call before it is killed. |
+| `hot` | `boolean \| HotReloadOptions` | `undefined` | Enable hot-reload mode. Pass `true` for defaults or a `HotReloadOptions` object to customize. See below. |
+
+### HotReloadOptions
+
+When `hot` is set to a `HotReloadOptions` object, the following sub-options are available:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `rootDir` | `string` | Auto-detect from workflow entry | Root directory to watch for file changes. |
+| `outDir` | `string` | `.smithers/hmr/<runId>` | Directory for generation overlays. |
+| `maxGenerations` | `number` | `3` | Maximum number of overlay generations to keep. |
+| `cancelUnmounted` | `boolean` | `false` | Whether to cancel tasks that become unmounted after a hot reload. |
+| `debounceMs` | `number` | `100` | Debounce interval in milliseconds for file change events. |
 
 ## RunResult
 

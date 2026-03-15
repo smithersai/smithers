@@ -153,15 +153,13 @@ const claudeCli = new ClaudeCodeAgent({
 
 export const claude = USE_CLI ? claudeCli : claudeApi;
 
-// Codex — same dual-mode pattern
-const codexCli = new CodexAgent({
+// Codex — CLI agent (CodexAgent does not have an API mode)
+export const codex = new CodexAgent({
   model: "gpt-5.3-codex",
   systemPrompt: SYSTEM_PROMPT,
   yolo: UNSAFE,
   timeoutMs: 30 * 60 * 1000,
 });
-
-export const codex = USE_CLI ? codexCli : codexApi;
 ```
 
 ## The Validation Loop — ValidationLoop.tsx

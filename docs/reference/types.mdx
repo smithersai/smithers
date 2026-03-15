@@ -168,6 +168,7 @@ type RunOptions = {
   allowNetwork?: boolean;
   maxOutputBytes?: number;
   toolTimeoutMs?: number;
+  hot?: boolean | HotReloadOptions;
 };
 ```
 
@@ -185,6 +186,31 @@ type RunOptions = {
 | `allowNetwork` | `boolean` | `false` | Allow network access in the `bash` tool |
 | `maxOutputBytes` | `number` | `200000` | Maximum output bytes for tool calls |
 | `toolTimeoutMs` | `number` | `60000` | Timeout for tool executions in milliseconds |
+| `hot` | `boolean \| HotReloadOptions` | `undefined` | Enable hot-reload mode. Pass `true` for defaults or a `HotReloadOptions` object to customize |
+
+---
+
+### HotReloadOptions
+
+Options for configuring hot-reload behavior when `hot` is set to an object.
+
+```ts
+type HotReloadOptions = {
+  rootDir?: string;
+  outDir?: string;
+  maxGenerations?: number;
+  cancelUnmounted?: boolean;
+  debounceMs?: number;
+};
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `rootDir` | `string` | Auto-detect from workflow entry | Root directory to watch for file changes |
+| `outDir` | `string` | `.smithers/hmr/<runId>` | Directory for generation overlays |
+| `maxGenerations` | `number` | `3` | Maximum number of overlay generations to keep |
+| `cancelUnmounted` | `boolean` | `false` | Whether to cancel tasks that become unmounted after a hot reload |
+| `debounceMs` | `number` | `100` | Debounce interval in milliseconds for file change events |
 
 ---
 
@@ -245,21 +271,31 @@ type TaskDescriptor = {
   ordinal: number;
   iteration: number;
   ralphId?: string;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  worktreeId?: string;
+  worktreePath?: string;
+  worktreeBranch?: string;
 
   outputTable: Table | null;
   outputTableName: string;
+  outputRef?: import("zod").ZodObject<any>;
   outputSchema?: import("zod").ZodObject<any>;
 
   parallelGroupId?: string;
   parallelMaxConcurrency?: number;
 
   needsApproval: boolean;
+  approvalMode?: "gate" | "decision";
+  approvalOnDeny?: "fail" | "continue" | "skip";
   skipIf: boolean;
   retries: number;
+  retryPolicy?: RetryPolicy;
   timeoutMs: number | null;
   continueOnFail: boolean;
+  cachePolicy?: CachePolicy;
 
-  agent?: AgentLike;
+  agent?: AgentLike | AgentLike[];
   prompt?: string;
   staticPayload?: unknown;
   computeFn?: () => unknown | Promise<unknown>;
@@ -273,19 +309,29 @@ type TaskDescriptor = {
 |---|---|---|
 | `nodeId` | `string` | Unique identifier for this task (from the `id` prop) |
 | `ordinal` | `number` | Position in the execution order (depth-first traversal) |
-| `iteration` | `number` | Current Ralph loop iteration |
-| `ralphId` | `string` | ID of the parent Ralph loop (if any) |
+| `iteration` | `number` | Current Loop iteration |
+| `ralphId` | `string` | ID of the parent Loop (if any) |
+| `dependsOn` | `string[]` | Array of node IDs this task explicitly depends on |
+| `needs` | `Record<string, string>` | Named dependencies. Keys become context keys, values are task node IDs |
+| `worktreeId` | `string` | ID of the git worktree assigned to this task |
+| `worktreePath` | `string` | Filesystem path to the git worktree |
+| `worktreeBranch` | `string` | Branch name for the git worktree |
 | `outputTable` | `Table \| null` | Drizzle table for persisting the output |
 | `outputTableName` | `string` | Name of the output table |
+| `outputRef` | `ZodObject<any>` | Zod schema reference from the `<Task>` `output` prop (used for schema resolution) |
 | `outputSchema` | `ZodObject<any>` | Optional Zod schema for validating agent output |
 | `parallelGroupId` | `string` | ID of the parent `<Parallel>` group (if any) |
 | `parallelMaxConcurrency` | `number` | Max concurrency limit from the parent `<Parallel>` |
 | `needsApproval` | `boolean` | Whether the task requires human approval before execution |
+| `approvalMode` | `"gate" \| "decision"` | Approval style: `"gate"` pauses before execution, `"decision"` records a decision |
+| `approvalOnDeny` | `"fail" \| "continue" \| "skip"` | Behavior when approval is denied |
 | `skipIf` | `boolean` | Whether this task should be skipped |
 | `retries` | `number` | Number of retry attempts on failure |
+| `retryPolicy` | `RetryPolicy` | Retry backoff configuration (`{ backoff?, initialDelayMs? }`) |
 | `timeoutMs` | `number \| null` | Task-level timeout in milliseconds |
 | `continueOnFail` | `boolean` | Whether to continue the workflow if this task fails |
-| `agent` | `AgentLike` | The AI agent assigned to execute this task |
+| `cachePolicy` | `CachePolicy` | Cache configuration (`{ by?, version? }`) |
+| `agent` | `AgentLike \| AgentLike[]` | The AI agent (or array of agents for fallback) assigned to execute this task |
 | `prompt` | `string` | The prompt text for the agent (from task children) |
 | `staticPayload` | `unknown` | Pre-computed payload (for non-agent tasks) |
 | `computeFn` | `() => unknown \| Promise<unknown>` | Callback invoked at execution time (for compute tasks) |
@@ -301,6 +347,44 @@ Type alias for any object that implements the AI SDK `Agent` interface.
 ```ts
 type AgentLike = Agent<any, any, any>;
 ```
+
+---
+
+### RetryPolicy
+
+Configuration for retry backoff behavior.
+
+```ts
+type RetryBackoff = "fixed" | "linear" | "exponential";
+
+type RetryPolicy = {
+  backoff?: RetryBackoff;
+  initialDelayMs?: number;
+};
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `backoff` | `"fixed" \| "linear" \| "exponential"` | `undefined` | Backoff strategy between retries |
+| `initialDelayMs` | `number` | `undefined` | Initial delay in milliseconds before the first retry |
+
+---
+
+### CachePolicy
+
+Configuration for task output caching.
+
+```ts
+type CachePolicy<Ctx = any> = {
+  by?: (ctx: Ctx) => unknown;
+  version?: string;
+};
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `by` | `(ctx: Ctx) => unknown` | `undefined` | Function that returns a cache key from the context. Tasks with the same key reuse cached output |
+| `version` | `string` | `undefined` | Cache version string. Changing this invalidates existing cached outputs |
 
 ---
 
@@ -590,12 +674,12 @@ type BranchProps = {
 
 ---
 
-### RalphProps
+### LoopProps
 
-Props for the `<Ralph>` component. Loops its children until a condition is met.
+Props for the `<Loop>` component. Loops its children until a condition is met. This is the primary loop API.
 
 ```ts
-type RalphProps = {
+type LoopProps = {
   id?: string;
   until: boolean;
   maxIterations?: number;
@@ -607,12 +691,82 @@ type RalphProps = {
 
 | Prop | Type | Required | Description |
 |---|---|---|---|
-| `id` | `string` | No | Unique identifier for the Ralph loop (auto-generated if omitted) |
+| `id` | `string` | No | Unique identifier for the loop (auto-generated if omitted) |
 | `until` | `boolean` | Yes | Exit condition. When `true`, the loop stops. |
 | `maxIterations` | `number` | No | Maximum number of loop iterations |
 | `onMaxReached` | `"fail" \| "return-last"` | No | Behavior when `maxIterations` is exceeded: fail the run or return the last successful output |
 | `skipIf` | `boolean` | No | Skip the loop entirely when true |
 | `children` | `ReactNode` | No | Child tasks executed each iteration |
+
+---
+
+### RalphProps
+
+> **Deprecated:** Use `LoopProps` instead. `RalphProps` is a type alias for `LoopProps`.
+
+```ts
+type RalphProps = LoopProps;
+```
+
+---
+
+### ApprovalProps\<Row\>
+
+Props for the `<Approval>` component. Represents a human approval gate within a workflow.
+
+```ts
+type ApprovalProps<Row = ApprovalDecision> = {
+  id: string;
+  output: ZodObject<any> | Table | string;
+  outputSchema?: import("zod").ZodObject<any>;
+  request: ApprovalRequest;
+  onDeny?: "fail" | "continue" | "skip";
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  skipIf?: boolean;
+  timeoutMs?: number;
+  retries?: number;
+  retryPolicy?: RetryPolicy;
+  continueOnFail?: boolean;
+  cache?: CachePolicy;
+  label?: string;
+  meta?: Record<string, unknown>;
+  key?: string;
+  children?: React.ReactNode;
+};
+
+type ApprovalRequest = {
+  title: string;
+  summary?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type ApprovalDecision = {
+  approved: boolean;
+  note: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+};
+```
+
+| Prop | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | Unique identifier for the approval node |
+| `output` | `ZodObject<any> \| Table \| string` | Yes | Where to persist the approval decision. Pass a Zod schema from `outputs` (recommended), a Drizzle table, or a string key |
+| `outputSchema` | `ZodObject<any>` | No | Zod schema for validating the decision output |
+| `request` | `ApprovalRequest` | Yes | Approval request details (title, summary, metadata) |
+| `onDeny` | `"fail" \| "continue" \| "skip"` | No | Behavior when approval is denied |
+| `dependsOn` | `string[]` | No | Explicit dependency on other task node IDs |
+| `needs` | `Record<string, string>` | No | Named dependencies. Keys become context keys, values are task node IDs |
+| `skipIf` | `boolean` | No | Skip this approval when true |
+| `timeoutMs` | `number` | No | Timeout in milliseconds |
+| `retries` | `number` | No | Number of retry attempts on failure |
+| `retryPolicy` | `RetryPolicy` | No | Retry backoff configuration |
+| `continueOnFail` | `boolean` | No | Continue the workflow if this approval fails |
+| `cache` | `CachePolicy` | No | Cache configuration |
+| `label` | `string` | No | Human-readable label (defaults to `request.title`) |
+| `meta` | `Record<string, unknown>` | No | Arbitrary metadata |
+| `children` | `ReactNode` | No | Child elements |
 
 ---
 

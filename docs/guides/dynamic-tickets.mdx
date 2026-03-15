@@ -27,7 +27,7 @@ The workflow has three key parts:
 import { Sequence, Branch } from "smithers-orchestrator";
 import { Discover, TicketPipeline } from "./components";
 import { Ticket } from "./components/Discover.schema";
-import { Workflow, smithers, tables } from "./smithers";
+import { Workflow, smithers, tables, outputs } from "./smithers";
 
 export default smithers((ctx) => {
   const discoverOutput = ctx.latest(tables.discover, "discover-codex");
@@ -66,7 +66,7 @@ Discover uses an agent to analyze the codebase and produce structured tickets:
 // components/Discover.tsx
 import { codex } from "../agents";
 import DiscoverPrompt from "./Discover.mdx";
-import { Task, useCtx, tables } from "../smithers";
+import { Task, useCtx, tables, outputs } from "../smithers";
 import { Ticket } from "./Discover.schema";
 
 export function Discover() {

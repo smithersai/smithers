@@ -21,8 +21,9 @@
     { "source": "/docs/integrations/:slug*", "destination": "/integrations/:slug*" },
     { "source": "/docs/examples/:slug*", "destination": "/examples/:slug*" },
     { "source": "/docs/reference/:slug*", "destination": "/reference/:slug*" },
-    { "source": "/docs/ralph", "destination": "/components/ralph" },
-    { "source": "/docs/loop", "destination": "/components/ralph" },
+    { "source": "/docs/ralph", "destination": "/components/loop" },
+    { "source": "/docs/loop", "destination": "/components/loop" },
+    { "source": "/components/ralph", "destination": "/components/loop" },
     { "source": "/docs/task", "destination": "/components/task" },
     { "source": "/docs/workflow", "destination": "/components/workflow" },
     { "source": "/docs/sequence", "destination": "/components/sequence" },
@@ -35,6 +36,15 @@
   "navigation": {
     "global": {
       "anchors": [
+        {
+          "anchor": "Getting Started",
+          "href": "/introduction",
+          "pages": [
+            "introduction",
+            "installation",
+            "quickstart"
+          ]
+        },
         {
           "anchor": "Core Concepts",
           "href": "/concepts/execution-model",
@@ -70,8 +80,10 @@
             "integrations/tools",
             "integrations/linear",
             "integrations/cli-agents",
+            "integrations/sdk-agents",
             "integrations/server",
-            "integrations/pi-plugin"
+            "integrations/pi-plugin",
+            "integrations/pi-integration"
           ]
         }
       ]
@@ -135,7 +147,8 @@
               "components/sequence",
               "components/parallel",
               "components/branch",
-              "components/ralph",
+              "components/loop",
+              "components/approval",
               "components/merge-queue",
               "components/worktree"
             ]
@@ -157,7 +170,8 @@
               "guides/debugging",
               "guides/monitoring-logs",
               "guides/best-practices",
-              "guides/vcs"
+              "guides/vcs",
+              "guides/troubleshooting"
             ]
           },
           {

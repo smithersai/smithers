@@ -19,6 +19,7 @@ import { Parallel } from "smithers-orchestrator";
 
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
+| `id` | `string` | `undefined` | Optional stable id for tracking and deduping the parallel group. |
 | `maxConcurrency` | `number` | `Infinity` | Maximum number of child tasks that can run simultaneously. When the limit is reached, remaining tasks wait until a running task completes before starting. |
 | `skipIf` | `boolean` | `false` | When `true`, the entire parallel group and all its children are skipped. The component returns `null` and no child tasks are mounted. |
 | `children` | `ReactNode` | `undefined` | The tasks and control-flow components to execute concurrently. |

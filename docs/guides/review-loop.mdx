@@ -24,7 +24,7 @@ The loop repeats until both reviewers approve or `maxIterations` is hit.
 import { createSmithers, Task, Sequence, Parallel, Loop } from "smithers-orchestrator";
 import { z } from "zod";
 
-const { Workflow, smithers, tables } = createSmithers({
+const { Workflow, smithers, tables, outputs } = createSmithers({
   implement: z.object({
     summary: z.string(),
     filesChanged: z.array(z.string()),
@@ -102,7 +102,7 @@ The Review component runs Claude and Codex in parallel. Using two different mode
 ```tsx
 // components/Review.tsx
 import { Parallel } from "smithers-orchestrator";
-import { Task, useCtx, tables } from "../smithers";
+import { Task, useCtx, tables, outputs } from "../smithers";
 import { claude, codex } from "../agents";
 import ReviewPrompt from "./Review.mdx";
 import type { Ticket } from "./Discover.schema";
@@ -153,7 +153,7 @@ On subsequent iterations, the Implement component reads previous review issues a
 
 ```tsx
 // components/Implement.tsx
-import { Task, useCtx, tables } from "../smithers";
+import { Task, useCtx, tables, outputs } from "../smithers";
 import { codex } from "../agents";
 import ImplementPrompt from "./Implement.mdx";
 import type { Ticket } from "./Discover.schema";
@@ -193,7 +193,7 @@ The ReviewFix component only runs if there are actual issues to fix. If both rev
 
 ```tsx
 // components/ReviewFix.tsx
-import { Task, useCtx, tables } from "../smithers";
+import { Task, useCtx, tables, outputs } from "../smithers";
 import { codex } from "../agents";
 import ReviewFixPrompt from "./ReviewFix.mdx";
 import type { Ticket } from "./Discover.schema";

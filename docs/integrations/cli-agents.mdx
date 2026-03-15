@@ -1,6 +1,6 @@
 ---
 title: CLI Agents
-description: Run external AI CLI tools (Claude Code, Codex, Gemini CLI, PI, Kimi, Forge) as drop-in Smithers agents that implement the AI SDK agent interface.
+description: Run external AI CLI tools (Claude Code, Codex, Gemini CLI, PI, Kimi, Forge, Amp) as drop-in Smithers agents that implement the AI SDK agent interface.
 ---
 
 Smithers ships CLI-backed agent classes that wrap external AI command-line tools. Each agent implements the AI SDK `Agent` interface, so they work as drop-in replacements anywhere you would use an AI SDK agent -- including in `<Task>` components.
@@ -19,6 +19,7 @@ import {
   PiAgent,
   KimiAgent,
   ForgeAgent,
+  AmpAgent,
   type PiAgentOptions,
   type PiExtensionUiRequest,
   type PiExtensionUiResponse,
@@ -37,11 +38,12 @@ Each agent requires its corresponding CLI tool installed and available in the sy
 | `PiAgent` | `pi` | [PI Coding Agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) |
 | `KimiAgent` | `kimi` | [Kimi CLI](https://moonshotai.github.io/kimi-cli/) |
 | `ForgeAgent` | `forge` | [Forge CLI](https://github.com/antinomyhq/forge) |
+| `AmpAgent` | `amp` | [Amp CLI](https://github.com/nichochar/amp-cli) |
 
 ## Quick Start
 
 ```ts
-import { ClaudeCodeAgent, CodexAgent, GeminiAgent, PiAgent, KimiAgent, ForgeAgent } from "smithers-orchestrator";
+import { ClaudeCodeAgent, CodexAgent, GeminiAgent, PiAgent, KimiAgent, ForgeAgent, AmpAgent } from "smithers-orchestrator";
 
 const claude = new ClaudeCodeAgent({ model: "claude-sonnet-4-20250514" });
 const codex = new CodexAgent({ model: "gpt-4.1" });
@@ -49,6 +51,7 @@ const gemini = new GeminiAgent({ model: "gemini-2.5-pro" });
 const pi = new PiAgent({ provider: "openai", model: "gpt-5.2-codex" });
 const kimi = new KimiAgent({ model: "kimi-latest" });
 const forge = new ForgeAgent({ model: "anthropic/claude-sonnet-4-20250514" });
+const amp = new AmpAgent({ model: "claude-sonnet-4-20250514" });
 ```
 
 Use them in workflows like any other agent:
@@ -285,7 +288,7 @@ type GeminiAgentOptions = BaseCliAgentOptions & {
 | `allowedTools` | Whitelist of tool names |
 | `extensions` | Gemini CLI extensions to load |
 | `includeDirectories` | Additional directories to include |
-| `outputFormat` | Output format: `"text"`, `"json"`, or `"stream-json"` (default: `"text"`) |
+| `outputFormat` | Output format: `"text"`, `"json"`, or `"stream-json"` (default: `"json"`) |
 
 **Yolo mode behavior:** When `yolo` is `true` and `approvalMode` is not set, the agent passes `--yolo`.
 
@@ -475,6 +478,50 @@ type ForgeAgentOptions = BaseCliAgentOptions & {
 **Yolo mode behavior:** Forge's `--prompt` mode auto-approves tool use; there is no separate yolo flag.
 
 **Input handling:** The prompt (with system prompt prepended) is passed via the `--prompt` flag.
+
+---
+
+## AmpAgent
+
+Wraps the `amp` CLI using `--execute` mode for non-interactive execution.
+
+```ts
+const amp = new AmpAgent({
+  model: "claude-sonnet-4-20250514",
+  visibility: "private",
+  logLevel: "info",
+});
+```
+
+### Amp-Specific Options
+
+```ts
+type AmpAgentOptions = BaseCliAgentOptions & {
+  visibility?: "private" | "public" | "workspace" | "group";
+  mcpConfig?: string;
+  settingsFile?: string;
+  logLevel?: "error" | "warn" | "info" | "debug" | "audit";
+  logFile?: string;
+  dangerouslyAllowAll?: boolean;
+  ide?: boolean;
+  jetbrains?: boolean;
+};
+```
+
+**Key options:**
+
+| Option | Description |
+|---|---|
+| `visibility` | Thread visibility: `"private"`, `"public"`, `"workspace"`, or `"group"` |
+| `mcpConfig` | Path to MCP configuration file |
+| `settingsFile` | Path to custom settings file |
+| `logLevel` | Log verbosity: `"error"`, `"warn"`, `"info"`, `"debug"`, or `"audit"` |
+| `logFile` | Path to log output file |
+| `dangerouslyAllowAll` | Allow all tool calls without confirmation |
+
+**Yolo mode behavior:** When `yolo` is `true` (the default) or `dangerouslyAllowAll` is `true`, the agent passes `--dangerously-allow-all`.
+
+**Input handling:** The prompt (with system prompt prepended) is passed via the `--execute` flag. The agent automatically passes `--no-ide`, `--no-jetbrains`, `--no-color`, and `--archive` for headless execution.
 
 ---
 

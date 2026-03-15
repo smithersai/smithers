@@ -89,22 +89,30 @@ Use this when you want things like:
 - `handler:` functions that run Effect code
 - shared services loaded through `imports:`
 
-## Optional TOON Plugins
+## Agents in TOON
 
-If you want TOON-specific plugins for model providers or custom node kinds, install them alongside the core runtime:
+TOON files declare agents inline using the `agents:` block. No extra packages are needed — Smithers ships with built-in support for multiple providers (Anthropic, OpenAI, Gemini, and more) through the Vercel AI SDK.
 
-```bash
-bun add smithers-plugin-anthropic
+```toon
+agents:
+  assistant:
+    type: anthropic
+    model: claude-sonnet-4-20250514
+    instructions: You are a concise assistant.
 ```
 
-Then reference them from your `.toon` file:
+Supported agent types include `anthropic`, `claude-code`, `openai`, `gemini`, `codex`, and others. See the [TOON Overview](/toon/overview) for details on declaring agents.
+
+## Optional TOON Plugins
+
+If you need custom node kinds or additional services, write a local plugin file and import it:
 
 ```toon
 imports:
   plugins[1]:
-    - from: smithers-plugin-anthropic
+    - from: ./my-plugin.ts
       config:
-        defaultModel: claude-sonnet-4-20250514
+        suffix: "!"
 ```
 
 Plugins are loaded when Smithers compiles the `.toon` file. They can register providers, node kinds, interpolation helpers, and supporting services.

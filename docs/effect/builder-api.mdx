@@ -45,7 +45,8 @@ const analyze = $.step("analyze", {
 | `output` | `Model.Class` | yes | The persisted output model |
 | `run` | `(ctx) => Effect<Output>` | yes | The step body |
 | `needs` | `Record<string, StepHandle>` | no | Upstream dependencies |
-| `retry` | `Schedule` | no | Effect retry schedule |
+| `retry` | `any` | no | Retry configuration — accepts an Effect `Schedule` or a plain number (retry count) |
+| `retryPolicy` | `RetryPolicy` | no | Declarative retry policy with backoff strategy (`{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }`) |
 | `timeout` | `DurationInput` | no | Step timeout |
 | `cache` | `CachePolicy` | no | Cache configuration |
 | `skipIf` | `(ctx) => boolean` | no | Condition to skip |
@@ -205,7 +206,7 @@ References a reusable workflow fragment:
 ```ts
 const ReviewCycle = Smithers.component({
   name: "ReviewCycle",
-  params: { content: Schema.String, reviewer: Schema.String },
+  params: { content: "string", reviewer: "string" },
 }).build(($, params) => {
   const review = $.step("review", {
     output: Review,
@@ -246,6 +247,26 @@ return $.sequence(
   deploy,
 );
 ```
+
+## `Smithers.loadToon()`
+
+Loads a `.toon` file and returns a workflow that can be executed like any builder workflow:
+
+```ts
+const MyWorkflow = Smithers.loadToon("./workflows/my-workflow.toon");
+
+const result = await Effect.runPromise(
+  MyWorkflow.execute(new Input({ ... })).pipe(
+    Effect.provide(AppLive),
+  ),
+);
+```
+
+| Param | Type | Description |
+| --- | --- | --- |
+| `path` | `string` | File path to the `.toon` workflow definition |
+
+Returns a `BuiltSmithersWorkflow` with an `execute` method that accepts the workflow input and optional execution options.
 
 ## Executing a Workflow
 

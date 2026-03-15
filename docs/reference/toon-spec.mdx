@@ -12,7 +12,7 @@ A `.toon` file is a TOON (Token-Oriented Object Notation) document with the foll
 ```toon
 imports:        # optional — external schemas, services, components, plugins, agents
 name:           # required — workflow name
-agents:         # required — named agent declarations
+agents:         # optional — named agent declarations (not needed if agents are imported or steps use run/handler)
 input:          # required — input schema
 schemas:        # optional — reusable output schemas
 components:     # optional — reusable step groups
@@ -47,28 +47,31 @@ input: TicketInput
 
 ### `agents`
 
-**Required** (for workflows with `prompt:` steps). Named agent declarations.
+**Optional.** Named agent declarations. Required only when steps use `prompt:` and agents are not imported.
 
 ```toon
 agents:
   coder:
     type: claude-code
-    model: claude-opus-4-6
     subscription: true
     instructions: You are a senior software engineer.
 
   reviewer:
     type: codex
-    model: gpt-5.4
     fullAuto: true
+
+  analyst:
+    type: anthropic
+    model: claude-opus-4-6
+    instructions: You are a data analyst.
 ```
 
 Each agent has:
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `type` | string | yes | Agent runtime: `claude-code`, `codex`, `gemini`, `pi`, `kimi`, `forge`, `api` |
-| `model` | string | yes | Model identifier |
+| `type` | string | yes | Agent runtime: `claude-code`, `codex`, `gemini`, `pi`, `kimi`, `forge`, `anthropic`, `openai`, `api` |
+| `model` | string | conditional | Model identifier. Required for `anthropic`, `openai`, and `api` types. Optional for CLI agents (`claude-code`, `codex`, `gemini`, `pi`, `kimi`, `forge`) which have built-in defaults. |
 | `instructions` | string | no | System prompt / persona |
 | `tools` | "string[]" | no | Tool names the agent can use |
 | `subscription` | boolean | no | Use subscription billing (Claude Code) |
@@ -76,6 +79,24 @@ Each agent has:
 | `idleTimeoutMs` | number | no | Inactivity timeout in milliseconds |
 
 Additional type-specific fields are passed through to the underlying agent constructor (e.g., `fullAuto` for Codex, `permissionMode` for Claude Code, `sandbox` for Gemini).
+
+#### `type: api`
+
+The `api` type is a generic provider-based agent that requires explicit `provider` and `model` fields. Currently supported providers are `anthropic` and `openai`.
+
+```toon
+agents:
+  custom-agent:
+    type: api
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    instructions: You are a helpful assistant.
+```
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `provider` | string | yes | Provider name: `anthropic` or `openai` |
+| `model` | string | yes | Model identifier for the provider |
 
 ### `schemas`
 
@@ -153,6 +174,19 @@ Every entry in `steps:` is a node. Nodes are either **steps** (default) or **con
   skipIf: "expression"    # optional — skip condition
 ```
 
+Each step must define exactly one of `prompt`, `run`, or `handler`.
+
+#### `handler` (advanced)
+
+The `handler` field references an external TypeScript module that exports a function. The format is `./path/to/module.ts` or `./path/to/module.ts#namedExport`. If no export name is specified, the default export is used. The function receives the step context (with `input`, upstream step outputs, and services) and returns the step output.
+
+```toon
+- id: transform
+  handler: ./handlers/transform.ts#processData
+  output:
+    result: string
+```
+
 ### `kind: sequence`
 
 ```toon
@@ -222,6 +256,19 @@ Every entry in `steps:` is a node. Nodes are either **steps** (default) or **con
   children[1]:
     - id: implement
       ...
+```
+
+### `kind: workflow`
+
+Invokes an imported workflow as a sub-workflow. The `use` field references a workflow alias declared in `imports.workflows`. Input fields are mapped via the `input` block and support interpolation.
+
+```toon
+- kind: workflow
+  id: run-tests            # required — step identifier
+  use: testSuite           # required — workflow alias from imports
+  input:                   # optional — input mapping
+    repo: "{input.repoUrl}"
+    branch: "{checkout.branch}"
 ```
 
 ### `kind: component`
@@ -330,6 +377,7 @@ imports:
 - `kind: loop` repeats children until `until:` is true or `maxIterations` is reached
 - `kind: approval` **suspends** execution durably
 - `kind: branch` takes one path based on `condition:`
+- `kind: workflow` invokes an imported workflow as a sub-workflow
 - Dependencies declared in `needs:` are resolved before the step runs
 - Implicit dependencies from `{stepId.field}` interpolation are also resolved
 

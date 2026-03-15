@@ -278,11 +278,11 @@ The control plane should target approval nodes directly.
 For example:
 
 ```bash
-smithers approve workflow.ts --execution-id <id> --gate approve-deploy --note "Ship it"
-smithers deny workflow.ts --execution-id <id> --gate approve-deploy --note "Blocked by QA"
+smithers approve workflow.ts --run-id <id> --node-id approve-deploy --note "Ship it"
+smithers deny workflow.ts --run-id <id> --node-id approve-deploy --note "Blocked by QA"
 ```
 
-The exact transport can vary, but the key should be `(executionId, gateId)`, not a hidden internal row id.
+The exact transport can vary, but the key should be `(runId, nodeId)`, not a hidden internal row id.
 
 ## Why Explicit Gates Matter
 

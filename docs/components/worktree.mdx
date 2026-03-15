@@ -19,6 +19,7 @@ import { Worktree, Task, Parallel, MergeQueue } from "smithers";
 | --- | --- | --- | --- |
 | `id` | `string` | auto-generated | Optional stable id for tracking and deduping. |
 | `path` | `string` | — | Filesystem path for the JJ workspace root. Required; non-empty. |
+| `branch` | `string` | `undefined` | Git/JJ branch name to check out in the worktree. When omitted, the worktree uses the current branch. |
 | `skipIf` | `boolean` | `false` | Skip the subtree when true. |
 | `children` | `ReactNode` | — | Nested tasks and control-flow nodes. |
 
