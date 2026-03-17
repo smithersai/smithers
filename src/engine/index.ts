@@ -40,7 +40,7 @@ import { z } from "zod";
 import { eq, getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
 import { Effect, Metric } from "effect";
-import { cacheHits, cacheMisses, nodeDuration, attemptDuration, schedulerQueueDepth } from "../effect/metrics";
+import { cacheHits, cacheMisses, nodeDuration, attemptDuration, schedulerQueueDepth, promptSizeBytes, responseSizeBytes, runDuration, runsResumedTotal } from "../effect/metrics";
 import { dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -1490,7 +1490,42 @@ async function executeTask(
             });
           },
         );
+
+        // --- Track prompt/response sizes ---
+        const promptBytes = Buffer.byteLength(desc.prompt ?? "", "utf8");
+        void runPromise(Metric.update(promptSizeBytes, promptBytes));
+
         responseText = (result as any).text ?? null;
+        if (responseText) {
+          void runPromise(Metric.update(responseSizeBytes, Buffer.byteLength(responseText, "utf8")));
+        }
+
+        // --- Track token usage ---
+        const usage = (result as any).usage ?? (result as any).totalUsage;
+        if (usage) {
+          const inputTokens = usage.inputTokens ?? usage.promptTokens ?? 0;
+          const outputTokens = usage.outputTokens ?? usage.completionTokens ?? 0;
+          const cacheReadTokens = usage.inputTokenDetails?.cacheReadTokens ?? usage.cacheReadTokens ?? undefined;
+          const cacheWriteTokens = usage.inputTokenDetails?.cacheWriteTokens ?? usage.cacheWriteTokens ?? undefined;
+          const reasoningTokens = usage.outputTokenDetails?.reasoningTokens ?? usage.reasoningTokens ?? undefined;
+          if (inputTokens > 0 || outputTokens > 0) {
+            void eventBus.emitEventQueued({
+              type: "TokenUsageReported",
+              runId,
+              nodeId: desc.nodeId,
+              iteration: desc.iteration,
+              attempt: attemptNo,
+              model: (effectiveAgent as any).model ?? (effectiveAgent as any).id ?? "unknown",
+              agent: (effectiveAgent as any).id ?? (effectiveAgent as any).constructor?.name ?? "unknown",
+              inputTokens,
+              outputTokens,
+              cacheReadTokens,
+              cacheWriteTokens,
+              reasoningTokens,
+              timestampMs: nowMs(),
+            });
+          }
+        }
         let output: any;
 
         // Try structured output first (wrapping in try/catch since getters may throw)
@@ -2311,6 +2346,8 @@ async function runWorkflowBody<Schema>(
       timestampMs: nowMs(),
     });
 
+    const runStartPerformanceMs = performance.now();
+
     await cancelStaleAttempts(adapter, runId);
 
     if (opts.resume) {
@@ -2774,6 +2811,7 @@ async function runWorkflowBody<Schema>(
           runId,
           timestampMs: nowMs(),
         });
+        void runPromise(Metric.update(runDuration, performance.now() - runStartPerformanceMs));
         logInfo("workflow run finished", {
           runId,
         }, "engine:run");
