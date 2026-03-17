@@ -1,6 +1,6 @@
 # Smithers
 
-> Deterministic, resumable AI workflow orchestration using TOON, JSX, and Effect Builder.
+> Deterministic, resumable AI workflow orchestration using TOON and JSX.
 > Source: https://smithers.sh
 > GitHub: https://github.com/evmts/smithers
 > Package: smithers-orchestrator on npm
@@ -14,7 +14,7 @@ This file contains the complete Smithers documentation. Each section below corre
 > Choose the Smithers API that matches how you want to author workflows.
 > Source: https://smithers.sh/introduction
 
-Smithers supports three authoring APIs. They all compile to the same durable execution engine, but they optimize for different ways of building workflows.
+Smithers supports two authoring APIs. They both compile to the same durable execution engine, but they optimize for different ways of building workflows.
 
 ## Choose an API
 
@@ -22,7 +22,6 @@ Smithers supports three authoring APIs. They all compile to the same durable exe
 | --- | --- | --- |
 | **TOON** | Prompt-first workflows and the fastest path to a working flow | [Overview](/toon/overview), [Installation](/toon/installation), [Quickstart](/toon/quickstart) |
 | **JSX** | TSX composition, render-time branching, and MDX prompts | [Overview](/jsx/overview), [Installation](/jsx/installation), [Quickstart](/jsx/quickstart) |
-| **Effect Builder** | Typed step handles, `Layer` composition, and low-level control | [Overview](/effect/overview), [Installation](/effect/installation), [Quickstart](/effect/quickstart) |
 
 ## Shared Runtime
 
@@ -34,13 +33,12 @@ No matter which API you choose, Smithers handles the same runtime concerns:
 - parallel execution and loops
 - structured events, metrics, and observability
 
-The sidebar sections for Core Concepts, Runtime, CLI, and Integrations are shared across all three API tabs because they describe the common engine underneath the authoring layers.
+The sidebar sections for Core Concepts, Runtime, CLI, and Integrations are shared across both API tabs because they describe the common engine underneath the authoring layers.
 
 ## Next Steps
 
 - [TOON Overview](/toon/overview) — Start with the declarative API.
 - [JSX API](/jsx/overview) — Build workflows as TSX components.
-- [Effect Builder](/effect/overview) — Use the low-level typed builder.
 
 ---
 
@@ -57,11 +55,10 @@ Smithers has separate installation guides for each authoring API.
 | --- | --- | --- |
 | **TOON** | You want declarative `.toon` files and the least setup | [TOON Installation](/toon/installation) |
 | **JSX** | You want TSX workflows, MDX prompts, and render-time branching | [JSX Installation](/jsx/installation) |
-| **Effect Builder** | You want `Layer`, `Context.Tag`, and low-level graph construction | [Effect Installation](/effect/installation) |
 
 ## Shared Requirements
 
-All three APIs run on the same underlying runtime, so these show up everywhere:
+Both APIs run on the same underlying runtime, so these show up everywhere:
 
 - Bun
 - local SQLite persistence
@@ -72,7 +69,6 @@ All three APIs run on the same underlying runtime, so these show up everywhere:
 
 - [TOON Installation](/toon/installation) — Start with the declarative path.
 - [JSX Installation](/jsx/installation) — Set up TSX and optional MDX prompts.
-- [Effect Installation](/effect/installation) — Install the low-level builder stack.
 
 ---
 
@@ -89,11 +85,10 @@ Smithers has a different quickstart for each authoring API.
 | --- | --- | --- |
 | **TOON** | A declarative `.toon` workflow with inline schemas and prompts | [TOON Quickstart](/toon/quickstart) |
 | **JSX** | A TSX workflow with `<Task>` components and `ctx.outputMaybe(...)` | [JSX Quickstart](/jsx/quickstart) |
-| **Effect Builder** | A low-level workflow graph built with `$.step()` and `Layer` | [Effect Quickstart](/effect/quickstart) |
 
 ## Same Runtime, Different Authoring Style
 
-All three quickstarts end up on the same runtime:
+Both quickstarts end up on the same runtime:
 
 - steps are persisted to SQLite
 - completed work resumes after restarts
@@ -104,7 +99,6 @@ All three quickstarts end up on the same runtime:
 
 - [TOON Quickstart](/toon/quickstart) — Start with the declarative flow.
 - [JSX Quickstart](/jsx/quickstart) — Build a render-driven TSX workflow.
-- [Effect Quickstart](/effect/quickstart) — Build the same idea with typed step handles.
 
 ---
 
@@ -138,30 +132,29 @@ Unlike the old JSX API, the workflow definition is not re-rendered after each st
 
 ## Phase 1: Build the Graph
 
-The workflow graph can be produced from any of Smithers' three definition layers:
+The workflow graph can be produced from either of Smithers' two definition layers:
 
 - **TOON** — a `.toon` file is compiled into a workflow graph at build time
-- **Effect builder** — `Smithers.workflow(...).build(...)` constructs the graph in TypeScript
 - **JSX** — the React renderer extracts `TaskDescriptor` objects from a component tree
 
-All three produce the same internal graph structure. The rest of the execution model is identical regardless of which layer defined the workflow.
+Both produce the same internal graph structure. The rest of the execution model is identical regardless of which layer defined the workflow.
 
-The builder API runs once to produce a workflow graph:
+A TOON workflow describes the graph declaratively:
 
-```ts
-const Workflow = Smithers.workflow({
-  name: "review-loop",
-  input: Input,
-}).build(($) => {
-  const analyze = $.step("analyze", { output: Analysis, run: ... });
-  const review = $.step("review", {
-    output: Review,
-    needs: { analysis: analyze },
-    run: ...,
-  });
-
-  return $.sequence(analyze, review);
-});
+```toon
+name: review-loop
+input:
+  topic: string
+steps[2]:
+  - id: analyze
+    run: "return { summary: `Analysis of ${input.topic}` };\n"
+    output:
+      summary: string
+  - id: review
+    run: "return { approved: true, feedback: 'LGTM' };\n"
+    output:
+      approved: boolean
+      feedback: string
 ```
 
 This phase is pure:
@@ -422,18 +415,8 @@ input:
   description: string
 ```
 
-**In the Effect builder:**
 
-```ts
-import { Schema } from "effect";
-
-class Input extends Schema.Class<Input>("Input")({
-  ticketId: Schema.String,
-  description: Schema.String,
-}) {}
-```
-
-Both compile to the same `Schema` validation. Smithers validates input against this schema before the workflow starts. After validation, steps receive a typed `input` value.
+Smithers validates input against this schema before the workflow starts. After validation, steps receive a typed `input` value.
 
 Use `Schema` for input because:
 
@@ -457,24 +440,8 @@ steps[1]:
 
 TOON output schemas compile to `Model.Class` definitions automatically.
 
-**In the Effect builder:**
 
-```ts
-import { Model } from "@effect/sql";
-import { Schema } from "effect";
-
-class Analysis extends Model.Class<Analysis>("Analysis")({
-  summary: Schema.String,
-  severity: Schema.Literal("low", "medium", "high"),
-}) {}
-
-class Fix extends Model.Class<Fix>("Fix")({
-  patch: Schema.String,
-  explanation: Schema.String,
-}) {}
-```
-
-The important point is that these are **domain models**, not workflow bookkeeping types.
+TOON output schemas compile to model definitions automatically.
 
 You should not need to add fields like:
 
@@ -686,7 +653,7 @@ Instead of:
 needsApproval: true
 ```
 
-approvals are explicit nodes in JSX, TOON, and the Effect builder.
+approvals are explicit nodes in JSX and TOON.
 
 **In JSX:**
 
@@ -758,31 +725,6 @@ steps[3]:
       url: string
 ```
 
-**In the Effect builder:**
-
-```ts
-const build = $.step("build", {
-  output: BuildResult,
-  run: ...,
-});
-
-const approveDeploy = $.approval("approve-deploy", {
-  needs: { build },
-  request: ({ build }) => ({
-    title: `Deploy ${build.version}?`,
-    summary: `Commit ${build.commitSha} passed all checks.`,
-  }),
-  onDeny: "fail",
-});
-
-const deploy = $.step("deploy", {
-  output: Deployment,
-  needs: { build, approval: approveDeploy },
-  run: ({ build }) => ...,
-});
-
-return $.sequence(build, approveDeploy, deploy);
-```
 
 This is better for three reasons:
 
@@ -1000,21 +942,6 @@ steps[1]:
       version: analysis-v1
 ```
 
-**In the Effect builder:**
-
-```ts
-const analyze = $.step("analyze", {
-  output: Analysis,
-  cache: {
-    by: ({ input }) => ({
-      ticketId: input.ticketId,
-      description: input.description,
-    }),
-    version: "analysis-v1",
-  },
-  run: ({ input }) => ...,
-});
-```
 
 This says:
 
@@ -1208,12 +1135,12 @@ If that sentence feels false, the step probably should not use caching.
 > **Warning:** This page describes internal architecture. You do not need it to write workflows, but it is useful when designing new primitives or debugging scheduler behavior.
 
 
-Smithers compiles workflow definitions — whether from TOON files, the Effect builder, or JSX — into a normalized internal plan and drives execution from durable state transitions.
+Smithers compiles workflow definitions — whether from TOON files or JSX — into a normalized internal plan and drives execution from durable state transitions.
 
 ## Pipeline Overview
 
 ```txt
-TOON File / Builder API / JSX
+TOON File / JSX
   ->
 Workflow Graph
   ->
@@ -1230,19 +1157,26 @@ The internal architecture should be centered on those phases.
 
 ## Stage 1: Builder Capture
 
-The builder captures a typed graph from calls like:
+The workflow definition captures a typed graph. For example, in TOON:
 
-```ts
-const workflow = Smithers.workflow({
-  name: "bugfix",
-  input: Input,
-}).build(($) => {
-  const analyze = $.step("analyze", { output: Analysis, run: ... });
-  const approve = $.approval("approve", { needs: { analyze }, request: ... });
-  const fix = $.step("fix", { output: Fix, needs: { analyze, approve }, run: ... });
-
-  return $.sequence(analyze, approve, fix);
-});
+```toon
+name: bugfix
+input:
+  title: string
+steps[3]:
+  - id: analyze
+    run: "return { summary: input.title };\n"
+    output:
+      summary: string
+  - kind: approval
+    id: approve
+    request:
+      title: "Approve fix for {analyze.summary}?"
+    onDeny: fail
+  - id: fix
+    run: "return { patch: 'fix applied' };\n"
+    output:
+      patch: string
 ```
 
 At this point Smithers should have an internal graph with explicit node kinds, stable ids, and typed handles.
@@ -1262,8 +1196,6 @@ type WorkflowNode =
 The important part is that the graph is already explicit before execution begins.
 
 ## Stage 2: Normalization
-
-The raw builder graph is convenient for authoring, but the runtime wants a normalized representation.
 
 Normalization should:
 
@@ -1293,7 +1225,7 @@ type CompiledStep = {
 };
 ```
 
-The actual `run` implementation remains an Effectful callback, but the rest of the descriptor should be plain data.
+The `run` implementation remains a callback, but the rest of the descriptor should be plain data.
 
 That distinction matters because the planner and persistence layer must reason about the workflow even when a step is not currently running.
 
@@ -1312,7 +1244,7 @@ That state should include:
 - branch decisions
 - cache hits or invalidations
 
-This is the real source of truth for the scheduler. The builder graph tells Smithers what is possible; durable state tells Smithers what has already happened.
+This is the real source of truth for the scheduler. The workflow graph tells Smithers what is possible; durable state tells Smithers what has already happened.
 
 ## Stage 4: Ready-Set Computation
 
@@ -1326,9 +1258,9 @@ A step is ready only when:
 - any loop state allows the current iteration
 - concurrency limits allow admission
 
-This is simpler than the old renderer-based model because scheduling depends on explicit graph edges instead of a re-rendered UI tree.
+This is simpler than manually tracking state because scheduling depends on explicit graph edges.
 
-## Stage 5: Effect Execution
+## Stage 5: Execution
 
 Ready steps are executed by invoking their `run` callback with:
 
@@ -1336,8 +1268,6 @@ Ready steps are executed by invoking their `run` callback with:
 - resolved dependency outputs
 - execution metadata
 - cancellation signal
-
-The callback returns an `Effect`, and Smithers runs it inside the application's provided layer stack.
 
 The planner should not know about provider-specific behavior. It only knows how to supply step inputs and interpret success, failure, retry, suspension, or cancellation.
 
@@ -1352,47 +1282,9 @@ After a step produces a result, Smithers commits:
 
 This commit phase should be atomic at the workflow level wherever possible. The goal is that after a crash, Smithers can recover from persisted state without guessing.
 
-## Why a Planner Instead of a Renderer
-
-The React renderer model was carrying too many unrelated responsibilities:
-
-- authoring syntax
-- control-flow representation
-- dependency discovery
-- runtime scheduling
-
-The planner model separates those concerns:
-
-- the builder API is authoring
-- the normalized plan is scheduling data
-- the Effect runtime runs step bodies
-- persistence manages durability
-
-That is a cleaner architecture for a workflow engine.
-
-## Suggested Internal APIs
-
-Internal APIs should bias toward explicit inspection.
-
-Examples:
-
-```ts
-Smithers.inspect(workflow)
-```
-
-should return a normalized graph for tooling and tests.
-
-```ts
-Smithers.explain(workflow, executionId)
-```
-
-should explain why each node is pending, ready, blocked, waiting for approval, or complete.
-
-Those kinds of APIs become much easier once the runtime is based on an explicit plan rather than an opaque reconciler tree.
-
 ## Debugging
 
-For debugging, the most useful artifacts are no longer XML frames. They are:
+For debugging, the most useful artifacts are:
 
 - normalized plan snapshots
 - node state tables
@@ -1402,21 +1294,10 @@ For debugging, the most useful artifacts are no longer XML frames. They are:
 
 If Smithers exposes those clearly, most workflow bugs become much easier to diagnose.
 
-## Relationship to Effect
-
-The planner should stay mostly data-oriented. Effect belongs primarily in:
-
-- step execution
-- runtime services
-- logging and tracing
-- durable primitives such as suspension, retries, queues, and timers
-
-That boundary keeps the planning layer inspectable and the execution layer composable.
-
 ## Next Steps
 
-- [Runtime Events](/runtime/events) -- This page will need to describe planner-level transitions instead of renderer frames.
-- [runWorkflow](/runtime/run-workflow) -- This page will need to describe the new execution entry points for builder workflows.
+- [Runtime Events](/runtime/events) — Planner-level transitions and lifecycle events.
+- [runWorkflow](/runtime/run-workflow) — Execution entry points for workflows.
 
 ---
 
@@ -5444,7 +5325,7 @@ Chat-provider integration lives in host applications, not this repo.
 > Declarative .toon files for defining Smithers workflows without TypeScript boilerplate.
 > Source: https://smithers.sh/toon/overview
 
-TOON is the primary way to define Smithers workflows. A `.toon` file uses the [TOON format](https://github.com/toon-format/toon) (Token-Oriented Object Notation) — a compact, line-oriented data format that combines YAML-style indentation for objects with CSV-style tabular layout for uniform arrays. TOON is **not** YAML: it requires explicit array lengths (`[N]`), supports tabular `{field}` headers, and has no comment syntax. Smithers compiles `.toon` files to the same durable execution engine as the Effect builder API.
+TOON is the primary way to define Smithers workflows. A `.toon` file uses the [TOON format](https://github.com/toon-format/toon) (Token-Oriented Object Notation) — a compact, line-oriented data format that combines YAML-style indentation for objects with CSV-style tabular layout for uniform arrays. TOON is **not** YAML: it requires explicit array lengths (`[N]`), supports tabular `{field}` headers, and has no comment syntax. Smithers compiles `.toon` files to the same durable execution engine as the JSX API.
 
 ## What Is a TOON File?
 
@@ -5474,15 +5355,14 @@ The `agents:` block declares named agents — each with a `type:` (the runtime),
 
 ## Three-Layer Architecture
 
-Smithers offers three ways to define workflows, each building on the one below:
+Smithers offers two ways to define workflows:
 
 | Layer | Format | When to Use |
 | --- | --- | --- |
 | **TOON** | `.toon` files | Most workflows. Declarative, prompt-first, zero boilerplate. |
-| **Effect Builder** | TypeScript | Advanced control flow, custom services, complex dependency injection. |
 | **JSX** | TSX | Component-based API using React-style JSX syntax. |
 
-TOON files compile to the Effect builder internally. You can mix TOON and Effect in the same project — a TOON workflow can import Effect services, and an Effect workflow can reference TOON components.
+TOON files compile to the same internal graph as JSX. You can mix TOON and JSX in the same project.
 
 ## Why TOON?
 
@@ -5493,7 +5373,7 @@ Most AI workflows are prompt-centric: define inputs, call a model with a prompt,
 - **Control flow is visual** — sequences, parallels, loops, and approvals are node kinds, not nested function calls
 - **Components are reusable** — extract repeated patterns into parameterized components
 
-When you need something TOON can't express — custom Effect services, complex branching logic, programmatic graph construction — drop down to the Effect builder API.
+When you need something TOON can't express — complex branching logic, programmatic graph construction — use the JSX API.
 
 ## Minimal Example
 
@@ -5533,11 +5413,11 @@ steps[2]:
       wordCount: number
 ```
 
-Steps execute sequentially by default. The `report` step references `{research.summary}` — Smithers resolves this as a typed dependency edge, just like `needs` in the Effect builder.
+Steps execute sequentially by default. The `report` step references `{research.summary}` — Smithers resolves this as a typed dependency edge, just like `dependsOn` in JSX.
 
 ## Control Flow
 
-Steps execute sequentially by default. TOON supports the same control flow primitives as the JSX and Effect APIs.
+Steps execute sequentially by default. TOON supports the same control flow primitives as the JSX API.
 
 ### Parallel
 
@@ -5566,7 +5446,7 @@ steps[2]:
       summary: string
 ```
 
-This is the TOON equivalent of `<Parallel>` in JSX or `$.parallel()` in the Effect builder.
+This is the TOON equivalent of `<Parallel>` in JSX.
 
 ### Loops
 
@@ -5663,7 +5543,7 @@ Every `prompt:` step needs an agent to handle it. Agents are declared in the top
 
 ### Agent types
 
-The `type:` field selects the agent runtime. Smithers supports all the same agent backends as the JSX and Effect APIs:
+The `type:` field selects the agent runtime. Smithers supports all the same agent backends as the JSX API:
 
 | Type | Runtime | JSX Equivalent |
 | --- | --- | --- |
@@ -5740,17 +5620,17 @@ Steps that use `run:` or `handler:` instead of `prompt:` do not need an agent �
 
 ## How It Compiles
 
-A `.toon` file compiles to the same internal graph as a `Smithers.workflow(...).build(...)` call:
+A `.toon` file compiles to the same internal graph that JSX workflows produce:
 
 ```txt
 .toon file
   -> TOON parser
-  -> Workflow graph (same as Effect builder output)
+  -> Workflow graph (same as JSX output)
   -> Normalized plan
   -> Durable execution
 ```
 
-At runtime, there is no difference between a TOON workflow and an Effect builder workflow. They share the same engine, the same SQLite persistence, the same retry/approval/caching semantics, and the same observability.
+At runtime, there is no difference between a TOON workflow and a JSX workflow. They share the same engine, the same SQLite persistence, the same retry/approval/caching semantics, and the same observability.
 
 ## Running a TOON Workflow
 
@@ -5780,7 +5660,7 @@ const result = await Effect.runPromise(
 - [Schemas](/toon/schemas) — Define input and output types inline.
 - [Nodes](/toon/nodes) — All node kinds: step, sequence, parallel, loop, approval, branch, worktree.
 - [Prompts](/toon/prompts) — Write prompts with interpolation and multi-line syntax.
-- [Effect Builder API](/effect/overview) — When you need more power.
+- [JSX Overview](/jsx/overview) — When you need more power.
 
 ---
 
@@ -6006,7 +5886,7 @@ input:
   priority: "low" | "medium" | "high"
 ```
 
-This compiles to the same `Schema` validation as the Effect builder API. Invalid input is rejected before any steps run.
+This compiles to the same `Schema` validation as the JSX API. Invalid input is rejected before any steps run.
 
 ## Step Output
 
@@ -6965,7 +6845,7 @@ export const createBranch = ({ input }) =>
   });
 ```
 
-This is the escape hatch from declarative TOON into the full Effect builder power.
+This is the escape hatch from declarative TOON into full TypeScript power.
 
 ## Error Handling
 
@@ -7207,45 +7087,6 @@ console.log(result.message);
 2. The `greet` step sends the interpolated prompt to the `assistant` agent (Claude Code)
 3. The response is validated against the output schema (`message: string`)
 4. The output is persisted to SQLite and returned
-
-## Effect Builder Equivalent
-
-```ts
-import { Context, Effect, Layer, Schema } from "effect";
-import { Model } from "@effect/sql";
-import { Smithers } from "smithers-orchestrator";
-
-class Input extends Schema.Class<Input>("Input")({
-  name: Schema.String,
-}) {}
-
-class Greeting extends Model.Class<Greeting>("Greeting")({
-  message: Schema.String,
-}) {}
-
-class Greeter extends Context.Tag("Greeter")<
-  Greeter,
-  { readonly greet: (name: string) => Effect.Effect<Greeting> }
->() {}
-
-const Hello = Smithers.workflow({
-  name: "hello-world",
-  input: Input,
-}).build(($) => {
-  const greet = $.step("greet", {
-    output: Greeting,
-    run: ({ input }) =>
-      Effect.gen(function* () {
-        const greeter = yield* Greeter;
-        return yield* greeter.greet(input.name);
-      }),
-  });
-
-  return $.sequence(greet);
-});
-```
-
-The TOON version is 12 lines. The Effect builder version is 30+.
 
 ---
 
@@ -8043,8 +7884,7 @@ Both styles compile to the same JSX renderer and execution engine.
 ## How It Relates to the Other APIs
 
 - [TOON](/toon/overview) is the declarative path. It is better when prompts are the main thing you are authoring.
-- [Effect Builder](/effect/overview) is the low-level typed graph API. It is better when you want explicit step handles and heavy `Layer` composition.
-- JSX sits in the middle: more dynamic than TOON, less explicit than the Effect builder.
+- JSX is more dynamic than TOON, giving you component composition and render-time branching.
 
 ## Next Steps
 
@@ -8260,7 +8100,7 @@ bun run main.ts
 > Root container that defines a named, cacheable workflow with implicit sequential execution of its children.
 > Source: https://smithers.sh/components/workflow
 
-> **Warning:** **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+> **Warning:** **JSX API** — This page documents the JSX-based API. For the declarative alternative, see [TOON](/toon/overview).
 
 
 `<Workflow>` is the root component of every Smithers workflow. It wraps all tasks and control-flow components into a single named unit that can be executed, cached, and resumed.
@@ -8404,7 +8244,7 @@ Internally, `<Workflow>` renders as a `<smithers:workflow>` host element. The ru
 > A single executable node that produces output by calling an AI agent, running a compute callback, or emitting a static payload.
 > Source: https://smithers.sh/components/task
 
-> **Warning:** **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+> **Warning:** **JSX API** — This page documents the JSX-based API. For the declarative alternative, see [TOON](/toon/overview).
 
 
 `<Task>` is the fundamental unit of work in a Smithers workflow. Every task has a unique `id` and an `output` destination. Tasks operate in one of three modes:
@@ -8688,7 +8528,7 @@ export default smithers(db, (ctx) => (
 > Execute child tasks one after another in the order they appear.
 > Source: https://smithers.sh/components/sequence
 
-> **Warning:** **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+> **Warning:** **JSX API** — This page documents the JSX-based API. For the declarative alternative, see [TOON](/toon/overview).
 
 
 `<Sequence>` groups its children and executes them **one at a time, in order**, from top to bottom. Each child must complete before the next one starts.
@@ -8790,7 +8630,7 @@ Internally, `<Sequence>` renders as a `<smithers:sequence>` host element (or `nu
 > Execute child tasks concurrently with optional concurrency limits.
 > Source: https://smithers.sh/components/parallel
 
-> **Warning:** **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+> **Warning:** **JSX API** — This page documents the JSX-based API. For the declarative alternative, see [TOON](/toon/overview).
 
 
 `<Parallel>` groups its children and executes them **concurrently**. All children start at the same time (subject to the concurrency limit) rather than waiting for the previous child to complete.
@@ -8903,7 +8743,7 @@ Internally, `<Parallel>` renders as a `<smithers:parallel>` host element (or `nu
 > Conditional branching that executes one of two paths based on a boolean condition.
 > Source: https://smithers.sh/components/branch
 
-> **Warning:** **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+> **Warning:** **JSX API** — This page documents the JSX-based API. For the declarative alternative, see [TOON](/toon/overview).
 
 
 `<Branch>` evaluates a boolean condition and executes exactly one of two branches: the `then` element when the condition is `true`, or the optional `else` element when the condition is `false`.
@@ -9043,7 +8883,7 @@ Internally, `<Branch>` renders the chosen child (`then` or `else`) wrapped in a 
 > Iterative loop that re-executes its children until a condition is met or the maximum iteration count is reached.
 > Source: https://smithers.sh/components/loop
 
-> **Warning:** **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+> **Warning:** **JSX API** — This page documents the JSX-based API. For the declarative alternative, see [TOON](/toon/overview).
 
 
 `<Loop>` repeats its children in a loop. On each iteration, the `until` condition is re-evaluated. When the condition becomes `true`, the loop stops. A `maxIterations` safety limit prevents infinite loops.
@@ -9291,10 +9131,10 @@ Internally, `<Loop>` renders as a `<smithers:ralph>` host element (or `null` whe
 > A first-class JSX approval node that pauses durably and resolves to an ApprovalDecision value.
 > Source: https://smithers.sh/components/approval
 
-> **Warning:** **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+> **Warning:** **JSX API** — This page documents the JSX-based API. For the declarative alternative, see [TOON](/toon/overview).
 
 
-`<Approval>` is the explicit approval-node counterpart to `$.approval()` in the Effect builder and `kind: approval` in TOON.
+`<Approval>` is the explicit approval-node counterpart to `kind: approval` in TOON.
 
 It pauses the workflow until a human approves or denies the node, then writes an `ApprovalDecision` row to the configured output table:
 
@@ -9422,7 +9262,7 @@ Use `needsApproval` on `<Task>` when you only need a simple pause before the tas
 > Queue tasks so at most maxConcurrency run; defaults to 1.
 > Source: https://smithers.sh/components/merge-queue
 
-> **Warning:** **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+> **Warning:** **JSX API** — This page documents the JSX-based API. For the declarative alternative, see [TOON](/toon/overview).
 
 
 ## Import
@@ -9493,7 +9333,7 @@ Internally, `<MergeQueue>` renders as a `<smithers:merge-queue>` host element (o
 > Execute a subtree in a separate JJ worktree rooted at `path`.
 > Source: https://smithers.sh/components/worktree
 
-> **Warning:** **JSX API** — This page documents the JSX-based API. For alternative approaches, see [TOON](/toon/overview) (declarative) or the [Effect builder](/effect/overview) (TypeScript).
+> **Warning:** **JSX API** — This page documents the JSX-based API. For the declarative alternative, see [TOON](/toon/overview).
 
 
 ## Import
@@ -16207,1131 +16047,4 @@ type ToolContext = {
   seq: number;
 };
 ```
-
----
-
-## Effect Builder API
-
-> Advanced TypeScript API for defining Smithers workflows with full Effect power.
-> Source: https://smithers.sh/effect/overview
-
-The Effect builder API is Smithers' advanced workflow definition layer. It gives you full access to Effect's type system, dependency injection, and runtime composition.
-
-Most workflows should start with [TOON files](/toon/overview). Use the Effect builder when you need:
-
-- Custom `Context.Tag` services with complex lifecycle
-- Programmatic graph construction
-- Advanced type-level constraints on step dependencies
-- Direct integration with existing Effect application code
-
-## Quick Comparison
-
-The same workflow in TOON and Effect builder:
-
-**TOON:**
-
-```toon
-name: bugfix
-input:
-  ticketId: string
-  description: string
-
-steps[2]:
-  - id: analyze
-    prompt: "Analyze the bug: {input.description}"
-    output:
-      summary: string
-      severity: "low" | "medium" | "high"
-
-  - id: fix
-    prompt: "Fix based on analysis: {analyze.summary}"
-    output:
-      patch: string
-      explanation: string
-```
-
-**Effect builder:**
-
-```ts
-import { Context, Effect, Layer, Schema } from "effect";
-import { Model } from "@effect/sql";
-import { Smithers } from "smithers-orchestrator";
-
-class Input extends Schema.Class<Input>("Input")({
-  ticketId: Schema.String,
-  description: Schema.String,
-}) {}
-
-class Analysis extends Model.Class<Analysis>("Analysis")({
-  summary: Schema.String,
-  severity: Schema.Literal("low", "medium", "high"),
-}) {}
-
-class Fix extends Model.Class<Fix>("Fix")({
-  patch: Schema.String,
-  explanation: Schema.String,
-}) {}
-
-class Coder extends Context.Tag("Coder")<
-  Coder,
-  {
-    readonly analyze: (description: string) => Effect.Effect<Analysis>;
-    readonly fix: (analysis: Analysis) => Effect.Effect<Fix>;
-  }
->() {}
-
-const Bugfix = Smithers.workflow({
-  name: "bugfix",
-  input: Input,
-}).build(($) => {
-  const analyze = $.step("analyze", {
-    output: Analysis,
-    run: ({ input }) =>
-      Effect.gen(function* () {
-        const coder = yield* Coder;
-        return yield* coder.analyze(input.description);
-      }),
-  });
-
-  const fix = $.step("fix", {
-    output: Fix,
-    needs: { analysis: analyze },
-    run: ({ analysis }) =>
-      Effect.gen(function* () {
-        const coder = yield* Coder;
-        return yield* coder.fix(analysis);
-      }),
-  });
-
-  return $.sequence(analyze, fix);
-});
-```
-
-The Effect builder is more verbose but gives you typed service injection, explicit dependency handles, and full control over retry policies, timeouts, and Layer composition.
-
-## When to Use Effect Builder
-
-| Scenario | Recommendation |
-| --- | --- |
-| Prompt-centric workflow | Use TOON |
-| Custom services with `Context.Tag` and `Layer` | Use Effect builder |
-| Programmatic step generation | Use Effect builder |
-| Existing Effect application integration | Use Effect builder |
-| Simple sequential steps | Use TOON |
-| Complex branching with typed discriminants | Use Effect builder |
-
-## Mixing TOON and Effect
-
-TOON and Effect builder workflows coexist in the same project. A TOON workflow can import Effect services through its `imports:` block, and an Effect builder workflow can reference TOON components.
-
-Both compile to the same internal graph and run on the same durable execution engine.
-
-## Next Steps
-
-- [Effect Installation](/effect/installation) — Install the builder stack and TypeScript setup.
-- [Effect Quickstart](/effect/quickstart) — Build a two-step workflow with `$.step()`.
-- [Builder API Reference](/effect/builder-api) — `$.step()`, `$.sequence()`, `$.parallel()`, and all builder primitives.
-- [Context](/effect/context) — What data a step receives at runtime.
-- [Services](/effect/services) — `Context.Tag`, `Layer`, and dependency injection.
-- [TOON Overview](/toon/overview) — The declarative alternative.
-
----
-
-## Effect Builder Installation
-
-> Install Smithers for the low-level Effect builder API.
-> Source: https://smithers.sh/effect/installation
-
-Use the Effect builder when you want full control over typed step handles, `Context.Tag` services, `Layer` composition, and programmatic workflow graphs.
-
-## Prerequisites
-
-- Bun >= 1.3
-- TypeScript >= 5
-- SQLite access on the local filesystem
-
-## Install
-
-Install the core builder dependencies:
-
-```bash
-bun add smithers-orchestrator effect @effect/sql drizzle-orm
-```
-
-If you plan to call hosted models, add the Vercel AI SDK packages you need. For example:
-
-```bash
-bun add ai @ai-sdk/anthropic
-```
-
-## What Each Package Does
-
-| Package | Purpose |
-| --- | --- |
-| `smithers-orchestrator` | Workflow builder, durable runtime, SQLite helpers, CLI |
-| `effect` | `Effect`, `Layer`, `Context.Tag`, `Schedule`, and `Schema` |
-| `@effect/sql` | `Model` and typed SQL integration |
-| `drizzle-orm` | SQLite client layer (uses `bun:sqlite` under the hood) |
-| `ai` + `@ai-sdk/anthropic` | Optional model integrations via the Vercel AI SDK |
-
-## Minimal TypeScript Setup
-
-Create a `tsconfig.json` like this:
-
-```json
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
-    "skipLibCheck": true
-  }
-}
-```
-
-The builder API does not require JSX configuration.
-
-## Recommended Runtime Shape
-
-Smithers should be configured the same way as the rest of an Effect app:
-
-```ts
-const AppLive = Layer.mergeAll(
-  Smithers.sqlite({ filename: "./smithers.db" }),
-  MyServicesLive,
-  ObservabilityLive,
-);
-```
-
-That is the core mental model:
-
-- dependencies are `Context.Tag`s
-- infrastructure is a `Layer`
-- workflow steps are `Effect`s
-- Smithers adds durability, retries, approvals, and orchestration
-
-## Next Steps
-
-- [Effect Quickstart](/effect/quickstart) — Build a two-step workflow with `$.step()`.
-- [Effect Builder API](/effect/overview) — See when to use the builder and how it compares to TOON.
-- [Services](/effect/services) — Wire in `Context.Tag` services and live layers.
-
----
-
-## Effect Builder Quickstart
-
-> Build and run your first Smithers workflow with the Effect builder API.
-> Source: https://smithers.sh/effect/quickstart
-
-This guide builds a two-step workflow that researches a topic and writes a report using the low-level Effect builder.
-
-## Step 1: Define Models and Services
-
-Create `workflow.ts`:
-
-```ts
-import { Context, Effect, Layer, Schedule, Schema } from "effect";
-import { Model } from "@effect/sql";
-import { Smithers } from "smithers-orchestrator";
-
-class Input extends Schema.Class<Input>("Input")({
-  topic: Schema.String,
-}) {}
-
-class Research extends Model.Class<Research>("Research")({
-  summary: Schema.String,
-  keyPoints: Schema.Array(Schema.String),
-}) {}
-
-class Report extends Model.Class<Report>("Report")({
-  title: Schema.String,
-  body: Schema.String,
-  wordCount: Schema.Number,
-}) {}
-
-class Researcher extends Context.Tag("Researcher")<
-  Researcher,
-  {
-    readonly research: (
-      topic: string,
-    ) => Effect.Effect<Research>;
-  }
->() {}
-
-class Writer extends Context.Tag("Writer")<
-  Writer,
-  {
-    readonly write: (
-      research: Research,
-    ) => Effect.Effect<Report>;
-  }
->() {}
-```
-
-## Step 2: Build the Workflow Graph
-
-```ts
-export const ResearchReport = Smithers.workflow({
-  name: "research-report",
-  input: Input,
-}).build(($) => {
-  const research = $.step("research", {
-    output: Research,
-    run: ({ input }) =>
-      Effect.gen(function* () {
-        const researcher = yield* Researcher;
-        return yield* researcher.research(input.topic);
-      }),
-    retry: Schedule.exponential("250 millis").pipe(
-      Schedule.intersect(Schedule.recurs(2)),
-    ),
-  });
-
-  const report = $.step("report", {
-    output: Report,
-    needs: { research },
-    run: ({ research }) =>
-      Effect.gen(function* () {
-        const writer = yield* Writer;
-        return yield* writer.write(research);
-      }),
-  });
-
-  return $.sequence(research, report);
-});
-```
-
-The important builder concepts are:
-
-- `research` is a typed step handle, not a string id
-- `needs: { research }` declares an explicit dependency edge
-- services are resolved through `Context.Tag`, not a global workflow context
-
-## Step 3: Provide Live Services
-
-```ts
-const ResearcherLive = Layer.succeed(Researcher, {
-  research: (topic) =>
-    Effect.succeed(
-      new Research({
-        summary: `${topic} is a systems programming topic.`,
-        keyPoints: [
-          "Prioritizes explicitness over hidden behavior.",
-          "Tooling aims to improve reliability.",
-          "Often discussed in low-level programming contexts.",
-        ],
-      }),
-    ),
-});
-
-const WriterLive = Layer.succeed(Writer, {
-  write: (research) =>
-    Effect.succeed(
-      new Report({
-        title: "Research Summary",
-        body: `${research.summary}\n\nKey points:\n- ${research.keyPoints.join("\n- ")}`,
-        wordCount: 43,
-      }),
-    ),
-});
-
-export const AppLive = Layer.mergeAll(
-  Smithers.sqlite({ filename: "./smithers.db" }),
-  ResearcherLive,
-  WriterLive,
-);
-```
-
-## Step 4: Execute
-
-Create `main.ts`:
-
-```ts
-import { Effect } from "effect";
-import { AppLive, Input, ResearchReport } from "./workflow";
-
-const result = await Effect.runPromise(
-  ResearchReport.execute(
-    new Input({ topic: "The history of the Zig programming language" }),
-  ).pipe(Effect.provide(AppLive)),
-);
-
-console.log(result.title);
-console.log(result.body);
-```
-
-Run it:
-
-```bash
-bun run main.ts
-```
-
-## Next Steps
-
-- [Builder API Reference](/effect/builder-api) — Learn `$.step()`, `$.parallel()`, `$.loop()`, and approvals.
-- [Step Context](/effect/context) — See what a builder step receives at runtime.
-- [Services](/effect/services) — Model the rest of your app as Effect services.
-
----
-
-## Builder API Reference
-
-> Complete reference for Smithers builder primitives — step, sequence, parallel, loop, approval, match, and component.
-> Source: https://smithers.sh/effect/builder-api
-
-The builder API defines workflows through a typed graph. You call `Smithers.workflow(...).build($)` and use `$` to create steps and control-flow nodes.
-
-## `Smithers.workflow()`
-
-Creates a workflow definition:
-
-```ts
-const MyWorkflow = Smithers.workflow({
-  name: "my-workflow",
-  input: Input,
-}).build(($) => {
-  // define steps and return a control-flow node
-});
-```
-
-| Option | Type | Description |
-| --- | --- | --- |
-| `name` | `string` | Unique workflow name |
-| `input` | `Schema.Class` | Input schema |
-
-## `$.step()`
-
-Defines a single executable step:
-
-```ts
-const analyze = $.step("analyze", {
-  output: Analysis,
-  run: ({ input }) =>
-    Effect.gen(function* () {
-      const coder = yield* Coder;
-      return yield* coder.analyze(input.description);
-    }),
-});
-```
-
-### Step Options
-
-| Option | Type | Required | Description |
-| --- | --- | --- | --- |
-| `output` | `Model.Class` | yes | The persisted output model |
-| `run` | `(ctx) => Effect<Output>` | yes | The step body |
-| `needs` | `Record<string, StepHandle>` | no | Upstream dependencies |
-| `retry` | `any` | no | Retry configuration — accepts an Effect `Schedule` or a plain number (retry count) |
-| `retryPolicy` | `RetryPolicy` | no | Declarative retry policy with backoff strategy (`{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }`) |
-| `timeout` | `DurationInput` | no | Step timeout |
-| `cache` | `CachePolicy` | no | Cache configuration |
-| `skipIf` | `(ctx) => boolean` | no | Condition to skip |
-
-### Run Context
-
-The `run` function receives:
-
-```ts
-run: ({ input, executionId, stepId, attempt, signal, iteration, ...needs }) => ...
-```
-
-- `input` — validated workflow input
-- Spread `needs` — resolved dependency outputs as named fields
-- `executionId` — durable execution id
-- `stepId` — logical step id
-- `attempt` — current attempt number (starts at 1)
-- `signal` — `AbortSignal` for timeout/cancellation
-- `iteration` — loop iteration (0 for non-looped steps)
-
-### Step Handle
-
-`$.step()` returns a **step handle** — a typed reference used in `needs` and control-flow nodes:
-
-```ts
-const analyze = $.step("analyze", { output: Analysis, run: ... });
-
-const fix = $.step("fix", {
-  output: Fix,
-  needs: { analysis: analyze },  // typed dependency
-  run: ({ analysis }) => ...,     // analysis is typed as Analysis
-});
-```
-
-## `$.sequence()`
-
-Executes nodes sequentially:
-
-```ts
-return $.sequence(analyze, fix, deploy);
-```
-
-Steps run in order. Each step waits for the previous to complete.
-
-## `$.parallel()`
-
-Executes nodes concurrently:
-
-```ts
-return $.parallel(researchWeb, researchDocs, researchCode);
-```
-
-### With Concurrency Limit
-
-```ts
-return $.parallel(task1, task2, task3, task4, {
-  maxConcurrency: 2,
-});
-```
-
-## `$.loop()`
-
-Repeats nodes until a condition is met:
-
-```ts
-const review = $.step("review", {
-  output: Review,
-  run: ({ draft }) => ...,
-});
-
-const revise = $.step("revise", {
-  output: Draft,
-  needs: { review },
-  run: ({ review }) => ...,
-  skipIf: ({ review }) => review.approved,
-});
-
-return $.loop({
-  id: "review-loop",
-  children: $.sequence(review, revise),
-  until: (outputs) => outputs.review.approved,
-  maxIterations: 5,
-  onMaxReached: "return-last",
-});
-```
-
-### Loop Options
-
-| Option | Type | Required | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | no | Loop identifier |
-| `children` | node | yes | The nodes to repeat |
-| `until` | `(outputs) => boolean` | yes | Stop condition |
-| `maxIterations` | `number` | no | Safety limit (default: 5) |
-| `onMaxReached` | `"fail" \| "return-last"` | no | Behavior at limit |
-
-## `$.approval()`
-
-Creates a durable approval gate:
-
-```ts
-const approveDeploy = $.approval("approve-deploy", {
-  needs: { build },
-  request: ({ build }) => ({
-    title: `Deploy ${build.version}?`,
-    summary: `Commit ${build.commitSha} passed all checks.`,
-  }),
-  onDeny: "fail",
-});
-```
-
-### Approval Options
-
-| Option | Type | Required | Description |
-| --- | --- | --- | --- |
-| `needs` | `Record<string, StepHandle>` | no | Dependencies |
-| `request` | `(needs) => { title, summary }` | yes | Request payload |
-| `onDeny` | `"fail" \| "continue" \| "skip"` | no | Denial behavior |
-
-The approval gate resolves to an `ApprovalDecision`:
-
-```ts
-type ApprovalDecision = {
-  readonly approved: boolean;
-  readonly note: string | null;
-  readonly decidedBy: string | null;
-  readonly decidedAt: string | null;
-};
-```
-
-## `$.match()`
-
-Branches based on a value:
-
-```ts
-return $.match(classify, {
-  when: (result) => result.severity === "high",
-  then: () => $.step("escalate", { output: Escalation, run: ... }),
-  else: () => $.step("auto-fix", { output: AutoFix, run: ... }),
-});
-```
-
-Also works with approval decisions:
-
-```ts
-return $.match(approval, {
-  when: (decision) => decision.approved,
-  then: () => $.step("publish", { output: Published, run: ... }),
-  else: () => $.step("record-rejection", { output: Rejection, run: ... }),
-});
-```
-
-## `$.component()`
-
-References a reusable workflow fragment:
-
-```ts
-const ReviewCycle = Smithers.component({
-  name: "ReviewCycle",
-  params: { content: "string", reviewer: "string" },
-}).build(($, params) => {
-  const review = $.step("review", {
-    output: Review,
-    run: ({ }) => ...,
-  });
-  const revise = $.step("revise", {
-    output: Revised,
-    needs: { review },
-    run: ({ review }) => ...,
-  });
-  return $.sequence(review, revise);
-});
-
-// Usage
-const techReview = $.component("tech-review", ReviewCycle, {
-  content: draft,
-  reviewer: "senior engineer",
-});
-```
-
-## Composition
-
-All primitives compose freely:
-
-```ts
-return $.sequence(
-  analyze,
-  $.parallel(
-    researchWeb,
-    researchDocs,
-  ),
-  $.loop({
-    children: $.sequence(review, revise),
-    until: (o) => o.review.approved,
-    maxIterations: 3,
-  }),
-  approveDeploy,
-  deploy,
-);
-```
-
-## `Smithers.loadToon()`
-
-Loads a `.toon` file and returns a workflow that can be executed like any builder workflow:
-
-```ts
-const MyWorkflow = Smithers.loadToon("./workflows/my-workflow.toon");
-
-const result = await Effect.runPromise(
-  MyWorkflow.execute(new Input({ ... })).pipe(
-    Effect.provide(AppLive),
-  ),
-);
-```
-
-| Param | Type | Description |
-| --- | --- | --- |
-| `path` | `string` | File path to the `.toon` workflow definition |
-
-Returns a `BuiltSmithersWorkflow` with an `execute` method that accepts the workflow input and optional execution options.
-
-## Executing a Workflow
-
-```ts
-const result = await Effect.runPromise(
-  MyWorkflow.execute(new Input({ ... })).pipe(
-    Effect.provide(AppLive),
-  ),
-);
-```
-
-The workflow requires all services declared in step `run` functions to be provided through the Layer stack.
-
-## Next Steps
-
-- [Context](/effect/context) — Detailed step context reference.
-- [Services](/effect/services) — Defining and providing Effect services.
-- [TOON Nodes](/toon/nodes) — The declarative equivalent of builder primitives.
-
----
-
-## Step Context
-
-> What data a Smithers step receives at runtime in the Effect builder API.
-> Source: https://smithers.sh/effect/context
-
-In the builder API, a step does not read from a global workflow context object. Instead, Smithers passes a **typed run context** directly into the step's `run` function.
-
-That context is made from:
-
-- validated workflow input
-- resolved dependency outputs from `needs`
-- execution metadata such as the execution id and attempt number
-- cancellation and timeout state
-
-This is a deliberate shift away from ambient lookup APIs like `ctx.output("...", ...)`.
-
-## The Basic Shape
-
-A step looks like this:
-
-```ts
-const report = $.step("report", {
-  output: Report,
-  needs: { research },
-  run: ({ input, research, executionId, attempt, signal }) =>
-    Effect.gen(function* () {
-      const writer = yield* Writer;
-      return yield* writer.write({
-        topic: input.topic,
-        summary: research.summary,
-        attempt,
-        signal,
-      });
-    }),
-});
-```
-
-The `run` argument is the step context.
-
-## Step Context Interface
-
-The source type is named `BuilderStepContext` (also referred to as `StepContext` in some older docs).
-
-Conceptually, Smithers provides something like:
-
-```ts
-type BuilderStepContext<Input, Needs> = {
-  readonly input: Input;
-  readonly executionId: string;
-  readonly stepId: string;
-  readonly attempt: number;
-  readonly signal: AbortSignal;
-  readonly iteration: number;
-  readonly loop: { iteration: number };
-} & Needs;
-```
-
-If a step declares:
-
-```ts
-needs: { analysis, review }
-```
-
-then the `run` function receives:
-
-```ts
-run: ({ input, analysis, review, executionId, stepId, attempt, signal }) => ...
-```
-
-The dependency outputs are regular typed values, not table lookups.
-
-## `input`
-
-`input` is the validated workflow input defined at the workflow boundary:
-
-```ts
-class Input extends Schema.Class<Input>("Input")({
-  description: Schema.String,
-}) {}
-```
-
-Every step in the workflow can read it:
-
-```ts
-run: ({ input }) =>
-  Effect.succeed(
-    new Analysis({
-      summary: `Analyzing ${input.description}`,
-      severity: "high",
-    }),
-  )
-```
-
-## Dependency Outputs
-
-Dependencies are the main source of typed step-to-step dataflow.
-
-```ts
-const analyze = $.step("analyze", {
-  output: Analysis,
-  run: ({ input }) => ...,
-});
-
-const fix = $.step("fix", {
-  output: Fix,
-  needs: { analysis: analyze },
-  run: ({ analysis }) => ...,
-});
-```
-
-In `fix`, the `analysis` value is already resolved and typed as `Analysis`.
-
-This has two important consequences:
-
-- the dependency edge is explicit in the graph
-- the step body does not need to know how persistence works
-
-## Execution Metadata
-
-Smithers exposes a small amount of orchestration metadata in every step context.
-
-### `executionId`
-
-The durable id for the workflow run. Useful for logging, tracing, and correlating external side effects.
-
-### `stepId`
-
-The logical id of the currently executing step.
-
-### `attempt`
-
-The current attempt number for this step. Starts at `1` and increments on each retry.
-
-### `signal`
-
-An `AbortSignal` that fires when:
-
-- the step times out
-- the workflow is interrupted
-- the runtime is shutting down
-
-### `iteration`
-
-For looped workflows, this identifies the current durable iteration. For non-loop steps, it is usually `0`.
-
-### `loop`
-
-An object with loop metadata: `{ iteration: number }`. Provides structured access to the current loop iteration. This is available on every step context; for non-looped steps, `loop.iteration` is `0`.
-
-## No Hook API
-
-There is no `useCtx()` in the builder design.
-
-That is intentional:
-
-- workflows are not React components
-- steps do not re-render to discover new dependencies
-- runtime dataflow should stay explicit in the builder graph
-
-If you want reusable workflow fragments, use regular functions that accept step handles or builder helpers, not hooks.
-
-## Services Do Not Belong in Step Context
-
-The step context is for workflow data, not infrastructure dependencies.
-
-To access services, use normal Effect dependency injection:
-
-```ts
-run: ({ analysis }) =>
-  Effect.gen(function* () {
-    const coder = yield* Coder;
-    return yield* coder.fix(analysis);
-  })
-```
-
-This keeps two separate concerns clean:
-
-- Smithers passes workflow data
-- Effect provides runtime capabilities
-
-## Multiple Dependencies
-
-Steps can depend on more than one upstream value:
-
-```ts
-const summary = $.step("summary", {
-  output: Summary,
-  needs: {
-    analysis,
-    review,
-    tests,
-  },
-  run: ({ input, analysis, review, tests }) =>
-    Effect.succeed(
-      new Summary({
-        title: input.ticketId,
-        body: `${analysis.summary}\n\n${review.feedback}\n\nTests: ${tests.status}`,
-      }),
-    ),
-});
-```
-
-All dependency outputs are available as named parameters, and TypeScript keeps them aligned with the step handles you declared in `needs`.
-
-## Historical Access
-
-The old API exposed helpers like `latest()` and `outputMaybe()` for global output lookup. The builder design should avoid making that the default.
-
-The preferred rule is:
-
-- if a step needs an upstream value, declare it in `needs`
-- if a workflow needs historical or ad hoc reads, use an explicit repository or workflow-state service
-
-For example:
-
-```ts
-run: ({ executionId }) =>
-  Effect.gen(function* () {
-    const history = yield* WorkflowHistory;
-    const reviews = yield* history.listStepOutputs(executionId, "review");
-    // ...
-  })
-```
-
-That keeps "normal dataflow" and "advanced state inspection" separate.
-
-## Suggested Mental Model
-
-Think of a Smithers step as a typed function:
-
-```ts
-({ input, ...needs, executionId, attempt, signal }) => Effect<Output>
-```
-
-That is all most steps should need.
-
-If you find yourself wanting a large mutable workflow context, it usually means one of two things:
-
-1. a missing dependency should be declared in `needs`
-2. the workflow needs a repository or service for advanced queries
-
-## Next Steps
-
-- [Services](/effect/services) — Define and provide Effect services.
-- [Builder API](/effect/builder-api) — Full builder primitive reference.
-- [Approvals](/concepts/approvals) — Durable approval gates.
-
----
-
-## Services
-
-> Define and provide Effect services for Smithers workflows using Context.Tag and Layer.
-> Source: https://smithers.sh/effect/services
-
-Smithers does not invent a service container. Workflows use Effect's native dependency injection: `Context.Tag` for service definitions and `Layer` for composition.
-
-## Defining a Service
-
-A service is a typed capability:
-
-```ts
-import { Context, Effect } from "effect";
-
-class Coder extends Context.Tag("Coder")<
-  Coder,
-  {
-    readonly analyze: (description: string) => Effect.Effect<Analysis>;
-    readonly fix: (analysis: Analysis) => Effect.Effect<Fix>;
-  }
->() {}
-```
-
-The service is consumed inside step `run` functions:
-
-```ts
-const analyze = $.step("analyze", {
-  output: Analysis,
-  run: ({ input }) =>
-    Effect.gen(function* () {
-      const coder = yield* Coder;
-      return yield* coder.analyze(input.description);
-    }),
-});
-```
-
-## Providing a Service
-
-Services are provided through `Layer`:
-
-```ts
-import { Layer } from "effect";
-
-const CoderLive = Layer.succeed(Coder, {
-  analyze: (description) =>
-    Effect.succeed(
-      new Analysis({
-        summary: `Analysis of: ${description}`,
-        severity: "medium",
-      }),
-    ),
-  fix: (analysis) =>
-    Effect.succeed(
-      new Fix({
-        patch: `Fix for: ${analysis.summary}`,
-        explanation: "Applied standard fix pattern.",
-      }),
-    ),
-});
-```
-
-## Composing Layers
-
-Use `Layer.mergeAll` to compose multiple service layers:
-
-```ts
-const AppLive = Layer.mergeAll(
-  Smithers.sqlite({ filename: "./smithers.db" }),
-  CoderLive,
-  ReviewerLive,
-  DeployerLive,
-);
-
-const result = await Effect.runPromise(
-  MyWorkflow.execute(input).pipe(Effect.provide(AppLive)),
-);
-```
-
-## Layer Dependencies
-
-Services can depend on other services:
-
-```ts
-const ReviewerLive = Layer.effect(
-  Reviewer,
-  Effect.gen(function* () {
-    const coder = yield* Coder;
-    return {
-      review: (code) =>
-        Effect.gen(function* () {
-          const analysis = yield* coder.analyze(code);
-          return new Review({
-            approved: analysis.severity === "low",
-            feedback: analysis.summary,
-          });
-        }),
-    };
-  }),
-);
-
-// Compose with dependency
-const AppLive = Layer.mergeAll(
-  Smithers.sqlite({ filename: "./smithers.db" }),
-  ReviewerLive.pipe(Layer.provide(CoderLive)),
-);
-```
-
-## Common Service Patterns
-
-### Model Provider
-
-```ts
-class ModelProvider extends Context.Tag("ModelProvider")<
-  ModelProvider,
-  {
-    readonly generate: (prompt: string) => Effect.Effect<string>;
-    readonly generateStructured: <A>(
-      prompt: string,
-      schema: Schema.Schema<A>,
-    ) => Effect.Effect<A>;
-  }
->() {}
-```
-
-### Repository
-
-```ts
-class TicketRepo extends Context.Tag("TicketRepo")<
-  TicketRepo,
-  {
-    readonly get: (id: string) => Effect.Effect<Ticket>;
-    readonly update: (id: string, data: Partial<Ticket>) => Effect.Effect<void>;
-  }
->() {}
-```
-
-### VCS Adapter
-
-```ts
-class VCS extends Context.Tag("VCS")<
-  VCS,
-  {
-    readonly createBranch: (name: string) => Effect.Effect<Branch>;
-    readonly commit: (message: string) => Effect.Effect<Commit>;
-    readonly diff: () => Effect.Effect<string>;
-  }
->() {}
-```
-
-## Testing with Services
-
-Replace live services with test implementations:
-
-```ts
-const CoderTest = Layer.succeed(Coder, {
-  analyze: (description) =>
-    Effect.succeed(
-      new Analysis({
-        summary: "test analysis",
-        severity: "low",
-      }),
-    ),
-  fix: (analysis) =>
-    Effect.succeed(
-      new Fix({
-        patch: "test patch",
-        explanation: "test explanation",
-      }),
-    ),
-});
-
-const TestLive = Layer.mergeAll(
-  Smithers.sqlite({ filename: ":memory:" }),
-  CoderTest,
-);
-```
-
-The workflow definition does not change. Only the provided layers differ between production and test.
-
-## Services in TOON
-
-TOON workflows can use Effect services through `handler:` functions and the `imports:` block:
-
-```toon
-imports:
-  services[1]{from,use}:
-    ./services/coder.ts,Coder
-
-steps[1]:
-  - id: analyze
-    handler: ./handlers/analyze.ts#analyzeWithCoder
-    output:
-      summary: string
-      severity: "low" | "medium" | "high"
-```
-
-The handler function accesses the service through normal Effect patterns:
-
-```ts
-export const analyzeWithCoder = ({ input }) =>
-  Effect.gen(function* () {
-    const coder = yield* Coder;
-    return yield* coder.analyze(input.description);
-  });
-```
-
-## Design Principles
-
-- **Services own capabilities**, not workflow data. Step context provides workflow data; services provide infrastructure.
-- **Layers compose**. Build your service graph with `Layer.mergeAll`, `Layer.provide`, and `Layer.effect`.
-- **Test by swapping layers**. The same workflow runs against live and mock services without code changes.
-- **Keep services focused**. A service should represent one capability (model calls, VCS, tickets), not a grab-bag of utilities.
-
-## Next Steps
-
-- [Context](/effect/context) — How services interact with step context.
-- [Builder API](/effect/builder-api) — Using services inside builder steps.
-- [Installation](/effect/installation) — Setting up Effect and provider packages.
 
