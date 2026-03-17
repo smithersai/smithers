@@ -2,7 +2,7 @@ import { Effect, Metric, MetricBoundaries } from "effect";
 import type { SmithersEvent } from "../SmithersEvent";
 
 // ---------------------------------------------------------------------------
-// Counters
+// Counters — existing
 // ---------------------------------------------------------------------------
 
 export const runsTotal = Metric.counter("smithers.runs.total");
@@ -21,7 +21,41 @@ export const approvalsGranted = Metric.counter("smithers.approvals.granted");
 export const approvalsDenied = Metric.counter("smithers.approvals.denied");
 
 // ---------------------------------------------------------------------------
-// Gauges
+// Counters — token usage
+// ---------------------------------------------------------------------------
+
+export const tokensInputTotal = Metric.counter("smithers.tokens.input_total");
+export const tokensOutputTotal = Metric.counter("smithers.tokens.output_total");
+export const tokensCacheReadTotal = Metric.counter("smithers.tokens.cache_read_total");
+export const tokensCacheWriteTotal = Metric.counter("smithers.tokens.cache_write_total");
+export const tokensReasoningTotal = Metric.counter("smithers.tokens.reasoning_total");
+
+// ---------------------------------------------------------------------------
+// Counters — run lifecycle
+// ---------------------------------------------------------------------------
+
+export const runsFinishedTotal = Metric.counter("smithers.runs.finished_total");
+export const runsFailedTotal = Metric.counter("smithers.runs.failed_total");
+export const runsCancelledTotal = Metric.counter("smithers.runs.cancelled_total");
+export const runsResumedTotal = Metric.counter("smithers.runs.resumed_total");
+
+// ---------------------------------------------------------------------------
+// Counters — errors & retries
+// ---------------------------------------------------------------------------
+
+export const errorsTotal = Metric.counter("smithers.errors.total");
+export const nodeRetriesTotal = Metric.counter("smithers.node.retries_total");
+export const toolCallErrorsTotal = Metric.counter("smithers.tool_calls.errors_total");
+export const toolOutputTruncatedTotal = Metric.counter("smithers.tool.output_truncated_total");
+
+// ---------------------------------------------------------------------------
+// Counters — events
+// ---------------------------------------------------------------------------
+
+export const eventsEmittedTotal = Metric.counter("smithers.events.emitted_total");
+
+// ---------------------------------------------------------------------------
+// Gauges — existing
 // ---------------------------------------------------------------------------
 
 export const activeRuns = Metric.gauge("smithers.runs.active");
@@ -29,7 +63,17 @@ export const activeNodes = Metric.gauge("smithers.nodes.active");
 export const schedulerQueueDepth = Metric.gauge("smithers.scheduler.queue_depth");
 
 // ---------------------------------------------------------------------------
-// Histograms
+// Gauges — new
+// ---------------------------------------------------------------------------
+
+export const approvalPending = Metric.gauge("smithers.approval.pending");
+export const schedulerConcurrencyUtilization = Metric.gauge("smithers.scheduler.concurrency_utilization");
+export const processUptimeSeconds = Metric.gauge("smithers.process.uptime_seconds");
+export const processMemoryRssBytes = Metric.gauge("smithers.process.memory_rss_bytes");
+export const processHeapUsedBytes = Metric.gauge("smithers.process.heap_used_bytes");
+
+// ---------------------------------------------------------------------------
+// Histograms — buckets
 // ---------------------------------------------------------------------------
 
 const durationBuckets = MetricBoundaries.exponential({
@@ -49,6 +93,22 @@ const toolBuckets = MetricBoundaries.exponential({
   factor: 2,
   count: 14,
 }); // ~10ms to ~80s
+
+const tokenBuckets = MetricBoundaries.exponential({
+  start: 10,
+  factor: 2,
+  count: 18,
+}); // ~10 to ~1.3M tokens
+
+const sizeBuckets = MetricBoundaries.exponential({
+  start: 100,
+  factor: 2,
+  count: 16,
+}); // ~100 bytes to ~3.2MB
+
+// ---------------------------------------------------------------------------
+// Histograms — existing
+// ---------------------------------------------------------------------------
 
 export const nodeDuration = Metric.histogram(
   "smithers.node.duration_ms",
@@ -86,60 +146,194 @@ export const vcsDuration = Metric.histogram(
 );
 
 // ---------------------------------------------------------------------------
+// Histograms — new
+// ---------------------------------------------------------------------------
+
+export const tokensInputPerCall = Metric.histogram(
+  "smithers.tokens.input_per_call",
+  tokenBuckets,
+);
+
+export const tokensOutputPerCall = Metric.histogram(
+  "smithers.tokens.output_per_call",
+  tokenBuckets,
+);
+
+export const runDuration = Metric.histogram(
+  "smithers.run.duration_ms",
+  durationBuckets,
+);
+
+export const promptSizeBytes = Metric.histogram(
+  "smithers.prompt.size_bytes",
+  sizeBuckets,
+);
+
+export const responseSizeBytes = Metric.histogram(
+  "smithers.response.size_bytes",
+  sizeBuckets,
+);
+
+export const approvalWaitDuration = Metric.histogram(
+  "smithers.approval.wait_duration_ms",
+  durationBuckets,
+);
+
+export const schedulerWaitDuration = Metric.histogram(
+  "smithers.scheduler.wait_duration_ms",
+  durationBuckets,
+);
+
+// ---------------------------------------------------------------------------
+// Process-level metric snapshot (call periodically)
+// ---------------------------------------------------------------------------
+
+const processStartMs = Date.now();
+
+export function updateProcessMetrics(): Effect.Effect<void> {
+  const uptimeS = (Date.now() - processStartMs) / 1000;
+  const mem = process.memoryUsage();
+  return Effect.all([
+    Metric.set(processUptimeSeconds, uptimeS),
+    Metric.set(processMemoryRssBytes, mem.rss),
+    Metric.set(processHeapUsedBytes, mem.heapUsed),
+  ], { discard: true });
+}
+
+// ---------------------------------------------------------------------------
 // Event-driven metric tracking
 // ---------------------------------------------------------------------------
 
 export function trackEvent(event: SmithersEvent): Effect.Effect<void> {
+  // Always count the event by type
+  const countEvent = Metric.increment(eventsEmittedTotal);
+
   switch (event.type) {
     case "RunStarted":
       return Effect.all([
+        countEvent,
         Metric.increment(runsTotal),
         Metric.update(activeRuns, 1),
       ], { discard: true });
 
     case "RunFinished":
-      return Metric.update(activeRuns, -1);
+      return Effect.all([
+        countEvent,
+        Metric.update(activeRuns, -1),
+        Metric.increment(runsFinishedTotal),
+      ], { discard: true });
 
     case "RunFailed":
-      return Metric.update(activeRuns, -1);
+      return Effect.all([
+        countEvent,
+        Metric.update(activeRuns, -1),
+        Metric.increment(runsFailedTotal),
+        Metric.increment(errorsTotal),
+      ], { discard: true });
 
     case "RunCancelled":
-      return Metric.update(activeRuns, -1);
+      return Effect.all([
+        countEvent,
+        Metric.update(activeRuns, -1),
+        Metric.increment(runsCancelledTotal),
+      ], { discard: true });
 
     case "NodeStarted":
       return Effect.all([
+        countEvent,
         Metric.increment(nodesStarted),
         Metric.update(activeNodes, 1),
       ], { discard: true });
 
     case "NodeFinished":
       return Effect.all([
+        countEvent,
         Metric.increment(nodesFinished),
         Metric.update(activeNodes, -1),
       ], { discard: true });
 
     case "NodeFailed":
       return Effect.all([
+        countEvent,
         Metric.increment(nodesFailed),
         Metric.update(activeNodes, -1),
+        Metric.increment(errorsTotal),
       ], { discard: true });
 
     case "NodeCancelled":
-      return Metric.update(activeNodes, -1);
+      return Effect.all([
+        countEvent,
+        Metric.update(activeNodes, -1),
+      ], { discard: true });
+
+    case "NodeRetrying":
+      return Effect.all([
+        countEvent,
+        Metric.increment(nodeRetriesTotal),
+      ], { discard: true });
 
     case "ToolCallStarted":
-      return Metric.increment(toolCallsTotal);
+      return Effect.all([
+        countEvent,
+        Metric.increment(toolCallsTotal),
+      ], { discard: true });
+
+    case "ToolCallFinished":
+      return event.status === "error"
+        ? Effect.all([
+            countEvent,
+            Metric.increment(toolCallErrorsTotal),
+          ], { discard: true })
+        : countEvent;
 
     case "ApprovalRequested":
-      return Metric.increment(approvalsRequested);
+      return Effect.all([
+        countEvent,
+        Metric.increment(approvalsRequested),
+        Metric.update(approvalPending, 1),
+      ], { discard: true });
 
     case "ApprovalGranted":
-      return Metric.increment(approvalsGranted);
+      return Effect.all([
+        countEvent,
+        Metric.increment(approvalsGranted),
+        Metric.update(approvalPending, -1),
+      ], { discard: true });
 
     case "ApprovalDenied":
-      return Metric.increment(approvalsDenied);
+      return Effect.all([
+        countEvent,
+        Metric.increment(approvalsDenied),
+        Metric.update(approvalPending, -1),
+      ], { discard: true });
+
+    case "TokenUsageReported": {
+      const effects: Effect.Effect<void>[] = [countEvent];
+      if (event.inputTokens > 0) {
+        effects.push(
+          Metric.incrementBy(tokensInputTotal, event.inputTokens),
+          Metric.update(tokensInputPerCall, event.inputTokens),
+        );
+      }
+      if (event.outputTokens > 0) {
+        effects.push(
+          Metric.incrementBy(tokensOutputTotal, event.outputTokens),
+          Metric.update(tokensOutputPerCall, event.outputTokens),
+        );
+      }
+      if (event.cacheReadTokens && event.cacheReadTokens > 0) {
+        effects.push(Metric.incrementBy(tokensCacheReadTotal, event.cacheReadTokens));
+      }
+      if (event.cacheWriteTokens && event.cacheWriteTokens > 0) {
+        effects.push(Metric.incrementBy(tokensCacheWriteTotal, event.cacheWriteTokens));
+      }
+      if (event.reasoningTokens && event.reasoningTokens > 0) {
+        effects.push(Metric.incrementBy(tokensReasoningTotal, event.reasoningTokens));
+      }
+      return Effect.all(effects, { discard: true });
+    }
 
     default:
-      return Effect.void;
+      return countEvent;
   }
 }
