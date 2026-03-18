@@ -128,6 +128,7 @@ export function extractFromHost(
       path: number[];
       iteration: number;
       ralphId?: string;
+      parentIsRalph: boolean;
       parallelStack: { id: string; max?: number }[];
       /**
        * Stack of active <Worktree> contexts (outermost -> innermost).
@@ -144,7 +145,7 @@ export function extractFromHost(
     const worktreeStack = ctx.worktreeStack;
 
     if (node.tag === "smithers:ralph") {
-      if (ralphId) {
+      if (ctx.parentIsRalph) {
         throw new Error("Nested <Ralph> is not supported.");
       }
       const id = resolveStableId(node.rawProps?.id, "ralph", ctx.path);
@@ -319,13 +320,14 @@ export function extractFromHost(
         path: nextPath,
         iteration,
         ralphId,
+        parentIsRalph: node.tag === "smithers:ralph",
         parallelStack: nextParallelStack,
         worktreeStack: nextWorktreeStack,
       });
     }
   }
 
-  walk(root, { path: [], iteration: 0, parallelStack: [], worktreeStack: [] });
+  walk(root, { path: [], iteration: 0, parentIsRalph: false, parallelStack: [], worktreeStack: [] });
 
   return { xml: toXmlNode(root), tasks, mountedTaskIds };
 }
