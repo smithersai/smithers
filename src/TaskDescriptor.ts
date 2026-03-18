@@ -12,6 +12,7 @@ export type TaskDescriptor = {
   worktreeId?: string;
   worktreePath?: string;
   worktreeBranch?: string;
+  worktreeBaseBranch?: string;
   outputTable: any | null;
   outputTableName: string;
   /** Zod schema reference from the Task output prop (used for schema resolution). */

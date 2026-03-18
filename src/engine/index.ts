@@ -122,17 +122,29 @@ async function ensureWorktree(
   rootDir: string,
   worktreePath: string,
   branch?: string,
+  baseBranch?: string,
 ): Promise<void> {
   if (existsSync(worktreePath)) {
-    // Worktree exists — rebase onto latest main so work starts from tip.
+    // Worktree exists — rebase onto the configured base branch so work starts from tip.
     const vcs = findVcsRoot(rootDir);
+    const base = baseBranch || "main";
     if (vcs?.type === "jj") {
       const { runJj } = await import("../vcs/jj");
       await runJj(["git", "fetch"], { cwd: worktreePath });
-      await runJj(["rebase", "-d", "main"], { cwd: worktreePath });
+      const rebaseRes = await runJj(["rebase", "-d", base], { cwd: worktreePath });
+      if (rebaseRes.code !== 0) {
+        console.warn(
+          `[smithers] worktree sync: jj rebase -d ${base} failed (exit ${rebaseRes.code}): ${rebaseRes.stderr || "unknown error"}`,
+        );
+      }
     } else if (vcs?.type === "git") {
       await runGitCommand(worktreePath, ["fetch", "origin"]);
-      await runGitCommand(worktreePath, ["rebase", "origin/main"]);
+      const rebaseRes = await runGitCommand(worktreePath, ["rebase", `origin/${base}`]);
+      if (rebaseRes.code !== 0) {
+        console.warn(
+          `[smithers] worktree sync: git rebase origin/${base} failed (exit ${rebaseRes.code}): ${rebaseRes.stderr || "unknown error"}`,
+        );
+      }
     }
     createdWorktrees.add(worktreePath);
     return;
@@ -165,7 +177,7 @@ async function ensureWorktree(
   if (vcs.type === "jj") {
     const { workspaceAdd, runJj } = await import("../vcs/jj");
     const name = worktreePath.split("/").pop() ?? "worktree";
-    const wsResult = await workspaceAdd(name, worktreePath, { cwd: vcs.root });
+    const wsResult = await workspaceAdd(name, worktreePath, { cwd: vcs.root, atRev: baseBranch });
     if (!wsResult.success) {
       throw new Error(
         `Failed to create jj workspace at ${worktreePath}: ${wsResult.error}`,
@@ -183,7 +195,9 @@ async function ensureWorktree(
       }
     }
   } else {
-    const baseRefs = ["main", "origin/main", "HEAD"] as const;
+    const baseRefs = baseBranch
+      ? [baseBranch, `origin/${baseBranch}`, "HEAD"] as const
+      : ["main", "origin/main", "HEAD"] as const;
     if (branch) {
       // -B force-creates the branch (handles restarts gracefully)
       let created = false;
@@ -1280,7 +1294,7 @@ async function executeTask(
 
   // Ensure the worktree directory exists on disk before running the task.
   if (desc.worktreePath) {
-    await ensureWorktree(toolConfig.rootDir, desc.worktreePath, desc.worktreeBranch);
+    await ensureWorktree(toolConfig.rootDir, desc.worktreePath, desc.worktreeBranch, desc.worktreeBaseBranch);
   }
   const cacheAgent = Array.isArray(desc.agent) ? desc.agent[0] : desc.agent;
 
