@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { SmithersError } from "../utils/errors";
 
 export type SmithersTaskRuntime = {
   runId: string;
@@ -25,7 +26,8 @@ export function getTaskRuntime(): SmithersTaskRuntime | undefined {
 export function requireTaskRuntime(): SmithersTaskRuntime {
   const runtime = storage.getStore();
   if (!runtime) {
-    throw new Error(
+    throw new SmithersError(
+      "TASK_RUNTIME_UNAVAILABLE",
       "Smithers task runtime is only available while a builder step is executing.",
     );
   }

@@ -5,6 +5,7 @@ import { Effect } from "effect";
 import type { OutputSnapshot } from "../context";
 import { fromPromise } from "../effect/interop";
 import { runPromise } from "../effect/runtime";
+import { SmithersError } from "../utils/errors";
 
 /**
  * Detect columns declared with `{ mode: "boolean" }` in a Drizzle table.
@@ -61,7 +62,7 @@ export function loadInputEffect(
   const cols = getTableColumns(inputTable as any) as Record<string, any>;
   const runIdCol = cols.runId;
   if (!runIdCol) {
-    throw new Error("schema.input must include runId column");
+    throw new SmithersError("DB_MISSING_COLUMNS", "schema.input must include runId column");
   }
   return fromPromise<any[]>("load input", () =>
     db

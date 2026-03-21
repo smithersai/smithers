@@ -16,7 +16,7 @@ import { httpRequests, httpRequestDuration } from "../effect/metrics";
 import { approveNode, denyNode } from "../engine/approvals";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { nowMs } from "../utils/time";
-import { errorToJson } from "../utils/errors";
+import { errorToJson, SmithersError } from "../utils/errors";
 import {
   prometheusContentType,
   renderPrometheusMetrics,
@@ -32,14 +32,28 @@ const runs = new Map<string, RunRecord>();
 const DEFAULT_MAX_BODY_BYTES = 1_048_576;
 const DEFAULT_SSE_HEARTBEAT_MS = 10_000;
 
+type HttpErrorCode =
+  | "INVALID_REQUEST"
+  | "PAYLOAD_TOO_LARGE"
+  | "INVALID_JSON"
+  | "SERVER_ERROR"
+  | "UNAUTHORIZED"
+  | "WORKFLOW_PATH_OUTSIDE_ROOT"
+  | "RUN_ID_REQUIRED"
+  | "RUN_ALREADY_EXISTS"
+  | "RUN_NOT_FOUND"
+  | "RUN_NOT_ACTIVE"
+  | "NOT_FOUND"
+  | "DB_NOT_CONFIGURED";
+
 class HttpError extends Error {
   status: number;
-  code: string;
+  code: HttpErrorCode;
   details?: Record<string, unknown>;
 
   constructor(
     status: number,
-    code: string,
+    code: HttpErrorCode,
     message: string,
     details?: Record<string, unknown>,
   ) {
@@ -143,7 +157,7 @@ function readBodyEffect(req: IncomingMessage, maxBytes: number) {
 
 async function loadWorkflow(absPath: string): Promise<SmithersWorkflow<any>> {
   const mod = await import(pathToFileURL(absPath).href);
-  if (!mod.default) throw new Error("Workflow must export default");
+  if (!mod.default) throw new SmithersError("WORKFLOW_MISSING_DEFAULT", "Workflow must export default");
   return mod.default as SmithersWorkflow<any>;
 }
 

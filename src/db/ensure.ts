@@ -2,13 +2,15 @@ import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Effect } from "effect";
 import { fromSync } from "../effect/interop";
 import { runSync } from "../effect/runtime";
+import { SmithersError } from "../utils/errors";
 
 export function ensureSmithersTablesEffect(
   db: BunSQLiteDatabase<any>,
 ): Effect.Effect<void, Error> {
   const client: any = (db as any).$client;
   if (!client || typeof client.exec !== "function") {
-    throw new Error(
+    throw new SmithersError(
+      "DB_REQUIRES_BUN_SQLITE",
       "Smithers requires a Bun SQLite database client with exec().",
     );
   }

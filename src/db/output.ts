@@ -6,6 +6,7 @@ import { Effect } from "effect";
 import { z } from "zod";
 import { fromPromise } from "../effect/interop";
 import { runPromise } from "../effect/runtime";
+import { SmithersError } from "../utils/errors";
 import { withSqliteWriteRetryEffect } from "./write-retry";
 
 export type OutputKey = { runId: string; nodeId: string; iteration?: number };
@@ -20,7 +21,8 @@ export function getKeyColumns(table: Table): {
   const nodeId = cols.nodeId;
   const iteration = cols.iteration;
   if (!runId || !nodeId) {
-    throw new Error(
+    throw new SmithersError(
+      "DB_MISSING_COLUMNS",
       `Output table ${table["_"]?.name ?? ""} must include runId and nodeId columns.`,
     );
   }

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { SmithersError } from "./utils/errors";
 
 const DEFAULT_MANIFEST_PATH = "baml_client/smithers/manifest.json";
 const DEFAULT_GENERATE_COMMAND = ["baml-cli"];
@@ -178,14 +179,16 @@ function ensureGenerateCommand(options: ResolvedBamlPluginOptions) {
   const stderr = (result.stderr ?? "").trim();
   const stdout = (result.stdout ?? "").trim();
   const details = [stderr, stdout, result.error?.message].filter(Boolean).join("\n");
-  throw new Error(
+  throw new SmithersError(
+    "BAML_COMMAND_FAILED",
     `smithers-baml: failed to run ${JSON.stringify(cmd)}${details ? `\n${details}` : ""}`,
   );
 }
 
 function readManifest(manifestPath: string) {
   if (!existsSync(manifestPath)) {
-    throw new Error(
+    throw new SmithersError(
+      "BAML_MANIFEST_NOT_FOUND",
       `smithers-baml: manifest not found at ${manifestPath}. ` +
         `Run the BAML Smithers generator so it emits ${DEFAULT_MANIFEST_PATH}.`,
     );
@@ -193,7 +196,8 @@ function readManifest(manifestPath: string) {
 
   const raw = JSON.parse(readFileSync(manifestPath, "utf8")) as Partial<Manifest>;
   if (!raw || typeof raw !== "object" || !raw.entries || typeof raw.entries !== "object") {
-    throw new Error(
+    throw new SmithersError(
+      "BAML_MANIFEST_INVALID",
       `smithers-baml: invalid manifest at ${manifestPath}. Expected { version, entries }.`,
     );
   }
@@ -248,7 +252,8 @@ function resolveGeneratedModulePath(
     return canonicalPath(fromCwd);
   }
 
-  throw new Error(
+  throw new SmithersError(
+    "BAML_ENTRY_NOT_FOUND",
     `smithers-baml: no manifest entry found for ${sourcePath}. ` +
       `Tried keys: ${candidates.join(", ") || "(none)"}.`,
   );
@@ -291,7 +296,8 @@ export function createBamlPlugin(options: BamlPluginOptions = {}): BamlBundlerPl
 
 export function bamlPlugin(options: BamlPluginOptions = {}) {
   if (typeof Bun === "undefined" || typeof Bun.plugin !== "function") {
-    throw new Error(
+    throw new SmithersError(
+      "BAML_REQUIRES_BUN",
       "bamlPlugin() requires Bun. Use createBamlPlugin() when wiring esbuild directly.",
     );
   }

@@ -19,6 +19,7 @@ import { zodToCreateTableSQL } from "./zodToCreateTableSQL";
 import { camelToSnake } from "./utils/camelToSnake";
 import { resolve } from "node:path";
 import type { z } from "zod";
+import { SmithersError } from "./utils/errors";
 
 type HotCacheEntry = {
   api: CreateSmithersApi<any>;
@@ -87,7 +88,8 @@ export function createSmithers<
     const cached = hotCache.get(absDbPath);
     if (cached) {
       if (cached.schemaSig !== sig) {
-        throw new Error(
+        throw new SmithersError(
+          "SCHEMA_CHANGE_HOT",
           "[smithers hot] Schema change detected; restart required to apply schema changes.",
         );
       }
