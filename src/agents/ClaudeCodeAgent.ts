@@ -90,6 +90,9 @@ export class ClaudeCodeAgent extends BaseCliAgent {
     // usage (message_start has input_tokens, message_delta has output_tokens).
     // BaseCliAgent.extractUsageFromOutput will parse these for metrics.
     const outputFormat = this.opts.outputFormat ?? "stream-json";
+    // Recent Claude CLI builds require --verbose when --print is combined with
+    // --output-format=stream-json.
+    const requiresVerbose = outputFormat === "stream-json";
 
     pushList(args, "--add-dir", this.opts.addDir);
     pushFlag(args, "--agent", this.opts.agent);
@@ -163,7 +166,7 @@ export class ClaudeCodeAgent extends BaseCliAgent {
         pushList(args, "--tools", this.opts.tools as string[]);
       }
     }
-    if (this.opts.verbose) args.push("--verbose");
+    if (this.opts.verbose || requiresVerbose) args.push("--verbose");
     if (this.extraArgs?.length) args.push(...this.extraArgs);
 
     if (params.prompt) args.push(params.prompt);
