@@ -2443,6 +2443,10 @@ async function runWorkflowBody<Schema>(
     // Track in-flight task promises across loop iterations so we
     // wait for them before declaring the run finished.
     const inflight = new Set<Promise<void>>();
+    // Track mounted task IDs from the previous frame to detect newly
+    // mounted tasks. When a conditional child mounts new tasks after
+    // outputs change, we must re-render instead of finishing.
+    let prevMountedTaskIds: Set<string> = new Set();
     if (opts.resume) {
       const nodes = await adapter.listNodes(runId);
       const maxIteration = nodes.reduce(
@@ -2855,6 +2859,25 @@ async function runWorkflowBody<Schema>(
             });
           }
           continue;
+        }
+
+        // Guard against premature completion when conditional children
+        // may mount new tasks after sibling outputs change.
+        //
+        // A workflow is truly finished only when two consecutive renders
+        // produce the same mounted task set with nothing pending. If
+        // this frame's mounted set differs from the previous frame's,
+        // new tasks appeared and we must loop to schedule them.
+        {
+          const currentMounted = new Set(mountedTaskIds);
+          const sameAsPrev =
+            currentMounted.size === prevMountedTaskIds.size &&
+            [...currentMounted].every((id) => prevMountedTaskIds.has(id));
+          prevMountedTaskIds = currentMounted;
+          if (!sameAsPrev) {
+            // Mounted task set changed — re-render to pick up new tasks
+            continue;
+          }
         }
 
         await adapter.updateRun(runId, {
