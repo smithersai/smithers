@@ -1,0 +1,3 @@
+[submodule "burns"]
+	path = burns
+	url = git@github.com:codeplaneapp/burns.git
