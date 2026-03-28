@@ -935,6 +935,14 @@ export class AgentTraceCollector {
       const text = this.extractGenericMessageText(parsed);
       if (typeof text === "string" && text) {
         this.setFinalAssistantText(text);
+        this.push(
+          "assistant.message.final",
+          { text },
+          parsed,
+          true,
+          rawType,
+          { recordSeen: true, direct: true },
+        );
       }
       return;
     }
@@ -969,6 +977,43 @@ export class AgentTraceCollector {
         });
       }
       return;
+    }
+
+    if (this.agentFamily === "codex" && rawType === "thread.started") {
+      this.push("stdout", { eventType: rawType }, parsed, true, rawType, {
+        recordSeen: true,
+        direct: true,
+      });
+      return;
+    }
+
+    if (this.agentFamily === "codex" && rawType === "turn.started") {
+      this.push("turn.start", {}, parsed, true, rawType, {
+        recordSeen: true,
+        direct: true,
+      });
+      this.expectedKinds.add("turn.end");
+      return;
+    }
+
+    if (
+      this.agentFamily === "codex" &&
+      rawType === "item.completed" &&
+      parsed?.item?.type === "agent_message"
+    ) {
+      const text = this.extractGenericMessageText(parsed.item);
+      if (typeof text === "string" && text) {
+        this.setFinalAssistantText(text);
+        this.push(
+          "assistant.message.final",
+          { text },
+          parsed,
+          true,
+          rawType,
+          { recordSeen: true, direct: true },
+        );
+        return;
+      }
     }
 
     if (
@@ -1139,6 +1184,12 @@ export class AgentTraceCollector {
       const usage = this.normalizeUsage(parsed.usage);
       if (usage) {
         this.push("usage", usage, parsed, true, rawType, {
+          recordSeen: true,
+          direct: true,
+        });
+      }
+      if (this.agentFamily === "codex") {
+        this.push("turn.end", {}, parsed, true, rawType, {
           recordSeen: true,
           direct: true,
         });

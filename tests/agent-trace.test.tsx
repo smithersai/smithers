@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workflow, Task, runWorkflow } from "../src";
 import { canonicalTraceEventToOtelLogRecord } from "../src/agent-trace";
+import { CodexAgent } from "../src/agents";
 import { SmithersDb } from "../src/db/adapter";
 import { runPromise } from "../src/effect/runtime";
 import {
@@ -415,7 +416,7 @@ describe("agent trace capture", () => {
       .filter((event: any) => event.type === "AgentTraceEvent")
       .map((event: any) => JSON.parse(event.payloadJson).trace);
 
-    expect(summary.traceCompleteness).toBe("partial-observed");
+    expect(summary.traceCompleteness).toBe("full-observed");
     expect(summary.unsupportedEventKinds).not.toContain("artifact.created");
     expect(
       traceEvents.some(
@@ -443,7 +444,8 @@ describe("agent trace capture", () => {
       traceEvents.some(
         (event: any) =>
           event.event.kind === "assistant.message.final" &&
-          event.source.observed === false,
+          event.source.observed === true &&
+          event.source.rawType === "result",
       ),
     ).toBe(true);
 
@@ -524,6 +526,108 @@ describe("agent trace capture", () => {
       true,
     );
     expect(summary.unsupportedEventKinds).not.toContain("assistant.text.delta");
+    cleanup();
+  });
+
+  test("captures real Codex dotted jsonl events as structured trace instead of cli-text fallback", async () => {
+    const { smithers, outputs, db, cleanup } = createTestSmithers({
+      result: z.object({ answer: z.string() }),
+    });
+    const runId = "agent-trace-codex-dotted-jsonl";
+
+    class CodexJsonlAgentFake extends CodexAgent {
+      constructor() {
+        super({ skipGitRepoCheck: true });
+      }
+
+      async generate(args: { onStdout?: (text: string) => void }) {
+        args.onStdout?.(
+          JSON.stringify({
+            type: "thread.started",
+            thread_id: "thread-1",
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "turn.started",
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "item.completed",
+            item: {
+              id: "item-1",
+              type: "agent_message",
+              text: "Codex dotted final",
+            },
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "turn.completed",
+            usage: {
+              input_tokens: 10,
+              cached_input_tokens: 2,
+              output_tokens: 4,
+            },
+          }) + "\n",
+        );
+        return {
+          text: '{"answer":"Codex dotted final"}',
+          output: { answer: "Codex dotted final" },
+        };
+      }
+    }
+
+    const workflow = smithers(() => (
+      <Workflow name="codex-dotted-jsonl-trace">
+        <Task
+          id="task"
+          output={outputs.result}
+          agent={new CodexJsonlAgentFake() as any}
+        >
+          structured codex dotted jsonl please
+        </Task>
+      </Workflow>
+    ));
+
+    const result = await runWorkflow(workflow, { input: {}, runId });
+    expect(result.status).toBe("finished");
+
+    const events = await listRunEvents(db, runId);
+    const summary = JSON.parse(
+      events.find((event: any) => event.type === "AgentTraceSummary")!
+        .payloadJson,
+    ).summary;
+    const traceEvents = events
+      .filter((event: any) => event.type === "AgentTraceEvent")
+      .map((event: any) => JSON.parse(event.payloadJson).trace);
+
+    expect(summary.captureMode).toBe("cli-json-stream");
+    expect(summary.traceCompleteness).toBe("full-observed");
+    expect(
+      traceEvents.some((event: any) => event.event.kind === "turn.start"),
+    ).toBe(true);
+    expect(
+      traceEvents.some((event: any) => event.event.kind === "turn.end"),
+    ).toBe(true);
+    expect(
+      traceEvents.some(
+        (event: any) =>
+          event.event.kind === "assistant.message.final" &&
+          event.source.observed === true &&
+          event.payload.text === "Codex dotted final",
+      ),
+    ).toBe(true);
+    expect(
+      traceEvents.some(
+        (event: any) =>
+          event.event.kind === "usage" &&
+          event.payload.inputTokens === 10 &&
+          event.payload.outputTokens === 4,
+      ),
+    ).toBe(true);
+
     cleanup();
   });
 

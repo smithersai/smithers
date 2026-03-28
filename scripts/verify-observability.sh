@@ -78,6 +78,11 @@ append_json() {
   } >> "$OUT_DIR/report.md"
 }
 
+trace_summary_json() {
+  local path=$1
+  node -e "const fs=require('fs'); const rows=fs.readFileSync(process.argv[1],'utf8').trim().split('\n').map(JSON.parse); console.log(JSON.stringify(rows.at(-1).summary));" "$path"
+}
+
 echo "[verify] reset stack"
 "$ROOT_DIR/scripts/obs-reset.sh"
 
@@ -147,6 +152,12 @@ retry_until loki-codex-text-delta 6 '.streams >= 1' \
 retry_until loki-codex-usage 6 '.streams >= 1' \
   "loki_query '{service_name=\"smithers-dev\"} | run_id=\"$RUN_ID\" | node_id=\"codex-structured-trace\" | event_kind=\"usage\"' 20 | jq '{streams:(.data.result|length), lines:[.data.result[]?.values[]?[1]]}'"
 
+retry_until trace-summary-claude 6 '.captureMode == "cli-json-stream" and .traceCompleteness == "full-observed" and (.missingExpectedEventKinds | length) == 0' \
+  "trace_summary_json '$ROOT_DIR/workflows/.smithers/executions/$RUN_ID/logs/agent-trace/claude-structured-trace-0-1.ndjson'"
+
+retry_until trace-summary-codex 6 '.captureMode == "cli-json-stream" and .traceCompleteness == "full-observed" and (.missingExpectedEventKinds | length) == 0' \
+  "trace_summary_json '$ROOT_DIR/workflows/.smithers/executions/$RUN_ID/logs/agent-trace/codex-structured-trace-0-1.ndjson'"
+
 retry_until loki-capture-errors 6 '.streams >= 1' \
   "loki_query '{service_name=\"smithers-dev\"} | run_id=\"$FAIL_RUN_ID\" | event_kind=\"capture.error\"' 20 | jq '{streams:(.data.result|length), lines:[.data.result[]?.values[]?[1]]}'"
 
@@ -206,6 +217,8 @@ append_json loki-claude-usage "$OUT_DIR/loki-claude-usage.json"
 append_json loki-gemini-usage "$OUT_DIR/loki-gemini-usage.json"
 append_json loki-codex-text-delta "$OUT_DIR/loki-codex-text-delta.json"
 append_json loki-codex-usage "$OUT_DIR/loki-codex-usage.json"
+append_json trace-summary-claude "$OUT_DIR/trace-summary-claude.json"
+append_json trace-summary-codex "$OUT_DIR/trace-summary-codex.json"
 append_json loki-capture-errors "$OUT_DIR/loki-capture-errors.json"
 append_json loki-redaction-presence "$OUT_DIR/loki-redaction-presence.json"
 append_json loki-secret-absence "$OUT_DIR/loki-secret-absence.json"

@@ -35,6 +35,11 @@ export class CodexAgent extends BaseCliAgent {
   private readonly opts: CodexAgentOptions;
 
   constructor(opts: CodexAgentOptions = {}) {
+    opts = {
+      ...opts,
+      json: opts.json ?? true,
+      outputFormat: opts.outputFormat ?? "stream-json",
+    };
     super(opts);
     this.opts = opts;
   }
