@@ -1,5 +1,5 @@
 
-import { Task } from "../smithers";
+import { Task, outputs } from "../smithers";
 import { z } from "zod";
 import { claude } from "../agents";
 import { useCtx, tables } from "../smithers";

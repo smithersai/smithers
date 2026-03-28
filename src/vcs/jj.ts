@@ -23,7 +23,7 @@ export type RunJjResult = {
 };
 
 function collectUtf8(stream: Stream.Stream<Uint8Array, unknown, never>) {
-  const decoder = new TextDecoder("utf8");
+  const decoder = new TextDecoder("utf-8");
   return Stream.runFold(stream, "", (acc, chunk) =>
     acc + decoder.decode(chunk, { stream: true }),
   ).pipe(Effect.map((acc) => acc + decoder.decode()));

@@ -2,6 +2,8 @@ import { createSmithers, Sequence } from "smithers-orchestrator";
 import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
+import ResearchPrompt from "./prompts/simple-workflow/research.mdx";
+import WritePrompt from "./prompts/simple-workflow/write.mdx";
 
 // Define Zod schemas
 const researchSchema = z.object({
@@ -32,17 +34,22 @@ const writerAgent = new Agent({
 });
 
 // Export workflow
-export default smithers((ctx) => (
-  <Workflow name="simple-example">
-    <Sequence>
-      <Task id="research" output={outputs.research} agent={researchAgent}>
-        {`Research this topic and provide a summary with 3-5 key points: ${ctx.input.topic}`}
-      </Task>
-      <Task id="write" output={outputs.output} agent={writerAgent}>
-        {`Write a short article based on this research:
-Summary: ${ctx.output("research", { nodeId: "research" }).summary}
-Key Points: ${JSON.stringify(ctx.output("research", { nodeId: "research" }).keyPoints)}`}
-      </Task>
-    </Sequence>
-  </Workflow>
-));
+export default smithers((ctx) => {
+  const research = ctx.outputMaybe("research", { nodeId: "research" });
+
+  return (
+    <Workflow name="simple-example">
+      <Sequence>
+        <Task id="research" output={outputs.research} agent={researchAgent}>
+          <ResearchPrompt topic={ctx.input.topic} />
+        </Task>
+        <Task id="write" output={outputs.output} agent={writerAgent}>
+          <WritePrompt
+            summary={research?.summary ?? ""}
+            keyPoints={research?.keyPoints ?? []}
+          />
+        </Task>
+      </Sequence>
+    </Workflow>
+  );
+});

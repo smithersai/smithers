@@ -10,6 +10,8 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, grep, bash } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import ReviewPrompt from "./prompts/panel/review.mdx";
+import SynthesisPrompt from "./prompts/panel/synthesis.mdx";
 
 const specialistReviewSchema = z.object({
   role: z.string(),
@@ -96,22 +98,18 @@ export default smithers((ctx) => {
               agent={agent}
               timeoutMs={120_000}
             >
-              {`Review the code at "${ctx.input.directory}" as a ${label} specialist.
-
-${ctx.input.context ?? ""}
-
-Focus only on ${label.toLowerCase()} concerns. Be specific with file paths and line references.`}
+              <ReviewPrompt
+                directory={ctx.input.directory}
+                label={label}
+                context={ctx.input.context ?? ""}
+              />
             </Task>
           ))}
         </Parallel>
 
         {/* Fan-in: synthesize all reviews */}
         <Task id="synthesis" output={outputs.synthesis} agent={moderator}>
-          {`Synthesize these ${reviews.length} specialist reviews into a final verdict:
-
-${reviews.map((r) => `=== ${r.role} (${r.verdict}) ===\n${r.summary}\nFindings: ${JSON.stringify(r.findings)}`).join("\n\n")}
-
-Produce a single overall verdict with prioritized action items.`}
+          <SynthesisPrompt reviews={reviews} />
         </Task>
       </Sequence>
     </Workflow>

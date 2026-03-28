@@ -20,6 +20,28 @@ import { approveNode } from "../src/engine/approvals";
 import { createTestSmithers } from "./helpers";
 import { outputSchemas } from "./schema";
 import { z } from "zod";
+import QuickstartPlanPrompt from "./prompts/ghost-docs/quickstart-plan.mdx";
+import QuickstartBriefPrompt from "./prompts/ghost-docs/quickstart-brief.mdx";
+import ValidationImplementPrompt from "./prompts/ghost-docs/validation-implement.mdx";
+import ValidationReviewPrompt from "./prompts/ghost-docs/validation-review.mdx";
+import ParallelReviewPrompt from "./prompts/ghost-docs/parallel-review.mdx";
+import DiscoverTicketsPrompt from "./prompts/ghost-docs/discover-tickets.mdx";
+import TicketReportPrompt from "./prompts/ghost-docs/ticket-report.mdx";
+import ResearchPrompt from "./prompts/ghost-docs/research.mdx";
+import ReportPrompt from "./prompts/ghost-docs/report.mdx";
+import HelloWorldGreetPrompt from "./prompts/ghost-docs/hello-world-greet.mdx";
+import DynamicAnalyzePrompt from "./prompts/ghost-docs/dynamic-analyze.mdx";
+import DynamicPlanPrompt from "./prompts/ghost-docs/dynamic-plan.mdx";
+import DynamicExecutePrompt from "./prompts/ghost-docs/dynamic-execute.mdx";
+import DynamicQuickFixPrompt from "./prompts/ghost-docs/dynamic-quick-fix.mdx";
+import RalphWritePrompt from "./prompts/ghost-docs/ralph-write.mdx";
+import RalphReviewPrompt from "./prompts/ghost-docs/ralph-review.mdx";
+import MultiSecurityReviewPrompt from "./prompts/ghost-docs/multi-security-review.mdx";
+import MultiQualityReviewPrompt from "./prompts/ghost-docs/multi-quality-review.mdx";
+import MultiAggregatePrompt from "./prompts/ghost-docs/multi-aggregate.mdx";
+import ApprovalWriteDraftPrompt from "./prompts/ghost-docs/approval-write-draft.mdx";
+import ApprovalPublishPrompt from "./prompts/ghost-docs/approval-publish.mdx";
+import ToolsSearchPrompt from "./prompts/ghost-docs/tools-search.mdx";
 
 // ---------------------------------------------------------------------------
 // Ghost: workflows/hello.tsx — literal output, no agent
@@ -165,10 +187,14 @@ describe("ghost: workflow-quickstart", () => {
           <Workflow name="quickstart">
             <Sequence>
               <Task id="plan" output={outputs.plan} agent={planAgent}>
-                {`Create a short plan for this goal:\n${ctx.input.goal}`}
+                <QuickstartPlanPrompt goal={ctx.input.goal} />
               </Task>
               <Task id="brief" output={outputs.brief} agent={briefAgent}>
-                {`Goal: ${ctx.input.goal}\nPlan: ${planOutput?.summary ?? "pending"}\nSteps: ${JSON.stringify(planOutput?.steps ?? [])}`}
+                <QuickstartBriefPrompt
+                  goal={ctx.input.goal}
+                  plan={planOutput?.summary ?? "pending"}
+                  steps={planOutput?.steps ?? []}
+                />
               </Task>
             </Sequence>
           </Workflow>
@@ -238,10 +264,10 @@ describe("ghost: worktree-feature (validation loop pattern)", () => {
             >
               <Sequence>
                 <Task id="implement" output={outputs.implement} agent={implementAgent}>
-                  Implement the feature
+                  <ValidationImplementPrompt />
                 </Task>
                 <Task id="review" output={outputs.review} agent={reviewAgent}>
-                  Review the implementation
+                  <ValidationReviewPrompt />
                 </Task>
               </Sequence>
             </Ralph>
@@ -291,10 +317,10 @@ describe("ghost: worktree-feature (validation loop pattern)", () => {
         <Workflow name="parallel-review">
           <Parallel>
             <Task id="review-claude" output={outputs.review} agent={makeReviewer("claude")}>
-              Review the code
+              <ParallelReviewPrompt />
             </Task>
             <Task id="review-codex" output={outputs.review} agent={makeReviewer("codex")}>
-              Review the code
+              <ParallelReviewPrompt />
             </Task>
           </Parallel>
         </Workflow>
@@ -493,7 +519,7 @@ describe("ghost: worktree-feature-workflow (ticket pipeline)", () => {
                 if={tickets.length === 0}
                 then={
                   <Task id="discover" output={outputs.discover} agent={discoverAgent}>
-                    Break PRD into tickets
+                    <DiscoverTicketsPrompt />
                   </Task>
                 }
               />
@@ -504,7 +530,7 @@ describe("ghost: worktree-feature-workflow (ticket pipeline)", () => {
                   output={outputs.report}
                   agent={reportAgent}
                 >
-                  {`Report on ${ticket.title}`}
+                  <TicketReportPrompt title={ticket.title} />
                 </Task>
               ))}
             </Sequence>
@@ -577,10 +603,10 @@ describe("docs: quickstart", () => {
       const workflow = smithers((ctx) => (
         <Workflow name="research-report">
           <Task id="research" output={outputs.research} agent={researcher}>
-            {`Research: ${ctx.input.topic}`}
+            <ResearchPrompt topic={ctx.input.topic} />
           </Task>
           <Task id="report" output={outputs.report} agent={writer}>
-            {`Write report based on: ${ctx.outputMaybe("research", { nodeId: "research" })?.summary ?? ""}`}
+            <ReportPrompt summary={ctx.outputMaybe("research", { nodeId: "research" })?.summary ?? ""} />
           </Task>
         </Workflow>
       ));
@@ -625,7 +651,7 @@ describe("docs: hello-world", () => {
         <Workflow name="hello-world">
           <Sequence>
             <Task id="greet" output={outputs.greeting} agent={greeter}>
-              Generate a warm greeting for someone named Alice.
+              <HelloWorldGreetPrompt />
             </Task>
           </Sequence>
         </Workflow>
@@ -692,23 +718,23 @@ describe("docs: dynamic-plan", () => {
           <Workflow name="dynamic-plan">
             <Sequence>
               <Task id="analyze" output={outputs.analysis} agent={analyzer}>
-                Analyze complexity
+                <DynamicAnalyzePrompt />
               </Task>
               <Branch
                 if={isComplex}
                 then={
                   <Sequence>
                     <Task id="plan" output={outputs.plan} agent={planner}>
-                      Plan steps for: {analysis?.summary}
+                      <DynamicPlanPrompt summary={analysis?.summary} />
                     </Task>
                     <Task id="implement" output={outputs.result} agent={implementer}>
-                      Execute plan
+                      <DynamicExecutePrompt />
                     </Task>
                   </Sequence>
                 }
                 else={
                   <Task id="implement" output={outputs.result} agent={implementer}>
-                    Quick fix
+                    <DynamicQuickFixPrompt />
                   </Task>
                 }
               />
@@ -781,11 +807,10 @@ describe("docs: ralph-loop", () => {
               >
                 <Sequence>
                   <Task id="write" output={outputs.code} agent={coder}>
-                    Write a debounce function
-                    {latestReview ? ` Revise: ${latestReview.feedback}` : ""}
+                    <RalphWritePrompt feedback={latestReview?.feedback} />
                   </Task>
                   <Task id="review" output={outputs.review} agent={reviewer}>
-                    Review: {latestCode?.source ?? "no code yet"}
+                    <RalphReviewPrompt source={latestCode?.source ?? "no code yet"} />
                   </Task>
                 </Sequence>
               </Ralph>
@@ -847,14 +872,17 @@ describe("docs: multi-agent-review", () => {
             <Sequence>
               <Parallel maxConcurrency={2}>
                 <Task id="security-review" output={outputs.review} agent={makeReviewer("security", true)}>
-                  Review for security
+                  <MultiSecurityReviewPrompt />
                 </Task>
                 <Task id="quality-review" output={outputs.review} agent={makeReviewer("quality", false)}>
-                  Review for quality
+                  <MultiQualityReviewPrompt />
                 </Task>
               </Parallel>
               <Task id="aggregate" output={outputs.verdict} agent={aggregator}>
-                {`Security: ${secReview?.feedback}, Quality: ${qualReview?.feedback}`}
+                <MultiAggregatePrompt
+                  securityFeedback={secReview?.feedback}
+                  qualityFeedback={qualReview?.feedback}
+                />
               </Task>
             </Sequence>
           </Workflow>
@@ -908,7 +936,7 @@ describe("docs: approval-gate", () => {
           <Workflow name="approval-gate">
             <Sequence>
               <Task id="write-draft" output={outputs.draft} agent={writer}>
-                Write a blog post about resumability
+                <ApprovalWriteDraftPrompt />
               </Task>
               <Task
                 id="publish"
@@ -917,7 +945,7 @@ describe("docs: approval-gate", () => {
                 needsApproval
                 label="Publish blog post"
               >
-                {`Publish: ${draft?.title}`}
+                <ApprovalPublishPrompt title={draft?.title} />
               </Task>
             </Sequence>
           </Workflow>
@@ -991,7 +1019,7 @@ describe("docs: tools-agent", () => {
               timeoutMs={60_000}
               retries={2}
             >
-              Search for deprecated legacyAuth calls
+              <ToolsSearchPrompt />
             </Task>
           </Sequence>
         </Workflow>

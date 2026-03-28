@@ -95,7 +95,16 @@ export function isSmithersError(err: unknown): err is SmithersError {
   return Boolean(err && typeof err === "object" && (err as any).code);
 }
 
-export function errorToJson(err: unknown) {
+export type SerializedError = Record<string, unknown> & {
+  name?: string;
+  message?: string;
+  stack?: string;
+  cause?: unknown;
+  code?: unknown;
+  details?: unknown;
+};
+
+export function errorToJson(err: unknown): SerializedError {
   if (err instanceof Error) {
     const anyErr = err as any;
     return {
@@ -108,7 +117,7 @@ export function errorToJson(err: unknown) {
     };
   }
   if (err && typeof err === "object") {
-    return err;
+    return err as SerializedError;
   }
   return { message: String(err) };
 }

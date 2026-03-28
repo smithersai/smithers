@@ -9,6 +9,7 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, grep, bash } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import PlanPrompt from "./prompts/plan/plan.mdx";
 
 const taskSchema = z.object({
   id: z.string(),
@@ -42,17 +43,12 @@ Identify the critical path and risks. Each task should be completable by a singl
 export default smithers((ctx) => (
   <Workflow name="plan">
     <Task id="plan" output={outputs.plan} agent={planner}>
-      {`Analyze the codebase at "${ctx.input.directory}" and create an implementation plan for:
-
-Goal: ${ctx.input.goal}
-
-Requirements:
-${ctx.input.requirements ?? "See codebase for context"}
-
-Constraints:
-${ctx.input.constraints ?? "None specified"}
-
-Break this into small, parallelizable tasks. Identify dependencies and critical path.`}
+      <PlanPrompt
+        directory={ctx.input.directory}
+        goal={ctx.input.goal}
+        requirements={ctx.input.requirements}
+        constraints={ctx.input.constraints}
+      />
     </Task>
   </Workflow>
 ));

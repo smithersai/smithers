@@ -9,6 +9,8 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { bash, read } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import SetupPrompt from "./prompts/smoketest/setup.mdx";
+import CheckPrompt from "./prompts/smoketest/check.mdx";
 
 const setupSchema = z.object({
   environment: z.string(),
@@ -70,9 +72,10 @@ export default smithers((ctx) => {
     <Workflow name="smoketest">
       <Sequence>
         <Task id="setup" output={outputs.setup} agent={setupAgent}>
-          {`Setup test environment at "${ctx.input.directory}":
-${ctx.input.setupCmd ?? "npm install"}
-Verify the environment is ready for smoke testing.`}
+          <SetupPrompt
+            directory={ctx.input.directory}
+            setupCmd={ctx.input.setupCmd ?? "npm install"}
+          />
         </Task>
 
         {setup?.ready && (
@@ -86,10 +89,11 @@ Verify the environment is ready for smoke testing.`}
                 continueOnFail
                 timeoutMs={ctx.input.timeoutMs ?? 120_000}
               >
-                {`Run smoke check "${check.name}":
-Command: ${check.cmd}
-Directory: ${ctx.input.directory}
-Report pass/fail with timing.`}
+                <CheckPrompt
+                  name={check.name}
+                  cmd={check.cmd}
+                  directory={ctx.input.directory}
+                />
               </Task>
             ))}
           </Parallel>

@@ -20,13 +20,5 @@ export type AgentLike = {
    * @param args.outputSchema - Optional Zod schema defining the expected structured output format
    * @returns A promise resolving to the generated output
    */
-  generate: (args: {
-    options?: any;
-    abortSignal?: AbortSignal;
-    prompt: string;
-    timeout?: { totalMs: number } | undefined;
-    onStdout?: (text: string) => void;
-    onStderr?: (text: string) => void;
-    outputSchema?: import("zod").ZodObject<any>;
-  }) => Promise<any>;
+  generate: (args: any) => Promise<any>;
 };

@@ -1,7 +1,6 @@
-import { Sequence, Branch } from "smithers";
 import { Discover, TicketPipeline } from "./components";
 import { Ticket } from "./components/Discover.schema";
-import { Workflow, smithers, tables } from "./smithers";
+import { Branch, Sequence, Workflow, smithers, tables } from "./smithers";
 
 export default smithers((ctx) => {
   const discoverOutput = ctx.latest(tables.discover, "discover-codex");

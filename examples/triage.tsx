@@ -5,11 +5,13 @@
  * Use cases: bug triage, support ticket routing, PR labeling, alert handling,
  * email classification, content moderation.
  */
-import { createSmithers, Sequence, Parallel, Branch } from "smithers-orchestrator";
+import { createSmithers, Sequence, Parallel } from "smithers-orchestrator";
 import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import ClassifyPrompt from "./prompts/triage/classify.mdx";
+import HandlePrompt from "./prompts/triage/handle.mdx";
 
 const classificationSchema = z.object({
   items: z.array(z.object({
@@ -34,7 +36,7 @@ const triageReportSchema = z.object({
   handled: z.number(),
   escalated: z.number(),
   deferred: z.number(),
-  byCategory: z.record(z.number()),
+  byCategory: z.record(z.string(), z.number()),
   summary: z.string(),
 });
 
@@ -60,7 +62,7 @@ const makeHandler = (role: string) =>
 If you can handle it, do so. If it needs human attention, escalate with details.`,
   });
 
-const handlers: Record<string, InstanceType<typeof Agent>> = {
+const handlers: Record<string, any> = {
   security: makeHandler("security incident"),
   "bug-fix": makeHandler("bug fix"),
   feature: makeHandler("feature request"),
@@ -79,12 +81,11 @@ export default smithers((ctx) => {
       <Sequence>
         {/* Classify all items */}
         <Task id="classify" output={outputs.classification} agent={classifier}>
-          {`Triage these items:
-
-Source: ${ctx.input.source ?? "GitHub issues"}
-${ctx.input.items ? `Items:\n${JSON.stringify(ctx.input.items, null, 2)}` : `Command to fetch items: ${ctx.input.fetchCmd ?? "gh issue list --json number,title,body,labels --limit 20"}`}
-
-Classify each by category, priority, and routing.`}
+          <ClassifyPrompt
+            source={ctx.input.source ?? "GitHub issues"}
+            items={ctx.input.items ?? null}
+            fetchCmd={ctx.input.fetchCmd ?? "gh issue list --json number,title,body,labels --limit 20"}
+          />
         </Task>
 
         {/* Route to handlers in parallel */}
@@ -98,14 +99,14 @@ Classify each by category, priority, and routing.`}
                 agent={handlers[item.assignTo] ?? handlers["bug-fix"]}
                 continueOnFail
               >
-                {`Handle this ${item.priority} ${item.category} item:
-
-ID: ${item.id}
-Title: ${item.title}
-Routing: ${item.assignTo}
-Reasoning: ${item.reasoning}
-
-Take appropriate action or escalate with details.`}
+                <HandlePrompt
+                  priority={item.priority}
+                  category={item.category}
+                  id={item.id}
+                  title={item.title}
+                  assignTo={item.assignTo}
+                  reasoning={item.reasoning}
+                />
               </Task>
             ))}
           </Parallel>

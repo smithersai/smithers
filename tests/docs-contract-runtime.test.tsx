@@ -17,6 +17,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { bash, read } from "../src/tools";
 import { getToolContext } from "../src/tools/context";
+import RunAgentPrompt from "./prompts/docs-contract-runtime/run-agent.mdx";
+import TryNetworkPrompt from "./prompts/docs-contract-runtime/try-network.mdx";
+import ReadFilePrompt from "./prompts/docs-contract-runtime/read-file.mdx";
+import SlowToolPrompt from "./prompts/docs-contract-runtime/slow-tool.mdx";
+import CheckTimeoutPrompt from "./prompts/docs-contract-runtime/check-timeout.mdx";
+import ReadPrompt from "./prompts/docs-contract-runtime/read.mdx";
 
 describe("docs: renderFrame", () => {
   test("renderFrame is pure and does not execute tasks", async () => {
@@ -42,7 +48,7 @@ describe("docs: renderFrame", () => {
           }}
         </Task>
         <Task id="agent" output={outputs.outputB} agent={agent}>
-          run agent
+          <RunAgentPrompt />
         </Task>
       </Workflow>
     ));
@@ -265,7 +271,7 @@ describe("docs: runWorkflow", () => {
     const workflow = smithers(() => (
       <Workflow name="allow-network">
         <Task id="net" output={outputs.output} agent={agent}>
-          Try network.
+          <TryNetworkPrompt />
         </Task>
       </Workflow>
     ));
@@ -295,7 +301,7 @@ describe("docs: runWorkflow", () => {
     const workflow = smithers(() => (
       <Workflow name="max-bytes">
         <Task id="read" output={outputs.output} agent={agent}>
-          Read file.
+          <ReadFilePrompt />
         </Task>
       </Workflow>
     ));
@@ -332,7 +338,7 @@ describe("docs: runWorkflow", () => {
     const workflow = smithers(() => (
       <Workflow name="read-limit">
         <Task id="read" output={outputs.output} agent={agent}>
-          Read file.
+          <ReadFilePrompt />
         </Task>
       </Workflow>
     ));
@@ -365,7 +371,7 @@ describe("docs: runWorkflow", () => {
     const workflow = smithers(() => (
       <Workflow name="tool-timeout">
         <Task id="slow" output={outputs.output} agent={agent}>
-          Slow tool.
+          <SlowToolPrompt />
         </Task>
       </Workflow>
     ));
@@ -394,7 +400,7 @@ describe("docs: runWorkflow", () => {
     const workflow = smithers(() => (
       <Workflow name="timeout-default">
         <Task id="t" output={outputs.output} agent={agent}>
-          Check timeout.
+          <CheckTimeoutPrompt />
         </Task>
       </Workflow>
     ));
@@ -539,7 +545,7 @@ describe("docs: events", () => {
     const workflow = smithers(() => (
       <Workflow name="tool-events">
         <Task id="read" output={outputs.output} agent={agent}>
-          Read.
+          <ReadPrompt />
         </Task>
       </Workflow>
     ));

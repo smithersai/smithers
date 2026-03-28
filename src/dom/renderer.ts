@@ -1,5 +1,6 @@
 import Reconciler from "react-reconciler";
 import type React from "react";
+import { installRDTHook } from "bippy";
 import {
   extractFromHost,
   type HostNode,
@@ -185,6 +186,10 @@ const hostConfig: any = {
 };
 
 const reconciler = Reconciler(hostConfig);
+
+// Ensure custom renderers can register with the devtools hook even when the
+// hook consumer starts after this module has already been imported.
+installRDTHook();
 
 // Register with React DevTools hook (if present).
 // This enables Bippy, react-devtools-inline, and other devtools that listen

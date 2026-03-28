@@ -10,6 +10,9 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import AnalyzePrompt from "./prompts/refactor/analyze.mdx";
+import RefactorPrompt from "./prompts/refactor/refactor.mdx";
+import VerifyPrompt from "./prompts/refactor/verify.mdx";
 
 const analysisSchema = z.object({
   targets: z.array(z.object({
@@ -84,14 +87,12 @@ export default smithers((ctx) => {
     <Workflow name="refactor">
       <Sequence>
         <Task id="analyze" output={outputs.analysis} agent={analyzer}>
-          {`Find all occurrences of this pattern in "${ctx.input.directory}":
-
-Pattern: ${ctx.input.pattern}
-Refactoring: ${ctx.input.refactoring}
-
-Example: ${ctx.input.example ?? "N/A"}
-
-List every file and occurrence that needs changing.`}
+          <AnalyzePrompt
+            directory={ctx.input.directory}
+            pattern={ctx.input.pattern}
+            refactoring={ctx.input.refactoring}
+            example={ctx.input.example ?? "N/A"}
+          />
         </Task>
 
         {analysis && (
@@ -104,10 +105,13 @@ List every file and occurrence that needs changing.`}
                 agent={refactorer}
                 continueOnFail
               >
-                {`Refactor "${target.file}":
-Pattern: ${target.pattern} (${target.occurrences} occurrences)
-Refactoring: ${ctx.input.refactoring}
-${ctx.input.example ? `Example:\nBefore: ${ctx.input.example.before}\nAfter: ${ctx.input.example.after}` : ""}`}
+                <RefactorPrompt
+                  file={target.file}
+                  pattern={target.pattern}
+                  occurrences={target.occurrences}
+                  refactoring={ctx.input.refactoring}
+                  example={ctx.input.example}
+                />
               </Task>
             ))}
           </Parallel>
@@ -115,11 +119,12 @@ ${ctx.input.example ? `Example:\nBefore: ${ctx.input.example.before}\nAfter: ${c
 
         {changes.length > 0 && (
           <Task id="verify" output={outputs.verify} agent={verifier}>
-            {`Verify the refactoring didn't break anything:
-Directory: ${ctx.input.directory}
-1. ${ctx.input.typecheckCmd ?? "npx tsc --noEmit"}
-2. ${ctx.input.testCmd ?? "npm test"}
-3. ${ctx.input.lintCmd ?? "npx eslint ."}`}
+            <VerifyPrompt
+              directory={ctx.input.directory}
+              typecheckCmd={ctx.input.typecheckCmd ?? "npx tsc --noEmit"}
+              testCmd={ctx.input.testCmd ?? "npm test"}
+              lintCmd={ctx.input.lintCmd ?? "npx eslint ."}
+            />
           </Task>
         )}
 

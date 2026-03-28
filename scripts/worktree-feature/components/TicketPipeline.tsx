@@ -1,7 +1,6 @@
-import { Sequence } from "smithers";
 import { ValidationLoop } from "./ValidationLoop";
 import { Report } from "./Report";
-import { useCtx, tables } from "../smithers";
+import { Sequence, useCtx, tables } from "../smithers";
 import type { Ticket } from "./Discover.schema";
 import type { ReportOutput } from "./Report.schema";
 

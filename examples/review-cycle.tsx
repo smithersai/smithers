@@ -10,6 +10,8 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import ImplementPrompt from "./prompts/review-cycle/implement.mdx";
+import ReviewPrompt from "./prompts/review-cycle/review.mdx";
 
 const implementSchema = z.object({
   filesChanged: z.array(z.string()),
@@ -68,22 +70,19 @@ export default smithers((ctx) => {
         <Loop until={isApproved} maxIterations={ctx.input.maxIterations ?? 5} onMaxReached="return-last">
           <Sequence>
             <Task id="implement" output={outputs.implement} agent={implementer}>
-              {`${reviews.length === 0 ? "Implement" : "Fix issues from review and re-implement"}:
-
-Task: ${ctx.input.task}
-Directory: ${ctx.input.directory}
-
-${latestReview ? `Review feedback to address:
-${latestReview.issues.map((i) => `- [${i.severity}] ${i.file}: ${i.description}\n  Suggestion: ${i.suggestion}`).join("\n")}` : "This is the initial implementation."}`}
+              <ImplementPrompt
+                mode={reviews.length === 0 ? "Implement" : "Fix issues from review and re-implement"}
+                task={ctx.input.task}
+                directory={ctx.input.directory}
+                issues={latestReview?.issues ?? []}
+              />
             </Task>
 
             <Task id="review" output={outputs.review} agent={reviewer}>
-              {`Review the implementation:
-Files changed: ${ctx.outputMaybe("implement", { nodeId: "implement" })?.filesChanged?.join(", ") ?? "unknown"}
-Approach: ${ctx.outputMaybe("implement", { nodeId: "implement" })?.approach ?? "unknown"}
-
-Check for: correctness, edge cases, error handling, style, tests.
-Only approve if there are no blocker or major issues.`}
+              <ReviewPrompt
+                filesChanged={ctx.outputMaybe("implement", { nodeId: "implement" })?.filesChanged ?? []}
+                approach={ctx.outputMaybe("implement", { nodeId: "implement" })?.approach ?? "unknown"}
+              />
             </Task>
           </Sequence>
         </Loop>

@@ -13,7 +13,9 @@ import { describe, expect, test, beforeAll } from "bun:test";
 import { installRDTHook } from "bippy";
 
 // Install BEFORE any React/Smithers code loads
-installRDTHook();
+if (!("__REACT_DEVTOOLS_GLOBAL_HOOK__" in globalThis)) {
+  installRDTHook();
+}
 
 describe("devtools: bippy + custom reconciler", () => {
   // These are populated in beforeAll via dynamic imports

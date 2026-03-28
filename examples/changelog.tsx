@@ -9,6 +9,8 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { bash, read, write } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import AnalyzePrompt from "./prompts/changelog/analyze.mdx";
+import GeneratePrompt from "./prompts/changelog/generate.mdx";
 
 const commitAnalysisSchema = z.object({
   commits: z.array(z.object({
@@ -65,24 +67,21 @@ export default smithers((ctx) => {
     <Workflow name="changelog">
       <Sequence>
         <Task id="analyze" output={outputs.commitAnalysis} agent={analyst}>
-          {`Analyze git history:
-Range: ${ctx.input.range ?? "last tag to HEAD"}
-Command: git log ${ctx.input.range ?? "--since='1 week ago'"} --pretty=format:"%H|%s|%an|%ai" --no-merges
-
-For each commit, categorize and write a user-friendly summary.`}
+          <AnalyzePrompt
+            range={ctx.input.range ?? "last tag to HEAD"}
+            command={`git log ${ctx.input.range ?? "--since='1 week ago'"} --pretty=format:"%H|%s|%an|%ai" --no-merges`}
+          />
         </Task>
 
         <Task id="generate" output={outputs.changelog} agent={writer}>
-          {`Generate a changelog from these ${analysis?.totalCommits ?? 0} commits:
-
-${JSON.stringify(analysis?.commits ?? [], null, 2)}
-
-Version: ${ctx.input.version ?? "Unreleased"}
-Date range: ${analysis?.dateRange ?? "unknown"}
-Audience: ${ctx.input.audience ?? "users"}
-Output file: ${ctx.input.outputFile ?? "CHANGELOG.md"}
-
-Group by category with emojis. Highlight breaking changes at the top.`}
+          <GeneratePrompt
+            totalCommits={analysis?.totalCommits ?? 0}
+            commits={analysis?.commits ?? []}
+            version={ctx.input.version ?? "Unreleased"}
+            dateRange={analysis?.dateRange ?? "unknown"}
+            audience={ctx.input.audience ?? "users"}
+            outputFile={ctx.input.outputFile ?? "CHANGELOG.md"}
+          />
         </Task>
       </Sequence>
     </Workflow>

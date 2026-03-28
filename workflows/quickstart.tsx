@@ -5,6 +5,8 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
 import { z } from "zod";
+import PlanPrompt from "./prompts/quickstart/plan.mdx";
+import BriefPrompt from "./prompts/quickstart/brief.mdx";
 
 const input = sqliteTable("input", {
   runId: text("run_id").primaryKey(),
@@ -89,14 +91,14 @@ export default smithers(db, (ctx) => (
   <Workflow name="quickstart">
     <Sequence>
       <Task id="plan" output={outputs.plan} agent={planAgent}>
-        {`Create a short plan for this goal:\n${ctx.input.goal}`}
+        <PlanPrompt goal={ctx.input.goal} />
       </Task>
       <Task id="brief" output={outputs.brief} agent={briefAgent}>
-        {`Goal: ${ctx.input.goal}
-Plan summary: ${ctx.output(schema.plan, { nodeId: "plan" }).summary}
-Steps: ${JSON.stringify(ctx.output(schema.plan, { nodeId: "plan" }).steps)}
-
-Write a brief based on the plan. The "stepCount" must equal the number of steps.`}
+        <BriefPrompt
+          goal={ctx.input.goal}
+          planSummary={ctx.output(schema.plan, { nodeId: "plan" }).summary}
+          steps={ctx.output(schema.plan, { nodeId: "plan" }).steps}
+        />
       </Task>
     </Sequence>
   </Workflow>

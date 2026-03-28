@@ -5,6 +5,7 @@ import { read } from "../../src/tools";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import NotesPrompt from "../prompts/fixtures/jsx-ai-release-notes/notes.mdx";
 
 const dbPath = join(
   mkdtempSync(join(tmpdir(), "smithers-jsx-ai-")),
@@ -35,9 +36,9 @@ const releaseAgent: any = {
     const latestSection = sections[0] ?? "";
     const highlights = latestSection
       .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("- "))
-      .map((line) => line.replace(/^-\s*/, ""));
+      .map((line: string) => line.trim())
+      .filter((line: string) => line.startsWith("- "))
+      .map((line: string) => line.replace(/^-\s*/, ""));
     return {
       output: {
         latestVersion,
@@ -51,7 +52,7 @@ const releaseAgent: any = {
 export default smithers(() => (
   <Workflow name="release-notes">
     <Task id="notes" output={outputs.output} agent={releaseAgent}>
-      Summarize recent changes for release notes.
+      <NotesPrompt />
     </Task>
   </Workflow>
 ));

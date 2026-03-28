@@ -26,6 +26,9 @@ describe("docs artifacts", () => {
 
   test("exact redirects land on real docs pages", () => {
     const pages = new Set(loadAllDocsPages().map((page) => `/${page.slug}`));
+    if (pages.has("/index")) {
+      pages.add("/");
+    }
     const redirects = loadDocsConfig().redirects ?? [];
     const exactRedirects = redirects.filter(
       (redirect) => !redirect.destination.includes(":slug*"),

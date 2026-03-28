@@ -10,6 +10,8 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import ScanPrompt from "./prompts/audit/scan.mdx";
+import InvestigatePrompt from "./prompts/audit/investigate.mdx";
 
 const scanSchema = z.object({
   items: z.array(z.object({
@@ -78,13 +80,12 @@ export default smithers((ctx) => {
     <Workflow name="audit">
       <Sequence>
         <Task id="scan" output={outputs.scan} agent={scanner}>
-          {`Audit the codebase at "${ctx.input.directory}":
-
-Audit type: ${auditType}
-Focus: ${auditFocus[auditType] ?? auditFocus.general}
-File patterns: ${ctx.input.glob ?? "**/*"}
-
-Scan systematically. Categorize each finding by severity.`}
+          <ScanPrompt
+            directory={ctx.input.directory}
+            auditType={auditType}
+            focus={auditFocus[auditType] ?? auditFocus.general}
+            glob={ctx.input.glob}
+          />
         </Task>
 
         {/* Investigate high+ severity items */}
@@ -100,13 +101,13 @@ Scan systematically. Categorize each finding by severity.`}
                   agent={investigator}
                   continueOnFail
                 >
-                  {`Investigate this ${item.severity} finding:
-ID: ${item.id}
-Category: ${item.category}
-Location: ${item.location}
-Description: ${item.description}
-
-Determine if this is a real issue or false positive. Provide a recommendation.`}
+                  <InvestigatePrompt
+                    id={item.id}
+                    severity={item.severity}
+                    category={item.category}
+                    location={item.location}
+                    description={item.description}
+                  />
                 </Task>
               ))}
           </Parallel>

@@ -14,6 +14,9 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import TriagePrompt from "./prompts/kanban/triage.mdx";
+import WorkPrompt from "./prompts/kanban/work.mdx";
+import ReviewPrompt from "./prompts/kanban/review.mdx";
 
 const itemSchema = z.object({
   id: z.string(),
@@ -89,12 +92,7 @@ export default smithers((ctx) => {
       <Sequence>
         {/* Triage: break input into work items */}
         <Task id="triage" output={outputs.triage} agent={triageAgent}>
-          {`Break this goal into discrete work items:
-
-Goal: ${ctx.input.goal}
-Directory: ${ctx.input.directory}
-
-Scan the codebase and create actionable items. Put each in "backlog" column.`}
+          <TriagePrompt goal={ctx.input.goal} directory={ctx.input.directory} />
         </Task>
 
         {/* Process: work on backlog items in parallel */}
@@ -112,11 +110,12 @@ Scan the codebase and create actionable items. Put each in "backlog" column.`}
                       agent={workerAgent}
                       continueOnFail
                     >
-                      {`Complete this task:
-ID: ${item.id}
-Title: ${item.title}
-Description: ${item.description}
-Directory: ${ctx.input.directory}`}
+                      <WorkPrompt
+                        id={item.id}
+                        title={item.title}
+                        description={item.description}
+                        directory={ctx.input.directory}
+                      />
                     </Task>
                   ))}
               </Parallel>
@@ -132,9 +131,11 @@ Directory: ${ctx.input.directory}`}
                       output={outputs.review}
                       agent={reviewerAgent}
                     >
-                      {`Review the work on item "${result.itemId}":
-Changes: ${result.summary}
-Files: ${result.filesChanged.join(", ")}`}
+                      <ReviewPrompt
+                        itemId={result.itemId}
+                        summary={result.summary}
+                        filesChanged={result.filesChanged}
+                      />
                     </Task>
                   ))}
               </Parallel>

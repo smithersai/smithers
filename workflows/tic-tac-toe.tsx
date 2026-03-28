@@ -1,6 +1,7 @@
 /** @jsxImportSource smithers */
 import { createSmithers, GeminiAgent, Sequence, Ralph } from "smithers";
 import { z } from "zod";
+import MakeMovePrompt from "./prompts/tic-tac-toe/make-move.mdx";
 
 // --- Schemas ---
 
@@ -108,17 +109,15 @@ export default smithers((ctx) => {
       <Ralph until={gameOver} maxIterations={9} onMaxReached="return-last">
         <Sequence>
           <Task id="make-move" output={outputs.move} agent={agent}>
-            {`You are player ${currentPlayer}. Here is the current board:
-
-${formatBoard(board)}
-
-Available positions (row, col): ${board
-              .flatMap((row, r) =>
-                row.map((cell, c) => (cell === "." ? `(${r},${c})` : null)).filter(Boolean),
-              )
-              .join(", ")}
-
-Pick an open position. Return ONLY JSON: {"row": <0-2>, "col": <0-2>}`}
+            <MakeMovePrompt
+              currentPlayer={currentPlayer}
+              board={formatBoard(board)}
+              availablePositions={board
+                .flatMap((row, r) =>
+                  row.map((cell, c) => (cell === "." ? `(${r},${c})` : null)).filter(Boolean),
+                )
+                .join(", ")}
+            />
           </Task>
           <Task id="update-state" output={outputs.gameState}>
             {(() => {

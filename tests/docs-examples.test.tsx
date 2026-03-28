@@ -19,6 +19,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import RetryPrompt from "./prompts/docs-examples/retry-me.mdx";
+import FailPrompt from "./prompts/docs-examples/fail.mdx";
+import TimingPrompt from "./prompts/docs-examples/timing.mdx";
+import ReadFilePrompt from "./prompts/docs-examples/read-file.mdx";
 
 describe("docs examples (renderer)", () => {
   test("Branch selects the active path and Parallel metadata is assigned", async () => {
@@ -172,7 +176,7 @@ describe("docs examples (engine)", () => {
       const workflow = smithers(() => (
         <Workflow name="retries">
           <Task id="flaky" output={outputs.outputA} agent={flakyAgent} retries={1}>
-            Retry me
+            <RetryPrompt />
           </Task>
         </Workflow>
       ));
@@ -212,7 +216,7 @@ describe("docs examples (engine)", () => {
               agent={failingAgent}
               continueOnFail
             >
-              Fail
+              <FailPrompt />
             </Task>
             <Task id="ok" output={outputs.outputB}>
               {{ value: 2 }}
@@ -250,7 +254,7 @@ describe("docs examples (engine)", () => {
       const workflow = smithers(() => (
         <Workflow name="timeout">
           <Task id="timed" output={outputs.outputA} agent={timedAgent} timeoutMs={1234}>
-            Timing
+            <TimingPrompt />
           </Task>
         </Workflow>
       ));
@@ -285,7 +289,7 @@ describe("docs examples (engine)", () => {
       const workflow = smithers(() => (
         <Workflow name="tools">
           <Task id="read" output={outputs.outputA} agent={toolAgent}>
-            Read file
+            <ReadFilePrompt />
           </Task>
         </Workflow>
       ));

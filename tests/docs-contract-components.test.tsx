@@ -13,6 +13,9 @@ import {
 import { createTestSmithers, sleep } from "./helpers";
 import { outputSchemas } from "./schema";
 import { z } from "zod";
+import StripExtraFieldsPrompt from "./prompts/docs-contract-components/strip-extra-fields.mdx";
+import CachedPrompt from "./prompts/docs-contract-components/cached-prompt.mdx";
+import ReturnValuePrompt from "./prompts/docs-contract-components/return-value.mdx";
 
 const TaskAny = Task as any;
 
@@ -210,7 +213,7 @@ describe("docs: <Task>", () => {
     const workflow = smithers(() => (
       <Workflow name="strip-columns">
         <Task id="strip" output={outputs.output} agent={agent}>
-          Return with extra fields.
+          <StripExtraFieldsPrompt />
         </Task>
       </Workflow>
     ));
@@ -248,7 +251,7 @@ describe("docs: <Workflow>", () => {
     const workflow = smithers(() => (
       <Workflow name="cache-workflow" cache>
         <Task id="cached" output={outputs.output} agent={agent}>
-          Cached prompt
+          <CachedPrompt />
         </Task>
       </Workflow>
     ));
@@ -283,7 +286,7 @@ describe("docs: <Workflow>", () => {
     const workflowA = smithers(() => (
       <Workflow name="cache-schema" cache>
         <Task id="cached" output={outputs.output} agent={agent} outputSchema={schemaA}>
-          Cached prompt
+          <CachedPrompt />
         </Task>
       </Workflow>
     ));
@@ -291,7 +294,7 @@ describe("docs: <Workflow>", () => {
     const workflowB = smithers(() => (
       <Workflow name="cache-schema" cache>
         <Task id="cached" output={outputs.output} agent={agent} outputSchema={schemaB}>
-          Cached prompt
+          <CachedPrompt />
         </Task>
       </Workflow>
     ));
@@ -329,7 +332,7 @@ describe("docs: structured output", () => {
     const workflow = smithers(() => (
       <Workflow name="schema-retry" cache={false}>
         <Task id="retry" output={outputs.output} agent={agent}>
-          Return value.
+          <ReturnValuePrompt />
         </Task>
       </Workflow>
     ));

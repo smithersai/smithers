@@ -9,6 +9,9 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import ExtractPrompt from "./prompts/etl/extract.mdx";
+import TransformPrompt from "./prompts/etl/transform.mdx";
+import LoadPrompt from "./prompts/etl/load.mdx";
 
 const extractSchema = z.object({
   records: z.array(z.object({
@@ -23,7 +26,7 @@ const transformSchema = z.object({
   records: z.array(z.object({
     id: z.string(),
     transformed: z.string(),
-    metadata: z.record(z.string()),
+    metadata: z.record(z.string(), z.string()),
   })),
   totalTransformed: z.number(),
   errors: z.array(z.string()),
@@ -70,31 +73,31 @@ export default smithers((ctx) => {
     <Workflow name="etl">
       <Sequence>
         <Task id="extract" output={outputs.extract} agent={extractor}>
-          {`Extract data from: ${ctx.input.source}
-Pattern: ${ctx.input.pattern ?? "*"}
-Format: ${ctx.input.sourceFormat ?? "auto-detect"}`}
+          <ExtractPrompt
+            source={ctx.input.source}
+            pattern={ctx.input.pattern ?? "*"}
+            sourceFormat={ctx.input.sourceFormat ?? "auto-detect"}
+          />
         </Task>
 
         <Task id="transform" output={outputs.transform} agent={transformer}>
-          {`Transform these ${extracted?.totalExtracted ?? 0} records:
-
-${JSON.stringify(extracted?.records?.slice(0, 5) ?? [])}
-${(extracted?.totalExtracted ?? 0) > 5 ? `... and ${(extracted?.totalExtracted ?? 0) - 5} more` : ""}
-
-Transformation rules:
-${ctx.input.transformRules ?? "Normalize and clean the data"}
-
-Output format: ${ctx.input.targetFormat ?? "JSON"}`}
+          <TransformPrompt
+            totalExtracted={extracted?.totalExtracted ?? 0}
+            records={extracted?.records?.slice(0, 5) ?? []}
+            remainingCount={Math.max((extracted?.totalExtracted ?? 0) - 5, 0)}
+            transformRules={ctx.input.transformRules ?? "Normalize and clean the data"}
+            targetFormat={ctx.input.targetFormat ?? "JSON"}
+          />
         </Task>
 
         <Task id="load" output={outputs.load} agent={loader}>
-          {`Load ${transformed?.totalTransformed ?? 0} transformed records to: ${ctx.input.destination}
-
-Records:
-${JSON.stringify(transformed?.records?.slice(0, 5) ?? [])}
-${(transformed?.totalTransformed ?? 0) > 5 ? `... and ${(transformed?.totalTransformed ?? 0) - 5} more` : ""}
-
-Handle duplicates: ${ctx.input.onDuplicate ?? "skip"}`}
+          <LoadPrompt
+            totalTransformed={transformed?.totalTransformed ?? 0}
+            destination={ctx.input.destination}
+            records={transformed?.records?.slice(0, 5) ?? []}
+            remainingCount={Math.max((transformed?.totalTransformed ?? 0) - 5, 0)}
+            onDuplicate={ctx.input.onDuplicate ?? "skip"}
+          />
         </Task>
       </Sequence>
     </Workflow>

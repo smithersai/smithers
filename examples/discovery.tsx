@@ -9,6 +9,7 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import ScanPrompt from "./prompts/discovery/scan.mdx";
 
 const findingSchema = z.object({
   category: z.enum(["bug", "tech-debt", "security", "performance", "style"]),
@@ -41,13 +42,11 @@ Be systematic: list files, check for common issues, categorize by severity.`,
 export default smithers((ctx) => (
   <Workflow name="discovery">
     <Task id="scan" output={outputs.discovery} agent={scanner}>
-      {`Scan the directory "${ctx.input.directory}" and discover:
-
-Focus: ${ctx.input.focus ?? "general code quality"}
-File patterns: ${ctx.input.glob ?? "**/*.ts,**/*.tsx"}
-
-For each finding, categorize it and rate severity.
-Return a structured discovery report.`}
+      <ScanPrompt
+        directory={ctx.input.directory}
+        focus={ctx.input.focus}
+        glob={ctx.input.glob}
+      />
     </Task>
   </Workflow>
 ));

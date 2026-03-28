@@ -10,6 +10,7 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { bash } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import CheckPrompt from "./prompts/gate/check.mdx";
 
 const checkSchema = z.object({
   satisfied: z.boolean(),
@@ -51,15 +52,12 @@ export default smithers((ctx) => {
           onMaxReached="return-last"
         >
           <Task id="check" output={outputs.check} agent={checker} timeoutMs={30_000}>
-            {`Check if this condition is satisfied:
-
-Condition: ${ctx.input.condition}
-Check command: ${ctx.input.checkCmd}
-
-Previous status: ${latestCheck?.status ?? "not yet checked"}
-Check #${checks.length + 1}
-
-Run the command and determine if the condition is met.`}
+            <CheckPrompt
+              condition={ctx.input.condition}
+              checkCmd={ctx.input.checkCmd}
+              previousStatus={latestCheck?.status ?? "not yet checked"}
+              checkNumber={checks.length + 1}
+            />
           </Task>
         </Loop>
 

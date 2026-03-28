@@ -1,3 +1,3 @@
-import { mdxPlugin } from "smithers/mdx-plugin";
+import { mdxPlugin } from "../../src/mdx-plugin.ts";
 
 mdxPlugin();

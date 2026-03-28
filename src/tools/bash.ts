@@ -103,7 +103,7 @@ export function bashToolEffect(
   );
 }
 
-export const bash = tool({
+export const bash: any = tool({
   description: "Execute a shell command",
   inputSchema: zodSchema(
     z.object({

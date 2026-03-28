@@ -15,6 +15,9 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import DelegatePrompt from "./prompts/supervisor/delegate.mdx";
+import WorkerPrompt from "./prompts/supervisor/worker.mdx";
+import SupervisePrompt from "./prompts/supervisor/supervise.mdx";
 
 const delegationSchema = z.object({
   tasks: z.array(z.object({
@@ -98,14 +101,12 @@ export default smithers((ctx) => {
       <Sequence>
         {/* Boss plans and delegates */}
         <Task id="delegate" output={outputs.delegation} agent={boss}>
-          {`Plan the implementation for:
-
-Goal: ${ctx.input.goal}
-Directory: ${ctx.input.directory}
-
-${results.length > 0 ? `Previous results:\n${results.map((r) => `- ${r.taskId}: ${r.status} — ${r.summary}`).join("\n")}\n\nRetriable tasks: ${supervision?.retriable?.join(", ") ?? "none"}` : "This is the initial planning phase."}
-
-Break into tasks. Assign each a workerType: "coder", "tester", or "docs".`}
+          <DelegatePrompt
+            goal={ctx.input.goal}
+            directory={ctx.input.directory}
+            results={results}
+            retriable={supervision?.retriable ?? []}
+          />
         </Task>
 
         {/* Workers execute in parallel worktrees */}
@@ -127,7 +128,11 @@ Break into tasks. Assign each a workerType: "coder", "tester", or "docs".`}
                       retries={1}
                       timeoutMs={300_000}
                     >
-                      {`Task: ${task.title}\n\n${task.instructions}\n\nFiles: ${task.files.join(", ")}`}
+                      <WorkerPrompt
+                        title={task.title}
+                        instructions={task.instructions}
+                        files={task.files}
+                      />
                     </Task>
                   </Worktree>
                 ))}
@@ -135,10 +140,7 @@ Break into tasks. Assign each a workerType: "coder", "tester", or "docs".`}
 
               {/* Boss reviews results */}
               <Task id="supervise" output={outputs.supervision} agent={boss}>
-                {`Review worker results:
-${results.map((r) => `- ${r.taskId}: ${r.status} — ${r.summary}`).join("\n")}
-
-Are all tasks done satisfactorily? List any that need retry.`}
+                <SupervisePrompt results={results} />
               </Task>
             </Sequence>
           </Loop>

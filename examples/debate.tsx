@@ -10,6 +10,8 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import ArgumentPrompt from "./prompts/debate/argument.mdx";
+import VerdictPrompt from "./prompts/debate/verdict.mdx";
 
 const argumentSchema = z.object({
   position: z.enum(["for", "against"]),
@@ -75,23 +77,43 @@ export default smithers((ctx) => {
             {/* Both sides argue simultaneously */}
             <Parallel>
               <Task id={`for-round-${currentRound}`} output={outputs.argument} agent={proposer}>
-                {`Round ${currentRound}/${rounds} — Argue FOR:
-
-Question: ${ctx.input.question}
-Context: ${ctx.input.context ?? ""}
-Directory: ${ctx.input.directory ?? "."}
-
-${againstArgs.length > 0 ? `Opponent's latest arguments to rebut:\n${againstArgs[againstArgs.length - 1].points.map((p) => `- ${p.claim}: ${p.evidence}`).join("\n")}` : "This is the opening round. Make your strongest case."}`}
+                <ArgumentPrompt
+                  position="FOR"
+                  currentRound={currentRound}
+                  rounds={rounds}
+                  question={ctx.input.question}
+                  context={ctx.input.context ?? ""}
+                  directory={ctx.input.directory ?? "."}
+                  rebuttalLabel="Opponent's latest arguments to rebut:"
+                  rebuttalText={
+                    againstArgs.length > 0
+                      ? againstArgs[againstArgs.length - 1].points
+                          .map((point) => `- ${point.claim}: ${point.evidence}`)
+                          .join("\n")
+                      : null
+                  }
+                  openerText="This is the opening round. Make your strongest case."
+                />
               </Task>
 
               <Task id={`against-round-${currentRound}`} output={outputs.argument} agent={opponent}>
-                {`Round ${currentRound}/${rounds} — Argue AGAINST:
-
-Question: ${ctx.input.question}
-Context: ${ctx.input.context ?? ""}
-Directory: ${ctx.input.directory ?? "."}
-
-${forArgs.length > 0 ? `Proposer's latest arguments to rebut:\n${forArgs[forArgs.length - 1].points.map((p) => `- ${p.claim}: ${p.evidence}`).join("\n")}` : "This is the opening round. Make your strongest counter-case."}`}
+                <ArgumentPrompt
+                  position="AGAINST"
+                  currentRound={currentRound}
+                  rounds={rounds}
+                  question={ctx.input.question}
+                  context={ctx.input.context ?? ""}
+                  directory={ctx.input.directory ?? "."}
+                  rebuttalLabel="Proposer's latest arguments to rebut:"
+                  rebuttalText={
+                    forArgs.length > 0
+                      ? forArgs[forArgs.length - 1].points
+                          .map((point) => `- ${point.claim}: ${point.evidence}`)
+                          .join("\n")
+                      : null
+                  }
+                  openerText="This is the opening round. Make your strongest counter-case."
+                />
               </Task>
             </Parallel>
           </Sequence>
@@ -99,15 +121,11 @@ ${forArgs.length > 0 ? `Proposer's latest arguments to rebut:\n${forArgs[forArgs
 
         {/* Judge renders verdict */}
         <Task id="verdict" output={outputs.verdict} agent={judge}>
-          {`Judge this debate on: "${ctx.input.question}"
-
-FOR arguments (${forArgs.length} rounds):
-${forArgs.map((a) => `Round ${a.round}: ${a.summary}`).join("\n")}
-
-AGAINST arguments (${againstArgs.length} rounds):
-${againstArgs.map((a) => `Round ${a.round}: ${a.summary}`).join("\n")}
-
-Render a clear verdict with reasoning, conditions, and risk mitigation.`}
+          <VerdictPrompt
+            question={ctx.input.question}
+            forArgs={forArgs}
+            againstArgs={againstArgs}
+          />
         </Task>
       </Sequence>
     </Workflow>

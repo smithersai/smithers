@@ -10,6 +10,10 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import OutlinePrompt from "./prompts/waterfall/outline.mdx";
+import DraftPrompt from "./prompts/waterfall/draft.mdx";
+import EditPrompt from "./prompts/waterfall/edit.mdx";
+import PublishPrompt from "./prompts/waterfall/publish.mdx";
 
 const outlineSchema = z.object({
   sections: z.array(z.object({
@@ -82,36 +86,31 @@ export default smithers((ctx) => {
     <Workflow name="waterfall">
       <Sequence>
         <Task id="outline" output={outputs.outline} agent={outliner}>
-          {`Create an outline for:
-Topic: ${ctx.input.topic}
-Audience: ${ctx.input.audience ?? "developers"}
-Length: ${ctx.input.targetWords ?? 2000} words
-${ctx.input.context ? `Context:\n${ctx.input.context}` : ""}`}
+          <OutlinePrompt
+            topic={ctx.input.topic}
+            audience={ctx.input.audience ?? "developers"}
+            targetWords={ctx.input.targetWords ?? 2000}
+            context={ctx.input.context}
+          />
         </Task>
 
         <Task id="draft" output={outputs.draft} agent={drafter}>
-          {`Write a draft following this outline:
-
-${outline?.sections?.map((s) => `## ${s.title}\nKey points: ${s.keyPoints.join(", ")}\nTarget: ~${s.estimatedLength} words`).join("\n\n") ?? "Waiting for outline..."}
-
-Target audience: ${outline?.targetAudience ?? ctx.input.audience ?? "developers"}`}
+          <DraftPrompt
+            sections={outline?.sections ?? []}
+            targetAudience={outline?.targetAudience ?? ctx.input.audience ?? "developers"}
+          />
         </Task>
 
         <Task id="edit" output={outputs.edit} agent={editor}>
-          {`Edit this draft for clarity, correctness, and flow:
-
-${draft?.content ?? "Waiting for draft..."}
-
-Focus on: readability, technical accuracy, conciseness.`}
+          <EditPrompt content={draft?.content ?? "Waiting for draft..."} />
         </Task>
 
         <Task id="publish" output={outputs.publish} agent={publisher}>
-          {`Publish the edited content:
-
-${edited?.content ?? "Waiting for edits..."}
-
-Output file: ${ctx.input.outputFile ?? "output.md"}
-Format: ${ctx.input.format ?? "markdown"}`}
+          <PublishPrompt
+            content={edited?.content ?? "Waiting for edits..."}
+            outputFile={ctx.input.outputFile ?? "output.md"}
+            format={ctx.input.format ?? "markdown"}
+          />
         </Task>
       </Sequence>
     </Workflow>

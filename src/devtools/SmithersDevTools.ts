@@ -9,6 +9,7 @@ import {
   getFiberId,
   setFiberId,
   type Fiber,
+  type ReactDevToolsGlobalHook,
 } from "bippy";
 
 // ---------------------------------------------------------------------------
@@ -337,13 +338,22 @@ export class SmithersDevTools {
     if (this._active) return this;
     this._active = true;
 
-    // Ensure the global hook exists — idempotent if already installed
-    installRDTHook();
+    // Avoid reinstalling the hook after renderers have already injected
+    // themselves, otherwise we lose their registrations.
+    if (!("__REACT_DEVTOOLS_GLOBAL_HOOK__" in globalThis)) {
+      installRDTHook();
+    }
 
     const self = this;
     const verbose = this.options.verbose ?? false;
+    const hookHost = globalThis as typeof globalThis & {
+      __REACT_DEVTOOLS_GLOBAL_HOOK__?: ReactDevToolsGlobalHook;
+    };
+    const hook = hookHost.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+    const previousRootHandler = hook?.onCommitFiberRoot;
+    const previousUnmountHandler = hook?.onCommitFiberUnmount;
 
-    const cleanup = instrument(
+    instrument(
       secure({
         onCommitFiberRoot(rendererID: number, root: any) {
           const smithersRoot = findSmithersRoot(root);
@@ -373,7 +383,18 @@ export class SmithersDevTools {
       }),
     );
 
-    this._cleanup = cleanup;
+    const installedRootHandler = hook?.onCommitFiberRoot;
+    const installedUnmountHandler = hook?.onCommitFiberUnmount;
+
+    this._cleanup = () => {
+      if (!hook) return;
+      if (hook.onCommitFiberRoot === installedRootHandler && previousRootHandler) {
+        hook.onCommitFiberRoot = previousRootHandler;
+      }
+      if (hook.onCommitFiberUnmount === installedUnmountHandler && previousUnmountHandler) {
+        hook.onCommitFiberUnmount = previousUnmountHandler;
+      }
+    };
     return this;
   }
 

@@ -1,8 +1,8 @@
 import { ToolLoopAgent as Agent, stepCountIs, type ToolSet } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
-import { ClaudeCodeAgent, CodexAgent } from "smithers";
-import { tools as smithersTools } from "smithers/tools";
+import { ClaudeCodeAgent, CodexAgent } from "../../src/index.ts";
+import { tools as smithersTools } from "../../src/tools/index.ts";
 import { SYSTEM_PROMPT } from "./system-prompt";
 
 const tools = smithersTools as ToolSet;
@@ -13,7 +13,7 @@ const USE_CLI =
 
 const UNSAFE = process.env.SMITHERS_UNSAFE === "1";
 
-const REPO_ROOT = new URL("../../../..", import.meta.url).pathname.replace(
+const REPO_ROOT = new URL("../..", import.meta.url).pathname.replace(
   /\/$/,
   "",
 );

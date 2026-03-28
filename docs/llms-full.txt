@@ -9,6 +9,480 @@ This file contains the complete Smithers documentation. Each section below corre
 
 ---
 
+## Smithers
+
+> Durable AI workflow orchestration with TypeScript, TSX, and real agent tooling.
+> Source: https://smithers.sh/index
+
+<div className="relative min-h-screen bg-slate-50 text-slate-800 dark:bg-[#06090E] dark:text-slate-200 selection:bg-[#00D2A0]/30 selection:text-slate-900 dark:selection:text-white pb-32 transition-colors duration-300">
+
+  {/* Ambient Background Glow */}
+  <div className="absolute top-0 inset-x-0 h-[600px] pointer-events-none overflow-hidden">
+    <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[70%] bg-[#00D2A0] opacity-[0.03] dark:opacity-[0.07] blur-[120px] rounded-full mix-blend-multiply dark:mix-blend-screen transition-opacity duration-300" />
+    <div className="absolute top-[10%] -right-[10%] w-[40%] h-[60%] bg-[#1F6FEB] opacity-[0.03] dark:opacity-[0.06] blur-[120px] rounded-full mix-blend-multiply dark:mix-blend-screen transition-opacity duration-300" />
+  </div>
+
+  {/* ── Hero ── */}
+  <section className="relative pt-24 pb-20 px-6 max-w-7xl mx-auto">
+    <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-12 lg:gap-8 items-center">
+      
+      {/* Hero Content */}
+      <div className="relative z-10 flex flex-col items-start">
+        
+        {/* Badge */}
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#00D2A0]/30 bg-[#00D2A0]/10 backdrop-blur-sm shadow-[0_0_20px_rgba(0,210,160,0.05)] dark:shadow-[0_0_20px_rgba(0,210,160,0.15)] text-[#00A17A] dark:text-[#00D2A0] text-xs font-bold uppercase tracking-[0.15em] mb-8 animate-[pulse_3s_ease-in-out_infinite]">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00A17A] dark:bg-[#00D2A0] opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00A17A] dark:bg-[#00D2A0]"></span>
+          </span>
+          Now with Hot Reload
+        </div>
+
+        {/* Headline */}
+        <h1 className="m-0 text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight leading-[1.05] text-slate-900 dark:text-white drop-shadow-sm transition-colors duration-300">
+          Build useful <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#00A17A] to-[#087777] dark:from-[#00D2A0] dark:to-[#0AA0A0]">AI workflows.</span>
+        </h1>
+
+        {/* Subtitle */}
+        <p className="mt-6 text-lg sm:text-xl leading-relaxed text-slate-600 dark:text-slate-400 max-w-2xl transition-colors duration-300">
+          Smithers is an agentic orchestration framework for AI workflows. It allows you to easily define prompts in MDX using React as your orchestrator.
+        </p>
+
+        {/* CTA Buttons */}
+        <div className="flex flex-wrap gap-4 mt-10">
+          <a href="/jsx/quickstart" className="group relative inline-flex items-center justify-center px-7 py-3.5 text-base font-bold text-white dark:text-[#06090E] bg-[#00A17A] dark:bg-[#00D2A0] rounded-xl overflow-hidden transition-all hover:scale-[1.03] shadow-[0_0_20px_rgba(0,161,122,0.3)] dark:shadow-[0_0_30px_rgba(0,210,160,0.4)]">
+            <span className="relative z-10">Use smithers</span>
+            <div className="absolute inset-0 h-full w-full bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
+          </a>
+          
+          <a href="/guides/review-loop" className="group inline-flex items-center justify-center px-7 py-3.5 text-base font-semibold text-slate-700 dark:text-white bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm border border-slate-300/50 dark:border-slate-700/50 rounded-xl transition-all hover:bg-slate-100 hover:border-slate-300 dark:hover:bg-slate-800 dark:hover:border-slate-600 hover:shadow-lg dark:hover:shadow-xl">
+            View Example
+            <svg className="ml-2 w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+          </a>
+        </div>
+        
+        {/* Value Props Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-16 w-full pt-8 border-t border-slate-200 dark:border-slate-800/50 transition-colors duration-300">
+          <div className="flex flex-col gap-1 transition-transform hover:-translate-y-1">
+            <strong className="text-slate-900 dark:text-white text-sm">Durable by default</strong>
+            <span className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">Every completed step is checkpointed to SQLite.</span>
+          </div>
+          <div className="flex flex-col gap-1 transition-transform hover:-translate-y-1">
+            <strong className="text-slate-900 dark:text-white text-sm">Typed all the way through</strong>
+            <span className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">Zod schemas validate outputs before execution.</span>
+          </div>
+          <div className="flex flex-col gap-1 transition-transform hover:-translate-y-1">
+            <strong className="text-slate-900 dark:text-white text-sm">Built for real agents</strong>
+            <span className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">All agents supported including Codex, Claude, and Gemini subscriptions.</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Hero Code Window - Always predominantly dark to feel like an IDE */}
+      <div className="relative group perspective">
+        {/* Glow behind window */}
+        <div className="absolute -inset-1 bg-gradient-to-tr from-[#00D2A0]/20 to-[#1F6FEB]/20 rounded-[2rem] blur-xl opacity-30 dark:opacity-50 group-hover:opacity-70 dark:group-hover:opacity-100 transition duration-700"></div>
+        
+        <div className="relative rounded-2xl border border-slate-300/60 dark:border-slate-700/60 bg-slate-900/95 dark:bg-[#0B111A]/90 backdrop-blur-xl shadow-2xl overflow-hidden transition-all duration-500 hover:border-[#00D2A0]/50 dark:hover:border-[#00D2A0]/30 hover:shadow-[0_20px_50px_rgba(0,210,160,0.15)] dark:hover:shadow-[0_20px_50px_rgba(0,210,160,0.1)]">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-[#0F172A]/80">
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500/80"></div>
+                <div className="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                <div className="w-3 h-3 rounded-full bg-green-500/80"></div>
+              </div>
+              <span className="text-slate-300 text-sm font-medium font-mono">Review.tsx</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-md bg-[#00D2A0]/10 text-[#00D2A0] text-xs font-bold uppercase">TSX</span>
+          </div>
+          {/* Code */}
+          <div className="p-5 overflow-x-auto">
+            <pre className="m-0 bg-transparent text-sm leading-relaxed text-slate-300 font-mono">
+            <div className="flex flex-col whitespace-pre">
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; createSmithers, Workflow, Loop, Sequence, Parallel, Task, useCtx &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"smithers-orchestrator"</span>;</div>
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; z &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"zod"</span>;</div>
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; AnalyzePrompt, FixPrompt &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"./prompts.mdx"</span>;</div>
+              <div className="h-5"></div>
+              <div><code className="text-[#569CD6]">const</code> <span className="text-slate-300">&#123; smithers, outputs &#125;</span> = createSmithers(&#123;</div>
+              <div className="pl-4"><span className="text-[#9CDCFE]">test</span>: z.object(&#123; <span className="text-[#9CDCFE]">passed</span>: z.boolean(), <span className="text-[#9CDCFE]">logs</span>: z.string() &#125;),</div>
+              <div className="pl-4"><span className="text-[#9CDCFE]">lint</span>: z.object(&#123; <span className="text-[#9CDCFE]">passed</span>: z.boolean(), <span className="text-[#9CDCFE]">logs</span>: z.string() &#125;),</div>
+              <div className="pl-4"><span className="text-[#9CDCFE]">review</span>: z.object(&#123; <span className="text-[#9CDCFE]">approved</span>: z.boolean(), <span className="text-[#9CDCFE]">feedback</span>: z.string() &#125;),</div>
+              <div className="pl-4"><span className="text-[#9CDCFE]">fix</span>: z.any()</div>
+              <div>&#125;);</div>
+              <div className="h-5"></div>
+              <div><code className="text-[#C586C0]">export default</code> smithers((&#123; description &#125;: &#123; description: string &#125;) =&gt; &#123;</div>
+              <div className="pl-4"><code className="text-[#569CD6]">const</code> ctx = useCtx();</div>
+              <div className="pl-4"><code className="text-[#569CD6]">const</code> test = ctx.outputMaybe(outputs.test, &#123; <span className="text-[#9CDCFE]">nodeId</span>: <span className="text-[#CE9178]">"test"</span> &#125;);</div>
+              <div className="pl-4"><code className="text-[#569CD6]">const</code> lint = ctx.outputMaybe(outputs.lint, &#123; <span className="text-[#9CDCFE]">nodeId</span>: <span className="text-[#CE9178]">"lint"</span> &#125;);</div>
+              <div className="pl-4"><code className="text-[#569CD6]">const</code> review = ctx.outputMaybe(outputs.review, &#123; <span className="text-[#9CDCFE]">nodeId</span>: <span className="text-[#CE9178]">"review"</span> &#125;);</div>
+              <div className="h-5"></div>
+              <div className="pl-4"><code className="text-[#C586C0]">return</code> (</div>
+              <div className="pl-8"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Workflow</span> <span className="text-[#9CDCFE]">name</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"code-review"</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-12"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Loop</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"review-loop"</span> <span className="text-[#9CDCFE]">until</span><span className="text-[#808080]">=</span>&#123;review?.approved === <code className="text-[#569CD6]">true</code>&#125; <span className="text-[#9CDCFE]">maxIterations</span><span className="text-[#808080]">=</span>&#123;5&#125;<span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-16"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Sequence</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-20"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Parallel</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-24"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Task</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"test"</span> <span className="text-[#9CDCFE]">output</span><span className="text-[#808080]">=</span>&#123;outputs.test&#125; <span className="text-[#9CDCFE]">agent</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"ci"</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-28"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">RunTestsPrompt</span> <span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-24"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Task</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-24"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Task</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"lint"</span> <span className="text-[#9CDCFE]">output</span><span className="text-[#808080]">=</span>&#123;outputs.lint&#125; <span className="text-[#9CDCFE]">agent</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"ci"</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-28"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">RunLintPrompt</span> <span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-24"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Task</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-20"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Parallel</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="h-5"></div>
+              <div className="pl-20"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Task</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"review"</span> <span className="text-[#9CDCFE]">output</span><span className="text-[#808080]">=</span>&#123;outputs.review&#125; <span className="text-[#9CDCFE]">agent</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"claude"</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-24"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">AnalyzePrompt</span> </div>
+              <div className="pl-28"><span className="text-[#9CDCFE]">description</span><span className="text-[#808080]">=</span>&#123;description&#125; </div>
+              <div className="pl-28"><span className="text-[#9CDCFE]">testLogs</span><span className="text-[#808080]">=</span>&#123;test?.logs&#125; </div>
+              <div className="pl-28"><span className="text-[#9CDCFE]">lintLogs</span><span className="text-[#808080]">=</span>&#123;lint?.logs&#125; </div>
+              <div className="pl-24"><span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-20"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Task</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="h-5"></div>
+              <div className="pl-20">&#123;!review?.approved ? (</div>
+              <div className="pl-24"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Task</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"fix"</span> <span className="text-[#9CDCFE]">output</span><span className="text-[#808080]">=</span>&#123;outputs.fix&#125; <span className="text-[#9CDCFE]">agent</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"codex"</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-28"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">FixPrompt</span> </div>
+              <div className="pl-32"><span className="text-[#9CDCFE]">description</span><span className="text-[#808080]">=</span>&#123;description&#125; </div>
+              <div className="pl-32"><span className="text-[#9CDCFE]">feedback</span><span className="text-[#808080]">=</span>&#123;review?.feedback&#125; </div>
+              <div className="pl-32"><span className="text-[#9CDCFE]">testLogs</span><span className="text-[#808080]">=</span>&#123;test?.logs&#125; </div>
+              <div className="pl-28"><span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-24"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Task</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-20">) : null&#125;</div>
+              <div className="pl-16"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Sequence</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-12"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Loop</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-8"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Workflow</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-4">);</div>
+              <div>&#125;);</div>
+            </div>
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ── Why Smithers exists ── */}
+  <section className="relative py-28 px-6 max-w-7xl mx-auto border-t border-slate-200 dark:border-slate-800/50 mt-12 transition-colors duration-300">
+    {/* Subtle gradient bg only visible in light or dark appropriately */}
+    <div className="absolute inset-0 block dark:hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-100 via-slate-50 to-slate-50 opacity-60"></div>
+    <div className="absolute inset-0 hidden dark:block bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900/40 via-[#06090E] to-[#06090E]"></div>
+    
+    <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+      <div className="flex flex-col">
+        <div className="inline-flex items-center px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-widest w-max mb-6">Why Smithers exists</div>
+        <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white mb-6 leading-[1.1]">Smithers exists for two reasons</h2>
+        
+        <ol className="list-decimal list-outside ml-5 text-lg text-slate-800 dark:text-slate-200 font-semibold space-y-3 mb-8">
+          <li>Agent orchestration should be easy for LLMs to write, reuse, and maintain, and easy for Humans to read.</li>
+          <li>The orchestration framework should abstract the hard parts of agent workflows.</li>
+        </ol>
+
+        <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-6">
+          Smithers rejects the idea of a one size fits all orchestrator in favor of using TypeScript to write arbitrarily custom orchestration.
+        </p>
+
+        <p className="text-slate-600 dark:text-slate-400 leading-relaxed mb-10">
+          Smithers encourages a durable 1-way data flow from sqlite to a JSX/MDX plan that LLM agents are great at writing and debugging and are easy for humans to read.
+        </p>
+
+        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 dark:text-white/80 mb-4 opacity-80">Abstracting the hard parts</h3>
+        <ul className="space-y-4">
+          {[
+            {title: "Agents crash & Prompts change", text: "Persist each step to SQLite to resume instantly, and hot reload prompts without losing state."},
+            {title: "Outputs & Approvals", text: "Zod-validated schemas, automatic retries, and built-in <Approval> nodes for human review."},
+            {title: "Coordination is messy", text: "Worktrees isolate parallel coding agents safely."},
+          ].map((item, i) => (
+            <li key={i} className="flex gap-3 text-sm flex-col sm:flex-row">
+              <span className="hidden sm:block text-[#00A17A] dark:text-[#00D2A0] font-bold mt-0.5">✓</span>
+              <div><strong className="text-slate-800 dark:text-slate-200 block sm:inline">{item.title}:</strong> <span className="text-slate-600 dark:text-slate-400">{item.text}</span></div>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="relative group perspective">
+        <div className="absolute -inset-1 bg-gradient-to-tr from-[#00A17A]/20 to-[#1F6FEB]/20 rounded-[2rem] blur-xl opacity-40 dark:opacity-60 group-hover:opacity-80 dark:group-hover:opacity-100 transition duration-700"></div>
+        <div className="relative rounded-2xl border border-slate-300/60 dark:border-slate-700/60 bg-slate-900/95 dark:bg-[#0B111A]/90 backdrop-blur-xl shadow-2xl overflow-hidden transition-all duration-500 hover:border-[#00D2A0]/40 dark:hover:border-[#00D2A0]/30 lg:rotate-1 lg:group-hover:rotate-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-[#0F172A]/80">
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+                <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+                <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+              </div>
+              <span className="text-slate-300 text-sm font-medium font-mono">review-flow.tsx</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-xs font-bold uppercase">React</span>
+          </div>
+          <div className="p-5 overflow-x-auto">
+            <pre className="m-0 bg-transparent text-sm leading-relaxed text-slate-300 font-mono">
+            <div className="flex flex-col whitespace-pre">
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; Task, Parallel, Sequence, useCtx &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"smithers-orchestrator"</span>;</div>
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; haiku &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"../agents"</span>;</div>
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; outputs &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"../smithers"</span>;</div>
+              <div className="h-5"></div>
+              <div><code className="text-[#C586C0]">export function</code> <span className="text-[#DCDCAA]">Review</span>(&#123; pr &#125;: &#123; pr: string &#125;) &#123;</div>
+              <div className="pl-4"><code className="text-[#569CD6]">const</code> ctx = useCtx();</div>
+              <div className="pl-4 text-slate-500">// Haiku determines which reviewers to trigger</div>
+              <div className="pl-4"><code className="text-[#569CD6]">const</code> decision = ctx.outputMaybe(outputs.reviewers, &#123; <span className="text-[#9CDCFE]">nodeId</span>: <span className="text-[#CE9178]">"determine"</span> &#125;);</div>
+              <div className="h-5"></div>
+              <div className="pl-4"><code className="text-[#C586C0]">return</code> (</div>
+              <div className="pl-8"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Sequence</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-12"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Task</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"determine"</span> <span className="text-[#9CDCFE]">output</span><span className="text-[#808080]">=</span>&#123;outputs.reviewers&#125; <span className="text-[#9CDCFE]">agent</span><span className="text-[#808080]">=</span>&#123;haiku&#125;<span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-16"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">DetermineReviewersPrompt</span> <span className="text-[#9CDCFE]">pr</span><span className="text-[#808080]">=</span>&#123;pr&#125; <span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-12"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Task</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="h-5"></div>
+              <div className="pl-12"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Parallel</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-16">&#123;decision?.reviewers.map((r: any) =&gt; (</div>
+              <div className="pl-20"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Task</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span>&#123;<span className="text-[#CE9178]">`review-$&#123;r.agent&#125;`</span>&#125; <span className="text-[#9CDCFE]">agent</span><span className="text-[#808080]">=</span>&#123;r.agent&#125;<span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-24"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">ReviewPrompt</span> <span className="text-[#9CDCFE]">pr</span><span className="text-[#808080]">=</span>&#123;pr&#125; <span className="text-[#9CDCFE]">focus</span><span className="text-[#808080]">=</span>&#123;r.focus&#125; <span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-20"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Task</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-16">))&#125;</div>
+              <div className="pl-12"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Parallel</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-8"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Sequence</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-4">);</div>
+              <div>&#125;</div>
+            </div>
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ── Durable Execution & Typed Outputs ── */}
+  <section className="relative py-28 px-6 max-w-7xl mx-auto border-t border-slate-200 dark:border-slate-800/50 transition-colors duration-300">
+    <div className="grid grid-cols-1 lg:grid-cols-[0.8fr_1fr] gap-16 items-center">
+      
+      {/* Code Window */}
+      <div className="order-2 lg:order-1 relative group perspective">
+        <div className="absolute -inset-1 bg-gradient-to-tr from-[#00D2A0]/20 to-[#1F6FEB]/20 rounded-[2rem] blur-xl opacity-40 dark:opacity-60 group-hover:opacity-80 dark:group-hover:opacity-100 transition duration-700"></div>
+        <div className="relative rounded-2xl border border-slate-300/60 dark:border-slate-700/60 bg-slate-900/95 dark:bg-[#0B111A]/90 backdrop-blur-xl shadow-2xl overflow-hidden transition-all duration-500 hover:border-[#00D2A0]/40 dark:hover:border-[#00D2A0]/30 lg:rotate-1 lg:group-hover:rotate-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-[#0F172A]/80">
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+                <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+                <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+              </div>
+              <span className="text-slate-300 text-sm font-medium font-mono">approval-gate.tsx</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-xs font-bold uppercase">React</span>
+          </div>
+          <div className="p-5 overflow-x-auto">
+            <pre className="m-0 bg-transparent text-sm leading-relaxed text-slate-300 font-mono">
+            <div className="flex flex-col whitespace-pre">
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; Task, Approval, Sequence, useCtx &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"smithers-orchestrator"</span>;</div>
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; outputs &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"../smithers"</span>;</div>
+              <div className="h-5"></div>
+              <div className="pl-0"><code className="text-[#C586C0]">export function</code> <span className="text-[#DCDCAA]">ExecuteSafely</span>() &#123;</div>
+              <div className="pl-4"><code className="text-[#569CD6]">const</code> ctx = useCtx();</div>
+              <div className="pl-4"><code className="text-[#569CD6]">const</code> plan = ctx.outputMaybe(outputs.commandPlan, &#123; <span className="text-[#9CDCFE]">nodeId</span>: <span className="text-[#CE9178]">"plan"</span> &#125;);</div>
+              <div className="pl-4"><code className="text-[#569CD6]">const</code> approval = ctx.outputMaybe(outputs.approval, &#123; <span className="text-[#9CDCFE]">nodeId</span>: <span className="text-[#CE9178]">"approve"</span> &#125;);</div>
+              <div className="h-5"></div>
+              <div className="pl-4"><code className="text-[#C586C0]">return</code> (</div>
+              <div className="pl-8"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Sequence</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-12"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Task</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"plan"</span> <span className="text-[#9CDCFE]">agent</span><span className="text-[#808080]">=</span>&#123;claude&#125; <span className="text-[#9CDCFE]">output</span><span className="text-[#808080]">=</span>&#123;outputs.commandPlan&#125;<span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-16"><span className="text-[#4EC9B0]">DetermineCommandPrompt</span> <span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-12"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Task</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="h-5"></div>
+              <div className="pl-12">&#123;plan?.isDestructive ? (</div>
+              <div className="pl-16"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Approval</span> </div>
+              <div className="pl-20"><span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"approve"</span> </div>
+              <div className="pl-20"><span className="text-[#9CDCFE]">output</span><span className="text-[#808080]">=</span>&#123;outputs.approval&#125;</div>
+              <div className="pl-20"><span className="text-[#9CDCFE]">request</span><span className="text-[#808080]">=</span>&#123;&#123;</div>
+              <div className="pl-24"><span className="text-[#9CDCFE]">title</span>: <span className="text-[#CE9178]">"Destructive Command"</span>,</div>
+              <div className="pl-24"><span className="text-[#9CDCFE]">summary</span>: <span className="text-[#CE9178]">`Approve running: $&#123;plan.command&#125;`</span></div>
+              <div className="pl-20">&#125;&#125; </div>
+              <div className="pl-16"><span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-12">) : null&#125;</div>
+              <div className="h-5"></div>
+              <div className="pl-12">&#123;(!plan?.isDestructive || approval?.approved) ? (</div>
+              <div className="pl-16"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Task</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"execute"</span> <span className="text-[#9CDCFE]">output</span><span className="text-[#808080]">=</span>&#123;outputs.result&#125;<span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-20"><span className="text-[#4EC9B0]">ExecuteCommand</span> <span className="text-[#9CDCFE]">command</span><span className="text-[#808080]">=</span>&#123;plan?.command&#125; <span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-16"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Task</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-12">) : null&#125;</div>
+              <div className="pl-8"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Sequence</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-4">);</div>
+              <div className="pl-0">&#125;</div>
+            </div>
+            </pre>
+          </div>
+        </div>
+      </div>
+
+      {/* Text block */}
+      <div className="order-1 lg:order-2">
+        <div className="inline-flex items-center px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-widest w-max mb-6">Type-safe Execution</div>
+        <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 dark:text-white mb-6 leading-[1.1]">Built for production AI workflows</h2>
+        
+        <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed mb-8">Smithers provides the primitives you need to build workflows that don't randomly crash after 3 hours of LLM generation.</p>
+        
+        <ul className="space-y-4">
+          {[
+            "Durable Execution: Every task persists to SQLite so workflows resume exactly where they left off.", 
+            "Typed Outputs: Define outputs with Zod. Validates and retries automatically until outputs match.", 
+            "Approval Gates: Standard <Approval> nodes elegantly pause workflows for human review.",
+            "Worktrees: Merge queues let you cleanly run parallel coding agents without git conflicts."
+          ].map((text, i) => (
+            <li key={i} className="flex items-start gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/40 shadow-sm dark:shadow-none">
+              <div className="flex-shrink-0 mt-1 w-2 h-2 rounded-full bg-[#00A17A] dark:bg-[#00D2A0] shadow-[0_0_8px_rgba(0,161,122,0.6)]"></div>
+              <span className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm">{text}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  {/* ── Boring CLI ── */}
+  <section className="relative py-28 px-6 max-w-7xl mx-auto border-t border-slate-200 dark:border-slate-800/50 transition-colors duration-300">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_0.8fr] gap-16 items-center">
+      
+      <div className="order-1 lg:order-1">
+        <div className="inline-flex items-center px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-widest w-max mb-6">Operations</div>
+        
+        <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 dark:text-white mb-6 leading-[1.1]">No TUI required. Just a boring, predictable CLI.</h2>
+        
+        <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed mb-8">If you know how to use <code>docker compose</code>, you know how to run Smithers. Core functionality is built into a standard, robust CLI that works anywhere—from your laptop terminal to a headless CI environment.</p>
+        
+        <ul className="space-y-4">
+          {[
+            "Run workflows seamlessly in the background or stream logs to standard out.", 
+            "Inspect runs, approve paused steps, and cancel rogue agents directly from the shell.", 
+            "Scriptable output modes make it easy to wire into bash scripts or CI pipelines."
+          ].map((text, i) => (
+            <li key={i} className="flex items-start gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/40 shadow-sm dark:shadow-none">
+              <div className="flex-shrink-0 mt-1 w-2 h-2 rounded-full bg-[#1F6FEB] dark:bg-[#1F6FEB] shadow-[0_0_8px_rgba(31,111,235,0.6)]"></div>
+              <span className="text-slate-700 dark:text-slate-300 leading-relaxed text-sm">{text}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Terminal Window */}
+      <div className="order-2 lg:order-2 relative group perspective">
+        <div className="absolute -inset-1 bg-gradient-to-br from-[#1F6FEB]/20 to-[#00D2A0]/20 rounded-[2rem] blur-xl opacity-40 dark:opacity-60 group-hover:opacity-80 dark:group-hover:opacity-100 transition duration-700"></div>
+        <div className="relative rounded-2xl border border-slate-300/60 dark:border-slate-700/60 bg-slate-900/95 dark:bg-[#0B111A]/90 backdrop-blur-xl shadow-2xl overflow-hidden transition-all duration-500 hover:border-[#1F6FEB]/40 dark:hover:border-[#1F6FEB]/30 lg:-rotate-1 lg:group-hover:rotate-0">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800 bg-[#0F172A]/80">
+            <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+            <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+            <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+            <span className="ml-2 text-slate-400 text-xs font-mono">bash</span>
+          </div>
+          <div className="p-5 overflow-x-auto text-sm leading-relaxed font-mono">
+            <div className="flex flex-col whitespace-pre">
+              <div className="text-slate-300"><span className="text-[#00D2A0] font-bold">~</span> <span className="text-[#1F6FEB] font-bold">smithers</span> up -d</div>
+              <div className="text-slate-400 mt-1">[+] Starting code-review workflow (run_7f8a9)</div>
+              <div className="text-slate-400">[+] View logs with <span className="text-slate-200 font-bold">smithers logs run_7f8a9</span></div>
+              <div className="h-5"></div>
+              <div className="text-slate-300"><span className="text-[#00D2A0] font-bold">~</span> <span className="text-[#1F6FEB] font-bold">smithers</span> ps</div>
+              <div className="text-slate-400 mt-1">RUN ID      WORKFLOW       STATUS     STEP</div>
+              <div className="text-slate-400">run_7f8a9   code-review    PAUSED     human-approval</div>
+              <div className="text-slate-400">run_2x9m4   update-docs    DONE       -</div>
+              <div className="h-5"></div>
+              <div className="text-slate-300"><span className="text-[#00D2A0] font-bold">~</span> <span className="text-[#1F6FEB] font-bold">smithers</span> approve run_7f8a9</div>
+              <div className="text-slate-400 mt-1">[+] Approved step human-approval. Resuming workflow.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ── Composable authoring ── */}
+  <section className="relative py-28 px-6 max-w-7xl mx-auto border-t border-slate-200 dark:border-slate-800/50 transition-colors duration-300">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_0.8fr] gap-16 items-center">
+      <div>
+        <div className="inline-flex items-center px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-widest w-max mb-6">Composable authoring</div>
+        
+        <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 dark:text-white mb-6 leading-[1.1]">Build reusable components, not giant prompts.</h2>
+        
+        <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed mb-8">Smithers uses a TSX component tree as the authoring model, so you can break large workflows into small, readable pieces that can be reused across runs, tickets, and teams.</p>
+        
+        <ul className="space-y-4">
+          {[
+            "Compose research, implementation, and review as normal standard components.", 
+            "Keep prompts in MDX and schemas in TypeScript without losing structure.", 
+            "Share patterns like validation loops, approval gates, and report generators."
+          ].map((text, i) => (
+            <li key={i} className="flex items-start gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/40 shadow-sm dark:shadow-none">
+              <div className="flex-shrink-0 mt-1 w-2 h-2 rounded-full bg-[#00A17A] dark:bg-[#00D2A0] shadow-[0_0_8px_rgba(0,161,122,0.6)] dark:shadow-[0_0_8px_#00D2A0]"></div>
+              <span className="text-slate-700 dark:text-slate-300 leading-relaxed">{text}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Component code window - Always predominantly dark to feel like an IDE */}
+      <div className="relative group perspective">
+        <div className="absolute -inset-1 bg-gradient-to-bl from-[#00D2A0]/20 to-[#1F6FEB]/20 rounded-[2rem] blur-xl opacity-40 dark:opacity-60 group-hover:opacity-80 dark:group-hover:opacity-100 transition duration-700"></div>
+        <div className="relative rounded-2xl border border-slate-300/60 dark:border-slate-700/60 bg-slate-900/95 dark:bg-[#0B111A]/90 backdrop-blur-xl shadow-2xl overflow-hidden transition-all duration-500 hover:border-[#00D2A0]/40 dark:hover:border-[#00D2A0]/30 lg:-rotate-2 lg:group-hover:rotate-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-[#0F172A]/80">
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+                <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+                <div className="w-3 h-3 rounded-full bg-slate-700"></div>
+              </div>
+              <span className="text-slate-300 text-sm font-medium font-mono">update-docs.tsx</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 text-xs font-bold uppercase">React</span>
+          </div>
+          <div className="p-5 overflow-x-auto">
+            <pre className="m-0 bg-transparent text-sm leading-relaxed text-slate-300 font-mono">
+            <div className="flex flex-col whitespace-pre">
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; Task &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"smithers-orchestrator"</span>;</div>
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; outputs &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"../smithers"</span>;</div>
+              <div><code className="text-[#C586C0]">import</code> <span className="text-slate-300">&#123; claude &#125;</span> <code className="text-[#C586C0]">from</code> <span className="text-[#CE9178]">"../agents"</span>;</div>
+              <div className="h-5"></div>
+              <div><code className="text-[#C586C0]">export function</code> <span className="text-[#DCDCAA]">UpdateDocs</span>(&#123; files &#125;: &#123; files: string[] &#125;) &#123;</div>
+              <div className="pl-4"><code className="text-[#C586C0]">return</code> (</div>
+              <div className="pl-8"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">Task</span> <span className="text-[#9CDCFE]">id</span><span className="text-[#808080]">=</span><span className="text-[#CE9178]">"update-docs"</span> <span className="text-[#9CDCFE]">agent</span><span className="text-[#808080]">=</span>&#123;claude&#125; <span className="text-[#9CDCFE]">output</span><span className="text-[#808080]">=</span>&#123;outputs.docsUpdate&#125;<span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-12"><span className="text-[#808080]">&lt;</span><span className="text-[#4EC9B0]">UpdateDocsPrompt</span> <span className="text-[#9CDCFE]">files</span><span className="text-[#808080]">=</span>&#123;files&#125; <span className="text-[#808080]">/&gt;</span></div>
+              <div className="pl-8"><span className="text-[#808080]">&lt;/</span><span className="text-[#4EC9B0]">Task</span><span className="text-[#808080]">&gt;</span></div>
+              <div className="pl-4">);</div>
+              <div>&#125;</div>
+            </div>
+            </pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ── CTA ── */}
+  <section className="relative pt-20 px-6 max-w-7xl mx-auto">
+    <div className="relative overflow-hidden rounded-[2.5rem] p-12 lg:p-20 text-center flex flex-col items-center bg-gradient-to-b from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-950 border border-slate-300 dark:border-slate-800 shadow-xl dark:shadow-2xl transition-colors duration-300">
+      <div className="absolute inset-0 bg-[#00D2A0] opacity-[0.015] dark:opacity-[0.03] animate-pulse"></div>
+      <div className="absolute -top-40 -right-40 w-80 h-80 bg-[#00D2A0] opacity-10 dark:opacity-20 blur-[100px] rounded-full"></div>
+      
+      <div className="relative z-10 inline-flex items-center px-3 py-1 rounded-full border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-widest mb-8">Get Started</div>
+      
+      <h2 className="relative z-10 text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white max-w-3xl leading-tight">
+        Ship the first workflow before you design the perfect platform.
+      </h2>
+      
+      <p className="relative z-10 mt-8 text-lg text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed">
+        Start with the quickstart, read the JSX overview, or open the full worktree-feature example to see Smithers used for a real coding workflow.
+      </p>
+      
+      <div className="relative z-10 flex flex-wrap justify-center gap-4 mt-12 w-full">
+        <a href="/jsx/quickstart" className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-bold text-white dark:text-[#06090E] bg-[#00A17A] dark:bg-[#00D2A0] rounded-xl transition-all hover:scale-105 hover:bg-[#00916d] dark:hover:bg-[#00e6af] shadow-[0_0_20px_rgba(0,161,122,0.2)] dark:shadow-[0_0_30px_rgba(0,210,160,0.3)]">
+          Use smithers
+        </a>
+        <a href="/jsx/overview" className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-slate-800 dark:text-white bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl transition-all hover:bg-slate-50 dark:hover:bg-slate-700 shadow-sm dark:shadow-none">
+          View Example
+        </a>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+---
+
 ## Introduction
 
 > Build Smithers workflows with JSX components on top of a durable runtime.
@@ -18,9 +492,9 @@ Smithers is a JSX-first framework for building deterministic, resumable AI workf
 
 ## Start Here
 
-- [JSX API](/jsx/overview) — Learn the component model and how execution works.
-- [Installation](/jsx/installation) — Set up TypeScript, TSX, and optional MDX prompts.
-- [Quickstart](/jsx/quickstart) — Build and run a two-step workflow.
+- [JSX API](/jsx/overview) - Learn the component model and how execution works.
+- [Installation](/jsx/installation) - Set up TypeScript, TSX, and optional MDX prompts.
+- [Quickstart](/jsx/quickstart) - Build and run a two-step workflow.
 
 ## Shared Runtime
 
@@ -36,9 +510,9 @@ The Core Concepts, Runtime, CLI, and Integrations sections describe the shared e
 
 ## Next Steps
 
-- [JSX API](/jsx/overview) — Build workflows as TSX components.
-- [CLI Reference](/cli/overview) — Run, resume, and inspect workflows from the terminal.
-- [Execution Model](/concepts/execution-model) — Understand how Smithers plans and executes runs durably.
+- [JSX API](/jsx/overview) - Build workflows as TSX components.
+- [CLI Reference](/cli/overview) - Run, resume, and inspect workflows from the terminal.
+- [Execution Model](/concepts/execution-model) - Understand how Smithers plans and executes runs durably.
 
 ---
 
@@ -2607,6 +3081,33 @@ smithers list <workflow.tsx> [--limit N] [--status STATUS]
 
 ```bash
 smithers list workflow.tsx --status failed --limit 10
+```
+
+---
+
+### chat
+
+Show persisted agent chat output for the latest run or a specific run. This reads the prompt from attempt metadata plus streamed `NodeOutput` chunks or the final `responseText`, so it works for both AI SDK agents and CLI-backed agents.
+
+```bash
+smithers chat [runId] [--all] [--tail N] [--follow]
+```
+
+| Option | Description |
+|---|---|
+| `runId` | Optional run ID. When omitted, Smithers uses the most recent run in the nearest `smithers.db`. |
+| `--all` | Show every agent attempt in the run instead of only the latest one. |
+| `--tail N` | Show only the last `N` chat blocks from the selected transcript. |
+| `--follow`, `-f` | Poll for new persisted chat output and keep streaming it until the run stops. |
+| `--no-stderr` | Hide persisted agent stderr blocks. |
+
+**Examples:**
+
+```bash
+smithers chat
+smithers chat run-123 --all
+smithers chat run-123 --tail 20
+smithers chat run-123 --follow
 ```
 
 ---
@@ -5536,327 +6037,6 @@ Use Smithers-native tasks/tools when:
 ## Limitations and Expectations
 
 Chat-provider integration lives in host applications, not this repo.
-
----
-
-## JSX API
-
-> Build Smithers workflows as JSX trees with render-time branching, reusable components, and MDX prompts.
-> Source: https://smithers.sh/jsx/overview
-
-The JSX API is Smithers' component-based authoring layer. You describe the workflow as a tree of `<Workflow>`, `<Task>`, and control-flow components, and Smithers renders that tree into an execution plan.
-
-You can mix normal `<Task>` nodes, MDX prompt components, and generated BAML tasks in the same JSX tree.
-
-Use JSX when you want:
-
-- component composition and reusable workflow fragments
-- explicit control-flow nodes like `<Approval>`, `<Parallel>`, `<MergeQueue>`, and `<Worktree>`
-- render-time branching driven by `ctx.outputMaybe(...)`
-- MDX prompt templates or BAML task files
-- a TSX-first workflow authoring model
-
-## What JSX Looks Like
-
-```tsx
-/** @jsxImportSource smithers-orchestrator */
-import { createSmithers, Sequence, Task } from "smithers-orchestrator";
-import { z } from "zod";
-
-const analysisSchema = z.object({
-  summary: z.string(),
-});
-
-const { Workflow, smithers, outputs } = createSmithers({
-  analysis: analysisSchema,
-});
-
-export default smithers((ctx) => (
-  <Workflow name="analyze-repo">
-    <Sequence>
-      <Task id="analyze" output={outputs.analysis}>
-        {{ summary: `Analyze ${ctx.input.repo}` }}
-      </Task>
-    </Sequence>
-  </Workflow>
-));
-```
-
-The `outputs` object returned by `createSmithers` maps each schema key to its Zod schema. Passing `output={outputs.analysis}` instead of a magic string gives you compile-time type checking — a typo like `output={outputs.anaylsis}` is a type error, not a runtime surprise.
-
-## How JSX Execution Works
-
-The JSX API is render-driven:
-
-1. Smithers renders the workflow tree with the current `ctx`.
-2. It extracts executable task descriptors from the rendered tree.
-3. It runs the ready tasks and persists their outputs.
-4. It renders again with the updated outputs in `ctx`.
-
-That means branching and task visibility are usually expressed with normal JSX conditions:
-
-```tsx
-const analysis = ctx.outputMaybe(outputs.analysis, { nodeId: "analyze" });
-
-return (
-  <Workflow name="code-review">
-    <Task id="analyze" output={outputs.analysis}>...</Task>
-    {analysis ? (
-      <Task id="fix" output={outputs.fix}>...</Task>
-    ) : null}
-  </Workflow>
-);
-```
-
-## Two Common JSX Styles
-
-### Schema-driven JSX
-
-Use `createSmithers(...)` with Zod schemas and the returned `outputs` object. This is the fastest JSX path and the best default for new workflows. The `output` prop is type-checked against the registered schemas.
-
-### Manual JSX
-
-Use `smithers(db, build)` with explicit Drizzle table objects when you want lower-level control over persistence.
-
-Both styles compile to the same JSX renderer and execution engine.
-
-## Why JSX Works Well
-
-- component composition keeps large workflows modular
-- normal JSX conditions make branching and gating easy to read
-- TypeScript and Zod keep workflow data explicit and type-checked
-- MDX prompts fit naturally into the same authoring model
-
-## Next Steps
-
-- [JSX Installation](/jsx/installation) — Set up TypeScript, TSX, and optional MDX prompts.
-- [JSX Quickstart](/jsx/quickstart) — Build a two-step workflow.
-- [BAML](/integrations/baml) — Import `.baml` functions as first-class Smithers tasks.
-- [Approval](/components/approval) — Add a first-class approval node to the graph.
-- [MergeQueue](/components/merge-queue) — Serialize a subtree with a concurrency cap.
-- [Workflow](/components/workflow) — Start with the root component reference.
-
----
-
-## JSX Installation
-
-> Install Smithers for the JSX workflow API.
-> Source: https://smithers.sh/jsx/installation
-
-The JSX API uses TSX to define workflows and the AI SDK to call models. The fastest setup is the schema-driven API with `createSmithers(...)`.
-
-## Prerequisites
-
-- Bun >= 1.3
-- TypeScript >= 5
-
-## Install
-
-Install the core JSX dependencies:
-
-```bash
-bun add smithers-orchestrator ai @ai-sdk/anthropic zod
-```
-
-Add the TypeScript and JSX type packages:
-
-```bash
-bun add -d typescript @types/react @types/react-dom
-```
-
-## TypeScript Configuration
-
-Create a `tsconfig.json` like this:
-
-```json
-{
-  "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "jsxImportSource": "smithers-orchestrator",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true
-  }
-}
-```
-
-`jsxImportSource` is the key setting. It tells TypeScript to use Smithers' JSX runtime instead of a browser UI runtime.
-
-## Project Shape
-
-A minimal JSX workflow project usually looks like this:
-
-```txt
-my-workflow/
-  package.json
-  tsconfig.json
-  workflow.tsx
-  main.ts
-```
-
-## Optional: MDX Prompt Files
-
-If you want prompt templates in `.mdx` files, register the MDX preload plugin:
-
-```ts
-// preload.ts
-import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
-
-mdxPlugin();
-```
-
-```toml
-# bunfig.toml
-preload = ["./preload.ts"]
-```
-
-And add the MDX types:
-
-```bash
-bun add -d @types/mdx
-```
-
-## Optional: BAML Task Files
-
-If you want to import `.baml` files directly as Smithers tasks, install BAML and register the BAML preload plugin.
-
-```bash
-bun add @boundaryml/baml
-```
-
-```ts
-// preload.ts
-import { bamlPlugin, mdxPlugin } from "smithers-orchestrator";
-
-bamlPlugin();
-mdxPlugin(); // optional; only needed if you also import .mdx prompts
-```
-
-```toml
-# bunfig.toml
-preload = ["./preload.ts"]
-```
-
-See [BAML](/integrations/baml) for generator configuration and usage.
-
-## Verify the Setup
-
-Once TypeScript and JSX are configured, continue to the quickstart and run the sample workflow:
-
-```bash
-bun run main.ts
-```
-
-## Next Steps
-
-- [JSX Quickstart](/jsx/quickstart) — Build a working two-step workflow.
-- [Tutorial: Build a Workflow](/guides/tutorial-workflow) — Go deeper with schemas, agents, and output access.
-- [MDX Prompts](/guides/mdx-prompts) — Use `.mdx` files as structured prompt templates.
-
----
-
-## JSX Quickstart
-
-> Build and run your first Smithers workflow with the JSX API.
-> Source: https://smithers.sh/jsx/quickstart
-
-This guide builds a two-step workflow that researches a topic and then writes a report once the research output exists.
-
-## Step 1: Create the Workflow
-
-Create `workflow.tsx`:
-
-```tsx
-/** @jsxImportSource smithers-orchestrator */
-import { createSmithers, Sequence, Task } from "smithers-orchestrator";
-import { ToolLoopAgent as Agent } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
-import { z } from "zod";
-
-const { Workflow, smithers, outputs } = createSmithers({
-  research: z.object({
-    summary: z.string(),
-    keyPoints: z.array(z.string()),
-  }),
-  report: z.object({
-    title: z.string(),
-    body: z.string(),
-  }),
-});
-
-const researcher = new Agent({
-  model: anthropic("claude-sonnet-4-20250514"),
-  instructions: "You are an expert research assistant.",
-});
-
-const writer = new Agent({
-  model: anthropic("claude-sonnet-4-20250514"),
-  instructions: "You are a concise technical writer.",
-});
-
-export default smithers((ctx) => {
-  const research = ctx.outputMaybe(outputs.research, { nodeId: "research" });
-
-  return (
-    <Workflow name="research-report">
-      <Sequence>
-        <Task id="research" output={outputs.research} agent={researcher}>
-          {`Research the following topic and return a summary with key points.\n\nTopic: ${ctx.input.topic}`}
-        </Task>
-
-        {research ? (
-          <Task id="report" output={outputs.report} agent={writer}>
-            {`Write a concise report.\n\nSummary: ${research.summary}\nKey points: ${research.keyPoints.join(", ")}`}
-          </Task>
-        ) : null}
-      </Sequence>
-    </Workflow>
-  );
-});
-```
-
-Two JSX-specific details matter here:
-
-- `ctx.outputMaybe(...)` is how the second render discovers that `research` has finished.
-- the `report` task only mounts once the `research` output exists.
-
-## Step 2: Run It
-
-Create `main.ts`:
-
-```ts
-import { runWorkflow } from "smithers-orchestrator";
-import workflow from "./workflow";
-
-const result = await runWorkflow(workflow, {
-  input: { topic: "The history of the Zig programming language" },
-});
-
-console.log(result.status);
-console.log(JSON.stringify(result.output, null, 2));
-```
-
-Run it:
-
-```bash
-bun run main.ts
-```
-
-## What Happened
-
-1. Smithers rendered the JSX tree. Only `research` was mounted.
-2. The `research` task ran, validated its output against the Zod schema, and persisted it.
-3. Smithers rendered again with that stored output available through `ctx.outputMaybe(...)`.
-4. The `report` task mounted on the second render and used the `research` output in its prompt.
-
-## Next Steps
-
-- [Workflow](/components/workflow) — Learn the root workflow component.
-- [Task](/components/task) — See agent, compute, and static task modes.
-- [Tutorial: Build a Workflow](/guides/tutorial-workflow) — Build a larger production-style JSX workflow.
 
 ---
 
@@ -14027,4 +14207,325 @@ These are server-internal `HttpError` codes returned in the JSON error response 
 - [Error Handling Guide](/guides/error-handling) — patterns for catching and handling errors in workflows
 - [Debugging Guide](/guides/debugging) — tools for diagnosing workflow failures
 - [Troubleshooting](/guides/troubleshooting) — common issues and solutions
+
+---
+
+## JSX API
+
+> Build Smithers workflows as JSX trees with render-time branching, reusable components, and MDX prompts.
+> Source: https://smithers.sh/jsx/overview
+
+The JSX API is Smithers' component-based authoring layer. You describe the workflow as a tree of `<Workflow>`, `<Task>`, and control-flow components, and Smithers renders that tree into an execution plan.
+
+You can mix normal `<Task>` nodes, MDX prompt components, and generated BAML tasks in the same JSX tree.
+
+Use JSX when you want:
+
+- component composition and reusable workflow fragments
+- explicit control-flow nodes like `<Approval>`, `<Parallel>`, `<MergeQueue>`, and `<Worktree>`
+- render-time branching driven by `ctx.outputMaybe(...)`
+- MDX prompt templates or BAML task files
+- a TSX-first workflow authoring model
+
+## What JSX Looks Like
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import { createSmithers, Sequence, Task } from "smithers-orchestrator";
+import { z } from "zod";
+
+const analysisSchema = z.object({
+  summary: z.string(),
+});
+
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: analysisSchema,
+});
+
+export default smithers((ctx) => (
+  <Workflow name="analyze-repo">
+    <Sequence>
+      <Task id="analyze" output={outputs.analysis}>
+        {{ summary: `Analyze ${ctx.input.repo}` }}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+The `outputs` object returned by `createSmithers` maps each schema key to its Zod schema. Passing `output={outputs.analysis}` instead of a magic string gives you compile-time type checking — a typo like `output={outputs.anaylsis}` is a type error, not a runtime surprise.
+
+## How JSX Execution Works
+
+The JSX API is render-driven:
+
+1. Smithers renders the workflow tree with the current `ctx`.
+2. It extracts executable task descriptors from the rendered tree.
+3. It runs the ready tasks and persists their outputs.
+4. It renders again with the updated outputs in `ctx`.
+
+That means branching and task visibility are usually expressed with normal JSX conditions:
+
+```tsx
+const analysis = ctx.outputMaybe(outputs.analysis, { nodeId: "analyze" });
+
+return (
+  <Workflow name="code-review">
+    <Task id="analyze" output={outputs.analysis}>...</Task>
+    {analysis ? (
+      <Task id="fix" output={outputs.fix}>...</Task>
+    ) : null}
+  </Workflow>
+);
+```
+
+## Two Common JSX Styles
+
+### Schema-driven JSX
+
+Use `createSmithers(...)` with Zod schemas and the returned `outputs` object. This is the fastest JSX path and the best default for new workflows. The `output` prop is type-checked against the registered schemas.
+
+### Manual JSX
+
+Use `smithers(db, build)` with explicit Drizzle table objects when you want lower-level control over persistence.
+
+Both styles compile to the same JSX renderer and execution engine.
+
+## Why JSX Works Well
+
+- component composition keeps large workflows modular
+- normal JSX conditions make branching and gating easy to read
+- TypeScript and Zod keep workflow data explicit and type-checked
+- MDX prompts fit naturally into the same authoring model
+
+## Next Steps
+
+- [JSX Installation](/jsx/installation) — Set up TypeScript, TSX, and optional MDX prompts.
+- [JSX Quickstart](/jsx/quickstart) — Build a two-step workflow.
+- [BAML](/integrations/baml) — Import `.baml` functions as first-class Smithers tasks.
+- [Approval](/components/approval) — Add a first-class approval node to the graph.
+- [MergeQueue](/components/merge-queue) — Serialize a subtree with a concurrency cap.
+- [Workflow](/components/workflow) — Start with the root component reference.
+
+---
+
+## JSX Installation
+
+> Install Smithers for the JSX workflow API.
+> Source: https://smithers.sh/jsx/installation
+
+The JSX API uses TSX to define workflows and the AI SDK to call models. The fastest setup is the schema-driven API with `createSmithers(...)`.
+
+## Prerequisites
+
+- Bun >= 1.3
+- TypeScript >= 5
+
+## Install
+
+Install the core JSX dependencies:
+
+```bash
+bun add smithers-orchestrator ai @ai-sdk/anthropic zod
+```
+
+Add the TypeScript and JSX type packages:
+
+```bash
+bun add -d typescript @types/react @types/react-dom
+```
+
+## TypeScript Configuration
+
+Create a `tsconfig.json` like this:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "smithers-orchestrator",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  }
+}
+```
+
+`jsxImportSource` is the key setting. It tells TypeScript to use Smithers' JSX runtime instead of a browser UI runtime.
+
+## Project Shape
+
+A minimal JSX workflow project usually looks like this:
+
+```txt
+my-workflow/
+  package.json
+  tsconfig.json
+  workflow.tsx
+  main.ts
+```
+
+## Optional: MDX Prompt Files
+
+If you want prompt templates in `.mdx` files, register the MDX preload plugin:
+
+```ts
+// preload.ts
+import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
+
+mdxPlugin();
+```
+
+```toml
+# bunfig.toml
+preload = ["./preload.ts"]
+```
+
+And add the MDX types:
+
+```bash
+bun add -d @types/mdx
+```
+
+## Optional: BAML Task Files
+
+If you want to import `.baml` files directly as Smithers tasks, install BAML and register the BAML preload plugin.
+
+```bash
+bun add @boundaryml/baml
+```
+
+```ts
+// preload.ts
+import { bamlPlugin, mdxPlugin } from "smithers-orchestrator";
+
+bamlPlugin();
+mdxPlugin(); // optional; only needed if you also import .mdx prompts
+```
+
+```toml
+# bunfig.toml
+preload = ["./preload.ts"]
+```
+
+See [BAML](/integrations/baml) for generator configuration and usage.
+
+## Verify the Setup
+
+Once TypeScript and JSX are configured, continue to the quickstart and run the sample workflow:
+
+```bash
+bun run main.ts
+```
+
+## Next Steps
+
+- [JSX Quickstart](/jsx/quickstart) — Build a working two-step workflow.
+- [Tutorial: Build a Workflow](/guides/tutorial-workflow) — Go deeper with schemas, agents, and output access.
+- [MDX Prompts](/guides/mdx-prompts) — Use `.mdx` files as structured prompt templates.
+
+---
+
+## JSX Quickstart
+
+> Build and run your first Smithers workflow with the JSX API.
+> Source: https://smithers.sh/jsx/quickstart
+
+This guide builds a two-step workflow that researches a topic and then writes a report once the research output exists.
+
+## Step 1: Create the Workflow
+
+Create `workflow.tsx`:
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import { createSmithers, Sequence, Task } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  research: z.object({
+    summary: z.string(),
+    keyPoints: z.array(z.string()),
+  }),
+  report: z.object({
+    title: z.string(),
+    body: z.string(),
+  }),
+});
+
+const researcher = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are an expert research assistant.",
+});
+
+const writer = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a concise technical writer.",
+});
+
+export default smithers((ctx) => {
+  const research = ctx.outputMaybe(outputs.research, { nodeId: "research" });
+
+  return (
+    <Workflow name="research-report">
+      <Sequence>
+        <Task id="research" output={outputs.research} agent={researcher}>
+          {`Research the following topic and return a summary with key points.\n\nTopic: ${ctx.input.topic}`}
+        </Task>
+
+        {research ? (
+          <Task id="report" output={outputs.report} agent={writer}>
+            {`Write a concise report.\n\nSummary: ${research.summary}\nKey points: ${research.keyPoints.join(", ")}`}
+          </Task>
+        ) : null}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+Two JSX-specific details matter here:
+
+- `ctx.outputMaybe(...)` is how the second render discovers that `research` has finished.
+- the `report` task only mounts once the `research` output exists.
+
+## Step 2: Run It
+
+Create `main.ts`:
+
+```ts
+import { runWorkflow } from "smithers-orchestrator";
+import workflow from "./workflow";
+
+const result = await runWorkflow(workflow, {
+  input: { topic: "The history of the Zig programming language" },
+});
+
+console.log(result.status);
+console.log(JSON.stringify(result.output, null, 2));
+```
+
+Run it:
+
+```bash
+bun run main.ts
+```
+
+## What Happened
+
+1. Smithers rendered the JSX tree. Only `research` was mounted.
+2. The `research` task ran, validated its output against the Zod schema, and persisted it.
+3. Smithers rendered again with that stored output available through `ctx.outputMaybe(...)`.
+4. The `report` task mounted on the second render and used the `research` output in its prompt.
+
+## Next Steps
+
+- [Workflow](/components/workflow) — Learn the root workflow component.
+- [Task](/components/task) — See agent, compute, and static task modes.
+- [Tutorial: Build a Workflow](/guides/tutorial-workflow) — Build a larger production-style JSX workflow.
 

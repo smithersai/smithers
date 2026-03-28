@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { renderMdx } from "smithers";
+import { renderMdx } from "../../src/index.ts";
 
 const SMITHERS_ROOT = resolve(new URL("../../", import.meta.url).pathname);
-const REPO_ROOT = resolve(new URL("../../../../", import.meta.url).pathname);
+const REPO_ROOT = resolve(new URL("../../", import.meta.url).pathname);
 const PROMPTS = resolve(new URL("./prompts", import.meta.url).pathname);
 
 function readFile(path: string): string {

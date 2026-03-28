@@ -10,6 +10,9 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import SplitPrompt from "./prompts/fan-out-fan-in/split.mdx";
+import ProcessPrompt from "./prompts/fan-out-fan-in/process.mdx";
+import MergePrompt from "./prompts/fan-out-fan-in/merge.mdx";
 
 const splitSchema = z.object({
   items: z.array(z.object({
@@ -24,7 +27,7 @@ const processSchema = z.object({
   itemId: z.string(),
   output: z.string(),
   status: z.enum(["success", "failed"]),
-  metrics: z.record(z.number()).optional(),
+  metrics: z.record(z.string(), z.number()).optional(),
 });
 
 const mergeSchema = z.object({
@@ -70,13 +73,11 @@ export default smithers((ctx) => {
       <Sequence>
         {/* Split: divide work */}
         <Task id="split" output={outputs.split} agent={splitter}>
-          {`Divide this work into parallel chunks:
-
-Input: ${ctx.input.input ?? ctx.input.directory}
-Operation: ${ctx.input.operation}
-Max chunks: ${ctx.input.maxChunks ?? 10}
-
-Each chunk should be independent and processable by a single agent.`}
+          <SplitPrompt
+            input={ctx.input.input ?? ctx.input.directory}
+            operation={ctx.input.operation}
+            maxChunks={ctx.input.maxChunks ?? 10}
+          />
         </Task>
 
         {/* Fan-out: process each chunk in parallel */}
@@ -91,12 +92,12 @@ Each chunk should be independent and processable by a single agent.`}
                 continueOnFail
                 timeoutMs={ctx.input.timeoutMs ?? 120_000}
               >
-                {`Process this item:
-ID: ${item.id}
-Input: ${item.input}
-Context: ${item.context}
-
-Operation: ${ctx.input.operation}`}
+                <ProcessPrompt
+                  id={item.id}
+                  input={item.input}
+                  context={item.context}
+                  operation={ctx.input.operation}
+                />
               </Task>
             ))}
           </Parallel>
@@ -104,11 +105,7 @@ Operation: ${ctx.input.operation}`}
 
         {/* Fan-in: merge results */}
         <Task id="merge" output={outputs.merge} agent={merger}>
-          {`Merge ${results.length} worker results:
-
-${results.map((r) => `[${r.status}] ${r.itemId}: ${r.output}`).join("\n\n")}
-
-Produce a single coherent output combining all successful results.`}
+          <MergePrompt results={results} />
         </Task>
       </Sequence>
     </Workflow>

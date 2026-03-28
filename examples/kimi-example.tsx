@@ -1,6 +1,8 @@
 import { createSmithers, Sequence } from "smithers-orchestrator";
 import { KimiAgent } from "smithers-orchestrator";
 import { z } from "zod";
+import AnalysisPrompt from "./prompts/kimi-example/analysis.mdx";
+import ReportPrompt from "./prompts/kimi-example/report.mdx";
 
 // Define Zod schemas
 const analysisSchema = z.object({
@@ -33,25 +35,23 @@ const kimiReporter = new KimiAgent({
 });
 
 // Export workflow
-export default smithers((ctx) => (
-  <Workflow name="kimi-analysis">
-    <Sequence>
-      <Task id="analysis" output={outputs.analysis} agent={kimiAnalyzer}>
-        {`Analyze the following topic and provide a structured analysis:
+export default smithers((ctx) => {
+  const analysis = ctx.outputMaybe("analysis", { nodeId: "analysis" });
 
-Topic: ${ctx.input.topic}
-
-Please analyze this topic thoroughly and return your findings in the required JSON format.`}
-      </Task>
-      <Task id="report" output={outputs.output} agent={kimiReporter}>
-        {`Based on the following analysis, create a comprehensive report:
-
-Summary: ${ctx.output("analysis", { nodeId: "analysis" }).summary}
-Key Points: ${JSON.stringify(ctx.output("analysis", { nodeId: "analysis" }).keyPoints)}
-Complexity: ${ctx.output("analysis", { nodeId: "analysis" }).complexity}
-
-Generate a detailed report with actionable recommendations.`}
-      </Task>
-    </Sequence>
-  </Workflow>
-));
+  return (
+    <Workflow name="kimi-analysis">
+      <Sequence>
+        <Task id="analysis" output={outputs.analysis} agent={kimiAnalyzer}>
+          <AnalysisPrompt topic={ctx.input.topic} />
+        </Task>
+        <Task id="report" output={outputs.output} agent={kimiReporter}>
+          <ReportPrompt
+            summary={analysis?.summary ?? ""}
+            keyPoints={analysis?.keyPoints ?? []}
+            complexity={analysis?.complexity ?? "medium"}
+          />
+        </Task>
+      </Sequence>
+    </Workflow>
+  );
+});

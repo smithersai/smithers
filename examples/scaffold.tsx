@@ -10,6 +10,9 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import BlueprintPrompt from "./prompts/scaffold/blueprint.mdx";
+import GeneratePrompt from "./prompts/scaffold/generate.mdx";
+import VerifyPrompt from "./prompts/scaffold/verify.mdx";
 
 const blueprintSchema = z.object({
   files: z.array(z.object({
@@ -70,15 +73,12 @@ export default smithers((ctx) => {
     <Workflow name="scaffold">
       <Sequence>
         <Task id="blueprint" output={outputs.blueprint} agent={architect}>
-          {`Design file structure for:
-
-Feature: ${ctx.input.feature}
-Type: ${ctx.input.type ?? "feature"}
-Directory: ${ctx.input.directory}
-
-Analyze existing patterns in the codebase (look at similar features).
-List every file that needs to be created.
-${ctx.input.spec ? `Spec:\n${ctx.input.spec}` : ""}`}
+          <BlueprintPrompt
+            feature={ctx.input.feature}
+            type={ctx.input.type ?? "feature"}
+            directory={ctx.input.directory}
+            spec={ctx.input.spec}
+          />
         </Task>
 
         {blueprint && (
@@ -91,11 +91,13 @@ ${ctx.input.spec ? `Spec:\n${ctx.input.spec}` : ""}`}
                 agent={generator}
                 continueOnFail
               >
-                {`Generate file: ${file.path}
-Type: ${file.type}
-Purpose: ${file.description}
-${file.template ? `Template:\n${file.template}` : "Match existing project patterns."}
-Directory: ${ctx.input.directory}`}
+                <GeneratePrompt
+                  path={file.path}
+                  type={file.type}
+                  description={file.description}
+                  template={file.template}
+                  directory={ctx.input.directory}
+                />
               </Task>
             ))}
           </Parallel>
@@ -103,9 +105,10 @@ Directory: ${ctx.input.directory}`}
 
         {generated.length > 0 && (
           <Task id="verify" output={outputs.verify} agent={verifier}>
-            {`Verify generated files:
-Directory: ${ctx.input.directory}
-Command: ${ctx.input.verifyCmd ?? "npx tsc --noEmit"}`}
+            <VerifyPrompt
+              directory={ctx.input.directory}
+              verifyCmd={ctx.input.verifyCmd ?? "npx tsc --noEmit"}
+            />
           </Task>
         )}
       </Sequence>

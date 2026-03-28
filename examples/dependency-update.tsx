@@ -9,6 +9,9 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import ScanPrompt from "./prompts/dependency-update/scan.mdx";
+import UpdatePrompt from "./prompts/dependency-update/update.mdx";
+import VerifyPrompt from "./prompts/dependency-update/verify.mdx";
 
 const scanSchema = z.object({
   outdated: z.array(z.object({
@@ -85,10 +88,11 @@ export default smithers((ctx) => {
     <Workflow name="dependency-update">
       <Sequence>
         <Task id="scan" output={outputs.scan} agent={scanner}>
-          {`Check for outdated dependencies:
-Directory: ${ctx.input.directory}
-Command: ${ctx.input.checkCmd ?? "npm outdated --json"}
-Also check: ${ctx.input.lockfile ?? "package-lock.json"}`}
+          <ScanPrompt
+            directory={ctx.input.directory}
+            checkCmd={ctx.input.checkCmd ?? "npm outdated --json"}
+            lockfile={ctx.input.lockfile ?? "package-lock.json"}
+          />
         </Task>
 
         {autoUpdatable.length > 0 && (
@@ -101,9 +105,14 @@ Also check: ${ctx.input.lockfile ?? "package-lock.json"}`}
                 agent={updater}
                 continueOnFail
               >
-                {`Update ${dep.name}: ${dep.current} → ${dep.latest} (${dep.type})
-Directory: ${ctx.input.directory}
-${dep.changelog ? `Changelog: ${dep.changelog}` : ""}`}
+                <UpdatePrompt
+                  name={dep.name}
+                  current={dep.current}
+                  latest={dep.latest}
+                  type={dep.type}
+                  directory={ctx.input.directory}
+                  changelog={dep.changelog}
+                />
               </Task>
             ))}
           </Parallel>
@@ -111,11 +120,12 @@ ${dep.changelog ? `Changelog: ${dep.changelog}` : ""}`}
 
         {updates.length > 0 && (
           <Task id="verify" output={outputs.verify} agent={verifier}>
-            {`Verify after dependency updates:
-Directory: ${ctx.input.directory}
-1. ${ctx.input.typecheckCmd ?? "npx tsc --noEmit"}
-2. ${ctx.input.testCmd ?? "npm test"}
-3. ${ctx.input.buildCmd ?? "npm run build"}`}
+            <VerifyPrompt
+              directory={ctx.input.directory}
+              typecheckCmd={ctx.input.typecheckCmd ?? "npx tsc --noEmit"}
+              testCmd={ctx.input.testCmd ?? "npm test"}
+              buildCmd={ctx.input.buildCmd ?? "npm run build"}
+            />
           </Task>
         )}
 

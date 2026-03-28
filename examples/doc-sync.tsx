@@ -9,6 +9,9 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import AuditPrompt from "./prompts/doc-sync/audit.mdx";
+import FixPrompt from "./prompts/doc-sync/fix.mdx";
+import PrPrompt from "./prompts/doc-sync/pr.mdx";
 
 const auditSchema = z.object({
   discrepancies: z.array(z.object({
@@ -67,22 +70,18 @@ export default smithers((ctx) => {
   const audit = ctx.outputMaybe("audit", { nodeId: "audit" });
   const fixes = ctx.outputs.fix ?? [];
   const fixableDiscrepancies = audit?.discrepancies?.filter((d) => d.severity !== "info") ?? [];
+  const fixedFiles = fixes.filter((f) => f.status === "fixed").map((f) => f.file);
+  const branchName = `docs/auto-sync-${Date.now()}`;
 
   return (
     <Workflow name="doc-sync">
       <Sequence>
         <Task id="audit" output={outputs.audit} agent={auditor}>
-          {`Audit documentation against source code:
-
-Docs directory: ${ctx.input.docsDir ?? "docs/"}
-Source directory: ${ctx.input.srcDir ?? "src/"}
-Doc format: ${ctx.input.format ?? "mdx"}
-
-For each doc file:
-1. Find the corresponding source code
-2. Verify all API signatures match
-3. Check that examples are valid
-4. Flag any stale references`}
+          <AuditPrompt
+            docsDir={ctx.input.docsDir ?? "docs/"}
+            srcDir={ctx.input.srcDir ?? "src/"}
+            format={ctx.input.format ?? "mdx"}
+          />
         </Task>
 
         {/* Fix discrepancies in parallel */}
@@ -96,12 +95,12 @@ For each doc file:
                 agent={fixer}
                 continueOnFail
               >
-                {`Fix this documentation discrepancy:
-File: ${d.docFile}
-Issue: ${d.issue} — ${d.description}
-Reference code: ${d.codeFile}
-
-Make minimal edits to fix the factual error.`}
+                <FixPrompt
+                  docFile={d.docFile}
+                  issue={d.issue}
+                  description={d.description}
+                  codeFile={d.codeFile}
+                />
               </Task>
             ))}
           </Parallel>
@@ -112,14 +111,13 @@ Make minimal edits to fix the factual error.`}
           id="pr"
           output={outputs.pr}
           agent={prAgent}
-          skipIf={fixes.filter((f) => f.status === "fixed").length === 0}
+          skipIf={fixedFiles.length === 0}
         >
-          {`Create a PR with the doc fixes:
-1. git checkout -b docs/auto-sync-${Date.now()}
-2. git add ${fixes.filter((f) => f.status === "fixed").map((f) => f.file).join(" ")}
-3. git commit -m "docs: sync documentation with source code"
-4. git push -u origin HEAD
-5. gh pr create --title "docs: auto-sync documentation" --body "Fixes ${fixes.filter((f) => f.status === "fixed").length} documentation discrepancies found by automated audit"`}
+          <PrPrompt
+            branchName={branchName}
+            fixedFiles={fixedFiles}
+            fixedCount={fixedFiles.length}
+          />
         </Task>
       </Sequence>
     </Workflow>

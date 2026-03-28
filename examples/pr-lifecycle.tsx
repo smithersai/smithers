@@ -9,6 +9,11 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { bash, read, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import RebasePrompt from "./prompts/pr-lifecycle/rebase.mdx";
+import ReviewPrompt from "./prompts/pr-lifecycle/review.mdx";
+import PushPrompt from "./prompts/pr-lifecycle/push.mdx";
+import PollCiPrompt from "./prompts/pr-lifecycle/poll-ci.mdx";
+import MergePrompt from "./prompts/pr-lifecycle/merge.mdx";
 
 const rebaseSchema = z.object({
   conflicts: z.boolean(),
@@ -80,42 +85,29 @@ export default smithers((ctx) => {
       <Sequence>
         {/* Rebase on latest main */}
         <Task id="rebase" output={outputs.rebase} agent={gitAgent}>
-          {`Rebase the current branch on origin/main:
-1. git fetch origin
-2. git rebase origin/main
-3. Resolve any conflicts
-4. Report result`}
+          <RebasePrompt />
         </Task>
 
         {/* Self-review the diff */}
         <Task id="review" output={outputs.review} agent={reviewAgent} skipIf={rebase?.conflicts ?? false}>
-          {`Review the PR diff:
-Run: git diff origin/main...HEAD
-Check for critical issues, forgotten debug code, missing error handling.`}
+          <ReviewPrompt />
         </Task>
 
         {/* Push */}
         <Task id="push" output={outputs.rebase} agent={gitAgent} skipIf={!(review?.approved)}>
-          {`Force push the rebased branch:
-git push --force-with-lease`}
+          <PushPrompt />
         </Task>
 
         {/* Poll CI until green */}
         <Loop until={ci?.status === "pass"} maxIterations={20} onMaxReached="return-last">
           <Task id="poll-ci" output={outputs.ci} agent={ciAgent} timeoutMs={30_000}>
-            {`Check CI status for the current PR:
-gh pr checks --watch=false
-gh pr view --json mergeable,reviewDecision,statusCheckRollup
-
-Report the status of all checks.`}
+            <PollCiPrompt />
           </Task>
         </Loop>
 
         {/* Merge */}
         <Task id="merge" output={outputs.merge} agent={gitAgent} skipIf={!ci?.mergeable}>
-          {`Merge the PR:
-gh pr merge --${ctx.input.mergeMethod ?? "squash"} --auto
-Report the merge result.`}
+          <MergePrompt mergeMethod={ctx.input.mergeMethod ?? "squash"} />
         </Task>
       </Sequence>
     </Workflow>

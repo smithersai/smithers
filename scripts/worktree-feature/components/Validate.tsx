@@ -1,5 +1,5 @@
 
-import { Task } from "../smithers";
+import { Task, outputs } from "../smithers";
 import { codex } from "../agents";
 import ValidatePrompt from "./Validate.mdx";
 import { useCtx, tables } from "../smithers";

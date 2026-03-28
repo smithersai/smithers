@@ -9,6 +9,8 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import MeasurePrompt from "./prompts/coverage-loop/measure.mdx";
+import FixPrompt from "./prompts/coverage-loop/fix.mdx";
 
 const measureSchema = z.object({
   coverage: z.number(),
@@ -69,22 +71,21 @@ export default smithers((ctx) => {
         <Loop until={hitTarget} maxIterations={ctx.input.maxIterations ?? 10} onMaxReached="return-last">
           <Sequence>
             <Task id="measure" output={outputs.measure} agent={measurer}>
-              {`Run test coverage in "${ctx.input.directory}":
-Command: ${ctx.input.coverageCmd ?? "npx vitest --coverage --reporter=json"}
-Target: ${target}%
-Current: ${latestMeasure?.coverage ?? "unknown"}%
-
-Parse the coverage report and identify the worst-covered files.`}
+              <MeasurePrompt
+                directory={ctx.input.directory}
+                coverageCmd={ctx.input.coverageCmd ?? "npx vitest --coverage --reporter=json"}
+                target={target}
+                current={latestMeasure?.coverage ?? "unknown"}
+              />
             </Task>
 
             <Task id="fix" output={outputs.fix} agent={testWriter} skipIf={hitTarget}>
-              {`Write tests to improve coverage from ${latestMeasure?.coverage ?? 0}% toward ${target}%.
-
-Worst-covered files:
-${latestMeasure?.uncoveredFiles?.slice(0, 5).map((f) => `- ${f.file}: ${f.coverage}% (lines: ${f.uncoveredLines.slice(0, 10).join(", ")})`).join("\n") ?? "Run measurement first"}
-
-Directory: ${ctx.input.directory}
-Write 2-3 focused test files. Commit each.`}
+              <FixPrompt
+                current={latestMeasure?.coverage ?? 0}
+                target={target}
+                uncoveredFiles={latestMeasure?.uncoveredFiles?.slice(0, 5) ?? []}
+                directory={ctx.input.directory}
+              />
             </Task>
           </Sequence>
         </Loop>

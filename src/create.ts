@@ -11,6 +11,13 @@ import {
   Approval as BaseApproval,
   Workflow as BaseWorkflow,
   Task as BaseTask,
+  Sequence as BaseSequence,
+  Parallel as BaseParallel,
+  MergeQueue as BaseMergeQueue,
+  Branch as BaseBranch,
+  Loop as BaseLoop,
+  Ralph as BaseRalph,
+  Worktree as BaseWorktree,
 } from "./components";
 import type { ApprovalProps, WorkflowProps, TaskProps } from "./components";
 
@@ -47,6 +54,13 @@ export type CreateSmithersApi<Schema = any> = {
   Workflow: (props: WorkflowProps) => React.ReactElement;
   Approval: <Row>(props: ApprovalProps<Row, SchemaOutput<Schema>>) => React.ReactElement;
   Task: <Row>(props: TaskProps<Row, SchemaOutput<Schema>>) => React.ReactElement;
+  Sequence: typeof BaseSequence;
+  Parallel: typeof BaseParallel;
+  MergeQueue: typeof BaseMergeQueue;
+  Branch: typeof BaseBranch;
+  Loop: typeof BaseLoop;
+  Ralph: typeof BaseRalph;
+  Worktree: typeof BaseWorktree;
   useCtx: () => SmithersCtx<Schema>;
   smithers: (
     build: (ctx: SmithersCtx<Schema>) => React.ReactElement,
@@ -213,6 +227,13 @@ export function createSmithers<
     Workflow,
     Approval,
     Task,
+    Sequence: BaseSequence,
+    Parallel: BaseParallel,
+    MergeQueue: BaseMergeQueue,
+    Branch: BaseBranch,
+    Loop: BaseLoop,
+    Ralph: BaseRalph,
+    Worktree: BaseWorktree,
     useCtx,
     smithers: boundSmithers,
     db,

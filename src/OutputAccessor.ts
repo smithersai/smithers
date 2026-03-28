@@ -13,7 +13,12 @@ export type InferOutputEntry<T> = T extends z.ZodTypeAny
     ? InferRow<T>
     : never;
 
+type FallbackTableName<Schema> = [keyof Schema & string] extends [never]
+  ? string
+  : never;
+
 export type OutputAccessor<Schema> = {
+  (table: FallbackTableName<Schema>): Array<any>;
   <K extends keyof Schema & string>(table: K): Array<InferOutputEntry<Schema[K]>>;
 } & {
   [K in keyof Schema & string]: Array<InferOutputEntry<Schema[K]>>;

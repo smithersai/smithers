@@ -15,6 +15,9 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import AnalyzePrompt from "./prompts/migration/analyze.mdx";
+import MigratePrompt from "./prompts/migration/migrate.mdx";
+import ValidatePrompt from "./prompts/migration/validate.mdx";
 
 const migrationPlanSchema = z.object({
   files: z.array(z.object({
@@ -89,15 +92,12 @@ export default smithers((ctx) => {
       <Sequence>
         {/* Analyze: what needs to change */}
         <Task id="analyze" output={outputs.migrationPlan} agent={analyzer}>
-          {`Analyze the codebase at "${ctx.input.directory}" for this migration:
-
-From: ${ctx.input.from}
-To: ${ctx.input.to}
-
-Migration guide:
-${ctx.input.guide ?? "Determine changes needed based on the version diff"}
-
-Find ALL files that need changes. Assess complexity of each.`}
+          <AnalyzePrompt
+            directory={ctx.input.directory}
+            from={ctx.input.from}
+            to={ctx.input.to}
+            guide={ctx.input.guide ?? "Determine changes needed based on the version diff"}
+          />
         </Task>
 
         {/* Transform: apply changes in parallel batches */}
@@ -112,13 +112,14 @@ Find ALL files that need changes. Assess complexity of each.`}
                 continueOnFail
                 retries={1}
               >
-                {`Migrate this file:
-Path: ${file.path}
-Change type: ${file.changeType}
-Description: ${file.description}
-
-Migration: ${ctx.input.from} → ${ctx.input.to}
-${ctx.input.guide ?? ""}`}
+                <MigratePrompt
+                  path={file.path}
+                  changeType={file.changeType}
+                  description={file.description}
+                  from={ctx.input.from}
+                  to={ctx.input.to}
+                  guide={ctx.input.guide ?? ""}
+                />
               </Task>
             ))}
           </Parallel>
@@ -127,13 +128,12 @@ ${ctx.input.guide ?? ""}`}
         {/* Validate: ensure nothing is broken */}
         {fileResults.length > 0 && (
           <Task id="validate" output={outputs.validation} agent={validator}>
-            {`Run validation checks in "${ctx.input.directory}":
-
-1. Typecheck: ${ctx.input.typecheckCmd ?? "npx tsc --noEmit"}
-2. Tests: ${ctx.input.testCmd ?? "npm test"}
-3. Lint: ${ctx.input.lintCmd ?? "npx eslint ."}
-
-Report pass/fail for each.`}
+            <ValidatePrompt
+              directory={ctx.input.directory}
+              typecheckCmd={ctx.input.typecheckCmd ?? "npx tsc --noEmit"}
+              testCmd={ctx.input.testCmd ?? "npm test"}
+              lintCmd={ctx.input.lintCmd ?? "npx eslint ."}
+            />
           </Task>
         )}
 

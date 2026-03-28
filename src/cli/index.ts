@@ -1486,7 +1486,7 @@ const cli = Cli.create({
   // smithers ask <question>
   // =========================================================================
   .command("ask", {
-    description: "Ask a question about Smithers, answered from the docs.",
+    description: "Ask a question about Smithers using your installed agent and the Smithers MCP server.",
     args: z.object({
       question: z.string().describe("The question to ask"),
     }),

@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
+import { expect, test } from "bun:test";
 import { Effect, Layer } from "effect";
 import { Smithers } from "../src";
 import { Greeter } from "./fixtures/toon-services";

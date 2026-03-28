@@ -1,5 +1,6 @@
 import { createSmithers, Loop, ClaudeCodeAgent } from "smithers-orchestrator";
 import { z } from "zod";
+import CheckPrompt from "./prompts/ralph-loop/check.mdx";
 
 const { Workflow, Task, smithers, outputs } = createSmithers({
   check: z.object({ status: z.string() }),
@@ -14,7 +15,7 @@ export default smithers((ctx) => (
   <Workflow name="ralph-loop">
     <Loop until={false}>
       <Task id="check" output={outputs.check} agent={agent}>
-        Check the current status of: {ctx.input.target}
+        <CheckPrompt target={ctx.input.target} />
       </Task>
     </Loop>
   </Workflow>

@@ -25,6 +25,11 @@ import { ToolLoopAgent as Agent } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import MayorPrompt from "./prompts/gastown/mayor.mdx";
+import PolecatPrompt from "./prompts/gastown/polecat.mdx";
+import WitnessPatrolPrompt from "./prompts/gastown/witness-patrol.mdx";
+import MergePrompt from "./prompts/gastown/merge.mdx";
+import ReportPrompt from "./prompts/gastown/report.mdx";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BEADS — Gas Town's persistent issue tracking, implemented as Zod schemas.
@@ -391,8 +396,6 @@ a merge log showing each branch's phase and result, and a brief narrative.`,
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default smithers((ctx) => {
-  const beads = useBeads();
-
   // ── Derived state ──
   const plan = ctx.outputMaybe("plan", { nodeId: "mayor" });
   const polecatResults: z.infer<typeof polecatResultSchema>[] =
@@ -424,23 +427,11 @@ export default smithers((ctx) => {
       <Sequence>
         {/* ═══ MAYOR: Decompose goal → convoy of beads ═══ */}
         <Task id="mayor" output={outputs.plan} agent={mayorAgent}>
-          {`Analyze the codebase at "${ctx.input.directory}" and break this goal
-into independent, parallelizable beads (issues):
-
-Goal: ${ctx.input.goal}
-
-Create a convoy ID (format: "hq-cv-XXXXX") and assign each bead to it.
-Each bead needs:
-- id: "gt-XXXXX" format
-- title: short description
-- description: detailed instructions
-- files: array of file paths to focus on
-- priority: 0-4 (0=critical)
-- acceptanceCriteria: what "done" looks like
-
-${ctx.input.maxAgents ? `Target ${ctx.input.maxAgents} beads max for parallel execution.` : "Keep to 3-8 beads."}
-
-Return JSON with convoyId and beads array.`}
+          <MayorPrompt
+            directory={ctx.input.directory}
+            goal={ctx.input.goal}
+            maxAgents={ctx.input.maxAgents}
+          />
         </Task>
 
         {/* ═══ CONVOY TRACKING: Create convoy bead ═══ */}
@@ -510,37 +501,14 @@ Return JSON with convoyId and beads array.`}
                   timeoutMs={300_000}
                   continueOnFail
                 >
-                  {`## Bead Assignment: ${bead.id}
-
-**Title:** ${bead.title}
-**Priority:** P${bead.priority}
-
-## Description
-${bead.description}
-
-## Files to Focus On
-${bead.files.join("\n")}
-
-## Acceptance Criteria
-${bead.acceptanceCriteria}
-
-## mol-polecat-work Steps
-Work through these in order:
-1. Read and understand the bead requirements
-2. Create branch: polecat/${bead.id}
-3. Implement the solution — atomic commits with "feat:", "fix:", etc.
-4. HARD GATE: Verify all changes are committed (git status = clean)
-5. Self-review: git diff main...HEAD — check for bugs, security, style
-6. Build check: run any configured build/test commands
-
-Report your result with:
-- beadId: "${bead.id}"
-- polecatName: "${bead.id}"
-- branch: "polecat/${bead.id}"
-- state: your final state (working/done/stuck)
-- exitType: completed/escalated/deferred
-- filesChanged: list of files you modified
-- commitCount: number of commits made`}
+                  <PolecatPrompt
+                    beadId={bead.id}
+                    title={bead.title}
+                    priority={bead.priority}
+                    description={bead.description}
+                    files={bead.files}
+                    acceptanceCriteria={bead.acceptanceCriteria}
+                  />
                 </Task>
               </Worktree>
             ))}
@@ -555,26 +523,10 @@ Report your result with:
             onMaxReached="return-last"
           >
             <Task id="witness-patrol" output={outputs.witnessEvent} agent={witnessAgent}>
-              {`## Witness Patrol
-
-Check the status of all polecats in this convoy.
-
-### Polecat Results So Far
-${JSON.stringify(polecatResults.map((r) => ({
-  name: r.polecatName,
-  state: r.state,
-  exitType: r.exitType,
-  branch: r.branch,
-})), null, 2)}
-
-### Expected Polecats
-${plan.beads.map((b) => `- ${b.id}: "${b.title}"`).join("\n")}
-
-### Completed: ${polecatResults.length}/${plan.beads.length}
-
-Report protocol message type, any stuck/zombie agents, and overall health.
-If all polecats are done, report type "polecat_done".
-If any are stuck, report type "help" with severity and escalation target.`}
+              <WitnessPatrolPrompt
+                polecatResults={polecatResults}
+                beads={plan.beads}
+              />
             </Task>
           </Loop>
         )}
@@ -607,27 +559,15 @@ If any are stuck, report type "help" with severity and escalation target.`}
                   agent={refineryAgent}
                   retries={1}
                 >
-                  {`## Refinery: Process MR for ${result.beadId}
-
-**Branch:** ${result.branch}
-**Worker:** ${result.polecatName}
-**Target:** ${ctx.input.baseBranch ?? "main"}
-**Changes:** ${result.summary}
-**Files:** ${result.filesChanged.join(", ")}
-**Commits:** ${result.commitCount}
-
-## Phase State Machine
-Execute these phases in order:
-1. **Claim** (ready → claimed): Take ownership of this MR
-2. **Prepare** (claimed → preparing): Rebase onto target, run quality gates
-3. **Merge** (prepared → merging → merged): Fast-forward merge + push
-
-If any gate fails:
-- conflict → phase=rejected, closeReason="conflict"
-- tests_fail → phase=rejected, closeReason="rejected"
-- push_fail → phase=failed (eligible for retry)
-
-Report the final MR state with phase and any errors.`}
+                  <MergePrompt
+                    beadId={result.beadId}
+                    branch={result.branch}
+                    polecatName={result.polecatName}
+                    targetBranch={ctx.input.baseBranch ?? "main"}
+                    summary={result.summary}
+                    filesChanged={result.filesChanged}
+                    commitCount={result.commitCount}
+                  />
                 </Task>
               </Sequence>
             ))}
@@ -654,39 +594,14 @@ Report the final MR state with phase and any errors.`}
 
         {/* ═══ FINAL REPORT: Convoy summary ═══ */}
         <Task id="report" output={outputs.report} agent={reportAgent}>
-          {`## Gas Town Convoy Report
-
-**Convoy:** ${plan?.convoyId ?? "unknown"}
-**Goal:** ${ctx.input.goal}
-
-### Beads
-${plan?.beads.map((b) => `- ${b.id}: ${b.title} (P${b.priority})`).join("\n") ?? "No beads"}
-
-### Polecat Results
-${JSON.stringify(polecatResults.map((r) => ({
-  bead: r.beadId,
-  polecat: r.polecatName,
-  exitType: r.exitType,
-  commits: r.commitCount,
-  files: r.filesChanged.length,
-})), null, 2)}
-
-### Merge Queue Results
-${JSON.stringify(mergeRequests.map((mr) => ({
-  branch: mr.branch,
-  phase: mr.phase,
-  closeReason: mr.closeReason,
-  error: mr.error,
-})), null, 2)}
-
-### Witness Events
-${JSON.stringify(witnessEvents.map((e) => ({
-  type: e.type,
-  source: e.source,
-  severity: e.severity,
-})), null, 2)}
-
-Provide a complete convoy summary with merge log.`}
+          <ReportPrompt
+            convoyId={plan?.convoyId ?? "unknown"}
+            goal={ctx.input.goal}
+            beads={plan?.beads ?? []}
+            polecatResults={polecatResults}
+            mergeRequests={mergeRequests}
+            witnessEvents={witnessEvents}
+          />
         </Task>
       </Sequence>
     </Workflow>
