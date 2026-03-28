@@ -24,7 +24,8 @@
       "smithers/tools": ["./src/tools/index.ts"],
       // Back-compat for example imports
       "smithers-orchestrator": ["./src/index.ts"],
-      "smithers-orchestrator/tools": ["./src/tools/index.ts"]
+      "smithers-orchestrator/tools": ["./src/tools/index.ts"],
+      "smithers-orchestrator/scorers": ["./src/scorers/index.ts"]
     },
     "typeRoots": ["./src/types", "./node_modules/@types"]
   },

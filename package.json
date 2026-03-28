@@ -21,7 +21,9 @@
     "./mdx-plugin": "./src/mdx-plugin.ts",
     "./baml-plugin": "./src/baml-plugin.ts",
     "./dom/renderer": "./src/dom/renderer.ts",
-    "./linear": "./src/linear/index.ts"
+    "./linear": "./src/linear/index.ts",
+    "./serve": "./src/server/serve.ts",
+    "./scorers": "./src/scorers/index.ts"
   },
   "files": [
     "src/",
