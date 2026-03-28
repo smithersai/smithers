@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { EventBus } from "../src/events";
 import type { SmithersEvent } from "../src/SmithersEvent";
+import { renderPrometheusMetrics } from "../src/observability";
 
 function makeEvent(type: string, overrides: any = {}): SmithersEvent {
   return {
@@ -9,6 +10,24 @@ function makeEvent(type: string, overrides: any = {}): SmithersEvent {
     timestampMs: Date.now(),
     ...overrides,
   } as SmithersEvent;
+}
+
+function metricValue(
+  name: string,
+  labels?: Record<string, string>,
+): number {
+  const entries = Object.entries(labels ?? {}).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  const suffix = entries.length === 0
+    ? ""
+    : `{${entries.map(([key, value]) => `${key}="${value}"`).join(",")}}`;
+  const prefix = `${name}${suffix} `;
+  const line = renderPrometheusMetrics()
+    .split("\n")
+    .find((entry) => entry.startsWith(prefix));
+  if (!line) return 0;
+  return Number(line.slice(prefix.length));
 }
 
 describe("EventBus", () => {
@@ -77,5 +96,41 @@ describe("EventBus", () => {
     // Should not throw
     await bus.emitEvent(makeEvent("RunStarted"));
     await bus.flush();
+  });
+
+  test("emitEventQueued tracks event-derived counters", async () => {
+    const before = metricValue("smithers_tool_calls_total");
+    const bus = new EventBus({});
+
+    await bus.emitEventQueued(makeEvent("ToolCallStarted", {
+      nodeId: "node",
+      iteration: 0,
+      attempt: 1,
+      toolName: "bash",
+      seq: 1,
+    }));
+    await bus.flush();
+
+    expect(metricValue("smithers_tool_calls_total")).toBe(before + 1);
+  });
+
+  test("emitEventWithPersist tracks token usage metrics", async () => {
+    const labels = { agent: "test-agent", model: "test-model" };
+    const beforeInput = metricValue("smithers_tokens_input_total", labels);
+    const beforeOutput = metricValue("smithers_tokens_output_total", labels);
+    const bus = new EventBus({});
+
+    await bus.emitEventWithPersist(makeEvent("TokenUsageReported", {
+      nodeId: "node",
+      iteration: 0,
+      attempt: 1,
+      model: labels.model,
+      agent: labels.agent,
+      inputTokens: 12,
+      outputTokens: 7,
+    }));
+
+    expect(metricValue("smithers_tokens_input_total", labels)).toBe(beforeInput + 12);
+    expect(metricValue("smithers_tokens_output_total", labels)).toBe(beforeOutput + 7);
   });
 });
