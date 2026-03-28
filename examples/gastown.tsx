@@ -1,16 +1,24 @@
 /**
- * Gas Town Clone — Multi-agent orchestration à la Steve Yegge's Gas Town,
- * implemented in ~150 lines of Smithers JSX.
+ * Gas Town Clone — A faithful recreation of Steve Yegge's multi-agent
+ * orchestration framework, built on Smithers primitives.
  *
- * Demonstrates that Smithers' built-in primitives (Parallel, Worktree,
- * MergeQueue, retries, durability) replace Gas Town's entire custom
- * orchestration layer (Mayor, Polecats, Refinery, Witness, Beads).
+ * Gas Town concepts → Smithers mapping:
+ *   Beads (issue tracker)     → Zod schemas + SQLite tables + useBeads() hook
+ *   Mayor (orchestrator)      → Planning Task that creates beads
+ *   Polecats (workers)        → Parallel + Worktree + mol-polecat-work steps
+ *   Refinery (merge queue)    → MergeQueue with phase state machine
+ *   Witness (health monitor)  → Loop with health-check Task
+ *   Formulas (TOML workflows) → JSX component composition
+ *   Convoys (work batches)    → Convoy bead tracking related work
+ *   gt done (self-clean)      → Task completion + merge request creation
  */
 import {
   createSmithers,
   Sequence,
   Parallel,
+  Loop,
   MergeQueue,
+  Branch,
   Worktree,
 } from "smithers-orchestrator";
 import { ToolLoopAgent as Agent } from "ai";
@@ -18,185 +26,667 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { read, write, edit, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
 
-// ---------------------------------------------------------------------------
-// Schemas — these ARE the "Beads" (persistent, durable state per task)
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════════════
+// BEADS — Gas Town's persistent issue tracking, implemented as Zod schemas.
+// Each schema becomes a durable SQLite table. Together they form the "Beads
+// database" — the single source of truth for all work state.
+// ═══════════════════════════════════════════════════════════════════════════
 
-const taskItem = z.object({
-  id: z.string(),
+/** Bead status — mirrors Gas Town's issue lifecycle */
+const BeadStatus = z.enum([
+  "open",
+  "in_progress",
+  "hooked",       // Attached to an agent's hook (GUPP: you have work, you run it)
+  "closed",
+  "staged_ready", // Convoy staged without warnings
+]);
+
+/** Bead types — Gas Town's custom issue types */
+const BeadType = z.enum([
+  "task", "bug", "feature",       // Standard
+  "convoy",                        // Work batch tracking
+  "merge-request",                 // Refinery MR
+  "agent",                         // Agent identity
+  "molecule",                      // Work decomposition
+]);
+
+/** Polecat lifecycle states — from polecat/types.go */
+const PolecatState = z.enum([
+  "working",  // Session active, doing assigned work
+  "idle",     // Work completed, sandbox preserved for reuse
+  "done",     // Called gt done, transient cleanup state
+  "stuck",    // Explicitly requested help
+  "zombie",   // Session exists but worktree missing
+]);
+
+/** MR phase state machine — from refinery/types.go */
+const MRPhase = z.enum([
+  "ready",      // Queued and available for claiming
+  "claimed",    // Refinery instance claimed it
+  "preparing",  // Quality gates running (rebase, tests)
+  "prepared",   // Gates completed
+  "merging",    // ff-merge + push in progress
+  "merged",     // Successfully merged
+  "rejected",   // Rejected after diagnosis
+  "failed",     // Transient error, eligible for retry
+]);
+
+/** Witness protocol message types — from witness/protocol.go */
+const ProtocolType = z.enum([
+  "polecat_done",
+  "lifecycle_shutdown",
+  "help",
+  "merged",
+  "merge_failed",
+  "merge_ready",
+  "dispatch_attempt",
+  "dispatch_ok",
+  "dispatch_fail",
+]);
+
+// ── Bead Schema (the core issue) ──────────────────────────────────────────
+
+const beadSchema = z.object({
+  id: z.string(),                           // e.g. "gt-abc12"
   title: z.string(),
   description: z.string(),
-  files: z.array(z.string()),
+  status: BeadStatus,
+  type: BeadType,
+  priority: z.number().min(0).max(4),       // P0-P4
+  assignee: z.string().optional(),          // e.g. "gastown/polecats/Toast"
+  parent: z.string().optional(),            // Parent bead ID
+  children: z.array(z.string()).default([]),
+  dependsOn: z.array(z.string()).default([]),
+  labels: z.array(z.string()).default([]),
+  hookBead: z.string().optional(),          // Work pinned to agent's hook
+  agentState: PolecatState.optional(),
+  acceptanceCriteria: z.string().optional(),
+  convoyId: z.string().optional(),          // Convoy tracking
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
+
+// ── Convoy Schema (batch tracking) ────────────────────────────────────────
+
+const convoySchema = z.object({
+  id: z.string(),                           // e.g. "hq-cv-abc12"
+  title: z.string(),
+  status: z.enum(["open", "closed", "staged_ready"]),
+  trackedBeads: z.array(z.string()),        // Bead IDs in this convoy
+  mergeStrategy: z.enum(["direct", "mr", "local"]).default("mr"),
+  totalTasks: z.number(),
+  completedTasks: z.number(),
+  failedTasks: z.number(),
+});
+
+// ── Mayor Plan Schema ─────────────────────────────────────────────────────
 
 const planSchema = z.object({
-  tasks: z.array(taskItem),
+  convoyId: z.string(),
+  beads: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    description: z.string(),
+    files: z.array(z.string()),
+    priority: z.number(),
+    acceptanceCriteria: z.string(),
+  })),
 });
 
-const workerResultSchema = z.object({
-  taskId: z.string(),
-  branch: z.string(),
+// ── Polecat Result Schema (worker output) ─────────────────────────────────
+
+const polecatResultSchema = z.object({
+  beadId: z.string(),                       // Which bead was worked on
+  polecatName: z.string(),
+  branch: z.string(),                       // e.g. "polecat/Toast/gt-abc12"
+  state: PolecatState,
   summary: z.string(),
   filesChanged: z.array(z.string()),
-  status: z.enum(["success", "partial", "failed"]),
+  commitCount: z.number(),
+  exitType: z.enum(["completed", "escalated", "deferred"]),
 });
 
-const mergeResultSchema = z.object({
+// ── Merge Request Schema (Refinery) ───────────────────────────────────────
+
+const mergeRequestSchema = z.object({
+  id: z.string(),
   branch: z.string(),
-  merged: z.boolean(),
-  conflicts: z.array(z.string()),
-  resolution: z.string(),
+  worker: z.string(),
+  issueId: z.string(),
+  targetBranch: z.string().default("main"),
+  phase: MRPhase,
+  closeReason: z.enum(["merged", "rejected", "conflict", "superseded"]).optional(),
+  error: z.string().optional(),
+  gateResults: z.object({
+    build: z.boolean().optional(),
+    typecheck: z.boolean().optional(),
+    lint: z.boolean().optional(),
+    test: z.boolean().optional(),
+  }).optional(),
 });
 
-const finalReportSchema = z.object({
-  totalTasks: z.number(),
-  merged: z.number(),
-  failed: z.number(),
+// ── Witness Event Schema ──────────────────────────────────────────────────
+
+const witnessEventSchema = z.object({
+  type: ProtocolType,
+  source: z.string(),                       // Agent that sent it
+  target: z.string().optional(),            // Agent it's about
   summary: z.string(),
+  severity: z.enum(["critical", "high", "medium"]).optional(),
+  suggestTo: z.enum(["deacon", "mayor", "overseer"]).optional(),
+  timestamp: z.string(),
 });
 
-// ---------------------------------------------------------------------------
-// Create Smithers (schema → typed API + durable SQLite tables)
-// ---------------------------------------------------------------------------
+// ── Final Report Schema ───────────────────────────────────────────────────
 
-const { Workflow, Task, smithers, outputs } = createSmithers({
+const reportSchema = z.object({
+  convoyId: z.string(),
+  totalBeads: z.number(),
+  merged: z.number(),
+  rejected: z.number(),
+  failed: z.number(),
+  deferred: z.number(),
+  summary: z.string(),
+  mergeLog: z.array(z.object({
+    branch: z.string(),
+    phase: z.string(),
+    result: z.string(),
+  })),
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATE SMITHERS — Schema → typed API + durable SQLite tables
+// ═══════════════════════════════════════════════════════════════════════════
+
+const { Workflow, Task, smithers, outputs, useCtx } = createSmithers({
+  bead: beadSchema,
+  convoy: convoySchema,
   plan: planSchema,
-  workerResult: workerResultSchema,
-  mergeResult: mergeResultSchema,
-  finalReport: finalReportSchema,
+  polecatResult: polecatResultSchema,
+  mergeRequest: mergeRequestSchema,
+  witnessEvent: witnessEventSchema,
+  report: reportSchema,
 });
 
-// ---------------------------------------------------------------------------
-// Agents
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════════════
+// useBeads() — React hook for Gas Town's issue tracking system.
+// Provides typed access to beads state within any Smithers component.
+// ═══════════════════════════════════════════════════════════════════════════
 
+function useBeads() {
+  const ctx = useCtx();
+  const allBeads: z.infer<typeof beadSchema>[] = ctx.outputs.bead ?? [];
+  const allConvoys: z.infer<typeof convoySchema>[] = ctx.outputs.convoy ?? [];
+
+  return {
+    /** All beads in the system */
+    beads: allBeads,
+
+    /** Find a bead by ID */
+    get: (id: string) => allBeads.find((b) => b.id === id),
+
+    /** Find beads by status */
+    byStatus: (status: z.infer<typeof BeadStatus>) =>
+      allBeads.filter((b) => b.status === status),
+
+    /** Find beads by type */
+    byType: (type: z.infer<typeof BeadType>) =>
+      allBeads.filter((b) => b.type === type),
+
+    /** Find beads assigned to a specific agent */
+    hooked: (assignee: string) =>
+      allBeads.filter((b) => b.assignee === assignee && b.status === "hooked"),
+
+    /** Get the convoy for a bead */
+    convoyFor: (beadId: string) => {
+      const bead = allBeads.find((b) => b.id === beadId);
+      if (!bead?.convoyId) return undefined;
+      return allConvoys.find((c) => c.id === bead.convoyId);
+    },
+
+    /** All convoys */
+    convoys: allConvoys,
+
+    /** Check if all beads in a convoy are closed */
+    isConvoyComplete: (convoyId: string) => {
+      const convoy = allConvoys.find((c) => c.id === convoyId);
+      if (!convoy) return false;
+      return convoy.trackedBeads.every((id) => {
+        const bead = allBeads.find((b) => b.id === id);
+        return bead?.status === "closed";
+      });
+    },
+
+    /** Get open work — beads ready for dispatch */
+    openWork: () => allBeads.filter(
+      (b) => b.status === "open" && b.type === "task"
+    ),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AGENTS — Gas Town's role hierarchy
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Mayor: town-level orchestrator that decomposes goals into beads */
 const mayorAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
   tools: { read, grep, bash },
-  instructions: `You are the Mayor — a project planning agent.
-Analyze the codebase and break the user's goal into small, independent tasks
-that can be executed in parallel by separate agents, each in its own git worktree.
+  instructions: `You are the Mayor — Gas Town's global coordinator.
 
-Each task should:
-- Have a short, unique kebab-case id (e.g. "add-auth-middleware")
-- Touch a distinct set of files (no overlap between tasks)
-- Be completable by a single agent in one pass
+Your job:
+1. Analyze the codebase and break the user's goal into independent beads (issues)
+2. Create a convoy to track the batch of work
+3. Each bead should have:
+   - A unique ID in format "gt-XXXXX" (5 random alphanumeric chars)
+   - Clear acceptance criteria
+   - A list of files to focus on
+   - Priority (0=critical, 4=low)
+   - Non-overlapping scope with other beads
 
-Output a JSON plan with an array of tasks.`,
+Keep tasks small enough for a single polecat to complete in one pass.
+Prefer many small beads over few large ones.`,
 });
 
+/**
+ * Polecat: worker agent following the mol-polecat-work formula.
+ * Each polecat gets its own git worktree and works through the formula steps:
+ *   load-context → branch-setup → implement → commit → self-review → build-check → submit
+ */
 const polecatAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
   tools: { read, write, edit, bash, grep },
-  instructions: `You are a Polecat — a worker agent executing a single code task
-in an isolated git worktree. You have full read/write access.
+  instructions: `You are a Polecat — a self-cleaning worker agent.
 
-Complete the task described in your prompt. Make clean, minimal changes.
-Commit your work when done. Report what you changed.`,
+## Polecat Contract
+1. You receive work via your hook (a bead with acceptance criteria)
+2. You work through the formula steps in order
+3. You complete and self-clean: push branch, report result, you're done
+
+## mol-polecat-work Formula Steps
+1. **load-context**: Read the bead, understand requirements
+2. **branch-setup**: Create feature branch, fetch & rebase on main
+3. **implement**: Do the work. Commit frequently. Follow codebase conventions.
+4. **commit-changes**: Ensure ALL work is committed (HARD GATE)
+5. **self-review**: Review your own diff for bugs, security, style
+6. **build-check**: Run build/tests if configured
+
+## Rules
+- Make atomic, focused commits with conventional prefixes (feat:, fix:, etc.)
+- Do NOT fix unrelated issues — create new beads for discovered work
+- If stuck >15 min, report status "stuck" and exit type "escalated"
+- You do NOT push to main. The Refinery merges from the merge queue.
+- You do NOT close your own bead. The Refinery closes after merge.`,
 });
 
+/**
+ * Refinery: merge queue processor with phase state machine.
+ * Processes MRs through: ready → claimed → preparing → merging → merged
+ */
 const refineryAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
   tools: { bash, read, grep },
-  instructions: `You are the Refinery — a merge agent.
-Merge the given feature branch into the base branch.
-If there are conflicts, resolve them intelligently.
-Report whether the merge succeeded and any conflicts encountered.`,
+  instructions: `You are the Refinery — Gas Town's merge queue processor.
+
+## MR Phase State Machine
+ready → claimed → preparing → prepared → merging → merged
+                 ↓                        ↓
+              failed ────────────────────↘
+
+## Process for each MR
+1. **Claim**: Take the MR from the queue
+2. **Prepare**: Rebase onto target branch, run quality gates
+   - Build check
+   - Type check
+   - Lint
+   - Tests (if configured)
+3. **Merge**: Fast-forward merge + push to target
+4. **Report**: Update MR phase to merged or failed
+
+## Failure Handling
+- conflict → reject, label "needs-rebase", assign back to worker
+- tests_fail → reject, label "needs-fix", assign back to worker
+- push_fail → retry once, then fail
+
+You do NOT write code. You merge, gate, and report.`,
 });
 
+/** Witness: monitors polecat health and dispatches protocol messages */
+const witnessAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { bash, read },
+  instructions: `You are the Witness — Gas Town's polecat monitor.
+
+## Protocol Messages You Handle
+- POLECAT_DONE <name>: Work completion
+- HELP: <topic>: Polecat requesting intervention
+- MERGED <name>: Refinery confirms branch merged
+- MERGE_FAILED <name>: Refinery reporting merge failure
+
+## Your Patrol
+1. Check each polecat's state (working, idle, done, stuck, zombie)
+2. Detect stalled polecats (no activity for >30min)
+3. Detect zombie sessions (session exists but worktree missing)
+4. Escalate critical issues to the Mayor
+
+## Health Assessment
+For stuck agents, classify:
+- Category: decision | help | blocked | failed | emergency
+- Severity: critical | high | medium
+- SuggestTo: deacon | mayor | overseer
+
+Report a summary of all agent health status.`,
+});
+
+/** Report agent: synthesizes convoy results */
 const reportAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  instructions: `Summarize the results of a multi-agent coding session.
-Be concise: total tasks, how many merged, how many failed, and a brief summary.`,
+  instructions: `Summarize a Gas Town convoy's results.
+Include: convoy ID, total beads, merged/rejected/failed/deferred counts,
+a merge log showing each branch's phase and result, and a brief narrative.`,
 });
 
-// ---------------------------------------------------------------------------
-// Workflow
-// ---------------------------------------------------------------------------
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKFLOW — The Gas Town orchestration loop
+// ═══════════════════════════════════════════════════════════════════════════
 
 export default smithers((ctx) => {
-  // Mayor's plan (available after first task completes and tree re-renders)
-  const plan = ctx.outputMaybe("plan", { nodeId: "mayor" });
+  const beads = useBeads();
 
-  // Collect completed worker results for the merge phase
-  const workerResults = ctx.outputs.workerResult ?? [];
-  const mergeResults = ctx.outputs.mergeResult ?? [];
+  // ── Derived state ──
+  const plan = ctx.outputMaybe("plan", { nodeId: "mayor" });
+  const polecatResults: z.infer<typeof polecatResultSchema>[] =
+    ctx.outputs.polecatResult ?? [];
+  const mergeRequests: z.infer<typeof mergeRequestSchema>[] =
+    ctx.outputs.mergeRequest ?? [];
+  const witnessEvents: z.infer<typeof witnessEventSchema>[] =
+    ctx.outputs.witnessEvent ?? [];
+
+  // Which polecats completed successfully?
+  const completedPolecats = polecatResults.filter(
+    (r) => r.exitType === "completed"
+  );
+
+  // Has the witness found all polecats healthy/done?
+  const latestWitness = ctx.latest("witnessEvent", "witness-patrol");
+  const allPolecatsDone =
+    plan != null &&
+    polecatResults.length >= plan.beads.length;
+
+  // Are all merges done?
+  const allMergesDone =
+    completedPolecats.length > 0 &&
+    mergeRequests.filter((mr) => mr.phase === "merged" || mr.phase === "rejected")
+      .length >= completedPolecats.length;
 
   return (
     <Workflow name="gastown">
       <Sequence>
-        {/* ── Mayor: decompose the goal into parallel tasks ── */}
+        {/* ═══ MAYOR: Decompose goal → convoy of beads ═══ */}
         <Task id="mayor" output={outputs.plan} agent={mayorAgent}>
           {`Analyze the codebase at "${ctx.input.directory}" and break this goal
-into independent, parallelizable tasks:
+into independent, parallelizable beads (issues):
 
 Goal: ${ctx.input.goal}
 
-Return a JSON plan. Keep tasks small and non-overlapping.`}
+Create a convoy ID (format: "hq-cv-XXXXX") and assign each bead to it.
+Each bead needs:
+- id: "gt-XXXXX" format
+- title: short description
+- description: detailed instructions
+- files: array of file paths to focus on
+- priority: 0-4 (0=critical)
+- acceptanceCriteria: what "done" looks like
+
+${ctx.input.maxAgents ? `Target ${ctx.input.maxAgents} beads max for parallel execution.` : "Keep to 3-8 beads."}
+
+Return JSON with convoyId and beads array.`}
         </Task>
 
-        {/* ── Polecats: parallel workers, each in its own worktree ── */}
+        {/* ═══ CONVOY TRACKING: Create convoy bead ═══ */}
+        {plan && (
+          <Task id="convoy-create" output={outputs.convoy}>
+            {{
+              id: plan.convoyId,
+              title: ctx.input.goal,
+              status: "open" as const,
+              trackedBeads: plan.beads.map((b) => b.id),
+              mergeStrategy: "mr" as const,
+              totalTasks: plan.beads.length,
+              completedTasks: 0,
+              failedTasks: 0,
+            }}
+          </Task>
+        )}
+
+        {/* ═══ SLING: Create beads and hook them to polecats ═══ */}
+        {plan && (
+          <Parallel>
+            {plan.beads.map((bead) => (
+              <Task
+                key={bead.id}
+                id={`sling-${bead.id}`}
+                output={outputs.bead}
+              >
+                {{
+                  id: bead.id,
+                  title: bead.title,
+                  description: bead.description,
+                  status: "hooked" as const,
+                  type: "task" as const,
+                  priority: bead.priority,
+                  assignee: `gastown/polecats/${bead.id}`,
+                  hookBead: bead.id,
+                  agentState: "working" as const,
+                  acceptanceCriteria: bead.acceptanceCriteria,
+                  convoyId: plan.convoyId,
+                  children: [],
+                  dependsOn: [],
+                  labels: [],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                }}
+              </Task>
+            ))}
+          </Parallel>
+        )}
+
+        {/* ═══ POLECATS: Parallel workers in isolated worktrees ═══
+            Each polecat follows mol-polecat-work:
+            load-context → branch-setup → implement → commit → review → build → submit */}
         {plan && (
           <Parallel maxConcurrency={ctx.input.maxAgents ?? 5}>
-            {plan.tasks.map((task) => (
+            {plan.beads.map((bead) => (
               <Worktree
-                key={task.id}
-                path={`.worktrees/${task.id}`}
-                branch={`polecat/${task.id}`}
+                key={bead.id}
+                path={`.worktrees/${bead.id}`}
+                branch={`polecat/${bead.id}`}
               >
                 <Task
-                  id={`polecat-${task.id}`}
-                  output={outputs.workerResult}
+                  id={`polecat-${bead.id}`}
+                  output={outputs.polecatResult}
                   agent={polecatAgent}
                   retries={1}
                   timeoutMs={300_000}
                   continueOnFail
                 >
-                  {`Task: ${task.title}
+                  {`## Bead Assignment: ${bead.id}
 
-${task.description}
+**Title:** ${bead.title}
+**Priority:** P${bead.priority}
 
-Files to focus on: ${task.files.join(", ")}
+## Description
+${bead.description}
 
-Work in your isolated worktree. Commit when done.`}
+## Files to Focus On
+${bead.files.join("\n")}
+
+## Acceptance Criteria
+${bead.acceptanceCriteria}
+
+## mol-polecat-work Steps
+Work through these in order:
+1. Read and understand the bead requirements
+2. Create branch: polecat/${bead.id}
+3. Implement the solution — atomic commits with "feat:", "fix:", etc.
+4. HARD GATE: Verify all changes are committed (git status = clean)
+5. Self-review: git diff main...HEAD — check for bugs, security, style
+6. Build check: run any configured build/test commands
+
+Report your result with:
+- beadId: "${bead.id}"
+- polecatName: "${bead.id}"
+- branch: "polecat/${bead.id}"
+- state: your final state (working/done/stuck)
+- exitType: completed/escalated/deferred
+- filesChanged: list of files you modified
+- commitCount: number of commits made`}
                 </Task>
               </Worktree>
             ))}
           </Parallel>
         )}
 
-        {/* ── Refinery: serialized merge queue ── */}
-        {workerResults.length > 0 && (
+        {/* ═══ WITNESS: Monitor polecat health ═══ */}
+        {plan && !allPolecatsDone && (
+          <Loop
+            until={allPolecatsDone}
+            maxIterations={plan.beads.length + 2}
+            onMaxReached="return-last"
+          >
+            <Task id="witness-patrol" output={outputs.witnessEvent} agent={witnessAgent}>
+              {`## Witness Patrol
+
+Check the status of all polecats in this convoy.
+
+### Polecat Results So Far
+${JSON.stringify(polecatResults.map((r) => ({
+  name: r.polecatName,
+  state: r.state,
+  exitType: r.exitType,
+  branch: r.branch,
+})), null, 2)}
+
+### Expected Polecats
+${plan.beads.map((b) => `- ${b.id}: "${b.title}"`).join("\n")}
+
+### Completed: ${polecatResults.length}/${plan.beads.length}
+
+Report protocol message type, any stuck/zombie agents, and overall health.
+If all polecats are done, report type "polecat_done".
+If any are stuck, report type "help" with severity and escalation target.`}
+            </Task>
+          </Loop>
+        )}
+
+        {/* ═══ REFINERY: Serialized merge queue ═══
+            Phase state machine: ready → claimed → preparing → merging → merged */}
+        {completedPolecats.length > 0 && (
           <MergeQueue id="refinery" maxConcurrency={1}>
-            {workerResults
-              .filter((r) => r.status !== "failed")
-              .map((result) => (
+            {completedPolecats.map((result) => (
+              <Sequence key={result.branch}>
+                {/* Create MR bead */}
                 <Task
-                  key={result.branch}
-                  id={`merge-${result.taskId}`}
-                  output={outputs.mergeResult}
+                  id={`mr-create-${result.beadId}`}
+                  output={outputs.mergeRequest}
+                >
+                  {{
+                    id: `mr-${result.beadId}`,
+                    branch: result.branch,
+                    worker: result.polecatName,
+                    issueId: result.beadId,
+                    targetBranch: ctx.input.baseBranch ?? "main",
+                    phase: "ready" as const,
+                  }}
+                </Task>
+
+                {/* Process the merge */}
+                <Task
+                  id={`merge-${result.beadId}`}
+                  output={outputs.mergeRequest}
                   agent={refineryAgent}
                   retries={1}
                 >
-                  {`Merge branch "${result.branch}" into main.
-Changes made: ${result.summary}
-Files changed: ${result.filesChanged.join(", ")}
+                  {`## Refinery: Process MR for ${result.beadId}
 
-Resolve any conflicts. Report the result.`}
+**Branch:** ${result.branch}
+**Worker:** ${result.polecatName}
+**Target:** ${ctx.input.baseBranch ?? "main"}
+**Changes:** ${result.summary}
+**Files:** ${result.filesChanged.join(", ")}
+**Commits:** ${result.commitCount}
+
+## Phase State Machine
+Execute these phases in order:
+1. **Claim** (ready → claimed): Take ownership of this MR
+2. **Prepare** (claimed → preparing): Rebase onto target, run quality gates
+3. **Merge** (prepared → merging → merged): Fast-forward merge + push
+
+If any gate fails:
+- conflict → phase=rejected, closeReason="conflict"
+- tests_fail → phase=rejected, closeReason="rejected"
+- push_fail → phase=failed (eligible for retry)
+
+Report the final MR state with phase and any errors.`}
                 </Task>
-              ))}
+              </Sequence>
+            ))}
           </MergeQueue>
         )}
 
-        {/* ── Final report ── */}
-        <Task id="report" output={outputs.finalReport} agent={reportAgent}>
-          {`Summarize this multi-agent session:
+        {/* ═══ CONVOY COMPLETION: Update convoy status ═══ */}
+        {allMergesDone && plan && (
+          <Task id="convoy-close" output={outputs.convoy}>
+            {{
+              id: plan.convoyId,
+              title: ctx.input.goal,
+              status: "closed" as const,
+              trackedBeads: plan.beads.map((b) => b.id),
+              mergeStrategy: "mr" as const,
+              totalTasks: plan.beads.length,
+              completedTasks: mergeRequests.filter((mr) => mr.phase === "merged").length,
+              failedTasks: mergeRequests.filter(
+                (mr) => mr.phase === "rejected" || mr.phase === "failed"
+              ).length,
+            }}
+          </Task>
+        )}
 
-Total tasks planned: ${plan?.tasks.length ?? 0}
-Worker results: ${JSON.stringify(workerResults.map((r) => ({ id: r.taskId, status: r.status })))}
-Merge results: ${JSON.stringify(mergeResults.map((r) => ({ branch: r.branch, merged: r.merged })))}
+        {/* ═══ FINAL REPORT: Convoy summary ═══ */}
+        <Task id="report" output={outputs.report} agent={reportAgent}>
+          {`## Gas Town Convoy Report
 
-Provide a concise final report.`}
+**Convoy:** ${plan?.convoyId ?? "unknown"}
+**Goal:** ${ctx.input.goal}
+
+### Beads
+${plan?.beads.map((b) => `- ${b.id}: ${b.title} (P${b.priority})`).join("\n") ?? "No beads"}
+
+### Polecat Results
+${JSON.stringify(polecatResults.map((r) => ({
+  bead: r.beadId,
+  polecat: r.polecatName,
+  exitType: r.exitType,
+  commits: r.commitCount,
+  files: r.filesChanged.length,
+})), null, 2)}
+
+### Merge Queue Results
+${JSON.stringify(mergeRequests.map((mr) => ({
+  branch: mr.branch,
+  phase: mr.phase,
+  closeReason: mr.closeReason,
+  error: mr.error,
+})), null, 2)}
+
+### Witness Events
+${JSON.stringify(witnessEvents.map((e) => ({
+  type: e.type,
+  source: e.source,
+  severity: e.severity,
+})), null, 2)}
+
+Provide a complete convoy summary with merge log.`}
         </Task>
       </Sequence>
     </Workflow>
