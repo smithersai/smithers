@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { camelToSnake } from "../src/utils/camelToSnake";
 import { unwrapZodType } from "../src/unwrapZodType";
-import { SmithersError, isSmithersError, errorToJson } from "../src/utils/errors";
+import {
+  ERROR_REFERENCE_URL,
+  SmithersError,
+  isSmithersError,
+  errorToJson,
+} from "../src/utils/errors";
 import { newRunId } from "../src/utils/ids";
 import { stablePathId, resolveStableId } from "../src/utils/tree-ids";
 import { canonicalizeXml, parseXmlJson } from "../src/utils/xml";
@@ -76,7 +81,7 @@ describe("SmithersError", () => {
   test("creates error with code and message", () => {
     const err = new SmithersError("AGENT_CLI_ERROR", "Task failed");
     expect(err.code).toBe("AGENT_CLI_ERROR");
-    expect(err.message).toBe("Task failed");
+    expect(err.message).toBe(`Task failed See ${ERROR_REFERENCE_URL}`);
     expect(err).toBeInstanceOf(Error);
   });
 
@@ -281,16 +286,24 @@ describe("truncateToBytes", () => {
 
 describe("safeJson", () => {
   test("returns JSON when within limit", () => {
-    expect(safeJson({ a: 1 }, 1000)).toBe('{"a":1}');
+    expect(safeJson({ a: 1 }, 1000)).toEqual({
+      json: '{"a":1}',
+      truncated: false,
+    });
   });
 
   test("returns null for undefined value", () => {
-    expect(safeJson(undefined, 100)).toBe("null");
+    expect(safeJson(undefined, 100)).toEqual({
+      json: "null",
+      truncated: false,
+    });
   });
 
   test("truncates large values with metadata", () => {
     const large = { data: "x".repeat(1000) };
-    const result = JSON.parse(safeJson(large, 50));
+    const safe = safeJson(large, 50);
+    expect(safe.truncated).toBe(true);
+    const result = JSON.parse(safe.json);
     expect(result.truncated).toBe(true);
     expect(result.bytes).toBeGreaterThan(50);
     expect(typeof result.preview).toBe("string");
