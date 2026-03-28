@@ -3,21 +3,22 @@ title: Revert to Attempt
 description: Rewind the workspace to a previous task attempt's state using JJ (Jujutsu) snapshots.
 ---
 
-Smithers records a [JJ (Jujutsu)](https://jj-vcs.github.io/jj/) change ID at the end of each successful task attempt. You can use the revert feature to restore the workspace to the exact filesystem state that existed when a specific attempt completed. This is useful for debugging, undoing agent changes, or replaying a task from a known-good state.
+Smithers records a [JJ (Jujutsu)](https://jj-vcs.github.io/jj/) change ID after each successful task attempt. Revert restores the workspace to the exact filesystem state at that point.
 
 ## Prerequisites
 
-- **JJ must be installed** and available in your `PATH`. Install it with `brew install jj`, `cargo install jj-cli`, or see the [JJ installation docs](https://jj-vcs.github.io/jj/latest/install-and-setup/).
-- The workspace must be a JJ repository (run `jj git init` or `jj init` in your project root).
-- The attempt you want to revert to must have a recorded JJ pointer. Pointers are only recorded when JJ is available at the time the attempt finishes.
+- JJ installed and in `PATH` (`brew install jj` or `cargo install jj-cli`)
+- Workspace is a JJ repository (`jj git init` or `jj init`)
+- Target attempt has a recorded JJ pointer (captured only when JJ was available at attempt completion)
 
 ## How It Works
 
-1. When a task attempt finishes successfully, Smithers runs `jj log -r @ --no-graph --template change_id` to capture the current JJ change ID.
-2. This change ID is stored in the `_smithers_attempts` table in the `jj_pointer` column.
-3. When you invoke `smithers revert`, Smithers looks up the stored change ID and runs `jj restore --from <change_id>` to restore the workspace to that state.
+1. On successful attempt completion, Smithers captures the JJ change ID via `jj log -r @ --no-graph --template change_id`.
+2. The change ID is stored in `_smithers_attempts.jj_pointer`.
+3. `smithers revert` runs `jj restore --from <change_id>` to restore the workspace.
+4. Database frames recorded after the attempt started are deleted so the DB state matches the reverted filesystem.
 
-The revert operation restores file contents but does not alter the JJ history. It creates a new change on top of the current working copy with the restored content.
+Revert restores files but does not alter JJ history. It creates a new change on top of the current working copy.
 
 ## CLI Usage
 
@@ -29,37 +30,25 @@ smithers revert <workflow.tsx> \
   [--iteration N]
 ```
 
-### Required Flags
-
-| Flag | Description |
-|---|---|
-| `--run-id ID` | The run containing the attempt to revert to. |
-| `--node-id ID` | The task node whose attempt you want to revert to. |
-
-### Optional Flags
+### Flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `--attempt N` | `1` | The attempt number to revert to (1-indexed). |
-| `--iteration N` | `0` | The loop iteration number. |
+| `--run-id ID` | required | Run containing the target attempt. |
+| `--node-id ID` | required | Task node to revert to. |
+| `--attempt N` | `1` | Attempt number (1-indexed). |
+| `--iteration N` | `0` | Loop iteration number. |
 
 ### Examples
 
-Revert to the first attempt of task "analyze" in a specific run:
-
 ```bash
+# Revert to first attempt of "analyze"
 smithers revert workflow.tsx --run-id abc123 --node-id analyze
-```
 
-Revert to the second attempt (after a retry):
-
-```bash
+# Revert to second attempt (after retry)
 smithers revert workflow.tsx --run-id abc123 --node-id analyze --attempt 2
-```
 
-Revert to a specific loop iteration:
-
-```bash
+# Revert to a specific loop iteration
 smithers revert workflow.tsx --run-id abc123 --node-id fix --attempt 1 --iteration 2
 ```
 
@@ -68,34 +57,23 @@ smithers revert workflow.tsx --run-id abc123 --node-id fix --attempt 1 --iterati
 | Code | Meaning |
 |---|---|
 | `0` | Revert succeeded. |
-| `1` | Revert failed (attempt not found, no JJ pointer, or JJ command failed). |
+| `1` | Revert failed. |
 
 ### Output
 
-The command prints a JSON result to stdout:
-
 ```json
-{
-  "success": true,
-  "jjPointer": "zxkqmrstvwxy"
-}
+{ "success": true, "jjPointer": "zxkqmrstvwxy" }
 ```
 
 On failure:
 
 ```json
-{
-  "success": false,
-  "error": "Attempt has no jjPointer recorded",
-  "jjPointer": null
-}
+{ "success": false, "error": "Attempt has no jjPointer recorded", "jjPointer": null }
 ```
 
-During execution, `RevertStarted` and `RevertFinished` events are printed as JSON lines to stdout.
+`RevertStarted` and `RevertFinished` events are printed as JSON lines to stdout during execution.
 
 ## Programmatic Usage
-
-You can also revert programmatically using the `revertToAttempt` function:
 
 ```ts
 import { SmithersDb, ensureSmithersTables, revertToAttempt } from "smithers-orchestrator";
@@ -141,32 +119,22 @@ type RevertResult = {
 
 ## Events
 
-Revert operations emit two events:
+- **`RevertStarted`** -- Before `jj restore` runs. Includes `jjPointer`.
+- **`RevertFinished`** -- After restore completes. Includes `success` and `error` (if failed).
 
-- **`RevertStarted`** -- Fired before the `jj restore` command runs. Includes the `jjPointer` being restored to.
-- **`RevertFinished`** -- Fired after the restore completes. Includes `success` (boolean) and `error` (string, if failed).
-
-See [Events](/runtime/events#revert-events) for the full type definitions.
+See [Events](/runtime/events#revert-events) for full type definitions.
 
 ## Troubleshooting
 
-**"Attempt has no jjPointer recorded"**
+| Error | Cause |
+|---|---|
+| "Attempt has no jjPointer recorded" | JJ was not available when the attempt finished. Pointers are captured opportunistically. |
+| "jj exited with code 1" | Change ID pruned/GC'd, workspace conflicted, or JJ misconfigured. |
 
-The attempt finished before JJ was installed, or JJ was not available in `PATH` when the attempt completed. JJ pointers are only captured opportunistically -- if `jj log` fails, the pointer is silently set to `null`.
-
-**"jj exited with code 1"**
-
-The JJ restore command failed. Common causes:
-- The change ID no longer exists in the JJ repository (pruned or garbage-collected).
-- The workspace is in a conflicted state.
-- JJ is not properly configured for the repository.
-
-**Revert does not undo database changes**
-
-Revert only restores the filesystem via JJ. It does not modify the SQLite database. Task outputs, attempt records, and run state remain unchanged. To re-run a task, resume the workflow -- Smithers will detect that the output is now invalid and re-execute.
+Revert restores the filesystem **and** cleans up database frames recorded after the reverted attempt started. Task outputs, attempt records, and run state remain unchanged. To re-run a task, resume the workflow.
 
 ## Related
 
-- [Events](/runtime/events) -- RevertStarted and RevertFinished event types.
-- [VCS Integration](/guides/vcs) -- How Smithers integrates with version control.
-- [CLI](/cli/overview) -- Full CLI reference including the revert command.
+- [Events](/runtime/events) -- RevertStarted and RevertFinished types.
+- [VCS Integration](/guides/vcs) -- Version control integration.
+- [CLI](/cli/overview) -- Full CLI reference.

@@ -3,9 +3,9 @@ title: renderFrame
 description: Render a workflow tree to a GraphSnapshot for visualization and debugging without executing any tasks.
 ---
 
-`renderFrame` is a pure rendering function that converts a workflow's JSX tree into a `GraphSnapshot` containing an XML representation and an ordered list of task descriptors. It does not execute any tasks, call any agents, or modify the database. This makes it useful for visualization, debugging, and building workflow inspectors.
+`renderFrame` converts a workflow's JSX tree into a `GraphSnapshot` -- an XML representation and an ordered task list. It does not execute tasks, call agents, or modify the database.
 
-## Basic Usage
+## Usage
 
 ```ts
 import { renderFrame } from "smithers-orchestrator";
@@ -41,21 +41,19 @@ function renderFrame<Schema>(
 
 ### Context Object
 
-The second argument is a plain object that provides the data your workflow's JSX tree needs to render. It mirrors the `SmithersCtx` that `runWorkflow` builds internally. The parameter is typed as `any` in source, but it expects the shape shown above.
-
 | Field | Type | Description |
 |---|---|---|
-| `runId` | `string` | The run ID to use in the snapshot. Can be any string for preview purposes. |
-| `iteration` | `number` | The current loop iteration number (use `0` for non-looping workflows). |
+| `runId` | `string` | Run ID for the snapshot. Any string for previews. |
+| `iteration` | `number` | Current loop iteration (`0` for non-looping workflows). |
 | `iterations` | `Record<string, number>` | Per-loop iteration counts, keyed by loop ID. Optional. |
-| `input` | `object` | The input data the workflow expects from `ctx.input`. |
-| `outputs` | `object` | Previously computed outputs, keyed by table name. Pass `{}` to render the initial state. |
+| `input` | `object` | Input data the workflow expects from `ctx.input`. |
+| `outputs` | `object` | Previously computed outputs by table name. `{}` for initial state. |
 
-### Options (third argument)
+### Options
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `baseRootDir` | `string` | `undefined` | Base root directory used to resolve relative paths inside the workflow tree. |
+| `baseRootDir` | `string` | `undefined` | Base directory for resolving relative paths. |
 
 ## GraphSnapshot
 
@@ -70,14 +68,12 @@ type GraphSnapshot = {
 
 | Field | Type | Description |
 |---|---|---|
-| `runId` | `string` | The run ID from the context. |
-| `frameNo` | `number` | Always `0` for `renderFrame` (frame numbering is managed by the engine during actual execution). |
-| `xml` | `XmlNode \| null` | The rendered XML tree, or `null` if the workflow produced no output. |
-| `tasks` | `TaskDescriptor[]` | Ordered list of all `<Task>` nodes found in the tree, in execution order. |
+| `runId` | `string` | Run ID from context. |
+| `frameNo` | `number` | Always `0` for `renderFrame`. |
+| `xml` | `XmlNode \| null` | Rendered XML tree, or `null` if empty. |
+| `tasks` | `TaskDescriptor[]` | Tasks in execution order. |
 
 ### XmlNode
-
-The XML tree is a recursive structure of elements and text nodes:
 
 ```ts
 type XmlNode = XmlElement | XmlText;
@@ -96,8 +92,6 @@ type XmlText = {
 ```
 
 ### TaskDescriptor
-
-Each task in the tree produces a `TaskDescriptor` that describes its configuration:
 
 ```ts
 type TaskDescriptor = {
@@ -141,42 +135,40 @@ type TaskDescriptor = {
 
 | Field | Description |
 |---|---|
-| `nodeId` | The `id` prop from the `<Task>` component. |
-| `ordinal` | Position in the task list (0-indexed). |
-| `iteration` | The loop iteration this task belongs to. |
-| `ralphId` | The ID of the enclosing `<Loop>` component, if any. |
-| `dependsOn` | Array of node IDs this task explicitly depends on. |
-| `needs` | Named dependencies. Keys become context keys, values are task node IDs. |
-| `worktreeId` | ID of the git worktree assigned to this task. |
-| `worktreePath` | Filesystem path to the git worktree. |
-| `worktreeBranch` | Branch name for the git worktree. |
-| `outputTable` | The Drizzle table object for the task's output. |
-| `outputTableName` | String name of the output table. |
-| `outputRef` | Zod schema reference from the `<Task>` `output` prop (used for schema resolution). |
-| `outputSchema` | Optional Zod schema for validating agent output. |
-| `parallelGroupId` | ID of the `<Parallel>` group this task belongs to. |
-| `parallelMaxConcurrency` | Per-group concurrency limit from the enclosing `<Parallel>`. |
-| `needsApproval` | Whether this task requires human approval before executing. |
-| `approvalMode` | Approval style: `"gate"` pauses before execution, `"decision"` records a decision. |
-| `approvalOnDeny` | Behavior when approval is denied: `"fail"`, `"continue"`, or `"skip"`. |
-| `skipIf` | Whether this task should be skipped. |
-| `retries` | Number of retry attempts on failure. |
-| `retryPolicy` | Retry backoff configuration (`{ backoff?, initialDelayMs? }`). |
-| `timeoutMs` | Per-task timeout in milliseconds, or `null` for the global default. |
-| `continueOnFail` | Whether the workflow continues if this task fails. |
-| `cachePolicy` | Cache configuration (`{ by?, version? }`). |
-| `agent` | The AI agent (or array of agents for fallback) assigned to this task. |
-| `prompt` | The resolved prompt string (from `<Task>` children). |
-| `staticPayload` | Static output data (for tasks without an agent). |
-| `computeFn` | Callback function invoked at execution time (for compute tasks). |
-| `label` | Human-readable label for display. |
-| `meta` | Arbitrary metadata attached to the task. |
+| `nodeId` | `id` prop from `<Task>`. |
+| `ordinal` | Position in task list (0-indexed). |
+| `iteration` | Loop iteration this task belongs to. |
+| `ralphId` | Enclosing `<Loop>` ID, if any. |
+| `dependsOn` | Node IDs this task depends on. |
+| `needs` | Named dependencies. Keys are context keys, values are node IDs. |
+| `worktreeId` | Git worktree ID. |
+| `worktreePath` | Filesystem path to git worktree. |
+| `worktreeBranch` | Branch name for git worktree. |
+| `outputTable` | Drizzle table object for output. |
+| `outputTableName` | String name of output table. |
+| `outputRef` | Zod schema reference from `output` prop. |
+| `outputSchema` | Zod schema for validating agent output. |
+| `parallelGroupId` | Enclosing `<Parallel>` group ID. |
+| `parallelMaxConcurrency` | Per-group concurrency limit. |
+| `needsApproval` | Whether task requires human approval. |
+| `approvalMode` | `"gate"` pauses before execution; `"decision"` records a decision. |
+| `approvalOnDeny` | Behavior on denial: `"fail"`, `"continue"`, or `"skip"`. |
+| `skipIf` | Whether task is skipped. |
+| `retries` | Retry attempts on failure. |
+| `retryPolicy` | Backoff config (`{ backoff?, initialDelayMs? }`). |
+| `timeoutMs` | Per-task timeout in ms, or `null` for global default. |
+| `continueOnFail` | Whether workflow continues on task failure. |
+| `cachePolicy` | Cache config (`{ by?, version? }`). |
+| `agent` | AI agent(s) assigned to this task. |
+| `prompt` | Resolved prompt string. |
+| `staticPayload` | Static output data (no-agent tasks). |
+| `computeFn` | Callback for compute tasks. |
+| `label` | Human-readable label. |
+| `meta` | Arbitrary metadata. |
 
 ## Use Cases
 
 ### Previewing the Execution Graph
-
-Render a workflow to see what tasks will run before actually executing them:
 
 ```ts
 const snapshot = await renderFrame(workflow, {
@@ -194,8 +186,6 @@ for (const task of snapshot.tasks) {
 ```
 
 ### Simulating Completed Outputs
-
-Pass previously computed outputs to see how the tree changes:
 
 ```ts
 // First render: no outputs
@@ -217,22 +207,16 @@ const snap2 = await renderFrame(workflow, {
 });
 ```
 
-### Building a Workflow Visualizer
-
-The XML tree and task list can be used to build visual representations of the workflow DAG. The `xml` field mirrors the JSX structure, while `tasks` provides the flattened execution order.
-
-### CLI Graph Command
-
-The `smithers graph` CLI command uses `renderFrame` internally:
+### CLI
 
 ```bash
 smithers graph workflow.tsx --input '{"description": "Fix bug"}'
 ```
 
-This prints the `GraphSnapshot` as JSON to stdout.
+Prints the `GraphSnapshot` as JSON to stdout.
 
 ## Related
 
-- [runWorkflow](/runtime/run-workflow) -- Execute the workflow for real.
+- [runWorkflow](/runtime/run-workflow) -- Execute the workflow.
 - [Events](/runtime/events) -- Monitor execution progress.
-- [Execution Model](/concepts/execution-model) -- How the render-execute-persist loop works.
+- [Execution Model](/concepts/execution-model) -- The render-execute-persist loop.
