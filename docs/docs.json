@@ -37,7 +37,11 @@
               "concepts/caching",
               "concepts/planner-internals",
               "concepts/time-travel",
-              "concepts/evals"
+              "concepts/evals",
+              "concepts/voice",
+              "concepts/mcp-server",
+              "concepts/memory",
+              "concepts/openapi-tools"
             ]
           },
           {
@@ -74,7 +78,8 @@
               "components/loop",
               "components/approval",
               "components/merge-queue",
-              "components/worktree"
+              "components/worktree",
+              "components/voice"
             ]
           },
           {
@@ -98,6 +103,10 @@
               "guides/vcs",
               "guides/time-travel-quickstart",
               "guides/evals-quickstart",
+              "guides/voice-quickstart",
+              "guides/mcp-server-quickstart",
+              "guides/memory-quickstart",
+              "guides/openapi-tools-quickstart",
               "guides/troubleshooting"
             ]
           },

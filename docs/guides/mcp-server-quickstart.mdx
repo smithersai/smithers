@@ -1,0 +1,137 @@
+---
+title: MCP Server Quickstart
+description: Set up an MCP server, connect from Claude Desktop, and expose custom tools.
+---
+
+## Prerequisites
+
+- `smithers-orchestrator` version 0.12.8 or later
+- Claude Desktop (or any MCP client)
+
+## Start the MCP Server from the CLI
+
+The fastest path: run `smithers mcp serve` in your project directory.
+
+```bash
+smithers mcp serve
+```
+
+This starts an MCP server over stdio. It automatically discovers workflows in `.smithers/workflows/` and exposes the built-in tools (read, write, edit, grep, bash).
+
+To list what tools would be exposed without starting the server:
+
+```bash
+smithers mcp list-tools
+```
+
+## Connect from Claude Desktop
+
+Add this to your Claude Desktop MCP configuration (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "smithers": {
+      "command": "smithers",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. Your smithers tools now appear in Claude's tool palette.
+
+## Expose Custom Tools
+
+Create a server configuration file to register your own tools, agents, and workflows:
+
+```ts
+// mcp-server.ts
+import { createSmithersMcpServer } from "smithers-orchestrator/mcp";
+import { tools } from "smithers-orchestrator/tools";
+import { AnthropicAgent } from "smithers-orchestrator";
+
+const reviewer = new AnthropicAgent({
+  model: "claude-sonnet-4-20250514",
+  systemPrompt: "You are a code reviewer.",
+});
+
+const server = createSmithersMcpServer({
+  name: "my-project",
+  version: "1.0.0",
+  tools: {
+    ...tools,
+  },
+  agents: {
+    reviewer,
+  },
+});
+
+server.start({ transport: "stdio" });
+```
+
+Run it:
+
+```bash
+bun run mcp-server.ts
+```
+
+Or point Claude Desktop at it directly:
+
+```json
+{
+  "mcpServers": {
+    "my-project": {
+      "command": "bun",
+      "args": ["run", "mcp-server.ts"]
+    }
+  }
+}
+```
+
+## Use HTTP Transport
+
+For remote access or shared team servers, use the HTTP transport:
+
+```bash
+smithers mcp serve --transport http --port 3001
+```
+
+Or programmatically:
+
+```ts
+server.start({ transport: "http", port: 3001 });
+```
+
+## Expose Workflows
+
+Register workflows to make them callable as MCP tools:
+
+```ts
+import { createSmithersMcpServer } from "smithers-orchestrator/mcp";
+import myWorkflow from "./.smithers/workflows/review.tsx";
+
+const server = createSmithersMcpServer({
+  name: "my-project",
+  version: "1.0.0",
+  workflows: {
+    review: myWorkflow,
+  },
+});
+```
+
+The workflow's input schema becomes the MCP tool's input schema. Calling the tool starts a workflow run and returns the result.
+
+## Verify It Works
+
+After starting the server and connecting your MCP client:
+
+1. Open Claude Desktop and look for your tools in the tool palette
+2. Ask Claude to use one: "Read the file at src/index.ts using the read tool"
+3. Claude calls the MCP tool, smithers executes it, and the result flows back
+
+Check the CLI for available tools anytime:
+
+```bash
+smithers mcp list-tools
+```

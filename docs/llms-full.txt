@@ -4010,6 +4010,553 @@ smithers scores <run_id> --node analyze
 
 ---
 
+## Voice
+
+> How voice providers bring speech-to-text and text-to-speech into Smithers workflows.
+> Source: https://smithers.sh/concepts/voice
+
+Your workflow orchestrates code reviews, generates reports, analyzes data -- all in text. But some tasks start with an audio recording or need to produce spoken output. Maybe you have a meeting transcript to analyze, or you want your pipeline to read results aloud. That is what voice providers are for.
+
+## What Is a Voice Provider?
+
+A voice provider wraps a speech service behind a simple interface. It can do one or more of three things:
+
+1. **Speak** -- convert text to audio (text-to-speech / TTS)
+2. **Listen** -- convert audio to text (speech-to-text / STT)
+3. **Realtime** -- bidirectional audio streaming over a WebSocket (speech-to-speech)
+
+You pick the provider, configure it once, and hand it to your tasks. Smithers handles the wiring.
+
+```ts
+import { createAiSdkVoice } from "smithers-orchestrator/voice";
+import { openai } from "@ai-sdk/openai";
+
+const voice = createAiSdkVoice({
+  speechModel: openai.speech("tts-1"),
+  transcriptionModel: openai.transcription("whisper-1"),
+});
+```
+
+That single object now speaks and listens. The AI SDK handles the actual API calls; smithers gives you the integration layer.
+
+## The `<Voice>` Component
+
+Wrap a subtree with `<Voice>` and every task inside inherits that voice provider:
+
+```tsx
+<Voice provider={voice} speaker="alloy">
+  <Task id="transcribe" output={outputs.transcript} agent={myAgent}>
+    Transcribe the uploaded audio file.
+  </Task>
+  <Task id="summarize" output={outputs.summary} agent={myAgent}>
+    Summarize the transcript.
+  </Task>
+</Voice>
+```
+
+The `<Voice>` component does not execute anything itself. It annotates the tasks beneath it, the same way `<Worktree>` annotates tasks with a filesystem path or `<Parallel>` annotates them with concurrency limits.
+
+Tasks inside a `<Voice>` scope receive `voice` and `voiceSpeaker` on their descriptors. The engine uses these to call `voice.listen()` when the task needs audio input or `voice.speak()` when it produces audio output.
+
+## Batch vs Realtime
+
+Two fundamentally different modes. Batch is what most people need.
+
+**Batch**: send a blob of text, get a blob of audio back (or vice versa). One request, one response. The AI SDK's `experimental_generateSpeech` and `experimental_transcribe` handle this. It works with OpenAI, ElevenLabs, Deepgram, and others -- any provider the AI SDK supports.
+
+**Realtime**: open a persistent WebSocket, stream audio in both directions simultaneously. OpenAI's Realtime API does this. Latency is low, but the protocol is more complex. Smithers provides `createOpenAIRealtimeVoice()` for this case because the AI SDK does not cover it.
+
+Most workflows should start with batch. Reach for realtime only when you need live conversation.
+
+## Composite Voice
+
+What if you want Deepgram for transcription but ElevenLabs for speech? Composite voice mixes providers:
+
+```ts
+import { createCompositeVoice, createAiSdkVoice } from "smithers-orchestrator/voice";
+
+const listener = createAiSdkVoice({
+  transcriptionModel: deepgram.transcription("nova-3"),
+});
+const speaker = createAiSdkVoice({
+  speechModel: elevenlabs.speech("eleven_multilingual_v2"),
+});
+
+const voice = createCompositeVoice({
+  input: listener,
+  output: speaker,
+});
+```
+
+When a task calls `voice.listen()`, it routes to Deepgram. When it calls `voice.speak()`, it routes to ElevenLabs. If you also set a `realtime` provider, it takes priority for both operations.
+
+## Effect Service Layer
+
+For power users who build with Effect.ts directly, voice exposes an Effect service:
+
+```ts
+import { VoiceService, speak, listen } from "smithers-orchestrator/voice";
+import { Effect } from "effect";
+
+const program = Effect.gen(function* () {
+  const transcript = yield* listen(audioStream);
+  const audio = yield* speak(`Summary: ${transcript}`);
+  return audio;
+}).pipe(Effect.provideService(VoiceService, myVoice));
+```
+
+The `VoiceService` tag lets you inject a voice provider into any Effect pipeline. The `speak()` and `listen()` functions pull it from context automatically.
+
+## Events and Observability
+
+Voice operations emit structured events:
+
+- `VoiceStarted` -- a voice operation began (speak or listen)
+- `VoiceFinished` -- it completed successfully
+- `VoiceError` -- something went wrong
+
+These flow through the same event bus as all other Smithers events. The `smithers.voice.operations_total` counter and `smithers.voice.duration_ms` histogram track volume and latency.
+
+---
+
+## MCP Server
+
+> How Smithers exposes agents, workflows, and tools as MCP resources for external AI tools.
+> Source: https://smithers.sh/concepts/mcp-server
+
+You built a workflow. It orchestrates agents, calls tools, processes data. Now Claude Desktop wants to use those same tools. Cursor wants to run your workflow. How do you expose your Smithers capabilities to the outside world without building a bespoke integration for each client?
+
+That is what the Model Context Protocol (MCP) server is for.
+
+## What Is MCP?
+
+MCP is an open protocol that lets AI applications discover and call tools, read resources, and use prompts from external servers. Think of it as a USB-C port for AI tools -- one standard plug that works everywhere.
+
+When you run a Smithers MCP server, any MCP client can connect and:
+
+1. **List tools** -- see every smithers tool, agent, and workflow you expose
+2. **Call tools** -- invoke them with structured JSON input, get structured results back
+3. **Read resources** -- inspect workflow run data (status, outputs, timeline)
+
+Claude Desktop, Cursor, Windsurf, Cline, and dozens of other tools speak MCP natively. One server covers them all.
+
+## What Gets Exposed
+
+Smithers maps three kinds of things into MCP tools:
+
+### Tools as MCP Tools
+
+Every smithers tool (read, write, edit, grep, bash, or your custom tools) becomes an MCP tool. The Zod input schema converts to JSON Schema automatically. When an MCP client calls the tool, smithers executes it and returns the result.
+
+```
+smithers tool: read({ path: "src/index.ts" })
+  ↓
+MCP tool: read → { inputSchema: { path: string } }
+```
+
+### Agents as MCP Tools
+
+Each registered agent becomes a callable MCP tool named `agent-{id}`. The input is always `{ prompt: string }`. The MCP client sends a prompt, smithers passes it to the agent's `generate()` method, and returns the response.
+
+```
+smithers agent: reviewer (AnthropicAgent)
+  ↓
+MCP tool: agent-reviewer → { inputSchema: { prompt: string } }
+```
+
+### Workflows as MCP Tools
+
+Each registered workflow becomes a callable MCP tool named `workflow-{id}`. The input schema matches the workflow's declared input schema. Calling it starts the workflow and returns the run result.
+
+```
+smithers workflow: code-review (input: { repo: string, branch: string })
+  ↓
+MCP tool: workflow-code-review → { inputSchema: { repo: string, branch: string } }
+```
+
+## Transports
+
+MCP supports two transport mechanisms:
+
+**stdio** -- The client spawns the server as a subprocess and communicates over stdin/stdout. This is the default for Claude Desktop and most desktop tools. Zero configuration, no ports to open.
+
+**Streamable HTTP** -- The server listens on an HTTP endpoint. Useful for remote servers, shared team setups, or when the client and server run on different machines.
+
+For local development, stdio is simpler. For production deployments, HTTP gives you more flexibility.
+
+## Workflow Runs as Resources
+
+Beyond tools, the MCP server exposes recent workflow runs as MCP resources. Each run gets a URI like `smithers://runs/{runId}`. An MCP client can list runs and read their status, outputs, and event timeline -- useful for debugging or monitoring.
+
+## Configuration
+
+The server is configured with a single object:
+
+```ts
+import { createSmithersMcpServer } from "smithers-orchestrator/mcp";
+import { tools } from "smithers-orchestrator/tools";
+
+const server = createSmithersMcpServer({
+  name: "my-project",
+  version: "1.0.0",
+  tools,
+  agents: { reviewer: myReviewerAgent },
+  workflows: { codeReview: myWorkflow },
+});
+```
+
+You choose what to expose. Pass only tools and you get a tool server. Add agents and they appear alongside the tools. Add workflows and they become callable too.
+
+## Observability
+
+Every MCP tool call flows through Effect, so you get the same structured logging, metrics, and tracing as the rest of Smithers:
+
+- `smithers.mcp.tool_calls` counter tracks total MCP tool invocations
+- `smithers.mcp.tool_duration_ms` histogram measures execution time
+- `smithers.mcp.active_connections` gauge shows connected clients
+- All calls appear in log spans with `mcp:tool-call` annotations
+
+The MCP server events (`McpServerStarted`, `McpToolCalled`, `McpServerStopped`) integrate into the standard Smithers event bus, so your existing monitoring setup picks them up automatically.
+
+## When to Use It
+
+Use the MCP server when you want external AI tools to leverage your Smithers setup. Common scenarios:
+
+- **Claude Desktop integration** -- let Claude call your project's tools and agents directly
+- **IDE integration** -- expose workflows to Cursor or Windsurf for in-editor automation
+- **Team tooling** -- run a shared MCP server so the whole team can access the same agents
+- **Composability** -- let one Smithers project consume another project's capabilities through MCP
+
+---
+
+## Cross-Run Memory
+
+> How Smithers persists facts, messages, and semantic recall across workflow runs.
+> Source: https://smithers.sh/concepts/memory
+
+Your workflow completes a task, produces useful output, and exits. Next time it runs, that knowledge is gone. The agent starts from scratch every time. Cross-run memory fixes this by giving workflows a persistent brain -- facts they can write and read back, messages they can recall, and semantic search over past outputs.
+
+## Three Kinds of Memory
+
+Smithers memory has three layers, each solving a different problem:
+
+| Layer | What it stores | How you access it | When to use it |
+|-------|---------------|-------------------|----------------|
+| **Working Memory** | Key-value facts with optional TTL | `getFact` / `setFact` | Config, counters, last-known-good values |
+| **Message History** | Ordered messages per thread | `saveMessage` / `listMessages` | Conversation logs, audit trails |
+| **Semantic Recall** | Embedded text searchable by similarity | `remember` / `recall` | "Find past outputs similar to this query" |
+
+Working memory is fast and exact -- you know the key, you get the value. Message history is ordered and complete -- you get the last N messages from a conversation. Semantic recall is fuzzy and ranked -- you describe what you want, and it finds the closest matches.
+
+## Namespaces
+
+Every piece of memory lives in a namespace. A namespace scopes memory so that different workflows, agents, or users do not collide.
+
+```ts
+import type { MemoryNamespace } from "smithers-orchestrator/memory";
+
+const ns: MemoryNamespace = { kind: "workflow", id: "code-review" };
+// Serializes to: "workflow:code-review"
+```
+
+Four namespace kinds exist:
+
+- `workflow` -- scoped to a specific workflow definition
+- `agent` -- scoped to a specific agent identity
+- `user` -- scoped to an end user
+- `global` -- shared across everything
+
+The `namespaceToString()` helper produces the canonical string form (`"workflow:code-review"`). All database queries filter by this string, so memory in one namespace never leaks into another.
+
+## Working Memory
+
+Working memory stores structured facts as JSON. Each fact has a namespace, a string key, and a JSON value. Optionally, a TTL in milliseconds causes the fact to expire automatically.
+
+```ts
+import { createMemoryStore } from "smithers-orchestrator/memory";
+
+const store = createMemoryStore(db);
+
+// Write a fact
+await store.setFact(ns, "last-reviewer", { name: "Alice", score: 0.95 });
+
+// Read it back
+const fact = await store.getFact(ns, "last-reviewer");
+// { namespace: "workflow:code-review", key: "last-reviewer", valueJson: '{"name":"Alice","score":0.95}', ... }
+
+// List all facts in a namespace
+const facts = await store.listFacts(ns);
+
+// Delete
+await store.deleteFact(ns, "last-reviewer");
+```
+
+Facts are upserted -- writing the same key twice replaces the previous value and updates the timestamp.
+
+## Message History
+
+Message history records ordered messages in threads. A thread belongs to a namespace and can hold messages from any role (user, assistant, system, tool).
+
+```ts
+// Create a thread
+const thread = await store.createThread(ns, "Review session #42");
+
+// Save messages
+await store.saveMessage({
+  threadId: thread.threadId,
+  role: "user",
+  contentJson: JSON.stringify({ text: "Review this PR" }),
+  runId: "run-123",
+  nodeId: "review-task",
+});
+
+// List the last 20 messages
+const messages = await store.listMessages(thread.threadId, 20);
+```
+
+Threads are useful for building multi-turn conversations that persist across runs. A Ralph loop can write to the same thread each iteration, building up context over time.
+
+## Semantic Recall
+
+Semantic recall uses the existing RAG infrastructure (vector store + embedding model) to store and retrieve memory by meaning rather than by key.
+
+```ts
+import { createSemanticMemory } from "smithers-orchestrator/memory";
+import { openai } from "@ai-sdk/openai";
+
+const semantic = createSemanticMemory(
+  vectorStore,
+  openai.embedding("text-embedding-3-small"),
+);
+
+// Store a memory
+await semantic.remember(ns, "The user prefers TypeScript over JavaScript");
+
+// Recall by query
+const results = await semantic.recall(ns, "What language does the user prefer?", {
+  topK: 5,
+  similarityThreshold: 0.7,
+});
+```
+
+Under the hood, `remember` chunks the content, embeds it with the AI SDK's `embedMany()`, and upserts the vectors into the same `_smithers_vectors` table that RAG uses. `recall` embeds the query with `embed()`, searches the vector store filtered by namespace, and returns ranked results.
+
+## Task Integration
+
+The `memory` prop on `<Task>` connects memory to the execution flow. Before the agent runs, recalled context is prepended to the prompt. After the agent finishes, output is stored.
+
+```tsx
+<Task
+  id="analyze"
+  agent={reviewer}
+  output={outputs.analysis}
+  memory={{
+    recall: { namespace: { kind: "workflow", id: "code-review" }, topK: 3 },
+    remember: { namespace: { kind: "workflow", id: "code-review" }, key: "last-analysis" },
+  }}
+>
+  Review this pull request
+</Task>
+```
+
+- `memory.recall` -- before the agent call, query semantic memory and prepend the top results as context
+- `memory.remember` -- after the agent call, store the output in both working memory (under the given key) and semantic memory
+
+## Loop Memory
+
+Ralph (Loop) can use memory to carry context across iterations. When `recallPreviousRuns` is enabled, each iteration recalls what happened in previous iterations via semantic search.
+
+```tsx
+<Loop until={done}>
+  <Task
+    id="iterate"
+    agent={agent}
+    output={outputs.result}
+    memory={{
+      recall: { namespace: { kind: "workflow", id: "my-loop" }, topK: 5 },
+      remember: { namespace: { kind: "workflow", id: "my-loop" } },
+    }}
+  >
+    Improve the previous result
+  </Task>
+</Loop>
+```
+
+Each iteration writes its output to memory and reads back the most relevant past outputs on the next iteration.
+
+## Processors
+
+Memory processors run maintenance operations on stored data:
+
+- **TtlGarbageCollector** -- deletes expired facts based on their `ttlMs` field
+- **TokenLimiter** -- compresses message history when it exceeds a token budget
+- **Summarizer** -- uses an LLM to summarize old messages, replacing many messages with a single summary
+
+Processors run on-demand or can be wired into the workflow lifecycle.
+
+## Effect Service
+
+The `MemoryService` Effect tag bundles working memory, semantic recall, and message history into a single service layer. This is the recommended way to use memory in Effect-based code.
+
+```ts
+import { MemoryService, createMemoryLayer } from "smithers-orchestrator/memory";
+import { Effect } from "effect";
+
+const layer = createMemoryLayer({ db, vectorStore, embeddingModel });
+
+const program = Effect.gen(function* () {
+  const memory = yield* MemoryService;
+  yield* memory.setFact(ns, "key", { value: 42 });
+  const results = yield* memory.recall(ns, "search query");
+  return results;
+});
+```
+
+## Storage
+
+Memory uses three SQLite tables, all created automatically:
+
+| Table | Purpose |
+|-------|---------|
+| `_smithers_memory_facts` | Working memory key-value pairs |
+| `_smithers_memory_threads` | Message thread metadata |
+| `_smithers_memory_messages` | Individual messages within threads |
+
+Semantic recall reuses the existing `_smithers_vectors` table from the RAG module. No separate vector table is needed.
+
+## Observability
+
+Memory operations emit structured events and update Effect metrics:
+
+- `MemoryFactSet` / `MemoryRecalled` / `MemoryMessageSaved` events
+- `smithers.memory.fact_reads` / `smithers.memory.fact_writes` counters
+- `smithers.memory.recall_queries` counter
+- `smithers.memory.recall_duration_ms` histogram
+
+---
+
+## OpenAPI Tools
+
+> Turn any OpenAPI spec into tools your agents can call.
+> Source: https://smithers.sh/concepts/openapi-tools
+
+You have an internal API. It has an OpenAPI spec. Your agent needs to call it. You could hand-write a tool for every endpoint -- define the schema, build the URL, set the headers, parse the response. Or you could point Smithers at the spec and let it do that for you.
+
+## The Problem
+
+Every REST API endpoint you want an agent to use requires a tool. A tool needs three things: a Zod schema describing the parameters, a description the LLM can read, and an execute function that makes the HTTP request. For a single endpoint that is fine. For an API with forty endpoints, it is tedious and error-prone.
+
+OpenAPI specs already contain all the information you need. The parameter types are there. The descriptions are there. The URL patterns and HTTP methods are there. The only question is how to convert that information into tools.
+
+## The Solution
+
+`createOpenApiTools` reads an OpenAPI 3.0+ spec and returns a `Record<string, Tool>` -- one tool per operation. Each tool has a Zod schema derived from the operation's parameters and request body, a description from the operation's summary, and an execute function that builds the correct HTTP request and returns the response.
+
+```ts
+import { createOpenApiTools } from "smithers-orchestrator";
+
+const tools = await createOpenApiTools("https://api.example.com/openapi.json", {
+  auth: { type: "bearer", token: process.env.API_TOKEN! },
+});
+```
+
+That is the whole thing. `tools` is now a map of operation IDs to AI SDK tools. Hand them to an agent:
+
+```tsx
+const apiAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools,
+});
+
+<Task id="fetch-data" agent={apiAgent}>
+  List the first 10 items from the inventory API.
+</Task>
+```
+
+The agent sees tool descriptions like "List all pets" and parameters like `{ limit: z.number().optional() }`. It decides which endpoints to call, fills in the parameters, and gets back JSON responses. No glue code required.
+
+## How It Works
+
+The conversion follows four steps:
+
+1. **Parse the spec.** Smithers loads the OpenAPI document (JSON object, URL, or file path), resolves `$ref` pointers, and extracts every operation.
+
+2. **Convert schemas.** Each operation's path parameters, query parameters, header parameters, and request body are converted from JSON Schema into Zod schemas. Strings become `z.string()`, integers become `z.number().int()`, objects become `z.object()` with the correct shape. When a schema is too complex for clean conversion, Smithers falls back to `z.any()` with a description so the LLM still knows what to provide.
+
+3. **Build the tool.** Each operation becomes an AI SDK `tool()` with the converted schema as `inputSchema`, the operation summary as `description`, and an execute function that assembles the HTTP request.
+
+4. **Execute at runtime.** When an agent calls the tool, the execute function substitutes path parameters into the URL, appends query parameters, sets headers (including authentication), sends the request via `fetch`, and returns the response body.
+
+## Authentication
+
+Three authentication methods are supported:
+
+```ts
+// Bearer token
+{ auth: { type: "bearer", token: "sk-..." } }
+
+// Basic auth
+{ auth: { type: "basic", username: "admin", password: "secret" } }
+
+// API key (in header or query)
+{ auth: { type: "apiKey", name: "X-API-Key", value: "key123", in: "header" } }
+```
+
+You can also pass arbitrary headers:
+
+```ts
+{ headers: { "X-Custom-Header": "value" } }
+```
+
+## Filtering Operations
+
+Most APIs have endpoints you do not want an agent calling. Use `include` or `exclude` to control which operations become tools:
+
+```ts
+// Only these operations
+const tools = await createOpenApiTools(spec, {
+  include: ["listPets", "getPet"],
+});
+
+// Everything except these
+const tools = await createOpenApiTools(spec, {
+  exclude: ["deletePet", "deleteAllPets"],
+});
+```
+
+## Single Operation
+
+If you only need one tool from a spec, use `createOpenApiTool`:
+
+```ts
+import { createOpenApiTool } from "smithers-orchestrator";
+
+const listPets = await createOpenApiTool(spec, "listPets", {
+  baseUrl: "https://api.petstore.example.com",
+});
+```
+
+## Observability
+
+Every OpenAPI tool call emits an `OpenApiToolCalled` event and updates two metrics:
+
+- `smithers.openapi.tool_calls` -- counter of total calls
+- `smithers.openapi.tool_duration_ms` -- histogram of call durations
+
+These integrate with the standard Smithers observability pipeline, so they appear in your logs, Prometheus exports, and OpenTelemetry traces alongside all other tool metrics.
+
+## When to Use OpenAPI Tools
+
+Use them when you have an existing REST API with an OpenAPI spec and you want agents to interact with it. They are particularly good for:
+
+- Internal APIs with dozens of endpoints
+- Third-party APIs that publish OpenAPI specs
+- Rapid prototyping where hand-writing tools is too slow
+
+Do not use them when you need fine-grained control over how an API is called -- custom retry logic, request transformation, response filtering. In those cases, write a custom tool and call the API yourself.
+
+---
+
 ## runWorkflow
 
 > Execute a Smithers workflow programmatically and get back a durable RunResult.
@@ -8552,6 +9099,75 @@ Innermost `<Worktree>` in scope determines a task's effective `worktreeId`/`work
 
 ---
 
+## <Voice>
+
+> Wrap a subtree with voice I/O capabilities using a VoiceProvider.
+> Source: https://smithers.sh/components/voice
+
+## Import
+
+```tsx
+import { Voice, Task } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `provider` | `VoiceProvider` | -- | Voice provider instance. Required. |
+| `speaker` | `string` | `undefined` | Default speaker/voice ID for TTS within this subtree. |
+| `children` | `ReactNode` | -- | Nested tasks and control-flow nodes. |
+
+## Basics
+
+```tsx
+<Voice provider={voice} speaker="alloy">
+  <Task id="transcribe" output={outputs.transcript} agent={myAgent}>
+    Transcribe the audio and return the text.
+  </Task>
+</Voice>
+```
+
+Descendant tasks receive `voice` and `voiceSpeaker` on their descriptors. The engine uses these fields to invoke voice operations around agent execution.
+
+## Nesting
+
+Innermost `<Voice>` in scope determines a task's effective voice provider:
+
+```tsx
+<Voice provider={openaiVoice} speaker="alloy">
+  <Task id="a" output={outputs.out}>Uses openaiVoice with alloy</Task>
+  <Voice provider={elevenLabsVoice} speaker="rachel">
+    <Task id="b" output={outputs.out}>Uses elevenLabsVoice with rachel</Task>
+  </Voice>
+</Voice>
+```
+
+## With Other Components
+
+`<Voice>` composes with all existing control-flow components:
+
+```tsx
+<Voice provider={voice}>
+  <Parallel>
+    <Task id="transcribe-en" output={outputs.en} agent={agent}>
+      Transcribe the English audio.
+    </Task>
+    <Task id="transcribe-fr" output={outputs.fr} agent={agent}>
+      Transcribe the French audio.
+    </Task>
+  </Parallel>
+</Voice>
+```
+
+## Internals
+
+- Renders to `<smithers:voice>`.
+- Extraction assigns `voice` and `voiceSpeaker` to every descendant task descriptor via a `voiceStack` pattern, matching how `worktreeStack` and `parallelStack` work.
+- The scheduler is unaware of voice; the engine consumes these fields at task execution time.
+
+---
+
 ## Tutorial: Build a Workflow
 
 > Step-by-step guide to building a Smithers workflow with schemas, agents, sequential tasks, and output access.
@@ -12437,6 +13053,590 @@ const results = await runScorersBatch(
 
 ---
 
+## Voice Quickstart
+
+> Set up text-to-speech and speech-to-text in a Smithers workflow.
+> Source: https://smithers.sh/guides/voice-quickstart
+
+## Prerequisites
+
+Smithers ships with voice support built in. You need:
+
+- An OpenAI API key (or another AI SDK-supported provider)
+- `smithers-orchestrator` version 0.12.8 or later
+
+## Install
+
+No extra packages. The `ai` and `@ai-sdk/openai` dependencies are already included.
+
+## Create a Voice Provider
+
+The simplest provider wraps AI SDK models for batch TTS and STT:
+
+```ts
+import { createAiSdkVoice } from "smithers-orchestrator/voice";
+import { openai } from "@ai-sdk/openai";
+
+const voice = createAiSdkVoice({
+  speechModel: openai.speech("tts-1"),
+  transcriptionModel: openai.transcription("whisper-1"),
+});
+```
+
+## Add Voice to a Workflow
+
+Wrap tasks with the `<Voice>` component:
+
+```tsx
+import { Workflow, Task, Voice, createSmithers } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { outputs, workflow } = createSmithers({
+  transcript: z.object({ text: z.string() }),
+  summary: z.object({ content: z.string() }),
+});
+
+export default (
+  <Workflow>
+    <Voice provider={voice} speaker="alloy">
+      <Task id="transcribe" output={outputs.transcript} agent={myAgent}>
+        Transcribe the audio input and return the text.
+      </Task>
+      <Task id="summarize" output={outputs.summary} agent={myAgent} dependsOn={["transcribe"]}>
+        Summarize the transcript.
+      </Task>
+    </Voice>
+  </Workflow>
+);
+```
+
+## Use Composite Voice
+
+Mix different providers for input and output:
+
+```ts
+import { createCompositeVoice, createAiSdkVoice } from "smithers-orchestrator/voice";
+import { openai } from "@ai-sdk/openai";
+
+const stt = createAiSdkVoice({
+  transcriptionModel: openai.transcription("whisper-1"),
+});
+
+const tts = createAiSdkVoice({
+  speechModel: openai.speech("tts-1"),
+});
+
+const voice = createCompositeVoice({
+  input: stt,
+  output: tts,
+});
+```
+
+## Use Realtime Voice
+
+For low-latency bidirectional audio, use the OpenAI Realtime provider:
+
+```ts
+import { createOpenAIRealtimeVoice } from "smithers-orchestrator/voice";
+
+const realtime = createOpenAIRealtimeVoice({
+  apiKey: process.env.OPENAI_API_KEY,
+  model: "gpt-4o-mini-realtime-preview-2024-12-17",
+  speaker: "alloy",
+});
+
+// Connect before use
+await realtime.connect();
+
+// Listen for events
+realtime.on("speaking", (data) => {
+  // handle audio output
+});
+
+realtime.on("writing", (data) => {
+  // handle text transcription
+});
+
+// Send audio
+await realtime.send(audioStream);
+
+// Disconnect when done
+realtime.close();
+```
+
+## Voice with Effect.ts
+
+Use the Effect service layer for typed voice operations:
+
+```ts
+import { VoiceService, speak, listen } from "smithers-orchestrator/voice";
+import { Effect } from "effect";
+
+const program = Effect.gen(function* () {
+  const text = yield* listen(audioStream);
+  const audio = yield* speak(`The transcript says: ${text}`);
+  return { text, audio };
+}).pipe(Effect.provideService(VoiceService, voice));
+```
+
+## Supported Providers
+
+Any provider supported by the Vercel AI SDK works with `createAiSdkVoice`:
+
+| Provider | TTS | STT |
+| --- | --- | --- |
+| OpenAI | `openai.speech("tts-1")` | `openai.transcription("whisper-1")` |
+| ElevenLabs | `elevenlabs.speech(...)` | `elevenlabs.transcription(...)` |
+| Deepgram | -- | `deepgram.transcription("nova-3")` |
+| Google | `google.speech(...)` | `google.transcription(...)` |
+
+For realtime speech-to-speech, use `createOpenAIRealtimeVoice` directly.
+
+---
+
+## MCP Server Quickstart
+
+> Set up an MCP server, connect from Claude Desktop, and expose custom tools.
+> Source: https://smithers.sh/guides/mcp-server-quickstart
+
+## Prerequisites
+
+- `smithers-orchestrator` version 0.12.8 or later
+- Claude Desktop (or any MCP client)
+
+## Start the MCP Server from the CLI
+
+The fastest path: run `smithers mcp serve` in your project directory.
+
+```bash
+smithers mcp serve
+```
+
+This starts an MCP server over stdio. It automatically discovers workflows in `.smithers/workflows/` and exposes the built-in tools (read, write, edit, grep, bash).
+
+To list what tools would be exposed without starting the server:
+
+```bash
+smithers mcp list-tools
+```
+
+## Connect from Claude Desktop
+
+Add this to your Claude Desktop MCP configuration (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "smithers": {
+      "command": "smithers",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. Your smithers tools now appear in Claude's tool palette.
+
+## Expose Custom Tools
+
+Create a server configuration file to register your own tools, agents, and workflows:
+
+```ts
+// mcp-server.ts
+import { createSmithersMcpServer } from "smithers-orchestrator/mcp";
+import { tools } from "smithers-orchestrator/tools";
+import { AnthropicAgent } from "smithers-orchestrator";
+
+const reviewer = new AnthropicAgent({
+  model: "claude-sonnet-4-20250514",
+  systemPrompt: "You are a code reviewer.",
+});
+
+const server = createSmithersMcpServer({
+  name: "my-project",
+  version: "1.0.0",
+  tools: {
+    ...tools,
+  },
+  agents: {
+    reviewer,
+  },
+});
+
+server.start({ transport: "stdio" });
+```
+
+Run it:
+
+```bash
+bun run mcp-server.ts
+```
+
+Or point Claude Desktop at it directly:
+
+```json
+{
+  "mcpServers": {
+    "my-project": {
+      "command": "bun",
+      "args": ["run", "mcp-server.ts"]
+    }
+  }
+}
+```
+
+## Use HTTP Transport
+
+For remote access or shared team servers, use the HTTP transport:
+
+```bash
+smithers mcp serve --transport http --port 3001
+```
+
+Or programmatically:
+
+```ts
+server.start({ transport: "http", port: 3001 });
+```
+
+## Expose Workflows
+
+Register workflows to make them callable as MCP tools:
+
+```ts
+import { createSmithersMcpServer } from "smithers-orchestrator/mcp";
+import myWorkflow from "./.smithers/workflows/review.tsx";
+
+const server = createSmithersMcpServer({
+  name: "my-project",
+  version: "1.0.0",
+  workflows: {
+    review: myWorkflow,
+  },
+});
+```
+
+The workflow's input schema becomes the MCP tool's input schema. Calling the tool starts a workflow run and returns the result.
+
+## Verify It Works
+
+After starting the server and connecting your MCP client:
+
+1. Open Claude Desktop and look for your tools in the tool palette
+2. Ask Claude to use one: "Read the file at src/index.ts using the read tool"
+3. Claude calls the MCP tool, smithers executes it, and the result flows back
+
+Check the CLI for available tools anytime:
+
+```bash
+smithers mcp list-tools
+```
+
+---
+
+## Memory Quickstart
+
+> Set up cross-run memory, add recall to tasks, and use loop memory with Ralph.
+> Source: https://smithers.sh/guides/memory-quickstart
+
+## Prerequisites
+
+- `smithers-orchestrator` version 0.14 or later
+- An embedding model (OpenAI, Google, Cohere -- anything the AI SDK supports)
+
+## Set Up the Memory Store
+
+The memory store uses your workflow's existing SQLite database:
+
+```ts
+import { createSmithers } from "smithers-orchestrator";
+import { createMemoryStore } from "smithers-orchestrator/memory";
+import { z } from "zod";
+
+const { outputs, workflow } = createSmithers({
+  analysis: z.object({ summary: z.string(), score: z.number() }),
+});
+
+const store = createMemoryStore(workflow.db);
+```
+
+## Write and Read Facts
+
+Facts are key-value pairs scoped to a namespace:
+
+```ts
+import type { MemoryNamespace } from "smithers-orchestrator/memory";
+
+const ns: MemoryNamespace = { kind: "workflow", id: "code-review" };
+
+await store.setFact(ns, "reviewer-preference", { style: "thorough", language: "typescript" });
+
+const fact = await store.getFact(ns, "reviewer-preference");
+console.log(JSON.parse(fact!.valueJson));
+// { style: "thorough", language: "typescript" }
+```
+
+## Add Semantic Recall
+
+Set up semantic memory by connecting the RAG vector store and an embedding model:
+
+```ts
+import { createSemanticMemory } from "smithers-orchestrator/memory";
+import { createSqliteVectorStore } from "smithers-orchestrator/rag";
+import { openai } from "@ai-sdk/openai";
+
+const vectorStore = createSqliteVectorStore(workflow.db);
+const embeddingModel = openai.embedding("text-embedding-3-small");
+const semantic = createSemanticMemory(vectorStore, embeddingModel);
+```
+
+Store and retrieve by meaning:
+
+```ts
+await semantic.remember(ns, "The code-review workflow detected 3 critical bugs in the auth module");
+
+const results = await semantic.recall(ns, "What bugs were found?", { topK: 3 });
+for (const r of results) {
+  console.log(r.score.toFixed(2), r.chunk.content);
+}
+```
+
+## Add Memory to a Task
+
+Use the `memory` prop on `<Task>` to automatically recall context before the agent runs and store output after:
+
+```tsx
+import { Task, Loop, Workflow } from "smithers-orchestrator";
+
+const ns = { kind: "workflow" as const, id: "code-review" };
+
+export default workflow(({ input }) => (
+  <Workflow>
+    <Task
+      id="review"
+      agent={reviewer}
+      output={outputs.analysis}
+      memory={{
+        recall: { namespace: ns, topK: 3 },
+        remember: { namespace: ns, key: "last-review" },
+      }}
+    >
+      Review the code changes in {input.prUrl}
+    </Task>
+  </Workflow>
+));
+```
+
+On the first run, recall finds nothing and the agent runs normally. On subsequent runs, the agent receives the most relevant past reviews as context.
+
+## Loop Memory with Ralph
+
+Build iterative workflows where each loop iteration learns from the previous ones:
+
+```tsx
+const ns = { kind: "workflow" as const, id: "iterative-improve" };
+
+export default workflow(({ input }) => (
+  <Workflow>
+    <Loop until={done} maxIterations={5}>
+      <Task
+        id="improve"
+        agent={improver}
+        output={outputs.analysis}
+        memory={{
+          recall: { namespace: ns, topK: 5 },
+          remember: { namespace: ns },
+        }}
+      >
+        Improve the code based on previous feedback
+      </Task>
+    </Loop>
+  </Workflow>
+));
+```
+
+Each iteration stores its output and the next iteration recalls the most relevant prior outputs.
+
+## Message History
+
+Track ordered conversations across runs:
+
+```ts
+const thread = await store.createThread(ns, "PR #42 Review");
+
+await store.saveMessage({
+  threadId: thread.threadId,
+  role: "assistant",
+  contentJson: JSON.stringify({ text: "Found 3 issues in auth.ts" }),
+  runId: "run-abc",
+  nodeId: "review",
+});
+
+const messages = await store.listMessages(thread.threadId, 10);
+```
+
+## Processors
+
+Run maintenance on stored memory:
+
+```ts
+import { TtlGarbageCollector } from "smithers-orchestrator/memory";
+
+// Delete expired facts
+const gc = TtlGarbageCollector();
+await gc.process(store);
+```
+
+## CLI
+
+Inspect memory from the command line:
+
+```bash
+# List all facts in a namespace
+smithers memory list workflow:code-review
+
+# Semantic search
+smithers memory recall "What bugs were found?" --namespace workflow:code-review
+```
+
+---
+
+## OpenAPI Tools Quickstart
+
+> Load an OpenAPI spec, create tools, and give them to an agent in under five minutes.
+> Source: https://smithers.sh/guides/openapi-tools-quickstart
+
+## Prerequisites
+
+You need a Smithers project and an OpenAPI 3.0+ spec. The spec can be a JSON file, a YAML file, a URL, or a plain JavaScript object.
+
+## Install
+
+No extra dependencies. OpenAPI tools are built into `smithers-orchestrator`.
+
+## Load a Spec and Create Tools
+
+```ts
+import { createOpenApiTools } from "smithers-orchestrator";
+
+const tools = await createOpenApiTools("./petstore.json", {
+  baseUrl: "https://api.petstore.example.com",
+  auth: { type: "bearer", token: process.env.PETSTORE_TOKEN! },
+});
+
+console.log(Object.keys(tools));
+// ["listPets", "createPet", "getPet"]
+```
+
+Each key is the `operationId` from the spec. Each value is an AI SDK `tool()`.
+
+## Use Tools in a Workflow
+
+```tsx
+import { Workflow, Task, AnthropicAgent } from "smithers-orchestrator";
+import { createOpenApiTools } from "smithers-orchestrator";
+
+const petTools = await createOpenApiTools("./petstore.json", {
+  baseUrl: "https://api.petstore.example.com",
+  auth: { type: "bearer", token: process.env.PETSTORE_TOKEN! },
+});
+
+const agent = new AnthropicAgent({
+  model: "claude-sonnet-4-20250514",
+  tools: petTools,
+});
+
+export default (
+  <Workflow>
+    <Task id="list-pets" agent={agent}>
+      List all available pets and summarize them.
+    </Task>
+  </Workflow>
+);
+```
+
+## Filter Operations
+
+```ts
+// Only expose read operations
+const readTools = await createOpenApiTools("./petstore.json", {
+  include: ["listPets", "getPet"],
+});
+
+// Expose everything except destructive operations
+const safeTools = await createOpenApiTools("./petstore.json", {
+  exclude: ["deletePet"],
+});
+```
+
+## Single Tool
+
+```ts
+import { createOpenApiTool } from "smithers-orchestrator";
+
+const listPets = await createOpenApiTool("./petstore.json", "listPets", {
+  baseUrl: "https://api.petstore.example.com",
+});
+```
+
+## Preview Tools from CLI
+
+```bash
+smithers openapi list ./petstore.json
+```
+
+Output:
+
+```
+  listPets — List all pets
+  createPet — Create a pet
+  getPet — Get a pet by ID
+
+  3 tool(s) from spec
+```
+
+## Authentication Options
+
+```ts
+// Bearer token
+await createOpenApiTools(spec, {
+  auth: { type: "bearer", token: "sk-..." },
+});
+
+// Basic auth
+await createOpenApiTools(spec, {
+  auth: { type: "basic", username: "admin", password: "secret" },
+});
+
+// API key in header
+await createOpenApiTools(spec, {
+  auth: { type: "apiKey", name: "X-API-Key", value: "key123", in: "header" },
+});
+
+// API key in query string
+await createOpenApiTools(spec, {
+  auth: { type: "apiKey", name: "api_key", value: "key123", in: "query" },
+});
+
+// Custom headers
+await createOpenApiTools(spec, {
+  headers: { "X-Request-Id": "abc123" },
+});
+```
+
+## Name Prefixes
+
+When combining tools from multiple specs, use `namePrefix` to avoid collisions:
+
+```ts
+const petTools = await createOpenApiTools(petSpec, { namePrefix: "pet_" });
+const orderTools = await createOpenApiTools(orderSpec, { namePrefix: "order_" });
+
+const allTools = { ...petTools, ...orderTools };
+```
+
+---
+
 ## Troubleshooting
 
 > Common setup, runtime, and workflow issues with diagnosis paths.
@@ -15688,6 +16888,11 @@ try {
 | Code | When | Details |
 |---|---|---|
 | `PI_HTTP_ERROR` | The Pi or server integration receives a non-success HTTP response from Smithers. | -- |
+| `MCP_SERVER_START_FAILED` | The MCP server fails to start or bind to the requested transport. | -- |
+| `MCP_TOOL_EXECUTION_FAILED` | An MCP tool call fails during execution. | -- |
+| `OPENAPI_SPEC_LOAD_FAILED` | An OpenAPI spec cannot be loaded or parsed. | -- |
+| `OPENAPI_OPERATION_NOT_FOUND` | The requested operationId does not exist in the OpenAPI spec. | -- |
+| `OPENAPI_TOOL_EXECUTION_FAILED` | An OpenAPI tool call fails during HTTP execution. | -- |
 
 ## HTTP API Errors
 

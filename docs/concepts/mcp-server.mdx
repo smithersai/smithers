@@ -1,0 +1,107 @@
+---
+title: MCP Server
+description: How Smithers exposes agents, workflows, and tools as MCP resources for external AI tools.
+---
+
+You built a workflow. It orchestrates agents, calls tools, processes data. Now Claude Desktop wants to use those same tools. Cursor wants to run your workflow. How do you expose your Smithers capabilities to the outside world without building a bespoke integration for each client?
+
+That is what the Model Context Protocol (MCP) server is for.
+
+## What Is MCP?
+
+MCP is an open protocol that lets AI applications discover and call tools, read resources, and use prompts from external servers. Think of it as a USB-C port for AI tools -- one standard plug that works everywhere.
+
+When you run a Smithers MCP server, any MCP client can connect and:
+
+1. **List tools** -- see every smithers tool, agent, and workflow you expose
+2. **Call tools** -- invoke them with structured JSON input, get structured results back
+3. **Read resources** -- inspect workflow run data (status, outputs, timeline)
+
+Claude Desktop, Cursor, Windsurf, Cline, and dozens of other tools speak MCP natively. One server covers them all.
+
+## What Gets Exposed
+
+Smithers maps three kinds of things into MCP tools:
+
+### Tools as MCP Tools
+
+Every smithers tool (read, write, edit, grep, bash, or your custom tools) becomes an MCP tool. The Zod input schema converts to JSON Schema automatically. When an MCP client calls the tool, smithers executes it and returns the result.
+
+```
+smithers tool: read({ path: "src/index.ts" })
+  ↓
+MCP tool: read → { inputSchema: { path: string } }
+```
+
+### Agents as MCP Tools
+
+Each registered agent becomes a callable MCP tool named `agent-{id}`. The input is always `{ prompt: string }`. The MCP client sends a prompt, smithers passes it to the agent's `generate()` method, and returns the response.
+
+```
+smithers agent: reviewer (AnthropicAgent)
+  ↓
+MCP tool: agent-reviewer → { inputSchema: { prompt: string } }
+```
+
+### Workflows as MCP Tools
+
+Each registered workflow becomes a callable MCP tool named `workflow-{id}`. The input schema matches the workflow's declared input schema. Calling it starts the workflow and returns the run result.
+
+```
+smithers workflow: code-review (input: { repo: string, branch: string })
+  ↓
+MCP tool: workflow-code-review → { inputSchema: { repo: string, branch: string } }
+```
+
+## Transports
+
+MCP supports two transport mechanisms:
+
+**stdio** -- The client spawns the server as a subprocess and communicates over stdin/stdout. This is the default for Claude Desktop and most desktop tools. Zero configuration, no ports to open.
+
+**Streamable HTTP** -- The server listens on an HTTP endpoint. Useful for remote servers, shared team setups, or when the client and server run on different machines.
+
+For local development, stdio is simpler. For production deployments, HTTP gives you more flexibility.
+
+## Workflow Runs as Resources
+
+Beyond tools, the MCP server exposes recent workflow runs as MCP resources. Each run gets a URI like `smithers://runs/{runId}`. An MCP client can list runs and read their status, outputs, and event timeline -- useful for debugging or monitoring.
+
+## Configuration
+
+The server is configured with a single object:
+
+```ts
+import { createSmithersMcpServer } from "smithers-orchestrator/mcp";
+import { tools } from "smithers-orchestrator/tools";
+
+const server = createSmithersMcpServer({
+  name: "my-project",
+  version: "1.0.0",
+  tools,
+  agents: { reviewer: myReviewerAgent },
+  workflows: { codeReview: myWorkflow },
+});
+```
+
+You choose what to expose. Pass only tools and you get a tool server. Add agents and they appear alongside the tools. Add workflows and they become callable too.
+
+## Observability
+
+Every MCP tool call flows through Effect, so you get the same structured logging, metrics, and tracing as the rest of Smithers:
+
+- `smithers.mcp.tool_calls` counter tracks total MCP tool invocations
+- `smithers.mcp.tool_duration_ms` histogram measures execution time
+- `smithers.mcp.active_connections` gauge shows connected clients
+- All calls appear in log spans with `mcp:tool-call` annotations
+
+The MCP server events (`McpServerStarted`, `McpToolCalled`, `McpServerStopped`) integrate into the standard Smithers event bus, so your existing monitoring setup picks them up automatically.
+
+## When to Use It
+
+Use the MCP server when you want external AI tools to leverage your Smithers setup. Common scenarios:
+
+- **Claude Desktop integration** -- let Claude call your project's tools and agents directly
+- **IDE integration** -- expose workflows to Cursor or Windsurf for in-editor automation
+- **Team tooling** -- run a shared MCP server so the whole team can access the same agents
+- **Composability** -- let one Smithers project consume another project's capabilities through MCP
