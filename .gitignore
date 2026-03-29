@@ -53,6 +53,11 @@ deno.lock
 reference/
 codex/
 ghostty/
+burns
+
+# External reference repos
+.mastra-ref/
+.opentui_temp/
 
 # Worktree script SQLite artifacts
 scripts/worktree-feature/*.db*
