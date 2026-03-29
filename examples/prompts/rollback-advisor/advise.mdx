@@ -1,0 +1,11 @@
+Based on the gathered evidence, recommend whether to rollback, mitigate, or observe.
+
+Deployment: {props.deployment}
+Evidence: {props.evidence}
+
+Consider:
+- Severity and blast radius of the issue
+- Whether a rollback is safe (data migrations, schema changes)
+- Alternative mitigations (feature flags, traffic shifting, config changes)
+
+Provide a clear recommendation with reasoning and a concrete mitigation plan.

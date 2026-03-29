@@ -1,19 +1,15 @@
 /** @jsxImportSource smithers-orchestrator */
-import { createSmithers, Task, Workflow, PiAgent } from "smithers-orchestrator";
+import { Task, Workflow, PiAgent } from "smithers-orchestrator";
 import { z } from "zod";
+import { createExampleSmithers } from "./_example-kit";
 
 const HelloSchema = z.object({
   message: z.string(),
 });
 
-const { smithers, outputs } = createSmithers(
-  {
-    output: HelloSchema,
-  },
-  {
-    dbPath: "./examples/pi-hello-world.db",
-  },
-);
+const { smithers, outputs } = createExampleSmithers({
+  output: HelloSchema,
+});
 
 const pi = new PiAgent({
   provider: "openai-codex",

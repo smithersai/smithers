@@ -1,6 +1,7 @@
 /** @jsxImportSource smithers-orchestrator */
-import { createSmithers, Task, Workflow, PiAgent } from "smithers-orchestrator";
+import { Task, Workflow, PiAgent } from "smithers-orchestrator";
 import { z } from "zod";
+import { createExampleSmithers } from "./_example-kit";
 
 const OutputSchema = z.object({
   phrase: z.string().regex(/^saffron-orbit-lantern$/),
@@ -9,14 +10,9 @@ const OutputSchema = z.object({
   summary: z.string(),
 });
 
-const { smithers, outputs } = createSmithers(
-  {
-    output: OutputSchema,
-  },
-  {
-    dbPath: "./examples/pi-tools-workflow.db",
-  },
-);
+const { smithers, outputs } = createExampleSmithers({
+  output: OutputSchema,
+});
 
 const pi = new PiAgent({
   provider: "openai-codex",

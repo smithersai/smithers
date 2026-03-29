@@ -1,8 +1,11 @@
-import { createSmithers, Sequence, Ralph } from "smithers-orchestrator";
+import { Sequence, Ralph } from "smithers-orchestrator";
+import { createExampleSmithers } from "./_example-kit";
 import { ToolLoopAgent as Agent, Output } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { read, bash, grep } from "smithers-orchestrator/tools";
 import { z } from "zod";
+import ReviewPrompt from "./prompts/code-review-loop/review.mdx";
+import FixPrompt from "./prompts/code-review-loop/fix.mdx";
 
 // Define Zod schemas
 const reviewSchema = z.object({
@@ -22,7 +25,7 @@ const outputSchema = z.object({
 });
 
 // Create smithers with schema-driven API
-const { Workflow, Task, smithers, outputs } = createSmithers({
+const { Workflow, Task, smithers, outputs } = createExampleSmithers({
   review: reviewSchema,
   fix: fixSchema,
   output: outputSchema,
@@ -56,30 +59,20 @@ export default smithers((ctx) => {
       <Ralph until={isApproved} maxIterations={3} onMaxReached="return-last">
         <Sequence>
           <Task id="review" output={outputs.review} agent={reviewAgent}>
-            {`Review the codebase in directory: ${ctx.input.directory}
-Focus area: ${ctx.input.focus}
-
-${latestReview ? `Previous issues that were supposedly fixed:\n${latestReview.issues?.join("\n")}` : "This is the initial review."}
-
-Use the tools to explore the code. Look for:
-- Code quality issues
-- Potential bugs
-- Missing error handling
-- Type safety problems
-- Any issues related to: ${ctx.input.focus}`}
+            <ReviewPrompt
+              directory={ctx.input.directory}
+              focus={ctx.input.focus}
+              previousIssues={latestReview?.issues ?? []}
+            />
           </Task>
-          <Task id="fix" output={outputs.fix} agent={fixAgent} skipIf={isApproved}>
-            {`Fix the issues found in the code review:
-
-Feedback: ${ctx.outputMaybe("review", { nodeId: "review" })?.feedback ?? "No feedback yet"}
-
-Issues to fix:
-${ctx.outputMaybe("review", { nodeId: "review" })?.issues?.join("\n") ?? "No specific issues listed"}
-
-Directory: ${ctx.input.directory}
-
-IMPORTANT: After analysis, output EXACTLY this JSON format (no other text):
-{"filesChanged": ["file1.ts", "file2.ts"], "changesSummary": "What changes are needed"}`}
+          <Task id="fix" output={outputs.fix} agent={fixAgent} skipIf={isApproved} deps={{ review: outputs.review }}>
+            {(deps) => (
+              <FixPrompt
+                feedback={deps.review.feedback}
+                issues={deps.review.issues ?? []}
+                directory={ctx.input.directory}
+              />
+            )}
           </Task>
         </Sequence>
       </Ralph>

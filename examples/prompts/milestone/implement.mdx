@@ -1,0 +1,17 @@
+export default function Prompt(props) {
+  const completed = props.completedMilestones ?? [];
+
+  return (
+    <>
+      {`Implement milestone "${props.title}" (${props.id}):`}
+      {"\n\n"}
+      {`Requirements: ${props.requirements}`}
+      {"\n"}
+      {`Directory: ${props.directory}`}
+      {"\n\n"}
+      {completed.length > 0
+        ? `Previous milestones completed:\n${completed.map((item) => `- ${item.milestone}: ${item.summary}`).join("\n")}`
+        : "This is the first milestone."}
+    </>
+  );
+}

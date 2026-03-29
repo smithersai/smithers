@@ -1,0 +1,10 @@
+Plan the implementation for:
+
+Goal: {props.goal}
+Directory: {props.directory}
+
+{props.results.length > 0
+  ? `Previous results:\n${props.results.map((result) => `- ${result.taskId}: ${result.status} — ${result.summary}`).join("\n")}\n\nRetriable tasks: ${props.retriable.length > 0 ? props.retriable.join(", ") : "none"}`
+  : "This is the initial planning phase."}
+
+Break into tasks. Assign each a workerType: "coder", "tester", or "docs".
