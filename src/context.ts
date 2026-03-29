@@ -8,6 +8,9 @@ export type OutputSnapshot = {
   [tableName: string]: Array<any>;
 };
 
+export const SmithersContext = React.createContext<SmithersCtx<any> | null>(null);
+SmithersContext.displayName = "SmithersContext";
+
 function normalizeInputRow(input: any) {
   if (!input || typeof input !== "object") return input;
   if (!("payload" in input)) return input;
@@ -228,6 +231,7 @@ export function buildContext<Schema>(opts: {
 
 export function createSmithersContext<Schema>() {
   const SmithersContext = React.createContext<SmithersCtx<Schema> | null>(null);
+  SmithersContext.displayName = "SmithersContext";
 
   function useCtx(): SmithersCtx<Schema> {
     const ctx = React.useContext(SmithersContext);

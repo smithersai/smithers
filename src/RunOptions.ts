@@ -20,6 +20,7 @@ export type RunOptions = {
   onProgress?: (e: SmithersEvent) => void;
   signal?: AbortSignal;
   resume?: boolean;
+  force?: boolean;
   workflowPath?: string;
   rootDir?: string;
   logDir?: string | null;

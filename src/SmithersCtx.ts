@@ -10,12 +10,18 @@ type SchemaKeyForValue<Schema, V> = {
   [K in keyof Schema & string]: Schema[K] extends V ? K : never;
 }[keyof Schema & string];
 
+type FallbackTableName<Schema> = [keyof Schema & string] extends [never]
+  ? string
+  : never;
+
 export interface SmithersCtx<Schema> {
   runId: string;
   iteration: number;
   iterations?: Record<string, number>;
-  input: Schema extends { input: infer T } ? T : Record<string, unknown>;
+  input: Schema extends { input: infer T } ? T : any;
   outputs: OutputAccessor<Schema>;
+
+  output(table: FallbackTableName<Schema>, key: OutputKey): any;
 
   // Overload: pass Zod schema value directly → narrowed return type
   output<V extends z.ZodTypeAny>(
@@ -30,6 +36,11 @@ export interface SmithersCtx<Schema> {
     table: K,
     key: OutputKey,
   ): InferOutputEntry<Schema[K]>;
+
+  outputMaybe(
+    table: FallbackTableName<Schema>,
+    key: OutputKey,
+  ): any | undefined;
 
   // Overload: pass Zod schema value directly → narrowed return type
   outputMaybe<V extends z.ZodTypeAny>(
@@ -58,6 +69,11 @@ export interface SmithersCtx<Schema> {
     table: K,
     nodeId: string,
   ): InferOutputEntry<Schema[K]> | undefined;
+
+  latest(
+    table: FallbackTableName<Schema>,
+    nodeId: string,
+  ): any | undefined;
 
   latestArray(value: unknown, schema: z.ZodType): any[];
 

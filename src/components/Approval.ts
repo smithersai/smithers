@@ -84,6 +84,8 @@ export function Approval<Row = ApprovalDecision>(props: ApprovalProps<Row>) {
     key: props.key,
     output: props.output,
     outputSchema: props.outputSchema ?? approvalDecisionSchema,
+    dependsOn: props.dependsOn,
+    needs: props.needs,
     needsApproval: true,
     approvalMode: "decision",
     approvalOnDeny: props.onDeny,

@@ -71,5 +71,20 @@ export async function revertToAttempt(
     return { success: false, error: result.error, jjPointer };
   }
 
+  // Clean up DB frames recorded after the reverted attempt started.
+  // Find the latest frame created before the attempt's start time and
+  // discard everything after it so the DB matches the reverted VCS state.
+  const frames = await adapter.listFrames(runId, 1_000_000);
+  const cutoff = attemptRow.startedAtMs;
+  let lastValidFrameNo = -1;
+  for (const f of frames) {
+    if (f.createdAtMs <= cutoff && f.frameNo > lastValidFrameNo) {
+      lastValidFrameNo = f.frameNo;
+    }
+  }
+  if (lastValidFrameNo >= 0) {
+    await adapter.deleteFramesAfter(runId, lastValidFrameNo);
+  }
+
   return { success: true, jjPointer };
 }

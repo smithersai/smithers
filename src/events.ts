@@ -23,8 +23,7 @@ export class EventBus extends EventEmitter {
 
   emitEventEffect(event: SmithersEvent) {
     return Effect.gen(this, function* () {
-      yield* Effect.sync(() => this.emit("event", event));
-      yield* trackEvent(event);
+      yield* this.emitAndTrackEffect(event);
       if (this.db) {
         yield* this.persistDbEffect(event);
       }
@@ -40,7 +39,7 @@ export class EventBus extends EventEmitter {
 
   emitEventWithPersistEffect(event: SmithersEvent) {
     return Effect.gen(this, function* () {
-      yield* Effect.sync(() => this.emit("event", event));
+      yield* this.emitAndTrackEffect(event);
       yield* this.persistEffect(event);
     }).pipe(
       Effect.annotateLogs({ runId: event.runId, eventType: event.type }),
@@ -54,7 +53,9 @@ export class EventBus extends EventEmitter {
 
   emitEventQueued(event: SmithersEvent): Promise<void> {
     this.emit("event", event);
-    return runPromise(this.enqueuePersistEffect(event));
+    return runPromise(
+      trackEvent(event).pipe(Effect.andThen(this.enqueuePersistEffect(event))),
+    );
   }
 
   flushEffect() {
@@ -89,6 +90,13 @@ export class EventBus extends EventEmitter {
 
   async persist(event: SmithersEvent) {
     await runPromise(this.persistEffect(event));
+  }
+
+  private emitAndTrackEffect(event: SmithersEvent) {
+    return Effect.gen(this, function* () {
+      yield* Effect.sync(() => this.emit("event", event));
+      yield* trackEvent(event);
+    });
   }
 
   private enqueuePersistEffect(event: SmithersEvent) {

@@ -11,8 +11,15 @@ import {
   Approval as BaseApproval,
   Workflow as BaseWorkflow,
   Task as BaseTask,
+  Sequence as BaseSequence,
+  Parallel as BaseParallel,
+  MergeQueue as BaseMergeQueue,
+  Branch as BaseBranch,
+  Loop as BaseLoop,
+  Ralph as BaseRalph,
+  Worktree as BaseWorktree,
 } from "./components";
-import type { ApprovalProps, WorkflowProps, TaskProps } from "./components";
+import type { ApprovalProps, WorkflowProps, TaskProps, DepsSpec } from "./components";
 
 import { zodToTable } from "./zodToTable";
 import { zodToCreateTableSQL } from "./zodToCreateTableSQL";
@@ -46,7 +53,16 @@ type SchemaOutput<Schema> = Extract<Schema[keyof Schema], z.ZodObject<any>>;
 export type CreateSmithersApi<Schema = any> = {
   Workflow: (props: WorkflowProps) => React.ReactElement;
   Approval: <Row>(props: ApprovalProps<Row, SchemaOutput<Schema>>) => React.ReactElement;
-  Task: <Row>(props: TaskProps<Row, SchemaOutput<Schema>>) => React.ReactElement;
+  Task: <Row, D extends DepsSpec = {}>(
+    props: TaskProps<Row, SchemaOutput<Schema>, D>,
+  ) => React.ReactElement;
+  Sequence: typeof BaseSequence;
+  Parallel: typeof BaseParallel;
+  MergeQueue: typeof BaseMergeQueue;
+  Branch: typeof BaseBranch;
+  Loop: typeof BaseLoop;
+  Ralph: typeof BaseRalph;
+  Worktree: typeof BaseWorktree;
   useCtx: () => SmithersCtx<Schema>;
   smithers: (
     build: (ctx: SmithersCtx<Schema>) => React.ReactElement,
@@ -170,15 +186,14 @@ export function createSmithers<
   }
 
   // 7. Context + hooks
-  const { SmithersContext, useCtx } = createSmithersContext<any>();
-  const ctxRef = { current: null as SmithersCtx<any> | null };
+  const {
+    SmithersContext: RuntimeSmithersContext,
+    useCtx,
+  } = createSmithersContext<Schemas>();
+  const ctxRef = { current: null as SmithersCtx<Schemas> | null };
 
   function Workflow(props: WorkflowProps) {
-    return React.createElement(
-      SmithersContext.Provider,
-      { value: ctxRef.current },
-      React.createElement(BaseWorkflow, props, props.children),
-    );
+    return React.createElement(BaseWorkflow, props, props.children);
   }
 
   function Approval<Row>(props: ApprovalProps<Row>) {
@@ -189,30 +204,46 @@ export function createSmithers<
    * Task wrapper that resolves ZodObject output references against the
    * schema registry by reference equality, injecting the outputSchema.
    */
-  function Task<Row>(props: TaskProps<Row>) {
-    return React.createElement(BaseTask, props as any);
+  function Task<Row, D extends DepsSpec = {}>(
+    props: TaskProps<Row, SchemaOutput<Schemas>, D>,
+  ) {
+    return React.createElement(BaseTask, {
+      ...props,
+      smithersContext: RuntimeSmithersContext,
+    } as any);
   }
 
   function boundSmithers(
-    build: (ctx: SmithersCtx<any>) => React.ReactElement,
+    build: (ctx: SmithersCtx<Schemas>) => React.ReactElement,
     smithersOpts?: SmithersWorkflowOptions,
-  ): SmithersWorkflow<any> {
+  ): SmithersWorkflow<Schemas> {
     return {
       db,
-      build: (ctx: SmithersCtx<any>) => {
+      build: (ctx: SmithersCtx<Schemas>) => {
         ctxRef.current = ctx;
-        return build(ctx);
+        return React.createElement(
+          RuntimeSmithersContext.Provider,
+          { value: ctxRef.current },
+          build(ctx),
+        );
       },
       opts: smithersOpts ?? {},
       schemaRegistry,
       zodToKeyName,
-    } as SmithersWorkflow<any>;
+    } as SmithersWorkflow<Schemas>;
   }
 
   const api = {
     Workflow,
     Approval,
     Task,
+    Sequence: BaseSequence,
+    Parallel: BaseParallel,
+    MergeQueue: BaseMergeQueue,
+    Branch: BaseBranch,
+    Loop: BaseLoop,
+    Ralph: BaseRalph,
+    Worktree: BaseWorktree,
     useCtx,
     smithers: boundSmithers,
     db,
