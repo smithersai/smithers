@@ -1015,7 +1015,21 @@ const cli = Cli.create({
         return c.error(opts);
       };
       try {
-        return c.ok(initWorkflowPack({ force: c.options.force }));
+        const result = initWorkflowPack({ force: c.options.force });
+        return c.ok(result, {
+          cta: {
+            description: "Next steps:",
+            commands: c.agent
+              ? [
+                  { command: "workflow list", description: "View all available workflows" },
+                  { command: "bun install -g smithers", description: "Install smithers globally" },
+                ]
+              : [
+                  { command: "tui", description: "Open the interactive dashboard" },
+                  { command: "bun install -g smithers", description: "Install smithers globally" },
+                ],
+          },
+        });
       } catch (err: any) {
         if (err instanceof SmithersError) {
           return fail({

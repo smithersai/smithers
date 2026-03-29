@@ -55,6 +55,12 @@ mode: "custom"
 
         {/* Quick Install Command */}
         <div className="mt-14 relative group">
+          <div className="mb-3 flex items-center gap-2 ml-1">
+            <div className="w-1 h-1 rounded-full bg-[#00D2A0]"></div>
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+              Run this to get started
+            </span>
+          </div>
           <div className="absolute -inset-0.5 bg-gradient-to-r from-[#00D2A0] to-[#047857] rounded-xl blur opacity-0 group-hover:opacity-20 transition duration-500"></div>
           <div 
             className="relative flex items-center gap-4 px-5 py-3 bg-white dark:bg-[#0A0D15] border border-slate-200 dark:border-white/[0.08] rounded-xl cursor-pointer transition-all duration-300 active:scale-[0.98]"
@@ -94,8 +100,8 @@ mode: "custom"
               </div>
             </div>
           </div>
-          <div className="absolute -top-7 left-0 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0">
-            Copy to clipboard
+          <div className="absolute -top-7 right-0 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0">
+            Click to Copy
           </div>
         </div>
       </div>
