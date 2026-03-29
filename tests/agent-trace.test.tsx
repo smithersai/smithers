@@ -8,7 +8,6 @@ import {
   AgentTraceCollector,
   canonicalTraceEventToOtelLogRecord,
 } from "../src/agent-trace";
-import { CodexAgent } from "../src/agents";
 import { SmithersDb } from "../src/db/adapter";
 import { runPromise } from "../src/effect/runtime";
 import {
@@ -225,6 +224,80 @@ describe("agent trace capture", () => {
     expect(summary.traceCompleteness).toBe("capture-failed");
     expect(
       traceEvents.some((event: any) => event.event.kind === "capture.error"),
+    ).toBe(true);
+
+    cleanup();
+  });
+
+  test("preserves Pi message.update fallback and tool updates from one transcript", async () => {
+    const { smithers, outputs, db, cleanup } = createTestSmithers({
+      result: z.object({ answer: z.string() }),
+    });
+    const runId = "agent-trace-pi-update-fallback";
+
+    const piLikeAgent: any = {
+      id: "pi-agent-update-fallback",
+      opts: { mode: "json" },
+      generate: async (args: { onStdout?: (text: string) => void }) => {
+        args.onStdout?.(JSON.stringify({ type: "session", id: "sess-2" }) + "\n");
+        args.onStdout?.(
+          JSON.stringify({
+            type: "message_update",
+            message: { role: "assistant", content: [{ type: "text", text: "partial state" }] },
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "tool_execution_update",
+            toolExecution: { id: "tool-2", name: "bash", result: { status: "running" } },
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "turn_end",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "Pi final update" }],
+            },
+          }) + "\n",
+        );
+        args.onStdout?.(JSON.stringify({ type: "agent_end" }) + "\n");
+        return {
+          text: '{"answer":"Pi final update"}',
+          output: { answer: "Pi final update" },
+        };
+      },
+    };
+
+    const workflow = smithers(() => (
+      <Workflow name="pi-update-fallback">
+        <Task id="task" output={outputs.result} agent={piLikeAgent}>
+          pi update fallback please
+        </Task>
+      </Workflow>
+    ));
+
+    const result = await runWorkflow(workflow, { input: {}, runId });
+    expect(result.status).toBe("finished");
+
+    const events = await listRunEvents(db, runId);
+    const traceEvents = events
+      .filter((event: any) => event.type === "AgentTraceEvent")
+      .map((event: any) => JSON.parse(event.payloadJson).trace);
+
+    expect(
+      traceEvents.some(
+        (event: any) =>
+          event.event.kind === "message.update" &&
+          event.payload.text === "partial state",
+      ),
+    ).toBe(true);
+    expect(
+      traceEvents.some(
+        (event: any) =>
+          event.event.kind === "tool.execution.update" &&
+          event.payload.toolCallId === "tool-2",
+      ),
     ).toBe(true);
 
     cleanup();
@@ -510,6 +583,82 @@ describe("agent trace capture", () => {
     cleanup();
   });
 
+  test("preserves Claude structured tool lifecycle with shared raw event ids", async () => {
+    const { smithers, outputs, db, cleanup } = createTestSmithers({
+      result: z.object({ answer: z.string() }),
+    });
+    const runId = "agent-trace-claude-tool-lifecycle";
+
+    class ClaudeToolLifecycleFake {
+      id = "claude-tool-lifecycle-fake";
+      opts = { outputFormat: "stream-json" };
+      async generate(args: { onStdout?: (text: string) => void }) {
+        args.onStdout?.(
+          JSON.stringify({
+            type: "tool_call.started",
+            toolCall: { id: "tool-claude-1", name: "read", args: { path: "README.md" } },
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "tool_call.completed",
+            toolCall: { id: "tool-claude-1", name: "read", result: { ok: true } },
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "message_end",
+            message: { role: "assistant", content: "claude tool final" },
+          }) + "\n",
+        );
+        return {
+          text: '{"answer":"claude tool final"}',
+          output: { answer: "claude tool final" },
+        };
+      }
+    }
+
+    const workflow = smithers(() => (
+      <Workflow name="claude-tool-lifecycle-trace">
+        <Task
+          id="task"
+          output={outputs.result}
+          agent={new ClaudeToolLifecycleFake() as any}
+        >
+          structured claude tool lifecycle please
+        </Task>
+      </Workflow>
+    ));
+
+    const result = await runWorkflow(workflow, { input: {}, runId });
+    expect(result.status).toBe("finished");
+
+    const events = await listRunEvents(db, runId);
+    const traceEvents = events
+      .filter((event: any) => event.type === "AgentTraceEvent")
+      .map((event: any) => JSON.parse(event.payloadJson).trace);
+
+    const toolStart = traceEvents.find(
+      (event: any) => event.event.kind === "tool.execution.start",
+    );
+    const toolEnd = traceEvents.find(
+      (event: any) => event.event.kind === "tool.execution.end",
+    );
+
+    expect(toolStart?.payload.toolCallId).toBe("tool-claude-1");
+    expect(toolEnd?.payload.toolCallId).toBe("tool-claude-1");
+    expect(toolStart?.source.rawEventId).not.toBe(toolEnd?.source.rawEventId);
+    expect(
+      traceEvents.some(
+        (event: any) =>
+          event.event.kind === "assistant.message.final" &&
+          event.payload.text === "claude tool final",
+      ),
+    ).toBe(true);
+
+    cleanup();
+  });
+
   test("preserves structured Codex completion usage and final message truthfully", async () => {
     const { smithers, outputs, db, cleanup } = createTestSmithers({
       result: z.object({ answer: z.string() }),
@@ -666,16 +815,102 @@ describe("agent trace capture", () => {
     cleanup();
   });
 
+  test("preserves Codex structured tool lifecycle from one transcript", async () => {
+    const { smithers, outputs, db, cleanup } = createTestSmithers({
+      result: z.object({ answer: z.string() }),
+    });
+    const runId = "agent-trace-codex-tool-lifecycle";
+
+    class CodexToolLifecycleFake {
+      id = "codex-tool-lifecycle-fake";
+      opts = { outputFormat: "stream-json", json: true };
+      async generate(args: { onStdout?: (text: string) => void }) {
+        args.onStdout?.(
+          JSON.stringify({
+            type: "tool_call.started",
+            toolCall: { id: "codex-tool-1", name: "grep", args: { pattern: "trace" } },
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "tool_call.delta",
+            toolCall: { id: "codex-tool-1", name: "grep", result: { status: "running" } },
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "tool_call.completed",
+            toolCall: { id: "codex-tool-1", name: "grep", result: { ok: true } },
+          }) + "\n",
+        );
+        args.onStdout?.(
+          JSON.stringify({
+            type: "turn.completed",
+            message: { role: "assistant", content: "codex tool final" },
+          }) + "\n",
+        );
+        return {
+          text: '{"answer":"codex tool final"}',
+          output: { answer: "codex tool final" },
+        };
+      }
+    }
+
+    const workflow = smithers(() => (
+      <Workflow name="codex-tool-lifecycle-trace">
+        <Task
+          id="task"
+          output={outputs.result}
+          agent={new CodexToolLifecycleFake() as any}
+        >
+          codex tool lifecycle please
+        </Task>
+      </Workflow>
+    ));
+
+    const result = await runWorkflow(workflow, { input: {}, runId });
+    expect(result.status).toBe("finished");
+
+    const events = await listRunEvents(db, runId);
+    const traceEvents = events
+      .filter((event: any) => event.type === "AgentTraceEvent")
+      .map((event: any) => JSON.parse(event.payloadJson).trace);
+
+    expect(
+      traceEvents.some(
+        (event: any) =>
+          event.event.kind === "tool.execution.start" &&
+          event.payload.toolCallId === "codex-tool-1",
+      ),
+    ).toBe(true);
+    expect(
+      traceEvents.some(
+        (event: any) =>
+          event.event.kind === "tool.execution.update" &&
+          event.payload.toolCallId === "codex-tool-1",
+      ),
+    ).toBe(true);
+    expect(
+      traceEvents.some(
+        (event: any) =>
+          event.event.kind === "tool.execution.end" &&
+          event.payload.toolCallId === "codex-tool-1",
+      ),
+    ).toBe(true);
+
+    cleanup();
+  });
+
   test("captures real Codex dotted jsonl events as structured trace instead of cli-text fallback", async () => {
     const { smithers, outputs, db, cleanup } = createTestSmithers({
       result: z.object({ answer: z.string() }),
     });
     const runId = "agent-trace-codex-dotted-jsonl";
 
-    class CodexJsonlAgentFake extends CodexAgent {
-      constructor() {
-        super({ skipGitRepoCheck: true });
-      }
+    class CodexJsonlAgentFake {
+      readonly id = "codex-jsonl-fake";
+      readonly opts = { outputFormat: "stream-json" as const, json: true };
+      readonly family = "codex";
 
       async generate(args: { onStdout?: (text: string) => void }) {
         args.onStdout?.(

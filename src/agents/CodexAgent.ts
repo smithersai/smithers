@@ -16,6 +16,7 @@ type CodexAgentOptions = BaseCliAgentOptions & {
   disable?: string[];
   image?: string[];
   model?: string;
+  outputFormat?: "text" | "json" | "stream-json";
   oss?: boolean;
   localProvider?: string;
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";

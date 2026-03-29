@@ -493,6 +493,18 @@ type MappedStructuredEvent = {
   expect?: CanonicalAgentTraceEventKind;
 };
 
+type NormalizedTraceEvent = {
+  kind: CanonicalAgentTraceEventKind;
+  payload: Record<string, unknown> | null;
+  raw: unknown;
+  rawType?: string;
+};
+
+type NormalizedTraceBatch = {
+  events: NormalizedTraceEvent[];
+  expectedKinds?: CanonicalAgentTraceEventKind[];
+};
+
 const piSimpleEventMap: Record<string, MappedStructuredEvent> = {
   session: { kind: "session.start", payloadKind: "pi" },
   agent_start: { kind: "session.start", payloadKind: "pi" },
@@ -565,6 +577,419 @@ const genericStructuredEventMap: Record<string, MappedStructuredEvent> = {
   tool_result: { kind: "tool.result", payloadKind: "tool" },
   "tool_result.completed": { kind: "tool.result", payloadKind: "tool" },
 };
+
+function extractGenericDeltaText(parsed: any): string | undefined {
+  const candidates = [
+    parsed?.delta?.text,
+    parsed?.delta,
+    parsed?.text,
+    parsed?.content_block?.text,
+    parsed?.contentBlock?.text,
+    parsed?.message?.text,
+    parsed?.message?.content,
+    parsed?.output_text,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate) return candidate;
+  }
+  return undefined;
+}
+
+function extractGenericMessageText(parsed: any): string | undefined {
+  return extractTextFromJsonValue(
+    parsed?.message ?? parsed?.response ?? parsed?.item ?? parsed,
+  );
+}
+
+function extractGenericMessagePayload(parsed: any): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  const role =
+    parsed?.message?.role ?? parsed?.role ?? parsed?.response?.role;
+  if (typeof role === "string") payload.role = role;
+  const text = extractGenericMessageText(parsed);
+  if (text) payload.text = text;
+  if (parsed?.id) payload.id = parsed.id;
+  return payload;
+}
+
+function extractGenericToolPayload(parsed: any): Record<string, unknown> {
+  const tool =
+    parsed?.tool ??
+    parsed?.toolCall ??
+    parsed?.tool_call ??
+    parsed?.toolExecution ??
+    parsed;
+  return {
+    toolCallId: tool?.id ?? tool?.toolCallId ?? parsed?.id,
+    toolName: tool?.name ?? tool?.toolName ?? parsed?.toolName,
+    argsPreview: tool?.args ?? tool?.arguments ?? parsed?.args,
+    resultPreview: tool?.result ?? parsed?.result,
+    isError: Boolean(tool?.isError ?? parsed?.isError ?? parsed?.error),
+  };
+}
+
+function extractPiPayload(parsed: any): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (parsed?.message?.role) payload.role = parsed.message.role;
+  const text = extractGenericMessageText(parsed?.message);
+  if (text) payload.text = text;
+  if (parsed?.id) payload.id = parsed.id;
+  return payload;
+}
+
+function extractMappedPayload(
+  parsed: any,
+  payloadKind: PayloadKind,
+): Record<string, unknown> | null {
+  if (payloadKind === "message") return extractGenericMessagePayload(parsed);
+  if (payloadKind === "tool") return extractGenericToolPayload(parsed);
+  if (payloadKind === "pi") return extractPiPayload(parsed);
+  return {};
+}
+
+function buildNormalizedEvent(
+  kind: CanonicalAgentTraceEventKind,
+  payload: Record<string, unknown> | null,
+  raw: unknown,
+  rawType?: string,
+): NormalizedTraceEvent {
+  return { kind, payload, raw, rawType };
+}
+
+function normalizeMappedEvent(
+  parsed: any,
+  rawType: string,
+  mapped: MappedStructuredEvent,
+): NormalizedTraceBatch {
+  return {
+    events: [
+      buildNormalizedEvent(
+        mapped.kind,
+        extractMappedPayload(parsed, mapped.payloadKind),
+        parsed,
+        rawType,
+      ),
+    ],
+    expectedKinds: mapped.expect ? [mapped.expect] : undefined,
+  };
+}
+
+function normalizeClaudeStructuredEvent(
+  parsed: any,
+  rawType: string,
+): NormalizedTraceBatch | null {
+  if (rawType === "assistant") {
+    const text = extractGenericMessageText(parsed?.message ?? parsed);
+    const events = text
+      ? [
+          buildNormalizedEvent(
+            "message.update",
+            extractGenericMessagePayload(parsed?.message ?? parsed),
+            parsed,
+            rawType,
+          ),
+        ]
+      : [
+          buildNormalizedEvent("stdout", { eventType: rawType }, parsed, rawType),
+        ];
+    const usage = normalizeTokenUsage(parsed?.message?.usage);
+    if (usage) events.push(buildNormalizedEvent("usage", usage, parsed, rawType));
+    return { events };
+  }
+
+  if (rawType === "result") {
+    const events: NormalizedTraceEvent[] = [];
+    const usage = normalizeTokenUsage(parsed?.usage);
+    if (usage) events.push(buildNormalizedEvent("usage", usage, parsed, rawType));
+    const text = extractGenericMessageText(parsed);
+    if (text) {
+      events.push(
+        buildNormalizedEvent("assistant.message.final", { text }, parsed, rawType),
+      );
+    }
+    return events.length > 0 ? { events } : null;
+  }
+
+  return null;
+}
+
+function normalizeGeminiStructuredEvent(
+  parsed: any,
+  rawType: string,
+): NormalizedTraceBatch | null {
+  if (rawType === "message") {
+    const text = extractGenericMessageText(parsed);
+    if (parsed?.role === "assistant" && typeof text === "string" && text) {
+      return {
+        events: [
+          buildNormalizedEvent(
+            parsed?.delta ? "assistant.text.delta" : "assistant.message.final",
+            { text },
+            parsed,
+            rawType,
+          ),
+        ],
+      };
+    }
+  }
+
+  if (rawType === "result" && parsed?.stats) {
+    const usage = normalizeTokenUsage(parsed.stats);
+    return usage
+      ? { events: [buildNormalizedEvent("usage", usage, parsed, rawType)] }
+      : null;
+  }
+
+  return null;
+}
+
+function normalizeCodexStructuredEvent(
+  parsed: any,
+  rawType: string,
+): NormalizedTraceBatch | null {
+  if (rawType === "thread.started") {
+    return {
+      events: [buildNormalizedEvent("stdout", { eventType: rawType }, parsed, rawType)],
+    };
+  }
+
+  if (rawType === "turn.started") {
+    return {
+      events: [buildNormalizedEvent("turn.start", {}, parsed, rawType)],
+      expectedKinds: ["turn.end"],
+    };
+  }
+
+  if (rawType === "item.completed" && parsed?.item?.type === "agent_message") {
+    const text = extractGenericMessageText(parsed.item);
+    if (typeof text === "string" && text) {
+      return {
+        events: [
+          buildNormalizedEvent(
+            "assistant.message.final",
+            { text },
+            parsed,
+            rawType,
+          ),
+        ],
+      };
+    }
+  }
+
+  if (rawType === "turn.completed") {
+    const events: NormalizedTraceEvent[] = [];
+    const usage = normalizeTokenUsage(parsed?.usage);
+    if (usage) events.push(buildNormalizedEvent("usage", usage, parsed, rawType));
+    events.push(buildNormalizedEvent("turn.end", {}, parsed, rawType));
+    const text = extractGenericMessageText(parsed);
+    if (text) {
+      events.push(
+        buildNormalizedEvent("assistant.message.final", { text }, parsed, rawType),
+      );
+    }
+    return { events };
+  }
+
+  return null;
+}
+
+function normalizePiStructuredEvent(
+  parsed: any,
+  rawType: string,
+): NormalizedTraceBatch | null {
+  const simple = piSimpleEventMap[rawType];
+  if (simple) return normalizeMappedEvent(parsed, rawType, simple);
+
+  if (rawType === "turn_end") {
+    const events: NormalizedTraceEvent[] = [
+      buildNormalizedEvent("turn.end", extractPiPayload(parsed), parsed, rawType),
+    ];
+    const text = extractGenericMessageText(parsed?.message);
+    if (text) {
+      events.push(
+        buildNormalizedEvent(
+          "assistant.message.final",
+          { text },
+          parsed?.message,
+          rawType,
+        ),
+      );
+    }
+    const usage = normalizeTokenUsage(parsed?.message?.usage);
+    if (usage) events.push(buildNormalizedEvent("usage", usage, parsed.message.usage, "usage"));
+    return { events };
+  }
+
+  if (rawType === "message_end") {
+    const events: NormalizedTraceEvent[] = [
+      buildNormalizedEvent("message.end", extractPiPayload(parsed), parsed, rawType),
+    ];
+    const text = extractGenericMessageText(parsed?.message);
+    if (parsed?.message?.role === "assistant" && text) {
+      events.push(
+        buildNormalizedEvent(
+          "assistant.message.final",
+          { text },
+          parsed?.message,
+          rawType,
+        ),
+      );
+    }
+    return { events };
+  }
+
+  if (rawType === "message_update") {
+    const evt = parsed?.assistantMessageEvent;
+    if (evt?.type === "text_delta" && typeof evt.delta === "string") {
+      return {
+        events: [
+          buildNormalizedEvent(
+            "assistant.text.delta",
+            { text: evt.delta },
+            parsed,
+            evt.type,
+          ),
+        ],
+      };
+    }
+    if (
+      (evt?.type === "thinking_delta" || evt?.type === "reasoning_delta") &&
+      typeof evt.delta === "string"
+    ) {
+      return {
+        events: [
+          buildNormalizedEvent(
+            "assistant.thinking.delta",
+            { text: evt.delta },
+            parsed,
+            evt.type,
+          ),
+        ],
+      };
+    }
+    return {
+      events: [
+        buildNormalizedEvent("message.update", extractPiPayload(parsed), parsed, rawType),
+      ],
+    };
+  }
+
+  return {
+    events: [buildNormalizedEvent("stdout", { eventType: rawType }, parsed, rawType)],
+  };
+}
+
+function normalizeSharedStructuredEvent(
+  parsed: any,
+  rawType: string,
+): NormalizedTraceBatch | null {
+  const mapped = genericStructuredEventMap[rawType];
+  if (mapped) return normalizeMappedEvent(parsed, rawType, mapped);
+
+  if (
+    [
+      "message_delta",
+      "assistant_message.delta",
+      "assistant_message_delta",
+      "response.output_text.delta",
+      "content_block_delta",
+    ].includes(rawType)
+  ) {
+    const text = extractGenericDeltaText(parsed);
+    if (typeof text === "string" && text) {
+      return {
+        events: [
+          buildNormalizedEvent("assistant.text.delta", { text }, parsed, rawType),
+        ],
+      };
+    }
+  }
+
+  if (
+    [
+      "thinking_delta",
+      "reasoning_delta",
+      "response.reasoning.delta",
+    ].includes(rawType)
+  ) {
+    const text = extractGenericDeltaText(parsed);
+    if (typeof text === "string" && text) {
+      return {
+        events: [
+          buildNormalizedEvent(
+            "assistant.thinking.delta",
+            { text },
+            parsed,
+            rawType,
+          ),
+        ],
+      };
+    }
+  }
+
+  if (
+    [
+      "message_end",
+      "assistant_message_end",
+      "response.completed",
+      "message_stop",
+    ].includes(rawType)
+  ) {
+    const events: NormalizedTraceEvent[] = [
+      buildNormalizedEvent(
+        "message.end",
+        extractGenericMessagePayload(parsed),
+        parsed,
+        rawType,
+      ),
+    ];
+    const text = extractGenericMessageText(parsed);
+    if (text) {
+      events.push(
+        buildNormalizedEvent("assistant.message.final", { text }, parsed, rawType),
+      );
+    }
+    const usage = normalizeTokenUsage(parsed?.usage);
+    if (usage) events.push(buildNormalizedEvent("usage", usage, parsed, rawType));
+    return { events };
+  }
+
+  return null;
+}
+
+function normalizeStructuredEvent(
+  agentFamily: AgentFamily,
+  parsed: any,
+  rawType: string,
+): NormalizedTraceBatch {
+  if (agentFamily === "pi") {
+    return normalizePiStructuredEvent(parsed, rawType) ?? {
+      events: [buildNormalizedEvent("stdout", { eventType: rawType }, parsed, rawType)],
+    };
+  }
+
+  if (agentFamily === "claude-code") {
+    const normalized = normalizeClaudeStructuredEvent(parsed, rawType);
+    if (normalized) return normalized;
+  }
+
+  if (agentFamily === "gemini") {
+    const normalized = normalizeGeminiStructuredEvent(parsed, rawType);
+    if (normalized) return normalized;
+  }
+
+  if (agentFamily === "codex") {
+    const normalized = normalizeCodexStructuredEvent(parsed, rawType);
+    if (normalized) return normalized;
+  }
+
+  const shared = normalizeSharedStructuredEvent(parsed, rawType);
+  if (shared) return shared;
+
+  return {
+    events: [buildNormalizedEvent("stdout", { eventType: rawType }, parsed, rawType)],
+  };
+}
 
 export function canonicalTraceEventToOtelLogRecord(
   event: CanonicalAgentTraceEvent,
@@ -983,326 +1408,13 @@ export class AgentTraceCollector {
       typeof parsed?.type === "string" ? parsed.type : "structured";
     const previousRawEventId = this.currentRawEventId;
     this.currentRawEventId = this.nextRawEventId(rawType);
-    if (this.agentFamily === "pi") {
-      try {
-        this.processPiEvent(parsed);
-      } finally {
-        this.currentRawEventId = previousRawEventId;
-      }
-      return;
-    }
     try {
-      this.processGenericStructuredEvent(parsed);
+      this.emitObservedBatch(
+        normalizeStructuredEvent(this.agentFamily, parsed, rawType),
+      );
     } finally {
       this.currentRawEventId = previousRawEventId;
     }
-  }
-
-  private processGenericStructuredEvent(parsed: any) {
-    const rawType =
-      typeof parsed?.type === "string" ? parsed.type : "structured";
-
-    if (this.agentFamily === "claude-code" && rawType === "assistant") {
-      const text = this.extractGenericMessageText(parsed?.message ?? parsed);
-      if (typeof text === "string" && text) {
-        this.pushObserved(
-          "message.update",
-          this.extractGenericMessagePayload(parsed?.message ?? parsed),
-          parsed,
-          rawType,
-        );
-      } else {
-        this.pushObserved("stdout", { eventType: rawType }, parsed, rawType);
-      }
-      const usage = normalizeTokenUsage(parsed?.message?.usage);
-      if (usage) {
-        this.pushObserved("usage", usage, parsed, rawType);
-      }
-      return;
-    }
-
-    if (this.agentFamily === "claude-code" && rawType === "result") {
-      const usage = normalizeTokenUsage(parsed?.usage);
-      if (usage) {
-        this.pushObserved("usage", usage, parsed, rawType);
-      }
-      const text = this.extractGenericMessageText(parsed);
-      if (typeof text === "string" && text) {
-        this.setFinalAssistantText(text);
-        this.pushObserved(
-          "assistant.message.final",
-          { text },
-          parsed,
-          rawType,
-        );
-      }
-      return;
-    }
-
-    if (this.agentFamily === "gemini" && rawType === "message") {
-      const role = parsed?.role;
-      const text = this.extractGenericMessageText(parsed);
-      if (role === "assistant" && typeof text === "string" && text) {
-        if (parsed?.delta) {
-          this.appendAssistantText(text);
-        } else {
-          this.setFinalAssistantText(text);
-        }
-        this.pushObserved(
-          parsed?.delta ? "assistant.text.delta" : "assistant.message.final",
-          { text },
-          parsed,
-          rawType,
-        );
-        return;
-      }
-    }
-
-    if (this.agentFamily === "gemini" && rawType === "result" && parsed?.stats) {
-      const usage = normalizeTokenUsage(parsed.stats);
-      if (usage) {
-        this.pushObserved("usage", usage, parsed, rawType);
-      }
-      return;
-    }
-
-    if (this.agentFamily === "codex" && rawType === "thread.started") {
-      this.pushObserved("stdout", { eventType: rawType }, parsed, rawType);
-      return;
-    }
-
-    if (this.agentFamily === "codex" && rawType === "turn.started") {
-      this.pushObserved("turn.start", {}, parsed, rawType);
-      this.expectedKinds.add("turn.end");
-      return;
-    }
-
-    if (
-      this.agentFamily === "codex" &&
-      rawType === "item.completed" &&
-      parsed?.item?.type === "agent_message"
-    ) {
-      const text = this.extractGenericMessageText(parsed.item);
-      if (typeof text === "string" && text) {
-        this.setFinalAssistantText(text);
-        this.pushObserved(
-          "assistant.message.final",
-          { text },
-          parsed,
-          rawType,
-        );
-        return;
-      }
-    }
-
-    const mapped = genericStructuredEventMap[rawType];
-    if (mapped) {
-      this.pushObserved(
-        mapped.kind,
-        this.extractMappedPayload(parsed, mapped.payloadKind),
-        parsed,
-        rawType,
-      );
-      if (mapped.expect) this.expectedKinds.add(mapped.expect);
-      return;
-    }
-
-    if (
-      [
-        "message_delta",
-        "assistant_message.delta",
-        "assistant_message_delta",
-        "response.output_text.delta",
-        "content_block_delta",
-      ].includes(rawType)
-    ) {
-      const text = this.extractGenericDeltaText(parsed);
-      if (typeof text === "string" && text) {
-        this.appendAssistantText(text);
-        this.pushObserved(
-          "assistant.text.delta",
-          { text },
-          parsed,
-          rawType,
-        );
-        return;
-      }
-    }
-
-    if (
-      [
-        "thinking_delta",
-        "reasoning_delta",
-        "response.reasoning.delta",
-      ].includes(rawType)
-    ) {
-      const text = this.extractGenericDeltaText(parsed);
-      if (typeof text === "string" && text) {
-        this.pushObserved(
-          "assistant.thinking.delta",
-          { text },
-          parsed,
-          rawType,
-        );
-        return;
-      }
-    }
-
-    if (
-      [
-        "message_end",
-        "assistant_message_end",
-        "response.completed",
-        "message_stop",
-      ].includes(rawType)
-    ) {
-      this.pushObserved(
-        "message.end",
-        this.extractGenericMessagePayload(parsed),
-        parsed,
-        rawType,
-      );
-      const text = this.extractGenericMessageText(parsed);
-      if (text) {
-        this.setFinalAssistantText(text);
-        this.pushObserved(
-          "assistant.message.final",
-          { text },
-          parsed,
-          rawType,
-        );
-      }
-      const usage = normalizeTokenUsage(parsed?.usage);
-      if (usage) {
-        this.pushObserved("usage", usage, parsed, rawType);
-      }
-      return;
-    }
-
-    if (rawType === "turn.completed") {
-      const usage = normalizeTokenUsage(parsed?.usage);
-      if (usage) {
-        this.pushObserved("usage", usage, parsed, rawType);
-      }
-      if (this.agentFamily === "codex") {
-        this.pushObserved("turn.end", {}, parsed, rawType);
-      }
-      const text = this.extractGenericMessageText(parsed);
-      if (text) {
-        this.setFinalAssistantText(text);
-        this.pushObserved(
-          "assistant.message.final",
-          { text },
-          parsed,
-          rawType,
-        );
-      }
-      return;
-    }
-
-    this.pushObserved("stdout", { eventType: rawType }, parsed, rawType);
-  }
-
-  private processPiEvent(parsed: any) {
-    const type = String(parsed?.type ?? "unknown");
-    const simple = piSimpleEventMap[type];
-    if (simple) {
-      this.pushObserved(
-        simple.kind,
-        this.extractMappedPayload(parsed, simple.payloadKind),
-        parsed,
-        type,
-      );
-      if (simple.expect) this.expectedKinds.add(simple.expect);
-      return;
-    }
-
-    if (type === "turn_end") {
-      this.pushObserved("turn.end", this.extractPiPayload(parsed), parsed, type);
-      const finalText = this.extractGenericMessageText(parsed?.message);
-      if (finalText) {
-        this.setFinalAssistantText(finalText);
-        this.pushObserved(
-          "assistant.message.final",
-          { text: finalText },
-          parsed?.message,
-          type,
-        );
-      }
-      const usage = normalizeTokenUsage(parsed?.message?.usage);
-      if (usage) {
-        this.pushObserved("usage", usage, parsed.message.usage, "usage");
-      }
-      return;
-    }
-
-    if (type === "message_end") {
-      this.pushObserved("message.end", this.extractPiPayload(parsed), parsed, type);
-      const finalText = this.extractGenericMessageText(parsed?.message);
-      if (parsed?.message?.role === "assistant" && finalText) {
-        this.setFinalAssistantText(finalText);
-        this.pushObserved(
-          "assistant.message.final",
-          { text: finalText },
-          parsed?.message,
-          type,
-        );
-      }
-      return;
-    }
-
-    if (type === "message_update") {
-      const evt = parsed?.assistantMessageEvent;
-      if (evt?.type === "text_delta" && typeof evt.delta === "string") {
-        this.appendAssistantText(evt.delta);
-        this.pushObserved(
-          "assistant.text.delta",
-          { text: evt.delta },
-          parsed,
-          evt.type,
-        );
-        return;
-      }
-      if (
-        (evt?.type === "thinking_delta" || evt?.type === "reasoning_delta") &&
-        typeof evt.delta === "string"
-      ) {
-        this.pushObserved(
-          "assistant.thinking.delta",
-          { text: evt.delta },
-          parsed,
-          evt.type,
-        );
-        return;
-      }
-      this.pushObserved("message.update", this.extractPiPayload(parsed), parsed, type);
-      return;
-    }
-
-    this.pushObserved("stdout", { eventType: type }, parsed, type);
-  }
-
-  private extractGenericDeltaText(parsed: any): string | undefined {
-    const candidates = [
-      parsed?.delta?.text,
-      parsed?.delta,
-      parsed?.text,
-      parsed?.content_block?.text,
-      parsed?.contentBlock?.text,
-      parsed?.message?.text,
-      parsed?.message?.content,
-      parsed?.output_text,
-    ];
-    for (const candidate of candidates) {
-      if (typeof candidate === "string" && candidate) return candidate;
-    }
-    return undefined;
-  }
-
-  private extractGenericMessageText(parsed: any): string | undefined {
-    return extractTextFromJsonValue(
-      parsed?.message ?? parsed?.response ?? parsed?.item ?? parsed,
-    );
   }
 
   private appendAssistantText(text: string) {
@@ -1313,42 +1425,6 @@ export class AgentTraceCollector {
   private setFinalAssistantText(text: string) {
     this.assistantTextBuffer = text;
     this.finalText = text;
-  }
-
-  private extractGenericMessagePayload(parsed: any): Record<string, unknown> {
-    const payload: Record<string, unknown> = {};
-    const role =
-      parsed?.message?.role ?? parsed?.role ?? parsed?.response?.role;
-    if (typeof role === "string") payload.role = role;
-    const text = this.extractGenericMessageText(parsed);
-    if (text) payload.text = text;
-    if (parsed?.id) payload.id = parsed.id;
-    return payload;
-  }
-
-  private extractGenericToolPayload(parsed: any): Record<string, unknown> {
-    const tool =
-      parsed?.tool ??
-      parsed?.toolCall ??
-      parsed?.tool_call ??
-      parsed?.toolExecution ??
-      parsed;
-    return {
-      toolCallId: tool?.id ?? tool?.toolCallId ?? parsed?.id,
-      toolName: tool?.name ?? tool?.toolName ?? parsed?.toolName,
-      argsPreview: tool?.args ?? tool?.arguments ?? parsed?.args,
-      resultPreview: tool?.result ?? parsed?.result,
-      isError: Boolean(tool?.isError ?? parsed?.isError ?? parsed?.error),
-    };
-  }
-
-  private extractPiPayload(parsed: any): Record<string, unknown> {
-    const payload: Record<string, unknown> = {};
-    if (parsed?.message?.role) payload.role = parsed.message.role;
-    const text = this.extractGenericMessageText(parsed?.message);
-    if (text) payload.text = text;
-    if (parsed?.id) payload.id = parsed.id;
-    return payload;
   }
 
   private observeSmithersEvent(event: SmithersEvent) {
@@ -1460,16 +1536,6 @@ export class AgentTraceCollector {
     return "full-observed";
   }
 
-  private extractMappedPayload(
-    parsed: any,
-    payloadKind: PayloadKind,
-  ): Record<string, unknown> | null {
-    if (payloadKind === "message") return this.extractGenericMessagePayload(parsed);
-    if (payloadKind === "tool") return this.extractGenericToolPayload(parsed);
-    if (payloadKind === "pi") return this.extractPiPayload(parsed);
-    return {};
-  }
-
   private push(
     kind: CanonicalAgentTraceEventKind,
     payload: Record<string, unknown> | null,
@@ -1546,6 +1612,41 @@ export class AgentTraceCollector {
   private applyTraceCompleteness(traceCompleteness: TraceCompleteness) {
     for (const event of this.events) {
       event.traceCompleteness = traceCompleteness;
+    }
+  }
+
+  private emitObservedBatch(
+    batch: NormalizedTraceBatch,
+    rawEventId = this.currentRawEventId,
+  ) {
+    for (const kind of batch.expectedKinds ?? []) {
+      this.expectedKinds.add(kind);
+    }
+    for (const event of batch.events) {
+      this.observeNormalizedEvent(event);
+      this.pushObserved(
+        event.kind,
+        event.payload,
+        event.raw,
+        event.rawType,
+        rawEventId,
+      );
+    }
+  }
+
+  private observeNormalizedEvent(event: NormalizedTraceEvent) {
+    if (
+      event.kind === "assistant.text.delta" &&
+      typeof event.payload?.text === "string"
+    ) {
+      this.appendAssistantText(event.payload.text);
+      return;
+    }
+    if (
+      event.kind === "assistant.message.final" &&
+      typeof event.payload?.text === "string"
+    ) {
+      this.setFinalAssistantText(event.payload.text);
     }
   }
 
