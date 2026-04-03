@@ -1,0 +1,113 @@
+---
+title: Multi-Agent Review
+description: Two reviewer agents run in parallel, then a third task aggregates their results.
+---
+
+# Multi-Agent Review
+
+Two reviewers run concurrently via `<Parallel>`, then an aggregator produces a final verdict.
+
+## Workflow Definition
+
+```tsx
+// multi-agent-review.tsx
+import { createSmithers, Task, Sequence, Parallel } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  review: z.object({
+    approved: z.boolean(),
+    feedback: z.string(),
+  }),
+  verdict: z.object({
+    approved: z.boolean(),
+    summary: z.string(),
+  }),
+});
+
+const securityReviewer = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions:
+    "You are a security-focused code reviewer. Look for vulnerabilities, injection risks, and auth issues. Return your verdict and detailed feedback.",
+});
+
+const qualityReviewer = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions:
+    "You are a code quality reviewer. Evaluate readability, test coverage, error handling, and adherence to best practices. Return your verdict and detailed feedback.",
+});
+
+const aggregator = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions:
+    "You receive two code reviews. Synthesize them into a single verdict. Approve only if both reviewers approve.",
+});
+
+export default smithers((ctx) => {
+  const secReview = ctx.outputMaybe("review", { nodeId: "security-review" });
+  const qualReview = ctx.outputMaybe("review", { nodeId: "quality-review" });
+
+  return (
+    <Workflow name="multi-agent-review">
+      <Sequence>
+        <Parallel maxConcurrency={2}>
+          <Task id="security-review" output={outputs.review} agent={securityReviewer}>
+            Review this PR diff for security issues:{"\n\n"}
+            ```diff{"\n"}- const token = req.query.token;{"\n"}+ const token =
+            sanitize(req.headers.authorization);{"\n"}```
+          </Task>
+
+          <Task id="quality-review" output={outputs.review} agent={qualityReviewer}>
+            Review this PR diff for code quality:{"\n\n"}
+            ```diff{"\n"}- const token = req.query.token;{"\n"}+ const token =
+            sanitize(req.headers.authorization);{"\n"}```
+          </Task>
+        </Parallel>
+
+        <Task id="aggregate" output={outputs.verdict} agent={aggregator}>
+          Combine these two reviews into a final verdict:{"\n\n"}
+          Security review: {secReview?.approved ? "APPROVED" : "REJECTED"} -{" "}
+          {secReview?.feedback}
+          {"\n\n"}
+          Quality review: {qualReview?.approved ? "APPROVED" : "REJECTED"} -{" "}
+          {qualReview?.feedback}
+        </Task>
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## Running
+
+```bash
+smithers up multi-agent-review.tsx --input '{}'
+```
+
+```
+[multi-agent-review] Starting run jkl012
+[security-review] Running...
+[quality-review] Running...
+[security-review] Done -> { approved: true, feedback: "Good: moved token from query to header, added sanitization." }
+[quality-review] Done -> { approved: false, feedback: "Missing error handling if authorization header is absent." }
+[aggregate] Done -> { approved: false, summary: "Security looks good, but quality reviewer flagged missing null check on header." }
+[multi-agent-review] Completed
+```
+
+## How Parallel Works
+
+- All children of `<Parallel>` start at the same time.
+- `maxConcurrency` limits simultaneous tasks. If omitted, all run at once.
+- The `Sequence` waits for all parallel tasks to finish before continuing.
+- Tasks sharing the same output table are disambiguated by `nodeId`.
+
+Retrieve each result with `ctx.outputMaybe(schemaKey, { nodeId })`:
+
+```tsx
+const secReview = ctx.outputMaybe("review", { nodeId: "security-review" });
+const qualReview = ctx.outputMaybe("review", { nodeId: "quality-review" });
+```
+
+Both return `undefined` until their respective tasks complete.

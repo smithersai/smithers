@@ -1,0 +1,10 @@
+export default function Prompt(props) {
+  const { children, components, ...data } = props ?? {};
+  return (
+    <>
+      {"Example prompt: blog analyzer pipeline analyze"}
+      {"\n\n"}
+      {JSON.stringify(data, null, 2)}
+    </>
+  );
+}

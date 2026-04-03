@@ -1,0 +1,66 @@
+---
+title: <Voice>
+description: Wrap a subtree with voice I/O capabilities using a VoiceProvider.
+---
+
+## Import
+
+```tsx
+import { Voice, Task } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `provider` | `VoiceProvider` | -- | Voice provider instance. Required. |
+| `speaker` | `string` | `undefined` | Default speaker/voice ID for TTS within this subtree. |
+| `children` | `ReactNode` | -- | Nested tasks and control-flow nodes. |
+
+## Basics
+
+```tsx
+<Voice provider={voice} speaker="alloy">
+  <Task id="transcribe" output={outputs.transcript} agent={myAgent}>
+    Transcribe the audio and return the text.
+  </Task>
+</Voice>
+```
+
+Descendant tasks receive `voice` and `voiceSpeaker` on their descriptors. The engine uses these fields to invoke voice operations around agent execution.
+
+## Nesting
+
+Innermost `<Voice>` in scope determines a task's effective voice provider:
+
+```tsx
+<Voice provider={openaiVoice} speaker="alloy">
+  <Task id="a" output={outputs.out}>Uses openaiVoice with alloy</Task>
+  <Voice provider={elevenLabsVoice} speaker="rachel">
+    <Task id="b" output={outputs.out}>Uses elevenLabsVoice with rachel</Task>
+  </Voice>
+</Voice>
+```
+
+## With Other Components
+
+`<Voice>` composes with all existing control-flow components:
+
+```tsx
+<Voice provider={voice}>
+  <Parallel>
+    <Task id="transcribe-en" output={outputs.en} agent={agent}>
+      Transcribe the English audio.
+    </Task>
+    <Task id="transcribe-fr" output={outputs.fr} agent={agent}>
+      Transcribe the French audio.
+    </Task>
+  </Parallel>
+</Voice>
+```
+
+## Internals
+
+- Renders to `<smithers:voice>`.
+- Extraction assigns `voice` and `voiceSpeaker` to every descendant task descriptor via a `voiceStack` pattern, matching how `worktreeStack` and `parallelStack` work.
+- The scheduler is unaware of voice; the engine consumes these fields at task execution time.

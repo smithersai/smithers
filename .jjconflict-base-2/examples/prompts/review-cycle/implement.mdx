@@ -1,0 +1,8 @@
+{props.mode}:
+
+Task: {props.task}
+Directory: {props.directory}
+
+{props.issues.length > 0
+  ? `Review feedback to address:\n${props.issues.map((issue) => `- [${issue.severity}] ${issue.file}: ${issue.description}\n  Suggestion: ${issue.suggestion}`).join("\n")}`
+  : "This is the initial implementation."}

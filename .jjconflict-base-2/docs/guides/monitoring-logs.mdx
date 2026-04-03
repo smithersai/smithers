@@ -1,0 +1,177 @@
+---
+title: Observability
+description: Export Smithers spans and metrics over OTLP, inspect persisted events, and add observability with Effect.
+---
+
+Four observability surfaces:
+
+- Persisted lifecycle events
+- Structured logs
+- OpenTelemetry spans
+- Effect metrics exported over OTLP
+
+The runtime instruments workflow runs, nodes, tools, cache, approvals, database access, hot reloads, HTTP requests, and JJ commands automatically.
+
+## Enable OpenTelemetry Export
+
+```ts
+import { Context, Effect, Layer, Schema } from "effect";
+import { Model } from "@effect/sql";
+import { Smithers } from "smithers-orchestrator";
+import { createSmithersObservabilityLayer } from "smithers-orchestrator/observability";
+
+const AppLive = Layer.mergeAll(
+  Smithers.sqlite({ filename: "./smithers.db" }),
+  AgentLive,
+  createSmithersObservabilityLayer({
+    enabled: true,
+    endpoint: "http://localhost:4318",
+    serviceName: "bugfix-worker",
+    logFormat: "json",
+  }),
+);
+```
+
+Environment-based configuration:
+
+```bash
+export SMITHERS_OTEL_ENABLED=1
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export OTEL_SERVICE_NAME=bugfix-worker
+export SMITHERS_LOG_FORMAT=json
+export SMITHERS_LOG_LEVEL=info
+```
+
+## Local Prometheus + Grafana Stack
+
+```bash
+docker compose -f observability/docker-compose.otel.yml up
+```
+
+| Service | Endpoint |
+|---|---|
+| OTLP collector | `http://localhost:4318` |
+| Prometheus | `http://localhost:9090` |
+| Grafana | `http://localhost:3000` |
+| Tempo | `http://localhost:3200` |
+
+The collector exports metrics on `:8889`; Prometheus scrapes it; Grafana ships with a pre-provisioned Smithers dashboard.
+
+The built-in HTTP server also exposes `GET /metrics` in Prometheus text exposition format.
+
+## Direct Prometheus Endpoint
+
+```bash
+curl http://localhost:7331/metrics
+```
+
+For custom servers:
+
+```ts
+import {
+  prometheusContentType,
+  renderPrometheusMetrics,
+} from "smithers-orchestrator/observability";
+
+const body = renderPrometheusMetrics();
+// return body with Content-Type: prometheusContentType
+```
+
+## Built-in Metrics
+
+```ts
+import { smithersMetrics } from "smithers-orchestrator/observability";
+```
+
+| Category | Metrics |
+|---|---|
+| Runs | `runsTotal`, `activeRuns`, `runsResumedTotal`, `runsFinishedTotal`, `runsFailedTotal`, `runsCancelledTotal` |
+| Nodes | `nodesStarted`, `nodesFinished`, `nodesFailed`, `activeNodes`, `nodeRetriesTotal` |
+| Duration | `nodeDuration`, `attemptDuration`, `runDuration` |
+| Tools | `toolCallsTotal`, `toolDuration`, `toolCallErrorsTotal`, `toolOutputTruncatedTotal` |
+| Cache | `cacheHits`, `cacheMisses` |
+| Database | `dbQueryDuration`, `dbRetries` |
+| Scheduler | `schedulerQueueDepth`, `schedulerConcurrencyUtilization`, `schedulerWaitDuration` |
+| Approvals | `approvalsRequested`, `approvalsGranted`, `approvalsDenied`, `approvalPending`, `approvalWaitDuration` |
+| Tokens | `tokensInputTotal`, `tokensOutputTotal`, `tokensCacheReadTotal`, `tokensCacheWriteTotal`, `tokensReasoningTotal` |
+| HTTP | `httpRequests`, `httpRequestDuration` |
+| Hot reload | `hotReloads`, `hotReloadFailures`, `hotReloadDuration` |
+| VCS | `vcsDuration` |
+| Process | `processUptimeSeconds`, `processMemoryRssBytes`, `processHeapUsedBytes` |
+| Errors | `errorsTotal`, `eventsEmittedTotal` |
+
+Emitted by the engine automatically.
+
+## Observability as a Dependency
+
+```ts
+import { Context, Effect, Layer, Metric } from "effect";
+import { SmithersObservability } from "smithers-orchestrator/observability";
+
+const notificationsSent = Metric.counter("app.notifications.sent");
+
+class Notifications extends Context.Tag("Notifications")<
+  Notifications,
+  {
+    readonly send: (ticketId: string) => Effect.Effect<void>;
+  }
+>() {}
+
+const NotificationsLive = Layer.effect(
+  Notifications,
+  Effect.gen(function* () {
+    const obs = yield* SmithersObservability;
+
+    return {
+      send: (ticketId) =>
+        obs.withSpan(
+          "notifications:send",
+          Effect.gen(function* () {
+            yield* obs.annotate({
+              ticketId,
+              channel: "slack",
+            });
+            yield* Metric.increment(notificationsSent);
+            yield* Effect.logInfo(`sending notification for ${ticketId}`);
+          }),
+          { component: "notifications" },
+        ),
+    };
+  }),
+);
+```
+
+Composition model:
+
+- Call `createSmithersObservabilityLayer(...)` once in the app layer
+- Depend on `SmithersObservability` in services that need Smithers-scoped spans
+- Use standard Effect `Metric` primitives for custom application metrics
+
+## Events and Logs
+
+OTLP does not replace the durable event log. Every run still persists events to:
+
+```txt
+.smithers/executions/<runId>/logs/stream.ndjson
+```
+
+```bash
+tail -f .smithers/executions/<runId>/logs/stream.ndjson
+sqlite3 smithers.db "SELECT seq, type, payload_json FROM _smithers_events WHERE run_id = '<id>' ORDER BY seq DESC LIMIT 20;"
+```
+
+See [Events](/runtime/events) for the event model.
+
+## Server Instrumentation
+
+HTTP server requests are instrumented:
+
+- `smithers.http.requests` counter
+- `smithers.http.request_duration_ms` histogram
+- Request, workflow-load, and body-read spans flow through the OTLP layer
+
+## Next Steps
+
+- [Debugging](/guides/debugging) -- CLI and SQLite failure diagnosis.
+- [Events Reference](/runtime/events) -- Full event type definitions.
+- [Server Integration](/integrations/server) -- HTTP server and SSE endpoint.

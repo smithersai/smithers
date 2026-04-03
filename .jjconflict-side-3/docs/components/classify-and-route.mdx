@@ -1,0 +1,142 @@
+---
+title: <ClassifyAndRoute>
+description: Classify items into categories then route each to a category-specific agent in parallel.
+---
+
+```tsx
+import { ClassifyAndRoute } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"classify-and-route"` | ID prefix for all generated task elements. |
+| `items` | `unknown \| unknown[]` | **(required)** | Items to classify. A single item or array. |
+| `categories` | `Record<string, AgentLike \| CategoryConfig>` | **(required)** | Maps category names to agents or config objects. |
+| `classifierAgent` | `AgentLike` | **(required)** | Agent that classifies items into categories. |
+| `classifierOutput` | `OutputTarget` | **(required)** | Output schema for the classification task. |
+| `routeOutput` | `OutputTarget` | **(required)** | Default output schema for routed work. |
+| `classificationResult` | `{ classifications: Array<{ category, itemId? }> } \| null` | `undefined` | Classification result used to drive routing. Typically from `ctx.outputMaybe()`. |
+| `maxConcurrency` | `number` | `Infinity` | Max parallel route handlers. |
+| `skipIf` | `boolean` | `false` | Skip the entire classify-and-route block. Returns `null`. |
+| `children` | `ReactNode` | `undefined` | Custom prompt content for the classification task. |
+
+### CategoryConfig
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `agent` | `AgentLike` | Agent that handles items in this category. |
+| `output` | `OutputTarget` | Optional output schema override for this category. |
+| `prompt` | `(item) => string` | Optional prompt template for the route handler. |
+
+## Basic usage
+
+```tsx
+const classification = ctx.outputMaybe(outputs.classification, {
+  nodeId: "classify-and-route-classify",
+});
+
+<Workflow name="support-router">
+  <ClassifyAndRoute
+    items={ctx.input.tickets}
+    categories={{
+      billing: billingAgent,
+      support: supportAgent,
+      sales: salesAgent,
+    }}
+    classifierAgent={classifierAgent}
+    classifierOutput={outputs.classification}
+    routeOutput={outputs.handled}
+    classificationResult={classification}
+  />
+</Workflow>
+```
+
+## With category configs
+
+Pass config objects instead of bare agents for per-category output schemas and prompts:
+
+```tsx
+<ClassifyAndRoute
+  items={messages}
+  categories={{
+    urgent: {
+      agent: urgentHandler,
+      output: outputs.urgentResult,
+      prompt: (item) => `URGENT: Handle immediately.\n${JSON.stringify(item)}`,
+    },
+    normal: {
+      agent: normalHandler,
+      output: outputs.normalResult,
+    },
+  }}
+  classifierAgent={classifierAgent}
+  classifierOutput={outputs.classification}
+  routeOutput={outputs.defaultResult}
+  classificationResult={classification}
+/>
+```
+
+## Custom classifier prompt
+
+Use `children` to provide a custom prompt for the classification task:
+
+```tsx
+<ClassifyAndRoute
+  items={ctx.input.emails}
+  categories={categoryMap}
+  classifierAgent={classifierAgent}
+  classifierOutput={outputs.classification}
+  routeOutput={outputs.handled}
+  classificationResult={classification}
+>
+  Classify each email by department. Use "engineering" for bug reports,
+  "sales" for pricing questions, "hr" for internal requests.
+</ClassifyAndRoute>
+```
+
+## Limiting concurrency
+
+```tsx
+<ClassifyAndRoute
+  items={ctx.input.items}
+  categories={categories}
+  classifierAgent={classifierAgent}
+  classifierOutput={outputs.classification}
+  routeOutput={outputs.result}
+  classificationResult={classification}
+  maxConcurrency={3}
+/>
+```
+
+At most three route handlers run simultaneously.
+
+## Structure
+
+`<ClassifyAndRoute>` composes existing primitives. The rendered tree looks like:
+
+```
+Sequence
+  Task (classifier — assigns categories)
+  Parallel (route handlers — one per classified item)
+    Task (route handler for item 1)
+    Task (route handler for item 2)
+    ...
+```
+
+## Two-phase rendering
+
+The component uses a two-phase approach driven by Smithers reactivity:
+
+1. **First render**: The classification task runs. `classificationResult` is `null`, so no routes are mounted.
+2. **Re-render**: After classification completes, pass the result via `classificationResult` (typically `ctx.outputMaybe()`). The route handlers are now mounted and execute in parallel.
+
+This pattern follows standard Smithers data-dependent control flow.
+
+## Notes
+
+- `<ClassifyAndRoute>` is a composite component. It renders `<Sequence>`, `<Task>`, and `<Parallel>` elements.
+- The `classificationResult` prop drives routing. Each entry's `category` field must match a key in `categories`.
+- Unrecognized categories (no matching key in `categories`) are silently skipped.
+- Route tasks have `continueOnFail` enabled by default so a single handler failure does not block others.

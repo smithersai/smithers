@@ -1,0 +1,45 @@
+---
+title: "Ghost: scripts/generate-llms-txt.ts"
+description: "Example from scripts/generate-llms-txt.ts — A utility script that generates llms-full.txt context files from all MDX documentation pages."
+---
+
+# scripts/generate-llms-txt.ts
+
+<Note>
+**Ghost doc** — Real utility script at `scripts/generate-llms-txt.ts`.
+</Note>
+
+## Source
+
+```ts
+// scripts/generate-llms-txt.ts
+#!/usr/bin/env bun
+import { writeFileSync } from "node:fs";
+import { generateLlmsFull } from "./docs-utils";
+
+const output = generateLlmsFull();
+
+writeFileSync("docs/llms-full.txt", output);
+console.log(
+  `Generated docs/llms-full.txt (${output.length} chars, ~${Math.round(output.length / 4)} tokens)`,
+);
+```
+
+## Running
+
+```bash
+bun scripts/generate-llms-txt.ts
+```
+
+## Key Details
+
+- Follows the `llms.txt` convention: one text file containing all documentation for AI model context.
+- Reads `docs/docs.json` so output tracks the current navigation and API tabs.
+- Strips YAML frontmatter; converts MDX components (`<Warning>`, `<Tip>`, `<Note>`) to blockquotes.
+- Each section includes a source URL back to the live docs page.
+- The generator, route preview server, and browser smoke tests share the same manifest helper, so route changes cannot drift.
+
+## Related Validation
+
+- `tests/docs-artifacts.test.ts` keeps the committed `docs/llms-full.txt` in sync with the current docs manifest.
+- `tests/docs-e2e.playwright.ts` exercises docs routes and legacy redirects against a local preview server.

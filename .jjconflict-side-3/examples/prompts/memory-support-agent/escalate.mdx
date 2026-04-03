@@ -1,0 +1,9 @@
+export default function Prompt(props) {
+  return (
+    <>
+      {"Example prompt: memory support agent escalate"}
+      {"\n\n"}
+      {JSON.stringify(props ?? {}, null, 2)}
+    </>
+  );
+}

@@ -1,0 +1,219 @@
+---
+title: Serve Mode
+description: Run a single workflow as an HTTP server with Hono — interact with it over REST, stream events via SSE, and manage approvals remotely.
+---
+
+Serve mode starts a Hono-based HTTP server alongside a running workflow. Every route operates on the single active run — no workflow path or run ID needed in requests.
+
+## CLI
+
+```bash
+smithers up workflow.tsx --serve --port 3000 --host 0.0.0.0
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--serve` | `false` | Enable HTTP server mode |
+| `--port` | `7331` | TCP port |
+| `--host` | `127.0.0.1` | Bind address |
+| `--auth-token` | `SMITHERS_API_KEY` env | Bearer token for auth |
+| `--metrics` | `true` | Expose `/metrics` Prometheus endpoint |
+
+The process stays alive after the workflow completes so you can still query final state. Ctrl+C stops both the server and the workflow.
+
+Detached mode works too:
+
+```bash
+smithers up workflow.tsx --serve --port 8080 -d
+```
+
+## Programmatic
+
+```ts
+import { createServeApp } from "smithers-orchestrator/serve";
+
+const app = createServeApp({
+  workflow,
+  adapter,
+  runId,
+  abort: new AbortController(),
+  authToken: "sk-secret",
+});
+
+Bun.serve({ port: 3000, fetch: app.fetch });
+```
+
+`createServeApp` returns a standard Hono app. Mount it with `Bun.serve`, pass it to another Hono app via `app.route()`, or use `app.fetch` directly in tests.
+
+## ServeOptions
+
+```ts
+type ServeOptions = {
+  workflow: SmithersWorkflow<any>;
+  adapter: SmithersDb;
+  runId: string;
+  abort: AbortController;
+  authToken?: string;
+  metrics?: boolean;
+};
+```
+
+| Option | Type | Description |
+|---|---|---|
+| `workflow` | `SmithersWorkflow` | Loaded workflow instance |
+| `adapter` | `SmithersDb` | Database adapter for the workflow |
+| `runId` | `string` | Active run ID |
+| `abort` | `AbortController` | Shared abort controller for cancellation |
+| `authToken` | `string` | Bearer token. Falls back to `SMITHERS_API_KEY`. Disabled if unset. |
+| `metrics` | `boolean` | Expose `/metrics` endpoint. Default: `true`. |
+
+---
+
+## Authentication
+
+When `authToken` is configured, every route except `/health` requires:
+
+- `Authorization: Bearer <token>`, or
+- `x-smithers-key: <token>`
+
+Missing or invalid tokens receive `401`.
+
+---
+
+## Routes
+
+### GET /health
+
+Always returns `200` regardless of auth.
+
+```json
+{ "ok": true }
+```
+
+### GET /
+
+Run status and node summary.
+
+```json
+{
+  "runId": "run-1234",
+  "workflowName": "bugfix",
+  "status": "running",
+  "startedAtMs": 1707500000000,
+  "finishedAtMs": null,
+  "summary": { "finished": 3, "in-progress": 1, "pending": 2 }
+}
+```
+
+### GET /events
+
+SSE stream of lifecycle events. Same format as the [multi-workflow server](/integrations/server#get-v1runsrunidevents).
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `afterSeq` | `number` | `-1` | Only events after this sequence |
+
+```
+event: smithers
+data: {"type":"NodeStarted","runId":"run-1234","nodeId":"analyze","iteration":0,"attempt":0}
+id: 1
+
+event: smithers
+data: {"type":"NodeFinished","runId":"run-1234","nodeId":"analyze","iteration":0,"attempt":0}
+id: 2
+```
+
+- Polls every 500ms.
+- Auto-closes when the run reaches a terminal state.
+- Reconnect with `?afterSeq=N` to resume from a known position.
+
+### GET /frames
+
+Rendered workflow frames.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `limit` | `number` | `50` | Max frames |
+| `afterFrameNo` | `number` | — | Frames after this number |
+
+### POST /approve/:nodeId
+
+Approve a pending approval gate.
+
+```json
+{
+  "iteration": 0,
+  "note": "Looks good",
+  "decidedBy": "alice"
+}
+```
+
+All fields optional. Returns `{ "runId": "run-1234" }`.
+
+### POST /deny/:nodeId
+
+Deny a pending approval gate. Same body as `/approve/:nodeId`.
+
+### POST /cancel
+
+Cancel the running workflow.
+
+| Status | Code | Condition |
+|---|---|---|
+| 200 | — | Cancelled successfully |
+| 409 | `RUN_NOT_ACTIVE` | Run already finished/failed/cancelled |
+
+### GET /metrics
+
+Prometheus text exposition. Same metrics as the [multi-workflow server](/integrations/server#get-metrics).
+
+---
+
+## Error Format
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable description"
+  }
+}
+```
+
+Unknown routes return `404` with code `NOT_FOUND`.
+
+---
+
+## Serve Mode vs Multi-Workflow Server
+
+| | Serve mode | [Multi-workflow server](/integrations/server) |
+|---|---|---|
+| Scope | Single workflow, single run | Any workflow, multiple concurrent runs |
+| Start | `smithers up --serve` or `createServeApp()` | `startServer()` |
+| Routes | `/`, `/events`, `/approve/:nodeId`, ... | `/v1/runs`, `/v1/runs/:runId`, ... |
+| Framework | Hono | Node.js `http` |
+| Use case | Development, single-purpose services | Production API gateway |
+
+---
+
+## Example
+
+```bash
+# Start a workflow with serve mode
+smithers up workflow.tsx --serve --port 8080 --auth-token sk-secret
+
+# Check status
+curl http://localhost:8080/ -H "Authorization: Bearer sk-secret"
+
+# Stream events
+curl -N http://localhost:8080/events -H "Authorization: Bearer sk-secret"
+
+# Approve a gate
+curl -X POST http://localhost:8080/approve/deploy \
+  -H "Authorization: Bearer sk-secret" \
+  -H "Content-Type: application/json" \
+  -d '{"note": "Ship it", "decidedBy": "alice"}'
+
+# Health check (no auth needed)
+curl http://localhost:8080/health
+```

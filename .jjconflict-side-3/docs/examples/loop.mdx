@@ -1,0 +1,129 @@
+---
+title: Loop
+description: An iterative review loop where an agent writes code and a reviewer evaluates it until approved or max iterations.
+---
+
+# Loop
+
+`<Loop>` re-executes its children until a condition is met or a maximum iteration count is reached.
+
+## Workflow Definition
+
+```tsx
+// review-loop.tsx
+import { createSmithers, Task, Sequence, Loop } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  code: z.object({
+    source: z.string(),
+    language: z.string(),
+  }),
+  review: z.object({
+    approved: z.boolean(),
+    feedback: z.string(),
+  }),
+  finalOutput: z.object({
+    source: z.string(),
+    iterations: z.number(),
+  }),
+});
+
+const coder = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions:
+    "You are an expert programmer. Write or revise code based on the given requirements and feedback.",
+});
+
+const reviewer = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions:
+    "You are a strict code reviewer. Evaluate the code for correctness, style, and edge cases. Set approved to true only if the code is production-ready.",
+});
+
+export default smithers((ctx) => {
+  const latestReview = ctx.outputMaybe("review", { nodeId: "review" });
+  const latestCode = ctx.outputMaybe("code", { nodeId: "write" });
+
+  return (
+    <Workflow name="review-loop">
+      <Sequence>
+        <Loop
+          id="revision-loop"
+          until={latestReview?.approved === true}
+          maxIterations={5}
+          onMaxReached="return-last"
+        >
+          <Sequence>
+            <Task id="write" output={outputs.code} agent={coder}>
+              Write a TypeScript function that debounces an input function.
+              {latestReview
+                ? ` Revise based on this feedback: ${latestReview.feedback}`
+                : ""}
+            </Task>
+
+            <Task id="review" output={outputs.review} agent={reviewer}>
+              Review this code for correctness and edge cases:
+              {"\n\n```" + (latestCode?.language ?? "ts") + "\n"}
+              {latestCode?.source ?? "// no code yet"}
+              {"\n```"}
+            </Task>
+          </Sequence>
+        </Loop>
+
+        <Task id="final" output={outputs.finalOutput}>
+          {{
+            source: latestCode?.source ?? "",
+            iterations: ctx.iterationCount("code", "write"),
+          }}
+        </Task>
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## Running
+
+```bash
+smithers up review-loop.tsx --input '{}'
+```
+
+```
+[review-loop] Starting run ghi789
+[revision-loop] Iteration 1
+  [write] Done -> { source: "function debounce(fn, ms) { ... }", language: "ts" }
+  [review] Done -> { approved: false, feedback: "Missing generic types; no cancel method." }
+[revision-loop] Iteration 2
+  [write] Done -> { source: "function debounce<T>(fn: T, ms: number) { ... cancel() ... }", language: "ts" }
+  [review] Done -> { approved: true, feedback: "Looks good. Generics and cancel are correct." }
+[final] Done -> { source: "function debounce<T>(...) { ... }", iterations: 2 }
+[review-loop] Completed
+```
+
+## Loop Props
+
+| Prop | Description |
+|------|-------------|
+| `id` | Unique identifier for the loop node. |
+| `until` | Boolean expression. When `true`, the loop stops. |
+| `maxIterations` | Safety cap on iterations (default: 5). |
+| `onMaxReached` | `"fail"` throws an error; `"return-last"` exits with the last output. |
+
+## Context Methods
+
+- `ctx.outputMaybe(schemaKey, { nodeId })` returns the latest value from the most recent iteration. The first argument is the schema key from `createSmithers`, not a table name.
+- `ctx.iterationCount(schemaKey, nodeId)` returns how many times a task has executed.
+- `ctx.latest(schemaKey, nodeId)` always returns the highest-iteration row. Inside loops, this is often more convenient than `ctx.outputMaybe`.
+
+All intermediate outputs are persisted. If the workflow crashes mid-iteration, it restarts from the last incomplete task.
+
+## Re-render Cycle
+
+1. The builder function `(ctx) => (...)` runs on every render frame.
+2. First render: `ctx.outputMaybe("review", ...)` returns `undefined`. The write task produces an initial draft.
+3. After both tasks complete, the renderer persists outputs and re-renders.
+4. Next render: `latestReview` is populated. The loop evaluates `until`. If not approved, the body executes again with the review feedback.
+5. Repeats until approved or `maxIterations` is reached.

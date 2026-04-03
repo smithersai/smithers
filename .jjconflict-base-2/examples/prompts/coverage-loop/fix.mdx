@@ -1,0 +1,11 @@
+Write tests to improve coverage from {props.current}% toward {props.target}%.
+
+Worst-covered files:
+{props.uncoveredFiles.length > 0
+  ? props.uncoveredFiles
+      .map((file) => `- ${file.file}: ${file.coverage}% (lines: ${file.uncoveredLines.slice(0, 10).join(", ")})`)
+      .join("\n")
+  : "Run measurement first"}
+
+Directory: {props.directory}
+Write 2-3 focused test files. Commit each.

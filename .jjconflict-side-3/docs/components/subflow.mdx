@@ -1,0 +1,108 @@
+---
+title: <Subflow>
+description: Invoke a child workflow with its own retry, cache, and resume boundary.
+---
+
+Composes workflows from workflows. A `<Subflow>` invokes a child workflow definition either as an independent run (`childRun` mode) or embedded inline in the parent (`inline` mode).
+
+## Import
+
+```tsx
+import { Subflow } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | **(required)** | Unique node id within the workflow. |
+| `workflow` | `Function` | **(required)** | The child workflow definition (a smithers workflow function). |
+| `input` | `unknown` | `undefined` | Input to pass to the child workflow. |
+| `mode` | `"childRun" \| "inline"` | `"childRun"` | `childRun` creates its own DB row/run; `inline` embeds in parent tree. |
+| `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to store the subflow result. |
+| `skipIf` | `boolean` | `false` | Skip this node entirely. |
+| `timeoutMs` | `number` | `undefined` | Max execution time in ms. |
+| `retries` | `number` | `0` | Retry attempts before failure. |
+| `retryPolicy` | `RetryPolicy` | `undefined` | `{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }` |
+| `continueOnFail` | `boolean` | `false` | Workflow continues even if this node fails. |
+| `cache` | `CachePolicy` | `undefined` | `{ by?: (ctx) => unknown, version?: string }`. Skip re-execution on cache hit. |
+| `dependsOn` | `string[]` | `undefined` | Task IDs that must complete first. |
+| `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
+| `label` | `string` | `id` | Display label override. |
+| `meta` | `Record<string, unknown>` | `undefined` | Extra metadata. |
+
+## childRun Mode (default)
+
+The child workflow gets its own database row and run boundary. Retries, caching, and resume all apply to the child run as a unit.
+
+```tsx
+import { Workflow, Sequence, Task, Subflow, createSmithers } from "smithers-orchestrator";
+import { z } from "zod";
+import childWorkflow from "./child-workflow";
+
+const { smithers, outputs } = createSmithers({
+  childResult: z.object({ status: z.string() }),
+  finalResult: z.object({ summary: z.string() }),
+});
+
+export default smithers((ctx) => (
+  <Workflow name="parent-flow">
+    <Sequence>
+      <Subflow
+        id="run-child"
+        workflow={childWorkflow}
+        input={{ repo: "acme/app" }}
+        output={outputs.childResult}
+        retries={2}
+        timeoutMs={300_000}
+      />
+
+      <Task id="summarize" output={outputs.finalResult} agent={summarizer}>
+        Summarize the child workflow result.
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+## inline Mode
+
+The child workflow tree is rendered directly inside the parent. No separate DB row is created -- the child's tasks appear as siblings in the parent plan.
+
+```tsx
+<Subflow
+  id="inline-checks"
+  workflow={checksWorkflow}
+  input={{ strict: true }}
+  output={outputs.checksResult}
+  mode="inline"
+/>
+```
+
+## Conditional Skipping
+
+```tsx
+<Subflow
+  id="optional-child"
+  workflow={optionalWorkflow}
+  output={outputs.optionalResult}
+  skipIf={!ctx.input.runOptional}
+/>
+```
+
+## Behavior
+
+- In `childRun` mode, the subflow creates an independent run entry. The parent task waits for the child run to complete.
+- In `inline` mode, the child workflow's component tree is rendered inline as a sequence in the parent plan tree.
+- Standard retry, cache, and timeout semantics apply at the subflow boundary.
+- The subflow result is written to the configured `output` target.
+
+## Rendering
+
+`<Subflow>` renders as a `smithers:subflow` host element. The scheduler treats `childRun` mode as a single task node and `inline` mode as a sequence of the child's tasks.
+
+## Notes
+
+- `childRun` is the default and recommended mode for isolation and resumability.
+- Use `inline` when you want the child tasks to participate directly in the parent's plan and share its retry/resume scope.
+- Subflows are composable -- a child workflow can itself contain `<Subflow>` nodes.

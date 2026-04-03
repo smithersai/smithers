@@ -1,0 +1,9 @@
+export default function Prompt(props) {
+  return (
+    <>
+      {"Example prompt: branch doctor inspect"}
+      {"\n\n"}
+      {JSON.stringify(props ?? {}, null, 2)}
+    </>
+  );
+}

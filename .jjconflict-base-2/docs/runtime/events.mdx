@@ -1,0 +1,477 @@
+---
+title: Events
+description: Subscribe to fine-grained lifecycle events emitted during workflow execution.
+---
+
+Smithers emits typed `SmithersEvent` objects throughout a run. Subscribe via `onProgress` in `runWorkflow`, or read persisted events from NDJSON log files.
+
+Events serve as the durable replay/audit log, correlate with structured logs through `runId`/`nodeId`/`attempt`, and drive built-in lifecycle counters. For OTLP export and Prometheus/Grafana setup, see [Observability](/guides/monitoring-logs).
+
+## Subscribing
+
+### onProgress Callback
+
+```ts
+import { runWorkflow } from "smithers-orchestrator";
+import workflow from "./workflow";
+
+await runWorkflow(workflow, {
+  input: { description: "Fix bug" },
+  onProgress: (event) => {
+    console.log(`[${event.type}] at ${event.timestampMs}`);
+
+    if (event.type === "NodeStarted") {
+      console.log(`  node: ${event.nodeId}, attempt: ${event.attempt}`);
+    }
+
+    if (event.type === "NodeFailed") {
+      console.error(`  node: ${event.nodeId}, error:`, event.error);
+    }
+  },
+});
+```
+
+### NDJSON Log Files
+
+Events are appended as JSON lines to:
+
+```
+.smithers/executions/<runId>/logs/stream.ndjson
+```
+
+```bash
+# Watch events in real time
+tail -f .smithers/executions/abc123/logs/stream.ndjson | jq .
+
+# Filter for failures
+cat .smithers/executions/abc123/logs/stream.ndjson | jq 'select(.type == "NodeFailed")'
+
+# Count events by type
+cat .smithers/executions/abc123/logs/stream.ndjson | jq -r .type | sort | uniq -c | sort -rn
+```
+
+Configure with `logDir` in `runWorkflow` or `--log-dir` / `--no-log` in the CLI.
+
+## Event-Driven Metrics
+
+| Event | Metric |
+|---|---|
+| `RunStarted` | `smithers.runs.total` |
+| `NodeStarted` | `smithers.nodes.started` |
+| `NodeFinished` | `smithers.nodes.finished` |
+| `NodeFailed` | `smithers.nodes.failed` |
+| Approval events | Approval counters |
+
+`trackSmithersEvent` from `smithers-orchestrator/observability` exposes this mapping for custom integrations.
+
+## Common Fields
+
+Every `SmithersEvent`:
+
+| Field | Type | Description |
+|---|---|---|
+| `type` | `string` | Event type discriminator. |
+| `runId` | `string` | Run this event belongs to. |
+| `timestampMs` | `number` | Unix timestamp in milliseconds. |
+
+Node-scoped events add:
+
+| Field | Type | Description |
+|---|---|---|
+| `nodeId` | `string` | Task node ID. |
+| `iteration` | `number` | Loop iteration number. |
+
+Attempt-scoped events add:
+
+| Field | Type | Description |
+|---|---|---|
+| `attempt` | `number` | Attempt number (starts at 1). |
+
+## Event Types
+
+### Run Lifecycle
+
+#### RunStarted
+
+Emitted once at the beginning of every run (including resumes).
+
+```ts
+{ type: "RunStarted", runId: string, timestampMs: number }
+```
+
+#### RunStatusChanged
+
+```ts
+{ type: "RunStatusChanged", runId: string, status: RunStatus, timestampMs: number }
+```
+
+`RunStatus`: `"running"` | `"waiting-approval"` | `"finished"` | `"failed"` | `"cancelled"`.
+
+#### RunFinished
+
+```ts
+{ type: "RunFinished", runId: string, timestampMs: number }
+```
+
+#### RunFailed
+
+```ts
+{ type: "RunFailed", runId: string, error: unknown, timestampMs: number }
+```
+
+#### RunCancelled
+
+```ts
+{ type: "RunCancelled", runId: string, timestampMs: number }
+```
+
+### Frame Events
+
+#### FrameCommitted
+
+Emitted each time the engine renders a new frame.
+
+```ts
+{
+  type: "FrameCommitted",
+  runId: string,
+  frameNo: number,
+  xmlHash: string,
+  timestampMs: number,
+}
+```
+
+`xmlHash`: SHA-256 hex digest of the canonicalized XML tree.
+
+### Node Lifecycle
+
+#### NodePending
+
+Task identified, waiting to be scheduled.
+
+```ts
+{ type: "NodePending", runId: string, nodeId: string, iteration: number, timestampMs: number }
+```
+
+#### NodeStarted
+
+```ts
+{
+  type: "NodeStarted",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt: number,
+  timestampMs: number,
+}
+```
+
+#### NodeFinished
+
+```ts
+{
+  type: "NodeFinished",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt: number,
+  timestampMs: number,
+}
+```
+
+#### NodeFailed
+
+```ts
+{
+  type: "NodeFailed",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt: number,
+  error: unknown,
+  timestampMs: number,
+}
+```
+
+#### NodeCancelled
+
+```ts
+{
+  type: "NodeCancelled",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt?: number,
+  reason?: string,
+  timestampMs: number,
+}
+```
+
+`reason` may be `"unmounted"` if the task disappeared from the tree after re-render.
+
+#### NodeSkipped
+
+```ts
+{ type: "NodeSkipped", runId: string, nodeId: string, iteration: number, timestampMs: number }
+```
+
+#### NodeRetrying
+
+Fires before the next attempt starts.
+
+```ts
+{
+  type: "NodeRetrying",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt: number,
+  timestampMs: number,
+}
+```
+
+`attempt` is the upcoming attempt number.
+
+#### NodeWaitingApproval
+
+```ts
+{
+  type: "NodeWaitingApproval",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  timestampMs: number,
+}
+```
+
+### Approval Events
+
+#### ApprovalRequested
+
+```ts
+{
+  type: "ApprovalRequested",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  timestampMs: number,
+}
+```
+
+#### ApprovalGranted
+
+```ts
+{
+  type: "ApprovalGranted",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  timestampMs: number,
+}
+```
+
+#### ApprovalDenied
+
+```ts
+{
+  type: "ApprovalDenied",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  timestampMs: number,
+}
+```
+
+### Tool Events
+
+#### ToolCallStarted
+
+```ts
+{
+  type: "ToolCallStarted",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt: number,
+  toolName: string,
+  seq: number,
+  timestampMs: number,
+}
+```
+
+`seq`: sequential counter for tool calls within the attempt.
+
+#### ToolCallFinished
+
+```ts
+{
+  type: "ToolCallFinished",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt: number,
+  toolName: string,
+  seq: number,
+  status: "success" | "error",
+  timestampMs: number,
+}
+```
+
+### Output Events
+
+#### NodeOutput
+
+Streaming text from an agent.
+
+```ts
+{
+  type: "NodeOutput",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt: number,
+  text: string,
+  stream: "stdout" | "stderr",
+  timestampMs: number,
+}
+```
+
+### Revert Events
+
+#### RevertStarted
+
+```ts
+{
+  type: "RevertStarted",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt: number,
+  jjPointer: string,
+  timestampMs: number,
+}
+```
+
+#### RevertFinished
+
+```ts
+{
+  type: "RevertFinished",
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  attempt: number,
+  jjPointer: string,
+  success: boolean,
+  error?: string,
+  timestampMs: number,
+}
+```
+
+### Hot Reload
+
+#### WorkflowReloadDetected
+
+```ts
+{
+  type: "WorkflowReloadDetected",
+  runId: string,
+  changedFiles: string[],
+  timestampMs: number
+}
+```
+
+#### WorkflowReloaded
+
+```ts
+{
+  type: "WorkflowReloaded",
+  runId: string,
+  generation: number,
+  changedFiles: string[],
+  timestampMs: number
+}
+```
+
+`generation`: monotonically increasing reload counter.
+
+#### WorkflowReloadFailed
+
+```ts
+{
+  type: "WorkflowReloadFailed",
+  runId: string,
+  error: unknown,
+  changedFiles: string[],
+  timestampMs: number
+}
+```
+
+The engine continues with the previous valid code.
+
+#### WorkflowReloadUnsafe
+
+```ts
+{
+  type: "WorkflowReloadUnsafe",
+  runId: string,
+  reason: string,
+  changedFiles: string[],
+  timestampMs: number
+}
+```
+
+Schema changes require a process restart.
+
+## Quick Reference
+
+| Event Type | Extra Fields |
+|---|---|
+| `RunStarted` | -- |
+| `RunStatusChanged` | `status` |
+| `RunFinished` | -- |
+| `RunFailed` | `error` |
+| `RunCancelled` | -- |
+| `FrameCommitted` | `frameNo`, `xmlHash` |
+| `NodePending` | `nodeId`, `iteration` |
+| `NodeStarted` | `nodeId`, `iteration`, `attempt` |
+| `NodeFinished` | `nodeId`, `iteration`, `attempt` |
+| `NodeFailed` | `nodeId`, `iteration`, `attempt`, `error` |
+| `NodeCancelled` | `nodeId`, `iteration`, `attempt?`, `reason?` |
+| `NodeSkipped` | `nodeId`, `iteration` |
+| `NodeRetrying` | `nodeId`, `iteration`, `attempt` |
+| `NodeWaitingApproval` | `nodeId`, `iteration` |
+| `ApprovalRequested` | `nodeId`, `iteration` |
+| `ApprovalGranted` | `nodeId`, `iteration` |
+| `ApprovalDenied` | `nodeId`, `iteration` |
+| `ToolCallStarted` | `nodeId`, `iteration`, `attempt`, `toolName`, `seq` |
+| `ToolCallFinished` | `nodeId`, `iteration`, `attempt`, `toolName`, `seq`, `status` |
+| `NodeOutput` | `nodeId`, `iteration`, `attempt`, `text`, `stream` |
+| `AgentEvent` | `nodeId`, `iteration`, `attempt`, `engine`, `event` |
+| `RevertStarted` | `nodeId`, `iteration`, `attempt`, `jjPointer` |
+| `RevertFinished` | `nodeId`, `iteration`, `attempt`, `jjPointer`, `success`, `error?` |
+| `WorkflowReloadDetected` | `changedFiles` |
+| `WorkflowReloaded` | `generation`, `changedFiles` |
+| `WorkflowReloadFailed` | `error`, `changedFiles` |
+| `WorkflowReloadUnsafe` | `reason`, `changedFiles` |
+| `RunHijackRequested` | `target?` |
+| `RunHijacked` | `nodeId`, `iteration`, `attempt`, `engine`, `mode`, `resume?`, `cwd` |
+| `ScorerStarted` | `nodeId`, `scorerId`, `scorerName` |
+| `ScorerFinished` | `nodeId`, `scorerId`, `scorerName`, `score` |
+| `ScorerFailed` | `nodeId`, `scorerId`, `scorerName`, `error` |
+| `TokenUsageReported` | `nodeId`, `iteration`, `attempt`, `model`, `agent`, `inputTokens`, `outputTokens`, `cacheReadTokens?`, `cacheWriteTokens?`, `reasoningTokens?` |
+
+## Persistence
+
+Events are persisted in two places:
+
+1. **SQLite** -- `_smithers_events` table with sequential `seq` number. Source of truth.
+2. **NDJSON** -- `stream.ndjson` in the run's log directory. Best-effort.
+
+Both are asynchronous. `onProgress` fires synchronously before persistence.
+
+## Related
+
+- [runWorkflow](/runtime/run-workflow) -- Where `onProgress` is configured.
+- [Monitoring and Logs](/guides/monitoring-logs) -- Practical monitoring guide.
+- [CLI](/cli/overview) -- View run status and frames.

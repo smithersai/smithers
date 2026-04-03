@@ -1,0 +1,658 @@
+---
+title: CLI Reference
+description: Complete reference for the current smithers command-line interface: scaffold workflow packs, run workflows, inspect runs, manage approvals, hijack sessions, and operate local tooling.
+---
+
+```bash
+smithers <command> [options]
+```
+
+> The current CLI surface uses `up`, `ps`, `logs`, `chat`, and `inspect`. References to `run`, `resume`, `status`, `frames`, or `list` are stale.
+
+## Command Map
+
+| Command | Purpose |
+|---|---|
+| `init` | Install a local `.smithers/` workflow pack. |
+| `up` | Start or resume a workflow execution. |
+| `tui` | Open the chat-first terminal control plane. |
+| `ps` | List recent and active runs. |
+| `logs` | Stream lifecycle events for a run. |
+| `chat` | Show agent prompts, responses, and stderr. |
+| `inspect` | Print structured run state, steps, approvals, and loop info. |
+| `approve` / `deny` | Record a decision for a pending approval gate. |
+| `cancel` / `down` | Stop one run or all active runs. |
+| `hijack` | Hand off an agent session or conversation. |
+| `graph` | Render a workflow tree without executing. |
+| `revert` | Restore workspace to a previous task attempt snapshot. |
+| `scores` | View scorer results for a run. |
+| `observability` | Start or stop the local Grafana/Prometheus/Tempo stack. |
+| `ask` | Query an installed agent CLI via MCP. |
+| `workflow` | Discover, create, resolve, and run flat workflows in `.smithers/workflows`. |
+| `cron` | Register and run background schedule triggers. |
+
+## Resolution Rules
+
+### Workflow paths and IDs
+
+`up`, `graph`, and `revert` take explicit workflow file paths:
+
+```bash
+smithers up workflow.tsx --input '{"topic":"Zig"}'
+smithers graph workflow.tsx
+smithers revert workflow.tsx --run-id run-123 --node-id analyze
+```
+
+A workflow file can be invoked directly without `up`:
+
+```bash
+smithers workflow.tsx --input '{"topic":"Zig"}'
+```
+
+The `workflow` command family resolves IDs under `.smithers/workflows/*.tsx`:
+
+```bash
+smithers workflow implement --prompt "Add input validation"
+smithers workflow run implement --prompt "Add input validation"
+```
+
+`smithers workflow run <name>` is a real subcommand. `smithers workflow <name>` is a shorthand that rewrites to it.
+
+### Finding persisted state
+
+Commands that operate on existing runs locate the nearest `smithers.db` by walking upward from the working directory:
+
+`ps`, `logs`, `chat`, `inspect`, `scores`, `approve`, `deny`, `cancel`, `down`, `workflow doctor`, `cron start`, `cron list`, `cron rm`
+
+No database found: exit with error.
+
+### Boolean options
+
+Booleans are modeled explicitly. Disable a default-on option by passing `false`:
+
+```bash
+smithers logs run-123 --follow false
+smithers chat run-123 --stderr false
+smithers hijack run-123 --launch false
+smithers up workflow.tsx --log false
+smithers observability --down true
+```
+
+## Commands
+
+### init
+
+Install the local workflow pack into `.smithers/`.
+
+```bash
+smithers init [--force true]
+```
+
+| Option | Description |
+|---|---|
+| `--force <boolean>` | Overwrite existing scaffold files. Default: `false`. |
+
+Generated pack contents:
+
+- `.smithers/workflows/` -- seeded workflows (`implement`, `review`, `plan`, `ticket`, `tickets`, `ralph`, `improve-test-coverage`, `test-first`, `debug`)
+- `.smithers/prompts/` -- shared MDX prompt templates
+- `.smithers/components/` -- reusable workflow components
+- `.smithers/agents.ts` -- agent configuration based on installed CLIs
+- `.smithers/preload.ts`, `.smithers/bunfig.toml`, `package.json`, `tsconfig.json`
+
+```bash
+smithers init
+smithers workflow implement --prompt "Commit the new .smithers pack"
+```
+
+### up
+
+Start or resume a workflow execution.
+
+```bash
+smithers up <workflow> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--detach`, `-d <boolean>` | Background mode; print `runId`/`pid`/`logFile` and exit. Default: `false`. |
+| `--run-id`, `-r <string>` | Explicit run ID. |
+| `--max-concurrency`, `-c <number>` | Maximum parallel tasks. |
+| `--root <string>` | Tool sandbox root. Default: workflow file's parent directory. |
+| `--log <boolean>` | NDJSON event log output. Default: `true`. |
+| `--log-dir <string>` | NDJSON log directory. |
+| `--allow-network <boolean>` | Allow `bash` tool network access. Does not affect CLI-backed agents. |
+| `--max-output-bytes <number>` | Max bytes per tool call return. |
+| `--tool-timeout-ms <number>` | Max wall-clock time per tool call. |
+| `--hot <boolean>` | Hot reload for `.tsx` workflows. Default: `false`. |
+| `--input`, `-i <string>` | Input JSON string. |
+| `--resume <boolean>` | Resume existing run. Default: `false`. |
+| `--force <boolean>` | Resume even if run is marked `running`. Default: `false`. |
+| `--serve <boolean>` | Start an HTTP server alongside the workflow. Default: `false`. |
+| `--port <number>` | HTTP server port when `--serve true`. Default: `7331`. |
+| `--host <string>` | HTTP bind address when `--serve true`. Default: `127.0.0.1`. |
+| `--auth-token <string>` | Bearer token for HTTP auth. Can also be provided through `SMITHERS_API_KEY`. |
+| `--metrics <boolean>` | Expose `/metrics` Prometheus endpoint when `--serve true`. Default: `true`. |
+
+```bash
+smithers up workflow.tsx --input '{"description":"Fix auth bug"}'
+smithers up workflow.tsx --run-id run-123 --resume true
+smithers up workflow.tsx --run-id run-123 --resume true --force true
+smithers up workflow.tsx --detach true --input '{"description":"Deploy v2"}'
+smithers up workflow.tsx --serve true --port 8080 --auth-token secret
+smithers workflow.tsx --input '{"description":"Direct file shorthand"}'
+```
+
+- Detached mode redirects stdout/stderr to a log file regardless of NDJSON logging settings.
+- Exits with code `3` when the workflow pauses in `waiting-approval`.
+- Serve mode starts the HTTP app and keeps the process alive until interrupted.
+
+### tui
+
+Open the chat-first terminal control plane. Connects to the nearest `smithers.db` and provides a unified workspace for orchestrating, monitoring, and steering workflows.
+
+```bash
+smithers tui [options]
+```
+
+| Option | Description |
+|---|---|
+| `--attach` | Attach to an existing broker instead of starting a new one. |
+| `--broker-only` | Start the broker daemon without attaching the UI client. For debugging. |
+
+```bash
+smithers tui
+smithers tui --attach
+smithers tui --broker-only
+```
+
+See the [TUI guide](/guides/tui) for the full keyboard model, workspace system, and feature reference.
+
+### ps
+
+List active, paused, and recent runs.
+
+```bash
+smithers ps [options]
+```
+
+| Option | Description |
+|---|---|
+| `--status`, `-s <string>` | Filter: `running`, `finished`, `failed`, `cancelled`, `waiting-approval`. |
+| `--limit`, `-l <number>` | Max rows. Default: `20`. |
+| `--all`, `-a <boolean>` | Parity flag. Unset `--status` already returns mixed statuses. |
+
+```bash
+smithers ps
+smithers ps --status waiting-approval
+smithers ps --limit 50
+```
+
+### logs
+
+Tail lifecycle events for a run.
+
+```bash
+smithers logs <runId> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--follow`, `-f <boolean>` | Poll for new events while run is active. Default: `true`. |
+| `--since <number>` | Start from event sequence number. |
+| `--tail`, `-n <number>` | Last `N` events. Default: `50`. |
+
+```bash
+smithers logs run-123
+smithers logs run-123 --follow false
+smithers logs run-123 --since 400
+smithers logs run-123 --tail 10
+```
+
+Reads from the database, not detached-process stdout. See [Events](/runtime/events).
+
+### chat
+
+Show agent transcripts for the latest or a specified run. Reconstructs chat from attempt metadata, `NodeOutput` events, and fallback `responseText`.
+
+```bash
+smithers chat [runId] [options]
+```
+
+| Option | Description |
+|---|---|
+| `--all`, `-a <boolean>` | Show every agent attempt. Default: `false`. |
+| `--follow`, `-f <boolean>` | Watch for new output. Default: `false`. |
+| `--tail`, `-n <number>` | Last `N` chat blocks. |
+| `--stderr <boolean>` | Include agent stderr. Default: `true`. |
+
+```bash
+smithers chat
+smithers chat run-123
+smithers chat run-123 --all true
+smithers chat run-123 --tail 20
+smithers chat run-123 --follow true --stderr false
+```
+
+### inspect
+
+Print structured run state.
+
+```bash
+smithers inspect <runId>
+```
+
+Output includes: run metadata, step states, pending approvals, loop state, parsed runtime config, and error details.
+
+```bash
+smithers inspect run-123
+```
+
+### scores
+
+View scorer results for a specific run.
+
+```bash
+smithers scores <runId> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--node <string>` | Filter scores to a specific node ID. |
+
+```bash
+smithers scores run-123
+smithers scores run-123 --node review
+```
+
+### approve
+
+Approve a pending approval gate.
+
+```bash
+smithers approve <runId> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--node`, `-n <string>` | Node ID. Required when multiple gates are pending. |
+| `--iteration <number>` | Loop iteration. Default: `0`. |
+| `--note <string>` | Approval note. |
+| `--by <string>` | Approver identifier. |
+
+```bash
+smithers approve run-123 --node deploy --note "Looks good" --by alice
+```
+
+Recording approval does not resume execution. Resume with:
+
+```bash
+smithers up workflow.tsx --run-id run-123 --resume true
+```
+
+### deny
+
+Deny a pending approval gate. Same options as `approve`.
+
+```bash
+smithers deny <runId> [options]
+```
+
+```bash
+smithers deny run-123 --node deploy --note "Rollback plan missing" --by bob
+```
+
+### cancel
+
+Halt one active run. Marks in-progress attempts as cancelled.
+
+```bash
+smithers cancel <runId>
+```
+
+```bash
+smithers cancel run-123
+```
+
+Exits with code `2` on success.
+
+### down
+
+Cancel all active runs in the nearest `smithers.db`.
+
+```bash
+smithers down [options]
+```
+
+| Option | Description |
+|---|---|
+| `--force <boolean>` | Cancel stale runs too. Default: `false`. |
+
+```bash
+smithers down
+```
+
+### hijack
+
+Hand off the latest resumable agent session or conversation.
+
+```bash
+smithers hijack <runId> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--target <string>` | Expected engine: `claude-code`, `codex`, `gemini`, `pi`, `kimi`, `forge`, `amp`. |
+| `--timeout-ms <number>` | Wait time for live handoff. Default: `30000`. |
+| `--launch <boolean>` | Open session immediately. Default: `true`. |
+
+Two hijack styles: native session hijack (CLI agents with resumable session IDs) and conversation hijack (agents resuming from durable message history).
+
+```bash
+smithers hijack run-123
+smithers hijack run-123 --target codex
+smithers hijack run-123 --launch false
+```
+
+- Cross-engine hijack is not supported.
+- If a live hijack succeeds and the run has a workflow path, Smithers auto-resumes in detached mode.
+- If auto-resume fails, prints the equivalent `smithers up ... --resume true --run-id ...` command.
+- Conversation hijack reconstructs agents from the original `.tsx` source.
+
+### graph
+
+Render a workflow tree without executing. Uses [renderFrame](/runtime/render-frame) internally.
+
+```bash
+smithers graph <workflow> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--run-id`, `-r <string>` | Run ID for persisted input/outputs. Default: `"graph"`. |
+| `--input <string>` | Input JSON. Overrides persisted input. |
+
+```bash
+smithers graph workflow.tsx --input '{"description":"Preview"}'
+smithers graph workflow.tsx --run-id run-123
+```
+
+### revert
+
+Restore workspace to a previous task attempt snapshot. See [Revert](/runtime/revert).
+
+```bash
+smithers revert <workflow> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--run-id`, `-r <string>` | Run ID. |
+| `--node-id`, `-n <string>` | Node ID. |
+| `--attempt <number>` | Attempt number. Default: `1`. |
+| `--iteration <number>` | Loop iteration. Default: `0`. |
+
+```bash
+smithers revert workflow.tsx --run-id run-123 --node-id analyze --attempt 2
+```
+
+### observability
+
+Start or stop the local observability stack (Docker Compose).
+
+```bash
+smithers observability [options]
+```
+
+| Option | Description |
+|---|---|
+| `--detach`, `-d <boolean>` | Background containers. Default: `false`. |
+| `--down <boolean>` | Stop and remove stack. Default: `false`. |
+
+```bash
+smithers observability
+smithers observability --detach true
+smithers observability --down true
+```
+
+Prints Grafana, Prometheus, and Tempo endpoints on success. See [Monitoring & Logs](/guides/monitoring-logs).
+
+### ask
+
+Query via the best available installed agent CLI.
+
+```bash
+smithers ask "How do I resume an approval-gated run?"
+```
+
+Supported agents: Claude Code, Kimi, Gemini, Codex. Bootstraps a temporary MCP config, exposes Smithers as a local MCP server (`smithers --mcp`), and delegates the question. Exits with error if no supported agent is installed.
+
+### workflow
+
+Manage flat workflows in `.smithers/workflows/*.tsx`.
+
+```bash
+smithers workflow <command>
+```
+
+| Command | Purpose |
+|---|---|
+| `workflow run <name>` | Run a discovered workflow by ID. |
+| `workflow` | List discovered workflows (no subcommand). |
+| `workflow list` | List discovered workflows. |
+| `workflow path <name>` | Resolve workflow ID to entry file. |
+| `workflow create <name>` | Create a new workflow scaffold. |
+| `workflow doctor [name]` | Report discovery, preload, bunfig, and detected agents. |
+
+Run shorthands:
+
+```bash
+smithers workflow implement --prompt "Add input validation"
+smithers workflow run implement --prompt "Add input validation"
+```
+
+Shorthand resolution:
+1. Resolve name from `.smithers/workflows/<name>.tsx`
+2. Rewrite to `smithers workflow run <name>`
+
+```bash
+smithers workflow
+smithers workflow list
+smithers workflow run implement --prompt "Investigate flaky tests"
+smithers workflow path implement
+smithers workflow doctor implement
+smithers workflow create foo
+smithers workflow foo --prompt "Investigate flaky tests"
+```
+
+- Names: lowercase letters, numbers, hyphens only.
+- `workflow create` writes only the workflow file. Run `smithers init` first for `.smithers/agents.ts` and `.smithers/components/`.
+
+#### workflow list
+
+```bash
+smithers workflow list
+```
+
+#### workflow run
+
+Run a discovered workflow by ID.
+
+```bash
+smithers workflow run <name> [options]
+```
+
+Arguments:
+
+- `name`: workflow ID
+
+`workflow run` accepts all of the same execution options as [`up`](#up), plus:
+
+| Option | Description |
+|---|---|
+| `--prompt`, `-p <string>` | Shorthand for setting `input.prompt` when `--input` is omitted. |
+
+Workflow-specific behavior:
+
+- resolves `<name>` to `.smithers/workflows/<name>.tsx`
+- defaults `--root` to `.` when not provided
+- preserves all other `up` semantics including `--resume`, `--detach`, `--serve`, and hot reload
+
+#### workflow path
+
+```bash
+smithers workflow path <name>
+```
+
+#### workflow create
+
+```bash
+smithers workflow create <name>
+```
+
+#### workflow doctor
+
+```bash
+smithers workflow doctor [name]
+```
+
+### cron
+
+Background schedule triggers stored in the nearest `smithers.db`.
+
+```bash
+smithers cron <command>
+```
+
+| Command | Purpose |
+|---|---|
+| `cron start` | Start the scheduler loop. |
+| `cron add <pattern> <workflowPath>` | Add a cron entry. |
+| `cron list` | List registered entries. |
+| `cron rm <cronId>` | Delete an entry. |
+
+```bash
+smithers cron add "0 * * * *" .smithers/workflows/implement.tsx
+smithers cron list
+smithers cron start
+smithers cron rm 0d3a8b0f-6f1c-4e2b-9f4d-0a7b7b95c2e1
+```
+
+- Polls every 15 seconds.
+- Due jobs launch as detached `smithers up ... -d` processes.
+- `workflowPath` is replayed through `smithers up`; use an explicit file path.
+
+#### cron start
+
+```bash
+smithers cron start
+```
+
+#### cron add
+
+```bash
+smithers cron add <pattern> <workflowPath>
+```
+
+#### cron list
+
+```bash
+smithers cron list
+```
+
+#### cron rm
+
+```bash
+smithers cron rm <cronId>
+```
+
+## Framework-Provided Built-Ins
+
+### completions
+
+```bash
+smithers completions bash
+smithers completions zsh
+smithers completions fish
+smithers completions nushell
+```
+
+| Shell | Setup |
+|---|---|
+| `bash` | `eval "$(smithers completions bash)"` |
+| `zsh` | `eval "$(smithers completions zsh)"` |
+| `fish` | `smithers completions fish \| source` |
+| `nushell` | Add output of `smithers completions nushell` to `config.nu` |
+
+### mcp add
+
+Register Smithers as an MCP server for an agent integration.
+
+```bash
+smithers mcp add [options]
+```
+
+| Option | Description |
+|---|---|
+| `--command`, `-c <cmd>` | Override the agent command. |
+| `--no-global` | Project-local install. |
+| `--agent <agent>` | Target agent (`claude-code`, `cursor`, etc.). |
+
+```bash
+smithers mcp add
+smithers mcp add --agent claude-code
+smithers mcp add --command "pnpm smithers --mcp"
+```
+
+### skills add
+
+Sync skill files to agent integrations.
+
+```bash
+smithers skills add [options]
+```
+
+| Option | Description |
+|---|---|
+| `--depth <number>` | Grouping depth. Default: `1`. |
+| `--no-global` | Project-local install. |
+
+```bash
+smithers skills add
+smithers skills add --depth 2
+smithers skills add --no-global
+```
+
+## Global Options
+
+| Option | Description |
+|---|---|
+| `--format <toon\|json\|yaml\|md\|jsonl>` | Output format. |
+| `--verbose` | Full output envelope. |
+| `--filter-output <keys>` | Filter JSON by key path (e.g. `runs[0].id`). |
+| `--schema` | Print JSON schema for the command. |
+| `--llms`, `--llms-full` | Print LLM-readable manifest. |
+| `--token-count` | Print token count instead of output. |
+| `--token-limit <n>` | Limit output to `n` tokens. |
+| `--token-offset <n>` | Skip first `n` output tokens. |
+| `--help`, `-h` | Command help. |
+| `--version`, `-v` | CLI version. |
+| `--mcp` | Start as MCP stdio server. Used by `smithers ask` and external tooling. |
+
+## Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success. |
+| `1` | Execution failure. |
+| `2` | Run cancelled / `cancel` succeeded. |
+| `3` | `up` completed in `waiting-approval`. |
+| `4` | Invalid arguments or user-correctable input error. |
+
+## Related
+
+- [runWorkflow](/runtime/run-workflow) -- programmatic runtime API
+- [Events](/runtime/events) -- persisted lifecycle events
+- [Revert](/runtime/revert) -- filesystem snapshot restoration
+- [Hot Reload](/guides/hot-reload) -- `up --hot true`
+- [Approvals](/concepts/approvals) -- `approve` and `deny`

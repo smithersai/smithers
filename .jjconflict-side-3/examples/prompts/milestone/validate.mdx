@@ -1,0 +1,13 @@
+export default function Prompt(props) {
+  return (
+    <>
+      {`Validate milestone "${props.title}" (${props.id}):`}
+      {"\n"}
+      {`Validation command: ${props.validationCommand}`}
+      {"\n"}
+      {`Directory: ${props.directory}`}
+      {"\n"}
+      {"Run the checks and report pass/fail."}
+    </>
+  );
+}

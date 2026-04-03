@@ -1,0 +1,141 @@
+---
+title: <ContentPipeline>
+description: Progressive content refinement through explicit stages. A composite component that wires Sequence and Task into a typed waterfall pipeline.
+---
+
+```tsx
+import { ContentPipeline } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `undefined` | Optional ID prefix for the pipeline. |
+| `stages` | `ContentPipelineStage[]` | **(required)** | Array of stage definitions executed in order. |
+| `skipIf` | `boolean` | `false` | Skip the entire pipeline. Returns `null`. |
+| `children` | `string \| ReactNode` | **(required)** | Initial prompt/content for the first stage. |
+
+### ContentPipelineStage
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | Unique identifier for this stage. Becomes the Task `id`. |
+| `agent` | `AgentLike` | Agent that performs this stage's work. |
+| `output` | `OutputTarget` | Output schema for this stage. |
+| `label` | `string` | Optional human-readable label for the stage. |
+
+## Basic usage
+
+```tsx
+import { createSmithers } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const outlineSchema = z.object({
+  sections: z.array(z.string()),
+  wordCount: z.number(),
+});
+
+const draftSchema = z.object({
+  content: z.string(),
+  wordCount: z.number(),
+});
+
+const editedSchema = z.object({
+  content: z.string(),
+  changes: z.array(z.string()),
+});
+
+const { Workflow, smithers, outputs } = createSmithers({
+  outline: outlineSchema,
+  draft: draftSchema,
+  edited: editedSchema,
+});
+
+const outliner = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "Create structured outlines for blog posts.",
+});
+
+const writer = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "Write engaging blog content from outlines.",
+});
+
+const editor = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "Edit for clarity, grammar, and style.",
+});
+
+export default smithers(() => (
+  <Workflow name="blog-pipeline">
+    <ContentPipeline
+      stages={[
+        { id: "outline", agent: outliner, output: outputs.outline, label: "Create outline" },
+        { id: "draft", agent: writer, output: outputs.draft, label: "Write draft" },
+        { id: "edit", agent: editor, output: outputs.edited, label: "Edit and polish" },
+      ]}
+    >
+      Write a blog post about building AI workflows with React components.
+    </ContentPipeline>
+  </Workflow>
+));
+```
+
+## Two-stage pipeline
+
+A minimal pipeline with just two stages:
+
+```tsx
+<ContentPipeline
+  stages={[
+    { id: "translate", agent: translator, output: outputs.translation, label: "Translate" },
+    { id: "review", agent: nativeReviewer, output: outputs.reviewed, label: "Native review" },
+  ]}
+>
+  Translate the product documentation to Japanese.
+</ContentPipeline>
+```
+
+## Conditional skipping
+
+```tsx
+<ContentPipeline
+  skipIf={ctx.input.skipEditing}
+  stages={[
+    { id: "draft", agent: writer, output: outputs.draft },
+    { id: "edit", agent: editor, output: outputs.edited },
+  ]}
+>
+  {ctx.input.topic}
+</ContentPipeline>
+```
+
+## What it expands to
+
+`<ContentPipeline>` is a composite component. For a three-stage pipeline it renders:
+
+```tsx
+<Sequence>
+  <Task id="outline" output={outputs.outline} agent={outliner} label="Create outline">
+    {children}
+  </Task>
+  <Task id="draft" output={outputs.draft} agent={writer} label="Write draft" needs={{ previous: "outline" }}>
+    Continue from the previous stage's output. Perform: Write draft
+  </Task>
+  <Task id="edit" output={outputs.edited} agent={editor} label="Edit and polish" needs={{ previous: "draft" }}>
+    Continue from the previous stage's output. Perform: Edit and polish
+  </Task>
+</Sequence>
+```
+
+Each stage after the first uses `needs` to depend on the previous stage, creating a typed waterfall.
+
+## Notes
+
+- Stages execute in array order. Each stage after the first depends on the previous stage via `needs`.
+- The first stage receives `children` as its prompt. Subsequent stages receive a continuation prompt that includes the stage label.
+- Stage `id` values must be unique within the pipeline and across the workflow.
+- Use `label` to provide descriptive names that appear in the TUI and in continuation prompts.

@@ -1,0 +1,27 @@
+{
+  "name": "@burns/cli",
+  "version": "0.1.0",
+  "description": "Burns command-line runtime for daemon and packaged web UI",
+  "type": "module",
+  "bin": {
+    "burns": "./src/bin.ts"
+  },
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "start": "bun run src/bin.ts start",
+    "build:artifact": "bash ../../scripts/release/build-cli-artifact.sh --channel ${CHANNEL:-canary} --version ${RELEASE_VERSION:-local} --output-dir dist/cli",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "typescript": "~5.9.3"
+  }
+}

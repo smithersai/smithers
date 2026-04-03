@@ -1,0 +1,121 @@
+---
+title: Tools Agent
+description: An agent that uses built-in tools (read, grep, bash) to search a codebase and return structured results.
+---
+
+# Tools Agent
+
+An agent with filesystem and shell tools for codebase analysis, log searching, or automated refactoring.
+
+## Workflow Definition
+
+```tsx
+// tools-agent.tsx
+import { createSmithers, Task, Sequence } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { tools } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  searchResult: z.object({
+    matches: z.array(
+      z.object({
+        file: z.string(),
+        line: z.number(),
+        content: z.string(),
+      })
+    ),
+    summary: z.string(),
+    recommendation: z.string(),
+  }),
+});
+
+const codeSearchAgent = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions: `You are a codebase analysis agent. Use the provided tools to search
+through source code and answer questions. Always back up your findings with
+specific file paths and line numbers.`,
+  tools,
+});
+
+export default smithers((ctx) => (
+  <Workflow name="tools-agent">
+    <Sequence>
+      <Task
+        id="search"
+        output={outputs.searchResult}
+        agent={codeSearchAgent}
+        timeoutMs={60_000}
+        retries={2}
+      >
+        Search the current repository for all usages of deprecated API calls
+        matching the pattern "legacyAuth". For each match, record the file path,
+        line number, and the matching line content. Then provide a summary of how
+        widespread the usage is and a recommendation for migration.
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+## Running
+
+```bash
+smithers up tools-agent.tsx --input '{}'
+```
+
+```
+[tools-agent] Starting run pqr678
+[search] Running...
+  [tool:grep] pattern="legacyAuth" path="." -> 4 matches
+  [tool:read] file="src/auth/login.ts" lines=42-50
+  [tool:read] file="src/middleware/session.ts" lines=18-25
+[search] Done -> {
+  matches: [
+    { file: "src/auth/login.ts", line: 45, content: "const session = legacyAuth.createSession(user);" },
+    { file: "src/auth/login.ts", line: 48, content: "legacyAuth.setToken(session.token);" },
+    { file: "src/middleware/session.ts", line: 20, content: "if (legacyAuth.verify(token)) {" },
+    { file: "src/middleware/session.ts", line: 23, content: "legacyAuth.refresh(token);" }
+  ],
+  summary: "4 usages across 2 files (auth/login.ts and middleware/session.ts).",
+  recommendation: "Replace legacyAuth with the new AuthService class. Start with session.ts since it has fewer call sites."
+}
+[tools-agent] Completed
+```
+
+## Built-in Tools
+
+```tsx
+import { tools } from "smithers-orchestrator";
+
+// Or individually:
+import { read, write, edit, grep, bash } from "smithers-orchestrator";
+```
+
+| Tool | Description |
+|------|-------------|
+| `read` | Read file contents by path. Supports line ranges. |
+| `write` | Write content to a file. Creates if absent. |
+| `edit` | Search-and-replace edits. Safer than full rewrites. |
+| `grep` | Regex search over file contents. Returns files, lines, context. |
+| `bash` | Execute shell commands. |
+
+## Robustness Props
+
+| Prop | Value | Purpose |
+|------|-------|---------|
+| `timeoutMs` | `60_000` | Kill runaway tool loops after 60s. |
+| `retries` | `2` | Retry on failure (e.g., grep typo on first pass). |
+
+```tsx
+<Task
+  id="search"
+  output={outputs.searchResult}
+  agent={codeSearchAgent}
+  timeoutMs={60_000}
+  retries={2}
+  continueOnFail  // workflow continues even if retries exhausted
+  meta={{ pattern: "legacyAuth" }}  // arbitrary metadata stored with the task
+>
+```

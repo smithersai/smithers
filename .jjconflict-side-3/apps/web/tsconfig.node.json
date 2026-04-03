@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "baseUrl": ".",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "erasableSyntaxOnly": true,
+    "noUncheckedSideEffectImports": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["vite.config.ts"]
+}

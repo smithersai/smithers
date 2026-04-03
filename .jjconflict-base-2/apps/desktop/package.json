@@ -1,0 +1,21 @@
+{
+  "name": "@burns/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "export BURNS_DESKTOP_ALLOW_ATTACH_EXISTING=1; export BURNS_DESKTOP_PREBUILD_BUN=bun; bash ./scripts/ensure-electrobun-local-dep.sh && bunx electrobun dev",
+    "build": "export BURNS_DESKTOP_PREBUILD_BUN=bun; bash ./scripts/ensure-electrobun-local-dep.sh && bunx electrobun build --env=stable",
+    "build:canary": "export BURNS_DESKTOP_PREBUILD_BUN=bun; bash ./scripts/ensure-electrobun-local-dep.sh && bunx electrobun build --env=canary",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@burns/shared": "workspace:*",
+    "electrobun": "^1.15.1"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "typescript": "~5.9.3"
+  }
+}

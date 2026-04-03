@@ -1,0 +1,124 @@
+---
+title: <Approval>
+description: A first-class JSX approval node that pauses durably and resolves to an ApprovalDecision value.
+---
+
+Pauses the workflow until a human approves or denies. Writes an `ApprovalDecision` to the configured output:
+
+```ts
+type ApprovalDecision = {
+  approved: boolean;
+  note: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+};
+```
+
+## Import
+
+```tsx
+import { Approval, approvalDecisionSchema } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | **(required)** | Unique node id within the workflow. |
+| `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to persist the decision. Zod schema from `outputs` (recommended), Drizzle table, or string key. |
+| `outputSchema` | `z.ZodObject` | `approvalDecisionSchema` | Override the decision schema (manual DB API). |
+| `request` | `{ title: string; summary?: string; metadata?: Record<string, unknown> }` | **(required)** | Human-facing request. `title` becomes the node label. |
+| `onDeny` | `"fail" \| "continue" \| "skip"` | `"fail"` | Behavior after denial. `"continue"` and `"skip"` still persist the denial. |
+| `dependsOn` | `string[]` | `undefined` | Task IDs that must complete first. |
+| `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
+| `skipIf` | `boolean` | `false` | Skip this node entirely. |
+| `timeoutMs` | `number` | `undefined` | Max wait in ms. Node fails on timeout. |
+| `retries` | `number` | `0` | Retry attempts before failure. |
+| `retryPolicy` | `RetryPolicy` | `undefined` | `{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }` |
+| `continueOnFail` | `boolean` | `false` | Workflow continues even if this node fails. |
+| `cache` | `CachePolicy` | `undefined` | `{ by?: (ctx) => unknown, version?: string }`. Skip re-execution on cache hit. |
+| `label` | `string` | `request.title` | Display label override. |
+| `meta` | `Record<string, unknown>` | `undefined` | Extra metadata merged with request fields. |
+
+## Schema-driven Example
+
+```tsx
+import {
+  Approval,
+  Sequence,
+  Task,
+  Workflow,
+  approvalDecisionSchema,
+  createSmithers,
+} from "smithers-orchestrator";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  publishApproval: approvalDecisionSchema,
+  publishResult: z.object({
+    status: z.enum(["published", "rejected"]),
+  }),
+});
+
+export default smithers((ctx) => {
+  const decision = ctx.outputMaybe(outputs.publishApproval, {
+    nodeId: "approve-publish",
+  });
+
+  return (
+    <Workflow name="publish-flow">
+      <Sequence>
+        <Approval
+          id="approve-publish"
+          output={outputs.publishApproval}
+          request={{
+            title: "Publish the draft?",
+            summary: "Human review is required before production publish.",
+            metadata: { channel: "blog" },
+          }}
+          onDeny="continue"
+        />
+
+        {decision ? (
+          <Task id="record-decision" output={outputs.publishResult}>
+            {{
+              status: decision.approved ? "published" : "rejected",
+            }}
+          </Task>
+        ) : null}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## Manual API Example
+
+Pass `outputSchema={approvalDecisionSchema}` when `output` is a Drizzle table.
+
+```tsx
+<Approval
+  id="approve-deploy"
+  output={deployApprovalTable}
+  outputSchema={approvalDecisionSchema}
+  request={{
+    title: "Deploy to production?",
+    summary: "Build 2026.03.15 passed all checks.",
+  }}
+/>
+```
+
+## Behavior
+
+- Workflow enters `waiting-approval` when this node is reached.
+- `smithers approve` / `smithers deny` updates the record durably.
+- On resume, the node resolves to a decision object; downstream JSX branches on the value.
+- `onDeny="fail"` -- hard gate.
+- `onDeny="continue"` -- branch on `decision.approved`.
+
+## `<Approval>` vs `needsApproval`
+
+| Use | When |
+| --- | --- |
+| `<Approval>` | Decision must be persisted as data and consumed by downstream nodes. |
+| `needsApproval` on `<Task>` | Simple pause before a task; no separate decision value needed. |

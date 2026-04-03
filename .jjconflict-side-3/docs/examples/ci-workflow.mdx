@@ -1,0 +1,43 @@
+---
+title: "Ghost: .github/workflows/ci.yml"
+description: "Example from .github/workflows/ci.yml — GitHub Actions CI workflow for running typecheck and tests on every push and pull request."
+---
+
+# .github/workflows/ci.yml
+
+<Note>
+**Ghost doc** -- Real CI configuration from `.github/workflows/ci.yml`.
+</Note>
+
+## Source
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: "1.3.4"
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Test
+        run: bun test
+```
+
+## Notes
+
+- Uses `oven-sh/setup-bun` for fast Bun-based CI.
+- `--frozen-lockfile` pins exact dependency versions.
+- Typecheck and tests run as separate steps -- type errors surface even if tests pass.
+- Triggers on all pushes and pull requests with no branch filtering.

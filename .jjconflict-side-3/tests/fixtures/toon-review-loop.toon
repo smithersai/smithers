@@ -1,0 +1,26 @@
+name: review-loop
+input:
+  draft: string
+steps[2]:
+  - kind: loop
+    id: review-cycle
+    maxIterations: 3
+    until: review.approved
+    children[2]:
+      - id: review
+        run: "const approved = iteration >= 1;\nreturn { approved, notes: `round-${iteration}` };\n"
+        output:
+          approved: boolean
+          notes: string
+      - id: revise
+        needs[1]: review
+        skipIf: review.approved
+        run: "return { content: `${input.draft} | ${review.notes}` };\n"
+        output:
+          content: string
+  - id: finalize
+    needs[1]: review
+    run: "return {\n  approved: review.approved,\n  content: `${input.draft} | ${review.notes}`,\n};\n"
+    output:
+      approved: boolean
+      content: string

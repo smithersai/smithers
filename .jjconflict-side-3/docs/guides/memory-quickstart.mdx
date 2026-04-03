@@ -1,0 +1,164 @@
+---
+title: Memory Quickstart
+description: Set up cross-run memory, add recall to tasks, and use loop memory with Ralph.
+---
+
+## Prerequisites
+
+- `smithers-orchestrator` version 0.14 or later
+- An embedding model (OpenAI, Google, Cohere -- anything the AI SDK supports)
+
+## Set Up the Memory Store
+
+The memory store uses your workflow's existing SQLite database:
+
+```ts
+import { createSmithers } from "smithers-orchestrator";
+import { createMemoryStore } from "smithers-orchestrator/memory";
+import { z } from "zod";
+
+const { outputs, workflow } = createSmithers({
+  analysis: z.object({ summary: z.string(), score: z.number() }),
+});
+
+const store = createMemoryStore(workflow.db);
+```
+
+## Write and Read Facts
+
+Facts are key-value pairs scoped to a namespace:
+
+```ts
+import type { MemoryNamespace } from "smithers-orchestrator/memory";
+
+const ns: MemoryNamespace = { kind: "workflow", id: "code-review" };
+
+await store.setFact(ns, "reviewer-preference", { style: "thorough", language: "typescript" });
+
+const fact = await store.getFact(ns, "reviewer-preference");
+console.log(JSON.parse(fact!.valueJson));
+// { style: "thorough", language: "typescript" }
+```
+
+## Add Semantic Recall
+
+Set up semantic memory by connecting the RAG vector store and an embedding model:
+
+```ts
+import { createSemanticMemory } from "smithers-orchestrator/memory";
+import { createSqliteVectorStore } from "smithers-orchestrator/rag";
+import { openai } from "@ai-sdk/openai";
+
+const vectorStore = createSqliteVectorStore(workflow.db);
+const embeddingModel = openai.embedding("text-embedding-3-small");
+const semantic = createSemanticMemory(vectorStore, embeddingModel);
+```
+
+Store and retrieve by meaning:
+
+```ts
+await semantic.remember(ns, "The code-review workflow detected 3 critical bugs in the auth module");
+
+const results = await semantic.recall(ns, "What bugs were found?", { topK: 3 });
+for (const r of results) {
+  console.log(r.score.toFixed(2), r.chunk.content);
+}
+```
+
+## Add Memory to a Task
+
+Use the `memory` prop on `<Task>` to automatically recall context before the agent runs and store output after:
+
+```tsx
+import { Task, Loop, Workflow } from "smithers-orchestrator";
+
+const ns = { kind: "workflow" as const, id: "code-review" };
+
+export default workflow(({ input }) => (
+  <Workflow>
+    <Task
+      id="review"
+      agent={reviewer}
+      output={outputs.analysis}
+      memory={{
+        recall: { namespace: ns, topK: 3 },
+        remember: { namespace: ns, key: "last-review" },
+      }}
+    >
+      Review the code changes in {input.prUrl}
+    </Task>
+  </Workflow>
+));
+```
+
+On the first run, recall finds nothing and the agent runs normally. On subsequent runs, the agent receives the most relevant past reviews as context.
+
+## Loop Memory with Ralph
+
+Build iterative workflows where each loop iteration learns from the previous ones:
+
+```tsx
+const ns = { kind: "workflow" as const, id: "iterative-improve" };
+
+export default workflow(({ input }) => (
+  <Workflow>
+    <Loop until={done} maxIterations={5}>
+      <Task
+        id="improve"
+        agent={improver}
+        output={outputs.analysis}
+        memory={{
+          recall: { namespace: ns, topK: 5 },
+          remember: { namespace: ns },
+        }}
+      >
+        Improve the code based on previous feedback
+      </Task>
+    </Loop>
+  </Workflow>
+));
+```
+
+Each iteration stores its output and the next iteration recalls the most relevant prior outputs.
+
+## Message History
+
+Track ordered conversations across runs:
+
+```ts
+const thread = await store.createThread(ns, "PR #42 Review");
+
+await store.saveMessage({
+  threadId: thread.threadId,
+  role: "assistant",
+  contentJson: JSON.stringify({ text: "Found 3 issues in auth.ts" }),
+  runId: "run-abc",
+  nodeId: "review",
+});
+
+const messages = await store.listMessages(thread.threadId, 10);
+```
+
+## Processors
+
+Run maintenance on stored memory:
+
+```ts
+import { TtlGarbageCollector } from "smithers-orchestrator/memory";
+
+// Delete expired facts
+const gc = TtlGarbageCollector();
+await gc.process(store);
+```
+
+## CLI
+
+Inspect memory from the command line:
+
+```bash
+# List all facts in a namespace
+smithers memory list workflow:code-review
+
+# Semantic search
+smithers memory recall "What bugs were found?" --namespace workflow:code-review
+```

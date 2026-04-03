@@ -1,0 +1,23 @@
+REPORTING — Ticket: {props.ticketId} — {props.ticketTitle}
+
+Generate concise, easy-to-read report of ticket implementation.
+
+IMPLEMENTATION SUMMARY:
+{props.whatWasDone}
+
+PRE-COMPUTED METRICS (echo these back exactly in your output JSON):
+- filesChanged: {props.filesChanged}
+- testsAdded: {props.testsAdded}
+- reviewRounds: {props.reviewRounds}
+
+Assess:
+- Anything go wrong?
+- Agent struggle with anything?
+- Lessons for future tickets?
+- Did implementation match PRD exactly, or were deviations needed?
+
+**REQUIRED OUTPUT** — Must end with JSON matching schema:
+{props.schema}
+Use the pre-computed values above for filesChanged, testsAdded, reviewRounds.
+Only generate: summary, status, struggles, lessonsLearned.
+Don't skip JSON output. Workflow fails without it.

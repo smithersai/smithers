@@ -1,0 +1,9 @@
+export default function Prompt(props) {
+  return (
+    <>
+      {"Example prompt: compliance evidence collector packet"}
+      {"\n\n"}
+      {JSON.stringify(props ?? {}, null, 2)}
+    </>
+  );
+}

@@ -1,0 +1,66 @@
+---
+title: JSX API
+description: Build Smithers workflows as JSX trees with render-time branching, reusable components, and MDX prompts.
+---
+
+The JSX API describes workflows as trees of `<Workflow>`, `<Task>`, and control-flow components. Smithers renders the tree into an execution plan.
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import { createSmithers, Sequence, Task } from "smithers-orchestrator";
+import { z } from "zod";
+
+const analysisSchema = z.object({
+  summary: z.string(),
+});
+
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: analysisSchema,
+});
+
+export default smithers((ctx) => (
+  <Workflow name="analyze-repo">
+    <Sequence>
+      <Task id="analyze" output={outputs.analysis}>
+        {{ summary: `Analyze ${ctx.input.repo}` }}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+`outputs` maps each schema key to its Zod schema. `output={outputs.analysis}` gives compile-time type checking -- a typo like `output={outputs.anaylsis}` is a type error.
+
+## Execution Model
+
+1. Render the workflow tree with the current `ctx`.
+2. Extract executable task descriptors.
+3. Run ready tasks and persist outputs.
+4. Re-render with updated outputs in `ctx`.
+
+Task visibility uses JSX conditions or `deps` for upstream-output handoff:
+
+```tsx
+return (
+  <Workflow name="code-review">
+    <Task id="analyze" output={outputs.analysis}>...</Task>
+    <Task id="fix" output={outputs.fix} deps={{ analyze: outputs.analysis }}>
+      {(deps) => `Fix the issues from: ${deps.analyze.summary}`}
+    </Task>
+  </Workflow>
+);
+```
+
+## Schema-Driven JSX
+
+Use `createSmithers(...)` with Zod schemas and the returned `outputs` object. The `output` prop is type-checked against registered schemas. Smithers manages backing SQLite tables.
+
+A `<Task>` can still write to a custom Drizzle table or use a string schema key as an escape hatch.
+
+## Next Steps
+
+- [JSX Installation](/api/installation) -- Set up TypeScript, TSX, and optional MDX prompts.
+- [JSX Quickstart](/api/quickstart) -- Build a two-step workflow.
+- [Approval](/components/approval) -- Approval nodes.
+- [MergeQueue](/components/merge-queue) -- Serialize a subtree with a concurrency cap.
+- [Workflow](/components/workflow) -- Root component reference.

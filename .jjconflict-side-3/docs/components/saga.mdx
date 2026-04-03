@@ -1,0 +1,161 @@
+---
+title: <Saga>
+description: Forward steps with registered compensations executed in reverse on failure or cancel.
+---
+
+```tsx
+import { Saga } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | auto-generated | ID prefix for the saga. |
+| `steps` | `SagaStepDef[]` | `undefined` | Array of step definitions with action and compensation elements. |
+| `onFailure` | `"compensate" \| "compensate-and-fail" \| "fail"` | `"compensate"` | What to do when a step fails. |
+| `skipIf` | `boolean` | `false` | Skip the entire saga. Returns `null`. |
+| `children` | `React.ReactNode` | `undefined` | Alternative to `steps` — nest `<Saga.Step>` children. |
+
+### SagaStepDef
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | Unique step identifier. |
+| `action` | `ReactElement` | The forward action to execute. |
+| `compensation` | `ReactElement` | The rollback action on failure. |
+| `label` | `string` | Optional display label. |
+
+### Saga.Step Props
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | Step identifier. |
+| `compensation` | `ReactElement` | Rollback element for this step. |
+| `children` | `ReactElement` | The forward action element. |
+
+## Basic usage with steps array
+
+```tsx
+<Workflow name="deploy-saga">
+  <Saga
+    id="deploy"
+    steps={[
+      {
+        id: "create-pr",
+        action: (
+          <Task id="create-pr" output={outputs.pr} agent={codeAgent}>
+            Create a pull request with the changes.
+          </Task>
+        ),
+        compensation: (
+          <Task id="close-pr" output={outputs.closePr} agent={codeAgent}>
+            Close the pull request and clean up.
+          </Task>
+        ),
+      },
+      {
+        id: "deploy-staging",
+        action: (
+          <Task id="deploy-staging" output={outputs.staging} agent={deployAgent}>
+            Deploy to staging environment.
+          </Task>
+        ),
+        compensation: (
+          <Task id="rollback-staging" output={outputs.rollbackStaging} agent={deployAgent}>
+            Rollback staging deployment.
+          </Task>
+        ),
+      },
+      {
+        id: "deploy-prod",
+        action: (
+          <Task id="deploy-prod" output={outputs.prod} agent={deployAgent}>
+            Deploy to production.
+          </Task>
+        ),
+        compensation: (
+          <Task id="rollback-prod" output={outputs.rollbackProd} agent={deployAgent}>
+            Rollback production deployment.
+          </Task>
+        ),
+      },
+    ]}
+  />
+</Workflow>
+```
+
+## Declarative children syntax
+
+Use `<Saga.Step>` children for a JSX-native API:
+
+```tsx
+<Workflow name="ticket-saga">
+  <Saga id="ticket-flow">
+    <Saga.Step
+      id="create-ticket"
+      compensation={
+        <Task id="delete-ticket" output={outputs.deleteTicket} agent={ticketAgent}>
+          Delete the created ticket.
+        </Task>
+      }
+    >
+      <Task id="create-ticket" output={outputs.ticket} agent={ticketAgent}>
+        Create a Linear ticket for the feature.
+      </Task>
+    </Saga.Step>
+
+    <Saga.Step
+      id="create-branch"
+      compensation={
+        <Task id="delete-branch" output={outputs.deleteBranch} agent={gitAgent}>
+          Delete the feature branch.
+        </Task>
+      }
+    >
+      <Task id="create-branch" output={outputs.branch} agent={gitAgent}>
+        Create a feature branch from main.
+      </Task>
+    </Saga.Step>
+  </Saga>
+</Workflow>
+```
+
+## Failure modes
+
+The `onFailure` prop controls what happens when a step fails:
+
+- **`"compensate"`** (default) — Run compensation for all completed steps in reverse order. The saga resolves after compensation completes.
+- **`"compensate-and-fail"`** — Run compensation, then propagate the failure to the parent workflow.
+- **`"fail"`** — Skip compensation entirely and fail immediately.
+
+```tsx
+<Saga id="strict-deploy" onFailure="compensate-and-fail" steps={steps} />
+```
+
+## How compensation works
+
+When a step fails, the engine:
+
+1. Enters compensation mode.
+2. Identifies all completed steps (steps before the failed one).
+3. Executes their compensation elements in reverse order.
+4. Each compensation task receives the failed step's error context in its metadata.
+
+For example, if step 3 of 5 fails, compensations for steps 2 and 1 run (in that order).
+
+## Conditional skipping
+
+```tsx
+<Saga skipIf={ctx.input.dryRun} steps={steps} />
+```
+
+## Rendering
+
+`<Saga>` renders to a `<smithers:saga>` host element. Action steps are mounted as sequential children. Compensation elements are stored as engine metadata and only mounted when a failure triggers rollback.
+
+## Notes
+
+- Steps execute sequentially — each step waits for the previous one to complete.
+- Compensation elements should be idempotent when possible.
+- The `steps` prop and `Saga.Step` children are mutually exclusive. If both are provided, `steps` takes priority.

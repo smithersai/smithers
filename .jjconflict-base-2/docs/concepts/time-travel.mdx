@@ -1,0 +1,158 @@
+---
+title: Time Travel
+description: Snapshots, diffing, forking, and replay — navigating workflow history like a version control system for execution state.
+---
+
+When an AI workflow fails at step 47, you don't want to stare at logs and guess what went wrong. You want to rewind to step 46, see exactly what changed, and try again with different inputs. That's time travel.
+
+Smithers captures a snapshot of the entire workflow state at every frame commit. You can diff any two snapshots, fork a run from any point in its history, and replay from a checkpoint with modified inputs. Combined with jj (Jujutsu VCS) integration, you get versioned filesystem state alongside versioned workflow state.
+
+## Snapshots
+
+A snapshot is a frozen picture of everything that matters at a specific frame in a run:
+
+- **Node states** — which tasks are pending, running, finished, or failed
+- **Output rows** — the actual data each completed task produced
+- **Loop (Ralph) state** — loop iteration counters and completion flags (`<Loop>` renders as a `<smithers:ralph>` host element internally)
+- **Input data** — the original input row that started the run
+- **VCS pointer** — the jj `change_id` at the time of capture (if the repo uses jj)
+- **Content hash** — SHA-256 of the serialized state, so you can detect identical snapshots cheaply
+
+Snapshots are captured automatically after every frame commit in the engine loop. You never call a "checkpoint" function. The engine does it for you.
+
+```
+Frame 0 ──snapshot──> Frame 1 ──snapshot──> Frame 2 ──snapshot──> ...
+```
+
+Each snapshot is stored in `_smithers_snapshots` with a composite key of `(run_id, frame_no)`. The serialized JSON blobs are self-contained — you can reconstruct the full workflow state from any single snapshot without reading the event log.
+
+### Why Not Just Use Events?
+
+Events tell you *what happened*. Snapshots tell you *what the world looked like*. Replaying an event log to reconstruct state is expensive and error-prone. A snapshot gives you the answer in one read.
+
+## Diffing
+
+Given two snapshots, `diffSnapshots` computes a structured diff:
+
+```typescript
+const diff = diffSnapshots(snapshotA, snapshotB);
+// diff.nodesAdded    — nodes present in B but not A
+// diff.nodesRemoved  — nodes present in A but not B
+// diff.nodesChanged  — nodes whose state or output changed
+// diff.outputsAdded  — new output rows in B
+// diff.outputsRemoved — output rows gone in B
+// diff.outputsChanged — output rows with different values
+// diff.ralphChanged   — loop state differences
+// diff.inputChanged   — whether the input row changed
+```
+
+This is a pure function — no database access needed. You pass in two snapshot objects and get back a structured diff you can render in the TUI, dump as JSON, or use programmatically.
+
+The CLI exposes this as `smithers diff`:
+
+```bash
+# Diff two frames in the same run
+smithers diff myworkflow.tsx abc123:3 abc123:7
+
+# Diff the latest frames of two different runs
+smithers diff myworkflow.tsx abc123 def456
+```
+
+## Forking
+
+Forking creates a new run that starts from the state of an existing run at a specific frame. Think `git branch` but for workflow execution.
+
+```
+Run A:  Frame 0 → Frame 1 → Frame 2 → Frame 3 (failed)
+                              ↓
+Run B:                    Frame 0 → Frame 1 → ... (forked from A at frame 2)
+```
+
+When you fork:
+
+1. A new run is created with a fresh `runId`
+2. The snapshot from the parent run at the specified frame is copied as the initial state
+3. Optionally, specific nodes are reset to "pending" — they and their downstream dependents will re-execute
+4. Optionally, the input is overridden with new values
+5. The parent-child relationship is recorded in `_smithers_branches`
+
+Forking is cheap because it copies a single snapshot row, not the entire event history.
+
+### Reset Nodes
+
+The `resetNodes` parameter lets you selectively re-execute specific tasks. When a node is reset:
+
+- Its state is set to `pending`
+- Its output row is cleared
+- Any downstream nodes that depend on it are also reset (transitively)
+
+This is the key mechanism for "what-if" experiments. Change one task's behavior and see how it ripples through the rest of the workflow.
+
+## Replay
+
+Replay combines forking with execution. It creates a forked run and immediately starts running it:
+
+```bash
+# Replay from frame 5 of a specific run
+smithers replay workflow.tsx --run-id abc123 --frame 5
+
+# Replay with a specific node reset
+smithers replay workflow.tsx --run-id abc123 --frame 5 --node implement
+
+# Replay with new input
+smithers replay workflow.tsx --run-id abc123 --frame 5 --input '{"prompt":"Try a different approach"}'
+
+# Replay with VCS state restored
+smithers replay workflow.tsx --run-id abc123 --frame 5 --restore-vcs
+```
+
+With `--restore-vcs`, Smithers also restores the filesystem to the jj revision that was active at the source frame. This means the code that runs the workflow is the same code that was running when the snapshot was taken.
+
+## VCS Integration
+
+Every snapshot records the jj `change_id` and operation ID at capture time. This creates a parallel timeline: workflow state in SQLite, filesystem state in jj.
+
+The `_smithers_vcs_tags` table maps `(run_id, frame_no)` to VCS metadata. When you replay with `--restore-vcs`, Smithers:
+
+1. Looks up the VCS pointer for the source frame
+2. Creates a jj workspace at that revision
+3. Executes the workflow from the workspace
+
+This means you can replay a workflow exactly as it ran — same code, same state, same inputs — even if the codebase has changed since then.
+
+## Timeline Visualization
+
+The timeline shows the complete execution history of a run and all its forks:
+
+```bash
+# View timeline for a single run
+smithers timeline abc123
+
+# View the full branch tree
+smithers timeline abc123 --tree
+
+# JSON output for programmatic use
+smithers timeline abc123 --json
+```
+
+The `--tree` flag recursively includes all child runs (forks), building a tree of execution history. The TUI's run detail view shows this automatically.
+
+## Database Tables
+
+Time travel adds three tables:
+
+| Table | Primary Key | Purpose |
+|-------|-------------|---------|
+| `_smithers_snapshots` | `(run_id, frame_no)` | Full state capture at each frame |
+| `_smithers_branches` | `run_id` | Parent-child fork relationships |
+| `_smithers_vcs_tags` | `(run_id, frame_no)` | jj revision metadata per snapshot |
+
+The `_smithers_runs` table also gains three columns: `parent_run_id`, `parent_frame_no`, and `branch_label`, making fork relationships queryable directly from the runs table.
+
+## Events
+
+Three new event types track time travel operations:
+
+- **`SnapshotCaptured`** — emitted after each automatic snapshot. Carries `runId`, `frameNo`, and `contentHash`.
+- **`RunForked`** — emitted when a fork is created. Carries the parent run ID, parent frame, and optional branch label.
+- **`ReplayStarted`** — emitted when a replay begins. Carries the source run ID and frame.

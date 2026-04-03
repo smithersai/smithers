@@ -1,0 +1,22 @@
+REVIEW FIX — Ticket: {props.ticketId} — {props.ticketTitle}
+
+Address ALL issues from code review. Fix every issue unless clear false positive.
+
+REVIEW ISSUES:
+{JSON.stringify(props.issues, null, 2)}
+
+REVIEW FEEDBACK:
+{props.feedback}
+
+RULES:
+1. Fix every legitimate issue
+2. If FALSE POSITIVE: record it in falsePositiveComments array in your output JSON with file, line, issue, and rationale. Do NOT add comments to source code — false positives tracked in database.
+3. **ALL commits go directly on `main`. NEVER create branches. Stay on `main`.**
+4. Atomic commits: fix(scope): description
+5. Run `cd submodules/smithers && bun test` after fixes. Everything green.
+6. Significant refactoring required? Do it properly. No half-fixes.
+7. Remove verbose/redundant comments flagged. Keep only high-quality comments.
+
+**REQUIRED OUTPUT** — Must end with JSON matching schema:
+{props.schema}
+Don't skip JSON output. Workflow fails without it.

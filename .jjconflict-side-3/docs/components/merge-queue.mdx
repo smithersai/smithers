@@ -1,0 +1,66 @@
+---
+title: <MergeQueue>
+description: Queue tasks so at most maxConcurrency run; defaults to 1.
+---
+
+## Import
+
+```tsx
+import { MergeQueue } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | auto-generated | Stable id for the queue group. |
+| `maxConcurrency` | `number` | `1` | Max simultaneous child tasks. |
+| `skipIf` | `boolean` | `false` | Skip the entire subtree. |
+| `children` | `ReactNode` | -- | Child tasks/control-flow nodes. |
+
+## Examples
+
+### Single-lane (default)
+
+```tsx
+<MergeQueue>
+  <Task id="lint" output={outputs.outputC}>{{ value: 1 }}</Task>
+  <Task id="build" output={outputs.outputC}>{{ value: 2 }}</Task>
+  <Task id="test" output={outputs.outputC}>{{ value: 3 }}</Task>
+</MergeQueue>
+```
+
+### Custom concurrency
+
+```tsx
+<MergeQueue maxConcurrency={2}>
+  {items.map((it, i) => (
+    <Task key={i} id={`t${i}`} output={outputs.outputC}>{{ value: i }}</Task>
+  ))}
+</MergeQueue>
+```
+
+### Nesting with Parallel
+
+```tsx
+<Parallel maxConcurrency={3}>
+  <MergeQueue>
+    {items.map((it, i) => (
+      <Task key={i} id={`q${i}`} output={outputs.outputC}>{{ value: i }}</Task>
+    ))}
+  </MergeQueue>
+  <Task id="other" output={outputs.outputC}>{{ value: 99 }}</Task>
+</Parallel>
+```
+
+The inner `<MergeQueue>` constrains its children to 1-at-a-time. The outer `<Parallel>` runs unrelated siblings concurrently up to its own limit.
+
+## Internals
+
+Renders as `<smithers:merge-queue>` (or `null` when skipped). Each child task receives `parallelGroupId` and `parallelMaxConcurrency` in its descriptor. The engine enforces the concurrency cap per group.
+
+## Notes
+
+- Defaults to single-lane (`maxConcurrency = 1`).
+- Innermost group determines the effective cap for its descendants.
+- Tasks outside the queue are unaffected by its limit.

@@ -1,0 +1,6 @@
+Create a PR with the doc fixes:
+1. git checkout -b {props.branchName}
+2. git add {props.fixedFiles.join(" ")}
+3. git commit -m "docs: sync documentation with source code"
+4. git push -u origin HEAD
+5. gh pr create --title "docs: auto-sync documentation" --body "Fixes {props.fixedCount} documentation discrepancies found by automated audit"

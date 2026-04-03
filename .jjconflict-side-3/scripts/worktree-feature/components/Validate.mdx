@@ -1,0 +1,35 @@
+VALIDATION — Ticket: {props.ticketId} — {props.ticketTitle}
+
+Independently verify implementation correctness. Don't trust implementation agent claims — run everything yourself.
+
+## CANONICAL CHECK
+
+**Run: `cd submodules/smithers && bun test`**
+
+This runs the smithers framework test suite. ALL tests must pass.
+
+If `bun test` fails → validation FAILS. Must:
+1. Read full diagnostics
+2. Return JSON with allPassed: false + failingSummary describing EXACTLY what failed
+
+{props.implementOutput ? `\nIMPLEMENTATION CLAIMS (self-reported — verify independently):\nFiles created: ${JSON.stringify(props.implementOutput.filesCreated)}\nFiles modified: ${JSON.stringify(props.implementOutput.filesModified)}\nTests written: ${JSON.stringify(props.implementOutput.testsWritten)}\nDocs updated: ${JSON.stringify(props.implementOutput.docsUpdated)}\nRun \`git diff --name-only HEAD~1\` to verify actual changed files.\nCheck files exist + contain what described. Report discrepancies in failingSummary.` : ""}
+
+## ADDITIONAL CHECKS
+
+1. TypeScript compilation: `cd submodules/smithers && bunx tsc --noEmit` (if tsconfig exists)
+2. Verify new exports work: check `src/index.ts` re-exports new components/types
+3. If docs were changed, verify MDX syntax is valid
+
+## ZERO TOLERANCE
+
+- ALL tests pass. No exceptions.
+- Pre-existing failures count as failures.
+- Type errors count as failures.
+
+**REQUIRED OUTPUT** — Must end with JSON matching schema:
+{props.schema}
+
+Set `allPassed: true` ONLY if `bun test` exits status 0 (success).
+Set `allPassed: false` if ANY check fails + provide detailed failingSummary.
+
+Don't skip JSON output. Workflow fails without it.

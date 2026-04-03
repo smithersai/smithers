@@ -1,0 +1,5 @@
+Merge {props.results.length} worker results:
+
+{props.results.map((result) => `[${result.status}] ${result.itemId}: ${result.output}`).join("\n\n")}
+
+Produce a single coherent output combining all successful results.

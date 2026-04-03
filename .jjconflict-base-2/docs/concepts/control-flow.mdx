@@ -1,0 +1,303 @@
+---
+title: Control Flow
+description: How to sequence, parallelize, branch, and loop tasks in Smithers workflows.
+---
+
+Four primitives. That's the whole toolkit.
+
+`<Sequence>`, `<Parallel>`, `<Branch>`, `<Loop>` -- these are the only control-flow components you need to wire together any workflow. They compose like building blocks: nest them, combine them, and the execution graph writes itself.
+
+Let's build up from the simplest case.
+
+## Sequential Execution: `<Sequence>`
+
+You have three tasks. Each one needs the previous one's result. This is the most common pattern in programming, and `<Sequence>` does exactly what you'd expect: run children top to bottom, one at a time.
+
+```tsx
+<Workflow name="pipeline">
+  <Sequence>
+    <Task id="fetch" output={outputs.fetch}>
+      {{ url: "https://api.example.com" }}
+    </Task>
+    <Task id="transform" output={outputs.transform} agent={transformer}>
+      {`Transform: ${ctx.output(outputs.fetch, { nodeId: "fetch" }).url}`}
+    </Task>
+    <Task id="store" output={outputs.store}>
+      {{ stored: true }}
+    </Task>
+  </Sequence>
+</Workflow>
+```
+
+`fetch` runs first. Only after it completes does `transform` start. `store` runs last.
+
+<Tip>
+`<Workflow>` already sequences its direct children implicitly. You only need an explicit `<Sequence>` when nesting sequential groups inside `<Parallel>`, `<Branch>`, or `<Loop>`.
+</Tip>
+
+So if `<Workflow>` already sequences things, why does `<Sequence>` exist at all? Because you'll want to put ordered steps *inside* the other primitives. You'll see this in a moment.
+
+## Parallel Execution: `<Parallel>`
+
+Now suppose you're running a CI pipeline. Linting, type-checking, and tests don't depend on each other. Why run them one at a time?
+
+```tsx
+<Workflow name="checks">
+  <Parallel>
+    <Task id="lint" output={outputs.lint}>{{ errors: 0 }}</Task>
+    <Task id="typecheck" output={outputs.typecheck}>{{ passed: true }}</Task>
+    <Task id="test" output={outputs.test}>{{ passed: true }}</Task>
+  </Parallel>
+</Workflow>
+```
+
+All three tasks start simultaneously. The parallel group completes when **all** children have finished.
+
+### Limiting Concurrency
+
+What if you're calling an API with a rate limit of two concurrent requests? You don't want four agent calls hammering it at once.
+
+Use `maxConcurrency` to cap it:
+
+```tsx
+<Parallel maxConcurrency={2}>
+  <Task id="repo-1" output={outputs.repo1} agent={analyst}>Analyze alpha.</Task>
+  <Task id="repo-2" output={outputs.repo2} agent={analyst}>Analyze beta.</Task>
+  <Task id="repo-3" output={outputs.repo3} agent={analyst}>Analyze gamma.</Task>
+  <Task id="repo-4" output={outputs.repo4} agent={analyst}>Analyze delta.</Task>
+</Parallel>
+```
+
+At most two agent calls run at the same time. As each completes, the next queued task starts.
+
+### Combining Parallel and Sequential
+
+Here's where composition gets interesting. Remember the question about why `<Sequence>` exists? This is the answer:
+
+```tsx
+<Workflow name="ci">
+  <Parallel>
+    <Sequence>
+      <Task id="build-web" output={outputs.buildWeb}>{{ ok: true }}</Task>
+      <Task id="deploy-web" output={outputs.deployWeb}>{{ ok: true }}</Task>
+    </Sequence>
+    <Sequence>
+      <Task id="build-api" output={outputs.buildApi}>{{ ok: true }}</Task>
+      <Task id="deploy-api" output={outputs.deployApi}>{{ ok: true }}</Task>
+    </Sequence>
+  </Parallel>
+</Workflow>
+```
+
+The two sequences run in parallel. Within each sequence, tasks run one at a time. `deploy-web` waits for `build-web`, but `build-api` does not wait for `build-web`.
+
+Two pipelines. Running side by side. Each internally ordered. That's a CI matrix in six lines of JSX.
+
+## Conditional Logic: `<Branch>`
+
+Tests passed? Deploy. Tests failed? Notify the team. You've written this `if/else` a thousand times. `<Branch>` makes it declarative:
+
+```tsx
+<Workflow name="deploy-pipeline">
+  <Task id="test" output={outputs.test}>{{ passed: true, error: null }}</Task>
+
+  <Branch
+    if={ctx.output(outputs.test, { nodeId: "test" }).passed}
+    then={
+      <Task id="deploy" output={outputs.deploy}>
+        {{ url: "https://prod.example.com" }}
+      </Task>
+    }
+    else={
+      <Task id="notify" output={outputs.notify}>
+        {{ message: "Tests failed, skipping deploy." }}
+      </Task>
+    }
+  />
+</Workflow>
+```
+
+Only the selected branch is mounted. The other branch's tasks do not exist in the execution plan. This isn't short-circuit evaluation -- it's structural. The losing branch is never part of the graph.
+
+### Branching into Complex Sub-graphs
+
+Each branch can contain any workflow element -- not just a single task. A critical bug might need a hotfix *and* an emergency deploy. A minor bug just goes to the backlog:
+
+```tsx
+<Branch
+  if={severity === "critical"}
+  then={
+    <Sequence>
+      <Task id="hotfix" output={outputs.hotfix} agent={coder}>
+        Write a hotfix for the critical issue.
+      </Task>
+      <Task id="emergency-deploy" output={outputs.deploy}>{{ deployed: true }}</Task>
+    </Sequence>
+  }
+  else={
+    <Task id="backlog" output={outputs.backlog}>{{ queued: true }}</Task>
+  }
+/>
+```
+
+### JSX Conditions
+
+Because Smithers re-renders the tree each frame, you can also branch with plain JSX conditions:
+
+```tsx
+{analysis?.hasIssues ? (
+  <Task id="fix" output={outputs.fix} agent={coder}>Fix the issues.</Task>
+) : null}
+```
+
+When do you reach for `<Branch>` vs a ternary? Use `<Branch>` when you want both paths explicitly declared in the graph -- it documents the fork. Use JSX conditions for simpler gating on whether a task should exist at all.
+
+## Looping: `<Loop>`
+
+Some work isn't done until it's done. You write a draft, get feedback, revise, get more feedback. This is the pattern `<Loop>` is built for:
+
+```tsx
+<Loop
+  until={ctx.outputMaybe(outputs.review, { nodeId: "review" })?.approved === true}
+  maxIterations={5}
+  onMaxReached="return-last"
+>
+  <Sequence>
+    <Task id="write" output={outputs.draft} agent={writer}>
+      Write a draft.
+    </Task>
+    <Task id="review" output={outputs.review} agent={reviewer}>
+      Review the draft.
+    </Task>
+  </Sequence>
+</Loop>
+```
+
+Each iteration:
+
+1. The `until` condition is evaluated at render time
+2. If `false`, the loop body runs again
+3. Outputs are persisted per-iteration (keyed by `iteration` column)
+4. The tree re-renders with updated context
+5. The `until` condition is re-evaluated
+
+The loop stops when `until` returns `true` or when `maxIterations` is hit -- whichever comes first. Without `maxIterations`, a stubborn reviewer could keep you looping forever.
+
+### Accessing Previous Iteration Output
+
+The interesting question: how does iteration N+1 know what iteration N produced? Use `ctx.latest()` to feed the previous iteration's output back into the next:
+
+```tsx
+const latestReview = ctx.latest("review", "review");
+const latestDraft = ctx.latest("draft", "write");
+
+<Loop until={latestReview?.approved === true} maxIterations={5}>
+  <Sequence>
+    <Task id="write" output={outputs.draft} agent={writer}>
+      {latestReview
+        ? `Improve the draft. Feedback: ${latestReview.feedback}`
+        : `Write a first draft about: ${ctx.input.topic}`}
+    </Task>
+    <Task id="review" output={outputs.review} agent={reviewer}>
+      {`Review this draft:\n${latestDraft?.text ?? ""}`}
+    </Task>
+  </Sequence>
+</Loop>
+```
+
+On the first iteration, `latestReview` is `undefined`, so the writer gets the original topic. On every subsequent iteration, the writer gets the reviewer's feedback. This is how iterative refinement works: each pass incorporates what the previous pass learned.
+
+### Max Iterations
+
+| `onMaxReached` | Behavior |
+| --- | --- |
+| `"return-last"` | Stop looping, keep the final iteration's output, continue the workflow. This is the default. |
+| `"fail"` | Stop looping and fail the workflow. |
+
+## Choosing the Right Pattern
+
+You have four primitives and you've seen them individually. Now the question is: which one do I reach for?
+
+### Quick Reference
+
+| Primitive | Purpose | Use when... |
+| --- | --- | --- |
+| `<Sequence>` | Run tasks in order | Each step depends on the previous step's completion |
+| `<Parallel>` | Run tasks concurrently | Tasks are independent and can run at the same time |
+| `<Branch>` | Choose one path | The next step depends on a runtime condition |
+| `<Loop>` | Repeat until done | Work needs iterative refinement (implement -> review -> fix) |
+
+### `<Parallel>` vs Dynamic Tasks
+
+This trips people up. When do you use `<Parallel>` and when do you use `.map()`?
+
+Use `<Parallel>` when you have a **fixed set of different operations** on the same data:
+
+```tsx
+// Three different reviewers, each doing different work
+<Parallel>
+  <Task id="security-review" agent={securityReviewer}>...</Task>
+  <Task id="perf-review" agent={perfReviewer}>...</Task>
+  <Task id="style-review" agent={styleReviewer}>...</Task>
+</Parallel>
+```
+
+Use **dynamic JSX** when you have a **variable list of items** that need the same operation:
+
+```tsx
+// Process each ticket the same way
+{tickets.map((ticket) => (
+  <Task key={ticket.id} id={`${ticket.id}:implement`} output={outputs.implement} agent={coder}>
+    {`Implement: ${ticket.description}`}
+  </Task>
+))}
+```
+
+The distinction: `<Parallel>` is for heterogeneous fan-out (different work, same time). `.map()` is for homogeneous fan-out (same work, different data).
+
+### Composition Patterns
+
+| Pattern | What happens | Use case |
+| --- | --- | --- |
+| `<Sequence>` -> `<Sequence>` | Flat sequential chain | Simple pipelines |
+| `<Parallel>` -> `<Task>` | Fan-out, then combine | Run parallel work, aggregate results |
+| `<Loop>` -> `<Sequence>` | Iterative pipeline | Implement-review-fix cycles |
+| `<Branch>` -> `<Sequence>` | Conditional multi-step | Different pipelines for different conditions |
+| `<Parallel>` -> `<Sequence>` inside each | Parallel pipelines | Build + deploy web AND api simultaneously |
+
+### Synchronization
+
+Both `<Parallel>` and `<Loop>` are synchronization points. The next task after them only runs after all their children complete:
+
+```tsx
+<Workflow name="fan-out-fan-in">
+  <Parallel>
+    <Task id="a" ...>...</Task>
+    <Task id="b" ...>...</Task>
+    <Task id="c" ...>...</Task>
+  </Parallel>
+  {/* This only runs after a, b, AND c all finish */}
+  <Task id="combine" ...>...</Task>
+</Workflow>
+```
+
+This is fan-out/fan-in. The parallel block is a barrier. Nothing downstream proceeds until everything upstream has settled.
+
+## Conditional Skipping
+
+All control-flow components support `skipIf` to bypass them entirely:
+
+```tsx
+<Sequence skipIf={ctx.input.skipTests}>
+  <Task id="unit-tests" output={outputs.unitTests}>{{ passed: true }}</Task>
+  <Task id="e2e-tests" output={outputs.e2eTests}>{{ passed: true }}</Task>
+</Sequence>
+```
+
+When `skipIf` is `true`, the component returns `null` and none of its children are mounted.
+
+## Next Steps
+
+- [Workflow State](/concepts/workflow-state) -- How data flows between tasks and across iterations.
+- [Suspend and Resume](/concepts/suspend-and-resume) -- How workflows pause and recover.
+- [Implement-Review Loop](/guides/review-loop) -- See these primitives in a production pattern.

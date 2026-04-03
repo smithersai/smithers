@@ -1,0 +1,77 @@
+---
+title: "Ghost: Claude Code Plugin — Smithers Orchestrator"
+description: "Example from ~/.claude/plugins/smithers-orchestrator/ — A Claude Code plugin for multi-agent orchestration with monitoring and phase tracking."
+---
+
+# Claude Code Plugin — Smithers Orchestrator
+
+<Note>
+**Ghost doc** — Real Claude Code plugin at `~/.claude/plugins/smithers-orchestrator/`.
+</Note>
+
+## plugin.json
+
+```json
+{
+  "name": "smithers-orchestrator",
+  "version": "1.0.0",
+  "description": "Multi-agent orchestration framework using Smithers.",
+  "author": "Smithers Framework Contributors",
+  "license": "MIT",
+  "skills": ["skills/smithers-orchestrator"]
+}
+```
+
+## Monitor Output Format
+
+```
+[10:30:00] ◆ PHASE: Research      Status: STARTING
+[10:30:01] ● AGENT: Claude        Status: RUNNING
+[10:30:05] ⚡ TOOL CALL: Read     File: src/index.ts
+[10:30:12] ✓ PHASE: Research      Status: COMPLETE
+```
+
+## Workflow Template
+
+```tsx
+import { createSmithers, Sequence, Task, Workflow } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  research: z.object({ findings: z.string() }),
+  summary: z.object({ text: z.string() }),
+});
+
+const researcher = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions: "Research the topic thoroughly.",
+});
+
+const writer = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions: "Write a clear, concise summary.",
+});
+
+export default smithers((ctx) => (
+  <Workflow name="research-workflow">
+    <Sequence>
+      <Task id="research" output={outputs.research} agent={researcher}>
+        {`Research: ${ctx.input.topic}`}
+      </Task>
+      <Task id="summarize" output={outputs.summary} agent={writer}>
+        {`Summarize: ${ctx.outputMaybe("research", { nodeId: "research" })?.findings}`}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+## Best Practices
+
+1. Use `createSmithers` for schema-driven workflows with auto-persistence.
+2. Use `outputs.xxx` as the `output` prop on `<Task>` (the Zod schema, not a string key).
+3. Use `ctx.outputMaybe()` for cross-task data flow (returns `undefined` if not yet available).
+4. Set `maxIterations` on `<Loop>` to prevent infinite loops.
+5. Include `continueOnFail` on non-critical tasks.

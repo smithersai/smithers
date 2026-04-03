@@ -1,0 +1,7 @@
+Synthesize these {props.reviews.length} specialist reviews into a final verdict:
+
+{props.reviews
+  .map((review) => `=== ${review.role} (${review.verdict}) ===\n${review.summary}\nFindings: ${JSON.stringify(review.findings)}`)
+  .join("\n\n")}
+
+Produce a single overall verdict with prioritized action items.

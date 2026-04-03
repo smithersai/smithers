@@ -1,0 +1,395 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Smithers",
+  "description": "AI workflow orchestration framework",
+  "theme": "mint",
+  "colors": {
+    "primary": "#00D2A0"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "index",
+        "introduction",
+        "installation",
+        "quickstart"
+      ]
+    },
+    {
+      "group": "Core Concepts",
+      "pages": [
+        "concepts/workflows-overview",
+        "concepts/unidirectional-dataflow",
+        "concepts/reactivity",
+        "concepts/control-flow",
+        "concepts/workflow-state",
+        "concepts/agents-and-tools",
+        "concepts/suspend-and-resume",
+        "concepts/human-in-the-loop",
+        "concepts/execution-model",
+        "concepts/data-model",
+        "concepts/approvals",
+        "concepts/caching",
+        "concepts/planner-internals",
+        "concepts/time-travel",
+        "concepts/evals",
+        "concepts/voice",
+        "concepts/memory",
+        "concepts/openapi-tools"
+      ]
+    },
+    {
+      "group": "Runtime",
+      "pages": [
+        "runtime/run-workflow",
+        "runtime/render-frame",
+        "runtime/events",
+        "runtime/revert"
+      ]
+    },
+    {
+      "group": "Integrations",
+      "pages": [
+        "integrations/tools",
+        "integrations/integrations",
+        "integrations/cli-agents",
+        "integrations/sdk-agents",
+        "integrations/server",
+        "integrations/serve",
+        "integrations/pi-plugin",
+        "integrations/pi-integration",
+        "integrations/ecosystem"
+      ]
+    },
+    {
+      "group": "Components",
+      "pages": [
+        "components/workflow",
+        "components/task",
+        "components/sequence",
+        "components/parallel",
+        "components/branch",
+        "components/loop",
+        "components/approval",
+        "components/merge-queue",
+        "components/worktree",
+        "components/voice",
+        {
+          "group": "Composite Components",
+          "pages": [
+            "components/kanban",
+            "components/classify-and-route",
+            "components/gather-and-synthesize",
+            "components/panel",
+            "components/check-suite",
+            "components/debate",
+            "components/review-loop",
+            "components/optimizer",
+            "components/content-pipeline",
+            "components/approval-gate",
+            "components/escalation-chain",
+            "components/decision-table",
+            "components/drift-detector",
+            "components/scan-fix-verify",
+            "components/poller",
+            "components/supervisor",
+            "components/runbook"
+          ]
+        },
+        {
+          "group": "Engine Primitives",
+          "pages": [
+            "components/subflow",
+            "components/wait-for-event",
+            "components/human-task",
+            "components/saga",
+            "components/try-catch-finally"
+          ]
+        },
+        {
+          "group": "Core Enhancements",
+          "pages": [
+            "components/aspects",
+            "components/super-smithers"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "guides/tutorial-workflow",
+        "guides/project-structure",
+        "guides/model-selection",
+        "guides/review-loop",
+        "guides/dynamic-tickets",
+        "guides/mdx-prompts",
+        "guides/structured-output",
+        "guides/error-handling",
+        "guides/patterns",
+        "guides/resumability",
+        "guides/hot-reload",
+        "guides/tui",
+        "guides/debugging",
+        "guides/monitoring-logs",
+        "guides/best-practices",
+        "guides/vcs",
+        "guides/time-travel-quickstart",
+        "guides/evals-quickstart",
+        "guides/voice-quickstart",
+        "guides/memory-quickstart",
+        "guides/openapi-tools-quickstart",
+        "guides/troubleshooting"
+      ]
+    },
+    {
+      "group": "JSX API",
+      "pages": [
+        "api/overview",
+        "api/installation",
+        "api/quickstart"
+      ]
+    },
+    {
+      "group": "CLI",
+      "pages": [
+        "cli/overview"
+      ]
+    },
+    {
+      "group": "Examples",
+      "pages": [
+        "examples/hello-world",
+        "examples/dynamic-plan",
+        "examples/loop",
+        "examples/multi-agent-review",
+        "examples/approval-gate",
+        "examples/tools-agent",
+        {
+          "group": "Ghost Docs: workflows/",
+          "pages": [
+            "examples/workflow-hello",
+            "examples/workflow-approval",
+            "examples/workflow-quickstart"
+          ]
+        },
+        {
+          "group": "Ghost Docs: worktree-feature/",
+          "pages": [
+            "examples/worktree-feature-workflow",
+            "examples/worktree-feature-schemas",
+            "examples/worktree-feature-prompts",
+            "examples/worktree-feature-run-sh"
+          ]
+        },
+        {
+          "group": "Ghost Docs: Scripts & Config",
+          "pages": [
+            "examples/generate-llms-txt",
+            "examples/ci-workflow",
+            "examples/agents-md"
+          ]
+        },
+        {
+          "group": "Ghost Docs: Claude Code Plugins",
+          "pages": [
+            "examples/claude-plugin-skill",
+            "examples/claude-plugin-orchestrator"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "reference/types",
+        "reference/vcs-helpers",
+        "reference/errors"
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/docs",
+      "destination": "/"
+    },
+    {
+      "source": "/docs/introduction",
+      "destination": "/introduction"
+    },
+    {
+      "source": "/docs/installation",
+      "destination": "/installation"
+    },
+    {
+      "source": "/docs/quickstart",
+      "destination": "/quickstart"
+    },
+    {
+      "source": "/toon",
+      "destination": "/api/overview"
+    },
+    {
+      "source": "/toon/overview",
+      "destination": "/api/overview"
+    },
+    {
+      "source": "/toon/installation",
+      "destination": "/api/installation"
+    },
+    {
+      "source": "/toon/quickstart",
+      "destination": "/api/quickstart"
+    },
+    {
+      "source": "/toon/schemas",
+      "destination": "/concepts/data-model"
+    },
+    {
+      "source": "/toon/nodes",
+      "destination": "/components/workflow"
+    },
+    {
+      "source": "/toon/components",
+      "destination": "/api/overview"
+    },
+    {
+      "source": "/toon/prompts",
+      "destination": "/guides/mdx-prompts"
+    },
+    {
+      "source": "/toon/inline-code",
+      "destination": "/components/task"
+    },
+    {
+      "source": "/toon/imports",
+      "destination": "/guides/project-structure"
+    },
+    {
+      "source": "/jsx",
+      "destination": "/api/overview"
+    },
+    {
+      "source": "/jsx/overview",
+      "destination": "/api/overview"
+    },
+    {
+      "source": "/jsx/installation",
+      "destination": "/api/installation"
+    },
+    {
+      "source": "/jsx/quickstart",
+      "destination": "/api/quickstart"
+    },
+    {
+      "source": "/effect",
+      "destination": "/api/overview"
+    },
+    {
+      "source": "/integrations/linear",
+      "destination": "/integrations/integrations"
+    },
+    {
+      "source": "/docs/integrations/linear",
+      "destination": "/integrations/integrations"
+    },
+    {
+      "source": "/docs/concepts/:slug*",
+      "destination": "/concepts/:slug*"
+    },
+    {
+      "source": "/docs/components/:slug*",
+      "destination": "/components/:slug*"
+    },
+    {
+      "source": "/docs/guides/:slug*",
+      "destination": "/guides/:slug*"
+    },
+    {
+      "source": "/docs/runtime/:slug*",
+      "destination": "/runtime/:slug*"
+    },
+    {
+      "source": "/docs/cli/:slug*",
+      "destination": "/cli/:slug*"
+    },
+    {
+      "source": "/docs/integrations/:slug*",
+      "destination": "/integrations/:slug*"
+    },
+    {
+      "source": "/docs/examples/:slug*",
+      "destination": "/examples/:slug*"
+    },
+    {
+      "source": "/docs/reference/:slug*",
+      "destination": "/reference/:slug*"
+    },
+    {
+      "source": "/docs/ralph",
+      "destination": "/components/loop"
+    },
+    {
+      "source": "/docs/loop",
+      "destination": "/components/loop"
+    },
+    {
+      "source": "/components/ralph",
+      "destination": "/components/loop"
+    },
+    {
+      "source": "/docs/task",
+      "destination": "/components/task"
+    },
+    {
+      "source": "/docs/workflow",
+      "destination": "/components/workflow"
+    },
+    {
+      "source": "/docs/sequence",
+      "destination": "/components/sequence"
+    },
+    {
+      "source": "/docs/parallel",
+      "destination": "/components/parallel"
+    },
+    {
+      "source": "/docs/branch",
+      "destination": "/components/branch"
+    },
+    {
+      "source": "/docs/structured-output",
+      "destination": "/guides/structured-output"
+    },
+    {
+      "source": "/concepts/context",
+      "destination": "/concepts/execution-model"
+    },
+    {
+      "source": "/examples/toon-hello",
+      "destination": "/examples/hello-world"
+    },
+    {
+      "source": "/examples/toon-bugfix",
+      "destination": "/examples/workflow-quickstart"
+    },
+    {
+      "source": "/examples/toon-review-loop",
+      "destination": "/examples/loop"
+    },
+    {
+      "source": "/examples/toon-parallel",
+      "destination": "/examples/multi-agent-review"
+    },
+    {
+      "source": "/reference/toon-spec",
+      "destination": "/api/overview"
+    },
+    {
+      "source": "/concepts/renderer-internals",
+      "destination": "/concepts/planner-internals"
+    }
+  ]
+}

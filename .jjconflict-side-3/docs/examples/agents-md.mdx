@@ -1,0 +1,54 @@
+---
+title: "Ghost: AGENTS.md"
+description: "Example from AGENTS.md — Repository instructions for AI coding agents working on the Smithers Bun/TypeScript codebase, its docs, examples, tests, and Burns subproject."
+---
+
+# AGENTS.md
+
+<Note>
+**Ghost doc** — The real `AGENTS.md` from the Smithers repository root.
+</Note>
+
+## Source
+
+```markdown
+# Smithers Repository — Agent Instructions
+
+You are working in the Smithers repository, a Bun/TypeScript codebase centered on the `smithers-orchestrator` package.
+
+## Repository Overview
+
+- **Core runtime**: `src/` — Smithers workflow engine, JSX components, CLI, integrations, and observability
+- **Docs**: `docs/` — Mintlify source docs
+- **Examples**: `examples/` — runnable TSX workflows
+- **Tests**: `tests/` — Bun tests, Playwright docs checks, runtime regression coverage
+- **Burns**: `burns/` — workspace-first local control plane for Smithers with web, daemon, desktop, and CLI apps
+
+## Common Commands
+
+From the repository root:
+
+```bash
+bun test
+bun run typecheck
+bun run e2e
+bun run docs
+```
+
+From `burns/`:
+
+```bash
+bun run dev:daemon
+bun run dev:web
+bun run desktop:dev
+bun run typecheck
+```
+
+## Key Conventions
+
+- The published package name is `smithers-orchestrator`, not `smithers`
+- The main public JSX API is `createSmithers(...)`
+- Source docs live under `docs/`; `docs/llms-full.txt` is generated from those pages
+- `examples/` should stay runnable against the current public API
+- The repo may be used from Git or JJ-based workspaces depending on the developer environment; do not assume one workflow unless the local task requires it
+```

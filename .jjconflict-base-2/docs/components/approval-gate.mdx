@@ -1,0 +1,104 @@
+---
+title: <ApprovalGate>
+description: Conditional approval that requires human sign-off only when a condition is true, otherwise auto-approves.
+---
+
+Wraps `<Branch>` + `<Approval>` into a single component. When `when` is `true`, the workflow pauses for human approval. When `false`, a static task auto-approves immediately so downstream nodes can proceed without delay.
+
+## Import
+
+```tsx
+import { ApprovalGate } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | **(required)** | Unique node id within the workflow. |
+| `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to persist the approval decision. |
+| `request` | `{ title: string; summary?: string; metadata?: Record<string, unknown> }` | **(required)** | Human-facing approval request. |
+| `when` | `boolean` | **(required)** | When `true`, approval is required. When `false`, auto-approves. |
+| `onDeny` | `"fail" \| "continue" \| "skip"` | `"fail"` | Behavior after denial. |
+| `skipIf` | `boolean` | `false` | Skip this node entirely. |
+| `timeoutMs` | `number` | `undefined` | Max wait in ms. Node fails on timeout. |
+| `retries` | `number` | `0` | Retry attempts before failure. |
+| `retryPolicy` | `RetryPolicy` | `undefined` | `{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }` |
+| `continueOnFail` | `boolean` | `false` | Workflow continues even if this node fails. |
+
+## Basic usage
+
+Gate production deploys on a risk score. Low-risk changes sail through; high-risk changes require a human sign-off.
+
+```tsx
+const risk = ctx.output(outputs.riskScore, { nodeId: "risk" });
+
+<Workflow name="deploy-pipeline">
+  <Sequence>
+    <Task id="risk" output={outputs.riskScore} agent={riskAgent}>
+      Assess the risk of deploying this changeset.
+    </Task>
+
+    <ApprovalGate
+      id="deploy-approval"
+      output={outputs.deployDecision}
+      when={risk.level === "high"}
+      request={{
+        title: "Approve high-risk deploy?",
+        summary: `Risk score: ${risk.score}/100`,
+        metadata: { commit: ctx.input.sha },
+      }}
+      onDeny="fail"
+    />
+
+    <Task id="deploy" output={outputs.deploy}>
+      {{ deployed: true }}
+    </Task>
+  </Sequence>
+</Workflow>
+```
+
+## Auto-approve on dry run
+
+```tsx
+<ApprovalGate
+  id="publish-approval"
+  output={outputs.publishDecision}
+  when={!ctx.input.dryRun}
+  request={{ title: "Publish the article?" }}
+/>
+```
+
+When `dryRun` is `true`, `when` is `false` and the gate emits `{ approved: true, note: "auto-approved" }` without pausing.
+
+## With timeout and retry
+
+```tsx
+<ApprovalGate
+  id="budget-approval"
+  output={outputs.budgetDecision}
+  when={estimate.total > 10_000}
+  request={{
+    title: "Approve budget over $10k?",
+    summary: `Estimated cost: $${estimate.total}`,
+  }}
+  timeoutMs={60 * 60 * 1000}
+  retries={1}
+  onDeny="continue"
+/>
+```
+
+## How it works
+
+`<ApprovalGate>` renders a `<Branch>`:
+
+- **`when` is `true`** -- mounts an `<Approval>` node that pauses for human review.
+- **`when` is `false`** -- mounts a static `<Task>` that resolves immediately with `{ approved: true, note: "auto-approved", decidedBy: null, decidedAt: "<iso>" }`.
+
+Both paths write to the same `output`, so downstream nodes can branch on `decision.approved` without caring which path was taken.
+
+## Notes
+
+- The auto-approve path produces a valid `ApprovalDecision` shape, so downstream logic remains uniform.
+- `onDeny` only applies to the human-approval path. The auto-approve path always succeeds.
+- Combine with `skipIf` to disable the gate entirely during development.
