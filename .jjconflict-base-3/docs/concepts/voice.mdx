@@ -1,0 +1,106 @@
+---
+title: Voice
+description: How voice providers bring speech-to-text and text-to-speech into Smithers workflows.
+---
+
+Your workflow orchestrates code reviews, generates reports, analyzes data -- all in text. But some tasks start with an audio recording or need to produce spoken output. Maybe you have a meeting transcript to analyze, or you want your pipeline to read results aloud. That is what voice providers are for.
+
+## What Is a Voice Provider?
+
+A voice provider wraps a speech service behind a simple interface. It can do one or more of three things:
+
+1. **Speak** -- convert text to audio (text-to-speech / TTS)
+2. **Listen** -- convert audio to text (speech-to-text / STT)
+3. **Realtime** -- bidirectional audio streaming over a WebSocket (speech-to-speech)
+
+You pick the provider, configure it once, and hand it to your tasks. Smithers handles the wiring.
+
+```ts
+import { createAiSdkVoice } from "smithers-orchestrator/voice";
+import { openai } from "@ai-sdk/openai";
+
+const voice = createAiSdkVoice({
+  speechModel: openai.speech("tts-1"),
+  transcriptionModel: openai.transcription("whisper-1"),
+});
+```
+
+That single object now speaks and listens. The AI SDK handles the actual API calls; smithers gives you the integration layer.
+
+## The `<Voice>` Component
+
+Wrap a subtree with `<Voice>` and every task inside inherits that voice provider:
+
+```tsx
+<Voice provider={voice} speaker="alloy">
+  <Task id="transcribe" output={outputs.transcript} agent={myAgent}>
+    Transcribe the uploaded audio file.
+  </Task>
+  <Task id="summarize" output={outputs.summary} agent={myAgent}>
+    Summarize the transcript.
+  </Task>
+</Voice>
+```
+
+The `<Voice>` component does not execute anything itself. It annotates the tasks beneath it, the same way `<Worktree>` annotates tasks with a filesystem path or `<Parallel>` annotates them with concurrency limits.
+
+Tasks inside a `<Voice>` scope receive `voice` and `voiceSpeaker` on their descriptors. The engine uses these to call `voice.listen()` when the task needs audio input or `voice.speak()` when it produces audio output.
+
+## Batch vs Realtime
+
+Two fundamentally different modes. Batch is what most people need.
+
+**Batch**: send a blob of text, get a blob of audio back (or vice versa). One request, one response. The AI SDK's `experimental_generateSpeech` and `experimental_transcribe` handle this. It works with OpenAI, ElevenLabs, Deepgram, and others -- any provider the AI SDK supports.
+
+**Realtime**: open a persistent WebSocket, stream audio in both directions simultaneously. OpenAI's Realtime API does this. Latency is low, but the protocol is more complex. Smithers provides `createOpenAIRealtimeVoice()` for this case because the AI SDK does not cover it.
+
+Most workflows should start with batch. Reach for realtime only when you need live conversation.
+
+## Composite Voice
+
+What if you want Deepgram for transcription but ElevenLabs for speech? Composite voice mixes providers:
+
+```ts
+import { createCompositeVoice, createAiSdkVoice } from "smithers-orchestrator/voice";
+
+const listener = createAiSdkVoice({
+  transcriptionModel: deepgram.transcription("nova-3"),
+});
+const speaker = createAiSdkVoice({
+  speechModel: elevenlabs.speech("eleven_multilingual_v2"),
+});
+
+const voice = createCompositeVoice({
+  input: listener,
+  output: speaker,
+});
+```
+
+When a task calls `voice.listen()`, it routes to Deepgram. When it calls `voice.speak()`, it routes to ElevenLabs. If you also set a `realtime` provider, it takes priority for both operations.
+
+## Effect Service Layer
+
+For power users who build with Effect.ts directly, voice exposes an Effect service:
+
+```ts
+import { VoiceService, speak, listen } from "smithers-orchestrator/voice";
+import { Effect } from "effect";
+
+const program = Effect.gen(function* () {
+  const transcript = yield* listen(audioStream);
+  const audio = yield* speak(`Summary: ${transcript}`);
+  return audio;
+}).pipe(Effect.provideService(VoiceService, myVoice));
+```
+
+The `VoiceService` tag lets you inject a voice provider into any Effect pipeline. The `speak()` and `listen()` functions pull it from context automatically.
+
+## Events and Observability
+
+Voice operations emit structured events:
+
+- `VoiceStarted` -- a voice operation began (speak or listen)
+- `VoiceFinished` -- it completed successfully
+- `VoiceError` -- something went wrong
+
+These flow through the same event bus as all other Smithers events. The `smithers.voice.operations_total` counter and `smithers.voice.duration_ms` histogram track volume and latency.

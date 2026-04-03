@@ -1,0 +1,17 @@
+Analyze the Smithers workspace at "{props.directory}" and break this goal
+into independent, parallelizable beads (issues):
+
+Goal: {props.goal}
+
+Create a convoy ID (format: "hq-cv-XXXXX") and assign each bead to it.
+Each bead needs:
+- id: "gt-XXXXX" format
+- title: short description
+- description: detailed instructions
+- files: array of file paths to focus on
+- priority: 0-4 (0=critical)
+- acceptanceCriteria: what "done" looks like
+
+{props.maxAgents ? `Target ${props.maxAgents} beads max for parallel execution.` : "Keep to 3-8 beads."}
+
+Return JSON with convoyId and beads array.

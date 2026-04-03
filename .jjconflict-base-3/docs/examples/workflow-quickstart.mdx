@@ -1,0 +1,95 @@
+---
+title: "Ghost: workflows/quickstart.tsx"
+description: "Example from workflows/quickstart.tsx — A two-agent sequential workflow where a planner agent feeds a briefing agent, with Zod schemas and structured output."
+---
+
+# workflows/quickstart.tsx
+
+<Note>
+**Ghost doc** -- Real script from `workflows/quickstart.tsx`. Two-agent sequential pipeline with cross-task data flow.
+</Note>
+
+## Source
+
+```tsx
+// workflows/quickstart.tsx
+import { createSmithers, Sequence, Task, Workflow } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent, Output } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  plan: z.object({
+    summary: z.string(),
+    steps: z.array(z.string()),
+  }),
+  brief: z.object({
+    brief: z.string(),
+    stepCount: z.number(),
+  }),
+});
+
+const planAgent = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  output: Output.object({
+    schema: z.object({
+      summary: z.string(),
+      steps: z.array(z.string()).min(3).max(8),
+    }),
+  }),
+  instructions:
+    "You are a planning assistant. Return a concise summary and 3-8 actionable steps.",
+});
+
+const briefAgent = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  output: Output.object({
+    schema: z.object({
+      brief: z.string(),
+      stepCount: z.number().int().min(1),
+    }),
+  }),
+  instructions:
+    "You are a concise technical writer. Produce a 5-8 sentence brief.",
+});
+
+export default smithers((ctx) => {
+  const planOutput = ctx.outputMaybe("plan", { nodeId: "plan" });
+
+  return (
+    <Workflow name="quickstart">
+      <Sequence>
+        <Task id="plan" output={outputs.plan} agent={planAgent}>
+          {`Create a short plan for this goal:\n${ctx.input.goal}`}
+        </Task>
+        <Task id="brief" output={outputs.brief} agent={briefAgent}>
+          {`Goal: ${ctx.input.goal}
+Plan summary: ${planOutput?.summary ?? "pending"}
+Steps: ${JSON.stringify(planOutput?.steps ?? [])}
+
+Write a brief based on the plan. The "stepCount" must equal the number of steps.`}
+        </Task>
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## Running
+
+```bash
+smithers up workflows/quickstart.tsx --input '{"goal": "Build a CLI tool for managing dotfiles"}'
+```
+
+```
+[quickstart] Starting run def456
+[plan] Done -> { summary: "Build a dotfile manager CLI", steps: ["Parse config", "Symlink files", "Add backup"] }
+[brief] Done -> { brief: "This plan covers 3 steps...", stepCount: 3 }
+[quickstart] Completed
+```
+
+## Notes
+
+- **Cross-task data flow** -- `ctx.outputMaybe("plan", { nodeId: "plan" })` reads the planner's persisted output. First argument is the schema key from `createSmithers`, not a table name.
+- **Zod structured output** -- Both agents use `Output.object({ schema })` with validation constraints.
+- **Vercel AI SDK** -- Uses `ToolLoopAgent` with Anthropic provider.

@@ -1,0 +1,129 @@
+---
+title: <ReviewLoop>
+description: Produce, review, fix, and repeat until approved. A composite component that wires Loop, Sequence, and Task into a standard review-cycle pattern.
+---
+
+```tsx
+import { ReviewLoop } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"review-loop"` | ID prefix. Task ids are derived as `{id}-produce` and `{id}-review`. |
+| `producer` | `AgentLike` | **(required)** | Agent that produces or fixes the work each iteration. |
+| `reviewer` | `AgentLike \| AgentLike[]` | **(required)** | Agent (or agents) that reviews the produced work. |
+| `produceOutput` | `OutputTarget` | **(required)** | Output schema for the produced work. |
+| `reviewOutput` | `OutputTarget` | **(required)** | Output schema for the review. Must include an `approved: boolean` field. |
+| `maxIterations` | `number` | `5` | Maximum review cycles before stopping. |
+| `onMaxReached` | `"return-last" \| "fail"` | `"return-last"` | Behavior when max iterations is reached. |
+| `skipIf` | `boolean` | `false` | Skip the entire review loop. Returns `null`. |
+| `children` | `string \| ReactNode` | **(required)** | Initial prompt for the producer. |
+
+## Basic usage
+
+```tsx
+import { createSmithers } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const codeSchema = z.object({
+  files: z.array(z.string()),
+  summary: z.string(),
+});
+
+const reviewSchema = z.object({
+  approved: z.boolean(),
+  feedback: z.string(),
+  issues: z.array(z.string()),
+});
+
+const { Workflow, smithers, outputs } = createSmithers({
+  code: codeSchema,
+  review: reviewSchema,
+});
+
+const coder = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a senior developer.",
+});
+
+const reviewer = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a strict code reviewer.",
+});
+
+export default smithers(() => (
+  <Workflow name="code-review">
+    <ReviewLoop
+      producer={coder}
+      reviewer={reviewer}
+      produceOutput={outputs.code}
+      reviewOutput={outputs.review}
+      maxIterations={3}
+    >
+      Implement a REST API for user authentication with JWT tokens.
+    </ReviewLoop>
+  </Workflow>
+));
+```
+
+## Multiple reviewers
+
+Pass an array of agents to `reviewer`. The runtime uses the standard agent fallback chain:
+
+```tsx
+<ReviewLoop
+  producer={writer}
+  reviewer={[securityReviewer, styleReviewer]}
+  produceOutput={outputs.draft}
+  reviewOutput={outputs.review}
+>
+  Write a security policy document.
+</ReviewLoop>
+```
+
+## Fail on max iterations
+
+```tsx
+<ReviewLoop
+  producer={coder}
+  reviewer={reviewer}
+  produceOutput={outputs.code}
+  reviewOutput={outputs.review}
+  maxIterations={5}
+  onMaxReached="fail"
+>
+  Implement the payment processing module.
+</ReviewLoop>
+```
+
+When `onMaxReached` is `"fail"`, the workflow fails if the reviewer has not approved after the maximum number of iterations.
+
+## What it expands to
+
+`<ReviewLoop>` is a composite component. It renders this tree:
+
+```tsx
+<Loop id={id} until={false} maxIterations={maxIterations} onMaxReached={onMaxReached}>
+  <Sequence>
+    <Task id="{id}-produce" output={produceOutput} agent={producer}>
+      {children}
+    </Task>
+    <Task id="{id}-review" output={reviewOutput} agent={reviewer} needs={{ produced: "{id}-produce" }}>
+      Review the produced work and decide whether to approve.
+    </Task>
+  </Sequence>
+</Loop>
+```
+
+The runtime reads `reviewOutput` for the `approved` field each frame and exits the loop when `approved` is `true`.
+
+## Notes
+
+- The `reviewOutput` schema must include an `approved: boolean` field. The runtime uses this to determine when to exit the loop.
+- On subsequent iterations the producer receives the reviewer's feedback through the loop's re-render cycle.
+- Task ids are derived from the `id` prop: `{id}-produce` and `{id}-review`.
+- Access iteration outputs using `ctx.latest()` or `ctx.outputs` in the parent workflow.

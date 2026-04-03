@@ -1,0 +1,63 @@
+---
+title: Ecosystem
+description: Community projects built on Smithers.
+---
+
+Third-party tools and workflows built by the community.
+
+## Burns
+
+Workspace-first local control plane for Smithers. Single UI for authoring, running, and supervising workflows across repositories. Register repos, launch runs, stream events, inspect frames, handle approvals.
+
+- React web app, ElectroBun desktop shell, or headless CLI
+- AI-assisted workflow authoring via local agent CLIs
+- SQLite-backed workspace registry
+
+<Card title="Burns" icon="github" href="https://github.com/l3wi/burns">
+  github.com/l3wi/burns
+</Card>
+
+## Ralphinho
+
+Multi-agent development workflows. Two independent workflows:
+
+- **Ralphinho** (scheduled-work) -- decomposes RFC into work units, runs tier-based quality pipelines (implement, test, review), lands via merge queue with CI verification.
+- **Improvinho** (review-discovery) -- three parallel discovery lenses (refactoring, type safety, architecture), deduplicates findings. Optionally pushes to Linear.
+
+Requires Bun and Jujutsu (`jj`). Supports Claude and Codex agents.
+
+<Card title="Ralphinho" icon="github" href="https://github.com/enitrat/ralphinho">
+  github.com/enitrat/ralphinho
+</Card>
+
+## Cairo Coder
+
+AI-powered Cairo smart contract generator. RAG pipeline (DSPy) converting natural language to Cairo contracts for Starknet. Uses Smithers with Claude and Codex agents.
+
+<Card title="Cairo Coder" icon="github" href="https://github.com/KasarLabs/cairo-coder">
+  github.com/KasarLabs/cairo-coder
+</Card>
+
+## Agentix
+
+Opinionated RFC-to-production orchestrator. Multi-phase pipelines: research, plan, implement, test, review. Role-based agents, conflict-aware merge queues, security/performance gates. DDD + BDD + TDD by default.
+
+<Card title="Agentix" icon="github" href="https://github.com/AbdelStark/agentix">
+  github.com/AbdelStark/agentix
+</Card>
+
+## Era
+
+Generic multi-phase development workflow engine. Research, Plan, Implementation, Testing, Review, Fix, Final Review pipeline with outer Loop. Role-based agents, intelligent caching, dual-layer prompts.
+
+<Card title="Era" icon="github" href="https://github.com/ClementWalter/era">
+  github.com/ClementWalter/era
+</Card>
+
+## Local Isolated Ralph
+
+Kubernetes-native Smithers workflow runner. Runs workflows as isolated K8s Jobs and CronJobs via k3s/k3d. Sandboxed container execution.
+
+<Card title="Local Isolated Ralph" icon="github" href="https://github.com/SamuelLHuber/local-isolated-ralph">
+  github.com/SamuelLHuber/local-isolated-ralph
+</Card>

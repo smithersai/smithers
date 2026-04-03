@@ -1,0 +1,272 @@
+---
+title: <Task>
+description: A single executable node that produces output by calling an AI agent, running a compute callback, or emitting a static payload.
+---
+
+```tsx
+import { Task } from "smithers-orchestrator";
+```
+
+Three modes of operation:
+
+- **Agent** -- `agent` provided; children become the prompt.
+- **Compute** -- children is a function, no `agent`; function is called at execution time.
+- **Static** -- children is a plain value, no `agent`; value is written directly as output.
+
+For human gates, `<Task needsApproval>` pauses before execution. For explicit decision nodes, use [`<Approval>`](/components/approval).
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | **(required)** | Stable node identity. Must be unique within the workflow. |
+| `output` | `z.ZodObject \| Table \| string` | **(required)** | Output destination. Zod schema from `outputs` (recommended), Drizzle table, or string key. |
+| `outputSchema` | `z.ZodObject` | `undefined` | Expected agent output structure. Inferred when `output` is a Zod schema. When provided with a React element child, a `schema` prop containing a JSON example is auto-injected. |
+| `agent` | `AgentLike \| AgentLike[]` | `undefined` | AI SDK agent or ordered array `[primary, fallback1, ...]`. Agents are tried in order on retries. |
+| `fallbackAgent` | `AgentLike` | `undefined` | Single retry fallback agent. Appended to the `agent` chain. |
+| `dependsOn` | `string[]` | `undefined` | Explicit dependency on other task IDs. Task waits until all complete. |
+| `needs` | `Record<string, string>` | `undefined` | Named dependencies. Keys become context keys, values are task IDs. |
+| `deps` | `Record<string, OutputTarget>` | `undefined` | Typed render-time dependencies. Each key resolves from the task with the same id, or from a matching `needs` entry. |
+| `key` | `string` | `undefined` | Standard React key. No effect on execution. |
+| `skipIf` | `boolean` | `false` | Skip this task. |
+| `needsApproval` | `boolean` | `false` | Pause and wait for approval before executing. |
+| `timeoutMs` | `number` | `undefined` | Max execution time in ms. Task fails on timeout. |
+| `retries` | `number` | `0` | Retry attempts on failure. |
+| `retryPolicy` | `RetryPolicy` | `undefined` | `{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }` |
+| `continueOnFail` | `boolean` | `false` | Workflow continues even if this task fails. |
+| `cache` | `CachePolicy` | `undefined` | `{ by?: (ctx) => unknown, version?: string }`. Skip re-execution when a cached result with matching key/version exists. |
+| `label` | `string` | `undefined` | Human-readable label for UI and metadata. |
+| `meta` | `Record<string, unknown>` | `undefined` | Arbitrary metadata on the task descriptor. |
+| `scorers` | `ScorersMap` | `undefined` | Map of scorer configs to evaluate task output after execution. See [Evals & Scorers](/concepts/evals). |
+| `children` | `string \| Row \| (() => Row \| Promise<Row>) \| ReactNode \| ((deps) => Row \| ReactNode)` | **(required)** | Agent mode: prompt text or JSX rendered to markdown. Compute mode: callback. Static mode: output value. With `deps`, a render function receiving typed upstream outputs. |
+
+## Agent mode
+
+```tsx
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import AnalyzePrompt from "./prompts/analyze.mdx";
+import ReviewPrompt from "./prompts/review.mdx";
+
+const codeAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a senior software engineer.",
+});
+
+<Task id="analyze" output={outputs.analyze} agent={codeAgent}>
+  <AnalyzePrompt repoPath={ctx.input.repoPath} />
+</Task>
+
+<Task id="review" output={outputs.review} agent={reviewAgent} deps={{ analyze: outputs.analyze }}>
+  {(deps) => <ReviewPrompt code={deps.analyze.code} />}
+</Task>
+```
+
+### Typed deps
+
+```tsx
+<Task id="parse" output={outputs.parsed} agent={parser}>
+  <ParsePrompt document={ctx.input.document} />
+</Task>
+
+<Task id="summarize" output={outputs.summary} agent={writer} deps={{ parse: outputs.parsed }}>
+  {(deps) => <SummaryPrompt extracted={deps.parse.fields} />}
+</Task>
+```
+
+When the upstream task id differs from the dep key, pair `deps` with `needs`:
+
+```tsx
+<Task
+  id="typed-calls"
+  output={outputs.typedCalls}
+  agent={builder}
+  deps={{ contract: outputs.contractSource }}
+  needs={{ contract: "parse-contract" }}
+>
+  {(deps) => <TypedCallsPrompt contract={deps.contract} />}
+</Task>
+```
+
+### Structured output with outputSchema
+
+When `outputSchema` is provided and children are a React element, a `schema` prop containing a JSON example is auto-injected. The MDX template can reference `{props.schema}`.
+
+```tsx
+import { z } from "zod";
+
+const analysisSchema = z.object({
+  summary: z.string(),
+  risk: z.enum(["low", "medium", "high"]),
+  files: z.array(z.string()),
+});
+
+// When `output` is a Zod schema, outputSchema is inferred automatically.
+<Task id="analyze" output={outputs.analysis} agent={codeAgent}>
+  <AnalysisPrompt repo={ctx.input.repoPath} />
+</Task>
+
+// You can still pass outputSchema explicitly to override:
+<Task
+  id="analyze"
+  output={outputs.analysis}
+  agent={codeAgent}
+  outputSchema={analysisSchema}
+>
+  <AnalysisPrompt repo={ctx.input.repoPath} />
+</Task>
+```
+
+## Compute mode
+
+Children is a function, no `agent`. Called at execution time; return value becomes output. Sync or async.
+
+```tsx
+// Sync callback
+<Task id="calculate" output={outputs.results}>
+  {() => ({ total: items.length, status: "complete" })}
+</Task>
+
+// Async callback — run shell commands
+<Task id="validate" output={outputs.validate} timeoutMs={30000} retries={1}>
+  {async () => {
+    const testResult = await $`bun test`.quiet();
+    const typeResult = await $`tsc --noEmit`.quiet();
+    return {
+      testsPass: testResult.exitCode === 0,
+      typesPass: typeResult.exitCode === 0,
+    };
+  }}
+</Task>
+```
+
+If the callback throws, the task fails and follows normal retry/`continueOnFail` behavior.
+
+## Static mode
+
+No `agent`, children is not a function. Value is written directly as output. `deps` works in static mode.
+
+```tsx
+// Object payload
+<Task id="config" output={outputs.config}>
+  {{ environment: "production", debug: false }}
+</Task>
+
+// Computed payload from upstream output
+<Task id="summary" output={outputs.summary} deps={{ results: outputs.results }}>
+  {(deps) => ({
+    total: deps.results.count,
+    status: "complete",
+  })}
+</Task>
+```
+
+## Output resolution
+
+The `output` prop accepts three forms:
+
+**Zod schema from `outputs` (recommended)** -- type-checked at compile time; resolved to the correct table via `zodToKeyName`.
+
+```tsx
+const { outputs } = createSmithers({ results: z.object({ done: z.boolean() }) });
+
+<Task id="step" output={outputs.results}>
+  {{ done: true }}
+</Task>
+```
+
+**Drizzle table object** -- runtime calls `getTableName()` to determine storage.
+
+```tsx
+<Task id="step" output={myDrizzleTable}>
+  {{ done: true }}
+</Task>
+```
+
+**String key (escape hatch)** -- not type-checked. Resolved at execution time.
+
+```tsx
+<Task id="step" output="results">
+  {{ done: true }}
+</Task>
+```
+
+## Full example
+
+### Schema-driven (recommended)
+
+```tsx
+import { createSmithers } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: z.object({ summary: z.string() }),
+  setup: z.object({ files: z.array(z.string()) }),
+});
+
+const codeAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a senior software engineer.",
+});
+
+export default smithers((ctx) => (
+  <Workflow name="tasks-demo">
+    <Task id="analyze" output={outputs.analysis} agent={codeAgent}>
+      {`Analyze: ${ctx.input.description}`}
+    </Task>
+    <Task id="setup" output={outputs.setup}>
+      {{ files: ["README.md", "package.json"] }}
+    </Task>
+  </Workflow>
+));
+```
+
+### Custom Drizzle table output (advanced)
+
+```tsx
+import { z } from "zod";
+import { sqliteTable, text, primaryKey } from "drizzle-orm/sqlite-core";
+
+const auditTable = sqliteTable(
+  "audit",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    status: text("status").notNull(),
+    details: text("details").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId] }),
+  }),
+);
+
+const auditSchema = z.object({
+  status: z.enum(["ok", "needs-follow-up"]),
+  details: z.string(),
+});
+
+<Task id="audit" output={auditTable} outputSchema={auditSchema} agent={reviewAgent}>
+  Summarize the review outcome for the audit log.
+</Task>
+```
+
+Custom Drizzle tables must be created and migrated separately. Define the workflow with `createSmithers(...)` as usual.
+
+## Error handling
+
+| Scenario | Behavior |
+| --- | --- |
+| Duplicate `id` | Throws `"Duplicate Task id detected: <id>"` at render time. |
+| Missing `output` | Throws `"Task <id> is missing output table."` at render time. |
+| Agent timeout | Fails after `timeoutMs`. Retries if `retries > 0`. |
+| Agent failure | Fails. Retries if `retries > 0`. Continues if `continueOnFail`. |
+| Callback throws | Same retry/`continueOnFail` behavior as agent failures. |
+| Callback timeout | Fails after `timeoutMs`. Retries if `retries > 0`. |
+
+## Notes
+
+- Custom Drizzle tables must include `runId` and `nodeId` columns. Tasks inside `<Loop>` additionally need `iteration`. `createSmithers(...)` adds these automatically.
+- `id` is the `nodeId` in the task descriptor; uniqueness is enforced at render time.
+- In agent mode, JSX/MDX children are rendered to markdown (not HTML) before being sent to the agent.

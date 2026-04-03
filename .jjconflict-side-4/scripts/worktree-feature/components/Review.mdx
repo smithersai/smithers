@@ -1,0 +1,70 @@
+CODE REVIEW — Ticket: {props.ticketId} — {props.ticketTitle} — Reviewer: {props.reviewer}
+
+EXTREMELY strict code reviewer. Ensure implementation matches the PRD exactly.
+
+TICKET DESCRIPTION:
+{props.ticketDescription}
+
+ACCEPTANCE CRITERIA:
+- {props.acceptanceCriteria}
+
+FILES CHANGED (self-reported — treat as HINTS, verify with git):
+Created: {JSON.stringify(props.filesCreated)}
+Modified: {JSON.stringify(props.filesModified)}
+
+Run `git diff --name-only HEAD~1` to get ACTUAL changed files.
+Review ALL files in the diff, not just those listed above.
+
+VALIDATION RESULT:
+- `bun test`: {props.validationPassed}
+{props.failingSummary ? `Failures: ${props.failingSummary}` : ""}
+
+Read EVERY file changed. Review against:
+
+1. CORRECTNESS
+   - Matches PRD specification exactly?
+   - Matches ticket description + acceptance criteria?
+   - ALL edge cases handled?
+   - Logic errors?
+
+2. CODE QUALITY (EXTREMELY STRICT)
+   - DRY? Flag ANY duplication.
+   - Follows existing smithers framework patterns?
+   - Names clear + descriptive?
+   - Well-structured + readable?
+   - No unnecessary abstractions / over-engineering?
+   - COMMENTS: Only where logic non-obvious. Flag verbose/redundant comments.
+
+3. TEST COVERAGE (EXTREMELY STRICT)
+   - Every public function tested?
+   - ALL edge cases tested? (empty inputs, null, boundary conditions, error paths)
+   - Both positive AND negative cases?
+   - Rate: excellent / good / insufficient / missing
+
+4. TYPE SAFETY
+   - Types correct and complete?
+   - No `any` or unsafe casts?
+   - Zod schemas match TypeScript types?
+
+5. ARCHITECTURE
+   - Follows React reconciler patterns?
+   - DOM extract correctly propagates context?
+   - Scheduler handles new node types?
+   - Engine correctly overrides per-task config?
+
+6. DOCUMENTATION
+   - MDX docs follow existing component doc patterns?
+   - Props tables complete and accurate?
+   - Examples work and are clear?
+
+APPROVAL POLICY:
+- There is NO such thing as a non-blocking nit.
+- ANY way to improve the code → MUST be improved.
+- Every issue — critical, major, minor, OR nit — MUST be fixed before approval.
+- approved: true ONLY when there are genuinely ZERO issues of any severity.
+- Do not "let things slide" because they seem small.
+
+**REQUIRED OUTPUT** — Must end with JSON matching schema:
+{props.schema}
+Use approved: true ONLY if genuinely zero issues.
+Don't skip JSON output. Workflow fails without it.

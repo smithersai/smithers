@@ -1,0 +1,47 @@
+---
+title: Introduction
+description: Build Smithers workflows with JSX components on top of a durable runtime.
+---
+
+Smithers is a JSX-first framework for deterministic, resumable AI workflows. Define the workflow as a TypeScript component tree; Smithers handles execution ordering, persistence, approvals, retries, and observability.
+
+## Start Here
+
+```bash
+bunx smithers-orchestrator init
+```
+
+This creates `.smithers/` with pre-built workflows, shared components, prompt templates, and configuration. Run a seeded workflow:
+
+```bash
+bunx smithers workflow implement --prompt "Add input validation to the signup form"
+```
+
+- [Quickstart](/api/quickstart) -- Build a custom workflow from scratch.
+- [Workflows Overview](/concepts/workflows-overview) -- Core principles and execution model.
+
+## Concepts
+
+1. [Workflows Overview](/concepts/workflows-overview) -- What workflows are and how execution works.
+2. [Reactivity](/concepts/reactivity) -- How the component model enables plans that evolve.
+3. [Control Flow](/concepts/control-flow) -- Sequential, parallel, conditional, iterative.
+4. [Workflow State](/concepts/workflow-state) -- Data flow between tasks via the context API.
+5. [Agents and Tools](/concepts/agents-and-tools) -- AI agents and built-in tools.
+6. [Suspend and Resume](/concepts/suspend-and-resume) -- Durability, crash recovery, resumability.
+7. [Human-in-the-Loop](/concepts/human-in-the-loop) -- Approval gates and denial policies.
+
+## Runtime
+
+All workflows share:
+
+- Durable execution and resumability
+- Retries, timeouts, approval gates
+- SQLite persistence
+- Parallel execution and loops
+- Structured events, metrics, observability
+
+## Next Steps
+
+- [JSX API](/api/overview) -- Component model and authoring layer.
+- [CLI Reference](/cli/overview) -- Run, resume, inspect workflows.
+- [Implement-Review Loop](/guides/review-loop) -- Recommended production pattern.

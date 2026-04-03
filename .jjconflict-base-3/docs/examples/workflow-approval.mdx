@@ -1,0 +1,77 @@
+---
+title: "Ghost: workflows/approval.tsx"
+description: "Example from workflows/approval.tsx — A two-step sequential workflow with a human approval gate before the final task."
+---
+
+# workflows/approval.tsx
+
+<Note>
+**Ghost doc** -- Real script from `workflows/approval.tsx`. Demonstrates `needsApproval` for human-in-the-loop workflows.
+</Note>
+
+## Source
+
+```tsx
+// workflows/approval.tsx
+import { createSmithers, Sequence, Task, Workflow } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  output: z.object({
+    message: z.string(),
+    length: z.number(),
+  }),
+});
+
+export default smithers((ctx) => (
+  <Workflow name="approval">
+    <Sequence>
+      <Task id="approve" output={outputs.output} needsApproval>
+        {{
+          message: `Approved: ${ctx.input.name}`,
+          length: String(ctx.input.name).length,
+        }}
+      </Task>
+      <Task id="final" output={outputs.output}>
+        {{
+          message: `Done: ${ctx.input.name}`,
+          length: String(ctx.input.name).length,
+        }}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+## Running
+
+```bash
+smithers up workflows/approval.tsx --input '{"name": "Deploy v2"}'
+```
+
+The workflow pauses at the approval gate:
+
+```
+[approval] Starting run mno345
+[approve] Waiting for approval...
+[approval] Paused — run `smithers approve` or `smithers deny` to continue.
+```
+
+Approve and resume:
+
+```bash
+smithers approve mno345 --node approve
+smithers up workflows/approval.tsx --run-id mno345 --resume true
+```
+
+```
+[approve] Approved. Running...
+[approve] Done -> { message: "Approved: Deploy v2", length: 9 }
+[final] Done -> { message: "Done: Deploy v2", length: 9 }
+[approval] Completed
+```
+
+## Notes
+
+- **`needsApproval`** -- Pauses execution until a human approves. Core human-in-the-loop primitive.
+- **Resumable** -- Workflow state is persisted to SQLite. Approval is recorded durably; `--resume true` continues from the gate.

@@ -1,0 +1,3 @@
+Smithers PI tools sample
+Unique phrase: saffron-orbit-lantern
+This file is here so the PI agent has to read something real from disk.

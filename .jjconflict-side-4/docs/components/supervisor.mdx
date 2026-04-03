@@ -1,0 +1,164 @@
+---
+title: <Supervisor>
+description: Composite component that orchestrates a boss agent planning, delegating to parallel workers, reviewing results, and re-delegating failures.
+---
+
+A higher-level component that composes `Sequence`, `Task`, `Parallel`, `Loop`, and optionally `Worktree` into a full supervisor workflow. The boss agent plans work, workers execute in parallel, the boss reviews, and failures are re-delegated -- all in a single declarative element.
+
+## Import
+
+```tsx
+import { Supervisor } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"supervisor"` | ID prefix for all generated nodes. |
+| `boss` | `AgentLike` | **(required)** | Agent that plans, delegates, and reviews. |
+| `workers` | `Record<string, AgentLike>` | **(required)** | Map of worker type names to agents (e.g., `{ coder, tester, docs }`). |
+| `planOutput` | `OutputTarget` | **(required)** | Output schema for the boss's plan. Should include `tasks: Array<{ id, workerType, instructions }>`. |
+| `workerOutput` | `OutputTarget` | **(required)** | Output schema for individual worker results. |
+| `reviewOutput` | `OutputTarget` | **(required)** | Output schema for the boss's review. Should include `allDone: boolean` and `retriable: string[]`. |
+| `finalOutput` | `OutputTarget` | **(required)** | Output schema for the final summary. |
+| `maxIterations` | `number` | `3` | Max delegate-review cycles before stopping. |
+| `maxConcurrency` | `number` | `5` | Max parallel workers per cycle. |
+| `useWorktrees` | `boolean` | `false` | Whether each worker gets its own git worktree for isolation. |
+| `skipIf` | `boolean` | `false` | Skip the entire supervisor workflow. |
+| `children` | `string \| ReactNode` | **(required)** | Goal/prompt passed to the boss agent for planning. |
+
+## Generated structure
+
+`<Supervisor>` expands to:
+
+```
+Sequence
+  ├── Task (boss plan)          id: "{prefix}-plan"
+  ├── Loop (until allDone)      id: "{prefix}-loop"
+  │   └── Sequence
+  │       ├── Parallel
+  │       │   ├── [Worktree?] → Task (worker A)   id: "{prefix}-worker-{type}"
+  │       │   ├── [Worktree?] → Task (worker B)
+  │       │   └── ...
+  │       └── Task (boss review)                   id: "{prefix}-review"
+  └── Task (final summary)     id: "{prefix}-final"
+```
+
+## Basic usage
+
+```tsx
+import { Workflow, Supervisor, createSmithers } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const planSchema = z.object({
+  tasks: z.array(z.object({
+    id: z.string(),
+    workerType: z.enum(["coder", "tester"]),
+    instructions: z.string(),
+  })),
+  strategy: z.string(),
+});
+
+const workerResultSchema = z.object({
+  taskId: z.string(),
+  status: z.enum(["success", "partial", "failed"]),
+  summary: z.string(),
+});
+
+const reviewSchema = z.object({
+  allDone: z.boolean(),
+  retriable: z.array(z.string()),
+  summary: z.string(),
+});
+
+const finalSchema = z.object({
+  totalTasks: z.number(),
+  succeeded: z.number(),
+  summary: z.string(),
+});
+
+const { Workflow, smithers, outputs } = createSmithers({
+  plan: planSchema,
+  workerResult: workerResultSchema,
+  review: reviewSchema,
+  final: finalSchema,
+});
+
+const boss = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a tech lead. Break goals into tasks and assign them.",
+});
+
+const coder = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a developer. Implement assigned tasks.",
+});
+
+const tester = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a test engineer. Write tests for assigned code.",
+});
+
+export default smithers(() => (
+  <Workflow name="build-feature">
+    <Supervisor
+      boss={boss}
+      workers={{ coder, tester }}
+      planOutput={outputs.plan}
+      workerOutput={outputs.workerResult}
+      reviewOutput={outputs.review}
+      finalOutput={outputs.final}
+      maxIterations={3}
+      maxConcurrency={4}
+    >
+      Build the user authentication module with tests.
+    </Supervisor>
+  </Workflow>
+));
+```
+
+## With worktrees
+
+Enable `useWorktrees` so each worker operates in an isolated git worktree:
+
+```tsx
+<Supervisor
+  id="isolated-build"
+  boss={boss}
+  workers={{ coder, tester, docs: docsWriter }}
+  planOutput={outputs.plan}
+  workerOutput={outputs.workerResult}
+  reviewOutput={outputs.review}
+  finalOutput={outputs.final}
+  useWorktrees
+  maxConcurrency={3}
+>
+  Refactor the payments module and update docs.
+</Supervisor>
+```
+
+Each worker Task is wrapped in a `<Worktree>` at `.worktrees/{prefix}-worker-{type}` with branch `worker/{prefix}-worker-{type}`.
+
+## Node IDs
+
+All generated node IDs are prefixed with the `id` prop (default `"supervisor"`):
+
+| Node | ID |
+| --- | --- |
+| Plan | `{id}-plan` |
+| Loop | `{id}-loop` |
+| Worker (per type) | `{id}-worker-{workerType}` |
+| Review | `{id}-review` |
+| Final | `{id}-final` |
+
+Use these IDs with `ctx.outputMaybe()` or `needs` to reference supervisor outputs from other parts of your workflow.
+
+## Notes
+
+- The `until` condition on the Loop is evaluated reactively by the runtime. The boss review output's `allDone` field controls termination.
+- Workers run with `continueOnFail` so a single worker failure does not abort the cycle.
+- The final summary Task depends on both the plan and review outputs via `needs`.
+- Combine with `<Sequence>` to chain a Supervisor with other workflow steps.

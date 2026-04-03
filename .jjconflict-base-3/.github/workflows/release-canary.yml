@@ -1,0 +1,109 @@
+name: release-canary
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-canary-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DESKTOP_BUILD_COMMAND: ${{ vars.BURNS_DESKTOP_CANARY_BUILD_COMMAND || vars.BURNS_DESKTOP_BUILD_COMMAND || 'bash scripts/release/build-desktop-artifact.sh --channel canary --version ${RELEASE_VERSION} --output-dir dist/desktop' }}
+  CLI_BUILD_COMMAND: ${{ vars.BURNS_CLI_CANARY_BUILD_COMMAND || vars.BURNS_CLI_BUILD_COMMAND || 'bash scripts/release/build-cli-artifact.sh --channel canary --version ${RELEASE_VERSION} --output-dir dist/cli' }}
+  DESKTOP_ARTIFACT_PATTERN: ${{ vars.BURNS_DESKTOP_ARTIFACT_PATTERN || 'dist/desktop/*' }}
+  CLI_ARTIFACT_PATTERN: ${{ vars.BURNS_CLI_ARTIFACT_PATTERN || 'dist/cli/*' }}
+
+jobs:
+  build:
+    name: canary-${{ matrix.target_os }}-${{ matrix.target_arch }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target_os: linux
+            target_arch: x64
+          - runner: macos-14
+            target_os: darwin
+            target_arch: arm64
+          - runner: windows-latest
+            target_os: windows
+            target_arch: x64
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Resolve release metadata
+        id: metadata
+        run: |
+          SHORT_SHA="${GITHUB_SHA::8}"
+          RELEASE_VERSION="0.0.0-canary.${GITHUB_RUN_NUMBER}+${SHORT_SHA}"
+
+          echo "channel=canary" >> "$GITHUB_OUTPUT"
+          echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+
+          echo "CHANNEL=canary" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Build desktop package
+        run: |
+          bash scripts/release/run-build-step.sh \
+            --label "desktop build" \
+            --command "${DESKTOP_BUILD_COMMAND}"
+
+      - name: Build CLI package
+        run: |
+          bash scripts/release/run-build-step.sh \
+            --label "cli build" \
+            --command "${CLI_BUILD_COMMAND}"
+
+      - name: Runtime smoke checks
+        run: bun run smoke:release
+
+      - name: Collect artifacts
+        run: |
+          bash scripts/release/collect-artifacts.sh \
+            --channel "${CHANNEL}" \
+            --version "${RELEASE_VERSION}" \
+            --target-os "${{ matrix.target_os }}" \
+            --target-arch "${{ matrix.target_arch }}" \
+            --desktop-pattern "${DESKTOP_ARTIFACT_PATTERN}" \
+            --cli-pattern "${CLI_ARTIFACT_PATTERN}" \
+            --output-dir "release-artifacts" \
+            --strict
+
+      - name: Validate artifact naming contract
+        run: bash scripts/release/validate-artifact-contract.sh --dir "release-artifacts"
+
+      - name: Verify artifact integrity
+        run: |
+          bash scripts/release/verify-artifact-integrity.sh \
+            --dir "release-artifacts" \
+            --reject-placeholders
+
+      - name: Upload canary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: burns-canary-${{ steps.metadata.outputs.release_version }}-${{ matrix.target_os }}-${{ matrix.target_arch }}
+          path: release-artifacts
+          if-no-files-found: error
+          retention-days: 14

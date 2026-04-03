@@ -1,0 +1,9 @@
+Write a draft following this outline:
+
+{props.sections.length > 0
+  ? props.sections
+      .map((section) => `## ${section.title}\nKey points: ${section.keyPoints.join(", ")}\nTarget: ~${section.estimatedLength} words`)
+      .join("\n\n")
+  : "Waiting for outline..."}
+
+Target audience: {props.targetAudience}

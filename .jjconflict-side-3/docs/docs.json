@@ -54,6 +54,7 @@
       "pages": [
         "integrations/tools",
         "integrations/integrations",
+        "integrations/baml",
         "integrations/cli-agents",
         "integrations/sdk-agents",
         "integrations/server",

@@ -1,0 +1,335 @@
+---
+title: Workflow Patterns
+description: Recommended project structure, naming conventions, and organizational patterns for Smithers workflows.
+---
+
+A workflow with one task fits in a single file. A workflow with twenty tasks does not. These patterns show you how to organize a Smithers project so it stays readable as it grows.
+
+## Project Structure
+
+For small workflows (1-5 tasks), a single file is fine:
+
+```
+my-workflow/
+  package.json
+  tsconfig.json
+  workflow.tsx          # Workflow definition
+  agents.ts             # Agent configuration
+  schemas.ts            # All Zod schemas in one place
+  prompts/
+    analyze.mdx         # MDX prompt templates
+    review.mdx
+  lib/
+    helpers.ts           # Shared utility functions
+```
+
+When you cross roughly ten tasks, the single `workflow.tsx` file starts to hurt. Split tasks into component files:
+
+```
+my-workflow/
+  package.json
+  tsconfig.json
+  bunfig.toml            # MDX preload config (if using MDX prompts)
+  preload.ts
+  workflow.tsx
+  agents.ts
+  schemas.ts
+  components/
+    Discover.tsx
+    Implement.tsx
+    Review.tsx
+    Report.tsx
+  prompts/
+    discover.mdx
+    implement.mdx
+    review.mdx
+  lib/
+    render.ts            # MDX-to-text renderer
+    helpers.ts
+```
+
+The key insight: `workflow.tsx` should contain only orchestration -- how tasks connect, branch, and loop. The *what* lives in components and prompts. The *shape of data* lives in schemas. The *who does the work* lives in agents.
+
+### Single-File Pattern
+
+For prototyping or simple workflows, keep everything in one file. As soon as prompts become non-trivial, move them into `.mdx` files and leave `workflow.tsx` focused on composition.
+
+```tsx
+// workflow.tsx
+import { createSmithers, Task } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: z.object({ summary: z.string(), risk: z.enum(["low", "medium", "high"]) }),
+  report: z.object({ title: z.string(), body: z.string() }),
+});
+
+const analyst = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a code analyst. Return structured JSON.",
+});
+
+export default smithers((ctx) => (
+  <Workflow name="quick-review">
+    <Task id="analyze" output={outputs.analysis} agent={analyst}>
+      {`Analyze: ${ctx.input.target}`}
+    </Task>
+    <Task id="report" output={outputs.report} deps={{ analyze: outputs.analysis }}>
+      {(deps) => ({
+        title: "Review Complete",
+        body: deps.analyze.summary,
+      })}
+    </Task>
+  </Workflow>
+));
+```
+
+Sixty lines. Two tasks. You can read the entire workflow without scrolling. That is the point. Start here, and only split when the file forces you to.
+
+## Schema Organization
+
+Keep all schemas in a centralized `schemas.ts` file. When someone new looks at your project, this is the first file they should read -- it is the complete data model at a glance:
+
+```ts
+// schemas.ts
+import { z } from "zod";
+
+export const ticketSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  priority: z.enum(["low", "medium", "high"]),
+});
+
+export const schemas = {
+  discover: z.object({
+    tickets: z.array(ticketSchema).max(5),
+  }),
+  implement: z.object({
+    summary: z.string(),
+    filesChanged: z.array(z.string()),
+    testsAdded: z.number(),
+  }),
+  review: z.object({
+    approved: z.boolean(),
+    feedback: z.string(),
+    suggestions: z.array(z.string()),
+  }),
+  report: z.object({
+    title: z.string(),
+    body: z.string(),
+    totalTickets: z.number(),
+    totalApproved: z.number(),
+  }),
+};
+```
+
+Then your workflow file stays clean:
+
+```tsx
+// workflow.tsx
+import { createSmithers, Task, Sequence } from "smithers-orchestrator";
+import { schemas } from "./schemas";
+
+const { Workflow, smithers, outputs } = createSmithers(schemas);
+```
+
+One import, one call, done. All the data-shape decisions live in one place.
+
+## Task ID Naming Conventions
+
+Task IDs must be unique within a workflow and deterministic across renders. If an ID changes between renders, Smithers treats it as a different task -- and that breaks resumability.
+
+**Simple tasks**: use a short, descriptive name.
+
+```tsx
+<Task id="analyze" output={outputs.analysis} agent={analyst}>
+```
+
+**Dynamic tasks** (generated from arrays): use a prefix with a stable identifier.
+
+```tsx
+{/* assuming outputs from createSmithers */}
+{tickets.map((ticket) => (
+  <Task key={ticket.id} id={`${ticket.id}:implement`} output={outputs.implement} agent={implementer}>
+    {`Implement ticket ${ticket.id}: ${ticket.title}`}
+  </Task>
+))}
+```
+
+**Iteration-aware tasks** (inside Loop): the task ID stays the same across iterations. Smithers differentiates them by the `iteration` column.
+
+```tsx
+{/* assuming outputs from createSmithers */}
+<Loop until={approved} maxIterations={3}>
+  <Task id="review" output={outputs.review} agent={reviewer}>
+    Review the implementation.
+  </Task>
+</Loop>
+```
+
+The naming convention: `{entity}:{action}` for dynamic tasks, plain `{action}` for single tasks.
+
+```
+analyze              -- single analysis task
+ticket-42:implement  -- implementing ticket 42
+ticket-42:review     -- reviewing ticket 42
+report               -- final report
+```
+
+Why the colon? It gives you a visual namespace. You can scan a list of node IDs and instantly see which ticket each task belongs to.
+
+## Agent Configuration
+
+Centralize agent setup in `agents.ts`. This file answers one question: who does what?
+
+```ts
+// agents.ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { read, grep, bash, edit, write } from "smithers-orchestrator";
+
+const MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
+
+export const analyst = new Agent({
+  model: anthropic(MODEL),
+  instructions: "You are a senior code analyst. Return structured JSON.",
+});
+
+export const implementer = new Agent({
+  model: anthropic(MODEL),
+  instructions: "You are a senior engineer. Implement changes and return structured JSON.",
+  tools: { read, grep, bash, edit, write },
+});
+
+export const reviewer = new Agent({
+  model: anthropic(MODEL),
+  instructions: "You are a strict code reviewer. Return structured JSON with approval status.",
+  tools: { read, grep },
+});
+```
+
+Three agents, clearly named, with distinct tool sets. The analyst does not get `bash`. The reviewer does not get `edit`. Least privilege, enforced by configuration.
+
+## MDX Prompt Templates
+
+For prompts longer than a couple of lines, use MDX files. This keeps your JSX clean and lets you compose prompts with variables:
+
+```mdx
+{/* prompts/review.mdx */}
+Review the following implementation:
+
+**Ticket**: {props.ticket.title}
+**Description**: {props.ticket.description}
+
+**Changes made**:
+{props.summary}
+
+**Files changed**:
+{props.files.map(f => `- ${f}`).join("\n")}
+
+Return JSON with:
+- approved (boolean)
+- feedback (string)
+- suggestions (string[])
+```
+
+Enable MDX imports in Bun:
+
+```toml
+# bunfig.toml
+preload = ["./preload.ts"]
+```
+
+```ts
+// preload.ts
+import { plugin, type BunPlugin } from "bun";
+import mdx from "@mdx-js/esbuild";
+
+plugin(mdx() as unknown as BunPlugin);
+```
+
+Use it directly in your component:
+
+```tsx
+// components/Review.tsx
+import { Task } from "smithers-orchestrator";
+import { reviewer } from "../agents";
+import { outputs } from "../schemas"; // assuming outputs from createSmithers
+import ReviewPrompt from "../prompts/review.mdx";
+
+export function Review({ ticket, summary, files }: {
+  ticket: { title: string; description: string };
+  summary: string;
+  files: string[];
+}) {
+  return (
+    <Task id={`${ticket.title}:review`} output={outputs.review} agent={reviewer}>
+      <ReviewPrompt ticket={ticket} summary={summary} files={files} />
+    </Task>
+  );
+}
+```
+
+The component file is pure wiring. The prompt file is pure language. Neither contaminates the other.
+
+## Output Access Patterns
+
+There are two ways to read a previous task's output, and they serve different purposes.
+
+Use `deps` for straightforward task-to-task handoff -- "this task needs that task's result":
+
+```tsx
+// assuming outputs from createSmithers
+export default smithers((ctx) => (
+  <Workflow name="example">
+    <Sequence>
+      <Task id="analyze" output={outputs.analysis} agent={analyst}>
+        {`Analyze: ${ctx.input.description}`}
+      </Task>
+
+      <Task id="report" output={outputs.report} deps={{ analyze: outputs.analysis }}>
+        {(deps) => ({ summary: deps.analyze.summary, risk: deps.analyze.risk })}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+Use `ctx.outputMaybe()` when the *orchestration itself* depends on the answer -- "should this task even exist?":
+
+```tsx
+const analysis = ctx.outputMaybe(outputs.analysis, { nodeId: "analyze" });
+
+return analysis?.risk === "high" ? (
+  <Task id="escalate" output={outputs.escalation}>...</Task>
+) : null;
+```
+
+The distinction matters. `deps` is about data flow inside a prompt. `ctx.outputMaybe()` is about control flow in your JSX tree.
+
+## Environment-Based Configuration
+
+Use environment variables for settings that change between development and production:
+
+```ts
+// agents.ts
+const MODEL = process.env.CLAUDE_MODEL ?? "claude-sonnet-4-20250514";
+const USE_CLI = process.env.USE_CLI_AGENTS === "1";
+```
+
+```bash
+# Development
+CLAUDE_MODEL=claude-sonnet-4-20250514 bun run workflow.tsx
+
+# Production (use a more capable model)
+CLAUDE_MODEL=claude-opus-4-6 bun run workflow.tsx
+```
+
+## Next Steps
+
+- [Tutorial](/guides/tutorial-workflow) -- End-to-end tutorial using these patterns.
+- [Best Practices](/guides/best-practices) -- Higher-level guidelines for effective workflows.
+- [Components](/components/workflow) -- Reference for all JSX components.

@@ -1,0 +1,111 @@
+---
+title: <Debate>
+description: Adversarial multi-round debate between a proposer and opponent, followed by a judge verdict.
+---
+
+```tsx
+import { Debate } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"debate"` | ID prefix for generated task ids. |
+| `proposer` | `AgentLike` | **(required)** | Agent arguing FOR the topic. |
+| `opponent` | `AgentLike` | **(required)** | Agent arguing AGAINST the topic. |
+| `judge` | `AgentLike` | **(required)** | Agent rendering the final verdict after all rounds. |
+| `rounds` | `number` | `2` | Number of debate rounds. Each round has both sides arguing in parallel. |
+| `argumentOutput` | `OutputTarget` | **(required)** | Output schema for proposer and opponent argument tasks. |
+| `verdictOutput` | `OutputTarget` | **(required)** | Output schema for the judge verdict task. |
+| `topic` | `string \| ReactNode` | **(required)** | The debate topic. Passed to all participants. |
+| `skipIf` | `boolean` | `false` | Skip the entire debate. Returns `null`. |
+
+## Basic usage
+
+```tsx
+<Workflow name="architecture-debate">
+  <Debate
+    proposer={monolithAdvocate}
+    opponent={microservicesAdvocate}
+    judge={architectureJudge}
+    rounds={3}
+    argumentOutput={outputs.argument}
+    verdictOutput={outputs.verdict}
+    topic="Should we migrate from a monolith to microservices for the payments system?"
+  />
+</Workflow>
+```
+
+This renders as:
+
+1. A loop running for 3 rounds.
+2. Each round: proposer and opponent argue in parallel.
+3. After all rounds: the judge reviews all arguments and renders a verdict.
+
+## Two-round default
+
+Omit `rounds` for the default two-round debate:
+
+```tsx
+<Debate
+  proposer={proAgent}
+  opponent={conAgent}
+  judge={judgeAgent}
+  argumentOutput={outputs.argument}
+  verdictOutput={outputs.verdict}
+  topic="Should we adopt GraphQL over REST for our public API?"
+/>
+```
+
+## Technology selection
+
+```tsx
+<Debate
+  proposer={rustAdvocate}
+  opponent={goAdvocate}
+  judge={techLeadAgent}
+  rounds={2}
+  argumentOutput={outputs.argument}
+  verdictOutput={outputs.verdict}
+  topic={`Evaluate Rust vs Go for the new CLI tool.
+Requirements: fast startup, cross-compilation, small binary size.`}
+/>
+```
+
+## MDX topic
+
+The `topic` prop accepts ReactNode, so you can use MDX prompts:
+
+```tsx
+<Debate
+  proposer={proAgent}
+  opponent={conAgent}
+  judge={judgeAgent}
+  argumentOutput={outputs.argument}
+  verdictOutput={outputs.verdict}
+  topic={<DebateTopicPrompt context={ctx.input.context} />}
+/>
+```
+
+## Generated structure
+
+`<Debate>` is a composite component. It does not create a new host element type. Internally it renders:
+
+```
+Sequence
+  Loop (maxIterations=rounds)
+    Sequence
+      Parallel
+        Task (proposer)
+        Task (opponent)
+  Task (judge, needs: proposer + opponent)
+```
+
+## Notes
+
+- The proposer task id is `{prefix}-proposer`, the opponent is `{prefix}-opponent`, and the judge is `{prefix}-judge`.
+- The loop id is `{prefix}-loop`. It runs for exactly `rounds` iterations using `maxIterations` with `onMaxReached="return-last"`.
+- Both the proposer and opponent write to the same `argumentOutput` schema, differentiated by task id.
+- The judge task uses `needs` to depend on both the proposer and opponent tasks, receiving all round outputs.
+- For more control over rebuttals and per-round prompt customization, compose `Loop`, `Parallel`, and `Task` directly as shown in the `examples/debate.tsx` example.

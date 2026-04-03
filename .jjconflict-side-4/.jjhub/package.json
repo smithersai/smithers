@@ -1,0 +1,8 @@
+{
+  "name": "smithers-workflows",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "smithers-orchestrator": "file:.."
+  }
+}

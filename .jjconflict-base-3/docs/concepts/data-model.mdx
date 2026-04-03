@@ -1,0 +1,174 @@
+---
+title: Data Model
+description: How Smithers stores input payloads, task outputs, and internal workflow metadata.
+---
+
+Every database you have ever cursed at got that way for the same reason: someone mixed bookkeeping with business data. Audit timestamps crept into domain objects. Retry counters leaked into API responses. One day you open the schema and cannot tell what the system *does* from what the system *needs to run*.
+
+Smithers refuses to let that happen.
+
+It stores three kinds of data, and it keeps them apart on purpose:
+
+1. the run input payload
+2. task output rows
+3. internal workflow metadata
+
+Why does the separation matter? Because the question "what did the task produce?" and the question "how many attempts did it take?" have different audiences, different lifecycles, and no business sharing a table. You will thank this design the first time you query your outputs without wading through orchestration columns.
+
+## Run Input
+
+When you kick off a workflow, you hand it a payload. That payload is the *entire* context your workflow gets from the outside world:
+
+```ts
+const result = await runWorkflow(workflow, {
+  input: { description: "Auth tokens expire silently" },
+});
+```
+
+Think of it as the function argument for the whole run. Smithers persists it once, and every task in the workflow reads it through `ctx.input`. If the run crashes and resumes, the same input is still there -- unless you explicitly override it.
+
+So what should go in `input`? Three things:
+
+- user-supplied run context
+- durable across resume
+- available everywhere through `ctx.input`
+
+Nothing more. If a value is produced *during* the run, it belongs in a task output, not in the input.
+
+## Task Outputs
+
+Here is where your domain data lives. Most Smithers workflows define output schemas up front with `createSmithers(...)`:
+
+```tsx
+const { Workflow, Task, smithers, outputs } = createSmithers({
+  analysis: z.object({
+    summary: z.string(),
+    severity: z.enum(["low", "medium", "high"]),
+  }),
+});
+```
+
+Notice that the schema describes *your* data -- a summary string and a severity level. That is it. No run IDs, no iteration counters, no attempt numbers. You define the shape of the answer; Smithers handles everything else.
+
+Behind the scenes, each schema key becomes a durable SQLite table. Smithers automatically:
+
+- creates the SQLite table
+- maps the schema key to a snake_case table name
+- adds `runId`, `nodeId`, and `iteration` bookkeeping columns
+- validates agent output before persisting it
+
+Your prompt-facing schema stays clean:
+
+```ts
+z.object({
+  summary: z.string(),
+  severity: z.enum(["low", "medium", "high"]),
+})
+```
+
+"Wait," you might be thinking, "if Smithers adds bookkeeping columns anyway, why can't I just add them myself?" You *can*. But then your LLM prompt includes fields it should never fill, your validation conflates domain rules with runtime plumbing, and your query results mix what the task *said* with how it got there. You do not need to add fields like:
+
+- `runId`
+- `nodeId`
+- `iteration`
+- `attempt`
+- approval metadata
+
+Smithers owns those. Let it.
+
+## Identity of an Output Row
+
+Here is a subtlety that trips people up. Two different tasks can write to the same output schema. The same task can write to it ten times inside a loop. So how does Smithers know which row is which?
+
+The answer: output identity is not "table name only." Each row is keyed by:
+
+- run id
+- task id (`nodeId`)
+- iteration when the task is inside a loop
+
+That is why `ctx.output(...)`, `ctx.outputMaybe(...)`, and `ctx.latest(...)` all require both an output target and a `nodeId`. The table tells Smithers *where* to look. The node ID and iteration tell it *which row* you mean.
+
+## Custom Drizzle Tables
+
+Sometimes you already have a table, or you need a schema that Smithers cannot auto-generate. In that case, `<Task output={...}>` can point at a custom Drizzle table.
+
+Fair warning: when you go this route, you take on responsibility that Smithers normally handles for you:
+
+- creating and migrating the table
+- including Smithers bookkeeping columns such as `runId` and `nodeId`
+- including `iteration` in looped tasks
+- optionally pairing the table with `outputSchema` for stricter validation
+
+This is an escape hatch, not the default path. If `createSmithers(...)` can express your schema, use it.
+
+## Internal Smithers Metadata
+
+Open your database and you will see tables prefixed with `_smithers_`. Do not be alarmed. These are Smithers' own operational tables:
+
+- runs
+- node state
+- task attempts
+- render frames
+- approvals
+- cache entries
+- tool-call logs
+- event journal
+- loop state
+
+This is the machinery that lets Smithers resume a crashed run, retry a failed task, or tell you exactly what happened at 3 a.m. It exists so your output tables never have to carry orchestration concerns.
+
+## Why the Separation Matters
+
+Ask two questions about any completed task:
+
+Your workflow output answers: *what did this task produce?*
+
+Smithers metadata answers:
+
+- when did it run?
+- how many attempts did it take?
+- was it cached?
+- did it wait for approval?
+- which loop iteration produced it?
+
+These are fundamentally different concerns. Mixing them is like storing a book's page count in the same field as its ISBN -- technically possible, obviously wrong. Keep them apart and both stay easy to reason about.
+
+## Schema Changes
+
+Changing a Zod output schema is not just a prompt tweak. It is a persistence change. The table on disk has to match the schema in code.
+
+Typical examples:
+
+- adding a field
+- removing a field
+- changing a field type
+- tightening validation rules
+
+In hot-reload mode, Smithers blocks these changes and requires a restart so output resolution stays deterministic. This is deliberate friction -- it forces you to think about the migration before the data gets inconsistent.
+
+If you use custom Drizzle tables, you must manage those migrations yourself.
+
+## Direct Queries
+
+Smithers does not hide SQLite from you. The database is right there. Open it, poke around, write queries.
+
+Use output tables when you care about business results.
+Use `_smithers_*` tables when you care about execution history.
+
+This is one of the advantages of keeping the layers separate: you can hand your output tables to an analyst who has never heard of Smithers, and the data makes sense on its own.
+
+## Mental Model
+
+When in doubt, apply this rule of thumb:
+
+- `ctx.input` is run-scoped input
+- output tables hold validated task results
+- `_smithers_*` tables hold orchestration state
+
+If a field only exists to help the runtime schedule or resume work, it belongs in Smithers metadata, not in your domain schema. If a field describes what the task actually produced, it belongs in an output table, not in `_smithers_*`. The line is clean. Keep it that way.
+
+## Next Steps
+
+- [Execution Model](/concepts/execution-model) -- See how these tables participate in render, scheduling, and resume.
+- [Structured Output](/guides/structured-output) -- Validation and persistence details for task outputs.
+- [Debugging](/guides/debugging) -- Query the internal tables directly when a run behaves unexpectedly.

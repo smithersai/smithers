@@ -1,0 +1,135 @@
+---
+title: <Kanban>
+description: Process items through columns with pluggable ticket source. Triage, work, review loop.
+---
+
+```tsx
+import { Kanban } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"kanban"` | ID prefix for all generated task and loop elements. |
+| `columns` | `ColumnDef[]` | **(required)** | Column definitions in order. Items flow left to right through each column. |
+| `useTickets` | `() => Array<{ id: string }>` | **(required)** | Function that returns ticket items to process. Each item must have an `id` field. |
+| `agents` | `Record<string, AgentLike>` | `undefined` | Record mapping column names to agents. Overrides column-level agents. |
+| `maxConcurrency` | `number` | `Infinity` | Max items processed in parallel per column. |
+| `onComplete` | `OutputTarget` | `undefined` | Output schema for the completion task when items reach the final column. |
+| `until` | `boolean` | `false` | Loop exit condition. When `true`, the board loop stops. |
+| `maxIterations` | `number` | `5` | Max iterations through the column pipeline. |
+| `skipIf` | `boolean` | `false` | Skip the entire board. Returns `null`. |
+| `children` | `ReactNode` | `undefined` | Content passed to the `onComplete` task, if present. |
+
+### ColumnDef
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Column name (e.g., `"backlog"`, `"review"`). |
+| `agent` | `AgentLike` | Agent that processes items in this column. |
+| `output` | `OutputTarget` | Output schema for tasks in this column. |
+| `prompt` | `(ctx: { item, column }) => string` | Optional prompt template. Receives the item and column name. |
+
+## Basic usage
+
+```tsx
+const columns = [
+  { name: "triage", agent: triageAgent, output: outputs.triage },
+  { name: "work", agent: workerAgent, output: outputs.work },
+  { name: "review", agent: reviewAgent, output: outputs.review },
+];
+
+<Workflow name="ticket-board">
+  <Kanban
+    columns={columns}
+    useTickets={() => tickets}
+    until={allDone}
+    maxIterations={3}
+  />
+</Workflow>
+```
+
+## With concurrency limits
+
+```tsx
+<Kanban
+  id="pr-queue"
+  columns={columns}
+  useTickets={() => pullRequests}
+  maxConcurrency={2}
+  until={queueEmpty}
+/>
+```
+
+At most two items are processed simultaneously within each column.
+
+## Overriding agents per column
+
+The `agents` prop overrides column-level agents:
+
+```tsx
+<Kanban
+  columns={columns}
+  useTickets={() => tickets}
+  agents={{
+    review: seniorReviewAgent,
+    work: juniorDevAgent,
+  }}
+  until={done}
+/>
+```
+
+## With completion handler
+
+When `onComplete` is provided, a final task runs after the loop exits:
+
+```tsx
+<Kanban
+  columns={columns}
+  useTickets={() => tickets}
+  onComplete={outputs.boardSummary}
+  until={allDone}
+>
+  Summarize the board results.
+</Kanban>
+```
+
+## Custom prompts per column
+
+```tsx
+const columns = [
+  {
+    name: "triage",
+    agent: triageAgent,
+    output: outputs.triage,
+    prompt: ({ item }) => `Triage ticket: ${item.title}\n${item.description}`,
+  },
+  {
+    name: "implement",
+    agent: codeAgent,
+    output: outputs.impl,
+    prompt: ({ item }) => `Implement the fix for: ${item.title}`,
+  },
+];
+```
+
+## Structure
+
+`<Kanban>` composes existing primitives. It does not create a new host element type. The rendered tree looks like:
+
+```
+Loop (until / maxIterations)
+  Sequence
+    Parallel (column 1 — all items)
+    Parallel (column 2 — all items)
+    ...
+    Task (onComplete, if provided)
+```
+
+## Notes
+
+- `<Kanban>` is a composite component. It renders a tree of `<Loop>`, `<Sequence>`, `<Parallel>`, and `<Task>` elements.
+- Each column creates a `<Parallel>` block where all ticket items are processed concurrently (bounded by `maxConcurrency`).
+- The `useTickets` function is called at render time. Return different items each iteration to implement dynamic ticket sources.
+- Use `until` with `ctx.outputMaybe()` to exit the loop when all items reach the final column.

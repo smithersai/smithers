@@ -1,0 +1,86 @@
+---
+title: PI Integration
+description: Use PI as a Smithers workflow CLI backend and understand how PI extensibility composes with Smithers declarative orchestration.
+---
+
+Smithers provides deterministic orchestration (workflow graph, approvals, retries, durable state). PI provides adaptive agent capabilities (providers, models, extensions, skills, prompt templates). Use both when you need deterministic execution with flexible agent behavior.
+
+## Integration Modes
+
+### 1) PI as Workflow Agent
+
+```tsx
+import { PiAgent } from "smithers-orchestrator";
+
+const pi = new PiAgent({
+  provider: "openai",
+  model: "gpt-5.2-codex",
+  mode: "text",
+});
+
+{/* outputs comes from createSmithers() */}
+<Task id="implementation" output={outputs.implementation} agent={pi}>
+  {`Implement feature X and explain tradeoffs.`}
+</Task>
+```
+
+`PiAgent` supports all PI CLI flags: provider/model, tools, extensions, skills, prompt templates, themes, and sessions. Text mode uses `--print` by default; JSON/RPC modes set `--mode` and omit `--print`.
+
+PI sessions are first-class hijack targets. `smithers hijack <runId> --target pi` reopens the PI session for local steering.
+
+### 2) PI Server Client
+
+Use `pi-plugin` to drive Smithers server APIs from a PI extension or any Node process:
+
+```ts
+import { runWorkflow, approve, streamEvents } from "smithers-orchestrator/pi-plugin";
+```
+
+### 3) Hybrid: PI Extensibility + Smithers Orchestration
+
+- Keep orchestration in Smithers (`<Sequence>`, `<Parallel>`, `<Branch>`, `<Loop>`).
+- Run adaptive logic in PI tasks (extensions/skills/provider overrides).
+
+Patterns:
+
+1. PI skill-driven coding task inside a Smithers `<Task>`.
+2. PI extension command that starts/resumes Smithers workflows via server API or pi-plugin.
+3. Smithers workflow output persisted to SQLite and consumed by later PI-assisted tasks.
+
+## Hijacking PI Sessions
+
+PI is a native-session hijack backend.
+
+- Live run: Smithers watches PI's event stream, waits between blocking tool calls, then hands off the session.
+- Finished/cancelled run: Smithers reopens the latest persisted PI session.
+- Relaunch uses the stored session ID: `pi --session <id>`.
+- Clean exit resumes the workflow automatically.
+
+Session persistence:
+
+- `PiAgent` defaults `noSession` to `true` for one-shot calls.
+- For workflow hijack/resume/streaming, Smithers keeps session persistence enabled automatically.
+- No need to set `mode: "json"` manually for hijack support.
+
+## Setup
+
+1. Install PI CLI and add to `PATH`.
+2. Configure PI credentials via env/config (prefer over CLI args for API keys).
+3. Instantiate `PiAgent` with explicit options in workflows.
+4. For server-driven workflows, use `pi-plugin`.
+
+```bash
+pi --version
+bun run test
+```
+
+## Design Guidance
+
+| Use `PiAgent` tasks when | Use Smithers-native tasks when |
+|---|---|
+| You need PI capabilities inside deterministic workflows | You need strict reproducibility and narrow tool contracts |
+| You want PI calls as auditable workflow steps | |
+
+## Limitations
+
+Chat-provider integration lives in host applications, not this repo.

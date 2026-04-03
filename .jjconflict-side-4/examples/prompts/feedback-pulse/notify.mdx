@@ -1,0 +1,9 @@
+export default function Prompt(props) {
+  return (
+    <>
+      {"Example prompt: feedback pulse notify"}
+      {"\n\n"}
+      {JSON.stringify(props ?? {}, null, 2)}
+    </>
+  );
+}

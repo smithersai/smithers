@@ -1,0 +1,9 @@
+export default function Prompt(props) {
+  return (
+    <>
+      {"Example prompt: mcp health probe report"}
+      {"\n\n"}
+      {JSON.stringify(props ?? {}, null, 2)}
+    </>
+  );
+}

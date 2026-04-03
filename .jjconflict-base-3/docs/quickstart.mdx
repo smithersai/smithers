@@ -1,0 +1,37 @@
+---
+title: Quickstart
+description: Start with the JSX quickstart for Smithers workflows.
+---
+
+## 1. Initialize
+
+```bash
+bunx smithers-orchestrator init
+```
+
+Scaffolds `.smithers/` with ready-to-use workflows.
+
+## 2. Run a Workflow
+
+```bash
+bunx smithers workflow implement --prompt "Add rate limiting to the API"
+```
+
+## 3. Build Your Own
+
+- [JSX Quickstart](/api/quickstart) -- Build a TSX workflow with `<Task>` components and typed `deps`.
+
+## Runtime
+
+Every workflow gets:
+
+- SQLite persistence
+- Resume after restarts
+- Retries, approvals, loops
+- Observability and CLI tooling
+
+## Next Steps
+
+- [JSX Quickstart](/api/quickstart) -- Build a render-driven TSX workflow from scratch.
+- [Hello World Example](/examples/hello-world) -- Smallest complete workflow.
+- [Review Loop Guide](/guides/review-loop) -- From linear flow to iterative refinement.

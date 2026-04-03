@@ -1,0 +1,54 @@
+---
+title: "Ghost: workflows/hello.tsx"
+description: "Example from workflows/hello.tsx — A minimal hello-world workflow using literal output (no agent) with deterministic persistence."
+---
+
+# workflows/hello.tsx
+
+<Note>
+**Ghost doc** -- Real script from `workflows/hello.tsx`. Demonstrates literal output with no AI agent.
+</Note>
+
+## Source
+
+```tsx
+// workflows/hello.tsx
+import { createSmithers, Workflow, Task } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  output: z.object({
+    message: z.string(),
+    length: z.number(),
+  }),
+});
+
+export default smithers((ctx) => (
+  <Workflow name="hello">
+    <Task id="hello" output={outputs.output}>
+      {{
+        message: `Hello, ${ctx.input.name}!`,
+        length: String(ctx.input.name).length,
+      }}
+    </Task>
+  </Workflow>
+));
+```
+
+## Running
+
+```bash
+smithers up workflows/hello.tsx --input '{"name": "World"}'
+```
+
+```
+[hello] Starting run abc123
+[hello] Done -> { message: "Hello, World!", length: 5 }
+[hello] Completed
+```
+
+## Notes
+
+- **Literal output** -- `Task` receives a plain object instead of an agent prompt. No LLM call; deterministic output.
+- **`ctx.input`** -- Access the CLI input payload passed via `--input`.
+- **Resumable** -- Output is persisted to SQLite. Re-running after a crash skips completed tasks.

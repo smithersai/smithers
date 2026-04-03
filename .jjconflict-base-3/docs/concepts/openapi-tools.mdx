@@ -1,0 +1,119 @@
+---
+title: OpenAPI Tools
+description: Turn any OpenAPI spec into tools your agents can call.
+---
+
+You have an internal API. It has an OpenAPI spec. Your agent needs to call it. You could hand-write a tool for every endpoint -- define the schema, build the URL, set the headers, parse the response. Or you could point Smithers at the spec and let it do that for you.
+
+## The Problem
+
+Every REST API endpoint you want an agent to use requires a tool. A tool needs three things: a Zod schema describing the parameters, a description the LLM can read, and an execute function that makes the HTTP request. For a single endpoint that is fine. For an API with forty endpoints, it is tedious and error-prone.
+
+OpenAPI specs already contain all the information you need. The parameter types are there. The descriptions are there. The URL patterns and HTTP methods are there. The only question is how to convert that information into tools.
+
+## The Solution
+
+`createOpenApiTools` reads an OpenAPI 3.0+ spec and returns a `Record<string, Tool>` -- one tool per operation. Each tool has a Zod schema derived from the operation's parameters and request body, a description from the operation's summary, and an execute function that builds the correct HTTP request and returns the response.
+
+```ts
+import { createOpenApiTools } from "smithers-orchestrator";
+
+const tools = await createOpenApiTools("https://api.example.com/openapi.json", {
+  auth: { type: "bearer", token: process.env.API_TOKEN! },
+});
+```
+
+That is the whole thing. `tools` is now a map of operation IDs to AI SDK tools. Hand them to an agent:
+
+```tsx
+const apiAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools,
+});
+
+<Task id="fetch-data" agent={apiAgent}>
+  List the first 10 items from the inventory API.
+</Task>
+```
+
+The agent sees tool descriptions like "List all pets" and parameters like `{ limit: z.number().optional() }`. It decides which endpoints to call, fills in the parameters, and gets back JSON responses. No glue code required.
+
+## How It Works
+
+The conversion follows four steps:
+
+1. **Parse the spec.** Smithers loads the OpenAPI document (JSON object, URL, or file path), resolves `$ref` pointers, and extracts every operation.
+
+2. **Convert schemas.** Each operation's path parameters, query parameters, header parameters, and request body are converted from JSON Schema into Zod schemas. Strings become `z.string()`, integers become `z.number().int()`, objects become `z.object()` with the correct shape. When a schema is too complex for clean conversion, Smithers falls back to `z.any()` with a description so the LLM still knows what to provide.
+
+3. **Build the tool.** Each operation becomes an AI SDK `tool()` with the converted schema as `inputSchema`, the operation summary as `description`, and an execute function that assembles the HTTP request.
+
+4. **Execute at runtime.** When an agent calls the tool, the execute function substitutes path parameters into the URL, appends query parameters, sets headers (including authentication), sends the request via `fetch`, and returns the response body.
+
+## Authentication
+
+Three authentication methods are supported:
+
+```ts
+// Bearer token
+{ auth: { type: "bearer", token: "sk-..." } }
+
+// Basic auth
+{ auth: { type: "basic", username: "admin", password: "secret" } }
+
+// API key (in header or query)
+{ auth: { type: "apiKey", name: "X-API-Key", value: "key123", in: "header" } }
+```
+
+You can also pass arbitrary headers:
+
+```ts
+{ headers: { "X-Custom-Header": "value" } }
+```
+
+## Filtering Operations
+
+Most APIs have endpoints you do not want an agent calling. Use `include` or `exclude` to control which operations become tools:
+
+```ts
+// Only these operations
+const tools = await createOpenApiTools(spec, {
+  include: ["listPets", "getPet"],
+});
+
+// Everything except these
+const tools = await createOpenApiTools(spec, {
+  exclude: ["deletePet", "deleteAllPets"],
+});
+```
+
+## Single Operation
+
+If you only need one tool from a spec, use `createOpenApiTool`:
+
+```ts
+import { createOpenApiTool } from "smithers-orchestrator";
+
+const listPets = await createOpenApiTool(spec, "listPets", {
+  baseUrl: "https://api.petstore.example.com",
+});
+```
+
+## Observability
+
+Every OpenAPI tool call emits an `OpenApiToolCalled` event and updates two metrics:
+
+- `smithers.openapi.tool_calls` -- counter of total calls
+- `smithers.openapi.tool_duration_ms` -- histogram of call durations
+
+These integrate with the standard Smithers observability pipeline, so they appear in your logs, Prometheus exports, and OpenTelemetry traces alongside all other tool metrics.
+
+## When to Use OpenAPI Tools
+
+Use them when you have an existing REST API with an OpenAPI spec and you want agents to interact with it. They are particularly good for:
+
+- Internal APIs with dozens of endpoints
+- Third-party APIs that publish OpenAPI specs
+- Rapid prototyping where hand-writing tools is too slow
+
+Do not use them when you need fine-grained control over how an API is called -- custom retry logic, request transformation, response filtering. In those cases, write a custom tool and call the API yourself.

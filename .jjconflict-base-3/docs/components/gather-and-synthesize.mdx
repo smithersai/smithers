@@ -1,0 +1,146 @@
+---
+title: <GatherAndSynthesize>
+description: Parallel data collection from different sources followed by synthesis into a unified result.
+---
+
+```tsx
+import { GatherAndSynthesize } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"gather-and-synthesize"` | ID prefix for all generated task elements. |
+| `sources` | `Record<string, SourceDef>` | **(required)** | Maps source names to source definitions with agent, prompt, and optional output. |
+| `synthesizer` | `AgentLike` | **(required)** | Agent that synthesizes gathered data into a unified result. |
+| `gatherOutput` | `OutputTarget` | **(required)** | Default output schema for each source gather task. |
+| `synthesisOutput` | `OutputTarget` | **(required)** | Output schema for the synthesis task. |
+| `gatheredResults` | `Record<string, unknown> \| null` | `undefined` | Gathered results keyed by source name. Passed to the synthesis prompt. Typically from `ctx.outputMaybe()`. |
+| `maxConcurrency` | `number` | `Infinity` | Max parallel gatherers. |
+| `synthesisPrompt` | `string` | auto-generated | Custom prompt for the synthesis task. |
+| `skipIf` | `boolean` | `false` | Skip the entire gather-and-synthesize block. Returns `null`. |
+| `children` | `ReactNode` | `undefined` | Custom content for the synthesis task. Overrides `synthesisPrompt`. |
+
+### SourceDef
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `agent` | `AgentLike` | Agent that gathers data from this source. |
+| `prompt` | `string` | Prompt for the gather task. |
+| `output` | `OutputTarget` | Optional output schema override for this source. |
+| `children` | `ReactNode` | Optional ReactNode content for the gather task. Overrides `prompt`. |
+
+## Basic usage
+
+```tsx
+<Workflow name="research">
+  <GatherAndSynthesize
+    sources={{
+      docs: { agent: docsAgent, prompt: "Search the documentation." },
+      code: { agent: codeAgent, prompt: "Analyze the codebase." },
+      issues: { agent: issueAgent, prompt: "Review open issues." },
+    }}
+    synthesizer={synthesisAgent}
+    gatherOutput={outputs.gathered}
+    synthesisOutput={outputs.synthesis}
+    gatheredResults={gathered}
+  />
+</Workflow>
+```
+
+## With per-source output schemas
+
+```tsx
+<GatherAndSynthesize
+  sources={{
+    metrics: {
+      agent: metricsAgent,
+      prompt: "Collect performance metrics.",
+      output: outputs.metrics,
+    },
+    logs: {
+      agent: logAgent,
+      prompt: "Analyze recent error logs.",
+      output: outputs.logs,
+    },
+    alerts: {
+      agent: alertAgent,
+      prompt: "Fetch active alerts.",
+      output: outputs.alerts,
+    },
+  }}
+  synthesizer={incidentAgent}
+  gatherOutput={outputs.defaultGather}
+  synthesisOutput={outputs.incidentReport}
+  gatheredResults={gathered}
+/>
+```
+
+## Custom synthesis prompt
+
+```tsx
+<GatherAndSynthesize
+  sources={sources}
+  synthesizer={synthesisAgent}
+  gatherOutput={outputs.gathered}
+  synthesisOutput={outputs.report}
+  gatheredResults={gathered}
+  synthesisPrompt="Combine all research findings into an executive summary with recommendations."
+/>
+```
+
+Or use `children` for richer content:
+
+```tsx
+<GatherAndSynthesize
+  sources={sources}
+  synthesizer={synthesisAgent}
+  gatherOutput={outputs.gathered}
+  synthesisOutput={outputs.report}
+  gatheredResults={gathered}
+>
+  Write a comprehensive report combining all gathered data.
+  Focus on actionable insights and prioritized recommendations.
+</GatherAndSynthesize>
+```
+
+## Limiting concurrency
+
+```tsx
+<GatherAndSynthesize
+  sources={manySources}
+  synthesizer={synthesisAgent}
+  gatherOutput={outputs.gathered}
+  synthesisOutput={outputs.synthesis}
+  gatheredResults={gathered}
+  maxConcurrency={3}
+/>
+```
+
+At most three source agents gather data simultaneously.
+
+## Structure
+
+`<GatherAndSynthesize>` composes existing primitives. The rendered tree looks like:
+
+```
+Sequence
+  Parallel (gather phase)
+    Task (gather from source A)
+    Task (gather from source B)
+    ...
+  Task (synthesis — depends on all gather tasks via needs)
+```
+
+## Dependency wiring
+
+The synthesis task automatically receives `needs` entries for each source. Each source name becomes a key in `needs`, pointing to the corresponding gather task ID. This ensures the synthesis task does not run until all gather tasks complete.
+
+## Notes
+
+- `<GatherAndSynthesize>` is a composite component. It renders `<Sequence>`, `<Parallel>`, and `<Task>` elements.
+- Each source creates a separate gather `<Task>` with its own agent.
+- The synthesis `<Task>` uses `needs` to depend on all gather tasks, ensuring it runs after all data is collected.
+- When `gatheredResults` is provided, it is formatted into the default synthesis prompt. Pass `synthesisPrompt` or `children` to override.
+- Sources with a `children` field use that as the task content, taking priority over `prompt`.

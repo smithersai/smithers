@@ -1,0 +1,310 @@
+---
+title: PI Plugin Client
+description: A lightweight HTTP client for interacting with a Smithers server from any process, with functions for starting runs, streaming events, and managing approvals.
+---
+
+Lightweight HTTP client for a running Smithers server. Start/resume runs, stream events, manage approvals, query status.
+
+## Import
+
+```ts
+import {
+  runWorkflow,
+  resume,
+  approve,
+  deny,
+  streamEvents,
+  getStatus,
+  getFrames,
+  cancel,
+  listRuns,
+} from "smithers-orchestrator/pi-plugin";
+```
+
+## Defaults
+
+All functions accept optional `baseUrl` and `apiKey`:
+
+| Parameter | Default |
+|---|---|
+| `baseUrl` | `http://127.0.0.1:7331` |
+| `apiKey` | `undefined` (no auth header) |
+
+If `apiKey` is provided, it is sent as `Authorization: Bearer <token>`.
+
+---
+
+## Functions
+
+### runWorkflow
+
+Start a new workflow run.
+
+```ts
+async function runWorkflow(args: {
+  workflowPath: string;
+  input: unknown;
+  runId?: string;
+  baseUrl?: string;
+  apiKey?: string;
+}): Promise<{ runId: string }>
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `workflowPath` | `string` | Yes | Path to `.tsx` workflow file on the server |
+| `input` | `unknown` | Yes | Workflow input data |
+| `runId` | `string` | No | Custom run ID |
+| `baseUrl` | `string` | No | Server URL |
+| `apiKey` | `string` | No | Auth token |
+
+```ts
+const run = await runWorkflow({
+  workflowPath: "./workflows/bugfix.tsx",
+  input: { description: "Auth tokens expire silently" },
+  apiKey: "sk-my-token",
+});
+console.log(run.runId);
+```
+
+---
+
+### resume
+
+Resume a paused or failed run.
+
+```ts
+async function resume(args: {
+  workflowPath: string;
+  runId: string;
+  baseUrl?: string;
+  apiKey?: string;
+}): Promise<{ runId: string }>
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `workflowPath` | `string` | Yes | Path to `.tsx` workflow file |
+| `runId` | `string` | Yes | Run ID to resume |
+| `baseUrl` | `string` | No | Server URL |
+| `apiKey` | `string` | No | Auth token |
+
+Calls `POST /v1/runs` with `resume: true`.
+
+---
+
+### approve
+
+Approve a node waiting for human approval.
+
+```ts
+async function approve(args: {
+  runId: string;
+  nodeId: string;
+  iteration?: number;
+  note?: string;
+  baseUrl?: string;
+  apiKey?: string;
+}): Promise<{ runId: string }>
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `runId` | `string` | Yes | Run ID |
+| `nodeId` | `string` | Yes | Node ID |
+| `iteration` | `number` | No | Loop iteration (default: `0`) |
+| `note` | `string` | No | Approval note |
+| `baseUrl` | `string` | No | Server URL |
+| `apiKey` | `string` | No | Auth token |
+
+---
+
+### deny
+
+Deny a node waiting for human approval.
+
+```ts
+async function deny(args: {
+  runId: string;
+  nodeId: string;
+  iteration?: number;
+  note?: string;
+  baseUrl?: string;
+  apiKey?: string;
+}): Promise<{ runId: string }>
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `runId` | `string` | Yes | Run ID |
+| `nodeId` | `string` | Yes | Node ID |
+| `iteration` | `number` | No | Loop iteration (default: `0`) |
+| `note` | `string` | No | Denial reason |
+| `baseUrl` | `string` | No | Server URL |
+| `apiKey` | `string` | No | Auth token |
+
+---
+
+### streamEvents
+
+Stream lifecycle events via SSE. Returns `AsyncIterable<SmithersEvent>`.
+
+```ts
+async function* streamEvents(args: {
+  runId: string;
+  baseUrl?: string;
+  apiKey?: string;
+}): AsyncIterable<SmithersEvent>
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `runId` | `string` | Yes | Run ID |
+| `baseUrl` | `string` | No | Server URL |
+| `apiKey` | `string` | No | Auth token |
+
+```ts
+for await (const event of streamEvents({ runId: "smi_abc123" })) {
+  if (event.type === "RunFinished") break;
+  if (event.type === "RunFailed") break;
+  if (event.type === "NodeWaitingApproval") {
+    console.log(`Node ${event.nodeId} needs approval.`);
+  }
+}
+```
+
+Connects to `GET /v1/runs/:runId/events`. Keep-alive comments are filtered. Completes when the stream closes.
+
+---
+
+### getStatus
+
+Get run status and summary.
+
+```ts
+async function getStatus(args: {
+  runId: string;
+  baseUrl?: string;
+  apiKey?: string;
+}): Promise<{
+  runId: string;
+  workflowName: string;
+  status: string;
+  startedAtMs: number | null;
+  finishedAtMs: number | null;
+  summary: Record<string, number>;
+}>
+```
+
+```ts
+const status = await getStatus({ runId: "smi_abc123" });
+console.log(status.status);  // "running" | "finished" | "failed" | ...
+console.log(status.summary); // { finished: 3, pending: 2, "in-progress": 1 }
+```
+
+---
+
+### getFrames
+
+List render frames for a run.
+
+```ts
+async function getFrames(args: {
+  runId: string;
+  tail?: number;
+  baseUrl?: string;
+  apiKey?: string;
+}): Promise<any[]>
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `runId` | `string` | Yes | Run ID |
+| `tail` | `number` | No | Max frames (default: `20`) |
+| `baseUrl` | `string` | No | Server URL |
+| `apiKey` | `string` | No | Auth token |
+
+---
+
+### cancel
+
+Cancel a running workflow.
+
+```ts
+async function cancel(args: {
+  runId: string;
+  baseUrl?: string;
+  apiKey?: string;
+}): Promise<{ runId: string }>
+```
+
+---
+
+### listRuns
+
+List all runs. Requires server `db`.
+
+```ts
+async function listRuns(args?: {
+  limit?: number;
+  status?: string;
+  baseUrl?: string;
+  apiKey?: string;
+}): Promise<any[]>
+```
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `limit` | `number` | No | Max runs (default: server default of 50) |
+| `status` | `string` | No | Filter by status |
+| `baseUrl` | `string` | No | Server URL |
+| `apiKey` | `string` | No | Auth token |
+
+---
+
+## Complete Example
+
+```ts
+import {
+  runWorkflow,
+  streamEvents,
+  approve,
+  getStatus,
+} from "smithers-orchestrator/pi-plugin";
+
+const apiKey = process.env.SMITHERS_API_KEY;
+
+const run = await runWorkflow({
+  workflowPath: "./workflows/deploy.tsx",
+  input: { branch: "main", environment: "staging" },
+  apiKey,
+});
+
+for await (const event of streamEvents({ runId: run.runId, apiKey })) {
+  switch (event.type) {
+    case "NodeStarted":
+      console.log(`Task ${event.nodeId} started (attempt ${event.attempt})`);
+      break;
+    case "NodeFinished":
+      console.log(`Task ${event.nodeId} completed`);
+      break;
+    case "NodeWaitingApproval":
+      await approve({
+        runId: run.runId,
+        nodeId: event.nodeId,
+        note: "Auto-approved for staging",
+        apiKey,
+      });
+      break;
+    case "RunFinished":
+      console.log("Deployment complete.");
+      break;
+    case "RunFailed":
+      console.error("Deployment failed:", event.error);
+      break;
+  }
+}
+
+const status = await getStatus({ runId: run.runId, apiKey });
+console.log(`Final status: ${status.status}`);
+```

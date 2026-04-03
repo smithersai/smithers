@@ -1,0 +1,137 @@
+---
+title: <ScanFixVerify>
+description: Composite component that scans for problems, fixes them in parallel, verifies the fixes, and produces a report.
+---
+
+```tsx
+import { ScanFixVerify } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"sfv"` | ID prefix for generated task ids. |
+| `scanner` | `AgentLike` | **(required)** | Agent that scans for problems and returns an issues array. |
+| `fixer` | `AgentLike \| AgentLike[]` | **(required)** | Agent(s) that fix discovered problems. When an array, agents are cycled across issues. |
+| `verifier` | `AgentLike` | **(required)** | Agent that verifies fixes were applied correctly. |
+| `scanOutput` | `OutputTarget` | **(required)** | Output schema for scan results. Should include `issues: Array`. |
+| `fixOutput` | `OutputTarget` | **(required)** | Output schema for each fix result. |
+| `verifyOutput` | `OutputTarget` | **(required)** | Output schema for verification. |
+| `reportOutput` | `OutputTarget` | **(required)** | Output schema for the final summary report. |
+| `maxConcurrency` | `number` | `Infinity` | Maximum parallel fix tasks. |
+| `maxRetries` | `number` | `3` | Maximum scan-fix-verify cycles before stopping. |
+| `skipIf` | `boolean` | `false` | Skip the entire component. Returns `null`. |
+| `children` | `ReactNode` | `undefined` | Prompt/context describing what to scan for. Passed to the scanner task. |
+
+## What it builds
+
+`<ScanFixVerify>` composes primitives into the following tree:
+
+```
+Sequence
+  ├─ Loop (up to maxRetries)
+  │   └─ Sequence
+  │       ├─ Task (scan for problems)
+  │       ├─ Parallel (fix all issues)
+  │       │   └─ Task (fix)
+  │       └─ Task (verify fixes)
+  └─ Task (final report)
+```
+
+The loop continues until the verifier confirms all issues are resolved or `maxRetries` is reached.
+
+## Basic usage
+
+```tsx
+import { ScanFixVerify, Workflow } from "smithers-orchestrator";
+import { z } from "zod";
+
+const scanSchema = z.object({
+  issues: z.array(z.object({
+    file: z.string(),
+    line: z.number(),
+    message: z.string(),
+  })),
+});
+
+const fixSchema = z.object({
+  file: z.string(),
+  applied: z.boolean(),
+  description: z.string(),
+});
+
+const verifySchema = z.object({
+  allResolved: z.boolean(),
+  remainingIssues: z.number(),
+});
+
+const reportSchema = z.object({
+  totalCycles: z.number(),
+  issuesFound: z.number(),
+  issuesFixed: z.number(),
+  summary: z.string(),
+});
+
+<Workflow name="lint-fix">
+  <ScanFixVerify
+    scanner={lintAgent}
+    fixer={fixerAgent}
+    verifier={verifyAgent}
+    scanOutput={outputs.scan}
+    fixOutput={outputs.fix}
+    verifyOutput={outputs.verify}
+    reportOutput={outputs.report}
+    maxRetries={5}
+    maxConcurrency={3}
+  >
+    Scan the codebase for linting errors and type issues.
+  </ScanFixVerify>
+</Workflow>
+```
+
+## Multiple fixer agents
+
+Pass an array of agents to cycle different specialists across issues:
+
+```tsx
+<ScanFixVerify
+  scanner={securityScanner}
+  fixer={[dependencyFixer, codeFixer, configFixer]}
+  verifier={securityVerifier}
+  scanOutput={outputs.scan}
+  fixOutput={outputs.fix}
+  verifyOutput={outputs.verify}
+  reportOutput={outputs.report}
+>
+  Scan for security vulnerabilities in dependencies, code, and configuration.
+</ScanFixVerify>
+```
+
+## Generated task ids
+
+With the default `id` prefix of `"sfv"`:
+
+| Task | ID |
+| --- | --- |
+| Scan | `sfv-scan` |
+| Fix | `sfv-fix` |
+| Fix parallel group | `sfv-fixes` |
+| Verify | `sfv-verify` |
+| Loop | `sfv-loop` |
+| Report | `sfv-report` |
+
+Override with the `id` prop:
+
+```tsx
+<ScanFixVerify id="security" ... />
+// → security-scan, security-fix, security-verify, etc.
+```
+
+## Notes
+
+- `<ScanFixVerify>` is a composite component. It renders a tree of `<Loop>`, `<Sequence>`, `<Parallel>`, and `<Task>`.
+- The `scanOutput` schema should include an `issues` array. The fixer receives context about what to fix from the scan results.
+- The loop's `until` condition is driven by the verifier output. When the verifier reports all clear, the loop exits.
+- The final report task runs after the loop completes, summarizing all cycles.
+- If `maxRetries` is reached without full resolution, the report still runs with the last known state.

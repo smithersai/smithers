@@ -1,0 +1,42 @@
+---
+title: Installation
+description: Install Smithers for JSX-based workflow authoring.
+---
+
+## Recommended
+
+```bash
+bunx smithers-orchestrator init
+```
+
+Scaffolds `.smithers/` with:
+
+| Directory / File | Contents |
+|---|---|
+| `.smithers/workflows/` | Pre-built workflows (`implement`, `review`, `plan`, `ralph`, `debug`, ...) |
+| `.smithers/prompts/` | Shared MDX prompt templates |
+| `.smithers/components/` | Reusable TSX components (`Review`, `ValidationLoop`, ...) |
+| `.smithers/agents.ts` | Auto-detected agent configuration |
+| `.smithers/smithers.config.ts` | Repo-level config (lint, test, coverage commands) |
+
+To overwrite an existing scaffold:
+
+```bash
+bunx smithers-orchestrator init --force
+```
+
+## Manual Installation
+
+See [JSX Installation](/api/installation) for manual package setup and TypeScript configuration.
+
+## Requirements
+
+- Bun >= 1.3
+- TypeScript >= 5
+- Model or provider credentials (e.g. `ANTHROPIC_API_KEY`)
+
+## Next Steps
+
+- [JSX Installation](/api/installation) -- Manual setup with TSX and optional MDX prompts.
+- [CLI Reference](/cli/overview) -- Run, resume, inspect workflows.
+- [Tools Integration](/integrations/tools) -- Built-in tool sandbox.

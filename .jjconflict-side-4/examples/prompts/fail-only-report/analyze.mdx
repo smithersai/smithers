@@ -1,0 +1,10 @@
+Analyze the following command results and determine if anything is notable:
+
+{props.results}
+
+A run is notable if:
+- Any command exited with a non-zero code (failure)
+- Any command output contains regression markers or error patterns
+- Any metric shows a significant delta from baseline
+
+Classify each command and produce a summary of notable events.

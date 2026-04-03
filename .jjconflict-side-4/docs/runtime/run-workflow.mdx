@@ -1,0 +1,217 @@
+---
+title: runWorkflow
+description: Execute a Smithers workflow programmatically and get back a durable RunResult.
+---
+
+```ts
+import { createSmithers, Task, runWorkflow } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: z.object({ summary: z.string() }),
+});
+
+const workflow = smithers((ctx) => (
+  <Workflow name="example">
+    <Task id="analyze" output={outputs.analysis} agent={myAgent}>
+      {`Analyze: ${ctx.input.description}`}
+    </Task>
+  </Workflow>
+));
+
+const result = await runWorkflow(workflow, {
+  input: { description: "Auth tokens expire silently" },
+});
+
+console.log(result.status); // "finished" | "failed" | "cancelled" | "waiting-approval"
+```
+
+## Signature
+
+```ts
+function runWorkflow<Schema>(
+  workflow: SmithersWorkflow<Schema>,
+  opts: RunOptions,
+): Promise<RunResult>;
+```
+
+## RunOptions
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `input` | `Record<string, unknown>` | **(required)** | Input data for the run. Must be JSON. `runId` is injected automatically. |
+| `runId` | `string` | Auto-generated | Deterministic run ID. |
+| `resume` | `boolean` | `false` | Resume an existing run. Requires `runId`. Skips completed tasks. |
+| `maxConcurrency` | `number` | `4` | Max parallel tasks. Also respects per-group `<Parallel maxConcurrency>`. |
+| `onProgress` | `(e: SmithersEvent) => void` | `undefined` | Callback for every lifecycle event. See [Events](/runtime/events). |
+| `signal` | `AbortSignal` | `undefined` | Cancel the run. Finishes with status `"cancelled"`. |
+| `workflowPath` | `string` | `undefined` | Path to the workflow `.tsx` file. Resolves default `rootDir`. |
+| `rootDir` | `string` | Workflow file's directory | Sandbox root for file-system tools (`read`, `edit`, `write`, `bash`, `grep`). |
+| `logDir` | `string \| null` | `.smithers/executions/<runId>/logs` | NDJSON event log directory. `null` disables logging. Relative paths resolve from `rootDir`. |
+| `allowNetwork` | `boolean` | `false` | Permit network requests from `bash`. |
+| `maxOutputBytes` | `number` | `200000` | Max bytes per tool call output. Truncated beyond this. |
+| `toolTimeoutMs` | `number` | `60000` | Wall-clock timeout (ms) per tool call. |
+| `hot` | `boolean \| HotReloadOptions` | `undefined` | Enable hot-reload. `true` for defaults, or pass `HotReloadOptions`. |
+
+### HotReloadOptions
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `rootDir` | `string` | Auto-detect | Directory to watch for file changes. |
+| `outDir` | `string` | `.smithers/hmr/<runId>` | Directory for generation overlays. |
+| `maxGenerations` | `number` | `3` | Max overlay generations to keep. |
+| `cancelUnmounted` | `boolean` | `false` | Cancel tasks unmounted after hot reload. |
+| `debounceMs` | `number` | `100` | Debounce interval (ms) for file changes. |
+
+## RunResult
+
+```ts
+type RunResult = {
+  runId: string;
+  status: "finished" | "failed" | "cancelled" | "waiting-approval";
+  output?: unknown;
+  error?: unknown;
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `runId` | `string` | Run identifier (provided or auto-generated). |
+| `status` | `string` | Terminal status. |
+| `output` | `unknown` | Output rows, if the schema includes a key named `output`. See below. |
+| `error` | `unknown` | Serialized error with `code`, `message`, and optional `details`. |
+
+### `result.output`
+
+`output` is populated only when the schema passed to `createSmithers()` has a key literally named `output`:
+
+```ts
+// result.output WILL be populated
+const { Workflow, smithers, outputs } = createSmithers({
+  output: z.object({ summary: z.string() }),
+});
+```
+
+```ts
+// result.output will be undefined
+const { Workflow, smithers, outputs } = createSmithers({
+  page: z.object({ title: z.string(), html: z.string() }),
+});
+```
+
+Other schema keys (`page`, `analysis`, etc.) are persisted to SQLite but not returned on `result.output`. Query them directly:
+
+```ts
+import { Database } from "bun:sqlite";
+
+const result = await runWorkflow(workflow, { input: {} });
+const db = new Database("smithers.db", { readonly: true });
+const rows = db.query(
+  "SELECT * FROM page WHERE run_id = ? ORDER BY iteration DESC"
+).all(result.runId);
+db.close();
+```
+
+### Status Values
+
+| Status | Meaning |
+|---|---|
+| `"finished"` | All tasks completed. |
+| `"failed"` | A task failed after exhausting retries; `continueOnFail` not set. |
+| `"cancelled"` | Cancelled via `AbortSignal` or hijack handoff. |
+| `"waiting-approval"` | A task requires human approval. Unblock with `smithers approve` or `smithers deny`. |
+
+## Resuming a Run
+
+Pass `resume: true` with the original `runId`. Smithers reads persisted state from SQLite, skips completed tasks, and continues from the first pending task.
+
+```ts
+const result = await runWorkflow(workflow, {
+  input: {},
+  runId: "my-run-123",
+  resume: true,
+});
+```
+
+- The original input row is loaded from the database; pass an empty object for `input`.
+- Workflow path, file hash, and VCS metadata must match the current environment.
+- In-progress attempts older than 15 minutes are automatically cancelled and retried.
+- Tasks with valid persisted outputs are skipped.
+
+## Hijacking and Resuming Agent State
+
+Smithers persists agent continuation state:
+
+- CLI-backed agents persist a native session ID (Claude, Codex, Gemini, PI, Kimi, Forge, or Amp).
+- SDK-style agents persist conversation `messages`.
+
+When a run is hijacked (CLI or TUI):
+
+- `RunHijackRequested` and `RunHijacked` events are emitted.
+- The run ends with status `"cancelled"`.
+- The latest attempt metadata stores `hijackHandoff` plus `agentResume` or `agentConversation`.
+
+On `resume: true`, Smithers reuses that persisted state instead of starting fresh. Smithers waits for a safe handoff point: between blocking tool calls for CLI agents, after durable message history for conversation-backed agents.
+
+## Cancellation
+
+```ts
+const controller = new AbortController();
+
+// Cancel after 5 minutes
+setTimeout(() => controller.abort(), 5 * 60 * 1000);
+
+const result = await runWorkflow(workflow, {
+  input: { description: "Long task" },
+  signal: controller.signal,
+});
+
+if (result.status === "cancelled") {
+  console.log("Run was cancelled");
+}
+```
+
+All in-progress attempts are marked cancelled in the database and `NodeCancelled` events are emitted.
+
+## Event Monitoring
+
+```ts
+const result = await runWorkflow(workflow, {
+  input: { description: "Fix bug" },
+  onProgress: (event) => {
+    switch (event.type) {
+      case "NodeStarted":
+        console.log(`Task ${event.nodeId} started (attempt ${event.attempt})`);
+        break;
+      case "NodeFinished":
+        console.log(`Task ${event.nodeId} finished`);
+        break;
+      case "NodeFailed":
+        console.error(`Task ${event.nodeId} failed:`, event.error);
+        break;
+      case "ApprovalRequested":
+        console.log(`Task ${event.nodeId} needs approval`);
+        break;
+    }
+  },
+});
+```
+
+See [Events](/runtime/events) for the full event type list.
+
+## Idle Sleep Prevention
+
+On macOS, `runWorkflow` acquires a `caffeinate` lock to prevent idle sleep. Released on completion. No-op on other platforms.
+
+## Error Handling
+
+Unhandled engine exceptions mark the run `"failed"` and serialize into `RunResult.error`. Task-level failures are handled by retry and `continueOnFail` mechanisms.
+
+Set `SMITHERS_DEBUG=1` to print engine errors to stderr.
+
+## Related
+
+- [Events](/runtime/events) -- All event types emitted during a run.
+- [renderFrame](/runtime/render-frame) -- Preview the workflow graph without executing.
+- [CLI](/cli/overview) -- Run workflows from the command line.
+- [Resumability](/guides/resumability) -- How durable state and crash recovery work.

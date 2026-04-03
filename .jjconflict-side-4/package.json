@@ -1,0 +1,120 @@
+{
+  "name": "smithers-orchestrator",
+  "version": "0.13.0",
+  "description": "AI workflow orchestration with JSX",
+  "author": "William Cory",
+  "license": "MIT",
+  "module": "src/index.ts",
+  "type": "module",
+  "bin": {
+    "smithers": "src/cli/index.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./jsx-runtime": "./src/jsx-runtime.ts",
+    "./jsx-dev-runtime": "./src/jsx-runtime.ts",
+    "./tools": "./src/tools/index.ts",
+    "./server": "./src/server/index.ts",
+    "./observability": "./src/observability/index.ts",
+    "./pi-plugin": "./src/pi-plugin/index.ts",
+    "./pi-extension": "./src/pi-plugin/extension.ts",
+    "./mdx-plugin": "./src/mdx-plugin.ts",
+    "./dom/renderer": "./src/dom/renderer.ts",
+    "./serve": "./src/server/serve.ts",
+    "./scorers": "./src/scorers/index.ts",
+    "./voice": "./src/voice/index.ts",
+    "./rag": "./src/rag/index.ts",
+    "./openapi": "./src/openapi/index.ts"
+  },
+  "files": [
+    "src/",
+    "docs/",
+    "observability/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/evmts/smithers.git"
+  },
+  "homepage": "https://github.com/evmts/smithers#readme",
+  "bugs": {
+    "url": "https://github.com/evmts/smithers/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "react",
+    "jsx",
+    "llm",
+    "claude",
+    "orchestration",
+    "workflow",
+    "bun"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:examples": "tsc -p tsconfig.examples.json --noEmit",
+    "cli": "bun run src/cli/index.ts",
+    "test": "bun test tests/*.test.ts tests/*.test.tsx",
+    "test:baml-live": "SMITHERS_BAML_LIVE_E2E=1 bun test tests/baml-live.e2e.test.ts",
+    "e2e": "playwright test",
+    "docs": "cd docs && bunx mintlify dev",
+    "gui": "SMITHERS_REPO_ROOT=$PWD; cd gui && bunx vite & VITE_PID=$!; trap 'kill $VITE_PID 2>/dev/null' EXIT; cd gui && SMITHERS_DEV_SOURCE=vite SMITHERS_REPO_ROOT=$SMITHERS_REPO_ROOT bunx electrobun dev"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.36",
+    "@ai-sdk/openai": "^3.0.41",
+    "@effect/opentelemetry": "^0.61.0",
+    "@effect/platform": "^0.94.5",
+    "@effect/platform-bun": "^0.87.1",
+    "@effect/sql": "^0.49.0",
+    "@mariozechner/pi-coding-agent": "0.63.1",
+    "@mariozechner/pi-tui": "0.63.1",
+    "@mdx-js/esbuild": "^3.1.1",
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.213.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.213.0",
+    "@opentelemetry/resources": "^2.6.0",
+    "@opentelemetry/sdk-logs": "^0.213.0",
+    "@opentelemetry/sdk-metrics": "^2.6.0",
+    "@opentelemetry/sdk-trace-base": "^2.6.0",
+    "@opentelemetry/sdk-trace-node": "^2.6.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0",
+    "@opentui/core": "^0.1.92",
+    "@opentui/react": "^0.1.92",
+    "@sinclair/typebox": "0.34.49",
+    "@toon-format/toon": "^2.1.0",
+    "@types/react-dom": "^19.2.3",
+    "@types/react-reconciler": "^0.28.9",
+    "ai": "^6.0.69",
+    "bippy": "^0.5.32",
+    "cron-parser": "^5.5.0",
+    "diff": "^5.2.0",
+    "drizzle-orm": "^0.45.1",
+    "drizzle-zod": "^0.8.3",
+    "effect": "^3.19.19",
+    "hono": "^4.12.9",
+    "incur": "^0.3.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-reconciler": "^0.31.0",
+    "ws": "^8.18.0",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "devDependencies": {
+    "@boundaryml/baml": "0.220.0",
+    "@playwright/test": "^1.52.0",
+    "@types/bun": "latest",
+    "@types/diff": "^5.2.0",
+    "@types/react": "^19.2.10",
+    "@types/ws": "^8.5.12"
+  }
+}

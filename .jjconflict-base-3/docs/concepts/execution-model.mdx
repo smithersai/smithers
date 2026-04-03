@@ -1,0 +1,230 @@
+---
+title: Execution Model
+description: How Smithers turns a JSX workflow into a durable render-execute-persist loop.
+---
+
+Here's what actually happens when you hit run.
+
+You hand Smithers a JSX tree. It doesn't execute anything yet. It _renders_ the tree into a frame -- a snapshot of what work exists right now. Then it finds the tasks that are ready, runs them, writes the results to SQLite, and renders again. That loop continues until there's nothing left to do.
+
+That's the whole model. Everything else is detail.
+
+But the details matter, because three properties fall out of this design that you'd otherwise have to build yourself:
+
+- Workflow definitions stay declarative. You write what the work _is_, not how to schedule it.
+- Execution state is durable. Crash, restart, resume -- the database is the truth.
+- Branching and loops are data-driven. No hidden scheduler magic, no opaque state machines.
+
+Let's walk through one complete turn of the loop.
+
+## The Core Loop
+
+Every run follows the same five-phase cycle:
+
+```txt
+1. Render   build a frame from JSX + current context
+2. Extract  turn mounted nodes into task descriptors
+3. Schedule find ready tasks whose dependencies are satisfied
+4. Execute  run agent, compute, or static tasks
+5. Persist  write outputs, attempts, events, and frame state
+           -> render again until terminal
+```
+
+`runWorkflow(...)` drives that loop until the run finishes, fails, is cancelled, or pauses for approval.
+
+If you've ever watched a React app re-render after a state change, you already have the intuition. The difference is that Smithers' "state" lives in a database, and its "side effects" are agent calls and compute functions instead of DOM updates.
+
+## Phase 1: Render a Frame
+
+Think of the workflow builder as a factory floor blueprint. Every time you render, you're asking: _given what we know right now, what does the floor plan look like?_
+
+The workflow builder returned by `createSmithers(...)` is a pure function of the current context:
+
+```tsx
+const workflow = smithers((ctx) => (
+  <Workflow name="review-loop">
+    <Task id="analyze" output={outputs.analysis}>
+      {{ summary: `Analysis of ${ctx.input.topic}` }}
+    </Task>
+
+    {ctx.outputMaybe(outputs.analysis, { nodeId: "analyze" }) ? (
+      <Task id="review" output={outputs.review}>
+        {{ approved: true, feedback: "LGTM" }}
+      </Task>
+    ) : null}
+  </Workflow>
+));
+```
+
+Notice what's happening. On the first render, `analyze` hasn't run yet, so `outputMaybe` returns nothing, and the `review` task doesn't appear in the frame at all. After `analyze` finishes and its output is persisted, the next render sees that output and mounts `review`.
+
+At render time Smithers does not execute tasks. It only builds a frame that reflects:
+
+- the current `ctx.input`
+- previously persisted outputs
+- current loop iteration state
+- mounted control-flow nodes such as `<Branch>`, `<Loop>`, and `<Approval>`
+
+This is why normal JSX conditions work: each render sees the latest persisted state. No special conditional API, no "if-node." Just JavaScript.
+
+## Phase 2: Extract Task Descriptors
+
+You have a rendered tree. Now what?
+
+Smithers walks that tree and extracts `TaskDescriptor` records -- flat, serializable descriptions of each piece of work. Think of it as reading the blueprint and writing work orders.
+
+Each descriptor includes things like:
+
+- `nodeId`
+- output destination
+- task kind: agent, compute, or static
+- retry and timeout policy
+- dependency metadata
+- loop iteration
+- concurrency-group metadata from `<Parallel>` or `<MergeQueue>`
+- worktree metadata from `<Worktree>`
+
+Control-flow components don't execute anything themselves. They shape what gets extracted:
+
+- `<Sequence>` contributes ordering
+- `<Parallel>` contributes a concurrency group
+- `<Branch>` mounts exactly one branch for the current frame
+- `<Loop>` remounts its children for the active iteration
+- `skipIf` removes nodes entirely from the current frame
+
+"Wait," you might be thinking, "if `<Branch>` only mounts one branch, what happened to the other branches?" They simply aren't in the frame. They don't exist as far as the scheduler is concerned. If the data changes and a different branch should be active, the next render will mount it.
+
+## Phase 3: Schedule Ready Tasks
+
+Now the scheduler looks at the descriptors and asks a simple question for each one: _can this run right now?_
+
+Typical task states are:
+
+| State | Meaning |
+| --- | --- |
+| `pending` | Known to the workflow but not yet runnable |
+| `running` | Currently executing |
+| `finished` | Persisted successfully |
+| `failed` | Terminal failure after retries are exhausted |
+| `waiting-approval` | Blocked on a durable approval decision |
+| `cancelled` | Interrupted by an abort signal or explicit handoff |
+| `skipped` | Not mounted or intentionally bypassed |
+
+A task becomes runnable only when:
+
+- all sequential/dependency constraints are satisfied
+- any required approval has been granted
+- the current branch or loop iteration has mounted it
+- its concurrency group allows another slot
+
+There's no priority queue, no weight heuristic, no topological sort happening behind your back. A task is either ready or it isn't, and you can tell which by looking at the rendered frame and the persisted state. That's it.
+
+## Phase 4: Execute Tasks
+
+Smithers supports three task execution modes. The simplest first:
+
+### Static tasks
+
+When the children are plain data and no `agent` is present, Smithers writes that payload directly. No computation, no network call. This is useful for seeding known values into the workflow.
+
+### Compute tasks
+
+When the children are a function and no `agent` is present, Smithers runs that callback at execution time and persists the returned value. Your function, your logic, deterministic output.
+
+### Agent tasks
+
+When `agent` is present, Smithers renders the children to markdown, sends that prompt to the agent, validates the returned JSON, and persists the validated row. This is where LLMs enter the picture.
+
+Across all three modes, the runtime applies the same operational policies:
+
+- timeout handling
+- retries
+- `continueOnFail`
+- caching
+- approval waits
+- event emission
+
+The uniformity is deliberate. Whether a task shells out to GPT-4 or returns a hardcoded object, it goes through the same persist-and-resume machinery. You don't need to think about which kind of task you're writing when you think about durability.
+
+## Phase 5: Persist Durable State
+
+Here's the aha moment.
+
+After each task attempt, Smithers writes durable records to SQLite. Not "optionally." Not "if you configure a backend." Every time, unconditionally.
+
+That includes:
+
+- the validated task output row
+- attempt metadata
+- node state transitions
+- render frames
+- lifecycle events
+- approval decisions
+- cache entries when enabled
+
+For schema-driven outputs, the durable identity is effectively:
+
+```txt
+(runId, nodeId, iteration)
+```
+
+That triple is what makes everything else work. Resume, replay, crash recovery -- they all reduce to "read the rows keyed by `(runId, nodeId, iteration)` and render again." On the next render, `ctx.outputMaybe(...)` and `ctx.latest(...)` read from persisted rows, not from in-memory task objects.
+
+The database isn't a log you consult after the fact. It's the control plane.
+
+## Re-rendering Is the Control Plane
+
+This is worth saying twice, because it's the single idea that makes the rest of the system simple.
+
+Smithers does not mutate a long-lived in-memory graph after each task. Instead, it re-renders with the latest persisted context. The new frame might look different from the old one -- a branch might activate, a loop might advance, a conditional task might appear for the first time.
+
+This is what enables:
+
+- dynamic branching based on completed outputs
+- iterative loops that stop when a reviewer approves
+- conditional task visibility
+- hot reload for future work without restarting the run
+
+In other words, the rendered frame _is_ the current execution plan. There is no separate "plan" data structure that drifts out of sync with reality. The plan is regenerated from truth on every cycle.
+
+## Resume Semantics
+
+When you run with `resume: true`, Smithers:
+
+1. loads the prior run metadata
+2. reloads persisted outputs and internal state
+3. renders the workflow again with that state available in `ctx`
+4. skips tasks that already have valid output rows
+5. continues from the first unfinished mounted work
+
+No special resume logic. The same render-execute-persist loop runs; it just starts with a non-empty database. Tasks that already have durable output rows produce the same frame as before, so the scheduler skips right past them.
+
+That only works if task identities stay stable. Renaming `id="review"` to `id="review-step"` creates a new durable node from the runtime's perspective. The old `review` output is still in the database, but nothing references it anymore. Be as creative as you like with control flow; be boring with your IDs.
+
+## Determinism
+
+Where does determinism come from? Not from restricting what you can do. From making the inputs explicit:
+
+- stable `id` props identify tasks durably
+- JSX structure defines ordering and control flow
+- persisted rows define what has already happened
+- schema validation prevents malformed outputs from entering durable state
+
+The workflow can still be dynamic -- branches, loops, conditions, all of it. But the dynamism comes from data that is visible in the render context and can therefore be replayed after a crash or restart. If you can see it in `ctx`, the system can reproduce it.
+
+## Mental Model
+
+When in doubt, come back to this:
+
+- JSX decides what the current workflow frame looks like
+- SQLite decides what has already happened
+- the scheduler only runs work that is both mounted and unblocked
+
+Three sentences. That is the Smithers execution model: render, execute, persist, render again.
+
+## Next Steps
+
+- [Data Model](/concepts/data-model) -- See how input, output tables, and internal metadata are stored.
+- [runWorkflow](/runtime/run-workflow) -- Programmatic entry point for executing a workflow.
+- [Events](/runtime/events) -- Lifecycle events emitted while the loop runs.
+- [Planner Internals](/concepts/planner-internals) -- Lower-level details on extraction and scheduling.

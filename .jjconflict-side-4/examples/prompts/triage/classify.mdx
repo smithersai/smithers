@@ -1,0 +1,8 @@
+Triage these items:
+
+Source: {props.source}
+{props.items
+  ? `Items:\n${JSON.stringify(props.items, null, 2)}`
+  : `Command to fetch items: ${props.fetchCmd}`}
+
+Classify each by category, priority, and routing.

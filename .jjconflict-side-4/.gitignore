@@ -1,0 +1,66 @@
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# playwright
+playwright-report
+test-results
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+
+# Gemini
+.gemini-clipboard/
+
+# Profiling artifacts
+default.profraw
+
+# Deno
+deno.lock
+
+# Smithers runtime artifacts
+.smithers/
+.tui-test/
+.worktrees/
+reference/
+codex/
+ghostty/
+burns
+
+# External reference repos
+.mastra-ref/
+.opentui_temp/
+
+# Worktree script SQLite artifacts
+scripts/worktree-feature/*.db*
+smithers.db
+smithers.db-shm
+smithers.db-wal

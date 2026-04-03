@@ -1,0 +1,136 @@
+---
+title: <DriftDetector>
+description: Composite component that captures state, compares it to a baseline, and conditionally alerts when meaningful drift is detected.
+---
+
+```tsx
+import { DriftDetector } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"drift"` | ID prefix for generated task ids (`{id}-capture`, `{id}-compare`). |
+| `captureAgent` | `AgentLike` | **(required)** | Agent that captures the current state snapshot. |
+| `compareAgent` | `AgentLike` | **(required)** | Agent that compares current state against the baseline. |
+| `captureOutput` | `OutputTarget` | **(required)** | Output schema for the captured state. |
+| `compareOutput` | `OutputTarget` | **(required)** | Output schema for comparison. Should include `drifted: boolean` and `significance: string`. |
+| `baseline` | `unknown` | **(required)** | Static baseline data (object, string, etc.) to compare against. |
+| `alertIf` | `(comparison) => boolean` | `undefined` | Custom condition for firing the alert. If omitted, the `drifted` field from the comparison output is used. |
+| `alert` | `ReactElement` | `undefined` | Element to render when drift is detected (e.g. a `<Task>` that sends a notification). |
+| `poll` | `{ intervalMs: number, maxPolls?: number }` | `undefined` | If set, wraps the detector in a `<Loop>` for periodic polling. |
+| `skipIf` | `boolean` | `false` | Skip the entire component. Returns `null`. |
+
+## What it builds
+
+`<DriftDetector>` composes primitives into the following tree:
+
+```
+Sequence
+  ├─ Task (capture current state)
+  ├─ Task (compare against baseline)
+  └─ Branch (if drifted → alert element)
+```
+
+When `poll` is provided, the entire `Sequence` is wrapped in a `Loop`.
+
+## Basic usage
+
+```tsx
+import { DriftDetector, Task, Workflow } from "smithers-orchestrator";
+import { z } from "zod";
+
+const captureSchema = z.object({
+  endpoints: z.array(z.string()),
+  schemaHash: z.string(),
+});
+
+const compareSchema = z.object({
+  drifted: z.boolean(),
+  significance: z.string(),
+  changes: z.array(z.string()),
+});
+
+<Workflow name="api-drift-check">
+  <DriftDetector
+    captureAgent={snapshotAgent}
+    compareAgent={diffAgent}
+    captureOutput={outputs.capture}
+    compareOutput={outputs.compare}
+    baseline={{ endpoints: ["/users", "/orders"], schemaHash: "abc123" }}
+    alert={
+      <Task id="notify" output={outputs.notify} agent={slackAgent}>
+        API drift detected — notify the team.
+      </Task>
+    }
+  />
+</Workflow>
+```
+
+## Poll mode
+
+Poll periodically to detect drift over time:
+
+```tsx
+<DriftDetector
+  id="config-drift"
+  captureAgent={configReader}
+  compareAgent={configDiffer}
+  captureOutput={outputs.configSnapshot}
+  compareOutput={outputs.configDiff}
+  baseline={knownGoodConfig}
+  poll={{ intervalMs: 60_000, maxPolls: 24 }}
+  alert={
+    <Task id="alert" output={outputs.alert} agent={pagerAgent}>
+      Configuration drift detected — page on-call.
+    </Task>
+  }
+/>
+```
+
+This runs every 60 seconds, up to 24 times.
+
+## Custom alert condition
+
+Use `alertIf` to override the default `drifted` check:
+
+```tsx
+<DriftDetector
+  captureAgent={snapshotAgent}
+  compareAgent={diffAgent}
+  captureOutput={outputs.capture}
+  compareOutput={outputs.compare}
+  baseline={previousRelease}
+  alertIf={(comparison) => comparison.significance === "breaking"}
+  alert={
+    <Task id="block-deploy" output={outputs.block}>
+      Block the deployment — breaking changes detected.
+    </Task>
+  }
+/>
+```
+
+## Generated task ids
+
+With the default `id` prefix of `"drift"`:
+
+| Task | ID |
+| --- | --- |
+| Capture | `drift-capture` |
+| Compare | `drift-compare` |
+| Poll loop | `drift-poll` |
+
+Override with the `id` prop:
+
+```tsx
+<DriftDetector id="schema" ... />
+// → schema-capture, schema-compare, schema-poll
+```
+
+## Notes
+
+- `<DriftDetector>` is a composite component. It renders a tree of `<Sequence>`, `<Task>`, `<Branch>`, and optionally `<Loop>`.
+- The `compareOutput` schema should include `drifted: boolean` so the default alert condition works. If you use `alertIf`, any schema shape is fine.
+- Without `alert`, the component captures and compares but takes no action on drift.
+- Without `poll`, the component runs once. Use `poll` for continuous monitoring.

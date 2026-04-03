@@ -1,0 +1,377 @@
+---
+title: Smithers
+description: Durable AI workflow orchestration with TypeScript, TSX, and real agent tooling.
+mode: "wide"
+---
+
+<div className="relative w-full overflow-hidden min-h-screen bg-slate-50 text-slate-800 dark:bg-[#030712] dark:text-slate-300 selection:bg-[#00D2A0]/30 selection:text-slate-900 dark:selection:text-white pb-32 font-sans font-medium">
+
+  {/* Ambient Background Grid & Subtle Glows (V2 Fixed Contrast) */}
+  <div className="absolute inset-0 pointer-events-none overflow-hidden">
+    {/* Refined Super-Subtle Grid */}
+    <div className="hidden dark:block absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:32px_32px] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,#000_100%,transparent_100%)]"></div>
+    <div className="block dark:hidden absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.02)_1px,transparent_1px)] bg-[size:32px_32px] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,#000_100%,transparent_100%)]"></div>
+    
+    {/* Static Low-Opacity Top-Anchored Gradient for Depth */}
+    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-[1200px] h-[600px] bg-[radial-gradient(ellipse_at_top,rgba(0,210,160,0.04)_0%,transparent_70%)] dark:bg-[radial-gradient(ellipse_at_top,rgba(0,210,160,0.06)_0%,transparent_70%)]" />
+  </div>
+
+  {/* ── Hero Section ── */}
+  <section className="relative pt-24 pb-20 px-6 max-w-7xl mx-auto">
+    <div className="flex flex-col lg:flex-row gap-16 items-center">
+      
+      {/* Hero Content */}
+      <div className="relative z-10 flex-1 flex flex-col items-start">
+        
+        {/* Refined Badge */}
+        <div className="group inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full border border-slate-200/50 dark:border-white/5 bg-slate-100 dark:bg-white/[0.02] shadow-sm text-slate-700 dark:text-slate-300 text-xs font-bold uppercase tracking-[0.1em] mb-8 cursor-default transition-all hover:bg-slate-200 dark:hover:bg-white/[0.04]">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00D2A0] opacity-50"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00D2A0]"></span>
+          </span>
+          <span className="opacity-90">Hot Reload Prompts</span>
+        </div>
+
+        {/* Refined Headline - Flatter tracking, smoother gradient */}
+        <h1 className="m-0 text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-[-0.02em] leading-[1.05] text-slate-900 dark:text-white drop-shadow-sm transition-colors duration-300">
+          Build useful <br className="hidden sm:block" />
+          <span className="text-transparent bg-clip-text bg-gradient-to-br from-[#00D2A0] to-[#047857]">AI workflows.</span>
+        </h1>
+
+        {/* Subtitle */}
+        <p className="mt-8 text-lg sm:text-xl leading-relaxed text-slate-600 dark:text-slate-400 max-w-xl transition-colors duration-300 font-medium">
+          Smithers is a TypeScript orchestrator for real AI workloads. Build durable, strictly typed, and human-readable agents using React.
+        </p>
+
+        {/* CTA Buttons */}
+        <div className="flex flex-wrap gap-4 mt-10">
+          <a href="/quickstart" className="group relative inline-flex items-center justify-center px-8 py-3.5 text-base font-bold text-white dark:text-[#030712] bg-[#000] dark:bg-[#00D2A0] rounded-xl overflow-hidden transition-all hover:scale-[1.02] shadow-[0_10px_30px_-10px_rgba(0,0,0,0.5)] dark:shadow-[0_10px_30px_-10px_rgba(0,210,160,0.3)]">
+            <span className="relative z-10">Quickstart</span>
+          </a>
+          <a href="/guides/review-loop" className="group inline-flex items-center justify-center px-8 py-3.5 text-base font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/[0.02] border border-transparent dark:border-white/5 rounded-xl transition-all hover:bg-slate-200 dark:hover:bg-white/[0.05]">
+            View Concepts
+          </a>
+        </div>
+
+        {/* Quick Install Command */}
+        <div className="mt-14 relative group">
+          <div className="mb-3 flex items-center gap-2 ml-1">
+            <div className="w-1 h-1 rounded-full bg-[#00D2A0]"></div>
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+              Run this to get started
+            </span>
+          </div>
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-[#00D2A0] to-[#047857] rounded-xl blur opacity-0 group-hover:opacity-20 transition duration-500"></div>
+          <div 
+            className="relative flex items-center gap-4 px-5 py-3 bg-white dark:bg-[#0A0D15] border border-slate-200 dark:border-white/[0.08] rounded-xl cursor-pointer transition-all duration-300 active:scale-[0.98]"
+            onClick={() => {
+              navigator.clipboard.writeText('npx smithers-orchestrator init');
+              const t = document.getElementById('copy-text');
+              const icon = document.getElementById('copy-icon');
+              const check = document.getElementById('copy-check');
+              if (t && icon && check) {
+                t.classList.add('text-[#00D2A0]');
+                icon.classList.add('hidden');
+                check.classList.remove('hidden');
+                setTimeout(() => {
+                  t.classList.remove('text-[#00D2A0]');
+                  icon.classList.remove('hidden');
+                  check.classList.add('hidden');
+                }, 2000);
+              }
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-[#00D2A0] font-mono text-sm font-bold">$</span>
+              <code id="copy-text" className="text-sm sm:text-base font-mono font-medium text-slate-700 dark:text-slate-300 transition-colors">
+                npx smithers-orchestrator init
+              </code>
+            </div>
+              <div className="pl-16"><span className="text-slate-300 dark:text-slate-600">&lt;</span><span className="text-slate-900 dark:text-white">Task</span> <span className="text-slate-400 dark:text-slate-500">agent=</span><span className="text-[#00D2A0]">"codex"</span> <span className="text-slate-400 dark:text-slate-500">deps=</span>&#123;!review?.approved&#125;<span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              <div className="pl-20"><span className="text-slate-300 dark:text-slate-600">&lt;</span><span className="text-slate-900 dark:text-white">FixCodePrompt</span> <span className="text-slate-400 dark:text-slate-500">feedback=</span>&#123;review.feedback&#125; <span className="text-slate-300 dark:text-slate-600">/&gt;</span></div>
+              <div className="pl-16"><span className="text-slate-300 dark:text-slate-600">&lt;/</span><span className="text-slate-900 dark:text-white">Task</span><span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              </div>
+              <div id="copy-check" className="hidden text-[#00D2A0]">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div className="absolute -top-7 right-0 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0">
+            Click to Copy
+          </div>
+        </div>
+      </div>
+
+      {/* Hero Code Window - Custom Bespoke Syntax */}
+      <div className="relative group flex-1 w-full min-w-0 lg:max-w-[50%] perspective-1000 mt-12 lg:mt-0">
+        {/* Soft edge shadow */}
+        <div className="absolute -inset-1 bg-[#00D2A0]/10 rounded-[2rem] blur-xl opacity-0 group-hover:opacity-40 transition duration-1000"></div>
+        
+        <div className="relative rounded-2xl border border-slate-200/50 dark:border-white/[0.08] bg-[#F8FAFC] dark:bg-[#0A0D15] shadow-2xl dark:shadow-[0_40px_80px_-20px_rgba(0,0,0,0.6)] overflow-hidden transition-all duration-500 transform-gpu lg:rotate-y-[-2deg] lg:rotate-x-[1deg] group-hover:rotate-0">
+          
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200/50 dark:border-white/5 bg-slate-100/50 dark:bg-white/[0.01]">
+            <div className="flex items-center gap-2 px-1">
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700"></div>
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700"></div>
+              <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700"></div>
+            </div>
+            <div className="absolute left-1/2 -translate-x-1/2 text-slate-500 dark:text-slate-500 text-xs font-mono font-medium">
+              Review.tsx
+            </div>
+          </div>
+          
+          <div className="p-6 overflow-x-auto text-[13px] leading-[1.65] font-mono">
+            <div className="flex flex-col whitespace-pre">
+              <div><span className="text-slate-400 dark:text-slate-500">import</span> <span className="text-slate-800 dark:text-slate-300">&#123; createSmithers, Loop &#125;</span> <span className="text-slate-400 dark:text-slate-500">from</span> <span className="text-[#00D2A0]">"smithers-orchestrator"</span>;</div>
+              <div className="h-4"></div>
+              <div><span className="text-slate-400 dark:text-slate-500">import</span> <span className="text-slate-800 dark:text-slate-300">&#123; z &#125;</span> <span className="text-slate-400 dark:text-slate-500">from</span> <span className="text-[#00D2A0]">"zod"</span>;</div>
+              <div className="h-4"></div>
+              <div><span className="text-slate-400 dark:text-slate-500">const</span> &#123; Workflow, Task, smithers, outputs &#125; = <span className="text-[#00D2A0]">createSmithers</span>(&#123; <span className="text-slate-300 dark:text-slate-500">review:</span> z.object(&#123; approved: z.boolean(), feedback: z.string() &#125;) &#125;);</div>
+              <div className="h-4"></div>
+              <div><span className="text-slate-400 dark:text-slate-500">export default</span> <span className="text-[#00D2A0]">smithers</span>((ctx) <span className="text-[#00D2A0]">=&gt;</span> &#123;</div>
+              <div className="pl-4"><span className="text-slate-400 dark:text-slate-500">const</span> review = ctx.latest(outputs.review, <span className="text-[#00D2A0]">"review"</span>);</div>
+              <div className="h-4"></div>
+              <div className="pl-4"><span className="text-slate-400 dark:text-slate-500">return</span> (</div>
+              <div className="pl-8"><span className="text-slate-300 dark:text-slate-600">&lt;</span><span className="text-slate-900 dark:text-white">Workflow</span> <span className="text-slate-400 dark:text-slate-500">name=</span><span className="text-[#00D2A0]">"code-review"</span><span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              <div className="pl-12"><span className="text-slate-300 dark:text-slate-600">&lt;</span><span className="text-slate-900 dark:text-white">Loop</span> <span className="text-slate-400 dark:text-slate-500">until=</span>&#123;review?.approved&#125;<span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              <div className="pl-16"><span className="text-slate-300 dark:text-slate-600">&lt;</span><span className="text-slate-900 dark:text-white">Task</span> <span className="text-slate-400 dark:text-slate-500">agent=</span>&#123;reviewer&#125;<span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              <div className="pl-20"><span className="text-slate-300 dark:text-slate-600">&lt;</span><span className="text-slate-900 dark:text-white">AnalyzeCodePrompt</span> <span className="text-slate-400 dark:text-slate-500">code=</span>&#123;ctx.input.code&#125; <span className="text-slate-300 dark:text-slate-600">/&gt;</span></div>
+              <div className="pl-16"><span className="text-slate-300 dark:text-slate-600">&lt;/</span><span className="text-slate-900 dark:text-white">Task</span><span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              <div className="h-4"></div>
+              <div className="pl-16"><span className="text-slate-400 dark:text-slate-500">&#123;!review?.approved && (</span></div>
+              <div className="pl-20"><span className="text-slate-300 dark:text-slate-600">&lt;</span><span className="text-slate-900 dark:text-white">Task</span> <span className="text-slate-400 dark:text-slate-500">agent=</span>&#123;coder&#125;<span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              <div className="pl-24"><span className="text-slate-300 dark:text-slate-600">&lt;</span><span className="text-slate-900 dark:text-white">FixCodePrompt</span> <span className="text-slate-400 dark:text-slate-500">feedback=</span>&#123;review?.feedback ?? <span className="text-[#00D2A0]">""</span>&#125; <span className="text-slate-300 dark:text-slate-600">/&gt;</span></div>
+              <div className="pl-20"><span className="text-slate-300 dark:text-slate-600">&lt;/</span><span className="text-slate-900 dark:text-white">Task</span><span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              <div className="pl-16"><span className="text-slate-400 dark:text-slate-500">)&#125;</span></div>
+              <div className="pl-12"><span className="text-slate-300 dark:text-slate-600">&lt;/</span><span className="text-slate-900 dark:text-white">Loop</span><span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              <div className="pl-8"><span className="text-slate-300 dark:text-slate-600">&lt;/</span><span className="text-slate-900 dark:text-white">Workflow</span><span className="text-slate-300 dark:text-slate-600">&gt;</span></div>
+              <div className="pl-4">);</div>
+              <div>&#125;);</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ── Asymmetrical Bento Grid (V2) ── */}
+  <section className="relative py-12 px-6 max-w-7xl mx-auto z-10 w-full">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full">
+      
+      {/* Bento 1: Durable Execution (Large Span) */}
+      <div className="col-span-1 lg:col-span-2 group relative p-8 rounded-[2rem] bg-slate-100/50 dark:bg-[#0B1221]/50 border border-slate-200/50 dark:border-white/[0.04] hover:bg-slate-100 dark:hover:bg-[#0B1221]/80 transition-colors duration-500 overflow-hidden flex flex-col md:flex-row gap-8 items-center">
+        <div className="flex-1">
+          <div className="w-12 h-12 rounded-2xl bg-white dark:bg-white/[0.03] flex items-center justify-center mb-6 shadow-sm border border-slate-200 dark:border-transparent">
+             <svg className="w-6 h-6 text-slate-800 dark:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+             </svg>
+          </div>
+          <strong className="block text-2xl font-bold tracking-tight text-slate-900 dark:text-white mb-3">Durable by default</strong>
+          <span className="text-slate-600 dark:text-slate-400 leading-relaxed block max-w-sm">Every completed node is checkpointed to SQLite. Never lose hours of LLM generation to a validation crash again.</span>
+        </div>
+        
+        {/* Visual Element inside Bento */}
+        <div className="flex-shrink-0 w-full md:w-64">
+           <div className="flex flex-col gap-2 font-mono text-[11px] bg-white dark:bg-[#06090E] rounded-xl p-4 border border-slate-200 dark:border-white/[0.05] shadow-sm">
+             <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-white/[0.05]">
+                <span className="text-slate-400">runs.sqlite</span>
+                <span className="w-2 h-2 rounded-full bg-[#00D2A0] animate-pulse"></span>
+             </div>
+             <div className="flex items-center gap-3 mt-2">
+                <span className="text-[#00D2A0]">✓</span> <span className="text-slate-600 dark:text-slate-300 truncate">AnalyzeCodePrompt</span>
+             </div>
+             <div className="flex items-center gap-3">
+                <span className="text-[#00D2A0]">✓</span> <span className="text-slate-600 dark:text-slate-300 truncate">FixCodePrompt</span>
+             </div>
+             <div className="flex items-center gap-3 opacity-50">
+                <span className="w-2 h-2 rounded-full border border-slate-400 ml-[2px]"></span> <span className="text-slate-600 dark:text-slate-300 truncate">RunCIWorkflow</span>
+             </div>
+           </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-6 col-span-1">
+        {/* Bento 2: Typed Outputs */}
+        <div className="flex-1 group relative p-8 rounded-[2rem] bg-slate-100/50 dark:bg-[#0B1221]/50 border border-slate-200/50 dark:border-white/[0.04] hover:bg-slate-100 dark:hover:bg-[#0B1221]/80 transition-colors duration-500">
+          <strong className="block text-xl font-bold tracking-tight text-slate-900 dark:text-white mb-2">Strictly Typed Outputs</strong>
+          <span className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-medium">Define LLM outputs with Zod. Smithers handles the validation loop autonomously.</span>
+        </div>
+
+        {/* Bento 3: Real Agents */}
+        <div className="flex-1 group relative p-8 rounded-[2rem] bg-slate-100/50 dark:bg-[#0B1221]/50 border border-slate-200/50 dark:border-white/[0.04] hover:bg-slate-100 dark:hover:bg-[#0B1221]/80 transition-colors duration-500">
+          <strong className="block text-xl font-bold tracking-tight text-slate-900 dark:text-white mb-2">Model Agnostic</strong>
+          <span className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-medium">Mix Codex, Claude Code, and Gemini directly out of the box. No heavy wrappers.</span>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  {/* ── Why Smithers Exists (V2 Horizontal Pipeline) ── */}
+  <section className="relative py-28 px-6 max-w-7xl mx-auto mt-8">
+    <div className="flex flex-col items-center text-center">
+      <div className="inline-flex items-center px-4 py-1.5 rounded-full border border-slate-200 dark:border-white/5 bg-slate-100/50 dark:bg-white/[0.02] text-slate-700 dark:text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-6">Philosophy</div>
+      <h2 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-6 leading-[1.1] max-w-3xl">
+        Human-readable, <br className="hidden sm:block"/> LLM-writable.
+      </h2>
+      <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl font-medium">
+        Most orchestrators produce unreadable JSON graphs or hide complexity behind magic abstractions. Smithers uses TSX components so your agent plans look like React applications.
+      </p>
+    </div>
+
+    {/* Horizontal Data Flow Pipeline */}
+    <div className="mt-20 relative max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8 md:gap-4">
+       
+       {/* Node 1 */}
+       <div className="w-full md:w-64 p-6 rounded-2xl bg-white dark:bg-[#0B1221]/40 border border-slate-200 dark:border-white/[0.05] shadow-sm flex flex-col items-center text-center z-10 relative">
+          <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-white/[0.05] flex items-center justify-center mb-4 text-slate-500">
+             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" /></svg>
+          </div>
+          <span className="font-bold text-slate-900 dark:text-white block mb-1">State</span>
+          <span className="text-xs text-slate-500">Reads checkpoint from SQLite</span>
+       </div>
+
+       {/* Connector 1 */}
+       <div className="hidden md:flex flex-1 h-[1px] bg-slate-300 dark:bg-white/[0.1] relative">
+          <div className="absolute w-2 h-2 rounded-full bg-[#00D2A0] top-1/2 -translate-y-1/2 -translate-x-1/2 shadow-[0_0_10px_#00D2A0] animate-[slide-right_3s_linear_infinite]"></div>
+       </div>
+
+       {/* Node 2 */}
+       <div className="w-full md:w-64 p-6 rounded-2xl bg-white dark:bg-[#0B1221]/40 border border-slate-200 dark:border-white/[0.05] shadow-sm flex flex-col items-center text-center z-10 relative">
+          <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-white/[0.05] flex items-center justify-center mb-4 text-[#1F6FEB]">
+             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+          </div>
+          <span className="font-bold text-slate-900 dark:text-white block mb-1">Render</span>
+          <span className="text-xs text-slate-500">JSX tree builds continuously</span>
+       </div>
+
+       {/* Connector 2 */}
+       <div className="hidden md:flex flex-1 h-[1px] bg-slate-300 dark:bg-white/[0.1] relative">
+          <div className="absolute w-2 h-2 rounded-full bg-[#00D2A0] top-1/2 -translate-y-1/2 -translate-x-1/2 shadow-[0_0_10px_#00D2A0] animate-[slide-right_3s_linear_infinite_1.5s]"></div>
+       </div>
+
+       {/* Node 3 */}
+       <div className="w-full md:w-64 p-6 rounded-2xl bg-white dark:bg-[#00D2A0]/[0.02] border border-slate-200 dark:border-[#00D2A0]/20 shadow-sm flex flex-col items-center text-center z-10 relative">
+          <div className="w-10 h-10 rounded-full bg-[#00D2A0]/10 flex items-center justify-center mb-4 text-[#00D2A0]">
+             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          </div>
+          <span className="font-bold text-slate-900 dark:text-white block mb-1">Execution</span>
+          <span className="text-xs text-slate-500">Diffs trigger LLM agent network</span>
+       </div>
+    </div>
+  </section>
+
+  {/* ── CLI Section (Refined Ghostty) ── */}
+  <section className="relative py-28 px-6 max-w-7xl mx-auto border-t border-slate-200 dark:border-white/[0.02]">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-16 items-center">
+      
+      <div className="order-2 lg:order-1 relative group w-full perspective-1000 mt-8 lg:mt-0">
+        
+        {/* Terminal Window - True Ghostty aesthetic (Solid black, minimal UI) */}
+        <div className="relative rounded-xl border border-slate-800/50 bg-[#000000] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] overflow-hidden font-mono text-[13px] leading-relaxed transform-gpu lg:rotate-y-[2deg] group-hover:rotate-0 transition-transform duration-500">
+          <div className="flex items-center gap-2 px-4 py-3 bg-[#000] border-b border-white/[0.05]">
+            <div className="w-2.5 h-2.5 rounded-full bg-[#333]"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-[#333]"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-[#333]"></div>
+            <div className="flex-1 flex justify-center text-slate-600 font-medium tracking-wide text-[10px] items-center">
+              smithers-cli
+            </div>
+          </div>
+          
+          <div className="p-6 text-slate-300">
+            <div className="flex gap-2">
+              <span className="text-slate-500 select-none">~</span> 
+              <span className="text-white">smithers ps</span>
+            </div>
+            <div className="text-slate-600 mt-2 flex gap-6 text-[10px] font-bold">
+              <span className="w-10">RUN_ID</span>
+              <span className="w-16">WORKFLOW</span>
+              <span className="w-12">STATUS</span>
+              <span>STEP</span>
+            </div>
+            <div className="text-slate-300 flex gap-6 mt-1">
+              <span className="w-10 text-slate-500">a7b93</span>
+              <span className="w-16">code-review</span>
+              <span className="w-12 text-[#FFBD2E]">PAUSED</span>
+              <span>human-approval</span>
+            </div>
+            <div className="text-slate-300 flex gap-6 mt-1 mb-6">
+              <span className="w-10 text-slate-500">x9m42</span>
+              <span className="w-16">update-docs</span>
+              <span className="w-12 text-[#00D2A0]">DONE</span>
+              <span className="text-slate-600">-</span>
+            </div>
+
+            <div className="flex gap-2">
+              <span className="text-slate-500 select-none">~</span> 
+              <span className="text-white">smithers approve a7b93</span>
+            </div>
+            <div className="text-slate-400 mt-2">
+              <span className="text-[#00D2A0]">[+]</span> Approved step human-approval. Resuming background loop.
+            </div>
+            
+            <div className="flex gap-2 mt-4">
+              <span className="text-slate-500 select-none">~</span> 
+              <div className="w-2 h-[15px] bg-[#fff] animate-[pulse_1.5s_step-end_infinite] shrink-0 mt-[2px]"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="order-1 lg:order-2 px-4">
+        <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-6 leading-tight">
+          A boring CLI that just works.
+        </h2>
+        
+        <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed font-medium mb-8">
+          No bloated TUI required. If you know how to use `docker compose`, you know how to run Smithers. Core functionality is built into a standard, scriptable CLI.
+        </p>
+        
+        <ul className="space-y-6 text-slate-700 dark:text-slate-300 font-medium">
+            <li className="flex gap-4 items-start">
+              <span className="text-[#00D2A0] font-mono text-xs mt-1 border border-slate-200 dark:border-white/10 px-1 rounded">01</span>
+              <span>Run workflows seamlessly in the background or stream directly to standard out.</span>
+            </li>
+            <li className="flex gap-4 items-start">
+              <span className="text-[#00D2A0] font-mono text-xs mt-1 border border-slate-200 dark:border-white/10 px-1 rounded">02</span>
+              <span>Inspect runs, approve paused <code className="text-[12px] bg-slate-100 dark:bg-white/[0.05] rounded px-1">&lt;Approval /&gt;</code> bounds, and cancel rogue agents via CLI.</span>
+            </li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  {/* ── Final CTA Section (Vercel Style Clean Box) ── */}
+  <section className="relative py-32 px-6 max-w-7xl mx-auto z-10">
+    <div className="relative overflow-hidden rounded-[2rem] p-12 lg:p-24 flex flex-col items-center bg-slate-100 dark:bg-black border border-slate-200 dark:border-white/[0.05]">
+      
+      <h2 className="relative z-10 text-3xl md:text-5xl lg:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white text-center leading-[1.1]">
+        Orchestrate without the headache.
+      </h2>
+      
+      <p className="relative z-10 mt-6 text-lg text-slate-600 dark:text-slate-400 text-center font-medium max-w-xl">
+        A single dependency, standard TypeScript, and a SQLite file. That's all you need.
+      </p>
+      
+      <div className="relative z-10 flex mt-10">
+        <a href="/quickstart" className="inline-flex items-center justify-center px-10 py-3.5 text-base font-bold text-white dark:text-black bg-slate-900 dark:bg-white rounded-xl transition-all hover:scale-105 shadow-xl">
+          Start Building
+        </a>
+      </div>
+    </div>
+  </section>
+
+  {/* CSS Animations used in the page */}
+  <style dangerouslySetInnerHTML={{__html: `
+    @keyframes slide-right {
+      0% { left: 0%; opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { left: 100%; opacity: 0; }
+    }
+  `}} />
+
+</div>

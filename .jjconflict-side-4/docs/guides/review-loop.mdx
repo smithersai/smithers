@@ -1,0 +1,265 @@
+---
+title: Implement-Review Loop
+description: The recommended pattern for production workflows -- a loop that implements, validates, reviews, and fixes code until approved.
+---
+
+You write code. You test it. You review it. You fix what the review found. Then you do it again.
+
+That loop is the oldest pattern in software engineering. Smithers makes it the oldest pattern in *agent* engineering too.
+
+## Why a loop?
+
+Think about what happens without one. An agent writes code, declares victory, and moves on. Nobody checked if it compiles. Nobody checked if the logic is sound. You are trusting a single pass from a model that hallucinates sometimes.
+
+Now think about what happens *with* one. The agent writes code, a separate agent runs the tests, two more agents review the result, and a fixer addresses every issue. Then the whole thing repeats until both reviewers sign off -- or you hit a safety cap.
+
+That is the implement-review loop. Four steps, one `<Loop>`, zero unsupervised merges.
+
+## The four steps
+
+Each iteration runs these in sequence:
+
+1. **Implement** -- An agent writes code (preferably Codex).
+2. **Validate** -- A separate agent runs tests to verify correctness.
+3. **Review** -- Two agents review in parallel (Claude + Codex).
+4. **ReviewFix** -- An agent addresses every review issue.
+
+The loop repeats until both reviewers approve or `maxIterations` is hit.
+
+## Minimal Example
+
+Before wiring up the loop, you need schemas. One per step:
+
+```tsx
+import { createSmithers, Task, Sequence, Parallel, Loop } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { Workflow, smithers, tables, outputs } = createSmithers({
+  implement: z.object({
+    summary: z.string(),
+    filesChanged: z.array(z.string()),
+    allTestsPassing: z.boolean(),
+  }),
+  validate: z.object({
+    allPassed: z.boolean(),
+    failingSummary: z.string().nullable(),
+  }),
+  review: z.object({
+    reviewer: z.string(),
+    approved: z.boolean(),
+    issues: z.array(z.object({
+      severity: z.enum(["critical", "major", "minor", "nit"]),
+      file: z.string(),
+      description: z.string(),
+    })),
+    feedback: z.string(),
+  }),
+  reviewFix: z.object({
+    fixesMade: z.array(z.object({ issue: z.string(), fix: z.string() })),
+    allIssuesResolved: z.boolean(),
+  }),
+});
+```
+
+Four schemas, four steps. Each one captures exactly the data the next step needs. No more, no less.
+
+## The ValidationLoop Component
+
+Here is the core pattern. Read it top to bottom -- it is a `<Loop>` wrapping a `<Sequence>` of four components:
+
+```tsx
+// components/ValidationLoop.tsx
+import { Loop, Sequence } from "smithers-orchestrator";
+import { Implement } from "./Implement";
+import { Validate } from "./Validate";
+import { Review } from "./Review";
+import { ReviewFix } from "./ReviewFix";
+import { useCtx, tables } from "../smithers";
+import type { Ticket } from "./Discover.schema";
+import type { ReviewOutput } from "./Review.schema";
+
+const MAX_REVIEW_ROUNDS = 3;
+
+export function ValidationLoop({ ticket }: { ticket: Ticket }) {
+  const ctx = useCtx();
+  const ticketId = ticket.id;
+
+  const claudeReview = ctx.latest(tables.review, `${ticketId}:review-claude`) as ReviewOutput | undefined;
+  const codexReview = ctx.latest(tables.review, `${ticketId}:review-codex`) as ReviewOutput | undefined;
+
+  const allApproved = !!claudeReview?.approved && !!codexReview?.approved;
+
+  return (
+    <Loop
+      id={`${ticketId}:impl-review-loop`}
+      until={allApproved}
+      maxIterations={MAX_REVIEW_ROUNDS}
+      onMaxReached="return-last"
+    >
+      <Sequence>
+        <Implement ticket={ticket} />
+        <Validate ticket={ticket} />
+        <Review ticket={ticket} />
+        <ReviewFix ticket={ticket} />
+      </Sequence>
+    </Loop>
+  );
+}
+```
+
+Notice the stop condition: `until={allApproved}`. That is a boolean derived from two separate review outputs. Not a vague "looks good" -- a concrete, programmatic signal. The loop keeps going until both reviewers say yes, or three rounds pass, whichever comes first.
+
+## Parallel Multi-Agent Review
+
+Why two reviewers? Because they catch different things. Claude is strong on architecture and logic. Codex is strong on code correctness and edge cases. Running them in parallel costs wall-clock time equal to the slower one -- not the sum.
+
+Use `continueOnFail` so one reviewer timing out does not block the other:
+
+```tsx
+// components/Review.tsx
+import { Parallel } from "smithers-orchestrator";
+import { Task, useCtx, tables, outputs } from "../smithers";
+import { claude, codex } from "../agents";
+import ReviewPrompt from "./Review.mdx";
+import type { Ticket } from "./Discover.schema";
+import type { ValidateOutput } from "./Validate.schema";
+
+export function Review({ ticket }: { ticket: Ticket }) {
+  const ctx = useCtx();
+  const ticketId = ticket.id;
+  const latestValidate = ctx.latest(tables.validate, `${ticketId}:validate`) as ValidateOutput | undefined;
+
+  // Skip review if tests fail -- send back to Implement
+  if (!latestValidate?.allPassed) return null;
+
+  const reviewProps = {
+    ticketId,
+    ticketTitle: ticket.title,
+    ticketDescription: ticket.description,
+  };
+
+  return (
+    <Parallel>
+      <Task
+        id={`${ticketId}:review-claude`}
+        output={outputs.review}
+        agent={claude}
+        timeoutMs={15 * 60 * 1000}
+        continueOnFail
+      >
+        <ReviewPrompt {...reviewProps} reviewer="claude" />
+      </Task>
+      <Task
+        id={`${ticketId}:review-codex`}
+        output={outputs.review}
+        agent={codex}
+        timeoutMs={15 * 60 * 1000}
+        continueOnFail
+      >
+        <ReviewPrompt {...reviewProps} reviewer="codex" />
+      </Task>
+    </Parallel>
+  );
+}
+```
+
+There is a subtle but important detail at the top: if validation failed, the component returns `null`. No point reviewing code that does not pass tests. The loop skips review entirely and cycles back to Implement.
+
+## Feeding Review Feedback Back to Implement
+
+This is where the loop earns its keep. On the second (and third) iteration, the Implement component reads previous review issues and validation failures, then hands them to the agent:
+
+```tsx
+// components/Implement.tsx
+import { Task, useCtx, tables, outputs } from "../smithers";
+import { codex } from "../agents";
+import ImplementPrompt from "./Implement.mdx";
+import type { Ticket } from "./Discover.schema";
+
+export function Implement({ ticket }: { ticket: Ticket }) {
+  const ctx = useCtx();
+  const ticketId = ticket.id;
+
+  const latestImplement = ctx.latest(tables.implement, `${ticketId}:implement`);
+  const latestValidate = ctx.latest(tables.validate, `${ticketId}:validate`);
+  const claudeReview = ctx.latest(tables.review, `${ticketId}:review-claude`);
+  const codexReview = ctx.latest(tables.review, `${ticketId}:review-codex`);
+
+  const reviewIssues = [
+    ...(claudeReview?.issues ?? []),
+    ...(codexReview?.issues ?? []),
+  ];
+
+  return (
+    <Task id={`${ticketId}:implement`} output={outputs.implement} agent={codex} timeoutMs={45 * 60 * 1000}>
+      <ImplementPrompt
+        ticketId={ticketId}
+        ticketTitle={ticket.title}
+        ticketDescription={ticket.description}
+        previousImplementation={latestImplement ?? null}
+        validationFeedback={latestValidate ?? null}
+        reviewFixes={reviewIssues.length > 0 ? JSON.stringify(reviewIssues, null, 2) : null}
+      />
+    </Task>
+  );
+}
+```
+
+On the first iteration, `reviewIssues` is empty and `previousImplementation` is null. The agent starts fresh. On subsequent iterations, it gets a structured list of everything that went wrong. No ambiguity, no lost context.
+
+## ReviewFix with skipIf
+
+What if both reviewers approved? Then there is nothing to fix. The `skipIf` prop handles this cleanly:
+
+```tsx
+// components/ReviewFix.tsx
+import { Task, useCtx, tables, outputs } from "../smithers";
+import { codex } from "../agents";
+import ReviewFixPrompt from "./ReviewFix.mdx";
+import type { Ticket } from "./Discover.schema";
+
+export function ReviewFix({ ticket }: { ticket: Ticket }) {
+  const ctx = useCtx();
+  const ticketId = ticket.id;
+
+  const claudeReview = ctx.latest(tables.review, `${ticketId}:review-claude`);
+  const codexReview = ctx.latest(tables.review, `${ticketId}:review-codex`);
+
+  const allApproved = !!claudeReview?.approved && !!codexReview?.approved;
+  const allIssues = [...(claudeReview?.issues ?? []), ...(codexReview?.issues ?? [])];
+
+  return (
+    <Task
+      id={`${ticketId}:review-fix`}
+      output={outputs.reviewFix}
+      agent={codex}
+      skipIf={allApproved || allIssues.length === 0}
+    >
+      <ReviewFixPrompt
+        ticketId={ticketId}
+        issues={allIssues}
+        feedback={[claudeReview?.feedback, codexReview?.feedback].filter(Boolean).join("\n\n")}
+      />
+    </Task>
+  );
+}
+```
+
+If there are no issues, the task is skipped. If both reviewers approved, the task is skipped. The loop's `until` condition sees `allApproved` and stops. No wasted compute.
+
+## Why This Pattern Works
+
+Five properties make this loop reliable in production:
+
+- **Validation before review** -- No point reviewing code that does not compile or pass tests. If validation fails, the loop skips review and goes straight back to implement.
+- **Parallel review** -- Two different models catch different kinds of issues. Claude is strong on architecture and logic; Codex is strong on code correctness and edge cases.
+- **Structured issues** -- Review output uses a typed `issues` array with severity, file, and description. This lets ReviewFix address each issue systematically instead of parsing free-text feedback.
+- **Bounded iterations** -- `maxIterations` prevents infinite loops. Use `onMaxReached: "return-last"` to accept the best effort after the cap.
+- **Resumable** -- Every step persists to SQLite. If the workflow crashes mid-loop, it resumes from the last incomplete task. Not from the beginning. From right where it stopped.
+
+## Next Steps
+
+- [Loop Component](/components/loop) -- All Loop props and iteration semantics.
+- [Dynamic Tickets](/guides/dynamic-tickets) -- Generate tickets dynamically instead of hardcoding.
+- [Model Selection](/guides/model-selection) -- Which models to use for each step.
+- [Patterns](/guides/patterns) -- Project structure and naming conventions.
