@@ -1,0 +1,10 @@
+Generate a changelog from these {props.totalCommits} commits:
+
+{JSON.stringify(props.commits, null, 2)}
+
+Version: {props.version}
+Date range: {props.dateRange}
+Audience: {props.audience}
+Output file: {props.outputFile}
+
+Group by category with emojis. Highlight breaking changes at the top.

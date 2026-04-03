@@ -1,0 +1,250 @@
+---
+title: "Tutorial: Build a Workflow"
+description: Step-by-step guide to building a Smithers workflow with schemas, agents, sequential tasks, and output access.
+---
+
+## 1. Project Setup
+
+```bash
+mkdir code-review && cd code-review
+bun init -y
+bun add smithers-orchestrator ai @ai-sdk/anthropic zod
+```
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "smithers-orchestrator",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  }
+}
+```
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+```
+code-review/
+  tsconfig.json
+  package.json
+  workflow.tsx      # Workflow definition
+  main.ts          # Runner (optional -- CLI works too)
+```
+
+## 2. Define Schemas
+
+Each Zod schema passed to `createSmithers` becomes a named, auto-created SQLite output table.
+
+```tsx
+// workflow.tsx
+import { createSmithers, Task, Sequence } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: z.object({
+    summary: z.string(),
+    issues: z.array(z.object({
+      file: z.string(),
+      line: z.number(),
+      severity: z.enum(["low", "medium", "high"]),
+      description: z.string(),
+    })),
+  }),
+  fix: z.object({
+    patch: z.string(),
+    explanation: z.string(),
+    filesChanged: z.array(z.string()),
+  }),
+  report: z.object({
+    title: z.string(),
+    body: z.string(),
+    issueCount: z.number(),
+    fixedCount: z.number(),
+  }),
+});
+```
+
+`outputs` provides typed references (`outputs.analysis` instead of the string `"analysis"`). Typos become compile errors. `runId`, `nodeId`, and `iteration` columns are auto-added.
+
+## 3. Configure Agents
+
+```tsx
+// workflow.tsx (continued)
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+
+const analyst = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a senior code reviewer. Analyze code for bugs, security issues, and quality problems. Return structured JSON.",
+});
+
+const fixer = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a senior engineer who writes minimal, correct fixes. Return structured JSON with a unified diff patch.",
+});
+
+const reporter = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a technical writer. Summarize code review findings into a clear report. Return structured JSON.",
+});
+```
+
+## 4. Build the Workflow
+
+```tsx
+// workflow.tsx (continued)
+export default smithers((ctx) => {
+  const analysis = ctx.outputMaybe(outputs.analysis, { nodeId: "analyze" });
+  const fix = ctx.outputMaybe(outputs.fix, { nodeId: "fix" });
+
+  return (
+    <Workflow name="code-review">
+      <Sequence>
+        <Task id="analyze" output={outputs.analysis} agent={analyst}>
+          {`Review this code for bugs and issues:
+
+Repository: ${ctx.input.repo}
+Focus area: ${ctx.input.focusArea ?? "general"}
+
+Return JSON with:
+- summary (string): overall assessment
+- issues (array): each with file, line, severity, and description`}
+        </Task>
+
+        {analysis ? (
+          <Task id="fix" output={outputs.fix} agent={fixer}>
+            {`Fix these issues:
+
+${analysis.issues.map((i) => `- [${i.severity}] ${i.file}:${i.line} - ${i.description}`).join("\n")}
+
+Return JSON with:
+- patch (string): unified diff
+- explanation (string): what you changed and why
+- filesChanged (string[]): list of modified files`}
+          </Task>
+        ) : null}
+
+        {fix ? (
+          <Task id="report" output={outputs.report} agent={reporter}>
+            {`Write a code review report.
+
+Analysis summary: ${analysis!.summary}
+Issues found: ${analysis!.issues.length}
+Fix explanation: ${fix.explanation}
+Files changed: ${fix.filesChanged.join(", ")}
+
+Return JSON with:
+- title (string)
+- body (string): markdown report
+- issueCount (number)
+- fixedCount (number)`}
+          </Task>
+        ) : null}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+- `ctx.outputMaybe()` returns `undefined` until the task completes. Safe for conditional rendering.
+- `{analysis ? <Task .../> : null}` gates downstream tasks on upstream completion.
+- `ctx.input` is the runtime input object (here: `{ repo: string, focusArea?: string }`).
+
+## 5. Create the Runner
+
+```ts
+// main.ts
+import { runWorkflow } from "smithers-orchestrator";
+import workflow from "./workflow";
+
+const result = await runWorkflow(workflow, {
+  input: { repo: "/path/to/my-project", focusArea: "authentication" },
+  onProgress: (event) => {
+    if (event.type === "NodeStarted") {
+      console.log(`Starting: ${event.nodeId}`);
+    }
+    if (event.type === "NodeFinished") {
+      console.log(`Finished: ${event.nodeId}`);
+    }
+  },
+});
+
+console.log("Status:", result.status);
+console.log("Run ID:", result.runId);
+
+if (result.status === "finished") {
+  console.log("Report:", JSON.stringify(result.output, null, 2));
+}
+```
+
+## 6. Run It
+
+```bash
+bun run main.ts
+```
+
+Or via CLI (no `main.ts` needed):
+
+```bash
+bunx smithers up workflow.tsx --input '{"repo": "/path/to/my-project", "focusArea": "authentication"}'
+```
+
+## 7. Inspect Results
+
+```bash
+bunx smithers inspect smth_a1b2c3d4
+bunx smithers graph workflow.tsx --run-id smth_a1b2c3d4
+bunx smithers logs smth_a1b2c3d4 --tail 5 --follow false
+```
+
+Query SQLite directly:
+
+```bash
+sqlite3 smithers.db "SELECT * FROM analysis WHERE run_id = 'smth_a1b2c3d4';"
+sqlite3 smithers.db "SELECT * FROM report WHERE run_id = 'smth_a1b2c3d4';"
+```
+
+## Execution Model
+
+The engine renders the JSX tree repeatedly:
+
+1. **Render 1** -- Only `analyze` is mounted. Engine executes it.
+2. **Render 2** -- `ctx.outputMaybe(outputs.analysis)` returns data. `fix` mounts and executes.
+3. **Render 3** -- Both outputs available. `report` mounts and executes.
+4. **Render 4** -- All tasks finished. Run completes.
+
+On crash, resume skips completed tasks:
+
+```bash
+bunx smithers up workflow.tsx --run-id smth_a1b2c3d4 --resume true
+```
+
+## Adding Tools
+
+```tsx
+import { read, grep, bash } from "smithers-orchestrator";
+
+const analyst = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a senior code reviewer.",
+  tools: { read, grep, bash },
+});
+```
+
+Tools are sandboxed to the workflow root by default. See [Built-in Tools](/integrations/tools).
+
+## Next Steps
+
+- [Structured Output](/guides/structured-output) -- Schema validation in depth.
+- [Error Handling](/guides/error-handling) -- Retries, timeouts, fallback paths.
+- [Resumability](/guides/resumability) -- Crash recovery and deterministic replay.
+- [Patterns](/guides/patterns) -- Project structure for larger workflows.
+- [Components](/components/workflow) -- JSX component reference.

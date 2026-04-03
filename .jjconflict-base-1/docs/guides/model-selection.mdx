@@ -1,0 +1,241 @@
+---
+title: Model Selection
+description: Which AI models to use for each step in a Smithers workflow, and how to configure CLI vs API agents.
+---
+
+Not all tasks are created equal. An implementation task needs a model that writes correct code. A review task needs a model that reasons about architecture. A simple file-reading task needs a model that is fast and cheap.
+
+Choosing the right model for each task is the difference between a workflow that works and one that burns money on overkill -- or worse, fails because you used a cheap model for a hard job.
+
+## Recommended Models
+
+### Codex (gpt-5.3-codex) -- Implementation
+
+Codex is the strongest model for writing and modifying code. Use it for:
+
+- Implementing features
+- Fixing bugs
+- Running and interpreting tests
+- Refactoring code
+- Fixing review issues
+
+**Reasoning effort**: Set to `high` by default. Use `xhigh` for especially complex tasks -- architectural refactors, multi-file changes with tricky dependencies.
+
+### Claude Opus (claude-opus-4-6) -- Planning and Review
+
+Claude Opus is the strongest model for reasoning about architecture and evaluating code quality. Use it for:
+
+- Research and codebase exploration
+- Planning implementation steps
+- Code review
+- Report generation
+- Orchestration logic and tool calling
+
+### Claude Sonnet (claude-sonnet-4-5-20250929) -- Simple Tasks
+
+Sonnet is fast, cheap, and good enough for straightforward work. Use it for:
+
+- Simple tool calling (reading files, running commands)
+- Lightweight reviews where deep reasoning is not needed
+- Report aggregation from structured data
+- Tasks where a more expensive model would be wasteful
+
+## Summary Table
+
+| Task Type | Recommended Model | Why |
+| --- | --- | --- |
+| Implementing code | Codex | Strongest at code generation |
+| Reviewing code | Claude Opus + Codex (parallel) | Two models catch more issues |
+| Research and planning | Claude Opus | Strongest at architectural reasoning |
+| Running tests / validation | Codex | Good at interpreting build output |
+| Simple tool calls | Claude Sonnet | Fast, cheap, sufficient |
+| Report generation | Claude Sonnet or Opus | Depends on complexity |
+| Ticket discovery | Codex or Claude Opus | Both work well for codebase analysis |
+
+The parallel review row deserves special attention. Running two different models on the same review catches more bugs than running one model twice. They have different blind spots.
+
+## CLI Agents vs AI SDK Agents
+
+Smithers supports two ways to run each model. The choice depends on how you pay.
+
+### CLI Agents (subscription-based)
+
+Use `ClaudeCodeAgent`, `CodexAgent`, and `KimiAgent` when you have a subscription to the respective service. The agent runs as a subprocess using the CLI binary, which provides its native tool ecosystem -- file editing, shell access, and everything else the CLI supports.
+
+```ts
+import { ClaudeCodeAgent, CodexAgent, KimiAgent } from "smithers-orchestrator";
+
+const claude = new ClaudeCodeAgent({
+  model: "claude-opus-4-6",
+  systemPrompt: SYSTEM_PROMPT,
+  dangerouslySkipPermissions: true,
+  timeoutMs: 30 * 60 * 1000,
+});
+
+const codex = new CodexAgent({
+  model: "gpt-5.3-codex",
+  systemPrompt: SYSTEM_PROMPT,
+  yolo: true,
+  config: { model_reasoning_effort: "high" },
+  timeoutMs: 30 * 60 * 1000,
+});
+
+const kimi = new KimiAgent({
+  model: "kimi-latest",
+  systemPrompt: SYSTEM_PROMPT,
+  thinking: true,
+  timeoutMs: 30 * 60 * 1000,
+});
+```
+
+### AI SDK Agents (API billing)
+
+Use `AnthropicAgent` and `OpenAIAgent` when you want per-token billing instead of a subscription, or when you want sandboxed tools from Smithers:
+
+```ts
+import { stepCountIs } from "ai";
+import { AnthropicAgent, OpenAIAgent, tools } from "smithers-orchestrator";
+
+const claude = new AnthropicAgent({
+  model: "claude-opus-4-6",
+  tools,
+  instructions: SYSTEM_PROMPT,
+  stopWhen: stepCountIs(100),
+});
+
+const codex = new OpenAIAgent({
+  model: "gpt-5.3-codex",
+  tools,
+  instructions: SYSTEM_PROMPT,
+  stopWhen: stepCountIs(100),
+});
+```
+
+## Dual-Agent Setup
+
+In practice, you want the flexibility to switch between CLI and API agents without rewriting your workflow. Define both and let an environment variable decide:
+
+```ts
+// agents.ts
+import { stepCountIs, type ToolSet } from "ai";
+import {
+  AnthropicAgent,
+  ClaudeCodeAgent,
+  CodexAgent,
+  KimiAgent,
+  OpenAIAgent,
+} from "smithers-orchestrator";
+import { tools as smithersTools } from "smithers-orchestrator";
+import { SYSTEM_PROMPT } from "./system-prompt";
+
+const tools = smithersTools as ToolSet;
+const USE_CLI = process.env.USE_CLI_AGENTS !== "0" && process.env.USE_CLI_AGENTS !== "false";
+const UNSAFE = process.env.SMITHERS_UNSAFE === "1";
+
+// --- Codex ---
+const CODEX_MODEL = process.env.CODEX_MODEL ?? "gpt-5.3-codex";
+
+const codexApi = new OpenAIAgent({
+  model: CODEX_MODEL,
+  tools,
+  instructions: SYSTEM_PROMPT,
+  stopWhen: stepCountIs(100),
+  maxOutputTokens: 8192,
+});
+
+const codexCli = new CodexAgent({
+  model: CODEX_MODEL,
+  systemPrompt: SYSTEM_PROMPT,
+  yolo: UNSAFE,
+  config: { model_reasoning_effort: "high" },
+  timeoutMs: 30 * 60 * 1000,
+});
+
+export const codex = USE_CLI ? codexCli : codexApi;
+
+// --- Claude ---
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-6";
+
+const claudeApi = new AnthropicAgent({
+  model: CLAUDE_MODEL,
+  tools,
+  instructions: SYSTEM_PROMPT,
+  stopWhen: stepCountIs(100),
+  maxOutputTokens: 8192,
+});
+
+const claudeCli = new ClaudeCodeAgent({
+  model: CLAUDE_MODEL,
+  systemPrompt: SYSTEM_PROMPT,
+  dangerouslySkipPermissions: UNSAFE,
+  timeoutMs: 30 * 60 * 1000,
+});
+
+export const claude = USE_CLI ? claudeCli : claudeApi;
+
+// --- Kimi ---
+const KIMI_MODEL = process.env.KIMI_MODEL ?? "kimi-latest";
+
+const kimiCli = new KimiAgent({
+  model: KIMI_MODEL,
+  systemPrompt: SYSTEM_PROMPT,
+  thinking: true,
+  timeoutMs: 30 * 60 * 1000,
+});
+
+export const kimi = kimiCli; // Kimi is CLI-only
+```
+
+Switch at launch time:
+
+```bash
+# Use CLI agents (subscription)
+USE_CLI_AGENTS=1 SMITHERS_UNSAFE=1 bunx smithers up workflow.tsx
+
+# Use API agents
+USE_CLI_AGENTS=0 bunx smithers up workflow.tsx
+```
+
+Your workflow code never changes. Only the agent wiring does.
+
+## Assigning Models to Steps
+
+In a typical workflow with a [review loop](/guides/review-loop), assign models by what they are good at:
+
+| Step | Agent | Reasoning |
+| --- | --- | --- |
+| Discover | `codex` | Good at codebase analysis and structured output |
+| Research | `claude` | Strong at finding patterns and synthesizing information |
+| Plan | `claude` | Best at architectural reasoning |
+| Implement | `codex` | Strongest at writing code |
+| Validate | `codex` | Good at running and interpreting tests |
+| Review (parallel) | `claude` + `codex` | Two models catch different issue types |
+| ReviewFix | `codex` | Fixing code is implementation work |
+| Report | `claude` | Good at summarization |
+
+Notice the pattern: Codex does the hands-on coding, Claude does the thinking and judging. The review step uses both because that is where coverage matters most.
+
+## Codex Reasoning Effort
+
+The `model_reasoning_effort` config controls how much thinking Codex does before it generates. Higher effort produces better results but costs more time and tokens.
+
+```ts
+const codex = new CodexAgent({
+  model: "gpt-5.3-codex",
+  config: { model_reasoning_effort: "high" },  // default recommendation
+});
+```
+
+| Level | Use when |
+| --- | --- |
+| `medium` | Simple, well-defined changes with clear instructions |
+| `high` | Default. Most implementation and review tasks |
+| `xhigh` | Complex architectural changes, multi-file refactors, tricky edge cases |
+
+When in doubt, use `high`. You can always bump it to `xhigh` for the tasks that keep failing.
+
+## Next Steps
+
+- [Implement-Review Loop](/guides/review-loop) -- The recommended review loop pattern.
+- [CLI Agents](/integrations/cli-agents) -- Full reference for ClaudeCodeAgent, CodexAgent, GeminiAgent, PiAgent, KimiAgent.
+- [Built-in Tools](/integrations/tools) -- Sandboxed tools for AI SDK agents.

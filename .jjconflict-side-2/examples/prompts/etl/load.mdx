@@ -1,0 +1,7 @@
+Load {props.totalTransformed} transformed records to: {props.destination}
+
+Records:
+{JSON.stringify(props.records)}
+{props.remainingCount > 0 ? `... and ${props.remainingCount} more` : ""}
+
+Handle duplicates: {props.onDuplicate}

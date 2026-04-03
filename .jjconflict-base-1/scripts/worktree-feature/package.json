@@ -1,0 +1,26 @@
+{
+  "name": "worktree-feature-workflow",
+  "type": "module",
+  "scripts": {
+    "start": "bun run workflow.tsx",
+    "resume": "smithers resume workflow.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.36",
+    "@ai-sdk/openai": "^2.0.0",
+    "@mdx-js/esbuild": "^3.1.1",
+    "@mdx-js/mdx": "^3.1.1",
+    "@types/mdx": "^2.0.13",
+    "ai": "^6.0.69",
+    "react-dom": "^19.2.4",
+    "smithers": "file:../../",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.2",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}

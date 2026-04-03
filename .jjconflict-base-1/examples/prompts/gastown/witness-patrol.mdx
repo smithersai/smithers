@@ -1,0 +1,24 @@
+## Witness Patrol
+
+Check the status of all polecats in this convoy.
+
+### Polecat Results So Far
+{JSON.stringify(
+  props.polecatResults.map((result) => ({
+    name: result.polecatName,
+    state: result.state,
+    exitType: result.exitType,
+    branch: result.branch,
+  })),
+  null,
+  2,
+)}
+
+### Expected Polecats
+{props.beads.map((bead) => `- ${bead.id}: "${bead.title}"`).join("\n")}
+
+### Completed: {props.polecatResults.length}/{props.beads.length}
+
+Report protocol message type, any stuck/zombie agents, and overall health.
+If all polecats are done, report type "polecat_done".
+If any are stuck, report type "help" with severity and escalation target.

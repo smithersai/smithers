@@ -1,0 +1,132 @@
+name: release-stable
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Stable version (without leading v), optional when running from tag.'
+        required: false
+        type: string
+      strict_artifacts:
+        description: 'Fail if configured artifact patterns do not match files.'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-stable-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DESKTOP_BUILD_COMMAND: ${{ vars.BURNS_DESKTOP_STABLE_BUILD_COMMAND || vars.BURNS_DESKTOP_BUILD_COMMAND || 'bash scripts/release/build-desktop-artifact.sh --channel stable --version ${RELEASE_VERSION} --output-dir dist/desktop' }}
+  CLI_BUILD_COMMAND: ${{ vars.BURNS_CLI_STABLE_BUILD_COMMAND || vars.BURNS_CLI_BUILD_COMMAND || 'bash scripts/release/build-cli-artifact.sh --channel stable --version ${RELEASE_VERSION} --output-dir dist/cli' }}
+  DESKTOP_ARTIFACT_PATTERN: ${{ vars.BURNS_DESKTOP_ARTIFACT_PATTERN || 'dist/desktop/*' }}
+  CLI_ARTIFACT_PATTERN: ${{ vars.BURNS_CLI_ARTIFACT_PATTERN || 'dist/cli/*' }}
+
+jobs:
+  build:
+    name: stable-${{ matrix.target_os }}-${{ matrix.target_arch }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target_os: linux
+            target_arch: x64
+          - runner: macos-14
+            target_os: darwin
+            target_arch: arm64
+          - runner: windows-latest
+            target_os: windows
+            target_arch: x64
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Resolve release metadata
+        id: metadata
+        run: |
+          INPUT_VERSION="${{ github.event.inputs.version || '' }}"
+          if [[ -n "$INPUT_VERSION" ]]; then
+            RELEASE_VERSION="$INPUT_VERSION"
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            RELEASE_VERSION="${GITHUB_REF_NAME#v}"
+          else
+            echo "Stable version is required when workflow is not triggered by tag." >&2
+            exit 1
+          fi
+
+          echo "channel=stable" >> "$GITHUB_OUTPUT"
+          echo "release_version=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+
+          echo "CHANNEL=stable" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Build desktop package
+        run: |
+          bash scripts/release/run-build-step.sh \
+            --label "desktop build" \
+            --command "${DESKTOP_BUILD_COMMAND}"
+
+      - name: Build CLI package
+        run: |
+          bash scripts/release/run-build-step.sh \
+            --label "cli build" \
+            --command "${CLI_BUILD_COMMAND}"
+
+      - name: Runtime smoke checks
+        run: bun run smoke:release
+
+      - name: Collect artifacts
+        run: |
+          collect_args=(
+            --channel "${CHANNEL}"
+            --version "${RELEASE_VERSION}"
+            --target-os "${{ matrix.target_os }}"
+            --target-arch "${{ matrix.target_arch }}"
+            --desktop-pattern "${DESKTOP_ARTIFACT_PATTERN}"
+            --cli-pattern "${CLI_ARTIFACT_PATTERN}"
+            --output-dir "release-artifacts"
+          )
+
+          if [[ "${{ github.event.inputs.strict_artifacts || 'true' }}" == "true" ]]; then
+            collect_args+=(--strict)
+          fi
+
+          bash scripts/release/collect-artifacts.sh "${collect_args[@]}"
+
+      - name: Validate artifact naming contract
+        run: bash scripts/release/validate-artifact-contract.sh --dir "release-artifacts"
+
+      - name: Verify artifact integrity
+        run: |
+          bash scripts/release/verify-artifact-integrity.sh \
+            --dir "release-artifacts" \
+            --reject-placeholders
+
+      - name: Upload stable artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: burns-stable-${{ steps.metadata.outputs.release_version }}-${{ matrix.target_os }}-${{ matrix.target_arch }}
+          path: release-artifacts
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,203 @@
+---
+title: Cross-Run Memory
+description: How Smithers persists facts, messages, and semantic recall across workflow runs.
+---
+
+Your workflow completes a task, produces useful output, and exits. Next time it runs, that knowledge is gone. The agent starts from scratch every time. Cross-run memory fixes this by giving workflows a persistent brain -- facts they can write and read back, messages they can recall, and semantic search over past outputs.
+
+## Three Kinds of Memory
+
+Smithers memory has three layers, each solving a different problem:
+
+| Layer | What it stores | How you access it | When to use it |
+|-------|---------------|-------------------|----------------|
+| **Working Memory** | Key-value facts with optional TTL | `getFact` / `setFact` | Config, counters, last-known-good values |
+| **Message History** | Ordered messages per thread | `saveMessage` / `listMessages` | Conversation logs, audit trails |
+| **Semantic Recall** | Embedded text searchable by similarity | `remember` / `recall` | "Find past outputs similar to this query" |
+
+Working memory is fast and exact -- you know the key, you get the value. Message history is ordered and complete -- you get the last N messages from a conversation. Semantic recall is fuzzy and ranked -- you describe what you want, and it finds the closest matches.
+
+## Namespaces
+
+Every piece of memory lives in a namespace. A namespace scopes memory so that different workflows, agents, or users do not collide.
+
+```ts
+import type { MemoryNamespace } from "smithers-orchestrator/memory";
+
+const ns: MemoryNamespace = { kind: "workflow", id: "code-review" };
+// Serializes to: "workflow:code-review"
+```
+
+Four namespace kinds exist:
+
+- `workflow` -- scoped to a specific workflow definition
+- `agent` -- scoped to a specific agent identity
+- `user` -- scoped to an end user
+- `global` -- shared across everything
+
+The `namespaceToString()` helper produces the canonical string form (`"workflow:code-review"`). All database queries filter by this string, so memory in one namespace never leaks into another.
+
+## Working Memory
+
+Working memory stores structured facts as JSON. Each fact has a namespace, a string key, and a JSON value. Optionally, a TTL in milliseconds causes the fact to expire automatically.
+
+```ts
+import { createMemoryStore } from "smithers-orchestrator/memory";
+
+const store = createMemoryStore(db);
+
+// Write a fact
+await store.setFact(ns, "last-reviewer", { name: "Alice", score: 0.95 });
+
+// Read it back
+const fact = await store.getFact(ns, "last-reviewer");
+// { namespace: "workflow:code-review", key: "last-reviewer", valueJson: '{"name":"Alice","score":0.95}', ... }
+
+// List all facts in a namespace
+const facts = await store.listFacts(ns);
+
+// Delete
+await store.deleteFact(ns, "last-reviewer");
+```
+
+Facts are upserted -- writing the same key twice replaces the previous value and updates the timestamp.
+
+## Message History
+
+Message history records ordered messages in threads. A thread belongs to a namespace and can hold messages from any role (user, assistant, system, tool).
+
+```ts
+// Create a thread
+const thread = await store.createThread(ns, "Review session #42");
+
+// Save messages
+await store.saveMessage({
+  threadId: thread.threadId,
+  role: "user",
+  contentJson: JSON.stringify({ text: "Review this PR" }),
+  runId: "run-123",
+  nodeId: "review-task",
+});
+
+// List the last 20 messages
+const messages = await store.listMessages(thread.threadId, 20);
+```
+
+Threads are useful for building multi-turn conversations that persist across runs. A Ralph loop can write to the same thread each iteration, building up context over time.
+
+## Semantic Recall
+
+Semantic recall uses the existing RAG infrastructure (vector store + embedding model) to store and retrieve memory by meaning rather than by key.
+
+```ts
+import { createSemanticMemory } from "smithers-orchestrator/memory";
+import { openai } from "@ai-sdk/openai";
+
+const semantic = createSemanticMemory(
+  vectorStore,
+  openai.embedding("text-embedding-3-small"),
+);
+
+// Store a memory
+await semantic.remember(ns, "The user prefers TypeScript over JavaScript");
+
+// Recall by query
+const results = await semantic.recall(ns, "What language does the user prefer?", {
+  topK: 5,
+  similarityThreshold: 0.7,
+});
+```
+
+Under the hood, `remember` chunks the content, embeds it with the AI SDK's `embedMany()`, and upserts the vectors into the same `_smithers_vectors` table that RAG uses. `recall` embeds the query with `embed()`, searches the vector store filtered by namespace, and returns ranked results.
+
+## Task Integration
+
+The `memory` prop on `<Task>` connects memory to the execution flow. Before the agent runs, recalled context is prepended to the prompt. After the agent finishes, output is stored.
+
+```tsx
+<Task
+  id="analyze"
+  agent={reviewer}
+  output={outputs.analysis}
+  memory={{
+    recall: { namespace: { kind: "workflow", id: "code-review" }, topK: 3 },
+    remember: { namespace: { kind: "workflow", id: "code-review" }, key: "last-analysis" },
+  }}
+>
+  Review this pull request
+</Task>
+```
+
+- `memory.recall` -- before the agent call, query semantic memory and prepend the top results as context
+- `memory.remember` -- after the agent call, store the output in both working memory (under the given key) and semantic memory
+
+## Loop Memory
+
+Ralph (Loop) can use memory to carry context across iterations. When `recallPreviousRuns` is enabled, each iteration recalls what happened in previous iterations via semantic search.
+
+```tsx
+<Loop until={done}>
+  <Task
+    id="iterate"
+    agent={agent}
+    output={outputs.result}
+    memory={{
+      recall: { namespace: { kind: "workflow", id: "my-loop" }, topK: 5 },
+      remember: { namespace: { kind: "workflow", id: "my-loop" } },
+    }}
+  >
+    Improve the previous result
+  </Task>
+</Loop>
+```
+
+Each iteration writes its output to memory and reads back the most relevant past outputs on the next iteration.
+
+## Processors
+
+Memory processors run maintenance operations on stored data:
+
+- **TtlGarbageCollector** -- deletes expired facts based on their `ttlMs` field
+- **TokenLimiter** -- compresses message history when it exceeds a token budget
+- **Summarizer** -- uses an LLM to summarize old messages, replacing many messages with a single summary
+
+Processors run on-demand or can be wired into the workflow lifecycle.
+
+## Effect Service
+
+The `MemoryService` Effect tag bundles working memory, semantic recall, and message history into a single service layer. This is the recommended way to use memory in Effect-based code.
+
+```ts
+import { MemoryService, createMemoryLayer } from "smithers-orchestrator/memory";
+import { Effect } from "effect";
+
+const layer = createMemoryLayer({ db, vectorStore, embeddingModel });
+
+const program = Effect.gen(function* () {
+  const memory = yield* MemoryService;
+  yield* memory.setFact(ns, "key", { value: 42 });
+  const results = yield* memory.recall(ns, "search query");
+  return results;
+});
+```
+
+## Storage
+
+Memory uses three SQLite tables, all created automatically:
+
+| Table | Purpose |
+|-------|---------|
+| `_smithers_memory_facts` | Working memory key-value pairs |
+| `_smithers_memory_threads` | Message thread metadata |
+| `_smithers_memory_messages` | Individual messages within threads |
+
+Semantic recall reuses the existing `_smithers_vectors` table from the RAG module. No separate vector table is needed.
+
+## Observability
+
+Memory operations emit structured events and update Effect metrics:
+
+- `MemoryFactSet` / `MemoryRecalled` / `MemoryMessageSaved` events
+- `smithers.memory.fact_reads` / `smithers.memory.fact_writes` counters
+- `smithers.memory.recall_queries` counter
+- `smithers.memory.recall_duration_ms` histogram

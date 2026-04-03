@@ -1,0 +1,152 @@
+---
+title: Approval Gate
+description: A workflow with a human-in-the-loop approval step that pauses execution until a human approves or denies.
+---
+
+# Approval Gate
+
+`<Approval>` pauses a workflow at an explicit node, waits for a human decision, then continues.
+
+## Workflow Definition
+
+```tsx
+// approval-gate.tsx
+import {
+  Approval,
+  Sequence,
+  Task,
+  approvalDecisionSchema,
+  createSmithers,
+} from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  draft: z.object({
+    title: z.string(),
+    content: z.string(),
+  }),
+  publishApproval: approvalDecisionSchema,
+  published: z.object({
+    url: z.string(),
+    publishedAt: z.string(),
+  }),
+});
+
+const writer = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions:
+    "You are a technical writer. Draft a blog post with a title and full content based on the given topic.",
+});
+
+const publisher = new Agent({
+  model: anthropic("claude-sonnet-4-5-20250929"),
+  instructions:
+    "You are a publishing agent. Take the approved draft and return a URL and timestamp for the published post.",
+});
+
+export default smithers((ctx) => {
+  const draft = ctx.outputMaybe(outputs.draft, { nodeId: "write-draft" });
+  const decision = ctx.outputMaybe(outputs.publishApproval, {
+    nodeId: "approve-publish",
+  });
+
+  return (
+    <Workflow name="approval-gate">
+      <Sequence>
+        <Task id="write-draft" output={outputs.draft} agent={writer}>
+          Write a blog post about deterministic AI workflows and why resumability
+          matters for production systems.
+        </Task>
+
+        <Approval
+          id="approve-publish"
+          output={outputs.publishApproval}
+          request={{
+            title: "Publish blog post",
+            summary: draft
+              ? `Publish "${draft.title}" to the public site.`
+              : "Publish the current draft.",
+          }}
+        />
+
+        {decision?.approved ? (
+          <Task id="publish" output={outputs.published} agent={publisher}>
+            Publish this approved draft:{"\n\n"}
+            Title: {draft?.title}
+            {"\n\n"}
+            {draft?.content}
+          </Task>
+        ) : null}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## Running
+
+```bash
+smithers up approval-gate.tsx --input '{}'
+```
+
+```
+[approval-gate] Starting run mno345
+[write-draft] Done -> { title: "Why Resumability Matters", content: "In production AI systems..." }
+[approve-publish] Waiting for approval...
+[approval-gate] Paused — run `smithers approve` or `smithers deny` to continue.
+```
+
+## Approving or Denying
+
+Approve and resume:
+
+```bash
+smithers approve mno345 --node approve-publish
+smithers up approval-gate.tsx --run-id mno345 --resume true
+```
+
+```
+[approve-publish] Approved.
+[publish] Running...
+[publish] Done -> { url: "https://blog.example.com/resumability", publishedAt: "2026-02-10T12:00:00Z" }
+[approval-gate] Completed
+```
+
+Deny and halt:
+
+```bash
+smithers deny mno345 --node approve-publish
+```
+
+```
+[approve-publish] Denied.
+[approval-gate] Halted at node "approve-publish" (denied by user).
+```
+
+## Listing Pending Approvals
+
+```bash
+smithers ps --status waiting-approval
+```
+
+```json
+{
+  "runs": [
+    {
+      "id": "mno345",
+      "workflow": "approval-gate",
+      "status": "waiting-approval",
+      "step": "approve-publish",
+      "started": "2m ago"
+    }
+  ]
+}
+```
+
+## How It Works
+
+- `<Approval>` persists a decision object (`approved`, `note`, `decidedBy`, `decidedAt`) when the workflow resumes.
+- Re-running after approval replays completed tasks from the database and continues from the approval point.
+- Denial is permanent for that run. To retry, start a new run.

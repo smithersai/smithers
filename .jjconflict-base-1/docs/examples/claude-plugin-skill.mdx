@@ -1,0 +1,71 @@
+---
+title: "Ghost: Claude Code Plugin — Smithers Skill"
+description: "Example from ~/.claude/plugins/smithers/ — A Claude Code plugin that teaches Claude how to create and monitor Smithers orchestrations."
+---
+
+# Claude Code Plugin — Smithers Skill
+
+<Note>
+**Ghost doc** — Real Claude Code plugin at `~/.claude/plugins/smithers/`. Registers the `smithers` skill so Claude Code can create and run workflows.
+</Note>
+
+## plugin.json
+
+```json
+{
+  "name": "smithers",
+  "version": "0.1.0",
+  "description": "Build AI agents with declarative JSX for Claude orchestration",
+  "author": "William Cory",
+  "license": "MIT",
+  "repository": "https://github.com/evmts/smithers",
+  "keywords": ["orchestration", "multi-agent", "workflow", "ai-agents", "claude", "jsx"],
+  "skills": ["skills/smithers"]
+}
+```
+
+## SKILL.md
+
+```markdown
+---
+name: smithers-orchestrator
+description: Create and monitor multi-agent AI orchestrations using Smithers framework.
+allowed-tools: [Read, Write, Edit, Bash, Glob, Grep, Task]
+user-invocable: true
+recommend-plan-mode: true
+---
+
+# Smithers Orchestrator
+
+## When to Use
+- Orchestrate multiple AI agents working together
+- Create complex multi-phase workflows
+- Build agent pipelines with state management
+
+## Quick Start
+1. Define schemas with `createSmithers({ output: z.object({...}) })`
+2. Create agents with `new Agent({ model, instructions })`
+3. Build workflow with `smithers((ctx) => <Workflow>...</Workflow>)`
+4. Run with `smithers up workflow.tsx --input '{}'`
+```
+
+## EXAMPLES.md
+
+Five complete workflow examples:
+
+1. **Simple Sequential** — Three-phase research/implement/test pipeline
+2. **Conditional Branching** — Branches based on analysis results
+3. **Parallel Execution** — Frontend/backend/database agents simultaneously
+4. **Error Handling and Retry** — Automatic retry with recovery fallback
+5. **Data Flow Between Phases** — Requirements/design/implement/test with structured data passing
+
+## REFERENCE.md
+
+| Component | Purpose |
+|-----------|---------|
+| `<Workflow>` | Root component — defines a named workflow |
+| `<Task>` | Executes an agent or static payload, persists structured output |
+| `<Sequence>` | Runs children sequentially |
+| `<Parallel>` | Runs children concurrently with optional `maxConcurrency` |
+| `<Branch>` | Conditional rendering — `if`/`then`/`else` |
+| `<Loop>` | Loop controller — iterates `until` condition or `maxIterations` |

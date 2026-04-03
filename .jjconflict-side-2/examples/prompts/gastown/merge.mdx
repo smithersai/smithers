@@ -1,0 +1,21 @@
+## Refinery: Process MR for {props.beadId}
+
+**Branch:** {props.branch}
+**Worker:** {props.polecatName}
+**Target:** {props.targetBranch}
+**Changes:** {props.summary}
+**Files:** {props.filesChanged.join(", ")}
+**Commits:** {props.commitCount}
+
+## Phase State Machine
+Execute these phases in order:
+1. **Claim** (ready -> claimed): Take ownership of this MR
+2. **Prepare** (claimed -> preparing): Rebase onto target, run quality gates
+3. **Merge** (prepared -> merging -> merged): Fast-forward merge + push
+
+If any gate fails:
+- conflict -> phase=rejected, closeReason="conflict"
+- tests_fail -> phase=rejected, closeReason="rejected"
+- push_fail -> phase=failed (eligible for retry)
+
+Report the final MR state with phase and any errors.

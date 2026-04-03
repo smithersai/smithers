@@ -1,0 +1,236 @@
+---
+title: Workflows Overview
+description: What Smithers workflows are, when to use them, and the core principles behind the system.
+---
+
+You have a problem. You asked an AI agent to review a codebase, apply fixes, run the tests, and write a summary. It started well, then hallucinated a file path, lost track of which fixes it already applied, and — when your laptop went to sleep — forgot everything.
+
+You could wrap the agent call in a retry loop and pray. Or you could break the problem into pieces, give each piece a name, a schema, and an execution order, and let the machine handle the rest.
+
+That's what a Smithers workflow is: a typed, resumable execution plan for multi-step AI work.
+
+## When to Use Workflows
+
+Ask yourself: does this job need more than one step, and does the order matter?
+
+If you have a single prompt that needs one LLM call, a workflow is overkill. But the moment you need coordination — analyze, then fix, then validate, then report — you need answers to questions that ad hoc scripts dodge:
+
+- Which agent handles each step?
+- How does data flow between steps?
+- Which steps can run in parallel?
+- Where does a human need to approve something?
+- What happens when a step fails at 2 AM?
+
+Workflows give you structure for all of this. And because every completed step is persisted to SQLite, you get durability for free.
+
+## Core Principles
+
+Three ideas, in order:
+
+1. **Define tasks** as JSX components with typed input/output schemas
+2. **Compose tasks** using control-flow primitives (`<Sequence>`, `<Parallel>`, `<Branch>`, `<Loop>`)
+3. **Run workflows** with built-in persistence, resumability, approval gates, and streaming
+
+That's the whole framework. Everything else follows from these three.
+
+## Building Blocks
+
+### Tasks
+
+A `<Task>` is the smallest unit of work. It has an `id`, an `output` schema, and one of three modes. The simplest way to see the difference is to look at all three:
+
+```tsx
+// Agent mode — send a prompt to an AI agent
+<Task id="analyze" output={outputs.analysis} agent={claude}>
+  {`Analyze the codebase in ${ctx.input.repo}`}
+</Task>
+
+// Compute mode — run a function at execution time
+<Task id="validate" output={outputs.validation}>
+  {async () => {
+    const result = await $`bun test`.quiet();
+    return { passed: result.exitCode === 0 };
+  }}
+</Task>
+
+// Static mode — write a value directly
+<Task id="config" output={outputs.config}>
+  {{ environment: "production", debug: false }}
+</Task>
+```
+
+Agent mode sends a prompt to an LLM. Compute mode runs arbitrary code. Static mode writes a literal value. Every other feature — retries, validation, deps — layers on top of these three modes.
+
+### Control Flow
+
+"But why not just write `await step1(); await step2();`?"
+
+You could. But then you lose resumability, parallelism, and conditional branching — and you're back to the ad hoc script. These four primitives give you the same expressiveness with none of the bookkeeping:
+
+| Component | Purpose | Behavior |
+| --- | --- | --- |
+| `<Sequence>` | Run tasks one after another | Each child waits for the previous to complete |
+| `<Parallel>` | Run tasks concurrently | All children start together (respecting concurrency limits) |
+| `<Branch>` | Choose one path | Evaluates a condition and runs `then` or `else` |
+| `<Loop>` | Repeat until a condition | Re-executes children each iteration until `until` is true |
+
+Four components. That's the entire control-flow vocabulary. See [Control Flow](/concepts/control-flow) for detailed guidance on each primitive.
+
+### Schemas
+
+You might be wondering: how does Smithers know if an agent returned useful output or nonsense?
+
+Every task declares what it produces using a Zod schema. Smithers validates the agent's output against that schema automatically. If validation fails, the agent is retried with the error as feedback — no manual wrangling required.
+
+```tsx
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: z.object({
+    summary: z.string(),
+    risk: z.enum(["low", "medium", "high"]),
+  }),
+  fix: z.object({
+    filesChanged: z.array(z.string()),
+    description: z.string(),
+  }),
+});
+```
+
+The `outputs` object is type-checked at compile time. Write `outputs.analysis` incorrectly and the compiler catches it — not your production logs at midnight.
+
+## A Complete Workflow
+
+Here is a workflow that analyzes code, optionally fixes issues, and writes a report:
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import { createSmithers, Sequence, Branch, Task } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: z.object({
+    summary: z.string(),
+    hasIssues: z.boolean(),
+    issues: z.array(z.string()),
+  }),
+  fix: z.object({ filesChanged: z.array(z.string()) }),
+  report: z.object({ title: z.string(), body: z.string() }),
+});
+
+export default smithers((ctx) => {
+  const analysis = ctx.outputMaybe(outputs.analysis, { nodeId: "analyze" });
+
+  return (
+    <Workflow name="code-review">
+      <Sequence>
+        <Task id="analyze" output={outputs.analysis} agent={reviewer}>
+          {`Analyze: ${ctx.input.repo}`}
+        </Task>
+
+        {analysis ? (
+          <>
+            <Branch
+              if={analysis.hasIssues}
+              then={
+                <Task id="fix" output={outputs.fix} agent={coder} deps={{ analyze: outputs.analysis }}>
+                  {(deps) => `Fix these issues: ${deps.analyze.issues.join(", ")}`}
+                </Task>
+              }
+            />
+
+            <Task id="report" output={outputs.report} deps={{ analyze: outputs.analysis }}>
+              {(deps) => ({
+                title: `Review of ${ctx.input.repo}`,
+                body: deps.analyze.summary,
+              })}
+            </Task>
+          </>
+        ) : null}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+Read the code before the explanation — most of it should be clear from the JSX alone.
+
+A few things worth calling out:
+
+- **Typed schemas** define what each task produces. No ambiguity about shape.
+- **Sequential execution** via `<Sequence>` ensures `analyze` finishes before anything downstream runs.
+- **Typed handoff** via `deps={{ ... }}` gives downstream tasks direct access to upstream output — no prompt-plumbing boilerplate.
+- **Render-time branching** via `ctx.outputMaybe(...)` handles the case where the analysis hasn't run yet (first render) versus when it has (subsequent renders).
+- **Conditional logic** with `<Branch>` skips the fix step entirely when there are no issues.
+
+That last point is the key insight: the JSX tree re-renders as tasks complete, and each render can produce a different tree based on what's known so far.
+
+## How Execution Works
+
+The workflow runs in a loop — think of it like React's render cycle, but for task orchestration:
+
+1. **Render** — Smithers renders the JSX tree with the current context
+2. **Extract** — It finds executable tasks from the rendered tree
+3. **Execute** — Ready tasks run (agent calls, functions, or static writes)
+4. **Persist** — Outputs are validated and written to SQLite
+5. **Repeat** — The tree re-renders with updated context until all tasks complete
+
+Each render can produce a different set of ready tasks because branching and `outputMaybe` respond to what's already been computed. This is the high-level cycle. For the full internal model, see [Execution Model](/concepts/execution-model).
+
+## Durability
+
+Here is where workflows earn their keep over a chain of `await` calls.
+
+Every completed task writes its output to SQLite immediately. If the process crashes:
+
+- Completed tasks are never re-run
+- The workflow resumes from the last incomplete task
+- Approval gates survive restarts
+- Loop iteration state is preserved
+
+Your laptop can go to sleep. Your server can reboot. An hour-long agent workflow picks up where it left off. See [Suspend and Resume](/concepts/suspend-and-resume) for the full durability model.
+
+## Running Workflows
+
+### From the CLI
+
+```bash
+# Start a new run
+smithers up workflow.tsx --input '{"repo": "/my-project"}'
+
+# Resume after a crash
+smithers up workflow.tsx --run-id abc123 --resume true
+
+# Check status
+smithers inspect abc123
+```
+
+### Programmatically
+
+```ts
+import { runWorkflow } from "smithers-orchestrator";
+import workflow from "./workflow";
+
+const result = await runWorkflow(workflow, {
+  input: { repo: "/my-project" },
+});
+
+if (result.status === "finished") {
+  console.log(result.output);
+}
+```
+
+## Result Statuses
+
+A workflow run resolves to one of these statuses:
+
+| Status | Meaning |
+| --- | --- |
+| `finished` | All tasks completed successfully |
+| `failed` | A task failed after exhausting retries |
+| `waiting-approval` | Paused at an approval gate |
+| `cancelled` | Stopped by the user or runtime |
+
+## Next Steps
+
+- [Control Flow](/concepts/control-flow) — Learn the four control-flow primitives and when to use each.
+- [Workflow State](/concepts/workflow-state) — Understand how data flows between tasks.
+- [JSX Quickstart](/api/quickstart) — Build your first workflow hands-on.

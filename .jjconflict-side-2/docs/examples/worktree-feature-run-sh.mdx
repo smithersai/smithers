@@ -1,0 +1,89 @@
+---
+title: "Ghost: scripts/worktree-feature/run.sh"
+description: "Example from scripts/worktree-feature/run.sh — Shell script launcher for the worktree-feature workflow with environment setup for CLI agents, debug mode, and unsafe permissions."
+---
+
+# scripts/worktree-feature/run.sh
+
+<Note>
+**Ghost doc** — Real launcher script at `scripts/worktree-feature/run.sh`.
+</Note>
+
+## Source
+
+```bash
+#!/usr/bin/env bash
+# Run the Worktree+MergeQueue feature workflow
+# Usage: ./run.sh
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+
+cd "$SCRIPT_DIR"
+
+export USE_CLI_AGENTS=1
+export SMITHERS_DEBUG=1
+export SMITHERS_UNSAFE=1
+unset ANTHROPIC_API_KEY
+
+SMITHERS_CLI="${SMITHERS_CLI:-./node_modules/.bin/smithers}"
+
+echo "Starting Worktree+MergeQueue feature workflow"
+echo "Root directory: $ROOT_DIR"
+echo "Press Ctrl+C to stop."
+echo ""
+
+bun "$SMITHERS_CLI" run workflow.tsx --input '{}' --root "$ROOT_DIR"
+```
+
+## package.json
+
+```json
+{
+  "name": "worktree-feature-workflow",
+  "type": "module",
+  "scripts": {
+    "start": "bun run workflow.tsx",
+    "resume": "smithers up workflow.tsx --run-id <run-id> --resume true",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.36",
+    "@ai-sdk/openai": "^2.0.0",
+    "ai": "^6.0.69",
+    "smithers-orchestrator": "file:../../",
+    "zod": "^4.3.6"
+  }
+}
+```
+
+## config.ts
+
+```ts
+// scripts/worktree-feature/config.ts
+
+/** Maximum review->fix rounds before the validation loop gives up. */
+export const MAX_REVIEW_ROUNDS = 3;
+
+/** Steps per review round (implement + validate + review + reviewfix). */
+export const STEPS_PER_ROUND = 4;
+```
+
+## preload.ts
+
+```ts
+// scripts/worktree-feature/preload.ts
+import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
+
+mdxPlugin();
+```
+
+## Key Details
+
+- `USE_CLI_AGENTS=1` selects CLI agents (Claude Code / Codex CLI) over API agents. `SMITHERS_UNSAFE=1` enables `dangerouslySkipPermissions` for unattended execution.
+- `"smithers-orchestrator": "file:../../"` links to the local package for co-development.
+- `preload.ts` registers the MDX plugin, enabling `.mdx` imports as JSX components.
+- `--root` passes the repository root so agents access the full codebase, not just the workflow directory.
+- `smithers up workflow.tsx --run-id <run-id> --resume true` resumes from the last checkpoint.

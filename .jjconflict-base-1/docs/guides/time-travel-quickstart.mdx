@@ -1,0 +1,141 @@
+---
+title: Time Travel Quickstart
+description: Replay a failed run, diff two runs, fork and experiment, view the timeline.
+---
+
+This guide walks through the four core time travel operations: replaying a failed run, diffing two snapshots, forking a run for experimentation, and viewing the execution timeline.
+
+## Prerequisites
+
+- A Smithers project with at least one completed or failed run
+- The `smithers` CLI installed (`bunx smithers`)
+
+## Replay a Failed Run
+
+Suppose you ran a workflow and it failed at the `implement` task:
+
+```bash
+bunx smithers up workflow.tsx --input '{"ticket":"AUTH-42"}' --run-id run-001
+# [00:02:15] -> analyze (attempt 1, iteration 0)
+# [00:02:45] checkmark analyze (attempt 1)
+# [00:02:46] -> implement (attempt 1, iteration 0)
+# [00:05:30] x implement (attempt 1): LLM returned invalid code
+# [00:05:31] x Run failed
+```
+
+The run captured snapshots at every frame. To replay from the frame just before `implement` started:
+
+```bash
+bunx smithers replay workflow.tsx --run-id run-001 --frame 2 --node implement
+```
+
+This creates a new run forked from `run-001` at frame 2 with the `implement` node reset to pending. Everything before it (the `analyze` output) is preserved.
+
+To replay with modified input:
+
+```bash
+bunx smithers replay workflow.tsx --run-id run-001 --frame 2 \
+  --input '{"ticket":"AUTH-42","hint":"Use OAuth2 instead of session tokens"}' \
+  --label "oauth2-attempt"
+```
+
+The `--label` flag gives this fork a human-readable name for the timeline.
+
+## Diff Two Snapshots
+
+Compare what changed between two frames in the same run:
+
+```bash
+bunx smithers diff workflow.tsx run-001:1 run-001:3
+```
+
+Output shows which nodes changed state, which outputs were added or modified, and whether the input or VCS pointer changed.
+
+Compare the final states of two different runs (e.g., the original and a replay):
+
+```bash
+bunx smithers diff workflow.tsx run-001 run-002
+```
+
+For machine-readable output:
+
+```bash
+bunx smithers diff workflow.tsx run-001 run-002 --json
+```
+
+## Fork a Run
+
+Forking creates a new run from a snapshot without immediately executing it. Use this when you want to set up the fork first and run it later:
+
+```bash
+# Fork from frame 2, reset the implement node
+bunx smithers fork workflow.tsx --run-id run-001 --frame 2 \
+  --reset-node implement \
+  --label "experiment-1"
+
+# The fork is created but not running. Start it:
+bunx smithers up workflow.tsx --run-id <forked-run-id> --resume
+```
+
+To fork and run in one step:
+
+```bash
+bunx smithers fork workflow.tsx --run-id run-001 --frame 2 \
+  --reset-node implement \
+  --label "experiment-1" \
+  --run
+```
+
+## View the Timeline
+
+See the execution history for a run:
+
+```bash
+bunx smithers timeline run-001
+```
+
+```
+run-001
+  Frame 0  2024-03-15T10:00:00Z  (initial)
+  Frame 1  2024-03-15T10:00:01Z  analyze: pending -> running
+  Frame 2  2024-03-15T10:02:45Z  analyze: finished
+  Frame 3  2024-03-15T10:02:46Z  implement: pending -> running
+  Frame 4  2024-03-15T10:05:30Z  implement: failed
+```
+
+To include all forks in a tree view:
+
+```bash
+bunx smithers timeline run-001 --tree
+```
+
+```
+run-001
+  Frame 0  (initial)
+  Frame 1  analyze: pending -> running
+  Frame 2  analyze: finished
+  |-- run-002 [experiment-1] (forked at frame 2)
+  |     Frame 0  (from run-001:2)
+  |     Frame 1  implement: pending -> running
+  |     Frame 2  implement: finished
+  Frame 3  implement: pending -> running
+  Frame 4  implement: failed
+```
+
+JSON output for scripting:
+
+```bash
+bunx smithers timeline run-001 --tree --json
+```
+
+## Restoring VCS State
+
+If your project uses jj and the run recorded VCS pointers, you can replay with filesystem state restored:
+
+```bash
+bunx smithers replay workflow.tsx --run-id run-001 --frame 2 \
+  --node implement \
+  --restore-vcs
+```
+
+This creates a jj workspace at the revision that was active at frame 2 and runs the workflow there. The code running the workflow is identical to what ran originally.

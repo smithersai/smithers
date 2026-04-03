@@ -1,0 +1,209 @@
+---
+title: Suspend and Resume
+description: How Smithers workflows pause, persist state, and resume execution after crashes, approvals, and interruptions.
+---
+
+You have a workflow with twelve steps. Steps one through six took forty minutes and burned real money on agent calls. Step seven crashes. You re-run the workflow. It starts at step one.
+
+That is the problem. Suspend and resume is the solution.
+
+## The Durability Contract
+
+The rule fits in one sentence:
+
+> A completed task is never re-executed. When a workflow resumes, it picks up from the first incomplete task.
+
+Think of it like a save game. Every time a task finishes, Smithers writes the result to disk. If the power goes out, you do not replay the entire game from the title screen. You reload your last save and keep going.
+
+So that forty-minute, twelve-step workflow that crashed at step seven? You resume from step seven. Steps one through six are done. Their outputs are already in SQLite. You do not pay for them again.
+
+## How State Is Preserved
+
+Every task output is written to SQLite immediately on completion, keyed by `(runId, nodeId, iteration)`. When you resume a run, Smithers does five things:
+
+1. **Loads existing state** -- Reads run metadata, node states, and attempt history from SQLite
+2. **Validates the environment** -- Checks that the workflow file hash and VCS revision match the original run
+3. **Cleans up stale work** -- Cancels any in-progress attempts older than 15 minutes
+4. **Re-renders** -- Builds the JSX tree with persisted outputs already in context
+5. **Continues** -- Schedules and executes remaining incomplete tasks
+
+No magic. The database is the source of truth, and the resume logic walks it forward.
+
+## Three Ways Workflows Pause
+
+There are exactly three reasons a workflow stops before it finishes: something broke, someone needs to decide, or you told it to stop.
+
+### 1. Crash Recovery
+
+The process dies. Maybe the machine ran out of memory. Maybe you hit Ctrl-C at the wrong moment. Either way, some tasks are stuck in `in-progress` with no process behind them.
+
+On resume, Smithers handles this automatically:
+
+```bash
+# Start a run — crashes midway through "implement"
+smithers up workflow.tsx --run-id run-1 --input '{"repo": "/my-project"}'
+
+# "analyze" finished, "implement" was in-progress, "report" was pending
+# Resume picks up from "implement"
+smithers up workflow.tsx --run-id run-1 --resume true
+```
+
+"But what about that stuck in-progress task?" Good question. In-progress attempts older than 15 minutes are marked cancelled and retried. This is a deliberate tradeoff: it prevents zombie tasks from blocking the workflow forever, while still giving legitimately long-running tasks room to finish.
+
+### 2. Approval Gates
+
+Some steps should not proceed without a human saying yes. When a workflow reaches an `<Approval>` node or a `<Task needsApproval>`, it pauses durably until someone decides:
+
+```tsx
+<Approval
+  id="deploy-approval"
+  output={outputs.approval}
+  request={{
+    title: "Deploy to production?",
+    summary: "All checks passed. Ready to ship.",
+  }}
+  onDeny="fail"
+/>
+```
+
+The workflow enters `waiting-approval` status. Nothing runs. Nothing times out. It waits as long as it needs to. Resolve it from the CLI:
+
+```bash
+smithers approve run-1 --node deploy-approval --note "Ship it"
+smithers up workflow.tsx --run-id run-1 --resume true
+```
+
+Or deny it:
+
+```bash
+smithers deny run-1 --node deploy-approval --note "Blocked by QA"
+```
+
+See [Human-in-the-Loop](/concepts/human-in-the-loop) for the full pattern.
+
+### 3. Manual Cancellation
+
+Sometimes you want to stop a workflow on purpose -- maybe you realized the input was wrong, or you need the machine for something else. Cancel now, resume later:
+
+```bash
+# Cancel a running workflow
+smithers cancel run-1
+
+# Later, resume from where it stopped
+smithers up workflow.tsx --run-id run-1 --resume true
+```
+
+The workflow picks up where it left off, as if nothing happened.
+
+## What Gets Skipped on Resume
+
+This table is worth memorizing, or at least bookmarking:
+
+| Node state before resume | Behavior on resume |
+| --- | --- |
+| `finished` | Skipped. Output exists and is valid. |
+| `skipped` | Remains skipped. |
+| `failed` (retries exhausted) | Stays failed unless workflow code now allows more retries. |
+| `in-progress` (stale, >15 min) | Cancelled, then retried as `pending`. |
+| `in-progress` (recent) | Left in-progress. Will time out and be cleaned up on next resume. |
+| `pending` | Scheduled for execution. |
+| `waiting-approval` | Stays waiting. Approve or deny to unblock. |
+| `cancelled` | Stays cancelled. |
+
+The logic is straightforward: finished work stays finished, pending work gets scheduled, and anything stuck in limbo gets cleaned up. No surprises.
+
+## Resuming Programmatically
+
+The CLI is fine for manual recovery. For automation, use the API directly:
+
+```ts
+import { runWorkflow } from "smithers-orchestrator";
+import workflow from "./workflow";
+
+// Initial run
+const result1 = await runWorkflow(workflow, {
+  runId: "my-run",
+  input: { repo: "/my-project" },
+});
+
+// result1.status might be "failed" or "waiting-approval"
+
+// Resume later
+const result2 = await runWorkflow(workflow, {
+  runId: "my-run",
+  resume: true,
+});
+// result2 picks up from where result1 left off
+```
+
+Same contract, different interface. The `runId` is the thread that ties the two calls together.
+
+## Stable Task IDs
+
+Here is where most people trip up.
+
+Resumability depends on **stable, deterministic task identity**. The `id` prop on each `<Task>` becomes the durable key in SQLite. If the key changes between runs, Smithers cannot find the old output. It treats the task as new and runs it from scratch.
+
+```tsx
+// Good — stable, descriptive IDs
+<Task id="analyze" output={outputs.analysis}>...</Task>
+<Task id={`${ticket.id}:implement`} output={outputs.implement}>...</Task>
+
+// Bad — IDs that change between renders
+<Task id={`task-${Math.random()}`} output={outputs.analysis}>...</Task>
+<Task id={`task-${index}`} output={outputs.analysis}>...</Task>
+```
+
+Why is `task-${index}` bad? Because if you insert a new item at the beginning of a list, every index shifts. Task 3 becomes task 4, and suddenly Smithers loads task 4's old output into the wrong context. This is the same problem React has with list keys, and the fix is the same: derive keys from the data, not the position.
+
+**Rules for stable IDs:**
+- Use fixed strings for static tasks: `id="analyze"`, `id="report"`
+- Derive IDs from stable data for dynamic tasks: `id={`${ticket.id}:implement`}`
+- Never use array indices, timestamps, or random values
+
+## Loop State Persistence
+
+Loops are where durability really earns its keep. If a workflow crashes mid-loop, you do not want to replay every completed iteration.
+
+And you do not have to:
+
+- Completed iterations are preserved (each has its own output row)
+- The loop resumes from the incomplete iteration
+- `ctx.latest()` correctly returns the most recent completed output
+
+```tsx
+<Loop until={approved} maxIterations={5}>
+  <Sequence>
+    <Task id="implement" output={outputs.implement} agent={coder}>...</Task>
+    <Task id="review" output={outputs.review} agent={reviewer}>...</Task>
+  </Sequence>
+</Loop>
+```
+
+If the process crashes after iteration 2's `implement` but before `review`, resuming picks up at iteration 2's `review` task. Iterations 0 and 1 are untouched. Their outputs sit in SQLite, ready for anything that needs them.
+
+## Environment Validation
+
+"What if I fix a bug in my workflow and then resume?" Smithers will not let you.
+
+On resume, Smithers checks that:
+
+- The workflow file hash matches the original run
+- The VCS revision matches (if tracked)
+
+If either changed, resume is rejected. This is intentional. Resuming a run with a different workflow definition could produce inconsistent state -- imagine step eight reading outputs from steps one through seven that were produced by different code.
+
+To fix a bug and retry, start a fresh run:
+
+```bash
+# Fix the workflow code, then start new
+smithers up workflow.tsx --input '{"repo": "/my-project"}'
+```
+
+It costs you the re-execution, but it guarantees consistency. That is a trade worth making.
+
+## Next Steps
+
+- [Human-in-the-Loop](/concepts/human-in-the-loop) -- Approval gates, denial policies, and multi-step approval patterns.
+- [Resumability Guide](/guides/resumability) -- Practical tips for designing resumable workflows.
+- [Execution Model](/concepts/execution-model) -- The internal execution loop that drives suspend and resume.

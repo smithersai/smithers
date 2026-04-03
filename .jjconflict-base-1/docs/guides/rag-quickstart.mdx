@@ -1,0 +1,145 @@
+---
+title: RAG Quickstart
+description: Set up a RAG pipeline, ingest documents, and query from a workflow.
+---
+
+## Prerequisites
+
+- `smithers-orchestrator` version 0.12.8 or later
+- An OpenAI API key (or another AI SDK-supported embedding provider)
+
+No extra packages needed. The `ai` and `@ai-sdk/openai` dependencies are already included.
+
+## Create a Vector Store
+
+The vector store uses your workflow's existing SQLite database:
+
+```ts
+import { createSqliteVectorStore } from "smithers-orchestrator/rag";
+import { createSmithers } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { outputs, workflow } = createSmithers({
+  answer: z.object({ text: z.string() }),
+});
+
+const store = createSqliteVectorStore(workflow.db);
+```
+
+## Build a Pipeline
+
+Wire together chunking, embedding, and storage:
+
+```ts
+import { createRagPipeline } from "smithers-orchestrator/rag";
+import { openai } from "@ai-sdk/openai";
+
+const pipeline = createRagPipeline({
+  vectorStore: store,
+  embeddingModel: openai.embedding("text-embedding-3-small"),
+  chunkOptions: { strategy: "markdown", size: 1000, overlap: 200 },
+});
+```
+
+## Ingest Documents
+
+Load and ingest files:
+
+```ts
+await pipeline.ingestFile("./docs/api-reference.md");
+await pipeline.ingestFile("./docs/architecture.md");
+```
+
+Or create documents from strings:
+
+```ts
+import { createDocument } from "smithers-orchestrator/rag";
+
+const doc = createDocument(
+  "Smithers uses a unidirectional dataflow model...",
+  { metadata: { source: "design-doc" } },
+);
+await pipeline.ingest([doc]);
+```
+
+## Query the Pipeline
+
+```ts
+const results = await pipeline.retrieve("How does the scheduler work?", {
+  topK: 5,
+});
+
+for (const r of results) {
+  console.log(`[${r.score.toFixed(3)}] ${r.chunk.content.slice(0, 100)}...`);
+}
+```
+
+## Give Agents a RAG Tool
+
+Create a tool that agents can call to search the knowledge base:
+
+```ts
+import { createRagTool } from "smithers-orchestrator/rag";
+
+const searchDocs = createRagTool(pipeline, {
+  name: "search_docs",
+  description: "Search project documentation for relevant context",
+});
+```
+
+Use it in a workflow:
+
+```tsx
+import { Workflow, Task, OpenAIAgent } from "smithers-orchestrator";
+
+const agent = new OpenAIAgent({
+  model: "gpt-4o",
+  tools: { search_docs: searchDocs },
+});
+
+export default (
+  <Workflow>
+    <Task id="answer" output={outputs.answer} agent={agent}>
+      Answer the user's question using the search_docs tool.
+    </Task>
+  </Workflow>
+);
+```
+
+## Use Namespaces
+
+Keep different document collections separate:
+
+```ts
+const apiPipeline = createRagPipeline({
+  vectorStore: store,
+  embeddingModel: openai.embedding("text-embedding-3-small"),
+  chunkOptions: { strategy: "markdown", size: 1000, overlap: 200 },
+  namespace: "api-docs",
+});
+
+const designPipeline = createRagPipeline({
+  vectorStore: store,
+  embeddingModel: openai.embedding("text-embedding-3-small"),
+  chunkOptions: { strategy: "recursive", size: 800, overlap: 100 },
+  namespace: "design-docs",
+});
+```
+
+## CLI Usage
+
+Ingest and query without writing code:
+
+```bash
+# Ingest a markdown file
+smithers rag ingest ./docs/api.md --workflow my-workflow.tsx --namespace api-docs
+
+# Query the knowledge base
+smithers rag query "authentication flow" --workflow my-workflow.tsx --namespace api-docs --top-k 3
+```
+
+## Next Steps
+
+- Read [RAG Concepts](/concepts/rag) for details on chunking strategies and vector storage
+- See [Structured Output](/guides/structured-output) for validating agent responses
+- See [Model Selection](/guides/model-selection) for choosing embedding models

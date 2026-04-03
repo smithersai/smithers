@@ -1,0 +1,291 @@
+---
+title: Agents and Tools
+description: How to use AI agents and built-in tools within Smithers workflow tasks.
+---
+
+You have a workflow. Some of its tasks require judgment -- reading code, spotting bugs, drafting implementations. You could write heuristics for that, but heuristics are brittle and exhausting to maintain. What you really want is to drop an AI into a task and say "figure it out." That is what agents are for.
+
+## Agents in Workflows
+
+An agent handles the thinking inside a task. Give a `<Task>` the `agent` prop and three things happen: the children become the prompt, the agent reasons and responds, and Smithers validates the response against the output schema. No ceremony required.
+
+### Using an Agent
+
+The simplest case first:
+
+```tsx
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { read, grep, bash } from "smithers-orchestrator";
+
+const codeAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a senior software engineer.",
+  tools: { read, grep, bash },
+});
+
+<Task id="analyze" output={outputs.analysis} agent={codeAgent}>
+  {`Analyze the codebase in ${ctx.input.repo} and identify security issues.`}
+</Task>
+```
+
+That is the whole pattern. The children render into a prompt string. The agent uses its tools to explore the codebase. Smithers captures the response and checks it against the `analysis` schema. If the response is valid, the task completes. If not -- well, we will get to that.
+
+### Agent Types
+
+Where does the AI actually run? Smithers gives you two options, and they are interchangeable.
+
+**SDK Agents** talk directly to a provider API. You pay per token, you get fine-grained control:
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+
+const claude = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, write, edit, grep, bash },
+});
+```
+
+**CLI Agents** wrap external AI command-line tools. Same interface, different engine under the hood:
+
+```ts
+import { ClaudeCodeAgent, CodexAgent, GeminiAgent } from "smithers-orchestrator";
+
+const claude = new ClaudeCodeAgent({ model: "claude-sonnet-4-20250514" });
+const codex = new CodexAgent({ model: "gpt-4.1", fullAuto: true });
+const gemini = new GeminiAgent({ model: "gemini-2.5-pro" });
+```
+
+Why does this matter? Because the `<Task>` does not care which kind you hand it:
+
+```tsx
+// Same syntax regardless of agent type
+<Task id="review" output={outputs.review} agent={claude}>
+  Review the code for issues.
+</Task>
+```
+
+Swap `claude` for `codex` and the task works the same way. The interface is the seam; what sits behind it is your choice.
+
+### Structured Output
+
+Agents do not return free-form text. They return data, validated against a Zod schema. This is the contract that makes agents composable -- downstream tasks can depend on the shape of what comes back.
+
+```tsx
+const { outputs } = createSmithers({
+  analysis: z.object({
+    summary: z.string(),
+    risk: z.enum(["low", "medium", "high"]),
+    issues: z.array(z.object({
+      file: z.string(),
+      description: z.string(),
+    })),
+  }),
+});
+
+// The agent must return data matching the analysis schema
+<Task id="analyze" output={outputs.analysis} agent={codeAgent} retries={2}>
+  Analyze the codebase and report issues.
+</Task>
+```
+
+What happens when an agent returns `{ summary: "...", risk: "critical" }`? Validation fails -- `"critical"` is not in the enum. Smithers feeds the Zod error back to the agent and retries. The agent sees its own mistake, corrects it, and tries again. Think of it as a compiler error for AI output.
+
+### Agent Fallback Chains
+
+Agents fail. Models go down, rate limits hit, responses come back garbled. You do not want your workflow to stop because one provider had a bad minute.
+
+Pass an array of agents to create a fallback chain:
+
+```tsx
+<Task
+  id="implement"
+  output={outputs.implement}
+  agent={[codex, claude]}
+  retries={2}
+>
+  Implement the feature described in the ticket.
+</Task>
+```
+
+First attempt uses `codex`. If it fails, `claude` takes over on retry. This is a practical pattern: start with the fast, cheap option; fall back to the more capable one.
+
+For the common case of a single fallback, there is a dedicated prop:
+
+```tsx
+<Task
+  id="implement"
+  output={outputs.implement}
+  agent={codex}
+  fallbackAgent={claude}
+  retries={1}
+>
+  Implement the feature.
+</Task>
+```
+
+## Multi-Agent Patterns
+
+One agent per task is the simple case. But some problems benefit from multiple perspectives or a division of labor.
+
+### Parallel Review
+
+Ask two agents the same question and compare answers. This is the "get a second opinion" pattern:
+
+```tsx
+<Parallel>
+  <Task id="review-claude" output={outputs.review} agent={claude} continueOnFail>
+    <ReviewPrompt code={code} reviewer="claude" />
+  </Task>
+  <Task id="review-codex" output={outputs.review} agent={codex} continueOnFail>
+    <ReviewPrompt code={code} reviewer="codex" />
+  </Task>
+</Parallel>
+```
+
+The `continueOnFail` prop is important here. If one reviewer times out or crashes, the other still completes. You get at least one review instead of zero.
+
+### Pipeline Handoff
+
+Different agents are good at different things. Let each one do what it does best:
+
+```tsx
+<Sequence>
+  <Task id="implement" output={outputs.implement} agent={codex}>
+    Write the implementation.
+  </Task>
+  <Task id="review" output={outputs.review} agent={claude}>
+    {`Review this implementation: ${ctx.output(outputs.implement, { nodeId: "implement" }).summary}`}
+  </Task>
+</Sequence>
+```
+
+Codex writes the code. Claude reviews it. You would not ask the same person to write and review their own work -- same logic applies here.
+
+## Tools
+
+An agent without tools is a brain in a jar. It can reason about what you tell it, but it cannot look at your files, run your tests, or check what is on disk. Tools fix that.
+
+Smithers provides five built-in tools, each doing one thing well:
+
+| Tool | Purpose | Input |
+| --- | --- | --- |
+| `read` | Read a file | `{ path }` |
+| `write` | Write a file | `{ path, content }` |
+| `edit` | Apply a unified diff patch | `{ path, patch }` |
+| `grep` | Search files with regex | `{ pattern, path? }` |
+| `bash` | Execute a shell command | `{ cmd, args?, opts? }` |
+
+### Assigning Tools to Agents
+
+Pass them in when you create the agent:
+
+```ts
+import { read, write, edit, grep, bash } from "smithers-orchestrator";
+
+const coder = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, write, edit, grep, bash },
+});
+```
+
+Or grab them all at once:
+
+```ts
+import { tools } from "smithers-orchestrator";
+
+const coder = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools,
+});
+```
+
+### Sandboxing
+
+You might be wondering: "I am giving an AI shell access. How do I not lose sleep over this?"
+
+All tools are sandboxed to `rootDir` (defaults to the workflow directory). The constraints are straightforward:
+
+- File paths are resolved relative to the root
+- Symlinks that escape the sandbox are rejected
+- Output is truncated to `maxOutputBytes` (default 200KB)
+- Shell commands have a 60-second timeout
+- Network access is blocked by default in `bash`
+
+The agent can explore and modify your project. It cannot escape the sandbox, phone home, or run indefinitely.
+
+### Read-Only vs Full-Access Agents
+
+Here is a question worth asking for every agent you create: does it actually need write access?
+
+A reviewer does not need to modify files. A code generator does. Match the tools to the job:
+
+```tsx
+// Reviewer only needs to read — no write/edit access
+const reviewer = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, grep },
+});
+
+// Implementer needs full access
+const coder = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, write, edit, grep, bash },
+});
+```
+
+Least privilege is not just a security principle. It is also a guardrail against expensive mistakes -- an agent that cannot write files cannot write bad files.
+
+## Task Modes Without Agents
+
+Not everything requires AI. Some tasks are deterministic. Some are just data. Smithers handles both without reaching for an agent.
+
+### Compute Mode
+
+When children is a function and there is no agent, the function runs directly at execution time:
+
+```tsx
+<Task id="validate" output={outputs.validation} timeoutMs={30000}>
+  {async () => {
+    const result = await $`bun test`.quiet();
+    return { passed: result.exitCode === 0, output: result.text() };
+  }}
+</Task>
+```
+
+Use compute mode for things that have a right answer: running tests, calling APIs, transforming data. No AI needed, no tokens burned.
+
+### Static Mode
+
+When children is a plain value, Smithers writes it directly as output. No computation, no agent -- just data:
+
+```tsx
+<Task id="config" output={outputs.config}>
+  {{ environment: "production", version: "2.1.0" }}
+</Task>
+```
+
+Use static mode for constants, values computed from upstream outputs, or seeding data into later tasks.
+
+## Choosing the Right Approach
+
+When you are staring at a new task, ask: does this require judgment?
+
+| Scenario | Approach |
+| --- | --- |
+| Need AI reasoning or generation | Agent mode with `agent` prop |
+| Need to run shell commands or tests | Compute mode with async callback |
+| Need to pass data between steps | Static mode with literal value |
+| Need AI + file access | Agent mode with tools |
+| Need resilient AI calls | Agent with `retries` and/or `fallbackAgent` |
+| Need diverse AI perspectives | Parallel tasks with different agents |
+
+If yes, use an agent. If no, use compute or static mode. If you are unsure, start without an agent -- you can always add one later.
+
+## Next Steps
+
+- [Built-in Tools](/integrations/tools) -- Full API reference for all five tools.
+- [CLI Agents](/integrations/cli-agents) -- Using Claude Code, Codex, Gemini, and other CLI agents.
+- [SDK Agents](/integrations/sdk-agents) -- Using API-billed provider agents.
+- [Implement-Review Loop](/guides/review-loop) -- A production pattern using multi-agent review.

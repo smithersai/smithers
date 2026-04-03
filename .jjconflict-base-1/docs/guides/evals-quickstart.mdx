@@ -1,0 +1,168 @@
+---
+title: "Evals Quickstart"
+description: Add quality scoring to your Smithers workflow in under five minutes.
+---
+
+This guide walks you through adding scorers to an existing workflow. By the end you will have live scoring on every task run, with results visible in the CLI and TUI.
+
+## Prerequisites
+
+- A working Smithers workflow (see [Tutorial: Build a Workflow](/guides/tutorial-workflow))
+- At least one `<Task>` with an agent
+
+## Step 1: Import Scorers
+
+```tsx
+import {
+  schemaAdherenceScorer,
+  latencyScorer,
+  relevancyScorer,
+} from "smithers-orchestrator/scorers";
+```
+
+## Step 2: Attach Scorers to a Task
+
+Add the `scorers` prop to any `<Task>`:
+
+```tsx
+<Task
+  id="analyze"
+  agent={claude}
+  output={outputs.analysis}
+  scorers={{
+    schema: { scorer: schemaAdherenceScorer() },
+    latency: { scorer: latencyScorer({ targetMs: 5000, maxMs: 30000 }) },
+  }}
+>
+  <AnalysisPrompt />
+</Task>
+```
+
+These two scorers are code-based and require no additional LLM calls.
+
+## Step 3: Add LLM-based Scoring (Optional)
+
+For LLM-as-judge evaluation, pass an agent to the scorer factory:
+
+```tsx
+import { AnthropicAgent } from "smithers-orchestrator";
+
+const judge = new AnthropicAgent({
+  model: "claude-sonnet-4-20250514",
+});
+
+<Task
+  id="analyze"
+  agent={claude}
+  output={outputs.analysis}
+  scorers={{
+    schema: { scorer: schemaAdherenceScorer() },
+    relevancy: {
+      scorer: relevancyScorer(judge),
+      sampling: { type: "ratio", rate: 0.2 },  // Score 20% of runs
+    },
+  }}
+>
+  <AnalysisPrompt />
+</Task>
+```
+
+## Step 4: Run Your Workflow
+
+```bash
+smithers up workflow.tsx
+```
+
+If you are running a discovered workflow from `.smithers/workflows`, use `smithers workflow run <name>` instead.
+
+Scorers run asynchronously after each task finishes. They never slow down your workflow.
+
+## Step 5: View Scores
+
+### CLI
+
+```bash
+# List all scores for a run
+smithers scores <run_id>
+```
+
+Example output:
+
+```
+Scores for run abc123
+┌──────────┬────────────────────┬───────┬───────────────────────────────┐
+│ Node     │ Scorer             │ Score │ Reason                        │
+├──────────┼────────────────────┼───────┼───────────────────────────────┤
+│ analyze  │ Schema Adherence   │  1.00 │ Output matches schema         │
+│ analyze  │ Latency            │  0.85 │ 7200ms (target: 5000ms)       │
+│ analyze  │ Relevancy          │  0.92 │ Output directly addresses ... │
+└──────────┴────────────────────┴───────┴───────────────────────────────┘
+```
+
+### TUI
+
+Open the TUI with `smithers tui`, navigate to a task, and switch to the **Scores** tab to see per-task scoring results.
+
+## Step 6: Custom Scorers
+
+Build your own scorer with `createScorer`:
+
+```ts
+import { createScorer } from "smithers-orchestrator/scorers";
+
+const wordCountScorer = createScorer({
+  id: "word-count",
+  name: "Word Count",
+  description: "Scores based on output word count",
+  score: async ({ output }) => {
+    const words = String(output).split(/\s+/).length;
+    const score = Math.min(words / 200, 1);
+    return {
+      score,
+      reason: `Output contains ${words} words`,
+    };
+  },
+});
+```
+
+## Step 7: LLM-as-Judge Custom Scorers
+
+Use `llmJudge` to build custom LLM-based scorers:
+
+```ts
+import { llmJudge } from "smithers-orchestrator/scorers";
+
+const toneScorer = llmJudge({
+  id: "professional-tone",
+  name: "Professional Tone",
+  description: "Evaluates if the output maintains a professional tone",
+  judge,
+  instructions: "You evaluate whether text maintains a professional, business-appropriate tone.",
+  promptTemplate: ({ input, output }) =>
+    `Rate the professionalism of this response on a scale of 0-1.\n\nInput: ${String(input)}\n\nOutput: ${String(output)}\n\nRespond with a JSON object: { "score": <number>, "reason": "<explanation>" }`,
+});
+```
+
+## Batch Evaluation
+
+For testing and offline evaluation, use `runScorersBatch` directly:
+
+```ts
+import { runScorersBatch } from "smithers-orchestrator/scorers";
+
+const results = await runScorersBatch(
+  {
+    myScorer: { scorer: schemaAdherenceScorer() },
+  },
+  {
+    runId: "test-run",
+    nodeId: "analyze",
+    iteration: 0,
+    attempt: 0,
+    input: "Analyze this code",
+    output: { summary: "The code is clean" },
+    outputSchema: analysisSchema,
+  },
+  adapter,
+);
+```

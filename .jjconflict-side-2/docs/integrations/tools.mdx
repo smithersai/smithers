@@ -1,0 +1,257 @@
+---
+title: Built-in Tools
+description: Sandboxed file and shell tools for AI agent tasks, with exact input schemas, security policies, and usage examples.
+---
+
+```ts
+import { tools, read, write, edit, grep, bash } from "smithers-orchestrator";
+```
+
+`tools` bundles all five tools keyed by name:
+
+```ts
+const { read, write, edit, grep, bash } = tools;
+```
+
+## Sandboxing
+
+All tools are sandboxed to `rootDir` (defaults to the workflow directory). Paths are resolved relative to this root; escapes via symlinks are rejected.
+
+| Policy | Behavior |
+|---|---|
+| Path resolution | Relative paths resolve against `rootDir`. Absolute paths must fall within root. |
+| Symlinks | Rejected if target is outside sandbox. |
+| Output size | Truncated to `maxOutputBytes` (default 200KB). |
+| Timeouts | `bash` and `grep` default to 60s; exceeded processes killed with `SIGKILL`. |
+| Network | `bash` blocks network commands by default. See [bash](#bash). |
+
+## Tool Call Logging
+
+Every invocation is logged to `_smithers_tool_calls`:
+
+| Field | Description |
+|---|---|
+| `runId` | Workflow run ID |
+| `nodeId` | Task node that invoked the tool |
+| `iteration` | Loop iteration |
+| `attempt` | Retry attempt number |
+| `seq` | Sequential call counter within the task |
+| `toolName` | `read`, `write`, `edit`, `grep`, or `bash` |
+| `inputJson` | Serialized input arguments |
+| `outputJson` | Serialized output (truncated if over limit) |
+| `startedAtMs` | Start timestamp |
+| `finishedAtMs` | End timestamp |
+| `status` | `"success"` or `"error"` |
+| `errorJson` | Error details (if `"error"`) |
+
+---
+
+## read
+
+Read a file from the sandbox.
+
+```ts
+{ path: string }  // relative to rootDir or absolute
+```
+
+Returns file contents as UTF-8. Throws `"File too large"` if size exceeds `maxOutputBytes`.
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { read, grep } from "smithers-orchestrator";
+
+const codeAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, grep },
+});
+```
+
+```tsx
+{/* outputs comes from createSmithers() */}
+<Task id="review" output={outputs.review} agent={codeAgent}>
+  Read the file src/auth.ts and identify any security vulnerabilities.
+</Task>
+```
+
+---
+
+## write
+
+Write content to a file. Creates parent directories as needed.
+
+```ts
+{
+  path: string      // relative to rootDir or absolute
+  content: string
+}
+```
+
+Returns `"ok"`. Throws `"Content too large"` if content exceeds `maxOutputBytes`. Logs content hash (SHA-256) and byte size; full content is not stored.
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { write, read } from "smithers-orchestrator";
+
+const writerAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { write, read },
+});
+```
+
+---
+
+## edit
+
+Apply a unified diff patch to an existing file.
+
+```ts
+{
+  path: string    // file to patch
+  patch: string   // unified diff format
+}
+```
+
+Returns `"ok"`. The file must exist. Reads current contents, applies the patch via `applyPatch`, writes back. Throws on size limits (`"Patch too large"`, `"File too large"`) or mismatched context (`"Failed to apply patch"`). Logs patch hash and byte size.
+
+```
+--- a/src/auth.ts
++++ b/src/auth.ts
+@@ -10,3 +10,4 @@
+   const token = jwt.sign(payload, secret);
++  logger.info("Token issued", { userId: payload.sub });
+   return token;
+```
+
+---
+
+## grep
+
+Search for a regex pattern using `ripgrep`.
+
+```ts
+{
+  pattern: string    // regex
+  path?: string      // directory or file (default: rootDir)
+}
+```
+
+Returns matching lines with file paths and line numbers (`rg -n` format). Exit code 1 (no matches) returns empty string. Exit code 2 throws stderr as error. Requires `ripgrep` in PATH.
+
+```
+src/auth.ts:15:  if (token.expired()) {
+src/auth.ts:42:  validateToken(token);
+tests/auth.test.ts:8:  const token = createTestToken();
+```
+
+---
+
+## bash
+
+Execute a shell command.
+
+```ts
+{
+  cmd: string                     // executable or command
+  args?: string[]                 // arguments
+  opts?: { cwd?: string }        // working directory (sandboxed)
+}
+```
+
+Returns combined stdout and stderr. Working directory defaults to `rootDir`. Timeout: 60s (killed with `SIGKILL` via process group). Non-zero exit codes throw.
+
+### Network Blocking
+
+Controlled by `allowNetwork` in `RunOptions`, `--allow-network` on CLI, or server config. Default: blocked.
+
+When blocked, the command string (executable + args) is checked against these fragments:
+
+| Category | Blocked strings |
+|---|---|
+| HTTP clients | `curl`, `wget` |
+| URL prefixes | `http://`, `https://` |
+| Package managers | `npm`, `bun`, `pip` |
+| Git remote ops | `git push`, `git pull`, `git fetch`, `git clone`, `git remote` |
+
+Local git commands (`git status`, `git diff`, `git log`) are allowed.
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { bash } from "smithers-orchestrator";
+
+const devAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { bash },
+});
+```
+
+```tsx
+{/* outputs comes from createSmithers() */}
+<Task id="lint" output={outputs.lint} agent={devAgent}>
+  Run the linter on src/ and report any issues.
+</Task>
+```
+
+---
+
+## Using Tools with Agents
+
+Pass tools to an AI SDK agent, assign the agent to a `<Task>`:
+
+```tsx
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { read, write, edit, grep, bash } from "smithers-orchestrator";
+
+const codeAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, write, edit, grep, bash },
+  instructions: "You are a senior engineer. Use the available tools to complete tasks.",
+});
+
+const { Workflow, smithers, outputs } = createSmithers({
+  result: z.object({ summary: z.string() }),
+});
+
+export default smithers((ctx) => (
+  <Workflow name="refactor">
+    <Task id="refactor" output={outputs.result} agent={codeAgent}>
+      {`Refactor the function in ${ctx.input.file} to improve readability.`}
+    </Task>
+  </Workflow>
+));
+```
+
+The full bundle works too:
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { tools } from "smithers-orchestrator";
+
+const fullAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools,
+});
+```
+
+## Configuration
+
+| Option | Default | Description |
+|---|---|---|
+| `rootDir` | Workflow directory | Sandbox root |
+| `allowNetwork` | `false` | Allow network commands in `bash` |
+| `maxOutputBytes` | `200000` (200KB) | Max output size per tool |
+| `toolTimeoutMs` | `60000` (60s) | Timeout for `bash` and `grep` |
+
+```ts
+const result = await runWorkflow(workflow, {
+  input: { file: "src/auth.ts" },
+  rootDir: "/home/project",
+  allowNetwork: false,
+  maxOutputBytes: 500_000,
+  toolTimeoutMs: 120_000,
+});
+```

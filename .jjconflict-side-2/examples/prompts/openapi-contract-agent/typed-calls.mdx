@@ -1,0 +1,10 @@
+export default function Prompt(props) {
+  const { children, components, ...data } = props ?? {};
+  return (
+    <>
+      {"Example prompt: openapi contract agent typed calls"}
+      {"\n\n"}
+      {JSON.stringify(data, null, 2)}
+    </>
+  );
+}

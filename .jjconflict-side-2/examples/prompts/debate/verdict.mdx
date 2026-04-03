@@ -1,0 +1,9 @@
+Judge this debate on: "{props.question}"
+
+FOR arguments ({props.forArgs.length} rounds):
+{props.forArgs.map((argument) => `Round ${argument.round}: ${argument.summary}`).join("\n")}
+
+AGAINST arguments ({props.againstArgs.length} rounds):
+{props.againstArgs.map((argument) => `Round ${argument.round}: ${argument.summary}`).join("\n")}
+
+Render a clear verdict with reasoning, conditions, and risk mitigation.

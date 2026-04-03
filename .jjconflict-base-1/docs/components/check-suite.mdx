@@ -1,0 +1,120 @@
+---
+title: <CheckSuite>
+description: Parallel checks with auto-aggregated pass/fail verdict.
+---
+
+```tsx
+import { CheckSuite } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"checksuite"` | ID prefix for generated task ids. |
+| `checks` | `CheckConfig[] \| Record<string, CheckConfig>` | **(required)** | Checks to run. Array of `{ id, agent?, command?, label? }` or an object keyed by check id. |
+| `verdictOutput` | `OutputTarget` | **(required)** | Output schema for each check task and the aggregate verdict. |
+| `strategy` | `"all-pass" \| "majority" \| "any-pass"` | `"all-pass"` | How individual results aggregate. `"all-pass"`: every check must pass. `"majority"`: more than half must pass. `"any-pass"`: one passing check is enough. |
+| `maxConcurrency` | `number` | `Infinity` | Maximum checks running in parallel. |
+| `continueOnFail` | `boolean` | `true` | Whether individual check failures stop the suite or allow remaining checks to complete. |
+| `skipIf` | `boolean` | `false` | Skip the entire suite. Returns `null`. |
+
+## Basic usage
+
+```tsx
+<Workflow name="ci-checks">
+  <CheckSuite
+    checks={[
+      { id: "lint", agent: lintAgent, label: "ESLint" },
+      { id: "typecheck", agent: typecheckAgent, label: "TypeScript" },
+      { id: "test", agent: testAgent, label: "Unit Tests" },
+    ]}
+    verdictOutput={outputs.verdict}
+  />
+</Workflow>
+```
+
+This renders as:
+
+1. Three check tasks run in parallel.
+2. A verdict task runs after all checks complete, aggregating results into a pass/fail decision.
+
+## Object syntax
+
+Pass checks as a record instead of an array:
+
+```tsx
+<CheckSuite
+  checks={{
+    lint: { agent: lintAgent, label: "ESLint" },
+    typecheck: { agent: typecheckAgent, label: "TypeScript" },
+    security: { agent: securityAgent, label: "Security Scan" },
+  }}
+  verdictOutput={outputs.verdict}
+  strategy="all-pass"
+/>
+```
+
+Object keys become check ids automatically.
+
+## Majority strategy
+
+Allow the suite to pass even if some checks fail:
+
+```tsx
+<CheckSuite
+  checks={[
+    { id: "perf", agent: perfAgent, label: "Performance" },
+    { id: "a11y", agent: a11yAgent, label: "Accessibility" },
+    { id: "seo", agent: seoAgent, label: "SEO" },
+  ]}
+  verdictOutput={outputs.verdict}
+  strategy="majority"
+/>
+```
+
+The verdict task receives the `"majority"` strategy and aggregates accordingly.
+
+## Fail-fast mode
+
+Set `continueOnFail={false}` to stop the suite as soon as any check fails:
+
+```tsx
+<CheckSuite
+  checks={checks}
+  verdictOutput={outputs.verdict}
+  continueOnFail={false}
+/>
+```
+
+## Limiting concurrency
+
+```tsx
+<CheckSuite
+  checks={checks}
+  verdictOutput={outputs.verdict}
+  maxConcurrency={3}
+/>
+```
+
+At most three checks run at a time.
+
+## Generated structure
+
+`<CheckSuite>` is a composite component. It does not create a new host element type. Internally it renders:
+
+```
+Sequence
+  Parallel (maxConcurrency)
+    Task (check 0, continueOnFail)
+    Task (check 1, continueOnFail)
+    ...
+  Task (verdict, needs: all check ids)
+```
+
+## Notes
+
+- Each check task id is `{prefix}-{checkId}`. The verdict task id is `{prefix}-verdict`.
+- The verdict task uses `needs` to depend on all check tasks.
+- `strategy` is passed as prompt context to the verdict aggregation task. When using agent-based checks, the aggregation logic depends on the verdict agent interpreting the strategy.
+- When `continueOnFail` is `true` (default), all checks run to completion even if some fail. The verdict task can then inspect which checks passed or failed.

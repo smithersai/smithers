@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "smithers": ["./src/examples-entry.ts"],
+      "smithers/jsx-runtime": ["./src/jsx-runtime.ts"],
+      "smithers/jsx-dev-runtime": ["./src/jsx-runtime.ts"],
+      "smithers/tools": ["./src/tools/index.ts"],
+      "smithers-orchestrator": ["./src/examples-entry.ts"],
+      "smithers-orchestrator/tools": ["./src/tools/index.ts"]
+    }
+  },
+  "include": ["examples/**/*", "src/examples-entry.ts", "src/**/*"],
+  "exclude": ["tests/**/*", "src/pi-plugin/**/*", "src/devtools/**/*"]
+}

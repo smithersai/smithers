@@ -1,0 +1,9 @@
+Transform these {props.totalExtracted} records:
+
+{JSON.stringify(props.records)}
+{props.remainingCount > 0 ? `... and ${props.remainingCount} more` : ""}
+
+Transformation rules:
+{props.transformRules}
+
+Output format: {props.targetFormat}

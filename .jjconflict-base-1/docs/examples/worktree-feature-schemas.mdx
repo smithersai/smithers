@@ -1,0 +1,169 @@
+---
+title: "Ghost: Worktree Feature Schemas"
+description: "Example from scripts/worktree-feature/components/*.schema.ts — Zod schema definitions for all pipeline stages: discover, implement, validate, review, review-fix, and report."
+---
+
+# scripts/worktree-feature/ — Zod Output Schemas
+
+<Note>
+**Ghost doc** — Real schema files from `scripts/worktree-feature/components/`.
+</Note>
+
+## Discover Schema
+
+```ts
+// components/Discover.schema.ts
+import { z } from "zod";
+
+export const Ticket = z.object({
+  id: z.string().describe("Unique slug identifier (lowercase kebab-case)"),
+  title: z.string().describe("Short imperative title"),
+  description: z.string().describe("Detailed description"),
+  acceptanceCriteria: z.array(z.string()).describe("List of acceptance criteria"),
+  filesToModify: z.array(z.string()).describe("Files to modify"),
+  filesToCreate: z.array(z.string()).describe("Files to create"),
+  dependencies: z.array(z.string()).nullable().describe("IDs of tickets this depends on"),
+});
+export type Ticket = z.infer<typeof Ticket>;
+
+export const DiscoverOutput = z.object({
+  tickets: z.array(Ticket).describe("All tickets ordered by dependency"),
+  reasoning: z.string().describe("Why these tickets in this order"),
+});
+export type DiscoverOutput = z.infer<typeof DiscoverOutput>;
+```
+
+## Implement Schema
+
+```ts
+// components/Implement.schema.ts
+import { z } from "zod";
+
+export const ImplementOutput = z.object({
+  filesCreated: z.array(z.string()).nullable().describe("Files created"),
+  filesModified: z.array(z.string()).nullable().describe("Files modified"),
+  commitMessages: z.array(z.string()).describe("Git commit messages made"),
+  whatWasDone: z.string().describe("Detailed description of what was implemented"),
+  testsWritten: z.array(z.string()).describe("Test files written"),
+  docsUpdated: z.array(z.string()).describe("Documentation files updated"),
+  allTestsPassing: z.boolean().describe("Whether all tests pass after implementation"),
+  testOutput: z.string().describe("Output from running tests"),
+});
+export type ImplementOutput = z.infer<typeof ImplementOutput>;
+```
+
+## Validate Schema
+
+```ts
+// components/Validate.schema.ts
+import { z } from "zod";
+
+export const ValidateOutput = z.object({
+  allPassed: z.boolean().describe("Whether tests exited with status 0"),
+  failingSummary: z.string().nullable().describe("Summary of what failed (null if all passed)"),
+  fullOutput: z.string().describe("Full output from test runner"),
+});
+export type ValidateOutput = z.infer<typeof ValidateOutput>;
+```
+
+## Review Schema
+
+```ts
+// components/Review.schema.ts
+import { z } from "zod";
+
+export const ReviewOutput = z.object({
+  reviewer: z.string().default("unknown").describe("Which agent reviewed (claude, codex)"),
+  approved: z.boolean().describe("Whether the reviewer approves (LGTM)"),
+  issues: z.array(z.object({
+    severity: z.enum(["critical", "major", "minor", "nit"]),
+    file: z.string(),
+    line: z.number().nullable(),
+    description: z.string(),
+    suggestion: z.string().nullable(),
+  })).describe("Issues found during review"),
+  testCoverage: z.enum(["excellent", "good", "insufficient", "missing"]),
+  codeQuality: z.enum(["excellent", "good", "needs-work", "poor"]),
+  feedback: z.string().describe("Overall review feedback"),
+});
+export type ReviewOutput = z.infer<typeof ReviewOutput>;
+```
+
+## ReviewFix Schema
+
+```ts
+// components/ReviewFix.schema.ts
+import { z } from "zod";
+
+export const ReviewFixOutput = z.object({
+  fixesMade: z.array(z.object({
+    issue: z.string(),
+    fix: z.string(),
+    file: z.string(),
+  })).describe("Fixes applied"),
+  falsePositiveComments: z.array(z.object({
+    file: z.string(),
+    line: z.number(),
+    issue: z.string().describe("The review issue that was a false positive"),
+    rationale: z.string().describe("Why this is a false positive"),
+  })).nullable().describe("False positives to suppress in future reviews"),
+  commitMessages: z.array(z.string()).describe("Commit messages for fixes"),
+  allIssuesResolved: z.boolean().describe("Whether all review issues were resolved"),
+  summary: z.string().describe("Summary of fixes"),
+});
+export type ReviewFixOutput = z.infer<typeof ReviewFixOutput>;
+```
+
+## Report Schema
+
+```ts
+// components/Report.schema.ts
+import { z } from "zod";
+
+export const ReportOutput = z.object({
+  ticketTitle: z.string().describe("Title of the ticket"),
+  status: z.enum(["completed", "partial", "failed"]).describe("Final status"),
+  summary: z.string().describe("Concise summary of what was implemented"),
+  filesChanged: z.number().describe("Number of files changed"),
+  testsAdded: z.number().describe("Number of tests added"),
+  reviewRounds: z.number().describe("How many review rounds it took"),
+  struggles: z.array(z.string()).nullable().describe("Any struggles or issues encountered"),
+  lessonsLearned: z.array(z.string()).nullable().describe("Lessons for future tickets"),
+});
+export type ReportOutput = z.infer<typeof ReportOutput>;
+```
+
+## Registration
+
+All schemas register in one `createSmithers` call:
+
+```ts
+// smithers.ts
+import { createSmithers } from "smithers-orchestrator";
+import { DiscoverOutput } from "./components/Discover.schema";
+import { ImplementOutput } from "./components/Implement.schema";
+import { ValidateOutput } from "./components/Validate.schema";
+import { ReviewOutput } from "./components/Review.schema";
+import { ReviewFixOutput } from "./components/ReviewFix.schema";
+import { ReportOutput } from "./components/Report.schema";
+
+export const { Workflow, Task, useCtx, smithers, tables, outputs } = createSmithers({
+  discover: DiscoverOutput,
+  implement: ImplementOutput,
+  validate: ValidateOutput,
+  review: ReviewOutput,
+  reviewFix: ReviewFixOutput,
+  report: ReportOutput,
+});
+```
+
+Use `outputs.discover`, `outputs.review`, etc. as the `output` prop on `<Task>`.
+
+## Key Patterns
+
+- **Dual export** -- each file exports the Zod schema and its inferred `type`, giving runtime validation and compile-time types from one source.
+- **`.describe()` annotations** -- Smithers passes these to the LLM as field-level instructions in the structured output schema.
+- **`.nullable()`** -- ensures optional fields are always present in output JSON (e.g., `dependencies`, `failingSummary`).
+- **`z.enum()`** -- constrains agent output to valid values (severity levels, status codes, quality ratings).
+- **Schema composition** -- `Ticket` defined once, reused in `DiscoverOutput.tickets` and as a prop type throughout the pipeline.
+- **Single registration** -- `createSmithers` auto-generates SQLite tables; `outputs` provides typed references for `<Task output={outputs.xxx}>`.

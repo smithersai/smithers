@@ -1,0 +1,13 @@
+Review the codebase in directory: {props.directory}
+Focus area: {props.focus}
+
+{props.previousIssues.length > 0
+  ? `Previous issues that were supposedly fixed:\n${props.previousIssues.join("\n")}`
+  : "This is the initial review."}
+
+Use the tools to explore the code. Look for:
+- Code quality issues
+- Potential bugs
+- Missing error handling
+- Type safety problems
+- Any issues related to: {props.focus}

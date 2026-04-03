@@ -1,0 +1,166 @@
+---
+title: Scorers
+description: How Smithers evaluates task outputs using built-in and custom scorers with live and batch scoring modes.
+---
+
+Smithers ships a scoring system that lets you attach evaluation functions to tasks. Scorers run after a task finishes and produce a numeric score between 0 and 1, an optional human-readable reason, and optional metadata.
+
+Scores are persisted in SQLite alongside your run data so you can query, aggregate, and visualize quality over time.
+
+## Core Concepts
+
+### Scorer
+
+A scorer is a named function that takes a `ScorerInput` and returns a `ScoreResult`:
+
+```ts
+import { createScorer } from "smithers-orchestrator/scorers";
+
+const myScorer = createScorer({
+  id: "length-check",
+  name: "Length Check",
+  description: "Checks output meets minimum length",
+  score: async ({ output }) => {
+    const text = String(output);
+    const score = Math.min(text.length / 500, 1);
+    return { score, reason: `Output is ${text.length} chars` };
+  },
+});
+```
+
+### ScoreResult
+
+Every scorer returns a `ScoreResult`:
+
+| Field    | Type                        | Description                              |
+|----------|-----------------------------|------------------------------------------|
+| `score`  | `number` (0-1)              | Normalized quality score                 |
+| `reason` | `string?`                   | Human-readable explanation               |
+| `meta`   | `Record<string, unknown>?`  | Arbitrary metadata for downstream use    |
+
+### ScorerInput
+
+The input passed to every scorer function:
+
+| Field          | Type              | Description                                |
+|----------------|-------------------|--------------------------------------------|
+| `input`        | `unknown`         | The original task input/prompt             |
+| `output`       | `unknown`         | The task's produced output                 |
+| `groundTruth`  | `unknown?`        | Expected output for comparison             |
+| `context`      | `unknown?`        | Additional context (e.g. retrieved docs)   |
+| `latencyMs`    | `number?`         | How long the task took in milliseconds     |
+| `outputSchema` | `ZodObject?`      | The Zod schema the output should match     |
+
+## Attaching Scorers to Tasks
+
+Pass a `scorers` map to any `<Task>` component:
+
+```tsx
+import { latencyScorer, schemaAdherenceScorer } from "smithers-orchestrator/scorers";
+
+<Task
+  id="analyze"
+  agent={claude}
+  output={outputs.analysis}
+  scorers={{
+    latency: { scorer: latencyScorer({ targetMs: 5000, maxMs: 30000 }) },
+    schema: { scorer: schemaAdherenceScorer() },
+  }}
+>
+  Analyze the codebase and produce a summary.
+</Task>
+```
+
+Scorers fire asynchronously after the task finishes. They never block the workflow.
+
+## Sampling
+
+Not every run needs every scorer. Use sampling to control evaluation frequency:
+
+```tsx
+scorers={{
+  relevancy: {
+    scorer: relevancyScorer(judge),
+    sampling: { type: "ratio", rate: 0.1 },  // 10% of runs
+  },
+  schema: {
+    scorer: schemaAdherenceScorer(),
+    sampling: { type: "all" },  // every run (default)
+  },
+}}
+```
+
+| Sampling Type | Behavior                        |
+|---------------|---------------------------------|
+| `all`         | Run on every task execution     |
+| `ratio`       | Run with probability `rate`     |
+| `none`        | Disabled (useful for toggling)  |
+
+## Built-in Scorers
+
+Smithers includes five built-in scorers:
+
+### Code-based (no LLM needed)
+
+- **`schemaAdherenceScorer()`** — Validates that the output matches the task's Zod schema. Returns 1.0 if valid, 0.0 if not.
+- **`latencyScorer({ targetMs, maxMs })`** — Scores based on execution time. Returns 1.0 at or below `targetMs`, linearly decreasing to 0.0 at `maxMs`.
+
+### LLM-based (requires a judge agent)
+
+- **`relevancyScorer(judge)`** — Uses an LLM to evaluate whether the output is relevant to the input.
+- **`toxicityScorer(judge)`** — Uses an LLM to detect toxic or harmful content.
+- **`faithfulnessScorer(judge)`** — Uses an LLM to check if the output is faithful to the provided context.
+
+## Persistence
+
+All scores are stored in the `_smithers_scorers` table:
+
+| Column         | Type    | Description                           |
+|----------------|---------|---------------------------------------|
+| `id`           | TEXT    | Unique score row ID                   |
+| `run_id`       | TEXT    | Parent run                            |
+| `node_id`      | TEXT    | Task that was scored                  |
+| `iteration`    | INTEGER | Task iteration                        |
+| `attempt`      | INTEGER | Task attempt number                   |
+| `scorer_id`    | TEXT    | Scorer identifier                     |
+| `scorer_name`  | TEXT    | Human-readable scorer name            |
+| `source`       | TEXT    | `live` or `batch`                     |
+| `score`        | REAL    | The 0-1 score                         |
+| `reason`       | TEXT    | Optional explanation                  |
+| `meta_json`    | TEXT    | JSON metadata                         |
+| `input_json`   | TEXT    | Serialized scorer input               |
+| `output_json`  | TEXT    | Serialized task output                |
+| `latency_ms`   | REAL    | Task execution latency                |
+| `scored_at_ms` | INTEGER | When the score was computed           |
+| `duration_ms`  | REAL    | How long the scorer itself took       |
+
+## Aggregation
+
+Query aggregate statistics across runs:
+
+```ts
+import { aggregateScores } from "smithers-orchestrator/scorers";
+
+const stats = await aggregateScores(adapter, { runId: "run-123" });
+// [{ scorerId, scorerName, count, mean, min, max, p50, stddev }]
+```
+
+## Events
+
+Three event types are emitted during scoring:
+
+- `ScorerStarted` — A scorer has begun evaluation
+- `ScorerFinished` — A scorer completed successfully
+- `ScorerFailed` — A scorer threw an error
+
+## CLI
+
+View scores from the command line:
+
+```bash
+# Show all scores for a run
+smithers scores <run_id>
+
+# Show scores for a specific node
+smithers scores <run_id> --node analyze
+```

@@ -1,0 +1,11 @@
+Fix the issues found in the code review:
+
+Feedback: {props.feedback}
+
+Issues to fix:
+{props.issues.length > 0 ? props.issues.join("\n") : "No specific issues listed"}
+
+Directory: {props.directory}
+
+IMPORTANT: After analysis, output EXACTLY this JSON format (no other text):
+{`{"filesChanged": ["file1.ts", "file2.ts"], "changesSummary": "What changes are needed"}`}

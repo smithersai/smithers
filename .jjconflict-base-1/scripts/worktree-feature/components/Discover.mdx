@@ -1,0 +1,50 @@
+TICKET DISCOVERY — Break PRD into Ordered Implementation Tickets
+
+The full PRD for the `<Worktree>` and `<MergeQueue>` feature is in your system prompt. Read it carefully.
+
+GOAL: Break the PRD into ordered, independently-implementable tickets.
+
+STEPS:
+1. Read the PRD thoroughly — understand all 5 parts (framework changes, tests, docs, workflow script changes, implementation details)
+2. Explore the smithers framework codebase (`submodules/smithers/`) to understand current state
+3. Break the PRD into tickets ordered by dependency (foundational first)
+4. Each ticket should be the smallest independently testable unit
+
+TICKET ID RULES:
+- IDs MUST be lowercase kebab-case slugs derived from the title (e.g. "vcs-jj-rewrite", "worktree-types")
+- NEVER use numeric IDs like T-001, T-002 — they collide across runs
+- Keep slugs short but descriptive (2-5 words)
+
+EXPECTED TICKET BREAKDOWN (roughly):
+1. `vcs-jj-rewrite` — Rewrite `src/vcs/jj.ts` with cwd support + workspace operations
+2. `worktree-types` — Add WorktreeProps, MergeQueueProps, extend TaskDescriptor in `src/types.ts`
+3. `worktree-component` — Add Worktree component to `src/components.ts`
+4. `worktree-extract` — Add worktreeStack to `src/dom/extract.ts` walk()
+5. `worktree-scheduler` — Handle smithers:worktree in `src/engine/scheduler.ts`
+6. `worktree-engine` — Per-task rootDir override in `src/engine/index.ts`
+7. `merge-queue-component` — Add MergeQueue component + scheduler support
+8. `worktree-tests` — tests/worktree.test.tsx
+9. `jj-workspace-tests` — tests/jj-workspace.test.ts
+10. `merge-queue-tests` — tests/merge-queue.test.tsx
+11. `worktree-docs` — docs/components/worktree.mdx + docs.json update
+12. `merge-queue-docs` — docs/components/merge-queue.mdx + parallel-worktrees example
+13. `vcs-docs-update` — Update docs/guides/vcs.mdx, reference/types.mdx, execution-model.mdx
+14. `workflow-repoint-dep` — Repoint scripts/smithers-workflow package.json + bun install
+15. `workflow-config-schemas` — Update config.ts, smithers.ts, Discover.schema.ts, new MergeBatch/Rebase schemas
+16. `workflow-components` — TicketPipeline.tsx (Worktree wrapping), ValidationLoop.tsx (rebase check), MergeBatch.tsx
+17. `workflow-main` — workflow.tsx wave-based parallel, run.sh JJ init, .gitignore
+
+You may split or merge tickets as needed — the above is a guide, not a mandate. Prioritize:
+- Foundational work first (types, VCS before components that use them)
+- Tests alongside or after the code they test
+- Docs after implementation
+
+SCOPE:
+- Only implement what's in the PRD. Don't add features beyond the spec.
+- Every ticket must be independently testable after implementation.
+- Include acceptance criteria with specific test commands.
+- List exact files to modify/create per ticket.
+
+**REQUIRED OUTPUT** — JSON matching this schema:
+{props.schema}
+DO NOT skip JSON output. Workflow fails without it.

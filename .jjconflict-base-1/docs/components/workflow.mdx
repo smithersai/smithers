@@ -1,0 +1,93 @@
+---
+title: <Workflow>
+description: Root container that defines a named, cacheable workflow with implicit sequential execution of its children.
+---
+
+```tsx
+import { Workflow } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `name` | `string` | **(required)** | Unique workflow name. Used in logs, CLI, and run metadata. |
+| `cache` | `boolean` | `false` | Enable per-node output caching. Completed tasks are skipped on resume. |
+| `children` | `ReactNode` | `undefined` | Tasks and control-flow components that make up the workflow. |
+
+## Implicit sequencing
+
+Direct children execute sequentially, top to bottom. A bare `<Workflow>` behaves identically to wrapping children in `<Sequence>`:
+
+```tsx
+// These two are equivalent:
+
+<Workflow name="example">
+  <Task id="first" output={outputs.first}>{/* ... */}</Task>
+  <Task id="second" output={outputs.second}>{/* ... */}</Task>
+</Workflow>
+
+<Workflow name="example">
+  <Sequence>
+    <Task id="first" output={outputs.first}>{/* ... */}</Task>
+    <Task id="second" output={outputs.second}>{/* ... */}</Task>
+  </Sequence>
+</Workflow>
+```
+
+An explicit `<Sequence>` is only needed when nesting sequential groups inside `<Parallel>` or other control-flow components.
+
+## Caching
+
+When `cache` is enabled, the runtime checks whether a task's output row exists before executing it. If present, the task is skipped and stored output is reused. This makes workflows resumable after partial failures.
+
+```tsx
+<Workflow name="pipeline" cache>
+  <Task id="expensive-step" output={outputs.expensiveStep} agent={myAgent}>
+    Perform a costly analysis.
+  </Task>
+  <Task id="cheap-step" output={outputs.cheapStep}>
+    {{ status: "done" }}
+  </Task>
+</Workflow>
+```
+
+## Full example
+
+```tsx
+import { createSmithers } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, Task, smithers, outputs } = createSmithers({
+  research: z.object({ findings: z.string() }),
+  summary: z.object({ summary: z.string() }),
+});
+
+const researcher = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a research assistant.",
+});
+
+export default smithers((ctx) => (
+  <Workflow name="research-pipeline" cache>
+    <Task id="research" output={outputs.research} agent={researcher}>
+      {`Research the topic: ${ctx.input.topic}`}
+    </Task>
+    <Task id="summary" output={outputs.summary}>
+      {{ summary: "Workflow complete." }}
+    </Task>
+  </Workflow>
+));
+```
+
+## Rendering
+
+`<Workflow>` renders as a `<smithers:workflow>` host element. The runtime traverses this tree to extract `TaskDescriptor` objects and build the execution plan.
+
+## Notes
+
+- Every workflow must have exactly one `<Workflow>` at the root.
+- `name` is for identification in logs, CLI, and event streams; it need not be globally unique across files.
+- Custom Drizzle tables must include `runId` and `nodeId` columns. Tasks inside `<Loop>` additionally need `iteration`. `createSmithers(...)` adds these columns automatically for schema-driven tables.

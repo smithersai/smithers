@@ -1,0 +1,123 @@
+---
+title: <Panel>
+description: Parallel specialist agents review the same input, then a moderator synthesizes results with optional voting/quorum strategies.
+---
+
+```tsx
+import { Panel } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | `"panel"` | ID prefix for generated task ids. |
+| `panelists` | `PanelistConfig[] \| AgentLike[]` | **(required)** | Specialist agents. Each entry is `{ agent, role?, label? }` or a bare `AgentLike`. |
+| `moderator` | `AgentLike` | **(required)** | Agent that synthesizes all panelist outputs into a final result. |
+| `panelistOutput` | `OutputTarget` | **(required)** | Output schema for each panelist task. |
+| `moderatorOutput` | `OutputTarget` | **(required)** | Output schema for the moderator synthesis task. |
+| `strategy` | `"synthesize" \| "vote" \| "consensus"` | `"synthesize"` | How the moderator combines results. `"synthesize"` merges freely; `"vote"` counts agreement; `"consensus"` requires convergence. |
+| `minAgree` | `number` | `undefined` | Minimum panelists that must agree (used with `"vote"` and `"consensus"` strategies). |
+| `maxConcurrency` | `number` | `Infinity` | Maximum panelists running in parallel. |
+| `skipIf` | `boolean` | `false` | Skip the entire panel. Returns `null`. |
+| `children` | `string \| ReactNode` | **(required)** | Prompt or input sent to every panelist. |
+
+## Basic usage
+
+```tsx
+<Workflow name="code-review-panel">
+  <Panel
+    panelists={[
+      { agent: securityAgent, role: "Security Reviewer" },
+      { agent: qualityAgent, role: "Code Quality Reviewer" },
+      { agent: architectureAgent, role: "Architecture Reviewer" },
+    ]}
+    moderator={moderatorAgent}
+    panelistOutput={outputs.review}
+    moderatorOutput={outputs.synthesis}
+  >
+    Review the changes in src/auth/ for security, quality, and architecture concerns.
+  </Panel>
+</Workflow>
+```
+
+This renders as:
+
+1. Three panelist tasks run in parallel, each receiving the same prompt.
+2. A moderator task runs after all panelists complete, receiving their outputs via `needs`.
+
+## Voting strategy
+
+Use `strategy="vote"` with `minAgree` to require quorum:
+
+```tsx
+<Panel
+  panelists={[
+    { agent: reviewer1, role: "Reviewer A" },
+    { agent: reviewer2, role: "Reviewer B" },
+    { agent: reviewer3, role: "Reviewer C" },
+  ]}
+  moderator={moderatorAgent}
+  panelistOutput={outputs.review}
+  moderatorOutput={outputs.verdict}
+  strategy="vote"
+  minAgree={2}
+>
+  Should we approve this RFC? Evaluate the proposal and vote approve or reject.
+</Panel>
+```
+
+The moderator receives the vote strategy and minimum agreement threshold in its prompt context.
+
+## Bare agent shorthand
+
+When you don't need per-panelist roles, pass an array of agents directly:
+
+```tsx
+<Panel
+  panelists={[agent1, agent2, agent3]}
+  moderator={moderatorAgent}
+  panelistOutput={outputs.review}
+  moderatorOutput={outputs.synthesis}
+>
+  Analyze the quarterly report for discrepancies.
+</Panel>
+```
+
+Each agent is auto-labeled `panelist-0`, `panelist-1`, etc.
+
+## Limiting concurrency
+
+```tsx
+<Panel
+  panelists={specialists}
+  moderator={moderatorAgent}
+  panelistOutput={outputs.review}
+  moderatorOutput={outputs.synthesis}
+  maxConcurrency={2}
+>
+  Review the deployment plan.
+</Panel>
+```
+
+At most two panelists run at a time. The rest queue until a slot opens.
+
+## Generated structure
+
+`<Panel>` is a composite component. It does not create a new host element type. Internally it renders:
+
+```
+Sequence
+  Parallel (maxConcurrency)
+    Task (panelist 0)
+    Task (panelist 1)
+    ...
+  Task (moderator, needs: all panelist ids)
+```
+
+## Notes
+
+- Each panelist task id is `{prefix}-{label|role|panelist-N}`. The moderator task id is `{prefix}-moderator`.
+- The moderator task uses `needs` to depend on all panelist tasks, so it runs only after every panelist completes.
+- `strategy` and `minAgree` are passed as prompt context to the moderator. The moderator agent is responsible for interpreting and applying the strategy.
+- Panelist outputs all write to the same `panelistOutput` schema, differentiated by their task id.

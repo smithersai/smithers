@@ -1,0 +1,181 @@
+---
+title: Resumability
+description: How Smithers persists state to SQLite and resumes interrupted runs deterministically.
+---
+
+Long-running workflows crash. Networks fail. Processes get killed. Deploys happen. If your workflow runs for two hours and dies at minute 119, you do not want to start over.
+
+Smithers persists every task's output to SQLite as it completes. When you resume a run, it skips the tasks that already finished and picks up from the ones that did not. The result: minutes of recovery instead of hours of re-execution.
+
+## How It Works
+
+Every task output is written to SQLite keyed by `(runId, nodeId, iteration)`. When you resume, Smithers re-renders the JSX tree with the persisted outputs already available in `ctx`. Tasks with valid output rows are marked `finished` and skipped. Tasks that were in-progress or pending are picked up from where they left off.
+
+The resume flow, step by step:
+
+1. **Load existing state** -- Smithers reads `_smithers_runs`, `_smithers_nodes`, and `_smithers_attempts` for the given `runId`.
+2. **Metadata check** -- The stored workflow path, workflow file hash, and VCS metadata are compared against the current environment. If they changed, resume fails fast. This prevents you from accidentally running new code against old state.
+3. **Stale attempt cleanup** -- Any in-progress attempts older than 15 minutes are automatically cancelled. This prevents zombie tasks from blocking forward progress. The associated nodes are reset to `pending`.
+4. **Re-render** -- The JSX tree is rendered with the current `ctx`, which includes all previously persisted outputs. Completed tasks are naturally skipped because their output already exists.
+5. **Resume execution** -- The engine schedules and executes any remaining runnable tasks.
+
+That is it. No manual checkpointing. No state serialization code. You get resumability by using task IDs correctly.
+
+## Deterministic Node IDs
+
+Resumability lives or dies by stable, deterministic node identity. A task's identity comes from its `id` prop:
+
+```tsx
+{/* assuming outputs from createSmithers */}
+<Task id="analyze" output={outputs.analysis} agent={analyst}>
+  Analyze the codebase.
+</Task>
+```
+
+The `nodeId` in the database is `"analyze"`. If you rename the `id` prop between runs, Smithers treats it as a new task and the old output is orphaned -- sitting in the database, unused, while the "new" task starts from scratch.
+
+**Rules for stable IDs:**
+
+- Use fixed, descriptive strings for static tasks: `id="analyze"`, `id="report"`.
+- For dynamic tasks, derive the ID from a stable identifier: `id={`${ticket.id}:implement`}`.
+- Never use array indices or timestamps as IDs. They change between renders.
+
+This is the single most important thing to get right for resumability. Everything else follows from it.
+
+## Resume via CLI
+
+Start a run, then resume it later:
+
+```bash
+# Start the run
+bunx smithers up workflow.tsx --run-id my-run --input '{"description": "Fix auth bugs"}'
+
+# Process crashes or is cancelled...
+
+# Resume the same run
+bunx smithers up workflow.tsx --run-id my-run --resume true
+```
+
+On resume, the input row must already exist in the database. Smithers will throw an error if it is missing. You do not need to pass `--input` again -- it was persisted on the first run.
+
+## Resume Programmatically
+
+```ts
+import { runWorkflow } from "smithers-orchestrator";
+import workflow from "./workflow";
+
+// Initial run
+const result1 = await runWorkflow(workflow, {
+  runId: "my-run",
+  input: { description: "Fix auth bugs" },
+});
+
+// result1.status might be "failed" or "waiting-approval"
+
+// Resume the same run later
+const result2 = await runWorkflow(workflow, {
+  runId: "my-run",
+  resume: true,
+});
+
+// result2 picks up from where result1 left off
+```
+
+When `resume: true` is set, Smithers loads the existing run state instead of creating a new run.
+
+## What Gets Skipped on Resume
+
+| Node state before resume | Behavior on resume |
+|---|---|
+| `finished` | Skipped. Output row exists and is valid. |
+| `skipped` | Remains skipped. |
+| `failed` (retries exhausted) | Stays failed unless the workflow code changed to allow more retries. |
+| `in-progress` (stale) | Cancelled after 15 minutes, then retried as `pending`. |
+| `in-progress` (recent) | Left in-progress. If the process died, the attempt will time out and be cleaned up on the next resume. |
+| `pending` | Scheduled for execution. |
+| `waiting-approval` | Stays waiting. Approve or deny to unblock. |
+| `cancelled` | Stays cancelled. |
+
+The 15-minute threshold for stale attempts deserves explanation. Why not cancel immediately? Because some tasks legitimately run for a long time -- a complex implementation step with a 30-minute timeout, for example. Cancelling it prematurely would waste the work already done. Fifteen minutes is a conservative default that catches zombie processes without killing slow-but-alive ones.
+
+## Stale Attempt Recovery
+
+If a process crashes mid-execution, some tasks may be stuck in `in-progress` state with no process to complete them. Smithers handles this automatically:
+
+- On resume, any in-progress attempt with a `started_at_ms` older than 15 minutes is marked `cancelled`.
+- The associated node is reset to `pending`.
+- The task will be picked up on the next scheduling pass.
+
+No manual intervention required.
+
+## Common Resume Scenarios
+
+### Crash during execution
+
+```bash
+# Start a run -- crashes midway through "implement"
+bunx smithers up workflow.tsx --run-id run-1 --input '{"repo": "/my-project"}'
+
+# "analyze" finished, "implement" was in-progress, "report" was pending
+# Resume picks up from "implement"
+bunx smithers up workflow.tsx --run-id run-1 --resume true
+```
+
+### Waiting for approval
+
+```bash
+# Run pauses at an approval gate
+bunx smithers up workflow.tsx --run-id run-2 --input '{"repo": "/my-project"}'
+# Status: waiting-approval
+
+# Approve the pending node
+bunx smithers approve run-2 --node deploy
+
+# Resume to continue execution
+bunx smithers up workflow.tsx --run-id run-2 --resume true
+```
+
+### Fixing a bug and retrying
+
+If a task failed because of a bug in your workflow code, you have two options:
+
+1. Fix the code and start a fresh run.
+2. Fix the code and resume -- but only if the workflow file hash has not changed, which it has, because you just fixed it.
+
+In practice, this means: if the failure was in your code, start a new run. If the failure was transient (network, rate limit, model hiccup), resume.
+
+```bash
+# Original run failed at "analyze" because of a prompt bug
+# Fix the prompt in workflow.tsx, then start a new run
+bunx smithers up workflow.tsx --input '{"repo": "/my-project"}'
+```
+
+Smithers stores workflow and repository metadata in `_smithers_runs` and requires them to match on resume. This is intentional -- it keeps resume deterministic. Running changed code against old state is a recipe for subtle bugs.
+
+## Database Tables
+
+Smithers uses these internal tables for resume state. You can query them directly for debugging:
+
+```bash
+# View run status
+sqlite3 smithers.db "SELECT run_id, status, created_at_ms FROM _smithers_runs WHERE run_id = 'my-run';"
+
+# View node states
+sqlite3 smithers.db "SELECT node_id, status, iteration FROM _smithers_nodes WHERE run_id = 'my-run' ORDER BY updated_at_ms;"
+
+# View attempts
+sqlite3 smithers.db "SELECT node_id, attempt, status, started_at_ms FROM _smithers_attempts WHERE run_id = 'my-run' ORDER BY started_at_ms;"
+```
+
+## Tips
+
+- **Always use stable task IDs.** This is worth repeating. Changing IDs between runs breaks resume because the engine cannot match old output rows to new task nodes.
+- **Test resume in development.** Run your workflow, cancel it partway through, and resume to verify it picks up correctly. Do this before your first production run, not after.
+- **Check for stale runs.** Use `bunx smithers ps --status running` to find runs that may need to be resumed or cancelled.
+- **Input immutability.** Once a run starts, the input is persisted. Passing different input on resume is an error. This is by design -- the input is part of the run's identity.
+
+## Next Steps
+
+- [Debugging](/guides/debugging) -- Inspect run state and diagnose resume issues.
+- [Execution Model](/concepts/execution-model) -- Understand the render-schedule-execute loop that drives resume.
+- [VCS Integration](/guides/vcs) -- Revert filesystem changes to a specific attempt.

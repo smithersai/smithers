@@ -1,0 +1,170 @@
+---
+title: <TryCatchFinally>
+description: Workflow-scoped error boundaries with catch handlers and guaranteed cleanup.
+---
+
+```tsx
+import { TryCatchFinally } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | auto-generated | ID prefix for the error boundary. |
+| `try` | `ReactElement` | **(required)** | The main workflow content. |
+| `catch` | `ReactElement \| (error: SmithersError) => ReactElement` | `undefined` | Recovery handler mounted on failure. |
+| `catchErrors` | `SmithersErrorCode[]` | all errors | Restrict which error codes trigger the catch handler. |
+| `finally` | `ReactElement` | `undefined` | Always runs after try (success) or catch (failure). |
+| `skipIf` | `boolean` | `false` | Skip the entire block. Returns `null`. |
+
+## Basic usage
+
+```tsx
+<Workflow name="safe-deploy">
+  <TryCatchFinally
+    try={
+      <Sequence>
+        <Task id="build" output={outputs.build} agent={buildAgent}>
+          Build the project.
+        </Task>
+        <Task id="deploy" output={outputs.deploy} agent={deployAgent}>
+          Deploy to production.
+        </Task>
+      </Sequence>
+    }
+    catch={
+      <Task id="notify-failure" output={outputs.notify} agent={notifyAgent}>
+        Send a failure notification to the team.
+      </Task>
+    }
+    finally={
+      <Task id="cleanup" output={outputs.cleanup}>
+        {{ cleanedUp: true }}
+      </Task>
+    }
+  />
+</Workflow>
+```
+
+## Dynamic catch handler
+
+When `catch` is a function, it receives the `SmithersError` and returns a React element. This allows error-specific recovery:
+
+```tsx
+<TryCatchFinally
+  try={
+    <Task id="risky-op" output={outputs.riskyOp} agent={agent}>
+      Perform a risky operation.
+    </Task>
+  }
+  catch={(error) => (
+    <Task id="recover" output={outputs.recover} agent={recoveryAgent}>
+      {`Recover from error: ${error.code} — ${error.summary}`}
+    </Task>
+  )}
+/>
+```
+
+## Filtering by error code
+
+Use `catchErrors` to only catch specific error types. Unmatched errors propagate normally:
+
+```tsx
+<TryCatchFinally
+  catchErrors={["TASK_TIMEOUT", "AGENT_CLI_ERROR"]}
+  try={
+    <Task id="flaky-task" output={outputs.flaky} agent={agent} timeoutMs={30000}>
+      Run a task that might time out or have agent issues.
+    </Task>
+  }
+  catch={
+    <Task id="fallback" output={outputs.fallback}>
+      {{ usedFallback: true }}
+    </Task>
+  }
+/>
+```
+
+## Finally-only (guaranteed cleanup)
+
+Omit `catch` to let errors propagate while still running cleanup:
+
+```tsx
+<TryCatchFinally
+  try={
+    <Task id="create-worktree" output={outputs.worktree} agent={gitAgent}>
+      Create a temporary worktree.
+    </Task>
+  }
+  finally={
+    <Task id="cleanup-worktree" output={outputs.cleanup} agent={gitAgent}>
+      Remove the temporary worktree.
+    </Task>
+  }
+/>
+```
+
+## Execution flow
+
+1. The `try` block runs first.
+2. If any task in `try` fails:
+   - If `catchErrors` is set, the error code is checked. Non-matching errors skip the catch handler.
+   - If the error matches (or `catchErrors` is not set), the `catch` handler mounts.
+   - If `catch` is a function, it receives the `SmithersError` and the returned element mounts.
+3. The `finally` block always runs — after `try` succeeds or after `catch` completes.
+
+## Conditional skipping
+
+```tsx
+<TryCatchFinally
+  skipIf={!ctx.input.enableErrorHandling}
+  try={mainWorkflow}
+  catch={recoveryWorkflow}
+/>
+```
+
+## Nesting
+
+`<TryCatchFinally>` blocks can be nested. Inner blocks handle errors first; unhandled errors propagate to outer blocks:
+
+```tsx
+<TryCatchFinally
+  try={
+    <Sequence>
+      <TryCatchFinally
+        catchErrors={["TASK_TIMEOUT"]}
+        try={
+          <Task id="inner-task" output={outputs.inner} agent={agent} timeoutMs={10000}>
+            Task that might time out.
+          </Task>
+        }
+        catch={
+          <Task id="retry-with-longer-timeout" output={outputs.retry} agent={agent} timeoutMs={60000}>
+            Retry with a longer timeout.
+          </Task>
+        }
+      />
+      <Task id="next-step" output={outputs.next}>
+        {{ continued: true }}
+      </Task>
+    </Sequence>
+  }
+  catch={
+    <Task id="outer-catch" output={outputs.outerCatch} agent={notifyAgent}>
+      Handle any error that the inner block did not catch.
+    </Task>
+  }
+/>
+```
+
+## Rendering
+
+`<TryCatchFinally>` renders to a `<smithers:try-catch-finally>` host element. The `try` block is always mounted as children. The `catch` and `finally` blocks are stored as engine metadata and mounted on demand.
+
+## Notes
+
+- The `try` prop accepts a single `ReactElement`. Wrap multiple elements in `<Sequence>` or `<Parallel>`.
+- The `catch` handler receives the first matching error. Subsequent errors in the try block are ignored once catch is active.
+- The `finally` block runs regardless of whether an error occurred, whether it was caught, or whether the catch handler itself fails.
+- `catchErrors` accepts any `SmithersErrorCode` string. See the [error reference](/reference/errors) for the full list.

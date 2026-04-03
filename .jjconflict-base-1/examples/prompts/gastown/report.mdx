@@ -1,0 +1,47 @@
+## Gas Town Convoy Report
+
+**Convoy:** {props.convoyId}
+**Goal:** {props.goal}
+
+### Beads
+{props.beads.length > 0
+  ? props.beads.map((bead) => `- ${bead.id}: ${bead.title} (P${bead.priority})`).join("\n")
+  : "No beads"}
+
+### Polecat Results
+{JSON.stringify(
+  props.polecatResults.map((result) => ({
+    bead: result.beadId,
+    polecat: result.polecatName,
+    exitType: result.exitType,
+    commits: result.commitCount,
+    files: result.filesChanged.length,
+  })),
+  null,
+  2,
+)}
+
+### Merge Queue Results
+{JSON.stringify(
+  props.mergeRequests.map((request) => ({
+    branch: request.branch,
+    phase: request.phase,
+    closeReason: request.closeReason,
+    error: request.error,
+  })),
+  null,
+  2,
+)}
+
+### Witness Events
+{JSON.stringify(
+  props.witnessEvents.map((event) => ({
+    type: event.type,
+    source: event.source,
+    severity: event.severity,
+  })),
+  null,
+  2,
+)}
+
+Provide a complete convoy summary with merge log.

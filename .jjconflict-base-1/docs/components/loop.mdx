@@ -1,0 +1,227 @@
+---
+title: <Loop>
+description: Iterative loop that re-executes its children until a condition is met or the maximum iteration count is reached.
+---
+
+```tsx
+import { Loop } from "smithers-orchestrator";
+```
+
+## Props
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | `string` | auto-generated | Loop identifier. Auto-generated from tree position if omitted. |
+| `until` | `boolean` | **(required)** | Stop condition. Re-evaluated each iteration. Loop exits when `true`. |
+| `maxIterations` | `number` | `5` | Maximum iterations. Loop stops regardless of `until`. |
+| `onMaxReached` | `"fail" \| "return-last"` | `"return-last"` | Behavior at limit. `"fail"`: workflow fails. `"return-last"`: keep final output and continue. |
+| `skipIf` | `boolean` | `false` | Skip the loop entirely. Returns `null`. |
+| `children` | `ReactNode` | `undefined` | Tasks and control-flow components to execute each iteration. |
+
+## Basic usage
+
+```tsx
+<Workflow name="review-loop">
+  <Loop
+    until={ctx.outputMaybe(outputs.review, { nodeId: "review" })?.approved === true}
+    maxIterations={3}
+    onMaxReached="return-last"
+  >
+    <Task id="review" output={outputs.review} agent={reviewAgent}>
+      Review the code and decide whether to approve.
+    </Task>
+  </Loop>
+</Workflow>
+```
+
+## Iteration state
+
+Each iteration increments an internal counter exposed on the context:
+
+- **`ctx.iteration`** -- current iteration number (0-indexed).
+- **`ctx.iterations`** -- map of loop ids to current iteration numbers.
+
+Tasks inside `<Loop>` receive the iteration number in their descriptor. Custom Drizzle tables must include `iteration` in the primary key. `createSmithers(...)` adds this automatically for schema-driven outputs.
+
+```tsx
+const reviewTable = sqliteTable(
+  "review",
+  {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    iteration: integer("iteration").notNull().default(0),
+    approved: integer("approved", { mode: "boolean" }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.nodeId, t.iteration] }),
+  }),
+);
+```
+
+## Accessing previous iteration output with `ctx.latest()`
+
+`ctx.latest(table, nodeId)` retrieves the most recent output for a task across all iterations.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `table` | `ZodObject \| Table \| string` | Output target: schema from `outputs`, Drizzle table, or schema key (not SQLite table name). |
+| `nodeId` | `string` | The `id` prop of the target `<Task>`. |
+
+```tsx
+const { Workflow, smithers, outputs } = createSmithers({
+  draft: z.object({ text: z.string(), score: z.number() }),
+  review: z.object({ approved: z.boolean(), feedback: z.string() }),
+});
+
+export default smithers((ctx) => {
+  const latestDraft = ctx.latest("draft", "write");   // string key, not table name
+  const latestReview = ctx.latest("review", "review");
+
+  return (
+    <Workflow name="refine-loop">
+      <Loop
+        until={latestReview?.approved === true}
+        maxIterations={5}
+      >
+        <Sequence>
+          <Task id="write" output={outputs.draft} agent={writer}>
+            {latestReview
+              ? `Improve the draft. Feedback: ${latestReview.feedback}`
+              : `Write a first draft about: ${ctx.input.topic}`}
+          </Task>
+          <Task id="review" output={outputs.review} agent={reviewer}>
+            {`Review this draft (score: ${latestDraft?.score ?? "N/A"}):\n${latestDraft?.text ?? ""}`}
+          </Task>
+        </Sequence>
+      </Loop>
+    </Workflow>
+  );
+});
+```
+
+The re-render cycle drives iteration: after tasks complete, the tree re-renders with new outputs in context, `until` is re-evaluated, and the next iteration starts if not satisfied.
+
+<Tip>
+`ctx.latest()` returns the highest-iteration result. `ctx.output()` defaults to the current iteration, which may not have output yet at render time.
+</Tip>
+
+## Accessing iteration count
+
+```tsx
+<Loop
+  until={ctx.iterationCount("review", "review") >= 2}
+  maxIterations={5}
+>
+  <Task id="review" output={outputs.review} agent={reviewAgent}>
+    {`This is iteration ${ctx.iteration}. Review the code.`}
+  </Task>
+</Loop>
+```
+
+## Multiple loops
+
+Use `id` to distinguish multiple loops in the same workflow:
+
+```tsx
+<Workflow name="multi-loop">
+  <Loop id="code-loop" until={codeApproved} maxIterations={3}>
+    <Task id="write-code" output={outputs.writeCode} agent={codeAgent}>
+      Write the implementation.
+    </Task>
+  </Loop>
+  <Loop id="review-loop" until={reviewApproved} maxIterations={3}>
+    <Task id="review-code" output={outputs.reviewCode} agent={reviewAgent}>
+      Review the implementation.
+    </Task>
+  </Loop>
+</Workflow>
+```
+
+When `id` is omitted, a stable id is generated from tree position.
+
+## onMaxReached behavior
+
+| Value | Behavior |
+| --- | --- |
+| `"return-last"` | Keep final iteration output; workflow continues. Default. |
+| `"fail"` | Workflow fails with max-iteration error. |
+
+```tsx
+// Fail the workflow if we can't converge in 10 iterations
+<Loop until={converged} maxIterations={10} onMaxReached="fail">
+  <Task id="optimize" output={outputs.optimize} agent={optimizer}>
+    Optimize the solution.
+  </Task>
+</Loop>
+```
+
+## Full example
+
+```tsx
+import { createSmithers } from "smithers-orchestrator";
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const { Workflow, Task, smithers, outputs } = createSmithers({
+  review: z.object({
+    approved: z.boolean(),
+    feedback: z.string().nullable(),
+  }),
+});
+
+const reviewAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a thorough code reviewer.",
+});
+
+export default smithers((ctx) => (
+  <Workflow name="iterative-review">
+    <Loop
+      until={
+        ctx.outputMaybe(outputs.review, { nodeId: "review" })?.approved === true
+      }
+      maxIterations={5}
+      onMaxReached="return-last"
+    >
+      <Task id="review" output={outputs.review} agent={reviewAgent}>
+        {`Review this code and either approve or provide feedback:\n\n${ctx.input.code}`}
+      </Task>
+    </Loop>
+  </Workflow>
+));
+```
+
+## Rendering
+
+`<Loop>` renders as a `<smithers:ralph>` host element (or `null` when skipped). The runtime manages iteration state and re-renders the tree each iteration.
+
+## Nested loops
+
+Direct nesting -- `<Loop>` as immediate child of `<Loop>` -- throws at render time. Wrap the inner loop in `<Sequence>`:
+
+```tsx
+<Workflow name="nested-loops">
+  <Loop id="outer" until={outerDone} maxIterations={5}>
+    <Sequence>
+      <Loop id="inner" until={innerDone} maxIterations={3}>
+        <Task id="innerTask" output="innerOutput" agent={agent}>
+          Run the inner loop body.
+        </Task>
+      </Loop>
+    </Sequence>
+  </Loop>
+</Workflow>
+```
+
+## Restrictions
+
+- **Direct nesting throws.** Wrap the inner `<Loop>` in `<Sequence>`.
+- **Duplicate ids throw.** Two loops cannot share the same `id`.
+
+## Notes
+
+- `until` is evaluated at render time each frame. Typically references loop body output via `ctx.outputMaybe()`.
+- Use `ctx.outputMaybe()` for `until` since output does not exist on the first render.
+- Custom Drizzle tables for tasks inside `<Loop>` must include `iteration` in the primary key. `createSmithers(...)` handles this automatically.
+- The iteration counter resets to 0 at the start of each workflow run.

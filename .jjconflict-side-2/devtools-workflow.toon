@@ -1,0 +1,275 @@
+name: smithers-devtools
+agents:
+  researcher:
+    type: claude-code
+    model: claude-opus-4-6
+    subscription: true
+    instructions: "You are researching implementation requirements for Smithers DevTools.\nInspirations include React, Electrobun, DAG visualization, and desktop app architecture.\nRead existing code thoroughly before making recommendations. Check docs/design-prompts/devtools-prd.md for the full PRD.\nFocus on feasibility, edge cases, and concrete technical decisions.\nYour ultimate goal is to provide any and all information and context we need to implement this feature.\nThis should include websearching docs and more. \n"
+  planner:
+    type: claude-code
+    model: claude-opus-4-6
+    subscription: true
+    instructions: "You are creating implementation plans for Smithers DevTools.\nPlans must be concrete — specify exact files to create/modify, exact APIs to use, and exact test cases to write.\nEvery ticket must be a vertical slice: implement the feature AND write verification/e2e tests.\nElectrobun e2e testing is difficult prioritize getting that working early.\nWe did research first to help you with this task\nRead the PRD at docs/design-prompts/devtools-prd.md and existing code before planning.\n"
+  implementer:
+    type: gemini
+    model: gemini-3.1-pro
+    instructions: "You are implementing Smithers DevTools features.\nWrite clean, idiomatic TypeScript. Use principle of least surprise. Do not overabstract\n  Prefer inlining code unless it's truly reused\nUse existing patterns from the Smithers codebase — read src/ before writing new code.\nEvery feature must include tests. E2E tests are critical.\nRun tests after every change: bun test\n"
+  reviewer:
+    type: codex
+    model: gpt-5.4-codex
+    fullAuto: true
+    instructions: "You are a strict code reviewer for Smithers DevTools.\nReview for: correctness, test coverage (especially e2e), type safety, performance, security.\nCheck that the implementation matches the plan and PRD intent.\nCheck that e2e tests actually exercise the feature end-to-end.\nSet verdict to LGTM only if the code is production-ready with proper test coverage and you see no way to improve the code.\nIf tests are missing or inadequate, verdict is NEEDS_CHANGES.\n"
+input:
+  tickets: "string[]"
+steps[1]:
+  - kind: parallel
+    maxConcurrency: 1
+    children[8]:
+      - kind: sequence
+        children[4]:
+          - id: t1-research
+            agent: researcher
+            prompt: "Research how to set up an Electrobun app for Smithers DevTools.\n\nInvestigate:\n1. Electrobun project structure and configuration (electrobun.config.ts)\n2. How to set up typed RPC between the Bun main process and webview\n3. How to run e2e tests against an Electrobun app — this is the HARD part\n   - Can we use Playwright/Puppeteer against the CEF webview?\n   - Does Electrobun expose any test utilities?\n   - What's the best approach for headless testing?\n4. How to connect to Smithers HTTP API (port 7331) from the webview\n5. How to read SQLite from the Bun main process\n\nRead the Electrobun docs at https://blackboard.sh/electrobun/ and the GitHub repo.\nRead our PRD at docs/design-prompts/devtools-prd.md.\nRead our existing devtools POC at src/devtools/SmithersDevTools.ts."
+            output:
+              electrobunSetup: string
+              e2eTestStrategy: string
+              rpcSchema: string
+              feasibilityNotes: string
+          - id: t1-plan
+            agent: planner
+            prompt: "Create an implementation plan for: Electrobun app scaffold + e2e test harness.\n\nResearch findings:\n{t1-research.electrobunSetup}\n{t1-research.e2eTestStrategy}\n{t1-research.rpcSchema}\n{t1-research.feasibilityNotes}\n\nThis ticket must deliver:\n1. A working Electrobun app in packages/devtools/ that opens a window\n2. Typed RPC between main process and webview\n3. Main process connects to Smithers HTTP API and can read SQLite\n4. A working e2e test harness that can:\n   - Launch the app headlessly\n   - Assert on webview content\n   - Clean up after tests\n5. At least 3 e2e tests proving the harness works:\n   - App launches and renders\n   - RPC round-trip works\n   - Can fetch data from a mock Smithers server\n\nThe e2e test harness is the MOST IMPORTANT deliverable. Everything else depends on it."
+            output:
+              files: "string[]"
+              steps: "string[]"
+              testCases: "string[]"
+              risks: "string[]"
+          - id: t1-implement
+            agent: implementer
+            prompt: "Implement: Electrobun app scaffold + e2e test harness for Smithers DevTools.\n\nPlan:\n{t1-plan.steps}\n\nFiles to create/modify:\n{t1-plan.files}\n\nTest cases to write:\n{t1-plan.testCases}\n\nRisks to watch for:\n{t1-plan.risks}\n\nCRITICAL: The e2e test harness must work. Run tests after implementing."
+            output:
+              filesChanged: "string[]"
+              summary: string
+              testsPass: boolean
+          - id: t1-review
+            agent: reviewer
+            prompt: "Review the Electrobun app scaffold and e2e test harness implementation.\n\nWhat was implemented: {t1-implement.summary}\nFiles changed: {t1-implement.filesChanged}\nTests passing: {t1-implement.testsPass}\n\nCheck:\n1. Does the Electrobun app launch correctly?\n2. Is the RPC schema properly typed?\n3. Do the e2e tests actually test end-to-end (launch app, interact, assert)?\n4. Is the test harness reusable for future tickets?\n5. Are there any security issues with the RPC setup?"
+            output:
+              verdict: string
+              comments: "string[]"
+      - kind: sequence
+        children[4]:
+          - id: t2-research
+            agent: researcher
+            prompt: "Research how to build the Smithers data layer for devtools.\n\nThis layer runs in the Electrobun main process (Bun) and provides:\n1. SSE client that connects to GET /v1/runs/:runId/events\n2. HTTP client for all Smithers REST endpoints (list runs, get status, approve, deny, frames)\n3. Direct SQLite reader for deep queries (attempts, tool calls, output data)\n4. Prometheus metrics parser from GET /metrics\n\nRead our existing HTTP client at src/pi-plugin/index.ts for reference.\nRead the server API at src/server/index.ts.\nRead the DB schema at src/db/internal-schema.ts.\nRead src/observability/index.ts for metrics format."
+            output:
+              existingClientAnalysis: string
+              sseStrategy: string
+              sqliteStrategy: string
+              metricsStrategy: string
+          - id: t2-plan
+            agent: planner
+            prompt: "Plan the Smithers data layer for devtools.\n\nResearch: {t2-research.existingClientAnalysis}\nSSE: {t2-research.sseStrategy}\nSQLite: {t2-research.sqliteStrategy}\nMetrics: {t2-research.metricsStrategy}\n\nDeliverables:\n1. SmithersClient class with typed methods for every API endpoint\n2. SSE event stream that emits typed SmithersEvent objects\n3. SQLite reader that queries attempts, tool calls, approvals, output data\n4. Metrics parser that returns structured metric data\n5. RPC handlers that expose all of the above to the webview\n6. Tests: unit tests for client, integration tests against a real Smithers server\n7. E2e test: launch app, connect to mock server, verify events stream to webview"
+            output:
+              files: "string[]"
+              steps: "string[]"
+              testCases: "string[]"
+              risks: "string[]"
+          - id: t2-implement
+            agent: implementer
+            prompt: "Implement the Smithers data layer for devtools.\n\nPlan: {t2-plan.steps}\nFiles: {t2-plan.files}\nTests: {t2-plan.testCases}\nRisks: {t2-plan.risks}"
+            output:
+              filesChanged: "string[]"
+              summary: string
+              testsPass: boolean
+          - id: t2-review
+            agent: reviewer
+            prompt: "Review the Smithers data layer implementation.\n\nSummary: {t2-implement.summary}\nFiles: {t2-implement.filesChanged}\nTests: {t2-implement.testsPass}\n\nCheck: typed API coverage, SSE reconnection, SQLite error handling, metrics parsing, e2e test quality."
+            output:
+              verdict: string
+              comments: "string[]"
+      - kind: sequence
+        children[4]:
+          - id: t3-research
+            agent: researcher
+            prompt: "Research how to expose the React fiber tree to the devtools webview.\n\nWe have a working POC at src/devtools/SmithersDevTools.ts that uses Bippy to intercept\nthe custom react-reconciler. This needs to be productionized:\n\n1. How to serialize the fiber tree efficiently for RPC (fibers have circular refs)\n2. How to send tree diffs instead of full snapshots on re-renders\n3. How to map fiber nodes to SmithersNodeType reliably\n4. How to handle the import ordering constraint (installRDTHook before reconciler)\n5. Performance: how large can fiber trees get in real workflows?\n\nRead src/devtools/SmithersDevTools.ts and tests/devtools.test.ts.\nRead src/dom/renderer.ts for the reconciler setup."
+            output:
+              serializationStrategy: string
+              diffStrategy: string
+              performanceNotes: string
+              importOrderingSolution: string
+          - id: t3-plan
+            agent: planner
+            prompt: "Plan the fiber tree data source for devtools.\n\nResearch: {t3-research.serializationStrategy}\nDiffing: {t3-research.diffStrategy}\nPerformance: {t3-research.performanceNotes}\nImport ordering: {t3-research.importOrderingSolution}\n\nDeliverables:\n1. FiberTreeSource class that wraps SmithersDevTools and produces serializable snapshots\n2. Tree diff algorithm that sends incremental updates\n3. RPC handler that streams fiber tree updates to the webview\n4. Props inspection: serialize memoizedProps safely (handle functions, circular refs)\n5. Re-render tracking: detect what changed between frames\n6. Unit tests for serialization, diffing, and props extraction\n7. E2e test: render a workflow, verify fiber tree appears in webview"
+            output:
+              files: "string[]"
+              steps: "string[]"
+              testCases: "string[]"
+              risks: "string[]"
+          - id: t3-implement
+            agent: implementer
+            prompt: "Implement the fiber tree data source.\n\nPlan: {t3-plan.steps}\nFiles: {t3-plan.files}\nTests: {t3-plan.testCases}\nRisks: {t3-plan.risks}"
+            output:
+              filesChanged: "string[]"
+              summary: string
+              testsPass: boolean
+          - id: t3-review
+            agent: reviewer
+            prompt: "Review the fiber tree data source implementation.\n\nSummary: {t3-implement.summary}\nFiles: {t3-implement.filesChanged}\nTests: {t3-implement.testsPass}\n\nCheck: serialization safety (no circular refs), diff correctness, performance with large trees, e2e test quality."
+            output:
+              verdict: string
+              comments: "string[]"
+      - kind: sequence
+        children[4]:
+          - id: t4-research
+            agent: researcher
+            prompt: "Research DAG visualization libraries for the devtools main view.\n\nRequirements:\n- Render a live, animated DAG from the Smithers fiber tree\n- Nodes change color/state in real-time\n- Support layout: sequences top-to-bottom, parallels fan horizontally\n- Handle nested structures (loops inside parallels, etc.)\n- Must work in Electrobun's CEF/webview renderer\n- Click nodes to drill down\n\nEvaluate:\n1. React Flow (reactflow.dev) — most popular React DAG library\n2. Dagre + D3 — layout algorithm + rendering\n3. ELK.js — Eclipse Layout Kernel for complex DAGs\n4. Custom canvas/SVG renderer\n5. Cytoscape.js\n\nConsider: performance with 100+ nodes, animation smoothness, layout stability during updates."
+            output:
+              libraryRecommendation: string
+              layoutAlgorithm: string
+              performanceNotes: string
+              alternatives: "string[]"
+          - id: t4-plan
+            agent: planner
+            prompt: "Plan the DAG graph renderer for devtools.\n\nResearch: {t4-research.libraryRecommendation}\nLayout: {t4-research.layoutAlgorithm}\nPerformance: {t4-research.performanceNotes}\n\nDeliverables:\n1. WorkflowGraph React component that renders fiber tree as a DAG\n2. Node components for each SmithersNodeType (task, sequence, parallel, loop, branch, approval, worktree)\n3. Edge rendering showing execution flow\n4. Real-time state updates: nodes change color as events stream in\n5. Loop node: collapsed with iteration badge, expandable\n6. Click handler that selects a node for drill-down\n7. Auto-layout that handles various workflow shapes\n8. Unit tests for layout algorithm and node state mapping\n9. E2e test: render a workflow with all node types, verify graph renders correctly"
+            output:
+              files: "string[]"
+              steps: "string[]"
+              testCases: "string[]"
+              risks: "string[]"
+          - id: t4-implement
+            agent: implementer
+            prompt: "Implement the DAG graph renderer.\n\nPlan: {t4-plan.steps}\nFiles: {t4-plan.files}\nTests: {t4-plan.testCases}\nRisks: {t4-plan.risks}"
+            output:
+              filesChanged: "string[]"
+              summary: string
+              testsPass: boolean
+          - id: t4-review
+            agent: reviewer
+            prompt: "Review the DAG graph renderer implementation.\n\nSummary: {t4-implement.summary}\nFiles: {t4-implement.filesChanged}\nTests: {t4-implement.testsPass}\n\nCheck: all node types render, state transitions animate, layout handles edge cases, performance, e2e tests."
+            output:
+              verdict: string
+              comments: "string[]"
+      - kind: sequence
+        children[4]:
+          - id: t5-research
+            agent: researcher
+            prompt: "Research the node detail panel for devtools drill-down.\n\nWhen a user clicks a node in the DAG, a detail panel shows everything about that node.\nThree levels of detail (see PRD):\n- Level 1: Summary (type, status, agent, duration, output preview)\n- Level 2: Execution (prompt, chat log, tool calls, token usage, attempts, timing)\n- Level 3: State (approval, errors, dependencies, worktree, cache, raw fiber props)\n\nResearch:\n1. What data is available from SQLite for each level? Read src/db/internal-schema.ts\n2. How to read chat logs from each agent type (Claude Code, Codex, Gemini)\n3. What UI patterns work for progressive disclosure (tabs, accordion, expandable sections)\n4. How to display tool calls in a readable way (collapsible with args/results)"
+            output:
+              dataAvailability: string
+              chatLogSources: string
+              uiPatterns: string
+              toolCallDisplay: string
+          - id: t5-plan
+            agent: planner
+            prompt: "Plan the node detail panel.\n\nResearch: {t5-research.dataAvailability}\nChat logs: {t5-research.chatLogSources}\nUI: {t5-research.uiPatterns}\nTool calls: {t5-research.toolCallDisplay}\n\nDeliverables:\n1. NodeDetailPanel React component with 3-level progressive disclosure\n2. Level 1: NodeSummary component\n3. Level 2: ExecutionDetail component with tabs (prompt, chat, tools, tokens, attempts)\n4. Level 3: StateContext component (approval, errors, deps, worktree, cache, raw props)\n5. ChatLogAdapter interface + implementations for Claude Code, Codex, Gemini\n6. ToolCallList component with collapsible entries\n7. Unit tests for each sub-component\n8. E2e test: run a workflow, click a node, verify all 3 levels of detail render"
+            output:
+              files: "string[]"
+              steps: "string[]"
+              testCases: "string[]"
+              risks: "string[]"
+          - id: t5-implement
+            agent: implementer
+            prompt: "Implement the node detail panel.\n\nPlan: {t5-plan.steps}\nFiles: {t5-plan.files}\nTests: {t5-plan.testCases}\nRisks: {t5-plan.risks}"
+            output:
+              filesChanged: "string[]"
+              summary: string
+              testsPass: boolean
+          - id: t5-review
+            agent: reviewer
+            prompt: "Review the node detail panel implementation.\n\nSummary: {t5-implement.summary}\nFiles: {t5-implement.filesChanged}\nTests: {t5-implement.testsPass}\n\nCheck: all 3 levels render, chat log adapters work, tool calls display correctly, e2e tests."
+            output:
+              verdict: string
+              comments: "string[]"
+      - kind: sequence
+        children[4]:
+          - id: t6-research
+            agent: researcher
+            prompt: "Research the multi-run dashboard view.\n\nThis is the landing page of devtools — shows all runs from GET /v1/runs and SQLite.\nResearch:\n1. What run data is available (read src/db/internal-schema.ts, _smithers_runs table)\n2. How the existing CLI list command works (src/cli/index.ts)\n3. How to show live status for active runs (SSE per run? Polling?)\n4. Filtering and sorting UX patterns for run lists"
+            output:
+              runDataShape: string
+              liveStatusStrategy: string
+              filteringPatterns: string
+              existingCliApproach: string
+          - id: t6-plan
+            agent: planner
+            prompt: "Plan the multi-run dashboard.\n\nResearch: {t6-research.runDataShape}\nLive status: {t6-research.liveStatusStrategy}\nFiltering: {t6-research.filteringPatterns}\n\nDeliverables:\n1. RunDashboard React component as the app's landing page\n2. RunList component with columns: name, status, start time, duration, node count\n3. Active runs at top with live status badges\n4. Click any run to navigate to its DAG view\n5. Filter by status, workflow name, date range\n6. Approve/deny buttons for runs in waiting-approval state\n7. Unit tests for filtering, sorting, status display\n8. E2e test: start 2 workflows, verify both appear in dashboard, click through to DAG"
+            output:
+              files: "string[]"
+              steps: "string[]"
+              testCases: "string[]"
+              risks: "string[]"
+          - id: t6-implement
+            agent: implementer
+            prompt: "Implement the multi-run dashboard.\n\nPlan: {t6-plan.steps}\nFiles: {t6-plan.files}\nTests: {t6-plan.testCases}\nRisks: {t6-plan.risks}"
+            output:
+              filesChanged: "string[]"
+              summary: string
+              testsPass: boolean
+          - id: t6-review
+            agent: reviewer
+            prompt: "Review the multi-run dashboard implementation.\n\nSummary: {t6-implement.summary}\nFiles: {t6-implement.filesChanged}\nTests: {t6-implement.testsPass}\n\nCheck: run list renders, live status works, filtering works, approve/deny works, e2e tests."
+            output:
+              verdict: string
+              comments: "string[]"
+      - kind: sequence
+        children[4]:
+          - id: t7-research
+            agent: researcher
+            prompt: "Research the metrics panel for devtools.\n\nThe devtools must surface ALL Prometheus metrics that Smithers exposes.\nRead src/effect/metrics.ts for the full list of 45+ metrics.\nRead src/observability/index.ts for the Prometheus text renderer.\n\nResearch:\n1. How to parse Prometheus text format into structured data\n2. Charting libraries that work in Electrobun/CEF (Chart.js, Recharts, uPlot)\n3. How to show time-series data (need to poll /metrics at intervals and accumulate)\n4. How to overlay metrics on the DAG (color nodes by duration, size by cost)\n5. Token cost estimation — is there a standard pricing source?"
+            output:
+              metricsInventory: string
+              chartLibrary: string
+              timeSeriesStrategy: string
+              dagOverlayApproach: string
+          - id: t7-plan
+            agent: planner
+            prompt: "Plan the metrics panel.\n\nResearch: {t7-research.metricsInventory}\nCharts: {t7-research.chartLibrary}\nTime series: {t7-research.timeSeriesStrategy}\nDAG overlay: {t7-research.dagOverlayApproach}\n\nDeliverables:\n1. MetricsPanel React component with summary cards and time-series charts\n2. Prometheus text parser\n3. Token usage breakdown by run, agent, model\n4. Task duration histograms (p50/p95/p99)\n5. Cache hit rate display\n6. Concurrency utilization gauge\n7. DAG overlay mode: color nodes by duration or token cost\n8. Unit tests for Prometheus parser, metric aggregation\n9. E2e test: run a workflow, verify metrics appear in panel and DAG overlay"
+            output:
+              files: "string[]"
+              steps: "string[]"
+              testCases: "string[]"
+              risks: "string[]"
+          - id: t7-implement
+            agent: implementer
+            prompt: "Implement the metrics panel.\n\nPlan: {t7-plan.steps}\nFiles: {t7-plan.files}\nTests: {t7-plan.testCases}\nRisks: {t7-plan.risks}"
+            output:
+              filesChanged: "string[]"
+              summary: string
+              testsPass: boolean
+          - id: t7-review
+            agent: reviewer
+            prompt: "Review the metrics panel implementation.\n\nSummary: {t7-implement.summary}\nFiles: {t7-implement.filesChanged}\nTests: {t7-implement.testsPass}\n\nCheck: all metrics surfaced, charts render, Prometheus parser correct, DAG overlay works, e2e tests."
+            output:
+              verdict: string
+              comments: "string[]"
+      - kind: sequence
+        children[4]:
+          - id: t8-research
+            agent: researcher
+            prompt: "Research the timeline/Gantt view for devtools.\n\nThis is the secondary view showing task execution over time.\nResearch:\n1. Gantt chart libraries (react-gantt, vis-timeline, custom SVG)\n2. How to represent loop iterations on a timeline\n3. How to show parallel execution visually\n4. Data source: _smithers_nodes table has start/finish timestamps per node\n5. How to handle very long workflows (scrolling, zooming)"
+            output:
+              ganttLibrary: string
+              loopRepresentation: string
+              dataSource: string
+              scrollZoomStrategy: string
+          - id: t8-plan
+            agent: planner
+            prompt: "Plan the timeline view.\n\nResearch: {t8-research.ganttLibrary}\nLoops: {t8-research.loopRepresentation}\nData: {t8-research.dataSource}\nScroll/zoom: {t8-research.scrollZoomStrategy}\n\nDeliverables:\n1. TimelineView React component with horizontal bars per task\n2. Color-coded by status (same colors as DAG nodes)\n3. Parallel tasks shown on separate lanes\n4. Loop iterations grouped with iteration markers\n5. Click a bar to select that node (synced with DAG view)\n6. Zoom and pan controls\n7. Unit tests for timeline data transformation\n8. E2e test: run a workflow with parallel + loop, verify timeline renders correctly"
+            output:
+              files: "string[]"
+              steps: "string[]"
+              testCases: "string[]"
+              risks: "string[]"
+          - id: t8-implement
+            agent: implementer
+            prompt: "Implement the timeline view.\n\nPlan: {t8-plan.steps}\nFiles: {t8-plan.files}\nTests: {t8-plan.testCases}\nRisks: {t8-plan.risks}"
+            output:
+              filesChanged: "string[]"
+              summary: string
+              testsPass: boolean
+          - id: t8-review
+            agent: reviewer
+            prompt: "Review the timeline view implementation.\n\nSummary: {t8-implement.summary}\nFiles: {t8-implement.filesChanged}\nTests: {t8-implement.testsPass}\n\nCheck: timeline renders, parallel lanes work, loop iterations grouped, click-to-select synced, e2e tests."
+            output:
+              verdict: string
+              comments: "string[]"

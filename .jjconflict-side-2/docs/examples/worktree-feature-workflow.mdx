@@ -1,0 +1,286 @@
+---
+title: "Ghost: Worktree Feature Workflow"
+description: "Example from scripts/worktree-feature/ — A production multi-agent pipeline that discovers tickets from a PRD, implements them with Claude/Codex, validates, reviews in parallel, and generates reports."
+---
+
+# scripts/worktree-feature/ — Full Pipeline
+
+<Note>
+**Ghost doc** — Real production workflow at `scripts/worktree-feature/`. The most complex Smithers example: multiple CLI agents (Claude Code, OpenAI Codex) through a full development lifecycle.
+</Note>
+
+## Pipeline
+
+1. **Discover** — Read PRD, break into ordered independent tickets
+2. **Implement** — Write code end-to-end per ticket
+3. **Validate** — Run `bun test`
+4. **Review** — Claude + Codex review in parallel
+5. **ReviewFix** — Address review issues
+6. **Report** — Generate final report
+
+Steps 2--5 loop via `<Loop>` until both reviewers approve or max iterations reached.
+
+## Schema Setup — smithers.ts
+
+```tsx
+// scripts/worktree-feature/smithers.ts
+import { createSmithers } from "smithers-orchestrator";
+import { z } from "zod";
+
+// Each pipeline stage gets its own Zod output schema
+const DiscoverOutput = z.object({
+  tickets: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    description: z.string(),
+    acceptanceCriteria: z.array(z.string()),
+    filesToModify: z.array(z.string()),
+    filesToCreate: z.array(z.string()),
+    dependencies: z.array(z.string()).nullable(),
+  })),
+  reasoning: z.string(),
+});
+
+const ImplementOutput = z.object({
+  filesCreated: z.array(z.string()).nullable(),
+  filesModified: z.array(z.string()).nullable(),
+  whatWasDone: z.string(),
+  allTestsPassing: z.boolean(),
+  testOutput: z.string(),
+});
+
+const ValidateOutput = z.object({
+  allPassed: z.boolean(),
+  failingSummary: z.string().nullable(),
+});
+
+const ReviewOutput = z.object({
+  reviewer: z.string(),
+  approved: z.boolean(),
+  issues: z.array(z.object({
+    severity: z.enum(["critical", "major", "minor", "nit"]),
+    file: z.string(),
+    line: z.number().nullable(),
+    description: z.string(),
+    suggestion: z.string().nullable(),
+  })),
+  feedback: z.string(),
+});
+
+const ReviewFixOutput = z.object({
+  fixesMade: z.array(z.object({ issue: z.string(), fix: z.string(), file: z.string() })),
+  allIssuesResolved: z.boolean(),
+  summary: z.string(),
+});
+
+const ReportOutput = z.object({
+  ticketTitle: z.string(),
+  status: z.enum(["completed", "partial", "failed"]),
+  summary: z.string(),
+  filesChanged: z.number(),
+  reviewRounds: z.number(),
+});
+
+export const { Workflow, Task, useCtx, smithers, tables, outputs } = createSmithers({
+  discover: DiscoverOutput,
+  implement: ImplementOutput,
+  validate: ValidateOutput,
+  review: ReviewOutput,
+  reviewFix: ReviewFixOutput,
+  report: ReportOutput,
+}, {
+  dbPath: `${process.env.HOME}/.cache/smithers/worktree-feature.db`,
+  journalMode: "DELETE",
+});
+```
+
+## Entry Point — workflow.tsx
+
+```tsx
+// scripts/worktree-feature/workflow.tsx
+import { Sequence, Branch } from "smithers-orchestrator";
+import { Discover, TicketPipeline } from "./components";
+import { Workflow, smithers, outputs } from "./smithers";
+
+export default smithers((ctx) => {
+  const discoverOutput = ctx.latest("discover", "discover-codex");
+  const tickets = discoverOutput?.tickets ?? [];
+  const unfinishedTickets = tickets.filter(
+    (t: any) => !ctx.latest("report", `${t.id}:report`)
+  );
+
+  return (
+    <Workflow name="worktree-feature">
+      <Sequence>
+        <Branch if={tickets.length === 0} then={<Discover />} />
+        {unfinishedTickets.map((ticket: any) => (
+          <TicketPipeline key={ticket.id} ticket={ticket} />
+        ))}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## Agents — agents.ts
+
+```tsx
+// scripts/worktree-feature/agents.ts
+import { ToolLoopAgent as Agent, stepCountIs } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { openai } from "@ai-sdk/openai";
+import { ClaudeCodeAgent, CodexAgent } from "smithers-orchestrator";
+import { SYSTEM_PROMPT } from "./system-prompt";
+
+const USE_CLI = process.env.USE_CLI_AGENTS !== "0";
+const UNSAFE = process.env.SMITHERS_UNSAFE === "1";
+
+// Claude — switches between API agent and CLI agent
+const claudeApi = new Agent({
+  model: anthropic("claude-opus-4-6"),
+  instructions: SYSTEM_PROMPT,
+  stopWhen: stepCountIs(100),
+});
+
+const claudeCli = new ClaudeCodeAgent({
+  model: "claude-opus-4-6",
+  systemPrompt: SYSTEM_PROMPT,
+  dangerouslySkipPermissions: UNSAFE,
+  timeoutMs: 30 * 60 * 1000,
+});
+
+export const claude = USE_CLI ? claudeCli : claudeApi;
+
+// Codex — CLI agent (CodexAgent does not have an API mode)
+export const codex = new CodexAgent({
+  model: "gpt-5.3-codex",
+  systemPrompt: SYSTEM_PROMPT,
+  yolo: UNSAFE,
+  timeoutMs: 30 * 60 * 1000,
+});
+```
+
+## Validation Loop — ValidationLoop.tsx
+
+```tsx
+// scripts/worktree-feature/components/ValidationLoop.tsx
+import { Loop, Sequence } from "smithers-orchestrator";
+import { Implement } from "./Implement";
+import { Validate } from "./Validate";
+import { Review } from "./Review";
+import { ReviewFix } from "./ReviewFix";
+import { useCtx } from "../smithers";
+
+const MAX_REVIEW_ROUNDS = 3;
+
+export function ValidationLoop({ ticket }: { ticket: { id: string } }) {
+  const ctx = useCtx();
+  const ticketId = ticket.id;
+
+  const claudeReview = ctx.latest("review", `${ticketId}:review-claude`);
+  const codexReview = ctx.latest("review", `${ticketId}:review-codex`);
+
+  const allApproved = !!claudeReview?.approved && !!codexReview?.approved;
+
+  return (
+    <Loop
+      id={`${ticketId}:impl-review-loop`}
+      until={allApproved}
+      maxIterations={MAX_REVIEW_ROUNDS}
+      onMaxReached="return-last"
+    >
+      <Sequence>
+        <Implement ticket={ticket} />
+        <Validate ticket={ticket} />
+        <Review ticket={ticket} />
+        <ReviewFix ticket={ticket} />
+      </Sequence>
+    </Loop>
+  );
+}
+```
+
+## Parallel Review — Review.tsx
+
+```tsx
+// scripts/worktree-feature/components/Review.tsx
+import { Parallel } from "smithers-orchestrator";
+import { Task, useCtx, outputs } from "../smithers";
+import { claude, codex } from "../agents";
+import ReviewPrompt from "./Review.mdx";
+
+export function Review({ ticket }: { ticket: { id: string; title: string } }) {
+  const ctx = useCtx();
+  const ticketId = ticket.id;
+  const latestValidate = ctx.latest("validate", `${ticketId}:validate`);
+
+  if (!latestValidate?.allPassed) return null;
+
+  return (
+    <Parallel>
+      <Task
+        id={`${ticketId}:review-claude`}
+        output={outputs.review}
+        agent={claude}
+        timeoutMs={15 * 60 * 1000}
+        continueOnFail
+      >
+        <ReviewPrompt ticketId={ticketId} reviewer="claude" />
+      </Task>
+
+      <Task
+        id={`${ticketId}:review-codex`}
+        output={outputs.review}
+        agent={codex}
+        timeoutMs={15 * 60 * 1000}
+        continueOnFail
+      >
+        <ReviewPrompt ticketId={ticketId} reviewer="codex" />
+      </Task>
+    </Parallel>
+  );
+}
+```
+
+## Ticket Pipeline — TicketPipeline.tsx
+
+```tsx
+// scripts/worktree-feature/components/TicketPipeline.tsx
+import { Sequence } from "smithers-orchestrator";
+import { ValidationLoop } from "./ValidationLoop";
+import { Report } from "./Report";
+import { useCtx } from "../smithers";
+
+export function TicketPipeline({ ticket }: { ticket: { id: string } }) {
+  const ctx = useCtx();
+  const latestReport = ctx.latest("report", `${ticket.id}:report`);
+  const ticketComplete = latestReport != null;
+
+  return (
+    <Sequence key={ticket.id} skipIf={ticketComplete}>
+      <ValidationLoop ticket={ticket} />
+      <Report ticket={ticket} />
+    </Sequence>
+  );
+}
+```
+
+## Running
+
+```bash
+cd scripts/worktree-feature
+bun install
+./run.sh
+```
+
+## Key Patterns
+
+- **`createSmithers`** registers 6 output schemas; generates typed `tables`, `outputs`, and `Task` components.
+- **`ClaudeCodeAgent` / `CodexAgent`** run real CLI tools with full filesystem access.
+- **`<Loop>`** iterates implement/validate/review/fix until both reviewers approve or `MAX_REVIEW_ROUNDS` exhausted.
+- **`<Parallel>`** runs dual review simultaneously; both must approve.
+- **`ctx.latest(schemaKey, nodeId)`** reads the highest-iteration output for a task.
+- **MDX prompts** -- `.mdx` files serve as prompt templates with JSX interpolation.
+- **`skipIf`** skips already-completed tickets on resume.
+- **`continueOnFail`** prevents a single review failure from blocking the pipeline.
+- **Dynamic ticket mapping** -- `unfinishedTickets.map()` renders one `TicketPipeline` per ticket.

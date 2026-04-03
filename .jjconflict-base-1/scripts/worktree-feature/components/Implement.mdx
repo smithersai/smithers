@@ -1,0 +1,54 @@
+IMPLEMENTATION — Ticket: {props.ticketId} — {props.ticketTitle}
+
+Implement FULLY end-to-end. Do NOT stop until fully implemented + ALL tests pass.
+
+TICKET DESCRIPTION:
+{props.ticketDescription}
+
+ACCEPTANCE CRITERIA:
+- {props.acceptanceCriteria}
+
+FILES TO MODIFY: {JSON.stringify(props.filesToModify)}
+FILES TO CREATE: {JSON.stringify(props.filesToCreate)}
+
+The full PRD is in your system prompt. Refer to it for exact code snippets, types, and implementation details.
+
+{props.previousImplementation ? `\nPREVIOUS ATTEMPT:\nWhat was done: ${props.previousImplementation.whatWasDone}\nTest output: ${props.previousImplementation.testOutput}\nFix issues from previous attempt.` : ""}
+
+{props.validationFeedback ? `\nVALIDATION RESULTS FROM PREVIOUS ATTEMPT:\n- All passed: ${props.validationFeedback.allPassed}\n- Failures: ${props.validationFeedback.failingSummary ?? "none"}\nFix ALL validation failures before proceeding.` : ""}
+
+{props.reviewFixes ? `\nREVIEW FIXES NEEDED:\n${props.reviewFixes}` : ""}
+
+BEFORE CODING:
+1. Explore codebase first. Read existing files relevant to ticket.
+2. Understand existing patterns, naming conventions, architecture.
+3. Read the PRD section relevant to this ticket for exact code to write.
+4. If the PRD provides code snippets, use them as the starting point (adapt as needed).
+
+IMPLEMENTATION RULES:
+1. Implement ticket FULLY — nothing unfinished
+2. Follow existing smithers framework patterns exactly
+3. **ALL commits go directly on `main`. NEVER create branches. Stay on `main`.**
+4. Atomic git commits: ✨ feat, 🧪 test, 🐛 fix, 📋 docs, ♻️ refactor
+5. After implementing, run: `cd submodules/smithers && bun test`
+6. If tests fail, fix before moving on. NEVER leave failing tests.
+7. Pre-existing test failures count — fix those too.
+
+CODE QUALITY:
+- Follow existing smithers framework patterns (React reconciler, Drizzle, Zod)
+- DRY — no duplicate code
+- Handle all error cases elegantly
+- Write clear, self-documenting code
+- TypeScript strict mode compliance
+
+SELF-REVIEW:
+Before finishing, self-review:
+- Test coverage: all edge cases, error conditions
+- Code follows existing framework patterns
+- Types are correct and complete
+- No unused imports or dead code
+Fix issues before submitting.
+
+**REQUIRED OUTPUT** — JSON matching this schema:
+{props.schema}
+DO NOT skip JSON output. Workflow fails without it.

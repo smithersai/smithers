@@ -1,0 +1,257 @@
+---
+title: Human-in-the-Loop
+description: How to pause workflows for human approval, handle denials, and design multi-step approval workflows.
+---
+
+You automate a workflow. It builds, it tests, it deploys. Then one Tuesday it deploys a broken migration to production at 3 AM because no human was awake to say "wait." Full automation is wonderful right up until it isn't.
+
+The tension is real: you want machines to do the boring parts, but some decisions — deploying to production, publishing to customers, spending money — need a human brain in the loop. The question isn't whether to pause. It's how to pause *well*.
+
+Smithers gives you two mechanisms, and the difference between them matters more than you might think.
+
+## Simple Gates: `needsApproval`
+
+Start with the simplest thing that could work. If you just need a human to say "go" before a task runs, put `needsApproval` on it:
+
+```tsx
+<Task id="deploy" output={outputs.deploy} agent={deployer} needsApproval>
+  Deploy the application to production.
+</Task>
+```
+
+The workflow pauses before executing the task. A human approves. The task runs. That's it — no decision value, no downstream branching. A gate, nothing more.
+
+```bash
+# Approve the gate
+smithers approve abc123 --node deploy
+
+# Resume the workflow
+smithers up workflow.tsx --run-id abc123 --resume true
+```
+
+Use `needsApproval` when you need a checkpoint, not a choice. "Should we proceed?" is a gate. "What should we do next?" is not.
+
+## Explicit Nodes: `<Approval>`
+
+Here's where it gets interesting. What if a denial isn't an error — it's information? What if "no" means "take a different path" rather than "stop everything"?
+
+That's the aha moment: **an approval can be data, not just a gate**.
+
+When downstream tasks need to *read* the decision and branch on it, use `<Approval>`:
+
+```tsx
+import { Approval, approvalDecisionSchema, createSmithers } from "smithers-orchestrator";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  approval: approvalDecisionSchema,
+  result: z.object({ status: z.enum(["published", "rejected"]) }),
+});
+
+export default smithers((ctx) => {
+  const decision = ctx.outputMaybe(outputs.approval, { nodeId: "approve-publish" });
+
+  return (
+    <Workflow name="publish-flow">
+      <Sequence>
+        <Approval
+          id="approve-publish"
+          output={outputs.approval}
+          request={{
+            title: "Publish the draft?",
+            summary: "Human review required before production publish.",
+          }}
+          onDeny="continue"
+        />
+
+        {decision ? (
+          <Task id="record" output={outputs.result}>
+            {{ status: decision.approved ? "published" : "rejected" }}
+          </Task>
+        ) : null}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+Look at the `onDeny="continue"` and the branching logic that follows. A denial doesn't kill the workflow — it flows through as a value. The downstream task reads `decision.approved` and acts accordingly.
+
+The `<Approval>` node produces an `ApprovalDecision`:
+
+```ts
+type ApprovalDecision = {
+  approved: boolean;
+  note: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+};
+```
+
+Four fields. The boolean is the verdict. The rest is audit trail. Every approval becomes a first-class piece of data in your workflow — queryable, branchable, persistent.
+
+## Denial Policies
+
+So a human said "no." Now what? The `onDeny` prop answers that question, and the right answer depends entirely on what you're protecting.
+
+### `onDeny="fail"` (default)
+
+The workflow fails. Full stop. Use this for actions where denial means "this should not have been attempted":
+
+```tsx
+<Approval
+  id="deploy-prod"
+  output={outputs.deployApproval}
+  request={{ title: "Deploy to production?" }}
+  onDeny="fail"
+/>
+```
+
+Production deploys, compliance-sensitive operations, anything destructive — if a human says no, you want the workflow to stop, not find a creative workaround.
+
+### `onDeny="continue"`
+
+The denial resolves as a decision value and the workflow keeps going. This is the policy that turns approvals into branching logic:
+
+```tsx
+<Approval
+  id="approve-publish"
+  output={outputs.approval}
+  request={{ title: "Publish?" }}
+  onDeny="continue"
+/>
+
+{decision?.approved ? (
+  <Task id="publish" output={outputs.publish}>...</Task>
+) : decision ? (
+  <Task id="log-rejection" output={outputs.rejection}>
+    {{ reason: decision.note ?? "No reason given" }}
+  </Task>
+) : null}
+```
+
+Notice the three-way branch: approved, denied, or not yet decided. The denied path does real work — logging the rejection, notifying someone, taking an alternative action. "No" is just another kind of data.
+
+### `onDeny="skip"`
+
+The protected branch is skipped, but the rest of the workflow continues as if the approval node were never there:
+
+```tsx
+<Approval
+  id="optional-review"
+  output={outputs.reviewApproval}
+  request={{ title: "Run additional review?" }}
+  onDeny="skip"
+/>
+```
+
+Think of this as "nice to have" approval. The extra review would be great, but the workflow doesn't depend on it.
+
+### Choosing a Denial Policy
+
+| Policy | Use when... |
+| --- | --- |
+| `"fail"` | Denial should stop the entire workflow (deploys, releases) |
+| `"continue"` | You need to branch on the decision (publish vs reject) |
+| `"skip"` | The approved work is optional and the workflow should continue without it |
+
+If you aren't sure, start with `"fail"`. It's the safest default, and you can always loosen it later. You cannot un-deploy to production.
+
+## The Approval Lifecycle
+
+What actually happens when the workflow hits an approval node? Here's the full lifecycle, and every state is durable:
+
+```
+pending → requested → waiting-approval → approved | denied → completed
+```
+
+1. Smithers reaches the approval node
+2. It persists an approval request record (title, summary, metadata)
+3. The workflow suspends in a durable waiting state
+4. A human approves or denies via CLI, API, or UI
+5. The node resolves according to its denial policy
+6. Downstream tasks become eligible to run
+
+"Durable" is the key word. If the process crashes while waiting for approval, the request still exists. When the process restarts and a decision arrives, the workflow picks up exactly where it left off. Your approval doesn't vanish just because a server rebooted — that would rather defeat the purpose.
+
+## Multi-Step Approvals
+
+Real pipelines often need more than one checkpoint. Each `<Approval>` is independent — they don't know about each other, and they don't need to:
+
+```tsx
+<Workflow name="release-pipeline">
+  <Sequence>
+    <Task id="build" output={outputs.build} agent={builder}>Build the release.</Task>
+
+    <Approval
+      id="qa-approval"
+      output={outputs.qaApproval}
+      request={{ title: "QA sign-off", summary: "All tests passed." }}
+    />
+
+    <Task id="stage" output={outputs.stage} agent={deployer}>Deploy to staging.</Task>
+
+    <Approval
+      id="prod-approval"
+      output={outputs.prodApproval}
+      request={{ title: "Production deploy", summary: "Staging looks good." }}
+    />
+
+    <Task id="deploy" output={outputs.deploy} agent={deployer}>Deploy to production.</Task>
+  </Sequence>
+</Workflow>
+```
+
+Build, wait for QA, stage, wait for production sign-off, deploy. Each gate pauses independently. The workflow advances step-by-step as humans approve:
+
+```bash
+# After build completes, approve QA
+smithers approve rel-1 --node qa-approval --note "QA passed"
+smithers up workflow.tsx --run-id rel-1 --resume true
+
+# After staging, approve production
+smithers approve rel-1 --node prod-approval --note "Ship it"
+smithers up workflow.tsx --run-id rel-1 --resume true
+```
+
+This is a pattern you'll see in any organization with a release process. The workflow encodes the process; the humans provide judgment at the right moments.
+
+## Approval with Context
+
+A bare "Deploy to production?" is not very helpful when you're the one being asked at 11 PM. Give your approvers what they need to decide:
+
+```tsx
+<Approval
+  id="deploy-approval"
+  output={outputs.deployApproval}
+  request={{
+    title: `Deploy v${version} to production?`,
+    summary: `${passedTests} tests passed. Risk level: ${riskLevel}.`,
+    metadata: {
+      commitSha: ctx.input.commitSha,
+      changedFiles: analysis.filesChanged,
+    },
+  }}
+/>
+```
+
+The `title` and `summary` are what the human sees. The `metadata` is persisted alongside the request and available in `smithers inspect`, so the approver can check the commit, review which files changed, and make an informed decision without switching tools.
+
+Good approval context is the difference between "I guess?" and "Yes, ship it." Invest in it.
+
+## `needsApproval` vs `<Approval>`: When to Use Each
+
+| Feature | `needsApproval` | `<Approval>` |
+| --- | --- | --- |
+| Produces a decision value | No | Yes (`ApprovalDecision`) |
+| Downstream branching | Not possible | Branch on `decision.approved` |
+| Denial policies | Implicit fail | `"fail"`, `"continue"`, or `"skip"` |
+| Custom request metadata | No | Yes (`title`, `summary`, `metadata`) |
+| Visible in graph | As a flag on the task | As its own node |
+
+**Rule of thumb:** If you're thinking of the approval as a padlock on a task, use `needsApproval`. If you're thinking of it as a fork in the road, use `<Approval>`.
+
+## Next Steps
+
+- [Approval Component](/components/approval) — Full API reference for `<Approval>`.
+- [Suspend and Resume](/concepts/suspend-and-resume) — The underlying durability model.
+- [CLI Reference](/cli/overview) — Commands for approving, denying, and resuming workflows.

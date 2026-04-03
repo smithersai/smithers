@@ -1,0 +1,100 @@
+---
+title: VCS Integration
+description: How Smithers integrates with JJ (Jujutsu) for filesystem snapshots and revert support.
+---
+
+Smithers integrates with [JJ (Jujutsu)](https://github.com/martinvonz/jj) to record filesystem snapshots at each task completion. This enables reverting to the exact workspace state after any attempt.
+
+## JJ Pointer Flow
+
+When JJ is installed and the workspace is a JJ repository:
+
+1. A task executes, making filesystem changes via agent tools.
+2. The task completes (success or failure).
+3. Smithers captures the JJ change/operation ID into `_smithers_attempts.jj_pointer`.
+4. The next task continues from this point.
+
+Each attempt gets its own pointer.
+
+## Recorded Data
+
+| Column | Type | Description |
+|---|---|---|
+| `jj_pointer` | text (nullable) | JJ change/operation ID after attempt completion. `null` if JJ unavailable. |
+
+```bash
+sqlite3 smithers.db "SELECT run_id, node_id, iteration, attempt, jj_pointer FROM _smithers_attempts WHERE run_id = '<id>';"
+```
+
+```
+smth_a1b2|analyze|0|1|zqkopwvn
+smth_a1b2|fix|0|1|xrlmqkts
+smth_a1b2|fix|0|2|ynpwzrmv
+smth_a1b2|report|0|1|kutswxqp
+```
+
+## Revert
+
+```bash
+smithers revert workflow.tsx \
+  --run-id <run-id> \
+  --node-id <node-id> \
+  --attempt <attempt-number> \
+  --iteration <iteration-number>
+```
+
+```bash
+smithers revert workflow.tsx --run-id smth_a1b2 --node-id fix --attempt 1 --iteration 0
+```
+
+Restores the filesystem to the exact post-attempt state. Emits `RevertStarted` and `RevertFinished` events.
+
+## Without JJ
+
+- `jj_pointer` is `null` for all attempts.
+- `revert` fails with an error.
+- All other Smithers functionality is unaffected.
+
+JJ is optional. Install only if revert support is needed.
+
+## Setup
+
+```bash
+brew install jj
+```
+
+```bash
+# New JJ repo
+cd /path/to/my-project
+jj git init
+
+# Colocate with existing Git repo
+jj git init --colocate
+```
+
+Smithers auto-detects JJ and starts recording pointers.
+
+## Programmatic Helpers
+
+Smithers exports helpers for running raw `jj` commands, checking repo status, reading/restoring pointers, and managing JJ workspaces. See [VCS Helper Reference](/reference/vcs-helpers).
+
+## Cache Key Integration
+
+JJ pointers are included in the cache key when caching is enabled (`<Workflow cache>` or `{ cache: true }`):
+
+| Component |
+|---|
+| Workflow name + nodeId |
+| Prompt text or static payload |
+| Model ID and parameters |
+| Tool allowlist and versions |
+| Output schema signature |
+| **JJ pointer** |
+
+Workspace changes invalidate cached results. Returning to a previous state (same JJ pointer) reuses the cached result.
+
+## Next Steps
+
+- [Resumability](/guides/resumability) -- Crash recovery and state persistence.
+- [Caching](/concepts/caching) -- Cache key mechanics.
+- [CLI Reference](/cli/overview) -- All CLI commands including `revert`.

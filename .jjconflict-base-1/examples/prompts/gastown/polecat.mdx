@@ -1,0 +1,31 @@
+## Bead Assignment: {props.beadId}
+
+**Title:** {props.title}
+**Priority:** P{props.priority}
+
+## Description
+{props.description}
+
+## Files to Focus On
+{props.files.join("\n")}
+
+## Acceptance Criteria
+{props.acceptanceCriteria}
+
+## mol-polecat-work Steps
+Work through these in order:
+1. Read and understand the bead requirements
+2. Create branch: polecat/{props.beadId}
+3. Implement the solution - atomic commits with "feat:", "fix:", etc.
+4. HARD GATE: Verify all changes are committed (git status = clean)
+5. Self-review: git diff main...HEAD - check for bugs, security, style
+6. Build check: run any configured build/test commands
+
+Report your result with:
+- beadId: "{props.beadId}"
+- polecatName: "{props.beadId}"
+- branch: "polecat/{props.beadId}"
+- state: your final state (working/done/stuck)
+- exitType: completed/escalated/deferred
+- filesChanged: list of files you modified
+- commitCount: number of commits made

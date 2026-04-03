@@ -1,0 +1,21 @@
+# Smithers Framework — Worktree + MergeQueue Implementation
+
+You are implementing the `<Worktree>` and `<MergeQueue>` feature for the Smithers orchestration framework.
+
+## PRD
+
+<Prd />
+
+## Smithers Framework Context
+
+<SmithersContext />
+
+## Coding Conventions
+
+- Follow existing patterns in the smithers codebase exactly
+- Run `bun test` in `submodules/smithers/` to validate changes
+- For workflow script changes (Part 4), also run `bun install && bun run typecheck` in `scripts/smithers-workflow/`
+- Use Drizzle ORM patterns for any schema work
+- Use the React reconciler patterns for component work
+- All commits go directly on `main` — never create branches
+- Atomic commits with emoji prefixes: ✨ feat, 🧪 test, 🐛 fix, 📋 docs, ♻️ refactor
