@@ -18,7 +18,7 @@ export interface SmithersCtx<Schema> {
   runId: string;
   iteration: number;
   iterations?: Record<string, number>;
-  input: Schema extends { input: infer T } ? T : any;
+  input: Schema extends { input: infer T extends z.ZodTypeAny } ? z.infer<T> : any;
   outputs: OutputAccessor<Schema>;
 
   output(table: FallbackTableName<Schema>, key: OutputKey): any;
