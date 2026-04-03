@@ -331,6 +331,22 @@ export const smithersErrorDefinitions = {
     category: "cli",
     when: "The workflow creation CLI refuses to overwrite an existing workflow file.",
   },
+  PROMPT_EXISTS: {
+    category: "cli",
+    when: "The prompt creation CLI refuses to overwrite an existing prompt file.",
+  },
+  PROMPT_MDX_INVALID: {
+    category: "cli",
+    when: "An MDX prompt file does not export a valid default component.",
+  },
+  TICKET_EXISTS: {
+    category: "cli",
+    when: "The ticket creation CLI refuses to overwrite an existing ticket file.",
+  },
+  TICKET_NOT_FOUND: {
+    category: "cli",
+    when: "A CLI command references a ticket file that does not exist.",
+  },
   CLI_DB_NOT_FOUND: {
     category: "cli",
     when: "A CLI command cannot find a nearby smithers.db file.",
