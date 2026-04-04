@@ -609,16 +609,19 @@ export class CodexAgent extends BaseCliAgent {
     pushFlag(args, "--cd", this.opts.cd);
     if (this.opts.skipGitRepoCheck) args.push("--skip-git-repo-check");
     pushList(args, "--add-dir", this.opts.addDir);
-    pushFlag(args, "--output-schema", this.opts.outputSchema);
+    if (!resumeSession) {
+      pushFlag(args, "--output-schema", this.opts.outputSchema);
+    }
     pushFlag(args, "--color", this.opts.color);
     // Always enable JSON output to capture JSONL events including
     // turn.completed with token usage for metrics. extractUsageFromOutput
     // in BaseCliAgent will parse these automatically.
     args.push("--json");
 
-    // Auto-wire output schema from task context if not explicitly set
+    // Auto-wire output schema from task context if not explicitly set.
+    // Skip when resuming — `codex exec resume` does not accept --output-schema.
     let schemaCleanupFile: string | null = null;
-    if (!this.opts.outputSchema && params.options?.outputSchema) {
+    if (!resumeSession && !this.opts.outputSchema && params.options?.outputSchema) {
       // Handle both zod v3 and v4 schemas
       const schema = params.options.outputSchema;
       let jsonSchema: any;

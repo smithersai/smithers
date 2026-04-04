@@ -40,8 +40,11 @@ export type ExtractOptions = {
   baseRootDir?: string;
 };
 
-const DEFAULT_LOCAL_TASK_HEARTBEAT_TIMEOUT_MS = 60_000;
-const DEFAULT_SANDBOX_TASK_HEARTBEAT_TIMEOUT_MS = 120_000;
+// CLI agents (Claude Code, Codex, etc.) can spend minutes reading files and
+// thinking without producing stdout.  60s was too aggressive and caused
+// spurious aborts on complex spec/research/plan generation tasks.
+const DEFAULT_LOCAL_TASK_HEARTBEAT_TIMEOUT_MS = 300_000;
+const DEFAULT_SANDBOX_TASK_HEARTBEAT_TIMEOUT_MS = 300_000;
 
 function isDrizzleTable(value: unknown): boolean {
   if (!value || typeof value !== "object") return false;
