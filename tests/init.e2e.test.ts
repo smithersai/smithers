@@ -61,6 +61,9 @@ test.skip("smithers init writes the expected workflow-pack layout and it typeche
   expect(repo.exists(".smithers/prompts/research.mdx")).toBe(true);
   expect(repo.exists(".smithers/workflows/implement.tsx")).toBe(true);
   expect(repo.exists(".smithers/workflows/review.tsx")).toBe(true);
+  expect(repo.exists(".smithers/workflows/ai-review.tsx")).toBe(true);
+  expect(repo.exists(".smithers/workflows/pr-description.tsx")).toBe(true);
+  expect(repo.exists(".smithers/workflows/lint-autofix.tsx")).toBe(true);
   expect(repo.exists(".smithers/workflows/plan.tsx")).toBe(true);
   expect(repo.exists(".smithers/workflows/research.tsx")).toBe(true);
   expect(repo.exists(".smithers/workflows/ticket-create.tsx")).toBe(true);
@@ -137,6 +140,58 @@ test("smithers init does not clobber user edits unless --force is passed", () =>
   });
   expect(forced.exitCode).toBe(0);
   expect(repo.read(".smithers/workflows/implement.tsx")).not.toContain("user-edited workflow");
+});
+
+test("smithers init seeds ai-review workflow triggers", () => {
+  const repo = createTempRepo();
+  const env = buildInitEnv(repo.dir);
+
+  const initResult = runSmithers(["init"], {
+    cwd: repo.dir,
+    format: "json",
+    env,
+  });
+  expect(initResult.exitCode).toBe(0);
+
+  const source = repo.read(".smithers/workflows/ai-review.tsx");
+  expect(source).toContain('export const on = [');
+  expect(source).toContain('"pull_request.opened"');
+  expect(source).toContain('"pull_request.synchronize"');
+  expect(source).toContain('"stack_submit"');
+});
+
+test("smithers init seeds pr-description workflow triggers", () => {
+  const repo = createTempRepo();
+  const env = buildInitEnv(repo.dir);
+
+  const initResult = runSmithers(["init"], {
+    cwd: repo.dir,
+    format: "json",
+    env,
+  });
+  expect(initResult.exitCode).toBe(0);
+
+  const source = repo.read(".smithers/workflows/pr-description.tsx");
+  expect(source).toContain('export const on = [');
+  expect(source).toContain('"pull_request.opened"');
+  expect(source).toContain('"stack_submit"');
+});
+
+test("smithers init seeds lint-autofix workflow trigger and branch guard", () => {
+  const repo = createTempRepo();
+  const env = buildInitEnv(repo.dir);
+
+  const initResult = runSmithers(["init"], {
+    cwd: repo.dir,
+    format: "json",
+    env,
+  });
+  expect(initResult.exitCode).toBe(0);
+
+  const source = repo.read(".smithers/workflows/lint-autofix.tsx");
+  expect(source).toContain('export const on = ["check_run.completed"] as const;');
+  expect(source).toContain("conclusion !== \"failure\"");
+  expect(source).toContain("smithers/");
 });
 
 test("seeded workflows reuse the shared review substrate", () => {

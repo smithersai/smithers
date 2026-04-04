@@ -86,13 +86,3 @@ export default smithers((ctx) => (
 - [CLI Agents](https://smithers.sh/integrations/cli-agents)
 - [SDK Agents](https://smithers.sh/integrations/sdk-agents)
 
-## Burns
-
-The repository also contains `burns/`, a workspace-first local control plane for Smithers. Burns is a separate subproject with:
-
-- `burns/apps/web`
-- `burns/apps/daemon`
-- `burns/apps/desktop`
-- `burns/apps/cli`
-
-Use the root docs for Smithers runtime/API questions and the `burns/README.md` plus `burns/docs/` for Burns-specific development.

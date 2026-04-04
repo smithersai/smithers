@@ -7,8 +7,9 @@
     "primary": "#00D2A0"
   },
   "favicon": "/favicon.svg",
-  "navigation": [
-    {
+  "navigation": {
+    "groups": [
+      {
       "group": "Getting Started",
       "pages": [
         "index",
@@ -209,7 +210,8 @@
         "reference/errors"
       ]
     }
-  ],
+    ]
+  },
   "redirects": [
     {
       "source": "/docs",

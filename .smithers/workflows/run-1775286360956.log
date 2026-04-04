@@ -1,0 +1,18 @@
+[smithers] ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. To use API billing instead, use ToolLoopAgent from 'ai' with anthropic() provider.
+[smithers] ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. To use API billing instead, use ToolLoopAgent from 'ai' with anthropic() provider.
+timestamp=2026-04-04T07:06:02.176Z level=INFO fiber=#26 message="starting workflow run" engine:run=0ms runId=run-1775286360956 allowNetwork=false hotReload=false maxConcurrency=4 service=smithers workflowPath=/Users/williamcory/smithers/.smithers/workflows/sync-features.tsx resume=false rootDir=/Users/williamcory/smithers/.smithers/workflows
+[00:00:00] → bootstrap (attempt 1, iteration 0)
+timestamp=2026-04-04T07:06:02.683Z level=WARN fiber=#64 message="transaction rollback" sqlite-write-retry=1ms db:transaction=1ms writeGroup=task-completion phase=operation service=smithers error="SmithersError: upsert output output: table bootstrap has no column named codebase_summary See https://smithers.sh/reference/errors\n    at toSmithersError (/Users/williamcory/smithers/src/utils/errors.ts:518:14)"
+timestamp=2026-04-04T07:06:02.685Z level=ERROR fiber=#66 message="task execution failed" engine:task=0ms runId=run-1775286360956 nodeId=bootstrap attempt=1 maxAttempts=1 iteration=0 service=smithers error="upsert output output: table bootstrap has no column named codebase_summary See https://smithers.sh/reference/errors"
+[00:00:00] ✗ bootstrap (attempt 1): upsert output output: table bootstrap has no column named codebase_summary See https://smithers.sh/reference/errors
+timestamp=2026-04-04T07:06:02.693Z level=ERROR fiber=#88 message="workflow failed due to task failures" engine:run=0ms runId=run-1775286360956 failedTaskIds=bootstrap service=smithers
+[00:00:00] ✗ Run failed: Task(s) failed: bootstrap
+runId: run-1775286360956
+status: failed
+error: "Task(s) failed: bootstrap"
+cta:
+  description: "Next steps:"
+  commands[3]{command,description}:
+    smithers inspect run-1775286360956,Inspect run state
+    smithers logs run-1775286360956,View run logs
+    smithers chat run-1775286360956,View agent chat

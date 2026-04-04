@@ -15,24 +15,6 @@ import { fromPromise } from "../effect/interop";
 import { runFork, runPromise } from "../effect/runtime";
 import type { SmithersWorkflow } from "../SmithersWorkflow";
 import { trackEvent } from "../effect/metrics";
-import type { UiTarget as BurnsUiTarget } from "../../apps/cli/src/args";
-async function openInBrowser(url: string): Promise<{ error?: string }> {
-  try {
-    const cmd = process.platform === "darwin" ? "open" : "xdg-open";
-    const proc = Bun.spawn([cmd, url], { stdio: ["ignore", "ignore", "ignore"] });
-    await proc.exited;
-    return {};
-  } catch (err: any) {
-    return { error: err?.message ?? String(err) };
-  }
-}
-import {
-  buildUiUrl,
-  ensureUiHostRunning,
-  shouldSuppressAutoOpen,
-} from "../../apps/cli/src/ui";
-import { resolveDefaultWebBinding } from "../../apps/cli/src/web";
-
 import { revertToAttempt } from "../revert";
 import { runSync } from "../effect/runtime";
 import { spawn } from "node:child_process";
@@ -159,87 +141,6 @@ function formatStatusExitCode(status: string | undefined) {
   if (status === "waiting-approval" || status === "waiting-timer") return 3;
   if (status === "cancelled") return 2;
   return 1;
-}
-
-function parseUiTarget(
-  targetRaw: string | undefined,
-  valueRaw: string | undefined,
-): { ok: true; target: BurnsUiTarget } | { ok: false; error: string } {
-  const target = targetRaw?.trim().toLowerCase();
-  const value = valueRaw?.trim();
-
-  if (!target) {
-    if (value) {
-      return {
-        ok: false,
-        error: `Unexpected argument: ${value}`,
-      };
-    }
-
-    return {
-      ok: true,
-      target: { kind: "dashboard" },
-    };
-  }
-
-  if (target === "approvals") {
-    if (value) {
-      return {
-        ok: false,
-        error: `Unexpected argument for smithers ui approvals: ${value}`,
-      };
-    }
-
-    return {
-      ok: true,
-      target: { kind: "approvals" },
-    };
-  }
-
-  if (target === "run") {
-    if (!value) {
-      return {
-        ok: false,
-        error: "Missing run ID for smithers ui run <run-id>",
-      };
-    }
-
-    return {
-      ok: true,
-      target: { kind: "run", runId: value },
-    };
-  }
-
-  if (target === "node") {
-    if (!value) {
-      return {
-        ok: false,
-        error: "Missing run/node target for smithers ui node <run-id>/<node-id>",
-      };
-    }
-
-    const separatorIndex = value.indexOf("/");
-    if (separatorIndex <= 0 || separatorIndex >= value.length - 1) {
-      return {
-        ok: false,
-        error: "Invalid node target. Expected <run-id>/<node-id>",
-      };
-    }
-
-    return {
-      ok: true,
-      target: {
-        kind: "node",
-        runId: value.slice(0, separatorIndex),
-        nodeId: value.slice(separatorIndex + 1),
-      },
-    };
-  }
-
-  return {
-    ok: false,
-    error: `Unknown UI target: ${target}`,
-  };
 }
 
 function setupSqliteCleanup(workflow: SmithersWorkflow<any>) {
@@ -1302,17 +1203,6 @@ const initOptions = z.object({
   force: z.boolean().default(false).describe("Overwrite existing scaffold files"),
 });
 
-const uiArgs = z.object({
-  target: z.string().optional().describe("Deep-link target: run, node, or approvals"),
-  value: z.string().optional().describe("run-id or run-id/node-id"),
-});
-
-const uiOptions = z.object({
-  open: z.boolean().default(true).describe("Open the browser automatically (default: true)"),
-  host: z.string().optional().describe("Override Smithers web host"),
-  port: z.number().int().min(1).optional().describe("Override Smithers web port"),
-});
-
 const workflowPathArgs = z.object({
   name: z.string().describe("Workflow ID"),
 });
@@ -2291,120 +2181,6 @@ const cli = Cli.create({
         cleanup?.();
       }
     }
-  })
-
-  // =========================================================================
-  // smithers ui [run <id> | node <run>/<node> | approvals]
-  // =========================================================================
-  .command("ui", {
-    description: "Open Smithers web UI deep links for runs, nodes, or approvals.",
-    args: uiArgs,
-    options: uiOptions,
-    async run(c) {
-      const fail: FailFn = (opts) => {
-        commandExitOverride = opts.exitCode ?? 1;
-        return c.error(opts);
-      };
-
-      const parsedTarget = parseUiTarget(c.args.target, c.args.value);
-      if ("error" in parsedTarget) {
-        const targetError = parsedTarget.error;
-        return fail({
-          code: "UI_COMMAND_INVALID_ARGS",
-          message: targetError,
-          exitCode: 4,
-        });
-      }
-      const uiTarget = parsedTarget.target;
-
-      const defaults = resolveDefaultWebBinding();
-      const host = c.options.host?.trim() || defaults.host;
-      const port = c.options.port ?? defaults.port;
-      const allowDiscovery = !c.options.host && !c.options.port;
-
-      try {
-        await runPromise(
-          Effect.gen(function* () {
-            const ensureResult = yield* fromPromise(
-              "ensure ui host",
-              () =>
-                ensureUiHostRunning({
-                  host,
-                  port,
-                  allowDiscovery,
-                }),
-              {
-                code: "UI_COMMAND_FAILED",
-                details: { host, port, allowDiscovery },
-              },
-            );
-
-            const url = buildUiUrl(ensureResult.webBaseUrl, uiTarget);
-            yield* Effect.void.pipe(
-              Effect.annotateLogs({
-                target: uiTarget.kind,
-                url,
-                serverAutoStarted: ensureResult.ok
-                  ? ensureResult.serverAutoStarted
-                  : false,
-              }),
-            );
-
-            if ("error" in ensureResult) {
-              const ensureError = ensureResult.error;
-              return yield* Effect.fail(
-                new SmithersError("UI_COMMAND_FAILED", ensureError, {
-                  host,
-                  port,
-                }),
-              );
-            }
-
-            yield* Effect.sync(() => {
-              console.log(url);
-            });
-
-            if (!c.options.open || shouldSuppressAutoOpen()) {
-              return;
-            }
-
-            const openResult = yield* fromPromise(
-              "open smithers ui browser url",
-              () => openInBrowser(url),
-              {
-                code: "UI_COMMAND_FAILED",
-                details: { url },
-              },
-            );
-
-            if (openResult && typeof openResult === "object" && "error" in openResult) {
-              const openError = (openResult as { error?: string }).error;
-              yield* Effect.logWarning(
-                "Could not open browser for Smithers UI.",
-              ).pipe(
-                Effect.annotateLogs({
-                  target: uiTarget.kind,
-                  url,
-                  reason: openError,
-                }),
-              );
-              yield* Effect.sync(() => {
-                console.error(`Failed to open browser: ${openError}`);
-                console.error(`Open this URL manually: ${url}`);
-              });
-            }
-          }).pipe(Effect.withLogSpan("cli:ui")),
-        );
-
-        return c.ok(undefined);
-      } catch (err: any) {
-        return fail({
-          code: "UI_COMMAND_FAILED",
-          message: err?.message ?? String(err),
-          exitCode: 1,
-        });
-      }
-    },
   })
 
   // =========================================================================

@@ -1034,6 +1034,16 @@ function renderWorkflowFile(
   };
 }
 
+function renderWorkflowFromTemplate(
+  id: string,
+  relativeTemplatePath: string,
+): TemplateFile {
+  return {
+    path: `.smithers/workflows/${id}.tsx`,
+    contents: readFileSync(new URL(relativeTemplatePath, import.meta.url), "utf8"),
+  };
+}
+
 function renderWorkflows(): TemplateFile[] {
   const sharedImports = [
     'import { createSmithers } from "smithers-orchestrator";',
@@ -1120,6 +1130,15 @@ function renderWorkflows(): TemplateFile[] {
       "  </Workflow>",
       "));",
     ]),
+    renderWorkflowFromTemplate("ai-review", "./templates/ai-review.tsx.template"),
+    renderWorkflowFromTemplate(
+      "pr-description",
+      "./templates/pr-description.tsx.template",
+    ),
+    renderWorkflowFromTemplate(
+      "lint-autofix",
+      "./templates/lint-autofix.tsx.template",
+    ),
     renderWorkflowFile("plan", "Plan", [
       ...sharedImports,
       'import PlanPrompt from "../prompts/plan.mdx";',
