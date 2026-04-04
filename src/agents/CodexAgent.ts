@@ -13,33 +13,7 @@ import {
 } from "./BaseCliAgent";
 import type { BaseCliAgentOptions, CodexConfigOverrides } from "./BaseCliAgent";
 import { zodV3ToJsonSchema } from "../zodV3Compat";
-
-/**
- * Recursively normalize `additionalProperties` for OpenAI structured output
- * compatibility.  Zod's `.passthrough()` produces `additionalProperties: {}`
- * which OpenAI rejects because `{}` is a sub-schema without a `type` key.
- * We convert it to `false` so the schema validates.
- */
-function normalizeAdditionalProperties(obj: any): void {
-  if (obj == null || typeof obj !== "object") return;
-  if (Array.isArray(obj)) {
-    for (const item of obj) normalizeAdditionalProperties(item);
-    return;
-  }
-  for (const key of Object.keys(obj)) {
-    if (
-      key === "additionalProperties" &&
-      typeof obj[key] === "object" &&
-      obj[key] !== null &&
-      !Array.isArray(obj[key]) &&
-      Object.keys(obj[key]).length === 0
-    ) {
-      obj[key] = false;
-    } else {
-      normalizeAdditionalProperties(obj[key]);
-    }
-  }
-}
+import { sanitizeForOpenAI } from "./schema";
 
 type CodexAgentOptions = BaseCliAgentOptions & {
   config?: CodexConfigOverrides;
@@ -656,10 +630,8 @@ export class CodexAgent extends BaseCliAgent {
         // Zod v3 or unknown — build JSON schema manually
         jsonSchema = zodV3ToJsonSchema(schema);
       }
-      // OpenAI structured output rejects `additionalProperties: {}` — it
-      // requires a `type` key or the boolean `false`.  Zod's .passthrough()
-      // produces `{}`, so recursively normalize it.
-      normalizeAdditionalProperties(jsonSchema);
+      // Sanitize for OpenAI structured output compatibility
+      sanitizeForOpenAI(jsonSchema);
       const schemaFile = join(
         tmpdir(),
         `smithers-schema-${randomUUID()}.json`,

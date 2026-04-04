@@ -20,3 +20,5 @@ export type { PiExtensionUiRequest, PiExtensionUiResponse, PiAgentOptions } from
 export { KimiAgent } from "./KimiAgent";
 
 export { ForgeAgent } from "./ForgeAgent";
+
+export { zodToOpenAISchema, sanitizeForOpenAI } from "./schema";
