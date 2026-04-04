@@ -81,6 +81,33 @@ const ROLE_PREFERENCES: Record<string, AgentAvailability["id"][]> = {
   review: ["claude", "amp", "codex"],
 };
 
+// ---------------------------------------------------------------------------
+// Tier-based agent groupings (used by the new agents.ts layout)
+// ---------------------------------------------------------------------------
+
+type AgentVariant = {
+  derivedFrom: AgentAvailability["id"];
+  variantId: string;
+  constructor: { importName: string; expr: string };
+};
+
+const AGENT_VARIANTS: AgentVariant[] = [
+  {
+    derivedFrom: "claude",
+    variantId: "claudeSonnet",
+    constructor: {
+      importName: "ClaudeCodeAgent",
+      expr: 'new ClaudeCodeAgent({ model: "claude-sonnet-4-6" })',
+    },
+  },
+];
+
+const TIER_PREFERENCES: Record<string, { order: string[]; maxSize: number }> = {
+  cheapFast: { order: ["kimi", "claudeSonnet", "gemini", "pi"], maxSize: 2 },
+  smart: { order: ["codex", "claude", "kimi", "gemini", "amp"], maxSize: 3 },
+  smartTool: { order: ["claude", "codex", "kimi", "gemini", "amp"], maxSize: 3 },
+};
+
 const CONSTRUCTORS: Record<AgentAvailability["id"], { importName: string; expr: string }> = {
   claude: {
     importName: "ClaudeCodeAgent",
@@ -194,37 +221,55 @@ export function generateAgentsTs(env: NodeJS.ProcessEnv = process.env) {
     );
   }
 
+  // Base providers in detection order
   const orderedProviders = DETECTORS
     .map((detector) => available.find((entry) => entry.id === detector.id))
     .filter((entry): entry is AgentAvailability => Boolean(entry));
-  const imports = orderedProviders.map((provider) => CONSTRUCTORS[provider.id].importName);
 
-  const providerLines = orderedProviders.map(
-    (provider) => `  ${provider.id}: ${CONSTRUCTORS[provider.id].expr},`,
-  );
+  // Derive variants (e.g. claudeSonnet from claude)
+  const availableIds = new Set(orderedProviders.map((p) => p.id));
+  const activeVariants = AGENT_VARIANTS.filter((v) => availableIds.has(v.derivedFrom));
 
-  const roleLines = Object.keys(ROLE_PREFERENCES).map((role) => {
-    const providers = resolveRoleAgents(role, available).map((provider) => `providers.${provider.id}`);
-    return `  ${role}: [${providers.join(", ")}],`;
+  // Collect all import names (dedup)
+  const importNames = new Set<string>();
+  for (const provider of orderedProviders) importNames.add(CONSTRUCTORS[provider.id].importName);
+  for (const variant of activeVariants) importNames.add(variant.constructor.importName);
+
+  // Provider lines: base + variants
+  const providerLines = [
+    ...orderedProviders.map(
+      (provider) => `  ${provider.id}: ${CONSTRUCTORS[provider.id].expr},`,
+    ),
+    ...activeVariants.map(
+      (variant) => `  ${variant.variantId}: ${variant.constructor.expr},`,
+    ),
+  ];
+
+  // All known provider/variant IDs for tier resolution
+  const allProviderIds = new Set([
+    ...orderedProviders.map((p) => p.id),
+    ...activeVariants.map((v) => v.variantId),
+  ]);
+
+  // Tier lines
+  const tierLines = Object.entries(TIER_PREFERENCES).map(([tier, { order, maxSize }]) => {
+    const resolved = order
+      .filter((id) => allProviderIds.has(id))
+      .slice(0, maxSize);
+    return `  ${tier}: [${resolved.map((id) => `providers.${id}`).join(", ")}],`;
   });
 
   return [
     "// smithers-source: generated",
-    `import { ${imports.join(", ")}, type AgentLike } from "smithers-orchestrator";`,
+    `import { ${[...importNames].join(", ")}, type AgentLike } from "smithers-orchestrator";`,
     "",
     "export const providers = {",
     ...providerLines,
     "} as const;",
     "",
-    "export const roleChains = {",
-    ...roleLines,
+    "export const agents = {",
+    ...tierLines,
     "} as const satisfies Record<string, AgentLike[]>;",
-    "",
-    "export function pickAgent(role: keyof typeof roleChains): AgentLike {",
-    "  const agent = roleChains[role][0];",
-    '  if (!agent) throw new Error(`No agent configured for role: ${role}`);',
-    "  return agent;",
-    "}",
     "",
   ].join("\n");
 }
