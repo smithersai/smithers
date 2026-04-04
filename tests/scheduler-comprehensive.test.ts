@@ -41,6 +41,7 @@ function desc(
     meta: undefined,
     parallelGroupId: undefined,
     parallelMaxConcurrency: undefined,
+    heartbeatTimeoutMs: null,
     ...overrides,
   };
 }

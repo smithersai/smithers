@@ -1,0 +1,31 @@
+[smithers] ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. To use API billing instead, use ToolLoopAgent from 'ai' with anthropic() provider.
+[smithers] ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. To use API billing instead, use ToolLoopAgent from 'ai' with anthropic() provider.
+[smithers] ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. To use API billing instead, use ToolLoopAgent from 'ai' with anthropic() provider.
+timestamp=2026-04-04T04:09:59.605Z level=INFO fiber=#25 message="starting workflow run" engine:run=0ms runId=run-1775275799104 allowNetwork=false hotReload=false maxConcurrency=4 service=smithers workflowPath=/Users/williamcory/smithers/examples/fan-out-fan-in.tsx resume=false rootDir=/Users/williamcory/smithers/examples
+[00:00:00] → split (attempt 1, iteration 0)
+[00:00:09] ✓ split (attempt 1)
+timestamp=2026-04-04T04:10:08.877Z level=INFO fiber=#144 message="task execution finished" engine:task=1ms runId=run-1775275799104 durationMs=9240 nodeId=split attempt=1 cached=false iteration=0 service=smithers jjPointer=uypzzzmkkvxqnkqxkwnunxvpxyntzwqz
+[00:00:09] → process-sentiment-1 (attempt 1, iteration 0)
+[00:00:09] → process-sentiment-2 (attempt 1, iteration 0)
+[00:00:09] → process-sentiment-3 (attempt 1, iteration 0)
+[00:00:19] ✓ process-sentiment-1 (attempt 1)
+timestamp=2026-04-04T04:10:18.549Z level=INFO fiber=#307 message="task execution finished" engine:task=0ms runId=run-1775275799104 durationMs=9660 nodeId=process-sentiment-1 attempt=1 cached=false iteration=0 service=smithers jjPointer=uypzzzmkkvxqnkqxkwnunxvpxyntzwqz
+[00:00:19] ✓ process-sentiment-3 (attempt 1)
+timestamp=2026-04-04T04:10:18.843Z level=INFO fiber=#370 message="task execution finished" engine:task=0ms runId=run-1775275799104 durationMs=9954 nodeId=process-sentiment-3 attempt=1 cached=false iteration=0 service=smithers jjPointer=uypzzzmkkvxqnkqxkwnunxvpxyntzwqz
+[00:00:19] ✓ process-sentiment-2 (attempt 1)
+timestamp=2026-04-04T04:10:19.083Z level=INFO fiber=#419 message="task execution finished" engine:task=0ms runId=run-1775275799104 durationMs=10194 nodeId=process-sentiment-2 attempt=1 cached=false iteration=0 service=smithers jjPointer=uypzzzmkkvxqnkqxkwnunxvpxyntzwqz
+[00:00:19] → merge (attempt 1, iteration 0)
+timestamp=2026-04-04T04:10:31.006Z level=WARN fiber=#548 message="transaction rollback" sqlite-write-retry=1ms db:transaction=1ms writeGroup=task-completion phase=operation service=smithers error="SmithersError: upsert output output: table merge has no column named total_processed See https://smithers.sh/reference/errors\n    at toSmithersError (/Users/williamcory/smithers/src/utils/errors.ts:488:14)"
+timestamp=2026-04-04T04:10:31.008Z level=ERROR fiber=#550 message="task execution failed" engine:task=0ms runId=run-1775275799104 nodeId=merge attempt=1 maxAttempts=1 iteration=0 service=smithers error="upsert output output: table merge has no column named total_processed See https://smithers.sh/reference/errors"
+[00:00:31] ✗ merge (attempt 1): upsert output output: table merge has no column named total_processed See https://smithers.sh/reference/errors
+timestamp=2026-04-04T04:10:31.018Z level=ERROR fiber=#584 message="workflow failed due to task failures" engine:run=0ms runId=run-1775275799104 failedTaskIds=merge service=smithers
+[00:00:31] ✗ Run failed: Task(s) failed: merge
+runId: run-1775275799104
+status: failed
+error: "Task(s) failed: merge"
+cta:
+  description: "Next steps:"
+  commands[3]{command,description}:
+    smithers inspect run-1775275799104,Inspect run state
+    smithers logs run-1775275799104,View run logs
+    smithers chat run-1775275799104,View agent chat

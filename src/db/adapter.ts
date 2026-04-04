@@ -326,10 +326,7 @@ export class SmithersDb {
             ),
           );
         }),
-      {
-        label,
-        onRetry: () => Metric.increment(dbTransactionRetries),
-      },
+      { label },
     ).pipe(
       Effect.annotateLogs({ writeGroup }),
       Effect.withLogSpan("db:transaction"),
@@ -725,7 +722,7 @@ export class SmithersDb {
         .insert(table)
         .values(values)
         .onConflictDoUpdate({
-          target,
+          target: target as any,
           set: values,
         }),
     );

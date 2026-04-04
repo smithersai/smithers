@@ -2658,7 +2658,7 @@ async function executeTask(
         iteration: desc.iteration,
         attempt: attemptNo,
         lastHeartbeatAtMs,
-        timeoutMs: desc.heartbeatTimeoutMs,
+        timeoutMs: desc.heartbeatTimeoutMs!,
         timestampMs: nowMs(),
       });
       taskAbortController.abort(timeoutError);

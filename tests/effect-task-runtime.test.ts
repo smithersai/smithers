@@ -130,6 +130,8 @@ describe("task runtime", () => {
       iteration: 0,
       signal: new AbortController().signal,
       db: null,
+      heartbeat: () => {},
+      lastHeartbeat: null,
     };
     const result = await withTaskRuntime(runtime, async () => {
       await new Promise((r) => setTimeout(r, 10));

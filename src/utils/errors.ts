@@ -69,6 +69,36 @@ export const smithersErrorDefinitions = {
     when: "A task compute callback exceeds its configured timeout.",
     details: "{ nodeId, attempt, timeoutMs }",
   },
+  RUN_NOT_FOUND: {
+    category: "engine",
+    when: "A CLI or engine command references a run ID that does not exist in the database.",
+    details: "{ runId }",
+  },
+  NODE_NOT_FOUND: {
+    category: "engine",
+    when: "A CLI command references a node ID that does not exist for the given run.",
+    details: "{ runId, nodeId }",
+  },
+  UI_COMMAND_FAILED: {
+    category: "cli",
+    when: "The smithers ui command fails to open the browser or probe the server.",
+    details: "{ url }",
+  },
+  INVALID_EVENTS_OPTIONS: {
+    category: "cli",
+    when: "The smithers events command receives invalid filter options.",
+    details: "{}",
+  },
+  SANDBOX_BUNDLE_INVALID: {
+    category: "engine",
+    when: "A sandbox bundle fails validation (missing README, invalid manifest, etc.).",
+    details: "{ bundlePath }",
+  },
+  SANDBOX_BUNDLE_TOO_LARGE: {
+    category: "engine",
+    when: "A sandbox bundle exceeds the maximum allowed size.",
+    details: "{ bundlePath, maxBytes }",
+  },
   TASK_HEARTBEAT_TIMEOUT: {
     category: "engine",
     when: "A task heartbeat timeout is exceeded while the task is still in progress.",

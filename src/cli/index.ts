@@ -16,7 +16,16 @@ import { runFork, runPromise } from "../effect/runtime";
 import type { SmithersWorkflow } from "../SmithersWorkflow";
 import { trackEvent } from "../effect/metrics";
 import type { UiTarget as BurnsUiTarget } from "../../apps/cli/src/args";
-import { openInBrowser } from "../../apps/cli/src/open-browser";
+async function openInBrowser(url: string): Promise<{ error?: string }> {
+  try {
+    const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+    const proc = Bun.spawn([cmd, url], { stdio: ["ignore", "ignore", "ignore"] });
+    await proc.exited;
+    return {};
+  } catch (err: any) {
+    return { error: err?.message ?? String(err) };
+  }
+}
 import {
   buildUiUrl,
   ensureUiHostRunning,
@@ -2368,8 +2377,8 @@ const cli = Cli.create({
               },
             );
 
-            if ("error" in openResult) {
-              const openError = openResult.error;
+            if (openResult && typeof openResult === "object" && "error" in openResult) {
+              const openError = (openResult as { error?: string }).error;
               yield* Effect.logWarning(
                 "Could not open browser for Smithers UI.",
               ).pipe(

@@ -32,8 +32,6 @@ burns start
 
 Options:
 
-- `--host <host>`: web host/interface to bind (default: `127.0.0.1`)
-- `--port <port>`: web port to bind (default: `4173`)
 - `--open`: open a web URL in your browser after daemon startup
 - `--web-url <url>`: URL opened by `--open` (default: `http://127.0.0.1:4173`)
 
@@ -58,28 +56,6 @@ Options:
 - `--host <host>`: bind host (default: `127.0.0.1`)
 - `--port <port>`: bind port (default: `4173`)
 - `--open`: open served URL in your browser
-
-### `burns ui`
-
-Open or print deep links into the Burns web UI.
-
-```bash
-burns ui
-burns ui run <run-id>
-burns ui node <run-id>/<node-id>
-burns ui approvals
-```
-
-Options:
-
-- `--host <host>`: web host to target (default: `127.0.0.1`)
-- `--port <port>`: web port to target (default: `4173`)
-- `--no-open`: print URL only, skip browser open
-
-Deep-link contracts supported by the web app:
-
-- Pretty routes: `/runs`, `/runs/:runId`, `/runs/:runId/nodes/:nodeId`, `/approvals`
-- Query fallback: `/?tab=runs`, `/?tab=runs&runId=:runId`, `/?tab=runs&runId=:runId&nodeId=:nodeId`, `/?tab=approvals`
 
 If `dist/web` is missing, the CLI prints guidance to run:
 
