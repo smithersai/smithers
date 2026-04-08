@@ -58,6 +58,7 @@
         "integrations/sdk-agents",
         "integrations/server",
         "integrations/serve",
+        "integrations/gateway",
         "integrations/pi-plugin",
         "integrations/pi-integration",
         "integrations/ecosystem"
