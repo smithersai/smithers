@@ -1,6 +1,15 @@
 /** @jsxImportSource smithers */
 import { describe, expect, test } from "bun:test";
-import { Workflow, Task, Sequence, runWorkflow } from "../src/index";
+import {
+  Approval,
+  Workflow,
+  Task,
+  Sequence,
+  runWorkflow,
+  approvalDecisionSchema,
+  approvalRankingSchema,
+  approvalSelectionSchema,
+} from "../src/index";
 import { approveNode, denyNode } from "../src/engine/approvals";
 import { SmithersDb } from "../src/db/adapter";
 import { createTestSmithers } from "./helpers";
@@ -133,6 +142,188 @@ describe("approval extended", () => {
     expect(approval?.status).toBe("approved");
     expect(approval?.decidedBy).toBe("alice");
     expect(approval?.note).toBe("looks good");
+    cleanup();
+  });
+
+  test("selection approval persists typed selection output", async () => {
+    const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
+      selection: approvalSelectionSchema,
+      result: z.object({ selected: z.string() }),
+    });
+
+    const workflow = smithers((ctx) => {
+      const selection = ctx.outputMaybe("selection", { nodeId: "pick-plan" });
+
+      return (
+        <Workflow name="approval-selection">
+          <Sequence>
+            <Approval
+              id="pick-plan"
+              mode="select"
+              output={outputs.selection}
+              request={{ title: "Pick a plan" }}
+              options={[
+                { key: "light", label: "Light" },
+                { key: "balanced", label: "Balanced" },
+              ]}
+            />
+            {selection ? (
+              <Task id="record-selection" output={outputs.result}>
+                {{ selected: selection.selected }}
+              </Task>
+            ) : null}
+          </Sequence>
+        </Workflow>
+      );
+    });
+
+    const first = await runWorkflow(workflow, { input: {} });
+    expect(first.status).toBe("waiting-approval");
+
+    const adapter = new SmithersDb(db as any);
+    await approveNode(
+      adapter,
+      first.runId,
+      "pick-plan",
+      0,
+      "balanced is safest",
+      "planner",
+      { selected: "balanced", notes: "balanced is safest" },
+    );
+
+    const resumed = await runWorkflow(workflow, {
+      input: {},
+      runId: first.runId,
+      resume: true,
+    });
+    expect(resumed.status).toBe("finished");
+
+    const selectionRows = await (db as any).select().from(tables.selection);
+    expect(selectionRows).toHaveLength(1);
+    expect(selectionRows[0]).toEqual({
+      runId: first.runId,
+      nodeId: "pick-plan",
+      iteration: 0,
+      selected: "balanced",
+      notes: "balanced is safest",
+    });
+
+    const resultRows = await (db as any).select().from(tables.result);
+    expect(resultRows[0]?.selected).toBe("balanced");
+
+    cleanup();
+  });
+
+  test("ranking approval persists typed ranking output", async () => {
+    const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
+      ranking: approvalRankingSchema,
+      result: z.object({ first: z.string() }),
+    });
+
+    const workflow = smithers((ctx) => {
+      const ranking = ctx.outputMaybe("ranking", { nodeId: "rank-plans" });
+
+      return (
+        <Workflow name="approval-ranking">
+          <Sequence>
+            <Approval
+              id="rank-plans"
+              mode="rank"
+              output={outputs.ranking}
+              request={{ title: "Rank the rollout plans" }}
+              options={[
+                { key: "canary", label: "Canary" },
+                { key: "regional", label: "Regional" },
+                { key: "global", label: "Global" },
+              ]}
+            />
+            {ranking ? (
+              <Task id="record-ranking" output={outputs.result}>
+                {{ first: ranking.ranked[0] ?? "" }}
+              </Task>
+            ) : null}
+          </Sequence>
+        </Workflow>
+      );
+    });
+
+    const first = await runWorkflow(workflow, { input: {} });
+    expect(first.status).toBe("waiting-approval");
+
+    const adapter = new SmithersDb(db as any);
+    await approveNode(
+      adapter,
+      first.runId,
+      "rank-plans",
+      0,
+      "canary first",
+      "planner",
+      { ranked: ["canary", "regional", "global"], notes: "canary first" },
+    );
+
+    const resumed = await runWorkflow(workflow, {
+      input: {},
+      runId: first.runId,
+      resume: true,
+    });
+    expect(resumed.status).toBe("finished");
+
+    const rankingRows = await (db as any).select().from(tables.ranking);
+    expect(rankingRows).toHaveLength(1);
+    expect(rankingRows[0]).toEqual({
+      runId: first.runId,
+      nodeId: "rank-plans",
+      iteration: 0,
+      ranked: ["canary", "regional", "global"],
+      notes: "canary first",
+    });
+
+    const resultRows = await (db as any).select().from(tables.result);
+    expect(resultRows[0]?.first).toBe("canary");
+
+    cleanup();
+  });
+
+  test("autoApprove after consecutive manual approvals skips the approval wait", async () => {
+    const { smithers, outputs, db, cleanup } = createTestSmithers({
+      approval: approvalDecisionSchema,
+    });
+
+    const workflow = smithers(() => (
+      <Workflow name="approval-auto-approve">
+        <Approval
+          id="checkout"
+          output={outputs.approval}
+          request={{ title: "Confirm checkout" }}
+          autoApprove={{ after: 2, audit: true }}
+        />
+      </Workflow>
+    ));
+
+    const adapter = new SmithersDb(db as any);
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const run = await runWorkflow(workflow, { input: {} });
+      expect(run.status).toBe("waiting-approval");
+      await approveNode(adapter, run.runId, "checkout", 0, "ok", `human-${attempt + 1}`);
+      const resumed = await runWorkflow(workflow, {
+        input: {},
+        runId: run.runId,
+        resume: true,
+      });
+      expect(resumed.status).toBe("finished");
+    }
+
+    const autoApproved = await runWorkflow(workflow, { input: {} });
+    expect(autoApproved.status).toBe("finished");
+
+    const approval = await adapter.getApproval(autoApproved.runId, "checkout", 0);
+    expect(approval?.status).toBe("approved");
+    expect(approval?.autoApproved).toBe(true);
+
+    const events = await adapter.listEventsByType(autoApproved.runId, "ApprovalAutoApproved");
+    expect(events).toHaveLength(1);
+
     cleanup();
   });
 });

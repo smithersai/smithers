@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableName, gte, isNull, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Effect, Exit, FiberId, Metric } from "effect";
 import { fromPromise, fromSync } from "../effect/interop";
@@ -25,6 +25,7 @@ import {
   smithersAttempts,
   smithersFrames,
   smithersApprovals,
+  smithersSignals,
   smithersCache,
   smithersSandboxes,
   smithersToolCalls,
@@ -56,6 +57,13 @@ export type EventHistoryQuery = {
   nodeId?: string;
   types?: readonly string[];
   sinceTimestampMs?: number;
+};
+
+export type SignalQuery = {
+  signalName?: string;
+  correlationId?: string | null;
+  receivedAfterMs?: number;
+  limit?: number;
 };
 
 const FRAME_XML_CACHE_MAX = 512;
@@ -736,6 +744,85 @@ export class SmithersDb {
     return runPromise(this.upsertOutputRowEffect(table, key, payload));
   }
 
+  deleteOutputRowEffect(tableName: string, key: OutputKey) {
+    return this.writeEffect(`delete output ${tableName}`, () => {
+      const client = (this.db as any).session.client;
+      let resolvedTableName = tableName;
+      let escapedTableName = resolvedTableName.replaceAll(`"`, `""`);
+      let tableInfo = client
+        .query(`PRAGMA table_info("${escapedTableName}")`)
+        .all() as Array<{ name?: string }>;
+      if (tableInfo.length === 0) {
+        const schemaCandidates = [
+          (this.db as any)?._?.fullSchema,
+          (this.db as any)?._?.schema,
+          (this.db as any)?.schema,
+        ];
+        for (const candidate of schemaCandidates) {
+          if (!candidate || typeof candidate !== "object") continue;
+          const table = (candidate as Record<string, unknown>)[tableName];
+          if (!table) continue;
+          try {
+            resolvedTableName = getTableName(table as any);
+            escapedTableName = resolvedTableName.replaceAll(`"`, `""`);
+            tableInfo = client
+              .query(`PRAGMA table_info("${escapedTableName}")`)
+              .all() as Array<{ name?: string }>;
+            if (tableInfo.length > 0) {
+              break;
+            }
+          } catch {}
+        }
+      }
+      const columnNames = new Set(
+        tableInfo
+          .map((column) => column.name)
+          .filter((name): name is string => typeof name === "string"),
+      );
+      const runIdColumn = columnNames.has("run_id")
+        ? "run_id"
+        : columnNames.has("runId")
+          ? "runId"
+          : null;
+      const nodeIdColumn = columnNames.has("node_id")
+        ? "node_id"
+        : columnNames.has("nodeId")
+          ? "nodeId"
+          : null;
+      const iterationColumn = columnNames.has("iteration")
+        ? "iteration"
+        : null;
+
+      if (!runIdColumn || !nodeIdColumn) {
+        throw new Error(
+          `Output table ${tableName} is missing runId/nodeId columns`,
+        );
+      }
+
+      if (iterationColumn) {
+        client
+          .query(
+            `DELETE FROM "${escapedTableName}"
+             WHERE "${runIdColumn}" = ? AND "${nodeIdColumn}" = ? AND "${iterationColumn}" = ?`,
+          )
+          .run(key.runId, key.nodeId, key.iteration ?? 0);
+      } else {
+        client
+          .query(
+            `DELETE FROM "${escapedTableName}"
+             WHERE "${runIdColumn}" = ? AND "${nodeIdColumn}" = ?`,
+          )
+          .run(key.runId, key.nodeId);
+      }
+
+      return Promise.resolve(undefined);
+    });
+  }
+
+  deleteOutputRow(tableName: string, key: OutputKey) {
+    return runPromise(this.deleteOutputRowEffect(tableName, key));
+  }
+
   getRawNodeOutputEffect(tableName: string, runId: string, nodeId: string) {
     return this.readEffect(`get raw node output ${tableName}`, () => {
       const query = sql.raw(`SELECT * FROM "${tableName}" WHERE run_id = '${runId}' AND node_id = '${nodeId}' ORDER BY iteration DESC LIMIT 1`);
@@ -1215,6 +1302,166 @@ export class SmithersDb {
     return runPromise(this.getApprovalEffect(runId, nodeId, iteration));
   }
 
+  insertSignalWithNextSeqEffect(row: {
+    runId: string;
+    signalName: string;
+    correlationId: string | null;
+    payloadJson: string;
+    receivedAtMs: number;
+    receivedBy?: string | null;
+  }) {
+    const label = `insert signal ${row.signalName}`;
+    const self = this;
+    return withSqliteWriteRetryEffect(
+      () =>
+        Effect.gen(function* () {
+          const existing = yield* self.readEffect(label, () =>
+            self.db
+              .select({ seq: smithersSignals.seq })
+              .from(smithersSignals)
+              .where(
+                and(
+                  eq(smithersSignals.runId, row.runId),
+                  eq(smithersSignals.signalName, row.signalName),
+                  row.correlationId === null
+                    ? isNull(smithersSignals.correlationId)
+                    : eq(smithersSignals.correlationId, row.correlationId),
+                  eq(smithersSignals.payloadJson, row.payloadJson),
+                  eq(smithersSignals.receivedAtMs, row.receivedAtMs),
+                  row.receivedBy == null
+                    ? isNull(smithersSignals.receivedBy)
+                    : eq(smithersSignals.receivedBy, row.receivedBy),
+                ),
+              )
+              .orderBy(desc(smithersSignals.seq))
+              .limit(1),
+          );
+          if (existing[0]?.seq !== undefined) {
+            return existing[0].seq as number;
+          }
+
+          const client = (self.db as any).$client;
+          if (
+            !client ||
+            typeof client.exec !== "function" ||
+            typeof client.query !== "function"
+          ) {
+            const lastSeq = (yield* self.getLastSignalSeqEffect(row.runId)) ?? -1;
+            const seq = lastSeq + 1;
+            yield* fromPromise("insert fallback signal row", () =>
+              self.db
+                .insert(smithersSignals)
+                .values({
+                  ...row,
+                  receivedBy: row.receivedBy ?? null,
+                  seq,
+                })
+                .onConflictDoNothing(),
+            );
+            return seq;
+          }
+
+          return yield* fromSync("insert signal transaction", () => {
+            client.run("BEGIN IMMEDIATE");
+            try {
+              const res = client
+                .query(
+                  "SELECT COALESCE(MAX(seq), -1) + 1 AS seq FROM _smithers_signals WHERE run_id = ?",
+                )
+                .get(row.runId);
+              const seq = Number(res?.seq ?? 0);
+              client
+                .query(
+                  "INSERT INTO _smithers_signals (run_id, seq, signal_name, correlation_id, payload_json, received_at_ms, received_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                )
+                .run(
+                  row.runId,
+                  seq,
+                  row.signalName,
+                  row.correlationId,
+                  row.payloadJson,
+                  row.receivedAtMs,
+                  row.receivedBy ?? null,
+                );
+              client.run("COMMIT");
+              return seq;
+            } catch (error) {
+              try {
+                client.run("ROLLBACK");
+              } catch {
+                // ignore rollback failures
+              }
+              throw error;
+            }
+          });
+        }),
+      { label },
+    ).pipe(
+      Effect.annotateLogs({
+        runId: row.runId,
+        signalName: row.signalName,
+        correlationId: row.correlationId ?? null,
+      }),
+      Effect.withLogSpan(`db:${label}`),
+    );
+  }
+
+  insertSignalWithNextSeq(row: {
+    runId: string;
+    signalName: string;
+    correlationId: string | null;
+    payloadJson: string;
+    receivedAtMs: number;
+    receivedBy?: string | null;
+  }) {
+    return runPromise(this.insertSignalWithNextSeqEffect(row));
+  }
+
+  getLastSignalSeqEffect(runId: string) {
+    return this.readEffect(`get last signal seq ${runId}`, () =>
+      this.db
+        .select()
+        .from(smithersSignals)
+        .where(eq(smithersSignals.runId, runId))
+        .orderBy(desc(smithersSignals.seq))
+        .limit(1),
+    ).pipe(Effect.map((rows) => rows[0]?.seq as number | undefined));
+  }
+
+  getLastSignalSeq(runId: string) {
+    return runPromise(this.getLastSignalSeqEffect(runId));
+  }
+
+  listSignalsEffect(runId: string, query: SignalQuery = {}) {
+    const clauses = [eq(smithersSignals.runId, runId)];
+    if (query.signalName) {
+      clauses.push(eq(smithersSignals.signalName, query.signalName));
+    }
+    if (query.correlationId !== undefined) {
+      clauses.push(
+        query.correlationId === null
+          ? isNull(smithersSignals.correlationId)
+          : eq(smithersSignals.correlationId, query.correlationId),
+      );
+    }
+    if (typeof query.receivedAfterMs === "number") {
+      clauses.push(gte(smithersSignals.receivedAtMs, query.receivedAfterMs));
+    }
+    const limit = Math.max(1, Math.floor(query.limit ?? 200));
+    return this.readEffect(`list signals ${runId}`, () =>
+      this.db
+        .select()
+        .from(smithersSignals)
+        .where(and(...clauses))
+        .orderBy(asc(smithersSignals.seq))
+        .limit(limit),
+    );
+  }
+
+  listSignals(runId: string, query: SignalQuery = {}) {
+    return runPromise(this.listSignalsEffect(runId, query));
+  }
+
   insertToolCallEffect(row: any) {
     return this.writeEffect(`insert tool call ${row.toolName}`, () =>
       this.db.insert(smithersToolCalls).values(row).onConflictDoNothing(),
@@ -1592,6 +1839,41 @@ export class SmithersDb {
 
   listAllPendingApprovals() {
     return runPromise(this.listAllPendingApprovalsEffect());
+  }
+
+  listApprovalHistoryForNodeEffect(workflowName: string, nodeId: string, limit = 50) {
+    return this.readEffect(`list approval history ${workflowName}:${nodeId}`, () =>
+      this.db
+        .select({
+          runId: smithersApprovals.runId,
+          nodeId: smithersApprovals.nodeId,
+          iteration: smithersApprovals.iteration,
+          status: smithersApprovals.status,
+          requestedAtMs: smithersApprovals.requestedAtMs,
+          decidedAtMs: smithersApprovals.decidedAtMs,
+          note: smithersApprovals.note,
+          decidedBy: smithersApprovals.decidedBy,
+          requestJson: smithersApprovals.requestJson,
+          decisionJson: smithersApprovals.decisionJson,
+          autoApproved: smithersApprovals.autoApproved,
+          workflowName: smithersRuns.workflowName,
+          runCreatedAtMs: smithersRuns.createdAtMs,
+        })
+        .from(smithersApprovals)
+        .innerJoin(smithersRuns, eq(smithersApprovals.runId, smithersRuns.runId))
+        .where(
+          and(
+            eq(smithersRuns.workflowName, workflowName),
+            eq(smithersApprovals.nodeId, nodeId),
+          ),
+        )
+        .orderBy(desc(smithersRuns.createdAtMs), desc(smithersApprovals.decidedAtMs))
+        .limit(limit),
+    );
+  }
+
+  listApprovalHistoryForNode(workflowName: string, nodeId: string, limit = 50) {
+    return runPromise(this.listApprovalHistoryForNodeEffect(workflowName, nodeId, limit));
   }
 
   getRalphEffect(runId: string, ralphId: string) {

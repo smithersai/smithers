@@ -20,7 +20,9 @@ If you catch runtime failures yourself, prefer switching on `KnownSmithersErrorC
 
 ## Retries
 
-Set the `retries` prop to retry a task on failure. The value is the number of *additional* attempts after the first failure -- so `retries={2}` means up to 3 total attempts:
+By default, tasks retry indefinitely with exponential backoff (1s, 2s, 4s, 8s, ... capped at 5 minutes). This means most transient failures -- rate limits, model errors, network blips -- are absorbed automatically without any configuration.
+
+You can override the default with the `retries` prop. The value is the number of *additional* attempts after the first failure -- so `retries={2}` means up to 3 total attempts:
 
 ```tsx
 {/* assuming outputs from createSmithers */}
@@ -29,9 +31,17 @@ Set the `retries` prop to retry a task on failure. The value is the number of *a
 </Task>
 ```
 
+To disable retries entirely, use `noRetry` or `retries={0}`:
+
+```tsx
+<Task id="validate" output={outputs.check} agent={checker} noRetry>
+  One-shot validation -- do not retry.
+</Task>
+```
+
 Each retry creates a new row in `_smithers_attempts`. Previous attempts are never overwritten -- you can inspect every failure after the fact. Between the failure and the next attempt, a `NodeRetrying` event is emitted.
 
-The task is marked `failed` only after all retries are exhausted.
+The task is marked `failed` only after all retries are exhausted. With the default infinite retries, this never happens -- use `smithers cancel` to stop a persistently failing task, or set an explicit `retries` count.
 
 ### Schema validation retries
 
@@ -40,6 +50,74 @@ Here is a subtlety that will save you retry budget. When the agent returns JSON 
 Only if those schema retries also fail does the attempt fail -- and then the `retries` mechanism takes over (if configured).
 
 So `retries={2}` with schema validation gives you up to 9 chances to get a valid response: 3 attempts, each with 3 schema tries. That is usually more than enough.
+
+### Retry Backoff
+
+By default, retries happen immediately -- the next attempt fires as soon as the previous one fails. That is fine for transient model errors, but terrible for rate-limited APIs. The `retryPolicy` prop controls the delay between retries.
+
+Three backoff strategies are available: `fixed`, `linear`, and `exponential`.
+
+**Fixed** waits the same duration every time:
+
+```tsx
+{/* 1s, 1s, 1s */}
+<Task
+  id="api-call"
+  retries={3}
+  retryPolicy={{ backoff: "fixed", initialDelayMs: 1000 }}
+>
+  Call the external API.
+</Task>
+```
+
+Delay = `initialDelayMs` for every attempt. Three retries with `initialDelayMs: 1000` means three 1-second waits.
+
+**Linear** increases the delay proportionally to the attempt number:
+
+```tsx
+{/* 1s, 2s, 3s */}
+<Task
+  id="api-call"
+  retries={3}
+  retryPolicy={{ backoff: "linear", initialDelayMs: 1000 }}
+>
+  Call the external API.
+</Task>
+```
+
+Delay = `initialDelayMs * attempt`. Attempt 1 waits 1s, attempt 2 waits 2s, attempt 3 waits 3s.
+
+**Exponential** doubles the delay each time:
+
+```tsx
+{/* 1s, 2s, 4s */}
+<Task
+  id="api-call"
+  retries={3}
+  retryPolicy={{ backoff: "exponential", initialDelayMs: 1000 }}
+>
+  Call the external API.
+</Task>
+```
+
+Delay = `initialDelayMs * 2^(attempt - 1)`. Attempt 1 waits 1s, attempt 2 waits 2s, attempt 3 waits 4s. This is the right choice for rate-limited external services -- it backs off fast enough to let quotas recover.
+
+If you omit `backoff`, it defaults to `"fixed"`. If you omit `initialDelayMs` or set it to 0, the policy is ignored and retries happen immediately (the same behavior as having no `retryPolicy` at all).
+
+The type is straightforward:
+
+```ts
+type RetryPolicy = {
+  backoff?: "fixed" | "linear" | "exponential";
+  initialDelayMs?: number;
+};
+```
+
+### Side-effect tool warnings on retry
+
+When a task retries after a previous attempt already executed a non-idempotent side-effect tool call (a tool defined with `sideEffect: true, idempotent: false` via `defineTool`), Smithers injects a warning into the retry prompt. The warning tells the agent that those side effects may already have happened and that it should verify external state before calling them again. Smithers also reuses the same `ctx.idempotencyKey` across retries so your tool implementations can deduplicate.
+
+This matters most when you combine `retryPolicy` with tools that modify external state -- sending emails, creating records, charging payments. The backoff gives external systems time to settle, and the warning prevents the agent from blindly repeating mutations. See [Built-in Tools](/integrations/tools) for details on `defineTool` and the `sideEffect` flag.
 
 ## Timeouts
 
@@ -223,7 +301,9 @@ Read the comments. Each task uses a different error handling strategy based on h
 
 | Mechanism | Prop | Effect |
 |---|---|---|
-| **Retries** | `retries={N}` | Retry up to N times after failure. Each attempt is recorded. |
+| **Retries** | `retries={N}` | Retry up to N times after failure. Default: `Infinity` (retry forever). Each attempt is recorded. |
+| **No retry** | `noRetry` | Disable retries. Equivalent to `retries={0}`. |
+| **Retry backoff** | `retryPolicy={{ backoff, initialDelayMs }}` | Control delay between retries: `fixed`, `linear`, or `exponential`. Default: exponential from 1s, capped at 5 min. |
 | **Timeout** | `timeoutMs={N}` | Fail the attempt after N milliseconds. Combines with retries. |
 | **Continue on fail** | `continueOnFail` | Let subsequent tasks run even if this task fails. |
 | **Skip** | `skipIf={boolean}` | Skip the task at render time. Evaluated once per render cycle. |

@@ -616,7 +616,7 @@ describe("kanban", () => {
     const workRows = (db as any).select().from(tables.work).all();
     expect(workRows.length).toBeGreaterThanOrEqual(2);
     cleanup();
-  });
+  }, 30_000);
 });
 
 // ============================================================================

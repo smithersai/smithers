@@ -1,6 +1,8 @@
 import { Duration, Schedule } from "effect";
 import type { RetryPolicy } from "../RetryPolicy";
 
+const MAX_RETRY_DELAY_MS = 300_000;
+
 /**
  * Convert a RetryPolicy to an Effect Schedule for use with Effect.retry.
  */
@@ -42,5 +44,8 @@ export function computeRetryDelayMs(
   } else if (backoff === "exponential") {
     multiplier = 2 ** (safeAttempt - 1);
   }
-  return Math.max(0, Math.round(base * multiplier));
+  return Math.min(
+    MAX_RETRY_DELAY_MS,
+    Math.max(0, Math.round(base * multiplier)),
+  );
 }

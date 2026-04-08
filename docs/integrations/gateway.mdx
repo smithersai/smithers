@@ -1,0 +1,118 @@
+---
+title: Gateway
+description: Multi-workflow WebSocket gateway for Smithers runs, approvals, cron triggers, and scoped authentication.
+---
+
+`Gateway` exposes multiple workflows behind a single WebSocket endpoint with protocol negotiation, event streaming, run management, approvals, and cron scheduling.
+
+## Import
+
+```ts
+import { Gateway } from "smithers-orchestrator";
+```
+
+## Quick Start
+
+```ts
+import { Gateway } from "smithers-orchestrator";
+
+const gateway = new Gateway({
+  heartbeatMs: 15_000,
+  auth: {
+    mode: "token",
+    tokens: {
+      "operator-token": {
+        role: "operator",
+        scopes: ["*"],
+        userId: "user:will",
+      },
+    },
+  },
+});
+
+gateway.register("basic", workflow);
+await gateway.listen({ port: 7331 });
+```
+
+## Authentication Modes
+
+### Static tokens
+
+```ts
+new Gateway({
+  auth: {
+    mode: "token",
+    tokens: {
+      "viewer-token": {
+        role: "viewer",
+        scopes: ["runs.list", "runs.get"],
+      },
+    },
+  },
+});
+```
+
+### JWT
+
+```ts
+new Gateway({
+  auth: {
+    mode: "jwt",
+    issuer: "https://auth.example.com",
+    audience: "smithers",
+    secret: process.env.GATEWAY_JWT_SECRET!,
+    scopesClaim: "permissions",
+    roleClaim: "role",
+    userClaim: "sub",
+    defaultScopes: ["runs.get"],
+  },
+});
+```
+
+- Only `HS256` JWTs are accepted.
+- `iss`, `aud`, `exp`, and `nbf` are validated.
+- `scopesClaim`, `roleClaim`, and `userClaim` let you map custom claim names.
+
+### Trusted proxy
+
+```ts
+new Gateway({
+  auth: {
+    mode: "trusted-proxy",
+    allowedOrigins: ["https://smithers.example.com"],
+    trustedHeaders: ["x-user-id", "x-user-scopes", "x-user-role"],
+  },
+});
+```
+
+Use this only when another trusted service is already authenticating the user and forwarding identity headers.
+
+## Scoped approvals
+
+`<Approval>` can constrain who is allowed to decide it:
+
+```tsx
+<Approval
+  id="deploy"
+  output={outputs.deployApproval}
+  request={{ title: "Deploy to production?" }}
+  allowedScopes={["approve"]}
+  allowedUsers={["user:oncall"]} 
+/>
+```
+
+`Gateway` enforces both scope and user restrictions on `approvals.decide`.
+
+## Defaults
+
+Run-scoped defaults can be enforced at the gateway level:
+
+```ts
+new Gateway({
+  defaults: {
+    cliAgentTools: "explicit-only",
+  },
+});
+```
+
+`cliAgentTools: "explicit-only"` means supported CLI agents (`ClaudeCodeAgent`, `PiAgent`, `GeminiAgent`) get no tools unless a task explicitly sets `allowTools`.

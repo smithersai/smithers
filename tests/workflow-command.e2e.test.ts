@@ -225,7 +225,88 @@ test("workflow create scaffolds a workflow that runs immediately", () => {
   expect(runResult.json).toMatchObject({
     status: "finished",
   });
-});
+}, 15_000);
+
+test("workflow path can pause on WaitForEvent, accept a signal, and resume", () => {
+  const repo = createTempRepo();
+  repo.write(
+    "workflow.tsx",
+    [
+      "/** @jsxImportSource smithers-orchestrator */",
+      'import { createSmithers, WaitForEvent, Workflow } from "smithers-orchestrator";',
+      'import { z } from "zod";',
+      "",
+      "const { smithers, outputs } = createSmithers({",
+      "  eventOut: z.object({ ok: z.boolean() }),",
+      "});",
+      "",
+      "export default smithers(() => (",
+      '  <Workflow name="wait-for-event-fixture">',
+      '    <WaitForEvent id="wait" event="deploy.ready" output={outputs.eventOut} />',
+      "  </Workflow>",
+      "));",
+      "",
+    ].join("\n"),
+  );
+
+  const first = runSmithers(["workflow.tsx"], {
+    cwd: repo.dir,
+    format: "json",
+  });
+
+  expect(first.exitCode).toBe(3);
+  expect(first.json).toMatchObject({
+    status: "waiting-event",
+  });
+
+  const runId = (first.json as any)?.runId;
+  expect(typeof runId).toBe("string");
+
+  const signal = runSmithers(
+    [
+      "signal",
+      runId,
+      "deploy.ready",
+      "--data",
+      '{"ok":true}',
+    ],
+    {
+      cwd: repo.dir,
+      format: "json",
+    },
+  );
+
+  expect(signal.exitCode).toBe(0);
+  expect(signal.json).toMatchObject({
+    runId,
+    signalName: "deploy.ready",
+    status: "signalled",
+  });
+
+  const resumed = runSmithers(
+    ["workflow.tsx", "--resume", "--run-id", runId],
+    {
+      cwd: repo.dir,
+      format: "json",
+    },
+  );
+
+  expect(resumed.exitCode).toBe(0);
+  expect(resumed.json).toMatchObject({
+    runId,
+    status: "finished",
+  });
+
+  const sqlite = new Database(repo.path("smithers.db"), { readonly: true });
+  try {
+    const row = sqlite
+      .query('select ok from "event_out" order by rowid desc limit 1')
+      .get() as { ok: number | boolean } | null;
+    expect(Boolean(row?.ok)).toBe(true);
+  } finally {
+    sqlite.close();
+  }
+}, 20_000);
 
 test("workflow create rejects invalid workflow names", () => {
   const repo = createTempRepo();

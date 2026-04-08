@@ -15,6 +15,7 @@ import {
 import { z } from "zod";
 
 const tempRoots: string[] = [];
+const WORKTREE_RUNTIME_TIMEOUT_MS = 15_000;
 
 afterEach(async () => {
   for (const dir of tempRoots.splice(0)) {
@@ -51,71 +52,79 @@ async function createGitRepoWithoutOrigin() {
 }
 
 describe("Worktree runtime", () => {
-  test("falls back to HEAD when origin/main is unavailable", async () => {
-    if (!hasGit()) return;
+  test(
+    "falls back to HEAD when origin/main is unavailable",
+    async () => {
+      if (!hasGit()) return;
 
-    const { root, repoDir } = await createGitRepoWithoutOrigin();
-    const linkedPath = resolve(repoDir, "..", "linked-head");
-    const api = createSmithers(
-      { outputA: z.object({ value: z.number() }) },
-      { dbPath: join(root, "db.sqlite") },
-    );
-    const workflow = api.smithers((_ctx) => (
-      <Workflow name="head-fallback">
-        <Worktree id="wt" path="../linked-head">
-          <Task id="task1" output={api.outputs.outputA}>
-            {{ value: 1 }}
-          </Task>
-        </Worktree>
-      </Workflow>
-    ));
+      const { root, repoDir } = await createGitRepoWithoutOrigin();
+      const linkedPath = resolve(repoDir, "..", "linked-head");
+      const api = createSmithers(
+        { outputA: z.object({ value: z.number() }) },
+        { dbPath: join(root, "db.sqlite") },
+      );
+      const workflow = api.smithers((_ctx) => (
+        <Workflow name="head-fallback">
+          <Worktree id="wt" path="../linked-head">
+            <Task id="task1" output={api.outputs.outputA}>
+              {{ value: 1 }}
+            </Task>
+          </Worktree>
+        </Workflow>
+      ));
 
-    const result = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
-    try {
-      expect(result.status).toBe("finished");
-      expect(existsSync(linkedPath)).toBe(true);
-    } finally {
+      const result = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
       try {
-        (api.db as any).$client?.close?.();
-      } catch {}
-    }
-  });
+        expect(result.status).toBe("finished");
+        expect(existsSync(linkedPath)).toBe(true);
+      } finally {
+        try {
+          (api.db as any).$client?.close?.();
+        } catch {}
+      }
+    },
+    WORKTREE_RUNTIME_TIMEOUT_MS,
+  );
 
-  test("recreates a deleted worktree path on later runs", async () => {
-    if (!hasGit()) return;
+  test(
+    "recreates a deleted worktree path on later runs",
+    async () => {
+      if (!hasGit()) return;
 
-    const { root, repoDir } = await createGitRepoWithoutOrigin();
-    const linkedPath = resolve(repoDir, "..", "linked-recreate");
-    const api = createSmithers(
-      { outputA: z.object({ value: z.number() }) },
-      { dbPath: join(root, "db.sqlite") },
-    );
-    const workflow = api.smithers((_ctx) => (
-      <Workflow name="recreate-worktree">
-        <Worktree id="wt" path="../linked-recreate">
-          <Task id="task1" output={api.outputs.outputA}>
-            {{ value: 1 }}
-          </Task>
-        </Worktree>
-      </Workflow>
-    ));
+      const { root, repoDir } = await createGitRepoWithoutOrigin();
+      const linkedPath = resolve(repoDir, "..", "linked-recreate");
+      const api = createSmithers(
+        { outputA: z.object({ value: z.number() }) },
+        { dbPath: join(root, "db.sqlite") },
+      );
+      const workflow = api.smithers((_ctx) => (
+        <Workflow name="recreate-worktree">
+          <Worktree id="wt" path="../linked-recreate">
+            <Task id="task1" output={api.outputs.outputA}>
+              {{ value: 1 }}
+            </Task>
+          </Worktree>
+        </Workflow>
+      ));
 
-    try {
-      const first = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
-      expect(first.status).toBe("finished");
-      expect(existsSync(linkedPath)).toBe(true);
-
-      await rm(linkedPath, { recursive: true, force: true });
-      runGit(repoDir, ["worktree", "prune"]);
-      expect(existsSync(linkedPath)).toBe(false);
-
-      const second = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
-      expect(second.status).toBe("finished");
-      expect(existsSync(linkedPath)).toBe(true);
-    } finally {
       try {
-        (api.db as any).$client?.close?.();
-      } catch {}
-    }
-  });
+        const first = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
+        expect(first.status).toBe("finished");
+        expect(existsSync(linkedPath)).toBe(true);
+
+        await rm(linkedPath, { recursive: true, force: true });
+        runGit(repoDir, ["worktree", "prune"]);
+        expect(existsSync(linkedPath)).toBe(false);
+
+        const second = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
+        expect(second.status).toBe("finished");
+        expect(existsSync(linkedPath)).toBe(true);
+      } finally {
+        try {
+          (api.db as any).$client?.close?.();
+        } catch {}
+      }
+    },
+    WORKTREE_RUNTIME_TIMEOUT_MS,
+  );
 });

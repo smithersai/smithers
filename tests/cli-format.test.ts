@@ -197,6 +197,14 @@ describe("formatEventLine", () => {
     expect(line).toContain("✓ Approved: gate-1");
   });
 
+  test("formats ApprovalAutoApproved", () => {
+    const line = formatEventLine(
+      { timestampMs: 2000, type: "ApprovalAutoApproved", payloadJson: JSON.stringify({ nodeId: "gate-1" }) },
+      base,
+    );
+    expect(line).toContain("✓ Auto-approved: gate-1");
+  });
+
   test("formats ApprovalDenied", () => {
     const line = formatEventLine(
       { timestampMs: 2000, type: "ApprovalDenied", payloadJson: JSON.stringify({ nodeId: "gate-1" }) },

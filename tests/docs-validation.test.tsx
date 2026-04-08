@@ -2293,6 +2293,8 @@ describe("docs: SmithersEvent completeness", () => {
       "AgentEvent",
       "RevertStarted",
       "RevertFinished",
+      "TimeTravelStarted",
+      "TimeTravelFinished",
       "WorkflowReloadDetected",
       "WorkflowReloaded",
       "WorkflowReloadFailed",
@@ -2307,7 +2309,7 @@ describe("docs: SmithersEvent completeness", () => {
     for (const type of allSourceEventTypes) {
       expect(typeof type).toBe("string");
     }
-    expect(allSourceEventTypes.length).toBe(35);
+    expect(allSourceEventTypes.length).toBe(37);
   });
 });
 

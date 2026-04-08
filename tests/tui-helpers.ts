@@ -91,7 +91,10 @@ class BunSpawnBackend implements TUITestInstance {
   }
 }
 
-export async function launchTUI(args: string[]): Promise<TUITestInstance> {
+export async function launchTUI(
+  args: string[],
+  options: { cwd?: string } = {},
+): Promise<TUITestInstance> {
   const env = {
     ...process.env,
     TERM: "xterm-256color",
@@ -100,6 +103,7 @@ export async function launchTUI(args: string[]): Promise<TUITestInstance> {
   };
 
   const proc = Bun.spawn([BUN, "run", TUI_ENTRY, ...args], {
+    cwd: options.cwd,
     env,
     stdin: "pipe",
     stdout: "pipe",

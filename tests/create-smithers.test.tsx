@@ -62,6 +62,27 @@ describe("createSmithers", () => {
     expect(rows[0].sum).toBe(3);
     cleanup();
   });
+
+  test("reserved input schema is validated via ctx.input without shadowing the input table", async () => {
+    const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
+      input: z.object({ prompt: z.string() }),
+      result: z.object({ echoedPrompt: z.string() }),
+    });
+
+    const workflow = smithers((ctx) => (
+      <Workflow name="input-schema">
+        <Task id="echo" output={outputs.result}>
+          {{ echoedPrompt: ctx.input.prompt }}
+        </Task>
+      </Workflow>
+    ));
+
+    const r = await runWorkflow(workflow, { input: { prompt: "hello" } });
+    expect(r.status).toBe("finished");
+    const rows = (db as any).select().from(tables.result).all();
+    expect(rows[0].echoedPrompt).toBe("hello");
+    cleanup();
+  });
 });
 
 describe("workflow control flow integration", () => {

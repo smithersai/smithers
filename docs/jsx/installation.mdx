@@ -79,28 +79,6 @@ And add the MDX types:
 bun add -d @types/mdx
 ```
 
-## Optional: BAML Task Files
-
-If you want to import `.baml` files directly as Smithers tasks, install BAML and register the BAML preload plugin.
-
-```bash
-bun add @boundaryml/baml
-```
-
-```ts
-// preload.ts
-import { bamlPlugin, mdxPlugin } from "smithers-orchestrator";
-
-bamlPlugin();
-mdxPlugin(); // optional; only needed if you also import .mdx prompts
-```
-
-```toml
-# bunfig.toml
-preload = ["./preload.ts"]
-```
-
-See [BAML](/integrations/baml) for generator configuration and usage.
 
 ## Verify the Setup
 

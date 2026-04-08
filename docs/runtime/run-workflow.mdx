@@ -52,6 +52,7 @@ function runWorkflow<Schema>(
 | `maxOutputBytes` | `number` | `200000` | Max bytes per tool call output. Truncated beyond this. |
 | `toolTimeoutMs` | `number` | `60000` | Wall-clock timeout (ms) per tool call. |
 | `hot` | `boolean \| HotReloadOptions` | `undefined` | Enable hot-reload. `true` for defaults, or pass `HotReloadOptions`. |
+| `cliAgentToolsDefault` | `"all" \| "explicit-only"` | `"all"` | Default tool access policy for CLI-backed agents. When `"explicit-only"`, agents can only use tools listed in the task's `allowTools` prop. Recommended `"explicit-only"` for production workflows. |
 
 ### HotReloadOptions
 

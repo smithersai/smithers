@@ -206,6 +206,8 @@ export function formatEventLine(event: {
       return `${prefix}⏸ Approval requested: ${payload?.nodeId ?? "?"}`;
     case "ApprovalGranted":
       return `${prefix}✓ Approved: ${payload?.nodeId ?? "?"}`;
+    case "ApprovalAutoApproved":
+      return `${prefix}✓ Auto-approved: ${payload?.nodeId ?? "?"}`;
     case "ApprovalDenied":
       return `${prefix}✗ Denied: ${payload?.nodeId ?? "?"}`;
     case "ToolCallStarted":
@@ -244,6 +246,10 @@ export function formatEventLine(event: {
       return `${prefix}↩ Revert started on ${payload?.nodeId ?? "?"}`;
     case "RevertFinished":
       return `${prefix}${payload?.success ? "✓" : "✗"} Revert ${payload?.success ? "finished" : "failed"} on ${payload?.nodeId ?? "?"}`;
+    case "TimeTravelStarted":
+      return `${prefix}↺ Time travel started on ${payload?.nodeId ?? "?"}`;
+    case "TimeTravelFinished":
+      return `${prefix}${payload?.success ? "✓" : "✗"} Time travel ${payload?.success ? "finished" : "failed"} on ${payload?.nodeId ?? "?"}`;
     case "OpenApiToolCalled":
       return `${prefix}🌐 ${payload?.method ?? "?"} ${payload?.path ?? payload?.operationId ?? "?"} (${payload?.status ?? "unknown"})`;
     case "VoiceStarted":

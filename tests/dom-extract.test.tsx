@@ -200,6 +200,30 @@ describe("extractFromHost", () => {
     expect(result.tasks[0].continueOnFail).toBe(true);
   });
 
+  test("defaults tasks to infinite retries with exponential backoff", () => {
+    const root = hostEl("smithers:task", {
+      id: "t1",
+      output: "t",
+    });
+    const result = extractFromHost(root);
+    expect(result.tasks[0].retries).toBe(Infinity);
+    expect(result.tasks[0].retryPolicy).toEqual({
+      backoff: "exponential",
+      initialDelayMs: 1000,
+    });
+  });
+
+  test("noRetry disables default retries and retry policy", () => {
+    const root = hostEl("smithers:task", {
+      id: "t1",
+      output: "t",
+      noRetry: true,
+    });
+    const result = extractFromHost(root);
+    expect(result.tasks[0].retries).toBe(0);
+    expect(result.tasks[0].retryPolicy).toBeUndefined();
+  });
+
   test("extracts skipIf flag", () => {
     const root = hostEl("smithers:task", {
       id: "t1",

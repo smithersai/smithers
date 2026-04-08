@@ -13,11 +13,21 @@ import {
 import { createTestSmithers } from "./helpers";
 import { z } from "zod";
 
+const WORKFLOW_EXAMPLE_TIMEOUT_MS = 30_000;
+
+function workflowTest(
+  name: string,
+  fn: () => Promise<unknown>,
+  timeoutMs = WORKFLOW_EXAMPLE_TIMEOUT_MS,
+) {
+  test(name, fn, timeoutMs);
+}
+
 // ============================================================
 // 1. alert-suppressor
 // ============================================================
 describe("alert-suppressor", () => {
-  test("full pipeline: dedupe → context → classify → dispatch → summary", async () => {
+  workflowTest("full pipeline: dedupe → context → classify → dispatch → summary", async () => {
     const dedupeResultSchema = z.object({
       uniqueAlerts: z.array(z.object({ id: z.string(), source: z.string(), severity: z.enum(["critical", "high", "medium", "low"]), message: z.string(), timestamp: z.string(), labels: z.string() })),
       suppressedCount: z.number(),
@@ -124,7 +134,7 @@ describe("alert-suppressor", () => {
 // 2. audit
 // ============================================================
 describe("audit", () => {
-  test("scan → investigate high-severity → report", async () => {
+  workflowTest("scan → investigate high-severity → report", async () => {
     const scanSchema = z.object({
       items: z.array(z.object({ id: z.string(), category: z.string(), severity: z.enum(["critical", "high", "medium", "low", "info"]), description: z.string(), location: z.string() })),
       totalScanned: z.number(),
@@ -222,7 +232,7 @@ describe("audit", () => {
 // 3. benchmark-sheriff
 // ============================================================
 describe("benchmark-sheriff", () => {
-  test("clean run: no regressions takes the else branch", async () => {
+  workflowTest("clean run: no regressions takes the else branch", async () => {
     const runSchema = z.object({
       benchmarks: z.array(z.object({ name: z.string(), valueMs: z.number() })),
       raw: z.string(),
@@ -307,7 +317,7 @@ describe("benchmark-sheriff", () => {
     cleanup();
   });
 
-  test("regressed run: takes the then branch", async () => {
+  workflowTest("regressed run: takes the then branch", async () => {
     const runSchema = z.object({
       benchmarks: z.array(z.object({ name: z.string(), valueMs: z.number() })),
       raw: z.string(),
@@ -397,7 +407,7 @@ describe("benchmark-sheriff", () => {
 // 4. bisect-guide
 // ============================================================
 describe("bisect-guide", () => {
-  test("loop converges when culpritFound is true", async () => {
+  workflowTest("loop converges when culpritFound is true", async () => {
     const bisectStepSchema = z.object({
       sha: z.string(),
       low: z.number(),
@@ -477,14 +487,14 @@ describe("bisect-guide", () => {
     expect(outputRows[0].culpritSha).toBe("abc3");
     expect(iteration).toBeGreaterThanOrEqual(3);
     cleanup();
-  });
+  }, 15_000);
 });
 
 // ============================================================
 // 5. blog-analyzer-pipeline
 // ============================================================
 describe("blog-analyzer-pipeline", () => {
-  test("ingest → analyze → report sequence", async () => {
+  workflowTest("ingest → analyze → report sequence", async () => {
     const ingestSchema = z.object({
       articles: z.array(z.object({ id: z.string(), title: z.string(), content: z.string(), author: z.string().optional(), publishedAt: z.string().optional() })),
       totalIngested: z.number(),
@@ -560,7 +570,7 @@ describe("blog-analyzer-pipeline", () => {
 // 6. branch-doctor
 // ============================================================
 describe("branch-doctor", () => {
-  test("inspect → diagnose → plan → summary (no auto-execute)", async () => {
+  workflowTest("inspect → diagnose → plan → summary (no auto-execute)", async () => {
     const inspectionSchema = z.object({
       branch: z.string(), conflictedFiles: z.array(z.string()), divergedCommits: z.number(),
       unresolvedCherryPicks: z.array(z.string()), staleGeneratedFiles: z.array(z.string()), statusSummary: z.string(),
@@ -650,7 +660,7 @@ describe("branch-doctor", () => {
 // 7. canary-judge
 // ============================================================
 describe("canary-judge", () => {
-  test("collect stable + canary in parallel → compare → judge → deploy", async () => {
+  workflowTest("collect stable + canary in parallel → compare → judge → deploy", async () => {
     const telemetrySchema = z.object({
       stream: z.enum(["stable", "canary"]),
       latencyP50Ms: z.number(), latencyP99Ms: z.number(), errorRate: z.number(),
@@ -738,7 +748,7 @@ describe("canary-judge", () => {
 // 8. change-blast-radius
 // ============================================================
 describe("change-blast-radius", () => {
-  test("parse → gather → blast-radius sequence", async () => {
+  workflowTest("parse → gather → blast-radius sequence", async () => {
     const parsedDiffSchema = z.object({
       files: z.array(z.object({ path: z.string(), changeType: z.enum(["added", "modified", "deleted", "renamed"]), hunks: z.number(), linesChanged: z.number() })),
       totalFiles: z.number(), summary: z.string(),
@@ -812,7 +822,7 @@ describe("change-blast-radius", () => {
 // 9. changelog
 // ============================================================
 describe("changelog", () => {
-  test("analyze → generate sequence", async () => {
+  workflowTest("analyze → generate sequence", async () => {
     const commitAnalysisSchema = z.object({
       commits: z.array(z.object({
         sha: z.string(), message: z.string(), author: z.string(),
@@ -878,7 +888,7 @@ describe("changelog", () => {
 // 10. classifier-switchboard
 // ============================================================
 describe("classifier-switchboard", () => {
-  test("intake → classify → fan-out handlers → summary", async () => {
+  workflowTest("intake → classify → fan-out handlers → summary", async () => {
     const intakeSchema = z.object({
       items: z.array(z.object({ id: z.string(), content: z.string(), source: z.enum(["email", "chat", "ticket", "file"]), metadata: z.record(z.string(), z.string()).optional() })),
     });

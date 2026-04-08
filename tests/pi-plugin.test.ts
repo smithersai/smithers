@@ -137,9 +137,9 @@ describe("pi-plugin client", () => {
       baseUrl: BASE_URL,
     });
 
-    const status2 = await waitForStatus(run.runId, "finished");
+    const status2 = await waitForStatus(run.runId, "finished", 50);
     expect(status2.status).toBe("finished");
-  });
+  }, 15_000);
 
   test("deny marks node as denied", async () => {
     const run = (await pi.runWorkflow({

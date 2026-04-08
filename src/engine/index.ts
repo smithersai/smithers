@@ -4,6 +4,7 @@ import type { RunResult } from "../RunResult";
 import type { SmithersEvent } from "../SmithersEvent";
 import type { TaskDescriptor } from "../TaskDescriptor";
 import type { GraphSnapshot } from "../GraphSnapshot";
+import type { RunAuthContext } from "../RunAuthContext";
 import type { AgentCliEvent } from "../agents/BaseCliAgent";
 import { isBlockingAgentActionKind } from "../agents/BaseCliAgent";
 import { SmithersRenderer } from "../dom/renderer";
@@ -17,6 +18,8 @@ import {
   validateExistingOutput,
   getAgentOutputSchema,
   describeSchemaShape,
+  buildOutputRow,
+  stripAutoColumns,
 } from "../db/output";
 import { validateInput } from "../db/input";
 import { schemaSignature } from "../db/schema-signature";
@@ -36,7 +39,12 @@ import {
   type RalphStateMap,
 } from "./scheduler";
 import { runWithToolContext } from "../tools/context";
-import { captureSnapshotEffect } from "../time-travel/snapshot";
+import { getDefinedToolMetadata } from "../tools/defineTool";
+import {
+  captureSnapshotEffect,
+  loadLatestSnapshot,
+  parseSnapshot,
+} from "../time-travel/snapshot";
 import { EventBus } from "../events";
 import { getJjPointer } from "../vcs/jj";
 import { findVcsRoot } from "../vcs/find-root";
@@ -71,12 +79,21 @@ import { spawn as nodeSpawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { platform } from "node:os";
 import { withTaskRuntime } from "../effect/task-runtime";
+import {
+  cancelPendingTimersBridge,
+  executeTaskBridge,
+  isBridgeManagedTimerTask as isTimerTask,
+  resolveDeferredTaskStateBridge,
+} from "../effect/workflow-bridge";
 
 /**
  * Track which worktree paths have already been created this run so we don't
  * re-create them for every task sharing the same worktree.
  */
 const createdWorktrees = new Set<string>();
+const gitBinary = typeof Bun !== "undefined" ? Bun.which("git") : null;
+const caffeinateBinary =
+  typeof Bun !== "undefined" ? Bun.which("caffeinate") : null;
 
 function makeAbortError(message = "Task aborted"): SmithersError {
   return new SmithersError("TASK_ABORTED", message, undefined, {
@@ -122,7 +139,7 @@ type HijackCompletion = {
   cwd: string;
 };
 
-type HijackState = {
+export type HijackState = {
   request: { requestedAtMs: number; target?: string | null } | null;
   completion: HijackCompletion | null;
 };
@@ -137,149 +154,6 @@ function parseAttemptMetaJson(metaJson?: string | null): Record<string, unknown>
   } catch {
     return {};
   }
-}
-
-type TimerType = "duration" | "absolute";
-
-type TimerSnapshot = {
-  timerId: string;
-  timerType: TimerType;
-  firesAtMs: number;
-  createdAtMs: number;
-  firedAtMs?: number;
-  duration?: string;
-  until?: string;
-};
-
-const timerDurationMultipliers: Record<string, number> = {
-  ms: 1,
-  s: 1_000,
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-};
-
-function isTimerTask(desc: TaskDescriptor): boolean {
-  return Boolean(desc.meta && (desc.meta as any).__timer);
-}
-
-function parseTimerType(desc: TaskDescriptor): TimerType {
-  const raw = (desc.meta as any)?.__timerType;
-  return raw === "absolute" ? "absolute" : "duration";
-}
-
-function parseTimerDurationMs(raw: string, nodeId: string): number {
-  const input = raw.trim().toLowerCase();
-  const match = input.match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)?$/);
-  if (!match) {
-    throw new SmithersError(
-      "INVALID_INPUT",
-      `Timer ${nodeId} has invalid duration "${raw}". Use formats like 500ms, 10s, 2m.`,
-      { nodeId, duration: raw },
-    );
-  }
-  const value = Number(match[1]);
-  const unit = match[2] ?? "ms";
-  const multiplier = timerDurationMultipliers[unit];
-  const ms = Math.floor(value * multiplier);
-  if (!Number.isFinite(ms) || ms < 0) {
-    throw new SmithersError(
-      "INVALID_INPUT",
-      `Timer ${nodeId} duration "${raw}" is not valid.`,
-      { nodeId, duration: raw },
-    );
-  }
-  return ms;
-}
-
-function parseTimerUntilMs(raw: string, nodeId: string): number {
-  const parsed = Date.parse(raw);
-  if (!Number.isFinite(parsed)) {
-    throw new SmithersError(
-      "INVALID_INPUT",
-      `Timer ${nodeId} has invalid "until" timestamp "${raw}".`,
-      { nodeId, until: raw },
-    );
-  }
-  return Math.floor(parsed);
-}
-
-function buildTimerSnapshot(desc: TaskDescriptor, createdAtMs: number): TimerSnapshot {
-  const timerType = parseTimerType(desc);
-  const timerId = desc.nodeId;
-  if (timerType === "duration") {
-    const duration = String((desc.meta as any)?.__timerDuration ?? "").trim();
-    if (!duration) {
-      throw new SmithersError(
-        "INVALID_INPUT",
-        `Timer ${timerId} is missing duration metadata.`,
-        { nodeId: timerId },
-      );
-    }
-    const delayMs = parseTimerDurationMs(duration, timerId);
-    return {
-      timerId,
-      timerType,
-      duration,
-      createdAtMs,
-      firesAtMs: createdAtMs + delayMs,
-    };
-  }
-
-  const until = String((desc.meta as any)?.__timerUntil ?? "").trim();
-  if (!until) {
-    throw new SmithersError(
-      "INVALID_INPUT",
-      `Timer ${timerId} is missing until metadata.`,
-      { nodeId: timerId },
-    );
-  }
-  return {
-    timerId,
-    timerType,
-    until,
-    createdAtMs,
-    firesAtMs: parseTimerUntilMs(until, timerId),
-  };
-}
-
-function parseTimerSnapshot(metaJson?: string | null): TimerSnapshot | null {
-  const meta = parseAttemptMetaJson(metaJson);
-  const timer = meta.timer;
-  if (!timer || typeof timer !== "object" || Array.isArray(timer)) return null;
-  const timerId = typeof (timer as any).timerId === "string" ? (timer as any).timerId : null;
-  const timerType = (timer as any).timerType === "absolute" ? "absolute" : "duration";
-  const createdAtMs = Number((timer as any).createdAtMs);
-  const firesAtMs = Number((timer as any).firesAtMs);
-  if (!timerId || !Number.isFinite(createdAtMs) || !Number.isFinite(firesAtMs)) {
-    return null;
-  }
-  const firedAtRaw = (timer as any).firedAtMs;
-  const firedAtMs = Number.isFinite(Number(firedAtRaw)) ? Number(firedAtRaw) : undefined;
-  return {
-    timerId,
-    timerType,
-    createdAtMs,
-    firesAtMs,
-    firedAtMs,
-    duration: typeof (timer as any).duration === "string" ? (timer as any).duration : undefined,
-    until: typeof (timer as any).until === "string" ? (timer as any).until : undefined,
-  };
-}
-
-function buildTimerAttemptMeta(snapshot: TimerSnapshot): Record<string, unknown> {
-  return {
-    kind: "timer",
-    timer: {
-      timerId: snapshot.timerId,
-      timerType: snapshot.timerType,
-      duration: snapshot.duration ?? null,
-      until: snapshot.until ?? null,
-      createdAtMs: snapshot.createdAtMs,
-      firesAtMs: snapshot.firesAtMs,
-      firedAtMs: snapshot.firedAtMs ?? null,
-    },
-  };
 }
 
 function asConversationMessages(value: unknown): unknown[] | undefined {
@@ -484,6 +358,117 @@ function findHijackContinuation(
   return undefined;
 }
 
+const TOOL_RESUME_WARNING_MARKER = "[smithers:tool-resume-warning]";
+
+type ToolResumeWarning = {
+  toolName: string;
+  attempt: number;
+  seq: number;
+  status: string;
+};
+
+function collectDefinedToolMetadata(agents: any[]): Map<string, ReturnType<typeof getDefinedToolMetadata>> {
+  const metadataByName = new Map<string, ReturnType<typeof getDefinedToolMetadata>>();
+  for (const agent of agents) {
+    const tools =
+      agent && typeof agent === "object" && (agent as any).tools && typeof (agent as any).tools === "object"
+        ? Object.entries((agent as any).tools as Record<string, unknown>)
+        : [];
+    for (const [toolName, tool] of tools) {
+      const metadata = getDefinedToolMetadata(tool);
+      if (!metadata) {
+        continue;
+      }
+      metadataByName.set(toolName, metadata);
+      metadataByName.set(metadata.name, metadata);
+    }
+  }
+  return metadataByName;
+}
+
+function collectToolResumeWarnings(
+  toolCalls: Array<{ toolName?: string; attempt?: number; seq?: number; status?: string }>,
+  agents: any[],
+  currentAttempt: number,
+): ToolResumeWarning[] {
+  if (currentAttempt <= 1 || toolCalls.length === 0) {
+    return [];
+  }
+  const metadataByName = collectDefinedToolMetadata(agents);
+  return toolCalls
+    .filter((call) => typeof call.attempt === "number" && call.attempt < currentAttempt)
+    .filter((call) => {
+      const toolName = typeof call.toolName === "string" ? call.toolName : "";
+      const metadata = metadataByName.get(toolName);
+      return Boolean(metadata?.sideEffect && metadata.idempotent === false);
+    })
+    .map((call) => ({
+      toolName: String(call.toolName ?? ""),
+      attempt: Number(call.attempt ?? 0),
+      seq: Number(call.seq ?? 0),
+      status: String(call.status ?? "unknown"),
+    }));
+}
+
+function buildToolResumeWarningMessage(warnings: ToolResumeWarning[]): string | null {
+  if (warnings.length === 0) {
+    return null;
+  }
+  const shownWarnings = warnings.slice(0, 5);
+  const lines = [
+    `${TOOL_RESUME_WARNING_MARKER} Previous attempts in this task already called non-idempotent side-effect tools.`,
+    "Those side effects may already have happened before the interruption or retry.",
+    "Do not blindly call them again. Verify external state first or continue from the prior result.",
+    "Smithers will reuse the same ctx.idempotencyKey for defineTool retries.",
+    "Previously called tools:",
+    ...shownWarnings.map(
+      (warning) =>
+        `- ${warning.toolName} (attempt ${warning.attempt}, seq ${warning.seq}, status ${warning.status})`,
+    ),
+  ];
+  if (warnings.length > shownWarnings.length) {
+    lines.push(`- ...and ${warnings.length - shownWarnings.length} more`);
+  }
+  return lines.join("\n");
+}
+
+function hasToolResumeWarningMessage(messages: unknown[] | undefined): boolean {
+  return Array.isArray(messages)
+    && messages.some((message) => {
+      try {
+        return JSON.stringify(message).includes(TOOL_RESUME_WARNING_MARKER);
+      } catch {
+        return false;
+      }
+    });
+}
+
+function appendToolResumeWarningMessage(
+  messages: unknown[] | undefined,
+  warningMessage: string | null,
+): unknown[] | undefined {
+  if (!messages?.length || !warningMessage || hasToolResumeWarningMessage(messages)) {
+    return messages;
+  }
+  return [
+    ...messages,
+    {
+      role: "user",
+      content: warningMessage,
+    },
+  ];
+}
+
+function prependToolResumeWarningMessage(
+  prompt: string,
+  warningMessage: string | null,
+): string {
+  if (!warningMessage || prompt.includes(TOOL_RESUME_WARNING_MARKER)) {
+    return prompt;
+  }
+  return `${warningMessage}\n\n${prompt}`;
+}
+
 function buildHijackAbortError(completion: HijackCompletion): Error {
   const err = makeAbortError(`Hijack requested for ${completion.engine}`);
   (err as any).code = "RUN_HIJACKED";
@@ -496,7 +481,7 @@ async function runGitCommand(
   args: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   return await new Promise<{ code: number; stdout: string; stderr: string }>((res) => {
-    const child = nodeSpawn("git", args, {
+    const child = nodeSpawn(gitBinary ?? "git", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -564,14 +549,7 @@ async function ensureWorktree(
   // Best effort: refresh remote refs for git so origin/main can be used as a
   // base when local main is absent.
   if (vcs.type === "git") {
-    await new Promise<void>((res) => {
-      const child = nodeSpawn("git", ["fetch", "origin"], {
-        cwd: vcs.root,
-        stdio: ["ignore", "ignore", "ignore"],
-      });
-      child.on("close", () => res());
-      child.on("error", () => res());
-    });
+    await runGitCommand(vcs.root, ["fetch", "origin"]);
   }
 
   if (vcs.type === "jj") {
@@ -624,7 +602,7 @@ async function ensureWorktree(
       if (!created) {
         throw new SmithersError(
           "WORKTREE_CREATE_FAILED",
-          `Failed to create git worktree at ${worktreePath} on branch ${branch}. Tried main, origin/main, and HEAD. ${failures.join(" | ")}`,
+          `Failed to create git worktree at ${worktreePath} on branch ${branch}. Tried ${baseRefs.join(", ")}. ${failures.join(" | ")}`,
           { worktreePath, branch, vcsType: "git" },
         );
       }
@@ -647,7 +625,7 @@ async function ensureWorktree(
       if (!created) {
         throw new SmithersError(
           "WORKTREE_CREATE_FAILED",
-          `Failed to create git worktree at ${worktreePath}. Tried main, origin/main, and HEAD. ${failures.join(" | ")}`,
+          `Failed to create git worktree at ${worktreePath}. Tried ${baseRefs.join(", ")}. ${failures.join(" | ")}`,
           { worktreePath, vcsType: "git" },
         );
       }
@@ -702,11 +680,13 @@ type RunDurabilityMetadata = {
 /** Prevent macOS idle sleep while a workflow is running. No-op on other platforms. */
 function acquireCaffeinate(): { release: () => void } {
   if (platform() !== "darwin") return { release: () => {} };
+  if (!caffeinateBinary) return { release: () => {} };
   try {
-    const child = nodeSpawn("caffeinate", ["-i", "-w", String(process.pid)], {
+    const child = nodeSpawn(caffeinateBinary, ["-i", "-w", String(process.pid)], {
       stdio: "ignore",
       detached: true,
     });
+    child.on("error", () => {});
     child.unref();
     return {
       release: () => {
@@ -742,58 +722,16 @@ function buildInputRow(
   return { runId, ...input };
 }
 
-function buildOutputRow(
-  outputTable: any,
-  runId: string,
-  nodeId: string,
-  iteration: number,
-  payload: unknown,
-) {
-  const cols = getTableColumns(outputTable as any) as Record<string, any>;
-  const keys = Object.keys(cols);
-  const hasPayload = keys.includes("payload");
-  const payloadOnly =
-    hasPayload &&
-    keys.every(
-      (key) =>
-        key === "runId" ||
-        key === "nodeId" ||
-        key === "iteration" ||
-        key === "payload",
-    );
-  if (payloadOnly) {
-    return {
-      runId,
-      nodeId,
-      iteration,
-      payload: (payload ?? null) as any,
-    };
-  }
-  return {
-    ...((payload ?? {}) as Record<string, unknown>),
-    runId,
-    nodeId,
-    iteration,
-  };
-}
-
-function stripAutoColumns(payload: unknown) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return payload;
-  }
-  const { runId: _runId, nodeId: _nodeId, iteration: _iteration, ...rest } =
-    payload as Record<string, unknown>;
-  return rest;
-}
-
 function normalizeInputRow(row: any): Record<string, unknown> {
   if (!row || typeof row !== "object") return {};
   if ("payload" in row) {
     const payload = (row as any).payload;
+    const { runId: _runId, payload: _payload, ...rest } =
+      row as Record<string, unknown>;
     if (payload && typeof payload === "object") {
-      return payload as Record<string, unknown>;
+      return { ...(payload as Record<string, unknown>), ...rest };
     }
-    return {};
+    return rest;
   }
   const { runId: _runId, ...rest } = row as Record<string, unknown>;
   return rest;
@@ -815,6 +753,134 @@ function normalizeOutputRow(row: any): unknown {
     return (row as any).payload ?? null;
   }
   return stripAutoColumns(row);
+}
+
+async function restoreDurableStateFromSnapshot(
+  adapter: SmithersDb,
+  db: any,
+  schema: Record<string, any>,
+  inputTable: any,
+  runId: string,
+): Promise<boolean> {
+  const snapshot = await loadLatestSnapshot(adapter, runId);
+  if (!snapshot) return false;
+
+  const parsed = parseSnapshot(snapshot);
+  const restoredAtMs = snapshot.createdAtMs ?? nowMs();
+  const inputRow = buildInputRow(inputTable, runId, normalizeInputRow(parsed.input));
+  const inputValidation = validateInput(inputTable as any, inputRow);
+  if (!inputValidation.ok) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "Snapshot input does not match schema",
+      {
+        issues: inputValidation.error?.issues,
+        runId,
+        frameNo: snapshot.frameNo,
+      },
+    );
+  }
+
+  const inputCols = getTableColumns(inputTable as any) as Record<string, any>;
+  await withSqliteWriteRetry(
+    () =>
+      db
+        .insert(inputTable)
+        .values(inputRow)
+        .onConflictDoUpdate({
+          target: inputCols.runId,
+          set: inputRow,
+        }),
+    { label: "restore input row from snapshot" },
+  );
+
+  for (const node of Object.values(parsed.nodes)) {
+    await adapter.insertNode({
+      runId,
+      nodeId: node.nodeId,
+      iteration: node.iteration ?? 0,
+      state: node.state,
+      lastAttempt: node.lastAttempt ?? null,
+      updatedAtMs: restoredAtMs,
+      outputTable: node.outputTable ?? "",
+      label: node.label ?? null,
+    });
+  }
+
+  for (const ralph of Object.values(parsed.ralph)) {
+    await adapter.insertOrUpdateRalph({
+      runId,
+      ralphId: ralph.ralphId,
+      iteration: ralph.iteration ?? 0,
+      done: Boolean(ralph.done),
+      updatedAtMs: restoredAtMs,
+    });
+  }
+
+  for (const [schemaKey, table] of Object.entries(schema)) {
+    if (!table || typeof table !== "object" || schemaKey === "input") continue;
+    const tableName = getTableName(table as any);
+    const rows =
+      (parsed.outputs[tableName] as unknown[] | undefined) ??
+      (parsed.outputs[schemaKey] as unknown[] | undefined) ??
+      [];
+
+    for (const rawRow of rows) {
+      if (!rawRow || typeof rawRow !== "object") continue;
+      const nodeId =
+        typeof (rawRow as Record<string, unknown>).nodeId === "string"
+          ? ((rawRow as Record<string, unknown>).nodeId as string)
+          : null;
+      if (!nodeId) continue;
+      const iteration =
+        typeof (rawRow as Record<string, unknown>).iteration === "number"
+          ? ((rawRow as Record<string, unknown>).iteration as number)
+          : 0;
+      const nodeState = parsed.nodes[`${nodeId}::${iteration}`];
+      if (nodeState?.state !== "finished") continue;
+
+      const restoredRow = buildOutputRow(
+        table as any,
+        runId,
+        nodeId,
+        iteration,
+        normalizeOutputRow(rawRow),
+      );
+      const outputValidation = validateOutput(table as any, restoredRow);
+      if (!outputValidation.ok) {
+        throw new SmithersError(
+          "INVALID_OUTPUT",
+          `Snapshot output does not match schema for ${tableName}`,
+          {
+            issues: outputValidation.error?.issues,
+            nodeId,
+            iteration,
+            runId,
+            frameNo: snapshot.frameNo,
+            tableName,
+          },
+        );
+      }
+
+      const outputCols = getTableColumns(table as any) as Record<string, any>;
+      const target = outputCols.iteration
+        ? [outputCols.runId, outputCols.nodeId, outputCols.iteration]
+        : [outputCols.runId, outputCols.nodeId];
+      await withSqliteWriteRetry(
+        () =>
+          db
+            .insert(table as any)
+            .values(restoredRow)
+            .onConflictDoUpdate({
+              target: target as any,
+              set: restoredRow,
+            }),
+        { label: `restore output ${tableName} from snapshot` },
+      );
+    }
+  }
+
+  return true;
 }
 
 function quoteSqlIdent(identifier: string): string {
@@ -1493,6 +1559,42 @@ export function isRunHeartbeatFresh(
   );
 }
 
+function parseRunConfigJson(value: string | null | undefined): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseRunAuthContext(value: unknown): RunAuthContext | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.triggeredBy !== "string" ||
+    !Array.isArray(record.scopes) ||
+    typeof record.role !== "string" ||
+    typeof record.createdAt !== "string"
+  ) {
+    return null;
+  }
+  const scopes = record.scopes.filter((entry): entry is string => typeof entry === "string");
+  return {
+    triggeredBy: record.triggeredBy,
+    scopes,
+    role: record.role,
+    createdAt: record.createdAt,
+  };
+}
+
 function normalizeHotOptions(hot: boolean | HotReloadOptions | undefined): HotReloadOptions & { enabled: boolean } {
   if (!hot) return { enabled: false };
   if (hot === true) return { enabled: true };
@@ -1738,6 +1840,7 @@ async function computeTaskStates(
   tasks: TaskDescriptor[],
   eventBus: EventBus,
   ralphDone: Map<string, boolean>,
+  retryFailedOnResume = false,
 ): Promise<{ stateMap: TaskStateMap; retryWait: Map<string, number> }> {
   const stateMap: TaskStateMap = new Map();
   const retryWait = new Map<string, number>();
@@ -1794,338 +1897,17 @@ async function computeTaskStates(
       continue;
     }
 
-    if (isTimerTask(desc)) {
-      const now = nowMs();
-      const attempts = await adapter.listAttempts(
-        runId,
-        desc.nodeId,
-        desc.iteration,
-      );
-      const latest = attempts[0];
-      const latestTimerSnapshot = parseTimerSnapshot(latest?.metaJson);
-
-      if (!latest) {
-        const snapshot = buildTimerSnapshot(desc, now);
-        const attemptNo = 1;
-        const immediateFire = snapshot.firesAtMs <= now;
-        const initialState = immediateFire ? "finished" : "waiting-timer";
-        const firedAtMs = immediateFire ? now : undefined;
-        const metaJson = JSON.stringify(
-          buildTimerAttemptMeta({
-            ...snapshot,
-            firedAtMs,
-          }),
-        );
-        const nodeState = immediateFire ? "finished" : "waiting-timer";
-
-        await adapter.withTransaction(
-          "timer-start",
-          Effect.gen(function* () {
-            yield* adapter.insertAttemptEffect({
-              runId,
-              nodeId: desc.nodeId,
-              iteration: desc.iteration,
-              attempt: attemptNo,
-              state: initialState,
-              startedAtMs: now,
-              finishedAtMs: immediateFire ? now : null,
-              errorJson: null,
-              jjPointer: null,
-              jjCwd: null,
-              cached: false,
-              metaJson,
-              responseText: null,
-            });
-            yield* adapter.insertNodeEffect({
-              runId,
-              nodeId: desc.nodeId,
-              iteration: desc.iteration,
-              state: nodeState,
-              lastAttempt: attemptNo,
-              updatedAtMs: now,
-              outputTable: desc.outputTableName,
-              label: desc.label ?? null,
-            });
-          }),
-        );
-        stateMap.set(key, nodeState as TaskState);
-
-        await eventBus.emitEventWithPersist({
-          type: "TimerCreated",
-          runId,
-          timerId: desc.nodeId,
-          firesAtMs: snapshot.firesAtMs,
-          timerType: snapshot.timerType,
-          timestampMs: now,
-        });
-
-        if (immediateFire) {
-          await eventBus.emitEventWithPersist({
-            type: "TimerFired",
-            runId,
-            timerId: desc.nodeId,
-            firesAtMs: snapshot.firesAtMs,
-            firedAtMs: now,
-            delayMs: Math.max(0, now - snapshot.firesAtMs),
-            timestampMs: now,
-          });
-          await eventBus.emitEventWithPersist({
-            type: "NodeFinished",
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-            attempt: attemptNo,
-            timestampMs: now,
-          });
-        } else {
-          await eventBus.emitEventWithPersist({
-            type: "NodeWaitingTimer",
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-            firesAtMs: snapshot.firesAtMs,
-            timestampMs: now,
-          });
-        }
-        continue;
-      }
-
-      if (latest.state === "waiting-timer") {
-        const snapshot = latestTimerSnapshot ?? buildTimerSnapshot(desc, now);
-        if (snapshot.firesAtMs > now) {
-          stateMap.set(key, "waiting-timer");
-          await adapter.insertNode({
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-            state: "waiting-timer",
-            lastAttempt: latest.attempt,
-            updatedAtMs: now,
-            outputTable: desc.outputTableName,
-            label: desc.label ?? null,
-          });
-          continue;
-        }
-
-        const firedAtMs = now;
-        const firedSnapshot: TimerSnapshot = {
-          ...snapshot,
-          firedAtMs,
-        };
-        await adapter.withTransaction(
-          "timer-fire",
-          Effect.gen(function* () {
-            yield* adapter.updateAttemptEffect(
-              runId,
-              desc.nodeId,
-              desc.iteration,
-              latest.attempt,
-              {
-                state: "finished",
-                finishedAtMs: firedAtMs,
-                metaJson: JSON.stringify(buildTimerAttemptMeta(firedSnapshot)),
-              },
-            );
-            yield* adapter.insertNodeEffect({
-              runId,
-              nodeId: desc.nodeId,
-              iteration: desc.iteration,
-              state: "finished",
-              lastAttempt: latest.attempt,
-              updatedAtMs: firedAtMs,
-              outputTable: desc.outputTableName,
-              label: desc.label ?? null,
-            });
-          }),
-        );
-        stateMap.set(key, "finished");
-        await eventBus.emitEventWithPersist({
-          type: "TimerFired",
-          runId,
-          timerId: desc.nodeId,
-          firesAtMs: snapshot.firesAtMs,
-          firedAtMs,
-          delayMs: Math.max(0, firedAtMs - snapshot.firesAtMs),
-          timestampMs: firedAtMs,
-        });
-        await eventBus.emitEventWithPersist({
-          type: "NodeFinished",
-          runId,
-          nodeId: desc.nodeId,
-          iteration: desc.iteration,
-          attempt: latest.attempt,
-          timestampMs: firedAtMs,
-        });
-        continue;
-      }
-
-      if (latest.state === "finished") {
-        stateMap.set(key, "finished");
-        await adapter.insertNode({
-          runId,
-          nodeId: desc.nodeId,
-          iteration: desc.iteration,
-          state: "finished",
-          lastAttempt: latest.attempt,
-          updatedAtMs: now,
-          outputTable: desc.outputTableName,
-          label: desc.label ?? null,
-        });
-        continue;
-      }
-
-      if (latest.state === "cancelled") {
-        stateMap.set(key, "skipped");
-        await adapter.insertNode({
-          runId,
-          nodeId: desc.nodeId,
-          iteration: desc.iteration,
-          state: "skipped",
-          lastAttempt: latest.attempt,
-          updatedAtMs: now,
-          outputTable: desc.outputTableName,
-          label: desc.label ?? null,
-        });
-        continue;
-      }
-
-      if (latest.state === "failed") {
-        stateMap.set(key, "failed");
-        await adapter.insertNode({
-          runId,
-          nodeId: desc.nodeId,
-          iteration: desc.iteration,
-          state: "failed",
-          lastAttempt: latest.attempt,
-          updatedAtMs: now,
-          outputTable: desc.outputTableName,
-          label: desc.label ?? null,
-        });
-        continue;
-      }
-    }
-
-    if (desc.needsApproval) {
-      const approval = await adapter.getApproval(
-        runId,
-        desc.nodeId,
-        desc.iteration,
-      );
-      if (approval?.status === "denied") {
-        if (desc.approvalMode === "decision" && desc.approvalOnDeny !== "fail") {
-          // Decision-mode denial with onDeny=continue|skip: check whether the
-          // computeFn has already run and written an output row. If so, the
-          // task is finished; otherwise it is still pending (scheduled to run).
-          const outputRow = await selectOutputRow<any>(db, desc.outputTable as any, {
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-          });
-          if (outputRow) {
-            const valid = validateExistingOutput(desc.outputTable as any, outputRow);
-            if (valid.ok) {
-              stateMap.set(key, "finished");
-              await adapter.insertNode({
-                runId,
-                nodeId: desc.nodeId,
-                iteration: desc.iteration,
-                state: "finished",
-                lastAttempt: null,
-                updatedAtMs: nowMs(),
-                outputTable: desc.outputTableName,
-                label: desc.label ?? null,
-              });
-              continue;
-            }
-          }
-          stateMap.set(key, "pending");
-          await adapter.insertNode({
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-            state: "pending",
-            lastAttempt: null,
-            updatedAtMs: nowMs(),
-            outputTable: desc.outputTableName,
-            label: desc.label ?? null,
-          });
-          await maybeEmitStateEvent("pending", desc);
-          continue;
-        }
-        const state: TaskState = desc.continueOnFail ? "skipped" : "failed";
-        stateMap.set(key, state);
-        await adapter.insertNode({
-          runId,
-          nodeId: desc.nodeId,
-          iteration: desc.iteration,
-          state,
-          lastAttempt: null,
-          updatedAtMs: nowMs(),
-          outputTable: desc.outputTableName,
-          label: desc.label ?? null,
-        });
-        await maybeEmitStateEvent(state, desc);
-        continue;
-      }
-      if (!approval || approval.status !== "approved") {
-        if (
-          desc.approvalMode === "decision" &&
-          approval?.status === "denied" &&
-          desc.approvalOnDeny !== "fail"
-        ) {
-          stateMap.set(key, "pending");
-          await adapter.insertNode({
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-            state: "pending",
-            lastAttempt: null,
-            updatedAtMs: nowMs(),
-            outputTable: desc.outputTableName,
-            label: desc.label ?? null,
-          });
-          await maybeEmitStateEvent("pending", desc);
-          continue;
-        }
-        if (!approval) {
-          await adapter.insertOrUpdateApproval({
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-            status: "requested",
-            requestedAtMs: nowMs(),
-            decidedAtMs: null,
-            note: null,
-            decidedBy: null,
-          });
-          await eventBus.emitEventWithPersist({
-            type: "ApprovalRequested",
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-            timestampMs: nowMs(),
-          });
-          await eventBus.emitEventWithPersist({
-            type: "NodeWaitingApproval",
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-            timestampMs: nowMs(),
-          });
-        }
-        stateMap.set(key, "waiting-approval");
-        await adapter.insertNode({
-          runId,
-          nodeId: desc.nodeId,
-          iteration: desc.iteration,
-          state: "waiting-approval",
-          lastAttempt: null,
-          updatedAtMs: nowMs(),
-          outputTable: desc.outputTableName,
-          label: desc.label ?? null,
-        });
-        continue;
-      }
+    const deferredState = await resolveDeferredTaskStateBridge(
+      adapter,
+      db,
+      runId,
+      desc,
+      eventBus,
+      (state) => maybeEmitStateEvent(state, desc),
+    );
+    if (deferredState.handled) {
+      stateMap.set(key, deferredState.state as TaskState);
+      continue;
     }
 
     const attempts = await adapter.listAttempts(
@@ -2201,6 +1983,21 @@ async function computeTaskStates(
     const maxAttempts = desc.retries + 1;
     const failedAttempts = attempts.filter((a: any) => a.state === "failed");
     if (failedAttempts.length >= maxAttempts) {
+      if (retryFailedOnResume && failedAttempts.length > 0) {
+        stateMap.set(key, "pending");
+        await adapter.insertNode({
+          runId,
+          nodeId: desc.nodeId,
+          iteration: desc.iteration,
+          state: "pending",
+          lastAttempt: attempts[0]?.attempt ?? null,
+          updatedAtMs: nowMs(),
+          outputTable: desc.outputTableName,
+          label: desc.label ?? null,
+        });
+        await maybeEmitStateEvent("pending", desc);
+        continue;
+      }
       stateMap.set(key, "failed");
       await adapter.insertNode({
         runId,
@@ -2339,59 +2136,7 @@ async function cancelPendingTimers(
   eventBus: EventBus,
   reason: string,
 ) {
-  const nodes = await adapter.listNodes(runId);
-  for (const node of nodes) {
-    if (node.state !== "waiting-timer") continue;
-    const attempts = await adapter.listAttempts(
-      runId,
-      node.nodeId,
-      node.iteration ?? 0,
-    );
-    const waiting = attempts.find((attempt: any) => attempt.state === "waiting-timer");
-    if (!waiting) continue;
-
-    const cancelledAtMs = nowMs();
-    await adapter.withTransaction(
-      "cancel-pending-timer",
-      Effect.gen(function* () {
-        yield* adapter.updateAttemptEffect(
-          runId,
-          node.nodeId,
-          node.iteration ?? 0,
-          waiting.attempt,
-          {
-            state: "cancelled",
-            finishedAtMs: cancelledAtMs,
-          },
-        );
-        yield* adapter.insertNodeEffect({
-          runId,
-          nodeId: node.nodeId,
-          iteration: node.iteration ?? 0,
-          state: "cancelled",
-          lastAttempt: waiting.attempt,
-          updatedAtMs: cancelledAtMs,
-          outputTable: node.outputTable ?? "",
-          label: node.label ?? null,
-        });
-      }),
-    );
-    await eventBus.emitEventWithPersist({
-      type: "TimerCancelled",
-      runId,
-      timerId: node.nodeId,
-      timestampMs: cancelledAtMs,
-    });
-    await eventBus.emitEventWithPersist({
-      type: "NodeCancelled",
-      runId,
-      nodeId: node.nodeId,
-      iteration: node.iteration ?? 0,
-      attempt: waiting.attempt,
-      reason,
-      timestampMs: cancelledAtMs,
-    });
-  }
+  await cancelPendingTimersBridge(adapter, runId, eventBus, reason);
 }
 
 async function cancelStaleAttempts(adapter: SmithersDb, runId: string) {
@@ -2433,7 +2178,7 @@ async function cancelStaleAttempts(adapter: SmithersDb, runId: string) {
   }
 }
 
-async function executeTask(
+export async function legacyExecuteTask(
   adapter: SmithersDb,
   db: any,
   runId: string,
@@ -2454,6 +2199,7 @@ async function executeTask(
   runAbortController?: AbortController,
   hijackState?: HijackState,
 ) {
+  // Legacy execution goes here (renamed function)
   const taskStartMs = performance.now();
   const attempts = await adapter.listAttempts(
     runId,
@@ -2873,6 +2619,16 @@ async function executeTask(
       effectiveAgent = agents.length > 0
         ? agents[Math.min(attemptNo - 1, agents.length - 1)]
         : allAgents[Math.min(attemptNo - 1, allAgents.length - 1)]; // fallback to disabled agent if all disabled
+      const priorToolCalls =
+        attemptNo > 1
+          ? await adapter.listToolCalls(runId, desc.nodeId, desc.iteration)
+          : [];
+      const toolResumeWarnings = collectToolResumeWarnings(
+        priorToolCalls as any[],
+        allAgents,
+        attemptNo,
+      );
+      const toolResumeWarningMessage = buildToolResumeWarningMessage(toolResumeWarnings);
       const emitOutput = (text: string, stream: "stdout" | "stderr") => {
         recordInternalHeartbeat();
         void eventBus.emitEventQueued({
@@ -2943,19 +2699,26 @@ async function executeTask(
             ? (cloneJsonValue(priorContinuation.messages) ?? priorContinuation.messages)
             : (cloneJsonValue(checkpointResumeMessages) ??
               checkpointResumeMessages);
+        const guidedResumeMessages = appendToolResumeWarningMessage(
+          resumeMessages,
+          toolResumeWarningMessage,
+        );
         if (resumeSession) {
           attemptMeta.resumedFromSession = resumeSession;
         }
-        if (resumeMessages?.length) {
+        if (guidedResumeMessages?.length) {
           attemptMeta.resumedFromConversation = true;
-          attemptMeta.agentConversation = resumeMessages;
+          attemptMeta.agentConversation = guidedResumeMessages;
+        }
+        if (toolResumeWarnings.length > 0) {
+          attemptMeta.toolResumeWarnings = toolResumeWarnings;
         }
         await adapter.updateAttempt(runId, desc.nodeId, desc.iteration, attemptNo, {
           metaJson: JSON.stringify(attemptMeta),
         });
 
         const activeCliActions = new Set<string>();
-        let conversationMessages = resumeMessages ? [...resumeMessages] : null;
+        let conversationMessages = guidedResumeMessages ? [...guidedResumeMessages] : null;
 
         const updateConversation = (messages: unknown[] | undefined) => {
           const cloned = cloneJsonValue(messages);
@@ -2993,6 +2756,10 @@ async function executeTask(
             jsonInstructions,
           ].join("\n");
         }
+        effectivePrompt = prependToolResumeWarningMessage(
+          effectivePrompt,
+          toolResumeWarningMessage,
+        );
 
         const maybeCompleteHijack = () => {
           if (!hijackState?.request || hijackState.completion || !runAbortController) {
@@ -3142,9 +2909,9 @@ async function executeTask(
               emitEvent: (event) => eventBus.emitEventQueued(event),
             },
             async () => {
-              const agentCall = resumeMessages?.length
+              const agentCall = guidedResumeMessages?.length
                 ? {
-                    messages: resumeMessages,
+                    messages: guidedResumeMessages,
                   }
                 : {
                     prompt: effectivePrompt,
@@ -3924,7 +3691,7 @@ async function executeTask(
       nodeId: desc.nodeId,
       iteration: desc.iteration,
       attempt: attemptNo,
-      maxAttempts: desc.retries + 1,
+      maxAttempts: Number.isFinite(desc.retries) ? desc.retries + 1 : "infinite",
       error:
         effectiveError instanceof Error
           ? effectiveError.message
@@ -4164,6 +3931,21 @@ async function runWorkflowBody<Schema>(
       resume: Boolean(opts.resume),
     }, "engine:run");
     const existingRun = await adapter.getRun(runId);
+    const existingConfig = parseRunConfigJson(existingRun?.configJson);
+    const runAuth = opts.auth ?? parseRunAuthContext(existingConfig.auth);
+    const runConfig = {
+      ...existingConfig,
+      ...(opts.config ?? {}),
+      maxConcurrency,
+      rootDir,
+      allowNetwork,
+      maxOutputBytes,
+      toolTimeoutMs,
+      ...(opts.cliAgentToolsDefault
+        ? { cliAgentToolsDefault: opts.cliAgentToolsDefault }
+        : {}),
+      ...(runAuth ? { auth: runAuth } : {}),
+    };
     if (opts.resume && existingRun) {
       assertResumeDurabilityMetadata(existingRun, runMetadata, resolvedWorkflowPath);
     }
@@ -4198,7 +3980,19 @@ async function runWorkflowBody<Schema>(
         });
       }
     } else {
-      const existingInput = await loadInput(db, inputTable, runId);
+      let existingInput = await loadInput(db, inputTable, runId);
+      if (!existingInput) {
+        const restored = await restoreDurableStateFromSnapshot(
+          adapter,
+          db,
+          schema,
+          inputTable,
+          runId,
+        );
+        if (restored) {
+          existingInput = await loadInput(db, inputTable, runId);
+        }
+      }
       if (!existingInput) {
         throw new SmithersError(
           "MISSING_INPUT",
@@ -4227,13 +4021,7 @@ async function runWorkflowBody<Schema>(
         vcsRoot: runMetadata.vcsRoot,
         vcsRevision: runMetadata.vcsRevision,
         errorJson: null,
-        configJson: JSON.stringify({
-          maxConcurrency,
-          rootDir,
-          allowNetwork,
-          maxOutputBytes,
-          toolTimeoutMs,
-        }),
+        configJson: JSON.stringify(runConfig),
       });
     } else {
       await adapter.updateRun(runId, {
@@ -4255,13 +4043,7 @@ async function runWorkflowBody<Schema>(
         vcsRoot: runMetadata.vcsRoot ?? existingRun.vcsRoot ?? null,
         vcsRevision: runMetadata.vcsRevision ?? existingRun.vcsRevision ?? null,
         errorJson: null,
-        configJson: JSON.stringify({
-          maxConcurrency,
-          rootDir,
-          allowNetwork,
-          maxOutputBytes,
-          toolTimeoutMs,
-        }),
+        configJson: JSON.stringify(runConfig),
       });
     }
     stopSupervisor = startRunSupervisor(
@@ -4530,14 +4312,25 @@ async function runWorkflowBody<Schema>(
       const inputRow = await loadInput(db, inputTable, runId);
       const outputs = await loadOutputs(db, schema, runId);
       const ralphIterations = ralphIterationsFromState(ralphState);
+      const cliAgentToolsDefault =
+        runConfig.cliAgentToolsDefault === "all" ||
+        runConfig.cliAgentToolsDefault === "explicit-only"
+          ? runConfig.cliAgentToolsDefault
+          : undefined;
 
       const ctx = buildContext<Schema>({
         runId,
         iteration: defaultIteration,
         iterations: ralphIterationsObject(ralphState),
         input: inputRow,
+        auth: runAuth,
         outputs,
         zodToKeyName: workflow.zodToKeyName,
+        runtimeConfig: cliAgentToolsDefault
+          ? {
+              cliAgentToolsDefault,
+            }
+          : undefined,
       });
 
       const { xml, tasks, mountedTaskIds } = await renderer.render(
@@ -4680,6 +4473,8 @@ async function runWorkflowBody<Schema>(
       const singleRalphId = ralphs.length === 1 ? ralphs[0]!.id : null;
 
       const ralphDoneMap = buildRalphDoneMap(ralphs, ralphState);
+      const retryFailedOnResume =
+        opts.resume && existingRun?.status === "failed";
       const { stateMap, retryWait } = await computeTaskStates(
         adapter,
         db,
@@ -4687,6 +4482,7 @@ async function runWorkflowBody<Schema>(
         tasks,
         eventBus,
         ralphDoneMap,
+        retryFailedOnResume,
       );
       const descriptorMap = buildDescriptorMap(tasks);
       const schedule = scheduleTasks(
@@ -4994,6 +4790,7 @@ async function runWorkflowBody<Schema>(
                 iteration: ralphIteration,
                 iterations: ralphIterationsObject(ralphState),
                 input: inputRow,
+                auth: runAuth,
                 outputs: freshOutputs,
                 zodToKeyName: workflow.zodToKeyName,
               });
@@ -5264,7 +5061,7 @@ async function runWorkflowBody<Schema>(
 
       // Launch new tasks and track them in the persistent inflight set.
       for (const task of runnable) {
-        const p = executeTask(
+        const p = executeTaskBridge(
           adapter,
           db,
           runId,
@@ -5279,6 +5076,7 @@ async function runWorkflowBody<Schema>(
           disabledAgents,
           runAbortController,
           hijackState,
+          legacyExecuteTask,
         ).finally(() => inflight.delete(p));
         inflight.add(p);
       }

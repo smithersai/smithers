@@ -3,12 +3,34 @@ import type { HijackState } from "../engine/index";
 import { SmithersDb } from "../db/adapter";
 import { EventBus } from "../events";
 import {
-  executeTaskActivity,
   makeTaskBridgeKey,
   RetriableTaskFailure,
   type TaskActivityContext,
 } from "./activity-bridge";
-import { computeRetryDelayMs } from "../utils/retry";
+import {
+  canExecuteBridgeManagedComputeTask,
+  executeComputeTaskBridge,
+} from "./compute-task-bridge";
+import {
+  canExecuteBridgeManagedStaticTask,
+  executeStaticTaskBridge,
+} from "./static-task-bridge";
+export {
+  bridgeApprovalResolve,
+  bridgeTimerResolve,
+  getDeferredResolution,
+  makeApprovalDeferred,
+  makeDeferredBridgeKey,
+  makeTimerDeferred,
+} from "./deferred-bridge";
+export {
+  cancelPendingTimersBridge,
+  isBridgeManagedTimerTask,
+  isBridgeManagedWaitForEventTask,
+  resolveDeferredTaskStateBridge,
+} from "./deferred-state-bridge";
+
+type BridgeManagedTaskKind = "compute" | "static" | null;
 
 /**
  * Phase 0 Seam Adapter
@@ -22,30 +44,31 @@ import { computeRetryDelayMs } from "../utils/retry";
  */
 
 const inflightTaskExecutions = new Map<string, Promise<void>>();
+const completedTaskExecutions = new Map<string, Promise<void>>();
 
-const waitForRetryDelay = async (
-  delayMs: number,
-  signal?: AbortSignal,
-): Promise<void> => {
-  if (delayMs <= 0) {
-    return;
-  }
-  if (signal?.aborted) {
-    throw signal.reason ?? new Error("Task retry aborted");
-  }
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, delayMs);
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-      reject(signal.reason ?? new Error("Task retry aborted"));
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
+export type TaskBridgeToolConfig = {
+  rootDir: string;
+  allowNetwork: boolean;
+  maxOutputBytes: number;
+  toolTimeoutMs: number;
 };
+
+export type LegacyExecuteTaskFn = (
+  adapter: SmithersDb,
+  db: any,
+  runId: string,
+  desc: TaskDescriptor,
+  descriptorMap: Map<string, TaskDescriptor>,
+  inputTable: any,
+  eventBus: EventBus,
+  toolConfig: TaskBridgeToolConfig,
+  workflowName: string,
+  cacheEnabled: boolean,
+  signal?: AbortSignal,
+  disabledAgents?: Set<any>,
+  runAbortController?: AbortController,
+  hijackState?: HijackState,
+) => Promise<void>;
 
 const classifyTaskAttempt = async (
   adapter: SmithersDb,
@@ -72,6 +95,119 @@ const classifyTaskAttempt = async (
   };
 };
 
+const executeBridgeAttempt = async (
+  adapter: SmithersDb,
+  db: any,
+  runId: string,
+  desc: TaskDescriptor,
+  descriptorMap: Map<string, TaskDescriptor>,
+  inputTable: any,
+  eventBus: EventBus,
+  toolConfig: TaskBridgeToolConfig,
+  workflowName: string,
+  cacheEnabled: boolean,
+  bridgeManagedExecution: BridgeManagedTaskKind,
+  context: TaskActivityContext,
+  signal?: AbortSignal,
+  disabledAgents?: Set<any>,
+  runAbortController?: AbortController,
+  hijackState?: HijackState,
+  legacyExecuteTaskFn?: LegacyExecuteTaskFn,
+) => {
+  if (bridgeManagedExecution === "static") {
+    await executeStaticTaskBridge(
+      adapter,
+      runId,
+      desc,
+      eventBus,
+      toolConfig,
+      workflowName,
+      signal,
+    );
+  } else if (bridgeManagedExecution === "compute") {
+    await executeComputeTaskBridge(
+      adapter,
+      db,
+      runId,
+      desc,
+      eventBus,
+      toolConfig,
+      workflowName,
+      signal,
+    );
+  } else {
+    await legacyExecuteTaskFn!(
+      adapter,
+      db,
+      runId,
+      desc,
+      descriptorMap,
+      inputTable,
+      eventBus,
+      toolConfig,
+      workflowName,
+      cacheEnabled,
+      signal,
+      disabledAgents,
+      runAbortController,
+      hijackState,
+    );
+  }
+
+  return classifyTaskAttempt(adapter, runId, desc, context);
+};
+
+const runTaskBridgeExecution = async (
+  adapter: SmithersDb,
+  db: any,
+  runId: string,
+  desc: TaskDescriptor,
+  descriptorMap: Map<string, TaskDescriptor>,
+  inputTable: any,
+  eventBus: EventBus,
+  toolConfig: TaskBridgeToolConfig,
+  workflowName: string,
+  cacheEnabled: boolean,
+  bridgeManagedExecution: BridgeManagedTaskKind,
+  bridgeKey: string,
+  signal?: AbortSignal,
+  disabledAgents?: Set<any>,
+  runAbortController?: AbortController,
+  hijackState?: HijackState,
+  legacyExecuteTaskFn?: LegacyExecuteTaskFn,
+) => {
+  try {
+    await executeBridgeAttempt(
+      adapter,
+      db,
+      runId,
+      desc,
+      descriptorMap,
+      inputTable,
+      eventBus,
+      toolConfig,
+      workflowName,
+      cacheEnabled,
+      bridgeManagedExecution,
+      {
+        attempt: 1,
+        idempotencyKey: bridgeKey,
+      },
+      signal,
+      disabledAgents,
+      runAbortController,
+      hijackState,
+      legacyExecuteTaskFn,
+    );
+    return { terminal: true as const };
+  } catch (error) {
+    if (error instanceof RetriableTaskFailure) {
+      return { terminal: false as const };
+    }
+    throw error;
+  }
+};
+
 export const executeTaskBridge = (
   adapter: SmithersDb,
   db: any,
@@ -80,62 +216,67 @@ export const executeTaskBridge = (
   descriptorMap: Map<string, TaskDescriptor>,
   inputTable: any,
   eventBus: EventBus,
-  toolConfig: {
-    rootDir: string;
-    allowNetwork: boolean;
-    maxOutputBytes: number;
-    toolTimeoutMs: number;
-  },
+  toolConfig: TaskBridgeToolConfig,
   workflowName: string,
   cacheEnabled: boolean,
   signal?: AbortSignal,
   disabledAgents?: Set<any>,
   runAbortController?: AbortController,
   hijackState?: HijackState,
-  legacyExecuteTaskFn?: any // injected to avoid circular dependency for now
+  legacyExecuteTaskFn?: LegacyExecuteTaskFn,
 ): Promise<void> => {
-  if (typeof legacyExecuteTaskFn !== "function") {
+  const bridgeManagedExecution: BridgeManagedTaskKind =
+    canExecuteBridgeManagedComputeTask(desc, cacheEnabled)
+      ? "compute"
+      : canExecuteBridgeManagedStaticTask(desc, cacheEnabled)
+        ? "static"
+        : null;
+
+  if (bridgeManagedExecution === null && typeof legacyExecuteTaskFn !== "function") {
     return Promise.reject(new TypeError("legacyExecuteTaskFn must be provided"));
   }
 
   const bridgeKey = makeTaskBridgeKey(adapter, workflowName, runId, desc);
+  const completed = completedTaskExecutions.get(bridgeKey);
+  if (completed) {
+    return completed;
+  }
   const existing = inflightTaskExecutions.get(bridgeKey);
   if (existing) {
     return existing;
   }
 
-  const execution = executeTaskActivity(
+  const execution = runTaskBridgeExecution(
     adapter,
-    workflowName,
+    db,
     runId,
     desc,
-    async (context) => {
-      if (context.attempt > 1) {
-        const delayMs = computeRetryDelayMs(desc.retryPolicy, context.attempt - 1);
-        await waitForRetryDelay(delayMs, signal);
-      }
-
-      await legacyExecuteTaskFn(
-        adapter,
-        db,
-        runId,
-        desc,
-        descriptorMap,
-        inputTable,
-        eventBus,
-        toolConfig,
-        workflowName,
-        cacheEnabled,
-        signal,
-        disabledAgents,
-        runAbortController,
-        hijackState
-      );
-
-      return classifyTaskAttempt(adapter, runId, desc, context);
-    },
+    descriptorMap,
+    inputTable,
+    eventBus,
+    toolConfig,
+    workflowName,
+    cacheEnabled,
+    bridgeManagedExecution,
+    bridgeKey,
+    signal,
+    disabledAgents,
+    runAbortController,
+    hijackState,
+    legacyExecuteTaskFn,
   )
-    .then(() => undefined)
+    .then((result) => {
+      if (!result.terminal) {
+        return undefined;
+      }
+      completedTaskExecutions.set(bridgeKey, execution);
+      setTimeout(() => {
+        if (completedTaskExecutions.get(bridgeKey) === execution) {
+          completedTaskExecutions.delete(bridgeKey);
+        }
+      }, 0);
+      return undefined;
+    })
     .finally(() => {
       if (inflightTaskExecutions.get(bridgeKey) === execution) {
         inflightTaskExecutions.delete(bridgeKey);

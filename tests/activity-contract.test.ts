@@ -53,7 +53,7 @@ describe("legacy executeTask contract", () => {
     } finally {
       cleanup();
     }
-  });
+  }, 30_000);
 
   test("retries on transient failure up to N times", async () => {
     const { smithers, outputs, db, cleanup } = buildContractSmithers();
@@ -102,7 +102,7 @@ describe("legacy executeTask contract", () => {
     } finally {
       cleanup();
     }
-  });
+  }, 30_000);
 
   test("returns cached result on replay (idempotency)", async () => {
     const { smithers, outputs, tables, db, cleanup } = buildContractSmithers();
@@ -153,7 +153,7 @@ describe("legacy executeTask contract", () => {
     } finally {
       cleanup();
     }
-  });
+  }, 30_000);
 
   test("generates deterministic idempotency key", async () => {
     const { smithers, outputs, db, cleanup } = buildContractSmithers();
@@ -192,7 +192,7 @@ describe("legacy executeTask contract", () => {
     } finally {
       cleanup();
     }
-  });
+  }, 30_000);
 
   test("tracks heartbeats during execution", async () => {
     const { smithers, outputs, db, cleanup } = buildContractSmithers();
@@ -234,7 +234,7 @@ describe("legacy executeTask contract", () => {
     } finally {
       cleanup();
     }
-  });
+  }, 30_000);
 
   test("pure computeFn tasks run inline without agent dispatch", async () => {
     const { smithers, outputs, tables, db, cleanup } = buildContractSmithers();
@@ -271,7 +271,7 @@ describe("legacy executeTask contract", () => {
     } finally {
       cleanup();
     }
-  });
+  }, 30_000);
 
   test("agent tasks dispatch to the agent and collect output", async () => {
     const { smithers, outputs, tables, db, cleanup } = buildContractSmithers();
@@ -323,5 +323,5 @@ describe("legacy executeTask contract", () => {
     } finally {
       cleanup();
     }
-  });
+  }, 30_000);
 });

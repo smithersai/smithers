@@ -17,8 +17,9 @@ describe("event category mapping", () => {
     const approvalTypes = eventTypesForCategory("approval");
     expect(approvalTypes).toContain("ApprovalRequested");
     expect(approvalTypes).toContain("ApprovalGranted");
+    expect(approvalTypes).toContain("ApprovalAutoApproved");
     expect(approvalTypes).toContain("ApprovalDenied");
-    expect(approvalTypes).toHaveLength(3);
+    expect(approvalTypes).toHaveLength(4);
   });
 
   test("maps runtime event types to categories", () => {

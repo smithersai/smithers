@@ -1,4 +1,5 @@
 preload = ["./preload.ts"]
 
 [test]
+root = "./tests"
 preload = ["./preload.ts"]

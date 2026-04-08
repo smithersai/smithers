@@ -97,8 +97,25 @@ export function ensureSmithersTablesEffect(
           decided_at_ms INTEGER,
           note TEXT,
           decided_by TEXT,
+          request_json TEXT,
+          decision_json TEXT,
+          auto_approved INTEGER NOT NULL DEFAULT 0,
           PRIMARY KEY (run_id, node_id, iteration)
         );
+
+        CREATE TABLE IF NOT EXISTS _smithers_signals (
+          run_id TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          signal_name TEXT NOT NULL,
+          correlation_id TEXT,
+          payload_json TEXT NOT NULL,
+          received_at_ms INTEGER NOT NULL,
+          received_by TEXT,
+          PRIMARY KEY (run_id, seq)
+        );
+
+        CREATE INDEX IF NOT EXISTS _smithers_signals_lookup_idx
+          ON _smithers_signals (run_id, signal_name, correlation_id, received_at_ms);
 
         CREATE TABLE IF NOT EXISTS _smithers_cache (
           cache_key TEXT PRIMARY KEY,
@@ -287,6 +304,9 @@ export function ensureSmithersTablesEffect(
       `ALTER TABLE _smithers_runs ADD COLUMN vcs_root TEXT`,
       `ALTER TABLE _smithers_runs ADD COLUMN vcs_revision TEXT`,
       `ALTER TABLE _smithers_runs ADD COLUMN parent_run_id TEXT`,
+      `ALTER TABLE _smithers_approvals ADD COLUMN request_json TEXT`,
+      `ALTER TABLE _smithers_approvals ADD COLUMN decision_json TEXT`,
+      `ALTER TABLE _smithers_approvals ADD COLUMN auto_approved INTEGER NOT NULL DEFAULT 0`,
       `CREATE INDEX IF NOT EXISTS _smithers_runs_parent_idx ON _smithers_runs (parent_run_id)`,
     ];
     for (const statement of migrations) {

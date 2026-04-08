@@ -389,6 +389,16 @@ export const smithersErrorDefinitions = {
     category: "integrations",
     when: "The Pi or server integration receives a non-success HTTP response from Smithers.",
   },
+  EXTERNAL_BUILD_FAILED: {
+    category: "integrations",
+    when: "An external workflow host fails to build a Smithers HostNode payload.",
+    details: "{ scriptPath, error?, exitCode?, stderr?, stdout? }",
+  },
+  SCHEMA_DISCOVERY_FAILED: {
+    category: "integrations",
+    when: "External workflow schema discovery fails or returns invalid output.",
+    details: "{ scriptPath, error?, exitCode?, stderr? }",
+  },
 
   OPENAPI_SPEC_LOAD_FAILED: {
     category: "integrations",

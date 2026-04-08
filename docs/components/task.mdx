@@ -27,12 +27,14 @@ For human gates, `<Task needsApproval>` pauses before execution. For explicit de
 | `dependsOn` | `string[]` | `undefined` | Explicit dependency on other task IDs. Task waits until all complete. |
 | `needs` | `Record<string, string>` | `undefined` | Named dependencies. Keys become context keys, values are task IDs. |
 | `deps` | `Record<string, OutputTarget>` | `undefined` | Typed render-time dependencies. Each key resolves from the task with the same id, or from a matching `needs` entry. |
+| `allowTools` | `string[]` | `undefined` | CLI-agent tool allowlist override. Supported by `ClaudeCodeAgent`, `PiAgent`, and `GeminiAgent`. |
 | `key` | `string` | `undefined` | Standard React key. No effect on execution. |
 | `skipIf` | `boolean` | `false` | Skip this task. |
 | `needsApproval` | `boolean` | `false` | Pause and wait for approval before executing. |
 | `timeoutMs` | `number` | `undefined` | Max execution time in ms. Task fails on timeout. |
-| `retries` | `number` | `0` | Retry attempts on failure. |
-| `retryPolicy` | `RetryPolicy` | `undefined` | `{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }` |
+| `retries` | `number` | `Infinity` | Retry attempts on failure. Default: infinite with exponential backoff. Set to `0` to disable. |
+| `noRetry` | `boolean` | `false` | Disable retries entirely. Equivalent to `retries={0}`. |
+| `retryPolicy` | `RetryPolicy` | `{ backoff: "exponential", initialDelayMs: 1000 }` | `{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }`. Delay capped at 5 minutes. |
 | `continueOnFail` | `boolean` | `false` | Workflow continues even if this task fails. |
 | `cache` | `CachePolicy` | `undefined` | `{ by?: (ctx) => unknown, version?: string }`. Skip re-execution when a cached result with matching key/version exists. |
 | `label` | `string` | `undefined` | Human-readable label for UI and metadata. |
@@ -73,6 +75,25 @@ const codeAgent = new Agent({
   {(deps) => <SummaryPrompt extracted={deps.parse.fields} />}
 </Task>
 ```
+
+### CLI tool allowlists
+
+`allowTools` narrows the tool surface for supported CLI agents on a per-task basis.
+
+```tsx
+<Task
+  id="review"
+  output={outputs.review}
+  agent={claude}
+  allowTools={["read", "grep"]}
+>
+  Review the patch and summarize risks.
+</Task>
+```
+
+- `allowTools={[]}` disables CLI tools entirely for supported agents.
+- When the workflow run is started with `cliAgentToolsDefault: "explicit-only"`, omitted `allowTools` behaves like `[]` for supported CLI agents.
+- Task-level `allowTools` always wins over the run-level default.
 
 When the upstream task id differs from the dep key, pair `deps` with `needs`:
 

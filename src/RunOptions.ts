@@ -1,4 +1,5 @@
 import type { SmithersEvent } from "./SmithersEvent";
+import type { RunAuthContext } from "./RunAuthContext";
 
 export type HotReloadOptions = {
   /** Root directory to watch for changes (default: auto-detect from workflow entry) */
@@ -29,4 +30,7 @@ export type RunOptions = {
   maxOutputBytes?: number;
   toolTimeoutMs?: number;
   hot?: boolean | HotReloadOptions;
+  auth?: RunAuthContext | null;
+  config?: Record<string, unknown>;
+  cliAgentToolsDefault?: "all" | "explicit-only";
 };

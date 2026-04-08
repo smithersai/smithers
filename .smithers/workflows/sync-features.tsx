@@ -54,7 +54,7 @@ export default smithers((ctx) => {
           const path = await import("node:path");
 
           const cwd = process.cwd();
-          const featuresPath = path.resolve(cwd, "specs/features.ts");
+          const featuresPath = path.resolve(cwd, ".smithers/.smithers/specs/features.ts");
           const exists = fs.existsSync(featuresPath);
 
           let existingFeatures: Record<string, string[]> | null = null;
@@ -284,7 +284,7 @@ Checklist:
             },
           }}
         >
-          {`Write the file specs/features.ts with the feature groups below.
+          {`Write the file .smithers/specs/features.ts with the feature groups below.
 
 First create the directory: mkdir -p specs
 
@@ -326,7 +326,7 @@ export const Features = Object.freeze(
 FEATURE GROUPS:
 ${JSON.stringify(scanResult.featureGroups, null, 2)}
 
-Write the file, then report: filePath "specs/features.ts", commitHash "${scanResult.lastCommitHash ?? "unknown"}", totalGroups and totalFeatures counts.`}
+Write the file, then report: filePath ".smithers/specs/features.ts", commitHash "${scanResult.lastCommitHash ?? "unknown"}", totalGroups and totalFeatures counts.`}
         </Task>
       ) : null}
     </Workflow>

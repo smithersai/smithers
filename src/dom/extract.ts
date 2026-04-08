@@ -98,6 +98,20 @@ function getRalphIteration(
   return typeof value === "number" ? value : fallback;
 }
 
+function resolveRetryConfig(raw: Record<string, any>) {
+  const noRetry = Boolean(raw.noRetry);
+  const hasExplicitRetries =
+    typeof raw.retries === "number" && !Number.isNaN(raw.retries);
+  const retries = noRetry ? 0 : hasExplicitRetries ? raw.retries : Infinity;
+  const retryPolicy =
+    raw.retryPolicy && typeof raw.retryPolicy === "object"
+      ? raw.retryPolicy
+      : retries > 0
+        ? { backoff: "exponential" as const, initialDelayMs: 1000 }
+        : undefined;
+  return { retries, retryPolicy };
+}
+
 export function extractFromHost(
   root: HostNode | null,
   opts?: ExtractOptions,
@@ -278,11 +292,7 @@ export function extractFromHost(
           ? outputRaw
           : "";
       const outputRef = !outputTable && isZodObject(outputRaw) ? outputRaw : undefined;
-      const retries = typeof raw.retries === "number" ? raw.retries : 0;
-      const retryPolicy =
-        raw.retryPolicy && typeof raw.retryPolicy === "object"
-          ? raw.retryPolicy
-          : undefined;
+      const { retries, retryPolicy } = resolveRetryConfig(raw);
       const timeoutMs =
         typeof raw.timeoutMs === "number" ? raw.timeoutMs : null;
       const heartbeatTimeoutMs = parseHeartbeatTimeoutMs(raw);
@@ -403,11 +413,7 @@ export function extractFromHost(
           ? outputRaw
           : "";
       const outputRef = !outputTable && isZodObject(outputRaw) ? outputRaw : undefined;
-      const retries = typeof raw.retries === "number" ? raw.retries : 0;
-      const retryPolicy =
-        raw.retryPolicy && typeof raw.retryPolicy === "object"
-          ? raw.retryPolicy
-          : undefined;
+      const { retries, retryPolicy } = resolveRetryConfig(raw);
       const timeoutMs =
         typeof raw.timeoutMs === "number" ? raw.timeoutMs : null;
       const heartbeatTimeoutMs =
@@ -757,19 +763,58 @@ export function extractFromHost(
       const outputSchema = raw.outputSchema ?? outputRef;
       const needsApproval = Boolean(raw.needsApproval);
       const approvalMode =
-        raw.approvalMode === "decision" ? "decision" : "gate";
+        raw.approvalMode === "decision" ||
+        raw.approvalMode === "select" ||
+        raw.approvalMode === "rank"
+          ? raw.approvalMode
+          : "gate";
       const approvalOnDeny =
         raw.approvalOnDeny === "continue" ||
         raw.approvalOnDeny === "skip" ||
         raw.approvalOnDeny === "fail"
           ? raw.approvalOnDeny
           : undefined;
-      const skipIf = Boolean(raw.skipIf);
-      const retries = typeof raw.retries === "number" ? raw.retries : 0;
-      const retryPolicy =
-        raw.retryPolicy && typeof raw.retryPolicy === "object"
-          ? raw.retryPolicy
+      const approvalOptions = Array.isArray(raw.approvalOptions)
+        ? raw.approvalOptions
+            .filter(
+              (value: unknown): value is Record<string, unknown> =>
+                Boolean(value && typeof value === "object" && !Array.isArray(value)),
+            )
+            .map((value) => ({
+              key: typeof value.key === "string" ? value.key : "",
+              label: typeof value.label === "string" ? value.label : "",
+              ...(typeof value.summary === "string" ? { summary: value.summary } : {}),
+              ...(value.metadata && typeof value.metadata === "object" && !Array.isArray(value.metadata)
+                ? { metadata: value.metadata as Record<string, unknown> }
+                : {}),
+            }))
+            .filter((value) => value.key && value.label)
+        : undefined;
+      const approvalAllowedScopes = Array.isArray(raw.approvalAllowedScopes)
+        ? raw.approvalAllowedScopes.filter((value: unknown): value is string => typeof value === "string")
+        : undefined;
+      const approvalAllowedUsers = Array.isArray(raw.approvalAllowedUsers)
+        ? raw.approvalAllowedUsers.filter((value: unknown): value is string => typeof value === "string")
+        : undefined;
+      const approvalAutoApprove =
+        raw.approvalAutoApprove && typeof raw.approvalAutoApprove === "object" && !Array.isArray(raw.approvalAutoApprove)
+          ? {
+              ...(typeof raw.approvalAutoApprove.after === "number"
+                ? { after: raw.approvalAutoApprove.after }
+                : {}),
+              ...(typeof raw.approvalAutoApprove.audit === "boolean"
+                ? { audit: raw.approvalAutoApprove.audit }
+                : {}),
+              ...(typeof raw.approvalAutoApprove.conditionMet === "boolean"
+                ? { conditionMet: raw.approvalAutoApprove.conditionMet }
+                : {}),
+              ...(typeof raw.approvalAutoApprove.revertOnMet === "boolean"
+                ? { revertOnMet: raw.approvalAutoApprove.revertOnMet }
+                : {}),
+            }
           : undefined;
+      const skipIf = Boolean(raw.skipIf);
+      const { retries, retryPolicy } = resolveRetryConfig(raw);
       const timeoutMs =
         typeof raw.timeoutMs === "number" ? raw.timeoutMs : null;
       const parsedHeartbeatTimeoutMs = parseHeartbeatTimeoutMs(raw);
@@ -830,6 +875,10 @@ export function extractFromHost(
         needsApproval,
         approvalMode,
         approvalOnDeny,
+        approvalOptions,
+        approvalAllowedScopes,
+        approvalAllowedUsers,
+        approvalAutoApprove,
         skipIf,
         retries,
         retryPolicy,

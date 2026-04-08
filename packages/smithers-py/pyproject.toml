@@ -1,0 +1,14 @@
+[project]
+name = "smithers"
+version = "0.1.0"
+description = "Python SDK for Smithers workflows"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+pydantic = ["pydantic>=2.0"]
+dev = ["pytest>=8.0", "pydantic>=2.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

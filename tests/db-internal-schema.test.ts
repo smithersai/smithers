@@ -112,6 +112,9 @@ describe("internal schema table definitions", () => {
     expect(cols).toContain("decidedAtMs");
     expect(cols).toContain("note");
     expect(cols).toContain("decidedBy");
+    expect(cols).toContain("requestJson");
+    expect(cols).toContain("decisionJson");
+    expect(cols).toContain("autoApproved");
   });
 
   test("smithersEvents has event columns", () => {

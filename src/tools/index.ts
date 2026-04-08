@@ -3,6 +3,7 @@ export { write } from "./write";
 export { edit } from "./edit";
 export { grep } from "./grep";
 export { bash } from "./bash";
+export { defineTool, getDefinedToolMetadata } from "./defineTool";
 
 import { read } from "./read";
 import { write } from "./write";

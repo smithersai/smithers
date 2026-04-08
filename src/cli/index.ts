@@ -7,6 +7,7 @@ import { Cli, z } from "incur";
 import { runWorkflow, renderFrame, resolveSchema } from "../engine";
 import { mdxPlugin } from "../mdx-plugin";
 import { approveNode, denyNode } from "../engine/approvals";
+import { signalRun } from "../engine/signals";
 import { loadInput, loadOutputs } from "../db/snapshot";
 import { ensureSmithersTables } from "../db/ensure";
 import { SmithersDb } from "../db/adapter";
@@ -16,6 +17,8 @@ import { runFork, runPromise } from "../effect/runtime";
 import type { SmithersWorkflow } from "../SmithersWorkflow";
 import { trackEvent } from "../effect/metrics";
 import { revertToAttempt } from "../revert";
+import { retryTask } from "../retry-task";
+import { timeTravel } from "../timetravel";
 import { runSync } from "../effect/runtime";
 import { spawn } from "node:child_process";
 import { SmithersError } from "../utils/errors";
@@ -138,7 +141,13 @@ function parseJsonInput(raw: string | undefined, label: string, fail: FailFn) {
 
 function formatStatusExitCode(status: string | undefined) {
   if (status === "finished") return 0;
-  if (status === "waiting-approval" || status === "waiting-timer") return 3;
+  if (
+    status === "waiting-approval" ||
+    status === "waiting-event" ||
+    status === "waiting-timer"
+  ) {
+    return 3;
+  }
   if (status === "cancelled") return 2;
   return 1;
 }
@@ -208,6 +217,16 @@ function buildProgressReporter() {
       case "RunFailed":
         process.stderr.write(
           `[${ts}] ✗ Run failed: ${typeof event.error === "string" ? event.error : (event.error?.message ?? "unknown")}\n`,
+        );
+        break;
+      case "RetryTaskStarted":
+        process.stderr.write(
+          `[${ts}] ↻ retrying ${event.nodeId} (reset: ${(event.resetNodes ?? []).join(", ") || event.nodeId})\n`,
+        );
+        break;
+      case "RetryTaskFinished":
+        process.stderr.write(
+          `[${ts}] ${event.success ? "✓" : "✗"} retry reset ${event.success ? "finished" : "failed"} for ${event.nodeId}${event.error ? `: ${event.error}` : ""}\n`,
         );
         break;
       case "FrameCommitted":
@@ -479,6 +498,7 @@ async function* streamRunEventsCommand(c: any) {
     const isActive =
       (run as any).status === "running" ||
       (run as any).status === "waiting-approval" ||
+      (run as any).status === "waiting-event" ||
       (run as any).status === "waiting-timer";
     if (!c.options.follow || !isActive) {
       return c.ok(undefined, {
@@ -502,6 +522,7 @@ async function* streamRunEventsCommand(c: any) {
       if (
         currentStatus !== "running" &&
         currentStatus !== "waiting-approval" &&
+        currentStatus !== "waiting-event" &&
         currentStatus !== "waiting-timer"
       ) {
         const finalEvents = await adapter.listEvents(c.args.runId, lastSeq, 1000);
@@ -515,6 +536,9 @@ async function* streamRunEventsCommand(c: any) {
         ];
         if (currentStatus === "waiting-approval") {
           ctaCommands.push({ command: `approve ${c.args.runId}`, description: "Approve run" });
+        }
+        if (currentStatus === "waiting-event") {
+          ctaCommands.push({ command: `why ${c.args.runId}`, description: "Explain signal wait" });
         }
         if (currentStatus === "waiting-timer") {
           ctaCommands.push({ command: `why ${c.args.runId}`, description: "Explain timer wait" });
@@ -1171,6 +1195,17 @@ const approveOptions = z.object({
   iteration: z.number().int().min(0).default(0).describe("Loop iteration number"),
   note: z.string().optional().describe("Approval/denial note"),
   by: z.string().optional().describe("Name or identifier of the approver"),
+});
+
+const signalArgs = z.object({
+  runId: z.string().describe("Run ID containing the waiting event"),
+  signalName: z.string().describe("Signal name to deliver"),
+});
+
+const signalOptions = z.object({
+  data: z.string().optional().describe("Signal payload as JSON (default: {})"),
+  correlation: z.string().optional().describe("Correlation ID to match a specific waiter"),
+  by: z.string().optional().describe("Name or identifier of the signal sender"),
 });
 
 const cancelArgs = z.object({
@@ -2757,6 +2792,7 @@ const cli = Cli.create({
           if (
             currentStatus !== "running" &&
             currentStatus !== "waiting-approval" &&
+            currentStatus !== "waiting-event" &&
             currentStatus !== "waiting-timer"
           ) {
             const finalAttempts = await adapter.listAttemptsForRun(runId);
@@ -3261,6 +3297,84 @@ const cli = Cli.create({
   })
 
   // =========================================================================
+  // smithers signal <run_id> <signal_name>
+  // =========================================================================
+  .command("signal", {
+    description: "Deliver a durable signal to a run waiting on <WaitForEvent>.",
+    args: signalArgs,
+    options: signalOptions,
+    async run(c) {
+      const fail: FailFn = (opts) => {
+        commandExitOverride = opts.exitCode ?? 1;
+        return c.error(opts);
+      };
+      try {
+        const { adapter, cleanup } = await findAndOpenDb();
+        try {
+          const payload = parseJsonInput(c.options.data, "signal data", fail) ?? {};
+          const run = await adapter.getRun(c.args.runId);
+          if (!run) {
+            return fail({
+              code: "RUN_NOT_FOUND",
+              message: `Run not found: ${c.args.runId}`,
+              exitCode: 4,
+            });
+          }
+
+          const delivered = await signalRun(
+            adapter,
+            c.args.runId,
+            c.args.signalName,
+            payload,
+            {
+              correlationId: c.options.correlation,
+              receivedBy: c.options.by,
+            },
+          );
+
+          const commands = [
+            { command: `why ${c.args.runId}`, description: "Explain remaining blockers" },
+            { command: `logs ${c.args.runId}`, description: "Tail run logs" },
+          ];
+          if ((run as any).workflowPath) {
+            commands.unshift({
+              command: `up ${(run as any).workflowPath} --resume --run-id ${c.args.runId}`,
+              description: "Resume the paused run",
+            });
+          }
+
+          return c.ok(
+            {
+              runId: c.args.runId,
+              signalName: c.args.signalName,
+              correlationId: c.options.correlation ?? null,
+              seq: delivered.seq,
+              status: "signalled",
+            },
+            {
+              cta: {
+                commands,
+              },
+            },
+          );
+        } finally {
+          cleanup();
+        }
+      } catch (err: any) {
+        return fail({
+          code:
+            err instanceof SmithersError && err.code === "RUN_NOT_FOUND"
+              ? "RUN_NOT_FOUND"
+              : "SIGNAL_FAILED",
+          message: err?.message ?? String(err),
+          exitCode:
+            err instanceof SmithersError && err.code === "RUN_NOT_FOUND" ? 4 : 1,
+        });
+      }
+    },
+  })
+
+  // =========================================================================
   // smithers deny <run_id>
   // =========================================================================
   .command("deny", {
@@ -3337,6 +3451,7 @@ const cli = Cli.create({
           if (
             (run as any).status !== "running" &&
             (run as any).status !== "waiting-approval" &&
+            (run as any).status !== "waiting-event" &&
             (run as any).status !== "waiting-timer"
           ) {
             return fail({ code: "RUN_NOT_ACTIVE", message: `Run is not active (status: ${(run as any).status})`, exitCode: 4 });
@@ -3415,10 +3530,12 @@ const cli = Cli.create({
         try {
           const activeRuns = await adapter.listRuns(100, "running");
           const waitingApprovalRuns = await adapter.listRuns(100, "waiting-approval");
+          const waitingEventRuns = await adapter.listRuns(100, "waiting-event");
           const waitingTimerRuns = await adapter.listRuns(100, "waiting-timer");
           const allActive = [
             ...(activeRuns as any[]),
             ...(waitingApprovalRuns as any[]),
+            ...(waitingEventRuns as any[]),
             ...(waitingTimerRuns as any[]),
           ];
 
@@ -3544,6 +3661,152 @@ const cli = Cli.create({
         }
       } catch (err: any) {
         return fail({ code: "REVERT_FAILED", message: err?.message ?? String(err), exitCode: 1 });
+      }
+    },
+  })
+
+  // =========================================================================
+  // smithers retry-task <workflow>
+  // =========================================================================
+  .command("retry-task", {
+    description: "Retry a specific task within a run, then resume the workflow.",
+    args: workflowArgs,
+    options: z.object({
+      runId: z.string().describe("Run ID containing the task"),
+      nodeId: z.string().describe("Task/node ID to retry"),
+      iteration: z.number().int().default(0).describe("Loop iteration"),
+      noDeps: z.boolean().default(false).describe("Only reset this node, not dependents"),
+      force: z.boolean().default(false).describe("Allow retry even if run is still running"),
+    }),
+    alias: { runId: "r", nodeId: "n" },
+    async run(c) {
+      const fail: FailFn = (opts) => {
+        commandExitOverride = opts.exitCode ?? 1;
+        return c.error(opts);
+      };
+      try {
+        const { adapter, cleanup } = await loadWorkflowDb(c.args.workflow);
+        try {
+          const onProgress = buildProgressReporter();
+          const resetResult = await retryTask(adapter, {
+            runId: c.options.runId,
+            nodeId: c.options.nodeId,
+            iteration: c.options.iteration,
+            resetDependents: !c.options.noDeps,
+            force: c.options.force,
+            onProgress,
+          });
+          if (!resetResult.success) {
+            process.exitCode = 1;
+            return c.ok(resetResult);
+          }
+
+          const workflow = await loadWorkflow(c.args.workflow);
+          const abort = setupAbortSignal();
+          const runResult = await runWorkflow(workflow, {
+            input: {},
+            runId: c.options.runId,
+            workflowPath: c.args.workflow,
+            resume: true,
+            force: c.options.force,
+            onProgress,
+            signal: abort.signal,
+          });
+          process.exitCode = formatStatusExitCode(runResult.status);
+          return c.ok({
+            ...resetResult,
+            status: runResult.status,
+            error: runResult.error,
+          });
+        } finally {
+          cleanup?.();
+        }
+      } catch (err: any) {
+        return fail({ code: "RETRY_TASK_FAILED", message: err?.message ?? String(err), exitCode: 1 });
+      }
+    },
+  })
+
+  // =========================================================================
+  // smithers timetravel <workflow>
+  // =========================================================================
+  .command("timetravel", {
+    description: "Time-travel to a previous task state: revert filesystem, reset DB, and optionally resume.",
+    args: workflowArgs,
+    options: z.object({
+      runId: z.string().describe("Run ID"),
+      nodeId: z.string().describe("Task/node ID to travel back to"),
+      iteration: z.number().int().default(0).describe("Loop iteration"),
+      attempt: z.number().int().optional().describe("Attempt number (default: latest)"),
+      noVcs: z.boolean().default(false).describe("Skip filesystem revert (DB only)"),
+      noDeps: z.boolean().default(false).describe("Only reset this node, not dependents"),
+      resume: z.boolean().default(false).describe("Resume the workflow after time travel"),
+      force: z.boolean().default(false).describe("Force even if run is still running"),
+    }),
+    alias: { runId: "r", nodeId: "n", attempt: "a" },
+    async run(c) {
+      const fail: FailFn = (opts) => {
+        commandExitOverride = opts.exitCode ?? 1;
+        return c.error(opts);
+      };
+      try {
+        const { adapter, cleanup } = await loadWorkflowDb(c.args.workflow);
+        try {
+          const run = await adapter.getRun(c.options.runId);
+          if (run?.status === "running" && !c.options.force) {
+            return fail({
+              code: "RUN_STILL_RUNNING",
+              message: `Run ${c.options.runId} is still marked running. Re-run with --force to time-travel it anyway.`,
+              exitCode: 4,
+            });
+          }
+
+          const result = await timeTravel(adapter, {
+            runId: c.options.runId,
+            nodeId: c.options.nodeId,
+            iteration: c.options.iteration,
+            attempt: c.options.attempt,
+            resetDependents: !c.options.noDeps,
+            restoreVcs: !c.options.noVcs,
+            onProgress: (e) => console.log(JSON.stringify(e)),
+          });
+
+          if (!result.success || !c.options.resume) {
+            process.exitCode = result.success ? 0 : 1;
+            return c.ok(result);
+          }
+
+          process.stderr.write(
+            `[smithers] Time travel reset ${result.resetNodes.join(", ")} on run ${c.options.runId}\n`,
+          );
+          if (result.vcsRestored && result.jjPointer) {
+            process.stderr.write(`[smithers] VCS state restored to ${result.jjPointer}\n`);
+          }
+          process.stderr.write(`[smithers] Resuming run...\n`);
+
+          const workflow = await loadWorkflow(c.args.workflow);
+          const onProgress = buildProgressReporter();
+          const abort = setupAbortSignal();
+          const runResult = await runWorkflow(workflow, {
+            input: {},
+            runId: c.options.runId,
+            workflowPath: c.args.workflow,
+            resume: true,
+            force: true,
+            onProgress,
+            signal: abort.signal,
+          });
+          process.exitCode = formatStatusExitCode(runResult.status);
+          return c.ok({
+            ...result,
+            resumed: true,
+            status: runResult.status,
+          });
+        } finally {
+          cleanup?.();
+        }
+      } catch (err: any) {
+        return fail({ code: "TIMETRAVEL_FAILED", message: err?.message ?? String(err), exitCode: 1 });
       }
     },
   })

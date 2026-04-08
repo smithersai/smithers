@@ -24,9 +24,24 @@ export type TaskDescriptor = {
   parallelGroupId?: string;
   parallelMaxConcurrency?: number;
   needsApproval: boolean;
-  approvalMode?: "gate" | "decision";
+  approvalMode?: "gate" | "decision" | "select" | "rank";
   approvalOnDeny?: "fail" | "continue" | "skip";
+  approvalOptions?: Array<{
+    key: string;
+    label: string;
+    summary?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  approvalAllowedScopes?: string[];
+  approvalAllowedUsers?: string[];
+  approvalAutoApprove?: {
+    after?: number;
+    audit?: boolean;
+    conditionMet?: boolean;
+    revertOnMet?: boolean;
+  };
   skipIf: boolean;
+  /** Number of retries after the initial attempt. Infinity is allowed. */
   retries: number;
   retryPolicy?: RetryPolicy;
   timeoutMs: number | null;

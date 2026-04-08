@@ -16,6 +16,7 @@ import { logError, logInfo, logWarning } from "../effect/logging";
 import { runPromise, runSync } from "../effect/runtime";
 import { httpRequests, httpRequestDuration, trackEvent } from "../effect/metrics";
 import { approveNode, denyNode } from "../engine/approvals";
+import { signalRun } from "../engine/signals";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { nowMs } from "../utils/time";
 import { errorToJson, SmithersError } from "../utils/errors";
@@ -1017,6 +1018,40 @@ function startServerInternal(opts: ServerOptions = {}) {
           body.decidedBy,
         );
         return sendJson(res, 200, { runId });
+      }
+
+      const signalMatch = url.pathname.match(
+        /^\/v1\/runs\/([^/]+)\/signals\/([^/]+)$/,
+      );
+      if (method === "POST" && signalMatch) {
+        const runId = signalMatch[1]!;
+        const signalName = decodeURIComponent(signalMatch[2]!);
+        const body = await readBody(req, maxBodyBytes);
+        const adapter = adapterForRun(runId);
+        if (!adapter)
+          return sendJson(res, 404, {
+            error: { code: "NOT_FOUND", message: "Run not found" },
+          });
+        const run = await adapter.getRun(runId);
+        if (!run)
+          return sendJson(res, 404, {
+            error: { code: "NOT_FOUND", message: "Run not found" },
+          });
+        const delivered = await signalRun(
+          adapter,
+          runId,
+          signalName,
+          body.data ?? {},
+          {
+            correlationId:
+              typeof body.correlationId === "string"
+                ? body.correlationId
+                : undefined,
+            receivedBy:
+              typeof body.receivedBy === "string" ? body.receivedBy : undefined,
+          },
+        );
+        return sendJson(res, 200, delivered);
       }
 
       if (

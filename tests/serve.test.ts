@@ -190,8 +190,12 @@ export default smithers((ctx) => (
         workflowPath: resolve(process.cwd(), workflowPath),
         signal: abort.signal,
       }).catch(() => {});
-      // Give the workflow a moment to start and persist initial state
-      await sleep(200);
+      // Wait for the run row to exist instead of relying on a fixed startup delay.
+      for (let i = 0; i < 40; i++) {
+        const run = await adapter.getRun(runId);
+        if (run) break;
+        await sleep(50);
+      }
     }
 
     const app = createServeApp({
@@ -208,6 +212,23 @@ export default smithers((ctx) => (
     request = makeRequest(port);
 
     return { workflow, adapter, runId, app };
+  }
+
+  async function waitForServeRunStatus(
+    statuses: string[],
+    timeoutMs = 5_000,
+  ) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const { status, data } = await request("/");
+      if (status === 200 && statuses.includes(data.status)) {
+        return data;
+      }
+      await sleep(50);
+    }
+    throw new Error(
+      `Timed out waiting for serve run to reach one of: ${statuses.join(", ")}`,
+    );
   }
 
   // =========================================================================
@@ -347,8 +368,7 @@ export default smithers((ctx) => (
         needsApproval: true,
       });
 
-      // Wait for workflow to reach waiting-approval
-      await sleep(500);
+      await waitForServeRunStatus(["waiting-approval"]);
 
       const { status, data } = await request("/approve/task1", {
         method: "POST",
@@ -374,8 +394,7 @@ export default smithers((ctx) => (
         needsApproval: true,
       });
 
-      // Wait for workflow to reach waiting-approval
-      await sleep(500);
+      await waitForServeRunStatus(["waiting-approval"]);
 
       const { status, data } = await request("/deny/task1", {
         method: "POST",
@@ -640,7 +659,7 @@ export default smithers((ctx) => (
         needsApproval: true,
       });
       await startServeApp(workflowPath, { needsApproval: true });
-      await sleep(500);
+      await waitForServeRunStatus(["waiting-approval"]);
 
       await request("/approve/task1", {
         method: "POST",
@@ -663,7 +682,7 @@ export default smithers((ctx) => (
         needsApproval: true,
       });
       await startServeApp(workflowPath, { needsApproval: true });
-      await sleep(500);
+      await waitForServeRunStatus(["waiting-approval"]);
 
       await request("/deny/task1", {
         method: "POST",

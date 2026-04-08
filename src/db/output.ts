@@ -11,6 +11,50 @@ import { withSqliteWriteRetryEffect } from "./write-retry";
 
 export type OutputKey = { runId: string; nodeId: string; iteration?: number };
 
+export function buildOutputRow(
+  table: Table,
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  payload: unknown,
+) {
+  const cols = getTableColumns(table as any) as Record<string, AnyColumn>;
+  const keys = Object.keys(cols);
+  const hasPayload = keys.includes("payload");
+  const payloadOnly =
+    hasPayload &&
+    keys.every(
+      (key) =>
+        key === "runId" ||
+        key === "nodeId" ||
+        key === "iteration" ||
+        key === "payload",
+    );
+  if (payloadOnly) {
+    return {
+      runId,
+      nodeId,
+      iteration,
+      payload: (payload ?? null) as any,
+    };
+  }
+  return {
+    ...((payload ?? {}) as Record<string, unknown>),
+    runId,
+    nodeId,
+    iteration,
+  };
+}
+
+export function stripAutoColumns(payload: unknown) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+  const { runId: _runId, nodeId: _nodeId, iteration: _iteration, ...rest } =
+    payload as Record<string, unknown>;
+  return rest;
+}
+
 export function getKeyColumns(table: Table): {
   runId: AnyColumn;
   nodeId: AnyColumn;
@@ -233,31 +277,6 @@ function describeZodType(schema: z.ZodType): string {
     if (typeName === "enum") return `enum(${(def.values ?? []).join(" | ")})`;
     if (typeName === "literal") return `literal(${JSON.stringify(def.value)})`;
     if (typeName === "union") {
-      const options = (def.options ?? []).map((o: z.ZodType) => describeZodType(o));
-      return options.join(" | ");
-    }
-  }
-  // Zod v3: uses _def.typeName
-  if ((schema as any)._def?.typeName) {
-    const typeName = (schema as any)._def.typeName as string;
-    const def = (schema as any)._def;
-    if (typeName === "ZodOptional" || typeName === "ZodDefault" || typeName === "ZodNullable") {
-      const inner = def.innerType ? describeZodType(def.innerType) : "unknown";
-      if (typeName === "ZodOptional") return `${inner} (optional)`;
-      if (typeName === "ZodNullable") return `${inner} | null`;
-      return inner;
-    }
-    if (typeName === "ZodString") return "string";
-    if (typeName === "ZodNumber") return "number";
-    if (typeName === "ZodBoolean") return "boolean";
-    if (typeName === "ZodArray") {
-      const itemType = def.type ? describeZodType(def.type) : "unknown";
-      return `${itemType}[]`;
-    }
-    if (typeName === "ZodObject") return "object";
-    if (typeName === "ZodEnum") return `enum(${(def.values ?? []).join(" | ")})`;
-    if (typeName === "ZodLiteral") return `literal(${JSON.stringify(def.value)})`;
-    if (typeName === "ZodUnion") {
       const options = (def.options ?? []).map((o: z.ZodType) => describeZodType(o));
       return options.join(" | ");
     }

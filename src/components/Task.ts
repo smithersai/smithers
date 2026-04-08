@@ -11,6 +11,9 @@ import type { TaskMemoryConfig } from "../memory/types";
 import { SmithersContext } from "../context";
 import type { InferOutputEntry } from "../OutputAccessor";
 import { AspectContext, type AspectContextValue } from "../aspects/AspectContext";
+import { ClaudeCodeAgent } from "../agents/ClaudeCodeAgent";
+import { GeminiAgent } from "../agents/GeminiAgent";
+import { PiAgent } from "../agents/PiAgent";
 
 /**
  * Valid output targets: a Zod schema (recommended with createSmithers),
@@ -56,6 +59,8 @@ export type TaskProps<
   timeoutMs?: number;
   heartbeatTimeoutMs?: number;
   heartbeatTimeout?: number;
+  /** Disable retries entirely. Equivalent to retries={0}. */
+  noRetry?: boolean;
   retries?: number;
   retryPolicy?: RetryPolicy;
   continueOnFail?: boolean;
@@ -64,6 +69,7 @@ export type TaskProps<
   scorers?: ScorersMap;
   /** Optional cross-run memory configuration. */
   memory?: TaskMemoryConfig;
+  allowTools?: string[];
   label?: string;
   meta?: Record<string, unknown>;
   /** @internal Used by createSmithers() to bind tasks to the correct workflow context. */
@@ -193,6 +199,70 @@ function validateDeps(
   }
 }
 
+function applyCliToolAllowlist(
+  agent: AgentLike,
+  allowTools: string[] | undefined,
+): AgentLike {
+  if (!allowTools) {
+    return agent;
+  }
+
+  if (agent instanceof ClaudeCodeAgent) {
+    const opts = { ...((agent as any).opts ?? {}) };
+    if (allowTools.length === 0) {
+      return new ClaudeCodeAgent({
+        ...opts,
+        allowedTools: [],
+        tools: "",
+      });
+    }
+    return new ClaudeCodeAgent({
+      ...opts,
+      allowedTools: [...allowTools],
+    });
+  }
+
+  if (agent instanceof PiAgent) {
+    const opts = { ...((agent as any).opts ?? {}) };
+    if (allowTools.length === 0) {
+      return new PiAgent({
+        ...opts,
+        tools: [],
+        noTools: true,
+      });
+    }
+    return new PiAgent({
+      ...opts,
+      tools: [...allowTools],
+      noTools: false,
+    });
+  }
+
+  if (agent instanceof GeminiAgent) {
+    const opts = { ...((agent as any).opts ?? {}) };
+    return new GeminiAgent({
+      ...opts,
+      allowedTools: [...allowTools],
+    });
+  }
+
+  return agent;
+}
+
+function resolveCliToolAllowlist(
+  ctx: unknown,
+  allowTools: string[] | undefined,
+): string[] | undefined {
+  if (allowTools !== undefined) {
+    return allowTools;
+  }
+  const cliAgentToolsDefault =
+    ctx && typeof ctx === "object"
+      ? (ctx as any).__smithersRuntime?.cliAgentToolsDefault
+      : undefined;
+  return cliAgentToolsDefault === "explicit-only" ? [] : undefined;
+}
+
 export function Task<Row, Output extends OutputTarget = OutputTarget, D extends DepsSpec = {}>(
   props: TaskProps<Row, Output, D>,
 ) {
@@ -225,6 +295,12 @@ export function Task<Row, Output extends OutputTarget = OutputTarget, D extends 
     : agent && fallbackAgent
       ? [agent, fallbackAgent]
       : agent;
+  const effectiveAllowTools = resolveCliToolAllowlist(ctx, rest.allowTools);
+  const restrictedAgentChain = Array.isArray(agentChain)
+    ? agentChain.map((entry) => applyCliToolAllowlist(entry, effectiveAllowTools))
+    : agentChain
+      ? applyCliToolAllowlist(agentChain, effectiveAllowTools)
+      : agentChain;
   const nextDependsOn = mergeDependsOn(rest.dependsOn, depNodeIds);
   const childValue =
     typeof children === "function" && (agent || deps)
@@ -244,7 +320,7 @@ export function Task<Row, Output extends OutputTarget = OutputTarget, D extends 
     const prompt = renderChildrenToText(childElement);
     return React.createElement(
       "smithers:task",
-      { ...rest, dependsOn: nextDependsOn, agent: agentChain, __smithersKind: "agent", ...aspectMeta },
+      { ...rest, dependsOn: nextDependsOn, agent: restrictedAgentChain, __smithersKind: "agent", ...aspectMeta },
       prompt,
     );
   }

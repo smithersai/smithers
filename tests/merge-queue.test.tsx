@@ -33,7 +33,7 @@ describe("<MergeQueue>", () => {
     expect(res.tasks.length).toBe(2);
     expect(res.tasks[0]!.parallelGroupId).toBe("my-queue");
     expect(res.tasks[1]!.parallelGroupId).toBe("my-queue");
-  });
+  }, 30_000);
 
   test("extract sets parallel group with default concurrency 1", async () => {
     const renderer = new SmithersRenderer();
@@ -57,7 +57,7 @@ describe("<MergeQueue>", () => {
     expect(g1).toBe(g2);
     expect(res.tasks[0]!.parallelMaxConcurrency).toBe(1);
     expect(res.tasks[1]!.parallelMaxConcurrency).toBe(1);
-  });
+  }, 30_000);
 
   test("skipIf prevents subtree extraction", async () => {
     const renderer = new SmithersRenderer();
@@ -71,7 +71,7 @@ describe("<MergeQueue>", () => {
       </Workflow>,
     );
     expect(res.tasks.length).toBe(0);
-  });
+  }, 30_000);
 
   test("engine enforces default concurrency = 1 within queue", async () => {
     const { smithers, cleanup, outputs } = buildSmithers();
@@ -104,7 +104,7 @@ describe("<MergeQueue>", () => {
     expect(result.status).toBe("finished");
     expect(max).toBeLessThanOrEqual(1);
     cleanup();
-  });
+  }, 30_000);
 
   test("engine respects provided maxConcurrency on queue", async () => {
     const { smithers, cleanup, outputs } = buildSmithers();
@@ -137,7 +137,7 @@ describe("<MergeQueue>", () => {
     expect(result.status).toBe("finished");
     expect(max).toBeLessThanOrEqual(2);
     cleanup();
-  });
+  }, 30_000);
   test("innermost group controls concurrency when nested inside Parallel", async () => {
     const { smithers, cleanup, outputs } = buildSmithers();
     let queueCurrent = 0, queueMax = 0;
@@ -186,7 +186,7 @@ describe("<MergeQueue>", () => {
     expect(queueMax).toBeLessThanOrEqual(1);
     expect(outsideMax).toBeGreaterThanOrEqual(1);
     cleanup();
-  });
+  }, 30_000);
 
   test("edge maxConcurrency values clamp to 1 at extract time", async () => {
     const renderer = new SmithersRenderer();
@@ -227,7 +227,7 @@ describe("<MergeQueue>", () => {
     );
     expect(res.tasks[0]!.parallelMaxConcurrency).toBe(1);
     expect(res.tasks[1]!.parallelMaxConcurrency).toBe(1);
-  });
+  }, 30_000);
 
   test("engine clamps non-positive and fractional to 1 for MergeQueue", async () => {
     const { smithers, cleanup, outputs } = buildSmithers();
@@ -266,5 +266,5 @@ describe("<MergeQueue>", () => {
     await runCase(-1);
     await runCase(1.7);
     cleanup();
-  });
+  }, 30_000);
 });

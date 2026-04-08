@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "skills": "github:mattpocock/skills",
-    "smithers-orchestrator": "0.12.8",
+    "smithers-orchestrator": "file:..",
     "zod": "4.3.6"
   },
   "devDependencies": {

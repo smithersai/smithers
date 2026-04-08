@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Chunk, Duration, Effect, Exit, Schedule, ScheduleDecision } from "effect";
-import { retryPolicyToSchedule } from "../src/utils/retry";
+import { computeRetryDelayMs, retryPolicyToSchedule } from "../src/utils/retry";
 
 /**
  * Step through a schedule synchronously and collect the delay (in ms) for each iteration.
@@ -90,5 +90,14 @@ describe("retryPolicyToSchedule", () => {
     for (const d of delays) {
       expect(d).toBe(99);
     }
+  });
+
+  test("computeRetryDelayMs caps exponential backoff at five minutes", () => {
+    expect(
+      computeRetryDelayMs(
+        { backoff: "exponential", initialDelayMs: 1_000 },
+        20,
+      ),
+    ).toBe(300_000);
   });
 });

@@ -6,21 +6,7 @@ import { camelToSnake } from "./utils/camelToSnake";
  * Determines the Zod base type name from a (possibly unwrapped) Zod type.
  */
 function getZodBaseTypeName(zodType: any): string {
-  // Zod v4 style
-  if (zodType._zod?.def) {
-    return zodType._zod.def.type ?? "unknown";
-  }
-  // Zod v3 fallback
-  const typeName = zodType._def?.typeName;
-  if (typeName === "ZodString") return "string";
-  if (typeName === "ZodNumber") return "number";
-  if (typeName === "ZodBoolean") return "boolean";
-  if (typeName === "ZodArray") return "array";
-  if (typeName === "ZodObject") return "object";
-  if (typeName === "ZodEnum") return "enum";
-  if (typeName === "ZodLiteral") return "literal";
-  if (typeName === "ZodUnion") return "union";
-  return typeName ?? "unknown";
+  return zodType._zod?.def?.type ?? "unknown";
 }
 
 /**

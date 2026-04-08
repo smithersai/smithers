@@ -5,14 +5,14 @@ description: Build Smithers workflows as JSX trees with render-time branching, r
 
 The JSX API is Smithers' component-based authoring layer. You describe the workflow as a tree of `<Workflow>`, `<Task>`, and control-flow components, and Smithers renders that tree into an execution plan.
 
-You can mix normal `<Task>` nodes, MDX prompt components, and generated BAML tasks in the same JSX tree.
+You can mix normal `<Task>` nodes and MDX prompt components in the same JSX tree.
 
 Use JSX when you want:
 
 - component composition and reusable workflow fragments
 - explicit control-flow nodes like `<Approval>`, `<Parallel>`, `<MergeQueue>`, and `<Worktree>`
 - render-time branching driven by `ctx.outputMaybe(...)`
-- MDX prompt templates or BAML task files
+- MDX prompt templates
 - a TSX-first workflow authoring model
 
 ## What JSX Looks Like
@@ -90,7 +90,6 @@ Both styles compile to the same JSX renderer and execution engine.
 
 - [JSX Installation](/jsx/installation) — Set up TypeScript, TSX, and optional MDX prompts.
 - [JSX Quickstart](/jsx/quickstart) — Build a two-step workflow.
-- [BAML](/integrations/baml) — Import `.baml` functions as first-class Smithers tasks.
 - [Approval](/components/approval) — Add a first-class approval node to the graph.
 - [MergeQueue](/components/merge-queue) — Serialize a subtree with a concurrency cap.
 - [Workflow](/components/workflow) — Start with the root component reference.

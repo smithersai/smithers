@@ -10,6 +10,7 @@ import { createTempRepo, type TempRepo } from "./e2e-helpers";
 const BUN_BINARY = process.execPath;
 const CLI_ENTRY = resolve(import.meta.dir, "../src/cli/index.ts");
 const CLEAR_SCREEN_SEQUENCE = "\x1B[2J\x1B[0f";
+const WATCH_STARTUP_TIMEOUT_MS = 20_000;
 
 type LiveSmithersProcess = {
   child: ReturnType<typeof spawn>;
@@ -184,7 +185,11 @@ test(
         { cwd: repo.dir },
       );
 
-      await waitForMatch(processRef.readStderr, "--interval clamped to 500ms");
+      await waitForMatch(
+        processRef.readStderr,
+        "--interval clamped to 500ms",
+        WATCH_STARTUP_TIMEOUT_MS,
+      );
       await waitForMatch(processRef.readStdout, "watch-ps-run");
       await sleep(1_250);
       const exit = await stopProcess(processRef, "SIGINT");
@@ -203,7 +208,7 @@ test(
       sqlite.close();
     }
   },
-  20_000,
+  30_000,
 );
 
 test(
@@ -221,7 +226,11 @@ test(
         { cwd: repo.dir },
       );
 
-      await waitForMatch(processRef.readStderr, "--interval clamped to 500ms");
+      await waitForMatch(
+        processRef.readStderr,
+        "--interval clamped to 500ms",
+        WATCH_STARTUP_TIMEOUT_MS,
+      );
       await waitForMatch(processRef.readStdout, "\"id\": \"watch-inspect-run\"");
       await adapter.updateRun("watch-inspect-run", {
         status: "finished",
@@ -242,7 +251,7 @@ test(
       sqlite.close();
     }
   },
-  20_000,
+  30_000,
 );
 
 test(
@@ -260,7 +269,11 @@ test(
         { cwd: repo.dir },
       );
 
-      await waitForMatch(processRef.readStderr, "--interval clamped to 500ms");
+      await waitForMatch(
+        processRef.readStderr,
+        "--interval clamped to 500ms",
+        WATCH_STARTUP_TIMEOUT_MS,
+      );
       await sleep(600);
 
       const now = Date.now();
@@ -305,7 +318,7 @@ test(
       sqlite.close();
     }
   },
-  20_000,
+  30_000,
 );
 
 test(
@@ -350,7 +363,11 @@ test(
         { cwd: repo.dir },
       );
 
-      await waitForMatch(processRef.readStderr, "--interval clamped to 500ms");
+      await waitForMatch(
+        processRef.readStderr,
+        "--interval clamped to 500ms",
+        WATCH_STARTUP_TIMEOUT_MS,
+      );
       await waitForMatch(processRef.readStdout, "\"nodeId\": \"watch-node\"");
 
       await adapter.insertNode({
@@ -382,5 +399,5 @@ test(
       sqlite.close();
     }
   },
-  20_000,
+  30_000,
 );

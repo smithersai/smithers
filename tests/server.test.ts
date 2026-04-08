@@ -82,6 +82,31 @@ describe("HTTP Server", () => {
     throw new Error(`Timed out waiting for run ${runId} to reach one of: ${statuses.join(", ")}`);
   }
 
+  async function waitForPersistedRun(
+    dbPath: string,
+    runId: string,
+    timeoutMs = 5_000,
+  ) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      let db: Database | null = null;
+      try {
+        db = new Database(dbPath, { readonly: true });
+        const row = db
+          .query("SELECT run_id AS runId FROM _smithers_runs WHERE run_id = ? LIMIT 1")
+          .get(runId) as { runId: string } | null;
+        if (row) {
+          return row;
+        }
+      } catch {
+      } finally {
+        db?.close();
+      }
+      await sleep(50);
+    }
+    throw new Error(`Timed out waiting for run ${runId} to be persisted`);
+  }
+
   function readOutputValue(dbPath: string, runId: string) {
     const db = new Database(dbPath, { readonly: true });
     try {
@@ -204,7 +229,7 @@ const fakeAgent = {
       expect(secondRun.status).toBe(200);
       await waitForRunStatus(secondRun.data.runId, ["finished"]);
       expect(readOutputValue(dbPath, secondRun.data.runId)).toBe(7);
-    });
+    }, 15_000);
 
     test("returns 400 for invalid JSON body", async () => {
       const dbPath = resolve(testDir, "test-invalid-json.db");
@@ -249,7 +274,7 @@ const fakeAgent = {
       });
 
       expect(startStatus).toBe(200);
-      await sleep(200);
+      await waitForPersistedRun(dbPath, startData.runId);
 
       const { status, data } = await request(`/v1/runs/${startData.runId}`);
 
@@ -312,7 +337,7 @@ const fakeAgent = {
         body: { workflowPath },
       });
 
-      await sleep(200);
+      await waitForPersistedRun(dbPath, startData.runId);
 
       const { status, data } = await request(`/v1/runs/${startData.runId}/cancel`, {
         method: "POST",
@@ -345,7 +370,7 @@ const fakeAgent = {
         body: { workflowPath },
       });
 
-      await sleep(500);
+      await waitForPersistedRun(dbPath, startData.runId);
 
       const { status, data } = await request(`/v1/runs/${startData.runId}/resume`, {
         method: "POST",
@@ -368,7 +393,7 @@ const fakeAgent = {
         body: { workflowPath },
       });
 
-      await sleep(200);
+      await waitForPersistedRun(dbPath, startData.runId);
 
       const { status, data } = await request(`/v1/runs/${startData.runId}/frames`);
 
@@ -395,7 +420,7 @@ const fakeAgent = {
         body: { workflowPath },
       });
 
-      await sleep(200);
+      await waitForPersistedRun(dbPath, startData.runId);
 
       const { status, data } = await request(
         `/v1/runs/${startData.runId}/frames?limit=10&afterFrameNo=0`
@@ -417,7 +442,7 @@ const fakeAgent = {
         body: { workflowPath },
       });
 
-      await sleep(500);
+      await waitForRunStatus(startData.runId, ["waiting-approval"]);
 
       const { status, data } = await request(
         `/v1/runs/${startData.runId}/nodes/task1/approve`,
@@ -476,7 +501,7 @@ const fakeAgent = {
         body: { workflowPath },
       });
 
-      await sleep(500);
+      await waitForRunStatus(startData.runId, ["waiting-approval"]);
 
       const { status, data } = await request(
         `/v1/runs/${startData.runId}/nodes/task1/deny`,
@@ -535,7 +560,7 @@ const fakeAgent = {
         body: { workflowPath },
       });
 
-      await sleep(200);
+      await waitForPersistedRun(dbPath, startData.runId);
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 1000);

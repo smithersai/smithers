@@ -1,9 +1,9 @@
 ---
 title: <Approval>
-description: A first-class JSX approval node that pauses durably and resolves to an ApprovalDecision value.
+description: A first-class JSX approval node that pauses durably and resolves to an approval decision, selection, or ranking value.
 ---
 
-Pauses the workflow until a human approves or denies. Writes an `ApprovalDecision` to the configured output:
+Pauses the workflow until a human approves or denies. `mode="approve"` writes an `ApprovalDecision` to the configured output:
 
 ```ts
 type ApprovalDecision = {
@@ -25,10 +25,15 @@ import { Approval, approvalDecisionSchema } from "smithers-orchestrator";
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
 | `id` | `string` | **(required)** | Unique node id within the workflow. |
+| `mode` | `"approve" \| "select" \| "rank"` | `"approve"` | Approval shape. `"approve"` returns a boolean decision, `"select"` returns one option, `"rank"` returns an ordered list. |
+| `options` | `ApprovalOption[]` | `undefined` | Required for `mode="select"` and `mode="rank"`. |
 | `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to persist the decision. Zod schema from `outputs` (recommended), Drizzle table, or string key. |
 | `outputSchema` | `z.ZodObject` | `approvalDecisionSchema` | Override the decision schema (manual DB API). |
 | `request` | `{ title: string; summary?: string; metadata?: Record<string, unknown> }` | **(required)** | Human-facing request. `title` becomes the node label. |
 | `onDeny` | `"fail" \| "continue" \| "skip"` | `"fail"` | Behavior after denial. `"continue"` and `"skip"` still persist the denial. |
+| `allowedScopes` | `string[]` | `undefined` | Optional gateway scopes allowed to decide this approval. |
+| `allowedUsers` | `string[]` | `undefined` | Optional gateway user IDs allowed to decide this approval. |
+| `autoApprove` | `ApprovalAutoApprove` | `undefined` | Auto-approval policy. Supports immediate auto-approval, approval-after-history, and audited auto-approvals. |
 | `dependsOn` | `string[]` | `undefined` | Task IDs that must complete first. |
 | `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
 | `skipIf` | `boolean` | `false` | Skip this node entirely. |
@@ -107,6 +112,61 @@ Pass `outputSchema={approvalDecisionSchema}` when `output` is a Drizzle table.
   }}
 />
 ```
+
+## Selection and ranking modes
+
+`<Approval>` can also return typed non-boolean outputs.
+
+```tsx
+import {
+  Approval,
+  approvalRankingSchema,
+  approvalSelectionSchema,
+} from "smithers-orchestrator";
+
+<Approval
+  id="pick-plan"
+  mode="select"
+  output={outputs.selection}
+  request={{ title: "Pick a rollout plan" }}
+  options={[
+    { key: "canary", label: "Canary" },
+    { key: "regional", label: "Regional" },
+  ]}
+/>
+
+<Approval
+  id="rank-plans"
+  mode="rank"
+  output={outputs.ranking}
+  request={{ title: "Rank the rollout plans" }}
+  options={[
+    { key: "canary", label: "Canary" },
+    { key: "regional", label: "Regional" },
+    { key: "global", label: "Global" },
+  ]}
+/>
+```
+
+- `mode="select"` returns `{ selected: string, notes: string | null }`
+- `mode="rank"` returns `{ ranked: string[], notes: string | null }`
+
+## Scoped approvals and auto-approval
+
+```tsx
+<Approval
+  id="deploy-prod"
+  output={outputs.deployApproval}
+  request={{ title: "Deploy to production?" }}
+  allowedScopes={["approve"]}
+  allowedUsers={["user:oncall", "user:release-manager"]}
+  autoApprove={{ after: 2, audit: true }}
+/>
+```
+
+- `allowedScopes` and `allowedUsers` are enforced by `Gateway`.
+- `autoApprove={{ after: N }}` auto-approves after `N` consecutive manual approvals for the same workflow node.
+- `audit: true` preserves an approval record and emits `ApprovalAutoApproved`.
 
 ## Behavior
 

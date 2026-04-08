@@ -81,10 +81,12 @@ const BubblewrapTransportLive = Layer.succeed(
         if (process.platform === "linux") {
           const bwrap = typeof Bun !== "undefined" ? Bun.which("bwrap") : null;
           if (!bwrap) {
-            throw new SmithersError(
-              "PROCESS_SPAWN_FAILED",
-              "Bubblewrap runtime requested but `bwrap` is not installed. Install bubblewrap (package: bubblewrap) or use runtime=\"docker\".",
-              { runtime: "bubblewrap" },
+            yield* Effect.fail(
+              new SmithersError(
+                "PROCESS_SPAWN_FAILED",
+                "Bubblewrap runtime requested but `bwrap` is not installed. Install bubblewrap (package: bubblewrap) or use runtime=\"docker\".",
+                { runtime: "bubblewrap" },
+              )
             );
           }
         }
@@ -92,10 +94,12 @@ const BubblewrapTransportLive = Layer.succeed(
           const sandboxExec =
             typeof Bun !== "undefined" ? Bun.which("sandbox-exec") : null;
           if (!sandboxExec) {
-            throw new SmithersError(
-              "PROCESS_SPAWN_FAILED",
-              "bubblewrap runtime on macOS requires `sandbox-exec` for fallback isolation.",
-              { runtime: "bubblewrap" },
+            yield* Effect.fail(
+              new SmithersError(
+                "PROCESS_SPAWN_FAILED",
+                "bubblewrap runtime on macOS requires `sandbox-exec` for fallback isolation.",
+                { runtime: "bubblewrap" },
+              )
             );
           }
         }
@@ -167,9 +171,11 @@ const CodeplaneTransportLive = Layer.succeed(
         const apiUrl = process.env.CODEPLANE_API_URL;
         const apiKey = process.env.CODEPLANE_API_KEY;
         if (!apiUrl || !apiKey) {
-          throw new SmithersError(
-            "INVALID_INPUT",
-            "Codeplane runtime requires CODEPLANE_API_URL and CODEPLANE_API_KEY.",
+          yield* Effect.fail(
+            new SmithersError(
+              "INVALID_INPUT",
+              "Codeplane runtime requires CODEPLANE_API_URL and CODEPLANE_API_KEY.",
+            )
           );
         }
         const handle = baseHandle(config);

@@ -98,9 +98,30 @@ export const smithersApprovals = sqliteTable(
     decidedAtMs: integer("decided_at_ms"),
     note: text("note"),
     decidedBy: text("decided_by"),
+    requestJson: text("request_json"),
+    decisionJson: text("decision_json"),
+    autoApproved: integer("auto_approved", { mode: "boolean" })
+      .notNull()
+      .default(false),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.runId, t.nodeId, t.iteration] }),
+  }),
+);
+
+export const smithersSignals = sqliteTable(
+  "_smithers_signals",
+  {
+    runId: text("run_id").notNull(),
+    seq: integer("seq").notNull(),
+    signalName: text("signal_name").notNull(),
+    correlationId: text("correlation_id"),
+    payloadJson: text("payload_json").notNull(),
+    receivedAtMs: integer("received_at_ms").notNull(),
+    receivedBy: text("received_by"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.seq] }),
   }),
 );
 

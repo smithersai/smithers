@@ -550,6 +550,12 @@ export function trackEvent(event: SmithersEvent): Effect.Effect<void> {
         Metric.update(approvalPending, -1),
       ], { discard: true });
 
+    case "ApprovalAutoApproved":
+      return Effect.all([
+        countEvent,
+        Metric.increment(approvalsGranted),
+      ], { discard: true });
+
     case "ApprovalDenied":
       return Effect.all([
         countEvent,

@@ -125,4 +125,52 @@ describe("ensureSmithersTables", () => {
 
     sqlite.close();
   });
+
+  test("adds approval payload columns for legacy databases", () => {
+    const sqlite = new Database(":memory:");
+    sqlite.exec(`
+      CREATE TABLE _smithers_approvals (
+        run_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        iteration INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        requested_at_ms INTEGER,
+        decided_at_ms INTEGER,
+        note TEXT,
+        decided_by TEXT,
+        PRIMARY KEY (run_id, node_id, iteration)
+      );
+      INSERT INTO _smithers_approvals (
+        run_id,
+        node_id,
+        iteration,
+        status
+      ) VALUES (
+        'legacy-run',
+        'gate',
+        0,
+        'requested'
+      );
+    `);
+
+    const db = drizzle(sqlite);
+    ensureSmithersTables(db);
+
+    const approvalCols = sqlite
+      .query('PRAGMA table_info("_smithers_approvals")')
+      .all() as { name: string }[];
+    const names = approvalCols.map((c) => c.name);
+    expect(names).toContain("request_json");
+    expect(names).toContain("decision_json");
+    expect(names).toContain("auto_approved");
+
+    const legacyRow = sqlite
+      .query(
+        `SELECT auto_approved FROM _smithers_approvals WHERE run_id = 'legacy-run' AND node_id = 'gate' AND iteration = 0`,
+      )
+      .get() as { auto_approved: number };
+    expect(legacyRow.auto_approved).toBe(0);
+
+    sqlite.close();
+  });
 });

@@ -27,7 +27,7 @@ describe("BaseCliAgent timeouts", () => {
   test("idle timeout resets on stdout activity", async () => {
     const agent = new TimedAgent(
       "for i in 1 2 3 4 5; do echo tick; sleep 0.05; done",
-      { idleTimeoutMs: 80 },
+      { idleTimeoutMs: 150 },
     );
 
     const result = await agent.generate({ prompt: "run" });

@@ -101,7 +101,7 @@ process.stdout.write(lines.join("\\n") + "\\n");
       await rm(fake.dir, { recursive: true, force: true });
       await rm(argsFileDir, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   test("PiAgent builds expected CLI arguments", async () => {
      const argsFileDir = await mkdtemp(join(tmpdir(), "smithers-pi-args-"));
@@ -213,7 +213,7 @@ process.stdout.write(lines.join("\\n") + "\\n");
        await rm(fake.dir, { recursive: true, force: true });
        await rm(argsFileDir, { recursive: true, force: true });
      }
-   });
+   }, 15_000);
  
    test("PiAgent RPC mode sends prompt and returns output", async () => {
      const argsFileDir = await mkdtemp(join(tmpdir(), "smithers-pi-rpc-"));

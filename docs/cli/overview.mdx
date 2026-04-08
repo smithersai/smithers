@@ -20,11 +20,22 @@ smithers <command> [options]
 | `logs` | Stream lifecycle events for a run. |
 | `chat` | Show agent prompts, responses, and stderr. |
 | `inspect` | Print structured run state, steps, approvals, and loop info. |
+| `node` | Show enriched node details for debugging retries, tool calls, and output. |
+| `events` | Query run event history with filters, grouping, and NDJSON output. |
+| `why` | Explain why a run is currently blocked or paused. |
 | `approve` / `deny` | Record a decision for a pending approval gate. |
+| `signal` | Deliver external data to a waiting signal node. |
+| `supervise` | Watch for stale runs and auto-resume them. |
 | `cancel` / `down` | Stop one run or all active runs. |
 | `hijack` | Hand off an agent session or conversation. |
 | `graph` | Render a workflow tree without executing. |
 | `revert` | Restore workspace to a previous task attempt snapshot. |
+| `retry-task` | Retry a specific task within a run, then resume. |
+| `timetravel` | Revert to a previous task state with filesystem + DB reset. |
+| `replay` | Fork from a checkpoint and resume execution (time travel). |
+| `diff` | Compare two time-travel snapshots. |
+| `fork` | Create a branched run from a snapshot checkpoint. |
+| `timeline` | View execution timeline for a run and its forks. |
 | `scores` | View scorer results for a run. |
 | `observability` | Start or stop the local Grafana/Prometheus/Tempo stack. |
 | `ask` | Query an installed agent CLI via MCP. |
@@ -62,7 +73,7 @@ smithers workflow run implement --prompt "Add input validation"
 
 Commands that operate on existing runs locate the nearest `smithers.db` by walking upward from the working directory:
 
-`ps`, `logs`, `chat`, `inspect`, `scores`, `approve`, `deny`, `cancel`, `down`, `workflow doctor`, `cron start`, `cron list`, `cron rm`
+`ps`, `logs`, `events`, `chat`, `inspect`, `node`, `why`, `scores`, `approve`, `deny`, `signal`, `cancel`, `down`, `supervise`, `diff`, `timeline`, `workflow doctor`, `cron start`, `cron list`, `cron rm`
 
 No database found: exit with error.
 
@@ -133,6 +144,11 @@ smithers up <workflow> [options]
 | `--host <string>` | HTTP bind address when `--serve true`. Default: `127.0.0.1`. |
 | `--auth-token <string>` | Bearer token for HTTP auth. Can also be provided through `SMITHERS_API_KEY`. |
 | `--metrics <boolean>` | Expose `/metrics` Prometheus endpoint when `--serve true`. Default: `true`. |
+| `--supervise <boolean>` | Run the stale-run supervisor loop (with `--serve`). Default: `false`. |
+| `--supervise-dry-run <boolean>` | With `--supervise`, detect stale runs without resuming. Default: `false`. |
+| `--supervise-interval <string>` | With `--supervise`, poll interval (e.g. `10s`, `30s`). Default: `"10s"`. |
+| `--supervise-stale-threshold <string>` | With `--supervise`, stale heartbeat threshold. Default: `"30s"`. |
+| `--supervise-max-concurrent <number>` | With `--supervise`, max runs resumed per poll. Default: `3`. |
 
 ```bash
 smithers up workflow.tsx --input '{"description":"Fix auth bug"}'
@@ -211,6 +227,34 @@ smithers logs run-123 --tail 10
 
 Reads from the database, not detached-process stdout. See [Events](/runtime/events).
 
+### events
+
+Query run event history with filters, grouping, and NDJSON output.
+
+```bash
+smithers events <runId> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--node`, `-n <string>` | Filter events by node ID. |
+| `--type`, `-t <string>` | Filter by event category. |
+| `--since`, `-s <string>` | Filter to a recent duration window (e.g. `5m`, `2h`). |
+| `--limit`, `-l <number>` | Maximum events to display. Default: `1000`. Max: `100000`. |
+| `--json`, `-j <boolean>` | Output NDJSON for piping. Default: `false`. |
+| `--group-by <string>` | Group output by `"node"` or `"attempt"`. |
+| `--watch`, `-w <boolean>` | Watch mode: append new events as they arrive. Default: `false`. |
+| `--interval`, `-i <number>` | Watch poll interval in seconds. Default: `2`. |
+
+```bash
+smithers events run-123
+smithers events run-123 --node analyze --type tool
+smithers events run-123 --since 5m --limit 500
+smithers events run-123 --json true
+smithers events run-123 --watch true --interval 5
+smithers events run-123 --group-by node
+```
+
 ### chat
 
 Show agent transcripts for the latest or a specified run. Reconstructs chat from attempt metadata, `NodeOutput` events, and fallback `responseText`.
@@ -246,6 +290,48 @@ Output includes: run metadata, step states, pending approvals, loop state, parse
 
 ```bash
 smithers inspect run-123
+```
+
+### node
+
+Show enriched node details for debugging retries, tool calls, and output.
+
+```bash
+smithers node <nodeId> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--run-id`, `-r <string>` | Run ID containing the node. |
+| `--iteration`, `-i <number>` | Loop iteration number. Default: latest iteration. |
+| `--attempts <boolean>` | Expand all attempts in human output. Default: `false`. |
+| `--tools <boolean>` | Expand tool input/output payloads in human output. Default: `false`. |
+| `--watch`, `-w <boolean>` | Watch mode: refresh output continuously. Default: `false`. |
+| `--interval <number>` | Watch refresh interval in seconds. Default: `2`. |
+
+```bash
+smithers node analyze -r run-123
+smithers node analyze -r run-123 --attempts
+smithers node analyze -r run-123 --tools
+smithers node analyze -r run-123 --watch true --interval 5
+smithers node analyze -r run-123 --iteration 2
+```
+
+### why
+
+Explain why a run is currently blocked or paused.
+
+```bash
+smithers why <runId> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--json <boolean>` | Output structured JSON diagnosis. Default: `false`. |
+
+```bash
+smithers why run-123
+smithers why run-123 --json true
 ```
 
 ### scores
@@ -300,6 +386,46 @@ smithers deny <runId> [options]
 
 ```bash
 smithers deny run-123 --node deploy --note "Rollback plan missing" --by bob
+```
+
+### signal
+
+Deliver a durable signal to a run waiting on `<WaitForEvent>`.
+
+```bash
+smithers signal <runId> <signalName> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--data <string>` | Signal payload as JSON. Default: `{}`. |
+| `--correlation <string>` | Correlation ID to match a specific waiter. |
+| `--by <string>` | Name or identifier of the signal sender. |
+
+```bash
+smithers signal run-123 payment-received --data '{"amount":100}'
+smithers signal run-123 approval --correlation txn-456 --by alice
+```
+
+### supervise
+
+Watch for stale running runs and auto-resume them.
+
+```bash
+smithers supervise [options]
+```
+
+| Option | Description |
+|---|---|
+| `--dry-run`, `-n <boolean>` | Show which stale runs would be resumed, without acting. Default: `false`. |
+| `--interval`, `-i <string>` | Poll interval (e.g. `10s`, `30s`, `1m`). Default: `"10s"`. |
+| `--stale-threshold`, `-t <string>` | Heartbeat staleness threshold before resume. Default: `"30s"`. |
+| `--max-concurrent`, `-c <number>` | Max runs resumed per poll. Default: `3`. |
+
+```bash
+smithers supervise
+smithers supervise --dry-run true
+smithers supervise --interval 30s --stale-threshold 1m --max-concurrent 5
 ```
 
 ### cancel
@@ -394,6 +520,148 @@ smithers revert <workflow> [options]
 
 ```bash
 smithers revert workflow.tsx --run-id run-123 --node-id analyze --attempt 2
+```
+
+### retry-task
+
+Retry a specific task within a run. Resets the target node (and optionally its dependents) to `pending`, clears their output rows, then resumes the workflow. Only the reset tasks re-execute; completed tasks use cached results.
+
+```bash
+smithers retry-task <workflow> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--run-id`, `-r <string>` | Run ID containing the task. |
+| `--node-id`, `-n <string>` | Task/node ID to retry. |
+| `--iteration <number>` | Loop iteration. Default: `0`. |
+| `--no-deps <boolean>` | Only reset this node, not dependents. Default: `false`. |
+| `--force <boolean>` | Allow retry even if run is still marked `running`. Default: `false`. |
+
+```bash
+smithers retry-task workflow.tsx -r run-123 -n implement
+smithers retry-task workflow.tsx -r run-123 -n analyze --no-deps true
+smithers retry-task workflow.tsx -r run-123 -n stuck-task --force true
+```
+
+- Resets the target node and all downstream dependents to `pending` by default.
+- Clears persisted output rows for reset nodes so the agent starts fresh.
+- Cancels any prior failed/waiting attempts so retry budgets don't block re-execution.
+- After resetting, automatically resumes the workflow with `resume: true`.
+
+### timetravel
+
+Time-travel to a previous task state: revert the filesystem via jj to an attempt's snapshot, reset the DB state, and optionally resume. Combines `revert` + node reset into one atomic operation.
+
+```bash
+smithers timetravel <workflow> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--run-id`, `-r <string>` | Run ID. |
+| `--node-id`, `-n <string>` | Task/node ID to travel back to. |
+| `--iteration <number>` | Loop iteration. Default: `0`. |
+| `--attempt`, `-a <number>` | Attempt number. Default: latest. |
+| `--no-vcs <boolean>` | Skip filesystem revert (DB only). Default: `false`. |
+| `--no-deps <boolean>` | Only reset this node, not dependents. Default: `false`. |
+| `--resume <boolean>` | Resume the workflow after time travel. Default: `false`. |
+| `--force <boolean>` | Force even if run is still marked `running`. Default: `false`. |
+
+```bash
+smithers timetravel workflow.tsx -r run-123 -n implement --resume true
+smithers timetravel workflow.tsx -r run-123 -n analyze -a 1 --no-vcs true
+smithers timetravel workflow.tsx -r run-123 -n step-3 --no-deps true --resume true
+```
+
+- Restores the filesystem to the attempt's `jjPointer` snapshot (unless `--no-vcs`).
+- Deletes DB frames created after the target attempt.
+- Resets the target node and dependents to `pending`.
+- With `--resume`, immediately re-runs the workflow from the reverted state.
+
+### replay
+
+Fork from a checkpoint and resume execution (time travel). Creates a new run branched from a specific frame of an existing run, optionally resetting a node and overriding input, then immediately resumes execution.
+
+```bash
+smithers replay <workflow> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--run-id`, `-r <string>` | Source run ID to replay from. |
+| `--frame`, `-f <number>` | Frame number to fork from. |
+| `--node`, `-n <string>` | Node ID to reset to pending. |
+| `--input`, `-i <string>` | Input overrides as JSON string. |
+| `--label`, `-l <string>` | Branch label for the fork. |
+| `--restore-vcs <boolean>` | Restore jj filesystem state to the source frame's revision. Default: `false`. |
+
+```bash
+smithers replay workflow.tsx --run-id run-123 --frame 5
+smithers replay workflow.tsx -r run-123 -f 5 -n analyze --input '{"topic":"Rust"}'
+smithers replay workflow.tsx -r run-123 -f 5 --label experiment-1 --restore-vcs true
+```
+
+### diff
+
+Compare two time-travel snapshots.
+
+```bash
+smithers diff <a> <b> [options]
+```
+
+Arguments are snapshot refs in the format `run_id:frame_no` or `run_id` (uses latest frame).
+
+| Option | Description |
+|---|---|
+| `--json <boolean>` | Output as JSON. Default: `false`. |
+
+```bash
+smithers diff run-123:5 run-123:10
+smithers diff run-123 run-456
+smithers diff run-123:5 run-456:3 --json true
+```
+
+### fork
+
+Create a branched run from a snapshot checkpoint (time travel). Unlike `replay`, `fork` does not automatically resume execution unless `--run true` is passed.
+
+```bash
+smithers fork <workflow> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--run-id`, `-r <string>` | Source run ID. |
+| `--frame`, `-f <number>` | Frame number to fork from. |
+| `--reset-node`, `-n <string>` | Node ID to reset to pending. |
+| `--input`, `-i <string>` | Input overrides as JSON string. |
+| `--label`, `-l <string>` | Branch label. |
+| `--run <boolean>` | Immediately start the forked run. Default: `false`. |
+
+```bash
+smithers fork workflow.tsx --run-id run-123 --frame 5
+smithers fork workflow.tsx -r run-123 -f 5 -n analyze --label fix-branch
+smithers fork workflow.tsx -r run-123 -f 5 --run true
+```
+
+### timeline
+
+View execution timeline for a run and its forks (time travel).
+
+```bash
+smithers timeline <runId> [options]
+```
+
+| Option | Description |
+|---|---|
+| `--tree <boolean>` | Include all child forks recursively. Default: `false`. |
+| `--json <boolean>` | Output as JSON. Default: `false`. |
+
+```bash
+smithers timeline run-123
+smithers timeline run-123 --tree true
+smithers timeline run-123 --json true
 ```
 
 ### observability
@@ -656,3 +924,4 @@ smithers skills add --no-global
 - [Revert](/runtime/revert) -- filesystem snapshot restoration
 - [Hot Reload](/guides/hot-reload) -- `up --hot true`
 - [Approvals](/concepts/approvals) -- `approve` and `deny`
+- [Time Travel](/concepts/time-travel) -- snapshots, forking, and replay

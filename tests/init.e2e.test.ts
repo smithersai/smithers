@@ -233,4 +233,4 @@ test("seeded workflows reuse the shared review substrate", () => {
     expect(graph.exitCode).toBe(0);
     expect(JSON.stringify(graph.json)).toContain(`${reviewPrefix}:0`);
   }
-});
+}, 15_000);

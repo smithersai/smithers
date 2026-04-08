@@ -3,6 +3,7 @@ import { nowMs } from "../utils/time";
 import { SmithersDb } from "../db/adapter";
 import { runPromise } from "../effect/runtime";
 import { approvalWaitDuration, trackEvent } from "../effect/metrics";
+import { bridgeApprovalResolve } from "../effect/deferred-bridge";
 
 function nextRunStatusForApproval(
   currentStatus: string | null | undefined,
@@ -17,6 +18,10 @@ function nextRunStatusForApproval(
   return pendingApprovals > 0 ? "waiting-approval" : "waiting-event";
 }
 
+function serializeDecision(decision: unknown) {
+  return decision === undefined ? null : JSON.stringify(decision);
+}
+
 export function approveNodeEffect(
   adapter: SmithersDb,
   runId: string,
@@ -24,10 +29,12 @@ export function approveNodeEffect(
   iteration: number,
   note?: string,
   decidedBy?: string,
+  decision?: unknown,
+  autoApproved = false,
 ) {
   const ts = nowMs();
   const event = {
-    type: "ApprovalGranted" as const,
+    type: autoApproved ? ("ApprovalAutoApproved" as const) : ("ApprovalGranted" as const),
     runId,
     nodeId,
     iteration,
@@ -48,6 +55,9 @@ export function approveNodeEffect(
           decidedAtMs: ts,
           note: note ?? null,
           decidedBy: decidedBy ?? null,
+          requestJson: existing?.requestJson ?? null,
+          decisionJson: serializeDecision(decision) ?? existing?.decisionJson ?? null,
+          autoApproved,
         });
         yield* adapter.insertNodeEffect({
           runId,
@@ -76,17 +86,17 @@ export function approveNodeEffect(
     yield* adapter.insertEventWithNextSeqEffect({
       runId,
       timestampMs: ts,
-      type: "ApprovalGranted",
+      type: event.type,
       payloadJson: JSON.stringify(event),
     });
     yield* trackEvent(event);
-    yield* Effect.logInfo("approval granted");
+    yield* Effect.logInfo(autoApproved ? "approval auto-approved" : "approval granted");
   }).pipe(
     Effect.annotateLogs({
       runId,
       nodeId,
       iteration,
-      approvalStatus: "approved",
+      approvalStatus: autoApproved ? "auto-approved" : "approved",
       approvalDecidedBy: decidedBy ?? null,
     }),
     Effect.withLogSpan("approval:grant"),
@@ -100,10 +110,12 @@ export async function approveNode(
   iteration: number,
   note?: string,
   decidedBy?: string,
+  decision?: unknown,
 ) {
   await runPromise(
-    approveNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy),
+    approveNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy, decision),
   );
+  bridgeApprovalResolve(runId, nodeId, iteration, { approved: true });
 }
 
 export function denyNodeEffect(
@@ -113,6 +125,7 @@ export function denyNodeEffect(
   iteration: number,
   note?: string,
   decidedBy?: string,
+  decision?: unknown,
 ) {
   const ts = nowMs();
   const event = {
@@ -137,6 +150,9 @@ export function denyNodeEffect(
           decidedAtMs: ts,
           note: note ?? null,
           decidedBy: decidedBy ?? null,
+          requestJson: existing?.requestJson ?? null,
+          decisionJson: serializeDecision(decision) ?? existing?.decisionJson ?? null,
+          autoApproved: false,
         });
         yield* adapter.insertNodeEffect({
           runId,
@@ -189,8 +205,36 @@ export async function denyNode(
   iteration: number,
   note?: string,
   decidedBy?: string,
+  decision?: unknown,
 ) {
   await runPromise(
-    denyNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy),
+    denyNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy, decision),
   );
+  bridgeApprovalResolve(runId, nodeId, iteration, { approved: false });
+}
+
+export async function autoApproveNode(
+  adapter: SmithersDb,
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  options?: {
+    note?: string;
+    decidedBy?: string;
+    decision?: unknown;
+  },
+) {
+  await runPromise(
+    approveNodeEffect(
+      adapter,
+      runId,
+      nodeId,
+      iteration,
+      options?.note,
+      options?.decidedBy ?? "smithers:auto",
+      options?.decision,
+      true,
+    ),
+  );
+  bridgeApprovalResolve(runId, nodeId, iteration, { approved: true });
 }

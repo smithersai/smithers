@@ -4,11 +4,18 @@ export type { WorkflowProps } from "./Workflow";
 export {
   Approval,
   approvalDecisionSchema,
+  approvalRankingSchema,
+  approvalSelectionSchema,
 } from "./Approval";
 export type {
+  ApprovalAutoApprove,
   ApprovalDecision,
+  ApprovalMode,
+  ApprovalOption,
   ApprovalProps,
+  ApprovalRanking,
   ApprovalRequest,
+  ApprovalSelection,
 } from "./Approval";
 
 export { Task } from "./Task";

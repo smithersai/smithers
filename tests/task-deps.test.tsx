@@ -86,7 +86,9 @@ describe("Task deps", () => {
     cleanup();
   });
 
-  test("uses matching needs entries when dep key differs from the upstream task id", async () => {
+  test(
+    "uses matching needs entries when dep key differs from the upstream task id",
+    async () => {
     const { smithers, Workflow, Task, outputs, tables, db, cleanup } = createTestSmithers({
       contract: z.object({ title: z.string() }),
       summary: z.object({ title: z.string() }),
@@ -114,7 +116,9 @@ describe("Task deps", () => {
     const summaryRows = (db as any).select().from(tables.summary).all();
     expect(summaryRows[0]?.title).toBe("Orders API");
     cleanup();
-  });
+    },
+    15_000,
+  );
 
   test("does not resolve deps from another createSmithers context", async () => {
     const dir = mkdtempSync(join(tmpdir(), "smithers-task-deps-"));

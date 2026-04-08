@@ -2,10 +2,15 @@ import React from "react";
 import { getTableName } from "drizzle-orm";
 import type { SmithersCtx } from "./SmithersCtx";
 import type { OutputKey } from "./OutputKey";
+import type { RunAuthContext } from "./RunAuthContext";
 import { SmithersError } from "./utils/errors";
 
 export type OutputSnapshot = {
   [tableName: string]: Array<any>;
+};
+
+type SmithersRuntimeConfig = {
+  cliAgentToolsDefault?: "all" | "explicit-only";
 };
 
 export const SmithersContext = React.createContext<SmithersCtx<any> | null>(null);
@@ -113,10 +118,21 @@ export function buildContext<Schema>(opts: {
   iteration: number;
   iterations?: Record<string, number>;
   input: any;
+  auth?: RunAuthContext | null;
   outputs: OutputSnapshot;
   zodToKeyName?: Map<any, string>;
+  runtimeConfig?: SmithersRuntimeConfig;
 }): SmithersCtx<Schema> {
-  const { runId, iteration, iterations, input, outputs, zodToKeyName } = opts;
+  const {
+    runId,
+    iteration,
+    iterations,
+    input,
+    auth,
+    outputs,
+    zodToKeyName,
+    runtimeConfig,
+  } = opts;
   const normalizedInput = normalizeInputRow(input);
   const currentScopes = buildCurrentScopes(iterations);
 
@@ -157,6 +173,8 @@ export function buildContext<Schema>(opts: {
     iteration,
     iterations,
     input: normalizedInput,
+    auth: auth ?? null,
+    __smithersRuntime: runtimeConfig ?? null,
     outputs: outputsFn,
     output(table: any, key: OutputKey): any {
       const row = resolveRow(table, key);

@@ -63,7 +63,9 @@ describe("timer runtime", () => {
     const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
       out: z.object({ v: z.number() }),
     });
-    const until = new Date(Date.now() + 140).toISOString();
+    // Leave enough slack for engine startup so the first run still observes a
+    // future absolute deadline on slower machines.
+    const until = new Date(Date.now() + 900).toISOString();
 
     const workflow = smithers(() => (
       <Workflow name="timer-absolute">
@@ -77,7 +79,7 @@ describe("timer runtime", () => {
     const first = await runWorkflow(workflow, { input: {} });
     expect(first.status).toBe("waiting-timer");
 
-    await sleep(200);
+    await sleep(980);
     const resumed = await runWorkflow(workflow, {
       input: {},
       runId: first.runId,
@@ -195,7 +197,7 @@ describe("timer runtime", () => {
             <Task id="left-task" output={outputs.left}>{{ v: 1 }}</Task>
           </Sequence>
           <Sequence>
-            <Timer id="right-timer" duration="700ms" />
+            <Timer id="right-timer" duration="1600ms" />
             <Task id="right-task" output={outputs.right}>{{ v: 2 }}</Task>
           </Sequence>
         </Parallel>
@@ -205,7 +207,7 @@ describe("timer runtime", () => {
     const first = await runWorkflow(workflow, { input: {} });
     expect(first.status).toBe("waiting-timer");
 
-    await sleep(110);
+    await sleep(140);
     const second = await runWorkflow(workflow, {
       input: {},
       runId: first.runId,
@@ -213,11 +215,14 @@ describe("timer runtime", () => {
     });
     expect(second.status).toBe("waiting-timer");
 
-    await sleep(700);
-    const third = await runWorkflow(workflow, {
-      input: {},
-      runId: first.runId,
-      resume: true,
+    const leftRowsAfterSecond = await (db as any).select().from(tables.left);
+    const rightRowsAfterSecond = await (db as any).select().from(tables.right);
+    expect(leftRowsAfterSecond).toHaveLength(1);
+    expect(rightRowsAfterSecond).toHaveLength(0);
+
+    const third = await resumeUntilDone(workflow, first.runId, {
+      maxAttempts: 20,
+      intervalMs: 120,
     });
     expect(third.status).toBe("finished");
 

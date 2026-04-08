@@ -8,6 +8,7 @@ export type ToolContext = {
   nodeId: string;
   iteration: number;
   attempt: number;
+  idempotencyKey?: string | null;
   rootDir: string;
   allowNetwork: boolean;
   maxOutputBytes: number;
@@ -27,6 +28,16 @@ export function runWithToolContext<T>(
 
 export function getToolContext(): ToolContext | undefined {
   return storage.getStore();
+}
+
+export function getToolIdempotencyKey(ctx: ToolContext | undefined = getToolContext()) {
+  if (!ctx) {
+    return null;
+  }
+  if (typeof ctx.idempotencyKey === "string" && ctx.idempotencyKey.length > 0) {
+    return ctx.idempotencyKey;
+  }
+  return `smithers:${ctx.runId}:${ctx.nodeId}:${ctx.iteration}`;
 }
 
 export function nextToolSeq(ctx: ToolContext): number {

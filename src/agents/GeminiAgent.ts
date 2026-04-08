@@ -240,7 +240,13 @@ export class GeminiAgent extends BaseCliAgent {
       "--allowed-mcp-server-names",
       this.opts.allowedMcpServerNames,
     );
-    pushList(args, "--allowed-tools", this.opts.allowedTools);
+    if (this.opts.allowedTools !== undefined) {
+      if (this.opts.allowedTools.length === 0) {
+        pushFlag(args, "--allowed-tools", "");
+      } else {
+        pushList(args, "--allowed-tools", this.opts.allowedTools);
+      }
+    }
     pushList(args, "--extensions", this.opts.extensions);
     if (this.opts.listExtensions) args.push("--list-extensions");
     pushFlag(args, "--resume", resumeSession);

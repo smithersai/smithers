@@ -255,6 +255,13 @@ export type SmithersEvent =
       timestampMs: number;
     }
   | {
+      type: "ApprovalAutoApproved";
+      runId: string;
+      nodeId: string;
+      iteration: number;
+      timestampMs: number;
+    }
+  | {
       type: "ApprovalDenied";
       runId: string;
       nodeId: string;
@@ -303,6 +310,25 @@ export type SmithersEvent =
       timestampMs: number;
     }
   | {
+      type: "RetryTaskStarted";
+      runId: string;
+      nodeId: string;
+      iteration: number;
+      resetDependents: boolean;
+      resetNodes: string[];
+      timestampMs: number;
+    }
+  | {
+      type: "RetryTaskFinished";
+      runId: string;
+      nodeId: string;
+      iteration: number;
+      resetNodes: string[];
+      success: boolean;
+      error?: string;
+      timestampMs: number;
+    }
+  | {
       type: "RevertStarted";
       runId: string;
       nodeId: string;
@@ -319,6 +345,28 @@ export type SmithersEvent =
       attempt: number;
       jjPointer: string;
       success: boolean;
+      error?: string;
+      timestampMs: number;
+    }
+  | {
+      type: "TimeTravelStarted";
+      runId: string;
+      nodeId: string;
+      iteration: number;
+      attempt: number;
+      jjPointer?: string;
+      timestampMs: number;
+    }
+  | {
+      type: "TimeTravelFinished";
+      runId: string;
+      nodeId: string;
+      iteration: number;
+      attempt: number;
+      jjPointer?: string;
+      success: boolean;
+      vcsRestored: boolean;
+      resetNodes: string[];
       error?: string;
       timestampMs: number;
     }

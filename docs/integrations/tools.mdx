@@ -4,7 +4,7 @@ description: Sandboxed file and shell tools for AI agent tasks, with exact input
 ---
 
 ```ts
-import { tools, read, write, edit, grep, bash } from "smithers-orchestrator";
+import { tools, read, write, edit, grep, bash, defineTool } from "smithers-orchestrator";
 ```
 
 `tools` bundles all five tools keyed by name:
@@ -43,6 +43,36 @@ Every invocation is logged to `_smithers_tool_calls`:
 | `finishedAtMs` | End timestamp |
 | `status` | `"success"` or `"error"` |
 | `errorJson` | Error details (if `"error"`) |
+
+## defineTool
+
+Use `defineTool()` to wrap custom AI SDK tools with Smithers runtime context, deterministic idempotency keys, and durable tool-call logging.
+
+```ts
+import { defineTool } from "smithers-orchestrator";
+import { z } from "zod";
+
+const placeOrder = defineTool({
+  name: "wholefoods.place_order",
+  description: "Place a grocery order",
+  schema: z.object({
+    sku: z.string(),
+  }),
+  sideEffect: true,
+  idempotent: false,
+  async execute(args, ctx) {
+    return await wholeFoods.placeOrder({
+      sku: args.sku,
+      idempotencyKey: ctx.idempotencyKey,
+    });
+  },
+});
+```
+
+- `ctx.idempotencyKey` is stable across retries and resumes for the same task iteration.
+- `sideEffect: true` opts the tool into Smithers side-effect tracking.
+- `idempotent: false` tells Smithers to warn resumed/retried agent loops when the tool was already called in a previous attempt.
+- Smithers logs start/finish records for every `defineTool()` call in `_smithers_tool_calls`.
 
 ---
 

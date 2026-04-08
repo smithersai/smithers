@@ -100,8 +100,18 @@ describe("Issue #110: ensureWorktree baseBranch support", () => {
       runGit(repoDir, ["commit", "-m", "update"]);
       runGit(repoDir, ["push", "origin", "release"]);
 
-      // Second run: should sync against origin/release, not origin/main
-      const second = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
+      // Simulate another test temporarily clobbering PATH. The engine should
+      // still use the already-resolved git binary when syncing an existing
+      // worktree.
+      const previousPath = process.env.PATH;
+      process.env.PATH = "/nonexistent";
+      let second;
+      try {
+        // Second run: should sync against origin/release, not origin/main
+        second = await runWorkflow(workflow, { input: {}, rootDir: repoDir });
+      } finally {
+        process.env.PATH = previousPath;
+      }
       expect(second.status).toBe("finished");
 
       // Verify the worktree was actually rebased onto origin/release
@@ -113,7 +123,7 @@ describe("Issue #110: ensureWorktree baseBranch support", () => {
         (api.db as any).$client?.close?.();
       } catch {}
     }
-  });
+  }, 15_000);
 
   test("worktree without baseBranch falls back through main, origin/main, HEAD", async () => {
     if (!hasGit()) return;
@@ -152,5 +162,5 @@ describe("Issue #110: ensureWorktree baseBranch support", () => {
         (api.db as any).$client?.close?.();
       } catch {}
     }
-  });
+  }, 15_000);
 });

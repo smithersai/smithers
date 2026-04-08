@@ -36,6 +36,8 @@ export type {
 export {
   Approval,
   approvalDecisionSchema,
+  approvalRankingSchema,
+  approvalSelectionSchema,
   Workflow,
   Task,
   Sequence,
@@ -50,17 +52,24 @@ export {
   Sandbox,
   Voice,
   Timer,
+  WaitForEvent,
 } from "./components";
 export type {
+  ApprovalAutoApprove,
   ApprovalDecision,
+  ApprovalMode,
+  ApprovalOption,
   ApprovalProps,
+  ApprovalRanking,
   ApprovalRequest,
+  ApprovalSelection,
   ContinueAsNewProps,
   TaskProps,
   OutputTarget,
   DepsSpec,
   InferDeps,
   TimerProps,
+  WaitForEventProps,
   SandboxProps,
   SandboxRuntime,
   SandboxVolumeMount,
@@ -110,13 +119,35 @@ export type {
 export { createSmithers } from "./create";
 export type { CreateSmithersApi } from "./create";
 export { runWorkflow, renderFrame } from "./engine";
+export { signalRun } from "./engine/signals";
 
 // Tools
-export { tools, read, write, edit, grep, bash } from "./tools/index";
+export {
+  tools,
+  read,
+  write,
+  edit,
+  grep,
+  bash,
+  defineTool,
+  getDefinedToolMetadata,
+} from "./tools/index";
 
 // Server
 export { startServer } from "./server/index";
 export type { ServerOptions } from "./server/index";
+export { Gateway } from "./gateway";
+export type {
+  ConnectRequest,
+  EventFrame,
+  GatewayAuthConfig,
+  GatewayDefaults,
+  GatewayOptions,
+  GatewayTokenGrant,
+  HelloResponse,
+  RequestFrame,
+  ResponseFrame,
+} from "./gateway";
 
 // Serve (Hono-based single-workflow HTTP server)
 export { createServeApp } from "./server/serve";
@@ -186,9 +217,15 @@ export { ensureSmithersTables } from "./db/ensure";
 export { SmithersRenderer } from "./dom/renderer";
 export type { HostContainer } from "./dom/renderer";
 
+// External / multi-language
+export { createExternalSmithers, createPythonWorkflow, createPythonBuildFn } from "./external";
+export type { ExternalSmithersConfig, SerializedCtx, HostNodeJson } from "./external";
+
 // Revert
 export { revertToAttempt } from "./revert";
 export type { RevertOptions, RevertResult } from "./revert";
+export { timeTravel } from "./timetravel";
+export type { TimeTravelOptions, TimeTravelResult } from "./timetravel";
 
 
 // Scorers

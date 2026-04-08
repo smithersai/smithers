@@ -97,6 +97,16 @@ describe("Task component", () => {
     expect(result.tasks[0].heartbeatTimeoutMs).toBe(2000);
     expect(result.tasks[0].continueOnFail).toBe(true);
   });
+
+  test("noRetry maps to zero retries", async () => {
+    const result = await render(
+      <Task id="t1" output="out" noRetry>
+        {{ v: 1 }}
+      </Task>,
+    );
+    expect(result.tasks[0].retries).toBe(0);
+    expect(result.tasks[0].retryPolicy).toBeUndefined();
+  });
 });
 
 describe("Workflow component", () => {
