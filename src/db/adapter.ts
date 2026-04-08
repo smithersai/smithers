@@ -1,6 +1,7 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableName, gte, isNull, or, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Effect, Exit, FiberId, Metric } from "effect";
+import { isRunHeartbeatFresh } from "../engine";
 import { fromPromise, fromSync } from "../effect/interop";
 import { runPromise } from "../effect/runtime";
 import {
@@ -36,6 +37,28 @@ import {
 } from "./internal-schema";
 import { withSqliteWriteRetryEffect } from "./write-retry";
 
+export type RunRow = {
+  runId: string;
+  parentRunId: string | null;
+  workflowName: string;
+  workflowPath: string | null;
+  workflowHash: string | null;
+  status: string;
+  createdAtMs: number;
+  startedAtMs: number | null;
+  finishedAtMs: number | null;
+  heartbeatAtMs: number | null;
+  runtimeOwnerId: string | null;
+  cancelRequestedAtMs: number | null;
+  hijackRequestedAtMs: number | null;
+  hijackTarget: string | null;
+  vcsType: string | null;
+  vcsRoot: string | null;
+  vcsRevision: string | null;
+  errorJson: string | null;
+  configJson: string | null;
+};
+
 export type StaleRunRecord = {
   runId: string;
   workflowPath: string | null;
@@ -59,6 +82,21 @@ export type EventHistoryQuery = {
 };
 
 const FRAME_XML_CACHE_MAX = 512;
+
+function classifyRunRowStatus<T extends { status: string; heartbeatAtMs: number | null }>(row: T): T {
+  if (
+    row.status === "running" &&
+    typeof row.heartbeatAtMs === "number" &&
+    row.heartbeatAtMs > 0 &&
+    !isRunHeartbeatFresh(row)
+  ) {
+    return {
+      ...row,
+      status: "continued",
+    };
+  }
+  return row;
+}
 
 export class SmithersDb {
   private reconstructedFrameXmlCache = new Map<string, string>();
@@ -443,13 +481,14 @@ export class SmithersDb {
   }
 
   getRunEffect(runId: string) {
-    return this.readEffect(`get run ${runId}`, () =>
-      this.db
+    return this.readEffect(`get run ${runId}`, async () => {
+      const rows = await this.db
         .select()
         .from(smithersRuns)
         .where(eq(smithersRuns.runId, runId))
-        .limit(1),
-    ).pipe(Effect.map((rows) => rows[0]));
+        .limit(1) as RunRow[];
+      return rows[0] ? classifyRunRowStatus(rows[0]) : undefined;
+    });
   }
 
   getRun(runId: string) {
@@ -502,17 +541,20 @@ export class SmithersDb {
   }
 
   listRunsEffect(limit = 50, status?: string) {
-    const where = status ? eq(smithersRuns.status, status) : undefined;
-    return this.readEffect(`list runs ${status ?? "all"}`, () => {
+    const where =
+      status === "running"
+        ? or(eq(smithersRuns.status, "running"), eq(smithersRuns.status, "continued"))
+        : status
+          ? eq(smithersRuns.status, status)
+          : undefined;
+    return this.readEffect(`list runs ${status ?? "all"}`, async () => {
       const query = this.db
         .select()
         .from(smithersRuns)
         .orderBy(desc(smithersRuns.createdAtMs))
         .limit(limit);
-      if (where) {
-        return query.where(where);
-      }
-      return query;
+      const rows = (where ? await query.where(where) : await query) as RunRow[];
+      return rows.map((row) => classifyRunRowStatus(row));
     });
   }
 
