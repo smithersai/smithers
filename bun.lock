@@ -38,6 +38,7 @@
         "effect": "^3.19.19",
         "hono": "^4.12.8",
         "incur": "^0.3.3",
+        "picocolors": "^1.1.1",
         "react": "^19.2.4",
         "react-dom": "^19.2.4",
         "react-reconciler": "^0.31.0",
