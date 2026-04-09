@@ -4907,10 +4907,17 @@ async function runWorkflowBody<Schema>(
           runId,
           timestampMs: nowMs(),
         });
-        return { runId, status: "cancelled" };
+        return {
+          type: "return",
+          result: { runId, status: "cancelled" },
+        };
       }
 
-      if (hijackState.request && !hijackState.completion && inflight.size === 0) {
+      if (
+        hijackState.request &&
+        !hijackState.completion &&
+        schedulerTaskKeys.size === 0
+      ) {
         const hijackAttempts = await adapter.listAttemptsForRun(runId);
         const target = hijackState.request.target ?? null;
         const candidate = [...(hijackAttempts as any[])].sort((a, b) => {
@@ -4964,7 +4971,7 @@ async function runWorkflowBody<Schema>(
             timestampMs: nowMs(),
           });
           runAbortController.abort();
-          continue;
+          return { type: "continue" };
         }
       }
 
@@ -5096,6 +5103,9 @@ async function runWorkflowBody<Schema>(
           (xml.props.cache === "true" || xml.props.cache === "1"),
         );
       await adapter.updateRun(runId, { workflowName });
+      await annotateRunSpan({
+        workflowName,
+      });
 
       frameNo += 1;
       const frameCreatedAtMs = nowMs();
@@ -5232,21 +5242,35 @@ async function runWorkflowBody<Schema>(
         nowMs(),
       );
 
+      let dbInProgressCount = 0;
+      for (const task of tasks) {
+        const state = stateMap.get(buildStateKey(task.nodeId, task.iteration));
+        if (state === "in-progress") {
+          dbInProgressCount += 1;
+        }
+      }
+      const localCapacity = Math.max(
+        0,
+        maxConcurrency - Math.max(dbInProgressCount, schedulerTaskKeys.size),
+      );
       const runnable = applyConcurrencyLimits(
         schedule.runnable,
         stateMap,
         maxConcurrency,
         tasks,
+      )
+        .filter((task) => !schedulerTaskKeys.has(makeSchedulerTaskKey(task)))
+        .slice(0, localCapacity);
+      void runPromise(
+        Metric.set(
+          schedulerQueueDepth,
+          schedule.runnable.length - runnable.length,
+        ),
       );
-      void runPromise(Metric.set(schedulerQueueDepth, schedule.runnable.length - runnable.length));
 
       if (runnable.length === 0) {
-        // If tasks are still in-flight, wait for one to finish then
-        // loop back to re-evaluate instead of declaring the run done.
-        if (inflight.size > 0) {
-          armHotReloadWakeup();
-          await schedulerWakeQueue.wait();
-          continue;
+        if (schedulerTaskKeys.size > 0) {
+          return { type: "await-trigger" };
         }
 
         // Detect orphaned in-progress tasks: tasks the DB thinks are running
@@ -5298,7 +5322,7 @@ async function runWorkflowBody<Schema>(
               iteration: task.iteration,
             }, "engine:run");
           }
-          continue;
+          return { type: "continue" };
         }
 
         if (schedule.waitingApprovalExists) {
@@ -5316,7 +5340,10 @@ async function runWorkflowBody<Schema>(
             status: "waiting-approval",
             timestampMs: nowMs(),
           });
-          return { runId, status: "waiting-approval" };
+          return {
+            type: "return",
+            result: { runId, status: "waiting-approval" },
+          };
         }
 
         if (schedule.waitingEventExists) {
@@ -5334,7 +5361,10 @@ async function runWorkflowBody<Schema>(
             status: "waiting-event",
             timestampMs: nowMs(),
           });
-          return { runId, status: "waiting-event" };
+          return {
+            type: "return",
+            result: { runId, status: "waiting-event" },
+          };
         }
 
         if (schedule.waitingTimerExists) {
@@ -5352,7 +5382,10 @@ async function runWorkflowBody<Schema>(
             status: "waiting-timer",
             timestampMs: nowMs(),
           });
-          return { runId, status: "waiting-timer" };
+          return {
+            type: "return",
+            result: { runId, status: "waiting-timer" },
+          };
         }
 
         if (schedule.fatalError) {
@@ -5376,7 +5409,10 @@ async function runWorkflowBody<Schema>(
             error: schedule.fatalError,
             timestampMs: nowMs(),
           });
-          return { runId, status: "failed", error: schedule.fatalError };
+          return {
+            type: "return",
+            result: { runId, status: "failed", error: schedule.fatalError },
+          };
         }
 
         const failedTasks = tasks.filter((t) => {
@@ -5407,7 +5443,10 @@ async function runWorkflowBody<Schema>(
             error: errorMsg,
             timestampMs: nowMs(),
           });
-          return { runId, status: "failed", error: errorMsg };
+          return {
+            type: "return",
+            result: { runId, status: "failed", error: errorMsg },
+          };
         }
 
         if (schedule.continuation) {
@@ -5428,12 +5467,12 @@ async function runWorkflowBody<Schema>(
           }
 
           if (runAbortController.signal.aborted) {
-            continue;
+            return { type: "continue" };
           }
           const latestRun = await adapter.getRun(runId);
           if (latestRun?.cancelRequestedAtMs) {
             runAbortController.abort();
-            continue;
+            return { type: "continue" };
           }
 
           const continuationIteration = defaultIteration;
@@ -5505,9 +5544,12 @@ async function runWorkflowBody<Schema>(
           );
 
           return {
-            runId,
-            status: "continued",
-            nextRunId: transition.newRunId,
+            type: "return",
+            result: {
+              runId,
+              status: "continued",
+              nextRunId: transition.newRunId,
+            },
           };
         }
 
@@ -5517,9 +5559,12 @@ async function runWorkflowBody<Schema>(
               ? Math.max(0, schedule.nextRetryAtMs - nowMs())
               : 100;
           if (waitMs > 0) {
-            await Bun.sleep(waitMs);
+            return {
+              type: "schedule-retry",
+              waitMs,
+            };
           }
-          continue;
+          return { type: "continue" };
         }
 
         if (schedule.readyRalphs.length > 0) {

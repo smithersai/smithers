@@ -2,9 +2,10 @@ import { Effect, Metric } from "effect";
 import { fromPromise } from "../effect/interop";
 import { runPromise } from "../effect/runtime";
 import { chunk } from "./chunker";
-import { createDocument, loadDocument } from "./document";
-import { embedChunks, embedQuery, embedChunksEffect, embedQueryEffect } from "./embedder";
+import { loadDocument } from "./document";
+import { embedChunksEffect, embedQueryEffect } from "./embedder";
 import { ragIngestCount, ragRetrieveCount } from "./metrics";
+import { acquireVectorStore } from "./vector-store";
 import type {
   Document,
   RagPipeline,
@@ -17,37 +18,20 @@ import type {
 // ---------------------------------------------------------------------------
 
 export function createRagPipeline(config: RagPipelineConfig): RagPipeline {
-  const {
-    vectorStore,
-    embeddingModel,
-    chunkOptions,
-    topK: defaultTopK = 10,
-    namespace,
-  } = config;
-
   return {
     async ingest(documents: Document[]): Promise<void> {
-      const allChunks = documents.flatMap((doc) => chunk(doc, chunkOptions));
-      const embedded = await embedChunks(allChunks, embeddingModel);
-      await vectorStore.upsert(embedded, namespace);
+      await runPromise(ingestEffect(config, documents));
     },
 
     async ingestFile(path: string): Promise<void> {
-      const doc = loadDocument(path);
-      const chunks = chunk(doc, chunkOptions);
-      const embedded = await embedChunks(chunks, embeddingModel);
-      await vectorStore.upsert(embedded, namespace);
+      await runPromise(ingestEffect(config, [loadDocument(path)]));
     },
 
     async retrieve(
       query: string,
       opts?: { topK?: number },
     ): Promise<RetrievalResult[]> {
-      const embedding = await embedQuery(query, embeddingModel);
-      return vectorStore.query(embedding, {
-        topK: opts?.topK ?? defaultTopK,
-        namespace,
-      });
+      return runPromise(retrieveEffect(config, query, opts?.topK));
     },
   };
 }
@@ -57,31 +41,33 @@ export function createRagPipeline(config: RagPipelineConfig): RagPipeline {
 // ---------------------------------------------------------------------------
 
 export function ingestEffect(config: RagPipelineConfig, documents: Document[]) {
-  return Effect.gen(function* () {
+  return Effect.scoped(Effect.gen(function* () {
+    const vectorStore = yield* acquireVectorStore(config.vectorStore);
     const allChunks = documents.flatMap((doc) => chunk(doc, config.chunkOptions));
     const embedded = yield* embedChunksEffect(allChunks, config.embeddingModel);
     yield* fromPromise("rag pipeline upsert", () =>
-      config.vectorStore.upsert(embedded, config.namespace),
+      vectorStore.upsert(embedded, config.namespace),
     );
     yield* Metric.incrementBy(ragIngestCount, documents.length);
-  }).pipe(
+  })).pipe(
     Effect.annotateLogs({ operation: "ragIngest", docCount: documents.length }),
     Effect.withLogSpan("rag:ingest"),
   );
 }
 
 export function retrieveEffect(config: RagPipelineConfig, query: string, topK?: number) {
-  return Effect.gen(function* () {
+  return Effect.scoped(Effect.gen(function* () {
+    const vectorStore = yield* acquireVectorStore(config.vectorStore);
     const embedding = yield* embedQueryEffect(query, config.embeddingModel);
     const results = yield* fromPromise("rag pipeline query", () =>
-      config.vectorStore.query(embedding, {
+      vectorStore.query(embedding, {
         topK: topK ?? config.topK ?? 10,
         namespace: config.namespace,
       }),
     );
     yield* Metric.increment(ragRetrieveCount);
     return results;
-  }).pipe(
+  })).pipe(
     Effect.annotateLogs({ operation: "ragRetrieve" }),
     Effect.withLogSpan("rag:retrieve"),
   );

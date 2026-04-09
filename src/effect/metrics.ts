@@ -507,6 +507,7 @@ const durationBucketValues = metricBoundaryValues(durationBuckets);
 const fastBucketValues = metricBoundaryValues(fastBuckets);
 const toolBucketValues = metricBoundaryValues(toolBuckets);
 const tokenBucketValues = metricBoundaryValues(tokenBuckets);
+const contextWindowBucketValues = metricBoundaryValues(contextWindowBuckets);
 const sizeBucketValues = metricBoundaryValues(sizeBuckets);
 const carriedStateSizeBucketValues = metricBoundaryValues(carriedStateSizeBuckets);
 const ancestryDepthBucketValues = metricBoundaryValues(ancestryDepthBuckets);
@@ -545,6 +546,16 @@ export const smithersMetricCatalog: ReadonlyArray<SmithersMetricDefinition> = [
     unit: "count",
     labels: ["runtime", "status"],
   }),
+  metricDefinition("alertsFiredTotal", alertsFiredTotal, "smithers.alerts.fired_total", "counter", {
+    label: "Alerts fired",
+    unit: "count",
+    labels: ["policy"],
+  }),
+  metricDefinition("alertsAcknowledgedTotal", alertsAcknowledgedTotal, "smithers.alerts.acknowledged_total", "counter", {
+    label: "Alerts acknowledged",
+    unit: "count",
+    labels: ["policy"],
+  }),
   metricDefinition("scorerEventsStarted", scorerEventsStarted, "smithers.scorer_events.started", "counter", { label: "Scorer events started", unit: "count" }),
   metricDefinition("scorerEventsFinished", scorerEventsFinished, "smithers.scorer_events.finished", "counter", { label: "Scorer events finished", unit: "count" }),
   metricDefinition("scorerEventsFailed", scorerEventsFailed, "smithers.scorer_events.failed", "counter", { label: "Scorer events failed", unit: "count" }),
@@ -572,6 +583,11 @@ export const smithersMetricCatalog: ReadonlyArray<SmithersMetricDefinition> = [
     label: "Reasoning tokens",
     unit: "tokens",
     labels: ["agent", "model"],
+  }),
+  metricDefinition("tokensContextWindowBucketTotal", tokensContextWindowBucketTotal, "smithers.tokens.context_window_bucket_total", "counter", {
+    label: "Context window bucket hits",
+    unit: "count",
+    labels: ["agent", "bucket", "model"],
   }),
   metricDefinition("runsFinishedTotal", runsFinishedTotal, "smithers.runs.finished_total", "counter", { label: "Runs finished", unit: "count" }),
   metricDefinition("runsFailedTotal", runsFailedTotal, "smithers.runs.failed_total", "counter", { label: "Runs failed", unit: "count" }),
@@ -688,6 +704,21 @@ export const smithersMetricCatalog: ReadonlyArray<SmithersMetricDefinition> = [
     unit: "count",
     labels: ["source"],
   }),
+  metricDefinition("gatewayWebhooksReceivedTotal", gatewayWebhooksReceivedTotal, "smithers.gateway.webhooks_received_total", "counter", {
+    label: "Gateway webhooks received",
+    unit: "count",
+    labels: ["provider"],
+  }),
+  metricDefinition("gatewayWebhooksVerifiedTotal", gatewayWebhooksVerifiedTotal, "smithers.gateway.webhooks_verified_total", "counter", {
+    label: "Gateway webhooks verified",
+    unit: "count",
+    labels: ["provider"],
+  }),
+  metricDefinition("gatewayWebhooksRejectedTotal", gatewayWebhooksRejectedTotal, "smithers.gateway.webhooks_rejected_total", "counter", {
+    label: "Gateway webhooks rejected",
+    unit: "count",
+    labels: ["provider", "reason"],
+  }),
   metricDefinition("eventsEmittedTotal", eventsEmittedTotal, "smithers.events.emitted_total", "counter", { label: "Events emitted", unit: "count" }),
   metricDefinition("taskHeartbeatsTotal", taskHeartbeatsTotal, "smithers.heartbeats.total", "counter", { label: "Task heartbeats", unit: "count" }),
   metricDefinition("taskHeartbeatTimeoutTotal", taskHeartbeatTimeoutTotal, "smithers.heartbeats.timeout_total", "counter", { label: "Task heartbeat timeouts", unit: "count" }),
@@ -713,6 +744,11 @@ export const smithersMetricCatalog: ReadonlyArray<SmithersMetricDefinition> = [
     label: "Active sandboxes",
     unit: "count",
     labels: ["runtime"],
+  }),
+  metricDefinition("alertsActive", alertsActive, "smithers.alerts.active", "gauge", {
+    label: "Active alerts",
+    unit: "count",
+    labels: ["policy"],
   }),
   metricDefinition("gatewayConnectionsActive", gatewayConnectionsActive, "smithers.gateway.connections_active", "gauge", {
     label: "Active gateway connections",
@@ -765,6 +801,12 @@ export const smithersMetricCatalog: ReadonlyArray<SmithersMetricDefinition> = [
     unit: "tokens",
     labels: ["agent", "model"],
     boundaries: tokenBucketValues,
+  }),
+  metricDefinition("tokensContextWindowPerCall", tokensContextWindowPerCall, "smithers.tokens.context_window_per_call", "histogram", {
+    label: "Context window per call",
+    unit: "tokens",
+    labels: ["agent", "model"],
+    boundaries: contextWindowBucketValues,
   }),
   metricDefinition("runDuration", runDuration, "smithers.run.duration_ms", "histogram", { label: "Run duration", unit: "milliseconds", boundaries: durationBucketValues }),
   metricDefinition("promptSizeBytes", promptSizeBytes, "smithers.prompt.size_bytes", "histogram", { label: "Prompt size", unit: "bytes", boundaries: sizeBucketValues }),

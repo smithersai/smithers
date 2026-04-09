@@ -1119,7 +1119,7 @@ export const FeatureGroups = {
     "SANDBOX_BUNDLE_README_SIZE_LIMIT",
   ],
 
-  // Source: src/observability/index.ts (74 metrics, OTEL, Prometheus)
+  // Source: src/observability/index.ts (76 metrics, OTEL, Prometheus)
   OBSERVABILITY: [
     "PROMETHEUS_METRICS_EXPORT",
     "OTEL_TRACING_LAYER",
@@ -1140,6 +1140,7 @@ export const FeatureGroups = {
     "SANDBOX_METRICS",
     "SANDBOX_TRANSPORT_METRICS",
     "TOKEN_USAGE_METRICS",
+    "TOKEN_CONTEXT_WINDOW_METRICS",
     "TOKEN_REASONING_METRICS",
     "PROCESS_HEALTH_METRICS",
     "SCHEDULER_CONCURRENCY_METRICS",

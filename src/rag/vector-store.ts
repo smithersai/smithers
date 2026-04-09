@@ -166,7 +166,7 @@ export function createSqliteVectorStore(
     },
 
     async dispose(): Promise<void> {
-      await this.cleanup?.();
+      // The SQLite handle is caller-owned, so scoped store cleanup is a no-op.
     },
   };
 }

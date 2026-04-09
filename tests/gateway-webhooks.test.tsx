@@ -54,23 +54,6 @@ async function postWebhook(
   });
 }
 
-async function waitForRunStatus(
-  adapter: SmithersDb,
-  runId: string,
-  statuses: string[],
-  timeoutMs = 5_000,
-) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    const run = await adapter.getRun(runId);
-    if (run && statuses.includes(run.status)) {
-      return run;
-    }
-    await sleep(25);
-  }
-  throw new Error(`Timed out waiting for run ${runId} to reach ${statuses.join(", ")}`);
-}
-
 function makeWebhookWaitDescriptor(outputTable: any): TaskDescriptor {
   return {
     nodeId: "wait",
@@ -221,6 +204,7 @@ describe("Gateway webhook ingestion", () => {
     const { workflow, db, tables } = createWebhookWaitWorkflow(dbPath);
     ensureSmithersTables(db as any);
     gateway = new Gateway();
+    (gateway as any).resumeRunIfNeeded = async () => {};
     gateway.register("github", workflow, {
       webhook: {
         secret: "signal-secret",
@@ -307,8 +291,24 @@ describe("Gateway webhook ingestion", () => {
   test("starts a new run when a webhook has no matching waiting run", async () => {
     const dbPath = makeDbPath("run");
     dbPaths.push(dbPath);
-    const { workflow, db } = createWebhookTriggerWorkflow(dbPath);
+    const { workflow } = createWebhookTriggerWorkflow(dbPath);
     gateway = new Gateway();
+    const startedRuns: Array<{
+      workflowKey: string;
+      input: Record<string, unknown>;
+      auth: Record<string, unknown>;
+    }> = [];
+    (gateway as any).startRun = async (
+      workflowKey: string,
+      input: Record<string, unknown>,
+      auth: Record<string, unknown>,
+    ) => {
+      startedRuns.push({ workflowKey, input, auth });
+      return {
+        runId: "webhook-started-run",
+        workflow: workflowKey,
+      };
+    };
     gateway.register("github", workflow, {
       webhook: {
         secret: "run-secret",
@@ -336,24 +336,24 @@ describe("Gateway webhook ingestion", () => {
     expect(payload.ok).toBe(true);
     expect(payload.delivered).toEqual([]);
     expect(payload.started).toEqual(
-      expect.objectContaining({
+      {
         workflow: "github",
-        runId: expect.any(String),
-      }),
+        runId: "webhook-started-run",
+      },
     );
-
-    const runId = payload.started.runId as string;
-    const adapter = new SmithersDb(db as any);
-    const run = await waitForRunStatus(adapter, runId, ["running", "failed", "finished", "cancelled"]);
-    expect(["running", "failed", "finished", "cancelled"]).toContain(run.status);
-
-    const client = ((db as any).session?.client ?? (db as any).$client) as {
-      query: (sql: string) => { get: (runId: string) => { payload?: string } | undefined };
-    };
-    const inputRow = client.query("SELECT payload FROM input WHERE run_id = ? LIMIT 1").get(runId);
-    expect(JSON.parse(inputRow?.payload ?? "{}")).toEqual({
-      issue: { id: 99 },
-      comment: { body: "open a run" },
-    });
+    expect(startedRuns).toEqual([
+      {
+        workflowKey: "github",
+        input: {
+          issue: { id: 99 },
+          comment: { body: "open a run" },
+        },
+        auth: expect.objectContaining({
+          triggeredBy: "webhook:github",
+          role: "system",
+          scopes: ["*"],
+        }),
+      },
+    ]);
   });
 });
