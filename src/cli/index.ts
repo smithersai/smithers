@@ -81,6 +81,11 @@ import { ask } from "./ask";
 import { runScheduler } from "./scheduler";
 import { resumeRunDetached } from "./resume-detached";
 import {
+  formatCliAgentCapabilityDoctorReport,
+  getCliAgentCapabilityDoctorReport,
+  getCliAgentCapabilityReport,
+} from "../agents/cli-capabilities";
+import {
   parseDurationMs,
   supervisorLoopEffect,
 } from "./supervisor";
@@ -447,6 +452,38 @@ function writeWatchOutput(
     return;
   }
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function truncateCliText(value: string, maxLength: number) {
+  return value.length <= maxLength
+    ? value
+    : `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function renderHumanInboxHuman(requests: any[]) {
+  if (requests.length === 0) {
+    return "No pending human requests.";
+  }
+
+  return requests
+    .map((request) => {
+      const age = typeof request.requestedAtMs === "number"
+        ? formatAge(request.requestedAtMs)
+        : "unknown";
+      const workflowName =
+        typeof request.workflowName === "string" && request.workflowName.length > 0
+          ? ` (${request.workflowName})`
+          : "";
+      return [
+        `${request.requestId}`,
+        `  kind: ${request.kind}`,
+        `  run: ${request.runId}${workflowName}`,
+        `  node: ${request.nodeId}#${request.iteration ?? 0}`,
+        `  age: ${age}`,
+        `  prompt: ${truncateCliText(String(request.prompt ?? ""), 160)}`,
+      ].join("\n");
+    })
+    .join("\n\n");
 }
 
 function resolveWatchIntervalMsOrFail(
@@ -1290,6 +1327,16 @@ const approveOptions = z.object({
   by: z.string().optional().describe("Name or identifier of the approver"),
 });
 
+const humanArgs = z.object({
+  action: z.string().describe("Human request action: inbox, answer, or cancel"),
+  requestId: z.string().optional().describe("Human request ID for answer/cancel"),
+});
+
+const humanOptions = z.object({
+  value: z.string().optional().describe("JSON response for smithers human answer"),
+  by: z.string().optional().describe("Name or identifier of the human operator"),
+});
+
 const signalArgs = z.object({
   runId: z.string().describe("Run ID containing the waiting signal"),
   signalName: z.string().describe("Signal name to deliver"),
@@ -2093,6 +2140,36 @@ const cronCli = Cli.create({
       } finally {
         cleanup();
       }
+    },
+  });
+
+const agentsCli = Cli.create({
+  name: "agents",
+  description: "Inspect built-in CLI agent capability registries.",
+})
+  .command("capabilities", {
+    description: "Print a JSON report of the built-in CLI agent capability registries.",
+    run(c) {
+      process.stdout.write(
+        `${JSON.stringify(getCliAgentCapabilityReport(), null, 2)}\n`,
+      );
+      return c.ok(undefined);
+    },
+  })
+  .command("doctor", {
+    description: "Validate built-in CLI agent capability registries for drift or contradictions.",
+    options: z.object({
+      json: z.boolean().default(false).describe("Print the doctor report as JSON"),
+    }),
+    run(c) {
+      const report = getCliAgentCapabilityDoctorReport();
+      commandExitOverride = report.ok ? 0 : 1;
+      if (c.options.json) {
+        process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${formatCliAgentCapabilityDoctorReport(report)}\n`);
+      }
+      return c.ok(undefined);
     },
   });
 
@@ -3426,6 +3503,166 @@ const cli = Cli.create({
   })
 
   // =========================================================================
+  // smithers human inbox|answer|cancel
+  // =========================================================================
+  .command("human", {
+    description: "List and resolve durable human requests.",
+    args: humanArgs,
+    options: humanOptions,
+    async run(c) {
+      const fail: FailFn = (opts) => {
+        commandExitOverride = opts.exitCode ?? 1;
+        return c.error(opts);
+      };
+
+      const action = c.args.action.trim().toLowerCase();
+      if (action !== "inbox" && action !== "answer" && action !== "cancel") {
+        return fail({
+          code: "INVALID_HUMAN_ACTION",
+          message: `Unknown smithers human action: ${c.args.action}`,
+          exitCode: 4,
+        });
+      }
+
+      try {
+        const { adapter, cleanup } = await findAndOpenDb();
+        try {
+          if (action === "inbox") {
+            const rows = await adapter.listPendingHumanRequests();
+            const requests = (rows as any[]).map((row: any) => ({
+              requestId: row.requestId,
+              runId: row.runId,
+              workflowName: row.workflowName ?? null,
+              nodeId: row.nodeId,
+              iteration: row.iteration ?? 0,
+              kind: row.kind,
+              prompt: row.prompt,
+              status: row.status,
+              requestedAtMs: row.requestedAtMs ?? null,
+              requestedAt:
+                typeof row.requestedAtMs === "number"
+                  ? new Date(row.requestedAtMs).toISOString()
+                  : null,
+              age:
+                typeof row.requestedAtMs === "number"
+                  ? formatAge(row.requestedAtMs)
+                  : "unknown",
+              timeoutAtMs: row.timeoutAtMs ?? null,
+            }));
+            if (c.format === "json" || c.format === "jsonl") {
+              return c.ok({ requests });
+            }
+            return c.ok(renderHumanInboxHuman(requests));
+          }
+
+          const requestId = c.args.requestId?.trim();
+          if (!requestId) {
+            return fail({
+              code: "HUMAN_REQUEST_ID_REQUIRED",
+              message: `smithers human ${action} requires <request-id>`,
+              exitCode: 4,
+            });
+          }
+
+          const request = await adapter.getHumanRequest(requestId);
+          if (!request) {
+            return fail({
+              code: "HUMAN_REQUEST_NOT_FOUND",
+              message: `Human request not found: ${requestId}`,
+              exitCode: 4,
+            });
+          }
+          if (request.status !== "pending") {
+            return fail({
+              code: "HUMAN_REQUEST_NOT_PENDING",
+              message: `Human request ${requestId} is ${request.status}, not pending.`,
+              exitCode: 4,
+            });
+          }
+
+          const approval = await adapter.getApproval(
+            request.runId,
+            request.nodeId,
+            request.iteration,
+          );
+
+          if (action === "answer") {
+            if (!c.options.value) {
+              return fail({
+                code: "HUMAN_REQUEST_VALUE_REQUIRED",
+                message: "smithers human answer requires --value <json>",
+                exitCode: 4,
+              });
+            }
+
+            const value = parseJsonInput(
+              c.options.value,
+              "human request value",
+              fail,
+            );
+            const responseJson = JSON.stringify(value);
+
+            if (approval?.status === "requested") {
+              await approveNode(
+                adapter,
+                request.runId,
+                request.nodeId,
+                request.iteration,
+                responseJson,
+                c.options.by,
+              );
+            }
+
+            await adapter.answerHumanRequest(
+              requestId,
+              responseJson,
+              Date.now(),
+              c.options.by ?? null,
+            );
+
+            return c.ok({
+              requestId,
+              runId: request.runId,
+              nodeId: request.nodeId,
+              iteration: request.iteration,
+              status: "answered",
+            });
+          }
+
+          if (approval?.status === "requested") {
+            await denyNode(
+              adapter,
+              request.runId,
+              request.nodeId,
+              request.iteration,
+              `Human request cancelled: ${requestId}`,
+              c.options.by,
+            );
+          }
+
+          await adapter.cancelHumanRequest(requestId);
+
+          return c.ok({
+            requestId,
+            runId: request.runId,
+            nodeId: request.nodeId,
+            iteration: request.iteration,
+            status: "cancelled",
+          });
+        } finally {
+          cleanup();
+        }
+      } catch (err: any) {
+        return fail({
+          code: "HUMAN_REQUEST_COMMAND_FAILED",
+          message: err?.message ?? String(err),
+          exitCode: 1,
+        });
+      }
+    },
+  })
+
+  // =========================================================================
   // smithers approve <run_id>
   // =========================================================================
   .command("approve", {
@@ -4370,6 +4607,7 @@ const cli = Cli.create({
   .command(cronCli)
   .command(ragCli)
 
+  .command(agentsCli)
   .command(memoryCli)
   .command(openapiCli);
 
@@ -4380,7 +4618,7 @@ const cli = Cli.create({
 const KNOWN_COMMANDS = new Set([
   "init", "up", "supervise", "down", "ps", "logs", "events", "chat", "inspect", "node", "why", "approve", "deny",
   "cancel", "graph", "revert", "scores", "observability", "workflow", "ask", "cron",
-  "replay", "diff", "fork", "timeline", "rag", "memory", "openapi",
+  "replay", "diff", "fork", "timeline", "rag", "memory", "openapi", "agents",
 ]);
 
 const BUILTIN_FLAGS_WITH_VALUES = new Set([

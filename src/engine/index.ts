@@ -79,6 +79,7 @@ import { spawn as nodeSpawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { platform } from "node:os";
 import { withTaskRuntime } from "../effect/task-runtime";
+import { hashCapabilityRegistry } from "../agents/capability-registry";
 import {
   cancelPendingTimersBridge,
   executeTaskBridge,
@@ -2516,9 +2517,7 @@ export async function legacyExecuteTask(
         ? sha256Hex(describeSchemaShape(desc.outputTable as any, desc.outputSchema))
         : null;
       const agentSig = cacheAgent?.id ?? "agent";
-      const toolsSig = cacheAgent?.tools
-        ? Object.keys(cacheAgent.tools).sort().join(",")
-        : "";
+      const toolsSig = hashCapabilityRegistry(cacheAgent?.capabilities ?? null);
       // Incorporate JJ state so workspace changes invalidate cache as documented.
       const jjBase = await getJjPointer(taskRoot);
       cacheJjBase = jjBase ?? null;
@@ -3540,9 +3539,7 @@ export async function legacyExecuteTask(
                 )
               : null,
             agentSig: cacheAgent?.id ?? "agent",
-            toolsSig: cacheAgent?.tools
-              ? Object.keys(cacheAgent.tools).sort().join(",")
-              : null,
+            toolsSig: hashCapabilityRegistry(cacheAgent?.capabilities ?? null),
             jjPointer: cacheJjBase,
             payloadJson: JSON.stringify(payload),
           });
@@ -3959,6 +3956,20 @@ async function runWorkflowBody<Schema>(
       persist: async (config) => {
         await adapter.updateRun(runId, {
           configJson: JSON.stringify(config),
+        });
+      },
+      recordDecision: async (record) => {
+        const timestampMs = nowMs();
+        await adapter.insertEventWithNextSeq({
+          runId,
+          timestampMs,
+          type: "WorkflowPatchRecorded",
+          payloadJson: JSON.stringify({
+            runId,
+            patchId: record.patchId,
+            decision: record.decision,
+            timestampMs,
+          }),
         });
       },
     });
