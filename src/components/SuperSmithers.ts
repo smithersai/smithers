@@ -126,7 +126,7 @@ export function SuperSmithers(props: SuperSmithersProps) {
             // The compute function has access to the proposed modifications
             // from the previous task via the engine context. The actual file
             // writes trigger the hot reload system.
-            return { applied: true, timestamp: Date.now() };
+            return { applied: true };
           },
         },
         null,

@@ -59,7 +59,7 @@ export function ApprovalGate(props: ApprovalGateProps) {
         approved: true,
         note: "auto-approved",
         decidedBy: null,
-        decidedAt: new Date().toISOString(),
+        decidedAt: null,
       },
     }),
   });

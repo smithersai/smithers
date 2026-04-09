@@ -1,5 +1,6 @@
 import React from "react";
 import type { SmithersErrorCode, SmithersError } from "../utils/errors";
+import { forceContinueOnFail } from "./control-flow-utils";
 
 export type TryCatchFinallyProps = {
   id?: string;
@@ -25,24 +26,26 @@ export function TryCatchFinally(
 ): React.ReactElement | null {
   if (props.skipIf) return null;
 
-  const {
-    id,
-    catch: catchHandler,
-    catchErrors,
-    finally: finallyHandler,
-    ...rest
-  } = props;
-  const tryBlock = props.try;
-
+  const { id, catch: catchHandler, catchErrors, finally: finallyHandler } = props;
+  const tryBlock = forceContinueOnFail(props.try);
+  const catchBlock =
+    catchHandler && typeof catchHandler !== "function" ? catchHandler : null;
   const hostProps: Record<string, any> = {
-    ...rest,
     id,
     __tcfCatchErrors: catchErrors,
     __tcfCatchHandler: catchHandler,
     __tcfFinallyHandler: finallyHandler,
   };
 
-  // The try block is always the child of the host element.
-  // catch and finally are stored as metadata for the engine.
-  return React.createElement("smithers:try-catch-finally", hostProps, tryBlock);
+  return React.createElement(
+    "smithers:try-catch-finally",
+    hostProps,
+    React.createElement("smithers:tcf-try", null, tryBlock),
+    catchBlock
+      ? React.createElement("smithers:tcf-catch", null, catchBlock)
+      : null,
+    finallyHandler
+      ? React.createElement("smithers:tcf-finally", null, finallyHandler)
+      : null,
+  );
 }

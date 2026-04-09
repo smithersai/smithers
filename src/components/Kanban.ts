@@ -91,24 +91,8 @@ export function Kanban(props: KanbanProps) {
     );
   });
 
-  const sequenceChildren: React.ReactElement[] = [...columnElements];
-
-  // Append onComplete task if provided
-  if (onComplete) {
-    sequenceChildren.push(
-      React.createElement(Task, {
-        key: `${prefix}-complete`,
-        id: `${prefix}-complete`,
-        output: onComplete,
-        label: "Board complete",
-        children: children ?? null,
-      }),
-    );
-  }
-
-  const sequence = React.createElement(Sequence, null, ...sequenceChildren);
-
-  return React.createElement(
+  const sequence = React.createElement(Sequence, null, ...columnElements);
+  const loop = React.createElement(
     Loop,
     {
       id: `${prefix}-loop`,
@@ -117,5 +101,22 @@ export function Kanban(props: KanbanProps) {
       onMaxReached: "return-last" as const,
     },
     sequence,
+  );
+
+  if (!onComplete) {
+    return loop;
+  }
+
+  return React.createElement(
+    Sequence,
+    null,
+    loop,
+    React.createElement(Task, {
+      key: `${prefix}-complete`,
+      id: `${prefix}-complete`,
+      output: onComplete,
+      label: "Board complete",
+      children: children ?? null,
+    }),
   );
 }

@@ -1,4 +1,5 @@
 import React from "react";
+import { forceContinueOnFail } from "./control-flow-utils";
 
 export type SagaStepDef = {
   id: string;
@@ -73,10 +74,15 @@ export function Saga(props: SagaProps): React.ReactElement | null {
     })),
   };
 
-  // Render actions as sequential children of the saga host element.
-  // Compensations are stored as metadata for the engine to use on rollback.
   const actionChildren = resolvedSteps.map((step) =>
-    React.cloneElement(step.action, { key: `saga-action-${step.id}` }),
+    React.cloneElement(forceContinueOnFail(step.action) as React.ReactElement, {
+      key: `saga-action-${step.id}`,
+    }),
+  );
+  const compensationChildren = resolvedSteps.map((step) =>
+    React.cloneElement(step.compensation, {
+      key: `saga-compensation-${step.id}`,
+    }),
   );
 
   // Store compensation elements on the host props for the engine.
@@ -91,7 +97,12 @@ export function Saga(props: SagaProps): React.ReactElement | null {
   return React.createElement(
     "smithers:saga",
     sagaProps,
-    ...actionChildren,
+    React.createElement("smithers:saga-actions", null, ...actionChildren),
+    React.createElement(
+      "smithers:saga-compensations",
+      null,
+      ...compensationChildren,
+    ),
   );
 }
 

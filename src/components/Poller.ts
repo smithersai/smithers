@@ -1,5 +1,6 @@
 import React from "react";
 import type { AgentLike } from "../AgentLike";
+import { SmithersContext } from "../context";
 import type { OutputTarget, TaskProps } from "./Task";
 import { Task } from "./Task";
 import { Loop } from "./Ralph";
@@ -50,11 +51,18 @@ function computeTimeoutMs(
 export function Poller(props: PollerProps) {
   if (props.skipIf) return null;
 
+  const ctx = React.useContext(SmithersContext);
   const prefix = props.id ?? "poll";
   const maxAttempts = props.maxAttempts ?? 30;
   const backoff = props.backoff ?? "fixed";
   const baseInterval = props.intervalMs ?? 5000;
   const onTimeout = props.onTimeout ?? "fail";
+  const iteration = ctx?.iterations?.[`${prefix}-loop`] ?? ctx?.iteration ?? 0;
+  const checkRow = ctx?.outputMaybe(props.checkOutput as any, {
+    nodeId: `${prefix}-check`,
+    iteration,
+  });
+  const until = checkRow?.satisfied === true;
 
   // Determine if check is an agent or a compute function
   const isAgent =
@@ -67,19 +75,26 @@ export function Poller(props: PollerProps) {
     props.children ??
     "Check whether the condition is satisfied. Return an object with a satisfied boolean.";
 
-  const checkTask = React.createElement(Task, {
-    id: `${prefix}-check`,
-    output: props.checkOutput,
-    timeoutMs: computeTimeoutMs(0, baseInterval, backoff),
-    ...(isAgent ? { agent: props.check as AgentLike } : {}),
-    children: prompt,
-  } as TaskProps<unknown>);
+  const checkTask = isAgent
+    ? React.createElement(Task, {
+        id: `${prefix}-check`,
+        output: props.checkOutput,
+        timeoutMs: computeTimeoutMs(iteration, baseInterval, backoff),
+        agent: props.check as AgentLike,
+        children: prompt,
+      } as TaskProps<unknown>)
+    : React.createElement(Task, {
+        id: `${prefix}-check`,
+        output: props.checkOutput,
+        timeoutMs: computeTimeoutMs(iteration, baseInterval, backoff),
+        children: props.check as (...args: any[]) => any,
+      } as TaskProps<unknown>);
 
   return React.createElement(
     Loop,
     {
       id: `${prefix}-loop`,
-      until: false, // Re-evaluated at render time: ctx checks satisfied field
+      until,
       maxIterations: maxAttempts,
       onMaxReached: onTimeout === "fail" ? ("fail" as const) : ("return-last" as const),
     },

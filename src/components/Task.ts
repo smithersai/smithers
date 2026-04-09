@@ -85,33 +85,33 @@ export type TaskProps<
 };
 
 /**
- * Render JSX children to plain markdown text.
+ * Render a prompt React node to plain markdown text.
  *
- * If children is a React element (e.g. a compiled MDX component), we inject
+ * If the prompt is a React element (e.g. a compiled MDX component), we inject
  * `markdownComponents` via the standard MDX `components` prop so that
  * renderToStaticMarkup outputs clean markdown instead of HTML.
  * No HTML tag stripping or entity decoding needed.
  */
-function renderChildrenToText(children: any): string {
-  if (children == null) return "";
-  if (typeof children === "string") return children;
-  if (typeof children === "number") return String(children);
+export function renderPromptToText(prompt: any): string {
+  if (prompt == null) return "";
+  if (typeof prompt === "string") return prompt;
+  if (typeof prompt === "number") return String(prompt);
   try {
     let element: React.ReactElement;
-    if (React.isValidElement(children)) {
+    if (React.isValidElement(prompt)) {
       // Inject markdown components into the element so MDX components
       // render fragments instead of HTML tags.
-      element = React.cloneElement(children as React.ReactElement<any>, {
+      element = React.cloneElement(prompt as React.ReactElement<any>, {
         components: markdownComponents,
       });
     } else {
-      element = React.createElement(React.Fragment, null, children);
+      element = React.createElement(React.Fragment, null, prompt);
     }
     return renderToStaticMarkup(element)
       .replace(/\n{3,}/g, "\n\n")
       .trim();
   } catch (err) {
-    const result = String(children ?? "");
+    const result = String(prompt ?? "");
     if (result === "[object Object]") {
       throw new SmithersError(
         "MDX_PRELOAD_INACTIVE",
@@ -319,7 +319,7 @@ export function Task<Row, Output extends OutputTarget = OutputTarget, D extends 
         schema: zodSchemaToJsonExample(schemaForInjection as any),
       });
     }
-    const prompt = renderChildrenToText(childElement);
+    const prompt = renderPromptToText(childElement);
     return React.createElement(
       "smithers:task",
       {

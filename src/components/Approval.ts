@@ -218,10 +218,7 @@ export function Approval<Row = ApprovalDecision>(props: ApprovalProps<Row>) {
       approved: approval?.status === "approved",
       note: approval?.note ?? null,
       decidedBy: approval?.decidedBy ?? null,
-      decidedAt:
-        typeof approval?.decidedAtMs === "number"
-          ? new Date(approval.decidedAtMs).toISOString()
-          : null,
+      decidedAt: null,
     } as Row;
   };
 

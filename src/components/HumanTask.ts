@@ -1,4 +1,5 @@
 import React from "react";
+import { renderPromptToText } from "./Task";
 import { getTaskRuntime } from "../effect/task-runtime";
 import { SmithersDb } from "../db/adapter";
 import { buildHumanRequestId } from "../human-requests";
@@ -43,10 +44,7 @@ export function HumanTask(props: HumanTaskProps) {
   const outputSchema =
     props.outputSchema ?? (isZodObject(props.output) ? props.output : undefined);
 
-  const promptText =
-    typeof props.prompt === "string"
-      ? props.prompt
-      : String(props.prompt ?? "");
+  const promptText = renderPromptToText(props.prompt);
 
   const humanMeta = {
     humanTask: true,
