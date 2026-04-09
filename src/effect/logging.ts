@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { getCurrentSmithersTraceAnnotations } from "../observability";
 import { runFork } from "./runtime";
 import {
   correlationContextToLogAnnotations,
@@ -16,10 +17,12 @@ function emitLog(
   const correlationAnnotations = correlationContextToLogAnnotations(
     getCurrentCorrelationContext(),
   );
+  const traceAnnotations = getCurrentSmithersTraceAnnotations();
   const mergedAnnotations =
-    correlationAnnotations || annotations
+    correlationAnnotations || traceAnnotations || annotations
       ? {
           ...(correlationAnnotations ?? {}),
+          ...(traceAnnotations ?? {}),
           ...(annotations ?? {}),
         }
       : undefined;

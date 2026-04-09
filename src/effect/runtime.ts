@@ -1,5 +1,12 @@
 import { Cause, Effect, Exit, ManagedRuntime } from "effect";
-import { createSmithersRuntimeLayer } from "../observability";
+import {
+  createSmithersRuntimeLayer,
+  getCurrentSmithersTraceAnnotations,
+  getCurrentSmithersTraceSpan,
+  makeSmithersSpanAttributes,
+  smithersSpanNames,
+} from "../observability";
+import { getToolContext } from "../tools/context";
 import { type SmithersError, toSmithersError } from "../utils/errors";
 
 const SmithersRuntimeLayer = createSmithersRuntimeLayer();
@@ -7,7 +14,35 @@ const SmithersRuntimeLayer = createSmithersRuntimeLayer();
 const runtime = ManagedRuntime.make(SmithersRuntimeLayer);
 
 function decorate<A, E, R>(effect: Effect.Effect<A, E, R>) {
-  return effect.pipe(Effect.annotateLogs("service", "smithers"));
+  let program = effect.pipe(
+    Effect.annotateLogs("service", "smithers"),
+    Effect.withTracerEnabled(true),
+  );
+  const traceAnnotations = getCurrentSmithersTraceAnnotations();
+  if (traceAnnotations) {
+    program = program.pipe(Effect.annotateLogs(traceAnnotations));
+  }
+  const parentSpan = getCurrentSmithersTraceSpan();
+  if (parentSpan) {
+    program = program.pipe(Effect.withParentSpan(parentSpan));
+  }
+  const toolContext = getToolContext();
+  if (
+    toolContext &&
+    !(parentSpan && parentSpan._tag === "Span" && parentSpan.name === smithersSpanNames.tool)
+  ) {
+    program = program.pipe(
+      Effect.withSpan(smithersSpanNames.tool, {
+        attributes: makeSmithersSpanAttributes({
+          runId: toolContext.runId,
+          nodeId: toolContext.nodeId,
+          iteration: toolContext.iteration,
+          attempt: toolContext.attempt,
+        }),
+      }),
+    );
+  }
+  return program;
 }
 
 function normalizeRejection(cause: unknown): SmithersError {
