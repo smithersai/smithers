@@ -1,7 +1,9 @@
 import type { SmithersWorkflow } from "../SmithersWorkflow";
 import type { RunResult } from "../RunResult";
 import { SmithersError } from "../utils/errors";
+import { SmithersDb } from "../db/adapter";
 import { requireTaskRuntime } from "../effect/task-runtime";
+import { getWorkflowMakeBridgeRuntime } from "../effect/workflow-make-bridge";
 
 export type ChildWorkflowDefinition =
   | SmithersWorkflow<any>
@@ -10,6 +12,7 @@ export type ChildWorkflowDefinition =
 export type ChildWorkflowExecuteOptions = {
   workflow: ChildWorkflowDefinition;
   input?: unknown;
+  runId?: string;
   parentRunId?: string;
   rootDir?: string;
   allowNetwork?: boolean;
@@ -57,6 +60,19 @@ function normalizeChildOutput(runResult: RunResult): unknown {
   if (rows.length === 0) return null;
   if (rows.length === 1) return rows[0];
   return rows;
+}
+
+function buildChildWorkflowRunId(
+  parentRunId: string,
+  stepId: string,
+  iteration: number,
+): string {
+  return [
+    parentRunId,
+    "child",
+    stepId,
+    String(iteration),
+  ].join(":");
 }
 
 function resolveChildWorkflow(
@@ -112,9 +128,41 @@ export async function executeChildWorkflow(
   const runtime = requireTaskRuntime();
   const childWorkflow = resolveChildWorkflow(options.workflow, parentWorkflow);
   const input = normalizeChildInput(options.input);
+  const childRunId =
+    options.runId ??
+    buildChildWorkflowRunId(
+      options.parentRunId ?? runtime.runId,
+      runtime.stepId,
+      runtime.iteration,
+    );
+  const adapter = new SmithersDb(childWorkflow.db as any);
+  const existingChildRun = await adapter.getRun(childRunId);
+  const resume = Boolean(existingChildRun);
+  const bridgeRuntime = getWorkflowMakeBridgeRuntime();
+  if (bridgeRuntime) {
+    const result = await bridgeRuntime.executeChildWorkflow(childWorkflow, {
+      input,
+      runId: childRunId,
+      resume,
+      parentRunId: options.parentRunId ?? runtime.runId,
+      rootDir: options.rootDir,
+      workflowPath: options.workflowPath,
+      allowNetwork: options.allowNetwork,
+      maxOutputBytes: options.maxOutputBytes,
+      toolTimeoutMs: options.toolTimeoutMs,
+      signal: options.signal ?? runtime.signal,
+    });
+    return {
+      runId: result.runId,
+      status: result.status,
+      output: normalizeChildOutput(result),
+    };
+  }
   const { runWorkflow } = await import("./index");
   const result = await runWorkflow(childWorkflow, {
     input,
+    runId: childRunId,
+    resume,
     parentRunId: options.parentRunId ?? runtime.runId,
     rootDir: options.rootDir,
     workflowPath: options.workflowPath,

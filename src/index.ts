@@ -120,6 +120,7 @@ export { createSmithers } from "./create";
 export type { CreateSmithersApi } from "./create";
 export { runWorkflow, renderFrame } from "./engine";
 export { signalRun } from "./engine/signals";
+export { usePatched } from "./effect/versioning";
 
 // Tools
 export {

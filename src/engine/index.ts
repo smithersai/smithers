@@ -85,6 +85,12 @@ import {
   isBridgeManagedTimerTask as isTimerTask,
   resolveDeferredTaskStateBridge,
 } from "../effect/workflow-bridge";
+import { createSchedulerWakeQueue, runWorkflowWithMakeBridge } from "../effect/workflow-make-bridge";
+import {
+  createWorkflowVersioningRuntime,
+  getWorkflowPatchDecisions,
+  withWorkflowVersioningRuntime,
+} from "../effect/versioning";
 
 /**
  * Track which worktree paths have already been created this run so we don't
@@ -3843,18 +3849,15 @@ async function runWorkflowAsync<Schema>(
   workflow: SmithersWorkflow<Schema>,
   opts: RunOptions,
 ): Promise<RunResult> {
-  let nextOpts = { ...opts };
-  while (true) {
-    const result = await runWorkflowBody(workflow, nextOpts);
-    if (result.status !== "continued" || !(result as any).nextRunId) {
-      return result;
-    }
-    nextOpts = {
-      ...nextOpts,
-      runId: (result as any).nextRunId,
-      resume: true,
-    };
-  }
+  const runId = opts.runId ?? newRunId();
+  return runWorkflowWithMakeBridge(
+    workflow,
+    {
+      ...opts,
+      runId,
+    },
+    runWorkflowBody,
+  );
 }
 
 async function runWorkflowBody<Schema>(
@@ -3919,6 +3922,8 @@ async function runWorkflowBody<Schema>(
   let hotController: HotWorkflowController | null = null;
   let hotPendingFiles: string[] | null = null;
   let workflowRef = workflow;
+  let onAbortWake = () => {};
+  let armHotReloadWakeup = () => {};
 
   const wakeLock = acquireCaffeinate();
   try {
@@ -3947,6 +3952,16 @@ async function runWorkflowBody<Schema>(
         : {}),
       ...(runAuth ? { auth: runAuth } : {}),
     };
+    const workflowVersioning = createWorkflowVersioningRuntime({
+      baseConfig: runConfig,
+      initialDecisions: getWorkflowPatchDecisions(existingConfig),
+      isNewRun: !existingRun,
+      persist: async (config) => {
+        await adapter.updateRun(runId, {
+          configJson: JSON.stringify(config),
+        });
+      },
+    });
     if (opts.resume && existingRun) {
       assertResumeDurabilityMetadata(existingRun, runMetadata, resolvedWorkflowPath);
     }
@@ -4115,6 +4130,27 @@ async function runWorkflowBody<Schema>(
     // mounted tasks. When a conditional child mounts new tasks after
     // outputs change, we must re-render instead of finishing.
     let prevMountedTaskIds: Set<string> = new Set();
+    const schedulerWakeQueue = createSchedulerWakeQueue();
+    const notifyScheduler = () => schedulerWakeQueue.notify();
+    let hotWaitInFlight = false;
+    onAbortWake = () => notifyScheduler();
+    runAbortController.signal.addEventListener("abort", onAbortWake);
+    armHotReloadWakeup = () => {
+      if (!hotController || hotWaitInFlight) {
+        return;
+      }
+      hotWaitInFlight = true;
+      void hotController
+        .wait()
+        .then((files) => {
+          hotPendingFiles = files;
+          notifyScheduler();
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          hotWaitInFlight = false;
+        });
+    };
     if (opts.resume) {
       const nodes = await adapter.listNodes(runId);
       const maxIteration = nodes.reduce(
@@ -4141,6 +4177,7 @@ async function runWorkflowBody<Schema>(
         hotOpts,
       );
       await hotController.init();
+      armHotReloadWakeup();
     }
 
     while (true) {
@@ -4334,14 +4371,15 @@ async function runWorkflowBody<Schema>(
           : undefined,
       });
 
-      const { xml, tasks, mountedTaskIds } = await renderer.render(
-        workflowRef.build(ctx),
-        {
-          ralphIterations,
-          defaultIteration,
-          baseRootDir: rootDir,
-        },
-      );
+      const { xml, tasks, mountedTaskIds } =
+        await withWorkflowVersioningRuntime(workflowVersioning, () =>
+          renderer.render(workflowRef.build(ctx), {
+            ralphIterations,
+            defaultIteration,
+            baseRootDir: rootDir,
+          }),
+        );
+      await workflowVersioning.flush();
       const xmlJson = canonicalizeXml(xml);
       const xmlHash = sha256Hex(xmlJson);
 
@@ -4507,19 +4545,8 @@ async function runWorkflowBody<Schema>(
         // If tasks are still in-flight, wait for one to finish then
         // loop back to re-evaluate instead of declaring the run done.
         if (inflight.size > 0) {
-          {
-            const waitables: Promise<any>[] = [...inflight];
-            if (hotController) {
-              waitables.push(
-                hotController.wait().then((files) => {
-                  hotPendingFiles = files;
-                }),
-              );
-            }
-            if (waitables.length > 0) {
-              await Promise.race(waitables);
-            }
-          }
+          armHotReloadWakeup();
+          await schedulerWakeQueue.wait();
           continue;
         }
 
@@ -5078,23 +5105,19 @@ async function runWorkflowBody<Schema>(
           runAbortController,
           hijackState,
           legacyExecuteTask,
-        ).finally(() => inflight.delete(p));
+        ).finally(() => {
+          inflight.delete(p);
+          notifyScheduler();
+        });
         inflight.add(p);
       }
       // Wait for at least one task to finish, then loop back to
       // re-render and schedule newly runnable tasks.
       {
-        const waitables: Promise<any>[] = [...inflight];
-        if (hotController) {
-          waitables.push(
-            hotController.wait().then((files) => {
-              hotPendingFiles = files;
-            }),
-          );
-        }
-        if (waitables.length > 0) {
+        if (inflight.size > 0 || hotController) {
+          armHotReloadWakeup();
           const waitStart = performance.now();
-          await Promise.race(waitables);
+          await schedulerWakeQueue.wait();
           void runPromise(
             Metric.update(
               schedulerWaitDuration,
@@ -5161,6 +5184,7 @@ async function runWorkflowBody<Schema>(
   } finally {
     await stopSupervisor();
     detachAbort();
+    runAbortController.signal.removeEventListener("abort", onAbortWake);
     await hotController?.close();
     wakeLock.release();
   }

@@ -897,8 +897,10 @@ export function runRpcCommandEffect(command: string, args: string[], options: Ru
      const child = spawn(command, args, {
        cwd,
        env,
+       detached: true,
        stdio: ["pipe", "pipe", "pipe"],
      });
+     child.unref();
  
      const rl = createInterface({ input: child.stdout });
 
@@ -925,6 +927,9 @@ export function runRpcCommandEffect(command: string, args: string[], options: Ru
      ) => {
        if (settled) return;
        settled = true;
+       if (signal) {
+         signal.removeEventListener("abort", onAbort);
+       }
        logWarning(
          message,
          {
@@ -944,6 +949,9 @@ export function runRpcCommandEffect(command: string, args: string[], options: Ru
      const finalize = (text: string, output: unknown) => {
        if (settled) return;
        settled = true;
+       if (signal) {
+         signal.removeEventListener("abort", onAbort);
+       }
        logDebug(
          "agent RPC command completed",
          {
@@ -962,18 +970,20 @@ export function runRpcCommandEffect(command: string, args: string[], options: Ru
        resume(Effect.succeed({ text, output, stderr, exitCode: child.exitCode, usage: extractedUsage }));
      };
 
-     const terminateChild = () => {
+     const killProcessGroup = (signal: NodeJS.Signals) => {
+       if (!child.pid) return;
        try {
-         child.kill("SIGTERM");
+         process.kill(-child.pid, signal);
        } catch {
-         // ignore
+         // process group already exited
        }
+     };
+
+     const terminateChild = () => {
+       if (!child.pid) return;
+       killProcessGroup("SIGTERM");
        const killTimer = setTimeout(() => {
-         try {
-           child.kill("SIGKILL");
-         } catch {
-           // ignore
-         }
+         killProcessGroup("SIGKILL");
        }, 250);
        child.once("close", () => clearTimeout(killTimer));
      };
@@ -990,11 +1000,17 @@ export function runRpcCommandEffect(command: string, args: string[], options: Ru
        kill(`CLI idle timed out after ${idleTimeoutMs}ms`),
      );
 
-     if (signal) {
+     function onAbort() {
+       kill("CLI aborted");
+     }
+
+     if (signal?.aborted) {
+       onAbort();
+     } else if (signal) {
+       signal.addEventListener("abort", onAbort, { once: true });
        if (signal.aborted) {
-         kill("CLI aborted");
-       } else {
-         signal.addEventListener("abort", () => kill("CLI aborted"), { once: true });
+         signal.removeEventListener("abort", onAbort);
+         onAbort();
        }
      }
  
@@ -1176,11 +1192,10 @@ export function runRpcCommandEffect(command: string, args: string[], options: Ru
        } catch {
          // ignore
        }
-       try {
-         child.kill("SIGKILL");
-       } catch {
-         // ignore
+       if (signal) {
+         signal.removeEventListener("abort", onAbort);
        }
+       killProcessGroup("SIGKILL");
      });
    }).pipe(
      Effect.annotateLogs(logAnnotations),

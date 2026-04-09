@@ -31,6 +31,12 @@ export {
   isBridgeManagedWaitForEventTask,
   resolveDeferredTaskStateBridge,
 } from "./deferred-state-bridge";
+export {
+  createSchedulerWakeQueue,
+  getWorkflowMakeBridgeRuntime,
+  runWorkflowWithMakeBridge,
+  withWorkflowMakeBridgeRuntime,
+} from "./workflow-make-bridge";
 
 type BridgeManagedTaskKind = "compute" | "static" | null;
 
