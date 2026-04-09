@@ -552,6 +552,7 @@ export function extractFromHost(
           : "";
       const outputRef = !outputTable && isZodObject(outputRaw) ? outputRaw : undefined;
       const outputSchema = raw.outputSchema ?? outputRef;
+      const waitAsync = Boolean(raw.waitAsync);
       const timeoutMs =
         typeof raw.timeoutMs === "number" ? raw.timeoutMs : null;
       const heartbeatTimeoutMs = parseHeartbeatTimeoutMs(raw);
@@ -587,6 +588,7 @@ export function extractFromHost(
         dependsOn,
         needs,
         needsApproval: false,
+        waitAsync,
         skipIf: Boolean(raw.skipIf),
         retries: 0,
         timeoutMs,
@@ -765,6 +767,7 @@ export function extractFromHost(
       const outputRef = !outputTable && isZodObject(outputRaw) ? outputRaw : undefined;
       const outputSchema = raw.outputSchema ?? outputRef;
       const needsApproval = Boolean(raw.needsApproval);
+      const waitAsync = Boolean(raw.waitAsync);
       const approvalMode =
         raw.approvalMode === "decision" ||
         raw.approvalMode === "select" ||
@@ -876,6 +879,7 @@ export function extractFromHost(
         dependsOn,
         needs,
         needsApproval,
+        waitAsync,
         approvalMode,
         approvalOnDeny,
         approvalOptions,

@@ -24,6 +24,7 @@ export type TaskDescriptor = {
   parallelGroupId?: string;
   parallelMaxConcurrency?: number;
   needsApproval: boolean;
+  waitAsync?: boolean;
   approvalMode?: "gate" | "decision" | "select" | "rank";
   approvalOnDeny?: "fail" | "continue" | "skip";
   approvalOptions?: Array<{

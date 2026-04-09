@@ -20,6 +20,8 @@ export type WaitForEventProps = {
   timeoutMs?: number;
   /** Behavior on timeout: fail (default), skip the node, or continue with null. */
   onTimeout?: "fail" | "skip" | "continue";
+  /** Do not block unrelated downstream flow while waiting for the event. */
+  async?: boolean;
   skipIf?: boolean;
   /** Explicit dependency on other task node IDs. */
   dependsOn?: string[];
@@ -49,6 +51,7 @@ export function WaitForEvent(props: WaitForEventProps) {
     outputSchema: props.outputSchema,
     timeoutMs: props.timeoutMs,
     onTimeout: props.onTimeout ?? "fail",
+    waitAsync: props.async === true,
     dependsOn: props.dependsOn,
     needs: props.needs,
     label: props.label ?? `wait:${props.event}`,

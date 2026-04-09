@@ -303,6 +303,16 @@ function isTerminal(state: TaskState, desc: TaskDescriptor): boolean {
   return false;
 }
 
+function isTraversalTerminal(state: TaskState, desc: TaskDescriptor): boolean {
+  if (isTerminal(state, desc)) {
+    return true;
+  }
+  return Boolean(
+    desc.waitAsync &&
+      (state === "waiting-approval" || state === "waiting-event"),
+  );
+}
+
 function dependenciesSatisfied(
   desc: TaskDescriptor,
   states: TaskStateMap,
@@ -365,7 +375,7 @@ export function scheduleTasks(
         if (state === "waiting-event") waitingEventExists = true;
         if (state === "waiting-timer") waitingTimerExists = true;
         if (state === "pending" || state === "cancelled") pendingExists = true;
-        const terminal = isTerminal(state, desc);
+        const terminal = isTraversalTerminal(state, desc);
         if (!terminal && (state === "pending" || state === "cancelled")) {
           if (!dependenciesSatisfied(desc, states, descriptors)) {
             return { terminal };

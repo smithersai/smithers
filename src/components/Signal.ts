@@ -11,6 +11,8 @@ export type SignalProps<Schema extends z.ZodObject<any> = z.ZodObject<any>> = {
   correlationId?: string;
   timeoutMs?: number;
   onTimeout?: "fail" | "skip" | "continue";
+  /** Do not block unrelated downstream flow while waiting for the signal. */
+  async?: boolean;
   skipIf?: boolean;
   dependsOn?: string[];
   needs?: Record<string, string>;
@@ -35,6 +37,7 @@ export function Signal<Schema extends z.ZodObject<any>>(props: SignalProps<Schem
     outputSchema: props.schema,
     timeoutMs: props.timeoutMs,
     onTimeout: props.onTimeout,
+    async: props.async,
     dependsOn: props.dependsOn,
     needs: props.needs,
     label: props.label ?? `signal:${props.id}`,

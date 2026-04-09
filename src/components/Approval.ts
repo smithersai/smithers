@@ -63,6 +63,8 @@ export type ApprovalProps<Row = ApprovalDecision, Output extends OutputTarget = 
   allowedScopes?: string[];
   allowedUsers?: string[];
   autoApprove?: ApprovalAutoApprove;
+  /** Do not block unrelated downstream flow while this approval is pending. */
+  async?: boolean;
   /** Explicit dependency on other task node IDs. */
   dependsOn?: string[];
   /** Named dependencies on other tasks. Keys become context keys, values are task node IDs. */
@@ -233,6 +235,7 @@ export function Approval<Row = ApprovalDecision>(props: ApprovalProps<Row>) {
     dependsOn: props.dependsOn,
     needs: props.needs,
     needsApproval: true,
+    waitAsync: props.async === true,
     approvalMode,
     approvalOnDeny: props.onDeny,
     approvalOptions: options,

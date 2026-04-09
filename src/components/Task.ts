@@ -56,6 +56,8 @@ export type TaskProps<
   deps?: D;
   skipIf?: boolean;
   needsApproval?: boolean;
+  /** When paired with `needsApproval`, do not block unrelated downstream flow while the approval is pending. */
+  async?: boolean;
   timeoutMs?: number;
   heartbeatTimeoutMs?: number;
   heartbeatTimeout?: number;
@@ -320,7 +322,14 @@ export function Task<Row, Output extends OutputTarget = OutputTarget, D extends 
     const prompt = renderChildrenToText(childElement);
     return React.createElement(
       "smithers:task",
-      { ...rest, dependsOn: nextDependsOn, agent: restrictedAgentChain, __smithersKind: "agent", ...aspectMeta },
+      {
+        ...rest,
+        dependsOn: nextDependsOn,
+        waitAsync: rest.async === true,
+        agent: restrictedAgentChain,
+        __smithersKind: "agent",
+        ...aspectMeta,
+      },
       prompt,
     );
   }
@@ -328,6 +337,7 @@ export function Task<Row, Output extends OutputTarget = OutputTarget, D extends 
     const nextProps = {
       ...rest,
       dependsOn: nextDependsOn,
+      waitAsync: rest.async === true,
       __smithersKind: "compute",
       __smithersComputeFn: children,
       ...aspectMeta,
@@ -337,6 +347,7 @@ export function Task<Row, Output extends OutputTarget = OutputTarget, D extends 
   const nextProps = {
     ...rest,
     dependsOn: nextDependsOn,
+    waitAsync: rest.async === true,
     __smithersKind: "static",
     __smithersPayload: childValue,
     __payload: childValue,

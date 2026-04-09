@@ -18,6 +18,8 @@ export type HumanTaskProps = {
   prompt: string | React.ReactNode;
   /** Max validation retries before failure. */
   maxAttempts?: number;
+  /** Do not block unrelated downstream flow while waiting for human input. */
+  async?: boolean;
   skipIf?: boolean;
   timeoutMs?: number;
   continueOnFail?: boolean;
@@ -132,6 +134,7 @@ export function HumanTask(props: HumanTaskProps) {
     dependsOn: props.dependsOn,
     needs: props.needs,
     needsApproval: true,
+    waitAsync: props.async === true,
     approvalMode: "decision",
     timeoutMs: props.timeoutMs,
     retries: maxAttempts - 1,
