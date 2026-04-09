@@ -12,6 +12,24 @@ import { createTestDb, createTestSmithers, sleep } from "./helpers";
 import { ddl, outputSchemas, schema } from "./schema";
 
 describe("Durability", () => {
+  async function waitFor(
+    predicate: () => Promise<boolean>,
+    options?: { timeoutMs?: number; intervalMs?: number },
+  ) {
+    const timeoutMs = options?.timeoutMs ?? 5_000;
+    const intervalMs = options?.intervalMs ?? 50;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      try {
+        if (await predicate()) return;
+      } catch {}
+      await sleep(intervalMs);
+    }
+
+    throw new Error(`Timed out after ${timeoutMs}ms waiting for condition`);
+  }
+
   test("persists streamed NodeOutput events to SQLite", async () => {
     const { smithers, outputs, db, cleanup } = createTestSmithers(outputSchemas);
     const runId = "durable-node-output";
@@ -112,10 +130,13 @@ describe("Durability", () => {
 
     const runPromise = runWorkflow(workflow, { input: {}, runId });
 
-    for (let i = 0; i < 50; i++) {
-      if (await adapter.getRun(runId)) break;
-      await sleep(10);
-    }
+    await waitFor(async () => {
+      try {
+        return Boolean(await adapter.getRun(runId));
+      } catch {
+        return false;
+      }
+    }, { timeoutMs: 5_000, intervalMs: 10 });
 
     await adapter.requestRunCancel(runId, nowMs());
     const result = await runPromise;
@@ -133,7 +154,7 @@ describe("Durability", () => {
     const workflowPath = join(dir, "workflow.tsx");
     writeFileSync(workflowPath, "export default 'v1';\n", "utf8");
 
-    const { smithers, outputs, cleanup } = createTestSmithers(outputSchemas);
+    const { smithers, outputs, db, cleanup } = createTestSmithers(outputSchemas);
     const runId = "resume-metadata";
     const workflow = smithers(() => (
       <Workflow name="resume-metadata">
@@ -159,6 +180,55 @@ describe("Durability", () => {
     });
     expect(resumed.status).toBe("failed");
     expect((resumed as any).error?.code).toBe("RESUME_METADATA_MISMATCH");
+    const adapter = new SmithersDb(db as any);
+    const run = await adapter.getRun(runId);
+    expect(run?.status).toBe("finished");
+
+    rmSync(dir, { recursive: true, force: true });
+    cleanup();
+  });
+
+  test("resume fails when an imported workflow module changed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "smithers-resume-graph-"));
+    const workflowPath = join(dir, "workflow.tsx");
+    const helperPath = join(dir, "helper.ts");
+    writeFileSync(helperPath, "export const version = 'v1';\n", "utf8");
+    writeFileSync(
+      workflowPath,
+      "import { version } from './helper';\nexport default version;\n",
+      "utf8",
+    );
+
+    const { smithers, outputs, db, cleanup } = createTestSmithers(outputSchemas);
+    const runId = "resume-graph-metadata";
+    const workflow = smithers(() => (
+      <Workflow name="resume-graph-metadata">
+        <Task id="task" output={outputs.outputA}>
+          {{ value: 1 }}
+        </Task>
+      </Workflow>
+    ));
+
+    const first = await runWorkflow(workflow, {
+      input: {},
+      runId,
+      workflowPath,
+    });
+    expect(first.status).toBe("finished");
+
+    writeFileSync(helperPath, "export const version = 'v2';\n", "utf8");
+    const resumed = await runWorkflow(workflow, {
+      input: {},
+      runId,
+      resume: true,
+      workflowPath,
+    });
+    expect(resumed.status).toBe("failed");
+    expect((resumed as any).error?.code).toBe("RESUME_METADATA_MISMATCH");
+
+    const adapter = new SmithersDb(db as any);
+    const run = await adapter.getRun(runId);
+    expect(run?.status).toBe("finished");
 
     rmSync(dir, { recursive: true, force: true });
     cleanup();

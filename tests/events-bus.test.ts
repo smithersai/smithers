@@ -133,4 +133,56 @@ describe("EventBus", () => {
     expect(metricValue("smithers_tokens_input_total", labels)).toBe(beforeInput + 12);
     expect(metricValue("smithers_tokens_output_total", labels)).toBe(beforeOutput + 7);
   });
+
+  test("emitEventWithPersist tracks context window usage buckets", async () => {
+    const bus = new EventBus({});
+    const cases = [
+      { inputTokens: 49_999, bucket: "lt_50k" },
+      { inputTokens: 50_000, bucket: "gte_50k_lt_100k" },
+      { inputTokens: 100_000, bucket: "gte_100k_lt_200k" },
+      { inputTokens: 200_000, bucket: "gte_200k_lt_500k" },
+      { inputTokens: 500_000, bucket: "gte_500k_lt_1m" },
+      { inputTokens: 1_000_000, bucket: "gte_1m" },
+    ] as const;
+
+    for (const [index, testCase] of cases.entries()) {
+      const labels = {
+        agent: `context-agent-${index}`,
+        model: `context-model-${index}`,
+      };
+      const bucketLabels = { ...labels, bucket: testCase.bucket };
+      const beforeBucket = metricValue(
+        "smithers_tokens_context_window_bucket_total",
+        bucketLabels,
+      );
+      const beforeCount = metricValue(
+        "smithers_tokens_context_window_per_call_count",
+        labels,
+      );
+      const beforeSum = metricValue(
+        "smithers_tokens_context_window_per_call_sum",
+        labels,
+      );
+
+      await bus.emitEventWithPersist(makeEvent("TokenUsageReported", {
+        nodeId: `context-node-${index}`,
+        iteration: 0,
+        attempt: 1,
+        model: labels.model,
+        agent: labels.agent,
+        inputTokens: testCase.inputTokens,
+        outputTokens: 1,
+      }));
+
+      expect(
+        metricValue("smithers_tokens_context_window_bucket_total", bucketLabels),
+      ).toBe(beforeBucket + 1);
+      expect(
+        metricValue("smithers_tokens_context_window_per_call_count", labels),
+      ).toBe(beforeCount + 1);
+      expect(
+        metricValue("smithers_tokens_context_window_per_call_sum", labels),
+      ).toBe(beforeSum + testCase.inputTokens);
+    }
+  });
 });

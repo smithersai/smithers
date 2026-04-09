@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
-import type { DocsConfig, DocsPage } from "../scripts/docs-utils";
+import type { DocsPage } from "../scripts/docs-utils";
 import {
-  collectPageSlugs,
   escapeHtml,
-  getDocsTabLinks,
+  getDocsNavigationSections,
   loadAllDocsPages,
   loadDocsConfig,
 } from "../scripts/docs-utils";
@@ -12,25 +11,16 @@ const PORT = 4173;
 const docsConfig = loadDocsConfig();
 const docsPages = loadAllDocsPages();
 const pagesBySlug = new Map(docsPages.map((page) => [page.slug, page]));
-const tabLinks = getDocsTabLinks();
-
-function currentTabFor(slug: string, config: DocsConfig) {
-  const tabs = Array.isArray(config.navigation?.tabs)
-    ? config.navigation?.tabs
-    : [];
-
-  return tabs.find((tab) =>
-    collectPageSlugs((tab as Record<string, unknown>).groups).has(slug),
-  ) as Record<string, unknown> | undefined;
-}
+const navSections = getDocsNavigationSections();
 
 function renderNavSection(title: string, slugs: string[], currentSlug: string) {
   const items = Array.from(new Set(slugs))
     .map((slug) => pagesBySlug.get(slug))
     .filter((page): page is DocsPage => page !== undefined)
     .map((page) => {
+      const href = page.slug === "index" ? "/" : `/${page.slug}`;
       const current = page.slug === currentSlug ? ' aria-current="page"' : "";
-      return `<li><a href="/${page.slug}"${current}>${escapeHtml(page.title)}</a></li>`;
+      return `<li><a href="${href}"${current}>${escapeHtml(page.title)}</a></li>`;
     })
     .join("\n");
 
@@ -75,15 +65,7 @@ function resolveRedirect(pathname: string) {
 }
 
 function renderPage(page: DocsPage) {
-  const sharedSlugs = Array.from(
-    collectPageSlugs(docsConfig.navigation?.global?.anchors ?? []),
-  );
-  const currentTab = currentTabFor(page.slug, docsConfig);
-  const currentTabLabel =
-    typeof currentTab?.tab === "string" ? currentTab.tab : "Current Tab";
-  const currentTabSlugs = currentTab
-    ? Array.from(collectPageSlugs(currentTab.groups))
-    : [];
+  const pathname = page.slug === "index" ? "/" : `/${page.slug}`;
 
   return `<!doctype html>
 <html lang="en">
@@ -112,20 +94,6 @@ function renderPage(page: DocsPage) {
         font-size: 1.1rem;
         font-weight: 700;
         text-decoration: none;
-      }
-      .tabs {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-        margin-top: 0.75rem;
-      }
-      .tabs a {
-        color: #0f172a;
-        text-decoration: none;
-      }
-      .tabs a[aria-current="page"] {
-        font-weight: 700;
-        text-decoration: underline;
       }
       .layout {
         display: grid;
@@ -185,23 +153,16 @@ function renderPage(page: DocsPage) {
   </head>
   <body>
     <header>
-      <a class="brand" href="/introduction">Smithers Docs Preview</a>
-      <nav class="tabs" aria-label="API tabs">
-        ${tabLinks
-          .map((tab) => {
-            const current = currentTabLabel === tab.label ? ' aria-current="page"' : "";
-            return `<a href="/${tab.slug}"${current}>${escapeHtml(tab.label)}</a>`;
-          })
-          .join("\n")}
-      </nav>
+      <a class="brand" href="/">Smithers Docs Preview</a>
     </header>
     <div class="layout">
       <aside>
-        ${renderNavSection("Shared Runtime", sharedSlugs, page.slug)}
-        ${renderNavSection(currentTabLabel, currentTabSlugs, page.slug)}
+        ${navSections
+          .map((section) => renderNavSection(section.label, section.slugs, page.slug))
+          .join("\n")}
       </aside>
       <main>
-        <p class="eyebrow">/${escapeHtml(page.slug)}</p>
+        <p class="eyebrow">${escapeHtml(pathname)}</p>
         <h1>${escapeHtml(page.title)}</h1>
         <p>${escapeHtml(page.description)}</p>
         <article>
@@ -231,7 +192,17 @@ const server = Bun.serve({
     }
 
     if (url.pathname === "/") {
-      return Response.redirect(new URL("/introduction", url), 302);
+      const page = pagesBySlug.get("index");
+      if (!page) {
+        return new Response("Missing docs index page", { status: 500 });
+      }
+      return new Response(renderPage(page), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+
+    if (url.pathname === "/index") {
+      return Response.redirect(new URL("/", url), 302);
     }
 
     const redirect = resolveRedirect(url.pathname);

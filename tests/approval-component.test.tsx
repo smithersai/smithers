@@ -213,7 +213,7 @@ describe("<Approval>", () => {
       expect(approvalRows[0]?.approved).toBe(false);
       expect(approvalRows[0]?.note).toBe("Needs another review");
       expect(approvalRows[0]?.decidedBy).toBe("qa-user");
-      expect(approvalRows[0]?.decidedAt).toEqual(expect.any(String));
+      expect(approvalRows[0]?.decidedAt).toBeNull();
 
       const resultRows = await (db as any).select().from(tables.result);
       expect(resultRows).toHaveLength(1);
