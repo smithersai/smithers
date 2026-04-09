@@ -1371,6 +1371,13 @@ const humanOptions = z.object({
   by: z.string().optional().describe("Name or identifier of the human operator"),
 });
 
+const alertsArgs = z.object({
+  action: z.string().describe("Alert action: list, ack, resolve, or silence"),
+  alertId: z.string().optional().describe("Alert ID for ack/resolve/silence"),
+});
+
+const alertsOptions = z.object({});
+
 const signalArgs = z.object({
   runId: z.string().describe("Run ID containing the waiting signal"),
   signalName: z.string().describe("Signal name to deliver"),

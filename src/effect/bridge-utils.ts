@@ -1,7 +1,8 @@
-import { SmithersError } from "../utils/errors";
+import { TaskAborted } from "../errors/tagged";
 
-export function makeAbortError(message = "Task aborted"): SmithersError {
-  return new SmithersError("TASK_ABORTED", message, undefined, {
+export function makeAbortError(message = "Task aborted"): TaskAborted {
+  return new TaskAborted({
+    message,
     name: "AbortError",
   });
 }

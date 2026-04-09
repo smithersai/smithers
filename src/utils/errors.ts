@@ -1,3 +1,8 @@
+import {
+  smithersTaggedErrorCodes,
+  toTaggedErrorPayload,
+} from "../errors/tagged";
+
 export const ERROR_REFERENCE_URL = "https://smithers.sh/reference/errors";
 
 export type SmithersErrorCategory =
@@ -407,6 +412,127 @@ export class SmithersError extends Error {
   }
 }
 
+export function fromTaggedError(error: unknown): SmithersError | undefined {
+  const payload = toTaggedErrorPayload(error);
+  if (!payload) {
+    return undefined;
+  }
+
+  switch (payload._tag) {
+    case "TaskAborted":
+      return new SmithersError(
+        smithersTaggedErrorCodes.TaskAborted,
+        payload.message,
+        payload.details,
+        {
+          cause:
+            error && typeof error === "object" && "cause" in (error as any)
+              ? (error as any).cause
+              : undefined,
+          name: payload.name,
+        },
+      );
+    case "TaskTimeout":
+      return new SmithersError(
+        smithersTaggedErrorCodes.TaskTimeout,
+        payload.message,
+        {
+          nodeId: payload.nodeId,
+          attempt: payload.attempt,
+          timeoutMs: payload.timeoutMs,
+        },
+        {
+          cause:
+            error && typeof error === "object" && "cause" in (error as any)
+              ? (error as any).cause
+              : undefined,
+        },
+      );
+    case "TaskHeartbeatTimeout":
+      return new SmithersError(
+        smithersTaggedErrorCodes.TaskHeartbeatTimeout,
+        payload.message,
+        {
+          nodeId: payload.nodeId,
+          iteration: payload.iteration,
+          attempt: payload.attempt,
+          timeoutMs: payload.timeoutMs,
+          staleForMs: payload.staleForMs,
+          lastHeartbeatAtMs: payload.lastHeartbeatAtMs,
+        },
+        {
+          cause:
+            error && typeof error === "object" && "cause" in (error as any)
+              ? (error as any).cause
+              : undefined,
+        },
+      );
+    case "RunNotFound":
+      return new SmithersError(
+        smithersTaggedErrorCodes.RunNotFound,
+        payload.message,
+        { runId: payload.runId },
+        {
+          cause:
+            error && typeof error === "object" && "cause" in (error as any)
+              ? (error as any).cause
+              : undefined,
+        },
+      );
+    case "InvalidInput":
+      return new SmithersError(
+        smithersTaggedErrorCodes.InvalidInput,
+        payload.message,
+        payload.details,
+        {
+          cause:
+            error && typeof error === "object" && "cause" in (error as any)
+              ? (error as any).cause
+              : undefined,
+        },
+      );
+    case "DbWriteFailed":
+      return new SmithersError(
+        smithersTaggedErrorCodes.DbWriteFailed,
+        payload.message,
+        payload.details,
+        {
+          cause:
+            error && typeof error === "object" && "cause" in (error as any)
+              ? (error as any).cause
+              : undefined,
+        },
+      );
+    case "AgentCliError":
+      return new SmithersError(
+        smithersTaggedErrorCodes.AgentCliError,
+        payload.message,
+        payload.details,
+        {
+          cause:
+            error && typeof error === "object" && "cause" in (error as any)
+              ? (error as any).cause
+              : undefined,
+        },
+      );
+    case "WorkflowFailed":
+      return new SmithersError(
+        smithersTaggedErrorCodes.WorkflowFailed,
+        payload.message,
+        {
+          ...(payload.details ?? {}),
+          ...(payload.status === undefined ? {} : { status: payload.status }),
+        },
+        {
+          cause:
+            error && typeof error === "object" && "cause" in (error as any)
+              ? (error as any).cause
+              : undefined,
+        },
+      );
+  }
+}
+
 export type SmithersErrorWrapOptions = {
   code?: SmithersErrorCode;
   details?: Record<string, unknown>;
@@ -417,20 +543,25 @@ export function toSmithersError(
   label?: string,
   options: SmithersErrorWrapOptions = {},
 ): SmithersError {
+  const taggedError = fromTaggedError(cause);
+  const normalizedCause = taggedError ?? cause;
+
   if (
-    cause instanceof SmithersError &&
+    normalizedCause instanceof SmithersError &&
     !label &&
     !options.code &&
     !options.details
   ) {
-    return cause;
+    return normalizedCause;
   }
 
   const code = options.code ?? (
-    cause instanceof SmithersError ? cause.code : "INTERNAL_ERROR"
+    normalizedCause instanceof SmithersError
+      ? normalizedCause.code
+      : "INTERNAL_ERROR"
   );
   const details = {
-    ...(cause instanceof SmithersError ? cause.details : {}),
+    ...(normalizedCause instanceof SmithersError ? normalizedCause.details : {}),
     ...(options.details ?? {}),
   };
   if (label && details.operation === undefined) {
@@ -440,23 +571,23 @@ export function toSmithersError(
   const summary =
     label
       ? `${label}: ${
-          cause instanceof SmithersError
-            ? cause.summary
-            : cause instanceof Error
-              ? cause.message
-              : String(cause)
+          normalizedCause instanceof SmithersError
+            ? normalizedCause.summary
+            : normalizedCause instanceof Error
+              ? normalizedCause.message
+              : String(normalizedCause)
         }`
-      : cause instanceof SmithersError
-        ? cause.summary
-        : cause instanceof Error
-          ? cause.message
-          : String(cause);
+      : normalizedCause instanceof SmithersError
+        ? normalizedCause.summary
+        : normalizedCause instanceof Error
+          ? normalizedCause.message
+          : String(normalizedCause);
 
   return new SmithersError(
     code,
     summary,
     Object.keys(details).length > 0 ? details : undefined,
-    { cause },
+    { cause: normalizedCause },
   );
 }
 
@@ -476,6 +607,11 @@ export type SerializedError = Record<string, unknown> & {
 };
 
 export function errorToJson(err: unknown): SerializedError {
+  const taggedError = fromTaggedError(err);
+  if (taggedError) {
+    return errorToJson(taggedError);
+  }
+
   if (err instanceof Error) {
     const anyErr = err as any;
     return {

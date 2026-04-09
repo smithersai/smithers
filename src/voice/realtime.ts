@@ -26,6 +26,7 @@ import type {
 const DEFAULT_VOICE = "alloy";
 const DEFAULT_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17";
 const DEFAULT_URL = "wss://api.openai.com/v1/realtime";
+const RESPONSE_TIMEOUT_MS = 30_000;
 const VOICES = [
   "alloy",
   "ash",
@@ -90,6 +91,33 @@ export function createOpenAIRealtimeVoice(
     }
   }
 
+  function addEventListener(event: string, callback: VoiceEventCallback): void {
+    if (!events[event]) {
+      events[event] = [];
+    }
+    events[event]!.push(callback);
+  }
+
+  function removeEventListener(
+    event: string,
+    callback: VoiceEventCallback,
+  ): void {
+    const cbs = events[event];
+    if (!cbs) return;
+    const idx = cbs.indexOf(callback);
+    if (idx !== -1) cbs.splice(idx, 1);
+  }
+
+  function toError(error: unknown, fallbackMessage: string): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+    if (typeof error === "string" && error.length > 0) {
+      return new Error(error);
+    }
+    return new Error(fallbackMessage);
+  }
+
   function sendEvent(type: string, data: any): void {
     const payload = { type, ...data };
     if (!ws || ws.readyState !== ws.OPEN) {
@@ -118,14 +146,45 @@ export function createOpenAIRealtimeVoice(
 
     if (!ws) throw new Error("WebSocket not initialized");
 
+    function cleanupSpeakerStreams(error?: Error): void {
+      for (const stream of speakerStreams.values()) {
+        if (error) {
+          stream.destroy(error);
+        } else {
+          stream.end();
+        }
+      }
+      speakerStreams.clear();
+    }
+
     ws.on("message", (message: Buffer | string) => {
-      const data = JSON.parse(message.toString());
+      let data: any;
+      try {
+        data = JSON.parse(message.toString());
+      } catch (error) {
+        client.emit(
+          "error",
+          toError(error, "Failed to parse OpenAI realtime WebSocket message"),
+        );
+        return;
+      }
       client.emit(data.type, data);
 
       if (debug) {
         const { delta, ...fields } = data;
         console.info(data.type, fields, delta?.length < 100 ? delta : "");
       }
+    });
+
+    ws.on("close", () => {
+      state = "close";
+      cleanupSpeakerStreams();
+    });
+
+    ws.on("error", (error: Error) => {
+      state = "close";
+      cleanupSpeakerStreams(error);
+      client.emit("error", error);
     });
 
     client.on("session.created", (ev: any) => {
@@ -232,15 +291,39 @@ export function createOpenAIRealtimeVoice(
       // In realtime mode, speak sends a response.create event
       // The audio comes back through the 'speaker' event
       const audioPromise = new Promise<NodeJS.ReadableStream>(
-        (resolve) => {
+        (resolve, reject) => {
+          let timeout: NodeJS.Timeout | undefined;
+
           const onSpeaker = (stream: NodeJS.ReadableStream) => {
-            // Remove listener after first response
-            const idx = (events["speaker"] ?? []).indexOf(onSpeaker);
-            if (idx !== -1) events["speaker"]!.splice(idx, 1);
+            cleanup();
             resolve(stream);
           };
-          if (!events["speaker"]) events["speaker"] = [];
-          events["speaker"].push(onSpeaker);
+
+          const onError = (error: unknown) => {
+            cleanup();
+            reject(toError(error, "OpenAI realtime speak request failed"));
+          };
+
+          const cleanup = () => {
+            if (timeout) {
+              clearTimeout(timeout);
+              timeout = undefined;
+            }
+            removeEventListener("speaker", onSpeaker);
+            removeEventListener("error", onError);
+          };
+
+          timeout = setTimeout(() => {
+            cleanup();
+            const error = new Error(
+              `Timed out waiting for realtime speaker response after ${RESPONSE_TIMEOUT_MS}ms`,
+            );
+            emit("error", error);
+            reject(error);
+          }, RESPONSE_TIMEOUT_MS);
+
+          addEventListener("speaker", onSpeaker);
+          addEventListener("error", onError);
         },
       );
 
@@ -273,21 +356,46 @@ export function createOpenAIRealtimeVoice(
 
       // Collect the text response
       let responseText = "";
-      const textPromise = new Promise<string>((resolve) => {
+      const textPromise = new Promise<string>((resolve, reject) => {
+        let timeout: NodeJS.Timeout | undefined;
+
         const onWriting = (data: any) => {
-          if (data.role === "assistant") {
-            if (data.text === "\n") {
-              // End of response
-              const idx = (events["writing"] ?? []).indexOf(onWriting);
-              if (idx !== -1) events["writing"]!.splice(idx, 1);
-              resolve(responseText.trim());
-            } else {
-              responseText += data.text;
-            }
+          if (data.role !== "assistant") {
+            return;
           }
+          if (data.text === "\n") {
+            cleanup();
+            resolve(responseText.trim());
+            return;
+          }
+          responseText += data.text;
         };
-        if (!events["writing"]) events["writing"] = [];
-        events["writing"].push(onWriting);
+
+        const onError = (error: unknown) => {
+          cleanup();
+          reject(toError(error, "OpenAI realtime listen request failed"));
+        };
+
+        const cleanup = () => {
+          if (timeout) {
+            clearTimeout(timeout);
+            timeout = undefined;
+          }
+          removeEventListener("writing", onWriting);
+          removeEventListener("error", onError);
+        };
+
+        timeout = setTimeout(() => {
+          cleanup();
+          const error = new Error(
+            `Timed out waiting for realtime transcription after ${RESPONSE_TIMEOUT_MS}ms`,
+          );
+          emit("error", error);
+          reject(error);
+        }, RESPONSE_TIMEOUT_MS);
+
+        addEventListener("writing", onWriting);
+        addEventListener("error", onError);
       });
 
       sendEvent("conversation.item.create", {
@@ -370,16 +478,49 @@ export function createOpenAIRealtimeVoice(
           "OpenAI-Beta": "realtime=v1",
         },
       });
+      const socket = ws;
+
+      const connectionReady = new Promise<void>((resolve, reject) => {
+        let isOpen = false;
+        let isSessionCreated = false;
+
+        const cleanup = () => {
+          socket.off("open", onOpen);
+          socket.off("error", onError);
+          client.off("session.created", onSessionCreated);
+        };
+
+        const maybeResolve = () => {
+          if (!isOpen || !isSessionCreated) {
+            return;
+          }
+          cleanup();
+          resolve();
+        };
+
+        const onOpen = () => {
+          isOpen = true;
+          maybeResolve();
+        };
+
+        const onSessionCreated = () => {
+          isSessionCreated = true;
+          maybeResolve();
+        };
+
+        const onError = (error: Error) => {
+          cleanup();
+          reject(error);
+        };
+
+        socket.on("open", onOpen);
+        socket.on("error", onError);
+        client.on("session.created", onSessionCreated);
+      });
 
       setupEventListeners();
 
-      // Wait for both open and session.created
-      await Promise.all([
-        new Promise<void>((resolve) => ws!.on("open", () => resolve())),
-        new Promise<void>((resolve) =>
-          client.once("session.created", () => resolve()),
-        ),
-      ]);
+      await connectionReady;
 
       sendEvent("session.update", {
         session: {
@@ -402,20 +543,14 @@ export function createOpenAIRealtimeVoice(
     },
 
     on<E extends VoiceEventType>(event: E, callback: VoiceEventCallback): void {
-      if (!events[event as string]) {
-        events[event as string] = [];
-      }
-      events[event as string]!.push(callback);
+      addEventListener(event as string, callback);
     },
 
     off<E extends VoiceEventType>(
       event: E,
       callback: VoiceEventCallback,
     ): void {
-      const cbs = events[event as string];
-      if (!cbs) return;
-      const idx = cbs.indexOf(callback);
-      if (idx !== -1) cbs.splice(idx, 1);
+      removeEventListener(event as string, callback);
     },
 
     async getSpeakers(): Promise<

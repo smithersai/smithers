@@ -1,5 +1,10 @@
 import { Effect } from "effect";
 import { runFork } from "./runtime";
+import {
+  correlationContextToLogAnnotations,
+  getCurrentCorrelationContext,
+  withCurrentCorrelationContext,
+} from "../observability/correlation";
 
 type LogAnnotations = Record<string, unknown> | undefined;
 
@@ -8,14 +13,24 @@ function emitLog(
   annotations?: LogAnnotations,
   span?: string,
 ) {
+  const correlationAnnotations = correlationContextToLogAnnotations(
+    getCurrentCorrelationContext(),
+  );
+  const mergedAnnotations =
+    correlationAnnotations || annotations
+      ? {
+          ...(correlationAnnotations ?? {}),
+          ...(annotations ?? {}),
+        }
+      : undefined;
   let program = effect;
-  if (annotations) {
-    program = program.pipe(Effect.annotateLogs(annotations));
+  if (mergedAnnotations) {
+    program = program.pipe(Effect.annotateLogs(mergedAnnotations));
   }
   if (span) {
     program = program.pipe(Effect.withLogSpan(span));
   }
-  void runFork(program);
+  void runFork(withCurrentCorrelationContext(program));
 }
 
 export function logDebug(

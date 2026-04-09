@@ -20,6 +20,7 @@ import { signalRun } from "../engine/signals";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { nowMs } from "../utils/time";
 import { errorToJson, SmithersError } from "../utils/errors";
+import { assertMaxBytes, assertMaxJsonDepth } from "../utils/input-bounds";
 import {
   prometheusContentType,
   renderPrometheusMetrics,
@@ -33,6 +34,7 @@ type RunRecord = {
 
 const runs = new Map<string, RunRecord>();
 const DEFAULT_MAX_BODY_BYTES = 1_048_576;
+const DEFAULT_MAX_BODY_JSON_DEPTH = 32;
 const DEFAULT_SSE_HEARTBEAT_MS = 10_000;
 
 type HttpErrorCode =
@@ -93,7 +95,11 @@ function parseOptionalInt(value: string | null, fallback: number): number {
   return Math.floor(num);
 }
 
-async function readBody(req: IncomingMessage, maxBytes: number): Promise<any> {
+async function readBody(
+  req: IncomingMessage,
+  maxBytes: number,
+  maxDepth: number,
+): Promise<any> {
   const chunks: Buffer[] = [];
   let total = 0;
   const lengthHeader = req.headers["content-length"];
@@ -123,10 +129,22 @@ async function readBody(req: IncomingMessage, maxBytes: number): Promise<any> {
     }
     chunks.push(buf);
   }
-  const body = Buffer.concat(chunks).toString("utf8");
-  if (!body) return {};
+  const bodyBuffer = Buffer.concat(chunks);
   try {
-    return JSON.parse(body);
+    assertMaxBytes("request body", bodyBuffer, maxBytes);
+  } catch (error) {
+    if (error instanceof SmithersError) {
+      throw new HttpError(413, "PAYLOAD_TOO_LARGE", error.message, {
+        maxBytes,
+      });
+    }
+    throw error;
+  }
+  const body = bodyBuffer.toString("utf8");
+  if (!body) return {};
+  let parsed: any;
+  try {
+    parsed = JSON.parse(body);
   } catch (err: any) {
     throw new HttpError(
       400,
@@ -134,6 +152,17 @@ async function readBody(req: IncomingMessage, maxBytes: number): Promise<any> {
       err?.message ?? "Request body must be valid JSON",
     );
   }
+  try {
+    assertMaxJsonDepth("request body", parsed, maxDepth);
+  } catch (error) {
+    if (error instanceof SmithersError) {
+      throw new HttpError(400, "INVALID_REQUEST", error.message, {
+        maxDepth,
+      });
+    }
+    throw error;
+  }
+  return parsed;
 }
 
 async function loadWorkflow(absPath: string): Promise<SmithersWorkflow<any>> {
@@ -514,7 +543,11 @@ function startServerInternal(opts: ServerOptions = {}) {
       }
 
       if (method === "POST" && url.pathname === "/v1/runs") {
-        const body = await readBody(req, maxBodyBytes);
+        const body = await readBody(
+          req,
+          maxBodyBytes,
+          DEFAULT_MAX_BODY_JSON_DEPTH,
+        );
         if (!body?.workflowPath || typeof body.workflowPath !== "string") {
           throw new HttpError(
             400,
@@ -631,7 +664,11 @@ function startServerInternal(opts: ServerOptions = {}) {
       const resumeMatch = url.pathname.match(/^\/v1\/runs\/([^/]+)\/resume$/);
       if (method === "POST" && resumeMatch) {
         const runId = resumeMatch[1]!;
-        const body = await readBody(req, maxBodyBytes);
+        const body = await readBody(
+          req,
+          maxBodyBytes,
+          DEFAULT_MAX_BODY_JSON_DEPTH,
+        );
         if (!body?.workflowPath || typeof body.workflowPath !== "string") {
           throw new HttpError(
             400,
@@ -970,7 +1007,11 @@ function startServerInternal(opts: ServerOptions = {}) {
       if (method === "POST" && approveMatch) {
         const runId = approveMatch[1]!;
         const nodeId = approveMatch[2]!;
-        const body = await readBody(req, maxBodyBytes);
+        const body = await readBody(
+          req,
+          maxBodyBytes,
+          DEFAULT_MAX_BODY_JSON_DEPTH,
+        );
         const adapter = adapterForRun(runId);
         if (!adapter)
           return sendJson(res, 404, {
@@ -998,7 +1039,11 @@ function startServerInternal(opts: ServerOptions = {}) {
       if (method === "POST" && denyMatch) {
         const runId = denyMatch[1]!;
         const nodeId = denyMatch[2]!;
-        const body = await readBody(req, maxBodyBytes);
+        const body = await readBody(
+          req,
+          maxBodyBytes,
+          DEFAULT_MAX_BODY_JSON_DEPTH,
+        );
         const adapter = adapterForRun(runId);
         if (!adapter)
           return sendJson(res, 404, {
@@ -1026,7 +1071,11 @@ function startServerInternal(opts: ServerOptions = {}) {
       if (method === "POST" && signalMatch) {
         const runId = signalMatch[1]!;
         const signalName = decodeURIComponent(signalMatch[2]!);
-        const body = await readBody(req, maxBodyBytes);
+        const body = await readBody(
+          req,
+          maxBodyBytes,
+          DEFAULT_MAX_BODY_JSON_DEPTH,
+        );
         const adapter = adapterForRun(runId);
         if (!adapter)
           return sendJson(res, 404, {

@@ -33,4 +33,10 @@ export type RunOptions = {
   auth?: RunAuthContext | null;
   config?: Record<string, unknown>;
   cliAgentToolsDefault?: "all" | "explicit-only";
+  resumeClaim?: {
+    claimOwnerId: string;
+    claimHeartbeatAtMs: number;
+    restoreRuntimeOwnerId?: string | null;
+    restoreHeartbeatAtMs?: number | null;
+  };
 };

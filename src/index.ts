@@ -12,7 +12,17 @@ export type { RunStatus } from "./RunStatus";
 export type { RunOptions } from "./RunOptions";
 export type { RunResult } from "./RunResult";
 export type { OutputKey } from "./OutputKey";
-export type { SmithersWorkflowOptions } from "./SmithersWorkflowOptions";
+export type {
+  SmithersAlertLabels,
+  SmithersAlertPolicy,
+  SmithersAlertPolicyDefaults,
+  SmithersAlertPolicyRule,
+  SmithersAlertReaction,
+  SmithersAlertReactionKind,
+  SmithersAlertReactionRef,
+  SmithersAlertSeverity,
+  SmithersWorkflowOptions,
+} from "./SmithersWorkflowOptions";
 export type { SchemaRegistryEntry } from "./SchemaRegistryEntry";
 export type { SmithersWorkflow } from "./SmithersWorkflow";
 export type { SmithersCtx } from "./SmithersCtx";
@@ -56,6 +66,10 @@ export {
   Worktree,
   Sandbox,
   Voice,
+  Kanban,
+  Poller,
+  Saga,
+  TryCatchFinally,
   Signal,
   Timer,
   WaitForEvent,
@@ -74,6 +88,13 @@ export type {
   OutputTarget,
   DepsSpec,
   InferDeps,
+  KanbanProps,
+  ColumnDef,
+  PollerProps,
+  SagaProps,
+  SagaStepDef,
+  SagaStepProps,
+  TryCatchFinallyProps,
   SignalProps,
   TimerProps,
   WaitForEventProps,

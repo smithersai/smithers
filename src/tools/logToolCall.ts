@@ -4,6 +4,11 @@ import { errorToJson } from "../utils/errors";
 import { getToolContext, nextToolSeq } from "./context";
 import { runPromise } from "../effect/runtime";
 import { toolDuration, toolOutputTruncatedTotal } from "../effect/metrics";
+import {
+  correlationContextToLogAnnotations,
+  getCurrentCorrelationContextEffect,
+  withCorrelationContext,
+} from "../observability/correlation";
 
 type ToolCallRow = {
   runId: string;
@@ -52,6 +57,12 @@ export function logToolCallEffect(
 ) {
   const ctx = getToolContext();
   if (!ctx) return Effect.void;
+  const toolCorrelation = {
+    runId: ctx.runId,
+    nodeId: ctx.nodeId,
+    iteration: ctx.iteration,
+    attempt: ctx.attempt,
+  } as const;
   const seq =
     typeof seqOverride === "number" ? seqOverride : nextToolSeq(ctx);
   const started = startedAtMs ?? nowMs();
@@ -90,24 +101,27 @@ export function logToolCallEffect(
     status,
     timestampMs: finished,
   });
-  return Effect.all([
-    Metric.update(toolDuration, durationMs),
-    truncatedLogCount > 0
-      ? Metric.incrementBy(toolOutputTruncatedTotal, truncatedLogCount)
-      : Effect.void,
-  ], { discard: true }).pipe(
-    Effect.andThen(
-      insertToolCallEffect(ctx, row).pipe(Effect.catchAllCause(() => Effect.void)),
-    ),
-    Effect.annotateLogs({
-      runId: ctx.runId,
-      nodeId: ctx.nodeId,
-      iteration: ctx.iteration,
-      attempt: ctx.attempt,
-      toolName,
-      toolStatus: status,
+  return withCorrelationContext(
+    Effect.gen(function* () {
+      const correlation = yield* getCurrentCorrelationContextEffect();
+      return yield* Effect.all([
+        Metric.update(toolDuration, durationMs),
+        truncatedLogCount > 0
+          ? Metric.incrementBy(toolOutputTruncatedTotal, truncatedLogCount)
+          : Effect.void,
+      ], { discard: true }).pipe(
+        Effect.andThen(
+          insertToolCallEffect(ctx, row).pipe(Effect.catchAllCause(() => Effect.void)),
+        ),
+        Effect.annotateLogs({
+          ...(correlationContextToLogAnnotations(correlation) ?? {}),
+          toolName,
+          toolStatus: status,
+        }),
+        Effect.withLogSpan(`tool:${toolName}:log`),
+      );
     }),
-    Effect.withLogSpan(`tool:${toolName}:log`),
+    toolCorrelation,
   );
 }
 
@@ -130,19 +144,29 @@ export function logToolCallStartEffect(
 ) {
   const ctx = getToolContext();
   if (!ctx) return Effect.succeed(undefined);
-  const seq = nextToolSeq(ctx);
-  const started = startedAtMs ?? nowMs();
-  void ctx.emitEvent?.({
-    type: "ToolCallStarted",
-    runId: ctx.runId,
-    nodeId: ctx.nodeId,
-    iteration: ctx.iteration,
-    attempt: ctx.attempt,
-    toolName,
-    seq,
-    timestampMs: started,
-  });
-  return Effect.succeed(seq);
+  return withCorrelationContext(
+    Effect.sync(() => {
+      const seq = nextToolSeq(ctx);
+      const started = startedAtMs ?? nowMs();
+      void ctx.emitEvent?.({
+        type: "ToolCallStarted",
+        runId: ctx.runId,
+        nodeId: ctx.nodeId,
+        iteration: ctx.iteration,
+        attempt: ctx.attempt,
+        toolName,
+        seq,
+        timestampMs: started,
+      });
+      return seq;
+    }),
+    {
+      runId: ctx.runId,
+      nodeId: ctx.nodeId,
+      iteration: ctx.iteration,
+      attempt: ctx.attempt,
+    },
+  );
 }
 
 export function truncateToBytes(text: string, maxBytes: number): string {

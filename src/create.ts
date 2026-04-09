@@ -1,12 +1,17 @@
 import type { SmithersWorkflow } from "./SmithersWorkflow";
-import type { SmithersWorkflowOptions } from "./SmithersWorkflowOptions";
+import type {
+  SmithersAlertPolicy,
+  SmithersAlertPolicyDefaults,
+  SmithersAlertPolicyRule,
+  SmithersWorkflowOptions,
+} from "./SmithersWorkflowOptions";
 import type { SchemaRegistryEntry } from "./SchemaRegistryEntry";
 import type { SmithersCtx } from "./SmithersCtx";
 import { Database } from "bun:sqlite";
 import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import React from "react";
-import { createSmithersContext } from "./context";
+import { createSmithersContext, SmithersContext as GlobalSmithersContext } from "./context";
 import {
   Approval as BaseApproval,
   Workflow as BaseWorkflow,
@@ -44,8 +49,15 @@ import { SmithersError } from "./utils/errors";
 type HotCacheEntry = {
   api: CreateSmithersApi<any>;
   schemaSig: string;
+  setModuleAlertPolicy: (alertPolicy?: SmithersAlertPolicy) => void;
 };
 const hotCache = new Map<string, HotCacheEntry>();
+
+type CreateSmithersOptions = {
+  alertPolicy?: SmithersAlertPolicy;
+  dbPath?: string;
+  journalMode?: string;
+};
 
 function computeSchemaSig(
   schemas: Record<string, any>,
@@ -58,6 +70,85 @@ function computeSchemaSig(
     parts.push(`${name}:${ddl}`);
   }
   return parts.join("\n");
+}
+
+function mergeAlertLabels(
+  base?: Record<string, string>,
+  override?: Record<string, string>,
+): Record<string, string> | undefined {
+  if (!base && !override) return undefined;
+  return {
+    ...(base ?? {}),
+    ...(override ?? {}),
+  };
+}
+
+function mergeAlertDefaults(
+  base?: SmithersAlertPolicyDefaults,
+  override?: SmithersAlertPolicyDefaults,
+): SmithersAlertPolicyDefaults | undefined {
+  if (!base && !override) return undefined;
+
+  const merged: SmithersAlertPolicyDefaults = {
+    ...(base ?? {}),
+    ...(override ?? {}),
+  };
+  const labels = mergeAlertLabels(base?.labels, override?.labels);
+  if (labels) merged.labels = labels;
+  return merged;
+}
+
+function mergeAlertRule(
+  base?: SmithersAlertPolicyRule,
+  override?: SmithersAlertPolicyRule,
+): SmithersAlertPolicyRule | undefined {
+  if (!base && !override) return undefined;
+
+  const merged: SmithersAlertPolicyRule = {
+    ...(base ?? {}),
+    ...(override ?? {}),
+  };
+  const labels = mergeAlertLabels(base?.labels, override?.labels);
+  if (labels) merged.labels = labels;
+  return merged;
+}
+
+function mergeAlertRules(
+  base?: Record<string, SmithersAlertPolicyRule>,
+  override?: Record<string, SmithersAlertPolicyRule>,
+): Record<string, SmithersAlertPolicyRule> | undefined {
+  if (!base && !override) return undefined;
+
+  const merged: Record<string, SmithersAlertPolicyRule> = {
+    ...(base ?? {}),
+  };
+  for (const [name, rule] of Object.entries(override ?? {})) {
+    merged[name] = mergeAlertRule(base?.[name], rule) ?? rule;
+  }
+  return merged;
+}
+
+function mergeAlertPolicies(
+  base?: SmithersAlertPolicy,
+  override?: SmithersAlertPolicy,
+): SmithersAlertPolicy | undefined {
+  if (!base && !override) return undefined;
+
+  const merged: SmithersAlertPolicy = {};
+  const defaults = mergeAlertDefaults(base?.defaults, override?.defaults);
+  const rules = mergeAlertRules(base?.rules, override?.rules);
+  const reactions =
+    base?.reactions || override?.reactions
+      ? {
+          ...(base?.reactions ?? {}),
+          ...(override?.reactions ?? {}),
+        }
+      : undefined;
+
+  if (defaults) merged.defaults = defaults;
+  if (rules) merged.rules = rules;
+  if (reactions) merged.reactions = reactions;
+  return merged;
 }
 
 /** Union of all Zod schema values registered in the schema, constrained to ZodObject. */
@@ -114,7 +205,7 @@ export function createSmithers<
   Schemas extends Record<string, z.ZodObject<any>>,
 >(
   schemas: Schemas,
-  opts?: { dbPath?: string; journalMode?: string },
+  opts?: CreateSmithersOptions,
 ): CreateSmithersApi<Schemas> {
   const dbPath = opts?.dbPath ?? "./smithers.db";
   const absDbPath = resolve(process.cwd(), dbPath);
@@ -129,6 +220,7 @@ export function createSmithers<
           "[smithers hot] Schema change detected; restart required to apply schema changes.",
         );
       }
+      cached.setModuleAlertPolicy(opts?.alertPolicy);
       return cached.api as any;
     }
     // Will cache after creating the API below
@@ -222,6 +314,7 @@ export function createSmithers<
     useCtx,
   } = createSmithersContext<Schemas>();
   const ctxRef = { current: null as SmithersCtx<Schemas> | null };
+  let moduleAlertPolicy = opts?.alertPolicy;
 
   function Workflow(props: WorkflowProps) {
     return React.createElement(BaseWorkflow, props, props.children);
@@ -282,6 +375,15 @@ export function createSmithers<
     build: (ctx: SmithersCtx<Schemas>) => React.ReactElement,
     smithersOpts?: SmithersWorkflowOptions,
   ): SmithersWorkflow<Schemas> {
+    const workflowOpts: SmithersWorkflowOptions = {
+      ...(smithersOpts ?? {}),
+    };
+    const alertPolicy = mergeAlertPolicies(
+      moduleAlertPolicy,
+      smithersOpts?.alertPolicy,
+    );
+    if (alertPolicy) workflowOpts.alertPolicy = alertPolicy;
+
     return {
       db,
       build: (ctx: SmithersCtx<Schemas>) => {
@@ -289,14 +391,22 @@ export function createSmithers<
         return React.createElement(
           RuntimeSmithersContext.Provider,
           { value: ctxRef.current },
-          build(ctx),
+          React.createElement(
+            GlobalSmithersContext.Provider,
+            { value: ctxRef.current },
+            build(ctx),
+          ),
         );
       },
-      opts: smithersOpts ?? {},
+      opts: workflowOpts,
       schemaRegistry,
       zodToKeyName,
     } as SmithersWorkflow<Schemas>;
   }
+
+  const setModuleAlertPolicy = (alertPolicy?: SmithersAlertPolicy) => {
+    moduleAlertPolicy = alertPolicy;
+  };
 
   const api = {
     Workflow,
@@ -323,7 +433,11 @@ export function createSmithers<
 
   if (process.env.SMITHERS_HOT === "1") {
     const sig = computeSchemaSig(schemas as Record<string, any>, absDbPath);
-    hotCache.set(absDbPath, { api: api as any, schemaSig: sig });
+    hotCache.set(absDbPath, {
+      api: api as any,
+      schemaSig: sig,
+      setModuleAlertPolicy,
+    });
   }
 
   return api;

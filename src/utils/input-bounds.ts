@@ -7,12 +7,11 @@ export type JsonBounds = {
   maxStringLength?: number;
 };
 
-export function assertOptionalStringMaxLength(
+export function assertMaxStringLength(
   field: string,
   value: unknown,
   maxLength: number,
-): void {
-  if (value === undefined || value === null) return;
+): string {
   if (typeof value !== "string") {
     throw new SmithersError(
       "INVALID_INPUT",
@@ -27,6 +26,16 @@ export function assertOptionalStringMaxLength(
       { field, maxLength, actualLength: value.length },
     );
   }
+  return value;
+}
+
+export function assertOptionalStringMaxLength(
+  field: string,
+  value: unknown,
+  maxLength: number,
+): void {
+  if (value === undefined || value === null) return;
+  assertMaxStringLength(field, value, maxLength);
 }
 
 export function assertOptionalArrayMaxLength(
@@ -80,25 +89,107 @@ export function assertPositiveFiniteInteger(
   return numberValue;
 }
 
-function validateJsonValue(
+export function assertMaxBytes(
+  field: string,
+  value: string | ArrayBuffer | ArrayBufferView,
+  maxBytes: number,
+): number {
+  let actualBytes: number;
+  if (typeof value === "string") {
+    actualBytes = Buffer.byteLength(value, "utf8");
+  } else if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+    actualBytes = value.byteLength;
+  } else {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `${field} must be a string or byte buffer.`,
+      { field, valueType: typeof value },
+    );
+  }
+
+  if (actualBytes > maxBytes) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `${field} exceeds the maximum size of ${maxBytes} bytes.`,
+      { field, maxBytes, actualBytes },
+    );
+  }
+
+  return actualBytes;
+}
+
+function validateJsonDepth(
   field: string,
   value: unknown,
   depth: number,
+  maxDepth: number,
+  path: string,
+  seen: Set<unknown>,
+): void {
+  if (depth > maxDepth) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `${field} exceeds the maximum JSON depth of ${maxDepth}.`,
+      { field, maxDepth, path },
+    );
+  }
+
+  if (value === null || typeof value !== "object") {
+    return;
+  }
+
+  if (seen.has(value)) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `${field} must not contain circular references.`,
+      { field, path },
+    );
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      validateJsonDepth(
+        field,
+        value[index],
+        depth + 1,
+        maxDepth,
+        `${path}[${index}]`,
+        seen,
+      );
+    }
+    seen.delete(value);
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    validateJsonDepth(
+      field,
+      entry,
+      depth + 1,
+      maxDepth,
+      `${path}.${key}`,
+      seen,
+    );
+  }
+  seen.delete(value);
+}
+
+export function assertMaxJsonDepth(
+  field: string,
+  value: unknown,
+  maxDepth: number,
+): void {
+  validateJsonDepth(field, value, 1, maxDepth, field, new Set());
+}
+
+function validateJsonValue(
+  field: string,
+  value: unknown,
   bounds: JsonBounds,
   path: string,
   seen: Set<unknown>,
 ): void {
-  if (
-    typeof bounds.maxDepth === "number" &&
-    depth > bounds.maxDepth
-  ) {
-    throw new SmithersError(
-      "INVALID_INPUT",
-      `${field} exceeds the maximum JSON depth of ${bounds.maxDepth}.`,
-      { field, maxDepth: bounds.maxDepth, path },
-    );
-  }
-
   if (value === null || typeof value === "boolean") {
     return;
   }
@@ -183,7 +274,6 @@ function validateJsonValue(
       validateJsonValue(
         field,
         value[index],
-        depth + 1,
         bounds,
         `${path}[${index}]`,
         seen,
@@ -197,7 +287,6 @@ function validateJsonValue(
     validateJsonValue(
       field,
       entry,
-      depth + 1,
       bounds,
       `${path}.${key}`,
       seen,
@@ -231,21 +320,14 @@ export function assertJsonPayloadWithinBounds(
     );
   }
 
-  if (
-    typeof bounds.maxBytes === "number" &&
-    Buffer.byteLength(payloadJson, "utf8") > bounds.maxBytes
-  ) {
-    throw new SmithersError(
-      "INVALID_INPUT",
-      `${field} exceeds the maximum size of ${bounds.maxBytes} bytes.`,
-      {
-        field,
-        maxBytes: bounds.maxBytes,
-        actualBytes: Buffer.byteLength(payloadJson, "utf8"),
-      },
-    );
+  if (typeof bounds.maxBytes === "number") {
+    assertMaxBytes(field, payloadJson, bounds.maxBytes);
   }
 
-  validateJsonValue(field, value, 1, bounds, field, new Set());
+  if (typeof bounds.maxDepth === "number") {
+    assertMaxJsonDepth(field, value, bounds.maxDepth);
+  }
+
+  validateJsonValue(field, value, bounds, field, new Set());
   return payloadJson;
 }

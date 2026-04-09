@@ -38,6 +38,7 @@ export type ExtractOptions = {
   defaultIteration?: number;
   /** Base directory for resolving relative Worktree paths */
   baseRootDir?: string;
+  workflowPath?: string | null;
 };
 
 // CLI agents (Claude Code, Codex, etc.) can spend minutes reading files and
@@ -353,6 +354,8 @@ export function extractFromHost(
           const result = await executeChildWorkflow(undefined, {
             workflow: raw.__smithersSubflowWorkflow,
             input: raw.__smithersSubflowInput,
+            rootDir: opts?.baseRootDir,
+            workflowPath: opts?.workflowPath ?? undefined,
           });
           if (result.status !== "finished") {
             throw new SmithersError(

@@ -6,6 +6,17 @@ import type { SmithersEvent } from "./SmithersEvent";
 import { fromPromise } from "./effect/interop";
 import { runPromise } from "./effect/runtime";
 import { trackEvent } from "./effect/metrics";
+import type { CorrelationContext } from "./observability/correlation";
+import {
+  correlationContextToLogAnnotations,
+  getCurrentCorrelationContext,
+  mergeCorrelationContext,
+  withCurrentCorrelationContext,
+} from "./observability/correlation";
+
+type CorrelatedSmithersEvent = SmithersEvent & {
+  correlation?: CorrelationContext;
+};
 
 export class EventBus extends EventEmitter {
   private seq = 0;
@@ -22,14 +33,17 @@ export class EventBus extends EventEmitter {
   }
 
   emitEventEffect(event: SmithersEvent) {
-    return Effect.gen(this, function* () {
-      yield* this.emitAndTrackEffect(event);
-      if (this.db) {
-        yield* this.persistDbEffect(event);
-      }
-    }).pipe(
-      Effect.annotateLogs({ runId: event.runId, eventType: event.type }),
-      Effect.withLogSpan(`event:${event.type}`),
+    const correlatedEvent = this.attachCorrelation(event);
+    return withCurrentCorrelationContext(
+      Effect.gen(this, function* () {
+        yield* this.emitAndTrackEffect(correlatedEvent);
+        if (this.db) {
+          yield* this.persistDbEffect(correlatedEvent);
+        }
+      }).pipe(
+        Effect.annotateLogs(this.eventLogAnnotations(correlatedEvent)),
+        Effect.withLogSpan(`event:${correlatedEvent.type}`),
+      ),
     );
   }
 
@@ -38,12 +52,15 @@ export class EventBus extends EventEmitter {
   }
 
   emitEventWithPersistEffect(event: SmithersEvent) {
-    return Effect.gen(this, function* () {
-      yield* this.emitAndTrackEffect(event);
-      yield* this.persistEffect(event);
-    }).pipe(
-      Effect.annotateLogs({ runId: event.runId, eventType: event.type }),
-      Effect.withLogSpan(`event:${event.type}:persist`),
+    const correlatedEvent = this.attachCorrelation(event);
+    return withCurrentCorrelationContext(
+      Effect.gen(this, function* () {
+        yield* this.emitAndTrackEffect(correlatedEvent);
+        yield* this.persistEffect(correlatedEvent);
+      }).pipe(
+        Effect.annotateLogs(this.eventLogAnnotations(correlatedEvent)),
+        Effect.withLogSpan(`event:${correlatedEvent.type}:persist`),
+      ),
     );
   }
 
@@ -52,54 +69,63 @@ export class EventBus extends EventEmitter {
   }
 
   emitEventQueued(event: SmithersEvent): Promise<void> {
-    this.emit("event", event);
+    const correlatedEvent = this.attachCorrelation(event);
+    this.emit("event", correlatedEvent);
     return runPromise(
-      trackEvent(event).pipe(Effect.andThen(this.enqueuePersistEffect(event))),
+      withCurrentCorrelationContext(
+        trackEvent(correlatedEvent).pipe(
+          Effect.andThen(this.enqueuePersistEffect(correlatedEvent)),
+        ),
+      ),
     );
   }
 
   flushEffect() {
-    return fromPromise("flush queued events", async () => {
-      await this.persistTail;
-      if (this.persistError) {
-        const err = this.persistError;
-        this.persistError = null;
-        throw err;
-      }
-    }).pipe(Effect.withLogSpan("event:flush"));
+    return withCurrentCorrelationContext(
+      fromPromise("flush queued events", async () => {
+        await this.persistTail;
+        if (this.persistError) {
+          const err = this.persistError;
+          this.persistError = null;
+          throw err;
+        }
+      }).pipe(Effect.withLogSpan("event:flush")),
+    );
   }
 
   async flush(): Promise<void> {
     await runPromise(this.flushEffect());
   }
 
-  persistEffect(event: SmithersEvent) {
-    return Effect.gen(this, function* () {
-      yield* this.persistDbEffect(event);
-      const persistedLog = yield* Effect.either(this.persistLogEffect(event));
-      if (persistedLog._tag === "Left") {
-        yield* Effect.logWarning(
-          `[smithers] failed to append event log: ${persistedLog.left instanceof Error ? persistedLog.left.message : String(persistedLog.left)}`,
-        );
-      }
-    }).pipe(
-      Effect.annotateLogs({ runId: event.runId, eventType: event.type }),
-      Effect.withLogSpan("event:persist"),
+  persistEffect(event: CorrelatedSmithersEvent) {
+    return withCurrentCorrelationContext(
+      Effect.gen(this, function* () {
+        yield* this.persistDbEffect(event);
+        const persistedLog = yield* Effect.either(this.persistLogEffect(event));
+        if (persistedLog._tag === "Left") {
+          yield* Effect.logWarning(
+            `[smithers] failed to append event log: ${persistedLog.left instanceof Error ? persistedLog.left.message : String(persistedLog.left)}`,
+          );
+        }
+      }).pipe(
+        Effect.annotateLogs(this.eventLogAnnotations(event)),
+        Effect.withLogSpan("event:persist"),
+      ),
     );
   }
 
   async persist(event: SmithersEvent) {
-    await runPromise(this.persistEffect(event));
+    await runPromise(this.persistEffect(this.attachCorrelation(event)));
   }
 
-  private emitAndTrackEffect(event: SmithersEvent) {
+  private emitAndTrackEffect(event: CorrelatedSmithersEvent) {
     return Effect.gen(this, function* () {
       yield* Effect.sync(() => this.emit("event", event));
       yield* trackEvent(event);
     });
   }
 
-  private enqueuePersistEffect(event: SmithersEvent) {
+  private enqueuePersistEffect(event: CorrelatedSmithersEvent) {
     const task = this.persistTail.then(() => runPromise(this.persistEffect(event)));
     this.persistTail = task.catch((error) => {
       this.persistError = error;
@@ -107,7 +133,7 @@ export class EventBus extends EventEmitter {
     return fromPromise("enqueue event persistence", () => task);
   }
 
-  private persistDbEffect(event: SmithersEvent) {
+  private persistDbEffect(event: CorrelatedSmithersEvent) {
     if (!this.db) return Effect.void;
     const payloadJson = JSON.stringify(event);
     if (typeof this.db.insertEventWithNextSeq === "function") {
@@ -148,7 +174,7 @@ export class EventBus extends EventEmitter {
     );
   }
 
-  private persistLogEffect(event: SmithersEvent) {
+  private persistLogEffect(event: CorrelatedSmithersEvent) {
     if (!this.logDir) return Effect.void;
     const dir = this.logDir;
     return Effect.gen(function* () {
@@ -160,5 +186,32 @@ export class EventBus extends EventEmitter {
       const prefix = current._tag === "Some" ? current.value : "";
       yield* fs.writeFileString(file, prefix + line);
     });
+  }
+
+  private attachCorrelation(event: SmithersEvent): CorrelatedSmithersEvent {
+    const correlation = mergeCorrelationContext(getCurrentCorrelationContext(), {
+      runId: event.runId,
+      nodeId:
+        "nodeId" in event && typeof event.nodeId === "string"
+          ? event.nodeId
+          : undefined,
+      iteration:
+        "iteration" in event && typeof event.iteration === "number"
+          ? event.iteration
+          : undefined,
+      attempt:
+        "attempt" in event && typeof event.attempt === "number"
+          ? event.attempt
+          : undefined,
+    });
+    return correlation ? { ...event, correlation } : event;
+  }
+
+  private eventLogAnnotations(event: CorrelatedSmithersEvent) {
+    return {
+      ...(correlationContextToLogAnnotations(event.correlation) ?? {}),
+      runId: event.runId,
+      eventType: event.type,
+    };
   }
 }
