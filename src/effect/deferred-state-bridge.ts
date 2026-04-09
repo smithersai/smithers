@@ -100,6 +100,51 @@ function buildApprovalRequestJson(desc: TaskDescriptor) {
   });
 }
 
+function buildHumanRequestSchemaJson(desc: TaskDescriptor): string | null {
+  if (!desc.outputSchema && !desc.outputTable) {
+    return null;
+  }
+  return describeSchemaShape(
+    (desc.outputSchema ?? desc.outputTable) as any,
+    desc.outputSchema,
+  );
+}
+
+async function ensurePendingHumanRequest(
+  adapter: SmithersDb,
+  runId: string,
+  desc: TaskDescriptor,
+  requestedAtMs: number,
+) {
+  if (!isHumanTaskMeta(desc.meta)) {
+    return;
+  }
+
+  const requestId = buildHumanRequestId(runId, desc.nodeId, desc.iteration);
+  const existing = await adapter.getHumanRequest(requestId);
+  if (existing) {
+    return;
+  }
+
+  await adapter.insertHumanRequest({
+    requestId,
+    runId,
+    nodeId: desc.nodeId,
+    iteration: desc.iteration,
+    kind: "json",
+    status: "pending",
+    prompt: getHumanTaskPrompt(desc.meta, desc.label ?? desc.nodeId),
+    schemaJson: buildHumanRequestSchemaJson(desc),
+    optionsJson: null,
+    responseJson: null,
+    requestedAtMs,
+    answeredAtMs: null,
+    answeredBy: null,
+    timeoutAtMs:
+      typeof desc.timeoutMs === "number" ? requestedAtMs + desc.timeoutMs : null,
+  });
+}
+
 function defaultAutoApprovalDecision(desc: TaskDescriptor) {
   if (desc.approvalMode === "select") {
     const selected = desc.approvalOptions?.[0]?.key;
@@ -1196,7 +1241,17 @@ async function resolveApprovalTaskStateBridge(
         iteration: desc.iteration,
         timestampMs: requestedAtMs,
       });
+      await ensurePendingHumanRequest(adapter, runId, desc, requestedAtMs);
     }
+  }
+
+  if (approval?.status === "requested") {
+    await ensurePendingHumanRequest(
+      adapter,
+      runId,
+      desc,
+      approval.requestedAtMs ?? nowMs(),
+    );
   }
 
   await syncApprovalDurableDeferredFromDb(adapter, runId, desc, approval);

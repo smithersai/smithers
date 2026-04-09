@@ -1,7 +1,7 @@
 import * as Activity from "@effect/workflow/Activity";
 import * as Workflow from "@effect/workflow/Workflow";
 import * as WorkflowEngine from "@effect/workflow/WorkflowEngine";
-import { Effect, Layer, Schema, Scope } from "effect";
+import { Cause, Effect, Exit, Layer, Schema, Scope } from "effect";
 import type { SmithersDb } from "../db/adapter";
 import type { TaskDescriptor } from "../TaskDescriptor";
 
@@ -51,6 +51,17 @@ export type TaskActivityContext = {
   idempotencyKey: string;
 };
 
+export type TaskActivityRetryOptions = {
+  times: number;
+  while?: (error: unknown) => boolean;
+};
+
+export type ExecuteTaskActivityOptions = {
+  initialAttempt?: number;
+  retry?: false | TaskActivityRetryOptions;
+  includeAttemptInIdempotencyKey?: boolean;
+};
+
 export class RetriableTaskFailure extends Error {
   readonly nodeId: string;
   readonly attempt: number;
@@ -85,6 +96,7 @@ export const makeTaskBridgeKey = (
 export const makeTaskActivity = <A>(
   desc: TaskDescriptor,
   executeFn: (context: TaskActivityContext) => Promise<A> | A,
+  options?: Pick<ExecuteTaskActivityOptions, "includeAttemptInIdempotencyKey">,
 ) =>
   Activity.make({
     name: desc.nodeId,
@@ -92,7 +104,9 @@ export const makeTaskActivity = <A>(
     error: Schema.Unknown,
     execute: Effect.gen(function* () {
       const attempt = yield* Activity.CurrentAttempt;
-      const idempotencyKey = yield* Activity.idempotencyKey(desc.nodeId);
+      const idempotencyKey = yield* Activity.idempotencyKey(desc.nodeId, {
+        includeAttempt: options?.includeAttemptInIdempotencyKey,
+      });
       return yield* Effect.tryPromise({
         try: () => Promise.resolve(executeFn({ attempt, idempotencyKey })),
         catch: (error) => error,
@@ -100,28 +114,63 @@ export const makeTaskActivity = <A>(
     }),
   });
 
+const runTaskActivityAttempt = async <A>(
+  engineContext: any,
+  activity: ReturnType<typeof makeTaskActivity<A>>,
+  instance: WorkflowEngine.WorkflowInstance["Type"],
+  attempt: number,
+): Promise<A> => {
+  const exit = await Effect.runPromiseExit(
+    activity.pipe(
+      Effect.provideService(Activity.CurrentAttempt, attempt),
+      Effect.provideService(WorkflowEngine.WorkflowInstance, instance),
+      Effect.provide(engineContext),
+    ) as Effect.Effect<A, unknown, never>,
+  );
+
+  if (Exit.isSuccess(exit)) {
+    return exit.value;
+  }
+
+  const failure = Cause.failureOption(exit.cause);
+  if (failure._tag === "Some") {
+    throw failure.value;
+  }
+  throw Cause.squash(exit.cause);
+};
+
 export const executeTaskActivity = async <A>(
   adapter: SmithersDb,
   workflowName: string,
   runId: string,
   desc: TaskDescriptor,
   executeFn: (context: TaskActivityContext) => Promise<A> | A,
+  options?: ExecuteTaskActivityOptions,
 ): Promise<A> => {
   const engineContext = await getActivityEngineContext();
-  const activity = makeTaskActivity(desc, executeFn);
+  const activity = makeTaskActivity(desc, executeFn, options);
   const instance = WorkflowEngine.WorkflowInstance.initial(
     TaskBridgeWorkflow,
     makeTaskBridgeKey(adapter, workflowName, runId, desc),
   );
+  const initialAttempt = Math.max(1, options?.initialAttempt ?? 1);
+  const retry = options?.retry === undefined
+    ? { times: desc.retries, while: isRetriableTaskFailure }
+    : options.retry;
 
-  return Effect.runPromise(
-    activity.pipe(
-      Activity.retry({
-        times: desc.retries,
-        while: isRetriableTaskFailure,
-      }),
-      Effect.provideService(WorkflowEngine.WorkflowInstance, instance),
-      Effect.provide(engineContext),
-    ),
-  );
+  let attempt = initialAttempt;
+  while (true) {
+    try {
+      return await runTaskActivityAttempt(engineContext, activity, instance, attempt);
+    } catch (error) {
+      if (
+        retry === false ||
+        attempt - initialAttempt >= retry.times ||
+        !(retry.while ?? isRetriableTaskFailure)(error)
+      ) {
+        throw error;
+      }
+      attempt += 1;
+    }
+  }
 };
