@@ -51,6 +51,7 @@ export {
   Worktree,
   Sandbox,
   Voice,
+  Signal,
   Timer,
   WaitForEvent,
 } from "./components";
@@ -68,6 +69,7 @@ export type {
   OutputTarget,
   DepsSpec,
   InferDeps,
+  SignalProps,
   TimerProps,
   WaitForEventProps,
   SandboxProps,

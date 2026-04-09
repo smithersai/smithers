@@ -1,141 +1,503 @@
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { detectAvailableAgents, type AgentAvailability } from "./agent-detection";
+import type { BaseCliAgent } from "../agents/BaseCliAgent";
 import { ClaudeCodeAgent } from "../agents/ClaudeCodeAgent";
 import { CodexAgent } from "../agents/CodexAgent";
 import { GeminiAgent } from "../agents/GeminiAgent";
 import { KimiAgent } from "../agents/KimiAgent";
-import type { BaseCliAgent } from "../agents/BaseCliAgent";
+import { PiAgent } from "../agents/PiAgent";
 import { SmithersError } from "../utils/errors";
+import {
+  buildSmithersMcpConfigFile,
+  buildSmithersMcpLaunchSpec,
+  probeSmithersAgentContract,
+  renderSmithersAgentPromptGuidance,
+  type SmithersAgentContract,
+  type SmithersToolSurface,
+} from "./agent-contract";
+import {
+  detectAvailableAgents,
+  type AgentAvailability,
+} from "./agent-detection";
 
-const SMITHERS_MCP_URL = "https://smithers.sh/mcp";
-const SMITHERS_REPO = "https://github.com/anthropics/smithers.git";
+const ASK_AGENT_IDS = ["claude", "codex", "kimi", "gemini", "pi"] as const;
+const DEFAULT_SERVER_NAME = "smithers";
 
-const MCP_SERVER_NAME = "smithers-docs";
+type AskAgentId = typeof ASK_AGENT_IDS[number];
+type AskBootstrapMode =
+  | "mcp-config-file"
+  | "mcp-config-inline"
+  | "mcp-allow-list"
+  | "prompt-only";
 
-const LOCAL_MCP_SERVER_NAME = "smithers-orchestrator";
+type AskOptions = {
+  agent?: AskAgentId;
+  listAgents?: boolean;
+  dumpPrompt?: boolean;
+  toolSurface?: SmithersToolSurface;
+  noMcp?: boolean;
+  printBootstrap?: boolean;
+};
 
-const SYSTEM_PROMPT = `You are an autonomous AI Agent embedded inside the Smithers orchestrator control plane TUI.
+type AskSupportedAvailability = AgentAvailability & { id: AskAgentId };
 
-You have access to TWO MCP servers:
-1. "${MCP_SERVER_NAME}" (Remote): Contains Smithers documentation to help you answer questions about the framework.
-2. "${LOCAL_MCP_SERVER_NAME}" (Local): Directly bridges to the active orchestrator sandbox. You can use tools like \`smithers_runs_list\`, \`smithers_workflow_up\`, \`smithers_cancel\`, etc., to natively view and manage active workflows unconditionally on the user's behalf.
+type AskSelection = {
+  availability: AskSupportedAvailability;
+  bootstrapMode: AskBootstrapMode;
+  selectionReason: string;
+};
 
-If the user asks you to start a workflow, query the local tools to find and launch it. If they ask for run statuses, use the tools to fetch it. Be highly autonomous.
+type AskBootstrap =
+  | {
+      mode: "mcp-config-file";
+      serverName: string;
+      toolSurface: SmithersToolSurface;
+      config: {
+        mcpServers: Record<string, { command: string; args: string[] }>;
+      };
+    }
+  | {
+      mode: "mcp-config-inline";
+      serverName: string;
+      toolSurface: SmithersToolSurface;
+      configOverrides: string[];
+    }
+  | {
+      mode: "mcp-allow-list";
+      serverName: string;
+      toolSurface: SmithersToolSurface;
+      allowedMcpServerNames: string[];
+      note: string;
+    }
+  | {
+      mode: "prompt-only";
+      serverName: string;
+      toolSurface: SmithersToolSurface;
+      note: string;
+    };
 
-If the remote MCP tools cannot answer a documentation request, execute a bash fallback:
-  git clone ${SMITHERS_REPO} /tmp/smithers-docs
-Then read the relevant files.
-
-Be concise and act as a strict orchestrator proxy.`;
-
-/** System prompt for agents that don't support MCP — instructs them to clone and run bash instead. */
-const FALLBACK_SYSTEM_PROMPT = `You are an autonomous AI Agent embedded inside the Smithers orchestrator control plane.
-
-To answer docs questions, clone the repo:
-  git clone ${SMITHERS_REPO} /tmp/smithers-docs
-
-To interact with Smithers workflows, run the \`bun run src/cli/index.ts\` CLI directly in bash. Use \`--help\` to discover commands like \`up\`, \`ps\`, \`cancel\`.
-
-Be concise and autonomous.`;
-
-function pickBestAgent(agents: AgentAvailability[]): AgentAvailability | undefined {
-  return agents
-    .filter((a) => a.usable)
-    .sort((a, b) => b.score - a.score)[0];
+function isAskAgentId(value: AgentAvailability["id"]): value is AskAgentId {
+  return ASK_AGENT_IDS.includes(value as AskAgentId);
 }
 
-function buildMcpConfigFile(): string {
-  const dir = mkdtempSync(join(tmpdir(), "smithers-ask-"));
-  const configPath = join(dir, "mcp.json");
-  writeFileSync(
-    configPath,
-    JSON.stringify({
-      mcpServers: {
-        [LOCAL_MCP_SERVER_NAME]: {
-          command: "bun",
-          args: ["run", "src/cli/index.ts", "--mcp"],
-        }
-      },
-    }),
-  );
-  return configPath;
+function isSupportedAvailability(
+  availability: AgentAvailability,
+): availability is AskSupportedAvailability {
+  return isAskAgentId(availability.id);
 }
 
-function buildAgent(best: AgentAvailability, mcpConfigPath: string): BaseCliAgent {
-  switch (best.id) {
+function resolveBootstrapMode(
+  agentId: AskAgentId,
+  noMcp = false,
+): AskBootstrapMode {
+  if (noMcp) {
+    return "prompt-only";
+  }
+
+  switch (agentId) {
     case "claude":
-      return new ClaudeCodeAgent({
-        model: "claude-sonnet-4-20250514",
-        mcpConfig: [mcpConfigPath],
-        systemPrompt: SYSTEM_PROMPT,
-        dangerouslySkipPermissions: true,
-      });
     case "kimi":
-      return new KimiAgent({
-        model: "kimi-latest",
-        mcpConfigFile: [mcpConfigPath],
-        systemPrompt: SYSTEM_PROMPT,
-      });
-    case "gemini":
-      // Gemini only supports --allowed-mcp-server-names to filter pre-configured
-      // servers. It cannot configure new MCP servers via CLI flags, so we allow
-      // the smithers-docs server name and rely on the user having it configured
-      // in their gemini settings. The system prompt includes the clone fallback.
-      return new GeminiAgent({
-        model: "gemini-3.1-pro-preview",
-        allowedMcpServerNames: [MCP_SERVER_NAME, LOCAL_MCP_SERVER_NAME],
-        systemPrompt: SYSTEM_PROMPT,
-        approvalMode: "yolo",
-      });
+      return "mcp-config-file";
     case "codex":
-      // Codex has no MCP support — fall back to clone-based approach.
-      return new CodexAgent({
-        model: "gpt-5.3-codex",
-        systemPrompt: FALLBACK_SYSTEM_PROMPT,
-        fullAuto: true,
-      });
+      return "mcp-config-inline";
+    case "gemini":
+      return "mcp-allow-list";
     case "pi":
-      // Pi has no MCP support — fall back to clone-based approach.
-      throw new SmithersError(
-        "CLI_AGENT_UNSUPPORTED",
-        `Agent "pi" does not support MCP servers. Install claude, kimi, or gemini CLI for best results.`,
-        { agentId: best.id },
-      );
-    default:
-      throw new SmithersError(
-        "CLI_AGENT_UNSUPPORTED",
-        `Agent "${best.id}" is not supported for \`smithers ask\`.`,
-        { agentId: best.id },
-      );
+      return "prompt-only";
   }
 }
 
-export async function ask(question: string, _cwd: string): Promise<void> {
-  const agents = detectAvailableAgents();
-  const best = pickBestAgent(agents);
+function bootstrapRank(mode: AskBootstrapMode) {
+  switch (mode) {
+    case "mcp-config-file":
+    case "mcp-config-inline":
+      return 3;
+    case "mcp-allow-list":
+      return 2;
+    case "prompt-only":
+      return 1;
+  }
+}
+
+function buildJsonMcpConfig(
+  toolSurface: SmithersToolSurface,
+  serverName = DEFAULT_SERVER_NAME,
+) {
+  const launchSpec = buildSmithersMcpLaunchSpec(toolSurface);
+  return {
+    mcpServers: {
+      [serverName]: {
+        command: launchSpec.command,
+        args: launchSpec.args,
+      },
+    },
+  };
+}
+
+function buildCodexConfigOverrides(
+  toolSurface: SmithersToolSurface,
+  serverName = DEFAULT_SERVER_NAME,
+) {
+  const launchSpec = buildSmithersMcpLaunchSpec(toolSurface);
+  return [
+    `mcp_servers.${serverName}.command=${JSON.stringify(launchSpec.command)}`,
+    `mcp_servers.${serverName}.args=${JSON.stringify(launchSpec.args)}`,
+  ];
+}
+
+function buildBootstrap(
+  selection: AskSelection,
+  toolSurface: SmithersToolSurface,
+): AskBootstrap {
+  switch (selection.bootstrapMode) {
+    case "mcp-config-file":
+      return {
+        mode: "mcp-config-file",
+        serverName: DEFAULT_SERVER_NAME,
+        toolSurface,
+        config: buildJsonMcpConfig(toolSurface),
+      };
+    case "mcp-config-inline":
+      return {
+        mode: "mcp-config-inline",
+        serverName: DEFAULT_SERVER_NAME,
+        toolSurface,
+        configOverrides: buildCodexConfigOverrides(toolSurface),
+      };
+    case "mcp-allow-list":
+      return {
+        mode: "mcp-allow-list",
+        serverName: DEFAULT_SERVER_NAME,
+        toolSurface,
+        allowedMcpServerNames: [DEFAULT_SERVER_NAME],
+        note:
+          "Gemini can only allow-list preconfigured MCP servers. Configure the local Smithers server under the same name before relying on MCP.",
+      };
+    case "prompt-only":
+      return {
+        mode: "prompt-only",
+        serverName: DEFAULT_SERVER_NAME,
+        toolSurface,
+        note:
+          selection.availability.id === "pi"
+            ? "PI falls back to prompt-only bootstrap for smithers ask."
+            : "MCP bootstrap is disabled for this run.",
+      };
+  }
+}
+
+function compareAgents(
+  left: AskSupportedAvailability,
+  right: AskSupportedAvailability,
+  noMcp = false,
+) {
+  const leftBootstrap = resolveBootstrapMode(left.id, noMcp);
+  const rightBootstrap = resolveBootstrapMode(right.id, noMcp);
+  const bootstrapDelta =
+    bootstrapRank(rightBootstrap) - bootstrapRank(leftBootstrap);
+  if (bootstrapDelta !== 0) {
+    return bootstrapDelta;
+  }
+  if (right.score !== left.score) {
+    return right.score - left.score;
+  }
+  return ASK_AGENT_IDS.indexOf(left.id) - ASK_AGENT_IDS.indexOf(right.id);
+}
+
+function formatAgentChecks(agent: AgentAvailability) {
+  return agent.checks.join(", ");
+}
+
+function noUsableAgentError(agents: AgentAvailability[]) {
+  return new SmithersError(
+    "NO_USABLE_AGENTS",
+    `No usable agents detected. Checked: ${agents
+      .map((agent) => `${agent.id} => ${formatAgentChecks(agent)}`)
+      .join(" | ")}`,
+  );
+}
+
+function selectAgent(
+  agents: AgentAvailability[],
+  options: AskOptions,
+): AskSelection {
+  const supported = agents.filter(isSupportedAvailability);
+
+  if (options.agent) {
+    const explicit = supported.find((agent) => agent.id === options.agent);
+    if (!explicit) {
+      throw new SmithersError(
+        "CLI_AGENT_UNSUPPORTED",
+        `Agent "${options.agent}" is not supported for \`smithers ask\`.`,
+        { agentId: options.agent },
+      );
+    }
+    if (!explicit.usable) {
+      throw new SmithersError(
+        "NO_USABLE_AGENTS",
+        `Agent "${explicit.id}" is not usable. Checked: ${formatAgentChecks(explicit)}`,
+        { agentId: explicit.id },
+      );
+    }
+    return {
+      availability: explicit,
+      bootstrapMode: resolveBootstrapMode(explicit.id, options.noMcp),
+      selectionReason: "requested via --agent",
+    };
+  }
+
+  const usable = supported.filter((agent) => agent.usable);
+  if (usable.length === 0) {
+    throw noUsableAgentError(agents);
+  }
+
+  const best = [...usable].sort((left, right) =>
+    compareAgents(left, right, options.noMcp),
+  )[0];
 
   if (!best) {
-    process.stderr.write(
-      "No usable agents detected. Install claude, codex, gemini, or kimi CLI to use `smithers ask`.\n",
-    );
-    process.exit(1);
+    throw noUsableAgentError(agents);
   }
 
-  const mcpConfigPath = buildMcpConfigFile();
+  const bootstrapMode = resolveBootstrapMode(best.id, options.noMcp);
+  return {
+    availability: best,
+    bootstrapMode,
+    selectionReason: `best available ${bootstrapMode} bootstrap`,
+  };
+}
+
+function buildSystemPrompt(
+  contract: SmithersAgentContract,
+  bootstrap: AskBootstrap,
+) {
+  const lines = [
+    "You are an autonomous AI agent operating inside the Smithers repository and control plane.",
+    bootstrap.mode === "prompt-only"
+      ? "MCP is disabled or unavailable for this run. Use the local Smithers repo and CLI directly when shell access is needed."
+      : "Prefer the live Smithers MCP tools over shell commands whenever they can answer the request.",
+    bootstrap.mode === "prompt-only"
+      ? renderSmithersAgentPromptGuidance(contract, { available: false })
+      : contract.promptGuidance,
+    "If you need repository documentation, read local files in this checkout, starting with docs/llms-full.txt.",
+    "Use `smithers` or `bun run src/cli/index.ts --help` to inspect the current CLI surface when you need shell fallbacks.",
+    "Be concise and act directly.",
+  ];
+
+  return lines.join("\n\n");
+}
+
+function formatBootstrap(selection: AskSelection, bootstrap: AskBootstrap) {
+  const lines = [
+    `agent: ${selection.availability.id}`,
+    `selectionReason: ${selection.selectionReason}`,
+    `bootstrapMode: ${bootstrap.mode}`,
+    `toolSurface: ${bootstrap.toolSurface}`,
+    `serverName: ${bootstrap.serverName}`,
+  ];
+
+  switch (bootstrap.mode) {
+    case "mcp-config-file":
+      lines.push("config:");
+      lines.push(JSON.stringify(bootstrap.config, null, 2));
+      break;
+    case "mcp-config-inline":
+      lines.push("configOverrides:");
+      lines.push(...bootstrap.configOverrides.map((entry) => `- ${entry}`));
+      break;
+    case "mcp-allow-list":
+      lines.push(
+        `allowedMcpServerNames: ${bootstrap.allowedMcpServerNames.join(", ")}`,
+      );
+      lines.push(`note: ${bootstrap.note}`);
+      break;
+    case "prompt-only":
+      lines.push(`note: ${bootstrap.note}`);
+      break;
+  }
+
+  return lines.join("\n");
+}
+
+function formatAgentList(
+  agents: AgentAvailability[],
+  options: AskOptions,
+  selectedAgentId?: AskAgentId,
+) {
+  const supported = agents.filter(isSupportedAvailability);
+  return supported
+    .sort((left, right) => compareAgents(left, right, options.noMcp))
+    .map((agent) => {
+      const marker = agent.id === selectedAgentId ? "*" : " ";
+      return `${marker} ${agent.id}  usable=${agent.usable ? "yes" : "no"}  status=${agent.status}  bootstrap=${resolveBootstrapMode(agent.id, options.noMcp)}`;
+    })
+    .join("\n");
+}
+
+function buildAgent(
+  selection: AskSelection,
+  bootstrap: AskBootstrap,
+  systemPrompt: string,
+  cwd: string,
+): { agent: BaseCliAgent; cleanup: () => void } {
+  switch (selection.availability.id) {
+    case "claude": {
+      if (bootstrap.mode !== "mcp-config-file") {
+        return {
+          agent: new ClaudeCodeAgent({
+            cwd,
+            model: "claude-sonnet-4-20250514",
+            systemPrompt,
+            dangerouslySkipPermissions: true,
+          }),
+          cleanup() {},
+        };
+      }
+
+      const mcpConfig = buildSmithersMcpConfigFile(
+        bootstrap.toolSurface,
+        bootstrap.serverName,
+      );
+      return {
+        agent: new ClaudeCodeAgent({
+          cwd,
+          model: "claude-sonnet-4-20250514",
+          mcpConfig: [mcpConfig.path],
+          strictMcpConfig: true,
+          systemPrompt,
+          dangerouslySkipPermissions: true,
+        }),
+        cleanup() {
+          mcpConfig.cleanup();
+        },
+      };
+    }
+    case "kimi": {
+      if (bootstrap.mode !== "mcp-config-file") {
+        return {
+          agent: new KimiAgent({
+            cwd,
+            model: "kimi-latest",
+            systemPrompt,
+          }),
+          cleanup() {},
+        };
+      }
+
+      const mcpConfig = buildSmithersMcpConfigFile(
+        bootstrap.toolSurface,
+        bootstrap.serverName,
+      );
+      return {
+        agent: new KimiAgent({
+          cwd,
+          model: "kimi-latest",
+          mcpConfigFile: [mcpConfig.path],
+          systemPrompt,
+        }),
+        cleanup() {
+          mcpConfig.cleanup();
+        },
+      };
+    }
+    case "gemini":
+      return {
+        agent: new GeminiAgent({
+          cwd,
+          model: "gemini-3.1-pro-preview",
+          allowedMcpServerNames:
+            bootstrap.mode === "mcp-allow-list"
+              ? bootstrap.allowedMcpServerNames
+              : undefined,
+          systemPrompt,
+          approvalMode: "yolo",
+        }),
+        cleanup() {},
+      };
+    case "codex":
+      return {
+        agent: new CodexAgent({
+          cwd,
+          model: "gpt-5.3-codex",
+          config:
+            bootstrap.mode === "mcp-config-inline"
+              ? bootstrap.configOverrides
+              : undefined,
+          systemPrompt,
+          fullAuto: true,
+          skipGitRepoCheck: true,
+        }),
+        cleanup() {},
+      };
+    case "pi":
+      return {
+        agent: new PiAgent({
+          cwd,
+          provider: "openai",
+          model: "gpt-5.3-codex",
+          systemPrompt,
+        }),
+        cleanup() {},
+      };
+  }
+}
+
+export async function ask(
+  question: string | undefined,
+  cwd: string,
+  options: AskOptions = {},
+): Promise<void> {
+  const agents = detectAvailableAgents();
+
+  if (options.listAgents) {
+    let selectedAgentId: AskAgentId | undefined;
+    try {
+      selectedAgentId = selectAgent(agents, options).availability.id;
+    } catch {}
+    process.stdout.write(
+      `${formatAgentList(agents, options, selectedAgentId)}\n`,
+    );
+    return;
+  }
+
+  const selection = selectAgent(agents, options);
+  const toolSurface = options.toolSurface ?? "semantic";
+  const contract = await probeSmithersAgentContract({
+    cwd,
+    toolSurface,
+    serverName: DEFAULT_SERVER_NAME,
+  });
+  const bootstrap = buildBootstrap(selection, toolSurface);
+  const systemPrompt = buildSystemPrompt(contract, bootstrap);
+
+  if (options.dumpPrompt || options.printBootstrap) {
+    const sections: string[] = [];
+    if (options.printBootstrap) {
+      sections.push("[bootstrap]");
+      sections.push(formatBootstrap(selection, bootstrap));
+    }
+    if (options.dumpPrompt) {
+      sections.push("[system-prompt]");
+      sections.push(systemPrompt);
+    }
+    process.stdout.write(`${sections.join("\n\n")}\n`);
+    return;
+  }
+
+  if (!question?.trim()) {
+    throw new SmithersError(
+      "INVALID_ARGUMENT",
+      "A question is required unless you use --list-agents, --dump-prompt, or --print-bootstrap.",
+    );
+  }
+
+  const { agent, cleanup } = buildAgent(selection, bootstrap, systemPrompt, cwd);
 
   try {
-    const agent = buildAgent(best, mcpConfigPath);
-
     await agent.generate({
       prompt: question,
       onStdout: (chunk: string) => process.stdout.write(chunk),
     });
     process.stdout.write("\n");
   } finally {
-    try {
-      rmSync(mcpConfigPath, { recursive: true, force: true });
-    } catch {}
+    cleanup();
   }
 }

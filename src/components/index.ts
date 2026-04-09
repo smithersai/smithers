@@ -114,6 +114,9 @@ export type {
 export { WaitForEvent } from "./WaitForEvent";
 export type { WaitForEventProps } from "./WaitForEvent";
 
+export { Signal } from "./Signal";
+export type { SignalProps } from "./Signal";
+
 export { Timer } from "./Timer";
 export type { TimerProps } from "./Timer";
 

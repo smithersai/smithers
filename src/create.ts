@@ -21,11 +21,13 @@ import {
   continueAsNew as baseContinueAsNew,
   Worktree as BaseWorktree,
   Sandbox as BaseSandbox,
+  Signal as BaseSignal,
   Timer as BaseTimer,
 } from "./components";
 import type {
   ApprovalProps,
   SandboxProps,
+  SignalProps,
   WorkflowProps,
   TaskProps,
   DepsSpec,
@@ -77,6 +79,9 @@ export type CreateSmithersApi<Schema = any> = {
   continueAsNew: typeof baseContinueAsNew;
   Worktree: typeof BaseWorktree;
   Sandbox: (props: SandboxProps) => React.ReactElement;
+  Signal: <Schema extends z.ZodObject<any>>(
+    props: SignalProps<Schema>,
+  ) => React.ReactElement;
   Timer: typeof BaseTimer;
   useCtx: () => SmithersCtx<Schema>;
   smithers: (
@@ -264,6 +269,15 @@ export function createSmithers<
     } as any);
   }
 
+  function Signal<SignalSchema extends z.ZodObject<any>>(
+    props: SignalProps<SignalSchema>,
+  ) {
+    return React.createElement(BaseSignal, {
+      ...props,
+      smithersContext: RuntimeSmithersContext,
+    } as any);
+  }
+
   function boundSmithers(
     build: (ctx: SmithersCtx<Schemas>) => React.ReactElement,
     smithersOpts?: SmithersWorkflowOptions,
@@ -298,6 +312,7 @@ export function createSmithers<
     continueAsNew: baseContinueAsNew,
     Worktree: BaseWorktree,
     Sandbox,
+    Signal,
     Timer: BaseTimer,
     useCtx,
     smithers: boundSmithers,

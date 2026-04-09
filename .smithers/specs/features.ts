@@ -340,23 +340,8 @@ export const FeatureGroups = {
     "AGENT_DETECTION",
   ],
 
-  // Source: src/cli/tui/app.tsx, src/cli/tui/components/
-  TUI_DASHBOARD: [
-    "TUI_WORKFLOW_LAUNCHER",
-    "TUI_RUNS_LIST",
-    "TUI_RUN_DETAIL_VIEW",
-    "TUI_NODE_DETAIL_VIEW",
-    "TUI_FRAMES_PANE",
-    "TUI_DETAILS_PANE",
-    "TUI_LOGS_PANE",
-    "TUI_CHAT_PANE",
-    "TUI_NODE_INSPECTOR",
-    "TUI_SQLITE_BROWSER",
-    "TUI_ASK_MODAL",
-    "TUI_CRON_LIST",
-    "TUI_METRICS_PANE",
-    "TUI_TAB_NAVIGATION",
-  ],
+  // TUI is being rebuilt in a separate repo — these features are not relevant until the new TUI lands.
+  TUI_DASHBOARD: [],
 
   // Source: src/db/adapter.ts, internal-schema.ts, ensure.ts, output.ts, input.ts, snapshot.ts, frame-codec.ts, write-retry.ts
   DATABASE_PERSISTENCE: [
@@ -750,9 +735,8 @@ export const FeatureGroups = {
     "EVENT_OPENAPI_TOOL_CALLED",
   ],
 
-  // Source: src/baml-plugin.ts, src/pi-plugin/index.ts, src/pi-plugin/extension.ts
+  // Source: src/pi-plugin/index.ts, src/pi-plugin/extension.ts
   PLUGINS_AND_EXTENSIONS: [
-    "BAML_PLUGIN",
     "PI_PLUGIN",
     "PI_EXTENSION_HTTP_CLIENT",
     "PI_EXTENSION_MCP_BRIDGE",

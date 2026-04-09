@@ -1020,9 +1020,9 @@ function startServerInternal(opts: ServerOptions = {}) {
         return sendJson(res, 200, { runId });
       }
 
-      const signalMatch = url.pathname.match(
-        /^\/v1\/runs\/([^/]+)\/signals\/([^/]+)$/,
-      );
+      const signalMatch =
+        url.pathname.match(/^\/v1\/runs\/([^/]+)\/signals\/([^/]+)$/) ??
+        url.pathname.match(/^\/signal\/([^/]+)\/([^/]+)$/);
       if (method === "POST" && signalMatch) {
         const runId = signalMatch[1]!;
         const signalName = decodeURIComponent(signalMatch[2]!);

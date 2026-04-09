@@ -2,8 +2,9 @@
 import { resolve, dirname, basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFileSync, existsSync, openSync } from "node:fs";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Effect, Fiber } from "effect";
-import { Cli, z } from "incur";
+import { Cli, Mcp as IncurMcp, z } from "incur";
 import { runWorkflow, renderFrame, resolveSchema } from "../engine";
 import { mdxPlugin } from "../mdx-plugin";
 import { approveNode, denyNode } from "../engine/approvals";
@@ -16,23 +17,15 @@ import { fromPromise } from "../effect/interop";
 import { runFork, runPromise } from "../effect/runtime";
 import type { SmithersWorkflow } from "../SmithersWorkflow";
 import { trackEvent } from "../effect/metrics";
-import type { UiTarget as BurnsUiTarget } from "../../apps/cli/src/args";
-async function openInBrowser(url: string): Promise<{ error?: string }> {
-  try {
-    const cmd = process.platform === "darwin" ? "open" : "xdg-open";
-    const proc = Bun.spawn([cmd, url], { stdio: ["ignore", "ignore", "ignore"] });
-    await proc.exited;
-    return {};
-  } catch (err: any) {
-    return { error: err?.message ?? String(err) };
-  }
-}
 import {
-  buildUiUrl,
-  ensureUiHostRunning,
+  buildUrl,
+  ensureServerRunning,
+  openInBrowser,
+  resolveUiHost,
+  resolveUiPort,
   shouldSuppressAutoOpen,
-} from "../../apps/cli/src/ui";
-import { resolveDefaultWebBinding } from "../../apps/cli/src/web";
+} from "./ui";
+import type { UiTarget } from "./ui";
 
 import { revertToAttempt } from "../revert";
 import { retryTask } from "../retry-task";
@@ -96,6 +89,7 @@ import {
   runWatchLoop,
   watchIntervalSecondsToMs,
 } from "./watch";
+import { createSemanticMcpServer } from "../mcp/semantic-server";
 import pc from "picocolors";
 import crypto from "node:crypto";
 
@@ -173,7 +167,7 @@ function formatStatusExitCode(status: string | undefined) {
 function parseUiTarget(
   targetRaw: string | undefined,
   valueRaw: string | undefined,
-): { ok: true; target: BurnsUiTarget } | { ok: false; error: string } {
+): { ok: true; target: UiTarget } | { ok: false; error: string } {
   const target = targetRaw?.trim().toLowerCase();
   const value = valueRaw?.trim();
 
@@ -1297,7 +1291,7 @@ const approveOptions = z.object({
 });
 
 const signalArgs = z.object({
-  runId: z.string().describe("Run ID containing the waiting event"),
+  runId: z.string().describe("Run ID containing the waiting signal"),
   signalName: z.string().describe("Signal name to deliver"),
 });
 
@@ -1344,7 +1338,7 @@ const uiArgs = z.object({
 
 const uiOptions = z.object({
   open: z.boolean().default(true).describe("Open the browser automatically (default: true)"),
-  host: z.string().optional().describe("Override Smithers web host"),
+  host: z.string().optional().describe("Override the Smithers UI bind host when auto-starting"),
   port: z.number().int().min(1).optional().describe("Override Smithers web port"),
 });
 
@@ -2352,48 +2346,21 @@ const cli = Cli.create({
       }
       const uiTarget = parsedTarget.target;
 
-      const defaults = resolveDefaultWebBinding();
-      const host = c.options.host?.trim() || defaults.host;
-      const port = c.options.port ?? defaults.port;
-      const allowDiscovery = !c.options.host && !c.options.port;
+      const host = c.options.host?.trim() || resolveUiHost();
+      const port = c.options.port ?? resolveUiPort();
 
       try {
         await runPromise(
           Effect.gen(function* () {
-            const ensureResult = yield* fromPromise(
-              "ensure ui host",
-              () =>
-                ensureUiHostRunning({
-                  host,
-                  port,
-                  allowDiscovery,
-                }),
-              {
-                code: "UI_COMMAND_FAILED",
-                details: { host, port, allowDiscovery },
-              },
-            );
-
-            const url = buildUiUrl(ensureResult.webBaseUrl, uiTarget);
+            const ensureResult = yield* ensureServerRunning(port, { host });
+            const url = buildUrl(port, uiTarget);
             yield* Effect.void.pipe(
               Effect.annotateLogs({
                 target: uiTarget.kind,
                 url,
-                serverAutoStarted: ensureResult.ok
-                  ? ensureResult.serverAutoStarted
-                  : false,
+                serverAutoStarted: ensureResult.serverAutoStarted,
               }),
             );
-
-            if ("error" in ensureResult) {
-              const ensureError = ensureResult.error;
-              return yield* Effect.fail(
-                new SmithersError("UI_COMMAND_FAILED", ensureError, {
-                  host,
-                  port,
-                }),
-              );
-            }
 
             yield* Effect.sync(() => {
               console.log(url);
@@ -2403,31 +2370,26 @@ const cli = Cli.create({
               return;
             }
 
-            const openResult = yield* fromPromise(
-              "open smithers ui browser url",
-              () => openInBrowser(url),
-              {
-                code: "UI_COMMAND_FAILED",
-                details: { url },
-              },
-            );
-
-            if (openResult && typeof openResult === "object" && "error" in openResult) {
-              const openError = (openResult as { error?: string }).error;
-              yield* Effect.logWarning(
-                "Could not open browser for Smithers UI.",
-              ).pipe(
-                Effect.annotateLogs({
-                  target: uiTarget.kind,
-                  url,
-                  reason: openError,
+            yield* openInBrowser(url).pipe(
+              Effect.catchAll((error) =>
+                Effect.gen(function* () {
+                  const openError = error?.message ?? String(error);
+                  yield* Effect.logWarning(
+                    "Could not open browser for Smithers UI.",
+                  ).pipe(
+                    Effect.annotateLogs({
+                      target: uiTarget.kind,
+                      url,
+                      reason: openError,
+                    }),
+                  );
+                  yield* Effect.sync(() => {
+                    console.error(`Failed to open browser: ${openError}`);
+                    console.error(`Open this URL manually: ${url}`);
+                  });
                 }),
-              );
-              yield* Effect.sync(() => {
-                console.error(`Failed to open browser: ${openError}`);
-                console.error(`Open this URL manually: ${url}`);
-              });
-            }
+              ),
+            );
           }).pipe(Effect.withLogSpan("cli:ui")),
         );
 
@@ -3524,7 +3486,7 @@ const cli = Cli.create({
   // smithers signal <run_id> <signal_name>
   // =========================================================================
   .command("signal", {
-    description: "Deliver a durable signal to a run waiting on <WaitForEvent>.",
+    description: "Deliver a durable signal to a run waiting on <Signal> or <WaitForEvent>.",
     args: signalArgs,
     options: signalOptions,
     async run(c) {
@@ -4098,11 +4060,19 @@ const cli = Cli.create({
   .command("ask", {
     description: "Ask a question about Smithers using your installed agent and the Smithers MCP server.",
     args: z.object({
-      question: z.string().describe("The question to ask"),
+      question: z.string().optional().describe("The question to ask"),
+    }),
+    options: z.object({
+      agent: z.enum(["claude", "codex", "gemini", "kimi", "pi"]).optional().describe("Explicitly select which agent CLI to use"),
+      listAgents: z.boolean().default(false).describe("List detected agents plus their bootstrap mode and exit"),
+      dumpPrompt: z.boolean().default(false).describe("Print the generated system prompt and exit"),
+      toolSurface: z.enum(["semantic", "raw"]).default("semantic").describe("Choose which Smithers MCP tool surface to expose"),
+      noMcp: z.boolean().default(false).describe("Disable MCP bootstrap and use prompt-only fallback"),
+      printBootstrap: z.boolean().default(false).describe("Print the selected bootstrap configuration and exit"),
     }),
     async run(c) {
       try {
-        await ask(c.args.question, process.cwd());
+        await ask(c.args.question, process.cwd(), c.options);
         return c.ok({ answered: true });
       } catch (err: any) {
         commandExitOverride = 1;
@@ -4429,6 +4399,70 @@ const WORKFLOW_UTILITY_COMMANDS = new Set([
   "doctor",
 ]);
 
+type McpSurface = "semantic" | "raw" | "both";
+
+function normalizeMcpSurface(value: string | undefined): McpSurface {
+  const surface = value?.trim().toLowerCase();
+  if (surface === undefined || surface.length === 0) {
+    throw new Error("Missing value for --surface. Expected semantic, raw, or both.");
+  }
+  if (surface === "semantic" || surface === "raw" || surface === "both") {
+    return surface;
+  }
+  throw new Error(`Invalid --surface value: ${value}. Expected semantic, raw, or both.`);
+}
+
+function parseMcpSurfaceArgv(argv: string[]) {
+  let surface: McpSurface = "semantic";
+  const filtered: string[] = [];
+
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index]!;
+    if (arg === "--surface") {
+      surface = normalizeMcpSurface(argv[index + 1]);
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--surface=")) {
+      surface = normalizeMcpSurface(arg.slice("--surface=".length));
+      continue;
+    }
+    filtered.push(arg);
+  }
+
+  return { surface, argv: filtered };
+}
+
+function registerRawToolsOnMcpServer(
+  server: ReturnType<typeof createSemanticMcpServer>,
+) {
+  const commands = (Cli as any).toCommands?.get(cli as any);
+  if (!(commands instanceof Map)) {
+    throw new Error("Could not resolve Smithers CLI commands for raw MCP surface.");
+  }
+
+  for (const tool of IncurMcp.collectTools(commands, [])) {
+    const mergedShape = {
+      ...(tool.command.args?.shape ?? {}),
+      ...(tool.command.options?.shape ?? {}),
+    };
+    const hasInput = Object.keys(mergedShape).length > 0;
+
+    server.registerTool(
+      tool.name,
+      {
+        ...(tool.description ? { description: tool.description } : undefined),
+        ...(hasInput ? { inputSchema: mergedShape } : undefined),
+      },
+      async (...callArgs: any[]) => {
+        const params = hasInput ? callArgs[0] : {};
+        const extra = hasInput ? callArgs[1] : callArgs[0];
+        return IncurMcp.callTool(tool, params, extra);
+      },
+    );
+  }
+}
+
 function findFirstPositionalIndex(argv: string[], startIndex = 0): number {
   for (let index = startIndex; index < argv.length; index++) {
     const arg = argv[index]!;
@@ -4524,7 +4558,20 @@ async function main() {
   // --mcp mode: the MCP server needs to stay alive listening on stdin.
   if (argv.includes("--mcp")) {
     try {
-      await cli.serve(argv);
+      const mcpArgs = parseMcpSurfaceArgv(argv);
+      if (mcpArgs.surface === "raw") {
+        await cli.serve(mcpArgs.argv);
+      } else {
+        const server = createSemanticMcpServer({
+          name: "smithers",
+          version: readPackageVersion(),
+        });
+        if (mcpArgs.surface === "both") {
+          registerRawToolsOnMcpServer(server);
+        }
+        const transport = new StdioServerTransport(process.stdin, process.stdout);
+        await server.connect(transport);
+      }
     } catch (err: any) {
       console.error(err?.message ?? String(err));
       process.exit(1);
