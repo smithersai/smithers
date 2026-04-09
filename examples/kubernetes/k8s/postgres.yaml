@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: smithers-postgres
+  namespace: smithers-system
+spec:
+  serviceName: smithers-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smithers-postgres
+  template:
+    metadata:
+      labels:
+        app: smithers-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: smithers
+            - name: POSTGRES_USER
+              value: smithers
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: smithers-secrets
+                  key: pg-password
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "250m"
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "smithers"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: smithers-postgres
+  namespace: smithers-system
+spec:
+  selector:
+    app: smithers-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

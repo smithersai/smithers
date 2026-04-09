@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smithers-orchestrator
+  namespace: smithers-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smithers-orchestrator
+  template:
+    metadata:
+      labels:
+        app: smithers-orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: smithers-orchestrator:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: gateway
+              containerPort: 3000
+            - name: cluster
+              containerPort: 3001
+          env:
+            - name: SMITHERS_ROLE
+              value: orchestrator
+            - name: SMITHERS_PG_HOST
+              value: smithers-postgres.smithers-system.svc.cluster.local
+            - name: SMITHERS_PG_PORT
+              value: "5432"
+            - name: SMITHERS_PG_DATABASE
+              value: smithers
+            - name: SMITHERS_PG_USER
+              value: smithers
+            - name: SMITHERS_PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: smithers-secrets
+                  key: pg-password
+          envFrom:
+            - secretRef:
+                name: smithers-api-keys
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: smithers-orchestrator
+  namespace: smithers-system
+spec:
+  selector:
+    app: smithers-orchestrator
+  ports:
+    - name: gateway
+      port: 3000
+      targetPort: 3000
+    - name: cluster
+      port: 3001
+      targetPort: 3001

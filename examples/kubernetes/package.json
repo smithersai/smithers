@@ -1,0 +1,13 @@
+{
+  "name": "smithers-kubernetes-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "deploy": "bun run scripts/deploy.ts",
+    "teardown": "bun run scripts/teardown.ts"
+  },
+  "dependencies": {
+    "smithers-orchestrator": "file:../.."
+  }
+}
