@@ -181,7 +181,7 @@ describe("slo-breach-explainer", () => {
 // ─── 3. smoketest ──────────────────────────────────────────────────────────────
 // FLAKY: passes individually but fails in full suite due to test ordering/state leakage.
 // See .smithers/tickets/fix-flaky-tests.md
-describe.skip("smoketest", () => {
+describe("smoketest", () => {
   test("setup → parallel checks → report", async () => {
     const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
       setup: z.object({

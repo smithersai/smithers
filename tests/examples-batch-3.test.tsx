@@ -15,7 +15,7 @@ import { z } from "zod";
 
 // FLAKY: passes individually but fails in full suite due to test ordering/state leakage.
 // See .smithers/tickets/fix-flaky-tests.md
-describe.skip("doc-sync", () => {
+describe("doc-sync", () => {
   test("audit → parallel fixes → PR sequence completes", async () => {
     const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
       audit: z.object({
@@ -922,7 +922,7 @@ describe("failing-test-author", () => {
 
 // FLAKY: passes individually but fails in full suite due to test ordering/state leakage.
 // See .smithers/tickets/fix-flaky-tests.md
-describe.skip("fan-out-fan-in", () => {
+describe("fan-out-fan-in", () => {
   test("split → parallel process → merge", async () => {
     const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
       split: z.object({

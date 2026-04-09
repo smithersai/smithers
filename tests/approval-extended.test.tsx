@@ -145,6 +145,54 @@ describe("approval extended", () => {
     cleanup();
   });
 
+  test("async approvals allow unrelated downstream work before approval resolves", async () => {
+    const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
+      approval: approvalDecisionSchema,
+      result: z.object({ v: z.number() }),
+    });
+
+    const workflow = smithers(() => (
+      <Workflow name="async-approval-flow">
+        <Sequence>
+          <Approval
+            id="gate"
+            output={outputs.approval}
+            request={{ title: "Ship it?" }}
+            async
+          />
+          <Task id="after" output={outputs.result}>
+            {{ v: 2 }}
+          </Task>
+        </Sequence>
+      </Workflow>
+    ));
+
+    const first = await runWorkflow(workflow, { input: {} });
+    expect(first.status).toBe("waiting-approval");
+
+    const beforeApproval = await (db as any).select().from(tables.result);
+    expect(beforeApproval).toEqual([
+      expect.objectContaining({
+        runId: first.runId,
+        nodeId: "after",
+        iteration: 0,
+        v: 2,
+      }),
+    ]);
+
+    const adapter = new SmithersDb(db as any);
+    await approveNode(adapter, first.runId, "gate", 0, "ok", "tester");
+
+    const resumed = await runWorkflow(workflow, {
+      input: {},
+      runId: first.runId,
+      resume: true,
+    });
+    expect(resumed.status).toBe("finished");
+
+    cleanup();
+  });
+
   test("selection approval persists typed selection output", async () => {
     const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
       selection: approvalSelectionSchema,

@@ -34,7 +34,7 @@ test("E2E harness can invoke the Smithers CLI from a temp repo", () => {
 
 // FLAKY: passes individually but fails in full suite due to test ordering/state leakage.
 // See .smithers/tickets/fix-flaky-tests.md
-test.skip("smithers init writes the expected workflow-pack layout and it typechecks", () => {
+test("smithers init writes the expected workflow-pack layout and it typechecks", () => {
   const repo = createTempRepo();
   const env = buildInitEnv(repo.dir);
 

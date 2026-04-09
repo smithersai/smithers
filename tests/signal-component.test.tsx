@@ -171,4 +171,75 @@ describe("Signal component", () => {
       cleanup();
     }
   });
+
+  test("async signals allow unrelated downstream work before the signal arrives", async () => {
+    const {
+      smithers,
+      Sequence,
+      Signal,
+      Workflow,
+      Task,
+      outputs,
+      tables,
+      db,
+      cleanup,
+    } = createTestSmithers({
+      signalData: z.object({ value: z.number() }),
+      result: z.object({ value: z.number() }),
+    });
+
+    try {
+      const workflow = smithers(() =>
+        jsx(Workflow, {
+          name: "signal-component-async",
+          children: jsxs(Sequence, {
+            children: [
+              jsx(Signal, {
+                id: "new-data",
+                schema: outputs.signalData,
+                async: true,
+              }),
+              jsx(Task, {
+                id: "after-signal",
+                output: outputs.result,
+                children: {
+                  value: 7,
+                },
+              }),
+            ],
+          }),
+        }),
+      );
+
+      const first = await runWorkflow(workflow, { input: {} });
+      expect(first.status).toBe("waiting-event");
+
+      const resultRowsBeforeSignal = await (db as any).select().from(tables.result);
+      expect(resultRowsBeforeSignal).toEqual([
+        expect.objectContaining({
+          runId: first.runId,
+          nodeId: "after-signal",
+          iteration: 0,
+          value: 7,
+        }),
+      ]);
+
+      await signalRun(
+        new SmithersDb(db as any),
+        first.runId,
+        "new-data",
+        { value: 3 },
+      );
+
+      const resumed = await runWorkflow(workflow, {
+        input: {},
+        runId: first.runId,
+        resume: true,
+      });
+
+      expect(resumed.status).toBe("finished");
+    } finally {
+      cleanup();
+    }
+  });
 });

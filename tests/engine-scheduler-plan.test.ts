@@ -282,6 +282,47 @@ describe("scheduleTasks", () => {
     expect(result.waitingApprovalExists).toBe(true);
   });
 
+  test("async waiting approvals do not block unrelated later sequence tasks", () => {
+    const plan: PlanNode = {
+      kind: "sequence",
+      children: [
+        { kind: "task", nodeId: "a" },
+        { kind: "task", nodeId: "b" },
+      ],
+    };
+    const states: TaskStateMap = new Map([
+      [buildStateKey("a", 0), "waiting-approval"],
+    ]);
+    const descs = new Map([
+      ["a", makeDescriptor("a", { waitAsync: true, needsApproval: true })],
+      ["b", makeDescriptor("b")],
+    ]);
+
+    const result = scheduleTasks(plan, states, descs, new Map(), new Map(), Date.now());
+    expect(result.waitingApprovalExists).toBe(true);
+    expect(result.runnable.map((task) => task.nodeId)).toEqual(["b"]);
+  });
+
+  test("async waiting approvals still block explicit dependencies", () => {
+    const plan: PlanNode = {
+      kind: "sequence",
+      children: [
+        { kind: "task", nodeId: "a" },
+        { kind: "task", nodeId: "b" },
+      ],
+    };
+    const states: TaskStateMap = new Map([
+      [buildStateKey("a", 0), "waiting-approval"],
+    ]);
+    const descs = new Map([
+      ["a", makeDescriptor("a", { waitAsync: true, needsApproval: true })],
+      ["b", makeDescriptor("b", { dependsOn: ["a"] })],
+    ]);
+
+    const result = scheduleTasks(plan, states, descs, new Map(), new Map(), Date.now());
+    expect(result.runnable).toEqual([]);
+  });
+
   test("detects waiting-timer state", () => {
     const plan: PlanNode = {
       kind: "sequence",
