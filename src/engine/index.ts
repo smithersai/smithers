@@ -2365,6 +2365,7 @@ export async function legacyExecuteTask(
       if (
         heartbeatClosed ||
         taskCompleted ||
+        taskExecutionReturned ||
         heartbeatTimeoutTriggered ||
         taskSignal.aborted
       ) {

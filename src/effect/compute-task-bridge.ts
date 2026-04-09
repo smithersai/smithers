@@ -406,6 +406,7 @@ export const executeComputeTaskBridge = async (
       if (
         heartbeatClosed ||
         taskCompleted ||
+        taskExecutionReturned ||
         heartbeatTimeoutTriggered ||
         taskSignal.aborted
       ) {
