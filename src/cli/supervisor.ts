@@ -6,6 +6,7 @@ import type { SmithersEvent } from "../SmithersEvent";
 import type { SmithersDb, StaleRunRecord } from "../db/adapter";
 import { fromSync } from "../effect/interop";
 import { trackEvent } from "../effect/metrics";
+import { isPidAlive, parseRuntimeOwnerPid } from "../runtime-owner";
 import { SmithersError } from "../utils/errors";
 import { resumeRunDetached } from "./resume-detached";
 
@@ -55,7 +56,16 @@ type SupervisorDeps = {
     runtimeOwnerId: string | null | undefined,
   ) => number | null;
   isPidAlive: (pid: number) => boolean;
-  spawnResumeDetached: (workflowPath: string, runId: string) => number | null;
+  spawnResumeDetached: (
+    workflowPath: string,
+    runId: string,
+    claim?: {
+      claimOwnerId: string;
+      claimHeartbeatAtMs: number;
+      restoreRuntimeOwnerId?: string | null;
+      restoreHeartbeatAtMs?: number | null;
+    },
+  ) => number | null;
 };
 
 const durationMultipliers: Record<string, number> = {
@@ -90,36 +100,7 @@ export function parseDurationMs(raw: string, fieldName: string): number {
   return ms;
 }
 
-export function parseRuntimeOwnerPid(
-  runtimeOwnerId: string | null | undefined,
-): number | null {
-  if (!runtimeOwnerId) return null;
-  const trimmed = runtimeOwnerId.trim();
-  if (trimmed.length === 0) return null;
-
-  const exact = trimmed.match(/^pid:(\d+)(?::.*)?$/i);
-  if (exact) {
-    const pid = Number(exact[1]);
-    return Number.isInteger(pid) && pid > 0 ? pid : null;
-  }
-
-  if (/^\d+$/.test(trimmed)) {
-    const pid = Number(trimmed);
-    return Number.isInteger(pid) && pid > 0 ? pid : null;
-  }
-
-  return null;
-}
-
-export function isPidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error: any) {
-    return error?.code === "EPERM";
-  }
-}
+export { isPidAlive, parseRuntimeOwnerPid } from "../runtime-owner";
 
 function normalizeSupervisorOptions(
   options: SupervisorOptions,
@@ -332,7 +313,13 @@ function processCandidateEffect(
 
       const spawnResult = yield* fromSync(
         `resume stale run ${staleRun.runId}`,
-        () => options.deps.spawnResumeDetached(workflowPath, staleRun.runId),
+        () =>
+          options.deps.spawnResumeDetached(workflowPath, staleRun.runId, {
+            claimOwnerId,
+            claimHeartbeatAtMs,
+            restoreRuntimeOwnerId: staleRun.runtimeOwnerId ?? null,
+            restoreHeartbeatAtMs: staleRun.heartbeatAtMs ?? null,
+          }),
         {
           code: "PROCESS_SPAWN_FAILED",
           details: { runId: staleRun.runId, workflowPath },

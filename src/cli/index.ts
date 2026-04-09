@@ -5,7 +5,7 @@ import { readFileSync, existsSync, openSync } from "node:fs";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Effect, Fiber } from "effect";
 import { Cli, Mcp as IncurMcp, z } from "incur";
-import { runWorkflow, renderFrame, resolveSchema } from "../engine";
+import { isRunHeartbeatFresh, runWorkflow, renderFrame, resolveSchema } from "../engine";
 import { mdxPlugin } from "../mdx-plugin";
 import { approveNode, denyNode } from "../engine/approvals";
 import { signalRun } from "../engine/signals";
@@ -23,7 +23,9 @@ import { retryTask } from "../retry-task";
 import { timeTravel } from "../timetravel";
 import { runSync } from "../effect/runtime";
 import { spawn } from "node:child_process";
+import { isHumanRequestPastTimeout, validateHumanRequestValue } from "../human-requests";
 import { SmithersError } from "../utils/errors";
+import { assertMaxBytes, assertMaxStringLength } from "../utils/input-bounds";
 import { findAndOpenDb } from "./find-db";
 import {
   chatAttemptKey,
@@ -133,6 +135,100 @@ function readPackageVersion(): string {
 }
 
 type FailFn = (opts: { code: string; message: string; exitCode?: number }) => never;
+
+const CLI_ARGUMENT_MAX_LENGTH = 4096;
+const CLI_IDENTIFIER_MAX_LENGTH = 256;
+const CLI_TEXT_ARGUMENT_MAX_LENGTH = 64 * 1024;
+const CLI_JSON_ARGUMENT_MAX_BYTES = 1024 * 1024;
+const CLI_HANDLER_BOUNDS_WRAPPED = Symbol("smithers.cliHandlerBoundsWrapped");
+
+function cliFieldNameFromPath(path: string): string {
+  const trimmed = path.replace(/\[\d+\]/g, "");
+  const lastDot = trimmed.lastIndexOf(".");
+  return lastDot >= 0 ? trimmed.slice(lastDot + 1) : trimmed;
+}
+
+function validateCliStringArgument(path: string, value: string): void {
+  const field = cliFieldNameFromPath(path);
+  switch (field) {
+    case "runId":
+    case "requestId":
+    case "correlation":
+    case "correlationId":
+    case "name":
+      assertMaxStringLength(path, value, CLI_IDENTIFIER_MAX_LENGTH);
+      return;
+    case "workflow":
+    case "root":
+    case "logDir":
+      assertMaxStringLength(path, value, CLI_ARGUMENT_MAX_LENGTH);
+      return;
+    case "input":
+    case "data":
+    case "value":
+      assertMaxBytes(path, value, CLI_JSON_ARGUMENT_MAX_BYTES);
+      return;
+    case "prompt":
+    case "note":
+    case "authToken":
+      assertMaxStringLength(path, value, CLI_TEXT_ARGUMENT_MAX_LENGTH);
+      return;
+    default:
+      assertMaxStringLength(path, value, CLI_ARGUMENT_MAX_LENGTH);
+  }
+}
+
+function assertCliArgumentBounds(value: unknown, path: string): void {
+  if (value === null || value === undefined) {
+    return;
+  }
+  if (typeof value === "string") {
+    validateCliStringArgument(path, value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      assertCliArgumentBounds(value[index], `${path}[${index}]`);
+    }
+    return;
+  }
+  if (typeof value !== "object") {
+    return;
+  }
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    assertCliArgumentBounds(entry, `${path}.${key}`);
+  }
+}
+
+function wrapCliCommandHandlersWithInputBounds(
+  commands: Map<string, any>,
+): void {
+  for (const entry of commands.values()) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    if ("_group" in entry) {
+      wrapCliCommandHandlersWithInputBounds(entry.commands);
+      continue;
+    }
+    if ("_fetch" in entry) {
+      continue;
+    }
+    if ((entry as any)[CLI_HANDLER_BOUNDS_WRAPPED]) {
+      continue;
+    }
+    const originalRun = entry.run;
+    if (typeof originalRun !== "function") {
+      continue;
+    }
+    entry.run = function wrappedRun(this: unknown, context: any) {
+      assertCliArgumentBounds(context.args, "args");
+      assertCliArgumentBounds(context.options, "options");
+      return originalRun.call(this, context);
+    };
+    (entry as any)[CLI_HANDLER_BOUNDS_WRAPPED] = true;
+  }
+}
 
 function parseJsonInput(raw: string | undefined, label: string, fail: FailFn) {
   if (!raw) return undefined;
@@ -391,6 +487,30 @@ function renderHumanInboxHuman(requests: any[]) {
         `  node: ${request.nodeId}#${request.iteration ?? 0}`,
         `  age: ${age}`,
         `  prompt: ${truncateCliText(String(request.prompt ?? ""), 160)}`,
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
+function renderAlertsHuman(alerts: any[]) {
+  if (alerts.length === 0) {
+    return "No active alerts.";
+  }
+
+  return alerts
+    .map((alert) => {
+      const age =
+        typeof alert.firedAtMs === "number"
+          ? formatAge(alert.firedAtMs)
+          : "unknown";
+      return [
+        `${alert.alertId}`,
+        `  severity: ${alert.severity}`,
+        `  status: ${alert.status}`,
+        `  policy: ${alert.policyName}`,
+        ...(alert.runId ? [`  run: ${alert.runId}`] : []),
+        `  age: ${age}`,
+        `  message: ${truncateCliText(String(alert.message ?? ""), 160)}`,
       ].join("\n");
     })
     .join("\n\n");
@@ -1140,6 +1260,10 @@ const upOptions = z.object({
   input: z.string().optional().describe("Input data as JSON string"),
   resume: z.boolean().default(false).describe("Resume a previous run instead of starting fresh"),
   force: z.boolean().default(false).describe("Resume even if still marked running"),
+  resumeClaimOwner: z.string().optional().describe("Internal durable resume claim owner"),
+  resumeClaimHeartbeat: z.number().int().min(1).optional().describe("Internal durable resume claim heartbeat"),
+  resumeRestoreOwner: z.string().optional().describe("Internal durable resume restore owner"),
+  resumeRestoreHeartbeat: z.number().int().min(1).optional().describe("Internal durable resume restore heartbeat"),
   serve: z.boolean().default(false).describe("Start an HTTP server alongside the workflow"),
   supervise: z.boolean().default(false).describe("Run the stale-run supervisor loop (with --serve)"),
   superviseDryRun: z.boolean().default(false).describe("With --supervise, detect stale runs without resuming"),
@@ -1414,6 +1538,10 @@ async function executeUpCommand(
       if (options.hot) childArgs.push("--hot");
       if (resume) childArgs.push("--resume");
       if (options.force) childArgs.push("--force");
+      if (options.resumeClaimOwner) childArgs.push("--resume-claim-owner", options.resumeClaimOwner);
+      if (options.resumeClaimHeartbeat) childArgs.push("--resume-claim-heartbeat", String(options.resumeClaimHeartbeat));
+      if (options.resumeRestoreOwner) childArgs.push("--resume-restore-owner", options.resumeRestoreOwner);
+      if (options.resumeRestoreHeartbeat) childArgs.push("--resume-restore-heartbeat", String(options.resumeRestoreHeartbeat));
       if (options.serve) childArgs.push("--serve");
       if (options.supervise) childArgs.push("--supervise");
       if (options.superviseDryRun) childArgs.push("--supervise-dry-run");
@@ -1492,8 +1620,8 @@ async function executeUpCommand(
       if (resume && !existing) {
         return fail({ code: "RUN_NOT_FOUND", message: `Run not found: ${runId}`, exitCode: 4 });
       }
-      if (resume && existing?.status === "running" && !options.force) {
-        return fail({ code: "RUN_STILL_RUNNING", message: `Run is still marked running: ${runId}. Use --force to resume anyway.`, exitCode: 4 });
+      if (resume && existing?.status === "running" && isRunHeartbeatFresh(existing) && !options.force) {
+        return fail({ code: "RUN_STILL_RUNNING", message: `Run is still actively running: ${runId}. Use --force to resume anyway.`, exitCode: 4 });
       }
       if (!resume && existing) {
         return fail({ code: "RUN_EXISTS", message: `Run already exists: ${runId}`, exitCode: 4 });
@@ -1504,6 +1632,22 @@ async function executeUpCommand(
     const logDir = options.log ? options.logDir : null;
     const onProgress = buildProgressReporter();
     const abort = setupAbortSignal();
+    if (Boolean(options.resumeClaimOwner) !== Boolean(options.resumeClaimHeartbeat)) {
+      return fail({
+        code: "INVALID_RESUME_CLAIM",
+        message: "--resume-claim-owner and --resume-claim-heartbeat must be provided together.",
+        exitCode: 4,
+      });
+    }
+    const resumeClaim =
+      options.resumeClaimOwner && options.resumeClaimHeartbeat
+        ? {
+            claimOwnerId: options.resumeClaimOwner,
+            claimHeartbeatAtMs: options.resumeClaimHeartbeat,
+            restoreRuntimeOwnerId: options.resumeRestoreOwner ?? null,
+            restoreHeartbeatAtMs: options.resumeRestoreHeartbeat ?? null,
+          }
+        : undefined;
 
     if (options.serve) {
       let hostedSupervisor: ResolvedSupervisorOptions | null = null;
@@ -1570,6 +1714,7 @@ async function executeUpCommand(
         input,
         runId: effectiveRunId,
         resume,
+        resumeClaim,
         workflowPath: resolvedWorkflowPath,
         maxConcurrency: options.maxConcurrency,
         rootDir,
@@ -1630,6 +1775,7 @@ async function executeUpCommand(
       input,
       runId,
       resume,
+      resumeClaim,
       workflowPath: resolvedWorkflowPath,
       maxConcurrency: options.maxConcurrency,
       rootDir,
@@ -3381,6 +3527,7 @@ const cli = Cli.create({
             });
           }
 
+          await adapter.expireStaleHumanRequests();
           const request = await adapter.getHumanRequest(requestId);
           if (!request) {
             return fail({
@@ -3417,6 +3564,26 @@ const cli = Cli.create({
               "human request value",
               fail,
             );
+            const validation = validateHumanRequestValue(request, value);
+            if (!validation.ok) {
+              return fail({
+                code: validation.code,
+                message: validation.message,
+                exitCode: 4,
+              });
+            }
+
+            const answeredAtMs = Date.now();
+            if (isHumanRequestPastTimeout(request, answeredAtMs)) {
+              await adapter.expireStaleHumanRequests(answeredAtMs);
+              return fail({
+                code: "HUMAN_REQUEST_EXPIRED",
+                message:
+                  `Human request ${requestId} expired at ${new Date(request.timeoutAtMs!).toISOString()}.`,
+                exitCode: 4,
+              });
+            }
+
             const responseJson = JSON.stringify(value);
 
             if (approval?.status === "requested") {
@@ -3433,7 +3600,7 @@ const cli = Cli.create({
             await adapter.answerHumanRequest(
               requestId,
               responseJson,
-              Date.now(),
+              answeredAtMs,
               c.options.by ?? null,
             );
 
@@ -3472,6 +3639,138 @@ const cli = Cli.create({
       } catch (err: any) {
         return fail({
           code: "HUMAN_REQUEST_COMMAND_FAILED",
+          message: err?.message ?? String(err),
+          exitCode: 1,
+        });
+      }
+    },
+  })
+
+  // =========================================================================
+  // smithers alerts list|ack|resolve|silence
+  // =========================================================================
+  .command("alerts", {
+    description: "List and manage durable alert instances.",
+    args: alertsArgs,
+    options: alertsOptions,
+    async run(c) {
+      const fail: FailFn = (opts) => {
+        commandExitOverride = opts.exitCode ?? 1;
+        return c.error(opts);
+      };
+
+      const action = c.args.action.trim().toLowerCase();
+      if (
+        action !== "list" &&
+        action !== "ack" &&
+        action !== "resolve" &&
+        action !== "silence"
+      ) {
+        return fail({
+          code: "INVALID_ALERT_ACTION",
+          message: `Unknown smithers alerts action: ${c.args.action}`,
+          exitCode: 4,
+        });
+      }
+
+      try {
+        const { adapter, cleanup } = await findAndOpenDb();
+        try {
+          if (action === "list") {
+            const rows = await adapter.listAlerts(200, [
+              "firing",
+              "acknowledged",
+              "silenced",
+            ]);
+            const alerts = (rows as any[]).map((row: any) => ({
+              alertId: row.alertId,
+              runId: row.runId ?? null,
+              policyName: row.policyName,
+              severity: row.severity,
+              status: row.status,
+              firedAtMs: row.firedAtMs ?? null,
+              firedAt:
+                typeof row.firedAtMs === "number"
+                  ? new Date(row.firedAtMs).toISOString()
+                  : null,
+              resolvedAtMs: row.resolvedAtMs ?? null,
+              resolvedAt:
+                typeof row.resolvedAtMs === "number"
+                  ? new Date(row.resolvedAtMs).toISOString()
+                  : null,
+              acknowledgedAtMs: row.acknowledgedAtMs ?? null,
+              acknowledgedAt:
+                typeof row.acknowledgedAtMs === "number"
+                  ? new Date(row.acknowledgedAtMs).toISOString()
+                  : null,
+              age:
+                typeof row.firedAtMs === "number"
+                  ? formatAge(row.firedAtMs)
+                  : "unknown",
+              message: row.message,
+              detailsJson: row.detailsJson ?? null,
+            }));
+            if (c.format === "json" || c.format === "jsonl") {
+              return c.ok({ alerts });
+            }
+            return c.ok(renderAlertsHuman(alerts));
+          }
+
+          const alertId = c.args.alertId?.trim();
+          if (!alertId) {
+            return fail({
+              code: "ALERT_ID_REQUIRED",
+              message: `smithers alerts ${action} requires <id>`,
+              exitCode: 4,
+            });
+          }
+
+          const existing = await adapter.getAlert(alertId);
+          if (!existing) {
+            return fail({
+              code: "ALERT_NOT_FOUND",
+              message: `Alert not found: ${alertId}`,
+              exitCode: 4,
+            });
+          }
+
+          const alert =
+            action === "ack"
+              ? await adapter.acknowledgeAlert(alertId, Date.now())
+              : action === "resolve"
+                ? await adapter.resolveAlert(alertId, Date.now())
+                : await adapter.silenceAlert(alertId);
+
+          if (!alert) {
+            return fail({
+              code: "ALERT_NOT_FOUND",
+              message: `Alert not found: ${alertId}`,
+              exitCode: 4,
+            });
+          }
+
+          const payload = {
+            alertId: alert.alertId,
+            runId: alert.runId ?? null,
+            policyName: alert.policyName,
+            severity: alert.severity,
+            status: alert.status,
+            firedAtMs: alert.firedAtMs ?? null,
+            resolvedAtMs: alert.resolvedAtMs ?? null,
+            acknowledgedAtMs: alert.acknowledgedAtMs ?? null,
+            message: alert.message,
+            detailsJson: alert.detailsJson ?? null,
+          };
+          if (c.format === "json" || c.format === "jsonl") {
+            return c.ok(payload);
+          }
+          return c.ok(`Alert ${payload.alertId} is ${payload.status}.`);
+        } finally {
+          cleanup();
+        }
+      } catch (err: any) {
+        return fail({
+          code: "ALERTS_FAILED",
           message: err?.message ?? String(err),
           exitCode: 1,
         });
@@ -3850,7 +4149,10 @@ const cli = Cli.create({
           outputs,
         });
         const baseRootDir = dirname(resolvedWorkflowPath);
-        const snap = await renderFrame(workflow, ctx, { baseRootDir });
+        const snap = await renderFrame(workflow, ctx, {
+          baseRootDir,
+          workflowPath: resolvedWorkflowPath,
+        });
         const seen = new WeakSet<object>();
         return c.ok(
           JSON.parse(
@@ -4428,6 +4730,12 @@ const cli = Cli.create({
   .command(memoryCli)
   .command(openapiCli);
 
+const cliCommands = (Cli as any).toCommands?.get(cli as any);
+if (!(cliCommands instanceof Map)) {
+  throw new Error("Could not resolve Smithers CLI commands for input bounds.");
+}
+wrapCliCommandHandlersWithInputBounds(cliCommands);
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -4435,7 +4743,7 @@ const cli = Cli.create({
 const KNOWN_COMMANDS = new Set([
   "init", "up", "supervise", "down", "ps", "logs", "events", "chat", "inspect", "node", "why", "approve", "deny",
   "cancel", "graph", "revert", "scores", "observability", "workflow", "ask", "cron",
-  "replay", "diff", "fork", "timeline", "rag", "memory", "openapi", "agents",
+  "replay", "diff", "fork", "timeline", "rag", "memory", "openapi", "agents", "alerts",
 ]);
 
 const BUILTIN_FLAGS_WITH_VALUES = new Set([

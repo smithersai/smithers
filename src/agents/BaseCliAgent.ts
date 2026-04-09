@@ -13,8 +13,15 @@ import type { AgentCapabilityRegistry } from "./capability-registry";
 import { spawnCaptureEffect } from "../effect/child-process";
 import { fromPromise } from "../effect/interop";
 import { runPromise } from "../effect/runtime";
-import { logDebug, logWarning } from "../effect/logging";
-import { toolOutputTruncatedTotal } from "../effect/metrics";
+import { logDebug, logInfo, logWarning } from "../effect/logging";
+import {
+  agentDurationMs,
+  agentErrorsTotal,
+  agentInvocationsTotal,
+  agentRetriesTotal,
+  agentTokensTotal,
+  toolOutputTruncatedTotal,
+} from "../effect/metrics";
 import { getToolContext } from "../tools/context";
 import { SmithersError, toSmithersError } from "../utils/errors";
 import { launchDiagnostics, enrichReportWithErrorAnalysis, formatDiagnosticSummary } from "./diagnostics";
@@ -541,6 +548,198 @@ export type CliUsageInfo = {
   cacheWriteTokens?: number;
   reasoningTokens?: number;
 };
+
+type AgentInvocationOperation = "generate" | "stream";
+
+type AgentInvocationTags = {
+  source: "adapter";
+  engine: string;
+  operation: AgentInvocationOperation;
+  model?: string;
+};
+
+type AgentTokenTotals = CliUsageInfo & {
+  totalTokens?: number;
+};
+
+function normalizeMetricTag(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function taggedMetric<A extends Metric.Metric<any, any, any>>(
+  metric: A,
+  tags: Record<string, string | undefined>,
+): A {
+  let tagged: any = metric;
+  for (const [key, value] of Object.entries(tags)) {
+    if (!value) continue;
+    tagged = Metric.tagged(tagged, key, value);
+  }
+  return tagged as A;
+}
+
+function resolveAgentEngineTag(
+  agent: BaseCliAgent,
+  fallbackCommand?: string,
+): string {
+  return normalizeMetricTag((agent as any).cliEngine)
+    ?? normalizeMetricTag((agent as any).model)
+    ?? normalizeMetricTag(fallbackCommand)
+    ?? normalizeMetricTag(agent.constructor?.name)
+    ?? "unknown";
+}
+
+function asFiniteTokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function extractAgentTokenTotals(usage: any): AgentTokenTotals {
+  if (!usage || typeof usage !== "object") {
+    return {};
+  }
+
+  const inputTokens =
+    asFiniteTokenCount(usage.inputTokens)
+    ?? asFiniteTokenCount(usage.input_tokens)
+    ?? asFiniteTokenCount(usage.prompt_tokens);
+  const outputTokens =
+    asFiniteTokenCount(usage.outputTokens)
+    ?? asFiniteTokenCount(usage.output_tokens)
+    ?? asFiniteTokenCount(usage.completion_tokens);
+  const cacheReadTokens =
+    asFiniteTokenCount(usage.cacheReadTokens)
+    ?? asFiniteTokenCount(usage.cached_input_tokens)
+    ?? asFiniteTokenCount(usage.cache_read_input_tokens)
+    ?? asFiniteTokenCount(usage.inputTokenDetails?.cacheReadTokens);
+  const cacheWriteTokens =
+    asFiniteTokenCount(usage.cacheWriteTokens)
+    ?? asFiniteTokenCount(usage.cache_creation_input_tokens)
+    ?? asFiniteTokenCount(usage.inputTokenDetails?.cacheWriteTokens);
+  const reasoningTokens =
+    asFiniteTokenCount(usage.reasoningTokens)
+    ?? asFiniteTokenCount(usage.reasoning_tokens)
+    ?? asFiniteTokenCount(usage.outputTokenDetails?.reasoningTokens);
+  const totalTokens =
+    asFiniteTokenCount(usage.totalTokens)
+    ?? asFiniteTokenCount(
+      (inputTokens ?? 0)
+      + (outputTokens ?? 0)
+      + (cacheReadTokens ?? 0)
+      + (cacheWriteTokens ?? 0)
+      + (reasoningTokens ?? 0),
+    );
+
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    reasoningTokens,
+    totalTokens,
+  };
+}
+
+function recordAgentTokenMetrics(
+  tags: AgentInvocationTags,
+  totals: AgentTokenTotals,
+): Effect.Effect<void> {
+  const effects: Effect.Effect<void>[] = [];
+
+  const pushMetric = (kind: string, value: number | undefined) => {
+    if (!value || value <= 0) return;
+    effects.push(
+      Metric.incrementBy(
+        taggedMetric(agentTokensTotal, {
+          ...tags,
+          kind,
+        }),
+        value,
+      ),
+    );
+  };
+
+  pushMetric("input", totals.inputTokens);
+  pushMetric("output", totals.outputTokens);
+  pushMetric("cache_read", totals.cacheReadTokens);
+  pushMetric("cache_write", totals.cacheWriteTokens);
+  pushMetric("reasoning", totals.reasoningTokens);
+  pushMetric("total", totals.totalTokens);
+
+  return effects.length > 0 ? Effect.all(effects, { discard: true }) : Effect.void;
+}
+
+function resolveRetryHint(options: any): { isRetry: boolean; reason?: string } {
+  if (options?.retry === true) return { isRetry: true, reason: "retry" };
+  if (options?.isRetry === true) return { isRetry: true, reason: "is_retry" };
+  if (typeof options?.retryAttempt === "number" && options.retryAttempt > 0) {
+    return { isRetry: true, reason: "retry_attempt" };
+  }
+  if (typeof options?.schemaRetry === "number" && options.schemaRetry > 0) {
+    return { isRetry: true, reason: "schema_retry" };
+  }
+  return { isRetry: false };
+}
+
+function logAgentCliEvent(
+  event: AgentCliEvent,
+  annotations: Record<string, unknown>,
+  span: string,
+) {
+  switch (event.type) {
+    case "started":
+      logInfo(
+        "agent session started",
+        {
+          ...annotations,
+          eventType: event.type,
+          eventEngine: event.engine,
+          title: event.title,
+          resume: event.resume ?? null,
+        },
+        span,
+      );
+      return;
+
+    case "action":
+      logDebug(
+        "agent action event",
+        {
+          ...annotations,
+          eventType: event.type,
+          eventEngine: event.engine,
+          phase: event.phase,
+          actionId: event.action.id,
+          actionKind: event.action.kind,
+          actionTitle: event.action.title,
+          entryType: event.entryType ?? null,
+          level: event.level ?? null,
+          ok: event.ok ?? null,
+        },
+        span,
+      );
+      return;
+
+    case "completed":
+      (event.ok ? logInfo : logWarning)(
+        event.ok ? "agent session completed" : "agent session failed",
+        {
+          ...annotations,
+          eventType: event.type,
+          eventEngine: event.engine,
+          ok: event.ok,
+          resume: event.resume ?? null,
+          error: event.error ?? null,
+          hasUsage: Boolean(event.usage),
+        },
+        span,
+      );
+      return;
+  }
+}
 
 /**
  * Extract token usage from raw CLI stdout. Each CLI harness reports usage
@@ -1242,7 +1441,11 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
     this.extraArgs = opts.extraArgs;
   }
 
-  async generate(options: any): Promise<GenerateTextResult<any, any>> {
+  private runGenerateEffect(
+    options: any,
+    operation: AgentInvocationOperation,
+  ): Effect.Effect<GenerateTextResult<any, any>, SmithersError> {
+    const invocationStart = performance.now();
     const { prompt, systemFromMessages } = extractPrompt(options);
     const callTimeouts = resolveTimeouts(options?.timeout, {
       totalMs: this.timeoutMs,
@@ -1257,77 +1460,41 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
       this.systemPrompt,
       systemFromMessages,
     ]);
-    const commandSpec = await this.buildCommand({
-      prompt,
-      systemPrompt: combinedSystem,
+    const retryHint = resolveRetryHint(options);
+    const span = `agent.${operation}`;
+    let metricTags: AgentInvocationTags = {
+      source: "adapter",
+      engine: resolveAgentEngineTag(this),
+      operation,
+      model: normalizeMetricTag(this.model),
+    };
+    const spanAnnotations = {
+      agentEngine: metricTags.engine,
+      agentOperation: operation,
+      agentModel: metricTags.model ?? "unknown",
       cwd,
-      options,
-    });
-    const commandEnv = commandSpec.env
-      ? ({ ...env, ...commandSpec.env } as Record<string, string>)
-      : env;
-    const stdoutEmitter = createAgentStdoutTextEmitter({
-      outputFormat: commandSpec.outputFormat,
-      onText: options?.onStdout,
-    });
-    const interpreter = this.createOutputInterpreter();
-    let stdoutBuffer = "";
-    let stderrBuffer = "";
+      timeoutMs: callTimeouts.totalMs ?? null,
+      idleTimeoutMs: callTimeouts.idleMs ?? null,
+      hasMessages: Array.isArray(options?.messages),
+      hasResumeSession: typeof options?.resumeSession === "string",
+      promptBytes: Buffer.byteLength(prompt, "utf8"),
+      systemPromptBytes: combinedSystem ? Buffer.byteLength(combinedSystem, "utf8") : 0,
+    } as const;
 
-    const emitEvents = (
-      eventPayload: AgentCliEvent[] | AgentCliEvent | null | undefined,
-    ) => {
-      if (!eventPayload || !options?.onEvent) return;
-      const events = Array.isArray(eventPayload) ? eventPayload : [eventPayload];
-      for (const event of events) {
-        void Promise.resolve(options.onEvent(event)).catch(() => undefined);
-      }
-    };
+    let diagnosticsPromise: Promise<any> | null | undefined;
+    let stdoutEmitter: AgentStdoutTextEmitter | undefined;
+    let cleanup: (() => Promise<void>) | undefined;
+    let commandLogAnnotations: Record<string, unknown> = {};
 
-    const flushBufferedLines = (
-      stream: "stdout" | "stderr",
-      includePartial: boolean,
-    ) => {
-      if (!interpreter) return;
-      let buffer = stream === "stdout" ? stdoutBuffer : stderrBuffer;
-      const lines = buffer.split("\n");
-      if (!includePartial) {
-        buffer = lines.pop() ?? "";
-      } else {
-        buffer = "";
-      }
-
-      for (const line of lines) {
-        if (!line) continue;
-        emitEvents(
-          stream === "stdout"
-            ? interpreter.onStdoutLine?.(line)
-            : interpreter.onStderrLine?.(line),
-        );
-      }
-
-      if (stream === "stdout") {
-        stdoutBuffer = buffer;
-      } else {
-        stderrBuffer = buffer;
-      }
-    };
-
-    const handleInterpreterChunk = (
-      stream: "stdout" | "stderr",
-      chunk: string,
-    ) => {
-      if (!interpreter || !chunk) return;
-      if (stream === "stdout") {
-        stdoutBuffer += chunk;
-      } else {
-        stderrBuffer += chunk;
-      }
-      flushBufferedLines(stream, false);
-    };
-
-    // Launch diagnostics optimistically alongside the agent
-    const diagnosticsPromise = launchDiagnostics(commandSpec.command, commandEnv, cwd);
+    const recordDurationMetric = () =>
+      Effect.sync(() => performance.now() - invocationStart).pipe(
+        Effect.flatMap((durationMs) =>
+          Metric.update(
+            taggedMetric(agentDurationMs, metricTags),
+            durationMs,
+          ),
+        ),
+      );
 
     function filterBenignStderr(stderr: string): string {
       const benignPatterns = [
@@ -1345,134 +1512,289 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
       return filtered.replace(/\n{3,}/g, "\n\n").trim();
     }
 
-    const program = Effect.gen(this, function* () {
-      const result = yield* runCommandEffect(commandSpec.command, commandSpec.args, {
-        cwd,
-        env: commandEnv,
-        input: commandSpec.stdin,
-        timeoutMs: callTimeouts.totalMs,
-        idleTimeoutMs: callTimeouts.idleMs,
-        signal: options?.abortSignal,
-        maxOutputBytes: this.maxOutputBytes ?? getToolContext()?.maxOutputBytes,
-        onStdout: (chunk) => {
-          stdoutEmitter.push(chunk);
-          handleInterpreterChunk("stdout", chunk);
-        },
-        onStderr: (chunk) => {
-          options?.onStderr?.(chunk);
-          handleInterpreterChunk("stderr", chunk);
-        },
-      });
-      flushBufferedLines("stdout", true);
-      flushBufferedLines("stderr", true);
-      emitEvents(interpreter?.onExit?.(result));
+    const program = Effect.all([
+      Metric.increment(taggedMetric(agentInvocationsTotal, metricTags)),
+      ...(retryHint.isRetry
+        ? [
+            Metric.increment(
+              taggedMetric(agentRetriesTotal, {
+                ...metricTags,
+                reason: retryHint.reason ?? "explicit",
+              }),
+            ),
+          ]
+        : []),
+      Effect.logDebug("agent invocation started").pipe(
+        Effect.annotateLogs({
+          ...spanAnnotations,
+          retryReason: retryHint.reason ?? null,
+        }),
+      ),
+    ], { discard: true }).pipe(
+      Effect.andThen(
+        fromPromise("build agent command", () =>
+          this.buildCommand({
+            prompt,
+            systemPrompt: combinedSystem,
+            cwd,
+            options,
+          }),
+        ),
+      ),
+      Effect.flatMap((commandSpec) => {
+        cleanup = commandSpec.cleanup;
+        metricTags = {
+          ...metricTags,
+          engine: resolveAgentEngineTag(this, commandSpec.command),
+          model: normalizeMetricTag(this.model ?? commandSpec.command),
+        };
+        commandLogAnnotations = {
+          ...spanAnnotations,
+          agentEngine: metricTags.engine,
+          agentModel: metricTags.model ?? "unknown",
+          agentCommand: commandSpec.command,
+          agentArgs: commandSpec.args.join(" "),
+          outputFormat: commandSpec.outputFormat ?? "text",
+        };
 
-      const stdout = commandSpec.outputFile
-        ? yield* fromPromise("read output file", () =>
-            fs.readFile(commandSpec.outputFile!, "utf8"),
-          ).pipe(Effect.catchAll(() => Effect.succeed(result.stdout)))
-        : result.stdout;
+        const commandEnv = commandSpec.env
+          ? ({ ...env, ...commandSpec.env } as Record<string, string>)
+          : env;
+        stdoutEmitter = createAgentStdoutTextEmitter({
+          outputFormat: commandSpec.outputFormat,
+          onText: options?.onStdout,
+        });
+        const interpreter = this.createOutputInterpreter();
+        let stdoutBuffer = "";
+        let stderrBuffer = "";
 
-      if (result.exitCode && result.exitCode !== 0) {
-        const filteredStderr = filterBenignStderr(result.stderr);
-        if (!(commandSpec.command === "codex" && filteredStderr.length === 0)) {
-          const errorText =
-            filteredStderr ||
-            result.stdout.trim() ||
-            `CLI exited with code ${result.exitCode}`;
-          return yield* Effect.fail(new SmithersError("AGENT_CLI_ERROR", errorText));
-        }
-      }
+        const emitEvents = (
+          eventPayload: AgentCliEvent[] | AgentCliEvent | null | undefined,
+        ) => {
+          if (!eventPayload) return;
+          const events = Array.isArray(eventPayload) ? eventPayload : [eventPayload];
+          for (const event of events) {
+            logAgentCliEvent(event, commandLogAnnotations, span);
+            if (!options?.onEvent) continue;
+            void Promise.resolve(options.onEvent(event)).catch(() => undefined);
+          }
+        };
 
-      // Some CLIs may print extra banners to stdout. Allow individual agents
-      // to provide patterns so this logic stays opt-in and agent-specific.
-      const stdoutBannerPatterns = commandSpec.stdoutBannerPatterns ?? [];
-      let cleanedStdout = stdout;
-      for (const pattern of stdoutBannerPatterns) {
-        const regex = new RegExp(pattern.source, pattern.flags);
-        cleanedStdout = cleanedStdout.replace(regex, "");
-      }
-      const rawText = cleanedStdout.trim();
+        const flushBufferedLines = (
+          stream: "stdout" | "stderr",
+          includePartial: boolean,
+        ) => {
+          if (!interpreter) return;
+          let buffer = stream === "stdout" ? stdoutBuffer : stderrBuffer;
+          const lines = buffer.split("\n");
+          if (!includePartial) {
+            buffer = lines.pop() ?? "";
+          } else {
+            buffer = "";
+          }
 
-      // Optionally treat "banner-only" output as an error when requested.
-      if (commandSpec.errorOnBannerOnly && !rawText && stdout.trim()) {
-        return yield* Effect.fail(new SmithersError(
-          "AGENT_CLI_ERROR",
-          `CLI agent error (stdout): output was only a banner with no model response`,
-        ));
-      }
-
-      // Some CLIs report failures on stdout even with exit code 0. Keep
-      // detection patterns opt-in so normal model text is not misclassified.
-      const stdoutErrorPatterns = commandSpec.stdoutErrorPatterns ?? [];
-      if (rawText && !rawText.startsWith("{") && !rawText.startsWith("[")) {
-        for (const pattern of stdoutErrorPatterns) {
-          const regex = new RegExp(pattern.source, pattern.flags);
-          if (regex.test(rawText)) {
-            return yield* Effect.fail(
-              new SmithersError("AGENT_CLI_ERROR", `CLI agent error (stdout): ${rawText.slice(0, 500)}`),
+          for (const line of lines) {
+            if (!line) continue;
+            emitEvents(
+              stream === "stdout"
+                ? interpreter.onStdoutLine?.(line)
+                : interpreter.onStderrLine?.(line),
             );
           }
-        }
-      }
 
-      const outputFormat = commandSpec.outputFormat;
-      const extractedText =
-        outputFormat === "json" || outputFormat === "stream-json"
-          ? (extractTextFromJsonPayload(rawText) ?? rawText)
-          : rawText;
-
-      const output = tryParseJson(extractedText);
-      // Extract token usage from raw stdout before text extraction strips it.
-      // Each CLI harness embeds usage differently (NDJSON events, JSON stats, etc.)
-      const cliUsage = extractUsageFromOutput(stdout);
-      const usage = cliUsage ? {
-        inputTokens: cliUsage.inputTokens,
-        inputTokenDetails: {
-          noCacheTokens: undefined,
-          cacheReadTokens: cliUsage.cacheReadTokens,
-          cacheWriteTokens: cliUsage.cacheWriteTokens,
-        },
-        outputTokens: cliUsage.outputTokens,
-        outputTokenDetails: {
-          textTokens: undefined,
-          reasoningTokens: cliUsage.reasoningTokens,
-        },
-        totalTokens: (cliUsage.inputTokens ?? 0) + (cliUsage.outputTokens ?? 0) || undefined,
-      } : undefined;
-      stdoutEmitter.flush(extractedText);
-      return buildGenerateResult(
-        extractedText,
-        output,
-        this.model ?? commandSpec.command,
-        usage,
-      );
-    }).pipe(
-      Effect.tapError((err) =>
-        fromPromise("enrich diagnostics", async () => {
-          if (!diagnosticsPromise) return;
-          const report = await diagnosticsPromise.catch(() => null);
-          if (report && err instanceof SmithersError) {
-            enrichReportWithErrorAnalysis(report, err.message);
-            err.details = { ...err.details, diagnostics: report };
-            console.warn(formatDiagnosticSummary(report));
+          if (stream === "stdout") {
+            stdoutBuffer = buffer;
+          } else {
+            stderrBuffer = buffer;
           }
-        }).pipe(Effect.ignore),
+        };
+
+        const handleInterpreterChunk = (
+          stream: "stdout" | "stderr",
+          chunk: string,
+        ) => {
+          if (!interpreter || !chunk) return;
+          if (stream === "stdout") {
+            stdoutBuffer += chunk;
+          } else {
+            stderrBuffer += chunk;
+          }
+          flushBufferedLines(stream, false);
+        };
+
+        diagnosticsPromise = launchDiagnostics(commandSpec.command, commandEnv, cwd);
+
+        return Effect.gen(this, function* () {
+          const result = yield* runCommandEffect(commandSpec.command, commandSpec.args, {
+            cwd,
+            env: commandEnv,
+            input: commandSpec.stdin,
+            timeoutMs: callTimeouts.totalMs,
+            idleTimeoutMs: callTimeouts.idleMs,
+            signal: options?.abortSignal,
+            maxOutputBytes: this.maxOutputBytes ?? getToolContext()?.maxOutputBytes,
+            onStdout: (chunk) => {
+              stdoutEmitter?.push(chunk);
+              handleInterpreterChunk("stdout", chunk);
+            },
+            onStderr: (chunk) => {
+              options?.onStderr?.(chunk);
+              handleInterpreterChunk("stderr", chunk);
+            },
+          });
+          flushBufferedLines("stdout", true);
+          flushBufferedLines("stderr", true);
+          emitEvents(interpreter?.onExit?.(result));
+
+          const stdout = commandSpec.outputFile
+            ? yield* fromPromise("read output file", () =>
+                fs.readFile(commandSpec.outputFile!, "utf8"),
+              ).pipe(Effect.catchAll(() => Effect.succeed(result.stdout)))
+            : result.stdout;
+
+          if (result.exitCode && result.exitCode !== 0) {
+            const filteredStderr = filterBenignStderr(result.stderr);
+            if (!(commandSpec.command === "codex" && filteredStderr.length === 0)) {
+              const errorText =
+                filteredStderr ||
+                result.stdout.trim() ||
+                `CLI exited with code ${result.exitCode}`;
+              return yield* Effect.fail(new SmithersError("AGENT_CLI_ERROR", errorText));
+            }
+          }
+
+          // Some CLIs may print extra banners to stdout. Allow individual agents
+          // to provide patterns so this logic stays opt-in and agent-specific.
+          const stdoutBannerPatterns = commandSpec.stdoutBannerPatterns ?? [];
+          let cleanedStdout = stdout;
+          for (const pattern of stdoutBannerPatterns) {
+            const regex = new RegExp(pattern.source, pattern.flags);
+            cleanedStdout = cleanedStdout.replace(regex, "");
+          }
+          const rawText = cleanedStdout.trim();
+
+          // Optionally treat "banner-only" output as an error when requested.
+          if (commandSpec.errorOnBannerOnly && !rawText && stdout.trim()) {
+            return yield* Effect.fail(new SmithersError(
+              "AGENT_CLI_ERROR",
+              "CLI agent error (stdout): output was only a banner with no model response",
+            ));
+          }
+
+          // Some CLIs report failures on stdout even with exit code 0. Keep
+          // detection patterns opt-in so normal model text is not misclassified.
+          const stdoutErrorPatterns = commandSpec.stdoutErrorPatterns ?? [];
+          if (rawText && !rawText.startsWith("{") && !rawText.startsWith("[")) {
+            for (const pattern of stdoutErrorPatterns) {
+              const regex = new RegExp(pattern.source, pattern.flags);
+              if (regex.test(rawText)) {
+                return yield* Effect.fail(
+                  new SmithersError(
+                    "AGENT_CLI_ERROR",
+                    `CLI agent error (stdout): ${rawText.slice(0, 500)}`,
+                  ),
+                );
+              }
+            }
+          }
+
+          const outputFormat = commandSpec.outputFormat;
+          const extractedText =
+            outputFormat === "json" || outputFormat === "stream-json"
+              ? (extractTextFromJsonPayload(rawText) ?? rawText)
+              : rawText;
+
+          const output = tryParseJson(extractedText);
+          // Extract token usage from raw stdout before text extraction strips it.
+          // Each CLI harness embeds usage differently (NDJSON events, JSON stats, etc.)
+          const cliUsage = extractUsageFromOutput(stdout);
+          const usage = cliUsage ? {
+            inputTokens: cliUsage.inputTokens,
+            inputTokenDetails: {
+              noCacheTokens: undefined,
+              cacheReadTokens: cliUsage.cacheReadTokens,
+              cacheWriteTokens: cliUsage.cacheWriteTokens,
+            },
+            outputTokens: cliUsage.outputTokens,
+            outputTokenDetails: {
+              textTokens: undefined,
+              reasoningTokens: cliUsage.reasoningTokens,
+            },
+            totalTokens: (cliUsage.inputTokens ?? 0) + (cliUsage.outputTokens ?? 0) || undefined,
+          } : undefined;
+          const tokenTotals = extractAgentTokenTotals(usage);
+          stdoutEmitter?.flush(extractedText);
+          yield* recordAgentTokenMetrics(metricTags, tokenTotals);
+
+          const durationMs = performance.now() - invocationStart;
+          yield* Effect.logDebug("agent invocation completed").pipe(
+            Effect.annotateLogs({
+              ...commandLogAnnotations,
+              durationMs,
+              textBytes: Buffer.byteLength(extractedText, "utf8"),
+              stderrBytes: Buffer.byteLength(result.stderr, "utf8"),
+              inputTokens: tokenTotals.inputTokens ?? 0,
+              outputTokens: tokenTotals.outputTokens ?? 0,
+              totalTokens: tokenTotals.totalTokens ?? 0,
+            }),
+          );
+
+          return buildGenerateResult(
+            extractedText,
+            output,
+            this.model ?? commandSpec.command,
+            usage,
+          );
+        });
+      }),
+    ).pipe(
+      Effect.tapError((err) =>
+        Effect.all([
+          Metric.increment(taggedMetric(agentErrorsTotal, metricTags)),
+          Effect.logWarning("agent invocation failed").pipe(
+            Effect.annotateLogs({
+              ...commandLogAnnotations,
+              ...spanAnnotations,
+              error: err.message,
+              durationMs: performance.now() - invocationStart,
+            }),
+          ),
+          fromPromise("enrich diagnostics", async () => {
+            if (!diagnosticsPromise) return;
+            const report = await diagnosticsPromise.catch(() => null);
+            if (report && err instanceof SmithersError) {
+              enrichReportWithErrorAnalysis(report, err.message);
+              err.details = { ...err.details, diagnostics: report };
+              console.warn(formatDiagnosticSummary(report));
+            }
+          }).pipe(Effect.ignore),
+        ], { discard: true }),
       ),
-      Effect.ensuring(Effect.sync(() => { stdoutEmitter.flush(); })),
+      Effect.ensuring(Effect.sync(() => { stdoutEmitter?.flush(); })),
       Effect.ensuring(
-        commandSpec.cleanup
-          ? fromPromise("agent cleanup", () => commandSpec.cleanup!()).pipe(Effect.ignore)
+        cleanup
+          ? fromPromise("agent cleanup", () => cleanup!()).pipe(Effect.ignore)
           : Effect.void,
       ),
+      Effect.ensuring(recordDurationMetric()),
+      Effect.annotateLogs(spanAnnotations),
+      Effect.withLogSpan(span),
     );
 
-    return runPromise(program);
+    return program;
+  }
+
+  async generate(options: any): Promise<GenerateTextResult<any, any>> {
+    return runPromise(this.runGenerateEffect(options, "generate"));
   }
 
   async stream(options: any): Promise<StreamTextResult<any, any>> {
-    const result = await this.generate(options);
-    return buildStreamResult(result);
+    const result = await runPromise(
+      this.runGenerateEffect(options, "stream").pipe(
+        Effect.map((generateResult) => buildStreamResult(generateResult)),
+      ),
+    );
+    return result;
   }
 
   protected createOutputInterpreter(): CliOutputInterpreter | undefined {

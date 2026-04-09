@@ -72,7 +72,10 @@ async function resolveConversationAgent(
     zodToKeyName: workflow.zodToKeyName,
   });
   const baseRootDir = dirname(resolve(workflowPath));
-  const snap = await renderFrame(workflow, ctx, { baseRootDir });
+  const snap = await renderFrame(workflow, ctx, {
+    baseRootDir,
+    workflowPath,
+  });
   const task = snap.tasks.find((entry) =>
     entry.nodeId === candidate.nodeId &&
     (entry.iteration ?? 0) === candidate.iteration

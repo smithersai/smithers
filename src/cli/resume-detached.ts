@@ -6,11 +6,31 @@ import { fileURLToPath } from "node:url";
  * Resume an existing run by launching `smithers up ... --resume` as a detached process.
  * Returns the spawned PID when available.
  */
-export function resumeRunDetached(workflowPath: string, runId: string) {
+export function resumeRunDetached(
+  workflowPath: string,
+  runId: string,
+  claim?: {
+    claimOwnerId: string;
+    claimHeartbeatAtMs: number;
+    restoreRuntimeOwnerId?: string | null;
+    restoreHeartbeatAtMs?: number | null;
+  },
+) {
   const cliPath = fileURLToPath(new URL("./index.ts", import.meta.url));
+  const args = [cliPath, "up", workflowPath, "--resume", "--run-id", runId, "-d", "--force"];
+  if (claim) {
+    args.push("--resume-claim-owner", claim.claimOwnerId);
+    args.push("--resume-claim-heartbeat", String(claim.claimHeartbeatAtMs));
+    if (claim.restoreRuntimeOwnerId !== undefined && claim.restoreRuntimeOwnerId !== null) {
+      args.push("--resume-restore-owner", claim.restoreRuntimeOwnerId);
+    }
+    if (claim.restoreHeartbeatAtMs !== undefined && claim.restoreHeartbeatAtMs !== null) {
+      args.push("--resume-restore-heartbeat", String(claim.restoreHeartbeatAtMs));
+    }
+  }
   const child = spawn(
     "bun",
-    [cliPath, "up", workflowPath, "--resume", "--run-id", runId, "-d", "--force"],
+    args,
     {
       cwd: dirname(resolve(workflowPath)),
       stdio: "ignore",
