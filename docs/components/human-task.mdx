@@ -20,6 +20,7 @@ import { HumanTask } from "smithers-orchestrator";
 | `outputSchema` | `z.ZodObject` | `undefined` | Zod schema the human must conform to. Inferred from `output` when it is a Zod schema. |
 | `prompt` | `string \| ReactNode` | **(required)** | Instructions shown to the human. |
 | `maxAttempts` | `number` | `10` | Max validation retries before failure. |
+| `async` | `boolean` | `false` | When `true`, unrelated downstream flow can continue while the human response is still pending. Explicit dependencies still wait for the validated output. |
 | `skipIf` | `boolean` | `false` | Skip this node entirely. |
 | `timeoutMs` | `number` | `undefined` | Max wait time in ms. |
 | `continueOnFail` | `boolean` | `false` | Workflow continues even if this node fails. |
@@ -111,6 +112,7 @@ If the human cannot provide valid input within `maxAttempts`, the task fails.
 
 - Internally creates a `smithers:task` host element with `needsApproval: true` and a compute function that reads human input from the database.
 - Same approval flow as `<Approval>` -- the node suspends and waits for human input.
+- With `async`, later unrelated nodes in the same sequence may continue rendering and executing before the human submits input.
 - Schema validation happens at compute time, not at submission time.
 - The `retries` prop is set to `maxAttempts - 1` (first attempt + retries = total attempts).
 
@@ -127,4 +129,5 @@ If the human cannot provide valid input within `maxAttempts`, the task fails.
 - The human's JSON input is stored in the approval `note` field as a JSON string.
 - `outputSchema` is inferred from `output` when `output` is a Zod schema.
 - Combine with `<Sequence>` to gate downstream work on human input.
+- Use `ctx.outputMaybe(...)` when rendering branches that consume an async human task's result.
 - The `meta` field includes `humanTask: true`, `maxAttempts`, and the `prompt` for UI rendering.

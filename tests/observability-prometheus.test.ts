@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { Effect, Metric } from "effect";
-import { renderPrometheusMetrics, prometheusContentType } from "../src/observability";
+import {
+  externalWaitAsyncPending,
+  renderPrometheusMetrics,
+  prometheusContentType,
+} from "../src/observability";
 
 describe("renderPrometheusMetrics", () => {
   test("returns a string", () => {
@@ -29,6 +33,23 @@ describe("renderPrometheusMetrics", () => {
     if (result.includes("smithers_test_prom_typed")) {
       expect(result).toContain("# TYPE");
     }
+  });
+
+  test("renders async external wait gauges with labels", () => {
+    Effect.runSync(
+      Metric.set(
+        Metric.tagged(
+          Metric.tagged(externalWaitAsyncPending, "kind", "event"),
+          "case",
+          "render",
+        ),
+        2,
+      ),
+    );
+    const result = renderPrometheusMetrics();
+    expect(result).toContain(
+      'smithers_external_wait_async_pending{case="render",kind="event"} 2',
+    );
   });
 
   test("content type constant is correct", () => {

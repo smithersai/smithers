@@ -3,7 +3,19 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { jsx, jsxs } from "smithers/jsx-runtime";
 import { SmithersDb, runWorkflow, signalRun } from "../src/index";
+import { renderPrometheusMetrics } from "../src/observability";
 import { createTestSmithers } from "./helpers";
+
+function asyncPendingMetric(kind: "approval" | "event"): number {
+  const text = renderPrometheusMetrics();
+  const match = text.match(
+    new RegExp(
+      `^smithers_external_wait_async_pending\\{kind="${kind}"\\} ([^\\n]+)$`,
+      "m",
+    ),
+  );
+  return match ? Number(match[1]) : 0;
+}
 
 describe("Signal component", () => {
   test("blocks, validates delivered data, and renders typed children after resume", async () => {
@@ -189,6 +201,7 @@ describe("Signal component", () => {
     });
 
     try {
+      const metricBefore = asyncPendingMetric("event");
       const workflow = smithers(() =>
         jsx(Workflow, {
           name: "signal-component-async",
@@ -213,6 +226,7 @@ describe("Signal component", () => {
 
       const first = await runWorkflow(workflow, { input: {} });
       expect(first.status).toBe("waiting-event");
+      expect(asyncPendingMetric("event") - metricBefore).toBe(1);
 
       const resultRowsBeforeSignal = await (db as any).select().from(tables.result);
       expect(resultRowsBeforeSignal).toEqual([
@@ -230,6 +244,7 @@ describe("Signal component", () => {
         "new-data",
         { value: 3 },
       );
+      expect(asyncPendingMetric("event")).toBe(metricBefore);
 
       const resumed = await runWorkflow(workflow, {
         input: {},

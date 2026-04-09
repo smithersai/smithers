@@ -11,6 +11,12 @@ import { SmithersDb } from "../db/adapter";
 import { ensureSmithersTables } from "../db/ensure";
 import { nowMs } from "../utils/time";
 import { newRunId } from "../utils/ids";
+import { errorToJson, isSmithersError, SmithersError } from "../utils/errors";
+import {
+  assertJsonPayloadWithinBounds,
+  assertOptionalStringMaxLength,
+  assertPositiveFiniteInteger,
+} from "../utils/input-bounds";
 import { loadLatestSnapshot, loadSnapshot } from "../time-travel/snapshot";
 import { diffRawSnapshots } from "../time-travel/diff";
 
@@ -107,6 +113,7 @@ export type GatewayOptions = {
   heartbeatMs?: number;
   auth?: GatewayAuthConfig;
   defaults?: GatewayDefaults;
+  maxBodyBytes?: number;
 };
 
 type RegisteredWorkflow = {
@@ -161,6 +168,14 @@ type MethodAccess = "read" | "execute" | "approve" | "admin";
 
 const DEFAULT_PROTOCOL = 1;
 const DEFAULT_HEARTBEAT_MS = 15_000;
+const DEFAULT_MAX_BODY_BYTES = 1_048_576;
+export const GATEWAY_RPC_MAX_PAYLOAD_BYTES = DEFAULT_MAX_BODY_BYTES;
+export const GATEWAY_RPC_MAX_DEPTH = 16;
+export const GATEWAY_RPC_MAX_ARRAY_LENGTH = 256;
+export const GATEWAY_RPC_MAX_STRING_LENGTH = 16 * 1024;
+export const GATEWAY_METHOD_NAME_MAX_LENGTH = 64;
+export const GATEWAY_FRAME_ID_MAX_LENGTH = 128;
+const GATEWAY_METHOD_NAME_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/;
 
 const ACCESS_RANK: Record<MethodAccess, number> = {
   read: 1,
@@ -202,6 +217,8 @@ function parseJson<T>(value: string | null | undefined): T | null {
 function sendJson(res: ServerResponse, status: number, payload: unknown) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
   res.end(JSON.stringify(payload));
 }
 
@@ -224,6 +241,33 @@ function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+function asOptionalPositiveInt(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  return Math.floor(assertPositiveFiniteInteger(field, Number(value)));
+}
+
+function headerValue(req: IncomingMessage, name: string): string | null {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+  return typeof value === "string" ? value : null;
+}
+
+function bearerTokenFromHeaders(req: IncomingMessage): string | null {
+  const smithersKey = headerValue(req, "x-smithers-key");
+  if (smithersKey) {
+    return smithersKey;
+  }
+  const authHeader = headerValue(req, "authorization");
+  if (!authHeader) {
+    return null;
+  }
+  return authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+}
+
 function asStringRecord(value: unknown): Record<string, unknown> | null {
   return asObject(value);
 }
@@ -234,6 +278,114 @@ function responseOk(id: string, payload?: unknown): ResponseFrame {
 
 function responseError(id: string, code: string, message: string): ResponseFrame {
   return { type: "res", id, ok: false, error: { code, message } };
+}
+
+function rawDataToUtf8(raw: unknown): string {
+  if (typeof raw === "string") {
+    return raw;
+  }
+  if (Buffer.isBuffer(raw)) {
+    return raw.toString("utf8");
+  }
+  if (Array.isArray(raw)) {
+    return Buffer.concat(
+      raw.map((entry) => (Buffer.isBuffer(entry) ? entry : Buffer.from(entry))),
+    ).toString("utf8");
+  }
+  return Buffer.from(raw as ArrayBufferLike).toString("utf8");
+}
+
+export function validateGatewayMethodName(method: unknown): string {
+  if (typeof method !== "string") {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "Gateway method name must be a string.",
+      { methodType: typeof method },
+    );
+  }
+  assertOptionalStringMaxLength(
+    "method",
+    method,
+    GATEWAY_METHOD_NAME_MAX_LENGTH,
+  );
+  if (!GATEWAY_METHOD_NAME_PATTERN.test(method)) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "Gateway method name is invalid.",
+      { method },
+    );
+  }
+  return method;
+}
+
+export function parseGatewayRequestFrame(raw: unknown): RequestFrame {
+  const body = rawDataToUtf8(raw);
+  if (Buffer.byteLength(body, "utf8") > GATEWAY_RPC_MAX_PAYLOAD_BYTES) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `Gateway RPC payload exceeds ${GATEWAY_RPC_MAX_PAYLOAD_BYTES} bytes.`,
+      { maxBytes: GATEWAY_RPC_MAX_PAYLOAD_BYTES },
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch (error) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "Gateway RPC payload must be valid JSON.",
+      undefined,
+      { cause: error },
+    );
+  }
+
+  assertJsonPayloadWithinBounds("gateway frame", parsed, {
+    maxArrayLength: GATEWAY_RPC_MAX_ARRAY_LENGTH,
+    maxDepth: GATEWAY_RPC_MAX_DEPTH,
+    maxStringLength: GATEWAY_RPC_MAX_STRING_LENGTH,
+  });
+
+  const frame = asObject(parsed);
+  if (!frame || frame.type !== "req") {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "Gateway frame must be a request object.",
+    );
+  }
+  if (typeof frame.id !== "string") {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "Gateway frame id must be a string.",
+    );
+  }
+  assertOptionalStringMaxLength("id", frame.id, GATEWAY_FRAME_ID_MAX_LENGTH);
+
+  return {
+    type: "req",
+    id: frame.id,
+    method: validateGatewayMethodName(frame.method),
+    params: frame.params,
+  };
+}
+
+function statusForRpcError(code: string | undefined) {
+  switch (code) {
+    case "UNAUTHORIZED":
+      return 401;
+    case "FORBIDDEN":
+      return 403;
+    case "NOT_FOUND":
+    case "METHOD_NOT_FOUND":
+      return 404;
+    case "INVALID_REQUEST":
+    case "INVALID_FRAME":
+    case "INVALID_INPUT":
+    case "PROTOCOL_UNSUPPORTED":
+      return 400;
+    default:
+      return 500;
+  }
 }
 
 function eventRunId(payload: unknown): string | null {
@@ -313,8 +465,8 @@ function verifyJwtToken(
   const expectedSignature = createHmac("sha256", config.secret)
     .update(`${encodedHeader}.${encodedPayload}`)
     .digest("base64url");
-  const actualSignature = Buffer.from(encodedSignature);
-  const expectedSignatureBuffer = Buffer.from(expectedSignature);
+  const actualSignature = Buffer.from(encodedSignature, "base64url");
+  const expectedSignatureBuffer = Buffer.from(expectedSignature, "base64url");
   if (
     actualSignature.length !== expectedSignatureBuffer.length ||
     !timingSafeEqual(actualSignature, expectedSignatureBuffer)
@@ -420,6 +572,49 @@ function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+async function readBody(req: IncomingMessage, maxBytes: number) {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  const lengthHeader = headerValue(req, "content-length");
+  const declaredLength = lengthHeader ? Number(lengthHeader) : NaN;
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `Gateway RPC payload exceeds ${maxBytes} bytes.`,
+      { maxBytes },
+    );
+  }
+
+  for await (const chunk of req) {
+    const buffer = Buffer.from(chunk);
+    total += buffer.length;
+    if (total > maxBytes) {
+      throw new SmithersError(
+        "INVALID_INPUT",
+        `Gateway RPC payload exceeds ${maxBytes} bytes.`,
+        { maxBytes },
+      );
+    }
+    chunks.push(buffer);
+  }
+
+  if (chunks.length === 0) {
+    return {};
+  }
+
+  const body = Buffer.concat(chunks).toString("utf8");
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "Gateway RPC payload must be valid JSON.",
+      undefined,
+      { cause: error },
+    );
+  }
+}
+
 function cronWorkflowPath(workflowKey: string) {
   return `gateway:${workflowKey}`;
 }
@@ -443,6 +638,7 @@ export class Gateway {
   readonly protocol: number;
   readonly features: string[];
   readonly heartbeatMs: number;
+  readonly maxBodyBytes: number;
   readonly auth?: GatewayAuthConfig;
   readonly defaults?: GatewayDefaults;
 
@@ -450,6 +646,7 @@ export class Gateway {
   private readonly connections = new Set<ConnectionState>();
   private readonly runRegistry = new Map<string, ActiveRunRecord>();
   private readonly activeRuns = new Map<string, ActiveRunRecord>();
+  private readonly inflightRuns = new Map<string, Promise<void>>();
   private server: Server | null = null;
   private wsServer: WebSocketServer | null = null;
   private schedulerTimer: Timer | null = null;
@@ -460,6 +657,9 @@ export class Gateway {
     this.protocol = options.protocol ?? DEFAULT_PROTOCOL;
     this.features = [...(options.features ?? ["streaming", "runs"])];
     this.heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
+    this.maxBodyBytes = options.maxBodyBytes === undefined
+      ? DEFAULT_MAX_BODY_BYTES
+      : Math.floor(assertPositiveFiniteInteger("maxBodyBytes", Number(options.maxBodyBytes)));
     this.auth = options.auth;
     this.defaults = options.defaults;
   }
@@ -480,7 +680,7 @@ export class Gateway {
     }
 
     const wsServer = new WebSocketServer({ noServer: true });
-    const server = createServer((req, res) => {
+    const server = createServer(async (req, res) => {
       if ((req.method ?? "GET") === "GET" && (req.url ?? "/") === "/health") {
         return sendJson(res, 200, {
           ok: true,
@@ -488,6 +688,9 @@ export class Gateway {
           features: this.features,
           stateVersion: this.stateVersion,
         });
+      }
+      if ((req.method ?? "GET") === "POST" && (req.url ?? "/") === "/rpc") {
+        return this.handleHttpRpc(req, res);
       }
       return sendJson(res, 404, { error: { code: "NOT_FOUND", message: "Route not found" } });
     });
@@ -510,6 +713,14 @@ export class Gateway {
   }
 
   async close() {
+    const activeRuns = [...this.activeRuns.values()];
+    for (const activeRun of activeRuns) {
+      activeRun.abort.abort();
+    }
+    const inflightRuns = [...this.inflightRuns.values()];
+    if (inflightRuns.length > 0) {
+      await Promise.allSettled(inflightRuns);
+    }
     for (const connection of this.connections) {
       if (connection.heartbeatTimer) {
         clearInterval(connection.heartbeatTimer);
@@ -632,7 +843,7 @@ export class Gateway {
       auth.subscribeConnection.subscribedRuns.add(runId);
     }
 
-    void runWorkflow(entry.workflow, {
+    const runPromise = runWorkflow(entry.workflow, {
       runId,
       input,
       resume: options?.resume,
@@ -659,9 +870,22 @@ export class Gateway {
           });
         }
       })
+      .catch((error) => {
+        this.broadcastEvent("run.completed", {
+          runId,
+          status: "failed",
+          error: errorToJson(error),
+        });
+        throw error;
+      })
       .finally(() => {
         this.activeRuns.delete(runId);
+        this.inflightRuns.delete(runId);
       });
+    this.inflightRuns.set(
+      runId,
+      runPromise.then(() => undefined, () => undefined),
+    );
 
     return { runId, workflow: workflowKey };
   }
@@ -709,11 +933,7 @@ export class Gateway {
 
     ws.on("message", async (raw) => {
       try {
-        const frame = JSON.parse(String(raw)) as RequestFrame;
-        if (!frame || frame.type !== "req" || typeof frame.id !== "string" || typeof frame.method !== "string") {
-          this.sendResponse(connection, responseError("invalid", "INVALID_FRAME", "Expected a request frame"));
-          return;
-        }
+        const frame = parseGatewayRequestFrame(raw);
 
         if (!connection.authenticated && frame.method !== "connect") {
           this.sendResponse(connection, responseError(frame.id, "UNAUTHORIZED", "Connect first"));
@@ -734,6 +954,13 @@ export class Gateway {
         const response = await this.routeRequest(connection, frame);
         this.sendResponse(connection, response);
       } catch (error: any) {
+        if (isSmithersError(error)) {
+          this.sendResponse(
+            connection,
+            responseError("invalid", error.code, error.summary),
+          );
+          return;
+        }
         this.sendResponse(
           connection,
           responseError("server", "SERVER_ERROR", error?.message ?? "Gateway request failed"),
@@ -780,6 +1007,15 @@ export class Gateway {
     ) {
       return responseError(id, "INVALID_REQUEST", "Connect request is missing protocol negotiation fields");
     }
+    try {
+      assertPositiveFiniteInteger("minProtocol", request.minProtocol);
+      assertPositiveFiniteInteger("maxProtocol", request.maxProtocol);
+    } catch (error) {
+      if (error instanceof SmithersError) {
+        return responseError(id, error.code, error.summary);
+      }
+      throw error;
+    }
     if (request.minProtocol > this.protocol || request.maxProtocol < this.protocol) {
       return responseError(id, "PROTOCOL_UNSUPPORTED", `Gateway protocol ${this.protocol} is not supported by the client`);
     }
@@ -819,6 +1055,17 @@ export class Gateway {
       | { ok: true; role: string; scopes: string[]; userId?: string }
       | { ok: false; code: string; message: string }
     > {
+    const tokenFromRequest = "token" in (request.auth ?? {}) ? (request.auth as any).token : null;
+    return this.authenticateRequest(req, typeof tokenFromRequest === "string" ? tokenFromRequest : null);
+  }
+
+  private async authenticateRequest(
+    req: IncomingMessage,
+    token: string | null,
+  ): Promise<
+      | { ok: true; role: string; scopes: string[]; userId?: string }
+      | { ok: false; code: string; message: string }
+    > {
     if (!this.auth) {
       return {
         ok: true,
@@ -828,7 +1075,6 @@ export class Gateway {
     }
 
     if (this.auth.mode === "token") {
-      const token = "token" in (request.auth ?? {}) ? (request.auth as any).token : null;
       if (!token || typeof token !== "string") {
         return {
           ok: false,
@@ -853,7 +1099,6 @@ export class Gateway {
     }
 
     if (this.auth.mode === "jwt") {
-      const token = "token" in (request.auth ?? {}) ? (request.auth as any).token : null;
       if (!token || typeof token !== "string") {
         return {
           ok: false,
@@ -917,6 +1162,70 @@ export class Gateway {
       code: "UNAUTHORIZED",
       message: "Unsupported auth mode",
     };
+  }
+
+  private async handleHttpRpc(req: IncomingMessage, res: ServerResponse) {
+    const requestId = headerValue(req, "x-request-id") ?? "http";
+    try {
+      const authResult = await this.authenticateRequest(req, bearerTokenFromHeaders(req));
+      if (!authResult.ok) {
+        return sendJson(res, statusForRpcError(authResult.code), responseError(requestId, authResult.code, authResult.message));
+      }
+
+      const body = asObject(await readBody(req, this.maxBodyBytes));
+      if (!body) {
+        return sendJson(res, 400, responseError(requestId, "INVALID_REQUEST", "RPC body must be a JSON object"));
+      }
+      assertJsonPayloadWithinBounds("gateway frame", body, {
+        maxArrayLength: GATEWAY_RPC_MAX_ARRAY_LENGTH,
+        maxDepth: GATEWAY_RPC_MAX_DEPTH,
+        maxStringLength: GATEWAY_RPC_MAX_STRING_LENGTH,
+      });
+
+      const method = validateGatewayMethodName(body.method);
+      const bodyId = asString(body.id) ?? requestId;
+      assertOptionalStringMaxLength("id", bodyId, GATEWAY_FRAME_ID_MAX_LENGTH);
+
+      if (!hasScope(authResult.scopes, method)) {
+        return sendJson(res, 403, responseError(bodyId, "FORBIDDEN", `Missing scope for ${method}`));
+      }
+
+      const response = await this.routeRequest(
+        {
+          userId: authResult.userId ?? null,
+          role: authResult.role,
+          scopes: [...authResult.scopes],
+          subscribedRuns: null,
+        } as ConnectionState,
+        {
+          type: "req",
+          id: bodyId,
+          method,
+          params: body.params,
+        },
+      );
+
+      return sendJson(res, response.ok ? 200 : statusForRpcError(response.error?.code), response);
+    } catch (error: any) {
+      if (isSmithersError(error)) {
+        return sendJson(
+          res,
+          statusForRpcError(error.code),
+          responseError(requestId, error.code, error.summary),
+        );
+      }
+      const message = error?.message ?? "Gateway request failed";
+      const status = message.includes("valid JSON") ? 400 : message.includes("exceeds") ? 413 : 500;
+      return sendJson(
+        res,
+        status,
+        responseError(
+          requestId,
+          status === 413 ? "PAYLOAD_TOO_LARGE" : status === 400 ? "INVALID_JSON" : "SERVER_ERROR",
+          message,
+        ),
+      );
+    }
   }
 
   private sendResponse(connection: ConnectionState, frame: ResponseFrame) {
@@ -1218,7 +1527,7 @@ export class Gateway {
           uptimeMs: nowMs() - this.startedAtMs,
         });
       case "runs.list": {
-        const limit = asNumber(params.limit) ?? 50;
+        const limit = asOptionalPositiveInt(params.limit, "limit") ?? 50;
         const status = asString(params.status);
         return responseOk(frame.id, await this.listRunsAcrossWorkflows(limit, status));
       }
@@ -1279,8 +1588,8 @@ export class Gateway {
         if (!resolved) {
           return responseError(frame.id, "NOT_FOUND", `Run not found: ${runId}`);
         }
-        const limit = asNumber(params.limit) ?? 50;
-        const afterFrameNo = asNumber(params.afterFrameNo);
+        const limit = asOptionalPositiveInt(params.limit, "limit") ?? 50;
+        const afterFrameNo = asOptionalPositiveInt(params.afterFrameNo, "afterFrameNo");
         return responseOk(frame.id, await resolved.adapter.listFrames(runId, limit, afterFrameNo));
       }
       case "frames.get": {
@@ -1292,7 +1601,7 @@ export class Gateway {
         if (!resolved) {
           return responseError(frame.id, "NOT_FOUND", `Run not found: ${runId}`);
         }
-        const frameNo = asNumber(params.frameNo);
+        const frameNo = asOptionalPositiveInt(params.frameNo, "frameNo");
         const frameRow = frameNo === undefined
           ? await resolved.adapter.getLastFrame(runId)
           : (await resolved.adapter.listFrames(runId, Math.max(frameNo + 1, 50))).find(

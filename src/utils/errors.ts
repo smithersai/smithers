@@ -78,11 +78,6 @@ export const smithersErrorDefinitions = {
     when: "A CLI command references a node ID that does not exist for the given run.",
     details: "{ runId, nodeId }",
   },
-  UI_COMMAND_FAILED: {
-    category: "cli",
-    when: "The smithers ui command fails to open the browser or probe the server.",
-    details: "{ url }",
-  },
   INVALID_EVENTS_OPTIONS: {
     category: "cli",
     when: "The smithers events command receives invalid filter options.",

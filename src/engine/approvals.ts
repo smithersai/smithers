@@ -2,8 +2,13 @@ import { Effect, Metric } from "effect";
 import { nowMs } from "../utils/time";
 import { SmithersDb } from "../db/adapter";
 import { runPromise } from "../effect/runtime";
-import { approvalWaitDuration, trackEvent } from "../effect/metrics";
+import {
+  approvalWaitDuration,
+  trackEvent,
+  updateAsyncExternalWaitPending,
+} from "../effect/metrics";
 import { bridgeApprovalResolve } from "../effect/durable-deferred-bridge";
+import { SmithersError } from "../utils/errors";
 
 function nextRunStatusForApproval(
   currentStatus: string | null | undefined,
@@ -20,6 +25,31 @@ function nextRunStatusForApproval(
 
 function serializeDecision(decision: unknown) {
   return decision === undefined ? null : JSON.stringify(decision);
+}
+
+function isAsyncApprovalRequest(requestJson?: string | null) {
+  if (!requestJson) return false;
+  try {
+    return JSON.parse(requestJson)?.waitAsync === true;
+  } catch {
+    return false;
+  }
+}
+
+function assertNodeWaitingForApproval(
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  state: string | null | undefined,
+) {
+  if (state === "waiting-approval" || state === "waiting_approval") {
+    return;
+  }
+  throw new SmithersError(
+    "INVALID_INPUT",
+    `Node ${nodeId} is not waiting for approval.`,
+    { runId, nodeId, iteration, state: state ?? null },
+  );
 }
 
 export function approveNodeEffect(
@@ -42,10 +72,11 @@ export function approveNodeEffect(
   };
   return Effect.gen(function* () {
     const existing = yield* adapter.getApprovalEffect(runId, nodeId, iteration);
+    const currentNode = yield* adapter.getNodeEffect(runId, nodeId, iteration);
+    assertNodeWaitingForApproval(runId, nodeId, iteration, currentNode?.state);
     yield* adapter.withTransactionEffect(
       "approval",
       Effect.gen(function* () {
-        const existingNode = yield* adapter.getNodeEffect(runId, nodeId, iteration);
         yield* adapter.insertOrUpdateApprovalEffect({
           runId,
           nodeId,
@@ -64,10 +95,10 @@ export function approveNodeEffect(
           nodeId,
           iteration,
           state: "pending",
-          lastAttempt: existingNode?.lastAttempt ?? null,
+          lastAttempt: currentNode?.lastAttempt ?? null,
           updatedAtMs: nowMs(),
-          outputTable: existingNode?.outputTable ?? "",
-          label: existingNode?.label ?? null,
+          outputTable: currentNode?.outputTable ?? "",
+          label: currentNode?.label ?? null,
         });
 
         const run = yield* adapter.getRunEffect(runId);
@@ -82,6 +113,9 @@ export function approveNodeEffect(
     );
     if (existing?.requestedAtMs) {
       yield* Metric.update(approvalWaitDuration, ts - existing.requestedAtMs);
+    }
+    if (existing?.status === "requested" && isAsyncApprovalRequest(existing.requestJson)) {
+      yield* updateAsyncExternalWaitPending("approval", -1);
     }
     yield* adapter.insertEventWithNextSeqEffect({
       runId,
@@ -142,10 +176,11 @@ export function denyNodeEffect(
   };
   return Effect.gen(function* () {
     const existing = yield* adapter.getApprovalEffect(runId, nodeId, iteration);
+    const currentNode = yield* adapter.getNodeEffect(runId, nodeId, iteration);
+    assertNodeWaitingForApproval(runId, nodeId, iteration, currentNode?.state);
     yield* adapter.withTransactionEffect(
       "approval",
       Effect.gen(function* () {
-        const existingNode = yield* adapter.getNodeEffect(runId, nodeId, iteration);
         yield* adapter.insertOrUpdateApprovalEffect({
           runId,
           nodeId,
@@ -164,10 +199,10 @@ export function denyNodeEffect(
           nodeId,
           iteration,
           state: "failed",
-          lastAttempt: existingNode?.lastAttempt ?? null,
+          lastAttempt: currentNode?.lastAttempt ?? null,
           updatedAtMs: nowMs(),
-          outputTable: existingNode?.outputTable ?? "",
-          label: existingNode?.label ?? null,
+          outputTable: currentNode?.outputTable ?? "",
+          label: currentNode?.label ?? null,
         });
 
         const run = yield* adapter.getRunEffect(runId);
@@ -182,6 +217,9 @@ export function denyNodeEffect(
     );
     if (existing?.requestedAtMs) {
       yield* Metric.update(approvalWaitDuration, ts - existing.requestedAtMs);
+    }
+    if (existing?.status === "requested" && isAsyncApprovalRequest(existing.requestJson)) {
+      yield* updateAsyncExternalWaitPending("approval", -1);
     }
     yield* adapter.insertEventWithNextSeqEffect({
       runId,

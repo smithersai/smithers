@@ -21,6 +21,8 @@ import {
   getHumanTaskPrompt,
   isHumanTaskMeta,
 } from "../human-requests";
+import { updateAsyncExternalWaitPending } from "./metrics";
+import { runPromise } from "./runtime";
 import { errorToJson, SmithersError } from "../utils/errors";
 import { nowMs } from "../utils/time";
 
@@ -42,6 +44,7 @@ type WaitForEventSnapshot = {
   correlationId?: string;
   onTimeout: WaitForEventOnTimeout;
   timeoutMs: number | null;
+  waitAsync?: boolean;
   startedAtMs: number;
   resolvedSignalSeq?: number;
   receivedAtMs?: number;
@@ -73,6 +76,24 @@ const timerDurationMultipliers: Record<string, number> = {
   d: 86_400_000,
 };
 
+async function updateAsyncExternalWaitPendingSafe(
+  kind: "approval" | "event",
+  delta: number,
+) {
+  try {
+    await runPromise(updateAsyncExternalWaitPending(kind, delta));
+  } catch {}
+}
+
+function shouldClearAsyncWaitMetric(
+  snapshot: Pick<WaitForEventSnapshot, "waitAsync" | "resolvedSignalSeq"> | null | undefined,
+) {
+  return Boolean(
+    snapshot?.waitAsync &&
+      !Number.isFinite(Number(snapshot.resolvedSignalSeq)),
+  );
+}
+
 function parseAttemptMetaJson(metaJson?: string | null): Record<string, unknown> {
   if (!metaJson) return {};
   try {
@@ -88,6 +109,7 @@ function parseAttemptMetaJson(metaJson?: string | null): Record<string, unknown>
 function buildApprovalRequestJson(desc: TaskDescriptor) {
   return JSON.stringify({
     mode: desc.approvalMode ?? "gate",
+    waitAsync: desc.waitAsync === true,
     title: desc.label ?? null,
     summary:
       desc.meta && typeof desc.meta.requestSummary === "string"
@@ -242,6 +264,14 @@ function parseWaitForEventOnTimeout(desc: TaskDescriptor): WaitForEventOnTimeout
   return raw === "continue" || raw === "skip" ? raw : "fail";
 }
 
+function parseOptionalFiniteNumber(value: unknown): number | undefined {
+  if (value == null || value === "") {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function buildWaitForEventSnapshot(
   desc: TaskDescriptor,
   startedAtMs: number,
@@ -254,6 +284,7 @@ function buildWaitForEventSnapshot(
       typeof desc.timeoutMs === "number" && Number.isFinite(desc.timeoutMs)
         ? desc.timeoutMs
         : null,
+    waitAsync: desc.waitAsync === true,
     startedAtMs,
   };
 }
@@ -301,16 +332,11 @@ function parseWaitForEventSnapshot(metaJson?: string | null): WaitForEventSnapsh
         ? (waitForEvent as any).onTimeout
         : "fail",
     timeoutMs,
+    waitAsync: (waitForEvent as any).waitAsync === true,
     startedAtMs,
-    resolvedSignalSeq: Number.isFinite(Number(resolvedSignalSeqRaw))
-      ? Number(resolvedSignalSeqRaw)
-      : undefined,
-    receivedAtMs: Number.isFinite(Number(receivedAtMsRaw))
-      ? Number(receivedAtMsRaw)
-      : undefined,
-    timedOutAtMs: Number.isFinite(Number(timedOutAtMsRaw))
-      ? Number(timedOutAtMsRaw)
-      : undefined,
+    resolvedSignalSeq: parseOptionalFiniteNumber(resolvedSignalSeqRaw),
+    receivedAtMs: parseOptionalFiniteNumber(receivedAtMsRaw),
+    timedOutAtMs: parseOptionalFiniteNumber(timedOutAtMsRaw),
   };
 }
 
@@ -324,6 +350,7 @@ function buildWaitForEventAttemptMeta(
       correlationId: snapshot.correlationId ?? null,
       onTimeout: snapshot.onTimeout,
       timeoutMs: snapshot.timeoutMs,
+      waitAsync: snapshot.waitAsync === true,
       startedAtMs: snapshot.startedAtMs,
       resolvedSignalSeq: snapshot.resolvedSignalSeq ?? null,
       receivedAtMs: snapshot.receivedAtMs ?? null,
@@ -747,6 +774,9 @@ async function failWaitForEventTaskBridge(
       });
     }),
   );
+  if (shouldClearAsyncWaitMetric(snapshot)) {
+    await updateAsyncExternalWaitPendingSafe("event", -1);
+  }
   await emitStateEvent?.("failed");
   return { handled: true, state: "failed" };
 }
@@ -793,6 +823,9 @@ async function finishWaitForEventTaskBridge(
       });
     }),
   );
+  if (shouldClearAsyncWaitMetric(snapshot)) {
+    await updateAsyncExternalWaitPendingSafe("event", -1);
+  }
   return { handled: true, state: "finished" };
 }
 
@@ -861,6 +894,9 @@ async function resolveWaitForEventTimeoutBridge(
         });
       }),
     );
+    if (shouldClearAsyncWaitMetric(timeoutSnapshot)) {
+      await updateAsyncExternalWaitPendingSafe("event", -1);
+    }
     await emitStateEvent?.("skipped");
     return { handled: true, state: "skipped" };
   }
@@ -988,6 +1024,9 @@ async function resolveWaitForEventTaskStateBridge(
         });
       }),
     );
+    if (snapshot.waitAsync) {
+      await updateAsyncExternalWaitPendingSafe("event", 1);
+    }
     latest = {
       attempt: 1,
       state: "waiting-event",
@@ -1227,6 +1266,9 @@ async function resolveApprovalTaskStateBridge(
         autoApproved: false,
       };
       await adapter.insertOrUpdateApproval(approval);
+      if (desc.waitAsync) {
+        await updateAsyncExternalWaitPendingSafe("approval", 1);
+      }
       await eventBus.emitEventWithPersist({
         type: "ApprovalRequested",
         runId,

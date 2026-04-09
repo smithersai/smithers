@@ -112,11 +112,19 @@ export const sandboxActive = Metric.gauge("smithers.sandbox.active");
 // ---------------------------------------------------------------------------
 
 export const approvalPending = Metric.gauge("smithers.approval.pending");
+export const externalWaitAsyncPending = Metric.gauge(
+  "smithers.external_wait.async_pending",
+);
 export const timersPending = Metric.gauge("smithers.timers.pending");
 export const schedulerConcurrencyUtilization = Metric.gauge("smithers.scheduler.concurrency_utilization");
 export const processUptimeSeconds = Metric.gauge("smithers.process.uptime_seconds");
 export const processMemoryRssBytes = Metric.gauge("smithers.process.memory_rss_bytes");
 export const processHeapUsedBytes = Metric.gauge("smithers.process.heap_used_bytes");
+
+const asyncExternalWaitCounts: Record<"approval" | "event", number> = {
+  approval: 0,
+  event: 0,
+};
 
 // ---------------------------------------------------------------------------
 // Histograms — buckets
@@ -325,6 +333,23 @@ export function updateProcessMetrics(): Effect.Effect<void> {
     Metric.set(processMemoryRssBytes, mem.rss),
     Metric.set(processHeapUsedBytes, mem.heapUsed),
   ], { discard: true });
+}
+
+export function updateAsyncExternalWaitPending(
+  kind: "approval" | "event",
+  delta: number,
+): Effect.Effect<void> {
+  return Effect.sync(() => {
+    asyncExternalWaitCounts[kind] = Math.max(
+      0,
+      asyncExternalWaitCounts[kind] + delta,
+    );
+    return asyncExternalWaitCounts[kind];
+  }).pipe(
+    Effect.flatMap((value) =>
+      Metric.set(Metric.tagged(externalWaitAsyncPending, "kind", kind), value),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------

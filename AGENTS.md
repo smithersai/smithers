@@ -64,3 +64,7 @@ cd apps/desktop && xcodegen generate   # regenerate Xcode project after project.
 - Use `jj` for version control, not `git`
 - Dependencies in both `apps/desktop/Package.swift` and `apps/desktop/project.yml` — keep in sync
 - SmithersShared is NOT a module — don't `import SmithersShared`, just reference types directly
+
+## Docs Review
+
+- When reviewing or testing documentation pages, prefer the configured `playwright` MCP server for browser-based validation instead of shell-only checks.

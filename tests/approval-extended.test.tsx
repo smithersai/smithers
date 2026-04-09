@@ -12,6 +12,7 @@ import {
 } from "../src/index";
 import { approveNode, denyNode } from "../src/engine/approvals";
 import { SmithersDb } from "../src/db/adapter";
+import { renderPrometheusMetrics } from "../src/observability";
 import { createTestSmithers } from "./helpers";
 import { z } from "zod";
 
@@ -19,6 +20,17 @@ const schemas = {
   a: z.object({ v: z.number() }),
   b: z.object({ v: z.number() }),
 };
+
+function asyncPendingMetric(kind: "approval" | "event"): number {
+  const text = renderPrometheusMetrics();
+  const match = text.match(
+    new RegExp(
+      `^smithers_external_wait_async_pending\\{kind="${kind}"\\} ([^\\n]+)$`,
+      "m",
+    ),
+  );
+  return match ? Number(match[1]) : 0;
+}
 
 describe("approval extended", () => {
   test("denial with onDeny=fail fails the workflow", async () => {
@@ -167,30 +179,36 @@ describe("approval extended", () => {
       </Workflow>
     ));
 
-    const first = await runWorkflow(workflow, { input: {} });
-    expect(first.status).toBe("waiting-approval");
+    try {
+      const metricBefore = asyncPendingMetric("approval");
 
-    const beforeApproval = await (db as any).select().from(tables.result);
-    expect(beforeApproval).toEqual([
-      expect.objectContaining({
+      const first = await runWorkflow(workflow, { input: {} });
+      expect(first.status).toBe("waiting-approval");
+      expect(asyncPendingMetric("approval") - metricBefore).toBe(1);
+
+      const beforeApproval = await (db as any).select().from(tables.result);
+      expect(beforeApproval).toEqual([
+        expect.objectContaining({
+          runId: first.runId,
+          nodeId: "after",
+          iteration: 0,
+          v: 2,
+        }),
+      ]);
+
+      const adapter = new SmithersDb(db as any);
+      await approveNode(adapter, first.runId, "gate", 0, "ok", "tester");
+      expect(asyncPendingMetric("approval")).toBe(metricBefore);
+
+      const resumed = await runWorkflow(workflow, {
+        input: {},
         runId: first.runId,
-        nodeId: "after",
-        iteration: 0,
-        v: 2,
-      }),
-    ]);
-
-    const adapter = new SmithersDb(db as any);
-    await approveNode(adapter, first.runId, "gate", 0, "ok", "tester");
-
-    const resumed = await runWorkflow(workflow, {
-      input: {},
-      runId: first.runId,
-      resume: true,
-    });
-    expect(resumed.status).toBe("finished");
-
-    cleanup();
+        resume: true,
+      });
+      expect(resumed.status).toBe("finished");
+    } finally {
+      cleanup();
+    }
   });
 
   test("selection approval persists typed selection output", async () => {

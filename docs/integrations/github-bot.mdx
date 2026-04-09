@@ -1,0 +1,442 @@
+---
+title: GitHub Bot
+description: Build a GitHub App backed by Smithers workflows using webhooks, gateway RPC, approvals, signals, comments, PR creation, and checks.
+---
+
+Smithers does not ship a turnkey GitHub bot server.
+
+What it does give you is the orchestration layer you actually want behind one:
+
+- durable workflows
+- approvals
+- resumable signals
+- gateway RPC
+- built-in tools and custom tools
+
+The usual shape is:
+
+1. a GitHub App receives webhooks
+2. your webhook receiver verifies the GitHub signature
+3. the receiver calls the Smithers gateway
+4. workflows do the actual work
+
+## Architecture
+
+```txt
+GitHub App
+  -> webhook receiver
+  -> Gateway (WebSocket or POST /rpc)
+  -> Smithers workflows
+  -> GitHub API client/tools
+```
+
+Use `runs.create` when the webhook should start fresh work.
+
+Use `signals.send` when the workflow is already running and is waiting for a follow-up event such as:
+
+- a maintainer comment
+- a label change
+- a check completion
+- a merge event
+
+## 1. Create The GitHub App
+
+In GitHub App settings, configure:
+
+- A webhook URL pointing at your receiver
+- A webhook secret for signature verification
+- Installation permissions that match what your workflows will do
+
+Common permissions for a PR review bot:
+
+- `Contents: Read`
+- `Pull requests: Read and write`
+- `Issues: Read and write`
+- `Checks: Read and write`
+- `Metadata: Read`
+
+Common webhook subscriptions:
+
+- `pull_request`
+- `issues`
+- `issue_comment`
+- `pull_request_review_comment`
+- `check_suite`
+- `check_run`
+
+`@mentions` usually arrive through comment events:
+
+- `issue_comment` for issue comments and PR conversation comments
+- `pull_request_review_comment` for inline review comments
+
+## 2. Start The Gateway
+
+The gateway is the remote control surface your bot talks to.
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import {
+  Gateway,
+  Sequence,
+  Task,
+  Workflow,
+  createSmithers,
+} from "smithers-orchestrator";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  review: z.object({
+    summary: z.string(),
+    commentBody: z.string(),
+    shouldBlock: z.boolean(),
+  }),
+  publish: z.object({
+    commentId: z.number().nullable(),
+    checkRunId: z.number().nullable(),
+  }),
+});
+
+export const reviewWorkflow = smithers((ctx) => (
+  <Workflow name="github-pr-review">
+    <Sequence>
+      <Task id="review" output={outputs.review} agent={reviewer}>
+        {`Review PR #${ctx.input.pullNumber} in ${ctx.input.owner}/${ctx.input.repo}.`}
+      </Task>
+
+      <Task id="publish" output={outputs.publish}>
+        {async () => {
+          return {
+            commentId: null,
+            checkRunId: null,
+          };
+        }}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+
+const gateway = new Gateway({
+  auth: {
+    mode: "token",
+    tokens: {
+      [process.env.GATEWAY_TOKEN!]: {
+        role: "github-bot",
+        scopes: ["*"],
+        userId: "bot:github",
+      },
+    },
+  },
+});
+
+gateway.register("github-pr-review", reviewWorkflow);
+await gateway.listen({ port: 7331 });
+```
+
+## 3. Receive Webhooks And Call The Gateway
+
+The receiver can be any HTTP framework. It does two jobs:
+
+1. verify the GitHub signature
+2. translate webhook payloads into gateway RPC calls
+
+```ts
+import { Hono } from "hono";
+
+const app = new Hono();
+
+app.post("/github/webhooks", async (c) => {
+  const event = c.req.header("x-github-event");
+  const deliveryId = c.req.header("x-github-delivery");
+  const payload = await c.req.json();
+
+  if (
+    event === "pull_request" &&
+    ["opened", "synchronize", "reopened"].includes(payload.action)
+  ) {
+    await fetch("http://127.0.0.1:7331/rpc", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.GATEWAY_TOKEN}`,
+      },
+      body: JSON.stringify({
+        method: "runs.create",
+        params: {
+          workflow: "github-pr-review",
+          input: {
+            owner: payload.repository.owner.login,
+            repo: payload.repository.name,
+            pullNumber: payload.pull_request.number,
+            installationId: payload.installation?.id,
+            sender: payload.sender.login,
+            deliveryId,
+          },
+        },
+      }),
+    });
+  }
+
+  return c.json({ ok: true });
+});
+```
+
+That pattern is enough for "start a workflow when a PR opens."
+
+For richer bots, keep the run alive and resume it with signals instead of starting over.
+
+## 4. Map GitHub Events To Workflow Actions
+
+| GitHub event | Typical gateway action | Why |
+| --- | --- | --- |
+| `pull_request.opened` | `runs.create` | Start initial review or triage |
+| `pull_request.synchronize` | `runs.create` or `signals.send` | Re-review after new commits |
+| `issues.opened` | `runs.create` | Triage issues, route labels, draft replies |
+| `issue_comment.created` | `signals.send` | Continue an existing run after a maintainer or user reply |
+| `pull_request_review_comment.created` | `signals.send` | React to inline feedback |
+| `check_run.completed` | `signals.send` | Resume a workflow waiting on CI or another bot |
+
+### Handling `@mentions`
+
+`@mentions` are usually just filtered comment events:
+
+```ts
+if (
+  event === "issue_comment" &&
+  typeof payload.comment?.body === "string" &&
+  payload.comment.body.includes("@smithers")
+) {
+  await fetch("http://127.0.0.1:7331/rpc", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${process.env.GATEWAY_TOKEN}`,
+    },
+    body: JSON.stringify({
+      method: "signals.send",
+      params: {
+        runId: findRunIdForThread(payload),
+        signalName: "github.comment",
+        correlationId: `pr-${payload.issue.number}`,
+        data: {
+          body: payload.comment.body,
+          author: payload.comment.user.login,
+          url: payload.comment.html_url,
+        },
+      },
+    }),
+  });
+}
+```
+
+That lets you build workflows that wait for commands like:
+
+- `@smithers re-run review`
+- `@smithers summarize the blockers`
+- `@smithers draft the changelog`
+
+## 5. Call The GitHub API From Workflows
+
+There are two common approaches.
+
+### Custom Tools With Octokit
+
+This is the cleanest option when you only need a handful of GitHub actions.
+
+```ts
+import { App } from "octokit";
+import { defineTool } from "smithers-orchestrator";
+import { z } from "zod";
+
+const githubApp = new App({
+  appId: process.env.GITHUB_APP_ID!,
+  privateKey: process.env.GITHUB_APP_PRIVATE_KEY!,
+});
+
+async function installationClient(installationId: number) {
+  return await githubApp.getInstallationOctokit(installationId);
+}
+
+export const listPullFiles = defineTool({
+  name: "github.list_pull_files",
+  description: "List changed files in a pull request",
+  schema: z.object({
+    installationId: z.number(),
+    owner: z.string(),
+    repo: z.string(),
+    pullNumber: z.number(),
+  }),
+  async execute({ installationId, owner, repo, pullNumber }) {
+    const octokit = await installationClient(installationId);
+    const { data } = await octokit.rest.pulls.listFiles({
+      owner,
+      repo,
+      pull_number: pullNumber,
+    });
+    return data.map((file) => ({
+      filename: file.filename,
+      status: file.status,
+      patch: file.patch ?? null,
+    }));
+  },
+});
+```
+
+### OpenAPI Tools
+
+If you already have a GitHub REST spec or a thin proxy with a smaller OpenAPI surface, `createOpenApiTools()` works well too. That is most useful when you want the agent to choose among many GitHub operations without hand-wrapping each one.
+
+## 6. Creating PRs, Posting Comments, And Running Checks
+
+These are the most common bot mutations.
+
+### Post A Comment
+
+```ts
+const octokit = await installationClient(ctx.input.installationId);
+const review = ctx.output(outputs.review, { nodeId: "review" });
+
+const comment = await octokit.rest.issues.createComment({
+  owner: ctx.input.owner,
+  repo: ctx.input.repo,
+  issue_number: ctx.input.pullNumber,
+  body: review.commentBody,
+});
+```
+
+### Create A Pull Request
+
+```ts
+await octokit.rest.pulls.create({
+  owner,
+  repo,
+  title: "smithers: apply review fixes",
+  head: "smithers/fix-branch",
+  base: "main",
+  body: "Automated fixes generated by Smithers.",
+});
+```
+
+### Create And Update A Check Run
+
+```ts
+const check = await octokit.rest.checks.create({
+  owner,
+  repo,
+  name: "smithers/review",
+  head_sha: sha,
+  status: "in_progress",
+});
+
+await octokit.rest.checks.update({
+  owner,
+  repo,
+  check_run_id: check.data.id,
+  status: "completed",
+  conclusion: "success",
+  output: {
+    title: "Review complete",
+    summary: "No blocking issues found.",
+  },
+});
+```
+
+Checks are a good place to surface machine-readable state while comments carry the longer narrative.
+
+## 7. Example Workflow: Review A Pull Request
+
+This example keeps the workflow simple:
+
+- fetch PR data through tools
+- ask an agent to review it
+- optionally publish a comment
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import {
+  Approval,
+  Sequence,
+  Task,
+  Workflow,
+  approvalDecisionSchema,
+  createSmithers,
+} from "smithers-orchestrator";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  review: z.object({
+    summary: z.string(),
+    commentBody: z.string(),
+    shouldBlock: z.boolean(),
+  }),
+  approval: approvalDecisionSchema,
+  publish: z.object({
+    commentId: z.number().nullable(),
+  }),
+});
+
+export default smithers((ctx) => {
+  const approval = ctx.outputMaybe(outputs.approval, { nodeId: "approve-comment" });
+
+  return (
+    <Workflow name="github-pr-review">
+      <Sequence>
+        <Task id="review" output={outputs.review} agent={reviewer}>
+          {`Review pull request #${ctx.input.pullNumber} in ${ctx.input.owner}/${ctx.input.repo}.
+
+Use the available GitHub tools to inspect the diff and return:
+- summary
+- commentBody
+- shouldBlock`}
+        </Task>
+
+        <Approval
+          id="approve-comment"
+          output={outputs.approval}
+          request={{
+            title: "Post review comment to GitHub?",
+            summary: "Human can edit or deny before the bot writes back.",
+          }}
+          onDeny="continue"
+        />
+
+        {approval?.approved ? (
+          <Task id="publish" output={outputs.publish}>
+            {async () => {
+              const review = ctx.output(outputs.review, { nodeId: "review" });
+              const octokit = await installationClient(ctx.input.installationId);
+              const result = await octokit.rest.issues.createComment({
+                owner: ctx.input.owner,
+                repo: ctx.input.repo,
+                issue_number: ctx.input.pullNumber,
+                body: review.commentBody,
+              });
+
+              return { commentId: result.data.id };
+            }}
+          </Task>
+        ) : null}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+## 8. Long-Lived PR Workflows
+
+The gateway gets especially useful when your bot needs to pause and resume rather than fire one request and exit.
+
+Typical pattern:
+
+1. Start a run on `pull_request.opened`
+2. Wait on `<Signal>` or `<WaitForEvent>` for later comments, CI updates, or labels
+3. Deliver those events with `signals.send`
+4. Keep the run's context and outputs intact between events
+
+That gives you a real conversation and state machine around the PR without writing one by hand.
+
+## Next Steps
+
+- [Gateway](/integrations/gateway)
+- [Common External Tools](/integrations/common-tools)
+- [OpenAPI Tools](/concepts/openapi-tools)
+- [Built-in Tools](/integrations/tools)

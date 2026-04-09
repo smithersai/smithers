@@ -298,9 +298,9 @@ function Review({ ticket }: { ticket: Ticket }) {
 }
 ```
 
-## What Doesn't Apply
+## What Works Differently
 
-Now for the part that might trip you up. Smithers renders the JSX tree fresh on each frame with a new `ctx`. There is no persistent component state between frames. So some React features you're used to simply don't apply:
+Now for the part that trips people up. Smithers is still React, so standard hooks can work. But workflow durability does **not** come from React state. Durable workflow state still lives in SQLite outputs and comes back through `ctx`.
 
 | React feature | Works in Smithers? | Why |
 | --- | --- | --- |
@@ -309,11 +309,12 @@ Now for the part that might trip you up. Smithers renders the JSX tree fresh on 
 | `useCtx()` and custom hooks | Yes | Read from workflow context |
 | Conditional rendering | Yes | Controls plan evolution |
 | `React.memo` | No effect | Each frame is fresh |
-| `useState` | No effect | No persistent state between frames |
-| `useEffect` | No effect | No mount/unmount lifecycle |
-| `useRef` | No effect | Refs reset each frame |
+| `useState` | Yes, but process-local only | Useful for local render behavior, not for durable state |
+| `useEffect` | Yes, but process-local only | Good for local setup; not a replacement for durable tasks or tool calls |
+| `useRef` | Yes, but process-local only | Persists across live re-renders, resets on restart/resume |
+| `useMemo` | Yes | Great for stable providers, clients, and derived values |
 
-This is intentional, not a limitation. Workflow state lives in SQLite, not in React component state. The `ctx` object is the single source of truth during each render, and it's built from persisted outputs. If you find yourself reaching for `useState`, stop — the answer is almost certainly `ctx.outputMaybe()` or `ctx.latest()`.
+This is intentional. Workflow truth lives in SQLite, not in React component state. The `ctx` object is still the single durable source of truth during each render, because it is rebuilt from persisted outputs. If you find yourself reaching for `useState` to remember something the workflow must survive, the answer is almost certainly `ctx.outputMaybe()`, `ctx.latest()`, or another output table.
 
 ## Why This Matters
 

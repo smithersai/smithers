@@ -54,11 +54,13 @@
       "pages": [
         "integrations/tools",
         "integrations/integrations",
+        "integrations/common-tools",
         "integrations/cli-agents",
         "integrations/sdk-agents",
         "integrations/server",
         "integrations/serve",
         "integrations/gateway",
+        "integrations/github-bot",
         "integrations/pi-plugin",
         "integrations/pi-integration",
         "integrations/ecosystem"
@@ -104,6 +106,7 @@
           "pages": [
             "components/subflow",
             "components/wait-for-event",
+            "components/signal",
             "components/human-task",
             "components/saga",
             "components/try-catch-finally"
@@ -122,6 +125,7 @@
       "group": "Guides",
       "pages": [
         "guides/tutorial-workflow",
+        "guides/third-party-hooks",
         "guides/project-structure",
         "guides/model-selection",
         "guides/review-loop",

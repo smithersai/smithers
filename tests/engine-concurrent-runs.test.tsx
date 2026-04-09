@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { Task, Workflow, runWorkflow } from "../src/index.ts";
 import { SmithersDb } from "../src/db/adapter";
+import { ensureSmithersTables } from "../src/db/ensure";
 import { createTestSmithers, sleep } from "./helpers";
 import { outputSchemas } from "./schema";
 
@@ -29,6 +30,7 @@ describe("Concurrent runs", () => {
       </Workflow>
     ));
 
+    ensureSmithersTables(db as any);
     const adapter = new SmithersDb(db as any);
     const firstRunId = "run-a";
     const secondRunId = "run-b";

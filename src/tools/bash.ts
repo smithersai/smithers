@@ -8,6 +8,11 @@ import { runPromise } from "../effect/runtime";
 import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";
 import { SmithersError } from "../utils/errors";
+import {
+  assertOptionalArrayMaxLength,
+  assertOptionalStringMaxLength,
+  assertPositiveFiniteInteger,
+} from "../utils/input-bounds";
 import { toolOutputTruncatedTotal } from "../effect/metrics";
 import {
   logToolCallEffect,
@@ -16,6 +21,12 @@ import {
 } from "./logToolCall";
 
 const DARWIN_NETWORK_DENY_PROFILE = "(version 1) (allow default) (deny network*)";
+export const BASH_TOOL_MAX_COMMAND_LENGTH = 8_192;
+export const BASH_TOOL_MAX_ARGS = 128;
+export const BASH_TOOL_MAX_ARG_LENGTH = 8_192;
+export const BASH_TOOL_MAX_CWD_LENGTH = 1_024;
+export const BASH_TOOL_MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+export const BASH_TOOL_MAX_TIMEOUT_MS = 60 * 60 * 1000;
 
 type ResolvedCommand = {
   command: string;
@@ -39,6 +50,52 @@ function resolveNetworkIsolatedCommand(
   return { command: cmd, args };
 }
 
+function validateBashInvocation(
+  cmd: string,
+  args: string[] | undefined,
+  opts: { cwd?: string } | undefined,
+  ctx: { maxOutputBytes?: number; timeoutMs?: number },
+) {
+  if (typeof cmd !== "string" || cmd.trim().length === 0) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "cmd must be a non-empty string.",
+    );
+  }
+  assertOptionalStringMaxLength("cmd", cmd, BASH_TOOL_MAX_COMMAND_LENGTH);
+  assertOptionalArrayMaxLength("args", args, BASH_TOOL_MAX_ARGS);
+  for (const [index, arg] of (args ?? []).entries()) {
+    assertOptionalStringMaxLength(`args[${index}]`, arg, BASH_TOOL_MAX_ARG_LENGTH);
+  }
+  const commandLine = [cmd, ...(args ?? [])].join(" ");
+  assertOptionalStringMaxLength(
+    "command",
+    commandLine,
+    BASH_TOOL_MAX_COMMAND_LENGTH,
+  );
+  assertOptionalStringMaxLength("opts.cwd", opts?.cwd, BASH_TOOL_MAX_CWD_LENGTH);
+
+  const maxOutputBytes = ctx.maxOutputBytes ?? 200_000;
+  assertPositiveFiniteInteger("maxOutputBytes", Number(maxOutputBytes));
+  if (maxOutputBytes > BASH_TOOL_MAX_OUTPUT_BYTES) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `maxOutputBytes exceeds ${BASH_TOOL_MAX_OUTPUT_BYTES}.`,
+      { maxOutputBytes, maxAllowed: BASH_TOOL_MAX_OUTPUT_BYTES },
+    );
+  }
+
+  const timeoutMs = ctx.timeoutMs ?? 60_000;
+  assertPositiveFiniteInteger("timeoutMs", Number(timeoutMs));
+  if (timeoutMs > BASH_TOOL_MAX_TIMEOUT_MS) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `timeoutMs exceeds ${BASH_TOOL_MAX_TIMEOUT_MS}.`,
+      { timeoutMs, maxAllowed: BASH_TOOL_MAX_TIMEOUT_MS },
+    );
+  }
+}
+
 export function bashToolEffect(
   cmd: string,
   args?: string[],
@@ -50,6 +107,10 @@ export function bashToolEffect(
   const started = nowMs();
   let seq: number | undefined;
   return Effect.gen(function* () {
+    validateBashInvocation(cmd, args, opts, {
+      maxOutputBytes: ctx?.maxOutputBytes,
+      timeoutMs: ctx?.timeoutMs,
+    });
     seq = yield* logToolCallStartEffect("bash", started);
     const cwd = opts?.cwd
       ? yield* fromSync("resolve sandbox path", () =>

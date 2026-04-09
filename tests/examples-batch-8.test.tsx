@@ -1,5 +1,5 @@
 /** @jsxImportSource smithers */
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   Workflow,
   Task,
@@ -9,8 +9,51 @@ import {
   Loop,
   runWorkflow,
 } from "../src/index";
-import { createTestSmithers } from "./helpers";
+import { createTestSmithers as baseCreateTestSmithers } from "./helpers";
 import { z } from "zod";
+
+type Cleanup = () => void;
+type ExitListener = (...args: any[]) => void;
+
+const cleanups = new Set<Cleanup>();
+let initialExitListeners = new Set<ExitListener>();
+
+function trackCleanup(cleanup: Cleanup): Cleanup {
+  let closed = false;
+  const wrapped = () => {
+    if (closed) return;
+    closed = true;
+    cleanups.delete(wrapped);
+    try {
+      cleanup();
+    } catch {}
+  };
+  cleanups.add(wrapped);
+  return wrapped;
+}
+
+function createTestSmithers<S extends Record<string, z.ZodObject<any>>>(schemas: S) {
+  const api = baseCreateTestSmithers(schemas);
+  return {
+    ...api,
+    cleanup: trackCleanup(api.cleanup),
+  };
+}
+
+beforeEach(() => {
+  initialExitListeners = new Set(process.listeners("exit") as ExitListener[]);
+});
+
+afterEach(() => {
+  for (const cleanup of [...cleanups]) {
+    cleanup();
+  }
+  for (const listener of process.listeners("exit") as ExitListener[]) {
+    if (!initialExitListeners.has(listener)) {
+      process.off("exit", listener);
+    }
+  }
+});
 
 // ─── 1. simple-workflow ────────────────────────────────────────────────────────
 describe("simple-workflow", () => {

@@ -217,7 +217,7 @@ describe("Compute callback children", () => {
     const { smithers, outputs, cleanup } = buildSmithers();
     const workflow = smithers((_ctx) => (
       <Workflow name="compute-fail">
-        <Task id="calc" output={outputs.outputA}>
+        <Task id="calc" output={outputs.outputA} noRetry>
           {() => { throw new Error("compute boom"); }}
         </Task>
       </Workflow>
@@ -232,7 +232,7 @@ describe("Compute callback children", () => {
     const { smithers, outputs, cleanup } = buildSmithers();
     const workflow = smithers((_ctx) => (
       <Workflow name="compute-timeout">
-        <Task id="slow" output={outputs.outputA} timeoutMs={50}>
+        <Task id="slow" output={outputs.outputA} timeoutMs={50} noRetry>
           {async () => {
             await sleep(500);
             return { value: 1 };
@@ -278,7 +278,7 @@ describe("Compute callback children", () => {
     const workflow = smithers((_ctx) => (
       <Workflow name="compute-continue">
         <Sequence>
-          <Task id="bomb" output={outputs.outputA} continueOnFail>
+          <Task id="bomb" output={outputs.outputA} continueOnFail noRetry>
             {() => { throw new Error("boom"); }}
           </Task>
           <Task id="after" output={outputs.outputB}>

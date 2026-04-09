@@ -4,6 +4,7 @@ import * as WorkflowEngine from "@effect/workflow/WorkflowEngine";
 import { resolve as resolvePath } from "node:path";
 import { Effect, Exit, Layer, Schema, Scope } from "effect";
 import type { SmithersDb } from "../db/adapter";
+import { updateAsyncExternalWaitPending } from "./metrics";
 
 export const DurableDeferredBridgeWorkflow = Workflow.make({
   name: "SmithersDurableDeferredBridge",
@@ -86,13 +87,25 @@ type WaitForEventSignalInput = {
 };
 
 type WaitForEventAttemptSnapshot = {
+  meta: Record<string, unknown>;
   signalName: string;
   correlationId: string | null;
+  waitAsync: boolean;
+  resolvedSignalSeq?: number;
+  receivedAtMs?: number;
 };
 
 function normalizeCorrelationId(value: string | null | undefined): string | null {
   const normalized = typeof value === "string" ? value.trim() : "";
   return normalized.length > 0 ? normalized : null;
+}
+
+function parseOptionalFiniteNumber(value: unknown): number | undefined {
+  if (value == null || value === "") {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function parseWaitForEventAttemptSnapshot(
@@ -101,6 +114,9 @@ function parseWaitForEventAttemptSnapshot(
   if (!metaJson) return null;
   try {
     const parsed = JSON.parse(metaJson);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
     const waitForEvent = parsed?.waitForEvent;
     if (!waitForEvent || typeof waitForEvent !== "object" || Array.isArray(waitForEvent)) {
       return null;
@@ -113,11 +129,76 @@ function parseWaitForEventAttemptSnapshot(
       return null;
     }
     return {
+      meta: parsed as Record<string, unknown>,
       signalName,
       correlationId: normalizeCorrelationId((waitForEvent as any).correlationId),
+      waitAsync: (waitForEvent as any).waitAsync === true,
+      resolvedSignalSeq: parseOptionalFiniteNumber((waitForEvent as any).resolvedSignalSeq),
+      receivedAtMs: parseOptionalFiniteNumber((waitForEvent as any).receivedAtMs),
     };
   } catch {
     return null;
+  }
+}
+
+function buildResolvedWaitForEventMetaJson(
+  snapshot: WaitForEventAttemptSnapshot,
+  signal: WaitForEventSignalInput,
+): string {
+  const waitForEvent =
+    snapshot.meta.waitForEvent &&
+    typeof snapshot.meta.waitForEvent === "object" &&
+    !Array.isArray(snapshot.meta.waitForEvent)
+      ? (snapshot.meta.waitForEvent as Record<string, unknown>)
+      : {};
+
+  return JSON.stringify({
+    ...snapshot.meta,
+    kind:
+      typeof snapshot.meta.kind === "string"
+        ? snapshot.meta.kind
+        : "wait-for-event",
+    waitForEvent: {
+      ...waitForEvent,
+      signalName: snapshot.signalName,
+      correlationId: snapshot.correlationId,
+      waitAsync: snapshot.waitAsync,
+      resolvedSignalSeq: signal.seq,
+      receivedAtMs: signal.receivedAtMs,
+    },
+  });
+}
+
+async function markWaitForEventResolved(
+  adapter: SmithersDb,
+  runId: string,
+  nodeId: string,
+  iteration: number,
+  signal: WaitForEventSignalInput,
+) {
+  const attempts = await adapter.listAttempts(runId, nodeId, iteration);
+  const waitingAttempt =
+    (attempts as any[]).find((attempt) => attempt.state === "waiting-event") ??
+    attempts[0];
+  const snapshot = parseWaitForEventAttemptSnapshot(waitingAttempt?.metaJson);
+  if (!waitingAttempt || !snapshot || snapshot.resolvedSignalSeq !== undefined) {
+    return;
+  }
+
+  await adapter.updateAttempt(
+    runId,
+    nodeId,
+    iteration,
+    waitingAttempt.attempt,
+    {
+      metaJson: buildResolvedWaitForEventMetaJson(snapshot, signal),
+    },
+  );
+
+  if (snapshot.waitAsync) {
+    try {
+      await Effect.runPromise(updateAsyncExternalWaitPending("event", -1));
+    } catch {}
   }
 }
 
@@ -248,6 +329,7 @@ export const bridgeWaitForEventResolve = async (
   iteration: number,
   signal: WaitForEventSignalInput,
 ) => {
+  await markWaitForEventResolved(adapter, runId, nodeId, iteration, signal);
   await resolveBridgeDeferred(
     makeDurableDeferredBridgeExecutionId(adapter, runId, nodeId, iteration),
     makeWaitForEventDurableDeferred(nodeId),

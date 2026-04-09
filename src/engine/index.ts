@@ -29,6 +29,11 @@ import { sha256Hex } from "../utils/hash";
 import { nowMs } from "../utils/time";
 import { newRunId } from "../utils/ids";
 import { errorToJson, SmithersError } from "../utils/errors";
+import {
+  assertJsonPayloadWithinBounds,
+  assertOptionalStringMaxLength,
+  assertPositiveFiniteInteger,
+} from "../utils/input-bounds";
 import { computeRetryDelayMs } from "../utils/retry";
 import {
   buildPlanTree,
@@ -101,6 +106,12 @@ const createdWorktrees = new Set<string>();
 const gitBinary = typeof Bun !== "undefined" ? Bun.which("git") : null;
 const caffeinateBinary =
   typeof Bun !== "undefined" ? Bun.which("caffeinate") : null;
+
+export const RUN_WORKFLOW_RUN_ID_MAX_LENGTH = 256;
+export const RUN_WORKFLOW_INPUT_MAX_BYTES = 256 * 1024;
+export const RUN_WORKFLOW_INPUT_MAX_DEPTH = 16;
+export const RUN_WORKFLOW_INPUT_MAX_ARRAY_LENGTH = 512;
+export const RUN_WORKFLOW_INPUT_MAX_STRING_LENGTH = 64 * 1024;
 
 function makeAbortError(message = "Task aborted"): SmithersError {
   return new SmithersError("TASK_ABORTED", message, undefined, {
@@ -707,10 +718,15 @@ function acquireCaffeinate(): { release: () => void } {
   }
 }
 
-function coercePositiveInt(value: unknown, fallback: number): number {
-  const num = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(num) || num <= 0) return fallback;
-  return Math.floor(num);
+function coercePositiveInt(
+  field: string,
+  value: unknown,
+  fallback: number,
+): number {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  return Math.floor(assertPositiveFiniteInteger(field, Number(value)));
 }
 
 function buildInputRow(
@@ -1611,6 +1627,30 @@ function normalizeHotOptions(hot: boolean | HotReloadOptions | undefined): HotRe
 function assertInputObject(input: unknown) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new SmithersError("INVALID_INPUT", "Run input must be a JSON object");
+  }
+}
+
+function validateRunOptions(opts: RunOptions) {
+  assertOptionalStringMaxLength(
+    "runId",
+    opts.runId,
+    RUN_WORKFLOW_RUN_ID_MAX_LENGTH,
+  );
+  assertInputObject(opts.input);
+  assertJsonPayloadWithinBounds("input", opts.input, {
+    maxArrayLength: RUN_WORKFLOW_INPUT_MAX_ARRAY_LENGTH,
+    maxBytes: RUN_WORKFLOW_INPUT_MAX_BYTES,
+    maxDepth: RUN_WORKFLOW_INPUT_MAX_DEPTH,
+    maxStringLength: RUN_WORKFLOW_INPUT_MAX_STRING_LENGTH,
+  });
+  if (opts.maxConcurrency !== undefined) {
+    assertPositiveFiniteInteger("maxConcurrency", Number(opts.maxConcurrency));
+  }
+  if (opts.maxOutputBytes !== undefined) {
+    assertPositiveFiniteInteger("maxOutputBytes", Number(opts.maxOutputBytes));
+  }
+  if (opts.toolTimeoutMs !== undefined) {
+    assertPositiveFiniteInteger("toolTimeoutMs", Number(opts.toolTimeoutMs));
   }
 }
 
@@ -3846,6 +3886,7 @@ async function runWorkflowAsync<Schema>(
   workflow: SmithersWorkflow<Schema>,
   opts: RunOptions,
 ): Promise<RunResult> {
+  validateRunOptions(opts);
   const runId = opts.runId ?? newRunId();
   return runWorkflowWithMakeBridge(
     workflow,
@@ -3880,14 +3921,17 @@ async function runWorkflowBody<Schema>(
   const rootDir = resolveRootDir(opts, resolvedWorkflowPath);
   const logDir = resolveLogDir(rootDir, runId, opts.logDir);
   const maxConcurrency = coercePositiveInt(
+    "maxConcurrency",
     opts.maxConcurrency,
     DEFAULT_MAX_CONCURRENCY,
   );
   const maxOutputBytes = coercePositiveInt(
+    "maxOutputBytes",
     opts.maxOutputBytes,
     DEFAULT_MAX_OUTPUT_BYTES,
   );
   const toolTimeoutMs = coercePositiveInt(
+    "toolTimeoutMs",
     opts.toolTimeoutMs,
     DEFAULT_TOOL_TIMEOUT_MS,
   );

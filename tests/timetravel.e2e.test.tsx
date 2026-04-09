@@ -122,24 +122,37 @@ describe("timeTravel e2e", () => {
       let shouldFailImplement = true;
 
       try {
-        const workflow = buildThreeTaskWorkflow(smithers, outputs, {
-          analyze: () => {
-            analyzeCalls += 1;
-            return { value: 1 };
-          },
-          implement: () => {
-            implementCalls += 1;
-            if (shouldFailImplement) {
-              shouldFailImplement = false;
-              throw new Error("implement failed first time");
-            }
-            return { value: 2 };
-          },
-          testTask: () => {
-            testCalls += 1;
-            return { value: 3 };
-          },
-        });
+        const workflow = smithers(() => (
+          <Workflow name="timetravel-resume">
+            <Task id="analyze" output={outputs.outputA}>
+              {() => {
+                analyzeCalls += 1;
+                return { value: 1 };
+              }}
+            </Task>
+            <Task
+              id="implement"
+              output={outputs.outputB}
+              dependsOn={["analyze"]}
+              noRetry
+            >
+              {() => {
+                implementCalls += 1;
+                if (shouldFailImplement) {
+                  shouldFailImplement = false;
+                  throw new Error("implement failed first time");
+                }
+                return { value: 2 };
+              }}
+            </Task>
+            <Task id="test" output={outputs.outputC} dependsOn={["implement"]}>
+              {() => {
+                testCalls += 1;
+                return { value: 3 };
+              }}
+            </Task>
+          </Workflow>
+        ));
 
         const first = await runWorkflow(workflow, {
           input: {},

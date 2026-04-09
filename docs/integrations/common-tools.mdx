@@ -1,0 +1,244 @@
+---
+title: Common External Tools
+description: Practical integration patterns for GitHub, Linear, Notion, Slack, and Obsidian using gateway, OpenAPI tools, and Smithers' built-in file tools.
+---
+
+Smithers is an orchestration framework, not a directory of first-party SaaS clients.
+
+That is usually the right trade: you keep external integrations thin and explicit, and Smithers handles the sequencing, retries, persistence, approvals, and control flow around them.
+
+For most teams, the winning pattern is one of these:
+
+- gateway plus webhooks for event-driven systems
+- `createOpenApiTools()` for APIs with an OpenAPI spec
+- `defineTool()` for a small number of custom actions
+- built-in file tools for local filesystems such as an Obsidian vault
+
+## Quick Map
+
+| System | Best Smithers wiring | Best for |
+| --- | --- | --- |
+| GitHub | Gateway plus webhook receiver | PRs, issues, comments, checks, bots |
+| Linear | OpenAPI tools against an internal or generated spec | Triage, status updates, comments |
+| Notion | OpenAPI tools against a Notion-facing spec or proxy | Spec lookup, page creation, block updates |
+| Slack | Incoming webhooks plus gateway or OpenAPI/custom tools | Notifications, slash commands, interactive workflows |
+| Obsidian | Built-in file tools or compute tasks | Reading and writing notes in a local vault |
+
+## GitHub
+
+GitHub is event-driven, so the gateway is the natural entry point.
+
+Typical flow:
+
+1. GitHub sends a webhook
+2. Your receiver verifies the signature
+3. The receiver calls `runs.create` or `signals.send`
+4. The workflow calls GitHub back through tools or a client
+
+```ts
+await fetch("http://127.0.0.1:7331/rpc", {
+  method: "POST",
+  headers: {
+    "content-type": "application/json",
+    authorization: `Bearer ${process.env.GATEWAY_TOKEN}`,
+  },
+  body: JSON.stringify({
+    method: "runs.create",
+    params: {
+      workflow: "github-pr-review",
+      input: {
+        owner: payload.repository.owner.login,
+        repo: payload.repository.name,
+        pullNumber: payload.pull_request.number,
+      },
+    },
+  }),
+});
+```
+
+Use GitHub when you need:
+
+- PR review bots
+- issue triage
+- check-run orchestration
+- comment-driven workflows with `signals.send`
+
+For a full example, see [GitHub Bot](/integrations/github-bot).
+
+## Linear
+
+Linear's public API is GraphQL, so the smoothest OpenAPI story is usually a small internal REST proxy or generated OpenAPI surface for the subset of Linear actions you need.
+
+That keeps the tool surface narrow and makes the agent's choices more predictable.
+
+```ts
+import { createOpenApiTools } from "smithers-orchestrator";
+
+const linearTools = await createOpenApiTools("./specs/linear-proxy.openapi.json", {
+  auth: {
+    type: "bearer",
+    token: process.env.LINEAR_API_KEY!,
+  },
+  include: [
+    "getIssue",
+    "listIssues",
+    "commentOnIssue",
+    "updateIssueState",
+  ],
+});
+```
+
+```tsx
+<Task id="triage-linear" output={outputs.triage} agent={opsAgent}>
+  Read the issue, decide the next state, and leave a short status comment.
+</Task>
+```
+
+If you do not have an OpenAPI spec for your Linear surface, write a few `defineTool()` wrappers instead.
+
+## Notion
+
+Notion works well with the same pattern: define or generate an OpenAPI description for the pages and search endpoints your team actually uses, then hand that smaller surface to an agent.
+
+```ts
+const notionTools = await createOpenApiTools("./specs/notion.openapi.json", {
+  auth: {
+    type: "bearer",
+    token: process.env.NOTION_TOKEN!,
+  },
+  include: [
+    "searchPages",
+    "getPage",
+    "createPage",
+    "appendBlockChildren",
+  ],
+});
+```
+
+```tsx
+<Task id="publish-spec" output={outputs.publish} agent={writerAgent}>
+  Find the matching spec page in Notion and append a release summary.
+</Task>
+```
+
+Good Notion use cases:
+
+- lookup supporting context before an agent decides something
+- create or update project pages
+- append release notes or meeting summaries
+
+## Slack
+
+Slack usually splits into two parts:
+
+- inbound events or slash commands trigger workflows through the gateway
+- outbound messages use either incoming webhooks or a Slack API client/tool
+
+### Slash Command Or Event Receiver
+
+```ts
+await fetch("http://127.0.0.1:7331/rpc", {
+  method: "POST",
+  headers: {
+    "content-type": "application/json",
+    authorization: `Bearer ${process.env.GATEWAY_TOKEN}`,
+  },
+  body: JSON.stringify({
+    method: "runs.create",
+    params: {
+      workflow: "slack-triage",
+      input: {
+        channel: command.channel_id,
+        user: command.user_id,
+        text: command.text,
+      },
+    },
+  }),
+});
+```
+
+### Outbound Notification
+
+For simple posting, an incoming webhook is enough:
+
+```tsx
+<Task id="notify-slack" output={outputs.notify}>
+  {async () => {
+    await fetch(process.env.SLACK_WEBHOOK_URL!, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        text: "Workflow completed successfully.",
+      }),
+    });
+
+    return { sent: true };
+  }}
+</Task>
+```
+
+For richer Slack API actions, use `createOpenApiTools()` against a proxy/spec or define a few custom tools.
+
+## Obsidian
+
+Obsidian is usually just a directory on disk, which means Smithers' built-in file tools are already enough.
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { read, write, edit, grep } from "smithers-orchestrator";
+
+const obsidianAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, write, edit, grep },
+});
+```
+
+```tsx
+<Task id="update-vault-note" output={outputs.update} agent={obsidianAgent}>
+  Read the note at vault/projects/release-plan.md, summarize the open tasks,
+  and update the "Status" section in place.
+</Task>
+```
+
+If you want stricter control than an agent with file tools, use a compute task:
+
+```tsx
+<Task id="append-daily-note" output={outputs.append}>
+  {async () => {
+    const path = `${process.env.OBSIDIAN_VAULT}/Daily/2026-04-09.md`;
+    const previous = await Bun.file(path).text();
+    await Bun.write(path, `${previous}\n- Smithers finished the release checklist.`);
+    return { updated: true };
+  }}
+</Task>
+```
+
+## Choosing Between OpenAPI And Custom Tools
+
+Use OpenAPI tools when:
+
+- you already have a spec
+- the surface area is medium or large
+- you want the model to choose among many operations
+
+Use `defineTool()` or a compute task when:
+
+- the service has no usable OpenAPI spec
+- you only need a few actions
+- you want exact control over the network call
+
+## Practical Advice
+
+- Keep the external tool surface narrow
+- Prefer gateway for inbound event streams
+- Prefer OpenAPI tools for broad REST-style APIs
+- Prefer custom tools for a few high-value operations
+- Persist business state in outputs, not in third-party client caches
+
+## Next Steps
+
+- [Gateway](/integrations/gateway)
+- [GitHub Bot](/integrations/github-bot)
+- [Built-in Tools](/integrations/tools)
+- [OpenAPI Tools](/concepts/openapi-tools)

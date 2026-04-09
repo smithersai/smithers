@@ -15,6 +15,8 @@ Three modes of operation:
 
 For human gates, `<Task needsApproval>` pauses before execution. For explicit decision nodes, use [`<Approval>`](/components/approval).
 
+When `needsApproval` and `async` are both set, sequence traversal can continue past the gate, but anything that explicitly depends on this task or reads its output still waits for the approval to resolve.
+
 ## Props
 
 | Prop | Type | Default | Description |
@@ -31,6 +33,7 @@ For human gates, `<Task needsApproval>` pauses before execution. For explicit de
 | `key` | `string` | `undefined` | Standard React key. No effect on execution. |
 | `skipIf` | `boolean` | `false` | Skip this task. |
 | `needsApproval` | `boolean` | `false` | Pause and wait for approval before executing. |
+| `async` | `boolean` | `false` | Only applies with `needsApproval`. When `true`, unrelated downstream flow can continue while approval is pending. |
 | `timeoutMs` | `number` | `undefined` | Max execution time in ms. Task fails on timeout. |
 | `retries` | `number` | `Infinity` | Retry attempts on failure. Default: infinite with exponential backoff. Set to `0` to disable. |
 | `noRetry` | `boolean` | `false` | Disable retries entirely. Equivalent to `retries={0}`. |

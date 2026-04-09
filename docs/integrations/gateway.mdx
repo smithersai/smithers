@@ -1,9 +1,24 @@
 ---
 title: Gateway
-description: Multi-workflow WebSocket gateway for Smithers runs, approvals, cron triggers, and scoped authentication.
+description: Headless multi-workflow control plane for remote run management, approvals, signals, cron, WebSocket streaming, and HTTP RPC.
 ---
 
-`Gateway` exposes multiple workflows behind a single WebSocket endpoint with protocol negotiation, event streaming, run management, approvals, and cron scheduling.
+`Gateway` is Smithers' headless control plane for remote workflow execution.
+
+If `smithers up` is for local runs and [`startServer()`](/integrations/server) is for loading workflow files over HTTP, `Gateway` is for long-lived remote control: bots, dashboards, webhook receivers, and schedulers connect once, authenticate, start runs, subscribe to progress, decide approvals, inject signals, and manage cron schedules.
+
+That makes it a good fit for ClaudeBot/OpenClaw-style systems where Smithers is the orchestration engine sitting behind GitHub, Slack, CI, or an internal operations UI.
+
+## What The Gateway Does
+
+- Registers multiple named workflows behind one server
+- Exposes a WebSocket RPC protocol with event streaming
+- Exposes `POST /rpc` for stateless HTTP callers
+- Enforces auth and scopes before a client can call methods
+- Surfaces pending approvals with rich metadata
+- Delivers external signals into waiting workflows
+- Persists and triggers cron schedules
+- Propagates gateway auth context into `ctx.auth`
 
 ## Import
 
@@ -13,10 +28,62 @@ import { Gateway } from "smithers-orchestrator";
 
 ## Quick Start
 
-```ts
-import { Gateway } from "smithers-orchestrator";
+This example registers a workflow, exposes approvals remotely, and starts the gateway on port `7331`.
 
-const gateway = new Gateway({
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import {
+  Approval,
+  Gateway,
+  Sequence,
+  Task,
+  Workflow,
+  approvalDecisionSchema,
+  createSmithers,
+} from "smithers-orchestrator";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  plan: z.object({
+    summary: z.string(),
+  }),
+  approval: approvalDecisionSchema,
+  deploy: z.object({
+    shipped: z.boolean(),
+    env: z.string(),
+  }),
+});
+
+const deployWorkflow = smithers((ctx) => (
+  <Workflow name="deploy">
+    <Sequence>
+      <Task id="plan" output={outputs.plan}>
+        {{
+          summary: `Deploy ${ctx.input.sha} to ${ctx.input.env}`,
+        }}
+      </Task>
+
+      <Approval
+        id="ship"
+        output={outputs.approval}
+        request={{
+          title: `Deploy ${ctx.input.sha}?`,
+          summary: "Remote operator approval required.",
+        }}
+        allowedScopes={["approve"]}
+      />
+
+      <Task id="deploy" output={outputs.deploy}>
+        {{
+          shipped: true,
+          env: String(ctx.input.env),
+        }}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+
+const smithersGateway = new Gateway({
   heartbeatMs: 15_000,
   auth: {
     mode: "token",
@@ -24,19 +91,83 @@ const gateway = new Gateway({
       "operator-token": {
         role: "operator",
         scopes: ["*"],
-        userId: "user:will",
+        userId: "user:ops",
+      },
+      "viewer-token": {
+        role: "viewer",
+        scopes: ["health", "runs.list", "runs.get", "approvals.list"],
+        userId: "user:viewer",
       },
     },
   },
+  defaults: {
+    cliAgentTools: "explicit-only",
+  },
 });
 
-gateway.register("basic", workflow);
-await gateway.listen({ port: 7331 });
+smithersGateway.register("deploy", deployWorkflow, {
+  schedule: "0 8 * * 1-5",
+});
+
+await smithersGateway.listen({ port: 7331 });
+```
+
+### What `GatewayOptions` Configures
+
+```ts
+type GatewayOptions = {
+  protocol?: number;
+  features?: string[];
+  heartbeatMs?: number;
+  auth?: GatewayAuthConfig;
+  defaults?: {
+    cliAgentTools?: "all" | "explicit-only";
+  };
+  maxBodyBytes?: number;
+};
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `protocol` | `1` | Gateway protocol version negotiated during `connect` |
+| `features` | `["streaming", "runs"]` | Feature list returned to clients in `hello` |
+| `heartbeatMs` | `15000` | Interval for `tick` events and scheduler polling cap |
+| `auth` | `undefined` | Auth mode and scope mapping |
+| `defaults.cliAgentTools` | `undefined` | Default tool policy for CLI agents started through the gateway |
+| `maxBodyBytes` | `1048576` | Max JSON body size for `POST /rpc` |
+
+### `ctx.auth` Inside Workflows
+
+Runs started through the gateway receive auth metadata in `ctx.auth`:
+
+```ts
+{
+  triggeredBy: string;
+  role: string;
+  scopes: string[];
+  createdAt: string;
+}
+```
+
+That lets you build workflows that behave differently for operators, bots, cron, or external services:
+
+```tsx
+<Task id="audit" output={outputs.audit}>
+  {{
+    triggeredBy: ctx.auth?.triggeredBy ?? "unknown",
+    role: ctx.auth?.role ?? "unknown",
+    scopes: ctx.auth?.scopes ?? [],
+  }}
+</Task>
 ```
 
 ## Authentication Modes
 
-### Static tokens
+The gateway supports three auth modes. WebSocket clients authenticate during `connect`. HTTP clients authenticate with headers on each `POST /rpc`.
+
+### Token Mode
+
+Static tokens map directly to a role, scopes, and an optional user ID.
 
 ```ts
 new Gateway({
@@ -45,14 +176,28 @@ new Gateway({
     tokens: {
       "viewer-token": {
         role: "viewer",
-        scopes: ["runs.list", "runs.get"],
+        scopes: ["health", "runs.list", "runs.get", "approvals.list"],
+      },
+      "approver-token": {
+        role: "approver",
+        scopes: ["approve", "approvals.list", "runs.get"],
+        userId: "user:oncall",
+      },
+      "operator-token": {
+        role: "operator",
+        scopes: ["*"],
+        userId: "user:ops",
       },
     },
   },
 });
 ```
 
-### JWT
+Use token mode for internal services, quick prototypes, or webhook relays where static secrets are acceptable.
+
+### JWT Mode
+
+JWT mode verifies `HS256` tokens and extracts scopes, role, and user ID from claims.
 
 ```ts
 new Gateway({
@@ -64,55 +209,616 @@ new Gateway({
     scopesClaim: "permissions",
     roleClaim: "role",
     userClaim: "sub",
+    defaultRole: "operator",
     defaultScopes: ["runs.get"],
+    clockSkewSeconds: 60,
   },
 });
 ```
 
-- Only `HS256` JWTs are accepted.
-- `iss`, `aud`, `exp`, and `nbf` are validated.
-- `scopesClaim`, `roleClaim`, and `userClaim` let you map custom claim names.
+JWT validation currently checks:
 
-### Trusted proxy
+- `alg === "HS256"`
+- HMAC signature
+- `iss`
+- `aud`
+- `exp`
+- `nbf`
+
+If the configured scope claim is a string, it can be space- or comma-separated. Arrays work too.
+
+### Trusted Proxy Mode
+
+Trusted-proxy mode assumes something in front of the gateway already authenticated the user and injected identity headers.
 
 ```ts
 new Gateway({
   auth: {
     mode: "trusted-proxy",
-    allowedOrigins: ["https://smithers.example.com"],
+    allowedOrigins: ["https://ops.example.com"],
     trustedHeaders: ["x-user-id", "x-user-scopes", "x-user-role"],
+    defaultRole: "operator",
+    defaultScopes: ["runs.list", "runs.get"],
   },
 });
 ```
 
-Use this only when another trusted service is already authenticating the user and forwarding identity headers.
+If `trustedHeaders` is omitted, the gateway defaults to:
 
-## Scoped approvals
+- `x-user-id`
+- `x-user-scopes`
+- `x-user-role`
 
-`<Approval>` can constrain who is allowed to decide it:
+Use this only when the gateway is behind something you control, such as Cloudflare Access, an internal API gateway, or an auth proxy that strips and rewrites those headers.
+
+## WebSocket Protocol
+
+The WebSocket endpoint is the same server root:
+
+```txt
+ws://localhost:7331
+```
+
+The protocol is JSON RPC-ish rather than raw SSE or REST. There are three frame types.
+
+### Request Frames
+
+```ts
+type RequestFrame = {
+  type: "req";
+  id: string;
+  method: string;
+  params?: unknown;
+};
+```
+
+### Response Frames
+
+```ts
+type ResponseFrame = {
+  type: "res";
+  id: string;
+  ok: boolean;
+  payload?: unknown;
+  error?: {
+    code: string;
+    message: string;
+  };
+};
+```
+
+### Event Frames
+
+```ts
+type EventFrame = {
+  type: "event";
+  event: string;
+  payload?: unknown;
+  seq: number;
+  stateVersion: number;
+};
+```
+
+`seq` is per connection. `stateVersion` increments globally each time the gateway broadcasts a new event.
+
+### Handshake
+
+When a client connects, the server immediately sends a challenge event:
+
+```json
+{
+  "type": "event",
+  "event": "connect.challenge",
+  "payload": {
+    "nonce": "8d6d8e1a-...",
+    "ts": 1765158412000
+  },
+  "seq": 1,
+  "stateVersion": 0
+}
+```
+
+The client then sends `connect`:
+
+```json
+{
+  "type": "req",
+  "id": "connect-1",
+  "method": "connect",
+  "params": {
+    "minProtocol": 1,
+    "maxProtocol": 1,
+    "client": {
+      "id": "github-bot",
+      "version": "1.0.0",
+      "platform": "node"
+    },
+    "auth": {
+      "token": "operator-token"
+    },
+    "subscribe": ["run_123"]
+  }
+}
+```
+
+The gateway replies with a `hello` payload:
+
+```json
+{
+  "type": "res",
+  "id": "connect-1",
+  "ok": true,
+  "payload": {
+    "protocol": 1,
+    "features": ["streaming", "runs"],
+    "policy": {
+      "heartbeatMs": 15000
+    },
+    "auth": {
+      "sessionToken": "e9a8b9d5-...",
+      "role": "operator",
+      "scopes": ["*"],
+      "userId": "user:ops"
+    },
+    "snapshot": {
+      "runs": [],
+      "approvals": [],
+      "stateVersion": 0
+    }
+  }
+}
+```
+
+### Subscriptions
+
+The optional `subscribe` array filters event delivery by `runId`.
+
+- Omit it to receive events for every run
+- Pass one or more run IDs to restrict delivery
+- `runs.create`, `approvals.decide`, `signals.send`, and `cron.trigger` automatically add the affected run to the current connection's subscription set
+
+That pattern is useful for bots that only care about the runs they started.
+
+### Heartbeats
+
+After a successful `connect`, the gateway emits `tick` events every `heartbeatMs`:
+
+```json
+{
+  "type": "event",
+  "event": "tick",
+  "payload": {
+    "ts": 1765158415000
+  },
+  "seq": 9,
+  "stateVersion": 14
+}
+```
+
+### Streamed Event Names
+
+The gateway maps Smithers runtime events into a stable external stream:
+
+| Event | Payload highlights |
+| --- | --- |
+| `connect.challenge` | `nonce`, `ts` |
+| `tick` | `ts` |
+| `node.started` | `runId`, `nodeId`, `state: "in-progress"` |
+| `node.finished` | `runId`, `nodeId`, `state: "finished"` |
+| `node.failed` | `runId`, `nodeId`, `state: "failed"`, `error` |
+| `task.output` | `runId`, `nodeId`, `output`, `stream` |
+| `task.heartbeat` | `runId`, `nodeId`, `iteration`, `attempt` |
+| `approval.requested` | `runId`, `nodeId`, `iteration` |
+| `approval.decided` | `runId`, `nodeId`, `iteration`, `approved` |
+| `approval.auto_approved` | `runId`, `nodeId`, `iteration` |
+| `run.completed` | `runId`, `status`, optional `error` |
+| `cron.triggered` | `cronId`, `workflow`, `runId` |
+
+## HTTP Fallback: `POST /rpc`
+
+Webhooks, GitHub Actions, Cloud Functions, and other stateless callers usually do not want to keep a WebSocket open. For those cases the gateway exposes an HTTP RPC endpoint:
+
+```txt
+POST /rpc
+```
+
+### Auth Headers
+
+In token or JWT mode, HTTP callers authenticate with either:
+
+- `Authorization: Bearer <token>`
+- `x-smithers-key: <token>`
+
+In trusted-proxy mode, the gateway reads the forwarded identity headers from the request instead.
+
+### Request Shape
+
+`POST /rpc` accepts the same logical request as the WebSocket protocol:
+
+```json
+{
+  "id": "create-1",
+  "method": "runs.create",
+  "params": {
+    "workflow": "deploy",
+    "input": {
+      "env": "staging",
+      "sha": "abc123"
+    }
+  }
+}
+```
+
+### Response Shape
+
+Successful method calls return the same `ResponseFrame` envelope:
+
+```json
+{
+  "type": "res",
+  "id": "create-1",
+  "ok": true,
+  "payload": {
+    "runId": "run_abc123",
+    "workflow": "deploy"
+  }
+}
+```
+
+Errors return the same `ResponseFrame` body with an HTTP status code:
+
+```json
+{
+  "type": "res",
+  "id": "create-1",
+  "ok": false,
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Missing scope for runs.create"
+  }
+}
+```
+
+Use WebSockets when you need live events. Use `POST /rpc` when you only need request/response semantics.
+
+### Example
+
+```bash
+curl -X POST http://localhost:7331/rpc \
+  -H "Authorization: Bearer operator-token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "create-1",
+    "method": "runs.create",
+    "params": {
+      "workflow": "deploy",
+      "input": { "env": "staging", "sha": "abc123" }
+    }
+  }'
+```
+
+## RPC Methods Reference
+
+The gateway authorizes methods by scope. Each method falls into one of four access levels:
+
+- `read`
+- `execute`
+- `approve`
+- `admin`
+
+Higher levels imply lower ones. For example, a token with `approve` can call `read` and `execute` methods too.
+
+### System
+
+| Method | Access | Params | Returns |
+| --- | --- | --- | --- |
+| `health` | `read` | none | `protocol`, `features`, `stateVersion`, `uptimeMs` |
+
+### Runs
+
+| Method | Access | Params | Returns |
+| --- | --- | --- | --- |
+| `runs.list` | `read` | `limit?`, `status?` | Recent runs across registered workflows |
+| `runs.create` | `execute` | `workflow`, `input?`, `runId?` | `{ runId, workflow }` |
+| `runs.get` | `read` | `runId` | Run row plus node-state summary |
+| `runs.diff` | `read` | `leftRunId`, `rightRunId` | Snapshot diff between two runs |
+| `runs.cancel` | `execute` | `runId` | `{ runId, status: "cancelling" }` |
+| `runs.rerun` | `execute` | `runId`, `newRunId?` | Starts a new run with the original input |
+
+Notes:
+
+- `runs.create` requires a registered workflow key, not a file path.
+- `runs.get` returns `workflowKey` so clients know which registered workflow produced the run.
+- `runs.diff` compares the latest saved snapshot for each run. If either run has no snapshot yet, the method returns `NOT_FOUND`.
+- `runs.rerun` reloads the original input from the workflow's `input` table, then delegates to `runs.create`.
+
+### Frames And Attempts
+
+| Method | Access | Params | Returns |
+| --- | --- | --- | --- |
+| `frames.list` | `read` | `runId`, `limit?`, `afterFrameNo?` | Render frames |
+| `frames.get` | `read` | `runId`, `frameNo?` | One frame, or the latest frame when `frameNo` is omitted |
+| `attempts.list` | `read` | `runId`, `nodeId?`, `iteration?` | Attempts for a run or for one node iteration |
+| `attempts.get` | `read` | `runId`, `nodeId`, `iteration`, `attempt` | One attempt row |
+
+These methods are what you use to build a run inspector or debugger.
+
+### Approvals
+
+| Method | Access | Params | Returns |
+| --- | --- | --- | --- |
+| `approvals.list` | `read` | none | Pending approvals across all workflows |
+| `approvals.decide` | `approve` | `runId`, `nodeId`, `approved`, `iteration?`, `note?`, `decision?` | `{ runId, nodeId, iteration, approved }` |
+
+`approvals.list` returns richer metadata than just `runId` and `nodeId`. Each row includes:
+
+- `requestTitle`
+- `requestSummary`
+- `approvalMode`
+- `options`
+- `allowedScopes`
+- `allowedUsers`
+- `autoApprove`
+
+`approvals.decide` enforces gateway-level approval restrictions before it records a decision:
+
+- If the approval specifies `allowedUsers`, the caller's `userId` must match
+- If the approval specifies `allowedScopes`, the caller must have one of those scopes
+
+For selection and ranking approvals, `decision` must match the requested mode:
+
+```json
+{
+  "method": "approvals.decide",
+  "params": {
+    "runId": "run_123",
+    "nodeId": "pick-plan",
+    "iteration": 0,
+    "approved": true,
+    "decision": {
+      "selected": "balanced",
+      "notes": "best fit"
+    }
+  }
+}
+```
+
+For ranking approvals:
+
+```json
+{
+  "decision": {
+    "ranked": ["canary", "regional", "global"],
+    "notes": "lowest blast radius first"
+  }
+}
+```
+
+After recording the decision, the gateway attempts to resume the run if it was paused on that approval.
+
+### Signals
+
+| Method | Access | Params | Returns |
+| --- | --- | --- | --- |
+| `signals.send` | `execute` | `runId`, `signalName`, `data?`, `correlationId?` | Delivery metadata including `seq` and `receivedAtMs` |
+
+Use `signals.send` to wake workflows blocked on `<Signal>` or `<WaitForEvent>`.
+
+```json
+{
+  "method": "signals.send",
+  "params": {
+    "runId": "run_123",
+    "signalName": "github.comment",
+    "correlationId": "pr-42",
+    "data": {
+      "body": "@smithers re-run the review",
+      "author": "octocat"
+    }
+  }
+}
+```
+
+After delivering the signal, the gateway tries to resume the run if it was waiting.
+
+### Cron
+
+| Method | Access | Params | Returns |
+| --- | --- | --- | --- |
+| `cron.list` | `read` | none | Cron rows across all registered workflows |
+| `cron.add` | `admin` | `workflow`, `pattern`, `cronId?`, `enabled?` | The created cron row |
+| `cron.remove` | `admin` | `cronId` | `{ cronId, removed: true }` |
+| `cron.trigger` | `execute` | `cronId` or `workflow`, `input?` | `{ runId, workflow }` |
+
+`cron.trigger` is handy for "run this scheduled job right now" buttons in UIs or bots.
+
+## Role And Scope Based Access Control
+
+The gateway stores both a `role` string and a list of `scopes`.
+
+- `role` is identity metadata and is passed into `ctx.auth.role`
+- `scopes` are what the gateway actually enforces
+
+Scopes can be granted in three styles:
+
+- Access level keywords: `read`, `execute`, `approve`, `admin`
+- Exact method names: `runs.create`, `approvals.decide`
+- Wildcards: `runs.*`, `cron.*`, `*`
+
+This token can read every run method and nothing else:
+
+```ts
+{
+  role: "viewer",
+  scopes: ["runs.*", "health"]
+}
+```
+
+This token can approve gates and, because of access ranking, also call `read` and `execute` methods:
+
+```ts
+{
+  role: "approver",
+  scopes: ["approve"],
+  userId: "user:oncall"
+}
+```
+
+### Approval-Level Restrictions
+
+You can add narrower restrictions at the workflow level:
 
 ```tsx
 <Approval
-  id="deploy"
-  output={outputs.deployApproval}
+  id="deploy-prod"
+  output={outputs.approval}
   request={{ title: "Deploy to production?" }}
   allowedScopes={["approve"]}
-  allowedUsers={["user:oncall"]} 
+  allowedUsers={["user:oncall", "user:release-manager"]}
 />
 ```
 
-`Gateway` enforces both scope and user restrictions on `approvals.decide`.
+Even if a caller has general approval access, the gateway still checks those narrower constraints before accepting `approvals.decide`.
 
-## Defaults
+## Cron Triggers
 
-Run-scoped defaults can be enforced at the gateway level:
+There are two ways to get cron into the gateway.
+
+### 1. Register A Workflow With A Schedule
 
 ```ts
-new Gateway({
-  defaults: {
-    cliAgentTools: "explicit-only",
-  },
+gateway.register("nightly-report", reportWorkflow, {
+  schedule: "0 2 * * *",
 });
 ```
 
-`cliAgentTools: "explicit-only"` means supported CLI agents (`ClaudeCodeAgent`, `PiAgent`, `GeminiAgent`) get no tools unless a task explicitly sets `allowTools`.
+When the gateway starts listening, it writes or updates a cron row in the workflow database with:
+
+- `cronId = "gateway:<workflowKey>"`
+- the cron pattern
+- the next scheduled fire time
+
+### 2. Manage Crons At Runtime
+
+You can create, delete, inspect, and trigger schedules with the `cron.*` RPC methods.
+
+The gateway polls for due schedules on an interval derived from `heartbeatMs`, clamped between `1000ms` and `15000ms`.
+
+When a cron fires:
+
+- the gateway starts a run
+- it sets `ctx.auth.triggeredBy` to `"cron:gateway"`
+- it sets `ctx.auth.role` to `"system"`
+- it grants `ctx.auth.scopes = ["*"]`
+- it emits `cron.triggered`
+
+## Building A GitHub Bot With The Gateway
+
+The gateway does not include a GitHub webhook server. The usual architecture is:
+
+1. GitHub sends a webhook to your webhook receiver
+2. The receiver verifies the GitHub signature
+3. The receiver calls `POST /rpc` or keeps a WebSocket open
+4. The workflow does the heavy lifting
+
+Minimal webhook relay:
+
+```ts
+import { Hono } from "hono";
+
+const app = new Hono();
+
+app.post("/github/webhooks", async (c) => {
+  const event = c.req.header("x-github-event");
+  const payload = await c.req.json();
+
+  if (event === "pull_request" && payload.action === "opened") {
+    await fetch("http://127.0.0.1:7331/rpc", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.GATEWAY_TOKEN}`,
+      },
+      body: JSON.stringify({
+        method: "runs.create",
+        params: {
+          workflow: "github-pr-review",
+          input: {
+            owner: payload.repository.owner.login,
+            repo: payload.repository.name,
+            pullNumber: payload.pull_request.number,
+            installationId: payload.installation?.id,
+            sender: payload.sender.login,
+          },
+        },
+      }),
+    });
+  }
+
+  return c.json({ ok: true });
+});
+```
+
+Use `signals.send` instead of `runs.create` when you want a long-lived run to wait for follow-up events such as review commands, check results, or a maintainer comment.
+
+See [GitHub Bot](/integrations/github-bot) for a full setup.
+
+## Building A Slack Bot With The Gateway
+
+Slack follows the same pattern:
+
+1. Slack slash command or Events API request hits your app
+2. Your app verifies the Slack signature
+3. Your app starts or resumes a workflow through the gateway
+4. The workflow posts back to Slack using your Slack client or tools
+
+Example slash command relay:
+
+```ts
+app.post("/slack/commands/review", async (c) => {
+  const form = await c.req.formData();
+
+  await fetch("http://127.0.0.1:7331/rpc", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${process.env.GATEWAY_TOKEN}`,
+    },
+    body: JSON.stringify({
+      method: "runs.create",
+      params: {
+        workflow: "slack-triage",
+        input: {
+          channel: form.get("channel_id"),
+          user: form.get("user_id"),
+          text: form.get("text"),
+        },
+      },
+    }),
+  });
+
+  return c.text("Review started.");
+});
+```
+
+For interactive Slack flows, a common pattern is:
+
+- start a run with `runs.create`
+- wait in the workflow with `<Signal>` or `<WaitForEvent>`
+- deliver button clicks, form submissions, or thread replies with `signals.send`
+
+## When To Use Gateway vs Other Server Modes
+
+| Use case | Best fit |
+| --- | --- |
+| One local run, maybe with a tiny HTTP wrapper | [`--serve`](/integrations/serve) |
+| Loading workflow files over REST by path | [`startServer()`](/integrations/server) |
+| Long-lived bots, dashboards, approvals, signals, and cron | `Gateway` |
+
+## Next Steps
+
+- [GitHub Bot](/integrations/github-bot)
+- [Built-in Tools](/integrations/tools)
+- [OpenAPI Tools](/concepts/openapi-tools)
+- [Serve Mode](/integrations/serve)
+- [HTTP Server](/integrations/server)

@@ -1,11 +1,21 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { SmithersError } from "../utils/errors";
+import {
+  assertJsonPayloadWithinBounds,
+  assertOptionalArrayMaxLength,
+  assertOptionalStringMaxLength,
+} from "../utils/input-bounds";
 import { resolveSandboxPath } from "../tools/utils";
 
 export const SANDBOX_MAX_BUNDLE_BYTES = 100 * 1024 * 1024; // 100MB
 export const SANDBOX_MAX_README_BYTES = 5 * 1024 * 1024; // 5MB
 export const SANDBOX_MAX_PATCH_FILES = 1000;
+export const SANDBOX_BUNDLE_RUN_ID_MAX_LENGTH = 256;
+export const SANDBOX_BUNDLE_PATH_MAX_LENGTH = 1024;
+export const SANDBOX_BUNDLE_OUTPUT_MAX_DEPTH = 16;
+export const SANDBOX_BUNDLE_OUTPUT_MAX_ARRAY_LENGTH = 512;
+export const SANDBOX_BUNDLE_OUTPUT_MAX_STRING_LENGTH = 64 * 1024;
 
 export type SandboxBundleManifest = {
   outputs: unknown;
@@ -104,6 +114,101 @@ function assertPatchPathSafe(bundlePath: string, patchPath: string) {
   }
 }
 
+async function estimateBundleWriteBytes(params: {
+  output: unknown;
+  patches?: Array<{ path: string; content: string }>;
+  artifacts?: Array<{ path: string; content: string }>;
+  runId?: string;
+  status: "finished" | "failed" | "cancelled";
+  streamLogPath?: string | null;
+}) {
+  const readmeBytes = Buffer.byteLength(
+    JSON.stringify(
+      {
+        outputs: params.output,
+        status: params.status,
+        runId: params.runId,
+        patches: (params.patches ?? []).map((patch) => patch.path),
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+  const patchBytes = (params.patches ?? []).reduce(
+    (total, patch) => total + Buffer.byteLength(patch.content, "utf8"),
+    0,
+  );
+  const artifactBytes = (params.artifacts ?? []).reduce(
+    (total, artifact) => total + Buffer.byteLength(artifact.content, "utf8"),
+    0,
+  );
+  const streamLogBytes = params.streamLogPath
+    ? (await stat(params.streamLogPath).catch(() => null))?.size ?? 0
+    : 0;
+  return readmeBytes + patchBytes + artifactBytes + streamLogBytes;
+}
+
+async function validateSandboxBundleWriteParams(params: {
+  bundlePath: string;
+  output: unknown;
+  status: "finished" | "failed" | "cancelled";
+  runId?: string;
+  streamLogPath?: string | null;
+  patches?: Array<{ path: string; content: string }>;
+  artifacts?: Array<{ path: string; content: string }>;
+}) {
+  assertOptionalStringMaxLength(
+    "bundlePath",
+    params.bundlePath,
+    SANDBOX_BUNDLE_PATH_MAX_LENGTH,
+  );
+  assertOptionalStringMaxLength(
+    "runId",
+    params.runId,
+    SANDBOX_BUNDLE_RUN_ID_MAX_LENGTH,
+  );
+  assertOptionalArrayMaxLength(
+    "patches",
+    params.patches,
+    SANDBOX_MAX_PATCH_FILES,
+  );
+  assertOptionalArrayMaxLength(
+    "artifacts",
+    params.artifacts,
+    SANDBOX_MAX_PATCH_FILES,
+  );
+  if (params.output !== undefined) {
+    assertJsonPayloadWithinBounds("output", params.output, {
+      maxArrayLength: SANDBOX_BUNDLE_OUTPUT_MAX_ARRAY_LENGTH,
+      maxDepth: SANDBOX_BUNDLE_OUTPUT_MAX_DEPTH,
+      maxStringLength: SANDBOX_BUNDLE_OUTPUT_MAX_STRING_LENGTH,
+    });
+  }
+  for (const patch of params.patches ?? []) {
+    assertOptionalStringMaxLength(
+      "patch.path",
+      patch.path,
+      SANDBOX_BUNDLE_PATH_MAX_LENGTH,
+    );
+  }
+  for (const artifact of params.artifacts ?? []) {
+    assertOptionalStringMaxLength(
+      "artifact.path",
+      artifact.path,
+      SANDBOX_BUNDLE_PATH_MAX_LENGTH,
+    );
+  }
+  const estimatedBytes = await estimateBundleWriteBytes(params);
+  if (estimatedBytes > SANDBOX_MAX_BUNDLE_BYTES) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `Sandbox bundle exceeds ${SANDBOX_MAX_BUNDLE_BYTES} bytes`,
+      { maxBytes: SANDBOX_MAX_BUNDLE_BYTES, estimatedBytes },
+    );
+  }
+}
+
 export async function validateSandboxBundle(
   bundlePath: string,
 ): Promise<ValidatedSandboxBundle> {
@@ -177,6 +282,7 @@ export async function writeSandboxBundle(params: {
   patches?: Array<{ path: string; content: string }>;
   artifacts?: Array<{ path: string; content: string }>;
 }) {
+  await validateSandboxBundleWriteParams(params);
   await mkdir(params.bundlePath, { recursive: true });
   await mkdir(join(params.bundlePath, "patches"), { recursive: true });
   await mkdir(join(params.bundlePath, "artifacts"), { recursive: true });

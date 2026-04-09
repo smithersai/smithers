@@ -221,10 +221,11 @@ Because the workflow re-renders after each task, you can branch with normal JSX:
 ## CLI
 
 ```bash
-smithers run workflow.tsx --input '{"description": "Fix bug"}'
-smithers resume workflow.tsx --run-id abc123
-smithers list workflow.tsx
-smithers approve workflow.tsx --run-id abc123 --node-id review
+smithers up workflow.tsx --input '{"description": "Fix bug"}'
+smithers up workflow.tsx --run-id abc123 --resume true
+smithers ps
+smithers workflow list
+smithers approve abc123 --node review
 ```
 
 ## Hot Module Replacement
@@ -232,7 +233,7 @@ smithers approve workflow.tsx --run-id abc123 --node-id review
 Edit your workflow files while a run is executing. Smithers watches your source tree and hot-reloads changes on save — prompts, config, agent settings, and component structure — without restarting the process or losing run state.
 
 ```bash
-smithers run workflow.tsx --hot
+smithers up workflow.tsx --hot
 ```
 
 In-flight tasks continue with their original code. Only newly scheduled tasks pick up the changes.

@@ -395,6 +395,78 @@ describe("Gateway", () => {
     await rejected.close();
   });
 
+  test("supports HTTP /rpc fallback for stateless callers", async () => {
+    const dbPath = makeDbPath("http-rpc");
+    dbPaths.push(dbPath);
+    gateway = new Gateway({
+      protocol: 1,
+      features: ["runs"],
+      heartbeatMs: 100,
+      auth: {
+        mode: "token",
+        tokens: {
+          "op-token": {
+            role: "operator",
+            scopes: ["*"],
+            userId: "user:http",
+          },
+        },
+      },
+    });
+    gateway.register("basic", createValueWorkflow(dbPath));
+    server = await gateway.listen({ port: 0 });
+    const port = getPort(server);
+
+    const createRes = await fetch(`http://127.0.0.1:${port}/rpc`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer op-token",
+      },
+      body: JSON.stringify({
+        method: "runs.create",
+        params: {
+          workflow: "basic",
+          input: { value: 12 },
+        },
+      }),
+    });
+    expect(createRes.status).toBe(200);
+    const created = await createRes.json() as any;
+    expect(created.ok).toBe(true);
+    const runId = created.payload.runId as string;
+
+    let run: any = null;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const runRes = await fetch(`http://127.0.0.1:${port}/rpc`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-smithers-key": "op-token",
+        },
+        body: JSON.stringify({
+          method: "runs.get",
+          params: { runId },
+        }),
+      });
+      const payload = await runRes.json() as any;
+      if (runRes.status === 404) {
+        await sleep(25);
+        continue;
+      }
+      expect(runRes.status).toBe(200);
+      expect(payload.ok).toBe(true);
+      run = payload.payload;
+      if (run?.status === "finished") {
+        break;
+      }
+      await sleep(25);
+    }
+
+    expect(run?.status).toBe("finished");
+    expect(run?.workflowKey).toBe("basic");
+  });
+
   test("creates runs, streams gateway events, and exposes frames, attempts, and diffs", async () => {
     const dbPath = makeDbPath("basic");
     dbPaths.push(dbPath);

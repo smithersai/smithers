@@ -269,7 +269,9 @@ describe("smithers why", () => {
       expect(result.stdout).toContain("All retries exhausted");
       expect(result.stdout).toContain("SchemaValidationError: output.score must be >= 0");
       expect(result.stdout).toContain("Attempt 3 of 3");
-      expect(result.stdout).toContain("smithers resume failed-run");
+      expect(result.stdout).toContain(
+        "smithers up workflow.tsx --run-id failed-run --resume true",
+      );
     } finally {
       sqlite.close();
     }
@@ -302,7 +304,9 @@ describe("smithers why", () => {
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("Run appears orphaned (last heartbeat");
-      expect(result.stdout).toContain("smithers resume stale-run --force");
+      expect(result.stdout).toContain(
+        "smithers up workflow.tsx --run-id stale-run --resume true --force true",
+      );
     } finally {
       sqlite.close();
     }
@@ -352,7 +356,9 @@ describe("smithers why", () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("hasn't heartbeated in");
       expect(result.stdout).toContain("timeout:");
-      expect(result.stdout).toContain("smithers retry task-heartbeat-run --node inflight-task --iteration 0");
+      expect(result.stdout).toContain(
+        "smithers retry-task workflow.tsx --run-id task-heartbeat-run --node-id inflight-task --iteration 0 --force true",
+      );
     } finally {
       sqlite.close();
     }

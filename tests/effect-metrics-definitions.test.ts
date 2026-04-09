@@ -46,6 +46,7 @@ import {
   activeNodes,
   schedulerQueueDepth,
   approvalPending,
+  externalWaitAsyncPending,
   nodeDuration,
   attemptDuration,
   toolDuration,
@@ -125,7 +126,8 @@ describe("effect/metrics definitions", () => {
       activeRuns,
       activeNodes,
       schedulerQueueDepth,
-          approvalPending,
+      approvalPending,
+      externalWaitAsyncPending,
     ];
 
     for (const gauge of gauges) {

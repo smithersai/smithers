@@ -602,6 +602,23 @@ function shellEscape(value: string): string {
   return `'${value.replaceAll("'", `'\"'\"'`)}'`;
 }
 
+function buildResumeUnblocker(run: DbRunRow, force = false) {
+  const workflowArg = run.workflowPath ? shellEscape(run.workflowPath) : "<workflow>";
+  const forceFlag = force ? " --force true" : "";
+  return `smithers up ${workflowArg} --run-id ${run.runId} --resume true${forceFlag}`;
+}
+
+function buildRetryTaskUnblocker(
+  run: DbRunRow,
+  nodeId: string,
+  iteration: number,
+  force = false,
+) {
+  const workflowArg = run.workflowPath ? shellEscape(run.workflowPath) : "<workflow>";
+  const forceFlag = force ? " --force true" : "";
+  return `smithers retry-task ${workflowArg} --run-id ${run.runId} --node-id ${shellEscape(nodeId)} --iteration ${iteration}${forceFlag}`;
+}
+
 function dedupeBlockers(blockers: WhyBlocker[]): WhyBlocker[] {
   const seen = new Set<string>();
   const deduped: WhyBlocker[] = [];
@@ -634,7 +651,10 @@ function buildDiagnosis(params: {
   } = params;
 
   const runId = run.runId;
-  const status = String(run.status ?? "unknown");
+  const status =
+    run.status === "continued" && run.finishedAtMs == null
+      ? "running"
+      : String(run.status ?? "unknown");
   const descriptorMetadata = parseFrameDescriptorMetadata(lastFrame?.xmlJson);
 
   const parsedEvents: ParsedEvent[] = events.map((row) => ({
@@ -802,7 +822,7 @@ function buildDiagnosis(params: {
         run.startedAtMs,
         run.createdAtMs,
       ),
-      unblocker: `smithers resume ${runId}`,
+      unblocker: buildResumeUnblocker(run),
       ...(contextParts.length > 0 ? { context: contextParts.join("\n") } : {}),
       firesAtMs,
       remainingMs,
@@ -841,7 +861,12 @@ function buildDiagnosis(params: {
         node.updatedAtMs,
         run.startedAtMs,
       ),
-      unblocker: `smithers retry ${runId} --node ${node.nodeId} --iteration ${node.iteration ?? 0}`,
+      unblocker: buildRetryTaskUnblocker(
+        run,
+        node.nodeId,
+        node.iteration ?? 0,
+        run.status === "running",
+      ),
       context: `Attempt ${inProgressAttempt.attempt}`,
       attempt: inProgressAttempt.attempt,
       maxAttempts:
@@ -868,7 +893,7 @@ function buildDiagnosis(params: {
         run.finishedAtMs,
         run.startedAtMs,
       ),
-      unblocker: `smithers resume ${runId}`,
+      unblocker: buildResumeUnblocker(run),
       context:
         insight.maxAttempts != null
           ? `Attempt ${insight.failedCount} of ${insight.maxAttempts}`
@@ -903,7 +928,12 @@ function buildDiagnosis(params: {
         node.updatedAtMs,
         run.startedAtMs,
       ),
-      unblocker: `smithers retry ${runId} --node ${node.nodeId} --iteration ${node.iteration ?? 0}`,
+      unblocker: buildRetryTaskUnblocker(
+        run,
+        node.nodeId,
+        node.iteration ?? 0,
+        run.status === "running",
+      ),
       context: describeRetryContext(insight, nowMs),
       attempt: insight.failedCount,
       maxAttempts: insight.maxAttempts,
@@ -938,7 +968,7 @@ function buildDiagnosis(params: {
           failedDependency.updatedAtMs,
           run.startedAtMs,
         ),
-        unblocker: `smithers resume ${runId}`,
+        unblocker: buildResumeUnblocker(run),
         dependencyNodeId: failedDependency.nodeId,
       });
       break;
@@ -964,7 +994,7 @@ function buildDiagnosis(params: {
         run.startedAtMs,
         run.createdAtMs,
       ),
-      unblocker: `smithers resume ${runId} --force`,
+      unblocker: buildResumeUnblocker(run, true),
     });
   }
 

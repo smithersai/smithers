@@ -15,6 +15,7 @@ import {
   activeNodes,
   activeRuns,
   approvalPending,
+  externalWaitAsyncPending,
   approvalsDenied,
   approvalsGranted,
   approvalsRequested,
@@ -514,6 +515,7 @@ export const smithersMetrics = {
   responseSizeBytes,
   // approvals
   approvalPending,
+  externalWaitAsyncPending,
   approvalWaitDuration,
   // timers
   timersCreated,
@@ -540,6 +542,7 @@ export {
   activeNodes,
   activeRuns,
   approvalPending,
+  externalWaitAsyncPending,
   approvalsDenied,
   approvalsGranted,
   approvalsRequested,

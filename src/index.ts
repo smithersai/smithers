@@ -171,6 +171,7 @@ export {
   trackSmithersEvent,
   activeNodes,
   activeRuns,
+  externalWaitAsyncPending,
   approvalsDenied,
   approvalsGranted,
   approvalsRequested,

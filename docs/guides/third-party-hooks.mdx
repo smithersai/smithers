@@ -1,0 +1,302 @@
+---
+title: Third-Party React Hooks
+description: How standard React hooks, TanStack Query, Zustand, and other React libraries fit inside Smithers workflows.
+---
+
+Smithers workflows are React components.
+
+That means you are not locked into a special workflow-only hook system. If a hook works with the React renderer Smithers uses, you can usually use it inside workflow components too.
+
+The important distinction is durability:
+
+- React hook state is process-local
+- Smithers workflow state is durable and lives in SQLite outputs
+
+Use hooks for local render-time coordination. Use task outputs, `ctx.outputMaybe()`, `ctx.latest()`, and output tables for anything the workflow must remember after a crash, restart, or resume.
+
+## What Smithers Provides Natively
+
+Smithers already gives you the workflow runtime itself:
+
+- JSX workflow components such as `<Workflow>`, `<Task>`, `<Sequence>`, `<Parallel>`, `<Branch>`, `<Loop>`, `<Approval>`, `<Signal>`, `<Timer>`, and `<WaitForEvent>`
+- Built-in agents such as `ClaudeCodeAgent`, `CodexAgent`, `OpenAIAgent`, `AnthropicAgent`, and others
+- Built-in tools such as `read`, `write`, `edit`, `grep`, `bash`, and `defineTool`
+- OpenAPI helpers such as `createOpenApiTools()` and `createOpenApiTool()`
+- Remote control surfaces such as `Gateway`, `startServer()`, `createServeApp()`, and `signalRun()`
+- One root React hook export: `usePatched()`
+
+From `createSmithers()` you also get a workflow-scoped `useCtx()` hook:
+
+```tsx
+const { smithers, Workflow, Task, outputs, useCtx } = createSmithers({
+  result: z.object({ summary: z.string() }),
+});
+```
+
+That is the main native hook you use to read workflow input and outputs inside reusable components.
+
+## Core React Hooks In Smithers
+
+These hooks work, but they do not replace durable workflow state.
+
+| Hook | Works? | Good for | Do not use it for |
+| --- | --- | --- | --- |
+| `useState` | Yes | Local derived state, toggles, cached prompt fragments | Durable workflow facts |
+| `useEffect` | Yes | Process-local setup and synchronization | Authoritative side effects you must survive resume |
+| `useRef` | Yes | Stable client instances, counters, scratch caches | Persistence |
+| `useMemo` | Yes | Expensive derived values, stable providers and clients | Cross-run caching |
+
+### `useState`
+
+`useState` can trigger re-renders inside workflow components just like normal React:
+
+```tsx
+function PromptMode() {
+  const ctx = useCtx();
+  const [mode, setMode] = React.useState("summary");
+
+  React.useEffect(() => {
+    if (ctx.input.verbose === true) {
+      setMode("detailed");
+    }
+  }, [ctx.input.verbose]);
+
+  return (
+    <Task id="draft" output={outputs.result}>
+      {{ summary: `Mode: ${mode}` }}
+    </Task>
+  );
+}
+```
+
+That is fine for local render behavior. It is not fine for anything the run must still know after the process dies.
+
+If the value matters to downstream workflow logic, write it to an output table instead of keeping it only in React state.
+
+### `useEffect`
+
+`useEffect` runs and can produce observable changes in a live workflow process, but treat it as a process-local helper, not your durable execution layer.
+
+Good uses:
+
+- initialize local state
+- hydrate an in-memory cache
+- wire up a `QueryClient`
+- keep a derived value in sync with props or `ctx.input`
+
+Avoid:
+
+- sending irreversible API mutations from an effect
+- making business-critical decisions only in effect state
+- assuming an effect has "already run" after resume
+
+If the action matters, put it in a `<Task>` or a tool call so Smithers can persist it, retry it, and reason about it.
+
+### `useRef`
+
+`useRef` is useful for process-local objects that should survive re-renders without causing new ones:
+
+```tsx
+function WorkflowCache() {
+  const cache = React.useRef(new Map<string, unknown>());
+
+  return (
+    <Task id="cache-size" output={outputs.result}>
+      {{ summary: `entries=${cache.current.size}` }}
+    </Task>
+  );
+}
+```
+
+Use it for clients, maps, counters, or temporary caches. On restart or resume, the ref resets.
+
+### `useMemo`
+
+`useMemo` is the right tool for stable provider values and expensive derived objects:
+
+```tsx
+const queryClient = React.useMemo(
+  () =>
+    new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    }),
+  [],
+);
+```
+
+This is especially useful when you want to embed provider-based libraries such as TanStack Query inside a workflow component tree.
+
+## TanStack Query
+
+TanStack Query works well in Smithers when you want to fetch external context during workflow rendering or share cached fetch results across multiple components in one live run.
+
+### `useQuery`
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import React from "react";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { Task, Workflow, createSmithers } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { smithers, outputs, useCtx } = createSmithers({
+  result: z.object({
+    repo: z.string(),
+    stars: z.number(),
+  }),
+});
+
+function RepoContext() {
+  const ctx = useCtx();
+  const { data } = useQuery({
+    queryKey: ["repo", ctx.input.owner, ctx.input.repo],
+    queryFn: async () => {
+      const res = await fetch(`https://api.github.com/repos/${ctx.input.owner}/${ctx.input.repo}`);
+      return await res.json();
+    },
+    retry: false,
+  });
+
+  if (!data) {
+    return null;
+  }
+
+  return (
+    <Task id="record" output={outputs.result}>
+      {{
+        repo: data.full_name,
+        stars: data.stargazers_count,
+      }}
+    </Task>
+  );
+}
+
+function QueryShell() {
+  const queryClient = React.useMemo(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    [],
+  );
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RepoContext />
+    </QueryClientProvider>
+  );
+}
+
+export default smithers(() => (
+  <Workflow name="repo-context">
+    <QueryShell />
+  </Workflow>
+));
+```
+
+### `useMutation`
+
+`useMutation` is useful when you want a reusable mutation client in component scope, but still execute the actual mutation from a durable task:
+
+```tsx
+import { useMutation } from "@tanstack/react-query";
+
+function SlackPublisher() {
+  const postMessage = useMutation({
+    mutationFn: async (input: { channel: string; text: string }) => {
+      const res = await fetch("https://slack.example.com/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      return await res.json();
+    },
+  });
+
+  return (
+    <Task id="publish" output={outputs.publish}>
+      {async () => {
+        const result = await postMessage.mutateAsync({
+          channel: "ops",
+          text: "Workflow completed",
+        });
+        return { ts: result.ts };
+      }}
+    </Task>
+  );
+}
+```
+
+### TanStack Query Rules Of Thumb
+
+- Put the `QueryClient` behind `useMemo`
+- Prefer `retry: false` unless you explicitly want another retry layer
+- Treat the query cache as local optimization, not workflow truth
+- If fetched data matters later, write it to an output table
+
+## Zustand
+
+Zustand is fine for ephemeral local state shared across multiple workflow components in one process.
+
+```tsx
+import { create } from "zustand";
+
+const useScratchStore = create<{
+  promptStyle: "short" | "long";
+  setPromptStyle: (value: "short" | "long") => void;
+}>((set) => ({
+  promptStyle: "short",
+  setPromptStyle: (value) => set({ promptStyle: value }),
+}));
+
+function PromptStyleTask() {
+  const promptStyle = useScratchStore((state) => state.promptStyle);
+
+  return (
+    <Task id="style" output={outputs.result}>
+      {{ summary: `style=${promptStyle}` }}
+    </Task>
+  );
+}
+```
+
+Use Zustand when it helps component ergonomics. Do not mistake it for workflow persistence.
+
+> Warning: if the state must survive resume, put it in SQLite output tables instead. Zustand stores are in-memory only.
+
+## Vercel AI SDK
+
+Smithers uses the [`ai`](https://sdk.vercel.ai/docs) package internally, so it already fits naturally with AI SDK agents, tools, and streams.
+
+That matters in two ways:
+
+- Inside workflows, you can use AI SDK-compatible agents and tool objects directly
+- Outside workflows, `@ai-sdk/react` is a strong choice for dashboards or operator UIs talking to Smithers over gateway or server endpoints
+
+Typical split:
+
+- `ai` package inside the workflow runtime
+- `@ai-sdk/react` in the browser or admin UI
+
+If you are building a control panel for approvals or bot conversations around Smithers, the AI SDK React hooks are often a clean match.
+
+## Other Useful Libraries
+
+These are not Smithers-specific, but they pair well with workflow code:
+
+- `swr` for a lighter-weight fetch cache than TanStack Query
+- `react-hook-form` for approval or operator UIs that sit on top of gateway endpoints
+- `react-error-boundary` for wrapping provider-heavy helper components
+- `use-context-selector` when you build large workflow helper trees with custom providers
+
+## Practical Rules
+
+- Use React hooks for local orchestration convenience
+- Use Smithers outputs and `ctx` for durable workflow state
+- Put side effects that matter inside `<Task>` bodies or tools
+- Memoize clients and providers with `useMemo`
+- Assume hook state disappears on restart unless you persist it yourself
+
+## Next Steps
+
+- [Reactivity](/concepts/reactivity)
+- [Workflow State](/concepts/workflow-state)
+- [Built-in Tools](/integrations/tools)
+- [OpenAPI Tools](/concepts/openapi-tools)

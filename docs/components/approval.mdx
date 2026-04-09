@@ -34,6 +34,7 @@ import { Approval, approvalDecisionSchema } from "smithers-orchestrator";
 | `allowedScopes` | `string[]` | `undefined` | Optional gateway scopes allowed to decide this approval. |
 | `allowedUsers` | `string[]` | `undefined` | Optional gateway user IDs allowed to decide this approval. |
 | `autoApprove` | `ApprovalAutoApprove` | `undefined` | Auto-approval policy. Supports immediate auto-approval, approval-after-history, and audited auto-approvals. |
+| `async` | `boolean` | `false` | When `true`, unrelated downstream flow can continue while this approval is pending. Explicit dependencies still wait for the resolved decision. |
 | `dependsOn` | `string[]` | `undefined` | Task IDs that must complete first. |
 | `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
 | `skipIf` | `boolean` | `false` | Skip this node entirely. |
@@ -171,10 +172,16 @@ import {
 ## Behavior
 
 - Workflow enters `waiting-approval` when this node is reached.
+- With `async`, the run can keep traversing unrelated later nodes while this approval is pending.
 - `smithers approve` / `smithers deny` updates the record durably.
 - On resume, the node resolves to a decision object; downstream JSX branches on the value.
 - `onDeny="fail"` -- hard gate.
 - `onDeny="continue"` -- branch on `decision.approved`.
+- Use `ctx.outputMaybe(...)` when branching on an async approval's output, since the decision may not exist yet during earlier renders.
+
+## Metrics
+
+Async approvals contribute to the Prometheus gauge `smithers_external_wait_async_pending{kind="approval"}` while waiting for human input.
 
 ## `<Approval>` vs `needsApproval`
 

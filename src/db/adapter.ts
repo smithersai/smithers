@@ -17,6 +17,10 @@ import {
 } from "../effect/metrics";
 import { toSmithersError, type SmithersError } from "../utils/errors";
 import {
+  assertOptionalStringMaxLength,
+  assertPositiveFiniteNumber,
+} from "../utils/input-bounds";
+import {
   FRAME_KEYFRAME_INTERVAL,
   applyFrameDeltaJson,
   encodeFrameDelta,
@@ -102,6 +106,85 @@ export type PendingHumanRequestRow = HumanRequestRow & {
 };
 
 const FRAME_XML_CACHE_MAX = 512;
+export const DB_RUN_ID_MAX_LENGTH = 256;
+export const DB_RUN_WORKFLOW_NAME_MAX_LENGTH = 256;
+export const DB_RUN_ALLOWED_STATUSES = [
+  "running",
+  "waiting-approval",
+  "waiting-event",
+  "waiting-timer",
+  "finished",
+  "failed",
+  "cancelled",
+  "continued",
+] as const;
+
+function validateRunStatus(status: unknown) {
+  if (
+    typeof status !== "string" ||
+    !DB_RUN_ALLOWED_STATUSES.includes(status as (typeof DB_RUN_ALLOWED_STATUSES)[number])
+  ) {
+    throw toSmithersError(
+      new Error("Invalid run status"),
+      `Run status must be one of: ${DB_RUN_ALLOWED_STATUSES.join(", ")}`,
+      {
+        code: "INVALID_INPUT",
+        details: { status },
+      },
+    );
+  }
+}
+
+function validateOptionalPositiveTimestamp(row: Record<string, unknown>, field: string) {
+  const value = row[field];
+  if (value === undefined || value === null) return;
+  assertPositiveFiniteNumber(field, Number(value));
+}
+
+function validateRunRow(row: any) {
+  if (!row || typeof row !== "object") {
+    throw toSmithersError(new Error("Invalid run row"), "Run row must be an object", {
+      code: "INVALID_INPUT",
+    });
+  }
+  assertOptionalStringMaxLength("runId", row.runId, DB_RUN_ID_MAX_LENGTH);
+  assertOptionalStringMaxLength(
+    "parentRunId",
+    row.parentRunId,
+    DB_RUN_ID_MAX_LENGTH,
+  );
+  assertOptionalStringMaxLength(
+    "workflowName",
+    row.workflowName,
+    DB_RUN_WORKFLOW_NAME_MAX_LENGTH,
+  );
+  validateRunStatus(row.status);
+  validateOptionalPositiveTimestamp(row, "createdAtMs");
+  validateOptionalPositiveTimestamp(row, "startedAtMs");
+  validateOptionalPositiveTimestamp(row, "finishedAtMs");
+  validateOptionalPositiveTimestamp(row, "heartbeatAtMs");
+  validateOptionalPositiveTimestamp(row, "cancelRequestedAtMs");
+  validateOptionalPositiveTimestamp(row, "hijackRequestedAtMs");
+}
+
+function validateRunPatch(patch: any) {
+  if (!patch || typeof patch !== "object") return;
+  if ("workflowName" in patch) {
+    assertOptionalStringMaxLength(
+      "workflowName",
+      patch.workflowName,
+      DB_RUN_WORKFLOW_NAME_MAX_LENGTH,
+    );
+  }
+  if ("status" in patch) {
+    validateRunStatus(patch.status);
+  }
+  validateOptionalPositiveTimestamp(patch, "startedAtMs");
+  validateOptionalPositiveTimestamp(patch, "finishedAtMs");
+  validateOptionalPositiveTimestamp(patch, "heartbeatAtMs");
+  validateOptionalPositiveTimestamp(patch, "cancelRequestedAtMs");
+  validateOptionalPositiveTimestamp(patch, "hijackRequestedAtMs");
+}
 
 function classifyRunRowStatus<T extends { status: string; heartbeatAtMs: number | null }>(row: T): T {
   if (
@@ -402,6 +485,7 @@ export class SmithersDb {
   }
 
   insertRunEffect(row: any) {
+    validateRunRow(row);
     return this.writeEffect("insert run", () =>
       this.internalStorage.insertIgnore("_smithers_runs", row),
     );
@@ -412,6 +496,7 @@ export class SmithersDb {
   }
 
   updateRunEffect(runId: string, patch: any) {
+    validateRunPatch(patch);
     return this.writeEffect(`update run ${runId}`, () =>
       this.internalStorage.updateWhere("_smithers_runs", patch, "run_id = ?", [runId]),
     );

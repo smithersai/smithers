@@ -22,6 +22,7 @@ import { WaitForEvent } from "smithers-orchestrator";
 | `outputSchema` | `z.ZodObject` | `undefined` | Zod schema for validating the event payload. |
 | `timeoutMs` | `number` | `undefined` | Max wait time in ms before timeout behavior triggers. |
 | `onTimeout` | `"fail" \| "skip" \| "continue"` | `"fail"` | What happens when the timeout expires. |
+| `async` | `boolean` | `false` | When `true`, unrelated downstream flow can continue while the event is still pending. Explicit dependencies still wait for the payload. |
 | `skipIf` | `boolean` | `false` | Skip this node entirely. |
 | `dependsOn` | `string[]` | `undefined` | Task IDs that must complete first. |
 | `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
@@ -100,6 +101,7 @@ Use `correlationId` to match specific event instances when multiple events of th
 - The engine durably records the event subscription (event name + correlation ID).
 - When a matching event arrives (via webhook, API call, or event bus), the node resumes and writes the payload to `output`.
 - If `timeoutMs` elapses first, the `onTimeout` behavior applies.
+- With `async`, later unrelated nodes can continue before the event arrives. Use explicit `dependsOn` / `needs` when later work really requires the payload.
 
 ## Rendering
 
@@ -111,3 +113,4 @@ Use `correlationId` to match specific event instances when multiple events of th
 - The event payload is validated against `outputSchema` when provided.
 - Combine with `<Sequence>` to gate downstream work on external events.
 - Multiple `<WaitForEvent>` nodes can wait for different events in a `<Parallel>` block.
+- Async event waits contribute to the Prometheus gauge `smithers_external_wait_async_pending{kind="event"}` while unresolved.
