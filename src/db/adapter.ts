@@ -1,7 +1,6 @@
 import { getTableName, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Effect, Exit, FiberId, Metric } from "effect";
-import { isRunHeartbeatFresh } from "../engine";
 import { fromPromise, fromSync } from "../effect/interop";
 import { runPromise } from "../effect/runtime";
 import { getSqlMessageStorage, type SqlMessageStorage } from "../effect/sql-message-storage";
@@ -10,6 +9,9 @@ import type {
   HumanRequestStatus,
 } from "../human-requests";
 import {
+  alertsAcknowledgedTotal,
+  alertsActive,
+  alertsFiredTotal,
   dbQueryDuration,
   dbTransactionDuration,
   dbTransactionRetries,
@@ -30,6 +32,7 @@ import {
 } from "./frame-codec";
 import { getKeyColumns, type OutputKey } from "./output";
 import { withSqliteWriteRetryEffect } from "./write-retry";
+import { camelToSnake } from "../utils/camelToSnake";
 
 export type RunRow = {
   runId: string;
@@ -105,6 +108,35 @@ export type PendingHumanRequestRow = HumanRequestRow & {
   nodeLabel: string | null;
 };
 
+export const DB_ALERT_ID_MAX_LENGTH = 256;
+export const DB_ALERT_POLICY_NAME_MAX_LENGTH = 256;
+export const DB_ALERT_MESSAGE_MAX_LENGTH = 4096;
+export const DB_ALERT_ALLOWED_SEVERITIES = [
+  "info",
+  "warning",
+  "critical",
+] as const;
+export type AlertSeverity = (typeof DB_ALERT_ALLOWED_SEVERITIES)[number];
+export const DB_ALERT_ALLOWED_STATUSES = [
+  "firing",
+  "acknowledged",
+  "resolved",
+  "silenced",
+] as const;
+export type AlertStatus = (typeof DB_ALERT_ALLOWED_STATUSES)[number];
+export type AlertRow = {
+  alertId: string;
+  runId: string | null;
+  policyName: string;
+  severity: AlertSeverity;
+  status: AlertStatus;
+  firedAtMs: number;
+  resolvedAtMs: number | null;
+  acknowledgedAtMs: number | null;
+  message: string;
+  detailsJson: string | null;
+};
+
 const FRAME_XML_CACHE_MAX = 512;
 export const DB_RUN_ID_MAX_LENGTH = 256;
 export const DB_RUN_WORKFLOW_NAME_MAX_LENGTH = 256;
@@ -118,6 +150,138 @@ export const DB_RUN_ALLOWED_STATUSES = [
   "cancelled",
   "continued",
 ] as const;
+const RUN_HEARTBEAT_STALE_MS = 30_000;
+const RAW_QUERY_ALLOWED_PREFIX = /^(?:select|with|explain|values)\b/i;
+const RAW_QUERY_FORBIDDEN_KEYWORDS = /\b(?:drop|delete|insert|update|alter|create|attach|detach|pragma)\b/i;
+const ACTIVE_ALERT_STATUSES = new Set<AlertStatus>([
+  "firing",
+  "acknowledged",
+  "silenced",
+]);
+
+function stripSqlCommentsAndLiterals(queryString: string): string {
+  let sanitized = "";
+  let index = 0;
+  while (index < queryString.length) {
+    const char = queryString[index];
+    const nextChar = queryString[index + 1];
+
+    if (char === "-" && nextChar === "-") {
+      sanitized += " ";
+      index += 2;
+      while (index < queryString.length && queryString[index] !== "\n") {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (char === "/" && nextChar === "*") {
+      sanitized += " ";
+      index += 2;
+      while (index < queryString.length) {
+        if (queryString[index] === "*" && queryString[index + 1] === "/") {
+          index += 2;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+
+    if (char === "'" || char === "\"" || char === "`") {
+      const quote = char;
+      sanitized += " ";
+      index += 1;
+      while (index < queryString.length) {
+        if (queryString[index] === quote) {
+          if (queryString[index + 1] === quote) {
+            index += 2;
+            continue;
+          }
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+
+    if (char === "[") {
+      sanitized += " ";
+      index += 1;
+      while (index < queryString.length) {
+        if (queryString[index] === "]") {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+
+    sanitized += char;
+    index += 1;
+  }
+  return sanitized;
+}
+
+function validateReadOnlyRawQuery(queryString: string): string {
+  const trimmedQuery = queryString.trim();
+  if (!trimmedQuery) {
+    throw toSmithersError(new Error("Raw query must not be empty"), undefined, {
+      code: "INVALID_INPUT",
+      details: { operation: "raw query validation" },
+    });
+  }
+
+  const sanitizedQuery = stripSqlCommentsAndLiterals(trimmedQuery).trim();
+  if (!sanitizedQuery) {
+    throw toSmithersError(new Error("Raw query must not be empty"), undefined, {
+      code: "INVALID_INPUT",
+      details: { operation: "raw query validation" },
+    });
+  }
+
+  const singleStatementQuery = sanitizedQuery.replace(/;+\s*$/, "").trim();
+  if (singleStatementQuery.includes(";")) {
+    throw toSmithersError(
+      new Error("Raw query must contain a single read-only SQL statement"),
+      undefined,
+      {
+        code: "INVALID_INPUT",
+        details: { operation: "raw query validation" },
+      },
+    );
+  }
+
+  const forbiddenKeyword = singleStatementQuery.match(RAW_QUERY_FORBIDDEN_KEYWORDS)?.[0];
+  if (forbiddenKeyword) {
+    throw toSmithersError(
+      new Error(`Raw query cannot use ${forbiddenKeyword.toUpperCase()} statements`),
+      undefined,
+      {
+        code: "INVALID_INPUT",
+        details: {
+          operation: "raw query validation",
+          keyword: forbiddenKeyword.toUpperCase(),
+        },
+      },
+    );
+  }
+
+  if (!RAW_QUERY_ALLOWED_PREFIX.test(singleStatementQuery)) {
+    throw toSmithersError(
+      new Error("Raw query only supports read-only SELECT, WITH, EXPLAIN, or VALUES statements"),
+      undefined,
+      {
+        code: "INVALID_INPUT",
+        details: { operation: "raw query validation" },
+      },
+    );
+  }
+
+  return trimmedQuery;
+}
 
 function validateRunStatus(status: unknown) {
   if (
@@ -127,6 +291,42 @@ function validateRunStatus(status: unknown) {
     throw toSmithersError(
       new Error("Invalid run status"),
       `Run status must be one of: ${DB_RUN_ALLOWED_STATUSES.join(", ")}`,
+      {
+        code: "INVALID_INPUT",
+        details: { status },
+      },
+    );
+  }
+}
+
+function validateAlertSeverity(severity: unknown) {
+  if (
+    typeof severity !== "string" ||
+    !DB_ALERT_ALLOWED_SEVERITIES.includes(
+      severity as (typeof DB_ALERT_ALLOWED_SEVERITIES)[number],
+    )
+  ) {
+    throw toSmithersError(
+      new Error("Invalid alert severity"),
+      `Alert severity must be one of: ${DB_ALERT_ALLOWED_SEVERITIES.join(", ")}`,
+      {
+        code: "INVALID_INPUT",
+        details: { severity },
+      },
+    );
+  }
+}
+
+function validateAlertStatus(status: unknown) {
+  if (
+    typeof status !== "string" ||
+    !DB_ALERT_ALLOWED_STATUSES.includes(
+      status as (typeof DB_ALERT_ALLOWED_STATUSES)[number],
+    )
+  ) {
+    throw toSmithersError(
+      new Error("Invalid alert status"),
+      `Alert status must be one of: ${DB_ALERT_ALLOWED_STATUSES.join(", ")}`,
       {
         code: "INVALID_INPUT",
         details: { status },
@@ -186,12 +386,96 @@ function validateRunPatch(patch: any) {
   validateOptionalPositiveTimestamp(patch, "hijackRequestedAtMs");
 }
 
+function validateAlertRow(row: AlertRow) {
+  if (!row || typeof row !== "object") {
+    throw toSmithersError(
+      new Error("Invalid alert row"),
+      "Alert row must be an object",
+      { code: "INVALID_INPUT" },
+    );
+  }
+
+  assertOptionalStringMaxLength("alertId", row.alertId, DB_ALERT_ID_MAX_LENGTH);
+  assertOptionalStringMaxLength("runId", row.runId, DB_RUN_ID_MAX_LENGTH);
+  assertOptionalStringMaxLength(
+    "policyName",
+    row.policyName,
+    DB_ALERT_POLICY_NAME_MAX_LENGTH,
+  );
+  assertOptionalStringMaxLength(
+    "message",
+    row.message,
+    DB_ALERT_MESSAGE_MAX_LENGTH,
+  );
+
+  if (typeof row.alertId !== "string" || row.alertId.length === 0) {
+    throw toSmithersError(
+      new Error("Invalid alert ID"),
+      "Alert ID must be a non-empty string",
+      { code: "INVALID_INPUT", details: { alertId: row.alertId } },
+    );
+  }
+  if (row.runId !== null && row.runId !== undefined && typeof row.runId !== "string") {
+    throw toSmithersError(
+      new Error("Invalid alert run ID"),
+      "Alert run ID must be a string or null",
+      { code: "INVALID_INPUT", details: { runId: row.runId } },
+    );
+  }
+  if (typeof row.policyName !== "string" || row.policyName.length === 0) {
+    throw toSmithersError(
+      new Error("Invalid alert policy name"),
+      "Alert policy name must be a non-empty string",
+      { code: "INVALID_INPUT", details: { policyName: row.policyName } },
+    );
+  }
+  if (typeof row.message !== "string" || row.message.length === 0) {
+    throw toSmithersError(
+      new Error("Invalid alert message"),
+      "Alert message must be a non-empty string",
+      { code: "INVALID_INPUT", details: { message: row.message } },
+    );
+  }
+  if (
+    row.detailsJson !== null &&
+    row.detailsJson !== undefined &&
+    typeof row.detailsJson !== "string"
+  ) {
+    throw toSmithersError(
+      new Error("Invalid alert details JSON"),
+      "Alert details JSON must be a string or null",
+      { code: "INVALID_INPUT", details: { detailsJson: row.detailsJson } },
+    );
+  }
+
+  validateAlertSeverity(row.severity);
+  validateAlertStatus(row.status);
+  validateOptionalPositiveTimestamp(row as Record<string, unknown>, "firedAtMs");
+  validateOptionalPositiveTimestamp(
+    row as Record<string, unknown>,
+    "resolvedAtMs",
+  );
+  validateOptionalPositiveTimestamp(
+    row as Record<string, unknown>,
+    "acknowledgedAtMs",
+  );
+}
+
+function isAlertActiveStatus(status: string | null | undefined): status is AlertStatus {
+  return status !== undefined && status !== null && ACTIVE_ALERT_STATUSES.has(status as AlertStatus);
+}
+
 function classifyRunRowStatus<T extends { status: string; heartbeatAtMs: number | null }>(row: T): T {
+  const isRunHeartbeatFresh = Boolean(
+    row.status === "running" &&
+      typeof row.heartbeatAtMs === "number" &&
+      Date.now() - row.heartbeatAtMs <= RUN_HEARTBEAT_STALE_MS,
+  );
   if (
     row.status === "running" &&
     typeof row.heartbeatAtMs === "number" &&
     row.heartbeatAtMs > 0 &&
-    !isRunHeartbeatFresh(row)
+    !isRunHeartbeatFresh
   ) {
     return {
       ...row,
@@ -248,10 +532,21 @@ export class SmithersDb {
   }
 
   rawQueryEffect(queryString: string) {
-    return this.readEffect(`raw query ${queryString.slice(0, 20)}`, () => {
-      const client = (this.db as any).session.client;
-      const stmt = client.query(queryString);
-      return Promise.resolve(stmt.all());
+    const self = this;
+    return Effect.gen(function* () {
+      const validatedQuery = yield* fromSync(
+        "validate raw query",
+        () => validateReadOnlyRawQuery(queryString),
+        {
+          code: "INVALID_INPUT",
+          details: { operation: "raw query validation" },
+        },
+      );
+      return yield* self.readEffect(`raw query ${validatedQuery.slice(0, 20)}`, () => {
+        const client = (self.db as any).session.client;
+        const stmt = client.query(validatedQuery);
+        return Promise.resolve(stmt.all());
+      });
     });
   }
 
@@ -706,30 +1001,37 @@ export class SmithersDb {
 
   claimRunForResumeEffect(params: {
     runId: string;
+    expectedStatus?: string;
     expectedRuntimeOwnerId: string | null;
     expectedHeartbeatAtMs: number | null;
     staleBeforeMs: number;
     claimOwnerId: string;
     claimHeartbeatAtMs: number;
+    requireStale?: boolean;
   }) {
     return this.writeEffect(`claim stale run ${params.runId}`, () => {
       const client = (this.db as any).session.client;
+      const expectedStatus = params.expectedStatus ?? "running";
+      const requireStale =
+        params.requireStale ?? expectedStatus === "running";
       client
         .query(
           `UPDATE _smithers_runs
            SET runtime_owner_id = ?, heartbeat_at_ms = ?
            WHERE run_id = ?
-             AND status = 'running'
+             AND status = ?
              AND COALESCE(runtime_owner_id, '') = COALESCE(?, '')
              AND COALESCE(heartbeat_at_ms, -1) = COALESCE(?, -1)
-             AND (heartbeat_at_ms IS NULL OR heartbeat_at_ms < ?)`,
+             AND (? = 0 OR heartbeat_at_ms IS NULL OR heartbeat_at_ms < ?)`,
         )
         .run(
           params.claimOwnerId,
           params.claimHeartbeatAtMs,
           params.runId,
+          expectedStatus,
           params.expectedRuntimeOwnerId,
           params.expectedHeartbeatAtMs,
+          requireStale ? 1 : 0,
           params.staleBeforeMs,
         );
       return this.internalStorage
@@ -740,11 +1042,13 @@ export class SmithersDb {
 
   claimRunForResume(params: {
     runId: string;
+    expectedStatus?: string;
     expectedRuntimeOwnerId: string | null;
     expectedHeartbeatAtMs: number | null;
     staleBeforeMs: number;
     claimOwnerId: string;
     claimHeartbeatAtMs: number;
+    requireStale?: boolean;
   }) {
     return runPromise(this.claimRunForResumeEffect(params));
   }
@@ -777,6 +1081,49 @@ export class SmithersDb {
     restoreHeartbeatAtMs: number | null;
   }) {
     return runPromise(this.releaseRunResumeClaimEffect(params));
+  }
+
+  updateClaimedRunEffect(params: {
+    runId: string;
+    expectedRuntimeOwnerId: string;
+    expectedHeartbeatAtMs: number | null;
+    patch: any;
+  }) {
+    validateRunPatch(params.patch);
+    return this.writeEffect(`update claimed run ${params.runId}`, () => {
+      const client = (this.db as any).session.client;
+      const patchEntries = Object.entries(params.patch);
+      if (patchEntries.length === 0) {
+        return Promise.resolve(true);
+      }
+      const assignments = patchEntries.map(([key]) => `${camelToSnake(key)} = ?`);
+      client
+        .query(
+          `UPDATE _smithers_runs
+           SET ${assignments.join(", ")}
+           WHERE run_id = ?
+             AND runtime_owner_id = ?
+             AND COALESCE(heartbeat_at_ms, -1) = COALESCE(?, -1)`,
+        )
+        .run(
+          ...patchEntries.map(([, value]) => value),
+          params.runId,
+          params.expectedRuntimeOwnerId,
+          params.expectedHeartbeatAtMs,
+        );
+      return this.internalStorage
+        .queryOne<{ count: number }>("SELECT changes() AS count")
+        .then((row) => Number(row?.count ?? 0) > 0);
+    });
+  }
+
+  updateClaimedRun(params: {
+    runId: string;
+    expectedRuntimeOwnerId: string;
+    expectedHeartbeatAtMs: number | null;
+    patch: any;
+  }) {
+    return runPromise(this.updateClaimedRunEffect(params));
   }
 
   insertNodeEffect(row: any) {
@@ -1421,42 +1768,86 @@ export class SmithersDb {
     return runPromise(this.getHumanRequestEffect(requestId));
   }
 
-  listPendingHumanRequestsEffect() {
-    return this.readEffect("list pending human requests", () =>
-      this.internalStorage.queryAll<PendingHumanRequestRow>(
-        `SELECT
-           h.request_id,
-           h.run_id,
-           h.node_id,
-           h.iteration,
-           h.kind,
-           h.status,
-           h.prompt,
-           h.schema_json,
-           h.options_json,
-           h.response_json,
-           h.requested_at_ms,
-           h.answered_at_ms,
-           h.answered_by,
-           h.timeout_at_ms,
-           r.workflow_name,
-           r.status AS run_status,
-           n.label AS node_label
-         FROM _smithers_human_requests h
-         LEFT JOIN _smithers_runs r ON h.run_id = r.run_id
-         LEFT JOIN _smithers_nodes n
-           ON h.run_id = n.run_id
-          AND h.node_id = n.node_id
-          AND h.iteration = n.iteration
-         WHERE h.status = ?
-         ORDER BY h.requested_at_ms ASC, h.run_id, h.node_id, h.iteration`,
-        ["pending"],
+  reopenHumanRequestEffect(requestId: string) {
+    return this.writeEffect(`reopen human request ${requestId}`, () =>
+      this.internalStorage.updateWhere(
+        "_smithers_human_requests",
+        {
+          status: "pending",
+          responseJson: null,
+          answeredAtMs: null,
+          answeredBy: null,
+        },
+        "request_id = ? AND status = ?",
+        [requestId, "answered"],
       ),
     );
   }
 
-  listPendingHumanRequests() {
-    return runPromise(this.listPendingHumanRequestsEffect());
+  reopenHumanRequest(requestId: string) {
+    return runPromise(this.reopenHumanRequestEffect(requestId));
+  }
+
+  expireStaleHumanRequestsEffect(nowMs = Date.now()) {
+    return this.writeEffect(`expire stale human requests before ${nowMs}`, () =>
+      this.internalStorage.updateWhere(
+        "_smithers_human_requests",
+        {
+          status: "expired",
+          responseJson: null,
+          answeredAtMs: null,
+          answeredBy: null,
+        },
+        "status = ? AND timeout_at_ms IS NOT NULL AND timeout_at_ms <= ?",
+        ["pending", nowMs],
+      ),
+    );
+  }
+
+  expireStaleHumanRequests(nowMs = Date.now()) {
+    return runPromise(this.expireStaleHumanRequestsEffect(nowMs));
+  }
+
+  listPendingHumanRequestsEffect(nowMs = Date.now()) {
+    const self = this;
+    return Effect.gen(function* () {
+      yield* self.expireStaleHumanRequestsEffect(nowMs);
+      return yield* self.readEffect("list pending human requests", () =>
+        self.internalStorage.queryAll<PendingHumanRequestRow>(
+          `SELECT
+             h.request_id,
+             h.run_id,
+             h.node_id,
+             h.iteration,
+             h.kind,
+             h.status,
+             h.prompt,
+             h.schema_json,
+             h.options_json,
+             h.response_json,
+             h.requested_at_ms,
+             h.answered_at_ms,
+             h.answered_by,
+             h.timeout_at_ms,
+             r.workflow_name,
+             r.status AS run_status,
+             n.label AS node_label
+           FROM _smithers_human_requests h
+           LEFT JOIN _smithers_runs r ON h.run_id = r.run_id
+           LEFT JOIN _smithers_nodes n
+             ON h.run_id = n.run_id
+            AND h.node_id = n.node_id
+            AND h.iteration = n.iteration
+           WHERE h.status = ?
+           ORDER BY h.requested_at_ms ASC, h.run_id, h.node_id, h.iteration`,
+          ["pending"],
+        ),
+      );
+    });
+  }
+
+  listPendingHumanRequests(nowMs = Date.now()) {
+    return runPromise(this.listPendingHumanRequestsEffect(nowMs));
   }
 
   answerHumanRequestEffect(
@@ -1511,6 +1902,206 @@ export class SmithersDb {
 
   cancelHumanRequest(requestId: string) {
     return runPromise(this.cancelHumanRequestEffect(requestId));
+  }
+
+  insertAlertEffect(row: AlertRow) {
+    validateAlertRow(row);
+    const self = this;
+    return this.withTransactionEffect(
+      `insert alert ${row.alertId}`,
+      Effect.gen(function* () {
+        const existing = yield* self.getAlertEffect(row.alertId);
+        if (existing) {
+          return existing;
+        }
+
+        yield* self.writeEffect(`insert alert ${row.alertId}`, () =>
+          self.internalStorage.insertIgnore("_smithers_alerts", row),
+        );
+        yield* Metric.increment(
+          Metric.tagged(
+            Metric.tagged(alertsFiredTotal, "policy", row.policyName),
+            "severity",
+            row.severity,
+          ),
+        );
+        if (isAlertActiveStatus(row.status)) {
+          yield* Metric.update(alertsActive, 1);
+        }
+        return yield* self.getAlertEffect(row.alertId);
+      }),
+    );
+  }
+
+  insertAlert(row: AlertRow) {
+    return runPromise(this.insertAlertEffect(row));
+  }
+
+  getAlertEffect(alertId: string) {
+    return this.readEffect(`get alert ${alertId}`, () =>
+      this.internalStorage.queryOne<AlertRow>(
+        `SELECT *
+         FROM _smithers_alerts
+         WHERE alert_id = ?
+         LIMIT 1`,
+        [alertId],
+      ),
+    );
+  }
+
+  getAlert(alertId: string) {
+    return runPromise(this.getAlertEffect(alertId));
+  }
+
+  listAlertsEffect(limit = 100, statuses?: readonly AlertStatus[]) {
+    if (statuses) {
+      for (const status of statuses) {
+        validateAlertStatus(status);
+      }
+    }
+
+    const normalizedLimit = Math.max(1, Math.floor(limit));
+    return this.readEffect("list alerts", () => {
+      const clauses: string[] = [];
+      const params: Array<string | number> = [];
+
+      if (statuses && statuses.length > 0) {
+        clauses.push(`status IN (${statuses.map(() => "?").join(", ")})`);
+        params.push(...statuses);
+      }
+
+      const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+      return this.internalStorage.queryAll<AlertRow>(
+        `SELECT *
+         FROM _smithers_alerts
+         ${whereSql}
+         ORDER BY
+           CASE status
+             WHEN 'firing' THEN 0
+             WHEN 'acknowledged' THEN 1
+             WHEN 'silenced' THEN 2
+             WHEN 'resolved' THEN 3
+             ELSE 4
+           END,
+           fired_at_ms DESC,
+           alert_id ASC
+         LIMIT ?`,
+        [...params, normalizedLimit],
+      );
+    });
+  }
+
+  listAlerts(limit = 100, statuses?: readonly AlertStatus[]) {
+    return runPromise(this.listAlertsEffect(limit, statuses));
+  }
+
+  acknowledgeAlertEffect(alertId: string, acknowledgedAtMs = Date.now()) {
+    validateOptionalPositiveTimestamp(
+      { acknowledgedAtMs },
+      "acknowledgedAtMs",
+    );
+    const self = this;
+    return this.withTransactionEffect(
+      `acknowledge alert ${alertId}`,
+      Effect.gen(function* () {
+        const alert = yield* self.getAlertEffect(alertId);
+        if (!alert) {
+          return undefined;
+        }
+        if (alert.status !== "firing") {
+          return alert;
+        }
+
+        yield* self.writeEffect(`acknowledge alert ${alertId}`, () =>
+          self.internalStorage.updateWhere(
+            "_smithers_alerts",
+            {
+              status: "acknowledged",
+              acknowledgedAtMs,
+            },
+            "alert_id = ? AND status = ?",
+            [alertId, "firing"],
+          ),
+        );
+        yield* Metric.increment(
+          Metric.tagged(alertsAcknowledgedTotal, "policy", alert.policyName),
+        );
+        return yield* self.getAlertEffect(alertId);
+      }),
+    );
+  }
+
+  acknowledgeAlert(alertId: string, acknowledgedAtMs = Date.now()) {
+    return runPromise(this.acknowledgeAlertEffect(alertId, acknowledgedAtMs));
+  }
+
+  resolveAlertEffect(alertId: string, resolvedAtMs = Date.now()) {
+    validateOptionalPositiveTimestamp({ resolvedAtMs }, "resolvedAtMs");
+    const self = this;
+    return this.withTransactionEffect(
+      `resolve alert ${alertId}`,
+      Effect.gen(function* () {
+        const alert = yield* self.getAlertEffect(alertId);
+        if (!alert) {
+          return undefined;
+        }
+        if (alert.status === "resolved") {
+          return alert;
+        }
+
+        yield* self.writeEffect(`resolve alert ${alertId}`, () =>
+          self.internalStorage.updateWhere(
+            "_smithers_alerts",
+            {
+              status: "resolved",
+              resolvedAtMs,
+            },
+            "alert_id = ? AND status != ?",
+            [alertId, "resolved"],
+          ),
+        );
+        if (isAlertActiveStatus(alert.status)) {
+          yield* Metric.update(alertsActive, -1);
+        }
+        return yield* self.getAlertEffect(alertId);
+      }),
+    );
+  }
+
+  resolveAlert(alertId: string, resolvedAtMs = Date.now()) {
+    return runPromise(this.resolveAlertEffect(alertId, resolvedAtMs));
+  }
+
+  silenceAlertEffect(alertId: string) {
+    const self = this;
+    return this.withTransactionEffect(
+      `silence alert ${alertId}`,
+      Effect.gen(function* () {
+        const alert = yield* self.getAlertEffect(alertId);
+        if (!alert) {
+          return undefined;
+        }
+        if (alert.status === "resolved" || alert.status === "silenced") {
+          return alert;
+        }
+
+        yield* self.writeEffect(`silence alert ${alertId}`, () =>
+          self.internalStorage.updateWhere(
+            "_smithers_alerts",
+            {
+              status: "silenced",
+            },
+            "alert_id = ? AND status != ? AND status != ?",
+            [alertId, "resolved", "silenced"],
+          ),
+        );
+        return yield* self.getAlertEffect(alertId);
+      }),
+    );
+  }
+
+  silenceAlert(alertId: string) {
+    return runPromise(this.silenceAlertEffect(alertId));
   }
 
   insertSignalWithNextSeqEffect(row: {

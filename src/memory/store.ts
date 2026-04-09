@@ -1,8 +1,8 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
-import { Effect, Metric } from "effect";
+import { Context, Effect, Layer, Metric } from "effect";
 import { fromPromise } from "../effect/interop";
-import { runPromise } from "../effect/runtime";
+import { runPromise, runSync } from "../effect/runtime";
 import { dbQueryDuration } from "../effect/metrics";
 import { nowMs } from "../utils/time";
 import type { SmithersError } from "../utils/errors";
@@ -62,6 +62,15 @@ export type MemoryStore = {
   deleteExpiredFactsEffect: () => Effect.Effect<number, SmithersError>;
 };
 
+export const MemoryStoreDb = Context.GenericTag<BunSQLiteDatabase<any>>(
+  "MemoryStoreDb",
+);
+
+export class MemoryStoreService extends Context.Tag("MemoryStoreService")<
+  MemoryStoreService,
+  MemoryStore
+>() {}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -106,7 +115,7 @@ function writeEffect<A>(
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createMemoryStore(db: BunSQLiteDatabase<any>): MemoryStore {
+function makeMemoryStore(db: BunSQLiteDatabase<any>): MemoryStore {
   // --- Working Memory Effects ---
 
   function getFactEffect(
@@ -376,4 +385,21 @@ export function createMemoryStore(db: BunSQLiteDatabase<any>): MemoryStore {
     countMessagesEffect,
     deleteExpiredFactsEffect,
   };
+}
+
+export const MemoryStoreLive = Layer.effect(
+  MemoryStoreService,
+  Effect.map(MemoryStoreDb, (db) => makeMemoryStore(db)),
+);
+
+export function createMemoryStoreLayer(db: BunSQLiteDatabase<any>) {
+  return MemoryStoreLive.pipe(
+    Layer.provide(Layer.succeed(MemoryStoreDb, db)),
+  );
+}
+
+export function createMemoryStore(db: BunSQLiteDatabase<any>): MemoryStore {
+  return runSync(
+    MemoryStoreService.pipe(Effect.provide(createMemoryStoreLayer(db))),
+  );
 }

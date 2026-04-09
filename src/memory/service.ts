@@ -10,7 +10,11 @@ import type {
   MemoryMessage,
   SemanticRecallConfig,
 } from "./types";
-import { createMemoryStore, type MemoryStore } from "./store";
+import {
+  createMemoryStoreLayer,
+  MemoryStoreService,
+  type MemoryStore,
+} from "./store";
 import { createSemanticMemory, type SemanticMemory } from "./semantic";
 
 // ---------------------------------------------------------------------------
@@ -103,7 +107,6 @@ export type MemoryLayerConfig = {
 // ---------------------------------------------------------------------------
 
 export function createMemoryLayer(config: MemoryLayerConfig) {
-  const store = createMemoryStore(config.db);
   const semantic =
     config.vectorStore && config.embeddingModel
       ? createSemanticMemory(config.vectorStore, config.embeddingModel)
@@ -116,32 +119,41 @@ export function createMemoryLayer(config: MemoryLayerConfig) {
       message: "Semantic memory requires vectorStore and embeddingModel in config",
     } as any);
 
-  return Layer.succeed(MemoryService, {
-    // Working memory
-    getFact: (ns, key) => store.getFactEffect(ns, key),
-    setFact: (ns, key, value, ttlMs) => store.setFactEffect(ns, key, value, ttlMs),
-    deleteFact: (ns, key) => store.deleteFactEffect(ns, key),
-    listFacts: (ns) => store.listFactsEffect(ns),
+  return Layer.effect(
+    MemoryService,
+    Effect.map(MemoryStoreService, (store) => ({
+      // Working memory
+      getFact: (ns, key) => store.getFactEffect(ns, key),
+      setFact: (ns, key, value, ttlMs) =>
+        store.setFactEffect(ns, key, value, ttlMs),
+      deleteFact: (ns, key) => store.deleteFactEffect(ns, key),
+      listFacts: (ns) => store.listFactsEffect(ns),
 
-    // Semantic
-    remember: (ns, content, metadata) =>
-      semantic ? semantic.rememberEffect(ns, content, metadata) : noSemanticError(),
-    recall: (ns, query, config) =>
-      semantic ? semantic.recallEffect(ns, query, config) : noSemanticError(),
+      // Semantic
+      remember: (ns, content, metadata) =>
+        semantic
+          ? semantic.rememberEffect(ns, content, metadata)
+          : noSemanticError(),
+      recall: (ns, query, recallConfig) =>
+        semantic
+          ? semantic.recallEffect(ns, query, recallConfig)
+          : noSemanticError(),
 
-    // Threads & messages
-    createThread: (ns, title) => store.createThreadEffect(ns, title),
-    getThread: (threadId) => store.getThreadEffect(threadId),
-    deleteThread: (threadId) => store.deleteThreadEffect(threadId),
-    saveMessage: (msg) => store.saveMessageEffect(msg),
-    listMessages: (threadId, limit) => store.listMessagesEffect(threadId, limit),
-    countMessages: (threadId) => store.countMessagesEffect(threadId),
+      // Threads & messages
+      createThread: (ns, title) => store.createThreadEffect(ns, title),
+      getThread: (threadId) => store.getThreadEffect(threadId),
+      deleteThread: (threadId) => store.deleteThreadEffect(threadId),
+      saveMessage: (msg) => store.saveMessageEffect(msg),
+      listMessages: (threadId, limit) =>
+        store.listMessagesEffect(threadId, limit),
+      countMessages: (threadId) => store.countMessagesEffect(threadId),
 
-    // Maintenance
-    deleteExpiredFacts: () => store.deleteExpiredFactsEffect(),
+      // Maintenance
+      deleteExpiredFacts: () => store.deleteExpiredFactsEffect(),
 
-    // Access underlying stores
-    store,
-    semantic,
-  });
+      // Access underlying stores
+      store,
+      semantic,
+    })),
+  ).pipe(Layer.provide(createMemoryStoreLayer(config.db)));
 }
