@@ -34,7 +34,7 @@ import {
   assertOptionalStringMaxLength,
   assertPositiveFiniteInteger,
 } from "../utils/input-bounds";
-import { computeRetryDelayMs } from "../utils/retry";
+import { retryPolicyToSchedule, retryScheduleDelayMs } from "../utils/retry";
 import {
   buildPlanTree,
   scheduleTasks,
@@ -56,7 +56,7 @@ import { findVcsRoot } from "../vcs/find-root";
 import { z } from "zod";
 import { eq, getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
-import { Effect, Metric } from "effect";
+import { Chunk, Duration, Effect, Fiber, Metric, Queue, Schedule } from "effect";
 import {
   attemptDuration,
   cacheHits,
@@ -77,7 +77,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fromPromise } from "../effect/interop";
 import { logDebug, logError, logInfo, logWarning } from "../effect/logging";
-import { runPromise, runSync } from "../effect/runtime";
+import { isPidAlive, parseRuntimeOwnerPid } from "../runtime-owner";
+import { runFork, runPromise, runSync } from "../effect/runtime";
 import { HotWorkflowController } from "../hot";
 import type { HotReloadOptions } from "../RunOptions";
 import { spawn as nodeSpawn } from "node:child_process";
@@ -87,16 +88,20 @@ import { withTaskRuntime } from "../effect/task-runtime";
 import { hashCapabilityRegistry } from "../agents/capability-registry";
 import {
   cancelPendingTimersBridge,
-  executeTaskBridge,
+  executeTaskBridgeEffect,
   isBridgeManagedTimerTask as isTimerTask,
   resolveDeferredTaskStateBridge,
 } from "../effect/workflow-bridge";
-import { createSchedulerWakeQueue, runWorkflowWithMakeBridge } from "../effect/workflow-make-bridge";
+import { runWorkflowWithMakeBridge } from "../effect/workflow-make-bridge";
 import {
   createWorkflowVersioningRuntime,
   getWorkflowPatchDecisions,
   withWorkflowVersioningRuntime,
 } from "../effect/versioning";
+import {
+  runWithCorrelationContext,
+  updateCurrentCorrelationContext,
+} from "../observability/correlation";
 
 /**
  * Track which worktree paths have already been created this run so we don't
@@ -108,8 +113,9 @@ const caffeinateBinary =
   typeof Bun !== "undefined" ? Bun.which("caffeinate") : null;
 
 export const RUN_WORKFLOW_RUN_ID_MAX_LENGTH = 256;
-export const RUN_WORKFLOW_INPUT_MAX_BYTES = 256 * 1024;
-export const RUN_WORKFLOW_INPUT_MAX_DEPTH = 16;
+export const RUN_WORKFLOW_WORKFLOW_PATH_MAX_LENGTH = 4096;
+export const RUN_WORKFLOW_INPUT_MAX_BYTES = 1024 * 1024;
+export const RUN_WORKFLOW_INPUT_MAX_DEPTH = 32;
 export const RUN_WORKFLOW_INPUT_MAX_ARRAY_LENGTH = 512;
 export const RUN_WORKFLOW_INPUT_MAX_STRING_LENGTH = 64 * 1024;
 
@@ -655,10 +661,11 @@ async function ensureWorktree(
 
 const DEFAULT_MAX_CONCURRENCY = 4;
 const STALE_ATTEMPT_MS = 15 * 60 * 1000;
+const SCHEDULER_EXTERNAL_EVENT_POLL_MS = 250;
 const DEFAULT_TOOL_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 200_000;
 const RUN_HEARTBEAT_MS = 1_000;
-const RUN_HEARTBEAT_STALE_MS = 5_000;
+const RUN_HEARTBEAT_STALE_MS = 30_000;
 const RUN_CANCEL_POLL_MS = 250;
 const TASK_HEARTBEAT_THROTTLE_MS = 500;
 const TASK_HEARTBEAT_MAX_PAYLOAD_BYTES = 1_000_000;
@@ -690,10 +697,14 @@ function buildRuntimeOwnerId() {
 
 type RunDurabilityMetadata = {
   workflowHash: string | null;
+  entryWorkflowHash: string | null;
   vcsType: "git" | "jj" | null;
   vcsRoot: string | null;
   vcsRevision: string | null;
 };
+
+const DURABILITY_CONFIG_KEY = "__smithersDurability";
+const DURABILITY_METADATA_VERSION = 2;
 
 /** Prevent macOS idle sleep while a workflow is running. No-op on other platforms. */
 function acquireCaffeinate(): { release: () => void } {
@@ -1382,13 +1393,98 @@ function resolveLogDir(
   return resolve(rootDir, ".smithers", "executions", runId, "logs");
 }
 
-async function readWorkflowHash(
+const STATIC_IMPORT_RE =
+  /\b(?:import|export)\s+(?:[^"'`]*?\s+from\s*)?["']([^"']+)["']/g;
+const DYNAMIC_IMPORT_RE = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g;
+const WORKFLOW_IMPORT_EXTENSIONS = [
+  "",
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+];
+
+async function readWorkflowEntryHash(
   workflowPath: string | null,
 ): Promise<string | null> {
   if (!workflowPath) return null;
   try {
     const raw = await readFile(workflowPath, "utf8");
     return sha256Hex(raw);
+  } catch {
+    return null;
+  }
+}
+
+function extractWorkflowImportSpecifiers(source: string): string[] {
+  const specifiers = new Set<string>();
+  for (const pattern of [STATIC_IMPORT_RE, DYNAMIC_IMPORT_RE]) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(source)) !== null) {
+      const specifier = match[1]?.trim();
+      if (!specifier?.startsWith(".")) continue;
+      specifiers.add(specifier);
+    }
+  }
+  return [...specifiers];
+}
+
+function resolveWorkflowImport(baseFile: string, specifier: string): string | null {
+  const basePath = resolve(dirname(baseFile), specifier);
+  const candidates = [
+    ...WORKFLOW_IMPORT_EXTENSIONS.map((ext) => `${basePath}${ext}`),
+    ...WORKFLOW_IMPORT_EXTENSIONS
+      .filter((ext) => ext.length > 0)
+      .map((ext) => resolve(basePath, `index${ext}`)),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return resolve(candidate);
+    }
+  }
+  return null;
+}
+
+async function collectWorkflowModuleHashEntries(
+  workflowPath: string,
+  visited = new Set<string>(),
+): Promise<string[]> {
+  const resolvedPath = resolve(workflowPath);
+  if (visited.has(resolvedPath)) {
+    return [];
+  }
+  visited.add(resolvedPath);
+
+  const source = await readFile(resolvedPath, "utf8");
+  const entries = [`${resolvedPath}:${sha256Hex(source)}`];
+  for (const specifier of extractWorkflowImportSpecifiers(source)) {
+    const importedPath = resolveWorkflowImport(resolvedPath, specifier);
+    if (!importedPath) {
+      throw new SmithersError(
+        "WORKFLOW_HASH_RESOLUTION_FAILED",
+        `Unable to resolve workflow import "${specifier}" from ${resolvedPath}.`,
+        { workflowPath: resolvedPath, specifier },
+      );
+    }
+    entries.push(
+      ...(await collectWorkflowModuleHashEntries(importedPath, visited)),
+    );
+  }
+  return entries;
+}
+
+async function readWorkflowGraphHash(
+  workflowPath: string | null,
+): Promise<string | null> {
+  if (!workflowPath) return null;
+  try {
+    const entries = await collectWorkflowModuleHashEntries(workflowPath);
+    return sha256Hex(entries.sort().join("|"));
   } catch {
     return null;
   }
@@ -1405,11 +1501,13 @@ async function getRunDurabilityMetadata(
   workflowPath: string | null,
   rootDir: string,
 ): Promise<RunDurabilityMetadata> {
-  const workflowHash = await readWorkflowHash(workflowPath);
+  const entryWorkflowHash = await readWorkflowEntryHash(workflowPath);
+  const workflowHash = await readWorkflowGraphHash(workflowPath);
   const vcs = findVcsRoot(rootDir);
   if (!vcs) {
     return {
       workflowHash,
+      entryWorkflowHash,
       vcsType: null,
       vcsRoot: null,
       vcsRevision: null,
@@ -1423,18 +1521,66 @@ async function getRunDurabilityMetadata(
 
   return {
     workflowHash,
+    entryWorkflowHash,
     vcsType: vcs.type,
     vcsRoot: vcs.root,
     vcsRevision,
   };
 }
 
+function buildDurabilityConfig(
+  config: Record<string, unknown>,
+  metadata: RunDurabilityMetadata,
+) {
+  return {
+    ...config,
+    [DURABILITY_CONFIG_KEY]: {
+      version: DURABILITY_METADATA_VERSION,
+      entryWorkflowHash: metadata.entryWorkflowHash,
+    },
+  };
+}
+
+function getStoredDurabilityConfig(
+  config: Record<string, unknown>,
+): { version: number; entryWorkflowHash: string | null } | null {
+  const raw = config[DURABILITY_CONFIG_KEY];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  return {
+    version:
+      typeof (raw as any).version === "number"
+        ? (raw as any).version
+        : 0,
+    entryWorkflowHash:
+      typeof (raw as any).entryWorkflowHash === "string"
+        ? (raw as any).entryWorkflowHash
+        : null,
+  };
+}
+
+function compareNullableString(
+  left: string | null | undefined,
+  right: string | null | undefined,
+  mismatchLabel: string,
+  mismatches: string[],
+) {
+  const normalizedLeft = left ?? null;
+  const normalizedRight = right ?? null;
+  if (normalizedLeft !== normalizedRight) {
+    mismatches.push(mismatchLabel);
+  }
+}
+
 function assertResumeDurabilityMetadata(
   existingRun: any,
+  existingConfig: Record<string, unknown>,
   current: RunDurabilityMetadata,
   workflowPath: string | null,
 ) {
   const mismatches: string[] = [];
+  const storedDurability = getStoredDurabilityConfig(existingConfig);
 
   if (
     existingRun.workflowPath &&
@@ -1443,34 +1589,65 @@ function assertResumeDurabilityMetadata(
   ) {
     mismatches.push("workflow path changed");
   }
+  const shouldCheckWorkflowHashes = Boolean(
+    existingRun.workflowPath ||
+      workflowPath ||
+      existingRun.workflowHash ||
+      current.workflowHash ||
+      storedDurability?.entryWorkflowHash ||
+      current.entryWorkflowHash,
+  );
   if (
-    existingRun.workflowHash &&
-    current.workflowHash &&
-    existingRun.workflowHash !== current.workflowHash
+    shouldCheckWorkflowHashes &&
+    storedDurability?.version >= DURABILITY_METADATA_VERSION
   ) {
-    mismatches.push("workflow file contents changed");
+    if (!existingRun.workflowHash || !current.workflowHash) {
+      mismatches.push("workflow module graph unavailable");
+    } else {
+      compareNullableString(
+        existingRun.workflowHash,
+        current.workflowHash,
+        "workflow module graph changed",
+        mismatches,
+      );
+    }
+    if (!storedDurability.entryWorkflowHash || !current.entryWorkflowHash) {
+      mismatches.push("workflow entry hash unavailable");
+    } else {
+      compareNullableString(
+        storedDurability.entryWorkflowHash,
+        current.entryWorkflowHash,
+        "workflow entry file changed",
+        mismatches,
+      );
+    }
+  } else if (shouldCheckWorkflowHashes) {
+    compareNullableString(
+      existingRun.workflowHash,
+      current.entryWorkflowHash,
+      "workflow entry file changed",
+      mismatches,
+    );
   }
+  compareNullableString(
+    existingRun.vcsType,
+    current.vcsType,
+    "VCS type changed",
+    mismatches,
+  );
   if (
-    existingRun.vcsType &&
-    current.vcsType &&
-    existingRun.vcsType !== current.vcsType
-  ) {
-    mismatches.push("VCS type changed");
-  }
-  if (
-    existingRun.vcsRoot &&
-    current.vcsRoot &&
-    resolve(existingRun.vcsRoot) !== resolve(current.vcsRoot)
+    (existingRun.vcsRoot && current.vcsRoot
+      ? resolve(existingRun.vcsRoot) !== resolve(current.vcsRoot)
+      : (existingRun.vcsRoot ?? null) !== (current.vcsRoot ?? null))
   ) {
     mismatches.push("VCS root changed");
   }
-  if (
-    existingRun.vcsRevision &&
-    current.vcsRevision &&
-    existingRun.vcsRevision !== current.vcsRevision
-  ) {
-    mismatches.push("VCS revision changed");
-  }
+  compareNullableString(
+    existingRun.vcsRevision,
+    current.vcsRevision,
+    "VCS revision changed",
+    mismatches,
+  );
 
   if (mismatches.length > 0) {
     throw new SmithersError(
@@ -1618,6 +1795,25 @@ function parseRunAuthContext(value: unknown): RunAuthContext | null {
   };
 }
 
+type ResumeClaimCleanup = {
+  claimOwnerId: string;
+  restoreRuntimeOwnerId: string | null;
+  restoreHeartbeatAtMs: number | null;
+};
+
+const RESUMABLE_RUN_STATUSES = new Set([
+  "running",
+  "waiting-approval",
+  "waiting-event",
+  "waiting-timer",
+  "finished",
+  "failed",
+]);
+
+function isResumableRunStatus(status: string | null | undefined): boolean {
+  return typeof status === "string" && RESUMABLE_RUN_STATUSES.has(status);
+}
+
 function normalizeHotOptions(hot: boolean | HotReloadOptions | undefined): HotReloadOptions & { enabled: boolean } {
   if (!hot) return { enabled: false };
   if (hot === true) return { enabled: true };
@@ -1636,6 +1832,11 @@ function validateRunOptions(opts: RunOptions) {
     opts.runId,
     RUN_WORKFLOW_RUN_ID_MAX_LENGTH,
   );
+  assertOptionalStringMaxLength(
+    "workflowPath",
+    opts.workflowPath,
+    RUN_WORKFLOW_WORKFLOW_PATH_MAX_LENGTH,
+  );
   assertInputObject(opts.input);
   assertJsonPayloadWithinBounds("input", opts.input, {
     maxArrayLength: RUN_WORKFLOW_INPUT_MAX_ARRAY_LENGTH,
@@ -1651,6 +1852,23 @@ function validateRunOptions(opts: RunOptions) {
   }
   if (opts.toolTimeoutMs !== undefined) {
     assertPositiveFiniteInteger("toolTimeoutMs", Number(opts.toolTimeoutMs));
+  }
+  if (opts.resumeClaim) {
+    assertOptionalStringMaxLength(
+      "resumeClaim.claimOwnerId",
+      opts.resumeClaim.claimOwnerId,
+      RUN_WORKFLOW_RUN_ID_MAX_LENGTH,
+    );
+    assertPositiveFiniteInteger(
+      "resumeClaim.claimHeartbeatAtMs",
+      Number(opts.resumeClaim.claimHeartbeatAtMs),
+    );
+    if (opts.resumeClaim.restoreHeartbeatAtMs !== undefined && opts.resumeClaim.restoreHeartbeatAtMs !== null) {
+      assertPositiveFiniteInteger(
+        "resumeClaim.restoreHeartbeatAtMs",
+        Number(opts.resumeClaim.restoreHeartbeatAtMs),
+      );
+    }
   }
 }
 
@@ -1887,7 +2105,6 @@ async function computeTaskStates(
   tasks: TaskDescriptor[],
   eventBus: EventBus,
   ralphDone: Map<string, boolean>,
-  retryFailedOnResume = false,
 ): Promise<{ stateMap: TaskStateMap; retryWait: Map<string, number> }> {
   const stateMap: TaskStateMap = new Map();
   const retryWait = new Map<string, number>();
@@ -2030,21 +2247,6 @@ async function computeTaskStates(
     const maxAttempts = desc.retries + 1;
     const failedAttempts = attempts.filter((a: any) => a.state === "failed");
     if (failedAttempts.length >= maxAttempts) {
-      if (retryFailedOnResume && failedAttempts.length > 0) {
-        stateMap.set(key, "pending");
-        await adapter.insertNode({
-          runId,
-          nodeId: desc.nodeId,
-          iteration: desc.iteration,
-          state: "pending",
-          lastAttempt: attempts[0]?.attempt ?? null,
-          updatedAtMs: nowMs(),
-          outputTable: desc.outputTableName,
-          label: desc.label ?? null,
-        });
-        await maybeEmitStateEvent("pending", desc);
-        continue;
-      }
       stateMap.set(key, "failed");
       await adapter.insertNode({
         runId,
@@ -2062,8 +2264,9 @@ async function computeTaskStates(
     let waitingForRetry = false;
     if (failedAttempts.length > 0 && desc.retryPolicy) {
       const lastFailed = failedAttempts[0];
-      const delayMs = computeRetryDelayMs(
-        desc.retryPolicy,
+      const retrySchedule = retryPolicyToSchedule(desc.retryPolicy);
+      const delayMs = retryScheduleDelayMs(
+        retrySchedule,
         lastFailed?.attempt ?? failedAttempts.length,
       );
       const finishedAtMs = lastFailed?.finishedAtMs ?? lastFailed?.startedAtMs;
@@ -2261,6 +2464,7 @@ export async function legacyExecuteTask(
     return null;
   })();
   const attemptNo = (attempts[0]?.attempt ?? 0) + 1;
+  updateCurrentCorrelationContext({ attempt: attemptNo });
   const taskAbortController = new AbortController();
   const removeAbortForwarder = wireAbortSignal(taskAbortController, signal);
   const taskSignal = taskAbortController.signal;
@@ -2276,8 +2480,6 @@ export async function legacyExecuteTask(
   let heartbeatLastPersistedWriteAtMs = 0;
   let heartbeatLastReceivedAtMs: number | null = null;
   let heartbeatWriteTimer: ReturnType<typeof setTimeout> | undefined;
-  let heartbeatTimeoutTimer: ReturnType<typeof setInterval> | undefined;
-  let heartbeatTimeoutTriggered = false;
 
   const flushHeartbeat = async (force = false): Promise<void> => {
     if (heartbeatClosed || !heartbeatHasPendingWrite || heartbeatWriteInFlight) {
@@ -2407,58 +2609,6 @@ export async function legacyExecuteTask(
     }
   };
 
-  if (desc.heartbeatTimeoutMs) {
-    heartbeatTimeoutTimer = setInterval(() => {
-      if (
-        heartbeatClosed ||
-        taskCompleted ||
-        taskExecutionReturned ||
-        heartbeatTimeoutTriggered ||
-        taskSignal.aborted
-      ) {
-        return;
-      }
-      const lastHeartbeatAtMs = Math.max(startedAtMs, heartbeatPendingAtMs);
-      const staleForMs = nowMs() - lastHeartbeatAtMs;
-      if (staleForMs <= desc.heartbeatTimeoutMs!) {
-        return;
-      }
-      heartbeatTimeoutTriggered = true;
-      const timeoutError = new SmithersError(
-        "TASK_HEARTBEAT_TIMEOUT",
-        `Task ${desc.nodeId} has not heartbeated in ${staleForMs}ms (timeout: ${desc.heartbeatTimeoutMs}ms).`,
-        {
-          nodeId: desc.nodeId,
-          iteration: desc.iteration,
-          attempt: attemptNo,
-          timeoutMs: desc.heartbeatTimeoutMs,
-          staleForMs,
-          lastHeartbeatAtMs,
-        },
-      );
-      logWarning("task heartbeat timed out", {
-        runId,
-        nodeId: desc.nodeId,
-        iteration: desc.iteration,
-        attempt: attemptNo,
-        timeoutMs: desc.heartbeatTimeoutMs,
-        staleForMs,
-        lastHeartbeatAtMs,
-      }, "heartbeat:timeout");
-      void eventBus.emitEventQueued({
-        type: "TaskHeartbeatTimeout",
-        runId,
-        nodeId: desc.nodeId,
-        iteration: desc.iteration,
-        attempt: attemptNo,
-        lastHeartbeatAtMs,
-        timeoutMs: desc.heartbeatTimeoutMs!,
-        timestampMs: nowMs(),
-      });
-      taskAbortController.abort(timeoutError);
-    }, TASK_HEARTBEAT_TIMEOUT_CHECK_MS);
-  }
-
   const attemptMeta: Record<string, unknown> = {
     kind: desc.agent ? "agent" : desc.computeFn ? "compute" : "static",
     prompt: desc.prompt ?? null,
@@ -2531,11 +2681,8 @@ export async function legacyExecuteTask(
   const taskRoot = desc.worktreePath ?? toolConfig.rootDir;
   const stepCacheEnabled = cacheEnabled || Boolean(desc.cachePolicy);
 
-  // Ensure the worktree directory exists on disk before running the task.
-  if (desc.worktreePath) {
-    await ensureWorktree(toolConfig.rootDir, desc.worktreePath, desc.worktreeBranch, desc.worktreeBaseBranch);
-  }
   const cacheAgent = Array.isArray(desc.agent) ? desc.agent[0] : desc.agent;
+  let heartbeatWatchdogFiber: ReturnType<typeof runFork> | null = null;
 
   try {
     if (taskSignal.aborted) {
@@ -2551,6 +2698,62 @@ export async function legacyExecuteTask(
       hasAgent: Boolean(desc.agent),
       cacheEnabled: stepCacheEnabled,
     }, "engine:task");
+    if (desc.heartbeatTimeoutMs) {
+      heartbeatWatchdogFiber = runFork(
+        Effect.repeat(
+          Effect.suspend(() => {
+            const lastHeartbeatAtMs = Math.max(startedAtMs, heartbeatPendingAtMs);
+            const staleForMs = nowMs() - lastHeartbeatAtMs;
+            if (staleForMs <= desc.heartbeatTimeoutMs!) {
+              return Effect.void;
+            }
+
+            const timeoutError = new SmithersError(
+              "TASK_HEARTBEAT_TIMEOUT",
+              `Task ${desc.nodeId} has not heartbeated in ${staleForMs}ms (timeout: ${desc.heartbeatTimeoutMs}ms).`,
+              {
+                nodeId: desc.nodeId,
+                iteration: desc.iteration,
+                attempt: attemptNo,
+                timeoutMs: desc.heartbeatTimeoutMs,
+                staleForMs,
+                lastHeartbeatAtMs,
+              },
+            );
+            logWarning("task heartbeat timed out", {
+              runId,
+              nodeId: desc.nodeId,
+              iteration: desc.iteration,
+              attempt: attemptNo,
+              timeoutMs: desc.heartbeatTimeoutMs,
+              staleForMs,
+              lastHeartbeatAtMs,
+            }, "heartbeat:timeout");
+            void eventBus.emitEventQueued({
+              type: "TaskHeartbeatTimeout",
+              runId,
+              nodeId: desc.nodeId,
+              iteration: desc.iteration,
+              attempt: attemptNo,
+              lastHeartbeatAtMs,
+              timeoutMs: desc.heartbeatTimeoutMs!,
+              timestampMs: nowMs(),
+            });
+            taskAbortController.abort(timeoutError);
+            return Effect.fail(timeoutError);
+          }),
+          Schedule.spaced(Duration.millis(TASK_HEARTBEAT_TIMEOUT_CHECK_MS)),
+        ).pipe(Effect.flatMap(() => Effect.never)),
+      );
+    }
+    if (desc.worktreePath) {
+      await ensureWorktree(
+        toolConfig.rootDir,
+        desc.worktreePath,
+        desc.worktreeBranch,
+        desc.worktreeBaseBranch,
+      );
+    }
     if (stepCacheEnabled) {
       const schemaSig = schemaSignature(desc.outputTable as any);
       const outputSchemaSig = desc.outputSchema
@@ -2659,6 +2862,8 @@ export async function legacyExecuteTask(
       }
     }
 
+    let agentResult: any;
+    let emitOutput = (_text: string, _stream: "stdout" | "stderr") => {};
     if (!payload) {
       const allAgents = Array.isArray(desc.agent) ? desc.agent : (desc.agent ? [desc.agent] : []);
       const agents = disabledAgents ? allAgents.filter((a: any) => !disabledAgents.has(a)) : allAgents;
@@ -2675,7 +2880,7 @@ export async function legacyExecuteTask(
         attemptNo,
       );
       const toolResumeWarningMessage = buildToolResumeWarningMessage(toolResumeWarnings);
-      const emitOutput = (text: string, stream: "stdout" | "stderr") => {
+      emitOutput = (text: string, stream: "stdout" | "stderr") => {
         recordInternalHeartbeat();
         void eventBus.emitEventQueued({
           type: "NodeOutput",
@@ -2690,7 +2895,6 @@ export async function legacyExecuteTask(
       };
       // Capture the agent result at this scope so schema-retry can build
       // conversation history from the original response messages.
-      let agentResult: any;
       if (effectiveAgent) {
         attemptMeta.agentId =
           (effectiveAgent as any).id ??
@@ -3284,11 +3488,6 @@ export async function legacyExecuteTask(
           try {
             payload = JSON.parse(output);
           } catch (e) {
-            const fs = await import("node:fs");
-            fs.appendFileSync(
-              "/tmp/smithers_debug.log",
-              `[JSON Debug] output is string, length=${output.length}, preview: ${output.slice(0, 500)}\n`,
-            );
             throw new SmithersError(
               "INVALID_OUTPUT",
               `Failed to parse agent output as JSON. Output starts with: "${output.slice(0, 100)}"`,
@@ -3343,27 +3542,28 @@ export async function legacyExecuteTask(
       } else {
         payload = desc.staticPayload;
       }
+    }
 
-      payload = stripAutoColumns(payload);
-      const payloadWithKeys = buildOutputRow(
-        desc.outputTable as any,
-        runId,
-        desc.nodeId,
-        desc.iteration,
-        payload,
-      );
-      let validation = validateOutput(desc.outputTable as any, payloadWithKeys);
+    payload = stripAutoColumns(payload);
+    const payloadWithKeys = buildOutputRow(
+      desc.outputTable as any,
+      runId,
+      desc.nodeId,
+      desc.iteration,
+      payload,
+    );
+    let validation = validateOutput(desc.outputTable as any, payloadWithKeys);
 
-      // If the Drizzle insert schema passed but we have a stricter Zod schema
-      // from the user, validate against that too. This catches cases where e.g.
-      // a JSON text column accepts any valid JSON but the Zod schema requires
-      // a specific shape (array vs string, enum values, etc).
-      if (validation.ok && desc.outputSchema) {
-        const zodResult = (desc.outputSchema as z.ZodType).safeParse(payload);
-        if (!zodResult.success) {
-          validation = { ok: false, error: zodResult.error };
-        }
+    // If the Drizzle insert schema passed but we have a stricter Zod schema
+    // from the user, validate against that too. This catches cases where e.g.
+    // a JSON text column accepts any valid JSON but the Zod schema requires
+    // a specific shape (array vs string, enum values, etc).
+    if (validation.ok && desc.outputSchema) {
+      const zodResult = (desc.outputSchema as z.ZodType).safeParse(payload);
+      if (!zodResult.success) {
+        validation = { ok: false, error: zodResult.error };
       }
+    }
 
       // Schema-validation retry: if the agent returned parseable JSON but it
       // doesn't match the Zod schema, resume the SAME agent conversation with
@@ -3546,8 +3746,6 @@ export async function legacyExecuteTask(
         throw validation.error;
       }
       payload = validation.data;
-    }
-
     taskExecutionReturned = true;
     await eventBus.flush();
     // Reuse the resolved taskRoot for JJ pointer capture to avoid recomputing.
@@ -3830,13 +4028,13 @@ export async function legacyExecuteTask(
   } finally {
     taskCompleted = true;
     heartbeatClosed = true;
+    if (heartbeatWatchdogFiber) {
+      await runPromise(Fiber.interrupt(heartbeatWatchdogFiber)).catch(() => {});
+      heartbeatWatchdogFiber = null;
+    }
     if (heartbeatWriteTimer) {
       clearTimeout(heartbeatWriteTimer);
       heartbeatWriteTimer = undefined;
-    }
-    if (heartbeatTimeoutTimer) {
-      clearInterval(heartbeatTimeoutTimer);
-      heartbeatTimeoutTimer = undefined;
     }
     removeAbortForwarder();
   }
@@ -3845,12 +4043,13 @@ export async function legacyExecuteTask(
 async function renderFrameAsync<Schema>(
   workflow: SmithersWorkflow<Schema>,
   ctx: any,
-  opts?: { baseRootDir?: string },
+  opts?: { baseRootDir?: string; workflowPath?: string | null },
 ): Promise<GraphSnapshot> {
   const renderer = new SmithersRenderer();
   const result = await renderer.render(workflow.build(ctx), {
     ralphIterations: ctx?.iterations,
     baseRootDir: opts?.baseRootDir,
+    workflowPath: opts?.workflowPath,
     defaultIteration: ctx?.iteration,
   });
 
@@ -3863,7 +4062,7 @@ async function renderFrameAsync<Schema>(
 export function renderFrameEffect<Schema>(
   workflow: SmithersWorkflow<Schema>,
   ctx: any,
-  opts?: { baseRootDir?: string },
+  opts?: { baseRootDir?: string; workflowPath?: string | null },
 ) {
   return fromPromise("render frame", () => renderFrameAsync(workflow, ctx, opts)).pipe(
     Effect.annotateLogs({
@@ -3877,9 +4076,186 @@ export function renderFrameEffect<Schema>(
 export async function renderFrame<Schema>(
   workflow: SmithersWorkflow<Schema>,
   ctx: any,
-  opts?: { baseRootDir?: string },
+  opts?: { baseRootDir?: string; workflowPath?: string | null },
 ): Promise<GraphSnapshot> {
   return runPromise(renderFrameEffect(workflow, ctx, opts));
+}
+
+async function releaseResumeClaimQuietly(
+  adapter: SmithersDb,
+  runId: string,
+  cleanup: ResumeClaimCleanup,
+) {
+  try {
+    await adapter.releaseRunResumeClaim({
+      runId,
+      claimOwnerId: cleanup.claimOwnerId,
+      restoreRuntimeOwnerId: cleanup.restoreRuntimeOwnerId,
+      restoreHeartbeatAtMs: cleanup.restoreHeartbeatAtMs,
+    });
+  } catch (error) {
+    logWarning("failed to release resume claim", {
+      runId,
+      claimOwnerId: cleanup.claimOwnerId,
+      error: error instanceof Error ? error.message : String(error),
+    }, "engine:resume");
+  }
+}
+
+async function activateRunForResume(
+  adapter: SmithersDb,
+  existingRun: any,
+  opts: RunOptions,
+  runtimeOwnerId: string,
+  runConfigJson: string,
+  runMetadata: RunDurabilityMetadata,
+  workflowPath: string | null,
+) {
+  if (!isResumableRunStatus(existingRun?.status)) {
+    throw new SmithersError(
+      "RUN_NOT_RESUMABLE",
+      `Run ${existingRun?.runId ?? opts.runId ?? "unknown"} cannot be resumed from status ${existingRun?.status ?? "unknown"}.`,
+      {
+        runId: existingRun?.runId ?? opts.runId ?? null,
+        status: existingRun?.status ?? null,
+      },
+    );
+  }
+
+  const ownerPid = parseRuntimeOwnerPid(existingRun.runtimeOwnerId);
+  if (
+    existingRun.status === "running" &&
+    ownerPid !== null &&
+    isPidAlive(ownerPid)
+  ) {
+    throw new SmithersError(
+      "RUN_OWNER_ALIVE",
+      `Run ${existingRun.runId} still belongs to live process ${ownerPid}.`,
+      {
+        runId: existingRun.runId,
+        runtimeOwnerId: existingRun.runtimeOwnerId ?? null,
+        ownerPid,
+      },
+    );
+  }
+
+  const claimOwnerId = opts.resumeClaim?.claimOwnerId ?? runtimeOwnerId;
+  const claimHeartbeatAtMs =
+    opts.resumeClaim?.claimHeartbeatAtMs ?? nowMs();
+  const cleanup: ResumeClaimCleanup = {
+    claimOwnerId,
+    restoreRuntimeOwnerId:
+      opts.resumeClaim?.restoreRuntimeOwnerId ??
+      existingRun.runtimeOwnerId ??
+      null,
+    restoreHeartbeatAtMs:
+      opts.resumeClaim?.restoreHeartbeatAtMs ??
+      existingRun.heartbeatAtMs ??
+      null,
+  };
+
+  let claimHeld = false;
+  try {
+    if (opts.resumeClaim) {
+      const claimedRun = await adapter.getRun(existingRun.runId);
+      if (
+        !claimedRun ||
+        claimedRun.runtimeOwnerId !== claimOwnerId ||
+        (claimedRun.heartbeatAtMs ?? null) !== claimHeartbeatAtMs
+      ) {
+        throw new SmithersError(
+          "RUN_RESUME_CLAIM_LOST",
+          `Resume claim for run ${existingRun.runId} is no longer held.`,
+          {
+            runId: existingRun.runId,
+            claimOwnerId,
+            claimHeartbeatAtMs,
+          },
+        );
+      }
+      claimHeld = true;
+    } else {
+      if (existingRun.status === "running") {
+        const fresh = isRunHeartbeatFresh(existingRun);
+        if (fresh && !opts.force) {
+          throw new SmithersError(
+            "RUN_STILL_RUNNING",
+            `Run ${existingRun.runId} is still actively running.`,
+            {
+              runId: existingRun.runId,
+              heartbeatAtMs: existingRun.heartbeatAtMs ?? null,
+            },
+          );
+        }
+      }
+
+      const claimed = await adapter.claimRunForResume({
+        runId: existingRun.runId,
+        expectedStatus: existingRun.status,
+        expectedRuntimeOwnerId: existingRun.runtimeOwnerId ?? null,
+        expectedHeartbeatAtMs: existingRun.heartbeatAtMs ?? null,
+        staleBeforeMs: nowMs() - RUN_HEARTBEAT_STALE_MS,
+        claimOwnerId,
+        claimHeartbeatAtMs,
+        requireStale: existingRun.status === "running" ? !opts.force : false,
+      });
+      if (!claimed) {
+        throw new SmithersError(
+          "RUN_RESUME_CLAIM_FAILED",
+          `Failed to acquire durable resume claim for run ${existingRun.runId}.`,
+          {
+            runId: existingRun.runId,
+            status: existingRun.status,
+          },
+        );
+      }
+      claimHeld = true;
+    }
+
+    const activatedAtMs = nowMs();
+    const activated = await adapter.updateClaimedRun({
+      runId: existingRun.runId,
+      expectedRuntimeOwnerId: claimOwnerId,
+      expectedHeartbeatAtMs: claimHeartbeatAtMs,
+      patch: {
+        status: "running",
+        startedAtMs: existingRun.startedAtMs ?? activatedAtMs,
+        finishedAtMs: null,
+        heartbeatAtMs: activatedAtMs,
+        runtimeOwnerId,
+        cancelRequestedAtMs: null,
+        hijackRequestedAtMs: null,
+        hijackTarget: null,
+        workflowPath:
+          workflowPath ??
+          opts.workflowPath ??
+          existingRun.workflowPath ??
+          null,
+        workflowHash: runMetadata.workflowHash,
+        vcsType: runMetadata.vcsType,
+        vcsRoot: runMetadata.vcsRoot,
+        vcsRevision: runMetadata.vcsRevision,
+        errorJson: null,
+        configJson: runConfigJson,
+      },
+    });
+    if (!activated) {
+      throw new SmithersError(
+        "RUN_RESUME_ACTIVATION_FAILED",
+        `Run ${existingRun.runId} changed before the resume claim could be activated.`,
+        {
+          runId: existingRun.runId,
+          claimOwnerId,
+          claimHeartbeatAtMs,
+        },
+      );
+    }
+  } catch (error) {
+    if (claimHeld) {
+      await releaseResumeClaimQuietly(adapter, existingRun.runId, cleanup);
+    }
+    throw error;
+  }
 }
 
 async function runWorkflowAsync<Schema>(
@@ -3888,13 +4264,21 @@ async function runWorkflowAsync<Schema>(
 ): Promise<RunResult> {
   validateRunOptions(opts);
   const runId = opts.runId ?? newRunId();
-  return runWorkflowWithMakeBridge(
-    workflow,
+  return runWithCorrelationContext(
     {
-      ...opts,
       runId,
+      parentRunId: opts.parentRunId ?? undefined,
+      workflowName: "workflow",
     },
-    runWorkflowBody,
+    () =>
+      runWorkflowWithMakeBridge(
+        workflow,
+        {
+          ...opts,
+          runId,
+        },
+        runWorkflowBody,
+      ),
   );
 }
 
@@ -3965,6 +4349,7 @@ async function runWorkflowBody<Schema>(
   let workflowRef = workflow;
   let onAbortWake = () => {};
   let armHotReloadWakeup = () => {};
+  let runOwnedByCurrentProcess = false;
 
   const wakeLock = acquireCaffeinate();
   try {
@@ -3978,9 +4363,13 @@ async function runWorkflowBody<Schema>(
       resume: Boolean(opts.resume),
     }, "engine:run");
     const existingRun = await adapter.getRun(runId);
+    updateCurrentCorrelationContext({
+      parentRunId: opts.parentRunId ?? existingRun?.parentRunId ?? undefined,
+      workflowName: existingRun?.workflowName ?? "workflow",
+    });
     const existingConfig = parseRunConfigJson(existingRun?.configJson);
     const runAuth = opts.auth ?? parseRunAuthContext(existingConfig.auth);
-    const runConfig = {
+    const runConfig = buildDurabilityConfig({
       ...existingConfig,
       ...(opts.config ?? {}),
       maxConcurrency,
@@ -3992,7 +4381,8 @@ async function runWorkflowBody<Schema>(
         ? { cliAgentToolsDefault: opts.cliAgentToolsDefault }
         : {}),
       ...(runAuth ? { auth: runAuth } : {}),
-    };
+    }, runMetadata);
+    const runConfigJson = JSON.stringify(runConfig);
     const workflowVersioning = createWorkflowVersioningRuntime({
       baseConfig: runConfig,
       initialDecisions: getWorkflowPatchDecisions(existingConfig),
@@ -4018,7 +4408,18 @@ async function runWorkflowBody<Schema>(
       },
     });
     if (opts.resume && existingRun) {
-      assertResumeDurabilityMetadata(existingRun, runMetadata, resolvedWorkflowPath);
+      assertResumeDurabilityMetadata(
+        existingRun,
+        existingConfig,
+        runMetadata,
+        resolvedWorkflowPath,
+      );
+    } else if (opts.resume && !existingRun) {
+      throw new SmithersError(
+        "RUN_NOT_FOUND",
+        `Cannot resume run ${runId} because it does not exist.`,
+        { runId },
+      );
     }
     if (!opts.resume) {
       assertInputObject(opts.input);
@@ -4092,8 +4493,20 @@ async function runWorkflowBody<Schema>(
         vcsRoot: runMetadata.vcsRoot,
         vcsRevision: runMetadata.vcsRevision,
         errorJson: null,
-        configJson: JSON.stringify(runConfig),
+        configJson: runConfigJson,
       });
+      runOwnedByCurrentProcess = true;
+    } else if (opts.resume) {
+      await activateRunForResume(
+        adapter,
+        existingRun,
+        opts,
+        runtimeOwnerId,
+        runConfigJson,
+        runMetadata,
+        resolvedWorkflowPath,
+      );
+      runOwnedByCurrentProcess = true;
     } else {
       await adapter.updateRun(runId, {
         status: "running",
@@ -4114,8 +4527,9 @@ async function runWorkflowBody<Schema>(
         vcsRoot: runMetadata.vcsRoot ?? existingRun.vcsRoot ?? null,
         vcsRevision: runMetadata.vcsRevision ?? existingRun.vcsRevision ?? null,
         errorJson: null,
-        configJson: JSON.stringify(runConfig),
+        configJson: runConfigJson,
       });
+      runOwnedByCurrentProcess = true;
     }
     stopSupervisor = startRunSupervisor(
       adapter,
@@ -4432,6 +4846,7 @@ async function runWorkflowBody<Schema>(
             ralphIterations,
             defaultIteration,
             baseRootDir: rootDir,
+            workflowPath: resolvedWorkflowPath,
           }),
         );
       await workflowVersioning.flush();
@@ -4442,6 +4857,7 @@ async function runWorkflowBody<Schema>(
       resolveTaskOutputs(tasks, workflow);
 
       const workflowName = getWorkflowNameFromXml(xml);
+      updateCurrentCorrelationContext({ workflowName });
       const cacheEnabled =
         workflow.opts.cache ??
         Boolean(
@@ -4567,8 +4983,6 @@ async function runWorkflowBody<Schema>(
       const singleRalphId = ralphs.length === 1 ? ralphs[0]!.id : null;
 
       const ralphDoneMap = buildRalphDoneMap(ralphs, ralphState);
-      const retryFailedOnResume =
-        opts.resume && existingRun?.status === "failed";
       const { stateMap, retryWait } = await computeTaskStates(
         adapter,
         db,
@@ -4576,7 +4990,7 @@ async function runWorkflowBody<Schema>(
         tasks,
         eventBus,
         ralphDoneMap,
-        retryFailedOnResume,
+        false,
       );
       const descriptorMap = buildDescriptorMap(tasks);
       const schedule = scheduleTasks(
@@ -4709,6 +5123,30 @@ async function runWorkflowBody<Schema>(
             timestampMs: nowMs(),
           });
           return { runId, status: "waiting-timer" };
+        }
+
+        if (schedule.fatalError) {
+          logError("workflow failed due to control-flow boundary", {
+            runId,
+            error: schedule.fatalError,
+          }, "engine:run");
+          await cancelPendingTimers(adapter, runId, eventBus, "run-failed");
+          await adapter.updateRun(runId, {
+            status: "failed",
+            finishedAtMs: nowMs(),
+            heartbeatAtMs: null,
+            runtimeOwnerId: null,
+            cancelRequestedAtMs: null,
+            hijackRequestedAtMs: null,
+            hijackTarget: null,
+          });
+          await eventBus.emitEventWithPersist({
+            type: "RunFailed",
+            runId,
+            error: schedule.fatalError,
+            timestampMs: nowMs(),
+          });
+          return { runId, status: "failed", error: schedule.fatalError };
         }
 
         const failedTasks = tasks.filter((t) => {
@@ -4883,6 +5321,7 @@ async function runWorkflowBody<Schema>(
                   ralphIterations: ralphIterationsFromState(ralphState),
                   defaultIteration: ralphIteration,
                   baseRootDir: rootDir,
+                  workflowPath: resolvedWorkflowPath,
                 },
               );
               const { ralphs: freshRalphs } = buildPlanTree(freshXml, ralphState);
@@ -5144,22 +5583,30 @@ async function runWorkflowBody<Schema>(
 
       // Launch new tasks and track them in the persistent inflight set.
       for (const task of runnable) {
-        const p = executeTaskBridge(
-          adapter,
-          db,
-          runId,
-          task,
-          descriptorMap,
-          inputTable,
-          eventBus,
-          toolConfig,
-          workflowName,
-          cacheEnabled,
-          runAbortController.signal,
-          disabledAgents,
-          runAbortController,
-          hijackState,
-          legacyExecuteTask,
+        const p = runWithCorrelationContext(
+          {
+            workflowName,
+            nodeId: task.nodeId,
+            iteration: task.iteration,
+          },
+          () =>
+            executeTaskBridge(
+              adapter,
+              db,
+              runId,
+              task,
+              descriptorMap,
+              inputTable,
+              eventBus,
+              toolConfig,
+              workflowName,
+              cacheEnabled,
+              runAbortController.signal,
+              disabledAgents,
+              runAbortController,
+              hijackState,
+              legacyExecuteTask,
+            ),
         ).finally(() => {
           inflight.delete(p);
           notifyScheduler();
@@ -5218,23 +5665,25 @@ async function runWorkflowBody<Schema>(
       error: err instanceof Error ? err.message : String(err),
     }, "engine:run");
     const errorInfo = errorToJson(err);
-    await cancelPendingTimers(adapter, runId, eventBus, "run-failed");
-    await adapter.updateRun(runId, {
-      status: "failed",
-      finishedAtMs: nowMs(),
-      heartbeatAtMs: null,
-      runtimeOwnerId: null,
-      cancelRequestedAtMs: null,
-      hijackRequestedAtMs: null,
-      hijackTarget: null,
-      errorJson: JSON.stringify(errorInfo),
-    });
-    await eventBus.emitEventWithPersist({
-      type: "RunFailed",
-      runId,
-      error: errorInfo,
-      timestampMs: nowMs(),
-    });
+    if (runOwnedByCurrentProcess) {
+      await cancelPendingTimers(adapter, runId, eventBus, "run-failed");
+      await adapter.updateRun(runId, {
+        status: "failed",
+        finishedAtMs: nowMs(),
+        heartbeatAtMs: null,
+        runtimeOwnerId: null,
+        cancelRequestedAtMs: null,
+        hijackRequestedAtMs: null,
+        hijackTarget: null,
+        errorJson: JSON.stringify(errorInfo),
+      });
+      await eventBus.emitEventWithPersist({
+        type: "RunFailed",
+        runId,
+        error: errorInfo,
+        timestampMs: nowMs(),
+      });
+    }
     return { runId, status: "failed", error: errorInfo };
   } finally {
     await stopSupervisor();

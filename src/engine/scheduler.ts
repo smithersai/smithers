@@ -25,7 +25,8 @@ export type PlanNode =
   | {
       kind: "saga";
       id: string;
-      children: PlanNode[];
+      actionChildren: PlanNode[];
+      compensationChildren: PlanNode[];
       onFailure: "compensate" | "compensate-and-fail" | "fail";
     }
   | {
@@ -58,6 +59,7 @@ export type ScheduleResult = {
   readyRalphs: RalphMeta[];
   continuation?: ContinuationRequest;
   nextRetryAtMs?: number;
+  fatalError?: string;
 };
 
 export type RalphMeta = {
@@ -128,6 +130,118 @@ export function buildPlanTree(
       scopedRalphId = logicalId + scope;
       const currentIter = ralphState?.get(scopedRalphId)?.iteration ?? 0;
       loopStack = [...loopStack, { ralphId: logicalId, iteration: currentIter }];
+    }
+
+    if (tag === "smithers:saga") {
+      const id = resolveStableId(node.props.id, "saga", ctx.path);
+      const onFailure =
+        (node.props.onFailure as "compensate" | "compensate-and-fail" | "fail") ??
+        "compensate";
+      const actionChildren: PlanNode[] = [];
+      const compensationChildren: PlanNode[] = [];
+      let specialIndex = 0;
+      for (const child of node.children) {
+        const nextPath =
+          child.kind === "element" ? [...ctx.path, specialIndex++] : ctx.path;
+        if (child.kind !== "element") continue;
+        if (child.tag === "smithers:saga-actions") {
+          let nestedIndex = 0;
+          for (const nested of child.children) {
+            const nestedPath =
+              nested.kind === "element"
+                ? [...nextPath, nestedIndex++]
+                : nextPath;
+            const built = walk(nested, {
+              path: nestedPath,
+              parentIsRalph: false,
+              loopStack,
+            });
+            if (built) actionChildren.push(built);
+          }
+          continue;
+        }
+        if (child.tag === "smithers:saga-compensations") {
+          let nestedIndex = 0;
+          for (const nested of child.children) {
+            const nestedPath =
+              nested.kind === "element"
+                ? [...nextPath, nestedIndex++]
+                : nextPath;
+            const built = walk(nested, {
+              path: nestedPath,
+              parentIsRalph: false,
+              loopStack,
+            });
+            if (built) compensationChildren.push(built);
+          }
+          continue;
+        }
+        const built = walk(child, {
+          path: nextPath,
+          parentIsRalph: false,
+          loopStack,
+        });
+        if (built) actionChildren.push(built);
+      }
+      return {
+        kind: "saga",
+        id,
+        actionChildren,
+        compensationChildren,
+        onFailure,
+      };
+    }
+
+    if (tag === "smithers:try-catch-finally") {
+      const id = resolveStableId(node.props.id, "tcf", ctx.path);
+      const tryChildren: PlanNode[] = [];
+      const catchChildren: PlanNode[] = [];
+      const finallyChildren: PlanNode[] = [];
+      let specialIndex = 0;
+      for (const child of node.children) {
+        const nextPath =
+          child.kind === "element" ? [...ctx.path, specialIndex++] : ctx.path;
+        if (child.kind !== "element") continue;
+        const target =
+          child.tag === "smithers:tcf-catch"
+            ? catchChildren
+            : child.tag === "smithers:tcf-finally"
+              ? finallyChildren
+              : tryChildren;
+        if (
+          child.tag === "smithers:tcf-try" ||
+          child.tag === "smithers:tcf-catch" ||
+          child.tag === "smithers:tcf-finally"
+        ) {
+          let nestedIndex = 0;
+          for (const nested of child.children) {
+            const nestedPath =
+              nested.kind === "element"
+                ? [...nextPath, nestedIndex++]
+                : nextPath;
+            const built = walk(nested, {
+              path: nestedPath,
+              parentIsRalph: false,
+              loopStack,
+            });
+            if (built) target.push(built);
+          }
+          continue;
+        }
+        const built = walk(child, {
+          path: nextPath,
+          parentIsRalph: false,
+          loopStack,
+        });
+        if (built) tryChildren.push(built);
+      }
+      return {
+        kind: "try-catch-finally",
+        id,
+        tryChildren,
+        catchChildren,
+        finallyChildren,
+      };
     }
 
     const children: PlanNode[] = [];
@@ -265,31 +379,6 @@ export function buildPlanTree(
         continueAsNewEvery,
       };
     }
-    if (tag === "smithers:saga") {
-      const id = resolveStableId(node.props.id, "saga", ctx.path);
-      const onFailure =
-        (node.props.onFailure as "compensate" | "compensate-and-fail" | "fail") ??
-        "compensate";
-      return {
-        kind: "saga",
-        id,
-        children,
-        onFailure,
-      };
-    }
-    if (tag === "smithers:try-catch-finally") {
-      const id = resolveStableId(node.props.id, "tcf", ctx.path);
-      // Children are structured: try block children come first,
-      // catch and finally are mounted by the engine on demand.
-      // At plan-build time, only the try children are present.
-      return {
-        kind: "try-catch-finally",
-        id,
-        tryChildren: children,
-        catchChildren: [],
-        finallyChildren: [],
-      };
-    }
     return { kind: "group", children };
   }
 
@@ -346,6 +435,7 @@ export function scheduleTasks(
   const readyRalphs: RalphMeta[] = [];
   let continuation: ContinuationRequest | undefined;
   let nextRetryAtMs: number | undefined;
+  let fatalError: string | undefined;
 
   // Track current usage per parallel/merge-queue group based on in-progress tasks.
   // This allows the scheduler to admit at most `parallelMaxConcurrency` new
@@ -363,6 +453,90 @@ export function scheduleTasks(
     if (gid && cap != null) {
       groupUsage.set(gid, (groupUsage.get(gid) ?? 0) + 1);
     }
+  }
+
+  function inspect(node: PlanNode): { terminal: boolean; failed: boolean } {
+    switch (node.kind) {
+      case "task": {
+        const desc = descriptors.get(node.nodeId);
+        if (!desc) return { terminal: true, failed: false };
+        const state = states.get(key(desc.nodeId, desc.iteration)) ?? "pending";
+        const terminal =
+          state === "finished" ||
+          state === "skipped" ||
+          state === "failed" ||
+          Boolean(
+            desc.waitAsync &&
+              (state === "waiting-approval" || state === "waiting-event"),
+          );
+        return {
+          terminal,
+          failed: state === "failed",
+        };
+      }
+      case "sequence":
+      case "group": {
+        for (const child of node.children) {
+          const res = inspect(child);
+          if (!res.terminal) {
+            return { terminal: false, failed: false };
+          }
+          if (res.failed) {
+            return { terminal: true, failed: true };
+          }
+        }
+        return { terminal: true, failed: false };
+      }
+      case "parallel": {
+        let terminal = true;
+        let failed = false;
+        for (const child of node.children) {
+          const res = inspect(child);
+          if (!res.terminal) terminal = false;
+          if (res.failed) failed = true;
+        }
+        return {
+          terminal,
+          failed: terminal && failed,
+        };
+      }
+      case "saga": {
+        for (const child of node.actionChildren) {
+          const res = inspect(child);
+          if (!res.terminal) {
+            return { terminal: false, failed: false };
+          }
+          if (res.failed) {
+            return { terminal: true, failed: true };
+          }
+        }
+        return { terminal: true, failed: false };
+      }
+      case "try-catch-finally": {
+        for (const child of node.tryChildren) {
+          const res = inspect(child);
+          if (!res.terminal) {
+            return { terminal: false, failed: false };
+          }
+          if (res.failed) {
+            return { terminal: true, failed: true };
+          }
+        }
+        return { terminal: true, failed: false };
+      }
+      default:
+        return { terminal: true, failed: false };
+    }
+  }
+
+  function walkSequence(children: PlanNode[]) {
+    for (const child of children) {
+      const res = walk(child);
+      if (!res.terminal) {
+        return { terminal: false };
+      }
+    }
+    return { terminal: true };
   }
 
   function walk(node: PlanNode): { terminal: boolean } {
@@ -402,13 +576,7 @@ export function scheduleTasks(
         return { terminal };
       }
       case "sequence": {
-        for (const child of node.children) {
-          const res = walk(child);
-          if (!res.terminal) {
-            return { terminal: false };
-          }
-        }
-        return { terminal: true };
+        return walkSequence(node.children);
       }
       case "parallel": {
         let terminal = true;
@@ -445,34 +613,64 @@ export function scheduleTasks(
         return { terminal: false };
       }
       case "saga": {
-        // Saga runs its action steps sequentially (like a sequence).
-        // If any step fails and onFailure !== "fail", compensation
-        // steps are triggered by the engine in reverse order.
-        for (const child of node.children) {
-          const res = walk(child);
+        let completedActions = 0;
+        let failed = false;
+        for (const child of node.actionChildren) {
+          const status = inspect(child);
+          if (!status.terminal) {
+            return walk(child);
+          }
+          if (status.failed) {
+            failed = true;
+            break;
+          }
+          completedActions += 1;
+        }
+        if (!failed) {
+          return { terminal: true };
+        }
+        if (node.onFailure === "fail") {
+          fatalError ??= `Saga ${node.id} failed`;
+          return { terminal: true };
+        }
+        for (let index = completedActions - 1; index >= 0; index -= 1) {
+          const compensation = node.compensationChildren[index];
+          if (!compensation) continue;
+          const res = walk(compensation);
           if (!res.terminal) {
             return { terminal: false };
           }
         }
+        if (node.onFailure === "compensate-and-fail") {
+          fatalError ??= `Saga ${node.id} failed`;
+        }
         return { terminal: true };
       }
       case "try-catch-finally": {
-        // Try children run first (sequentially).
-        let tryTerminal = true;
+        let tryFailed = false;
         for (const child of node.tryChildren) {
-          const res = walk(child);
-          if (!res.terminal) tryTerminal = false;
+          const status = inspect(child);
+          if (!status.terminal) {
+            return walk(child);
+          }
+          if (status.failed) {
+            tryFailed = true;
+            break;
+          }
         }
-        if (!tryTerminal) return { terminal: false };
-        // Once try is terminal, check catch children if any were mounted.
-        for (const child of node.catchChildren) {
-          const res = walk(child);
-          if (!res.terminal) return { terminal: false };
+        if (tryFailed) {
+          if (node.catchChildren.length > 0) {
+            const catchRes = walkSequence(node.catchChildren);
+            if (!catchRes.terminal) {
+              return catchRes;
+            }
+          } else {
+            fatalError ??= `TryCatchFinally ${node.id} failed`;
+          }
         }
-        // Finally children run last.
-        for (const child of node.finallyChildren) {
-          const res = walk(child);
-          if (!res.terminal) return { terminal: false };
+        const finallyRes = walkSequence(node.finallyChildren);
+        if (!finallyRes.terminal) {
+          return finallyRes;
         }
         return { terminal: true };
       }
@@ -502,6 +700,7 @@ export function scheduleTasks(
     readyRalphs,
     continuation,
     nextRetryAtMs,
+    fatalError,
   };
 }
 

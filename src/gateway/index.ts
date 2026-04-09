@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { CronExpressionParser } from "cron-parser";
+import { Effect, Metric } from "effect";
 import { WebSocketServer, type WebSocket } from "ws";
 import { runWorkflow } from "../engine";
 import { approveNode, denyNode } from "../engine/approvals";
@@ -9,6 +10,28 @@ import type { SmithersWorkflow } from "../SmithersWorkflow";
 import type { SmithersEvent } from "../SmithersEvent";
 import { SmithersDb } from "../db/adapter";
 import { ensureSmithersTables } from "../db/ensure";
+import {
+  gatewayApprovalDecisionsTotal,
+  gatewayAuthEventsTotal,
+  gatewayConnectionsActive,
+  gatewayConnectionsClosedTotal,
+  gatewayConnectionsTotal,
+  gatewayCronTriggersTotal,
+  gatewayErrorsTotal,
+  gatewayHeartbeatTicksTotal,
+  gatewayMessagesReceivedTotal,
+  gatewayMessagesSentTotal,
+  gatewayRpcCallsTotal,
+  gatewayRpcDuration,
+  gatewayRunsCompletedTotal,
+  gatewayRunsStartedTotal,
+  gatewaySignalsTotal,
+  gatewayWebhooksReceivedTotal,
+  gatewayWebhooksRejectedTotal,
+  gatewayWebhooksVerifiedTotal,
+} from "../effect/metrics";
+import { runFork, runPromise } from "../effect/runtime";
+import { prometheusContentType, renderPrometheusMetrics } from "../observability";
 import { nowMs } from "../utils/time";
 import { newRunId } from "../utils/ids";
 import { errorToJson, isSmithersError, SmithersError } from "../utils/errors";
@@ -114,12 +137,43 @@ export type GatewayOptions = {
   auth?: GatewayAuthConfig;
   defaults?: GatewayDefaults;
   maxBodyBytes?: number;
+  maxPayload?: number;
+  maxConnections?: number;
 };
 
 type RegisteredWorkflow = {
   key: string;
   workflow: SmithersWorkflow<any>;
   schedule?: string;
+  webhook?: GatewayWebhookConfig;
+};
+
+type GatewayWebhookSignalConfig = {
+  name: string;
+  correlationIdPath?: string;
+  runIdPath?: string;
+  payloadPath?: string;
+};
+
+type GatewayWebhookRunConfig = {
+  enabled?: boolean;
+  inputPath?: string;
+};
+
+type GatewayWebhookConfig = {
+  secret: string;
+  signatureHeader?: string;
+  signaturePrefix?: string;
+  signal?: GatewayWebhookSignalConfig;
+  run?: GatewayWebhookRunConfig;
+};
+
+type GatewayWebhookDelivery = {
+  runId: string;
+  seq: number;
+  signalName: string;
+  correlationId: string | null;
+  receivedAtMs: number;
 };
 
 type ActiveRunRecord = {
@@ -129,15 +183,22 @@ type ActiveRunRecord = {
   input: Record<string, unknown>;
 };
 
-type ConnectionState = {
-  ws: WebSocket;
-  seq: number;
-  authenticated: boolean;
-  sessionToken: string | null;
+type GatewayTransport = "http" | "ws";
+
+type GatewayRequestContext = {
+  connectionId: string;
+  transport: GatewayTransport;
   role: string | null;
   scopes: string[];
   userId: string | null;
   subscribedRuns: Set<string> | null;
+};
+
+type ConnectionState = GatewayRequestContext & {
+  ws: WebSocket;
+  seq: number;
+  authenticated: boolean;
+  sessionToken: string | null;
   heartbeatTimer: Timer | null;
 };
 
@@ -161,20 +222,27 @@ type RunStartAuthContext = {
   triggeredBy: string;
   scopes: string[];
   role: string;
-  subscribeConnection?: ConnectionState | null;
+  subscribeConnection?: GatewayRequestContext | null;
 };
 
 type MethodAccess = "read" | "execute" | "approve" | "admin";
+type GatewayMetricLabels = Record<
+  string,
+  string | number | boolean | null | undefined
+>;
 
 const DEFAULT_PROTOCOL = 1;
 const DEFAULT_HEARTBEAT_MS = 15_000;
 const DEFAULT_MAX_BODY_BYTES = 1_048_576;
+const DEFAULT_MAX_CONNECTIONS = 1_000;
 export const GATEWAY_RPC_MAX_PAYLOAD_BYTES = DEFAULT_MAX_BODY_BYTES;
-export const GATEWAY_RPC_MAX_DEPTH = 16;
+export const GATEWAY_RPC_MAX_DEPTH = 32;
 export const GATEWAY_RPC_MAX_ARRAY_LENGTH = 256;
 export const GATEWAY_RPC_MAX_STRING_LENGTH = 16 * 1024;
 export const GATEWAY_METHOD_NAME_MAX_LENGTH = 64;
 export const GATEWAY_FRAME_ID_MAX_LENGTH = 128;
+export const GATEWAY_RPC_INPUT_MAX_BYTES = GATEWAY_RPC_MAX_PAYLOAD_BYTES;
+export const GATEWAY_RPC_INPUT_MAX_DEPTH = GATEWAY_RPC_MAX_DEPTH;
 const GATEWAY_METHOD_NAME_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/;
 
 const ACCESS_RANK: Record<MethodAccess, number> = {
@@ -222,6 +290,19 @@ function sendJson(res: ServerResponse, status: number, payload: unknown) {
   res.end(JSON.stringify(payload));
 }
 
+function sendText(
+  res: ServerResponse,
+  status: number,
+  payload: string,
+  contentType = "text/plain; charset=utf-8",
+) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.end(payload);
+}
+
 function asObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -239,6 +320,150 @@ function asNumber(value: unknown): number | undefined {
 
 function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function asWebhookString(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  return undefined;
+}
+
+function taggedMetric(metric: any, labels: GatewayMetricLabels = {}) {
+  let tagged = metric;
+  for (const [key, value] of Object.entries(labels)) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+    tagged = Metric.tagged(tagged, key, String(value));
+  }
+  return tagged;
+}
+
+function incrementMetric(metric: any, labels: GatewayMetricLabels = {}) {
+  return Metric.increment(taggedMetric(metric, labels));
+}
+
+function updateMetric(metric: any, value: number, labels: GatewayMetricLabels = {}) {
+  return Metric.update(taggedMetric(metric, labels), value);
+}
+
+function emitGatewayEffect(effect: Effect.Effect<void, never, never>) {
+  void runFork(effect);
+}
+
+function emitGatewayLog(
+  level: "debug" | "info" | "warning" | "error",
+  message: string,
+  annotations?: Record<string, unknown>,
+  span?: string,
+) {
+  let effect = level === "debug"
+    ? Effect.logDebug(message)
+    : level === "info"
+      ? Effect.logInfo(message)
+      : level === "warning"
+        ? Effect.logWarning(message)
+        : Effect.logError(message);
+  if (annotations && Object.keys(annotations).length > 0) {
+    effect = effect.pipe(Effect.annotateLogs(annotations));
+  }
+  if (span) {
+    effect = effect.pipe(Effect.withLogSpan(span));
+  }
+  emitGatewayEffect(effect);
+}
+
+function gatewayContextAnnotations(
+  context: GatewayRequestContext,
+): Record<string, unknown> {
+  return {
+    connectionId: context.connectionId,
+    transport: context.transport,
+    ...(context.userId ? { userId: context.userId } : {}),
+    ...(context.role ? { role: context.role } : {}),
+  };
+}
+
+function gatewayRunAnnotations(
+  params?: Record<string, unknown>,
+  payload?: unknown,
+): Record<string, unknown> {
+  const annotations: Record<string, unknown> = {};
+  const responsePayload = asObject(payload);
+  const runId = asString(params?.runId) ?? asString(responsePayload?.runId);
+  const leftRunId = asString(params?.leftRunId);
+  const rightRunId = asString(params?.rightRunId);
+  if (runId) {
+    annotations.runId = runId;
+  }
+  if (leftRunId) {
+    annotations.leftRunId = leftRunId;
+  }
+  if (rightRunId) {
+    annotations.rightRunId = rightRunId;
+  }
+  return annotations;
+}
+
+function gatewayRpcAnnotations(
+  context: GatewayRequestContext,
+  frame: Pick<RequestFrame, "id" | "method" | "params">,
+  payload?: unknown,
+): Record<string, unknown> {
+  return {
+    ...gatewayContextAnnotations(context),
+    frameId: frame.id,
+    method: frame.method,
+    ...gatewayRunAnnotations(asObject(frame.params) ?? {}, payload),
+  };
+}
+
+function gatewayErrorCode(error: unknown): string {
+  if (error && typeof error === "object") {
+    const code = asString((error as any).code);
+    if (code) {
+      return code;
+    }
+  }
+  if (error instanceof Error && error.name) {
+    return error.name;
+  }
+  return "UNKNOWN";
+}
+
+function gatewayErrorAnnotations(error: unknown): Record<string, unknown> {
+  const serialized = errorToJson(error);
+  return {
+    errorCode: gatewayErrorCode(error),
+    ...(serialized.summary ? { errorSummary: serialized.summary } : {}),
+    ...(serialized.message ? { errorMessage: serialized.message } : {}),
+    error: serialized,
+  };
+}
+
+function gatewayAuthMode(auth: GatewayAuthConfig | undefined): string {
+  return auth?.mode ?? "none";
+}
+
+function gatewayTriggerSource(triggeredBy: string): string {
+  if (triggeredBy.startsWith("cron:")) {
+    return "cron";
+  }
+  if (triggeredBy.startsWith("webhook:")) {
+    return "webhook";
+  }
+  if (triggeredBy === "gateway") {
+    return "gateway";
+  }
+  return "user";
 }
 
 function asOptionalPositiveInt(value: unknown, field: string): number | undefined {
@@ -318,13 +543,16 @@ export function validateGatewayMethodName(method: unknown): string {
   return method;
 }
 
-export function parseGatewayRequestFrame(raw: unknown): RequestFrame {
+export function parseGatewayRequestFrame(
+  raw: unknown,
+  maxPayloadBytes = GATEWAY_RPC_MAX_PAYLOAD_BYTES,
+): RequestFrame {
   const body = rawDataToUtf8(raw);
-  if (Buffer.byteLength(body, "utf8") > GATEWAY_RPC_MAX_PAYLOAD_BYTES) {
+  if (Buffer.byteLength(body, "utf8") > maxPayloadBytes) {
     throw new SmithersError(
       "INVALID_INPUT",
-      `Gateway RPC payload exceeds ${GATEWAY_RPC_MAX_PAYLOAD_BYTES} bytes.`,
-      { maxBytes: GATEWAY_RPC_MAX_PAYLOAD_BYTES },
+      `Gateway RPC payload exceeds ${maxPayloadBytes} bytes.`,
+      { maxBytes: maxPayloadBytes },
     );
   }
 
@@ -367,6 +595,90 @@ export function parseGatewayRequestFrame(raw: unknown): RequestFrame {
     method: validateGatewayMethodName(frame.method),
     params: frame.params,
   };
+}
+
+function gatewayInputDepthAt(
+  value: unknown,
+  depth: number,
+  seen: Set<unknown>,
+): number {
+  if (!value || typeof value !== "object") {
+    return depth;
+  }
+  if (seen.has(value)) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "Gateway RPC input must not contain circular references.",
+    );
+  }
+
+  seen.add(value);
+  let maxDepth = depth;
+  const entries = Array.isArray(value)
+    ? value
+    : Object.values(value as Record<string, unknown>);
+  for (const entry of entries) {
+    const entryDepth =
+      entry && typeof entry === "object"
+        ? gatewayInputDepthAt(entry, depth + 1, seen)
+        : depth;
+    if (entryDepth > maxDepth) {
+      maxDepth = entryDepth;
+    }
+  }
+  seen.delete(value);
+  return maxDepth;
+}
+
+export function getGatewayInputDepth(value: unknown): number {
+  if (!value || typeof value !== "object") {
+    return 0;
+  }
+  return gatewayInputDepthAt(value, 1, new Set());
+}
+
+export function assertGatewayInputDepthWithinBounds(
+  value: unknown,
+  maxDepth = GATEWAY_RPC_INPUT_MAX_DEPTH,
+): number {
+  const depth = getGatewayInputDepth(value);
+  if (depth > maxDepth) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `Gateway RPC input exceeds the maximum nesting depth of ${maxDepth}.`,
+      {
+        actualDepth: depth,
+        maxDepth,
+      },
+    );
+  }
+  return depth;
+}
+
+function validateGatewayRpcInput(input: unknown): Record<string, unknown> {
+  const normalizedInput = asObject(input) ?? {};
+  const inputJson = JSON.stringify(normalizedInput);
+  if (inputJson === undefined) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      "Gateway RPC input must be JSON-serializable.",
+    );
+  }
+
+  const inputBytes = Buffer.byteLength(inputJson, "utf8");
+  if (inputBytes > GATEWAY_RPC_INPUT_MAX_BYTES) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `Gateway RPC input exceeds ${GATEWAY_RPC_INPUT_MAX_BYTES} bytes.`,
+      {
+        actualBytes: inputBytes,
+        maxBytes: GATEWAY_RPC_INPUT_MAX_BYTES,
+      },
+    );
+  }
+
+  assertGatewayInputDepthWithinBounds(normalizedInput);
+  return normalizedInput;
 }
 
 function statusForRpcError(code: string | undefined) {
@@ -572,7 +884,75 @@ function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-async function readBody(req: IncomingMessage, maxBytes: number) {
+function normalizeCorrelationId(value: string | null | undefined): string | null {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized.length > 0 ? normalized : null;
+}
+
+function parseWebhookWaitForEventSnapshot(metaJson?: string | null) {
+  if (!metaJson) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(metaJson);
+    const waitForEvent = asObject(asObject(parsed)?.waitForEvent);
+    const signalName = asString(waitForEvent?.signalName)?.trim();
+    if (!signalName) {
+      return null;
+    }
+    return {
+      signalName,
+      correlationId: normalizeCorrelationId(asString(waitForEvent?.correlationId) ?? null),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readPathValue(source: unknown, path: string | undefined): unknown {
+  if (!path) {
+    return source;
+  }
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return source;
+  }
+  let current: unknown = source;
+  for (const segment of trimmed.split(".").filter((entry) => entry.length > 0)) {
+    if (Array.isArray(current)) {
+      const index = Number(segment);
+      if (!Number.isInteger(index) || index < 0) {
+        return undefined;
+      }
+      current = current[index];
+      continue;
+    }
+    const record = asObject(current);
+    if (!record) {
+      return undefined;
+    }
+    current = record[segment];
+  }
+  return current;
+}
+
+function parseJsonBuffer(body: Buffer, description: string) {
+  if (body.length === 0) {
+    return {};
+  }
+  try {
+    return JSON.parse(body.toString("utf8"));
+  } catch (error) {
+    throw new SmithersError(
+      "INVALID_INPUT",
+      `${description} must be valid JSON.`,
+      undefined,
+      { cause: error },
+    );
+  }
+}
+
+async function readRawBody(req: IncomingMessage, maxBytes: number) {
   const chunks: Buffer[] = [];
   let total = 0;
   const lengthHeader = headerValue(req, "content-length");
@@ -580,7 +960,7 @@ async function readBody(req: IncomingMessage, maxBytes: number) {
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
     throw new SmithersError(
       "INVALID_INPUT",
-      `Gateway RPC payload exceeds ${maxBytes} bytes.`,
+      `Gateway request payload exceeds ${maxBytes} bytes.`,
       { maxBytes },
     );
   }
@@ -591,7 +971,7 @@ async function readBody(req: IncomingMessage, maxBytes: number) {
     if (total > maxBytes) {
       throw new SmithersError(
         "INVALID_INPUT",
-        `Gateway RPC payload exceeds ${maxBytes} bytes.`,
+        `Gateway request payload exceeds ${maxBytes} bytes.`,
         { maxBytes },
       );
     }
@@ -599,20 +979,43 @@ async function readBody(req: IncomingMessage, maxBytes: number) {
   }
 
   if (chunks.length === 0) {
-    return {};
+    return Buffer.alloc(0);
   }
 
-  const body = Buffer.concat(chunks).toString("utf8");
-  try {
-    return JSON.parse(body);
-  } catch (error) {
-    throw new SmithersError(
-      "INVALID_INPUT",
-      "Gateway RPC payload must be valid JSON.",
-      undefined,
-      { cause: error },
-    );
+  return Buffer.concat(chunks);
+}
+
+async function readBody(req: IncomingMessage, maxBytes: number) {
+  return parseJsonBuffer(await readRawBody(req, maxBytes), "Gateway RPC payload");
+}
+
+function computeWebhookSignature(
+  rawBody: Buffer,
+  secret: string,
+  prefix: string,
+) {
+  return `${prefix}${createHmac("sha256", secret).update(rawBody).digest("hex")}`;
+}
+
+function isValidWebhookSignature(expected: string, provided: string | null) {
+  if (!provided) {
+    return false;
   }
+  const expectedBuffer = Buffer.from(expected);
+  const providedBuffer = Buffer.from(provided);
+  if (expectedBuffer.length !== providedBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(expectedBuffer, providedBuffer);
+}
+
+function normalizeWebhookRunInput(input: unknown): Record<string, unknown> {
+  const normalized = asObject(input) ?? { payload: input ?? null };
+  return validateGatewayRpcInput(normalized);
+}
+
+function webhookTriggerUserId(workflowKey: string) {
+  return `webhook:${workflowKey}`;
 }
 
 function cronWorkflowPath(workflowKey: string) {
@@ -639,6 +1042,8 @@ export class Gateway {
   readonly features: string[];
   readonly heartbeatMs: number;
   readonly maxBodyBytes: number;
+  readonly maxPayload: number;
+  readonly maxConnections: number;
   readonly auth?: GatewayAuthConfig;
   readonly defaults?: GatewayDefaults;
 
@@ -660,16 +1065,495 @@ export class Gateway {
     this.maxBodyBytes = options.maxBodyBytes === undefined
       ? DEFAULT_MAX_BODY_BYTES
       : Math.floor(assertPositiveFiniteInteger("maxBodyBytes", Number(options.maxBodyBytes)));
+    this.maxPayload = options.maxPayload === undefined
+      ? GATEWAY_RPC_MAX_PAYLOAD_BYTES
+      : Math.floor(assertPositiveFiniteInteger("maxPayload", Number(options.maxPayload)));
+    this.maxConnections = options.maxConnections === undefined
+      ? DEFAULT_MAX_CONNECTIONS
+      : Math.floor(assertPositiveFiniteInteger("maxConnections", Number(options.maxConnections)));
     this.auth = options.auth;
     this.defaults = options.defaults;
   }
 
-  register(key: string, workflow: SmithersWorkflow<any>, options?: { schedule?: string }) {
+  private authModeLabel() {
+    return gatewayAuthMode(this.auth);
+  }
+
+  private recordMessageReceived(
+    transport: GatewayTransport,
+    frameType: string,
+    labels: GatewayMetricLabels = {},
+  ) {
+    emitGatewayEffect(
+      incrementMetric(gatewayMessagesReceivedTotal, {
+        transport,
+        frameType,
+        ...labels,
+      }),
+    );
+  }
+
+  private recordMessageSent(
+    transport: GatewayTransport,
+    frameType: string,
+    labels: GatewayMetricLabels = {},
+  ) {
+    emitGatewayEffect(
+      incrementMetric(gatewayMessagesSentTotal, {
+        transport,
+        frameType,
+        ...labels,
+      }),
+    );
+  }
+
+  private recordAuthEvent(
+    transport: GatewayTransport,
+    outcome: "success" | "failure",
+    context: GatewayRequestContext,
+    details: Record<string, unknown> = {},
+    level: "debug" | "info" | "warning" = outcome === "success" ? "info" : "warning",
+  ) {
+    const annotations = {
+      ...gatewayContextAnnotations(context),
+      authMode: this.authModeLabel(),
+      outcome,
+      ...details,
+    };
+    const logEffect = level === "debug"
+      ? Effect.logDebug(
+          outcome === "success"
+            ? "Gateway auth succeeded"
+            : "Gateway auth rejected",
+        )
+      : level === "info"
+        ? Effect.logInfo("Gateway auth succeeded")
+        : Effect.logWarning("Gateway auth rejected");
+    emitGatewayEffect(
+      Effect.all([
+        incrementMetric(gatewayAuthEventsTotal, {
+          transport,
+          mode: this.authModeLabel(),
+          outcome,
+        }),
+        logEffect.pipe(
+          Effect.annotateLogs(annotations),
+          Effect.withLogSpan("gateway:auth"),
+        ),
+      ], { discard: true }),
+    );
+  }
+
+  private async executeRpc(
+    context: GatewayRequestContext,
+    frame: RequestFrame,
+    handler: () => Promise<ResponseFrame>,
+  ): Promise<ResponseFrame> {
+    const self = this;
+    const start = performance.now();
+    const params = asObject(frame.params) ?? {};
+    const result = await runPromise(
+      Effect.gen(function* () {
+        yield* incrementMetric(gatewayRpcCallsTotal, {
+          transport: context.transport,
+          method: frame.method,
+        });
+        yield* Effect.logDebug("Gateway RPC started");
+        const result = yield* Effect.promise(() =>
+          handler()
+            .then((response) => ({ _tag: "success" as const, response }))
+            .catch((error) => ({ _tag: "failure" as const, error })),
+        );
+        yield* updateMetric(gatewayRpcDuration, performance.now() - start, {
+          transport: context.transport,
+          method: frame.method,
+        });
+        if (result._tag === "failure") {
+          yield* incrementMetric(gatewayErrorsTotal, {
+            kind: "rpc",
+            transport: context.transport,
+            method: frame.method,
+            code: gatewayErrorCode(result.error),
+          });
+          yield* Effect.logError("Gateway RPC failed").pipe(
+            Effect.annotateLogs(gatewayErrorAnnotations(result.error)),
+          );
+          return result;
+        }
+        if (!result.response.ok) {
+          yield* incrementMetric(gatewayErrorsTotal, {
+            kind: "rpc",
+            transport: context.transport,
+            method: frame.method,
+            code: result.response.error?.code ?? "UNKNOWN",
+          });
+          yield* Effect.logWarning("Gateway RPC rejected").pipe(
+            Effect.annotateLogs({
+              ...gatewayRunAnnotations(params, result.response.payload),
+              rpcCode: result.response.error?.code ?? "UNKNOWN",
+              ...(result.response.error?.message
+                ? { rpcMessage: result.response.error.message }
+                : {}),
+            }),
+          );
+        } else {
+          yield* Effect.logDebug("Gateway RPC completed").pipe(
+            Effect.annotateLogs(gatewayRunAnnotations(params, result.response.payload)),
+          );
+          yield* self.rpcSuccessEffect(context, frame, result.response);
+        }
+        return result;
+      }).pipe(
+        Effect.annotateLogs(gatewayRpcAnnotations(context, frame)),
+        Effect.withLogSpan(`gateway:rpc:${frame.method}`),
+      ),
+    );
+    if (result._tag === "failure") {
+      throw result.error;
+    }
+    return result.response;
+  }
+
+  private rpcSuccessEffect(
+    context: GatewayRequestContext,
+    frame: RequestFrame,
+    response: ResponseFrame,
+  ): Effect.Effect<void> {
+    const params = asObject(frame.params) ?? {};
+    switch (frame.method) {
+      case "approvals.decide": {
+        const approved = asBoolean(params.approved) ?? false;
+        const nodeId = asString(params.nodeId);
+        return Effect.all([
+          incrementMetric(gatewayApprovalDecisionsTotal, {
+            outcome: approved ? "approved" : "denied",
+          }),
+          Effect.logInfo("Gateway approval decision recorded").pipe(
+            Effect.annotateLogs({
+              ...gatewayRpcAnnotations(context, frame, response.payload),
+              ...(nodeId ? { nodeId } : {}),
+              iteration: asNumber(params.iteration) ?? 0,
+              approved,
+            }),
+          ),
+        ], { discard: true });
+      }
+      case "signals.send": {
+        const signalName = asString(params.signalName);
+        const correlationId = asString(params.correlationId);
+        return Effect.all([
+          incrementMetric(gatewaySignalsTotal, { outcome: "sent" }),
+          Effect.logInfo("Gateway signal sent").pipe(
+            Effect.annotateLogs({
+              ...gatewayRpcAnnotations(context, frame, response.payload),
+              ...(signalName ? { signalName } : {}),
+              ...(correlationId ? { correlationId } : {}),
+            }),
+          ),
+        ], { discard: true });
+      }
+      case "cron.trigger": {
+        const cronId = asString(params.cronId);
+        const workflow = asString(params.workflow);
+        return Effect.all([
+          incrementMetric(gatewayCronTriggersTotal, { source: "manual" }),
+          Effect.logInfo("Gateway cron trigger requested").pipe(
+            Effect.annotateLogs({
+              ...gatewayRpcAnnotations(context, frame, response.payload),
+              ...(cronId ? { cronId } : {}),
+              ...(workflow ? { workflow } : {}),
+            }),
+          ),
+        ], { discard: true });
+      }
+      default:
+        return Effect.void;
+    }
+  }
+
+  private sendHttpRpcResponse(
+    res: ServerResponse,
+    status: number,
+    response: ResponseFrame,
+  ) {
+    this.recordMessageSent("http", "response", {
+      outcome: response.ok ? "ok" : "error",
+    });
+    return sendJson(res, status, response);
+  }
+
+  private async runWaitsForSignal(
+    adapter: SmithersDb,
+    runId: string,
+    signalName: string,
+    correlationId: string | null,
+  ) {
+    const nodes = await adapter.listNodes(runId);
+    for (const node of nodes as any[]) {
+      if (node.state !== "waiting-event") {
+        continue;
+      }
+      const iteration = node.iteration ?? 0;
+      const attempts = await adapter.listAttempts(runId, node.nodeId, iteration);
+      const waitingAttempt =
+        (attempts as any[]).find((attempt) => attempt.state === "waiting-event") ??
+        attempts[0];
+      const snapshot = parseWebhookWaitForEventSnapshot(waitingAttempt?.metaJson);
+      if (!snapshot) {
+        continue;
+      }
+      if (snapshot.signalName !== signalName) {
+        continue;
+      }
+      if (snapshot.correlationId !== correlationId) {
+        continue;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private async findMatchingWebhookRuns(
+    entry: RegisteredWorkflow,
+    signalName: string,
+    correlationId: string | null,
+    explicitRunId?: string,
+  ) {
+    const adapter = this.adapterForWorkflow(entry.workflow);
+    const matches = new Set<string>();
+    if (explicitRunId) {
+      const run = await adapter.getRun(explicitRunId);
+      if (
+        run &&
+        run.status !== "finished" &&
+        run.status !== "failed" &&
+        run.status !== "cancelled" &&
+        await this.runWaitsForSignal(adapter, explicitRunId, signalName, correlationId)
+      ) {
+        matches.add(explicitRunId);
+      }
+      return [...matches];
+    }
+
+    const waitingRuns = await adapter.listRuns(1_000, "waiting-event");
+    for (const run of waitingRuns as any[]) {
+      if (await this.runWaitsForSignal(adapter, run.runId, signalName, correlationId)) {
+        matches.add(run.runId);
+      }
+    }
+    return [...matches];
+  }
+
+  private async handleWebhook(
+    req: IncomingMessage,
+    res: ServerResponse,
+    workflowKey: string,
+  ) {
+    const requestId = headerValue(req, "x-request-id") ?? randomUUID();
+    const respond = (status: number, payload: unknown) => {
+      this.recordMessageSent("http", "response", {
+        route: "webhook",
+        workflow: workflowKey,
+        outcome: status < 400 ? "ok" : "error",
+      });
+      return sendJson(res, status, payload);
+    };
+    const reject = (
+      status: number,
+      code: string,
+      message: string,
+      reason: string,
+      error?: unknown,
+    ) => {
+      emitGatewayEffect(
+        Effect.all([
+          incrementMetric(gatewayWebhooksRejectedTotal, {
+            workflow: workflowKey,
+            reason,
+          }),
+          incrementMetric(gatewayErrorsTotal, {
+            kind: "webhook",
+            workflow: workflowKey,
+            code,
+          }),
+        ], { discard: true }),
+      );
+      emitGatewayLog(
+        error && !isSmithersError(error) ? "error" : "warning",
+        "Gateway webhook rejected",
+        {
+          workflow: workflowKey,
+          requestId,
+          reason,
+          errorCode: code,
+          errorMessage: message,
+          ...(error ? gatewayErrorAnnotations(error) : {}),
+        },
+        "gateway:webhook",
+      );
+      return respond(status, { ok: false, error: { code, message } });
+    };
+
+    this.recordMessageReceived("http", "webhook", { workflow: workflowKey });
+    emitGatewayEffect(
+      incrementMetric(gatewayWebhooksReceivedTotal, {
+        workflow: workflowKey,
+      }),
+    );
+
+    const entry = this.workflows.get(workflowKey);
+    if (!entry) {
+      return reject(404, "NOT_FOUND", `Unknown workflow: ${workflowKey}`, "workflow_not_found");
+    }
+    const webhook = entry.webhook;
+    if (!webhook) {
+      return reject(404, "NOT_FOUND", `Webhook not configured for workflow: ${workflowKey}`, "not_configured");
+    }
+
+    const secret = webhook.secret.trim();
+    if (!secret) {
+      return reject(500, "SERVER_ERROR", "Webhook secret is not configured", "not_configured");
+    }
+
+    const signatureHeader = webhook.signatureHeader?.trim().toLowerCase() || "x-hub-signature-256";
+    const signaturePrefix = webhook.signaturePrefix ?? "sha256=";
+    const signalConfig = webhook.signal;
+    const runConfig = webhook.run;
+    const runEnabled = runConfig?.enabled !== false;
+    if (!signalConfig?.name && !runEnabled) {
+      return reject(
+        400,
+        "INVALID_REQUEST",
+        "Webhook config must enable signal delivery or run creation",
+        "misconfigured",
+      );
+    }
+
+    try {
+      const rawBody = await readRawBody(req, this.maxBodyBytes);
+      const providedSignature = headerValue(req, signatureHeader);
+      const expectedSignature = computeWebhookSignature(rawBody, secret, signaturePrefix);
+      if (!isValidWebhookSignature(expectedSignature, providedSignature)) {
+        return reject(
+          401,
+          "UNAUTHORIZED",
+          "Webhook signature verification failed",
+          "invalid_signature",
+        );
+      }
+
+      emitGatewayEffect(
+        incrementMetric(gatewayWebhooksVerifiedTotal, {
+          workflow: workflowKey,
+        }),
+      );
+
+      const payload = parseJsonBuffer(rawBody, "Webhook payload");
+      const adapter = this.adapterForWorkflow(entry.workflow);
+      const explicitRunId = asWebhookString(readPathValue(payload, signalConfig?.runIdPath));
+      const correlationId = normalizeCorrelationId(
+        asWebhookString(readPathValue(payload, signalConfig?.correlationIdPath)) ?? null,
+      );
+      const signalPayload = readPathValue(payload, signalConfig?.payloadPath);
+      const matchedRunIds = signalConfig?.name
+        ? await this.findMatchingWebhookRuns(
+            entry,
+            signalConfig.name,
+            correlationId,
+            explicitRunId,
+          )
+        : [];
+
+      const triggeredBy = webhookTriggerUserId(workflowKey);
+      const auth: RunStartAuthContext = {
+        triggeredBy,
+        scopes: ["*"],
+        role: "system",
+      };
+      const delivered: GatewayWebhookDelivery[] = [];
+
+      for (const runId of matchedRunIds) {
+        const signal = await signalRun(
+          adapter,
+          runId,
+          signalConfig!.name,
+          signalPayload,
+          {
+            correlationId,
+            receivedBy: triggeredBy,
+          },
+        );
+        delivered.push({
+          runId,
+          seq: signal.seq,
+          signalName: signal.signalName,
+          correlationId: signal.correlationId ?? null,
+          receivedAtMs: signal.receivedAtMs,
+        });
+        await this.resumeRunIfNeeded(runId, workflowKey, adapter, auth);
+      }
+
+      const started =
+        delivered.length === 0 && runEnabled
+          ? await this.startRun(
+              workflowKey,
+              normalizeWebhookRunInput(readPathValue(payload, runConfig?.inputPath)),
+              auth,
+            )
+          : null;
+
+      emitGatewayLog(
+        "info",
+        "Gateway webhook processed",
+        {
+          workflow: workflowKey,
+          requestId,
+          matchedRunCount: matchedRunIds.length,
+          deliveredCount: delivered.length,
+          ...(started ? { startedRunId: started.runId } : {}),
+        },
+        "gateway:webhook",
+      );
+
+      return respond(200, {
+        ok: true,
+        workflow: workflowKey,
+        verified: true,
+        delivered,
+        matchedRunIds,
+        started,
+      });
+    } catch (error: any) {
+      if (isSmithersError(error)) {
+        return reject(
+          statusForRpcError(error.code),
+          error.code,
+          error.summary,
+          "invalid_payload",
+          error,
+        );
+      }
+      return reject(
+        500,
+        "SERVER_ERROR",
+        error?.message ?? "Gateway webhook failed",
+        "server_error",
+        error,
+      );
+    }
+  }
+
+  register(
+    key: string,
+    workflow: SmithersWorkflow<any>,
+    options?: { schedule?: string; webhook?: GatewayWebhookConfig },
+  ) {
     ensureSmithersTables(workflow.db as any);
     this.workflows.set(key, {
       key,
       workflow,
       schedule: options?.schedule,
+      webhook: options?.webhook,
     });
     return this;
   }
@@ -679,8 +1563,13 @@ export class Gateway {
       return this.server;
     }
 
-    const wsServer = new WebSocketServer({ noServer: true });
+    const wsServer = new WebSocketServer({
+      noServer: true,
+      maxPayload: this.maxPayload,
+    });
     const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      const webhookMatch = url.pathname.match(/^\/webhooks\/([^/]+)$/);
       if ((req.method ?? "GET") === "GET" && (req.url ?? "/") === "/health") {
         return sendJson(res, 200, {
           ok: true,
@@ -689,6 +1578,17 @@ export class Gateway {
           stateVersion: this.stateVersion,
         });
       }
+      if ((req.method ?? "GET") === "GET" && (req.url ?? "/") === "/metrics") {
+        return sendText(
+          res,
+          200,
+          renderPrometheusMetrics(),
+          prometheusContentType,
+        );
+      }
+      if ((req.method ?? "GET") === "POST" && webhookMatch) {
+        return this.handleWebhook(req, res, decodeURIComponent(webhookMatch[1]!));
+      }
       if ((req.method ?? "GET") === "POST" && (req.url ?? "/") === "/rpc") {
         return this.handleHttpRpc(req, res);
       }
@@ -696,6 +1596,35 @@ export class Gateway {
     });
 
     server.on("upgrade", (req, socket, head) => {
+      if (this.connections.size >= this.maxConnections) {
+        emitGatewayEffect(
+          incrementMetric(gatewayErrorsTotal, {
+            kind: "connection_limit",
+            transport: "ws",
+          }),
+        );
+        emitGatewayLog(
+          "warning",
+          "Gateway connection rejected",
+          {
+            transport: "ws",
+            remoteAddress: req.socket.remoteAddress ?? null,
+            maxConnections: this.maxConnections,
+          },
+          "gateway:connect",
+        );
+        const body = "Gateway connection limit reached\n";
+        socket.write(
+          "HTTP/1.1 503 Service Unavailable\r\n"
+            + "Connection: close\r\n"
+            + "Content-Type: text/plain; charset=utf-8\r\n"
+            + `Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n`
+            + "\r\n"
+            + body,
+        );
+        socket.destroy();
+        return;
+      }
       wsServer.handleUpgrade(req, socket, head, (ws) => {
         this.handleSocket(ws, req);
       });
@@ -776,6 +1705,14 @@ export class Gateway {
 
   private async processDueCrons() {
     const now = nowMs();
+    emitGatewayLog(
+      "debug",
+      "Gateway cron evaluation tick",
+      {
+        workflowCount: this.workflows.size,
+      },
+      "gateway:cron",
+    );
     for (const entry of this.workflows.values()) {
       const adapter = this.adapterForWorkflow(entry.workflow);
       const crons = await adapter.listCrons(true);
@@ -785,6 +1722,16 @@ export class Gateway {
           continue;
         }
         if (typeof cron.nextRunAtMs === "number" && cron.nextRunAtMs > now) {
+          emitGatewayLog(
+            "debug",
+            "Gateway cron skipped",
+            {
+              cronId: cron.cronId,
+              workflow: workflowKey,
+              nextRunAtMs: cron.nextRunAtMs,
+            },
+            "gateway:cron",
+          );
           continue;
         }
         try {
@@ -799,12 +1746,43 @@ export class Gateway {
             nextCronRunAtMs(cron.pattern),
             null,
           );
+          emitGatewayEffect(
+            incrementMetric(gatewayCronTriggersTotal, {
+              source: "scheduled",
+            }),
+          );
+          emitGatewayLog(
+            "info",
+            "Gateway cron triggered",
+            {
+              cronId: cron.cronId,
+              workflow: workflowKey,
+              runId: run.runId,
+            },
+            "gateway:cron",
+          );
           this.broadcastEvent("cron.triggered", {
             cronId: cron.cronId,
             workflow: workflowKey,
             runId: run.runId,
           });
         } catch (error: any) {
+          emitGatewayEffect(
+            incrementMetric(gatewayErrorsTotal, {
+              kind: "cron",
+              code: gatewayErrorCode(error),
+            }),
+          );
+          emitGatewayLog(
+            "error",
+            "Gateway cron trigger failed",
+            {
+              cronId: cron.cronId,
+              workflow: workflowKey,
+              ...gatewayErrorAnnotations(error),
+            },
+            "gateway:cron",
+          );
           await adapter.updateCronRunTime(
             cron.cronId,
             now,
@@ -836,6 +1814,28 @@ export class Gateway {
     };
     this.runRegistry.set(runId, record);
     this.activeRuns.set(runId, record);
+    emitGatewayEffect(
+      Effect.all([
+        incrementMetric(gatewayRunsStartedTotal, {
+          workflow: workflowKey,
+          source: gatewayTriggerSource(auth.triggeredBy),
+          resume: options?.resume ? "true" : "false",
+        }),
+        Effect.logInfo("Gateway run started").pipe(
+          Effect.annotateLogs({
+            workflow: workflowKey,
+            runId,
+            triggeredBy: auth.triggeredBy,
+            source: gatewayTriggerSource(auth.triggeredBy),
+            resume: options?.resume ?? false,
+            ...(auth.subscribeConnection
+              ? gatewayContextAnnotations(auth.subscribeConnection)
+              : {}),
+          }),
+          Effect.withLogSpan("gateway:run"),
+        ),
+      ], { discard: true }),
+    );
     if (auth.subscribeConnection) {
       if (!auth.subscribeConnection.subscribedRuns) {
         auth.subscribeConnection.subscribedRuns = new Set();
@@ -848,7 +1848,7 @@ export class Gateway {
       input,
       resume: options?.resume,
       signal: abort.signal,
-      onProgress: (event) => this.handleSmithersEvent(event),
+      onProgress: (event: SmithersEvent) => this.handleSmithersEvent(event),
       cliAgentToolsDefault: this.defaults?.cliAgentTools,
       config: {
         gatewayWorkflowKey: workflowKey,
@@ -861,22 +1861,62 @@ export class Gateway {
         createdAt: new Date().toISOString(),
       },
     } as any)
-      .then((result) => {
-        if (result.status === "finished" || result.status === "failed" || result.status === "cancelled") {
-          this.broadcastEvent("run.completed", {
-            runId,
-            status: result.status,
-            error: result.error,
-          });
-        }
-      })
       .catch((error) => {
+        emitGatewayEffect(
+          Effect.all([
+            incrementMetric(gatewayErrorsTotal, {
+              kind: "run",
+              workflow: workflowKey,
+              code: gatewayErrorCode(error),
+            }),
+            incrementMetric(gatewayRunsCompletedTotal, {
+              workflow: workflowKey,
+              status: "failed",
+            }),
+            Effect.logError("Gateway run failed").pipe(
+              Effect.annotateLogs({
+                workflow: workflowKey,
+                runId,
+                source: gatewayTriggerSource(auth.triggeredBy),
+                ...gatewayErrorAnnotations(error),
+              }),
+              Effect.withLogSpan("gateway:run"),
+            ),
+          ], { discard: true }),
+        );
         this.broadcastEvent("run.completed", {
           runId,
           status: "failed",
           error: errorToJson(error),
         });
         throw error;
+      })
+      .then((result) => {
+        if (result.status === "finished" || result.status === "failed" || result.status === "cancelled") {
+          emitGatewayEffect(
+            Effect.all([
+              incrementMetric(gatewayRunsCompletedTotal, {
+                workflow: workflowKey,
+                status: result.status,
+              }),
+              Effect.logInfo("Gateway run completed").pipe(
+                Effect.annotateLogs({
+                  workflow: workflowKey,
+                  runId,
+                  status: result.status,
+                  source: gatewayTriggerSource(auth.triggeredBy),
+                  ...(result.error ? { error: result.error } : {}),
+                }),
+                Effect.withLogSpan("gateway:run"),
+              ),
+            ], { discard: true }),
+          );
+          this.broadcastEvent("run.completed", {
+            runId,
+            status: result.status,
+            error: result.error,
+          });
+        }
       })
       .finally(() => {
         this.activeRuns.delete(runId);
@@ -915,6 +1955,8 @@ export class Gateway {
 
   private handleSocket(ws: WebSocket, req: IncomingMessage) {
     const connection: ConnectionState = {
+      connectionId: randomUUID(),
+      transport: "ws",
       ws,
       seq: 0,
       authenticated: false,
@@ -926,34 +1968,64 @@ export class Gateway {
       heartbeatTimer: null,
     };
     this.connections.add(connection);
+    emitGatewayEffect(
+      Effect.all([
+        incrementMetric(gatewayConnectionsTotal, { transport: "ws" }),
+        updateMetric(gatewayConnectionsActive, 1, { transport: "ws" }),
+      ], { discard: true }),
+    );
+    emitGatewayLog(
+      "info",
+      "Gateway connection opened",
+      {
+        ...gatewayContextAnnotations(connection),
+        remoteAddress: req.socket.remoteAddress ?? null,
+        activeConnections: this.connections.size,
+      },
+      "gateway:connect",
+    );
     this.sendEvent(connection, "connect.challenge", {
       nonce: randomUUID(),
       ts: nowMs(),
     });
 
     ws.on("message", async (raw) => {
+      this.recordMessageReceived("ws", "request");
       try {
-        const frame = parseGatewayRequestFrame(raw);
+        const frame = parseGatewayRequestFrame(raw, this.maxPayload);
+        const response = await this.executeRpc(connection, frame, async () => {
+          if (!connection.authenticated && frame.method !== "connect") {
+            return responseError(frame.id, "UNAUTHORIZED", "Connect first");
+          }
 
-        if (!connection.authenticated && frame.method !== "connect") {
-          this.sendResponse(connection, responseError(frame.id, "UNAUTHORIZED", "Connect first"));
-          return;
-        }
+          if (frame.method === "connect") {
+            return this.handleConnect(connection, req, frame.id, frame.params);
+          }
 
-        if (frame.method === "connect") {
-          const response = await this.handleConnect(connection, req, frame.id, frame.params);
-          this.sendResponse(connection, response);
-          return;
-        }
+          if (!hasScope(connection.scopes, frame.method)) {
+            return responseError(frame.id, "FORBIDDEN", `Missing scope for ${frame.method}`);
+          }
 
-        if (!hasScope(connection.scopes, frame.method)) {
-          this.sendResponse(connection, responseError(frame.id, "FORBIDDEN", `Missing scope for ${frame.method}`));
-          return;
-        }
-
-        const response = await this.routeRequest(connection, frame);
+          return this.routeRequest(connection, frame);
+        });
         this.sendResponse(connection, response);
       } catch (error: any) {
+        emitGatewayEffect(
+          incrementMetric(gatewayErrorsTotal, {
+            kind: "frame",
+            transport: "ws",
+            code: gatewayErrorCode(error),
+          }),
+        );
+        emitGatewayLog(
+          isSmithersError(error) ? "warning" : "error",
+          "Gateway websocket frame failed",
+          {
+            ...gatewayContextAnnotations(connection),
+            ...gatewayErrorAnnotations(error),
+          },
+          "gateway:rpc:invalid",
+        );
         if (isSmithersError(error)) {
           this.sendResponse(
             connection,
@@ -968,15 +2040,55 @@ export class Gateway {
       }
     });
 
-    const cleanup = () => {
+    let cleanedUp = false;
+    const cleanup = (reason: "close" | "error", details: Record<string, unknown> = {}) => {
+      if (cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
       if (connection.heartbeatTimer) {
         clearInterval(connection.heartbeatTimer);
       }
       this.connections.delete(connection);
+      emitGatewayEffect(
+        Effect.all([
+          updateMetric(gatewayConnectionsActive, -1, { transport: "ws" }),
+          incrementMetric(gatewayConnectionsClosedTotal, {
+            transport: "ws",
+            reason,
+          }),
+          ...(reason === "error"
+            ? [
+                incrementMetric(gatewayErrorsTotal, {
+                  kind: "socket",
+                  transport: "ws",
+                }),
+              ]
+            : []),
+        ], { discard: true }),
+      );
+      emitGatewayLog(
+        reason === "error" ? "warning" : "info",
+        "Gateway connection closed",
+        {
+          ...gatewayContextAnnotations(connection),
+          activeConnections: this.connections.size,
+          closeReason: reason,
+          ...details,
+        },
+        "gateway:connect",
+      );
     };
 
-    ws.on("close", cleanup);
-    ws.on("error", cleanup);
+    ws.on("close", (code, reason) => {
+      cleanup("close", {
+        closeCode: code,
+        closeMessage: rawDataToUtf8(reason),
+      });
+    });
+    ws.on("error", (error) => {
+      cleanup("error", gatewayErrorAnnotations(error));
+    });
   }
 
   private startHeartbeat(connection: ConnectionState) {
@@ -984,6 +2096,7 @@ export class Gateway {
       clearInterval(connection.heartbeatTimer);
     }
     connection.heartbeatTimer = setInterval(() => {
+      emitGatewayEffect(incrementMetric(gatewayHeartbeatTicksTotal));
       this.sendEvent(connection, "tick", {
         ts: nowMs(),
       });
@@ -1021,7 +2134,18 @@ export class Gateway {
     }
 
     const authResult = await this.authenticate(req, request);
-    if (!authResult.ok) {
+    if (authResult.ok === false) {
+      this.recordAuthEvent(
+        "ws",
+        "failure",
+        connection,
+        {
+          clientId: request.client.id,
+          clientVersion: request.client.version,
+          authCode: authResult.code,
+          authMessage: authResult.message,
+        },
+      );
       return responseError(id, authResult.code, authResult.message);
     }
 
@@ -1034,6 +2158,16 @@ export class Gateway {
       ? new Set(request.subscribe.filter((value): value is string => typeof value === "string"))
       : null;
     this.startHeartbeat(connection);
+    this.recordAuthEvent(
+      "ws",
+      "success",
+      connection,
+      {
+        clientId: request.client.id,
+        clientVersion: request.client.version,
+        scopeCount: connection.scopes.length,
+      },
+    );
 
     const hello: HelloResponse = {
       protocol: this.protocol,
@@ -1107,7 +2241,7 @@ export class Gateway {
         };
       }
       const verified = verifyJwtToken(token, this.auth);
-      if (!verified.ok) {
+      if (verified.ok === false) {
         return {
           ok: false,
           code: "UNAUTHORIZED",
@@ -1165,16 +2299,91 @@ export class Gateway {
   }
 
   private async handleHttpRpc(req: IncomingMessage, res: ServerResponse) {
-    const requestId = headerValue(req, "x-request-id") ?? "http";
+    const requestId = headerValue(req, "x-request-id") ?? randomUUID();
+    const baseContext: GatewayRequestContext = {
+      connectionId: `http:${requestId}`,
+      transport: "http",
+      role: null,
+      scopes: [],
+      userId: null,
+      subscribedRuns: null,
+    };
+    let context: GatewayRequestContext = baseContext;
+    this.recordMessageReceived("http", "request");
     try {
       const authResult = await this.authenticateRequest(req, bearerTokenFromHeaders(req));
-      if (!authResult.ok) {
-        return sendJson(res, statusForRpcError(authResult.code), responseError(requestId, authResult.code, authResult.message));
+      if (authResult.ok === false) {
+        emitGatewayEffect(
+          incrementMetric(gatewayErrorsTotal, {
+            kind: "auth",
+            transport: "http",
+            code: authResult.code,
+          }),
+        );
+        this.recordAuthEvent(
+          "http",
+          "failure",
+          context,
+          {
+            requestId,
+            authCode: authResult.code,
+            authMessage: authResult.message,
+          },
+          "warning",
+        );
+        const response = responseError(requestId, authResult.code, authResult.message);
+        return this.sendHttpRpcResponse(
+          res,
+          statusForRpcError(authResult.code),
+          response,
+        );
       }
+      context = {
+        ...baseContext,
+        role: authResult.role,
+        scopes: [...authResult.scopes],
+        userId: authResult.userId ?? null,
+      };
+      this.recordAuthEvent(
+        "http",
+        "success",
+        context,
+        {
+          requestId,
+          scopeCount: authResult.scopes.length,
+        },
+        "debug",
+      );
 
       const body = asObject(await readBody(req, this.maxBodyBytes));
       if (!body) {
-        return sendJson(res, 400, responseError(requestId, "INVALID_REQUEST", "RPC body must be a JSON object"));
+        emitGatewayEffect(
+          incrementMetric(gatewayErrorsTotal, {
+            kind: "http",
+            transport: "http",
+            code: "INVALID_REQUEST",
+          }),
+        );
+        emitGatewayLog(
+          "warning",
+          "Gateway HTTP RPC rejected",
+          {
+            ...gatewayContextAnnotations(context),
+            requestId,
+            errorCode: "INVALID_REQUEST",
+            errorMessage: "RPC body must be a JSON object",
+          },
+          "gateway:http-rpc",
+        );
+        return this.sendHttpRpcResponse(
+          res,
+          400,
+          responseError(
+            requestId,
+            "INVALID_REQUEST",
+            "RPC body must be a JSON object",
+          ),
+        );
       }
       assertJsonPayloadWithinBounds("gateway frame", body, {
         maxArrayLength: GATEWAY_RPC_MAX_ARRAY_LENGTH,
@@ -1185,30 +2394,44 @@ export class Gateway {
       const method = validateGatewayMethodName(body.method);
       const bodyId = asString(body.id) ?? requestId;
       assertOptionalStringMaxLength("id", bodyId, GATEWAY_FRAME_ID_MAX_LENGTH);
+      const frame: RequestFrame = {
+        type: "req",
+        id: bodyId,
+        method,
+        params: body.params,
+      };
+      const response = await this.executeRpc(context, frame, async () => {
+        if (!hasScope(context.scopes, method)) {
+          return responseError(bodyId, "FORBIDDEN", `Missing scope for ${method}`);
+        }
+        return this.routeRequest(context, frame);
+      });
 
-      if (!hasScope(authResult.scopes, method)) {
-        return sendJson(res, 403, responseError(bodyId, "FORBIDDEN", `Missing scope for ${method}`));
-      }
-
-      const response = await this.routeRequest(
-        {
-          userId: authResult.userId ?? null,
-          role: authResult.role,
-          scopes: [...authResult.scopes],
-          subscribedRuns: null,
-        } as ConnectionState,
-        {
-          type: "req",
-          id: bodyId,
-          method,
-          params: body.params,
-        },
+      return this.sendHttpRpcResponse(
+        res,
+        response.ok ? 200 : statusForRpcError(response.error?.code),
+        response,
       );
-
-      return sendJson(res, response.ok ? 200 : statusForRpcError(response.error?.code), response);
     } catch (error: any) {
+      emitGatewayEffect(
+        incrementMetric(gatewayErrorsTotal, {
+          kind: "http",
+          transport: "http",
+          code: gatewayErrorCode(error),
+        }),
+      );
+      emitGatewayLog(
+        isSmithersError(error) ? "warning" : "error",
+        "Gateway HTTP RPC failed",
+        {
+          ...gatewayContextAnnotations(context),
+          requestId,
+          ...gatewayErrorAnnotations(error),
+        },
+        "gateway:http-rpc",
+      );
       if (isSmithersError(error)) {
-        return sendJson(
+        return this.sendHttpRpcResponse(
           res,
           statusForRpcError(error.code),
           responseError(requestId, error.code, error.summary),
@@ -1216,7 +2439,7 @@ export class Gateway {
       }
       const message = error?.message ?? "Gateway request failed";
       const status = message.includes("valid JSON") ? 400 : message.includes("exceeds") ? 413 : 500;
-      return sendJson(
+      return this.sendHttpRpcResponse(
         res,
         status,
         responseError(
@@ -1233,6 +2456,9 @@ export class Gateway {
       return;
     }
     connection.ws.send(JSON.stringify(frame));
+    this.recordMessageSent("ws", "response", {
+      outcome: frame.ok ? "ok" : "error",
+    });
   }
 
   private sendEvent(connection: ConnectionState, event: string, payload?: unknown, stateVersion = this.stateVersion) {
@@ -1248,17 +2474,31 @@ export class Gateway {
       stateVersion,
     };
     connection.ws.send(JSON.stringify(frame));
+    this.recordMessageSent("ws", "event", { event });
   }
 
   private broadcastEvent(event: string, payload?: unknown) {
     const runId = eventRunId(payload);
     this.stateVersion += 1;
+    let recipientCount = 0;
     for (const connection of this.connections) {
       if (!connection.authenticated || !shouldDeliverEvent(connection, runId)) {
         continue;
       }
+      recipientCount += 1;
       this.sendEvent(connection, event, payload, this.stateVersion);
     }
+    emitGatewayLog(
+      "debug",
+      "Gateway event broadcast",
+      {
+        event,
+        stateVersion: this.stateVersion,
+        recipientCount,
+        ...(runId ? { runId } : {}),
+      },
+      "gateway:broadcast",
+    );
   }
 
   private async buildSnapshot() {
@@ -1516,7 +2756,7 @@ export class Gateway {
     }
   }
 
-  private async routeRequest(connection: ConnectionState, frame: RequestFrame): Promise<ResponseFrame> {
+  private async routeRequest(connection: GatewayRequestContext, frame: RequestFrame): Promise<ResponseFrame> {
     const params = asObject(frame.params) ?? {};
     switch (frame.method) {
       case "health":
@@ -1539,7 +2779,15 @@ export class Gateway {
         if (!this.workflows.has(workflowKey)) {
           return responseError(frame.id, "NOT_FOUND", `Unknown workflow: ${workflowKey}`);
         }
-        const input = asObject(params.input) ?? {};
+        let input: Record<string, unknown>;
+        try {
+          input = validateGatewayRpcInput(params.input);
+        } catch (error: any) {
+          if (isSmithersError(error)) {
+            return responseError(frame.id, error.code, error.summary);
+          }
+          throw error;
+        }
         return responseOk(
           frame.id,
           await this.startRun(
@@ -1680,7 +2928,9 @@ export class Gateway {
         }
         const approval = await resolved.adapter.getApproval(runId, nodeId, iteration);
         const request = parseApprovalRequest(
-          parseJson<Record<string, unknown>>(approval?.requestJson),
+          parseJson<Record<string, unknown>>(
+            typeof approval?.requestJson === "string" ? approval.requestJson : null,
+          ),
           nodeId,
         );
         if (
@@ -1858,9 +3108,18 @@ export class Gateway {
             null,
           );
         }
+        let input: Record<string, unknown>;
+        try {
+          input = validateGatewayRpcInput(params.input);
+        } catch (error: any) {
+          if (isSmithersError(error)) {
+            return responseError(frame.id, error.code, error.summary);
+          }
+          throw error;
+        }
         return responseOk(
           frame.id,
-          await this.startRun(targetWorkflowKey, asObject(params.input) ?? {}, {
+          await this.startRun(targetWorkflowKey, input, {
             triggeredBy: connection.userId ?? "gateway",
             scopes: [...connection.scopes],
             role: connection.role ?? "operator",
