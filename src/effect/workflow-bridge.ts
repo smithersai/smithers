@@ -7,6 +7,7 @@ import {
   type WorkerDispatchKind,
 } from "./entity-worker";
 import {
+  executeTaskActivity,
   makeTaskBridgeKey,
   RetriableTaskFailure,
   type TaskActivityContext,
@@ -144,6 +145,16 @@ const classifyTaskAttempt = async (
   };
 };
 
+const getNextTaskActivityAttempt = async (
+  adapter: SmithersDb,
+  runId: string,
+  desc: TaskDescriptor,
+) => {
+  const attempts = await adapter.listAttempts(runId, desc.nodeId, desc.iteration);
+  const latestAttempt = attempts[0]?.attempt ?? 0;
+  return latestAttempt + 1;
+};
+
 const executeBridgeAttempt = async (
   adapter: SmithersDb,
   db: any,
@@ -225,31 +236,41 @@ const runTaskBridgeExecution = async (
   hijackState?: HijackState,
   legacyExecuteTaskFn?: LegacyExecuteTaskFn,
 ) => {
+  const initialAttempt = await getNextTaskActivityAttempt(adapter, runId, desc);
+
   return dispatchWorkerTask(
     makeWorkerTask(bridgeKey, workflowName, runId, desc, bridgeManagedExecution),
     async () => {
       try {
-        await executeBridgeAttempt(
+        await executeTaskActivity(
           adapter,
-          db,
+          workflowName,
           runId,
           desc,
-          descriptorMap,
-          inputTable,
-          eventBus,
-          toolConfig,
-          workflowName,
-          cacheEnabled,
-          bridgeManagedExecution,
+          (context) =>
+            executeBridgeAttempt(
+              adapter,
+              db,
+              runId,
+              desc,
+              descriptorMap,
+              inputTable,
+              eventBus,
+              toolConfig,
+              workflowName,
+              cacheEnabled,
+              bridgeManagedExecution,
+              context,
+              signal,
+              disabledAgents,
+              runAbortController,
+              hijackState,
+              legacyExecuteTaskFn,
+            ),
           {
-            attempt: 1,
-            idempotencyKey: bridgeKey,
+            initialAttempt,
+            retry: false,
           },
-          signal,
-          disabledAgents,
-          runAbortController,
-          hijackState,
-          legacyExecuteTaskFn,
         );
         return { terminal: true as const };
       } catch (error) {

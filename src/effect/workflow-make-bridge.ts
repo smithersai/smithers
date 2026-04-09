@@ -68,6 +68,45 @@ function isSuspendingStatus(
   );
 }
 
+async function registerBridgeWorkflow(
+  workflowBridge: ReturnType<typeof makeBridgeWorkflow>,
+  scope: Scope.CloseableScope,
+  engineContext: any,
+  execute: Effect.Effect<RunResult, unknown, any>,
+) {
+  await Effect.runPromise(
+    (Layer.buildWithScope(
+      workflowBridge.toLayer(() => execute as any),
+      scope,
+    ) as any).pipe(Effect.provide(engineContext)) as any,
+  );
+}
+
+async function executeRegisteredChildWorkflow(
+  workflowBridge: ReturnType<typeof makeBridgeWorkflow>,
+  runId: string,
+  scope: Scope.CloseableScope,
+  engineContext: any,
+  parentInstance: WorkflowMakeBridgeRuntime["parentInstance"],
+) {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const engine = yield* WorkflowEngine.WorkflowEngine;
+      return yield* engine.execute(workflowBridge, {
+        executionId: runId,
+        payload: { executionId: runId },
+      });
+    }).pipe(
+      Effect.provideService(
+        WorkflowEngine.WorkflowInstance,
+        parentInstance,
+      ),
+      Effect.provideService(Scope.Scope, scope as any),
+      Effect.provide(engineContext),
+    ) as any,
+  ) as Promise<RunResult>;
+}
+
 function createWorkflowExecutionEffect<Schema>(
   workflow: SmithersWorkflow<Schema>,
   initialOpts: RunOptions & { runId: string },
@@ -128,22 +167,19 @@ function createWorkflowMakeBridgeRuntime(
         lastRunIdRef,
       );
 
-      await Effect.runPromise(
-        (Layer.buildWithScope(
-          workflowBridge.toLayer(() => execute as any),
-          services.scope,
-        ) as any).pipe(Effect.provide(services.engineContext)) as any,
+      await registerBridgeWorkflow(
+        workflowBridge,
+        services.scope,
+        services.engineContext,
+        execute as any,
       );
 
-      return Effect.runPromise(
-        workflowBridge.execute({ executionId: opts.runId }).pipe(
-          Effect.provideService(
-            WorkflowEngine.WorkflowInstance,
-            services.parentInstance,
-          ),
-          Effect.provideService(Scope.Scope, services.scope as any),
-          Effect.provide(services.engineContext),
-        ) as any,
+      return executeRegisteredChildWorkflow(
+        workflowBridge,
+        opts.runId,
+        services.scope,
+        services.engineContext,
+        services.parentInstance,
       );
     },
   };
@@ -221,6 +257,13 @@ export async function runWorkflowWithMakeBridge<Schema>(
         executeBody,
       },
       lastRunIdRef,
+    );
+
+    await registerBridgeWorkflow(
+      workflowBridge,
+      scope,
+      engineContext,
+      execute as any,
     );
 
     const result = await Effect.runPromise(

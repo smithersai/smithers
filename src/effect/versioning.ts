@@ -9,11 +9,17 @@ export type WorkflowVersioningRuntime = {
   snapshot(): WorkflowPatchDecisions;
 };
 
+export type WorkflowPatchDecisionRecord = {
+  patchId: string;
+  decision: boolean;
+};
+
 type WorkflowVersioningRuntimeOptions = {
   baseConfig: Record<string, unknown>;
   initialDecisions?: WorkflowPatchDecisions;
   isNewRun: boolean;
   persist: (config: Record<string, unknown>) => Promise<void>;
+  recordDecision?: (record: WorkflowPatchDecisionRecord) => Promise<void>;
 };
 
 const storage = new AsyncLocalStorage<WorkflowVersioningRuntime>();
@@ -45,6 +51,7 @@ export function createWorkflowVersioningRuntime(
   );
   let currentConfig = { ...options.baseConfig };
   let dirty = false;
+  const pendingRecords: WorkflowPatchDecisionRecord[] = [];
 
   return {
     resolve(patchId: string): boolean {
@@ -59,18 +66,33 @@ export function createWorkflowVersioningRuntime(
       const decision = options.isNewRun;
       decisions.set(normalized, decision);
       dirty = true;
+      pendingRecords.push({ patchId: normalized, decision });
       return decision;
     },
     async flush() {
-      if (!dirty) {
+      if (!dirty && pendingRecords.length === 0) {
         return;
       }
-      currentConfig = {
-        ...currentConfig,
-        workflowPatches: Object.fromEntries(decisions.entries()),
-      };
-      dirty = false;
-      await options.persist(currentConfig);
+      const nextConfig = dirty
+        ? {
+            ...currentConfig,
+            workflowPatches: Object.fromEntries(decisions.entries()),
+          }
+        : currentConfig;
+
+      if (dirty) {
+        await options.persist(nextConfig);
+        currentConfig = nextConfig;
+        dirty = false;
+      }
+
+      if (pendingRecords.length > 0 && options.recordDecision) {
+        const records = pendingRecords.slice();
+        for (const record of records) {
+          await options.recordDecision(record);
+        }
+        pendingRecords.splice(0, records.length);
+      }
     },
     snapshot() {
       return Object.fromEntries(decisions.entries());
