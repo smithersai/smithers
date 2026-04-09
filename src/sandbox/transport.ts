@@ -1,9 +1,14 @@
-import { mkdir, cp, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { Context, Effect, Layer } from "effect";
-import { spawnCaptureEffect } from "../effect/child-process";
-import { fromPromise } from "../effect/interop";
-import { SmithersError } from "../utils/errors";
+import {
+  CodeplaneSandboxExecutorLive,
+  DockerSandboxExecutorLive,
+} from "../effect/http-runner";
+import {
+  SandboxEntityExecutor,
+  makeSandboxTransportServiceEffect,
+} from "../effect/sandbox-entity";
+import { BubblewrapSandboxExecutorLive } from "../effect/socket-runner";
+import { type SmithersError } from "../utils/errors";
 
 export type SandboxRuntime = "bubblewrap" | "docker" | "codeplane";
 
@@ -55,160 +60,26 @@ export class SandboxTransport extends Context.Tag("SandboxTransport")<
   SandboxTransportService
 >() {}
 
-function baseHandle(config: SandboxTransportConfig): SandboxHandle {
-  const sandboxRoot = join(
-    config.rootDir,
-    ".smithers",
-    "sandboxes",
-    config.runId,
-    config.sandboxId,
+export function makeSandboxTransportLayer<R, E>(
+  executorLayer: Layer.Layer<SandboxEntityExecutor, E, R>,
+): Layer.Layer<SandboxTransport, E, R> {
+  return Layer.scoped(
+    SandboxTransport,
+    makeSandboxTransportServiceEffect(executorLayer).pipe(
+      Effect.map((service) => SandboxTransport.of(service)),
+    ),
   );
-  return {
-    runtime: config.runtime,
-    runId: config.runId,
-    sandboxId: config.sandboxId,
-    sandboxRoot,
-    requestPath: join(sandboxRoot, "request"),
-    resultPath: join(sandboxRoot, "result"),
-  };
 }
-
-const BubblewrapTransportLive = Layer.succeed(
-  SandboxTransport,
-  SandboxTransport.of({
-    create: (config) =>
-      Effect.gen(function* () {
-        if (process.platform === "linux") {
-          const bwrap = typeof Bun !== "undefined" ? Bun.which("bwrap") : null;
-          if (!bwrap) {
-            yield* Effect.fail(
-              new SmithersError(
-                "PROCESS_SPAWN_FAILED",
-                "Bubblewrap runtime requested but `bwrap` is not installed. Install bubblewrap (package: bubblewrap) or use runtime=\"docker\".",
-                { runtime: "bubblewrap" },
-              )
-            );
-          }
-        }
-        if (process.platform === "darwin") {
-          const sandboxExec =
-            typeof Bun !== "undefined" ? Bun.which("sandbox-exec") : null;
-          if (!sandboxExec) {
-            yield* Effect.fail(
-              new SmithersError(
-                "PROCESS_SPAWN_FAILED",
-                "bubblewrap runtime on macOS requires `sandbox-exec` for fallback isolation.",
-                { runtime: "bubblewrap" },
-              )
-            );
-          }
-        }
-
-        const handle = baseHandle(config);
-        yield* fromPromise("create sandbox workspace", async () => {
-          await mkdir(handle.requestPath, { recursive: true });
-          await mkdir(handle.resultPath, { recursive: true });
-        });
-        return handle;
-      }),
-    ship: (bundlePath, handle) =>
-      fromPromise("ship sandbox bundle", async () => {
-        await rm(handle.requestPath, { recursive: true, force: true });
-        await mkdir(handle.requestPath, { recursive: true });
-        await cp(bundlePath, handle.requestPath, { recursive: true });
-      }),
-    execute: (_command, _handle) => Effect.succeed({ exitCode: 0 }),
-    collect: (handle) => Effect.succeed({ bundlePath: handle.resultPath }),
-    cleanup: (_handle) => Effect.void,
-  }),
-);
-
-const DockerTransportLive = Layer.succeed(
-  SandboxTransport,
-  SandboxTransport.of({
-    create: (config) =>
-      Effect.gen(function* () {
-        const handle = baseHandle(config);
-        yield* spawnCaptureEffect("docker", ["info"], {
-          cwd: config.rootDir,
-          env: process.env,
-          timeoutMs: 10_000,
-          maxOutputBytes: 200_000,
-        }).pipe(
-          Effect.catchAll(() =>
-            Effect.fail(
-              new SmithersError(
-                "PROCESS_SPAWN_FAILED",
-                "Docker daemon not reachable.",
-                { runtime: "docker" },
-              ),
-            ),
-          ),
-        );
-        yield* fromPromise("create docker sandbox workspace", async () => {
-          await mkdir(handle.requestPath, { recursive: true });
-          await mkdir(handle.resultPath, { recursive: true });
-        });
-        return handle;
-      }),
-    ship: (bundlePath, handle) =>
-      fromPromise("ship docker bundle", async () => {
-        await rm(handle.requestPath, { recursive: true, force: true });
-        await mkdir(handle.requestPath, { recursive: true });
-        await cp(bundlePath, handle.requestPath, { recursive: true });
-      }),
-    execute: (_command, _handle) => Effect.succeed({ exitCode: 0 }),
-    collect: (handle) => Effect.succeed({ bundlePath: handle.resultPath }),
-    cleanup: (_handle) => Effect.void,
-  }),
-);
-
-const CodeplaneTransportLive = Layer.succeed(
-  SandboxTransport,
-  SandboxTransport.of({
-    create: (config) =>
-      Effect.gen(function* () {
-        const apiUrl = process.env.CODEPLANE_API_URL;
-        const apiKey = process.env.CODEPLANE_API_KEY;
-        if (!apiUrl || !apiKey) {
-          yield* Effect.fail(
-            new SmithersError(
-              "INVALID_INPUT",
-              "Codeplane runtime requires CODEPLANE_API_URL and CODEPLANE_API_KEY.",
-            )
-          );
-        }
-        const handle = baseHandle(config);
-        yield* fromPromise("create codeplane sandbox workspace", async () => {
-          await mkdir(handle.requestPath, { recursive: true });
-          await mkdir(handle.resultPath, { recursive: true });
-        });
-        return {
-          ...handle,
-          workspaceId: `${config.runId}:${config.sandboxId}`,
-        };
-      }),
-    ship: (bundlePath, handle) =>
-      fromPromise("ship codeplane bundle", async () => {
-        await rm(handle.requestPath, { recursive: true, force: true });
-        await mkdir(handle.requestPath, { recursive: true });
-        await cp(bundlePath, handle.requestPath, { recursive: true });
-      }),
-    execute: (_command, _handle) => Effect.succeed({ exitCode: 0 }),
-    collect: (handle) => Effect.succeed({ bundlePath: handle.resultPath }),
-    cleanup: (_handle) => Effect.void,
-  }),
-);
 
 export function layerForSandboxRuntime(runtime: SandboxRuntime) {
   switch (runtime) {
     case "docker":
-      return DockerTransportLive;
+      return makeSandboxTransportLayer(DockerSandboxExecutorLive);
     case "codeplane":
-      return CodeplaneTransportLive;
+      return makeSandboxTransportLayer(CodeplaneSandboxExecutorLive);
     case "bubblewrap":
     default:
-      return BubblewrapTransportLive;
+      return makeSandboxTransportLayer(BubblewrapSandboxExecutorLive);
   }
 }
 

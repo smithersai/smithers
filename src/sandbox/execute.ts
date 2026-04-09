@@ -87,7 +87,7 @@ function requireSandboxHandle(
 ): SandboxHandle {
   if (handle) return handle;
   throw new SmithersError(
-    "TOON_EXECUTION_FAILED",
+    "SANDBOX_EXECUTION_FAILED",
     `Sandbox ${sandboxId} did not initialize correctly.`,
     { sandboxId },
   );
@@ -157,7 +157,7 @@ export async function executeSandbox(options: ExecuteSandboxOptions): Promise<un
     const maxConcurrent = resolveMaxConcurrentSandboxes();
     if (activeSandboxCount >= maxConcurrent) {
       throw new SmithersError(
-        "TOON_EXECUTION_FAILED",
+        "SANDBOX_EXECUTION_FAILED",
         `Sandbox concurrency limit reached for run ${runtime.runId} (${maxConcurrent}).`,
         {
           runId: runtime.runId,

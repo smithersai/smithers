@@ -106,6 +106,22 @@ const CREATE_TABLE_STATEMENTS = [
     auto_approved INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (run_id, node_id, iteration)
   )`,
+  `CREATE TABLE IF NOT EXISTS _smithers_human_requests (
+    request_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    iteration INTEGER NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    schema_json TEXT,
+    options_json TEXT,
+    response_json TEXT,
+    requested_at_ms INTEGER NOT NULL,
+    answered_at_ms INTEGER,
+    answered_by TEXT,
+    timeout_at_ms INTEGER
+  )`,
   `CREATE TABLE IF NOT EXISTS _smithers_signals (
     run_id TEXT NOT NULL,
     seq INTEGER NOT NULL,
