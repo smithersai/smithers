@@ -1,6 +1,11 @@
 // Types
 export type { XmlNode, XmlElement, XmlText } from "./XmlNode";
 export type { AgentLike } from "./AgentLike";
+export type {
+  AgentCapabilityRegistry,
+  AgentToolDescriptor,
+} from "./agents/capability-registry";
+export { hashCapabilityRegistry } from "./agents/capability-registry";
 export type { TaskDescriptor } from "./TaskDescriptor";
 export type { GraphSnapshot } from "./GraphSnapshot";
 export type { RunStatus } from "./RunStatus";
@@ -207,10 +212,6 @@ export {
   toolDuration,
   vcsDuration,
 } from "./observability";
-
-// Effect builder (internal, includes SQLite helpers)
-export { Smithers } from "./effect/builder";
-export type { SmithersSqliteOptions } from "./effect/builder";
 
 // DB
 export { SmithersDb } from "./db/adapter";

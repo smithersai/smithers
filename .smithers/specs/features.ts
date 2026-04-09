@@ -319,7 +319,6 @@ export const FeatureGroups = {
     "CLI_SKILLS_SYNC",
     "CLI_SHELL_COMPLETIONS",
     "CLI_LLMS_TXT_MANIFEST",
-    "CLI_OUTPUT_FORMAT_TOON",
     "CLI_OUTPUT_FORMAT_JSON",
     "CLI_OUTPUT_FORMAT_YAML",
     "CLI_OUTPUT_FORMAT_MARKDOWN",
@@ -515,9 +514,8 @@ export const FeatureGroups = {
     "TOOL_TIMEOUT",
   ],
 
-  // Source: src/effect/builder.ts, runtime.ts, metrics.ts, logging.ts, interop.ts, child-process.ts, task-runtime.ts
+  // Source: src/effect/runtime.ts, src/effect/metrics.ts, src/effect/logging.ts, src/effect/interop.ts, src/effect/child-process.ts, src/effect/task-runtime.ts
   EFFECT_INTEGRATION: [
-    "EFFECT_BUILDER_API",
     "EFFECT_RUN_SYNC",
     "EFFECT_RUN_PROMISE",
     "EFFECT_RUN_FORK",

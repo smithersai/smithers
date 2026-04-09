@@ -3,6 +3,7 @@ import type { TaskDescriptor } from "../TaskDescriptor";
 import type { SmithersDb } from "../db/adapter";
 import {
   buildOutputRow,
+  describeSchemaShape,
   selectOutputRow,
   stripAutoColumns,
   validateExistingOutput,
@@ -15,6 +16,11 @@ import {
   bridgeWaitForEventResolve,
 } from "./durable-deferred-bridge";
 import { EventBus } from "../events";
+import {
+  buildHumanRequestId,
+  getHumanTaskPrompt,
+  isHumanTaskMeta,
+} from "../human-requests";
 import { errorToJson, SmithersError } from "../utils/errors";
 import { nowMs } from "../utils/time";
 

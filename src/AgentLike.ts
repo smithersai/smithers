@@ -1,3 +1,5 @@
+import type { AgentCapabilityRegistry } from "./agents/capability-registry";
+
 /**
  * Represents an entity capable of generating responses or actions based on prompts.
  * This is typically an AI agent interface.
@@ -7,6 +9,8 @@ export type AgentLike = {
   id?: string;
   /** Available tools the agent can use */
   tools?: Record<string, any>;
+  /** Optional structured capability registry for cache and diagnostics */
+  capabilities?: AgentCapabilityRegistry;
   /**
    * Generates a response or action based on the provided arguments.
    * 

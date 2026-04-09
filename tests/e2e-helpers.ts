@@ -23,7 +23,7 @@ const EXECUTABLE_SHEBANG = `#!${BUN_BINARY}`;
 type RunSmithersOptions = {
   cwd: string;
   env?: Record<string, string | undefined>;
-  format?: "json" | "toon" | "yaml" | "md" | "jsonl" | null;
+  format?: "json" | "yaml" | "md" | "jsonl" | null;
 };
 
 export type SmithersCliResult = {

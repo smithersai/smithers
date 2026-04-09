@@ -5,7 +5,6 @@ export type SmithersErrorCategory =
   | "components"
   | "tools"
   | "agents"
-  | "toon"
   | "database"
   | "effect"
   | "hot"
@@ -98,6 +97,16 @@ export const smithersErrorDefinitions = {
     category: "engine",
     when: "A sandbox bundle exceeds the maximum allowed size.",
     details: "{ bundlePath, maxBytes }",
+  },
+  WORKFLOW_EXECUTION_FAILED: {
+    category: "engine",
+    when: "A child or builder workflow exits unsuccessfully without surfacing a typed error payload.",
+    details: "{ status }",
+  },
+  SANDBOX_EXECUTION_FAILED: {
+    category: "engine",
+    when: "Sandbox setup or execution fails before a more specific sandbox error can be emitted.",
+    details: "{ sandboxId, runId?, maxConcurrent?, activeSandboxCount? }",
   },
   TASK_HEARTBEAT_TIMEOUT: {
     category: "engine",
@@ -229,83 +238,6 @@ export const smithersErrorDefinitions = {
   AGENT_DIAGNOSTIC_TIMEOUT: {
     category: "agents",
     when: "An internal agent diagnostic check exceeds the per-check timeout budget.",
-  },
-
-  TOON_INVALID_FILE: {
-    category: "toon",
-    when: "A TOON file cannot be parsed as a valid Smithers builder workflow definition.",
-  },
-  TOON_SCHEMA_INVALID: {
-    category: "toon",
-    when: "A TOON schema definition has an unsupported or invalid shape.",
-  },
-  TOON_DUPLICATE_SCHEMA: {
-    category: "toon",
-    when: "The same TOON schema name is declared more than once.",
-  },
-  TOON_DUPLICATE_COMPONENT: {
-    category: "toon",
-    when: "The same TOON component name is declared more than once.",
-  },
-  TOON_COMPONENT_MISSING_STEPS: {
-    category: "toon",
-    when: "A TOON component omits its required steps block.",
-  },
-  TOON_DUPLICATE_STEP: {
-    category: "toon",
-    when: "Two TOON steps or builder handles share the same id.",
-  },
-  TOON_UNKNOWN_DEPENDENCY: {
-    category: "toon",
-    when: "A TOON step depends on an id that does not exist in the workflow.",
-  },
-  TOON_AGENT_CONFIG_INVALID: {
-    category: "toon",
-    when: "A TOON agent definition is invalid or missing required properties.",
-  },
-  TOON_NOT_FOUND: {
-    category: "toon",
-    when: "A TOON schema, component, service, agent, or workflow alias cannot be resolved.",
-  },
-  TOON_PLUGIN_INVALID: {
-    category: "toon",
-    when: "A TOON plugin module does not export a valid plugin object.",
-  },
-  TOON_UNKNOWN_NODE: {
-    category: "toon",
-    when: "A TOON workflow contains an unknown or unsupported node kind.",
-  },
-  TOON_STEP_MISSING_OUTPUT: {
-    category: "toon",
-    when: "A TOON step or handle omits its declared output schema.",
-  },
-  TOON_STEP_AMBIGUOUS: {
-    category: "toon",
-    when: "A TOON step declares more than one execution mode or none at all.",
-  },
-  TOON_STEP_MISSING_AGENT: {
-    category: "toon",
-    when: "A TOON prompt step cannot resolve the agent it needs.",
-  },
-  TOON_HANDLER_INVALID: {
-    category: "toon",
-    when: "A referenced TOON handler export is not a function.",
-  },
-  TOON_WORKFLOW_INVALID: {
-    category: "toon",
-    when: "A TOON workflow definition is missing required metadata or steps.",
-  },
-  TOON_NESTED_LOOP: {
-    category: "toon",
-    when: "The builder API detects nested loop constructs that it does not support.",
-  },
-  TOON_DUPLICATE_ALIAS: {
-    category: "toon",
-    when: "Two TOON workflows declare the same alias.",
-  },
-  TOON_EXECUTION_FAILED: {
-    category: "toon",
-    when: "A TOON workflow execution result fails without a typed error payload.",
   },
 
   DB_MISSING_COLUMNS: {

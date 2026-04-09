@@ -229,46 +229,6 @@
       "destination": "/quickstart"
     },
     {
-      "source": "/toon",
-      "destination": "/api/overview"
-    },
-    {
-      "source": "/toon/overview",
-      "destination": "/api/overview"
-    },
-    {
-      "source": "/toon/installation",
-      "destination": "/api/installation"
-    },
-    {
-      "source": "/toon/quickstart",
-      "destination": "/api/quickstart"
-    },
-    {
-      "source": "/toon/schemas",
-      "destination": "/concepts/data-model"
-    },
-    {
-      "source": "/toon/nodes",
-      "destination": "/components/workflow"
-    },
-    {
-      "source": "/toon/components",
-      "destination": "/api/overview"
-    },
-    {
-      "source": "/toon/prompts",
-      "destination": "/guides/mdx-prompts"
-    },
-    {
-      "source": "/toon/inline-code",
-      "destination": "/components/task"
-    },
-    {
-      "source": "/toon/imports",
-      "destination": "/guides/project-structure"
-    },
-    {
       "source": "/jsx",
       "destination": "/api/overview"
     },
@@ -367,26 +327,6 @@
     {
       "source": "/concepts/context",
       "destination": "/concepts/execution-model"
-    },
-    {
-      "source": "/examples/toon-hello",
-      "destination": "/examples/hello-world"
-    },
-    {
-      "source": "/examples/toon-bugfix",
-      "destination": "/examples/workflow-quickstart"
-    },
-    {
-      "source": "/examples/toon-review-loop",
-      "destination": "/examples/loop"
-    },
-    {
-      "source": "/examples/toon-parallel",
-      "destination": "/examples/multi-agent-review"
-    },
-    {
-      "source": "/reference/toon-spec",
-      "destination": "/api/overview"
     },
     {
       "source": "/concepts/renderer-internals",

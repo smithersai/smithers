@@ -1,6 +1,7 @@
 import React from "react";
 import { getTaskRuntime } from "../effect/task-runtime";
 import { SmithersDb } from "../db/adapter";
+import { buildHumanRequestId } from "../human-requests";
 import { SmithersError } from "../utils/errors";
 import type { RetryPolicy } from "../RetryPolicy";
 
@@ -61,24 +62,40 @@ export function HumanTask(props: HumanTaskProps) {
       );
     }
     const adapter = new SmithersDb(runtime.db);
-    const approval = await adapter.getApproval(
+    const requestId = buildHumanRequestId(
       runtime.runId,
       props.id,
       runtime.iteration,
     );
-    if (!approval) {
-      throw new SmithersError(
-        "HUMAN_TASK_NO_INPUT",
-        `No human input received for task "${props.id}".`,
+    const humanRequest = await adapter.getHumanRequest(requestId);
+    const approval = await adapter.getApproval(runtime.runId, props.id, runtime.iteration);
+
+    let rawInput = humanRequest?.responseJson ?? null;
+    if (
+      rawInput == null &&
+      humanRequest?.status !== "cancelled" &&
+      humanRequest?.status !== "expired" &&
+      typeof approval?.note === "string"
+    ) {
+      rawInput = approval.note;
+      await adapter.answerHumanRequest(
+        requestId,
+        rawInput,
+        approval.decidedAtMs ?? Date.now(),
+        approval.decidedBy ?? null,
       );
     }
 
-    // The human's JSON input is stored in the approval note field
-    const rawInput = approval.note;
     if (rawInput == null) {
+      if (humanRequest?.status === "cancelled") {
+        throw new SmithersError(
+          "HUMAN_TASK_CANCELLED",
+          `Human input for task "${props.id}" was cancelled.`,
+        );
+      }
       throw new SmithersError(
-        "HUMAN_TASK_EMPTY_INPUT",
-        `Human input for task "${props.id}" is empty.`,
+        "HUMAN_TASK_NO_INPUT",
+        `No human input received for task "${props.id}".`,
       );
     }
 

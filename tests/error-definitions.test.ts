@@ -27,7 +27,7 @@ describe("smithersErrorDefinitions", () => {
 
   test("categories are valid SmithersErrorCategory values", () => {
     const validCategories: SmithersErrorCategory[] = [
-      "engine", "components", "tools", "agents", "toon",
+      "engine", "components", "tools", "agents",
       "database", "effect", "hot", "scorers", "cli", "integrations",
     ];
     for (const [code, def] of Object.entries(smithersErrorDefinitions)) {

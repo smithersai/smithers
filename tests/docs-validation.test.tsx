@@ -103,8 +103,6 @@ import {
   runScorersBatch,
   aggregateScores,
   smithersScorers,
-  // Effect builder
-  Smithers,
   // VCS
   runJj,
   getJjPointer,
@@ -159,7 +157,6 @@ import type {
   RevertOptions,
   RevertResult,
   CreateSmithersApi,
-  SmithersSqliteOptions,
   HostContainer,
   ScoreResult,
   ScorerInput,
@@ -356,9 +353,6 @@ describe("docs: export surface", () => {
     expect(typeof zodSchemaToJsonExample).toBe("function");
   });
 
-  test("Effect builder export exists", () => {
-    expect(typeof Smithers).toBe("object");
-  });
 });
 
 // ==========================================================================

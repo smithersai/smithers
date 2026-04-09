@@ -1865,6 +1865,6 @@ const WORKFLOW_FOLLOW_UPS: Record<string, WorkflowCta[]> = {
 export function getWorkflowFollowUpCtas(workflowPath: string): WorkflowCta[] {
   const id = workflowPath
     .replace(/^.*\//, "")
-    .replace(/\.(tsx?|toon)$/, "");
+    .replace(/\.(tsx?)$/, "");
   return WORKFLOW_FOLLOW_UPS[id] ?? [];
 }

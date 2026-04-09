@@ -356,7 +356,7 @@ export function extractFromHost(
           });
           if (result.status !== "finished") {
             throw new SmithersError(
-              "TOON_EXECUTION_FAILED",
+              "WORKFLOW_EXECUTION_FAILED",
               `Subflow ${nodeId} failed with status ${result.status}.`,
               { nodeId, status: result.status },
             );

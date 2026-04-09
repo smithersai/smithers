@@ -5,14 +5,11 @@
  *
  * MCP bridge:
  *   - Spawns `smithers --mcp` as a child process
- *   - Bridges all smithers CLI commands as pi tools via MCP protocol
- *   - Tools: smithers_run, smithers_status, smithers_approve, smithers_deny,
- *     smithers_cancel, smithers_list, smithers_frames, smithers_graph,
- *     smithers_resume, smithers_revert
+ *   - Bridges the live Smithers semantic MCP surface as `smithers_<tool>` PI tools
  *
  * System prompt:
  *   - Injects llms-full.txt (~125k tokens) so the LLM fully understands smithers
- *   - Injects active run context (status, waiting approvals, errors)
+ *   - Injects contract-generated Smithers tool guidance plus active run context
  *
  * Commands (available to the user):
  *   /smithers          – Dashboard overlay (live-updating)
@@ -46,6 +43,11 @@ import type {
 import { Text, truncateToWidth, matchesKey } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { SmithersError } from "../utils/errors";
+import {
+  createSmithersAgentContract,
+  renderSmithersAgentPromptGuidance,
+  type SmithersAgentContract,
+} from "../cli/agent-contract";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,6 +82,14 @@ interface EventEntry {
   message: string;
   timestampMs: number;
 }
+
+export type SmithersPiRunContext = {
+  runId: string;
+  workflowName: string;
+  status: string;
+  nodeStates: Array<{ nodeId: string; state: string }>;
+  errors: string[];
+};
 
 // ---------------------------------------------------------------------------
 // Docs loader
@@ -134,6 +144,7 @@ function loadSmithersDocs(): string {
 
 let mcpClient: Client | undefined;
 let mcpTransport: StdioClientTransport | undefined;
+let smithersToolContract: SmithersAgentContract | undefined;
 
 async function ensureMcpClient(): Promise<Client> {
   if (mcpClient) return mcpClient;
@@ -152,6 +163,25 @@ async function ensureMcpClient(): Promise<Client> {
   mcpClient = new Client({ name: "smithers-pi-extension", version: "1.0.0" });
   await mcpClient.connect(mcpTransport);
   return mcpClient;
+}
+
+async function ensureSmithersToolContract(): Promise<SmithersAgentContract> {
+  if (smithersToolContract) return smithersToolContract;
+
+  const client = await ensureMcpClient();
+  const { tools } = await client.listTools();
+  smithersToolContract = createSmithersAgentContract({
+    serverName: "smithers",
+    toolSurface: "semantic",
+    tools: tools
+      .filter((tool) => tool.name !== "tui")
+      .map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+      })),
+  });
+
+  return smithersToolContract;
 }
 
 async function callMcpTool(
@@ -796,6 +826,145 @@ function jsonSchemaToTypebox(schema: Record<string, unknown>): Record<string, an
   return result;
 }
 
+function toolRef(
+  contract: SmithersAgentContract,
+  name: string,
+  prefix = "smithers_",
+) {
+  return contract.tools.some((tool) => tool.name === name)
+    ? `\`${prefix}${name}\``
+    : undefined;
+}
+
+function buildTypicalWorkflowGuidance(contract: SmithersAgentContract) {
+  const discover = toolRef(contract, "list_workflows");
+  const run = toolRef(contract, "run_workflow");
+  const listRuns = toolRef(contract, "list_runs");
+  const getRun = toolRef(contract, "get_run");
+  const watchRun = toolRef(contract, "watch_run");
+  const explainRun = toolRef(contract, "explain_run");
+  const listApprovals = toolRef(contract, "list_pending_approvals");
+  const resolveApproval = toolRef(contract, "resolve_approval");
+  const getNodeDetail = toolRef(contract, "get_node_detail");
+  const getRunEvents = toolRef(contract, "get_run_events");
+  const listArtifacts = toolRef(contract, "list_artifacts");
+  const getTranscript = toolRef(contract, "get_chat_transcript");
+  const revertAttempt = toolRef(contract, "revert_attempt");
+
+  const steps = [
+    "**Write a workflow** -> Use your Smithers knowledge to help the user write workflow files.",
+  ];
+
+  if (discover && run) {
+    steps.push(`**Run it** -> Use ${discover} to find workflow IDs, then ${run} to launch the workflow.`);
+  } else if (run) {
+    steps.push(`**Run it** -> Use ${run} to launch the workflow.`);
+  }
+
+  const monitorTools = [listRuns, getRun, watchRun, explainRun].filter(
+    (value): value is string => Boolean(value),
+  );
+  if (monitorTools.length > 0) {
+    steps.push(`**Monitor** -> Use ${monitorTools.join(", ")} to inspect progress, or tell the user about \`/smithers\`.`);
+  }
+
+  const approvalTools = [listApprovals, resolveApproval].filter(
+    (value): value is string => Boolean(value),
+  );
+  if (approvalTools.length > 0) {
+    steps.push(`**Approve** -> Use ${approvalTools.join(", ")} when runs are waiting for approval.`);
+  }
+
+  const debugTools = [
+    getNodeDetail,
+    getRunEvents,
+    listArtifacts,
+    getTranscript,
+  ].filter((value): value is string => Boolean(value));
+  if (debugTools.length > 0) {
+    steps.push(`**Debug** -> Use ${debugTools.join(", ")} to gather evidence before changing anything.`);
+  }
+
+  if (revertAttempt) {
+    steps.push(`**Revert** -> Use ${revertAttempt} only when the user explicitly asks to roll back or time travel.`);
+  }
+
+  return steps.map((step, index) => `${index + 1}. ${step}`);
+}
+
+export function buildSmithersPiSystemPrompt(
+  baseSystemPrompt: string,
+  docs: string,
+  contract: SmithersAgentContract,
+  activeRun?: SmithersPiRunContext,
+) {
+  const sections: string[] = [
+    "\n\n# Smithers Documentation\n",
+    "You are a Smithers workflow expert. Prefer the live Smithers tools over shelling out when they can answer the request.\n",
+    "## Smithers PI Extension — User Guide\n",
+    "The user is running PI with the Smithers extension. When they ask about capabilities, slash commands, or how to use this environment, refer to this section.\n",
+    "### Tools (available to you, the agent)",
+    renderSmithersAgentPromptGuidance(contract, { toolNamePrefix: "smithers_" }),
+    "",
+    "### Slash Commands (available to the user)",
+    "Tell the user about these when they ask what they can do:",
+    "- `/smithers` — Opens a full-screen dashboard overlay with 4 tabs (Overview, Nodes, Events, Errors). Navigate with j/k to select runs, 1-4 to switch tabs, q/Esc to close.",
+    "- `/smithers-run <workflow>` — Quick-start a workflow. Prompts for workflow path and optional input JSON, then auto-attaches event stream.",
+    "- `/smithers-resume <workflow>` — Resume a paused or crashed run. Prompts for workflow path and run ID.",
+    "- `/smithers-runs` — Shows a selection list of all tracked runs. Selecting one makes it the active run for the event ticker.",
+    "- `/smithers-status [runId]` — Show detailed status for a run. Defaults to active run if no ID given.",
+    "- `/smithers-watch <runId>` — Attaches a live SSE event stream to a run by ID. Events appear in the ticker widget above the editor and update the dashboard in real-time.",
+    "- `/smithers-logs [nodeId]` — Opens a scrollable log viewer for a node's stdout/stderr output. Supports j/k scrolling and g/G for top/bottom.",
+    "- `/smithers-frames [runId]` — Browse render frames (DAG snapshots) for a run. Navigate frames with j/k, see task states, mounted IDs, and XML structure.",
+    "- `/smithers-graph <workflow>` — Preview the execution graph for a workflow file without running it.",
+    "- `/smithers-approve` — Interactive approval flow: shows all nodes waiting for approval, lets the user pick one, choose Approve/Deny, and add an optional note.",
+    "- `/smithers-cancel [runId]` — Cancel a running workflow with confirmation. Shows a selection list if no ID given.",
+    "- `/smithers-revert <workflow>` — Interactive revert: prompts for run ID, node ID, and attempt number, then reverts the workspace with confirmation.",
+    "- `/smithers-list <workflow>` — List all runs from the database for a workflow file.",
+    "- `/smithers-metrics` — Opens a Prometheus metrics overlay showing counters (runs, nodes, tool calls, cache hits, approvals, DB retries) and histogram percentiles (node duration, tool duration, DB query latency, HTTP latency). Press r to toggle raw Prometheus text output.",
+    "",
+    "### UI Features (always active)",
+    "- **Header**: Shows \"smithers · workflow orchestrator\" branding at the top.",
+    "- **Footer**: Shows live run count (active, awaiting approval, done, failed) and git branch.",
+    "- **Event Ticker**: When a run is being watched, the 5 most recent events appear above the editor input, updating in real-time.",
+    "- **Status Bar**: Shows count of active runs and pending approvals. A separate approval indicator appears when nodes need attention.",
+    "- **Background Polling**: Active runs are polled every 10 seconds for status updates, even without an event stream attached. Prometheus metrics are also fetched on each poll cycle.",
+    "- **Prometheus Metrics**: The extension fetches metrics from the smithers server's `/metrics` endpoint. View them with `/smithers-metrics`. Includes counters (runs, nodes, cache, approvals), gauges (active runs/nodes, queue depth), and histograms (node/tool/DB/HTTP durations with p50/p99).",
+    "",
+    "### Flags (passed via CLI)",
+    "- `--smithers-url` / `-u` — Smithers server URL (default: http://127.0.0.1:7331)",
+    "- `--smithers-key` / `-k` — Smithers API key (also reads SMITHERS_API_KEY env var)",
+    "",
+    "### Typical Workflows",
+    ...buildTypicalWorkflowGuidance(contract),
+    "",
+    "---\n",
+    docs,
+  ];
+
+  if (activeRun) {
+    sections.push(`\n## Active Run Context`);
+    sections.push(`Run: ${activeRun.runId} (${activeRun.workflowName})`);
+    sections.push(`Status: ${activeRun.status}`);
+
+    const waitingNodes = activeRun.nodeStates.filter((node) =>
+      node.state === "waiting-approval" || node.state === "waiting-timer",
+    );
+    if (waitingNodes.length > 0) {
+      sections.push(
+        `Nodes waiting approval: ${waitingNodes.map((node) => node.nodeId).join(", ")}`,
+      );
+    }
+
+    const recentErrors = activeRun.errors.slice(-3);
+    if (recentErrors.length > 0) {
+      sections.push(`Recent errors: ${recentErrors.join("; ")}`);
+    }
+  }
+
+  return baseSystemPrompt + sections.join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Extension entry
 // ---------------------------------------------------------------------------
@@ -825,6 +994,16 @@ export default function (pi: ExtensionAPI) {
     try {
       const client = await ensureMcpClient();
       const { tools } = await client.listTools();
+      smithersToolContract = createSmithersAgentContract({
+        serverName: "smithers",
+        toolSurface: "semantic",
+        tools: tools
+          .filter((tool) => tool.name !== "tui")
+          .map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+          })),
+      });
 
       for (const tool of tools) {
         // Skip the tui command — that's us
@@ -923,91 +1102,31 @@ export default function (pi: ExtensionAPI) {
       mcpClient = undefined;
       mcpTransport = undefined;
     }
+    smithersToolContract = undefined;
   });
 
   // -- System prompt: inject full smithers docs -----------------------------
 
   pi.on("before_agent_start", async (event) => {
     const docs = loadSmithersDocs();
-
-    const sections: string[] = [
-      "\n\n# Smithers Documentation\n",
-      "You are a smithers workflow expert. You have smithers tools available — use them to run, monitor, approve, and manage workflows.\n",
-      "## Smithers PI Extension — User Guide\n",
-      "The user is running PI with the Smithers extension. When they ask about capabilities, slash commands, or how to use this environment, refer to this section.\n",
-      "### Tools (available to you, the agent)",
-      "You have native smithers tools that map to CLI commands. Use these instead of running bash commands when possible:",
-      "- `smithers_run` — Start a workflow from a .tsx file",
-      "- `smithers_resume` — Resume a paused or crashed run",
-      "- `smithers_status` — Get run status as JSON",
-      "- `smithers_approve` — Approve a node waiting for human approval",
-      "- `smithers_deny` — Deny a node waiting for approval",
-      "- `smithers_cancel` — Cancel a running workflow",
-      "- `smithers_list` — List all runs in the database",
-      "- `smithers_frames` — List render frames (XML snapshots of the workflow DAG)",
-      "- `smithers_graph` — Preview the execution graph without running",
-      "- `smithers_revert` — Revert workspace to a previous task attempt's filesystem state",
-      "",
-      "### Slash Commands (available to the user)",
-      "Tell the user about these when they ask what they can do:",
-      "- `/smithers` — Opens a full-screen dashboard overlay with 4 tabs (Overview, Nodes, Events, Errors). Navigate with j/k to select runs, 1-4 to switch tabs, q/Esc to close.",
-      "- `/smithers-run <workflow>` — Quick-start a workflow. Prompts for workflow path and optional input JSON, then auto-attaches event stream.",
-      "- `/smithers-resume <workflow>` — Resume a paused or crashed run. Prompts for workflow path and run ID.",
-      "- `/smithers-runs` — Shows a selection list of all tracked runs. Selecting one makes it the active run for the event ticker.",
-      "- `/smithers-status [runId]` — Show detailed status for a run. Defaults to active run if no ID given.",
-      "- `/smithers-watch <runId>` — Attaches a live SSE event stream to a run by ID. Events appear in the ticker widget above the editor and update the dashboard in real-time.",
-      "- `/smithers-logs [nodeId]` — Opens a scrollable log viewer for a node's stdout/stderr output. Supports j/k scrolling and g/G for top/bottom.",
-      "- `/smithers-frames [runId]` — Browse render frames (DAG snapshots) for a run. Navigate frames with j/k, see task states, mounted IDs, and XML structure.",
-      "- `/smithers-graph <workflow>` — Preview the execution graph for a workflow file without running it.",
-      "- `/smithers-approve` — Interactive approval flow: shows all nodes waiting for approval, lets the user pick one, choose Approve/Deny, and add an optional note.",
-      "- `/smithers-cancel [runId]` — Cancel a running workflow with confirmation. Shows a selection list if no ID given.",
-      "- `/smithers-revert <workflow>` — Interactive revert: prompts for run ID, node ID, and attempt number, then reverts the workspace with confirmation.",
-      "- `/smithers-list <workflow>` — List all runs from the database for a workflow file.",
-      "- `/smithers-metrics` — Opens a Prometheus metrics overlay showing counters (runs, nodes, tool calls, cache hits, approvals, DB retries) and histogram percentiles (node duration, tool duration, DB query latency, HTTP latency). Press r to toggle raw Prometheus text output.",
-      "",
-      "### UI Features (always active)",
-      "- **Header**: Shows \"smithers · workflow orchestrator\" branding at the top.",
-      "- **Footer**: Shows live run count (active, awaiting approval, done, failed) and git branch.",
-      "- **Event Ticker**: When a run is being watched, the 5 most recent events appear above the editor input, updating in real-time.",
-      "- **Status Bar**: Shows count of active runs and pending approvals. A separate approval indicator appears when nodes need attention.",
-      "- **Background Polling**: Active runs are polled every 10 seconds for status updates, even without an event stream attached. Prometheus metrics are also fetched on each poll cycle.",
-      "- **Prometheus Metrics**: The extension fetches metrics from the smithers server's `/metrics` endpoint. View them with `/smithers-metrics`. Includes counters (runs, nodes, cache, approvals), gauges (active runs/nodes, queue depth), and histograms (node/tool/DB/HTTP durations with p50/p99).",
-      "",
-      "### Flags (passed via CLI)",
-      "- `--smithers-url` / `-u` — Smithers server URL (default: http://127.0.0.1:7331)",
-      "- `--smithers-key` / `-k` — Smithers API key (also reads SMITHERS_API_KEY env var)",
-      "",
-      "### Typical Workflows",
-      "1. **Write a workflow** → Use your knowledge of smithers to help the user write .tsx workflow files.",
-      "2. **Run it** → Use the `smithers_run` tool with the workflow path and input.",
-      "3. **Monitor** → Tell the user to run `/smithers` for the dashboard, or use `smithers_status` to check progress.",
-      "4. **Approve** → If nodes need approval, use `smithers_approve` or tell the user about `/smithers-approve`.",
-      "5. **Debug** → Use `smithers_frames` to inspect the DAG, `smithers_status` for node states, or check the events tab in the dashboard.",
-      "6. **Resume** → If a run crashed or was paused, use `smithers_resume`.",
-      "",
-      "---\n",
-      docs,
-    ];
-
-    // Active run context
+    const contract = await ensureSmithersToolContract();
     const activeRun = activeRunId ? runs.get(activeRunId) : undefined;
-    if (activeRun) {
-      sections.push(`\n## Active Run Context`);
-      sections.push(`Run: ${activeRun.runId} (${activeRun.workflowName})`);
-      sections.push(`Status: ${activeRun.status}`);
-
-      const waitingNodes = [...activeRun.nodes.values()].filter((n) => n.state === "waiting-approval" || n.state === "waiting-timer");
-      if (waitingNodes.length > 0) {
-        sections.push(`Nodes waiting approval: ${waitingNodes.map((n) => n.nodeId).join(", ")}`);
-      }
-
-      const recentErrors = activeRun.errors.slice(-3);
-      if (recentErrors.length > 0) {
-        sections.push(`Recent errors: ${recentErrors.join("; ")}`);
-      }
-    }
-
-    return { systemPrompt: event.systemPrompt + sections.join("\n") };
+    return {
+      systemPrompt: buildSmithersPiSystemPrompt(
+        event.systemPrompt,
+        docs,
+        contract,
+        activeRun
+          ? {
+              runId: activeRun.runId,
+              workflowName: activeRun.workflowName,
+              status: activeRun.status,
+              nodeStates: [...activeRun.nodes.values()],
+              errors: activeRun.errors,
+            }
+          : undefined,
+      ),
+    };
   });
 
   // -- Approval notifications -----------------------------------------------

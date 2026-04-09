@@ -27,7 +27,6 @@ Read these files in order:
 
 Read all files in `docs/` — focus on:
 - What workflows look like from a user's perspective
-- The TOON format (declarative alternative to JSX)
 - How users define agents, tasks, sequences, loops, approvals
 - The CLI commands (run, resume, list, approve, status)
 - Any existing observability/debugging docs
@@ -52,7 +51,6 @@ The questions should cover areas like:
 - Delivery surface (CLI output, TUI, web UI, Chrome extension, VS Code panel, etc.)
 - What information matters most during a running workflow vs. post-mortem
 - How devtools interact with the existing CLI, hot reload, and approval flows
-- TOON workflows vs JSX workflows — do they need different treatment
 - The relationship between the React fiber tree view and the Smithers execution view
 - Whether this should be opt-in (separate package) or built into the core
 - Performance budget and production safety

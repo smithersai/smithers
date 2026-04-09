@@ -9,6 +9,7 @@ import type {
   StreamTextResult,
   ModelMessage,
 } from "ai";
+import type { AgentCapabilityRegistry } from "./capability-registry";
 import { spawnCaptureEffect } from "../effect/child-process";
 import { fromPromise } from "../effect/interop";
 import { runPromise } from "../effect/runtime";
@@ -1216,6 +1217,7 @@ export async function runRpcCommand(command: string, args: string[], options: Ru
 export abstract class BaseCliAgent implements Agent<any, any, any> {
   readonly version = "agent-v1" as const;
   readonly tools: Record<string, never> = {};
+  readonly capabilities?: AgentCapabilityRegistry;
   readonly id: string;
   protected readonly model?: string;
   protected readonly systemPrompt?: string;

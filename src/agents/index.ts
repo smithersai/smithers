@@ -1,4 +1,9 @@
 export { BaseCliAgent } from "./BaseCliAgent";
+export type {
+  AgentCapabilityRegistry,
+  AgentToolDescriptor,
+} from "./capability-registry";
+export { hashCapabilityRegistry } from "./capability-registry";
 
 export { AnthropicAgent } from "./AnthropicAgent";
 export type { AnthropicAgentOptions } from "./AnthropicAgent";

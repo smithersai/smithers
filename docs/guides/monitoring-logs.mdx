@@ -17,11 +17,9 @@ The runtime instruments workflow runs, nodes, tools, cache, approvals, database 
 ```ts
 import { Context, Effect, Layer, Schema } from "effect";
 import { Model } from "@effect/sql";
-import { Smithers } from "smithers-orchestrator";
 import { createSmithersObservabilityLayer } from "smithers-orchestrator/observability";
 
 const AppLive = Layer.mergeAll(
-  Smithers.sqlite({ filename: "./smithers.db" }),
   AgentLive,
   createSmithersObservabilityLayer({
     enabled: true,

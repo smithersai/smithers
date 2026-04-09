@@ -91,7 +91,6 @@
     "@opentui/core": "^0.1.92",
     "@opentui/react": "^0.1.92",
     "@sinclair/typebox": "0.34.49",
-    "@toon-format/toon": "^2.1.0",
     "@types/react-dom": "^19.2.3",
     "@types/react-reconciler": "^0.28.9",
     "ai": "^6.0.69",

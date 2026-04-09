@@ -2145,7 +2145,6 @@ const cli = Cli.create({
   name: "smithers",
   description: "Durable AI workflow orchestrator. Run, monitor, and manage workflow executions.",
   version: readPackageVersion(),
-  format: "toon",
 })
 
   // =========================================================================
@@ -4073,7 +4072,7 @@ const cli = Cli.create({
     async run(c) {
       try {
         await ask(c.args.question, process.cwd(), c.options);
-        return c.ok({ answered: true });
+        return c.ok(undefined);
       } catch (err: any) {
         commandExitOverride = 1;
         return c.error({

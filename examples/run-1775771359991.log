@@ -1,0 +1,148 @@
+[smithers] ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. To use API billing instead, use ToolLoopAgent from 'ai' with anthropic() provider.
+[smithers] ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. To use API billing instead, use ToolLoopAgent from 'ai' with anthropic() provider.
+[smithers] ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. To use API billing instead, use ToolLoopAgent from 'ai' with anthropic() provider.
+timestamp=2026-04-09T21:49:21.056Z level=INFO fiber=#36 message="starting workflow run" engine:run=0ms runId=run-1775771359991 allowNetwork=false hotReload=false maxConcurrency=4 service=smithers workflowPath=/Users/williamcory/smithers/examples/fan-out-fan-in.tsx resume=false rootDir=/Users/williamcory/smithers/examples
+[00:00:00] → split (attempt 1, iteration 0)
+timestamp=2026-04-09T21:49:22.330Z level=WARN fiber=#113 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:22.584Z level=WARN fiber=#116 message="failed to poll run cancel state" engine:cancel-watch=1ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:22.837Z level=WARN fiber=#119 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:23.064Z level=WARN fiber=#122 message="failed to persist run heartbeat" engine:heartbeat=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="heartbeat run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:23.090Z level=WARN fiber=#125 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:23.344Z level=WARN fiber=#128 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:23.599Z level=WARN fiber=#131 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:23.853Z level=WARN fiber=#134 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:24.066Z level=WARN fiber=#137 message="failed to persist run heartbeat" engine:heartbeat=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="heartbeat run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:24.105Z level=WARN fiber=#140 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:24.358Z level=WARN fiber=#143 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:24.610Z level=WARN fiber=#146 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:24.867Z level=WARN fiber=#149 message="failed to poll run cancel state" engine:cancel-watch=0ms runId=run-1775771359991 runtimeOwnerId=pid:56307:b2bd2b16-3cd3-4445-9f3b-0c58e263aede service=smithers error="get run run-1775771359991: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+timestamp=2026-04-09T21:49:24.966Z level=WARN fiber=#154 message="failed to persist task heartbeat" heartbeat:record=0ms runId=run-1775771359991 nodeId=split attempt=1 iteration=0 service=smithers error="heartbeat attempt split#1: Failed to execute SQLite statement See https://smithers.sh/reference/errors"
+523 |         ? cause.summary
+524 |         : cause instanceof Error
+525 |           ? cause.message
+526 |           : String(cause);
+527 | 
+528 |   return new SmithersError(
+               ^
+SmithersError: enqueue event persistence: insert event AgentEvent: Failed to execute SQLite statement See https://smithers.sh/reference/errors
+ summary: "enqueue event persistence: insert event AgentEvent: Failed to execute SQLite statement",
+ docsUrl: "https://smithers.sh/reference/errors",
+ details: {
+  operation: "insert event AgentEvent",
+},
+    code: "DB_QUERY_FAILED"
+
+      at toSmithersError (/Users/williamcory/smithers/src/utils/errors.ts:528:10)
+      at effect_internal_function (/Users/williamcory/smithers/node_modules/effect/dist/esm/Utils.js:339:14)
+      at Sync (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:945:19)
+      at runLoop (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1142:34)
+      at evaluateEffect (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:746:27)
+      at evaluateMessageWhileSuspended (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:721:16)
+      at drainQueueOnCurrentThread (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:499:85)
+      at run (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1173:10)
+      at starveInternal (/Users/williamcory/smithers/node_modules/effect/dist/esm/Scheduler.js:23:15)
+
+523 |         ? cause.summary
+524 |         : cause instanceof Error
+525 |           ? cause.message
+526 |           : String(cause);
+527 | 
+528 |   return new SmithersError(
+               ^
+SmithersError: insert event AgentEvent: Failed to execute SQLite statement See https://smithers.sh/reference/errors
+ summary: "insert event AgentEvent: Failed to execute SQLite statement",
+ docsUrl: "https://smithers.sh/reference/errors",
+ details: {
+  operation: "insert event AgentEvent",
+},
+   cause: 432 |         query.safeIntegers(useSafeIntegers);
+433 |         const rows = (query.all(...(params as any)) ?? []) as ReadonlyArray<any>;
+434 |         return Effect.succeed(transformRows ? transformRows(rows) : rows);
+435 |       } catch (cause) {
+436 |         return Effect.fail(
+437 |           new SqlError({ cause, message: "Failed to execute SQLite statement" }),
+                    ^
+(FiberFailure) SqlError: Failed to execute SQLite statement
+ effect/Runtime/FiberFailure: Symbol(effect/Runtime/FiberFailure),
+ effect/Runtime/FiberFailure/Cause: [Object ...],
+
+      at /Users/williamcory/smithers/src/effect/sql-message-storage.ts:437:15
+,
+    code: "DB_QUERY_FAILED"
+
+      at toSmithersError (/Users/williamcory/smithers/src/utils/errors.ts:528:10)
+      at effect_internal_function (/Users/williamcory/smithers/node_modules/effect/dist/esm/Utils.js:339:14)
+      at Sync (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:945:19)
+      at runLoop (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1142:34)
+      at evaluateEffect (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:746:27)
+      at evaluateMessageWhileSuspended (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:721:16)
+      at drainQueueOnCurrentThread (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:499:85)
+      at run (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1173:10)
+      at starveInternal (/Users/williamcory/smithers/node_modules/effect/dist/esm/Scheduler.js:23:15)
+
+432 |         query.safeIntegers(useSafeIntegers);
+433 |         const rows = (query.all(...(params as any)) ?? []) as ReadonlyArray<any>;
+434 |         return Effect.succeed(transformRows ? transformRows(rows) : rows);
+435 |       } catch (cause) {
+436 |         return Effect.fail(
+437 |           new SqlError({ cause, message: "Failed to execute SQLite statement" }),
+                    ^
+(FiberFailure) SqlError: Failed to execute SQLite statement
+ effect/Runtime/FiberFailure: Symbol(effect/Runtime/FiberFailure),
+ effect/Runtime/FiberFailure/Cause: {
+  _tag: "Fail",
+  error: 432 |         query.safeIntegers(useSafeIntegers);
+433 |         const rows = (query.all(...(params as any)) ?? []) as ReadonlyArray<any>;
+434 |         return Effect.succeed(transformRows ? transformRows(rows) : rows);
+435 |       } catch (cause) {
+436 |         return Effect.fail(
+437 |           new SqlError({ cause, message: "Failed to execute SQLite statement" }),
+                    ^
+error: Failed to execute SQLite statement
+ _tag: "SqlError",
+
+      at /Users/williamcory/smithers/src/effect/sql-message-storage.ts:437:15
+      at effect_internal_function (/Users/williamcory/smithers/node_modules/effect/dist/esm/Utils.js:339:14)
+      at runLoop (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1585:25)
+      at evaluateEffect (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1080:15)
+      at evaluateMessageWhileSuspended (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1047:12)
+      at drainQueueOnCurrentThread (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:748:39)
+      at run (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1626:4)
+      at starveInternal (/Users/williamcory/smithers/node_modules/effect/dist/esm/Scheduler.js:36:10)
+      at processTicksAndRejections (native:7:39)
+
+428 |       const useSafeIntegers = Context.get(fiber.currentContext, SqlClient.SafeIntegers);
+429 |       try {
+430 |         const query = sqlite.query(statement);
+431 |         // @ts-ignore bun-types missing safeIntegers()
+432 |         query.safeIntegers(useSafeIntegers);
+433 |         const rows = (query.all(...(params as any)) ?? []) as ReadonlyArray<any>;
+      ^
+SQLiteError: disk I/O error
+      errno: 6922,
+ byteOffset: -1,
+       code: "SQLITE_IOERR_VNODE"
+
+      at all (unknown:1:1)
+      at /Users/williamcory/smithers/src/effect/sql-message-storage.ts:433:29
+      at effect_internal_function (/Users/williamcory/smithers/node_modules/effect/dist/esm/Utils.js:339:14)
+      at runLoop (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1585:25)
+      at evaluateEffect (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1080:15)
+      at evaluateMessageWhileSuspended (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1047:12)
+      at drainQueueOnCurrentThread (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:748:39)
+      at run (/Users/williamcory/smithers/node_modules/effect/dist/esm/internal/fiberRuntime.js:1626:4)
+      at starveInternal (/Users/williamcory/smithers/node_modules/effect/dist/esm/Scheduler.js:36:10)
+      at processTicksAndRejections (native:7:39)
+,
+  [Symbol(effect/Cause)]: [Object ...],
+  [Symbol(effect/Hash)]: [Function],
+  [Symbol(effect/Equal)]: [Function],
+  pipe: [Function: pipe],
+  toJSON: [Function: toJSON],
+  toString: [Function: toString],
+  [Symbol(nodejs.util.inspect.custom)]: [Function],
+},
+
+      at /Users/williamcory/smithers/src/effect/sql-message-storage.ts:437:15
+
+Bun v1.3.9 (macOS arm64)
