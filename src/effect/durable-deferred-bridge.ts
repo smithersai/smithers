@@ -2,7 +2,7 @@ import * as DurableDeferred from "@effect/workflow/DurableDeferred";
 import * as Workflow from "@effect/workflow/Workflow";
 import * as WorkflowEngine from "@effect/workflow/WorkflowEngine";
 import { resolve as resolvePath } from "node:path";
-import { Effect, Exit, Layer, Schema, Scope } from "effect";
+import { Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
 import type { SmithersDb } from "../db/adapter";
 import { updateAsyncExternalWaitPending } from "./metrics";
 
@@ -15,29 +15,12 @@ export const DurableDeferredBridgeWorkflow = Workflow.make({
 
 const adapterNamespaces = new WeakMap<object, string>();
 let nextAdapterNamespace = 0;
-
-let durableDeferredEngineScope: Scope.CloseableScope | undefined;
-let durableDeferredEngineContextPromise: Promise<any> | undefined;
-
-const buildDurableDeferredEngineContext = async () => {
-  durableDeferredEngineScope = await Effect.runPromise(Scope.make());
-  return Effect.runPromise(
-    Layer.buildWithScope(WorkflowEngine.layerMemory, durableDeferredEngineScope),
-  );
-};
-
-const getDurableDeferredEngineContext = async () => {
-  if (!durableDeferredEngineContextPromise) {
-    durableDeferredEngineContextPromise = buildDurableDeferredEngineContext().catch(
-      (error) => {
-        durableDeferredEngineContextPromise = undefined;
-        durableDeferredEngineScope = undefined;
-        throw error;
-      },
-    );
-  }
-  return durableDeferredEngineContextPromise;
-};
+const DurableDeferredBridgeWorkflowEngineLive = Layer.suspend(
+  () => WorkflowEngine.layerMemory,
+);
+const durableDeferredBridgeRuntime = ManagedRuntime.make(
+  DurableDeferredBridgeWorkflowEngineLive,
+);
 
 const getAdapterNamespace = (adapter: SmithersDb): string => {
   const filename = (adapter as any)?.db?.$client?.filename;
@@ -215,15 +198,15 @@ const awaitBridgeDeferred = async <
   executionId: string,
   deferred: DurableDeferred.DurableDeferred<Success, Error>,
 ) => {
-  const engineContext = await getDurableDeferredEngineContext();
-  return Effect.runPromise(
+  return durableDeferredBridgeRuntime.runPromise(
     DurableDeferred.await(deferred).pipe(
       Workflow.intoResult,
-      Effect.provideService(
-        WorkflowEngine.WorkflowInstance,
-        makeWorkflowInstance(executionId),
+      Effect.provide(
+        Layer.succeed(
+          WorkflowEngine.WorkflowInstance,
+          makeWorkflowInstance(executionId),
+        ),
       ),
-      Effect.provide(engineContext),
     ) as any,
   );
 };
@@ -236,17 +219,16 @@ const resolveBridgeDeferred = async <
   deferred: DurableDeferred.DurableDeferred<Success, Error>,
   exit: Exit.Exit<Success["Type"], Error["Type"]>,
 ) => {
-  const engineContext = await getDurableDeferredEngineContext();
   const token = DurableDeferred.tokenFromExecutionId(deferred, {
     workflow: DurableDeferredBridgeWorkflow,
     executionId,
   });
 
-  await Effect.runPromise(
+  await durableDeferredBridgeRuntime.runPromise(
     DurableDeferred.done(deferred, {
       token,
       exit,
-    }).pipe(Effect.provide(engineContext)) as any,
+    }) as any,
   );
 };
 

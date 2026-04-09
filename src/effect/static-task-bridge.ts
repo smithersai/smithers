@@ -4,6 +4,7 @@ import type { TaskDescriptor } from "../TaskDescriptor";
 import type { SmithersDb } from "../db/adapter";
 import { buildOutputRow, stripAutoColumns, validateOutput } from "../db/output";
 import { EventBus } from "../events";
+import { makeAbortError, wireAbortSignal } from "./bridge-utils";
 import { logDebug, logError, logInfo } from "./logging";
 import { attemptDuration, nodeDuration } from "./metrics";
 import { runPromise } from "./runtime";
@@ -14,12 +15,6 @@ import { getJjPointer } from "../vcs/jj";
 type StaticTaskBridgeToolConfig = {
   rootDir: string;
 };
-
-function makeAbortError(message = "Task aborted"): SmithersError {
-  return new SmithersError("TASK_ABORTED", message, undefined, {
-    name: "AbortError",
-  });
-}
 
 function isAbortError(err: unknown): boolean {
   if (!err) return false;
@@ -35,21 +30,6 @@ function isAbortError(err: unknown): boolean {
     return /aborted|abort/i.test(err.message);
   }
   return false;
-}
-
-function wireAbortSignal(controller: AbortController, signal?: AbortSignal) {
-  if (!signal) {
-    return () => {};
-  }
-  const forwardAbort = () => {
-    controller.abort(signal.reason ?? makeAbortError());
-  };
-  if (signal.aborted) {
-    forwardAbort();
-    return () => {};
-  }
-  signal.addEventListener("abort", forwardAbort, { once: true });
-  return () => signal.removeEventListener("abort", forwardAbort);
 }
 
 export const canExecuteBridgeManagedStaticTask = (

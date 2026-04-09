@@ -2,6 +2,7 @@ import type { TaskDescriptor } from "../TaskDescriptor";
 import type { HijackState } from "../engine/index";
 import { SmithersDb } from "../db/adapter";
 import { EventBus } from "../events";
+import { fromPromise } from "./interop";
 import {
   makeWorkerTask,
   type WorkerDispatchKind,
@@ -20,9 +21,7 @@ import {
   canExecuteBridgeManagedStaticTask,
   executeStaticTaskBridge,
 } from "./static-task-bridge";
-import {
-  dispatchWorkerTask,
-} from "./single-runner";
+import { dispatchWorkerTask } from "./single-runner";
 export {
   bridgeApprovalResolve,
   bridgeSignalResolve,
@@ -361,3 +360,40 @@ export const executeTaskBridge = (
   inflightTaskExecutions.set(bridgeKey, execution);
   return execution;
 };
+
+export const executeTaskBridgeEffect = (
+  adapter: SmithersDb,
+  db: any,
+  runId: string,
+  desc: TaskDescriptor,
+  descriptorMap: Map<string, TaskDescriptor>,
+  inputTable: any,
+  eventBus: EventBus,
+  toolConfig: TaskBridgeToolConfig,
+  workflowName: string,
+  cacheEnabled: boolean,
+  signal?: AbortSignal,
+  disabledAgents?: Set<any>,
+  runAbortController?: AbortController,
+  hijackState?: HijackState,
+  legacyExecuteTaskFn?: LegacyExecuteTaskFn,
+) =>
+  fromPromise("execute task bridge", () =>
+    executeTaskBridge(
+      adapter,
+      db,
+      runId,
+      desc,
+      descriptorMap,
+      inputTable,
+      eventBus,
+      toolConfig,
+      workflowName,
+      cacheEnabled,
+      signal,
+      disabledAgents,
+      runAbortController,
+      hijackState,
+      legacyExecuteTaskFn,
+    ),
+  );

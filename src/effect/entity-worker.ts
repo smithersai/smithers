@@ -22,6 +22,90 @@ export const WorkerTask = Schema.Struct({
 });
 export type WorkerTask = Schema.Schema.Type<typeof WorkerTask>;
 
+const WorkerErrorDetails = Schema.Record({
+  key: Schema.String,
+  value: Schema.Unknown,
+});
+
+const TaskAbortedError = Schema.Struct({
+  _tag: Schema.Literal("TaskAborted"),
+  message: Schema.String,
+  details: Schema.optional(WorkerErrorDetails),
+  name: Schema.optional(Schema.String),
+});
+
+const TaskTimeoutError = Schema.Struct({
+  _tag: Schema.Literal("TaskTimeout"),
+  message: Schema.String,
+  nodeId: Schema.String,
+  attempt: Schema.Number,
+  timeoutMs: Schema.Number,
+});
+
+const TaskHeartbeatTimeoutError = Schema.Struct({
+  _tag: Schema.Literal("TaskHeartbeatTimeout"),
+  message: Schema.String,
+  nodeId: Schema.String,
+  iteration: Schema.Number,
+  attempt: Schema.Number,
+  timeoutMs: Schema.Number,
+  staleForMs: Schema.Number,
+  lastHeartbeatAtMs: Schema.Number,
+});
+
+const RunNotFoundError = Schema.Struct({
+  _tag: Schema.Literal("RunNotFound"),
+  message: Schema.String,
+  runId: Schema.String,
+});
+
+const InvalidInputError = Schema.Struct({
+  _tag: Schema.Literal("InvalidInput"),
+  message: Schema.String,
+  details: Schema.optional(WorkerErrorDetails),
+});
+
+const DbWriteFailedError = Schema.Struct({
+  _tag: Schema.Literal("DbWriteFailed"),
+  message: Schema.String,
+  details: Schema.optional(WorkerErrorDetails),
+});
+
+const AgentCliError = Schema.Struct({
+  _tag: Schema.Literal("AgentCliError"),
+  message: Schema.String,
+  details: Schema.optional(WorkerErrorDetails),
+});
+
+const WorkflowFailedError = Schema.Struct({
+  _tag: Schema.Literal("WorkflowFailed"),
+  message: Schema.String,
+  details: Schema.optional(WorkerErrorDetails),
+  status: Schema.optional(Schema.Number),
+});
+
+export const TaggedWorkerError = Schema.Union(
+  TaskAbortedError,
+  TaskTimeoutError,
+  TaskHeartbeatTimeoutError,
+  RunNotFoundError,
+  InvalidInputError,
+  DbWriteFailedError,
+  AgentCliError,
+  WorkflowFailedError,
+);
+export type TaggedWorkerError = Schema.Schema.Type<typeof TaggedWorkerError>;
+
+const UnknownWorkerError = Schema.Struct({
+  _tag: Schema.Literal("UnknownWorkerError"),
+  errorId: Schema.String,
+  message: Schema.String,
+});
+export type UnknownWorkerError = Schema.Schema.Type<typeof UnknownWorkerError>;
+
+export const WorkerTaskError = Schema.Union(TaggedWorkerError, UnknownWorkerError);
+export type WorkerTaskError = Schema.Schema.Type<typeof WorkerTaskError>;
+
 const TaskSuccess = Schema.Struct({
   _tag: Schema.Literal("Success"),
   executionId: Schema.String,
@@ -31,12 +115,12 @@ const TaskSuccess = Schema.Struct({
 const TaskFailure = Schema.Struct({
   _tag: Schema.Literal("Failure"),
   executionId: Schema.String,
-  errorId: Schema.String,
-  message: Schema.String,
+  error: WorkerTaskError,
 });
 
 export const TaskResult = Schema.Union(TaskSuccess, TaskFailure);
 export type TaskResult = Schema.Schema.Type<typeof TaskResult>;
+export type TaskFailure = Extract<TaskResult, { _tag: "Failure" }>;
 
 export const TaskWorkerEntity = Entity.make("TaskWorker", [
   Rpc.make("execute", {
@@ -77,6 +161,12 @@ export function makeWorkerTask(
 
 export function isTaskResultFailure(
   result: TaskResult,
-): result is Extract<TaskResult, { _tag: "Failure" }> {
+): result is TaskFailure {
   return result._tag === "Failure";
+}
+
+export function isUnknownWorkerError(
+  error: WorkerTaskError,
+): error is UnknownWorkerError {
+  return error._tag === "UnknownWorkerError";
 }

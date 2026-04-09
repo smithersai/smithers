@@ -2,7 +2,14 @@ import * as SingleRunner from "@effect/cluster/SingleRunner";
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
 import { Effect, Layer, Scope } from "effect";
 import {
+  fromTaggedErrorPayload,
+  toTaggedErrorPayload,
+} from "../errors/tagged";
+import {
+  isUnknownWorkerError,
   isTaskResultFailure,
+  type WorkerTaskError,
+  type TaskFailure,
   type TaskResult,
   type WorkerTask,
   TaskWorkerEntity,
@@ -44,8 +51,11 @@ function buildMissingExecutionResult(task: WorkerTask): Extract<TaskResult, { _t
   return {
     _tag: "Failure",
     executionId: task.executionId,
-    errorId: `missing:${task.executionId}`,
-    message: `No worker execution registered for ${task.executionId}`,
+    error: {
+      _tag: "UnknownWorkerError",
+      errorId: `missing:${task.executionId}`,
+      message: `No worker execution registered for ${task.executionId}`,
+    },
   };
 }
 
@@ -55,15 +65,30 @@ function storeWorkerError(executionId: string, error: unknown): string {
   return errorId;
 }
 
-function consumeWorkerError(
-  result: Extract<TaskResult, { _tag: "Failure" }>,
-): unknown {
-  const error = workerErrors.get(result.errorId);
-  workerErrors.delete(result.errorId);
+function toWorkerTaskError(executionId: string, error: unknown): WorkerTaskError {
+  const taggedError = toTaggedErrorPayload(error);
+  if (taggedError) {
+    return taggedError;
+  }
+
+  return {
+    _tag: "UnknownWorkerError",
+    errorId: storeWorkerError(executionId, error),
+    message: error instanceof Error ? error.message : String(error),
+  };
+}
+
+function consumeWorkerError(result: TaskFailure): unknown {
+  if (!isUnknownWorkerError(result.error)) {
+    return fromTaggedErrorPayload(result.error);
+  }
+
+  const error = workerErrors.get(result.error.errorId);
+  workerErrors.delete(result.error.errorId);
   if (error !== undefined) {
     return error;
   }
-  return new Error(result.message);
+  return new Error(result.error.message);
 }
 
 async function runRegisteredExecution(task: WorkerTask): Promise<TaskResult> {
@@ -84,8 +109,7 @@ async function runRegisteredExecution(task: WorkerTask): Promise<TaskResult> {
     return {
       _tag: "Failure",
       executionId: task.executionId,
-      errorId: storeWorkerError(task.executionId, error),
-      message: error instanceof Error ? error.message : String(error),
+      error: toWorkerTaskError(task.executionId, error),
     };
   } finally {
     if (workerExecutions.get(task.executionId) === registered) {

@@ -5,7 +5,7 @@ import { SqlError } from "@effect/sql/SqlError";
 import * as Statement from "@effect/sql/Statement";
 import { Database } from "bun:sqlite";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
-import { Context, Effect, Scope } from "effect";
+import { Context, Effect, Layer, ManagedRuntime, Scope } from "effect";
 import { camelToSnake } from "../utils/camelToSnake";
 
 type SqliteParam =
@@ -121,6 +121,18 @@ const CREATE_TABLE_STATEMENTS = [
     answered_at_ms INTEGER,
     answered_by TEXT,
     timeout_at_ms INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS _smithers_alerts (
+    alert_id TEXT PRIMARY KEY,
+    run_id TEXT,
+    policy_name TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    status TEXT NOT NULL,
+    fired_at_ms INTEGER NOT NULL,
+    resolved_at_ms INTEGER,
+    acknowledged_at_ms INTEGER,
+    message TEXT NOT NULL,
+    details_json TEXT
   )`,
   `CREATE TABLE IF NOT EXISTS _smithers_signals (
     run_id TEXT NOT NULL,
@@ -479,43 +491,50 @@ function createConnection(
   };
 }
 
-function createSqlClient(sqlite: Database): Promise<SqlClient.SqlClient> {
+function makeSqlClientEffect(
+  sqlite: Database,
+): Effect.Effect<SqlClient.SqlClient, never> {
   const compiler = Statement.makeCompilerSqlite(camelToSnake);
   const connection = createConnection(sqlite);
-  const semaphore = Effect.runSync(Effect.makeSemaphore(1));
-  const acquirer = semaphore.withPermits(1)(Effect.succeed(connection));
-  const transactionAcquirer = Effect.uninterruptibleMask((restore) =>
-    Effect.as(
-      Effect.zipRight(
-        restore(semaphore.take(1)),
-        Effect.tap(Effect.scope, (scope) => Scope.addFinalizer(scope, semaphore.release(1))),
+  return Effect.gen(function* () {
+    const semaphore = yield* Effect.makeSemaphore(1);
+    const acquirer = semaphore.withPermits(1)(Effect.succeed(connection));
+    const transactionAcquirer = Effect.uninterruptibleMask((restore) =>
+      Effect.as(
+        Effect.zipRight(
+          restore(semaphore.take(1)),
+          Effect.tap(
+            Effect.scope,
+            (scope) => Scope.addFinalizer(scope, semaphore.release(1)),
+          ),
+        ),
+        connection,
       ),
-      connection,
-    ),
-  );
-  const reactivity = Effect.runSync(Reactivity.make);
+    );
+    const reactivity = yield* Reactivity.make;
 
-  return Effect.runPromise(
-    SqlClient.make({
+    return yield* SqlClient.make({
       acquirer,
       compiler,
       transactionAcquirer,
       spanAttributes: [[ATTR_DB_SYSTEM_NAME, "sqlite"]],
       transformRows: transformRowKeys,
-    }).pipe(Effect.provideService(Reactivity.Reactivity, reactivity)),
-  );
+    }).pipe(Effect.provideService(Reactivity.Reactivity, reactivity));
+  });
 }
 
-const storageCache = new WeakMap<object, SqlMessageStorage>();
+function makeSqlClientLayer(sqlite: Database) {
+  return Layer.scoped(SqlClient.SqlClient, makeSqlClientEffect(sqlite));
+}
 
 export class SqlMessageStorage {
   readonly sqlite: Database;
-  private clientPromise: Promise<SqlClient.SqlClient>;
+  private runtime: ManagedRuntime.ManagedRuntime<SqlClient.SqlClient, never>;
   private tableColumnsCache = new Map<string, Set<string>>();
 
   constructor(db: BunSQLiteDatabase<any> | Database) {
     this.sqlite = resolveSqliteDatabase(db);
-    this.clientPromise = createSqlClient(this.sqlite);
+    this.runtime = ManagedRuntime.make(makeSqlClientLayer(this.sqlite));
   }
 
   private getTableColumns(table: string): Set<string> {
@@ -545,15 +564,15 @@ export class SqlMessageStorage {
     );
   }
 
-  private runEffect<A>(effect: Effect.Effect<A, SqlError>): Promise<A> {
-    return Effect.runPromise(effect);
+  private runEffect<A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>): Promise<A> {
+    return this.runtime.runPromise(effect);
   }
 
   private withConnection<A>(
     f: (connection: Connection) => Effect.Effect<A, SqlError>,
   ): Promise<A> {
-    return this.clientPromise.then((client) =>
-      this.runEffect(
+    return this.runEffect(
+      Effect.flatMap(SqlClient.SqlClient, (client) =>
         Effect.scoped(Effect.flatMap(client.reserve, f)),
       ),
     );
@@ -589,7 +608,7 @@ export class SqlMessageStorage {
   }
 
   ensureSchema(): Promise<void> {
-    return Effect.runPromise(this.ensureSchemaEffect());
+    return this.runtime.runPromise(this.ensureSchemaEffect());
   }
 
   queryAll<T extends Record<string, unknown>>(
@@ -778,14 +797,7 @@ export class SqlMessageStorage {
 export function getSqlMessageStorage(
   db: BunSQLiteDatabase<any> | Database,
 ): SqlMessageStorage {
-  const sqlite = resolveSqliteDatabase(db);
-  const existing = storageCache.get(sqlite);
-  if (existing) {
-    return existing;
-  }
-  const created = new SqlMessageStorage(sqlite);
-  storageCache.set(sqlite, created);
-  return created;
+  return new SqlMessageStorage(db);
 }
 
 export function ensureSqlMessageStorageEffect(

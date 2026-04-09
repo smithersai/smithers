@@ -1,7 +1,7 @@
 import * as Activity from "@effect/workflow/Activity";
 import * as Workflow from "@effect/workflow/Workflow";
 import * as WorkflowEngine from "@effect/workflow/WorkflowEngine";
-import { Cause, Effect, Exit, Layer, Schema, Scope } from "effect";
+import { Cause, Effect, Exit, Layer, ManagedRuntime, Schema } from "effect";
 import type { SmithersDb } from "../db/adapter";
 import type { TaskDescriptor } from "../TaskDescriptor";
 
@@ -14,9 +14,8 @@ const TaskBridgeWorkflow = Workflow.make({
 
 const adapterNamespaces = new WeakMap<object, string>();
 let nextAdapterNamespace = 0;
-
-let activityEngineScope: Scope.CloseableScope | undefined;
-let activityEngineContextPromise: Promise<any> | undefined;
+const ActivityBridgeWorkflowEngineLive = Layer.suspend(() => WorkflowEngine.layerMemory);
+const activityBridgeRuntime = ManagedRuntime.make(ActivityBridgeWorkflowEngineLive);
 
 const getAdapterNamespace = (adapter: SmithersDb): string => {
   const existing = adapterNamespaces.get(adapter);
@@ -26,24 +25,6 @@ const getAdapterNamespace = (adapter: SmithersDb): string => {
   const created = `adapter-${++nextAdapterNamespace}`;
   adapterNamespaces.set(adapter, created);
   return created;
-};
-
-const buildActivityEngineContext = async () => {
-  activityEngineScope = await Effect.runPromise(Scope.make());
-  return Effect.runPromise(
-    Layer.buildWithScope(WorkflowEngine.layerMemory, activityEngineScope),
-  );
-};
-
-const getActivityEngineContext = async () => {
-  if (!activityEngineContextPromise) {
-    activityEngineContextPromise = buildActivityEngineContext().catch((error) => {
-      activityEngineContextPromise = undefined;
-      activityEngineScope = undefined;
-      throw error;
-    });
-  }
-  return activityEngineContextPromise;
 };
 
 export type TaskActivityContext = {
@@ -115,16 +96,18 @@ export const makeTaskActivity = <A>(
   });
 
 const runTaskActivityAttempt = async <A>(
-  engineContext: any,
   activity: ReturnType<typeof makeTaskActivity<A>>,
   instance: WorkflowEngine.WorkflowInstance["Type"],
   attempt: number,
 ): Promise<A> => {
-  const exit = await Effect.runPromiseExit(
+  const exit = await activityBridgeRuntime.runPromiseExit(
     activity.pipe(
-      Effect.provideService(Activity.CurrentAttempt, attempt),
-      Effect.provideService(WorkflowEngine.WorkflowInstance, instance),
-      Effect.provide(engineContext),
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.succeed(Activity.CurrentAttempt, attempt),
+          Layer.succeed(WorkflowEngine.WorkflowInstance, instance),
+        ),
+      ),
     ) as Effect.Effect<A, unknown, never>,
   );
 
@@ -147,7 +130,6 @@ export const executeTaskActivity = async <A>(
   executeFn: (context: TaskActivityContext) => Promise<A> | A,
   options?: ExecuteTaskActivityOptions,
 ): Promise<A> => {
-  const engineContext = await getActivityEngineContext();
   const activity = makeTaskActivity(desc, executeFn, options);
   const instance = WorkflowEngine.WorkflowInstance.initial(
     TaskBridgeWorkflow,
@@ -161,7 +143,7 @@ export const executeTaskActivity = async <A>(
   let attempt = initialAttempt;
   while (true) {
     try {
-      return await runTaskActivityAttempt(engineContext, activity, instance, attempt);
+      return await runTaskActivityAttempt(activity, instance, attempt);
     } catch (error) {
       if (
         retry === false ||

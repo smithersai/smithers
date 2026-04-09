@@ -1,3 +1,5 @@
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { Effect, Exit } from "effect";
 import type { TaskDescriptor } from "../TaskDescriptor";
 import type { SmithersDb } from "../db/adapter";
@@ -18,11 +20,13 @@ import {
 import { EventBus } from "../events";
 import {
   buildHumanRequestId,
-  getHumanTaskPrompt,
+  getHumanTaskPrompt as getStoredHumanTaskPrompt,
   isHumanTaskMeta,
 } from "../human-requests";
+import { parseAttemptMetaJson } from "./bridge-utils";
 import { updateAsyncExternalWaitPending } from "./metrics";
 import { runPromise } from "./runtime";
+import { markdownComponents } from "../markdownComponents";
 import { errorToJson, SmithersError } from "../utils/errors";
 import { nowMs } from "../utils/time";
 
@@ -94,18 +98,6 @@ function shouldClearAsyncWaitMetric(
   );
 }
 
-function parseAttemptMetaJson(metaJson?: string | null): Record<string, unknown> {
-  if (!metaJson) return {};
-  try {
-    const parsed = JSON.parse(metaJson);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
 function buildApprovalRequestJson(desc: TaskDescriptor) {
   return JSON.stringify({
     mode: desc.approvalMode ?? "gate",
@@ -130,6 +122,44 @@ function buildHumanRequestSchemaJson(desc: TaskDescriptor): string | null {
     (desc.outputSchema ?? desc.outputTable) as any,
     desc.outputSchema,
   );
+}
+
+function renderHumanPromptToText(prompt: unknown): string {
+  if (prompt == null) return "";
+  if (typeof prompt === "string") return prompt;
+  if (typeof prompt === "number") return String(prompt);
+  try {
+    let element: React.ReactElement;
+    if (React.isValidElement(prompt)) {
+      element = React.cloneElement(prompt as React.ReactElement<any>, {
+        components: markdownComponents,
+      });
+    } else {
+      element = React.createElement(React.Fragment, null, prompt);
+    }
+    return renderToStaticMarkup(element)
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  } catch {
+    const result = String(prompt ?? "");
+    if (result === "[object Object]") {
+      throw new SmithersError(
+        "MDX_PRELOAD_INACTIVE",
+        "HumanTask prompt could not be rendered because the MDX preload is inactive.",
+      );
+    }
+    return result;
+  }
+}
+
+function getHumanTaskPrompt(
+  meta: Record<string, unknown> | null | undefined,
+  fallback: string,
+): string {
+  const renderedPrompt = renderHumanPromptToText(meta?.prompt);
+  return renderedPrompt.trim().length > 0
+    ? renderedPrompt
+    : getStoredHumanTaskPrompt(meta, fallback);
 }
 
 async function ensurePendingHumanRequest(
@@ -165,6 +195,67 @@ async function ensurePendingHumanRequest(
     timeoutAtMs:
       typeof desc.timeoutMs === "number" ? requestedAtMs + desc.timeoutMs : null,
   });
+}
+
+const HUMAN_REQUEST_REOPEN_ERROR_CODES = new Set([
+  "HUMAN_TASK_INVALID_JSON",
+  "HUMAN_TASK_VALIDATION_FAILED",
+]);
+
+function parseAttemptErrorCode(errorJson?: string | null): string | null {
+  if (!errorJson) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(errorJson);
+    return typeof parsed?.code === "string" ? parsed.code : null;
+  } catch {
+    return null;
+  }
+}
+
+async function reconcileHumanRequestValidationFailure(
+  adapter: SmithersDb,
+  runId: string,
+  desc: TaskDescriptor,
+) {
+  if (!isHumanTaskMeta(desc.meta)) {
+    return undefined;
+  }
+
+  const requestId = buildHumanRequestId(runId, desc.nodeId, desc.iteration);
+  const request = await adapter.getHumanRequest(requestId);
+  if (!request || request.status !== "answered") {
+    return request;
+  }
+
+  const attempts = await adapter.listAttempts(runId, desc.nodeId, desc.iteration);
+  const latestAttempt = attempts[0];
+  if (
+    latestAttempt?.state !== "failed" ||
+    !HUMAN_REQUEST_REOPEN_ERROR_CODES.has(
+      parseAttemptErrorCode(latestAttempt?.errorJson) ?? "",
+    )
+  ) {
+    return request;
+  }
+
+  if (
+    typeof request.answeredAtMs === "number" &&
+    typeof latestAttempt?.finishedAtMs === "number" &&
+    request.answeredAtMs > latestAttempt.finishedAtMs
+  ) {
+    return request;
+  }
+
+  await adapter.reopenHumanRequest(requestId);
+  return {
+    ...request,
+    status: "pending" as const,
+    responseJson: null,
+    answeredAtMs: null,
+    answeredBy: null,
+  };
 }
 
 function defaultAutoApprovalDecision(desc: TaskDescriptor) {
@@ -1294,6 +1385,25 @@ async function resolveApprovalTaskStateBridge(
       desc,
       approval.requestedAtMs ?? nowMs(),
     );
+  }
+
+  const humanRequest = await reconcileHumanRequestValidationFailure(
+    adapter,
+    runId,
+    desc,
+  );
+  if (approval?.status === "approved" && humanRequest?.status === "pending") {
+    await adapter.insertNode({
+      runId,
+      nodeId: desc.nodeId,
+      iteration: desc.iteration,
+      state: "waiting-approval",
+      lastAttempt: null,
+      updatedAtMs: nowMs(),
+      outputTable: desc.outputTableName,
+      label: desc.label ?? null,
+    });
+    return { handled: true, state: "waiting-approval" };
   }
 
   await syncApprovalDurableDeferredFromDb(adapter, runId, desc, approval);

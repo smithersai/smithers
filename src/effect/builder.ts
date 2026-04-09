@@ -542,10 +542,7 @@ async function executeStepHandle(
       approved: approval?.status === "approved",
       note: approval?.note ?? null,
       decidedBy: approval?.decidedBy ?? null,
-      decidedAt:
-        typeof approval?.decidedAtMs === "number"
-          ? new Date(approval.decidedAtMs).toISOString()
-          : null,
+      decidedAt: null,
     });
   }
 

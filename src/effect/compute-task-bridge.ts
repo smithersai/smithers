@@ -1,14 +1,16 @@
-import { Effect, Metric } from "effect";
+import { Cause, Duration, Effect, Either, Metric, Schedule } from "effect";
 import { z } from "zod";
 import type { TaskDescriptor } from "../TaskDescriptor";
 import type { SmithersDb } from "../db/adapter";
 import { buildOutputRow, stripAutoColumns, validateOutput } from "../db/output";
+import { TaskHeartbeatTimeout, TaskTimeout } from "../errors/tagged";
 import { EventBus } from "../events";
+import { makeAbortError, wireAbortSignal } from "./bridge-utils";
 import { withTaskRuntime } from "./task-runtime";
 import { logDebug, logError, logInfo, logWarning } from "./logging";
 import { attemptDuration, nodeDuration } from "./metrics";
 import { runPromise } from "./runtime";
-import { errorToJson, SmithersError } from "../utils/errors";
+import { errorToJson, fromTaggedError, SmithersError } from "../utils/errors";
 import { nowMs } from "../utils/time";
 import { getJjPointer } from "../vcs/jj";
 
@@ -20,14 +22,17 @@ type ComputeTaskBridgeToolConfig = {
   rootDir: string;
 };
 
-function makeAbortError(message = "Task aborted"): SmithersError {
-  return new SmithersError("TASK_ABORTED", message, undefined, {
-    name: "AbortError",
-  });
-}
-
 function isAbortError(err: unknown): boolean {
   if (!err) return false;
+  if (err instanceof SmithersError && err.code === "TASK_ABORTED") return true;
+  if (
+    err &&
+    typeof err === "object" &&
+    (err as any).code === "TASK_ABORTED"
+  ) {
+    return true;
+  }
+  if (fromTaggedError(err)?.code === "TASK_ABORTED") return true;
   if ((err as any).name === "AbortError") return true;
   if (
     typeof DOMException !== "undefined" &&
@@ -40,35 +45,6 @@ function isAbortError(err: unknown): boolean {
     return /aborted|abort/i.test(err.message);
   }
   return false;
-}
-
-function wireAbortSignal(controller: AbortController, signal?: AbortSignal) {
-  if (!signal) {
-    return () => {};
-  }
-  const forwardAbort = () => {
-    controller.abort(signal.reason ?? makeAbortError());
-  };
-  if (signal.aborted) {
-    forwardAbort();
-    return () => {};
-  }
-  signal.addEventListener("abort", forwardAbort, { once: true });
-  return () => signal.removeEventListener("abort", forwardAbort);
-}
-
-function abortPromise(signal?: AbortSignal): Promise<never> | null {
-  if (!signal) return null;
-  if (signal.aborted) {
-    return Promise.reject(signal.reason ?? makeAbortError());
-  }
-  return new Promise<never>((_, reject) => {
-    signal.addEventListener(
-      "abort",
-      () => reject(signal.reason ?? makeAbortError()),
-      { once: true },
-    );
-  });
 }
 
 function parseAttemptHeartbeatData(
@@ -187,14 +163,19 @@ function serializeHeartbeatPayload(data: unknown): {
 function heartbeatTimeoutReasonFromAbort(
   signal: AbortSignal | undefined,
   err: unknown,
-): SmithersError | null {
+): unknown | null {
   const reason = signal?.aborted ? (signal as any).reason : undefined;
   const candidate = reason ?? err;
   if (
-    candidate instanceof SmithersError &&
-    candidate.code === "TASK_HEARTBEAT_TIMEOUT"
+    candidate instanceof TaskHeartbeatTimeout ||
+    (candidate instanceof SmithersError &&
+      candidate.code === "TASK_HEARTBEAT_TIMEOUT")
   ) {
     return candidate;
+  }
+  const taggedCandidate = fromTaggedError(candidate);
+  if (taggedCandidate?.code === "TASK_HEARTBEAT_TIMEOUT") {
+    return taggedCandidate;
   }
   if (
     candidate &&
@@ -262,8 +243,6 @@ export const executeComputeTaskBridge = async (
   let heartbeatLastPersistedWriteAtMs = 0;
   let heartbeatLastReceivedAtMs: number | null = null;
   let heartbeatWriteTimer: ReturnType<typeof setTimeout> | undefined;
-  let heartbeatTimeoutTimer: ReturnType<typeof setInterval> | undefined;
-  let heartbeatTimeoutTriggered = false;
 
   const flushHeartbeat = async (force = false): Promise<void> => {
     if (heartbeatClosed || !heartbeatHasPendingWrite || heartbeatWriteInFlight) {
@@ -401,35 +380,30 @@ export const executeComputeTaskBridge = async (
     }
   };
 
-  if (desc.heartbeatTimeoutMs) {
-    heartbeatTimeoutTimer = setInterval(() => {
-      if (
-        heartbeatClosed ||
-        taskCompleted ||
-        taskExecutionReturned ||
-        heartbeatTimeoutTriggered ||
-        taskSignal.aborted
-      ) {
-        return;
-      }
+  const runWithHeartbeatWatchdog = async <A>(
+    taskEffect: Effect.Effect<A, unknown>,
+  ): Promise<A> => {
+    const heartbeatTimeoutMs = desc.heartbeatTimeoutMs;
+    if (!heartbeatTimeoutMs) {
+      return await runPromise(taskEffect, { signal: taskSignal });
+    }
+
+    const checkHeartbeat = Effect.suspend(() => {
       const lastHeartbeatAtMs = Math.max(startedAtMs, heartbeatPendingAtMs);
       const staleForMs = nowMs() - lastHeartbeatAtMs;
-      if (staleForMs <= desc.heartbeatTimeoutMs!) {
-        return;
+      if (staleForMs <= heartbeatTimeoutMs) {
+        return Effect.void;
       }
-      heartbeatTimeoutTriggered = true;
-      const timeoutError = new SmithersError(
-        "TASK_HEARTBEAT_TIMEOUT",
-        `Task ${desc.nodeId} has not heartbeated in ${staleForMs}ms (timeout: ${desc.heartbeatTimeoutMs}ms).`,
-        {
-          nodeId: desc.nodeId,
-          iteration: desc.iteration,
-          attempt: attemptNo,
-          timeoutMs: desc.heartbeatTimeoutMs,
-          staleForMs,
-          lastHeartbeatAtMs,
-        },
-      );
+
+      const timeoutError = new TaskHeartbeatTimeout({
+        message: `Task ${desc.nodeId} has not heartbeated in ${staleForMs}ms (timeout: ${heartbeatTimeoutMs}ms).`,
+        nodeId: desc.nodeId,
+        iteration: desc.iteration,
+        attempt: attemptNo,
+        timeoutMs: heartbeatTimeoutMs,
+        staleForMs,
+        lastHeartbeatAtMs,
+      });
       logWarning(
         "bridge-managed compute task heartbeat timed out",
         {
@@ -437,7 +411,7 @@ export const executeComputeTaskBridge = async (
           nodeId: desc.nodeId,
           iteration: desc.iteration,
           attempt: attemptNo,
-          timeoutMs: desc.heartbeatTimeoutMs,
+          timeoutMs: heartbeatTimeoutMs,
           staleForMs,
           lastHeartbeatAtMs,
         },
@@ -450,12 +424,25 @@ export const executeComputeTaskBridge = async (
         iteration: desc.iteration,
         attempt: attemptNo,
         lastHeartbeatAtMs,
-        timeoutMs: desc.heartbeatTimeoutMs!,
+        timeoutMs: heartbeatTimeoutMs,
         timestampMs: nowMs(),
       });
       taskAbortController.abort(timeoutError);
-    }, TASK_HEARTBEAT_TIMEOUT_CHECK_MS);
-  }
+      return Effect.fail(timeoutError);
+    });
+    const watchdog = Effect.repeat(
+      checkHeartbeat,
+      Schedule.spaced(Duration.millis(TASK_HEARTBEAT_TIMEOUT_CHECK_MS)),
+    ).pipe(Effect.flatMap(() => Effect.never));
+    const raced = await runPromise(
+      Effect.race(Effect.either(taskEffect), Effect.either(watchdog)),
+      { signal: taskSignal },
+    );
+    if (Either.isLeft(raced)) {
+      throw raced.left;
+    }
+    return raced.right;
+  };
 
   const attemptMeta: Record<string, unknown> = {
     kind: "compute",
@@ -537,51 +524,68 @@ export const executeComputeTaskBridge = async (
       "engine:task",
     );
 
-    const computePromise = Promise.resolve().then(() =>
-      withTaskRuntime(
-        {
-          runId,
-          stepId: desc.nodeId,
-          attempt: attemptNo,
-          iteration: desc.iteration,
-          signal: taskSignal,
-          db,
-          heartbeat: (data?: unknown) => {
-            queueHeartbeat(data);
-          },
-          lastHeartbeat: previousHeartbeat,
-        },
-        () => desc.computeFn!(),
-      ),
-    );
-    const races: Array<Promise<unknown>> = [computePromise];
-    if (desc.timeoutMs) {
-      races.push(
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new SmithersError(
-                  "TASK_TIMEOUT",
-                  `Compute callback timed out after ${desc.timeoutMs}ms`,
-                  {
-                    attempt: attemptNo,
-                    nodeId: desc.nodeId,
-                    timeoutMs: desc.timeoutMs,
-                  },
-                ),
-              ),
-            desc.timeoutMs!,
+    let computeEffect = Effect.tryPromise({
+      try: (effectSignal) => {
+        const computeAbortController = new AbortController();
+        const removeTaskAbortForwarder = wireAbortSignal(
+          computeAbortController,
+          taskSignal,
+        );
+        const forwardEffectAbort = () => {
+          computeAbortController.abort(
+            effectSignal.reason ?? makeAbortError(),
+          );
+        };
+        if (effectSignal.aborted) {
+          forwardEffectAbort();
+        } else {
+          effectSignal.addEventListener("abort", forwardEffectAbort, {
+            once: true,
+          });
+        }
+        return Promise.resolve()
+          .then(() =>
+            withTaskRuntime(
+              {
+                runId,
+                stepId: desc.nodeId,
+                attempt: attemptNo,
+                iteration: desc.iteration,
+                signal: computeAbortController.signal,
+                db,
+                heartbeat: (data?: unknown) => {
+                  queueHeartbeat(data);
+                },
+                lastHeartbeat: previousHeartbeat,
+              },
+              () => desc.computeFn!(),
+            ),
+          )
+          .finally(() => {
+            removeTaskAbortForwarder();
+            effectSignal.removeEventListener("abort", forwardEffectAbort);
+          });
+      },
+      catch: (error) => error,
+    });
+    const timeoutMs = desc.timeoutMs;
+    if (timeoutMs) {
+      computeEffect = computeEffect.pipe(
+        Effect.timeout(Duration.millis(timeoutMs)),
+        Effect.catchIf(Cause.isTimeoutException, () =>
+          Effect.fail(
+            new TaskTimeout({
+              message: `Compute callback timed out after ${timeoutMs}ms`,
+              attempt: attemptNo,
+              nodeId: desc.nodeId,
+              timeoutMs,
+            }),
           ),
         ),
       );
     }
-    const abort = abortPromise(taskSignal);
-    if (abort) {
-      races.push(abort);
-    }
 
-    let payload = await Promise.race(races);
+    let payload = await runWithHeartbeatWatchdog(computeEffect);
     payload = stripAutoColumns(payload);
     const payloadWithKeys = buildOutputRow(
       desc.outputTable as any,
@@ -855,10 +859,6 @@ export const executeComputeTaskBridge = async (
     if (heartbeatWriteTimer) {
       clearTimeout(heartbeatWriteTimer);
       heartbeatWriteTimer = undefined;
-    }
-    if (heartbeatTimeoutTimer) {
-      clearInterval(heartbeatTimeoutTimer);
-      heartbeatTimeoutTimer = undefined;
     }
     removeAbortForwarder();
   }

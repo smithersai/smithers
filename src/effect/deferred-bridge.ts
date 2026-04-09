@@ -1,8 +1,6 @@
-import * as DurableClock from "@effect/workflow/DurableClock";
 import * as DurableDeferred from "@effect/workflow/DurableDeferred";
 import * as Workflow from "@effect/workflow/Workflow";
-import * as WorkflowEngine from "@effect/workflow/WorkflowEngine";
-import { Effect, Exit, Layer, Schema, Scope } from "effect";
+import { Exit, Schema } from "effect";
 
 export const DeferredBridgeWorkflow = Workflow.make({
   name: "SmithersDeferredBridge",
@@ -10,27 +8,6 @@ export const DeferredBridgeWorkflow = Workflow.make({
   success: Schema.Unknown,
   idempotencyKey: ({ executionId }) => executionId,
 });
-
-let deferredEngineScope: Scope.CloseableScope | undefined;
-let deferredEngineContextPromise: Promise<any> | undefined;
-
-const buildDeferredEngineContext = async () => {
-  deferredEngineScope = await Effect.runPromise(Scope.make());
-  return Effect.runPromise(
-    Layer.buildWithScope(WorkflowEngine.layerMemory, deferredEngineScope),
-  );
-};
-
-const getDeferredEngineContext = async () => {
-  if (!deferredEngineContextPromise) {
-    deferredEngineContextPromise = buildDeferredEngineContext().catch((error) => {
-      deferredEngineContextPromise = undefined;
-      deferredEngineScope = undefined;
-      throw error;
-    });
-  }
-  return deferredEngineContextPromise;
-};
 
 const approvalDeferredSuccessSchema = Schema.Struct({
   approved: Schema.Boolean,
