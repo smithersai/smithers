@@ -1156,17 +1156,33 @@ smithers cron rm 0d3a8b0f-6f1c-4e2b-9f4d-0a7b7b95c2e1
 
 #### cron start
 
+Start the background scheduler loop in the current terminal. The loop polls every 15 seconds and launches due jobs as detached `smithers up ... -d` processes. Runs until interrupted.
+
 ```bash
 smithers cron start
 ```
 
 #### cron add
 
+Register a new workflow cron schedule. Returns the generated `cronId`.
+
 ```bash
 smithers cron add <pattern> <workflowPath>
 ```
 
+Arguments:
+
+- `pattern`: Cron expression (e.g. `"0 * * * *"` for hourly, `"*/5 * * * *"` for every 5 minutes).
+- `workflowPath`: Path or ID of the workflow to schedule.
+
+```bash
+smithers cron add "0 9 * * *" .smithers/workflows/sweep.tsx
+smithers cron add "*/30 * * * *" .smithers/workflows/implement.tsx
+```
+
 #### cron list
+
+List all registered background cron schedules from `smithers.db`. Output includes `cronId`, pattern, workflow path, enabled state, and last/next run timestamps.
 
 ```bash
 smithers cron list
@@ -1174,8 +1190,18 @@ smithers cron list
 
 #### cron rm
 
+Delete an existing cron schedule by its ID.
+
 ```bash
 smithers cron rm <cronId>
+```
+
+Arguments:
+
+- `cronId`: UUID of the cron entry to remove (from `cron list` output).
+
+```bash
+smithers cron rm 0d3a8b0f-6f1c-4e2b-9f4d-0a7b7b95c2e1
 ```
 
 ## Framework-Provided Built-Ins

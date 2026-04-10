@@ -444,7 +444,13 @@ bun add -d @types/mdx
 
 ## Verify the Setup
 
-Once TypeScript and JSX are configured, continue to the quickstart and run the sample workflow:
+Once TypeScript and JSX are configured, run the typecheck to validate your setup:
+
+```bash
+npx tsc --noEmit
+```
+
+Then run the sample workflow:
 
 ```bash
 bun run main.ts
@@ -455,6 +461,7 @@ bun run main.ts
 - [JSX Quickstart](/jsx/quickstart) — Build a working two-step workflow.
 - [Tutorial: Build a Workflow](/guides/tutorial-workflow) — Go deeper with schemas, agents, and output access.
 - [MDX Prompts](/guides/mdx-prompts) — Use `.mdx` files as structured prompt templates.
+- [Package Configuration](/reference/package-configuration) — All subpath exports, scripts, and build settings.
 
 ---
 
@@ -916,6 +923,9 @@ mdxPlugin();
 
 ```toml
 # bunfig.toml
+preload = ["./preload.ts"]
+
+[test]
 preload = ["./preload.ts"]
 ```
 
@@ -2277,8 +2287,16 @@ smithers workflow foo --prompt "Investigate flaky tests"
 
 #### workflow list
 
+List all discovered workflows under `.smithers/workflows/`. Output includes each workflow's ID, entry file path, and source type.
+
 ```bash
 smithers workflow list
+```
+
+```bash
+smithers workflow list
+# implement  .smithers/workflows/implement.tsx  local
+# sweep      .smithers/workflows/sweep.tsx      local
 ```
 
 #### workflow run
@@ -2307,20 +2325,55 @@ Workflow-specific behavior:
 
 #### workflow path
 
+Resolve a workflow ID to its entry file path. Prints the absolute path, ID, and source type.
+
 ```bash
 smithers workflow path <name>
 ```
 
+Arguments:
+
+- `name`: Workflow ID to resolve.
+
+```bash
+smithers workflow path implement
+# /home/user/project/.smithers/workflows/implement.tsx
+```
+
 #### workflow create
+
+Create a new workflow scaffold file in `.smithers/workflows/`. The name must contain only lowercase letters, numbers, and hyphens. Exits with code `4` if the name is invalid or the file already exists.
 
 ```bash
 smithers workflow create <name>
 ```
 
+Arguments:
+
+- `name`: ID for the new workflow.
+
+```bash
+smithers workflow create my-new-flow
+# Created .smithers/workflows/my-new-flow.tsx
+```
+
+Run `smithers init` first to ensure `.smithers/agents.ts` and `.smithers/components/` exist.
+
 #### workflow doctor
+
+Inspect workflow discovery health. Reports the workflow root, discovered workflows, preload file status, bunfig status, and detected CLI agents. When `name` is provided, scopes the report to that single workflow.
 
 ```bash
 smithers workflow doctor [name]
+```
+
+Arguments:
+
+- `name` (optional): Workflow ID to inspect. Omit to inspect all discovered workflows.
+
+```bash
+smithers workflow doctor
+smithers workflow doctor implement
 ```
 
 ### cron
@@ -2351,17 +2404,33 @@ smithers cron rm 0d3a8b0f-6f1c-4e2b-9f4d-0a7b7b95c2e1
 
 #### cron start
 
+Start the background scheduler loop in the current terminal. The loop polls every 15 seconds and launches due jobs as detached `smithers up ... -d` processes. Runs until interrupted.
+
 ```bash
 smithers cron start
 ```
 
 #### cron add
 
+Register a new workflow cron schedule. Returns the generated `cronId`.
+
 ```bash
 smithers cron add <pattern> <workflowPath>
 ```
 
+Arguments:
+
+- `pattern`: Cron expression (e.g. `"0 * * * *"` for hourly, `"*/5 * * * *"` for every 5 minutes).
+- `workflowPath`: Path or ID of the workflow to schedule.
+
+```bash
+smithers cron add "0 9 * * *" .smithers/workflows/sweep.tsx
+smithers cron add "*/30 * * * *" .smithers/workflows/implement.tsx
+```
+
 #### cron list
+
+List all registered background cron schedules from `smithers.db`. Output includes `cronId`, pattern, workflow path, enabled state, and last/next run timestamps.
 
 ```bash
 smithers cron list
@@ -2369,8 +2438,18 @@ smithers cron list
 
 #### cron rm
 
+Delete an existing cron schedule by its ID.
+
 ```bash
 smithers cron rm <cronId>
+```
+
+Arguments:
+
+- `cronId`: UUID of the cron entry to remove (from `cron list` output).
+
+```bash
+smithers cron rm 0d3a8b0f-6f1c-4e2b-9f4d-0a7b7b95c2e1
 ```
 
 ## Framework-Provided Built-Ins
@@ -2811,10 +2890,12 @@ Typical task states are:
 | State | Meaning |
 | --- | --- |
 | `pending` | Known to the workflow but not yet runnable |
-| `running` | Currently executing |
+| `in-progress` | Currently executing |
 | `finished` | Persisted successfully |
 | `failed` | Terminal failure after retries are exhausted |
 | `waiting-approval` | Blocked on a durable approval decision |
+| `waiting-event` | Blocked on an external signal or event |
+| `waiting-timer` | Suspended until a durable timer fires |
 | `cancelled` | Interrupted by an abort signal or explicit handoff |
 | `skipped` | Not mounted or intentionally bypassed |
 
@@ -3044,6 +3125,48 @@ const latestReview = ctx.latest("review", "review");
 
 The pattern: if you're certain the data exists, use `output`. If you're branching on whether it exists, use `outputMaybe`. If you're looping, use `latest`.
 
+### `ctx.latestArray(value, schema)`
+
+Parses a value as a JSON array and validates each element against a Zod schema. Invalid items are silently dropped. This is useful when an agent returns a JSON string containing an array, and you want type-safe, validated elements:
+
+```tsx
+const items = ctx.latestArray(
+  ctx.latest("findings", "scan")?.items,
+  z.object({ severity: z.string(), message: z.string() }),
+);
+
+// items: Array<{ severity: string; message: string }>
+// Malformed entries are filtered out automatically
+```
+
+If `value` is a string, it is JSON-parsed first. If it is already an array, each element is validated directly. Non-array values are wrapped in a single-element array before validation.
+
+### Table Name Resolution
+
+The `table` parameter in `ctx.output()`, `ctx.outputMaybe()`, `ctx.latest()`, and `ctx.iterationCount()` accepts three forms:
+
+| Form | Example | Resolution |
+| --- | --- | --- |
+| String schema key | `"analysis"` | Looked up directly in the outputs snapshot |
+| Zod schema | `outputs.analysis` | Resolved via the `createSmithers()` schema registry to its key name |
+| Drizzle table | `analysisTable` | Resolved via `getTableName()` to the SQL table name |
+
+The recommended form is the Zod schema from `outputs`, which provides type inference. String keys work when you need dynamic lookups.
+
+### `ctx.auth`
+
+The authentication context passed via `RunOptions.auth`. Returns `null` when no auth context was configured:
+
+```tsx
+export default smithers((ctx) => (
+  <Workflow name="gated">
+    <Task id="deploy" output={outputs.deploy} agent={deployer} skipIf={ctx.auth?.role !== "admin"}>
+      {`Deploy as ${ctx.auth?.userId}`}
+    </Task>
+  </Workflow>
+));
+```
+
 ## Workflow Input
 
 `ctx.input` holds the workflow's input, validated against its schema before execution begins:
@@ -3059,6 +3182,10 @@ export default smithers((ctx) => (
 ```
 
 Once a run starts, the input is immutable and persisted. Passing different input on resume is an error. This isn't a limitation -- it's a guarantee. You can always trust that `ctx.input` is the same value that started the run.
+
+### Input Payload Unwrapping
+
+When input is stored in a table with only `runId` and `payload` columns (the default `_smithers_input` table), Smithers automatically unwraps the `payload` field. If `payload` is a JSON string, it is parsed. This means `ctx.input` always gives you the clean, deserialized input object -- never the raw database row with `runId` and `payload` wrappers.
 
 ## Step Outputs vs Shared State
 
@@ -4007,9 +4134,99 @@ Good approval context is the difference between "I guess?" and "Yes, ship it." I
 
 **Rule of thumb:** If you're thinking of the approval as a padlock on a task, use `needsApproval`. If you're thinking of it as a fork in the road, use `<Approval>`.
 
+## Structured Human Input: `<HumanTask>`
+
+Sometimes you don't need a yes/no — you need the human to *provide data*. A code review, a triage classification, a budget estimate. `<HumanTask>` is a task where the human is the agent: the workflow suspends until a human provides JSON matching the output schema, with validation and retries.
+
+```tsx
+<HumanTask
+  id="human-review"
+  output={outputs.review}
+  prompt="Review the PR. Provide: approved (boolean), comments (string), severity (low/medium/high)."
+  maxAttempts={5}
+  timeoutMs={86_400_000}
+/>
+```
+
+If the human provides invalid JSON, the task retries — up to `maxAttempts` (default 10). Schema validation happens at compute time, not at submission time. See the [HumanTask component reference](/components/human-task) for the full API.
+
+## Conditional Gates: `<ApprovalGate>`
+
+What if approval is only needed sometimes? Low-risk deploys sail through; high-risk deploys need a human. `<ApprovalGate>` wraps `<Branch>` + `<Approval>` into a single component:
+
+```tsx
+<ApprovalGate
+  id="deploy-approval"
+  output={outputs.deployDecision}
+  when={risk.level === "high"}
+  request={{ title: "Approve high-risk deploy?" }}
+  onDeny="fail"
+/>
+```
+
+When `when` is `false`, the gate auto-approves immediately. When `true`, it pauses for human review. Both paths write a valid `ApprovalDecision` to the same output. See the [ApprovalGate component reference](/components/approval-gate).
+
+## Escalation: `<EscalationChain>`
+
+When the question isn't "should a human decide?" but "which agent should handle this, and what happens when it can't?" — use `<EscalationChain>`. It runs agents in sequence, escalating to the next level when one fails or its `escalateIf` predicate returns `true`. Optionally, the final level is a human approval fallback:
+
+```tsx
+<EscalationChain
+  id="support"
+  escalationOutput={outputs.escalation}
+  humanFallback
+  levels={[
+    { agent: fastAgent, output: outputs.tier1, escalateIf: (r) => r.confidence < 0.7 },
+    { agent: powerAgent, output: outputs.tier2, escalateIf: (r) => r.confidence < 0.9 },
+  ]}
+>
+  Resolve this ticket: {ctx.input.ticketBody}
+</EscalationChain>
+```
+
+See the [EscalationChain component reference](/components/escalation-chain).
+
+## Selection and Ranking
+
+Not every human decision is yes/no. `<Approval>` supports `mode="select"` and `mode="rank"` for choosing among options:
+
+```tsx
+<Approval
+  id="pick-plan"
+  mode="select"
+  output={outputs.selection}
+  request={{ title: "Pick a rollout plan" }}
+  options={[
+    { key: "canary", label: "Canary" },
+    { key: "regional", label: "Regional" },
+  ]}
+/>
+```
+
+`mode="select"` returns `{ selected: string, notes: string | null }`. `mode="rank"` returns `{ ranked: string[], notes: string | null }`. See the [Approval component reference](/components/approval) for the schemas.
+
+## Scoped Approvals and Auto-Approval
+
+For sensitive approvals, restrict who can decide with `allowedScopes` and `allowedUsers`. For approvals that become routine, use `autoApprove` to skip the human after enough consecutive manual approvals:
+
+```tsx
+<Approval
+  id="deploy-prod"
+  output={outputs.deployApproval}
+  request={{ title: "Deploy to production?" }}
+  allowedUsers={["user:oncall", "user:release-manager"]}
+  autoApprove={{ after: 5, audit: true }}
+/>
+```
+
+`autoApprove` also supports `condition` (auto-approve when a predicate is true) and `revertOn` (revert to human approval when conditions change). See the [Approval component reference](/components/approval) for the full `ApprovalAutoApprove` type.
+
 ## Next Steps
 
 - [Approval Component](/components/approval) — Full API reference for `<Approval>`.
+- [ApprovalGate Component](/components/approval-gate) — Conditional approval gates.
+- [HumanTask Component](/components/human-task) — Structured human input with schema validation.
+- [EscalationChain Component](/components/escalation-chain) — Multi-level agent escalation with human fallback.
 - [Suspend and Resume](/concepts/suspend-and-resume) — The underlying durability model.
 - [CLI Reference](/cli/overview) — Commands for approving, denying, and resuming workflows.
 
@@ -4947,6 +5164,134 @@ The keyframe interval is 50 frames (`FRAME_KEYFRAME_INTERVAL = 50`). Reading an 
 
 Delta encoding uses a structural diff algorithm that walks the XML JSON tree, emitting `set`, `insert`, and `remove` operations. It is node-ID-aware: when comparing adjacent objects in the tree, it uses the `id` prop of element nodes as a stable identity anchor, so reordered elements produce insert/remove pairs rather than spurious updates.
 
+## Signal Persistence
+
+Signals are external messages sent to a running workflow. When a signal arrives, Smithers writes it to `_smithers_signals` with an automatically allocated sequence number. You never pick the `seq` yourself -- Smithers computes `MAX(seq) + 1` inside a `BEGIN IMMEDIATE` transaction so two concurrent signals never collide.
+
+Before inserting, the adapter checks whether an identical signal already exists (same `runId`, `signalName`, `correlationId`, `payloadJson`, `receivedAtMs`, and `receivedBy`). If a match is found, the existing `seq` is returned and no duplicate row is created. This deduplication prevents replay or retry from doubling signals.
+
+### Signal Query Filters
+
+Querying signals supports four filters, all optional:
+
+| Filter | Column | Description |
+|--------|--------|-------------|
+| `signalName` | `signal_name` | Match a specific signal type |
+| `correlationId` | `correlation_id` | Match a specific correlation key (supports `null`) |
+| `receivedAfterMs` | `received_at_ms` | Only signals received at or after this timestamp |
+| `limit` | -- | Max rows to return (default 200) |
+
+Results are ordered by `seq ASC`, so you always see signals in arrival order.
+
+## Event Persistence
+
+The `_smithers_events` table is the durable event journal for each run. Every `SmithersEvent` emitted during execution is persisted here with a sequential `seq` number that serves as the total ordering.
+
+### Auto-Sequence Allocation
+
+Like signals, events get their `seq` via `SELECT COALESCE(MAX(seq), -1) + 1` inside a `BEGIN IMMEDIATE` transaction. This guarantees gap-free, monotonically increasing sequence numbers per run.
+
+### Insert Deduplication
+
+Before inserting, the adapter checks for an existing row matching the same `runId`, `timestampMs`, `type`, and `payloadJson`. If found, the existing `seq` is returned without creating a duplicate. This makes event insertion idempotent across retries.
+
+### Event Queue and Flush
+
+For performance, events can be enqueued asynchronously via `emitEventQueued`. The event is emitted to listeners and tracked immediately, but database and log-file persistence happens in a background promise chain (`persistTail`). Call `flush()` to await all queued persistence -- the engine does this at task boundaries and run completion to ensure nothing is lost.
+
+### Sequence Start Override
+
+The `EventBus` constructor accepts a `startSeq` option, which sets the initial sequence counter. This is used on resume to continue from where the previous run left off, preventing sequence number collisions with already-persisted events.
+
+### Event History Queries
+
+The adapter supports filtered history queries with these parameters:
+
+| Filter | Description |
+|--------|-------------|
+| `afterSeq` | Return events with `seq > afterSeq` |
+| `limit` | Max rows |
+| `nodeId` | Filter by `$.nodeId` inside the payload JSON |
+| `types` | Filter to specific event type strings |
+| `sinceTimestampMs` | Events at or after this timestamp |
+
+A separate `countEventHistory` method returns the count matching the same filters, useful for pagination.
+
+## Human Request Persistence
+
+Human requests (form fills, confirmations, free-text prompts) are stored in `_smithers_human_requests` with lifecycle states: `pending`, `answered`, `cancelled`, `expired`.
+
+### Pending Inbox Query
+
+`listPendingHumanRequests` returns all pending requests across all runs, joined with `_smithers_runs` and `_smithers_nodes` to include the `workflowName`, `runStatus`, and `nodeLabel`. Before returning, it automatically expires any requests whose `timeoutAtMs` has passed, transitioning them to `expired` status.
+
+### Answer Persistence
+
+`answerHumanRequest` sets the response JSON, timestamp, and optional `answeredBy` field, transitioning the request from `pending` to `answered`. Only pending requests can be answered -- the `WHERE status = 'pending'` clause prevents double-answering.
+
+### Cancellation
+
+`cancelHumanRequest` transitions a pending request to `cancelled`. Like answering, it only operates on requests in `pending` status.
+
+## Cron Persistence
+
+Cron schedules are stored in `_smithers_cron` and managed through the adapter:
+
+| Operation | Method | Description |
+|-----------|--------|-------------|
+| Create/Update | `upsertCron` | Inserts or updates a cron schedule by `cronId` |
+| List | `listCrons(enabledOnly?)` | Returns all cron entries, optionally filtering to `enabled = true` |
+| Track execution | `updateCronRunTime` | Updates `lastRunAtMs`, `nextRunAtMs`, and optional `errorJson` |
+| Delete | `deleteCron` | Removes a cron entry by ID |
+
+The `enabled` flag allows disabling a schedule without deleting it. The `lastRunAtMs` and `nextRunAtMs` columns let the scheduler know when to fire next without recomputing from the cron pattern on every poll. If a scheduled run fails, the error is stored in `errorJson` on the cron row for diagnostics.
+
+## Run Lifecycle Management
+
+### Stale Run Claims
+
+The supervisor detects stale runs by querying `_smithers_runs` for rows with `status = 'running'` whose `heartbeat_at_ms` is older than the stale threshold (default 30 seconds). To safely resume a stale run without races, the supervisor uses a compare-and-swap pattern:
+
+1. **Claim**: `claimRunForResume` atomically sets `runtime_owner_id` and `heartbeat_at_ms` only if the current values match the expected stale state. The `WHERE` clause checks `runtime_owner_id`, `heartbeat_at_ms`, and the stale threshold in a single `UPDATE`, and returns whether the row was modified.
+
+2. **Release**: If the supervisor decides not to resume after claiming, `releaseRunResumeClaim` restores the original `runtime_owner_id` and `heartbeat_at_ms`, but only if the claim is still held (the current `runtime_owner_id` matches the claimer).
+
+This two-phase claim prevents two supervisor instances from resuming the same stale run simultaneously.
+
+### Sandbox Tracking
+
+Sandbox sessions (bubblewrap, Docker, or Codeplane) are tracked in `_smithers_sandboxes`. The adapter upserts sandbox rows keyed by `(runId, sandboxId)`, recording runtime type, configuration, status, shipping and completion timestamps, and bundle paths.
+
+## Output Edge Cases
+
+### Payload-Only Tables
+
+When an output table's only non-bookkeeping column is `payload`, Smithers detects it and wraps the entire agent output into that single column instead of spreading fields across multiple columns. This is useful for unstructured or polymorphic outputs where a fixed column set does not make sense.
+
+### Boolean Column Coercion
+
+Bun's SQLite driver returns raw `0`/`1` integers for columns declared with `{ mode: "boolean" }` in Drizzle. When loading output snapshots, Smithers detects these columns by inspecting the Drizzle table metadata and coerces the integer values to proper JavaScript booleans. Without this, strict equality checks like `value === true` would fail.
+
+### Schema Key Aliasing
+
+When loading outputs via `loadOutputs`, each result set is stored under **both** the schema key (e.g., `"analysis"`) and the actual SQLite table name (e.g., `"analysis"` or a custom name). This dual indexing lets downstream code reference outputs by either name, which matters when schema keys and table names diverge (e.g., with custom Drizzle tables).
+
+## Snapshot Persistence
+
+Loading a complete workflow snapshot (`loadInput` + `loadOutputs`) reconstructs the full `ctx` state from SQLite. The input is loaded by filtering the input table for the current `runId`. Outputs are loaded by iterating every schema key, querying each table for rows matching the `runId`, applying boolean coercion, and indexing under both schema key and table name.
+
+This snapshot is what powers resume: when a crashed run restarts, the snapshot populates `ctx` so the JSX tree renders with all completed outputs already in place.
+
+## Transaction Internals
+
+### Read Gating
+
+Reads, not just writes, also acquire a turn in the `transactionTail` promise queue. This prevents reads from seeing intermediate state during a multi-statement transaction. If the current fiber already owns the active transaction, reads proceed immediately without acquiring a new turn.
+
+### Commit Retry
+
+The entire `withTransaction` call is wrapped in `withSqliteWriteRetryEffect`. If the `COMMIT` (or `BEGIN IMMEDIATE`) fails with `SQLITE_BUSY` or an I/O error, the retry mechanism rolls back and retries the full transaction from `BEGIN`, using the same exponential backoff as standalone writes.
+
 ## Why the Separation Matters
 
 Ask two questions about any completed task:
@@ -5569,6 +5914,7 @@ A snapshot is a frozen picture of everything that matters at a specific frame in
 - **Loop (Ralph) state** — loop iteration counters and completion flags (`<Loop>` renders as a `<smithers:ralph>` host element internally)
 - **Input data** — the original input row that started the run
 - **VCS pointer** — the jj `change_id` at the time of capture (if the repo uses jj)
+- **Workflow hash** — hash of the workflow definition at capture time (`null` if unavailable)
 - **Content hash** — SHA-256 of the serialized state, so you can detect identical snapshots cheaply
 
 Snapshots are captured automatically after every frame commit in the engine loop. You never call a "checkpoint" function. The engine does it for you.
@@ -5578,6 +5924,19 @@ Frame 0 ──snapshot──> Frame 1 ──snapshot──> Frame 2 ──snapsh
 ```
 
 Each snapshot is stored in `_smithers_snapshots` with a composite key of `(run_id, frame_no)`. The serialized JSON blobs are self-contained — you can reconstruct the full workflow state from any single snapshot without reading the event log.
+
+### Loading the Latest Snapshot
+
+To load the most recent snapshot for a run (regardless of frame number), use `loadLatestSnapshot`:
+
+```typescript
+import { loadLatestSnapshot } from "smithers-orchestrator";
+
+const snapshot = await loadLatestSnapshot(adapter, runId);
+// Returns the snapshot with the highest frame_no, or undefined if none exist.
+```
+
+This is what the engine uses internally when resuming a suspended run — it picks up from the last committed snapshot instead of replaying the event log.
 
 ### Why Not Just Use Events?
 
@@ -5597,6 +5956,7 @@ const diff = diffSnapshots(snapshotA, snapshotB);
 // diff.outputsChanged — output rows with different values
 // diff.ralphChanged   — loop state differences
 // diff.inputChanged   — whether the input row changed
+// diff.vcsPointerChanged — whether the VCS pointer changed
 ```
 
 This is a pure function — no database access needed. You pass in two snapshot objects and get back a structured diff you can render in the TUI, dump as JSON, or use programmatically.
@@ -5627,7 +5987,8 @@ When you fork:
 2. The snapshot from the parent run at the specified frame is copied as the initial state
 3. Optionally, specific nodes are reset to "pending" — they and their downstream dependents will re-execute
 4. Optionally, the input is overridden with new values
-5. The parent-child relationship is recorded in `_smithers_branches`
+5. Optionally, a `forkDescription` is attached for traceability
+6. The parent-child relationship is recorded in `_smithers_branches`
 
 Forking is cheap because it copies a single snapshot row, not the entire event history.
 
@@ -5640,6 +6001,30 @@ The `resetNodes` parameter lets you selectively re-execute specific tasks. When 
 - Any downstream nodes that depend on it are also reset (transitively)
 
 This is the key mechanism for "what-if" experiments. Change one task's behavior and see how it ripples through the rest of the workflow.
+
+### Listing Branches
+
+To list all forks that branched from a given run:
+
+```typescript
+import { listBranches } from "smithers-orchestrator";
+
+const branches = await listBranches(adapter, parentRunId);
+// Returns BranchInfo[] — one entry per child run forked from this parent.
+```
+
+Each `BranchInfo` contains the child `runId`, `parentRunId`, `parentFrameNo`, optional `branchLabel` and `forkDescription`, and a `createdAtMs` timestamp.
+
+### Looking Up Branch Info
+
+To check whether a run is itself a fork and retrieve its parent relationship:
+
+```typescript
+import { getBranchInfo } from "smithers-orchestrator";
+
+const info = await getBranchInfo(adapter, childRunId);
+// Returns BranchInfo | undefined — undefined if the run is not a fork.
+```
 
 ## Replay
 
@@ -5665,7 +6050,16 @@ With `--restore-vcs`, Smithers also restores the filesystem to the jj revision t
 
 Every snapshot records the jj `change_id` and operation ID at capture time. This creates a parallel timeline: workflow state in SQLite, filesystem state in jj.
 
-The `_smithers_vcs_tags` table maps `(run_id, frame_no)` to VCS metadata. When you replay with `--restore-vcs`, Smithers:
+The `_smithers_vcs_tags` table maps `(run_id, frame_no)` to VCS metadata. To look up a specific tag:
+
+```typescript
+import { loadVcsTag } from "smithers-orchestrator";
+
+const tag = await loadVcsTag(adapter, runId, frameNo);
+// Returns VcsTag | undefined — includes vcsType, vcsPointer, vcsRoot, jjOperationId.
+```
+
+When you replay with `--restore-vcs`, Smithers:
 
 1. Looks up the VCS pointer for the source frame
 2. Creates a jj workspace at that revision
@@ -5726,7 +6120,7 @@ This is a destructive operation on the run itself -- no child run is created. Us
 
 ## Metrics
 
-Time travel operations export three metrics:
+Time travel operations export four metrics:
 
 | Metric | Type | Description |
 |--------|------|-------------|
@@ -5866,20 +6260,72 @@ scorers={{
 | `ratio`       | Run with probability `rate`     |
 | `none`        | Disabled (useful for toggling)  |
 
+## Custom Scorers
+
+### createScorer
+
+Build a scorer from a plain configuration object:
+
+```ts
+import { createScorer } from "smithers-orchestrator/scorers";
+
+const myScorer = createScorer({
+  id: "word-count",
+  name: "Word Count",
+  description: "Scores based on output word count",
+  score: async ({ output }) => {
+    const words = String(output).split(/\s+/).length;
+    return { score: Math.min(words / 200, 1), reason: `${words} words` };
+  },
+});
+```
+
+### llmJudge
+
+Build an LLM-as-judge scorer that delegates evaluation to an AI agent. The judge receives a prompt constructed from `promptTemplate` and is expected to return JSON with `score` (0–1) and optional `reason`. If the response cannot be parsed, the scorer returns 0 with a diagnostic reason.
+
+```ts
+import { llmJudge } from "smithers-orchestrator/scorers";
+
+const toneScorer = llmJudge({
+  id: "professional-tone",
+  name: "Professional Tone",
+  description: "Evaluates if the output maintains a professional tone",
+  judge,
+  instructions: "You evaluate whether text maintains a professional, business-appropriate tone.",
+  promptTemplate: ({ input, output }) =>
+    `Rate the professionalism of this response (0-1 JSON).\n\nInput: ${String(input)}\n\nOutput: ${String(output)}`,
+});
+```
+
+| Field             | Type                            | Description                                                    |
+|-------------------|---------------------------------|----------------------------------------------------------------|
+| `id`              | `string`                        | Unique scorer identifier                                       |
+| `name`            | `string`                        | Human-readable name                                            |
+| `description`     | `string`                        | What this scorer evaluates                                     |
+| `judge`           | `AgentLike`                     | The agent that performs the evaluation                          |
+| `instructions`    | `string`                        | System-level instructions prepended to the prompt              |
+| `promptTemplate`  | `(input: ScorerInput) => string`| Builds the prompt from the scorer input                        |
+
 ## Built-in Scorers
 
 Smithers includes five built-in scorers:
 
 ### Code-based (no LLM needed)
 
-- **`schemaAdherenceScorer()`** — Validates that the output matches the task's Zod schema. Returns 1.0 if valid, 0.0 if not.
-- **`latencyScorer({ targetMs, maxMs })`** — Scores based on execution time. Returns 1.0 at or below `targetMs`, linearly decreasing to 0.0 at `maxMs`.
+**`schemaAdherenceScorer()`** — Validates that the output conforms to the task's Zod `outputSchema`. Returns 1.0 if `safeParse` succeeds, 0.0 if it fails (with validation issues in the reason). If no `outputSchema` is set, returns 1.0 with a skip note.
+
+**`latencyScorer({ targetMs, maxMs })`** — Scores based on task execution time. Returns 1.0 at or below `targetMs`, linearly interpolates to 0.0 at `maxMs`, and returns 0.0 above `maxMs`. If no latency data is available, returns 1.0 with a skip note.
 
 ### LLM-based (requires a judge agent)
 
-- **`relevancyScorer(judge)`** — Uses an LLM to evaluate whether the output is relevant to the input.
-- **`toxicityScorer(judge)`** — Uses an LLM to detect toxic or harmful content.
-- **`faithfulnessScorer(judge)`** — Uses an LLM to check if the output is faithful to the provided context.
+All three LLM-based scorers accept an `AgentLike` as `judge`. They construct a prompt with evaluation criteria, call `judge.generate()`, and parse the JSON response.
+
+**`relevancyScorer(judge)`** — Evaluates whether the output is relevant to and addresses the input prompt. Considers both direct answers and related context. Scores from 0.0 (completely irrelevant) to 1.0 (perfectly relevant).
+
+**`toxicityScorer(judge)`** — Detects toxic, harmful, offensive, or inappropriate content. Checks for hate speech, harassment, threats, discriminatory language, explicit content, and dangerous instructions. The score represents the *level* of toxicity: 0.0 means clean, 1.0 means highly toxic.
+
+**`faithfulnessScorer(judge)`** — Checks whether the output is faithful to the provided `context` without hallucinations. Every claim in the output should be supported by the context. Scores from 0.0 (entirely fabricated) to 1.0 (completely faithful). If no context is provided, evaluates internal consistency.
 
 ## Persistence
 
@@ -5904,6 +6350,29 @@ All scores are stored in the `_smithers_scorers` table:
 | `scored_at_ms` | INTEGER | When the score was computed           |
 | `duration_ms`  | REAL    | How long the scorer itself took       |
 
+## Execution Modes
+
+### Async (live scoring)
+
+When scorers are attached to a `<Task>`, they run via `runScorersAsync` — fire-and-forget execution that never blocks the workflow. All scorers run concurrently with unbounded concurrency. Errors are logged but do not fail the task.
+
+### Batch (offline evaluation)
+
+For testing and offline evaluation, call `runScorersBatch` directly. It runs all scorers, waits for completion, and returns a map of key to `ScoreResult | null`:
+
+```ts
+import { runScorersBatch } from "smithers-orchestrator/scorers";
+
+const results = await runScorersBatch(
+  { schema: { scorer: schemaAdherenceScorer() } },
+  { runId: "test", nodeId: "analyze", iteration: 0, attempt: 0, input: "...", output: { summary: "..." } },
+  adapter,
+);
+// { schema: { score: 1, reason: "Output matches schema" } }
+```
+
+Both modes persist results to the `_smithers_scorers` table with a `source` column of `"live"` or `"batch"`.
+
 ## Aggregation
 
 Query aggregate statistics across runs:
@@ -5912,16 +6381,78 @@ Query aggregate statistics across runs:
 import { aggregateScores } from "smithers-orchestrator/scorers";
 
 const stats = await aggregateScores(adapter, { runId: "run-123" });
-// [{ scorerId, scorerName, count, mean, min, max, p50, stddev }]
 ```
+
+### Filter Options
+
+| Filter     | Type     | Description                         |
+|------------|----------|-------------------------------------|
+| `runId`    | `string` | Filter to a specific run            |
+| `nodeId`   | `string` | Filter to a specific task node      |
+| `scorerId` | `string` | Filter to a specific scorer         |
+
+All filters are optional and can be combined.
+
+### Returned Statistics
+
+Each entry in the returned array contains:
+
+| Field        | Type     | Description                                      |
+|--------------|----------|--------------------------------------------------|
+| `scorerId`   | `string` | Scorer identifier                                |
+| `scorerName` | `string` | Human-readable scorer name                       |
+| `count`      | `number` | Total number of scores                           |
+| `mean`       | `number` | Average score                                    |
+| `min`        | `number` | Lowest score                                     |
+| `max`        | `number` | Highest score                                    |
+| `p50`        | `number` | Median score (50th percentile)                   |
+| `stddev`     | `number` | Standard deviation (population)                  |
 
 ## Events
 
-Three event types are emitted during scoring:
+Three event types are emitted during the scorer lifecycle:
 
-- `ScorerStarted` — A scorer has begun evaluation
-- `ScorerFinished` — A scorer completed successfully
-- `ScorerFailed` — A scorer threw an error
+**`ScorerStarted`** — Emitted when a scorer begins evaluation.
+
+| Field        | Type     |
+|--------------|----------|
+| `scorerId`   | `string` |
+| `scorerName` | `string` |
+| `nodeId`     | `string` |
+| `runId`      | `string` |
+
+**`ScorerFinished`** — Emitted when a scorer completes successfully. Includes the `score` value.
+
+| Field        | Type     |
+|--------------|----------|
+| `scorerId`   | `string` |
+| `scorerName` | `string` |
+| `score`      | `number` |
+| `nodeId`     | `string` |
+| `runId`      | `string` |
+
+**`ScorerFailed`** — Emitted when a scorer throws an error. Includes the `error`.
+
+| Field        | Type      |
+|--------------|-----------|
+| `scorerId`   | `string`  |
+| `scorerName` | `string`  |
+| `error`      | `unknown` |
+| `nodeId`     | `string`  |
+| `runId`      | `string`  |
+
+## Metrics
+
+Smithers tracks four Effect metrics for scorer execution:
+
+| Metric                          | Type      | Description                                  |
+|---------------------------------|-----------|----------------------------------------------|
+| `smithers.scorers.started`      | Counter   | Incremented when a scorer begins             |
+| `smithers.scorers.finished`     | Counter   | Incremented when a scorer completes          |
+| `smithers.scorers.failed`       | Counter   | Incremented when a scorer throws             |
+| `smithers.scorer.duration_ms`   | Histogram | Scorer execution time (exponential buckets, ~10ms to ~80s) |
+
+These metrics are available through the standard Effect metric system and can be exported via OTLP. See [Monitoring and Logs](/guides/monitoring-logs).
 
 ## CLI
 
@@ -6020,6 +6551,15 @@ await store.saveMessage({
 
 // List the last 20 messages
 const messages = await store.listMessages(thread.threadId, 20);
+
+// Count messages in a thread
+const total = await store.countMessages(thread.threadId);
+
+// Look up a thread by ID
+const existing = await store.getThread(thread.threadId);
+
+// Delete a thread and all its messages
+await store.deleteThread(thread.threadId);
 ```
 
 Threads are useful for building multi-turn conversations that persist across runs. A Ralph loop can write to the same thread each iteration, building up context over time.
@@ -6067,8 +6607,9 @@ The `memory` prop on `<Task>` connects memory to the execution flow. Before the 
 </Task>
 ```
 
-- `memory.recall` -- before the agent call, query semantic memory and prepend the top results as context
+- `memory.recall` -- before the agent call, query semantic memory and prepend the top results as context. Accepts an optional `query` to override the default prompt-based query.
 - `memory.remember` -- after the agent call, store the output in both working memory (under the given key) and semantic memory
+- `memory.threadId` -- optionally attach a message thread to the task, so conversation history persists across runs
 
 ## Loop Memory
 
@@ -6094,11 +6635,27 @@ Each iteration writes its output to memory and reads back the most relevant past
 
 ## Processors
 
-Memory processors run maintenance operations on stored data:
+Memory processors run maintenance operations on stored data. Each processor implements the `MemoryProcessor` interface with both Promise and Effect variants.
 
 - **TtlGarbageCollector** -- deletes expired facts based on their `ttlMs` field
 - **TokenLimiter** -- compresses message history when it exceeds a token budget
 - **Summarizer** -- uses an LLM to summarize old messages, replacing many messages with a single summary
+
+```ts
+import { TtlGarbageCollector, TokenLimiter, Summarizer } from "smithers-orchestrator/memory";
+
+// Delete all expired facts
+const gc = TtlGarbageCollector();
+await gc.process(store);
+
+// Limit message history to ~4000 tokens
+const limiter = TokenLimiter(4000);
+await limiter.process(store);
+
+// Summarize old messages using an LLM agent
+const summarizer = Summarizer(myAgent);
+await summarizer.process(store);
+```
 
 Processors run on-demand or can be wired into the workflow lifecycle.
 
@@ -6138,6 +6695,7 @@ Memory operations emit structured events and update Effect metrics:
 
 - `MemoryFactSet` / `MemoryRecalled` / `MemoryMessageSaved` events
 - `smithers.memory.fact_reads` / `smithers.memory.fact_writes` counters
+- `smithers.memory.message_saves` counter
 - `smithers.memory.recall_queries` counter
 - `smithers.memory.recall_duration_ms` histogram
 
@@ -6175,19 +6733,22 @@ Smithers ships five strategies:
 
 | Strategy | Splits on | Best for |
 |-----------|-----------|----------|
-| `recursive` | Paragraphs, then sentences, then words | General text (default) |
+| `recursive` | Paragraphs, then lines, then words, then characters | General text (default) |
 | `character` | Fixed character count | Uniform chunk sizes |
 | `sentence` | Sentence boundaries | Prose, articles |
 | `markdown` | Headings and sections | Documentation, READMEs |
-| `token` | Approximate token count | Token-budget-aware splitting |
+| `token` | Approximate token count (~4 chars/token) | Token-budget-aware splitting |
 
-Every strategy accepts `size` (max characters per chunk) and `overlap` (characters shared between adjacent chunks). Overlap prevents information loss at chunk boundaries.
+Every strategy accepts `size` (max characters per chunk) and `overlap` (characters shared between adjacent chunks). Overlap prevents information loss at chunk boundaries. The `character` strategy also accepts `separator` to override the default `"\n\n"` split boundary.
 
 ```ts
 import { chunk, createDocument } from "smithers-orchestrator/rag";
 
 const doc = createDocument("Your long document text here...");
 const chunks = chunk(doc, { strategy: "recursive", size: 1000, overlap: 200 });
+
+// Character strategy with a custom separator
+const csvChunks = chunk(doc, { strategy: "character", size: 500, overlap: 50, separator: "\n" });
 ```
 
 ## Embedding
@@ -6207,7 +6768,7 @@ The embedder is intentionally thin. It bridges Smithers chunk types to the AI SD
 
 ## Vector Store
 
-Vectors live in SQLite. No external database required. The `_smithers_vectors` table stores each chunk's text, embedding (as a BLOB), and metadata. Queries do a full-table scan with JavaScript cosine similarity using the AI SDK's `cosineSimilarity()`.
+Vectors live in SQLite. No external database required. The `_smithers_vectors` table stores each chunk's text, embedding (as a Float32 BLOB), dimensions, and metadata (as JSON). Document metadata set via `createDocument` is propagated to every chunk and persisted in `metadata_json`, so it survives round-trips through the store. Queries do a full-table scan with JavaScript cosine similarity using the AI SDK's `cosineSimilarity()`.
 
 This is fast enough for typical RAG workloads (hundreds to low thousands of chunks). If you outgrow it, swap in a different store implementation.
 
@@ -6230,13 +6791,15 @@ const pipeline = createRagPipeline({
   vectorStore: store,
   embeddingModel: model,
   chunkOptions: { strategy: "markdown", size: 1000, overlap: 200 },
+  topK: 10, // default topK for all retrieve calls (default 10)
+  namespace: "docs", // optional: scope to a namespace
 });
 
 // Ingest
 await pipeline.ingest([doc1, doc2]);
 await pipeline.ingestFile("./docs/architecture.md");
 
-// Retrieve
+// Retrieve — per-call topK overrides the pipeline default
 const results = await pipeline.retrieve("How does the scheduler work?", { topK: 5 });
 ```
 
@@ -6250,10 +6813,11 @@ import { createRagTool } from "smithers-orchestrator/rag";
 const searchKnowledge = createRagTool(pipeline, {
   name: "search_knowledge",
   description: "Search the project knowledge base",
+  defaultTopK: 5, // default results returned when agent omits topK
 });
 ```
 
-Hand this tool to any agent. When the agent calls it, Smithers embeds the query, searches the vector store, and returns the top results. The agent sees text and relevance scores -- it never touches raw vectors.
+Hand this tool to any agent. When the agent calls it, Smithers embeds the query, searches the vector store, and returns the top results with relevance scores and metadata. The agent's `topK` parameter accepts 1-50; when omitted, `defaultTopK` (default 5) is used.
 
 ## Namespaces
 
@@ -6346,6 +6910,8 @@ const program = Effect.gen(function* () {
 ```
 
 `ingest` and `retrieve` are convenience functions that pull `RagService` from Effect context automatically.
+
+Lower-level Effect wrappers are also exported for direct use outside the service layer: `embedChunksEffect`, `embedQueryEffect`, `ingestEffect`, `retrieveEffect`, `upsertEffect`, and `queryEffect`. These give you Effect-typed versions of each pipeline step without requiring the full `RagService` context.
 
 ## Observability Metrics
 
@@ -6471,6 +7037,22 @@ const program = Effect.gen(function* () {
 
 The `VoiceService` tag lets you inject a voice provider into any Effect pipeline. The `speak()` and `listen()` functions pull it from context automatically.
 
+For scoped lifecycle management (automatic `connect()` and `close()`), use `createVoiceServiceLayer()`:
+
+```ts
+import { createVoiceServiceLayer, speak } from "smithers-orchestrator/voice";
+import { Effect, Layer } from "effect";
+
+const voiceLayer = createVoiceServiceLayer(realtimeVoice);
+
+const program = Effect.gen(function* () {
+  const audio = yield* speak("Hello from Effect");
+  return audio;
+}).pipe(Effect.provide(voiceLayer));
+```
+
+The layer handles calling `connect()` when the scope opens and `close()` when it closes.
+
 ## Listing Available Speakers
 
 Every voice provider exposes `getSpeakers()`, which returns the list of voices that provider supports:
@@ -6534,6 +7116,115 @@ const voice = createOpenAIRealtimeVoice({
 ```
 
 The transcriber is sent to the server as part of the `session.update` call immediately after connection. It controls how the realtime API transcribes user audio for the `input_audio_transcription` session property.
+
+## Audio Format Support
+
+When calling `speak()`, you can request a specific audio format via the `format` option:
+
+```ts
+const audio = await voice.speak("Hello, world", { format: "opus" });
+```
+
+Supported formats:
+
+| Format | Description |
+| --- | --- |
+| `mp3` | MPEG Layer 3 — widely compatible, lossy |
+| `wav` | Waveform Audio — uncompressed, lossless |
+| `pcm` | Raw PCM — no header, lowest overhead |
+| `opus` | Opus codec — low latency, good for streaming |
+| `flac` | Free Lossless Audio Codec |
+| `aac` | Advanced Audio Coding — good compression |
+
+Not every provider supports every format. If the provider does not support the requested format, it will use its default. The `AudioFormat` type is exported from `smithers-orchestrator/voice` for type-safe usage.
+
+## Provider-Level Event Callbacks
+
+Realtime voice providers emit events that you can subscribe to with `on()` and unsubscribe from with `off()`:
+
+```ts
+const handler = (data) => console.log(data);
+
+voice.on("speaking", handler);   // audio output chunks
+voice.on("writing", handler);    // text transcription chunks
+voice.on("error", handler);      // provider errors
+voice.on("speaker", handler);    // new audio output stream
+
+voice.off("speaking", handler);  // remove a listener
+```
+
+| Event | Payload | When |
+| --- | --- | --- |
+| `speaking` | `{ audio, response_id }` | Each chunk of audio output from the model |
+| `writing` | `{ text, role, response_id }` | Each chunk of text transcription |
+| `error` | `{ message, code?, details? }` | A provider-level error occurred |
+| `speaker` | `ReadableStream` | A new audio response stream was created |
+
+These are provider-level events on the voice instance. They are separate from the Smithers event bus events (`VoiceStarted`, `VoiceFinished`, `VoiceError`) which track operation lifecycle at the workflow level.
+
+## Default Speaker Selection
+
+If you don't specify a `speaker` prop on `<Voice>` or a `speaker` option in the provider config, the default depends on the provider:
+
+- **OpenAI Realtime**: defaults to `"alloy"`
+- **AI SDK Voice**: no default — you must pass a speaker via `SpeakOptions` or the provider config, or the underlying model's default is used
+- **Composite Voice**: delegates to whichever sub-provider handles the operation
+
+You can override the speaker at three levels (highest priority first):
+
+1. Per-call: `voice.speak("text", { speaker: "shimmer" })`
+2. Per-component: `<Voice provider={voice} speaker="coral">`
+3. Per-provider: `createOpenAIRealtimeVoice({ speaker: "echo" })`
+
+## OpenAI Realtime: API Key and Environment Fallback
+
+The OpenAI Realtime provider resolves API keys in this order:
+
+1. The `apiKey` config option passed to `createOpenAIRealtimeVoice()`
+2. The `OPENAI_API_KEY` environment variable
+
+```ts
+// Explicit key
+const voice = createOpenAIRealtimeVoice({ apiKey: "sk-..." });
+
+// Or rely on the environment variable — no config needed
+const voice = createOpenAIRealtimeVoice();
+// Uses process.env.OPENAI_API_KEY automatically
+```
+
+If neither is set, `connect()` throws an error.
+
+## OpenAI Realtime: Model Override
+
+Override the realtime model with the `model` config option:
+
+```ts
+const voice = createOpenAIRealtimeVoice({
+  model: "gpt-4o-realtime-preview",
+});
+```
+
+The default is `gpt-4o-mini-realtime-preview-2024-12-17`. The model name is appended as a query parameter to the WebSocket URL.
+
+## OpenAI Realtime: Session Management
+
+The OpenAI Realtime provider manages WebSocket session lifecycle automatically:
+
+1. **`connect()`** opens a WebSocket, waits for the `session.created` event, then sends an initial `session.update` to configure the transcription model and default voice.
+2. While connected, any calls to `send()`, `speak()`, `listen()`, or `answer()` use the active session.
+3. **`close()`** tears down the connection, cleans up speaker streams, and releases resources.
+
+Messages sent before the session is ready are automatically queued and flushed once the connection opens. You don't need to wait for `session.created` yourself — `connect()` returns only after the session is fully initialized.
+
+```ts
+const voice = createOpenAIRealtimeVoice({ speaker: "coral" });
+
+await voice.connect();    // waits for session.created + session.update
+await voice.send(audio);  // uses the active session
+voice.close();            // tears down cleanly
+```
+
+If you call `connect()` while already connected, it returns immediately. Concurrent calls to `connect()` are deduplicated — only one connection attempt runs at a time.
 
 ## Events and Observability
 
@@ -6650,9 +7341,10 @@ const listPets = await createOpenApiTool(spec, "listPets", {
 
 ## Observability
 
-Every OpenAPI tool call emits an `OpenApiToolCalled` event and updates two metrics:
+Every OpenAPI tool call emits an `OpenApiToolCalled` event and updates three metrics:
 
 - `smithers.openapi.tool_calls` -- counter of total calls
+- `smithers.openapi.tool_call_errors` -- counter of failed calls
 - `smithers.openapi.tool_duration_ms` -- histogram of call durations
 
 These integrate with the standard Smithers observability pipeline, so they appear in your logs, Prometheus exports, and OpenTelemetry traces alongside all other tool metrics.
@@ -6675,6 +7367,12 @@ const tools = createOpenApiToolsSync("/path/to/openapi.json", options);
 ```
 
 Use the sync variant when you are initializing tools at module load time and cannot await.
+
+## Operation ID Fallback
+
+If an OpenAPI operation does not have an `operationId`, Smithers generates one from the HTTP method and path. For example, `GET /pets/{petId}` becomes `get_pets_petId`. The generated ID strips braces and non-alphanumeric characters, joining segments with underscores.
+
+You should still set explicit `operationId` values in your spec whenever possible -- they make tool names readable and stable. The fallback exists so that specs without IDs still produce usable tools.
 
 ## Loading a Spec via the Effect Layer
 
@@ -11251,6 +11949,13 @@ await store.saveMessage({
 });
 
 const messages = await store.listMessages(thread.threadId, 10);
+const total = await store.countMessages(thread.threadId);
+
+// Retrieve a thread by ID
+const existing = await store.getThread(thread.threadId);
+
+// Delete a thread and its messages
+await store.deleteThread(thread.threadId);
 ```
 
 ## Processors
@@ -11258,11 +11963,19 @@ const messages = await store.listMessages(thread.threadId, 10);
 Run maintenance on stored memory:
 
 ```ts
-import { TtlGarbageCollector } from "smithers-orchestrator/memory";
+import { TtlGarbageCollector, TokenLimiter, Summarizer } from "smithers-orchestrator/memory";
 
 // Delete expired facts
 const gc = TtlGarbageCollector();
 await gc.process(store);
+
+// Compress message history exceeding a token budget
+const limiter = TokenLimiter(4000);
+await limiter.process(store);
+
+// Summarize old messages with an LLM
+const summarizer = Summarizer(myAgent);
+await summarizer.process(store);
 ```
 
 ## CLI
@@ -11582,7 +12295,7 @@ const allTools = { ...petTools, ...orderTools };
 
 **A task did not rerun** -- Smithers resumes by `runId`. If a node already completed for the current `runId`, it is skipped. Use a new `runId` for a fresh run, or inspect persisted attempts first.
 
-**MDX prompt rendered as `[object Object]`** -- The MDX preload was not registered. Confirm `preload.ts` calls `mdxPlugin()` and `bunfig.toml` points at the preload file.
+**MDX prompt rendered as `[object Object]`** -- The MDX preload was not registered. Confirm `preload.ts` calls `mdxPlugin()` and `bunfig.toml` points at the preload file. If running tests, verify that the `[test]` section in `bunfig.toml` also lists the preload. See [Package Configuration](/reference/package-configuration#test-configuration).
 
 **Workflow code changed but running task did not** -- Hot reload only affects unscheduled work. In-flight tasks continue with the code they started with.
 
@@ -11848,6 +12561,24 @@ const analysisSchema = z.object({
 </Task>
 ```
 
+### Heartbeat monitoring
+
+Use `heartbeatTimeoutMs` to detect stalled long-running agent tasks. The agent must emit heartbeats periodically; if none arrive within the timeout window, the task fails:
+
+```tsx
+<Task
+  id="long-migration"
+  output={outputs.migration}
+  agent={migrationAgent}
+  heartbeatTimeoutMs={60_000}
+  timeoutMs={3_600_000}
+>
+  Run the database migration. Report progress periodically.
+</Task>
+```
+
+This is distinct from `timeoutMs` — `timeoutMs` caps total execution time, while `heartbeatTimeoutMs` detects hangs mid-execution.
+
 ## Compute mode
 
 Children is a function, no `agent`. Called at execution time; return value becomes output. Sync or async.
@@ -11995,6 +12726,28 @@ Custom Drizzle tables must be created and migrated separately. Define the workfl
 | Agent failure | Fails. Retries if `retries > 0`. Continues if `continueOnFail`. |
 | Callback throws | Same retry/`continueOnFail` behavior as agent failures. |
 | Callback timeout | Fails after `timeoutMs`. Retries if `retries > 0`. |
+
+## Agent JSON Output Extraction
+
+When `outputSchema` is set, the engine extracts structured JSON from the agent's text response using a multi-strategy pipeline:
+
+1. **Code fence extraction** -- looks for ` ```json ` fenced blocks and parses the content.
+2. **Balanced brace extraction** -- finds the outermost `{...}` using brace-depth counting, handling nested objects correctly.
+3. **Last balanced JSON** -- if multiple JSON objects appear, the last complete one is used (agents often produce the final answer last).
+
+After extraction, the JSON is validated against `outputSchema`. If validation fails:
+
+- The engine sends a **retry prompt** back to the agent describing the schema violation and asking for corrected output.
+- This schema-validation retry happens within the same attempt (it does not consume a `retries` count).
+- If the agent still fails to produce valid JSON after retries, the attempt fails.
+
+### Auth Failure Circuit Breaker
+
+If an agent returns an authentication error (e.g., invalid API key, expired token), the engine short-circuits without retrying. Auth failures are terminal -- retrying with the same credentials will not produce a different result.
+
+### Non-Idempotent Tool Retry Warnings
+
+When a task is retried (via `retries` or manual `retryTask()`), the engine checks whether non-idempotent tools (tools with `sideEffect: true` and `idempotent: false`) were called in prior attempts. If so, a warning message is prepended to the agent's prompt on the next attempt, alerting it that certain side effects may have already occurred.
 
 ## Notes
 
@@ -12512,6 +13265,35 @@ export default smithers((ctx) => (
 ));
 ```
 
+## Ralph alias
+
+`Loop` is also exported as `Ralph`, which is the original name for this component. The `Ralph` export is deprecated — use `Loop` in new code:
+
+```tsx
+import { Loop } from "smithers-orchestrator";     // preferred
+import { Ralph } from "smithers-orchestrator";     // deprecated alias, same component
+```
+
+Both names render the same `<smithers:ralph>` host element. Many composite components (Supervisor, ReviewLoop, Optimizer, Debate) use `Loop` internally for their iteration logic.
+
+## Infinite loop pattern
+
+To create an intentionally infinite loop (for polling, monitoring, or long-running daemons), set `until={false}` with no `maxIterations`, and use `continueAsNewEvery` to prevent unbounded history growth:
+
+```tsx
+<Loop
+  id="monitor"
+  until={false}
+  continueAsNewEvery={100}
+>
+  <Task id="check" output={outputs.status} agent={monitorAgent}>
+    Check system health and report any anomalies.
+  </Task>
+</Loop>
+```
+
+The `continueAsNewEvery` prop checkpoints the workflow state every N iterations and resumes in a fresh execution, keeping the event history bounded.
+
 ## Rendering
 
 `<Loop>` renders as a `<smithers:ralph>` host element (or `null` when skipped). The runtime manages iteration state and re-renders the tree each iteration.
@@ -12754,6 +13536,12 @@ type ApprovalAutoApprove = {
 ## Metrics
 
 Async approvals contribute to the Prometheus gauge `smithers_external_wait_async_pending{kind="approval"}` while waiting for human input.
+
+## Durable deferred resolution
+
+`<Approval>` uses a durable deferred mechanism to survive process restarts. When the node enters `waiting-approval` state, an `@effect/workflow DurableDeferred` is created and awaited by the executing task fiber. The deferred is keyed to the run, node, and iteration, so it survives process restarts: if the worker crashes while waiting, the next worker that picks up the task will re-await the same deferred and receive the resolution as soon as a human submits a decision.
+
+When `smithers approve` or `smithers deny` is called, `bridgeApprovalResolve` resolves the deferred, which unblocks the awaiting fiber and lets the compute function proceed to read the decision from the database. No polling is needed.
 
 ## `<Approval>` vs `needsApproval`
 
@@ -13516,6 +14304,29 @@ Use `strategy="vote"` with `minAgree` to require quorum:
 
 The moderator receives the vote strategy and minimum agreement threshold in its prompt context.
 
+## Consensus strategy
+
+Use `strategy="consensus"` to require panelists to converge on a shared answer. The moderator checks whether panelists agree and, if `minAgree` is set, enforces a minimum threshold:
+
+```tsx
+<Panel
+  panelists={[
+    { agent: analyst1, role: "Risk Analyst A" },
+    { agent: analyst2, role: "Risk Analyst B" },
+    { agent: analyst3, role: "Risk Analyst C" },
+  ]}
+  moderator={moderatorAgent}
+  panelistOutput={outputs.assessment}
+  moderatorOutput={outputs.consensus}
+  strategy="consensus"
+  minAgree={3}
+>
+  Assess the risk level of deploying the new payment gateway to production this week.
+</Panel>
+```
+
+The moderator receives the consensus strategy and threshold in its prompt context, and is responsible for determining whether the panelists have converged.
+
 ## Bare agent shorthand
 
 When you don't need per-panelist roles, pass an array of agents directly:
@@ -13647,6 +14458,39 @@ Allow the suite to pass even if some checks fail:
 ```
 
 The verdict task receives the `"majority"` strategy and aggregates accordingly.
+
+## Any-pass strategy
+
+Use `"any-pass"` when a single passing check is sufficient:
+
+```tsx
+<CheckSuite
+  checks={[
+    { id: "region-us", agent: healthAgent, label: "US region" },
+    { id: "region-eu", agent: healthAgent, label: "EU region" },
+    { id: "region-ap", agent: healthAgent, label: "AP region" },
+  ]}
+  verdictOutput={outputs.verdict}
+  strategy="any-pass"
+/>
+```
+
+The suite passes as long as at least one region is healthy.
+
+## Command-based checks
+
+Checks can use `command` instead of `agent` for shell-based checks:
+
+```tsx
+<CheckSuite
+  checks={[
+    { id: "lint", command: "npm run lint", label: "Lint" },
+    { id: "typecheck", command: "npx tsc --noEmit", label: "Type check" },
+    { id: "test", command: "npm test", label: "Unit tests" },
+  ]}
+  verdictOutput={outputs.verdict}
+/>
+```
 
 ## Fail-fast mode
 
@@ -14662,7 +15506,7 @@ import { DriftDetector } from "smithers-orchestrator";
 | `baseline` | `unknown` | **(required)** | Static baseline data (object, string, etc.) to compare against. |
 | `alertIf` | `(comparison) => boolean` | `undefined` | Custom condition for firing the alert. If omitted, the `drifted` field from the comparison output is used. |
 | `alert` | `ReactElement` | `undefined` | Element to render when drift is detected (e.g. a `<Task>` that sends a notification). |
-| `poll` | `{ intervalMs: number, maxPolls?: number }` | `undefined` | If set, wraps the detector in a `<Loop>` for periodic polling. |
+| `poll` | `{ intervalMs: number, maxPolls?: number }` | `undefined` | If set, wraps the detector in a `<Loop>` for periodic polling. `maxPolls` defaults to `100` when `poll` is provided but `maxPolls` is omitted. |
 | `skipIf` | `boolean` | `false` | Skip the entire component. Returns `null`. |
 
 ## What it builds
@@ -15589,6 +16433,44 @@ Use `correlationId` to match specific event instances when multiple events of th
 />
 ```
 
+## Durable Deferred Resolution
+
+When `async` is `true`, the wait node becomes a **durable deferred**: the workflow records the subscription durably and allows unrelated downstream work to proceed immediately. The deferred resolves when the event arrives. Any task that explicitly depends on this node (via `dependsOn` or `needs`) still blocks until the payload is available.
+
+This pattern is useful when you want to kick off a long-running external process and continue with independent work while waiting:
+
+```tsx
+<Workflow name="async-deploy">
+  <Sequence>
+    <Task id="trigger-build" output={outputs.trigger} agent={ciAgent}>
+      Trigger a CI build and return the build ID.
+    </Task>
+
+    <WaitForEvent
+      id="build-done"
+      event="ci.build.completed"
+      correlationId={ctx.outputMaybe(outputs.trigger, { nodeId: "trigger-build" })?.buildId}
+      output={outputs.buildResult}
+      timeoutMs={1_800_000}
+      onTimeout="fail"
+      async
+    />
+
+    {/* This runs immediately — it does not depend on the build result */}
+    <Task id="notify-started" output={outputs.notifyStarted}>
+      {{ message: "Build triggered, waiting for completion." }}
+    </Task>
+
+    {/* This blocks until the build event payload is available */}
+    <Task id="deploy" output={outputs.deploy} dependsOn={["build-done"]} agent={deployAgent}>
+      Deploy the completed build.
+    </Task>
+  </Sequence>
+</Workflow>
+```
+
+The subscription survives worker restarts — the Temporal runtime checkpoints the event wait durably. When the matching event arrives, the deferred resolves and any blocked dependents resume.
+
 ## Behavior
 
 - When the scheduler reaches this node, it enters `waiting-event` status.
@@ -16464,6 +17346,7 @@ Each workflow run handles `MAX_PER_RUN` iterations via the loop, then hands off 
 
 - Use `<ContinueAsNew>` for workflows that run indefinitely (daemons, pollers, event processors). For bounded iteration, [`<Loop>`](/components/loop) is simpler.
 - The `state` payload must be JSON-serializable. Classes, functions, `undefined` nested inside objects, and circular references are not supported.
+- The serialized continuation state (including the `__smithersContinuation` envelope) must be under **10 MB**. Exceeding this limit fails the run.
 - Access the carried payload via `ctx.input.__smithersContinuation.payload`. Type-cast as needed since the input type does not include this field by default.
 - Temporal imposes a maximum event history size (default 50,000 events / 50 MB). `<ContinueAsNew>` before approaching this limit is the recommended mitigation.
 - The `continueAsNew(state?)` helper is interchangeable with `<ContinueAsNew state={state} />` — choose whichever reads more clearly in context.
@@ -18034,6 +18917,14 @@ Behavior:
 
 Use `smithers hijack <runId> --launch=false` to inspect the resumable candidate without opening the session.
 
+### Non-Idempotent Tool Resume Warning
+
+When a task retries after a failure, previous attempts may have already executed side-effect tools (e.g., sending messages, creating PRs). Smithers detects non-idempotent tool calls from prior attempts and prepends a warning to the agent's prompt:
+
+> Previous attempts in this task already called non-idempotent side-effect tools. Those side effects may already have happened before the interruption or retry. Do not blindly call them again. Verify external state first or continue from the prior result.
+
+The warning includes the specific tool names and attempt numbers. It is automatically injected — no configuration is required.
+
 ---
 
 ## Base Options
@@ -18144,14 +19035,27 @@ type ClaudeCodeAgentOptions = BaseCliAgentOptions & {
 
 | Option | Description |
 |---|---|
-| `outputFormat` | `"text"`, `"json"`, or `"stream-json"` (default: `"text"`) |
 | `permissionMode` | `"bypassPermissions"`, `"acceptEdits"`, `"default"`, `"delegate"`, `"dontAsk"`, `"plan"` |
 | `allowedTools` | Tool name whitelist |
 | `disallowedTools` | Tool name blacklist |
+| `disableSlashCommands` | Disable all slash commands |
 | `maxBudgetUsd` | Spending cap in USD |
 | `mcpConfig` | MCP server configuration files |
+| `mcpDebug` | Enable MCP debug logging |
 | `addDir` | Additional context directories |
+| `file` | Files to inject into context |
 | `fromPr` | Pull request URL or number to use as additional context |
+| `fallbackModel` | Model to use if the primary model is unavailable |
+| `appendSystemPrompt` | Text appended to the system prompt |
+| `agents` | Multi-agent configuration as a map of agent definitions or JSON string |
+| `betas` | Beta feature flags to enable |
+| `pluginDir` | Plugin directories for Claude Code skills |
+| `resume` / `sessionId` | Resume a previous session by ID |
+| `settings` / `settingSources` | Override settings file or sources |
+| `jsonSchema` | JSON schema string for structured output |
+| `includePartialMessages` | Stream partial assistant messages |
+| `inputFormat` | `"text"` or `"stream-json"` for input |
+| `outputFormat` | `"text"`, `"json"`, or `"stream-json"` (default: `"stream-json"`) |
 
 When `yolo` is `true` (default), the agent passes `--allow-dangerously-skip-permissions`, `--dangerously-skip-permissions`, and `--permission-mode bypassPermissions` unless `permissionMode` is explicitly set.
 
@@ -18210,9 +19114,12 @@ type CodexAgentOptions = BaseCliAgentOptions & {
 |---|---|
 | `sandbox` | `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
 | `fullAuto` | Full auto mode (no confirmations) |
+| `dangerouslyBypassApprovalsAndSandbox` | Skip all approval prompts and sandbox restrictions |
 | `config` | Configuration overrides as key-value pairs or raw strings |
 | `oss` | Use open-source models |
 | `localProvider` | Local model provider URL |
+| `image` | Image file paths to include as visual inputs |
+| `outputSchema` | Path to JSON schema file for structured output |
 | `outputLastMessage` | File path to write the last message (auto-generated if not set) |
 
 When `yolo` is `true` and `fullAuto` is not set, passes `--dangerously-bypass-approvals-and-sandbox`. If `fullAuto` is `true`, uses `--full-auto` instead.
@@ -18259,7 +19166,10 @@ type GeminiAgentOptions = BaseCliAgentOptions & {
 | `sandbox` | Run in sandbox mode |
 | `approvalMode` | `"default"`, `"auto_edit"`, `"yolo"`, or `"plan"` |
 | `allowedTools` | Tool name whitelist |
+| `allowedMcpServerNames` | MCP server name whitelist |
 | `extensions` | Gemini CLI extensions to load |
+| `resume` | Resume a previous session by ID |
+| `listSessions` / `deleteSession` | Session management |
 | `includeDirectories` | Additional directories to include |
 | `outputFormat` | `"text"`, `"json"`, or `"stream-json"` (default: `"json"`) |
 
@@ -18404,8 +19314,10 @@ type KimiAgentOptions = BaseCliAgentOptions & {
 | `quiet` | Alias for `--print --output-format text --final-message-only` |
 | `agent` | Built-in agent spec: `"default"` or `"okabe"` |
 | `agentFile` | Path to custom agent specification file |
+| `workDir` | Override the working directory for the kimi process |
+| `session` / `continue` | Session resumption and continuation |
 | `skillsDir` | Skills directory path |
-| `mcpConfigFile` | MCP config file(s) |
+| `mcpConfigFile` / `mcpConfig` | MCP config file(s) or inline config |
 | `maxStepsPerTurn` | Max steps in one turn |
 | `maxRetriesPerStep` | Max retries in one step |
 | `maxRalphIterations` | Extra iterations after the first turn in Loop mode |
@@ -23264,7 +24176,7 @@ const result = await runWorkflow(workflow, {
   input: { description: "Auth tokens expire silently" },
 });
 
-console.log(result.status); // "finished" | "failed" | "cancelled" | "waiting-approval"
+console.log(result.status); // "finished" | "failed" | "cancelled" | "continued" | "waiting-approval" | ...
 ```
 
 ## Signature
@@ -23294,6 +24206,9 @@ function runWorkflow<Schema>(
 | `toolTimeoutMs` | `number` | `60000` | Wall-clock timeout (ms) per tool call. |
 | `hot` | `boolean \| HotReloadOptions` | `undefined` | Enable hot-reload. `true` for defaults, or pass `HotReloadOptions`. |
 | `cliAgentToolsDefault` | `"all" \| "explicit-only"` | `"all"` | Default tool access policy for CLI-backed agents. When `"explicit-only"`, agents can only use tools listed in the task's `allowTools` prop. Recommended `"explicit-only"` for production workflows. |
+| `parentRunId` | `string` | `undefined` | Parent run ID for child workflow / subflow ancestry tracking. |
+| `force` | `boolean` | `false` | Allow resume even when the run's owner process is still alive (overrides PID liveness check). |
+| `auth` | `RunAuthContext` | `undefined` | Authentication context accessible as `ctx.auth` in the workflow. |
 
 ### HotReloadOptions
 
@@ -23310,7 +24225,7 @@ function runWorkflow<Schema>(
 ```ts
 type RunResult = {
   runId: string;
-  status: "finished" | "failed" | "cancelled" | "waiting-approval";
+  status: "finished" | "failed" | "cancelled" | "continued" | "waiting-approval" | "waiting-event" | "waiting-timer";
   output?: unknown;
   error?: unknown;
 };
@@ -23361,7 +24276,10 @@ db.close();
 | `"finished"` | All tasks completed. |
 | `"failed"` | A task failed after exhausting retries; `continueOnFail` not set. |
 | `"cancelled"` | Cancelled via `AbortSignal` or hijack handoff. |
+| `"continued"` | Run ended via `<ContinueAsNew>` -- a fresh run has started with carried state. |
 | `"waiting-approval"` | A task requires human approval. Unblock with `smithers approve` or `smithers deny`. |
+| `"waiting-event"` | A task is waiting for an external signal or event. Send via `signalRun()` or the CLI. |
+| `"waiting-timer"` | A task is suspended until a durable timer fires. |
 
 ## Resuming a Run
 
@@ -23828,7 +24746,7 @@ Emitted once at the beginning of every run (including resumes).
 { type: "RunStatusChanged", runId: string, status: RunStatus, timestampMs: number }
 ```
 
-`RunStatus`: `"running"` | `"waiting-approval"` | `"finished"` | `"failed"` | `"cancelled"`.
+`RunStatus`: `"running"` | `"waiting-approval"` | `"waiting-event"` | `"waiting-timer"` | `"finished"` | `"continued"` | `"failed"` | `"cancelled"`.
 
 #### RunFinished
 
@@ -24764,6 +25682,63 @@ The engine continues with the previous valid code.
 ```
 
 Schema changes require a process restart.
+
+### Scorer Events
+
+#### ScorerStarted
+
+Emitted when a scorer begins evaluating a task's output.
+
+```ts
+{
+  type: "ScorerStarted",
+  runId: string,
+  nodeId: string,
+  scorerId: string,
+  scorerName: string,
+  timestampMs: number,
+}
+```
+
+`scorerId`: Unique identifier of the scorer. `scorerName`: Human-readable scorer name.
+
+#### ScorerFinished
+
+Emitted when a scorer completes successfully.
+
+```ts
+{
+  type: "ScorerFinished",
+  runId: string,
+  nodeId: string,
+  scorerId: string,
+  scorerName: string,
+  score: number,
+  timestampMs: number,
+}
+```
+
+`score`: The 0–1 normalized score produced by the scorer.
+
+#### ScorerFailed
+
+Emitted when a scorer throws an error during evaluation.
+
+```ts
+{
+  type: "ScorerFailed",
+  runId: string,
+  nodeId: string,
+  scorerId: string,
+  scorerName: string,
+  error: unknown,
+  timestampMs: number,
+}
+```
+
+`error`: The error thrown by the scorer. Scorer failures never fail the parent task — they are logged and the workflow continues.
+
+See [Evals & Scorers](/concepts/evals) for the full scoring system documentation.
 
 ## Quick Reference
 
@@ -27045,6 +28020,7 @@ interface SmithersCtx<Schema> {
   iteration: number;
   iterations?: Record<string, number>;
   input: Schema extends { input: infer T } ? T : any;
+  auth: RunAuthContext | null;
   outputs: OutputAccessor<Schema>;
 
   output<T extends keyof Schema>(
@@ -27071,11 +28047,12 @@ interface SmithersCtx<Schema> {
 | `iteration` | `number` | Current Loop iteration (0 outside loops) |
 | `iterations` | `Record<string, number>` | Loop ID to current iteration count |
 | `input` | Inferred from Schema | Typed input data |
+| `auth` | `RunAuthContext \| null` | Authentication context passed via `RunOptions.auth`. `null` when no auth context is configured. |
 | `outputs` | `OutputAccessor<Schema>` | Accessor for all output rows |
-| `output(table, key)` | `InferRow<T>` | Get output row. Throws if missing. |
-| `outputMaybe(table, key)` | `InferRow<T> \| undefined` | Get output row or `undefined` |
-| `latest(table, nodeId)` | `any` | Latest output row (highest iteration) |
-| `latestArray(value, schema)` | `any[]` | Parse array field with Zod, drop invalid items |
+| `output(table, key)` | `InferRow<T>` | Get output row. Throws if missing. The `table` parameter accepts a Zod schema from `outputs`, a Drizzle table, or a string schema key. |
+| `outputMaybe(table, key)` | `InferRow<T> \| undefined` | Get output row or `undefined`. Same table resolution as `output()`. |
+| `latest(table, nodeId)` | `any` | Latest output row (highest iteration). Same table resolution as `output()`. |
+| `latestArray(value, schema)` | `any[]` | JSON-parse `value` if it is a string, coerce to array, then validate each element against `schema` (Zod). Invalid items are silently dropped. |
 | `iterationCount(table, nodeId)` | `number` | Distinct iteration count for a node |
 
 ---
@@ -27123,11 +28100,13 @@ type InferRow<TTable> = TTable extends { $inferSelect: infer R } ? R : never;
 ```ts
 type RunOptions = {
   runId?: string;
+  parentRunId?: string;
   input: Record<string, unknown>;
   maxConcurrency?: number;
   onProgress?: (e: SmithersEvent) => void;
   signal?: AbortSignal;
   resume?: boolean;
+  force?: boolean;
   workflowPath?: string;
   rootDir?: string;
   logDir?: string | null;
@@ -27135,17 +28114,21 @@ type RunOptions = {
   maxOutputBytes?: number;
   toolTimeoutMs?: number;
   hot?: boolean | HotReloadOptions;
+  auth?: RunAuthContext;
+  cliAgentToolsDefault?: "all" | "explicit-only";
 };
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `runId` | `string` | Auto-generated | Custom run identifier |
+| `runId` | `string` | Auto-generated | Custom run identifier. Falls back to `randomUUID()` when omitted. |
+| `parentRunId` | `string` | `undefined` | Parent run ID for child workflow / subflow tracking. |
 | `input` | `Record<string, unknown>` | -- | Input data (required) |
-| `maxConcurrency` | `number` | `undefined` | Max parallel tasks |
+| `maxConcurrency` | `number` | `4` | Max parallel tasks |
 | `onProgress` | `(e: SmithersEvent) => void` | `undefined` | Lifecycle event callback |
 | `signal` | `AbortSignal` | `undefined` | Cancellation signal |
 | `resume` | `boolean` | `false` | Resume from last checkpoint |
+| `force` | `boolean` | `false` | Allow resume even if the run is still active (overrides liveness check) |
 | `workflowPath` | `string` | `undefined` | Workflow file path (for tool context) |
 | `rootDir` | `string` | `undefined` | Sandbox root for tools |
 | `logDir` | `string \| null` | `undefined` | Event log directory (`null` to disable) |
@@ -27153,6 +28136,8 @@ type RunOptions = {
 | `maxOutputBytes` | `number` | `200000` | Max output bytes per tool call |
 | `toolTimeoutMs` | `number` | `60000` | Tool execution timeout (ms) |
 | `hot` | `boolean \| HotReloadOptions` | `undefined` | Hot-reload mode |
+| `auth` | `RunAuthContext` | `undefined` | Authentication context. Accessible as `ctx.auth` inside the workflow. |
+| `cliAgentToolsDefault` | `"all" \| "explicit-only"` | `"all"` | Default tool access policy for CLI-backed agents. `"explicit-only"` restricts agents to tools listed in `allowTools`. |
 
 ---
 
@@ -27183,7 +28168,7 @@ type HotReloadOptions = {
 ```ts
 type RunResult = {
   runId: string;
-  status: "finished" | "failed" | "cancelled" | "waiting-approval";
+  status: "finished" | "failed" | "cancelled" | "continued" | "waiting-approval" | "waiting-event" | "waiting-timer";
   output?: unknown;
   error?: unknown;
 };
@@ -27204,7 +28189,10 @@ type RunResult = {
 type RunStatus =
   | "running"
   | "waiting-approval"
+  | "waiting-event"
+  | "waiting-timer"
   | "finished"
+  | "continued"
   | "failed"
   | "cancelled";
 ```
@@ -27213,7 +28201,10 @@ type RunStatus =
 |---|---|
 | `"running"` | Actively executing |
 | `"waiting-approval"` | Awaiting human approval |
+| `"waiting-event"` | Awaiting an external signal or event |
+| `"waiting-timer"` | Suspended until a durable timer fires |
 | `"finished"` | All tasks completed |
+| `"continued"` | Run ended via `<ContinueAsNew>` and a fresh run has started |
 | `"failed"` | Unrecoverable task failure |
 | `"cancelled"` | Cancelled via `AbortSignal` or API |
 
@@ -27321,8 +28312,62 @@ type RetryPolicy = {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `backoff` | `"fixed" \| "linear" \| "exponential"` | `undefined` | Backoff strategy |
-| `initialDelayMs` | `number` | `undefined` | Initial delay before first retry (ms) |
+| `backoff` | `"fixed" \| "linear" \| "exponential"` | `"fixed"` | Backoff strategy. `"fixed"`: constant delay. `"linear"`: delay increases by `initialDelayMs` each attempt. `"exponential"`: delay doubles each attempt. |
+| `initialDelayMs` | `number` | `0` | Base delay in milliseconds. When `0`, retries execute immediately with no schedule. |
+
+Backoff delay formulas (attempt 1-indexed):
+
+| Strategy | Delay formula |
+|---|---|
+| `"fixed"` | `initialDelayMs` every attempt |
+| `"linear"` | `initialDelayMs * attempt` |
+| `"exponential"` | `initialDelayMs * 2^(attempt - 1)` |
+
+When `retries` is set on a `<Task>` without a `retryPolicy`, the task retries immediately (no delay).
+
+---
+
+### RetryTaskOptions
+
+Options for the programmatic `retryTask()` function, which resets a task and its dependents for re-execution.
+
+```ts
+type RetryTaskOptions = {
+  runId: string;
+  nodeId: string;
+  iteration?: number;
+  resetDependents?: boolean;
+  force?: boolean;
+  onProgress?: (event: SmithersEvent) => void;
+};
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `runId` | `string` | -- | Run ID containing the task to retry |
+| `nodeId` | `string` | -- | Node ID of the task to retry |
+| `iteration` | `number` | `0` | Loop iteration to retry |
+| `resetDependents` | `boolean` | `true` | Also reset downstream tasks that depend on this node |
+| `force` | `boolean` | `false` | Allow retry even if the run is still active |
+| `onProgress` | `(event: SmithersEvent) => void` | `undefined` | Event callback for `RetryTaskStarted` and `RetryTaskFinished` events |
+
+---
+
+### RetryTaskResult
+
+```ts
+type RetryTaskResult = {
+  success: boolean;
+  resetNodes: string[];
+  error?: string;
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `success` | `boolean` | Whether the retry operation succeeded |
+| `resetNodes` | `string[]` | Node IDs that were reset to `"pending"` |
+| `error` | `string` | Error message if the retry operation failed |
 
 ---
 
@@ -27421,6 +28466,7 @@ type SmithersEvent =
   | RunFinished
   | RunFailed
   | RunCancelled
+  | RunContinuedAsNew
   | RunHijackRequested
   | RunHijacked
   | FrameCommitted
@@ -27460,6 +28506,9 @@ type SmithersEvent =
 | `RunFinished` | `runId`, `timestampMs` | All tasks completed |
 | `RunFailed` | `runId`, `error: unknown`, `timestampMs` | Failed |
 | `RunCancelled` | `runId`, `timestampMs` | Cancelled |
+| `RunContinuedAsNew` | `runId`, `newRunId`, `iteration`, `carriedStateSize`, `ancestryDepth?`, `timestampMs` | Continued as new run |
+| `RunHijackRequested` | `runId`, `target?`, `timestampMs` | Hijack requested |
+| `RunHijacked` | `runId`, `nodeId`, `iteration`, `attempt`, `engine`, `mode`, `resume?`, `cwd`, `timestampMs` | Hijack completed |
 
 #### Frame Events
 
@@ -27831,6 +28880,167 @@ type ToolContext = {
   seq: number;
 };
 ```
+
+---
+
+## Package Configuration
+
+> Reference for the smithers-orchestrator package exports, binary entry, TypeScript configuration, and Bun preload setup.
+> Source: https://smithers.sh/reference/package-configuration
+
+This page documents the build and package configuration shipped with `smithers-orchestrator`. Use it when setting up a new project, debugging import resolution, or understanding why your `tsconfig.json` needs specific options.
+
+## Binary
+
+```json
+"bin": {
+  "smithers": "src/cli/index.ts"
+}
+```
+
+After installing `smithers-orchestrator`, the `smithers` command is available via `bunx smithers-orchestrator` or globally if linked. See [CLI Reference](/cli/overview) for all commands.
+
+## Subpath Exports
+
+Every public import path is listed below. Use the subpath form to import only the surface you need.
+
+| Import path | Entry file | Purpose |
+|---|---|---|
+| `smithers-orchestrator` | `./src/index.ts` | Core API: `createSmithers`, components, `runWorkflow`, `renderMdx`, errors |
+| `smithers-orchestrator/gateway` | `./src/gateway/index.ts` | Gateway client for remote workflow coordination |
+| `smithers-orchestrator/jsx-runtime` | `./src/jsx-runtime.ts` | JSX runtime (auto-resolved by `jsxImportSource`) |
+| `smithers-orchestrator/jsx-dev-runtime` | `./src/jsx-runtime.ts` | JSX dev runtime (auto-resolved in dev mode) |
+| `smithers-orchestrator/tools` | `./src/tools/index.ts` | Tool sandbox: `defineTool`, `read`, `grep`, `bash`, `edit`, `write` |
+| `smithers-orchestrator/server` | `./src/server/index.ts` | HTTP server for run management and event streaming |
+| `smithers-orchestrator/observability` | `./src/observability/index.ts` | OpenTelemetry traces, metrics, and Grafana stack integration |
+| `smithers-orchestrator/pi-plugin` | `./src/pi-plugin/index.ts` | PI CLI agent plugin |
+| `smithers-orchestrator/pi-extension` | `./src/pi-plugin/extension.ts` | PI extension UI bridge |
+| `smithers-orchestrator/mdx-plugin` | `./src/mdx-plugin.ts` | Bun preload plugin for `.mdx` imports |
+| `smithers-orchestrator/dom/renderer` | `./src/dom/renderer.ts` | Internal renderer (advanced use) |
+| `smithers-orchestrator/serve` | `./src/server/serve.ts` | Single-workflow HTTP server via `createServeApp` |
+| `smithers-orchestrator/scorers` | `./src/scorers/index.ts` | Eval scorers: `createScorer`, `llmJudge`, `aggregate` |
+| `smithers-orchestrator/voice` | `./src/voice/index.ts` | Voice input/output integration |
+| `smithers-orchestrator/rag` | `./src/rag/index.ts` | RAG document ingestion and retrieval |
+| `smithers-orchestrator/memory` | `./src/memory/index.ts` | Cross-run memory storage and recall |
+| `smithers-orchestrator/openapi` | `./src/openapi/index.ts` | Generate AI SDK tools from OpenAPI specs |
+
+### Usage
+
+```ts
+// Core API
+import { createSmithers, runWorkflow } from "smithers-orchestrator";
+
+// Tools
+import { defineTool, bash, read, write } from "smithers-orchestrator/tools";
+
+// Scorers
+import { createScorer, llmJudge } from "smithers-orchestrator/scorers";
+
+// MDX plugin (in preload.ts)
+import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
+```
+
+## TypeScript Configuration
+
+### JSX Import Source
+
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "smithers-orchestrator"
+  }
+}
+```
+
+This tells TypeScript to resolve JSX transforms from `smithers-orchestrator/jsx-runtime` instead of `react/jsx-runtime`. The Smithers JSX runtime re-exports React's runtime, so component behavior is identical -- but this setting enables proper type resolution for Smithers workflow components.
+
+See [JSX Installation](/jsx/installation) for the complete TypeScript setup.
+
+### Path Aliases
+
+If you are developing inside the `smithers-orchestrator` monorepo, the root `tsconfig.json` defines path aliases so that source imports resolve without a build step:
+
+```json
+"paths": {
+  "smithers": ["./src/index.ts"],
+  "smithers/jsx-runtime": ["./src/jsx-runtime.ts"],
+  "smithers/jsx-dev-runtime": ["./src/jsx-runtime.ts"],
+  "smithers/tools": ["./src/tools/index.ts"],
+  "smithers-orchestrator": ["./src/index.ts"],
+  "smithers-orchestrator/tools": ["./src/tools/index.ts"],
+  "smithers-orchestrator/scorers": ["./src/scorers/index.ts"]
+}
+```
+
+The `smithers-orchestrator` entries are backward-compatibility aliases. The package was renamed from `smithers-orchestrator` to `smithers` internally, and these aliases ensure that existing imports and example code continue to resolve.
+
+**End users do not need path aliases.** Path aliases are only needed when developing the framework itself. When you install `smithers-orchestrator` as a dependency, Node/Bun module resolution handles import paths automatically.
+
+### Local Type Root Shims
+
+```json
+"typeRoots": ["./src/types", "./node_modules/@types"]
+```
+
+The `./src/types` directory contains ambient type declarations that fill gaps in third-party packages. Currently it ships a single shim:
+
+- `react-dom-server.d.ts` -- Declares the `react-dom/server` module so TypeScript does not error when server-side rendering types are referenced.
+
+End users should add `@types/react-dom` to their `devDependencies` instead of relying on this shim.
+
+## Bun Configuration
+
+### Runtime Preload
+
+```toml
+# bunfig.toml
+preload = ["./preload.ts"]
+```
+
+The preload script registers the MDX esbuild plugin with Bun's bundler so that `.mdx` files can be imported as JSX components at runtime. See [MDX Prompts](/guides/mdx-prompts) for details.
+
+### Test Configuration
+
+```toml
+[test]
+root = "./tests"
+preload = ["./preload.ts"]
+```
+
+| Key | Value | Purpose |
+|---|---|---|
+| `root` | `./tests` | Bun discovers test files from this directory instead of scanning the entire project |
+| `preload` | `["./preload.ts"]` | Registers the MDX plugin for test files so `.mdx` imports work in tests |
+
+The test preload is separate from the runtime preload. Both point to the same file, but Bun's `[test]` section only applies when running `bun test`. Without it, tests that import `.mdx` files would fail with a module resolution error.
+
+## npm Scripts
+
+These scripts are defined in the root `package.json` for development:
+
+| Script | Command | Purpose |
+|---|---|---|
+| `typecheck` | `tsc --noEmit` | Type-check the `src/` and `tests/` trees against `tsconfig.json` |
+| `typecheck:examples` | `tsc -p tsconfig.examples.json --noEmit` | Type-check example files against a separate config that maps `smithers` to `examples-entry.ts` |
+| `lint` | `oxlint ...` | Lint source, test, and CLI code with oxlint |
+| `test` | `bash ./scripts/run-all-tests.sh` | Run the full test suite |
+| `e2e` | `playwright test` | Run Playwright end-to-end tests against the docs site and integration surfaces |
+| `docs` | `cd docs && bunx mintlify dev` | Start the Mintlify docs dev server for local preview |
+
+### For end-user projects
+
+When scaffolding your own project (via `smithers init` or manually), add a typecheck script:
+
+```json
+{
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
+```
+
+See [Production Project Structure](/guides/project-structure) for a complete user-project `package.json` example.
 
 ---
 

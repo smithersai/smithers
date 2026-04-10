@@ -1078,6 +1078,63 @@ The engine continues with the previous valid code.
 
 Schema changes require a process restart.
 
+### Scorer Events
+
+#### ScorerStarted
+
+Emitted when a scorer begins evaluating a task's output.
+
+```ts
+{
+  type: "ScorerStarted",
+  runId: string,
+  nodeId: string,
+  scorerId: string,
+  scorerName: string,
+  timestampMs: number,
+}
+```
+
+`scorerId`: Unique identifier of the scorer. `scorerName`: Human-readable scorer name.
+
+#### ScorerFinished
+
+Emitted when a scorer completes successfully.
+
+```ts
+{
+  type: "ScorerFinished",
+  runId: string,
+  nodeId: string,
+  scorerId: string,
+  scorerName: string,
+  score: number,
+  timestampMs: number,
+}
+```
+
+`score`: The 0–1 normalized score produced by the scorer.
+
+#### ScorerFailed
+
+Emitted when a scorer throws an error during evaluation.
+
+```ts
+{
+  type: "ScorerFailed",
+  runId: string,
+  nodeId: string,
+  scorerId: string,
+  scorerName: string,
+  error: unknown,
+  timestampMs: number,
+}
+```
+
+`error`: The error thrown by the scorer. Scorer failures never fail the parent task — they are logged and the workflow continues.
+
+See [Evals & Scorers](/concepts/evals) for the full scoring system documentation.
+
 ## Quick Reference
 
 | Event Type | Section | Extra Fields |
