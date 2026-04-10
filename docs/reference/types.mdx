@@ -565,6 +565,9 @@ type SmithersEvent =
 | `RunFinished` | `runId`, `timestampMs` | All tasks completed |
 | `RunFailed` | `runId`, `error: unknown`, `timestampMs` | Failed |
 | `RunCancelled` | `runId`, `timestampMs` | Cancelled |
+| `RunContinuedAsNew` | `runId`, `newRunId`, `iteration`, `carriedStateSize`, `ancestryDepth?`, `timestampMs` | Continued as new run |
+| `RunHijackRequested` | `runId`, `target?`, `timestampMs` | Hijack requested |
+| `RunHijacked` | `runId`, `nodeId`, `iteration`, `attempt`, `engine`, `mode`, `resume?`, `cwd`, `timestampMs` | Hijack completed |
 
 #### Frame Events
 

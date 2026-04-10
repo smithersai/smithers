@@ -17,7 +17,7 @@ description: Common setup, runtime, and workflow issues with diagnosis paths.
 
 **A task did not rerun** -- Smithers resumes by `runId`. If a node already completed for the current `runId`, it is skipped. Use a new `runId` for a fresh run, or inspect persisted attempts first.
 
-**MDX prompt rendered as `[object Object]`** -- The MDX preload was not registered. Confirm `preload.ts` calls `mdxPlugin()` and `bunfig.toml` points at the preload file.
+**MDX prompt rendered as `[object Object]`** -- The MDX preload was not registered. Confirm `preload.ts` calls `mdxPlugin()` and `bunfig.toml` points at the preload file. If running tests, verify that the `[test]` section in `bunfig.toml` also lists the preload. See [Package Configuration](/reference/package-configuration#test-configuration).
 
 **Workflow code changed but running task did not** -- Hot reload only affects unscheduled work. In-flight tasks continue with the code they started with.
 

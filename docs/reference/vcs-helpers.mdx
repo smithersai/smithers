@@ -1,0 +1,175 @@
+---
+title: VCS Helper Reference
+description: Public JJ helper APIs exported by smithers-orchestrator for repo detection, snapshot inspection, and workspace management.
+---
+
+Smithers exports a small JJ helper surface for applications that want to inspect or manage Jujutsu state directly.
+
+These helpers are intentionally lightweight:
+
+- every helper accepts an optional `cwd` so you can target a specific repository
+- spawn failures are normalized instead of throwing, which makes them safe to call even when `jj` is not installed
+- workspace helpers try a few command shapes to tolerate JJ version drift
+
+## Import
+
+```ts
+import {
+  runJj,
+  getJjPointer,
+  revertToJjPointer,
+  isJjRepo,
+  workspaceAdd,
+  workspaceList,
+  workspaceClose,
+} from "smithers-orchestrator";
+```
+
+## `runJj(args, opts?)`
+
+Run an arbitrary `jj` command and capture its output.
+
+```ts
+const result = await runJj(["status"], { cwd: "/path/to/repo" });
+```
+
+```ts
+type RunJjOptions = {
+  cwd?: string;
+};
+
+type RunJjResult = {
+  code: number;
+  stdout: string;
+  stderr: string;
+};
+```
+
+Notes:
+
+- returns `{ code: 127, stdout: "", stderr: "..." }` when `jj` cannot be started
+- does not throw for ordinary process failures
+- useful when you need a raw escape hatch beyond the higher-level helpers below
+
+## `getJjPointer(cwd?)`
+
+Return the current workspace `change_id` for `@`, or `null` when JJ is unavailable or the current directory is not a JJ repo.
+
+```ts
+const pointer = await getJjPointer("/path/to/repo");
+```
+
+```ts
+function getJjPointer(cwd?: string): Promise<string | null>;
+```
+
+Smithers uses the same pointer model internally for revert support and cache invalidation.
+
+## `revertToJjPointer(pointer, cwd?)`
+
+Restore the working copy from a previously recorded JJ pointer.
+
+```ts
+const result = await revertToJjPointer("zqkopwvn", "/path/to/repo");
+```
+
+```ts
+type JjRevertResult =
+  | { success: true }
+  | { success: false; error?: string };
+```
+
+This helper wraps `jj restore --from <pointer>`.
+
+## `isJjRepo(cwd?)`
+
+Detect whether a directory is a readable JJ repository.
+
+```ts
+const enabled = await isJjRepo("/path/to/repo");
+```
+
+```ts
+function isJjRepo(cwd?: string): Promise<boolean>;
+```
+
+Use this before showing JJ-specific UI or attempting a revert flow.
+
+## `workspaceAdd(name, path, opts?)`
+
+Create a JJ workspace with a friendly name at a target filesystem path.
+
+```ts
+const result = await workspaceAdd("feature-auth", "/tmp/wt-feature-auth", {
+  cwd: "/path/to/repo",
+  atRev: "@",
+});
+```
+
+```ts
+type WorkspaceAddOptions = {
+  cwd?: string;
+  atRev?: string;
+};
+
+type WorkspaceResult =
+  | { success: true }
+  | { success: false; error?: string };
+```
+
+Behavior notes:
+
+- removes an existing workspace with the same name before retrying
+- recreates the target directory if needed
+- tries multiple `jj workspace add` syntaxes to work across JJ versions
+
+## `workspaceList(cwd?)`
+
+List known workspaces for the current JJ repo.
+
+```ts
+const workspaces = await workspaceList("/path/to/repo");
+```
+
+```ts
+type WorkspaceInfo = {
+  name: string;
+  path: string | null;
+  selected: boolean;
+};
+```
+
+The current implementation prefers template output when supported, then falls back to parsing the human-readable `jj workspace list` output.
+
+## `workspaceClose(name, opts?)`
+
+Forget a JJ workspace by name.
+
+```ts
+const result = await workspaceClose("feature-auth", {
+  cwd: "/path/to/repo",
+});
+```
+
+```ts
+function workspaceClose(
+  name: string,
+  opts?: { cwd?: string },
+): Promise<WorkspaceResult>;
+```
+
+This wraps `jj workspace forget <name>`.
+
+## When To Use These Helpers
+
+Use these helpers when your application needs to:
+
+- show whether JJ-backed revert is available
+- record or inspect a pointer outside the Smithers engine
+- manage JJ workspaces directly from an app or integration layer
+
+If you only need workflow-level revert behavior, prefer the runtime and CLI docs:
+
+- [VCS Integration](/guides/vcs)
+- [CLI Reference](/cli/overview)
+- [Revert](/runtime/revert)

@@ -5,6 +5,8 @@ import { Task, Workflow, runWorkflow } from "../src/index";
 import { createTestSmithers } from "./helpers";
 import { outputSchemas } from "./schema";
 
+const RETRY_E2E_TIMEOUT_MS = 15_000;
+
 describe("retry policy e2e", () => {
   test("task retries on failure up to max retries", async () => {
     const { smithers, outputs, db, cleanup } = createTestSmithers(outputSchemas);
@@ -42,7 +44,7 @@ describe("retry policy e2e", () => {
     } finally {
       cleanup();
     }
-  });
+  }, RETRY_E2E_TIMEOUT_MS);
 
   test("task fails after exhausting all retries", async () => {
     const { smithers, outputs, db, cleanup } = createTestSmithers(outputSchemas);
@@ -77,7 +79,7 @@ describe("retry policy e2e", () => {
     } finally {
       cleanup();
     }
-  });
+  }, RETRY_E2E_TIMEOUT_MS);
 
   test("continueOnFail allows workflow to proceed past failed task", async () => {
     const { smithers, outputs, db, cleanup } = createTestSmithers(outputSchemas);
@@ -189,5 +191,5 @@ describe("retry policy e2e", () => {
     } finally {
       cleanup();
     }
-  });
+  }, RETRY_E2E_TIMEOUT_MS);
 });

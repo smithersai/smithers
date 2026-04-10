@@ -84,6 +84,14 @@ Behavior:
 
 Use `smithers hijack <runId> --launch=false` to inspect the resumable candidate without opening the session.
 
+### Non-Idempotent Tool Resume Warning
+
+When a task retries after a failure, previous attempts may have already executed side-effect tools (e.g., sending messages, creating PRs). Smithers detects non-idempotent tool calls from prior attempts and prepends a warning to the agent's prompt:
+
+> Previous attempts in this task already called non-idempotent side-effect tools. Those side effects may already have happened before the interruption or retry. Do not blindly call them again. Verify external state first or continue from the prior result.
+
+The warning includes the specific tool names and attempt numbers. It is automatically injected — no configuration is required.
+
 ---
 
 ## Base Options
@@ -273,9 +281,12 @@ type CodexAgentOptions = BaseCliAgentOptions & {
 |---|---|
 | `sandbox` | `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
 | `fullAuto` | Full auto mode (no confirmations) |
+| `dangerouslyBypassApprovalsAndSandbox` | Skip all approval prompts and sandbox restrictions |
 | `config` | Configuration overrides as key-value pairs or raw strings |
 | `oss` | Use open-source models |
 | `localProvider` | Local model provider URL |
+| `image` | Image file paths to include as visual inputs |
+| `outputSchema` | Path to JSON schema file for structured output |
 | `outputLastMessage` | File path to write the last message (auto-generated if not set) |
 
 When `yolo` is `true` and `fullAuto` is not set, passes `--dangerously-bypass-approvals-and-sandbox`. If `fullAuto` is `true`, uses `--full-auto` instead.
@@ -322,7 +333,10 @@ type GeminiAgentOptions = BaseCliAgentOptions & {
 | `sandbox` | Run in sandbox mode |
 | `approvalMode` | `"default"`, `"auto_edit"`, `"yolo"`, or `"plan"` |
 | `allowedTools` | Tool name whitelist |
+| `allowedMcpServerNames` | MCP server name whitelist |
 | `extensions` | Gemini CLI extensions to load |
+| `resume` | Resume a previous session by ID |
+| `listSessions` / `deleteSession` | Session management |
 | `includeDirectories` | Additional directories to include |
 | `outputFormat` | `"text"`, `"json"`, or `"stream-json"` (default: `"json"`) |
 
@@ -467,8 +481,10 @@ type KimiAgentOptions = BaseCliAgentOptions & {
 | `quiet` | Alias for `--print --output-format text --final-message-only` |
 | `agent` | Built-in agent spec: `"default"` or `"okabe"` |
 | `agentFile` | Path to custom agent specification file |
+| `workDir` | Override the working directory for the kimi process |
+| `session` / `continue` | Session resumption and continuation |
 | `skillsDir` | Skills directory path |
-| `mcpConfigFile` | MCP config file(s) |
+| `mcpConfigFile` / `mcpConfig` | MCP config file(s) or inline config |
 | `maxStepsPerTurn` | Max steps in one turn |
 | `maxRetriesPerStep` | Max retries in one step |
 | `maxRalphIterations` | Extra iterations after the first turn in Loop mode |

@@ -50,6 +50,8 @@ deno.lock
 .tui-test/
 .worktrees/
 reference/
+!docs/reference/
+!docs/reference/*.mdx
 codex/
 ghostty/
 burns

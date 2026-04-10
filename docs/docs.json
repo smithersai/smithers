@@ -221,6 +221,7 @@
         "group": "Reference",
         "pages": [
           "reference/types",
+          "reference/package-configuration",
           "reference/vcs-helpers",
           "reference/errors",
           "api/effect"

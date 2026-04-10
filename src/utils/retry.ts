@@ -1,6 +1,8 @@
 import { Duration, Effect, Schedule, ScheduleDecision, ScheduleIntervals } from "effect";
 import type { RetryPolicy } from "../RetryPolicy";
 
+const MAX_RETRY_DELAY_MS = 5 * 60 * 1000;
+
 /**
  * Convert a RetryPolicy to an Effect Schedule for use with Effect.retry.
  */
@@ -14,13 +16,16 @@ export function retryPolicyToSchedule(
   if (base <= 0) return Schedule.stop;
 
   const backoff = policy.backoff ?? "fixed";
+  const capDelay = Schedule.modifyDelay((_out, delay) =>
+    Duration.min(delay, Duration.millis(MAX_RETRY_DELAY_MS)),
+  );
   switch (backoff) {
     case "fixed":
-      return Schedule.fixed(Duration.millis(base));
+      return capDelay(Schedule.fixed(Duration.millis(base)));
     case "linear":
-      return Schedule.linear(Duration.millis(base));
+      return capDelay(Schedule.linear(Duration.millis(base)));
     case "exponential":
-      return Schedule.exponential(Duration.millis(base));
+      return capDelay(Schedule.exponential(Duration.millis(base)));
   }
 }
 

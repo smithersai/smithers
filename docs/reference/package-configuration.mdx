@@ -1,0 +1,158 @@
+---
+title: Package Configuration
+description: Reference for the smithers-orchestrator package exports, binary entry, TypeScript configuration, and Bun preload setup.
+---
+
+This page documents the build and package configuration shipped with `smithers-orchestrator`. Use it when setting up a new project, debugging import resolution, or understanding why your `tsconfig.json` needs specific options.
+
+## Binary
+
+```json
+"bin": {
+  "smithers": "src/cli/index.ts"
+}
+```
+
+After installing `smithers-orchestrator`, the `smithers` command is available via `bunx smithers-orchestrator` or globally if linked. See [CLI Reference](/cli/overview) for all commands.
+
+## Subpath Exports
+
+Every public import path is listed below. Use the subpath form to import only the surface you need.
+
+| Import path | Entry file | Purpose |
+|---|---|---|
+| `smithers-orchestrator` | `./src/index.ts` | Core API: `createSmithers`, components, `runWorkflow`, `renderMdx`, errors |
+| `smithers-orchestrator/gateway` | `./src/gateway/index.ts` | Gateway client for remote workflow coordination |
+| `smithers-orchestrator/jsx-runtime` | `./src/jsx-runtime.ts` | JSX runtime (auto-resolved by `jsxImportSource`) |
+| `smithers-orchestrator/jsx-dev-runtime` | `./src/jsx-runtime.ts` | JSX dev runtime (auto-resolved in dev mode) |
+| `smithers-orchestrator/tools` | `./src/tools/index.ts` | Tool sandbox: `defineTool`, `read`, `grep`, `bash`, `edit`, `write` |
+| `smithers-orchestrator/server` | `./src/server/index.ts` | HTTP server for run management and event streaming |
+| `smithers-orchestrator/observability` | `./src/observability/index.ts` | OpenTelemetry traces, metrics, and Grafana stack integration |
+| `smithers-orchestrator/pi-plugin` | `./src/pi-plugin/index.ts` | PI CLI agent plugin |
+| `smithers-orchestrator/pi-extension` | `./src/pi-plugin/extension.ts` | PI extension UI bridge |
+| `smithers-orchestrator/mdx-plugin` | `./src/mdx-plugin.ts` | Bun preload plugin for `.mdx` imports |
+| `smithers-orchestrator/dom/renderer` | `./src/dom/renderer.ts` | Internal renderer (advanced use) |
+| `smithers-orchestrator/serve` | `./src/server/serve.ts` | Single-workflow HTTP server via `createServeApp` |
+| `smithers-orchestrator/scorers` | `./src/scorers/index.ts` | Eval scorers: `createScorer`, `llmJudge`, `aggregate` |
+| `smithers-orchestrator/voice` | `./src/voice/index.ts` | Voice input/output integration |
+| `smithers-orchestrator/rag` | `./src/rag/index.ts` | RAG document ingestion and retrieval |
+| `smithers-orchestrator/memory` | `./src/memory/index.ts` | Cross-run memory storage and recall |
+| `smithers-orchestrator/openapi` | `./src/openapi/index.ts` | Generate AI SDK tools from OpenAPI specs |
+
+### Usage
+
+```ts
+// Core API
+import { createSmithers, runWorkflow } from "smithers-orchestrator";
+
+// Tools
+import { defineTool, bash, read, write } from "smithers-orchestrator/tools";
+
+// Scorers
+import { createScorer, llmJudge } from "smithers-orchestrator/scorers";
+
+// MDX plugin (in preload.ts)
+import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
+```
+
+## TypeScript Configuration
+
+### JSX Import Source
+
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "smithers-orchestrator"
+  }
+}
+```
+
+This tells TypeScript to resolve JSX transforms from `smithers-orchestrator/jsx-runtime` instead of `react/jsx-runtime`. The Smithers JSX runtime re-exports React's runtime, so component behavior is identical -- but this setting enables proper type resolution for Smithers workflow components.
+
+See [JSX Installation](/jsx/installation) for the complete TypeScript setup.
+
+### Path Aliases
+
+If you are developing inside the `smithers-orchestrator` monorepo, the root `tsconfig.json` defines path aliases so that source imports resolve without a build step:
+
+```json
+"paths": {
+  "smithers": ["./src/index.ts"],
+  "smithers/jsx-runtime": ["./src/jsx-runtime.ts"],
+  "smithers/jsx-dev-runtime": ["./src/jsx-runtime.ts"],
+  "smithers/tools": ["./src/tools/index.ts"],
+  "smithers-orchestrator": ["./src/index.ts"],
+  "smithers-orchestrator/tools": ["./src/tools/index.ts"],
+  "smithers-orchestrator/scorers": ["./src/scorers/index.ts"]
+}
+```
+
+The `smithers-orchestrator` entries are backward-compatibility aliases. The package was renamed from `smithers-orchestrator` to `smithers` internally, and these aliases ensure that existing imports and example code continue to resolve.
+
+**End users do not need path aliases.** Path aliases are only needed when developing the framework itself. When you install `smithers-orchestrator` as a dependency, Node/Bun module resolution handles import paths automatically.
+
+### Local Type Root Shims
+
+```json
+"typeRoots": ["./src/types", "./node_modules/@types"]
+```
+
+The `./src/types` directory contains ambient type declarations that fill gaps in third-party packages. Currently it ships a single shim:
+
+- `react-dom-server.d.ts` -- Declares the `react-dom/server` module so TypeScript does not error when server-side rendering types are referenced.
+
+End users should add `@types/react-dom` to their `devDependencies` instead of relying on this shim.
+
+## Bun Configuration
+
+### Runtime Preload
+
+```toml
+# bunfig.toml
+preload = ["./preload.ts"]
+```
+
+The preload script registers the MDX esbuild plugin with Bun's bundler so that `.mdx` files can be imported as JSX components at runtime. See [MDX Prompts](/guides/mdx-prompts) for details.
+
+### Test Configuration
+
+```toml
+[test]
+root = "./tests"
+preload = ["./preload.ts"]
+```
+
+| Key | Value | Purpose |
+|---|---|---|
+| `root` | `./tests` | Bun discovers test files from this directory instead of scanning the entire project |
+| `preload` | `["./preload.ts"]` | Registers the MDX plugin for test files so `.mdx` imports work in tests |
+
+The test preload is separate from the runtime preload. Both point to the same file, but Bun's `[test]` section only applies when running `bun test`. Without it, tests that import `.mdx` files would fail with a module resolution error.
+
+## npm Scripts
+
+These scripts are defined in the root `package.json` for development:
+
+| Script | Command | Purpose |
+|---|---|---|
+| `typecheck` | `tsc --noEmit` | Type-check the `src/` and `tests/` trees against `tsconfig.json` |
+| `typecheck:examples` | `tsc -p tsconfig.examples.json --noEmit` | Type-check example files against a separate config that maps `smithers` to `examples-entry.ts` |
+| `lint` | `oxlint ...` | Lint source, test, and CLI code with oxlint |
+| `test` | `bash ./scripts/run-all-tests.sh` | Run the full test suite |
+| `e2e` | `playwright test` | Run Playwright end-to-end tests against the docs site and integration surfaces |
+| `docs` | `cd docs && bunx mintlify dev` | Start the Mintlify docs dev server for local preview |
+
+### For end-user projects
+
+When scaffolding your own project (via `smithers init` or manually), add a typecheck script:
+
+```json
+{
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
+```
+
+See [Production Project Structure](/guides/project-structure) for a complete user-project `package.json` example.

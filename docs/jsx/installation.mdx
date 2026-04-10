@@ -82,7 +82,13 @@ bun add -d @types/mdx
 
 ## Verify the Setup
 
-Once TypeScript and JSX are configured, continue to the quickstart and run the sample workflow:
+Once TypeScript and JSX are configured, run the typecheck to validate your setup:
+
+```bash
+npx tsc --noEmit
+```
+
+Then run the sample workflow:
 
 ```bash
 bun run main.ts
@@ -93,3 +99,4 @@ bun run main.ts
 - [JSX Quickstart](/jsx/quickstart) — Build a working two-step workflow.
 - [Tutorial: Build a Workflow](/guides/tutorial-workflow) — Go deeper with schemas, agents, and output access.
 - [MDX Prompts](/guides/mdx-prompts) — Use `.mdx` files as structured prompt templates.
+- [Package Configuration](/reference/package-configuration) — All subpath exports, scripts, and build settings.

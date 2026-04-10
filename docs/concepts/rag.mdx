@@ -30,19 +30,22 @@ Smithers ships five strategies:
 
 | Strategy | Splits on | Best for |
 |-----------|-----------|----------|
-| `recursive` | Paragraphs, then sentences, then words | General text (default) |
+| `recursive` | Paragraphs, then lines, then words, then characters | General text (default) |
 | `character` | Fixed character count | Uniform chunk sizes |
 | `sentence` | Sentence boundaries | Prose, articles |
 | `markdown` | Headings and sections | Documentation, READMEs |
-| `token` | Approximate token count | Token-budget-aware splitting |
+| `token` | Approximate token count (~4 chars/token) | Token-budget-aware splitting |
 
-Every strategy accepts `size` (max characters per chunk) and `overlap` (characters shared between adjacent chunks). Overlap prevents information loss at chunk boundaries.
+Every strategy accepts `size` (max characters per chunk) and `overlap` (characters shared between adjacent chunks). Overlap prevents information loss at chunk boundaries. The `character` strategy also accepts `separator` to override the default `"\n\n"` split boundary.
 
 ```ts
 import { chunk, createDocument } from "smithers-orchestrator/rag";
 
 const doc = createDocument("Your long document text here...");
 const chunks = chunk(doc, { strategy: "recursive", size: 1000, overlap: 200 });
+
+// Character strategy with a custom separator
+const csvChunks = chunk(doc, { strategy: "character", size: 500, overlap: 50, separator: "\n" });
 ```
 
 ## Embedding
@@ -62,7 +65,7 @@ The embedder is intentionally thin. It bridges Smithers chunk types to the AI SD
 
 ## Vector Store
 
-Vectors live in SQLite. No external database required. The `_smithers_vectors` table stores each chunk's text, embedding (as a BLOB), and metadata. Queries do a full-table scan with JavaScript cosine similarity using the AI SDK's `cosineSimilarity()`.
+Vectors live in SQLite. No external database required. The `_smithers_vectors` table stores each chunk's text, embedding (as a Float32 BLOB), dimensions, and metadata (as JSON). Document metadata set via `createDocument` is propagated to every chunk and persisted in `metadata_json`, so it survives round-trips through the store. Queries do a full-table scan with JavaScript cosine similarity using the AI SDK's `cosineSimilarity()`.
 
 This is fast enough for typical RAG workloads (hundreds to low thousands of chunks). If you outgrow it, swap in a different store implementation.
 
@@ -85,13 +88,15 @@ const pipeline = createRagPipeline({
   vectorStore: store,
   embeddingModel: model,
   chunkOptions: { strategy: "markdown", size: 1000, overlap: 200 },
+  topK: 10, // default topK for all retrieve calls (default 10)
+  namespace: "docs", // optional: scope to a namespace
 });
 
 // Ingest
 await pipeline.ingest([doc1, doc2]);
 await pipeline.ingestFile("./docs/architecture.md");
 
-// Retrieve
+// Retrieve — per-call topK overrides the pipeline default
 const results = await pipeline.retrieve("How does the scheduler work?", { topK: 5 });
 ```
 
@@ -105,10 +110,11 @@ import { createRagTool } from "smithers-orchestrator/rag";
 const searchKnowledge = createRagTool(pipeline, {
   name: "search_knowledge",
   description: "Search the project knowledge base",
+  defaultTopK: 5, // default results returned when agent omits topK
 });
 ```
 
-Hand this tool to any agent. When the agent calls it, Smithers embeds the query, searches the vector store, and returns the top results. The agent sees text and relevance scores -- it never touches raw vectors.
+Hand this tool to any agent. When the agent calls it, Smithers embeds the query, searches the vector store, and returns the top results with relevance scores and metadata. The agent's `topK` parameter accepts 1-50; when omitted, `defaultTopK` (default 5) is used.
 
 ## Namespaces
 
@@ -201,6 +207,8 @@ const program = Effect.gen(function* () {
 ```
 
 `ingest` and `retrieve` are convenience functions that pull `RagService` from Effect context automatically.
+
+Lower-level Effect wrappers are also exported for direct use outside the service layer: `embedChunksEffect`, `embedQueryEffect`, `ingestEffect`, `retrieveEffect`, `upsertEffect`, and `queryEffect`. These give you Effect-typed versions of each pipeline step without requiring the full `RagService` context.
 
 ## Observability Metrics
 

@@ -1039,8 +1039,16 @@ smithers workflow foo --prompt "Investigate flaky tests"
 
 #### workflow list
 
+List all discovered workflows under `.smithers/workflows/`. Output includes each workflow's ID, entry file path, and source type.
+
 ```bash
 smithers workflow list
+```
+
+```bash
+smithers workflow list
+# implement  .smithers/workflows/implement.tsx  local
+# sweep      .smithers/workflows/sweep.tsx      local
 ```
 
 #### workflow run
@@ -1069,20 +1077,55 @@ Workflow-specific behavior:
 
 #### workflow path
 
+Resolve a workflow ID to its entry file path. Prints the absolute path, ID, and source type.
+
 ```bash
 smithers workflow path <name>
 ```
 
+Arguments:
+
+- `name`: Workflow ID to resolve.
+
+```bash
+smithers workflow path implement
+# /home/user/project/.smithers/workflows/implement.tsx
+```
+
 #### workflow create
+
+Create a new workflow scaffold file in `.smithers/workflows/`. The name must contain only lowercase letters, numbers, and hyphens. Exits with code `4` if the name is invalid or the file already exists.
 
 ```bash
 smithers workflow create <name>
 ```
 
+Arguments:
+
+- `name`: ID for the new workflow.
+
+```bash
+smithers workflow create my-new-flow
+# Created .smithers/workflows/my-new-flow.tsx
+```
+
+Run `smithers init` first to ensure `.smithers/agents.ts` and `.smithers/components/` exist.
+
 #### workflow doctor
+
+Inspect workflow discovery health. Reports the workflow root, discovered workflows, preload file status, bunfig status, and detected CLI agents. When `name` is provided, scopes the report to that single workflow.
 
 ```bash
 smithers workflow doctor [name]
+```
+
+Arguments:
+
+- `name` (optional): Workflow ID to inspect. Omit to inspect all discovered workflows.
+
+```bash
+smithers workflow doctor
+smithers workflow doctor implement
 ```
 
 ### cron
