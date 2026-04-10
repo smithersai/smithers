@@ -5,7 +5,7 @@ description: Headless multi-workflow control plane for remote run management, ap
 
 `Gateway` is Smithers' headless control plane for remote workflow execution.
 
-If `smithers up` is for local runs and [`startServer()`](/integrations/server) is for loading workflow files over HTTP, `Gateway` is for long-lived remote control: bots, dashboards, webhook receivers, and schedulers connect once, authenticate, start runs, subscribe to progress, decide approvals, inject signals, and manage cron schedules.
+If `bunx smithers-orchestrator up` is for local runs and [`startServer()`](/integrations/server) is for loading workflow files over HTTP, `Gateway` is for long-lived remote control: bots, dashboards, webhook receivers, and schedulers connect once, authenticate, start runs, subscribe to progress, decide approvals, inject signals, and manage cron schedules.
 
 That makes it a good fit for ClaudeBot/OpenClaw-style systems where Smithers is the orchestration engine sitting behind GitHub, Slack, CI, or an internal operations UI.
 
