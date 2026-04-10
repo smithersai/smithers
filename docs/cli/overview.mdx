@@ -242,6 +242,7 @@ smithers logs <runId> [options]
 | Option | Description |
 |---|---|
 | `--follow`, `-f <boolean>` | Poll for new events while run is active. Default: `true`. |
+| `--follow-ancestry <boolean>` | Include events from parent runs in the output, ordered root-to-current. Default: `false`. |
 | `--since <number>` | Start from event sequence number. |
 | `--tail`, `-n <number>` | Last `N` events. Default: `50`. |
 
@@ -250,7 +251,10 @@ smithers logs run-123
 smithers logs run-123 --follow false
 smithers logs run-123 --since 400
 smithers logs run-123 --tail 10
+smithers logs run-123 --follow-ancestry true
 ```
+
+When `--follow-ancestry` is enabled, events from the full parent chain are merged into a single stream with each line prefixed by the originating run ID.
 
 Reads from the database, not detached-process stdout. See [Events](/runtime/events).
 
@@ -454,6 +458,19 @@ smithers supervise
 smithers supervise --dry-run true
 smithers supervise --interval 30s --stale-threshold 1m --max-concurrent 5
 ```
+
+#### Supervisor behavior
+
+Each poll cycle the supervisor:
+
+1. Queries stale `running` runs whose heartbeat exceeds `--stale-threshold`.
+2. Queries `waiting-timer` runs that have a timer past its fire time.
+3. For each candidate, applies guards before resuming:
+   - **Workflow existence**: skips the run if the workflow `.tsx` file no longer exists on disk.
+   - **PID liveness**: skips the run if the runtime owner PID is still alive (the run is not actually stale).
+   - **Claim acquisition**: attempts to claim the run for resume; skips if another supervisor already claimed it.
+4. Stale runs are processed first, up to `--max-concurrent`. Timer-due runs fill remaining concurrency slots.
+5. Runs that exceed the concurrency cap are rate-limited and retried on the next poll.
 
 ### cancel
 
@@ -721,6 +738,24 @@ smithers ask "How do I resume an approval-gated run?"
 ```
 
 Supported agents: Claude Code, Kimi, Gemini, Codex. Bootstraps a temporary MCP config, exposes Smithers as a local MCP server (`smithers --mcp`), and delegates the question. Exits with error if no supported agent is installed.
+
+| Option | Description |
+|---|---|
+| `--agent <string>` | Force a specific agent (`claude-code`, `kimi`, `gemini`, `codex`). Default: auto-select best available. |
+| `--no-mcp <boolean>` | Disable MCP bootstrap; pass the question as a plain prompt. Default: `false`. |
+| `--print-bootstrap <boolean>` | Print the bootstrap configuration (agent, mode, tool surface) instead of running. Default: `false`. |
+| `--dump-prompt <boolean>` | Print the full system prompt that would be sent to the agent. Default: `false`. |
+| `--list-agents <boolean>` | List all available agents with usability status and bootstrap mode. Default: `false`. |
+
+MCP bootstrap mode is selected automatically per agent: `mcp-config-file` for Claude Code and Kimi, `mcp-config-inline` for Codex, `mcp-allow-list` for Gemini, and `prompt-only` for PI. Use `--no-mcp` to disable MCP entirely.
+
+```bash
+smithers ask "How do I resume an approval-gated run?"
+smithers ask --agent codex "Explain the workflow graph"
+smithers ask --list-agents
+smithers ask --print-bootstrap "test query"
+smithers ask --dump-prompt "test query"
+```
 
 ### agents
 
@@ -1037,6 +1072,22 @@ smithers workflow foo --prompt "Investigate flaky tests"
 - Names: lowercase letters, numbers, hyphens only.
 - `workflow create` writes only the workflow file. Run `smithers init` first for `.smithers/agents.ts` and `.smithers/components/`.
 
+#### Workflow metadata comments
+
+Discovery extracts optional metadata from `//` comments in the first six lines of each workflow file:
+
+```ts
+// smithers-source: generated
+// smithers-display-name: Code Review
+```
+
+| Marker | Values | Purpose |
+|---|---|---|
+| `smithers-source` | `seeded`, `generated`, `user` | Origin classification shown in `workflow list` and `workflow doctor`. |
+| `smithers-display-name` | Free text | Human-readable name for the workflow. |
+
+`workflow create` automatically inserts both markers.
+
 #### workflow list
 
 List all discovered workflows under `.smithers/workflows/`. Output includes each workflow's ID, entry file path, and source type.
@@ -1277,6 +1328,49 @@ smithers skills add --no-global
 | `--version`, `-v` | CLI version. |
 | `--mcp` | Start as MCP stdio server. Used by `smithers ask` and external tooling. |
 
+## Operational Behavior
+
+### Progress reporting
+
+During `up` execution, the CLI writes progress events to stderr with elapsed timestamps:
+
+```
+[00:00:02] → analyze (attempt 1, iteration 0)
+[00:00:45] ✓ analyze (attempt 1)
+[00:00:45] → implement (attempt 1, iteration 0)
+[00:01:30] ✗ implement (attempt 1): tool timeout exceeded
+[00:01:30] ↻ implement retrying (attempt 2)
+[00:02:15] ✓ implement (attempt 2)
+[00:02:15] ⏱ deploy waiting for timer (fires 2026-04-09T12:00:00Z)
+```
+
+Progress includes node lifecycle (`→ ✓ ✗ ↻`), timer events (`⏱`), hot-reload status, and run completion.
+
+### Signal handling
+
+The CLI listens for `SIGINT` and `SIGTERM`. On receipt it:
+
+1. Writes `[smithers] received <signal>, cancelling run...` to stderr.
+2. Fires the abort controller to cancel in-flight operations.
+3. Closes the SQLite database connection.
+4. Exits with code `130` (SIGINT) or `143` (SIGTERM).
+
+Signals are handled at most once; a second signal during shutdown force-kills the process.
+
+### SQLite cleanup
+
+On process exit, SIGINT, or SIGTERM the CLI closes the SQLite connection via `client.close()`. This ensures WAL checkpointing and prevents database corruption from unclean shutdowns.
+
+### Event formatting
+
+`logs` and `events` render each event line as:
+
+```
+[+MM:SS.mmm] <symbol> <summary>
+```
+
+Symbols are color-coded: `✓` green for success, `✗` red for failure, `⏸` for approvals, `⏱` for timers, `🔧` for tool calls, `📚` for RAG, `🧠` for memory. Payloads are truncated to 240 characters by default.
+
 ## Exit Codes
 
 | Code | Meaning |
@@ -1286,6 +1380,8 @@ smithers skills add --no-global
 | `2` | Run cancelled / `cancel` succeeded. |
 | `3` | `up` completed in `waiting-approval`. |
 | `4` | Invalid arguments or user-correctable input error. |
+| `130` | Interrupted by SIGINT. |
+| `143` | Terminated by SIGTERM. |
 
 ## Related
 

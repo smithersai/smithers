@@ -78,7 +78,7 @@ bunx smithers deny <run-id>
 If a workflow is waiting on a signal:
 
 ```bash
-bunx smithers signal <run-id> --node wait-for-input --value '{"choice":"ship-it"}'
+bunx smithers signal <run-id> wait-for-input --data '{"choice":"ship-it"}'
 ```
 
 If you are not sure why the run is blocked:
