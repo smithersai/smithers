@@ -137,9 +137,9 @@ function buildObject(
   let obj: z.ZodType = z.object(props);
 
   if (s.additionalProperties === true || s.additionalProperties === undefined) {
-    // Allow additional properties — use passthrough for objects with props
+    // Allow additional properties — use catchall for objects with props
     if (Object.keys(props).length > 0) {
-      obj = (obj as any).passthrough();
+      obj = (obj as z.ZodObject<any>).catchall(z.unknown());
     }
   }
 

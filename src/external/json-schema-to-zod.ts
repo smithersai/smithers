@@ -18,8 +18,8 @@ export function pydanticSchemaToZod(rootSchema: JsonSchema): z.ZodObject<any> {
   const result = convertNode(rootSchema, rootSchema, new Set());
   // Ensure we return a ZodObject — Pydantic root schemas are always objects
   if (result instanceof z.ZodObject) return result;
-  // Fallback: wrap in a passthrough object
-  return z.object({}).passthrough();
+  // Fallback: wrap in a loose object that passes through unknown keys
+  return z.object({}).catchall(z.unknown());
 }
 
 function convertNode(

@@ -9,7 +9,7 @@
  * 3. `additionalProperties: true` is accepted but tells the model it can
  *    return extra keys — set to `false` if you want strict conformance.
  *
- * Zod v4's `toJSONSchema()` can violate (1) when `.passthrough()` is used:
+ * Zod v4's `toJSONSchema()` can violate (1) when `z.looseObject()` is used:
  * it emits `{ additionalProperties: true }` without `"type": "object"`.
  *
  * This module provides a single function to fix these issues so any agent

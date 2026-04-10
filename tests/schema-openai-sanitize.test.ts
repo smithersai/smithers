@@ -10,24 +10,24 @@ describe("zodToOpenAISchema", () => {
     expect((result.properties as any)?.name?.type).toBe("string");
   });
 
-  test("passthrough object has type: object", async () => {
-    const schema = z.object({ document: z.string() }).passthrough();
+  test("loose object has type: object", async () => {
+    const schema = z.object({ document: z.string() }).catchall(z.unknown());
     const result = await zodToOpenAISchema(schema);
     expect(result.type).toBe("object");
     expect(result.additionalProperties).toBeDefined();
   });
 
-  test("nested passthrough objects all have type: object", async () => {
-    const inner = z.object({ value: z.number() }).passthrough();
-    const schema = z.object({ nested: inner }).passthrough();
+  test("nested loose objects all have type: object", async () => {
+    const inner = z.object({ value: z.number() }).catchall(z.unknown());
+    const schema = z.object({ nested: inner }).catchall(z.unknown());
     const result = await zodToOpenAISchema(schema);
     expect(result.type).toBe("object");
     const nested = (result.properties as any)?.nested;
     expect(nested?.type).toBe("object");
   });
 
-  test("array items with passthrough are fixed", async () => {
-    const item = z.object({ id: z.string() }).passthrough();
+  test("array items with loose object are fixed", async () => {
+    const item = z.object({ id: z.string() }).catchall(z.unknown());
     const schema = z.object({ items: z.array(item) });
     const result = await zodToOpenAISchema(schema);
     const itemSchema = (result.properties as any)?.items?.items;
