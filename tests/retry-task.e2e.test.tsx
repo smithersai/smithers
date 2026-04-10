@@ -44,6 +44,7 @@ describe("retry-task e2e", () => {
             id="implement"
             output={outputs.outputB}
             agent={makeAgent("implement", callCounts, { failFirst: true })}
+            noRetry
             deps={{ analyze: outputs.outputA }}
           >
             {(deps) => `Implement using ${deps.analyze.value}`}
