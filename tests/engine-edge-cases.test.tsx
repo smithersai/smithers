@@ -27,7 +27,7 @@ describe("engine edge cases", () => {
         resume: true,
       });
       expect(result.status).toBe("failed");
-      expect(result.error).toMatchObject({ code: "MISSING_INPUT" });
+      expect(result.error).toMatchObject({ code: "RUN_NOT_FOUND" });
     } finally {
       runtime.cleanup();
     }

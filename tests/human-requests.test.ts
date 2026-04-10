@@ -29,6 +29,7 @@ function openRepoDb(repo: ReturnType<typeof createTempRepo>) {
 function humanRequestRow(
   overrides: Partial<HumanRequestRow> = {},
 ): HumanRequestRow {
+  const now = Date.now();
   return {
     requestId: buildHumanRequestId("run-1", "human-review", 0),
     runId: "run-1",
@@ -40,10 +41,10 @@ function humanRequestRow(
     schemaJson: '{"type":"object"}',
     optionsJson: null,
     responseJson: null,
-    requestedAtMs: 1_000,
+    requestedAtMs: now - 1_000,
     answeredAtMs: null,
     answeredBy: null,
-    timeoutAtMs: 61_000,
+    timeoutAtMs: now + 60_000,
     ...overrides,
   };
 }
@@ -67,6 +68,7 @@ describe("human request persistence", () => {
     const { sqlite, adapter } = createAdapter();
 
     try {
+      const now = Date.now();
       await adapter.insertRun({
         runId: "run-1",
         workflowName: "human-flow",
@@ -93,11 +95,17 @@ describe("human request persistence", () => {
         humanRequestRow({
           requestId: buildHumanRequestId("run-2", "human-review", 0),
           runId: "run-2",
-          requestedAtMs: 2_000,
+          requestedAtMs: now - 1_000,
+          timeoutAtMs: now + 60_000,
           prompt: "Second request",
         }),
       );
-      await adapter.insertHumanRequest(humanRequestRow());
+      await adapter.insertHumanRequest(
+        humanRequestRow({
+          requestedAtMs: now - 2_000,
+          timeoutAtMs: now + 60_000,
+        }),
+      );
       await adapter.insertHumanRequest(
         humanRequestRow({
           requestId: buildHumanRequestId("run-3", "human-review", 0),
@@ -108,7 +116,7 @@ describe("human request persistence", () => {
         }),
       );
 
-      const requests = await adapter.listPendingHumanRequests();
+      const requests = await adapter.listPendingHumanRequests(now);
       expect(requests).toHaveLength(2);
       expect(requests[0]?.requestId).toBe(buildHumanRequestId("run-1", "human-review", 0));
       expect(requests[0]?.workflowName).toBe("human-flow");

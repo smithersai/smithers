@@ -95,24 +95,33 @@ describe("transactional state writes", () => {
         | { attemptState?: string; nodeState?: string }
         | undefined;
       while (Date.now() < deadline) {
-        observed = client
-          .query(
-            `SELECT
-               a.state AS attemptState,
-               n.state AS nodeState
-             FROM _smithers_attempts a
-             LEFT JOIN _smithers_nodes n
-               ON n.run_id = a.run_id
-              AND n.node_id = a.node_id
-              AND n.iteration = a.iteration
-            WHERE a.run_id = ?
-              AND a.node_id = ?
-              AND a.iteration = 0
-              AND a.attempt = 1`,
-          )
-          .get(runId, "slow") as
-          | { attemptState?: string; nodeState?: string }
-          | undefined;
+        try {
+          observed = client
+            .query(
+              `SELECT
+                 a.state AS attemptState,
+                 n.state AS nodeState
+               FROM _smithers_attempts a
+               LEFT JOIN _smithers_nodes n
+                 ON n.run_id = a.run_id
+                AND n.node_id = a.node_id
+                AND n.iteration = a.iteration
+              WHERE a.run_id = ?
+                AND a.node_id = ?
+                AND a.iteration = 0
+                AND a.attempt = 1`,
+            )
+            .get(runId, "slow") as
+            | { attemptState?: string; nodeState?: string }
+            | undefined;
+        } catch (error) {
+          if (
+            !(error instanceof Error) ||
+            !error.message.includes("no such table: _smithers_attempts")
+          ) {
+            throw error;
+          }
+        }
 
         if (observed?.attemptState === "in-progress") {
           break;
