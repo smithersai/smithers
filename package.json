@@ -1,6 +1,6 @@
 {
   "name": "smithers-orchestrator",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "AI workflow orchestration with JSX",
   "author": "William Cory",
   "license": "MIT",
