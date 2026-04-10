@@ -146,6 +146,46 @@ const reviewSchema = z.object({
 
 If the agent returns `{ approved: "yes" }` instead of `{ approved: true }`, schema validation catches it and retries -- without burning a full task retry.
 
+## Mark Side-Effect Tools
+
+This is the single most important thing to get right with custom tools. If your tool mutates external state — calling an API, writing to a database, sending an email, creating a PR — you **must** set `sideEffect: true` on the tool definition. If the mutation is not safe to repeat, also set `idempotent: false`.
+
+Why this matters: Smithers retries failed tasks. Without `sideEffect: true`, Smithers treats your tool as a pure read and replays it without warning. That means duplicate orders, duplicate emails, double charges. The `sideEffect` flag is how Smithers knows to warn the agent on retry and provide an idempotency key for deduplication.
+
+```tsx
+import { defineTool } from "smithers-orchestrator";
+import { z } from "zod";
+
+// ✗ Dangerous: external mutation without sideEffect flag
+const createTicket = defineTool({
+  name: "jira.create_ticket",
+  schema: z.object({ title: z.string(), body: z.string() }),
+  async execute(args) {
+    return await jira.createIssue(args);
+  },
+});
+
+// ✓ Correct: marked as non-idempotent side effect
+const createTicket = defineTool({
+  name: "jira.create_ticket",
+  schema: z.object({ title: z.string(), body: z.string() }),
+  sideEffect: true,
+  idempotent: false,
+  async execute(args, ctx) {
+    return await jira.createIssue({
+      ...args,
+      idempotencyKey: ctx.idempotencyKey,
+    });
+  },
+});
+```
+
+Not everything is a side effect. File system changes inside the sandbox — writing files, editing code, running local shell commands — are **not** side effects. They are sandboxed, local, and tracked by git. You can undo them with `git reset`. The built-in `write`, `edit`, and `bash` tools do not carry the side effect flag for exactly this reason.
+
+The rule: **if you cannot undo it with `git reset`, it is a side effect. Mark it.**
+
+For the full reference on `sideEffect`, `idempotent`, and `ctx.idempotencyKey`, see [defineTool](/integrations/tools#side-effects-and-idempotency).
+
 ## Design for Resumability
 
 Every long-running workflow will eventually crash. A network blip, a rate limit, a deploy that kills the process. If your workflow cannot resume from where it stopped, you are starting over from scratch every time.
@@ -153,7 +193,7 @@ Every long-running workflow will eventually crash. A network blip, a rate limit,
 Three rules:
 
 - **Use deterministic task IDs.** No timestamps, no random strings, no array indices. If the ID changes between renders, Smithers treats it as a different task.
-- **Make tasks idempotent where possible.** If a task writes files, design it so re-running produces the same result.
+- **Make tasks idempotent where possible.** If a task writes files, design it so re-running produces the same result. For custom tools that call external APIs, [mark them as side effects](#mark-side-effect-tools) so Smithers handles retries safely.
 - **Use `deps` for direct task handoff and `ctx.outputMaybe()` for orchestration decisions.** This keeps prompt wiring terse while preserving explicit control-flow logic.
 
 ```tsx

@@ -3,9 +3,13 @@ import type { AgentLike } from "../AgentLike";
 import { Sequence } from "./Sequence";
 import { Parallel } from "./Parallel";
 import { Loop } from "./Ralph";
-import { Task } from "./Task";
+import { Task, type TaskProps } from "./Task";
 
 type OutputTarget = import("zod").ZodObject<any> | { $inferSelect: any } | string;
+type ColumnTaskProps = Omit<
+  Partial<TaskProps<unknown>>,
+  "agent" | "children" | "id" | "key" | "output" | "smithersContext"
+>;
 
 export type ColumnDef = {
   name: string;
@@ -14,6 +18,8 @@ export type ColumnDef = {
   output: OutputTarget;
   /** Prompt template. Receives `{ item, column }` and returns a string. */
   prompt?: (ctx: { item: unknown; column: string }) => string;
+  /** Optional Task props applied to each generated item task in this column. */
+  task?: ColumnTaskProps;
 };
 
 export type KanbanProps = {
@@ -66,16 +72,18 @@ export function Kanban(props: KanbanProps) {
     const agent = agents?.[col.name] ?? col.agent;
     const taskElements = tickets.map((item) => {
       const taskId = `${prefix}-${col.name}-${item.id}`;
+      const taskProps = col.task ?? {};
       const prompt = col.prompt
         ? col.prompt({ item, column: col.name })
         : `Process item ${item.id} in column "${col.name}".`;
       return React.createElement(Task, {
+        ...taskProps,
         key: `${col.name}-${item.id}`,
         id: taskId,
         output: col.output,
         agent,
-        continueOnFail: true,
-        label: `${col.name}: ${item.id}`,
+        continueOnFail: taskProps.continueOnFail ?? true,
+        label: taskProps.label ?? `${col.name}: ${item.id}`,
         children: prompt,
       });
     });

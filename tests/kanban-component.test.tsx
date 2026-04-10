@@ -296,6 +296,7 @@ describe("Kanban", () => {
                 agent: workAgent,
                 output: outputs.work,
                 prompt: ({ item }) => `item:${(item as any).id} column:work`,
+                task: { retries: 1 },
               },
               {
                 name: "review",

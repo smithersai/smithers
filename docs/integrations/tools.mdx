@@ -74,6 +74,67 @@ const placeOrder = defineTool({
 - `idempotent: false` tells Smithers to warn resumed/retried agent loops when the tool was already called in a previous attempt.
 - Smithers logs start/finish records for every `defineTool()` call in `_smithers_tool_calls`.
 
+### Side Effects and Idempotency
+
+Every custom tool that modifies external state **must** declare `sideEffect: true`. This is how Smithers knows to protect your workflow during retries and resumes. Without it, Smithers treats the tool as a pure read and will replay it freely — potentially sending duplicate emails, double-charging payments, or creating duplicate records.
+
+The two flags work together:
+
+| `sideEffect` | `idempotent` | Smithers behavior |
+|---|---|---|
+| `false` (default) | `true` (default) | Pure read. Safe to replay on retry. No warnings. |
+| `true` | `true` | Mutates external state, but calling it twice with the same input produces the same result (e.g. an upsert, a PUT request). Safe to replay. No warnings. |
+| `true` | `false` | Mutates external state and is **not** safe to replay (e.g. sending an email, placing an order, charging a payment). On retry, Smithers injects a warning telling the agent the tool was already called and it should verify external state before calling it again. |
+
+When `sideEffect: true` and `idempotent: false`, Smithers does two things on retry:
+
+1. **Warns the agent.** The retry prompt includes a message listing which non-idempotent tools were already called, so the agent can check external state before repeating them.
+2. **Provides a stable idempotency key.** `ctx.idempotencyKey` is deterministic for a given task + iteration, so you can pass it to external APIs that support idempotency (Stripe, AWS, etc.) to deduplicate on their end.
+
+If your `execute` function has `sideEffect: true, idempotent: false` but does not accept the `ctx` parameter, Smithers logs a warning at startup. This is almost always a bug — you need `ctx.idempotencyKey` to safely handle retries.
+
+```ts
+// ✗ Bad: non-idempotent side effect without ctx
+const sendEmail = defineTool({
+  name: "email.send",
+  schema: z.object({ to: z.string(), body: z.string() }),
+  sideEffect: true,
+  idempotent: false,
+  async execute(args) {  // ← missing ctx parameter, Smithers warns
+    await mailer.send(args);
+  },
+});
+
+// ✓ Good: uses ctx.idempotencyKey to deduplicate
+const sendEmail = defineTool({
+  name: "email.send",
+  schema: z.object({ to: z.string(), body: z.string() }),
+  sideEffect: true,
+  idempotent: false,
+  async execute(args, ctx) {
+    await mailer.send({ ...args, idempotencyKey: ctx.idempotencyKey });
+  },
+});
+```
+
+### What counts as a side effect
+
+A side effect is any mutation of state **outside the sandbox**. If the tool talks to an external API, writes to a database, sends a message, or triggers a webhook, it has a side effect. Mark it.
+
+File system changes inside the sandbox — writing files, editing code, running `git commit` — are **not** side effects in this sense. The built-in `write`, `edit`, and `bash` tools modify the working directory, but those changes are local, sandboxed, and tracked by git. They are inherently reversible (`git checkout`, `git reset`) and inspectable (`git diff`, `git log`). Smithers does not need retry warnings or idempotency keys for them.
+
+| Tool | Side effect? | Why |
+|---|---|---|
+| Built-in `read`, `grep` | No | Pure reads |
+| Built-in `write`, `edit` | No | Sandboxed file changes, tracked by git |
+| Built-in `bash` (local commands) | No | Local execution within sandbox |
+| Custom tool calling an external API | **Yes** | Mutates state outside the sandbox |
+| Custom tool writing to a database | **Yes** | External persistent state |
+| Custom tool sending a Slack message | **Yes** | Irreversible external communication |
+| Custom tool creating a GitHub PR | **Yes** | External state visible to others |
+
+The rule is simple: **if you cannot undo it with `git reset`, mark it as a side effect.**
+
 ---
 
 ## read
