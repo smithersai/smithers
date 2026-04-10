@@ -192,6 +192,23 @@ function heartbeatTimeoutReasonFromAbort(
   return null;
 }
 
+function isHeartbeatPayloadValidationError(err: unknown): boolean {
+  if (err instanceof SmithersError) {
+    return (
+      err.code === "HEARTBEAT_PAYLOAD_NOT_JSON_SERIALIZABLE" ||
+      err.code === "HEARTBEAT_PAYLOAD_TOO_LARGE"
+    );
+  }
+  if (!err || typeof err !== "object") {
+    return false;
+  }
+  const code = (err as any).code;
+  return (
+    code === "HEARTBEAT_PAYLOAD_NOT_JSON_SERIALIZABLE" ||
+    code === "HEARTBEAT_PAYLOAD_TOO_LARGE"
+  );
+}
+
 export const canExecuteBridgeManagedComputeTask = (
   desc: TaskDescriptor,
   cacheEnabled: boolean,
@@ -727,6 +744,9 @@ export const executeComputeTaskBridge = async (
         : aborted
           ? makeAbortError()
           : err);
+    if (isHeartbeatPayloadValidationError(effectiveError)) {
+      attemptMeta.failureRetryable = false;
+    }
 
     if (aborted) {
       await waitForHeartbeatWriteDrain();

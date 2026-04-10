@@ -339,6 +339,23 @@ function heartbeatTimeoutReasonFromAbort(
   return null;
 }
 
+function isHeartbeatPayloadValidationError(err: unknown): boolean {
+  if (err instanceof SmithersError) {
+    return (
+      err.code === "HEARTBEAT_PAYLOAD_NOT_JSON_SERIALIZABLE" ||
+      err.code === "HEARTBEAT_PAYLOAD_TOO_LARGE"
+    );
+  }
+  if (!err || typeof err !== "object") {
+    return false;
+  }
+  const code = (err as any).code;
+  return (
+    code === "HEARTBEAT_PAYLOAD_NOT_JSON_SERIALIZABLE" ||
+    code === "HEARTBEAT_PAYLOAD_TOO_LARGE"
+  );
+}
+
 function extractHijackContinuation(
   meta: Record<string, unknown>,
   engine: string,
@@ -4018,6 +4035,9 @@ export async function legacyExecuteTask(
       err,
     );
     const effectiveError = heartbeatTimeoutError ?? err;
+    if (isHeartbeatPayloadValidationError(effectiveError)) {
+      attemptMeta.failureRetryable = false;
+    }
     if (!heartbeatTimeoutError && (taskSignal.aborted || isAbortError(err))) {
       await waitForHeartbeatWriteDrain();
       await flushHeartbeat(true);
