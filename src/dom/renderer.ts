@@ -187,9 +187,15 @@ const hostConfig: any = {
 
 const reconciler = Reconciler(hostConfig);
 
-// Ensure custom renderers can register with the devtools hook even when the
-// hook consumer starts after this module has already been imported.
-installRDTHook();
+const hookHost = globalThis as typeof globalThis & {
+  __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown;
+};
+
+// Avoid clobbering an existing instrumented hook. Bippy's install helper
+// replaces the global hook object when called repeatedly.
+if (!hookHost.__REACT_DEVTOOLS_GLOBAL_HOOK__) {
+  installRDTHook();
+}
 
 // Register with React DevTools hook (if present).
 // This enables Bippy, react-devtools-inline, and other devtools that listen

@@ -4409,6 +4409,7 @@ async function runWorkflowBody<Schema>(
   let workflowRef = workflow;
   let onAbortWake = () => {};
   let armHotReloadWakeup = () => {};
+  let waitForAbortedTasksToSettle = async () => {};
   let runOwnedByCurrentProcess = false;
   const annotateRunSpan = (
     attributes: Readonly<Record<string, unknown>>,
@@ -4706,7 +4707,7 @@ async function runWorkflowBody<Schema>(
     const makeSchedulerTaskKey = (
       task: Pick<TaskDescriptor, "nodeId" | "iteration">,
     ) => buildStateKey(task.nodeId, task.iteration);
-    const waitForAbortedTasksToSettle = async () => {
+    waitForAbortedTasksToSettle = async () => {
       const deadlineAt = nowMs() + RUN_ABORT_SETTLE_TIMEOUT_MS;
       while (true) {
         const inProgress = await adapter.listInProgressAttempts(runId);
