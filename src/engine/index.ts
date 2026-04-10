@@ -3791,20 +3791,35 @@ export async function legacyExecuteTask(
           { role: "user", content: schemaRetryPrompt },
         ];
 
-        const schemaRetryResult = await (effectiveAgent as any).generate({
-          options: undefined as any,
-          abortSignal: taskSignal,
-          messages: retryMessages,
-          timeout: desc.timeoutMs ? { totalMs: desc.timeoutMs } : undefined,
-          onStdout: (text: string) => {
-            recordInternalHeartbeat();
-            emitOutput(text, "stdout");
+        const schemaRetryResult = await runWithToolContext(
+          {
+            db: adapter,
+            runId,
+            nodeId: desc.nodeId,
+            iteration: desc.iteration,
+            attempt: attemptNo,
+            rootDir: taskRoot,
+            allowNetwork: toolConfig.allowNetwork,
+            maxOutputBytes: toolConfig.maxOutputBytes,
+            timeoutMs: desc.timeoutMs ?? toolConfig.toolTimeoutMs,
+            seq: 0,
+            emitEvent: (event) => eventBus.emitEventQueued(event),
           },
-          onStderr: (text: string) => {
-            recordInternalHeartbeat();
-            emitOutput(text, "stderr");
-          },
-        });
+          async () => (effectiveAgent as any).generate({
+            options: undefined as any,
+            abortSignal: taskSignal,
+            messages: retryMessages,
+            timeout: desc.timeoutMs ? { totalMs: desc.timeoutMs } : undefined,
+            onStdout: (text: string) => {
+              recordInternalHeartbeat();
+              emitOutput(text, "stdout");
+            },
+            onStderr: (text: string) => {
+              recordInternalHeartbeat();
+              emitOutput(text, "stderr");
+            },
+          }),
+        );
         const retryText = ((schemaRetryResult as any).text ?? "").trim();
         responseText = retryText || responseText;
 
