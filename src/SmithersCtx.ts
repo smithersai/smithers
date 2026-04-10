@@ -20,7 +20,11 @@ export interface SmithersCtx<Schema> {
   runId: string;
   iteration: number;
   iterations?: Record<string, number>;
-  input: Schema extends { input: infer T } ? T : any;
+  input: Schema extends { input: infer T }
+    ? T extends z.ZodTypeAny
+      ? z.infer<T>
+      : T
+    : any;
   auth: RunAuthContext | null;
   __smithersRuntime?: SmithersRuntimeConfig | null;
   outputs: OutputAccessor<Schema>;
