@@ -57,7 +57,7 @@ describe("onProgress events", () => {
 
     const workflow = smithers(() => (
       <Workflow name="fail-events">
-        <Task id="fail" output={outputs.out}>
+        <Task id="fail" output={outputs.out} noRetry>
           {() => { throw new Error("boom"); }}
         </Task>
       </Workflow>
