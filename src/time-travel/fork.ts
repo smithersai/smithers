@@ -76,6 +76,14 @@ export function forkRunEffect(
     // 2. Create new run ID
     const childRunId = newRunId();
     const ts = nowMs();
+    const parentRun = yield* fromPromise(
+      "load parent run metadata",
+      () => adapter.getRun(parentRunId),
+      {
+        code: "DB_QUERY_FAILED",
+        details: { runId: parentRunId },
+      },
+    );
 
     // 3. Optionally override input and reset nodes
     let nodesJson = source.nodesJson;
@@ -128,6 +136,38 @@ export function forkRunEffect(
       details: { frameNo: 0, runId: childRunId },
     },
     );
+
+    if (parentRun) {
+      yield* fromPromise(
+        "insert forked run",
+        () =>
+          adapter.insertRun({
+            runId: childRunId,
+            parentRunId,
+            workflowName: parentRun.workflowName,
+            workflowPath: parentRun.workflowPath ?? null,
+            workflowHash: source.workflowHash ?? parentRun.workflowHash ?? null,
+            status: parentRun.status === "running" ? "failed" : parentRun.status,
+            createdAtMs: ts,
+            startedAtMs: null,
+            finishedAtMs: parentRun.finishedAtMs ?? ts,
+            heartbeatAtMs: null,
+            runtimeOwnerId: null,
+            cancelRequestedAtMs: null,
+            hijackRequestedAtMs: null,
+            hijackTarget: null,
+            vcsType: parentRun.vcsType ?? null,
+            vcsRoot: parentRun.vcsRoot ?? null,
+            vcsRevision: source.vcsPointer ?? parentRun.vcsRevision ?? null,
+            errorJson: null,
+            configJson: parentRun.configJson ?? null,
+          }),
+        {
+          code: "DB_WRITE_FAILED",
+          details: { runId: childRunId },
+        },
+      );
+    }
 
     // 5. Record branch relationship
     const branch: BranchInfo = {

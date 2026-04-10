@@ -194,14 +194,27 @@ type ClaudeCodeAgentOptions = BaseCliAgentOptions & {
 
 | Option | Description |
 |---|---|
-| `outputFormat` | `"text"`, `"json"`, or `"stream-json"` (default: `"text"`) |
 | `permissionMode` | `"bypassPermissions"`, `"acceptEdits"`, `"default"`, `"delegate"`, `"dontAsk"`, `"plan"` |
 | `allowedTools` | Tool name whitelist |
 | `disallowedTools` | Tool name blacklist |
+| `disableSlashCommands` | Disable all slash commands |
 | `maxBudgetUsd` | Spending cap in USD |
 | `mcpConfig` | MCP server configuration files |
+| `mcpDebug` | Enable MCP debug logging |
 | `addDir` | Additional context directories |
+| `file` | Files to inject into context |
 | `fromPr` | Pull request URL or number to use as additional context |
+| `fallbackModel` | Model to use if the primary model is unavailable |
+| `appendSystemPrompt` | Text appended to the system prompt |
+| `agents` | Multi-agent configuration as a map of agent definitions or JSON string |
+| `betas` | Beta feature flags to enable |
+| `pluginDir` | Plugin directories for Claude Code skills |
+| `resume` / `sessionId` | Resume a previous session by ID |
+| `settings` / `settingSources` | Override settings file or sources |
+| `jsonSchema` | JSON schema string for structured output |
+| `includePartialMessages` | Stream partial assistant messages |
+| `inputFormat` | `"text"` or `"stream-json"` for input |
+| `outputFormat` | `"text"`, `"json"`, or `"stream-json"` (default: `"stream-json"`) |
 
 When `yolo` is `true` (default), the agent passes `--allow-dangerously-skip-permissions`, `--dangerously-skip-permissions`, and `--permission-mode bypassPermissions` unless `permissionMode` is explicitly set.
 

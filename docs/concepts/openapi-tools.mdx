@@ -101,9 +101,10 @@ const listPets = await createOpenApiTool(spec, "listPets", {
 
 ## Observability
 
-Every OpenAPI tool call emits an `OpenApiToolCalled` event and updates two metrics:
+Every OpenAPI tool call emits an `OpenApiToolCalled` event and updates three metrics:
 
 - `smithers.openapi.tool_calls` -- counter of total calls
+- `smithers.openapi.tool_call_errors` -- counter of failed calls
 - `smithers.openapi.tool_duration_ms` -- histogram of call durations
 
 These integrate with the standard Smithers observability pipeline, so they appear in your logs, Prometheus exports, and OpenTelemetry traces alongside all other tool metrics.
@@ -126,6 +127,12 @@ const tools = createOpenApiToolsSync("/path/to/openapi.json", options);
 ```
 
 Use the sync variant when you are initializing tools at module load time and cannot await.
+
+## Operation ID Fallback
+
+If an OpenAPI operation does not have an `operationId`, Smithers generates one from the HTTP method and path. For example, `GET /pets/{petId}` becomes `get_pets_petId`. The generated ID strips braces and non-alphanumeric characters, joining segments with underscores.
+
+You should still set explicit `operationId` values in your spec whenever possible -- they make tool names readable and stable. The fallback exists so that specs without IDs still produce usable tools.
 
 ## Loading a Spec via the Effect Layer
 

@@ -95,6 +95,44 @@ Use `correlationId` to match specific event instances when multiple events of th
 />
 ```
 
+## Durable Deferred Resolution
+
+When `async` is `true`, the wait node becomes a **durable deferred**: the workflow records the subscription durably and allows unrelated downstream work to proceed immediately. The deferred resolves when the event arrives. Any task that explicitly depends on this node (via `dependsOn` or `needs`) still blocks until the payload is available.
+
+This pattern is useful when you want to kick off a long-running external process and continue with independent work while waiting:
+
+```tsx
+<Workflow name="async-deploy">
+  <Sequence>
+    <Task id="trigger-build" output={outputs.trigger} agent={ciAgent}>
+      Trigger a CI build and return the build ID.
+    </Task>
+
+    <WaitForEvent
+      id="build-done"
+      event="ci.build.completed"
+      correlationId={ctx.outputMaybe(outputs.trigger, { nodeId: "trigger-build" })?.buildId}
+      output={outputs.buildResult}
+      timeoutMs={1_800_000}
+      onTimeout="fail"
+      async
+    />
+
+    {/* This runs immediately — it does not depend on the build result */}
+    <Task id="notify-started" output={outputs.notifyStarted}>
+      {{ message: "Build triggered, waiting for completion." }}
+    </Task>
+
+    {/* This blocks until the build event payload is available */}
+    <Task id="deploy" output={outputs.deploy} dependsOn={["build-done"]} agent={deployAgent}>
+      Deploy the completed build.
+    </Task>
+  </Sequence>
+</Workflow>
+```
+
+The subscription survives worker restarts — the Temporal runtime checkpoints the event wait durably. When the matching event arrives, the deferred resolves and any blocked dependents resume.
+
 ## Behavior
 
 - When the scheduler reaches this node, it enters `waiting-event` status.

@@ -30,12 +30,14 @@ type RunRecord = {
   workflow: SmithersWorkflow<any>;
   abort: AbortController;
   workflowPath: string;
+  cleanupTimer: ReturnType<typeof setTimeout> | null;
 };
 
 const runs = new Map<string, RunRecord>();
 const DEFAULT_MAX_BODY_BYTES = 1_048_576;
 const DEFAULT_MAX_BODY_JSON_DEPTH = 32;
 const DEFAULT_SSE_HEARTBEAT_MS = 10_000;
+const COMPLETED_RUN_RETENTION_MS = 60_000;
 
 type HttpErrorCode =
   | "INVALID_REQUEST"
@@ -183,6 +185,43 @@ function loadWorkflowEffect(absPath: string) {
     Effect.annotateLogs({ workflowPath: absPath }),
     Effect.withLogSpan("server:load-workflow"),
   );
+}
+
+function clearRunCleanupTimer(record: RunRecord | undefined) {
+  if (!record?.cleanupTimer) return;
+  clearTimeout(record.cleanupTimer);
+  record.cleanupTimer = null;
+}
+
+function scheduleRunCleanup(runId: string) {
+  const record = runs.get(runId);
+  if (!record) return;
+  clearRunCleanupTimer(record);
+  record.cleanupTimer = setTimeout(() => {
+    const current = runs.get(runId);
+    if (current === record) {
+      runs.delete(runId);
+    }
+  }, COMPLETED_RUN_RETENTION_MS);
+}
+
+function finalizeRunRecord(
+  runId: string,
+  status: string,
+  hasServerDb: boolean,
+) {
+  if (
+    hasServerDb ||
+    (status !== "waiting-approval" && status !== "waiting-timer")
+  ) {
+    if (hasServerDb) {
+      const record = runs.get(runId);
+      clearRunCleanupTimer(record);
+      runs.delete(runId);
+      return;
+    }
+    scheduleRunCleanup(runId);
+  }
 }
 
 function sendJson(res: ServerResponse, status: number, payload: any) {
@@ -684,7 +723,12 @@ function startServerInternal(opts: ServerOptions = {}) {
             allowNetwork,
           }),
         );
-        const record: RunRecord = { workflow, abort, workflowPath };
+        const record: RunRecord = {
+          workflow,
+          abort,
+          workflowPath,
+          cleanupTimer: null,
+        };
         runs.set(runId, record);
         logInfo("accepted run request", {
           runId,
@@ -705,13 +749,7 @@ function startServerInternal(opts: ServerOptions = {}) {
           onProgress: mirrorOnProgress,
         })
           .then((result) => {
-            const id = result.runId;
-            if (
-              serverDb ||
-              (result.status !== "waiting-approval" && result.status !== "waiting-timer")
-            ) {
-              runs.delete(id);
-            }
+            finalizeRunRecord(result.runId, result.status, Boolean(serverDb));
           })
           .catch((err) => {
             logError("server run execution failed", {
@@ -719,6 +757,7 @@ function startServerInternal(opts: ServerOptions = {}) {
               workflowPath,
               error: err instanceof Error ? err.message : String(err),
             }, "server:run");
+            clearRunCleanupTimer(runs.get(runId));
             runs.delete(runId);
           });
 
@@ -776,7 +815,12 @@ function startServerInternal(opts: ServerOptions = {}) {
           return sendJson(res, 200, { runId, status: "running" });
         }
         const abort = new AbortController();
-        const record: RunRecord = { workflow, abort, workflowPath };
+        const record: RunRecord = {
+          workflow,
+          abort,
+          workflowPath,
+          cleanupTimer: null,
+        };
         runs.set(runId, record);
         logInfo("accepted run resume request", {
           runId,
@@ -810,12 +854,7 @@ function startServerInternal(opts: ServerOptions = {}) {
           onProgress: mirrorOnProgress,
         })
           .then((result) => {
-            if (
-              serverDb ||
-              (result.status !== "waiting-approval" && result.status !== "waiting-timer")
-            ) {
-              runs.delete(runId);
-            }
+            finalizeRunRecord(runId, result.status, Boolean(serverDb));
           })
           .catch((err) => {
             logError("server resume execution failed", {
@@ -823,6 +862,7 @@ function startServerInternal(opts: ServerOptions = {}) {
               workflowPath,
               error: err instanceof Error ? err.message : String(err),
             }, "server:resume");
+            clearRunCleanupTimer(runs.get(runId));
             runs.delete(runId);
           });
 
@@ -1274,6 +1314,7 @@ function startServerInternal(opts: ServerOptions = {}) {
       try {
         record.abort.abort();
       } catch {}
+      clearRunCleanupTimer(record);
       runs.delete(runId);
     }
   });

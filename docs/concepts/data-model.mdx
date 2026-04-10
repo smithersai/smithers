@@ -180,6 +180,134 @@ The keyframe interval is 50 frames (`FRAME_KEYFRAME_INTERVAL = 50`). Reading an 
 
 Delta encoding uses a structural diff algorithm that walks the XML JSON tree, emitting `set`, `insert`, and `remove` operations. It is node-ID-aware: when comparing adjacent objects in the tree, it uses the `id` prop of element nodes as a stable identity anchor, so reordered elements produce insert/remove pairs rather than spurious updates.
 
+## Signal Persistence
+
+Signals are external messages sent to a running workflow. When a signal arrives, Smithers writes it to `_smithers_signals` with an automatically allocated sequence number. You never pick the `seq` yourself -- Smithers computes `MAX(seq) + 1` inside a `BEGIN IMMEDIATE` transaction so two concurrent signals never collide.
+
+Before inserting, the adapter checks whether an identical signal already exists (same `runId`, `signalName`, `correlationId`, `payloadJson`, `receivedAtMs`, and `receivedBy`). If a match is found, the existing `seq` is returned and no duplicate row is created. This deduplication prevents replay or retry from doubling signals.
+
+### Signal Query Filters
+
+Querying signals supports four filters, all optional:
+
+| Filter | Column | Description |
+|--------|--------|-------------|
+| `signalName` | `signal_name` | Match a specific signal type |
+| `correlationId` | `correlation_id` | Match a specific correlation key (supports `null`) |
+| `receivedAfterMs` | `received_at_ms` | Only signals received at or after this timestamp |
+| `limit` | -- | Max rows to return (default 200) |
+
+Results are ordered by `seq ASC`, so you always see signals in arrival order.
+
+## Event Persistence
+
+The `_smithers_events` table is the durable event journal for each run. Every `SmithersEvent` emitted during execution is persisted here with a sequential `seq` number that serves as the total ordering.
+
+### Auto-Sequence Allocation
+
+Like signals, events get their `seq` via `SELECT COALESCE(MAX(seq), -1) + 1` inside a `BEGIN IMMEDIATE` transaction. This guarantees gap-free, monotonically increasing sequence numbers per run.
+
+### Insert Deduplication
+
+Before inserting, the adapter checks for an existing row matching the same `runId`, `timestampMs`, `type`, and `payloadJson`. If found, the existing `seq` is returned without creating a duplicate. This makes event insertion idempotent across retries.
+
+### Event Queue and Flush
+
+For performance, events can be enqueued asynchronously via `emitEventQueued`. The event is emitted to listeners and tracked immediately, but database and log-file persistence happens in a background promise chain (`persistTail`). Call `flush()` to await all queued persistence -- the engine does this at task boundaries and run completion to ensure nothing is lost.
+
+### Sequence Start Override
+
+The `EventBus` constructor accepts a `startSeq` option, which sets the initial sequence counter. This is used on resume to continue from where the previous run left off, preventing sequence number collisions with already-persisted events.
+
+### Event History Queries
+
+The adapter supports filtered history queries with these parameters:
+
+| Filter | Description |
+|--------|-------------|
+| `afterSeq` | Return events with `seq > afterSeq` |
+| `limit` | Max rows |
+| `nodeId` | Filter by `$.nodeId` inside the payload JSON |
+| `types` | Filter to specific event type strings |
+| `sinceTimestampMs` | Events at or after this timestamp |
+
+A separate `countEventHistory` method returns the count matching the same filters, useful for pagination.
+
+## Human Request Persistence
+
+Human requests (form fills, confirmations, free-text prompts) are stored in `_smithers_human_requests` with lifecycle states: `pending`, `answered`, `cancelled`, `expired`.
+
+### Pending Inbox Query
+
+`listPendingHumanRequests` returns all pending requests across all runs, joined with `_smithers_runs` and `_smithers_nodes` to include the `workflowName`, `runStatus`, and `nodeLabel`. Before returning, it automatically expires any requests whose `timeoutAtMs` has passed, transitioning them to `expired` status.
+
+### Answer Persistence
+
+`answerHumanRequest` sets the response JSON, timestamp, and optional `answeredBy` field, transitioning the request from `pending` to `answered`. Only pending requests can be answered -- the `WHERE status = 'pending'` clause prevents double-answering.
+
+### Cancellation
+
+`cancelHumanRequest` transitions a pending request to `cancelled`. Like answering, it only operates on requests in `pending` status.
+
+## Cron Persistence
+
+Cron schedules are stored in `_smithers_cron` and managed through the adapter:
+
+| Operation | Method | Description |
+|-----------|--------|-------------|
+| Create/Update | `upsertCron` | Inserts or updates a cron schedule by `cronId` |
+| List | `listCrons(enabledOnly?)` | Returns all cron entries, optionally filtering to `enabled = true` |
+| Track execution | `updateCronRunTime` | Updates `lastRunAtMs`, `nextRunAtMs`, and optional `errorJson` |
+| Delete | `deleteCron` | Removes a cron entry by ID |
+
+The `enabled` flag allows disabling a schedule without deleting it. The `lastRunAtMs` and `nextRunAtMs` columns let the scheduler know when to fire next without recomputing from the cron pattern on every poll. If a scheduled run fails, the error is stored in `errorJson` on the cron row for diagnostics.
+
+## Run Lifecycle Management
+
+### Stale Run Claims
+
+The supervisor detects stale runs by querying `_smithers_runs` for rows with `status = 'running'` whose `heartbeat_at_ms` is older than the stale threshold (default 30 seconds). To safely resume a stale run without races, the supervisor uses a compare-and-swap pattern:
+
+1. **Claim**: `claimRunForResume` atomically sets `runtime_owner_id` and `heartbeat_at_ms` only if the current values match the expected stale state. The `WHERE` clause checks `runtime_owner_id`, `heartbeat_at_ms`, and the stale threshold in a single `UPDATE`, and returns whether the row was modified.
+
+2. **Release**: If the supervisor decides not to resume after claiming, `releaseRunResumeClaim` restores the original `runtime_owner_id` and `heartbeat_at_ms`, but only if the claim is still held (the current `runtime_owner_id` matches the claimer).
+
+This two-phase claim prevents two supervisor instances from resuming the same stale run simultaneously.
+
+### Sandbox Tracking
+
+Sandbox sessions (bubblewrap, Docker, or Codeplane) are tracked in `_smithers_sandboxes`. The adapter upserts sandbox rows keyed by `(runId, sandboxId)`, recording runtime type, configuration, status, shipping and completion timestamps, and bundle paths.
+
+## Output Edge Cases
+
+### Payload-Only Tables
+
+When an output table's only non-bookkeeping column is `payload`, Smithers detects it and wraps the entire agent output into that single column instead of spreading fields across multiple columns. This is useful for unstructured or polymorphic outputs where a fixed column set does not make sense.
+
+### Boolean Column Coercion
+
+Bun's SQLite driver returns raw `0`/`1` integers for columns declared with `{ mode: "boolean" }` in Drizzle. When loading output snapshots, Smithers detects these columns by inspecting the Drizzle table metadata and coerces the integer values to proper JavaScript booleans. Without this, strict equality checks like `value === true` would fail.
+
+### Schema Key Aliasing
+
+When loading outputs via `loadOutputs`, each result set is stored under **both** the schema key (e.g., `"analysis"`) and the actual SQLite table name (e.g., `"analysis"` or a custom name). This dual indexing lets downstream code reference outputs by either name, which matters when schema keys and table names diverge (e.g., with custom Drizzle tables).
+
+## Snapshot Persistence
+
+Loading a complete workflow snapshot (`loadInput` + `loadOutputs`) reconstructs the full `ctx` state from SQLite. The input is loaded by filtering the input table for the current `runId`. Outputs are loaded by iterating every schema key, querying each table for rows matching the `runId`, applying boolean coercion, and indexing under both schema key and table name.
+
+This snapshot is what powers resume: when a crashed run restarts, the snapshot populates `ctx` so the JSX tree renders with all completed outputs already in place.
+
+## Transaction Internals
+
+### Read Gating
+
+Reads, not just writes, also acquire a turn in the `transactionTail` promise queue. This prevents reads from seeing intermediate state during a multi-statement transaction. If the current fiber already owns the active transaction, reads proceed immediately without acquiring a new turn.
+
+### Commit Retry
+
+The entire `withTransaction` call is wrapped in `withSqliteWriteRetryEffect`. If the `COMMIT` (or `BEGIN IMMEDIATE`) fails with `SQLITE_BUSY` or an I/O error, the retry mechanism rolls back and retries the full transaction from `BEGIN`, using the same exponential backoff as standalone writes.
+
 ## Why the Separation Matters
 
 Ask two questions about any completed task:

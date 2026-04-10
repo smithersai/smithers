@@ -137,6 +137,13 @@ await store.saveMessage({
 });
 
 const messages = await store.listMessages(thread.threadId, 10);
+const total = await store.countMessages(thread.threadId);
+
+// Retrieve a thread by ID
+const existing = await store.getThread(thread.threadId);
+
+// Delete a thread and its messages
+await store.deleteThread(thread.threadId);
 ```
 
 ## Processors
@@ -144,11 +151,19 @@ const messages = await store.listMessages(thread.threadId, 10);
 Run maintenance on stored memory:
 
 ```ts
-import { TtlGarbageCollector } from "smithers-orchestrator/memory";
+import { TtlGarbageCollector, TokenLimiter, Summarizer } from "smithers-orchestrator/memory";
 
 // Delete expired facts
 const gc = TtlGarbageCollector();
 await gc.process(store);
+
+// Compress message history exceeding a token budget
+const limiter = TokenLimiter(4000);
+await limiter.process(store);
+
+// Summarize old messages with an LLM
+const summarizer = Summarizer(myAgent);
+await summarizer.process(store);
 ```
 
 ## CLI

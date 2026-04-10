@@ -143,6 +143,24 @@ const analysisSchema = z.object({
 </Task>
 ```
 
+### Heartbeat monitoring
+
+Use `heartbeatTimeoutMs` to detect stalled long-running agent tasks. The agent must emit heartbeats periodically; if none arrive within the timeout window, the task fails:
+
+```tsx
+<Task
+  id="long-migration"
+  output={outputs.migration}
+  agent={migrationAgent}
+  heartbeatTimeoutMs={60_000}
+  timeoutMs={3_600_000}
+>
+  Run the database migration. Report progress periodically.
+</Task>
+```
+
+This is distinct from `timeoutMs` — `timeoutMs` caps total execution time, while `heartbeatTimeoutMs` detects hangs mid-execution.
+
 ## Compute mode
 
 Children is a function, no `agent`. Called at execution time; return value becomes output. Sync or async.
@@ -290,6 +308,28 @@ Custom Drizzle tables must be created and migrated separately. Define the workfl
 | Agent failure | Fails. Retries if `retries > 0`. Continues if `continueOnFail`. |
 | Callback throws | Same retry/`continueOnFail` behavior as agent failures. |
 | Callback timeout | Fails after `timeoutMs`. Retries if `retries > 0`. |
+
+## Agent JSON Output Extraction
+
+When `outputSchema` is set, the engine extracts structured JSON from the agent's text response using a multi-strategy pipeline:
+
+1. **Code fence extraction** -- looks for ` ```json ` fenced blocks and parses the content.
+2. **Balanced brace extraction** -- finds the outermost `{...}` using brace-depth counting, handling nested objects correctly.
+3. **Last balanced JSON** -- if multiple JSON objects appear, the last complete one is used (agents often produce the final answer last).
+
+After extraction, the JSON is validated against `outputSchema`. If validation fails:
+
+- The engine sends a **retry prompt** back to the agent describing the schema violation and asking for corrected output.
+- This schema-validation retry happens within the same attempt (it does not consume a `retries` count).
+- If the agent still fails to produce valid JSON after retries, the attempt fails.
+
+### Auth Failure Circuit Breaker
+
+If an agent returns an authentication error (e.g., invalid API key, expired token), the engine short-circuits without retrying. Auth failures are terminal -- retrying with the same credentials will not produce a different result.
+
+### Non-Idempotent Tool Retry Warnings
+
+When a task is retried (via `retries` or manual `retryTask()`), the engine checks whether non-idempotent tools (tools with `sideEffect: true` and `idempotent: false`) were called in prior attempts. If so, a warning message is prepended to the agent's prompt on the next attempt, alerting it that certain side effects may have already occurred.
 
 ## Notes
 

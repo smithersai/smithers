@@ -103,6 +103,48 @@ const latestReview = ctx.latest("review", "review");
 
 The pattern: if you're certain the data exists, use `output`. If you're branching on whether it exists, use `outputMaybe`. If you're looping, use `latest`.
 
+### `ctx.latestArray(value, schema)`
+
+Parses a value as a JSON array and validates each element against a Zod schema. Invalid items are silently dropped. This is useful when an agent returns a JSON string containing an array, and you want type-safe, validated elements:
+
+```tsx
+const items = ctx.latestArray(
+  ctx.latest("findings", "scan")?.items,
+  z.object({ severity: z.string(), message: z.string() }),
+);
+
+// items: Array<{ severity: string; message: string }>
+// Malformed entries are filtered out automatically
+```
+
+If `value` is a string, it is JSON-parsed first. If it is already an array, each element is validated directly. Non-array values are wrapped in a single-element array before validation.
+
+### Table Name Resolution
+
+The `table` parameter in `ctx.output()`, `ctx.outputMaybe()`, `ctx.latest()`, and `ctx.iterationCount()` accepts three forms:
+
+| Form | Example | Resolution |
+| --- | --- | --- |
+| String schema key | `"analysis"` | Looked up directly in the outputs snapshot |
+| Zod schema | `outputs.analysis` | Resolved via the `createSmithers()` schema registry to its key name |
+| Drizzle table | `analysisTable` | Resolved via `getTableName()` to the SQL table name |
+
+The recommended form is the Zod schema from `outputs`, which provides type inference. String keys work when you need dynamic lookups.
+
+### `ctx.auth`
+
+The authentication context passed via `RunOptions.auth`. Returns `null` when no auth context was configured:
+
+```tsx
+export default smithers((ctx) => (
+  <Workflow name="gated">
+    <Task id="deploy" output={outputs.deploy} agent={deployer} skipIf={ctx.auth?.role !== "admin"}>
+      {`Deploy as ${ctx.auth?.userId}`}
+    </Task>
+  </Workflow>
+));
+```
+
 ## Workflow Input
 
 `ctx.input` holds the workflow's input, validated against its schema before execution begins:
@@ -118,6 +160,10 @@ export default smithers((ctx) => (
 ```
 
 Once a run starts, the input is immutable and persisted. Passing different input on resume is an error. This isn't a limitation -- it's a guarantee. You can always trust that `ctx.input` is the same value that started the run.
+
+### Input Payload Unwrapping
+
+When input is stored in a table with only `runId` and `payload` columns (the default `_smithers_input` table), Smithers automatically unwraps the `payload` field. If `payload` is a JSON string, it is parsed. This means `ctx.input` always gives you the clean, deserialized input object -- never the raw database row with `runId` and `payload` wrappers.
 
 ## Step Outputs vs Shared State
 

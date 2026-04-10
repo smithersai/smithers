@@ -69,6 +69,29 @@ Use `strategy="vote"` with `minAgree` to require quorum:
 
 The moderator receives the vote strategy and minimum agreement threshold in its prompt context.
 
+## Consensus strategy
+
+Use `strategy="consensus"` to require panelists to converge on a shared answer. The moderator checks whether panelists agree and, if `minAgree` is set, enforces a minimum threshold:
+
+```tsx
+<Panel
+  panelists={[
+    { agent: analyst1, role: "Risk Analyst A" },
+    { agent: analyst2, role: "Risk Analyst B" },
+    { agent: analyst3, role: "Risk Analyst C" },
+  ]}
+  moderator={moderatorAgent}
+  panelistOutput={outputs.assessment}
+  moderatorOutput={outputs.consensus}
+  strategy="consensus"
+  minAgree={3}
+>
+  Assess the risk level of deploying the new payment gateway to production this week.
+</Panel>
+```
+
+The moderator receives the consensus strategy and threshold in its prompt context, and is responsible for determining whether the panelists have converged.
+
 ## Bare agent shorthand
 
 When you don't need per-panelist roles, pass an array of agents directly:

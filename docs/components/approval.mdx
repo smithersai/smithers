@@ -205,6 +205,12 @@ type ApprovalAutoApprove = {
 
 Async approvals contribute to the Prometheus gauge `smithers_external_wait_async_pending{kind="approval"}` while waiting for human input.
 
+## Durable deferred resolution
+
+`<Approval>` uses a durable deferred mechanism to survive process restarts. When the node enters `waiting-approval` state, an `@effect/workflow DurableDeferred` is created and awaited by the executing task fiber. The deferred is keyed to the run, node, and iteration, so it survives process restarts: if the worker crashes while waiting, the next worker that picks up the task will re-await the same deferred and receive the resolution as soon as a human submits a decision.
+
+When `smithers approve` or `smithers deny` is called, `bridgeApprovalResolve` resolves the deferred, which unblocks the awaiting fiber and lets the compute function proceed to read the decision from the database. No polling is needed.
+
 ## `<Approval>` vs `needsApproval`
 
 | Use | When |

@@ -23,7 +23,7 @@ const result = await runWorkflow(workflow, {
   input: { description: "Auth tokens expire silently" },
 });
 
-console.log(result.status); // "finished" | "failed" | "cancelled" | "waiting-approval"
+console.log(result.status); // "finished" | "failed" | "cancelled" | "continued" | "waiting-approval" | ...
 ```
 
 ## Signature
@@ -53,6 +53,9 @@ function runWorkflow<Schema>(
 | `toolTimeoutMs` | `number` | `60000` | Wall-clock timeout (ms) per tool call. |
 | `hot` | `boolean \| HotReloadOptions` | `undefined` | Enable hot-reload. `true` for defaults, or pass `HotReloadOptions`. |
 | `cliAgentToolsDefault` | `"all" \| "explicit-only"` | `"all"` | Default tool access policy for CLI-backed agents. When `"explicit-only"`, agents can only use tools listed in the task's `allowTools` prop. Recommended `"explicit-only"` for production workflows. |
+| `parentRunId` | `string` | `undefined` | Parent run ID for child workflow / subflow ancestry tracking. |
+| `force` | `boolean` | `false` | Allow resume even when the run's owner process is still alive (overrides PID liveness check). |
+| `auth` | `RunAuthContext` | `undefined` | Authentication context accessible as `ctx.auth` in the workflow. |
 
 ### HotReloadOptions
 
@@ -69,7 +72,7 @@ function runWorkflow<Schema>(
 ```ts
 type RunResult = {
   runId: string;
-  status: "finished" | "failed" | "cancelled" | "waiting-approval";
+  status: "finished" | "failed" | "cancelled" | "continued" | "waiting-approval" | "waiting-event" | "waiting-timer";
   output?: unknown;
   error?: unknown;
 };
@@ -120,7 +123,10 @@ db.close();
 | `"finished"` | All tasks completed. |
 | `"failed"` | A task failed after exhausting retries; `continueOnFail` not set. |
 | `"cancelled"` | Cancelled via `AbortSignal` or hijack handoff. |
+| `"continued"` | Run ended via `<ContinueAsNew>` -- a fresh run has started with carried state. |
 | `"waiting-approval"` | A task requires human approval. Unblock with `smithers approve` or `smithers deny`. |
+| `"waiting-event"` | A task is waiting for an external signal or event. Send via `signalRun()` or the CLI. |
+| `"waiting-timer"` | A task is suspended until a durable timer fires. |
 
 ## Resuming a Run
 

@@ -79,6 +79,7 @@ interface SmithersCtx<Schema> {
   iteration: number;
   iterations?: Record<string, number>;
   input: Schema extends { input: infer T } ? T : any;
+  auth: RunAuthContext | null;
   outputs: OutputAccessor<Schema>;
 
   output<T extends keyof Schema>(
@@ -105,11 +106,12 @@ interface SmithersCtx<Schema> {
 | `iteration` | `number` | Current Loop iteration (0 outside loops) |
 | `iterations` | `Record<string, number>` | Loop ID to current iteration count |
 | `input` | Inferred from Schema | Typed input data |
+| `auth` | `RunAuthContext \| null` | Authentication context passed via `RunOptions.auth`. `null` when no auth context is configured. |
 | `outputs` | `OutputAccessor<Schema>` | Accessor for all output rows |
-| `output(table, key)` | `InferRow<T>` | Get output row. Throws if missing. |
-| `outputMaybe(table, key)` | `InferRow<T> \| undefined` | Get output row or `undefined` |
-| `latest(table, nodeId)` | `any` | Latest output row (highest iteration) |
-| `latestArray(value, schema)` | `any[]` | Parse array field with Zod, drop invalid items |
+| `output(table, key)` | `InferRow<T>` | Get output row. Throws if missing. The `table` parameter accepts a Zod schema from `outputs`, a Drizzle table, or a string schema key. |
+| `outputMaybe(table, key)` | `InferRow<T> \| undefined` | Get output row or `undefined`. Same table resolution as `output()`. |
+| `latest(table, nodeId)` | `any` | Latest output row (highest iteration). Same table resolution as `output()`. |
+| `latestArray(value, schema)` | `any[]` | JSON-parse `value` if it is a string, coerce to array, then validate each element against `schema` (Zod). Invalid items are silently dropped. |
 | `iterationCount(table, nodeId)` | `number` | Distinct iteration count for a node |
 
 ---
@@ -157,11 +159,13 @@ type InferRow<TTable> = TTable extends { $inferSelect: infer R } ? R : never;
 ```ts
 type RunOptions = {
   runId?: string;
+  parentRunId?: string;
   input: Record<string, unknown>;
   maxConcurrency?: number;
   onProgress?: (e: SmithersEvent) => void;
   signal?: AbortSignal;
   resume?: boolean;
+  force?: boolean;
   workflowPath?: string;
   rootDir?: string;
   logDir?: string | null;
@@ -169,17 +173,21 @@ type RunOptions = {
   maxOutputBytes?: number;
   toolTimeoutMs?: number;
   hot?: boolean | HotReloadOptions;
+  auth?: RunAuthContext;
+  cliAgentToolsDefault?: "all" | "explicit-only";
 };
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `runId` | `string` | Auto-generated | Custom run identifier |
+| `runId` | `string` | Auto-generated | Custom run identifier. Falls back to `randomUUID()` when omitted. |
+| `parentRunId` | `string` | `undefined` | Parent run ID for child workflow / subflow tracking. |
 | `input` | `Record<string, unknown>` | -- | Input data (required) |
-| `maxConcurrency` | `number` | `undefined` | Max parallel tasks |
+| `maxConcurrency` | `number` | `4` | Max parallel tasks |
 | `onProgress` | `(e: SmithersEvent) => void` | `undefined` | Lifecycle event callback |
 | `signal` | `AbortSignal` | `undefined` | Cancellation signal |
 | `resume` | `boolean` | `false` | Resume from last checkpoint |
+| `force` | `boolean` | `false` | Allow resume even if the run is still active (overrides liveness check) |
 | `workflowPath` | `string` | `undefined` | Workflow file path (for tool context) |
 | `rootDir` | `string` | `undefined` | Sandbox root for tools |
 | `logDir` | `string \| null` | `undefined` | Event log directory (`null` to disable) |
@@ -187,6 +195,8 @@ type RunOptions = {
 | `maxOutputBytes` | `number` | `200000` | Max output bytes per tool call |
 | `toolTimeoutMs` | `number` | `60000` | Tool execution timeout (ms) |
 | `hot` | `boolean \| HotReloadOptions` | `undefined` | Hot-reload mode |
+| `auth` | `RunAuthContext` | `undefined` | Authentication context. Accessible as `ctx.auth` inside the workflow. |
+| `cliAgentToolsDefault` | `"all" \| "explicit-only"` | `"all"` | Default tool access policy for CLI-backed agents. `"explicit-only"` restricts agents to tools listed in `allowTools`. |
 
 ---
 
@@ -217,7 +227,7 @@ type HotReloadOptions = {
 ```ts
 type RunResult = {
   runId: string;
-  status: "finished" | "failed" | "cancelled" | "waiting-approval";
+  status: "finished" | "failed" | "cancelled" | "continued" | "waiting-approval" | "waiting-event" | "waiting-timer";
   output?: unknown;
   error?: unknown;
 };
@@ -238,7 +248,10 @@ type RunResult = {
 type RunStatus =
   | "running"
   | "waiting-approval"
+  | "waiting-event"
+  | "waiting-timer"
   | "finished"
+  | "continued"
   | "failed"
   | "cancelled";
 ```
@@ -247,7 +260,10 @@ type RunStatus =
 |---|---|
 | `"running"` | Actively executing |
 | `"waiting-approval"` | Awaiting human approval |
+| `"waiting-event"` | Awaiting an external signal or event |
+| `"waiting-timer"` | Suspended until a durable timer fires |
 | `"finished"` | All tasks completed |
+| `"continued"` | Run ended via `<ContinueAsNew>` and a fresh run has started |
 | `"failed"` | Unrecoverable task failure |
 | `"cancelled"` | Cancelled via `AbortSignal` or API |
 
@@ -355,8 +371,62 @@ type RetryPolicy = {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `backoff` | `"fixed" \| "linear" \| "exponential"` | `undefined` | Backoff strategy |
-| `initialDelayMs` | `number` | `undefined` | Initial delay before first retry (ms) |
+| `backoff` | `"fixed" \| "linear" \| "exponential"` | `"fixed"` | Backoff strategy. `"fixed"`: constant delay. `"linear"`: delay increases by `initialDelayMs` each attempt. `"exponential"`: delay doubles each attempt. |
+| `initialDelayMs` | `number` | `0` | Base delay in milliseconds. When `0`, retries execute immediately with no schedule. |
+
+Backoff delay formulas (attempt 1-indexed):
+
+| Strategy | Delay formula |
+|---|---|
+| `"fixed"` | `initialDelayMs` every attempt |
+| `"linear"` | `initialDelayMs * attempt` |
+| `"exponential"` | `initialDelayMs * 2^(attempt - 1)` |
+
+When `retries` is set on a `<Task>` without a `retryPolicy`, the task retries immediately (no delay).
+
+---
+
+### RetryTaskOptions
+
+Options for the programmatic `retryTask()` function, which resets a task and its dependents for re-execution.
+
+```ts
+type RetryTaskOptions = {
+  runId: string;
+  nodeId: string;
+  iteration?: number;
+  resetDependents?: boolean;
+  force?: boolean;
+  onProgress?: (event: SmithersEvent) => void;
+};
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `runId` | `string` | -- | Run ID containing the task to retry |
+| `nodeId` | `string` | -- | Node ID of the task to retry |
+| `iteration` | `number` | `0` | Loop iteration to retry |
+| `resetDependents` | `boolean` | `true` | Also reset downstream tasks that depend on this node |
+| `force` | `boolean` | `false` | Allow retry even if the run is still active |
+| `onProgress` | `(event: SmithersEvent) => void` | `undefined` | Event callback for `RetryTaskStarted` and `RetryTaskFinished` events |
+
+---
+
+### RetryTaskResult
+
+```ts
+type RetryTaskResult = {
+  success: boolean;
+  resetNodes: string[];
+  error?: string;
+};
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `success` | `boolean` | Whether the retry operation succeeded |
+| `resetNodes` | `string[]` | Node IDs that were reset to `"pending"` |
+| `error` | `string` | Error message if the retry operation failed |
 
 ---
 
@@ -455,6 +525,7 @@ type SmithersEvent =
   | RunFinished
   | RunFailed
   | RunCancelled
+  | RunContinuedAsNew
   | RunHijackRequested
   | RunHijacked
   | FrameCommitted

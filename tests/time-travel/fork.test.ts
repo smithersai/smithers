@@ -113,6 +113,59 @@ describe("forkRun", () => {
     expect(result.branch.forkDescription).toBe("Testing new approach");
   });
 
+  test("copies parent run metadata when the source run exists", async () => {
+    const { adapter } = createTestDb();
+    await adapter.insertRun({
+      runId: "parent-run",
+      parentRunId: null,
+      workflowName: "time-travel-parent",
+      workflowPath: "/tmp/workflow.tsx",
+      workflowHash: "workflow-hash",
+      status: "finished",
+      createdAtMs: 1_000,
+      startedAtMs: 1_100,
+      finishedAtMs: 1_200,
+      heartbeatAtMs: 1_150,
+      runtimeOwnerId: null,
+      cancelRequestedAtMs: null,
+      hijackRequestedAtMs: null,
+      hijackTarget: null,
+      vcsType: "jj",
+      vcsRoot: "/tmp",
+      vcsRevision: "abc123",
+      errorJson: null,
+      configJson: '{"__smithersDurability":{"version":2,"entryWorkflowHash":"entry-hash"}}',
+    });
+    await captureSnapshot(
+      adapter,
+      "parent-run",
+      0,
+      sampleData({ workflowHash: "workflow-hash", vcsPointer: "abc123" }),
+    );
+
+    const result = await forkRun(adapter, {
+      parentRunId: "parent-run",
+      frameNo: 0,
+    });
+
+    const childRun = await adapter.getRun(result.runId);
+    expect(childRun).toBeDefined();
+    expect(childRun).toMatchObject({
+      runId: result.runId,
+      parentRunId: "parent-run",
+      workflowName: "time-travel-parent",
+      workflowPath: "/tmp/workflow.tsx",
+      workflowHash: "workflow-hash",
+      status: "finished",
+      vcsType: "jj",
+      vcsRoot: "/tmp",
+      vcsRevision: "abc123",
+      configJson: '{"__smithersDurability":{"version":2,"entryWorkflowHash":"entry-hash"}}',
+    });
+    expect(childRun?.runtimeOwnerId).toBeNull();
+    expect(childRun?.heartbeatAtMs).toBeNull();
+  });
+
   test("fails for non-existent snapshot", async () => {
     const { adapter } = createTestDb();
     await expect(

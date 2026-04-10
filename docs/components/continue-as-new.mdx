@@ -157,6 +157,7 @@ Each workflow run handles `MAX_PER_RUN` iterations via the loop, then hands off 
 
 - Use `<ContinueAsNew>` for workflows that run indefinitely (daemons, pollers, event processors). For bounded iteration, [`<Loop>`](/components/loop) is simpler.
 - The `state` payload must be JSON-serializable. Classes, functions, `undefined` nested inside objects, and circular references are not supported.
+- The serialized continuation state (including the `__smithersContinuation` envelope) must be under **10 MB**. Exceeding this limit fails the run.
 - Access the carried payload via `ctx.input.__smithersContinuation.payload`. Type-cast as needed since the input type does not include this field by default.
 - Temporal imposes a maximum event history size (default 50,000 events / 50 MB). `<ContinueAsNew>` before approaching this limit is the recommended mitigation.
 - The `continueAsNew(state?)` helper is interchangeable with `<ContinueAsNew state={state} />` — choose whichever reads more clearly in context.

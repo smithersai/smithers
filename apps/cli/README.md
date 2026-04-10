@@ -1,11 +1,11 @@
 # @burns/cli
 
-CLI distribution package for running Burns without the web dev server workflow.
+CLI distribution package for the legacy Burns daemon launcher.
 
 ## Prerequisites
 
 - Bun `1.2.x`
-- Repository checkout containing `apps/daemon` and `apps/web`
+- Repository checkout containing the Burns daemon lifecycle module
 
 ## Commands
 
@@ -24,16 +24,13 @@ bun run src/bin.ts --help
 
 ### `burns start`
 
-Starts daemon and (when available) serves prebuilt web assets from `dist/web`.
+Starts the daemon.
 
 ```bash
 burns start
 ```
 
-Options:
-
-- `--open`: open a web URL in your browser after daemon startup
-- `--web-url <url>`: URL opened by `--open` (default: `http://127.0.0.1:4173`)
+`burns start` is retained as a legacy alias for `burns daemon`.
 
 ### `burns daemon`
 
@@ -43,37 +40,8 @@ Starts daemon only.
 burns daemon
 ```
 
-### `burns web`
-
-Serves static web assets from `dist/web`.
-
-```bash
-burns web
-```
-
-Options:
-
-- `--host <host>`: bind host (default: `127.0.0.1`)
-- `--port <port>`: bind port (default: `4173`)
-- `--open`: open served URL in your browser
-
-If `dist/web` is missing, the CLI prints guidance to run:
-
-```bash
-bun run build:web
-```
-
 ## Notes
 
 - The CLI reuses daemon startup by importing `apps/daemon/src/bootstrap/daemon-lifecycle.ts`.
+- The Burns UI and deep-link commands were intentionally removed from this repo.
 - Default daemon API URL is `http://localhost:7332`.
-
-## Packaging helper
-
-Build a CLI artifact tarball for release collection:
-
-```bash
-bun run build:artifact
-```
-
-This writes an archive into `dist/cli` via `scripts/release/build-cli-artifact.sh`.

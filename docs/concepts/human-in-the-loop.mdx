@@ -252,8 +252,98 @@ Good approval context is the difference between "I guess?" and "Yes, ship it." I
 
 **Rule of thumb:** If you're thinking of the approval as a padlock on a task, use `needsApproval`. If you're thinking of it as a fork in the road, use `<Approval>`.
 
+## Structured Human Input: `<HumanTask>`
+
+Sometimes you don't need a yes/no — you need the human to *provide data*. A code review, a triage classification, a budget estimate. `<HumanTask>` is a task where the human is the agent: the workflow suspends until a human provides JSON matching the output schema, with validation and retries.
+
+```tsx
+<HumanTask
+  id="human-review"
+  output={outputs.review}
+  prompt="Review the PR. Provide: approved (boolean), comments (string), severity (low/medium/high)."
+  maxAttempts={5}
+  timeoutMs={86_400_000}
+/>
+```
+
+If the human provides invalid JSON, the task retries — up to `maxAttempts` (default 10). Schema validation happens at compute time, not at submission time. See the [HumanTask component reference](/components/human-task) for the full API.
+
+## Conditional Gates: `<ApprovalGate>`
+
+What if approval is only needed sometimes? Low-risk deploys sail through; high-risk deploys need a human. `<ApprovalGate>` wraps `<Branch>` + `<Approval>` into a single component:
+
+```tsx
+<ApprovalGate
+  id="deploy-approval"
+  output={outputs.deployDecision}
+  when={risk.level === "high"}
+  request={{ title: "Approve high-risk deploy?" }}
+  onDeny="fail"
+/>
+```
+
+When `when` is `false`, the gate auto-approves immediately. When `true`, it pauses for human review. Both paths write a valid `ApprovalDecision` to the same output. See the [ApprovalGate component reference](/components/approval-gate).
+
+## Escalation: `<EscalationChain>`
+
+When the question isn't "should a human decide?" but "which agent should handle this, and what happens when it can't?" — use `<EscalationChain>`. It runs agents in sequence, escalating to the next level when one fails or its `escalateIf` predicate returns `true`. Optionally, the final level is a human approval fallback:
+
+```tsx
+<EscalationChain
+  id="support"
+  escalationOutput={outputs.escalation}
+  humanFallback
+  levels={[
+    { agent: fastAgent, output: outputs.tier1, escalateIf: (r) => r.confidence < 0.7 },
+    { agent: powerAgent, output: outputs.tier2, escalateIf: (r) => r.confidence < 0.9 },
+  ]}
+>
+  Resolve this ticket: {ctx.input.ticketBody}
+</EscalationChain>
+```
+
+See the [EscalationChain component reference](/components/escalation-chain).
+
+## Selection and Ranking
+
+Not every human decision is yes/no. `<Approval>` supports `mode="select"` and `mode="rank"` for choosing among options:
+
+```tsx
+<Approval
+  id="pick-plan"
+  mode="select"
+  output={outputs.selection}
+  request={{ title: "Pick a rollout plan" }}
+  options={[
+    { key: "canary", label: "Canary" },
+    { key: "regional", label: "Regional" },
+  ]}
+/>
+```
+
+`mode="select"` returns `{ selected: string, notes: string | null }`. `mode="rank"` returns `{ ranked: string[], notes: string | null }`. See the [Approval component reference](/components/approval) for the schemas.
+
+## Scoped Approvals and Auto-Approval
+
+For sensitive approvals, restrict who can decide with `allowedScopes` and `allowedUsers`. For approvals that become routine, use `autoApprove` to skip the human after enough consecutive manual approvals:
+
+```tsx
+<Approval
+  id="deploy-prod"
+  output={outputs.deployApproval}
+  request={{ title: "Deploy to production?" }}
+  allowedUsers={["user:oncall", "user:release-manager"]}
+  autoApprove={{ after: 5, audit: true }}
+/>
+```
+
+`autoApprove` also supports `condition` (auto-approve when a predicate is true) and `revertOn` (revert to human approval when conditions change). See the [Approval component reference](/components/approval) for the full `ApprovalAutoApprove` type.
+
 ## Next Steps
 
 - [Approval Component](/components/approval) — Full API reference for `<Approval>`.
+- [ApprovalGate Component](/components/approval-gate) — Conditional approval gates.
+- [HumanTask Component](/components/human-task) — Structured human input with schema validation.
+- [EscalationChain Component](/components/escalation-chain) — Multi-level agent escalation with human fallback.
 - [Suspend and Resume](/concepts/suspend-and-resume) — The underlying durability model.
 - [CLI Reference](/cli/overview) — Commands for approving, denying, and resuming workflows.

@@ -95,6 +95,22 @@ const program = Effect.gen(function* () {
 
 The `VoiceService` tag lets you inject a voice provider into any Effect pipeline. The `speak()` and `listen()` functions pull it from context automatically.
 
+For scoped lifecycle management (automatic `connect()` and `close()`), use `createVoiceServiceLayer()`:
+
+```ts
+import { createVoiceServiceLayer, speak } from "smithers-orchestrator/voice";
+import { Effect, Layer } from "effect";
+
+const voiceLayer = createVoiceServiceLayer(realtimeVoice);
+
+const program = Effect.gen(function* () {
+  const audio = yield* speak("Hello from Effect");
+  return audio;
+}).pipe(Effect.provide(voiceLayer));
+```
+
+The layer handles calling `connect()` when the scope opens and `close()` when it closes.
+
 ## Listing Available Speakers
 
 Every voice provider exposes `getSpeakers()`, which returns the list of voices that provider supports:
@@ -158,6 +174,115 @@ const voice = createOpenAIRealtimeVoice({
 ```
 
 The transcriber is sent to the server as part of the `session.update` call immediately after connection. It controls how the realtime API transcribes user audio for the `input_audio_transcription` session property.
+
+## Audio Format Support
+
+When calling `speak()`, you can request a specific audio format via the `format` option:
+
+```ts
+const audio = await voice.speak("Hello, world", { format: "opus" });
+```
+
+Supported formats:
+
+| Format | Description |
+| --- | --- |
+| `mp3` | MPEG Layer 3 — widely compatible, lossy |
+| `wav` | Waveform Audio — uncompressed, lossless |
+| `pcm` | Raw PCM — no header, lowest overhead |
+| `opus` | Opus codec — low latency, good for streaming |
+| `flac` | Free Lossless Audio Codec |
+| `aac` | Advanced Audio Coding — good compression |
+
+Not every provider supports every format. If the provider does not support the requested format, it will use its default. The `AudioFormat` type is exported from `smithers-orchestrator/voice` for type-safe usage.
+
+## Provider-Level Event Callbacks
+
+Realtime voice providers emit events that you can subscribe to with `on()` and unsubscribe from with `off()`:
+
+```ts
+const handler = (data) => console.log(data);
+
+voice.on("speaking", handler);   // audio output chunks
+voice.on("writing", handler);    // text transcription chunks
+voice.on("error", handler);      // provider errors
+voice.on("speaker", handler);    // new audio output stream
+
+voice.off("speaking", handler);  // remove a listener
+```
+
+| Event | Payload | When |
+| --- | --- | --- |
+| `speaking` | `{ audio, response_id }` | Each chunk of audio output from the model |
+| `writing` | `{ text, role, response_id }` | Each chunk of text transcription |
+| `error` | `{ message, code?, details? }` | A provider-level error occurred |
+| `speaker` | `ReadableStream` | A new audio response stream was created |
+
+These are provider-level events on the voice instance. They are separate from the Smithers event bus events (`VoiceStarted`, `VoiceFinished`, `VoiceError`) which track operation lifecycle at the workflow level.
+
+## Default Speaker Selection
+
+If you don't specify a `speaker` prop on `<Voice>` or a `speaker` option in the provider config, the default depends on the provider:
+
+- **OpenAI Realtime**: defaults to `"alloy"`
+- **AI SDK Voice**: no default — you must pass a speaker via `SpeakOptions` or the provider config, or the underlying model's default is used
+- **Composite Voice**: delegates to whichever sub-provider handles the operation
+
+You can override the speaker at three levels (highest priority first):
+
+1. Per-call: `voice.speak("text", { speaker: "shimmer" })`
+2. Per-component: `<Voice provider={voice} speaker="coral">`
+3. Per-provider: `createOpenAIRealtimeVoice({ speaker: "echo" })`
+
+## OpenAI Realtime: API Key and Environment Fallback
+
+The OpenAI Realtime provider resolves API keys in this order:
+
+1. The `apiKey` config option passed to `createOpenAIRealtimeVoice()`
+2. The `OPENAI_API_KEY` environment variable
+
+```ts
+// Explicit key
+const voice = createOpenAIRealtimeVoice({ apiKey: "sk-..." });
+
+// Or rely on the environment variable — no config needed
+const voice = createOpenAIRealtimeVoice();
+// Uses process.env.OPENAI_API_KEY automatically
+```
+
+If neither is set, `connect()` throws an error.
+
+## OpenAI Realtime: Model Override
+
+Override the realtime model with the `model` config option:
+
+```ts
+const voice = createOpenAIRealtimeVoice({
+  model: "gpt-4o-realtime-preview",
+});
+```
+
+The default is `gpt-4o-mini-realtime-preview-2024-12-17`. The model name is appended as a query parameter to the WebSocket URL.
+
+## OpenAI Realtime: Session Management
+
+The OpenAI Realtime provider manages WebSocket session lifecycle automatically:
+
+1. **`connect()`** opens a WebSocket, waits for the `session.created` event, then sends an initial `session.update` to configure the transcription model and default voice.
+2. While connected, any calls to `send()`, `speak()`, `listen()`, or `answer()` use the active session.
+3. **`close()`** tears down the connection, cleans up speaker streams, and releases resources.
+
+Messages sent before the session is ready are automatically queued and flushed once the connection opens. You don't need to wait for `session.created` yourself — `connect()` returns only after the session is fully initialized.
+
+```ts
+const voice = createOpenAIRealtimeVoice({ speaker: "coral" });
+
+await voice.connect();    // waits for session.created + session.update
+await voice.send(audio);  // uses the active session
+voice.close();            // tears down cleanly
+```
+
+If you call `connect()` while already connected, it returns immediately. Concurrent calls to `connect()` are deduplicated — only one connection attempt runs at a time.
 
 ## Events and Observability
 

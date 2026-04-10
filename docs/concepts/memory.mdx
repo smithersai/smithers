@@ -81,6 +81,15 @@ await store.saveMessage({
 
 // List the last 20 messages
 const messages = await store.listMessages(thread.threadId, 20);
+
+// Count messages in a thread
+const total = await store.countMessages(thread.threadId);
+
+// Look up a thread by ID
+const existing = await store.getThread(thread.threadId);
+
+// Delete a thread and all its messages
+await store.deleteThread(thread.threadId);
 ```
 
 Threads are useful for building multi-turn conversations that persist across runs. A Ralph loop can write to the same thread each iteration, building up context over time.
@@ -128,8 +137,9 @@ The `memory` prop on `<Task>` connects memory to the execution flow. Before the 
 </Task>
 ```
 
-- `memory.recall` -- before the agent call, query semantic memory and prepend the top results as context
+- `memory.recall` -- before the agent call, query semantic memory and prepend the top results as context. Accepts an optional `query` to override the default prompt-based query.
 - `memory.remember` -- after the agent call, store the output in both working memory (under the given key) and semantic memory
+- `memory.threadId` -- optionally attach a message thread to the task, so conversation history persists across runs
 
 ## Loop Memory
 
@@ -155,11 +165,27 @@ Each iteration writes its output to memory and reads back the most relevant past
 
 ## Processors
 
-Memory processors run maintenance operations on stored data:
+Memory processors run maintenance operations on stored data. Each processor implements the `MemoryProcessor` interface with both Promise and Effect variants.
 
 - **TtlGarbageCollector** -- deletes expired facts based on their `ttlMs` field
 - **TokenLimiter** -- compresses message history when it exceeds a token budget
 - **Summarizer** -- uses an LLM to summarize old messages, replacing many messages with a single summary
+
+```ts
+import { TtlGarbageCollector, TokenLimiter, Summarizer } from "smithers-orchestrator/memory";
+
+// Delete all expired facts
+const gc = TtlGarbageCollector();
+await gc.process(store);
+
+// Limit message history to ~4000 tokens
+const limiter = TokenLimiter(4000);
+await limiter.process(store);
+
+// Summarize old messages using an LLM agent
+const summarizer = Summarizer(myAgent);
+await summarizer.process(store);
+```
 
 Processors run on-demand or can be wired into the workflow lifecycle.
 
@@ -199,5 +225,6 @@ Memory operations emit structured events and update Effect metrics:
 
 - `MemoryFactSet` / `MemoryRecalled` / `MemoryMessageSaved` events
 - `smithers.memory.fact_reads` / `smithers.memory.fact_writes` counters
+- `smithers.memory.message_saves` counter
 - `smithers.memory.recall_queries` counter
 - `smithers.memory.recall_duration_ms` histogram

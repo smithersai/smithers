@@ -103,10 +103,12 @@ Typical task states are:
 | State | Meaning |
 | --- | --- |
 | `pending` | Known to the workflow but not yet runnable |
-| `running` | Currently executing |
+| `in-progress` | Currently executing |
 | `finished` | Persisted successfully |
 | `failed` | Terminal failure after retries are exhausted |
 | `waiting-approval` | Blocked on a durable approval decision |
+| `waiting-event` | Blocked on an external signal or event |
+| `waiting-timer` | Suspended until a durable timer fires |
 | `cancelled` | Interrupted by an abort signal or explicit handoff |
 | `skipped` | Not mounted or intentionally bypassed |
 

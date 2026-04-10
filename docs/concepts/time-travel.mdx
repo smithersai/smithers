@@ -16,6 +16,7 @@ A snapshot is a frozen picture of everything that matters at a specific frame in
 - **Loop (Ralph) state** — loop iteration counters and completion flags (`<Loop>` renders as a `<smithers:ralph>` host element internally)
 - **Input data** — the original input row that started the run
 - **VCS pointer** — the jj `change_id` at the time of capture (if the repo uses jj)
+- **Workflow hash** — hash of the workflow definition at capture time (`null` if unavailable)
 - **Content hash** — SHA-256 of the serialized state, so you can detect identical snapshots cheaply
 
 Snapshots are captured automatically after every frame commit in the engine loop. You never call a "checkpoint" function. The engine does it for you.
@@ -25,6 +26,19 @@ Frame 0 ──snapshot──> Frame 1 ──snapshot──> Frame 2 ──snapsh
 ```
 
 Each snapshot is stored in `_smithers_snapshots` with a composite key of `(run_id, frame_no)`. The serialized JSON blobs are self-contained — you can reconstruct the full workflow state from any single snapshot without reading the event log.
+
+### Loading the Latest Snapshot
+
+To load the most recent snapshot for a run (regardless of frame number), use `loadLatestSnapshot`:
+
+```typescript
+import { loadLatestSnapshot } from "smithers-orchestrator";
+
+const snapshot = await loadLatestSnapshot(adapter, runId);
+// Returns the snapshot with the highest frame_no, or undefined if none exist.
+```
+
+This is what the engine uses internally when resuming a suspended run — it picks up from the last committed snapshot instead of replaying the event log.
 
 ### Why Not Just Use Events?
 
@@ -44,6 +58,7 @@ const diff = diffSnapshots(snapshotA, snapshotB);
 // diff.outputsChanged — output rows with different values
 // diff.ralphChanged   — loop state differences
 // diff.inputChanged   — whether the input row changed
+// diff.vcsPointerChanged — whether the VCS pointer changed
 ```
 
 This is a pure function — no database access needed. You pass in two snapshot objects and get back a structured diff you can render in the TUI, dump as JSON, or use programmatically.
@@ -74,7 +89,8 @@ When you fork:
 2. The snapshot from the parent run at the specified frame is copied as the initial state
 3. Optionally, specific nodes are reset to "pending" — they and their downstream dependents will re-execute
 4. Optionally, the input is overridden with new values
-5. The parent-child relationship is recorded in `_smithers_branches`
+5. Optionally, a `forkDescription` is attached for traceability
+6. The parent-child relationship is recorded in `_smithers_branches`
 
 Forking is cheap because it copies a single snapshot row, not the entire event history.
 
@@ -87,6 +103,30 @@ The `resetNodes` parameter lets you selectively re-execute specific tasks. When 
 - Any downstream nodes that depend on it are also reset (transitively)
 
 This is the key mechanism for "what-if" experiments. Change one task's behavior and see how it ripples through the rest of the workflow.
+
+### Listing Branches
+
+To list all forks that branched from a given run:
+
+```typescript
+import { listBranches } from "smithers-orchestrator";
+
+const branches = await listBranches(adapter, parentRunId);
+// Returns BranchInfo[] — one entry per child run forked from this parent.
+```
+
+Each `BranchInfo` contains the child `runId`, `parentRunId`, `parentFrameNo`, optional `branchLabel` and `forkDescription`, and a `createdAtMs` timestamp.
+
+### Looking Up Branch Info
+
+To check whether a run is itself a fork and retrieve its parent relationship:
+
+```typescript
+import { getBranchInfo } from "smithers-orchestrator";
+
+const info = await getBranchInfo(adapter, childRunId);
+// Returns BranchInfo | undefined — undefined if the run is not a fork.
+```
 
 ## Replay
 
@@ -112,7 +152,16 @@ With `--restore-vcs`, Smithers also restores the filesystem to the jj revision t
 
 Every snapshot records the jj `change_id` and operation ID at capture time. This creates a parallel timeline: workflow state in SQLite, filesystem state in jj.
 
-The `_smithers_vcs_tags` table maps `(run_id, frame_no)` to VCS metadata. When you replay with `--restore-vcs`, Smithers:
+The `_smithers_vcs_tags` table maps `(run_id, frame_no)` to VCS metadata. To look up a specific tag:
+
+```typescript
+import { loadVcsTag } from "smithers-orchestrator";
+
+const tag = await loadVcsTag(adapter, runId, frameNo);
+// Returns VcsTag | undefined — includes vcsType, vcsPointer, vcsRoot, jjOperationId.
+```
+
+When you replay with `--restore-vcs`, Smithers:
 
 1. Looks up the VCS pointer for the source frame
 2. Creates a jj workspace at that revision
@@ -173,7 +222,7 @@ This is a destructive operation on the run itself -- no child run is created. Us
 
 ## Metrics
 
-Time travel operations export three metrics:
+Time travel operations export four metrics:
 
 | Metric | Type | Description |
 |--------|------|-------------|

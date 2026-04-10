@@ -75,6 +75,39 @@ Allow the suite to pass even if some checks fail:
 
 The verdict task receives the `"majority"` strategy and aggregates accordingly.
 
+## Any-pass strategy
+
+Use `"any-pass"` when a single passing check is sufficient:
+
+```tsx
+<CheckSuite
+  checks={[
+    { id: "region-us", agent: healthAgent, label: "US region" },
+    { id: "region-eu", agent: healthAgent, label: "EU region" },
+    { id: "region-ap", agent: healthAgent, label: "AP region" },
+  ]}
+  verdictOutput={outputs.verdict}
+  strategy="any-pass"
+/>
+```
+
+The suite passes as long as at least one region is healthy.
+
+## Command-based checks
+
+Checks can use `command` instead of `agent` for shell-based checks:
+
+```tsx
+<CheckSuite
+  checks={[
+    { id: "lint", command: "npm run lint", label: "Lint" },
+    { id: "typecheck", command: "npx tsc --noEmit", label: "Type check" },
+    { id: "test", command: "npm test", label: "Unit tests" },
+  ]}
+  verdictOutput={outputs.verdict}
+/>
+```
+
 ## Fail-fast mode
 
 Set `continueOnFail={false}` to stop the suite as soon as any check fails:

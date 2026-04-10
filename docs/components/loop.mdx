@@ -193,6 +193,35 @@ export default smithers((ctx) => (
 ));
 ```
 
+## Ralph alias
+
+`Loop` is also exported as `Ralph`, which is the original name for this component. The `Ralph` export is deprecated — use `Loop` in new code:
+
+```tsx
+import { Loop } from "smithers-orchestrator";     // preferred
+import { Ralph } from "smithers-orchestrator";     // deprecated alias, same component
+```
+
+Both names render the same `<smithers:ralph>` host element. Many composite components (Supervisor, ReviewLoop, Optimizer, Debate) use `Loop` internally for their iteration logic.
+
+## Infinite loop pattern
+
+To create an intentionally infinite loop (for polling, monitoring, or long-running daemons), set `until={false}` with no `maxIterations`, and use `continueAsNewEvery` to prevent unbounded history growth:
+
+```tsx
+<Loop
+  id="monitor"
+  until={false}
+  continueAsNewEvery={100}
+>
+  <Task id="check" output={outputs.status} agent={monitorAgent}>
+    Check system health and report any anomalies.
+  </Task>
+</Loop>
+```
+
+The `continueAsNewEvery` prop checkpoints the workflow state every N iterations and resumes in a fresh execution, keeping the event history bounded.
+
 ## Rendering
 
 `<Loop>` renders as a `<smithers:ralph>` host element (or `null` when skipped). The runtime manages iteration state and re-renders the tree each iteration.

@@ -19,7 +19,7 @@ import { DriftDetector } from "smithers-orchestrator";
 | `baseline` | `unknown` | **(required)** | Static baseline data (object, string, etc.) to compare against. |
 | `alertIf` | `(comparison) => boolean` | `undefined` | Custom condition for firing the alert. If omitted, the `drifted` field from the comparison output is used. |
 | `alert` | `ReactElement` | `undefined` | Element to render when drift is detected (e.g. a `<Task>` that sends a notification). |
-| `poll` | `{ intervalMs: number, maxPolls?: number }` | `undefined` | If set, wraps the detector in a `<Loop>` for periodic polling. |
+| `poll` | `{ intervalMs: number, maxPolls?: number }` | `undefined` | If set, wraps the detector in a `<Loop>` for periodic polling. `maxPolls` defaults to `100` when `poll` is provided but `maxPolls` is omitted. |
 | `skipIf` | `boolean` | `false` | Skip the entire component. Returns `null`. |
 
 ## What it builds

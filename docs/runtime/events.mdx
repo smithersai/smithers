@@ -141,7 +141,7 @@ Emitted once at the beginning of every run (including resumes).
 { type: "RunStatusChanged", runId: string, status: RunStatus, timestampMs: number }
 ```
 
-`RunStatus`: `"running"` | `"waiting-approval"` | `"finished"` | `"failed"` | `"cancelled"`.
+`RunStatus`: `"running"` | `"waiting-approval"` | `"waiting-event"` | `"waiting-timer"` | `"finished"` | `"continued"` | `"failed"` | `"cancelled"`.
 
 #### RunFinished
 

@@ -22,6 +22,7 @@ import {
   RUN_WORKFLOW_INPUT_MAX_ARRAY_LENGTH,
   RUN_WORKFLOW_INPUT_MAX_BYTES,
   RUN_WORKFLOW_INPUT_MAX_DEPTH,
+  RUN_WORKFLOW_INPUT_MAX_STRING_LENGTH,
   RUN_WORKFLOW_RUN_ID_MAX_LENGTH,
 } from "../src/engine";
 import {
@@ -131,29 +132,30 @@ describe("runWorkflow bounds", () => {
 
   test("rejects input payloads that exceed the max byte budget", async () => {
     const { workflow, cleanup } = buildWorkflow();
-    const chunk = "x".repeat(60_000);
+    const chunk = "x".repeat(RUN_WORKFLOW_INPUT_MAX_STRING_LENGTH);
+    const payload = Object.fromEntries(
+      Array.from(
+        {
+          length:
+            Math.ceil(
+              RUN_WORKFLOW_INPUT_MAX_BYTES / RUN_WORKFLOW_INPUT_MAX_STRING_LENGTH,
+            ) + 1,
+        },
+        (_, index) => [`field${index}`, chunk],
+      ),
+    );
     try {
       await expectAsyncSmithersError(
         runWorkflow(workflow, {
-          input: {
-            a: chunk,
-            b: chunk,
-            c: chunk,
-            d: chunk,
-            e: chunk,
-          },
+          input: payload,
         }),
       );
     } finally {
       cleanup();
     }
-    expect(Buffer.byteLength(JSON.stringify({
-      a: chunk,
-      b: chunk,
-      c: chunk,
-      d: chunk,
-      e: chunk,
-    }), "utf8")).toBeGreaterThan(RUN_WORKFLOW_INPUT_MAX_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(payload), "utf8")).toBeGreaterThan(
+      RUN_WORKFLOW_INPUT_MAX_BYTES,
+    );
   });
 
   test("rejects input arrays that exceed the max length", async () => {
