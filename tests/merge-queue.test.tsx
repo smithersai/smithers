@@ -229,7 +229,7 @@ describe("<MergeQueue>", () => {
     expect(res.tasks[1]!.parallelMaxConcurrency).toBe(1);
   }, 30_000);
 
-  test("engine clamps non-positive and fractional to 1 for MergeQueue", async () => {
+  async function expectMergeQueueRuntimeClamp(mc: number) {
     const { smithers, cleanup, outputs } = buildSmithers();
     let concurrent = 0;
     let peak = 0;
@@ -262,9 +262,22 @@ describe("<MergeQueue>", () => {
       expect(peak).toBeLessThanOrEqual(1);
     };
 
-    await runCase(0);
-    await runCase(-1);
-    await runCase(1.7);
-    cleanup();
+    try {
+      await runCase(mc);
+    } finally {
+      cleanup();
+    }
+  }
+
+  test("engine clamps maxConcurrency={0} to 1 for MergeQueue", async () => {
+    await expectMergeQueueRuntimeClamp(0);
+  }, 30_000);
+
+  test("engine clamps maxConcurrency={-1} to 1 for MergeQueue", async () => {
+    await expectMergeQueueRuntimeClamp(-1);
+  }, 30_000);
+
+  test("engine clamps fractional maxConcurrency to 1 for MergeQueue", async () => {
+    await expectMergeQueueRuntimeClamp(1.7);
   }, 30_000);
 });
