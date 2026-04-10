@@ -2195,6 +2195,35 @@ async function computeTaskStates(
     }
   };
 
+  const parseAttemptMeta = (metaJson?: string | null): Record<string, unknown> | null => {
+    if (!metaJson) return null;
+    try {
+      const parsed = JSON.parse(metaJson);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+  const parseAttemptErrorCode = (errorJson?: string | null): string | null => {
+    if (!errorJson) return null;
+    try {
+      const parsed = JSON.parse(errorJson);
+      return typeof parsed?.code === "string" ? parsed.code : null;
+    } catch {
+      return null;
+    }
+  };
+  const isRetryableTaskFailure = (
+    attempt?: { errorJson?: string | null; metaJson?: string | null } | null,
+  ) => {
+    const meta = parseAttemptMeta(attempt?.metaJson);
+    if (meta?.failureRetryable === false) {
+      return false;
+    }
+    const kind = typeof meta?.kind === "string" ? meta.kind : null;
+    return !(kind !== "agent" && parseAttemptErrorCode(attempt?.errorJson) === "INVALID_OUTPUT");
+  };
+
   for (const desc of tasks) {
     const key = buildStateKey(desc.nodeId, desc.iteration);
 
@@ -2299,7 +2328,10 @@ async function computeTaskStates(
 
     const maxAttempts = desc.retries + 1;
     const failedAttempts = attempts.filter((a: any) => a.state === "failed");
-    if (failedAttempts.length >= maxAttempts) {
+    const hasNonRetryableFailure = failedAttempts.some(
+      (attempt) => !isRetryableTaskFailure(attempt),
+    );
+    if (hasNonRetryableFailure || failedAttempts.length >= maxAttempts) {
       stateMap.set(key, "failed");
       await adapter.insertNode({
         runId,
@@ -2315,7 +2347,7 @@ async function computeTaskStates(
     }
 
     let waitingForRetry = false;
-    if (failedAttempts.length > 0 && desc.retryPolicy) {
+    if (failedAttempts.length > 0 && desc.retryPolicy && !hasNonRetryableFailure) {
       const lastFailed = failedAttempts[0];
       const retrySchedule = retryPolicyToSchedule(desc.retryPolicy);
       const delayMs = retryScheduleDelayMs(
@@ -3653,38 +3685,59 @@ export async function legacyExecuteTask(
       }
     }
 
-      // Schema-validation retry: if the agent returned parseable JSON but it
-      // doesn't match the Zod schema, resume the SAME agent conversation with
-      // the validation error up to 3 times before giving up.  These attempts
-      // are NOT counted as normal task retries — the agent did the work, it
-      // just formatted the output wrong.
-      const MAX_SCHEMA_RETRIES = 3;
-      let schemaRetry = 0;
+    const toInvalidOutputError = (
+      cause: unknown,
+      schemaRetryAttempts: number,
+    ) =>
+      new SmithersError(
+        "INVALID_OUTPUT",
+        `Task output failed validation for ${desc.outputTableName}`,
+        {
+          attempt: attemptNo,
+          nodeId: desc.nodeId,
+          iteration: desc.iteration,
+          outputTable: desc.outputTableName,
+          schemaRetryAttempts,
+          issues:
+            cause && typeof cause === "object" && "issues" in (cause as any)
+              ? (cause as any).issues
+              : undefined,
+        },
+        { cause },
+      );
 
-      // Build a conversation history so each schema-fix attempt resumes the
-      // same conversation instead of starting fresh.  For SDK-based agents
-      // this means true multi-turn; for CLI agents `extractPrompt` will
-      // flatten the messages to text which is the best we can do.
-      let schemaRetryMessages: Array<{ role: string; content: string }> = [];
-      if (!validation.ok && desc.agent && effectiveAgent) {
-        // Seed from the original result when available
-        const originalResponseMessages = agentResult?.response?.messages;
-        if (Array.isArray(originalResponseMessages) && originalResponseMessages.length > 0) {
-          // Start with the original prompt as a user message
-          schemaRetryMessages = [
-            { role: "user", content: desc.prompt ?? "" },
-            ...originalResponseMessages,
-          ];
-        } else {
-          // Fallback: reconstruct from the text we captured
-          schemaRetryMessages = [
-            { role: "user", content: desc.prompt ?? "" },
-            { role: "assistant", content: responseText ?? "" },
-          ];
-        }
+    // Schema-validation retry: if the agent returned parseable JSON but it
+    // doesn't match the Zod schema, resume the SAME agent conversation with
+    // the validation error up to 3 times before giving up. These attempts
+    // are NOT counted as normal task retries — the agent did the work, it
+    // just formatted the output wrong.
+    const MAX_SCHEMA_RETRIES = 3;
+    let schemaRetry = 0;
+
+    // Build a conversation history so each schema-fix attempt resumes the
+    // same conversation instead of starting fresh. For SDK-based agents
+    // this means true multi-turn; for CLI agents `extractPrompt` will
+    // flatten the messages to text which is the best we can do.
+    let schemaRetryMessages: Array<{ role: string; content: string }> = [];
+    if (!validation.ok && desc.agent && effectiveAgent) {
+      // Seed from the original result when available
+      const originalResponseMessages = agentResult?.response?.messages;
+      if (Array.isArray(originalResponseMessages) && originalResponseMessages.length > 0) {
+        // Start with the original prompt as a user message
+        schemaRetryMessages = [
+          { role: "user", content: desc.prompt ?? "" },
+          ...originalResponseMessages,
+        ];
+      } else {
+        // Fallback: reconstruct from the text we captured
+        schemaRetryMessages = [
+          { role: "user", content: desc.prompt ?? "" },
+          { role: "assistant", content: responseText ?? "" },
+        ];
       }
+    }
 
-      while (!validation.ok && desc.agent && schemaRetry < MAX_SCHEMA_RETRIES) {
+    while (!validation.ok && desc.agent && schemaRetry < MAX_SCHEMA_RETRIES) {
         schemaRetry++;
         const schemaDesc = describeSchemaShape(desc.outputTable as any, desc.outputSchema);
         const zodIssues =
@@ -3830,10 +3883,13 @@ export async function legacyExecuteTask(
         }
       }
 
-      if (!validation.ok) {
-        throw validation.error;
-      }
-      payload = validation.data;
+    if (!validation.ok && !desc.agent) {
+      attemptMeta.failureRetryable = false;
+    }
+    if (!validation.ok) {
+      throw toInvalidOutputError(validation.error, schemaRetry);
+    }
+    payload = validation.data;
     taskExecutionReturned = true;
     await eventBus.flush();
     // Reuse the resolved taskRoot for JJ pointer capture to avoid recomputing.

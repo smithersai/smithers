@@ -161,7 +161,19 @@ export const executeStaticTaskBridge = async (
     }
 
     if (!validation.ok) {
-      throw validation.error;
+      attemptMeta.failureRetryable = false;
+      throw new SmithersError(
+        "INVALID_OUTPUT",
+        `Task output failed validation for ${desc.outputTableName}`,
+        {
+          attempt: attemptNo,
+          nodeId: desc.nodeId,
+          iteration: desc.iteration,
+          outputTable: desc.outputTableName,
+          issues: validation.error?.issues,
+        },
+        { cause: validation.error },
+      );
     }
 
     payload = validation.data;
