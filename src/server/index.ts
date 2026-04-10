@@ -309,6 +309,24 @@ function recordHttpRequestMetrics(
   ], { discard: true });
 }
 
+async function recordHttpRequestMetricsSafely(
+  method: string,
+  pathname: string,
+  statusCode: number,
+  durationMs: number,
+) {
+  try {
+    await runPromise(recordHttpRequestMetrics(method, pathname, statusCode, durationMs));
+  } catch (error) {
+    logWarning("failed to record server http metrics", {
+      method: method.toUpperCase(),
+      pathname,
+      statusCode,
+      error: error instanceof Error ? error.message : String(error),
+    }, "server:metrics");
+  }
+}
+
 function assertAuth(req: IncomingMessage, authToken?: string) {
   if (!authToken) return;
   const header =
@@ -1295,13 +1313,11 @@ function startServerInternal(opts: ServerOptions = {}) {
         },
       });
     } finally {
-      void runPromise(
-        recordHttpRequestMetrics(
-          requestMethod,
-          requestPathname,
-          res.statusCode || 500,
-          performance.now() - requestStart,
-        ),
+      await recordHttpRequestMetricsSafely(
+        requestMethod,
+        requestPathname,
+        res.statusCode || 500,
+        performance.now() - requestStart,
       );
     }
   });

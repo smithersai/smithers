@@ -33,12 +33,23 @@ function parsePrometheusText(text: string): Map<string, number> {
 }
 
 /** Return the difference for a metric between two snapshots (0 if absent). */
+function metricValue(snapshot: Map<string, number>, name: string): number {
+  let total = 0;
+  for (const [key, value] of snapshot) {
+    if (key === name || key.startsWith(`${name}{`)) {
+      total += value;
+    }
+  }
+  return total;
+}
+
+/** Return the difference for a metric between two snapshots (0 if absent). */
 function metricDelta(
   before: Map<string, number>,
   after: Map<string, number>,
   name: string,
 ): number {
-  return (after.get(name) ?? 0) - (before.get(name) ?? 0);
+  return metricValue(after, name) - metricValue(before, name);
 }
 
 type BunServer = ReturnType<typeof Bun.serve>;
@@ -637,15 +648,11 @@ export default smithers((ctx) => (
       await request("/health");
       await request("/frames");
 
-      // Give fire-and-forget metric increments time to flush
-      await sleep(500);
-
       const res = await fetch(`http://localhost:${port}/metrics`);
       const after = parsePrometheusText(await res.text());
 
-      // The timing middleware uses void runPromise() (fire-and-forget), so
-      // the latest increment may not have landed yet.  We made 3 requests
-      // before sleeping, so at least 2 should have been recorded.
+      // HTTP request metrics are emitted with route/status labels, so sum the
+      // matching series instead of looking for a single untagged sample.
       expect(metricDelta(before, after, "smithers_http_requests")).toBeGreaterThanOrEqual(2);
       // Duration histogram should also have observations
       expect(metricDelta(before, after, "smithers_http_request_duration_ms_count")).toBeGreaterThanOrEqual(2);

@@ -10,6 +10,7 @@ import {
   prometheusContentType,
   renderPrometheusMetrics,
 } from "../observability";
+import { logWarning } from "../effect/logging";
 import { runPromise } from "../effect/runtime";
 import { httpRequests, httpRequestDuration, trackEvent } from "../effect/metrics";
 
@@ -90,6 +91,24 @@ function recordHttpRequestMetrics(
   ], { discard: true });
 }
 
+async function recordHttpRequestMetricsSafely(
+  method: string,
+  pathname: string,
+  statusCode: number,
+  durationMs: number,
+) {
+  try {
+    await runPromise(recordHttpRequestMetrics(method, pathname, statusCode, durationMs));
+  } catch (error) {
+    logWarning("failed to record serve http metrics", {
+      method: method.toUpperCase(),
+      pathname,
+      statusCode,
+      error: error instanceof Error ? error.message : String(error),
+    }, "serve:metrics");
+  }
+}
+
 export function createServeApp(opts: ServeOptions) {
   const { adapter, runId, abort, authToken, metrics: metricsEnabled = true } = opts;
   const app = new Hono();
@@ -122,15 +141,21 @@ export function createServeApp(opts: ServeOptions) {
   // Timing middleware
   app.use("*", async (c, next) => {
     const start = performance.now();
-    await next();
-    void runPromise(
-      recordHttpRequestMetrics(
+    let statusCode = 500;
+    try {
+      await next();
+      statusCode = c.res.status;
+    } catch (error) {
+      statusCode = error instanceof HttpError ? error.status : 500;
+      throw error;
+    } finally {
+      await recordHttpRequestMetricsSafely(
         c.req.method,
         c.req.path,
-        c.res.status,
+        statusCode,
         performance.now() - start,
-      ),
-    );
+      );
+    }
   });
 
   // GET / — run status
