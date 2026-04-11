@@ -8,7 +8,7 @@ import { createServeApp } from "../src/serve";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { runWorkflow } from "@smithers/engine";
-import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import { renderPrometheusMetrics } from "@smithers/observability";
 
 // ---------------------------------------------------------------------------

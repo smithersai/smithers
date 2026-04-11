@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@effect/workflow": "^0.18.0",
+    "@smithers/components": "workspace:*",
     "@smithers/db": "workspace:*",
     "@smithers/driver": "workspace:*",
     "@smithers/durables": "workspace:*",

@@ -6,7 +6,7 @@ import { resolve, dirname, sep, basename } from "node:path";
 import { Effect } from "effect";
 import { isRunHeartbeatFresh, runWorkflow } from "@smithers/engine";
 import { newRunId } from "@smithers/driver/newRunId";
-import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";

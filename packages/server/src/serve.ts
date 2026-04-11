@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { Effect, Metric } from "effect";
-import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import { SmithersDb } from "@smithers/db/adapter";
 import { approveNode, denyNode } from "@smithers/engine/approvals";
 import { isRunHeartbeatFresh } from "@smithers/engine";
