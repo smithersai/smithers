@@ -34,8 +34,8 @@
       "default": "./src/execution.ts"
     },
     "./graph": {
-      "types": "./src/graph/index.ts",
-      "default": "./src/graph/index.ts"
+      "types": "./src/graph.ts",
+      "default": "./src/graph.ts"
     },
     "./interop": {
       "types": "./src/interop.ts",
@@ -58,8 +58,8 @@
       "default": "./src/scheduler.ts"
     },
     "./session": {
-      "types": "./src/session/index.ts",
-      "default": "./src/session/index.ts"
+      "types": "./src/session.ts",
+      "default": "./src/session.ts"
     },
     "./state": {
       "types": "./src/TaskState.ts",
@@ -126,8 +126,8 @@
       "default": "./src/protocol/SmithersWorkflowOptions.ts"
     },
     "./workflow-types": {
-      "types": "./src/protocol/workflow-types.ts",
-      "default": "./src/protocol/workflow-types.ts"
+      "types": "./src/protocol/workflow-types/index.ts",
+      "default": "./src/protocol/workflow-types/index.ts"
     },
     "./human-requests": {
       "types": "./src/protocol/human-requests.ts",

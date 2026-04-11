@@ -1,1 +1,12 @@
-export * from "./session.ts";
+export type { TokenUsage } from "./TokenUsage.ts";
+export type { TaskOutput } from "./TaskOutput.ts";
+export type { TaskFailure } from "./TaskFailure.ts";
+export type { RunResult } from "./RunResult.ts";
+export type { RenderContext } from "./RenderContext.ts";
+export type { WaitReason } from "./WaitReason.ts";
+export type { EngineDecision } from "./EngineDecision.ts";
+export type { WorkflowSessionService } from "./WorkflowSessionService.ts";
+export type { WorkflowSessionOptions } from "./WorkflowSessionOptions.ts";
+export { WorkflowSession } from "./WorkflowSession.ts";
+export { makeWorkflowSession } from "./makeWorkflowSession.ts";
+export { WorkflowSessionLive } from "./WorkflowSessionLive.ts";

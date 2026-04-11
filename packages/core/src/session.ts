@@ -1,9 +1,9 @@
 import { Context, Effect, Layer } from "effect";
-import type { ApprovalResolution, ContinueAsNewTransition } from "../durables.ts";
+import type { ApprovalResolution, ContinueAsNewTransition } from "./durables.ts";
 import {
   type TaskDescriptor,
   type WorkflowGraph,
-} from "../graph/types.ts";
+} from "./graph.ts";
 import {
   buildPlanTree,
   scheduleTasks,
@@ -12,15 +12,15 @@ import {
   type RetryWaitMap,
   type ScheduleResult,
   type ScheduleSnapshot,
-} from "../scheduler.ts";
+} from "./scheduler.ts";
 import {
   buildStateKey,
   cloneTaskStateMap,
   parseStateKey,
   type TaskState,
   type TaskStateMap,
-} from "../TaskState.ts";
-import { SmithersError, toSmithersError } from "../errors.ts";
+} from "./TaskState.ts";
+import { SmithersError, toSmithersError } from "./errors.ts";
 
 export type TokenUsage = {
   readonly inputTokens?: number;

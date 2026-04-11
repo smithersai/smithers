@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { makeWorkflowSession } from "../src/session/index.ts";
-import type { TaskDescriptor, WorkflowGraph, XmlElement } from "../src/graph/index.ts";
+import { makeWorkflowSession } from "../src/session.ts";
+import type { TaskDescriptor, WorkflowGraph, XmlElement } from "../src/graph.ts";
 
 function el(
   tag: string,

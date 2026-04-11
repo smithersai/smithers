@@ -1,17 +1,7 @@
-import type { z } from "zod";
+import type { InferOutputEntry } from "./InferOutputEntry";
 
-export type InferRow<TTable> = TTable extends { $inferSelect: infer R }
-  ? R
-  : never;
-
-/**
- * Infer the output type from either a Zod schema or a Drizzle table.
- */
-export type InferOutputEntry<T> = T extends z.ZodTypeAny
-  ? z.infer<T>
-  : T extends { $inferSelect: any }
-    ? InferRow<T>
-    : never;
+export type { InferRow } from "./InferRow";
+export type { InferOutputEntry } from "./InferOutputEntry";
 
 type FallbackTableName<Schema> = [keyof Schema & string] extends [never]
   ? string

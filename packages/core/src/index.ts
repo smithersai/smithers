@@ -1,6 +1,6 @@
-export * from "./durables.ts";
-export * from "./devtools.ts";
-export * from "./context.ts";
+export * from "./durables/index.ts";
+export * from "./devtools/index.ts";
+export * from "./context/index.ts";
 export type { AgentLike } from "./protocol/AgentLike";
 export type { CachePolicy } from "./protocol/CachePolicy";
 export type {
@@ -95,18 +95,18 @@ export {
   WorkflowDriver,
   defaultTaskExecutor,
   withAbort,
-} from "./driver.ts";
+} from "./driver/index.ts";
 export type {
   WorkflowDefinition,
   WorkflowGraphRenderer,
-} from "./driver.ts";
+} from "./driver/index.ts";
 export * from "./errors.ts";
-export * from "./execution.ts";
-export * from "./graph/index.ts";
-export * from "./interop.ts";
+export * from "./execution/index.ts";
+export * from "./graph.ts";
+export * from "./interop/index.ts";
 export * from "./observability/index.ts";
 export * from "./persistence/index.ts";
-export * from "./runtime.ts";
-export * from "./scheduler.ts";
+export * from "./runtime/index.ts";
+export * from "./scheduler/index.ts";
 export * from "./session/index.ts";
-export * from "./TaskState.ts";
+export * from "./task-state/index.ts";

@@ -4,7 +4,7 @@ import {
   type HostElement,
   type HostNode,
   type HostText,
-} from "../src/graph/index.ts";
+} from "../src/graph.ts";
 
 function hostEl(
   tag: string,

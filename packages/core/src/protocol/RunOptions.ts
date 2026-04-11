@@ -1,18 +1,8 @@
 import type { SmithersEvent } from "./SmithersEvent";
 import type { RunAuthContext } from "./RunAuthContext";
+import type { HotReloadOptions } from "./HotReloadOptions";
 
-export type HotReloadOptions = {
-  /** Root directory to watch for changes (default: auto-detect from workflow entry) */
-  rootDir?: string;
-  /** Directory for generation overlays (default: .smithers/hmr/<runId>) */
-  outDir?: string;
-  /** Max overlay generations to keep (default: 3) */
-  maxGenerations?: number;
-  /** Whether to cancel tasks that become unmounted after hot reload (default: false) */
-  cancelUnmounted?: boolean;
-  /** Debounce interval in ms for file change events (default: 100) */
-  debounceMs?: number;
-};
+export type { HotReloadOptions } from "./HotReloadOptions";
 
 export type RunOptions = {
   runId?: string;

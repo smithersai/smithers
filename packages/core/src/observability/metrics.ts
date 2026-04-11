@@ -5,31 +5,16 @@ import {
   renderPrometheusSamples,
   toPrometheusMetricName,
 } from "./prometheus.ts";
+import type { SmithersMetricType } from "./SmithersMetricType.ts";
+import type { SmithersMetricUnit } from "./SmithersMetricUnit.ts";
+import type { SmithersMetricDefinition } from "./SmithersMetricDefinition.ts";
+import type { MetricName } from "./MetricName.ts";
 
-export type MetricName = string;
+export type { MetricName } from "./MetricName.ts";
 export type { MetricLabels };
-
-export type SmithersMetricType = "counter" | "gauge" | "histogram";
-export type SmithersMetricUnit =
-  | "count"
-  | "milliseconds"
-  | "seconds"
-  | "bytes"
-  | "tokens"
-  | "ratio"
-  | "depth";
-
-export type SmithersMetricDefinition = {
-  readonly key: string;
-  readonly name: string;
-  readonly prometheusName: string;
-  readonly type: SmithersMetricType;
-  readonly label: string;
-  readonly unit?: SmithersMetricUnit;
-  readonly labels?: readonly string[];
-  readonly defaultLabels?: readonly MetricLabels[];
-  readonly boundaries?: readonly number[];
-};
+export type { SmithersMetricType } from "./SmithersMetricType.ts";
+export type { SmithersMetricUnit } from "./SmithersMetricUnit.ts";
+export type { SmithersMetricDefinition } from "./SmithersMetricDefinition.ts";
 
 function metricDefinition(
   key: string,

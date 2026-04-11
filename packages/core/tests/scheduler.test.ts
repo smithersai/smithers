@@ -6,7 +6,7 @@ import {
   type PlanNode,
   type TaskStateMap,
 } from "../src/scheduler.ts";
-import type { TaskDescriptor, XmlElement } from "../src/graph/index.ts";
+import type { TaskDescriptor, XmlElement } from "../src/graph.ts";
 
 function el(
   tag: string,
