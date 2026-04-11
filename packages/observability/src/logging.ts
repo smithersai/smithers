@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { runFork } from "@smithers/runtime/runtime";
-import { getCurrentSmithersTraceAnnotations } from "./index";
+import { getCurrentSmithersTraceAnnotations } from "./getCurrentSmithersTraceAnnotations";
 import {
   correlationContextToLogAnnotations,
   getCurrentCorrelationContext,
