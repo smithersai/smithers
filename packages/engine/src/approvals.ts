@@ -70,13 +70,13 @@ export function approveNodeEffect(
     timestampMs: ts,
   };
   return Effect.gen(function* () {
-    const existing = yield* adapter.getApprovalEffect(runId, nodeId, iteration);
-    const currentNode = yield* adapter.getNodeEffect(runId, nodeId, iteration);
+    const existing = yield* adapter.getApproval(runId, nodeId, iteration);
+    const currentNode = yield* adapter.getNode(runId, nodeId, iteration);
     assertNodeWaitingForApproval(runId, nodeId, iteration, currentNode?.state);
-    yield* adapter.withTransactionEffect(
+    yield* adapter.withTransaction(
       "approval",
       Effect.gen(function* () {
-        yield* adapter.insertOrUpdateApprovalEffect({
+        yield* adapter.insertOrUpdateApproval({
           runId,
           nodeId,
           iteration,
@@ -89,7 +89,7 @@ export function approveNodeEffect(
           decisionJson: serializeDecision(decision) ?? existing?.decisionJson ?? null,
           autoApproved,
         });
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId,
           iteration,
@@ -100,7 +100,7 @@ export function approveNodeEffect(
           label: currentNode?.label ?? null,
         });
 
-        const run = yield* adapter.getRunEffect(runId);
+        const run = yield* adapter.getRun(runId);
         if (run) {
           const pending = yield* adapter.listPendingApprovalsEffect(runId);
           const nextStatus = nextRunStatusForApproval(run.status, pending.length);
@@ -174,13 +174,13 @@ export function denyNodeEffect(
     timestampMs: ts,
   };
   return Effect.gen(function* () {
-    const existing = yield* adapter.getApprovalEffect(runId, nodeId, iteration);
-    const currentNode = yield* adapter.getNodeEffect(runId, nodeId, iteration);
+    const existing = yield* adapter.getApproval(runId, nodeId, iteration);
+    const currentNode = yield* adapter.getNode(runId, nodeId, iteration);
     assertNodeWaitingForApproval(runId, nodeId, iteration, currentNode?.state);
-    yield* adapter.withTransactionEffect(
+    yield* adapter.withTransaction(
       "approval",
       Effect.gen(function* () {
-        yield* adapter.insertOrUpdateApprovalEffect({
+        yield* adapter.insertOrUpdateApproval({
           runId,
           nodeId,
           iteration,
@@ -193,7 +193,7 @@ export function denyNodeEffect(
           decisionJson: serializeDecision(decision) ?? existing?.decisionJson ?? null,
           autoApproved: false,
         });
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId,
           iteration,
@@ -204,7 +204,7 @@ export function denyNodeEffect(
           label: currentNode?.label ?? null,
         });
 
-        const run = yield* adapter.getRunEffect(runId);
+        const run = yield* adapter.getRun(runId);
         if (run) {
           const pending = yield* adapter.listPendingApprovalsEffect(runId);
           const nextStatus = nextRunStatusForApproval(run.status, pending.length);

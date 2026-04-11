@@ -17,7 +17,6 @@ import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
 import { SmithersDb } from "@smithers/db/adapter";
 import { runWorkflow } from "../index";
 import { ignoreSyncError } from "@smithers/driver/interop";
-// TODO: task-runtime needs to be created in @smithers/driver
 import { requireTaskRuntime } from "@smithers/driver/task-runtime";
 import {
   Branch,

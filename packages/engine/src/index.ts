@@ -97,7 +97,6 @@ import {
   smithersSpanNames,
   withSmithersSpan,
 } from "@smithers/observability";
-// TODO: task-runtime needs to be created in @smithers/driver
 import { withTaskRuntime } from "@smithers/driver/task-runtime";
 import { hashCapabilityRegistry } from "@smithers/agents/capability-registry";
 import {
