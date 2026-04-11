@@ -1,0 +1,91 @@
+{
+  "name": "@smithers/driver",
+  "version": "0.0.0",
+  "description": "Workflow execution driver — runs tasks, acts on EngineDecisions, reports results",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./driver": {
+      "types": "./src/driver.ts",
+      "default": "./src/driver.ts"
+    },
+    "./execution": {
+      "types": "./src/execution.ts",
+      "default": "./src/execution.ts"
+    },
+    "./context": {
+      "types": "./src/context.ts",
+      "default": "./src/context.ts"
+    },
+    "./interop": {
+      "types": "./src/interop.ts",
+      "default": "./src/interop.ts"
+    },
+    "./RunOptions": {
+      "types": "./src/RunOptions.ts",
+      "default": "./src/RunOptions.ts"
+    },
+    "./RunResult": {
+      "types": "./src/RunResult.ts",
+      "default": "./src/RunResult.ts"
+    },
+    "./RunStatus": {
+      "types": "./src/RunStatus.ts",
+      "default": "./src/RunStatus.ts"
+    },
+    "./RunAuthContext": {
+      "types": "./src/RunAuthContext.ts",
+      "default": "./src/RunAuthContext.ts"
+    },
+    "./SmithersCtx": {
+      "types": "./src/SmithersCtx.ts",
+      "default": "./src/SmithersCtx.ts"
+    },
+    "./OutputAccessor": {
+      "types": "./src/OutputAccessor.ts",
+      "default": "./src/OutputAccessor.ts"
+    },
+    "./OutputKey": {
+      "types": "./src/OutputKey.ts",
+      "default": "./src/OutputKey.ts"
+    },
+    "./workflow-types": {
+      "types": "./src/workflow-types.ts",
+      "default": "./src/workflow-types.ts"
+    },
+    "./sha256Hex": {
+      "types": "./src/sha256Hex.ts",
+      "default": "./src/sha256Hex.ts"
+    },
+    "./newRunId": {
+      "types": "./src/newRunId.ts",
+      "default": "./src/newRunId.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@smithers/core": "workspace:*",
+    "@smithers/errors": "workspace:*",
+    "@smithers/graph": "workspace:*",
+    "@smithers/scheduler": "workspace:*",
+    "effect": "^3.21.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "~5.9.3"
+  }
+}
