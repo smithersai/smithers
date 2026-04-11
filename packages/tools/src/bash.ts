@@ -2,8 +2,7 @@ import { tool, zodSchema } from "ai";
 import { Effect, Metric } from "effect";
 import { z } from "zod";
 import { nowMs } from "@smithers/scheduler/nowMs";
-// TODO: Move spawnCaptureEffect to @smithers/driver/child-process
-import { spawnCaptureEffect } from "@smithers/runtime/child-process";
+import { spawnCaptureEffect } from "@smithers/driver/child-process";
 import { fromSync } from "@smithers/driver/interop";
 import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";

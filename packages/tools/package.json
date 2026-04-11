@@ -28,7 +28,6 @@
     "@smithers/driver": "workspace:*",
     "@smithers/errors": "workspace:*",
     "@smithers/observability": "workspace:*",
-    "@smithers/runtime": "workspace:*",
     "@smithers/scheduler": "workspace:*",
     "ai": "^6.0.69",
     "diff": "^5.2.0",
