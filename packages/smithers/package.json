@@ -1,0 +1,54 @@
+{
+  "name": "smithers",
+  "version": "0.0.0",
+  "description": "Public Smithers facade and workflow authoring convenience package",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./src/jsx-runtime.ts",
+      "default": "./src/jsx-runtime.ts"
+    }
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "test": "bun test tests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@smithers/core": "workspace:*",
+    "@smithers/graph": "workspace:*",
+    "@smithers/observability": "workspace:*",
+    "@smithers/runtime": "workspace:*",
+    "@smithers/react-reconciler": "workspace:*",
+    "@smithers/react": "workspace:*",
+    "@smithers/db": "workspace:*",
+    "@smithers/agents": "workspace:*",
+    "@smithers/tools": "workspace:*",
+    "@smithers/voice": "workspace:*",
+    "@smithers/rag": "workspace:*",
+    "@smithers/memory": "workspace:*",
+    "@smithers/scorers": "workspace:*",
+    "@smithers/openapi": "workspace:*",
+    "@smithers/sandbox": "workspace:*",
+    "@smithers/vcs": "workspace:*",
+    "@smithers/time-travel": "workspace:*",
+    "@smithers/engine": "workspace:*",
+    "@smithers/server": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "~5.9.3"
+  }
+}
