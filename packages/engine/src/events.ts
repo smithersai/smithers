@@ -3,8 +3,7 @@ import * as FileSystem from "@effect/platform/FileSystem";
 import { join } from "node:path";
 import { Effect } from "effect";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
-import { fromPromise } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromPromise } from "@smithers/driver/interop";
 import { trackEvent } from "@smithers/observability/metrics";
 import type { CorrelationContext } from "@smithers/observability/correlation";
 import {
@@ -48,7 +47,7 @@ export class EventBus extends EventEmitter {
   }
 
   async emitEvent(event: SmithersEvent) {
-    await runPromise(this.emitEventEffect(event));
+    await Effect.runPromise(this.emitEventEffect(event));
   }
 
   emitEventWithPersistEffect(event: SmithersEvent) {
@@ -65,13 +64,13 @@ export class EventBus extends EventEmitter {
   }
 
   async emitEventWithPersist(event: SmithersEvent) {
-    await runPromise(this.emitEventWithPersistEffect(event));
+    await Effect.runPromise(this.emitEventWithPersistEffect(event));
   }
 
   emitEventQueued(event: SmithersEvent): Promise<void> {
     const correlatedEvent = this.attachCorrelation(event);
     this.emit("event", correlatedEvent);
-    return runPromise(
+    return Effect.runPromise(
       withCurrentCorrelationContext(
         trackEvent(correlatedEvent).pipe(
           Effect.andThen(this.enqueuePersistEffect(correlatedEvent)),
@@ -94,7 +93,7 @@ export class EventBus extends EventEmitter {
   }
 
   async flush(): Promise<void> {
-    await runPromise(this.flushEffect());
+    await Effect.runPromise(this.flushEffect());
   }
 
   persistEffect(event: CorrelatedSmithersEvent) {
@@ -115,7 +114,7 @@ export class EventBus extends EventEmitter {
   }
 
   async persist(event: SmithersEvent) {
-    await runPromise(this.persistEffect(this.attachCorrelation(event)));
+    await Effect.runPromise(this.persistEffect(this.attachCorrelation(event)));
   }
 
   private emitAndTrackEffect(event: CorrelatedSmithersEvent) {
@@ -126,7 +125,7 @@ export class EventBus extends EventEmitter {
   }
 
   private enqueuePersistEffect(event: CorrelatedSmithersEvent) {
-    const task = this.persistTail.then(() => runPromise(this.persistEffect(event)));
+    const task = this.persistTail.then(() => Effect.runPromise(this.persistEffect(event)));
     this.persistTail = task.catch((error) => {
       this.persistError = error;
     });

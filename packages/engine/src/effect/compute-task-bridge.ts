@@ -7,10 +7,10 @@ import { TaskHeartbeatTimeout } from "@smithers/errors/TaskHeartbeatTimeout";
 import { TaskTimeout } from "@smithers/errors/TaskTimeout";
 import { EventBus } from "../events";
 import { makeAbortError, wireAbortSignal } from "./bridge-utils";
+// TODO: move task-runtime to @smithers/driver/task-runtime
 import { withTaskRuntime } from "@smithers/runtime/task-runtime";
 import { logDebug, logError, logInfo, logWarning } from "@smithers/observability/logging";
 import { attemptDuration, nodeDuration } from "@smithers/observability/metrics";
-import { runPromise } from "@smithers/runtime/runtime";
 import { errorToJson } from "@smithers/errors/errorToJson";
 import { fromTaggedError } from "@smithers/errors/fromTaggedError";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -405,7 +405,7 @@ export const executeComputeTaskBridge = async (
   ): Promise<A> => {
     const heartbeatTimeoutMs = desc.heartbeatTimeoutMs;
     if (!heartbeatTimeoutMs) {
-      return await runPromise(taskEffect, { signal: taskSignal });
+      return await Effect.runPromise(taskEffect, { signal: taskSignal });
     }
 
     const checkHeartbeat = Effect.suspend(() => {
@@ -454,7 +454,7 @@ export const executeComputeTaskBridge = async (
       checkHeartbeat,
       Schedule.spaced(Duration.millis(TASK_HEARTBEAT_TIMEOUT_CHECK_MS)),
     ).pipe(Effect.flatMap(() => Effect.never));
-    const raced = await runPromise(
+    const raced = await Effect.runPromise(
       Effect.race(Effect.either(taskEffect), Effect.either(watchdog)),
       { signal: taskSignal },
     );
@@ -693,7 +693,7 @@ export const executeComputeTaskBridge = async (
     });
 
     const taskElapsedMs = performance.now() - taskStartMs;
-    void runPromise(
+    void Effect.runPromise(
       Effect.all(
         [
           Metric.update(nodeDuration, taskElapsedMs),

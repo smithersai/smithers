@@ -25,7 +25,6 @@ import {
 } from "../human-requests";
 import { parseAttemptMetaJson } from "./bridge-utils";
 import { updateAsyncExternalWaitPending } from "@smithers/observability/metrics";
-import { runPromise } from "@smithers/runtime/runtime";
 import { markdownComponents } from "@smithers/react/markdownComponents";
 import { errorToJson } from "@smithers/errors/errorToJson";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -86,7 +85,7 @@ async function updateAsyncExternalWaitPendingSafe(
   delta: number,
 ) {
   try {
-    await runPromise(updateAsyncExternalWaitPending(kind, delta));
+    await Effect.runPromise(updateAsyncExternalWaitPending(kind, delta));
   } catch {}
 }
 

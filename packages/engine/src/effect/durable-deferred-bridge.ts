@@ -5,7 +5,6 @@ import { resolve as resolvePath } from "node:path";
 import { Cause, Effect, Exit, Layer, Schema } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import { updateAsyncExternalWaitPending } from "@smithers/observability/metrics";
-import { runPromiseExit } from "@smithers/runtime/runtime";
 
 export const DurableDeferredBridgeWorkflow = Workflow.make({
   name: "SmithersDurableDeferredBridge",
@@ -189,7 +188,7 @@ const makeWorkflowInstance = (executionId: string) =>
 async function runBridgeEffect<A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Promise<A> {
-  const exit = await runPromiseExit(effect);
+  const exit = await Effect.runPromiseExit(effect);
   if (Exit.isSuccess(exit)) {
     return exit.value;
   }

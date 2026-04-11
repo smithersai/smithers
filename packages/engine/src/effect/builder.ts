@@ -16,8 +16,8 @@ import type { CachePolicy } from "@smithers/scheduler/CachePolicy";
 import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
 import { SmithersDb } from "@smithers/db/adapter";
 import { runWorkflow } from "../index";
-import { ignoreSyncError } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { ignoreSyncError } from "@smithers/driver/interop";
+// TODO: move task-runtime to @smithers/driver/task-runtime
 import { requireTaskRuntime } from "@smithers/runtime/task-runtime";
 import {
   Branch,
@@ -506,7 +506,7 @@ async function resolveEffectResult(
   signal: AbortSignal,
 ) {
   if ((Effect as any).isEffect?.(value)) {
-    return await runPromise(
+    return await Effect.runPromise(
       (value as any).pipe(Effect.provide(env)),
       { signal },
     );
@@ -514,7 +514,7 @@ async function resolveEffectResult(
   if (value && typeof (value as PromiseLike<unknown>).then === "function") {
     const resolved = await value;
     if ((Effect as any).isEffect?.(resolved)) {
-      return await runPromise(
+      return await Effect.runPromise(
         (resolved as any).pipe(Effect.provide(env)),
         { signal },
       );

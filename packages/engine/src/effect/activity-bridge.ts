@@ -4,7 +4,6 @@ import * as WorkflowEngine from "@effect/workflow/WorkflowEngine";
 import { Cause, Effect, Exit, Layer, Schema } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
-import { runPromiseExit } from "@smithers/runtime/runtime";
 
 const TaskBridgeWorkflow = Workflow.make({
   name: "SmithersTaskBridge",
@@ -99,7 +98,7 @@ const runTaskActivityAttempt = async <A>(
   instance: WorkflowEngine.WorkflowInstance["Type"],
   attempt: number,
 ): Promise<A> => {
-  const exit = await runPromiseExit(
+  const exit = await Effect.runPromiseExit(
     activity.pipe(
       Effect.provide(
         Layer.mergeAll(

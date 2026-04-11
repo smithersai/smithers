@@ -2,7 +2,7 @@ import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
 import type { HijackState } from "../index";
 import { SmithersDb } from "@smithers/db/adapter";
 import { EventBus } from "../events";
-import { fromPromise } from "@smithers/runtime/interop";
+import { fromPromise } from "@smithers/driver/interop";
 import {
   makeWorkerTask,
   type WorkerDispatchKind,

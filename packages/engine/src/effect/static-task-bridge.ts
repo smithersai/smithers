@@ -7,7 +7,6 @@ import { EventBus } from "../events";
 import { makeAbortError, wireAbortSignal } from "./bridge-utils";
 import { logDebug, logError, logInfo } from "@smithers/observability/logging";
 import { attemptDuration, nodeDuration } from "@smithers/observability/metrics";
-import { runPromise } from "@smithers/runtime/runtime";
 import { errorToJson } from "@smithers/errors/errorToJson";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { nowMs } from "@smithers/scheduler/nowMs";
@@ -226,7 +225,7 @@ export const executeStaticTaskBridge = async (
     });
 
     const taskElapsedMs = performance.now() - taskStartMs;
-    void runPromise(
+    void Effect.runPromise(
       Effect.all(
         [
           Metric.update(nodeDuration, taskElapsedMs),

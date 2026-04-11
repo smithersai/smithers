@@ -1,7 +1,6 @@
 import { Effect } from "effect";
 import { SmithersDb } from "@smithers/db/adapter";
 import { bridgeSignalResolve } from "./effect/durable-deferred-bridge";
-import { runPromise } from "@smithers/runtime/runtime";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { nowMs } from "@smithers/scheduler/nowMs";
 
@@ -92,7 +91,7 @@ export async function signalRun(
   options: SignalRunOptions = {},
 ) {
   const payloadJson = serializeSignalPayload(payload);
-  const delivered = await runPromise(
+  const delivered = await Effect.runPromise(
     signalRunEffect(adapter, runId, signalName, payload, options),
   );
   await bridgeSignalResolve(adapter, runId, {

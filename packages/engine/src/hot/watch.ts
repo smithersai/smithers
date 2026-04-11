@@ -2,9 +2,8 @@ import { watch, type FSWatcher } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolve, relative } from "node:path";
 import { Effect } from "effect";
-import { fromPromise } from "@smithers/runtime/interop";
+import { fromPromise } from "@smithers/driver/interop";
 import { logDebug, logInfo } from "@smithers/observability/logging";
-import { runPromise } from "@smithers/runtime/runtime";
 
 const DEFAULT_IGNORE = [
   "node_modules",
@@ -38,7 +37,7 @@ export class WatchTree {
 
   /** Start watching. Call once. */
   async start(): Promise<void> {
-    await runPromise(this.startEffect());
+    await Effect.runPromise(this.startEffect());
   }
 
   /**

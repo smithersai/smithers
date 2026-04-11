@@ -1,7 +1,6 @@
 import { Effect, Metric } from "effect";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { SmithersDb } from "@smithers/db/adapter";
-import { runPromise } from "@smithers/runtime/runtime";
 import {
   approvalWaitDuration,
   trackEvent,
@@ -146,7 +145,7 @@ export async function approveNode(
   decidedBy?: string,
   decision?: unknown,
 ) {
-  await runPromise(
+  await Effect.runPromise(
     approveNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy, decision),
   );
   await bridgeApprovalResolve(adapter, runId, nodeId, iteration, {
@@ -250,7 +249,7 @@ export async function denyNode(
   decidedBy?: string,
   decision?: unknown,
 ) {
-  await runPromise(
+  await Effect.runPromise(
     denyNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy, decision),
   );
   await bridgeApprovalResolve(adapter, runId, nodeId, iteration, {
@@ -272,7 +271,7 @@ export async function autoApproveNode(
     decision?: unknown;
   },
 ) {
-  await runPromise(
+  await Effect.runPromise(
     approveNodeEffect(
       adapter,
       runId,
