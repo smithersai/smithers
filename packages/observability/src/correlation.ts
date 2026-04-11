@@ -34,7 +34,7 @@ export function updateCurrentCorrelationContext(
   if (!current) return;
 
   // TODO: replace this compatibility shim once legacy callers adopt the
-  // Effect-returning updateCurrentCorrelationContext from @smithers/core.
+  // Effect-returning updateCurrentCorrelationContext from @smithers/observability.
   const next = mergeCoreCorrelationContext(current, patch);
   if (!next) return;
   Object.assign(current, next satisfies CorrelationContext);
