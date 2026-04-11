@@ -1298,7 +1298,7 @@ export class Gateway {
         continue;
       }
       const iteration = node.iteration ?? 0;
-      const attempts = await adapter.listAttempts(runId, node.nodeId, iteration);
+      const attempts = await runPromise(adapter.listAttempts(runId, node.nodeId, iteration));
       const waitingAttempt =
         (attempts as any[]).find((attempt) => attempt.state === "waiting-event") ??
         attempts[0];
