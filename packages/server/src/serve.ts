@@ -285,7 +285,7 @@ export function createServeApp(opts: ServeOptions) {
       if (run.status === "waiting-timer") {
         const nodes = await adapter.listNodes(runId);
         for (const node of (nodes as any[]).filter((entry) => entry.state === "waiting-timer")) {
-          const attempts = await adapter.listAttempts(runId, node.nodeId, node.iteration ?? 0);
+          const attempts = await runPromise(adapter.listAttempts(runId, node.nodeId, node.iteration ?? 0));
           const waitingAttempt = (attempts as any[]).find((attempt) => attempt.state === "waiting-timer");
           if (!waitingAttempt) continue;
           await adapter.updateAttempt(
