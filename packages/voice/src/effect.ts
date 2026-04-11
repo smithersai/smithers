@@ -13,7 +13,7 @@ import type {
   ListenOptions,
   TranscriptionResult,
 } from "./types";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 // ---------------------------------------------------------------------------
 // Service tag
