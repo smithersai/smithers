@@ -1,5 +1,5 @@
 import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
-import type { AgentLike } from "@smithers/core/AgentLike";
+import type { AgentLike } from "@smithers/agents/AgentLike";
 import { createExternalSmithers } from "./create-external-smithers";
 import { createPythonBuildFn, discoverPythonSchemas } from "./python-subprocess";
 import { pydanticSchemaToZod } from "./json-schema-to-zod";

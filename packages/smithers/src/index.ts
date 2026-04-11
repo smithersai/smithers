@@ -1,6 +1,6 @@
 // Types
 export type { XmlNode, XmlElement, XmlText } from "@smithers/graph/XmlNode";
-export type { AgentLike } from "@smithers/core/AgentLike";
+export type { AgentLike } from "@smithers/agents/AgentLike";
 export type {
   AgentCapabilityRegistry,
   AgentToolDescriptor,
@@ -27,7 +27,7 @@ export type { SchemaRegistryEntry } from "@smithers/core/SchemaRegistryEntry";
 export type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
 export type { SmithersCtx } from "@smithers/driver/SmithersCtx";
 export type { OutputAccessor, InferRow, InferOutputEntry } from "@smithers/driver/OutputAccessor";
-export type { SmithersEvent } from "@smithers/core/SmithersEvent";
+export type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 export type { SmithersError } from "@smithers/errors/SmithersError";
 export {
   ERROR_REFERENCE_URL,

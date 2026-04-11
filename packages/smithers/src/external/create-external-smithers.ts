@@ -2,7 +2,7 @@ import React from "react";
 import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
 import type { SmithersCtx } from "@smithers/driver/SmithersCtx";
 import type { SchemaRegistryEntry } from "@smithers/core/SchemaRegistryEntry";
-import type { AgentLike } from "@smithers/core/AgentLike";
+import type { AgentLike } from "@smithers/agents/AgentLike";
 import type { OutputSnapshot } from "@smithers/driver/OutputSnapshot";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";

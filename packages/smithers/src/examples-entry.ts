@@ -1,4 +1,4 @@
-export type { AgentLike } from "@smithers/core/AgentLike";
+export type { AgentLike } from "@smithers/agents/AgentLike";
 export type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
 export type { SmithersCtx } from "@smithers/driver/SmithersCtx";
 

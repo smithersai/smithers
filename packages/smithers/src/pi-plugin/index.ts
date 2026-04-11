@@ -1,4 +1,4 @@
-import type { SmithersEvent } from "@smithers/core/SmithersEvent";
+import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import { SmithersError } from "@smithers/errors/SmithersError";
 
 const DEFAULT_BASE = "http://127.0.0.1:7331";
