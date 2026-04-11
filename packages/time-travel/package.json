@@ -13,6 +13,18 @@
       "types": "./src/snapshot/index.ts",
       "default": "./src/snapshot/index.ts"
     },
+    "./fork": {
+      "types": "./src/fork/index.ts",
+      "default": "./src/fork/index.ts"
+    },
+    "./timeline": {
+      "types": "./src/timeline/index.ts",
+      "default": "./src/timeline/index.ts"
+    },
+    "./vcs-version": {
+      "types": "./src/vcs-version/index.ts",
+      "default": "./src/vcs-version/index.ts"
+    },
     "./metrics": {
       "types": "./src/metrics.ts",
       "default": "./src/metrics.ts"
