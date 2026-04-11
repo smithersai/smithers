@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import type { TaskDescriptor } from "@smithers/graph";
-import type { TaskOutput } from "@smithers/core/workflow-types";
+import type { TaskOutput } from "@smithers/scheduler";
 import { fromPromise } from "./fromPromise.ts";
 import { fromSync } from "./fromSync.ts";
 import { ExecutionService } from "./ExecutionService.ts";

@@ -1,18 +1,20 @@
 import type { RunOptions } from "./RunOptions.ts";
 import type {
-  CreateWorkflowSession,
   EngineDecision,
   RenderContext,
   RunResult,
+  TaskOutput,
+  WaitReason,
+} from "@smithers/scheduler";
+import type {
+  CreateWorkflowSession,
   SchedulerWaitHandler,
   TaskExecutor,
   TaskExecutorContext,
-  TaskOutput,
   WaitHandler,
   ContinueAsNewHandler,
   WorkflowRuntime,
   WorkflowSession,
-  WaitReason,
 } from "@smithers/core/workflow-types";
 import type { WorkflowGraph, TaskDescriptor } from "@smithers/graph";
 import { buildContext } from "./buildContext.ts";

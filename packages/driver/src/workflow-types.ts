@@ -1,14 +1,17 @@
 export type {
-  ContinueAsNewHandler,
-  CreateWorkflowSession,
   EngineDecision,
   RenderContext,
+  TaskOutput,
+  WaitReason,
+} from "@smithers/scheduler";
+export type { RunResult } from "@smithers/scheduler";
+export type {
+  ContinueAsNewHandler,
+  CreateWorkflowSession,
   SchedulerWaitHandler,
   TaskExecutor,
   TaskExecutorContext,
-  TaskOutput,
   WaitHandler,
-  WaitReason,
   WorkflowRuntime,
   WorkflowSession,
 } from "@smithers/core/workflow-types";

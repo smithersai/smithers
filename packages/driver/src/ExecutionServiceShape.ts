@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { SmithersError } from "@smithers/errors/SmithersError";
-import type { TaskOutput } from "@smithers/core/workflow-types";
+import type { TaskOutput } from "@smithers/scheduler";
 import type { ExecutionInput } from "./ExecutionInput.ts";
 
 export type ExecutionServiceShape = {
