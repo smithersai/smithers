@@ -6,7 +6,6 @@ import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
 import type { GraphSnapshot } from "@smithers/graph/GraphSnapshot";
 import type { RunAuthContext } from "@smithers/core/RunAuthContext";
 import type { AgentCliEvent } from "@smithers/agents/BaseCliAgent";
-import { isBlockingAgentActionKind } from "@smithers/agents/BaseCliAgent";
 import {
   makeWorkflowSession,
   type EngineDecision,
@@ -134,6 +133,17 @@ export const RUN_WORKFLOW_INPUT_MAX_BYTES = 1024 * 1024;
 export const RUN_WORKFLOW_INPUT_MAX_DEPTH = 32;
 export const RUN_WORKFLOW_INPUT_MAX_ARRAY_LENGTH = 512;
 export const RUN_WORKFLOW_INPUT_MAX_STRING_LENGTH = 64 * 1024;
+
+type AgentCliActionKind = Extract<AgentCliEvent, { type: "action" }>["action"]["kind"];
+
+function isBlockingAgentActionKind(kind: AgentCliActionKind): boolean {
+  return (
+    kind === "command" ||
+    kind === "tool" ||
+    kind === "file_change" ||
+    kind === "web_search"
+  );
+}
 
 function makeAbortError(message = "Task aborted"): SmithersError {
   return new SmithersError("TASK_ABORTED", message, undefined, {
