@@ -1,7 +1,7 @@
 import React from "react";
 import { getTaskRuntime } from "@smithers/runtime/task-runtime";
 import { SmithersDb } from "@smithers/db/adapter";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 /** Valid output targets: a Zod schema, a Drizzle table object, or a string key. */
 type OutputTarget = import("zod").ZodObject<any> | { $inferSelect: any } | string;

@@ -1,6 +1,6 @@
 import React from "react";
-import type { CachePolicy } from "@smithers/core/CachePolicy";
-import type { RetryPolicy } from "@smithers/core/RetryPolicy";
+import type { CachePolicy } from "@smithers/scheduler/CachePolicy";
+import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
 import type { SmithersWorkflow } from "../SmithersWorkflow";
 
 /** Valid output targets: a Zod schema, a Drizzle table object, or a string key. */

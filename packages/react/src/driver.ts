@@ -2,7 +2,7 @@ import type React from "react";
 import {
   WorkflowDriver,
   type WorkflowDriverOptions,
-} from "@smithers/core/driver";
+} from "@smithers/driver";
 import { SmithersRenderer } from "@smithers/react-reconciler";
 import type { SmithersWorkflowDriverOptions } from "./types";
 

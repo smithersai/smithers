@@ -3,7 +3,7 @@ import { z } from "zod";
 import { SmithersContext } from "../context";
 import { getTaskRuntime } from "@smithers/runtime/task-runtime";
 import { SmithersDb } from "@smithers/db/adapter";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 export const approvalDecisionSchema = z.object({
   approved: z.boolean(),

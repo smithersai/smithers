@@ -1,6 +1,6 @@
 import type React from "react";
-import type { SmithersCtx } from "@smithers/core/SmithersCtx";
-import type { SmithersWorkflowOptions } from "@smithers/core/SmithersWorkflowOptions";
+import type { SmithersCtx } from "@smithers/driver/SmithersCtx";
+import type { SmithersWorkflowOptions } from "@smithers/scheduler/SmithersWorkflowOptions";
 import type { SchemaRegistryEntry } from "@smithers/core/SchemaRegistryEntry";
 
 export type SmithersWorkflow<Schema> = {

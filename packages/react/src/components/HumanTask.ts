@@ -2,9 +2,9 @@ import React from "react";
 import { renderPromptToText } from "./Task";
 import { getTaskRuntime } from "@smithers/runtime/task-runtime";
 import { SmithersDb } from "@smithers/db/adapter";
-import { buildHumanRequestId } from "@smithers/core/human-requests";
-import { SmithersError } from "@smithers/core/errors";
-import type { RetryPolicy } from "@smithers/core/RetryPolicy";
+import { buildHumanRequestId } from "@smithers/durables";
+import { SmithersError } from "@smithers/errors/SmithersError";
+import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
 
 /** Valid output targets: a Zod schema, a Drizzle table object, or a string key. */
 type OutputTarget = import("zod").ZodObject<any> | { $inferSelect: any } | string;

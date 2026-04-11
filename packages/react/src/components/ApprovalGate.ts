@@ -3,8 +3,8 @@ import { Branch } from "./Branch";
 import { Approval } from "./Approval";
 import { Task } from "./Task";
 import type { ApprovalRequest } from "./Approval";
-import type { RetryPolicy } from "@smithers/core/RetryPolicy";
-import type { CachePolicy } from "@smithers/core/CachePolicy";
+import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
+import type { CachePolicy } from "@smithers/scheduler/CachePolicy";
 
 /** Valid output targets for ApprovalGate: Zod schema, Drizzle table, or string key. */
 type OutputTarget = import("zod").ZodObject<any> | { $inferSelect: any } | string;

@@ -1,5 +1,6 @@
 import React from "react";
-import type { SmithersErrorCode, SmithersError } from "@smithers/core/errors";
+import type { SmithersErrorCode } from "@smithers/errors/SmithersErrorCode";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import { forceContinueOnFail } from "./control-flow-utils";
 
 export type TryCatchFinallyProps = {

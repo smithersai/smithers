@@ -1,5 +1,5 @@
 import React from "react";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 export type TimerProps = {
   id: string;
