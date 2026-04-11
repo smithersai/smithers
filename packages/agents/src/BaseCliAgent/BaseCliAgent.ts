@@ -7,8 +7,7 @@ import type {
   StreamTextResult,
 } from "ai";
 import type { AgentCapabilityRegistry } from "../capability-registry";
-import { fromPromise } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromPromise } from "@smithers/driver/interop";
 import { logDebug, logInfo, logWarning } from "@smithers/observability/logging";
 import {
   agentDurationMs,
@@ -889,11 +888,11 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
   }
 
   async generate(options: any): Promise<GenerateTextResult<any, any>> {
-    return runPromise(this.runGenerateEffect(options, "generate"));
+    return Effect.runPromise(this.runGenerateEffect(options, "generate"));
   }
 
   async stream(options: any): Promise<StreamTextResult<any, any>> {
-    const result = await runPromise(
+    const result = await Effect.runPromise(
       this.runGenerateEffect(options, "stream").pipe(
         Effect.map((generateResult) => buildStreamResult(generateResult)),
       ),

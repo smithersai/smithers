@@ -25,8 +25,7 @@ import {
   normalizeCapabilityStringList,
   type AgentCapabilityRegistry,
 } from "./capability-registry";
-import { fromPromise } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromPromise } from "@smithers/driver/interop";
 import { getToolContext } from "@smithers/tools/context";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { enrichReportWithErrorAnalysis, launchDiagnostics } from "./diagnostics";
@@ -483,7 +482,7 @@ export class PiAgent extends BaseCliAgent {
       Effect.tapError(diagnosticsEnrichment),
     );
 
-    return runPromise(rpcProgram);
+    return Effect.runPromise(rpcProgram);
   }
 
   protected async buildCommand(params: {

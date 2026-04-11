@@ -4,7 +4,6 @@ import { createInterface } from "node:readline";
 import { Effect } from "effect";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
-import { runPromise } from "@smithers/runtime/runtime";
 import { logDebug, logWarning } from "@smithers/observability/logging";
 import { toolOutputTruncatedTotal } from "@smithers/observability/metrics";
 import { Metric } from "effect";
@@ -342,7 +341,7 @@ export function runRpcCommandEffect(command: string, args: string[], options: Ru
        const nextStderr = stderr + text;
        if (!stderrTruncated && maxOutputBytes && Buffer.byteLength(nextStderr, "utf8") > maxOutputBytes) {
          stderrTruncated = true;
-         void runPromise(Metric.increment(toolOutputTruncatedTotal));
+         void Effect.runPromise(Metric.increment(toolOutputTruncatedTotal));
          logWarning(
            "agent RPC stderr truncated",
            {
