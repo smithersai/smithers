@@ -27,7 +27,6 @@
   },
   "dependencies": {
     "@smithers/agents": "workspace:*",
-    "@smithers/core": "workspace:*",
     "@smithers/db": "workspace:*",
     "@smithers/devtools": "workspace:*",
     "@smithers/driver": "workspace:*",
