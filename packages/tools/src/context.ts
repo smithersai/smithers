@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SmithersDb } from "@smithers/db/adapter";
-import type { SmithersEvent } from "@smithers/core/SmithersEvent";
+import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 
 export type ToolContext = {
   db: SmithersDb;
