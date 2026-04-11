@@ -8,7 +8,6 @@ import { trackEvent, sandboxTransportDurationMs } from "@smithers/observability/
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { errorToJson } from "@smithers/errors/errorToJson";
-// TODO: verify @smithers/driver/task-runtime resolves correctly
 import { requireTaskRuntime } from "@smithers/driver/task-runtime";
 import { executeChildWorkflow, type ChildWorkflowDefinition } from "@smithers/engine/child-workflow";
 import { validateSandboxBundle, writeSandboxBundle } from "./bundle";
