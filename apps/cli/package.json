@@ -1,26 +1,46 @@
 {
-  "name": "@burns/cli",
-  "version": "0.1.0",
-  "description": "Burns command-line runtime for daemon and packaged web UI",
+  "name": "@smithers/cli",
+  "version": "0.0.0",
+  "description": "Smithers command-line interface, TUI, MCP server, and local workflow tools",
   "type": "module",
-  "bin": {
-    "burns": "./src/bin.ts"
-  },
-  "engines": {
-    "bun": ">=1.2.0"
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
   },
   "files": [
-    "src",
-    "README.md",
-    "tsconfig.json"
+    "src/"
   ],
   "scripts": {
-    "start": "bun run src/bin.ts start",
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test tests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "bin": {
+    "smithers": "./src/index.ts"
+  },
+  "dependencies": {
+    "smithers": "workspace:*",
+    "@smithers/server": "workspace:*",
+    "@smithers/db": "workspace:*",
+    "@smithers/time-travel": "workspace:*",
+    "@smithers/agents": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "incur": "^0.3.3",
+    "@opentui/core": "^0.1.92",
+    "@opentui/react": "^0.1.92",
+    "picocolors": "^1.1.1",
+    "react": "^18.3.0 || ^19.0.0",
+    "zod": "^4.3.6",
+    "@smithers/core": "workspace:*"
   },
   "devDependencies": {
-    "bun-types": "latest",
+    "@types/bun": "latest",
     "typescript": "~5.9.3"
   }
 }

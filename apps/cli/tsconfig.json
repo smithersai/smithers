@@ -1,15 +1,28 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM"],
-    "types": ["bun-types", "node"],
-    "allowImportingTsExtensions": true,
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
-    "strict": true,
-    "baseUrl": "."
+    "allowImportingTsExtensions": true,
+    "types": [
+      "bun-types"
+    ],
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
   },
-  "include": ["src"]
+  "include": [
+    "src/**/*"
+  ]
 }
