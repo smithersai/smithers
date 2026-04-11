@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import { EventBus } from "../src/events";
-import type { SmithersEvent } from "@smithers/core/SmithersEvent";
+import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 
 function makeEvent(overrides?: Partial<SmithersEvent>): SmithersEvent {
   return {

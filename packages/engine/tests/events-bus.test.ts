@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { EventBus } from "../src/events";
-import type { SmithersEvent } from "@smithers/core/SmithersEvent";
+import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import { renderPrometheusMetrics } from "@smithers/observability";
 
 function makeEvent(type: string, overrides: any = {}): SmithersEvent {

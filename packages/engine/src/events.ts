@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import * as FileSystem from "@effect/platform/FileSystem";
 import { join } from "node:path";
 import { Effect } from "effect";
-import type { SmithersEvent } from "@smithers/core/SmithersEvent";
+import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import { fromPromise } from "@smithers/runtime/interop";
 import { runPromise } from "@smithers/runtime/runtime";
 import { trackEvent } from "@smithers/observability/metrics";

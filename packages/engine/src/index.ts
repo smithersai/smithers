@@ -1,7 +1,7 @@
 import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
 import type { RunOptions } from "@smithers/driver/RunOptions";
 import type { RunResult } from "@smithers/driver/RunResult";
-import type { SmithersEvent } from "@smithers/core/SmithersEvent";
+import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
 import type { GraphSnapshot } from "@smithers/graph/GraphSnapshot";
 import type { RunAuthContext } from "@smithers/driver/RunAuthContext";

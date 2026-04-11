@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Workflow, Task, Sequence, runWorkflow } from "smithers";
 import { createTestSmithers, sleep } from "../../smithers/tests/helpers";
 import { z } from "zod";
-import type { SmithersEvent } from "@smithers/core/SmithersEvent";
+import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 
 const schemas = { out: z.object({ v: z.number() }) };
 
