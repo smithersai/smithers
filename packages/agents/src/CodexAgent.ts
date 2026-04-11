@@ -10,6 +10,12 @@ import {
   normalizeCodexConfig,
   pushFlag,
   pushList,
+  isRecord,
+  asString,
+  asNumber,
+  truncate,
+  shouldSurfaceUnparsedStdout,
+  createSyntheticIdGenerator,
 } from "./BaseCliAgent";
 import type { BaseCliAgentOptions, CodexConfigOverrides } from "./BaseCliAgent";
 import {
@@ -73,65 +79,6 @@ export function createCodexCapabilityRegistry(
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function asString(value: unknown) {
-  return typeof value === "string" ? value : undefined;
-}
-
-function asNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function truncate(value: string, maxLength = 240) {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength - 1)}…`;
-}
-
-const RUNTIME_METADATA_MARKERS = [
-  "\"mcp_servers\"",
-  "\"slash_commands\"",
-  "\"permissionmode\"",
-  "\"claude_code_version\"",
-  "\"apikeysource\"",
-  "\"plugins\"",
-  "\"skills\"",
-];
-
-function isLikelyRuntimeMetadataBlob(value: string) {
-  const lower = value.toLowerCase();
-  let matchCount = 0;
-  for (const marker of RUNTIME_METADATA_MARKERS) {
-    if (lower.includes(marker)) {
-      matchCount += 1;
-    }
-  }
-
-  return matchCount >= 3;
-}
-
-function shouldSurfaceUnparsedStdout(line: string) {
-  if (isLikelyRuntimeMetadataBlob(line)) {
-    return false;
-  }
-
-  const lower = line.toLowerCase();
-  if (line.length > 220) {
-    return false;
-  }
-
-  return (
-    lower.includes("error") ||
-    lower.includes("failed") ||
-    lower.includes("denied") ||
-    lower.includes("exception") ||
-    lower.includes("timeout")
-  );
-}
 
 export class CodexAgent extends BaseCliAgent {
   private readonly opts: CodexAgentOptions;
@@ -149,12 +96,7 @@ export class CodexAgent extends BaseCliAgent {
     let threadId: string | undefined;
     let finalAnswer = "";
     let didEmitCompleted = false;
-    let syntheticCounter = 0;
-
-    const nextSyntheticId = (prefix: string) => {
-      syntheticCounter += 1;
-      return `${prefix}-${syntheticCounter}`;
-    };
+    const nextSyntheticId = createSyntheticIdGenerator();
 
     const actionForItem = (
       item: Record<string, unknown>,

@@ -1,17 +1,24 @@
 import {
   BaseCliAgent,
-  type AgentCliActionKind,
   type AgentCliEvent,
   pushFlag,
   pushList,
   type CliOutputInterpreter,
   type RunCommandResult,
+  isRecord,
+  asString,
+  truncate,
+  toolKindFromName,
+  shouldSurfaceUnparsedStdout,
+  isLikelyRuntimeMetadata,
+  createSyntheticIdGenerator,
 } from "./BaseCliAgent";
 import type { BaseCliAgentOptions } from "./BaseCliAgent";
 import {
   normalizeCapabilityStringList,
   type AgentCapabilityRegistry,
 } from "./capability-registry";
+import { logWarning } from "@smithers/observability/logging";
 
 type ClaudeCodeAgentOptions = BaseCliAgentOptions & {
   addDir?: string[];
@@ -112,44 +119,7 @@ export function createClaudeCodeCapabilityRegistry(
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function asString(value: unknown) {
-  return typeof value === "string" ? value : undefined;
-}
-
 const TOOL_OUTPUT_MAX_CHARS = 500;
-
-function truncate(value: string, maxLength = TOOL_OUTPUT_MAX_CHARS) {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength - 1)}…`;
-}
-
-function isLikelyRuntimeMetadata(value: string) {
-  const lower = value.toLowerCase();
-  const markers = [
-    "\"mcp_servers\"",
-    "\"slash_commands\"",
-    "\"permissionmode\"",
-    "\"claude_code_version\"",
-    "\"apikeysource\"",
-    "\"plugins\"",
-    "\"skills\"",
-  ];
-
-  let matches = 0;
-  for (const marker of markers) {
-    if (lower.includes(marker)) {
-      matches += 1;
-    }
-  }
-
-  return matches >= 3;
-}
 
 function summarizeToolOutput(toolName: string, rawOutput: string | undefined) {
   const output = rawOutput?.trim();
@@ -180,40 +150,9 @@ function summarizeToolOutput(toolName: string, rawOutput: string | undefined) {
     return `${truncate(preview, 300)}\n… (+${lines.length - 3} lines)`;
   }
 
-  return truncate(output);
+  return truncate(output, TOOL_OUTPUT_MAX_CHARS);
 }
 
-function shouldSurfaceUnparsedStdout(line: string) {
-  const lower = line.toLowerCase();
-  if (line.length > 220) {
-    return false;
-  }
-
-  return (
-    lower.includes("error") ||
-    lower.includes("failed") ||
-    lower.includes("denied") ||
-    lower.includes("exception") ||
-    lower.includes("timeout")
-  );
-}
-
-function toolKindForClaude(name: string | undefined): AgentCliActionKind {
-  const normalized = (name ?? "").toLowerCase();
-  if (!normalized) {
-    return "tool";
-  }
-
-  if (normalized.includes("bash") || normalized.includes("command")) {
-    return "command";
-  }
-
-  if (normalized.includes("web")) {
-    return "web_search";
-  }
-
-  return "tool";
-}
 
 export class ClaudeCodeAgent extends BaseCliAgent {
   private readonly opts: ClaudeCodeAgentOptions;
@@ -229,9 +168,11 @@ export class ClaudeCodeAgent extends BaseCliAgent {
     if (process.env.CLAUDE_CODE_ENTRYPOINT) parentEnvOverrides.CLAUDE_CODE_ENTRYPOINT = "";
     if (process.env.CLAUDECODE) parentEnvOverrides.CLAUDECODE = "";
     if (process.env.ANTHROPIC_API_KEY) {
-      console.warn(
-        "[smithers] ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. " +
+      logWarning(
+        "ClaudeCodeAgent: unsetting ANTHROPIC_API_KEY so Claude Code uses your subscription. " +
         "To use API billing instead, use ToolLoopAgent from 'ai' with anthropic() provider.",
+        {},
+        "agent.init",
       );
       parentEnvOverrides.ANTHROPIC_API_KEY = "";
     }
@@ -248,12 +189,8 @@ export class ClaudeCodeAgent extends BaseCliAgent {
     let didEmitStarted = false;
     let didEmitCompleted = false;
     let lastAssistantText = "";
-    let syntheticCounter = 0;
     const toolNameByUseId = new Map<string, string>();
-    const nextSyntheticId = (prefix: string) => {
-      syntheticCounter += 1;
-      return `${prefix}-${syntheticCounter}`;
-    };
+    const nextSyntheticId = createSyntheticIdGenerator();
 
     const warningAction = (
       title: string,
@@ -368,7 +305,7 @@ export class ClaudeCodeAgent extends BaseCliAgent {
               entryType: "thought",
               action: {
                 id: toolUseId,
-                kind: toolKindForClaude(toolName),
+                kind: toolKindFromName(toolName),
                 title: toolName,
                 detail: isRecord(block.input)
                   ? {
@@ -406,7 +343,7 @@ export class ClaudeCodeAgent extends BaseCliAgent {
               entryType: "thought",
               action: {
                 id: toolUseId,
-                kind: toolKindForClaude(toolName),
+                kind: toolKindFromName(toolName),
                 title: toolName,
                 detail: {},
               },

@@ -1,17 +1,14 @@
 import type { AgentCapabilityRegistry } from "../capability-registry";
-import type { CliAgentCapabilityDoctorReport } from "./CliAgentCapabilityDoctorReport";
+import type {
+  CliAgentCapabilityDoctorReport,
+  CliAgentCapabilityIssue,
+} from "./CliAgentCapabilityDoctorReport";
 import { getCliAgentCapabilityReport } from "./getCliAgentCapabilityReport";
-
-type CapabilityIssue = {
-  code: string;
-  message: string;
-  severity: "error" | "warning";
-};
 
 function diagnoseCapabilityRegistry(
   registry: AgentCapabilityRegistry,
-): CapabilityIssue[] {
-  const issues: CapabilityIssue[] = [];
+): CliAgentCapabilityIssue[] {
+  const issues: CliAgentCapabilityIssue[] = [];
 
   if (registry.version !== 1) {
     issues.push({

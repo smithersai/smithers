@@ -1,6 +1,5 @@
 export type { DiagnosticCheckId } from "./DiagnosticCheckId";
-export type { DiagnosticCheckStatus } from "./DiagnosticCheckStatus";
-export type { DiagnosticCheck } from "./DiagnosticCheck";
+export type { DiagnosticCheck, DiagnosticCheckStatus } from "./DiagnosticCheck";
 export type { DiagnosticReport } from "./DiagnosticReport";
 export type { DiagnosticContext } from "./DiagnosticContext";
 export { runDiagnostics } from "./runDiagnostics";

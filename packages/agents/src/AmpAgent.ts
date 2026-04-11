@@ -1,11 +1,15 @@
 import {
-  type AgentCliActionKind,
   type AgentCliEvent,
   BaseCliAgent,
   type CliOutputInterpreter,
   pushFlag,
+  isRecord,
+  asString,
+  toolKindFromName,
+  createSyntheticIdGenerator,
 } from "./BaseCliAgent";
 import type { BaseCliAgentOptions } from "./BaseCliAgent";
+import type { AgentCapabilityRegistry } from "./capability-registry";
 
 /**
  * Configuration options for the AmpAgent.
@@ -39,54 +43,53 @@ export type AmpAgentOptions = BaseCliAgentOptions & {
   jetbrains?: boolean;
 };
 
+export function createAmpCapabilityRegistry(): AgentCapabilityRegistry {
+  return {
+    version: 1,
+    engine: "amp",
+    runtimeTools: {},
+    mcp: {
+      bootstrap: "project-config",
+      supportsProjectScope: true,
+      supportsUserScope: false,
+    },
+    skills: {
+      supportsSkills: false,
+      smithersSkillIds: [],
+    },
+    humanInteraction: {
+      supportsUiRequests: false,
+      methods: [],
+    },
+    builtIns: ["default"],
+  };
+}
+
 /**
  * Agent implementation that wraps the 'amp' CLI executable.
  * It translates generation requests into CLI arguments and executes the process.
  */
 export class AmpAgent extends BaseCliAgent {
   private readonly opts: AmpAgentOptions;
+  readonly capabilities: AgentCapabilityRegistry;
   readonly cliEngine = "amp";
 
   /**
    * Initializes a new AmpAgent with the given options.
-   * 
+   *
    * @param opts - Configuration options for the agent
    */
   constructor(opts: AmpAgentOptions = {}) {
     super(opts);
     this.opts = opts;
+    this.capabilities = createAmpCapabilityRegistry();
   }
 
   protected createOutputInterpreter(): CliOutputInterpreter {
     let sessionId: string | undefined;
     let finalAnswer = "";
-    let syntheticCounter = 0;
-
-    const nextSyntheticId = (prefix: string) => {
-      syntheticCounter += 1;
-      return `${prefix}-${syntheticCounter}`;
-    };
-
-    const asString = (value: unknown) =>
-      typeof value === "string" ? value : undefined;
-
-    const isRecord = (value: unknown): value is Record<string, unknown> =>
-      Boolean(value) && typeof value === "object" && !Array.isArray(value);
-
-    const toolKindForAmp = (name: string | undefined): AgentCliActionKind => {
-      const normalized = (name ?? "").toLowerCase();
-      if (!normalized) return "tool";
-      if (normalized.includes("bash") || normalized.includes("shell") || normalized.includes("command")) {
-        return "command";
-      }
-      if (normalized.includes("search") || normalized.includes("web")) {
-        return "web_search";
-      }
-      if (normalized.includes("todo")) {
-        return "todo_list";
-      }
-      return "tool";
-    };
+    let didEmitCompleted = false;
+    const nextSyntheticId = createSyntheticIdGenerator();
 
     const parseLine = (line: string): AgentCliEvent[] => {
       const trimmed = line.trim();
@@ -138,7 +141,7 @@ export class AmpAgent extends BaseCliAgent {
               entryType: "thought",
               action: {
                 id,
-                kind: toolKindForAmp(name),
+                kind: toolKindFromName(name),
                 title: name,
                 detail: {
                   input: block.input,

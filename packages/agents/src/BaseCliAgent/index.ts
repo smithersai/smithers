@@ -3,16 +3,17 @@ export type { PiExtensionUiRequest } from "./PiExtensionUiRequest";
 export type { PiExtensionUiResponse } from "./PiExtensionUiResponse";
 export type { RunCommandResult } from "./RunCommandResult";
 export type { AgentCliActionKind } from "./AgentCliActionKind";
-export type { AgentCliActionPhase } from "./AgentCliActionPhase";
-export type { AgentCliEventLevel } from "./AgentCliEventLevel";
-export type { AgentCliStartedEvent } from "./AgentCliStartedEvent";
-export type { AgentCliActionEvent } from "./AgentCliActionEvent";
-export type { AgentCliCompletedEvent } from "./AgentCliCompletedEvent";
-export type { AgentCliEvent } from "./AgentCliEvent";
+export type {
+  AgentCliActionEvent,
+  AgentCliActionPhase,
+  AgentCliCompletedEvent,
+  AgentCliEvent,
+  AgentCliEventLevel,
+  AgentCliStartedEvent,
+} from "./AgentCliEvent";
 export type { CliOutputInterpreter } from "./CliOutputInterpreter";
 export type { CliUsageInfo } from "./CliUsageInfo";
 export type { CodexConfigOverrides } from "./CodexConfigOverrides";
-export { isBlockingAgentActionKind } from "./isBlockingAgentActionKind";
 export { resolveTimeouts } from "./resolveTimeouts";
 export { combineNonEmpty } from "./combineNonEmpty";
 export { extractPrompt } from "./extractPrompt";
@@ -21,14 +22,21 @@ export { extractTextFromJsonValue } from "./extractTextFromJsonValue";
 export { extractTextFromPiNdjson } from "./extractTextFromPiNdjson";
 export { createAgentStdoutTextEmitter } from "./createAgentStdoutTextEmitter";
 export { truncateToBytes } from "./truncateToBytes";
-export { extractUsageFromOutput } from "./extractUsageFromOutput";
 export { buildGenerateResult } from "./buildGenerateResult";
-export { buildStreamResult } from "./buildStreamResult";
 export { runCommandEffect } from "./runCommandEffect";
-export { runCommand } from "./runCommand";
 export { runRpcCommandEffect } from "./runRpcCommandEffect";
-export { runRpcCommand } from "./runRpcCommand";
 export { pushFlag } from "./pushFlag";
 export { pushList } from "./pushList";
 export { normalizeCodexConfig } from "./normalizeCodexConfig";
 export { BaseCliAgent } from "./BaseCliAgent";
+export { isBlockingAgentActionKind } from "./isBlockingAgentActionKind";
+export {
+  isRecord,
+  asString,
+  asNumber,
+  truncate,
+  toolKindFromName,
+  isLikelyRuntimeMetadata,
+  shouldSurfaceUnparsedStdout,
+  createSyntheticIdGenerator,
+} from "./parseHelpers";

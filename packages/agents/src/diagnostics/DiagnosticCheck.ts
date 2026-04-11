@@ -1,5 +1,6 @@
 import type { DiagnosticCheckId } from "./DiagnosticCheckId";
-import type { DiagnosticCheckStatus } from "./DiagnosticCheckStatus";
+
+export type DiagnosticCheckStatus = "pass" | "fail" | "skip" | "error";
 
 export type DiagnosticCheck = {
   id: DiagnosticCheckId;

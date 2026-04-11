@@ -4,7 +4,6 @@ import type { SmithersAgentContractTool } from "./SmithersAgentContractTool";
 import type { SmithersAgentContract } from "./SmithersAgentContract";
 import type { SmithersListedTool } from "./SmithersListedTool";
 import { renderSmithersAgentPromptGuidance } from "./renderSmithersAgentPromptGuidance";
-import { renderSmithersAgentDocsGuidance } from "./renderSmithersAgentDocsGuidance";
 
 type CreateSmithersAgentContractOptions = {
   toolSurface?: SmithersToolSurface;
@@ -147,6 +146,23 @@ function sortTools(tools: SmithersAgentContractTool[]) {
   });
 }
 
+function renderDocsGuidance(contract: SmithersAgentContract) {
+  const lines = [
+    `## Smithers ${contract.toolSurface} Tool Surface`,
+    "",
+    "| Tool | Category | Destructive | Description |",
+    "| --- | --- | --- | --- |",
+  ];
+
+  for (const tool of contract.tools) {
+    lines.push(
+      `| \`${tool.name}\` | ${tool.category} | ${tool.destructive ? "yes" : "no"} | ${tool.description || "No description provided."} |`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
 export function createSmithersAgentContract(
   options: CreateSmithersAgentContractOptions,
 ): SmithersAgentContract {
@@ -173,7 +189,7 @@ export function createSmithersAgentContract(
   };
 
   contract.promptGuidance = renderSmithersAgentPromptGuidance(contract);
-  contract.docsGuidance = renderSmithersAgentDocsGuidance(contract);
+  contract.docsGuidance = renderDocsGuidance(contract);
 
   return contract;
 }

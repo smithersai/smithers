@@ -1,7 +1,14 @@
 import { sha256Hex } from "@smithers/core/utils/hash";
 import type { AgentCapabilityRegistry } from "./AgentCapabilityRegistry";
-import type { StableJson } from "./StableJson";
 import { normalizeCapabilityRegistry } from "./normalizeCapabilityRegistry";
+
+type StableJson =
+  | null
+  | boolean
+  | number
+  | string
+  | StableJson[]
+  | { [key: string]: StableJson };
 
 function toStableJson(value: unknown): StableJson {
   if (

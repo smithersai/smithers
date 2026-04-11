@@ -1,10 +1,14 @@
 import {
-  type AgentCliActionKind,
   type AgentCliEvent,
   BaseCliAgent,
   type CliOutputInterpreter,
   pushFlag,
   pushList,
+  isRecord,
+  asString,
+  truncate,
+  toolKindFromName,
+  createSyntheticIdGenerator,
 } from "./BaseCliAgent";
 import type { BaseCliAgentOptions } from "./BaseCliAgent";
 import {
@@ -76,33 +80,8 @@ export class GeminiAgent extends BaseCliAgent {
     let sessionId: string | undefined;
     let finalAnswer = "";
     let emittedStarted = false;
-    let syntheticCounter = 0;
-
-    const nextSyntheticId = (prefix: string) => {
-      syntheticCounter += 1;
-      return `${prefix}-${syntheticCounter}`;
-    };
-
-    const truncate = (value: string, maxLength = 240) =>
-      value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
-
-    const asString = (value: unknown) =>
-      typeof value === "string" ? value : undefined;
-
-    const isRecord = (value: unknown): value is Record<string, unknown> =>
-      Boolean(value) && typeof value === "object" && !Array.isArray(value);
-
-    const toolKindForGemini = (name: string | undefined): AgentCliActionKind => {
-      const normalized = (name ?? "").toLowerCase();
-      if (!normalized) return "tool";
-      if (normalized.includes("bash") || normalized.includes("shell") || normalized.includes("command")) {
-        return "command";
-      }
-      if (normalized.includes("search") || normalized.includes("web")) {
-        return "web_search";
-      }
-      return "tool";
-    };
+    let didEmitCompleted = false;
+    const nextSyntheticId = createSyntheticIdGenerator();
 
     const parseLine = (line: string): AgentCliEvent[] => {
       const trimmed = line.trim();
@@ -159,7 +138,7 @@ export class GeminiAgent extends BaseCliAgent {
           entryType: "thought",
           action: {
             id: toolId,
-            kind: toolKindForGemini(toolName),
+            kind: toolKindFromName(toolName),
             title: toolName,
             detail: {
               parameters: payload.parameters,
@@ -216,6 +195,8 @@ export class GeminiAgent extends BaseCliAgent {
       }
 
       if (type === "RESULT") {
+        if (didEmitCompleted) return [];
+        didEmitCompleted = true;
         return [{
           type: "completed",
           engine: this.cliEngine,
@@ -232,7 +213,9 @@ export class GeminiAgent extends BaseCliAgent {
     return {
       onStdoutLine: parseLine,
       onExit: (result) => {
+        if (didEmitCompleted) return [];
         if (result.exitCode === 0) return [];
+        didEmitCompleted = true;
         return [{
           type: "completed",
           engine: this.cliEngine,

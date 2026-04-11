@@ -22,7 +22,6 @@ import { getToolContext } from "@smithers/tools/context";
 import { SmithersError } from "@smithers/core/errors";
 import { launchDiagnostics, enrichReportWithErrorAnalysis, formatDiagnosticSummary } from "../diagnostics";
 import type { BaseCliAgentOptions } from "./BaseCliAgentOptions";
-import type { AgentCliActionKind } from "./AgentCliActionKind";
 import type { AgentCliEvent } from "./AgentCliEvent";
 import type { CliOutputInterpreter } from "./CliOutputInterpreter";
 import type { CliUsageInfo } from "./CliUsageInfo";
@@ -33,9 +32,7 @@ import { combineNonEmpty } from "./combineNonEmpty";
 import { tryParseJson } from "./tryParseJson";
 import { extractTextFromJsonValue } from "./extractTextFromJsonValue";
 import { createAgentStdoutTextEmitter } from "./createAgentStdoutTextEmitter";
-import { extractUsageFromOutput } from "./extractUsageFromOutput";
 import { buildGenerateResult } from "./buildGenerateResult";
-import { buildStreamResult } from "./buildStreamResult";
 import { runCommandEffect } from "./runCommandEffect";
 
 type CliCommandSpec = {
@@ -286,6 +283,194 @@ function emptyUsage() {
     },
     totalTokens: undefined,
   };
+}
+
+function asyncIterableToStream<T>(
+  iterable: AsyncIterable<T>,
+): ReadableStream<T> & AsyncIterable<T> {
+  const stream = new ReadableStream<T>({
+    async start(controller) {
+      try {
+        for await (const item of iterable) {
+          controller.enqueue(item);
+        }
+      } catch (err) {
+        controller.error(err);
+        return;
+      }
+      controller.close();
+    },
+  });
+  (stream as any)[Symbol.asyncIterator] =
+    iterable[Symbol.asyncIterator].bind(iterable);
+  return stream as any;
+}
+
+function buildStreamResult(
+  result: GenerateTextResult<any, any>,
+): StreamTextResult<any, any> {
+  const text = result.text ?? "";
+  const content = result.content ?? [];
+  const steps = result.steps ?? [];
+  const usage = result.usage ?? emptyUsage();
+  const totalUsage = result.totalUsage ?? usage;
+  const response = result.response ?? {
+    id: randomUUID(),
+    timestamp: new Date(),
+    modelId: "unknown",
+    messages: [],
+  };
+  const request = result.request ?? {};
+
+  const textStream = asyncIterableToStream<string>(
+    (async function* () {
+      if (text) yield text;
+    })(),
+  );
+  const fullStream = asyncIterableToStream<any>(
+    (async function* () {
+      const id = randomUUID();
+      yield { type: "text-start", id };
+      if (text) {
+        yield { type: "text-delta", id, text };
+      }
+      yield { type: "text-end", id };
+    })(),
+  );
+
+  return {
+    content: Promise.resolve(content),
+    text: Promise.resolve(text),
+    reasoning: Promise.resolve(result.reasoning ?? []),
+    reasoningText: Promise.resolve(result.reasoningText),
+    files: Promise.resolve(result.files ?? []),
+    sources: Promise.resolve(result.sources ?? []),
+    toolCalls: Promise.resolve(result.toolCalls ?? []),
+    staticToolCalls: Promise.resolve(result.staticToolCalls ?? []),
+    dynamicToolCalls: Promise.resolve(result.dynamicToolCalls ?? []),
+    staticToolResults: Promise.resolve(result.staticToolResults ?? []),
+    dynamicToolResults: Promise.resolve(result.dynamicToolResults ?? []),
+    toolResults: Promise.resolve(result.toolResults ?? []),
+    finishReason: Promise.resolve(result.finishReason ?? "stop"),
+    rawFinishReason: Promise.resolve(result.rawFinishReason),
+    usage: Promise.resolve(usage),
+    totalUsage: Promise.resolve(totalUsage),
+    warnings: Promise.resolve(result.warnings),
+    steps: Promise.resolve(steps),
+    request: Promise.resolve(request),
+    response: Promise.resolve(response),
+    providerMetadata: Promise.resolve(result.providerMetadata),
+    textStream: textStream as any,
+    fullStream: fullStream as any,
+  } as unknown as StreamTextResult<any, any>;
+}
+
+function extractUsageFromOutput(raw: string): CliUsageInfo | undefined {
+  const lines = raw.split(/\r?\n/).filter(Boolean);
+  const usage: CliUsageInfo = {};
+  let found = false;
+
+  for (const line of lines) {
+    let parsed: any;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== "object") continue;
+
+    if (parsed.type === "message_start" && parsed.message?.usage) {
+      const u = parsed.message.usage;
+      usage.inputTokens = (usage.inputTokens ?? 0) + (u.input_tokens ?? 0);
+      if (u.cache_read_input_tokens) {
+        usage.cacheReadTokens =
+          (usage.cacheReadTokens ?? 0) + u.cache_read_input_tokens;
+      }
+      if (u.cache_creation_input_tokens) {
+        usage.cacheWriteTokens =
+          (usage.cacheWriteTokens ?? 0) + u.cache_creation_input_tokens;
+      }
+      found = true;
+      continue;
+    }
+
+    if (parsed.type === "message_delta" && parsed.usage) {
+      if (parsed.usage.output_tokens) {
+        usage.outputTokens =
+          (usage.outputTokens ?? 0) + parsed.usage.output_tokens;
+      }
+      found = true;
+      continue;
+    }
+
+    if (parsed.type === "turn.completed" && parsed.usage) {
+      const u = parsed.usage;
+      if (u.input_tokens) {
+        usage.inputTokens = (usage.inputTokens ?? 0) + u.input_tokens;
+      }
+      if (u.output_tokens) {
+        usage.outputTokens = (usage.outputTokens ?? 0) + u.output_tokens;
+      }
+      if (u.cached_input_tokens) {
+        usage.cacheReadTokens =
+          (usage.cacheReadTokens ?? 0) + u.cached_input_tokens;
+      }
+      found = true;
+      continue;
+    }
+
+    if (parsed.usage && typeof parsed.usage === "object") {
+      const u = parsed.usage;
+      const inTok = u.input_tokens ?? u.inputTokens ?? u.prompt_tokens ?? 0;
+      const outTok =
+        u.output_tokens ?? u.outputTokens ?? u.completion_tokens ?? 0;
+      if (inTok > 0 || outTok > 0) {
+        usage.inputTokens = (usage.inputTokens ?? 0) + inTok;
+        usage.outputTokens = (usage.outputTokens ?? 0) + outTok;
+        if (
+          u.cache_read_input_tokens ||
+          u.cacheReadTokens ||
+          u.cached_input_tokens
+        ) {
+          usage.cacheReadTokens =
+            (usage.cacheReadTokens ?? 0) +
+            (u.cache_read_input_tokens ??
+              u.cacheReadTokens ??
+              u.cached_input_tokens ??
+              0);
+        }
+        if (u.reasoning_tokens ?? u.reasoningTokens) {
+          usage.reasoningTokens =
+            (usage.reasoningTokens ?? 0) +
+            (u.reasoning_tokens ?? u.reasoningTokens ?? 0);
+        }
+        found = true;
+        continue;
+      }
+    }
+  }
+
+  if (!found) {
+    try {
+      const parsed = JSON.parse(raw.trim());
+      if (parsed?.stats?.models && typeof parsed.stats.models === "object") {
+        for (const data of Object.values(parsed.stats.models as Record<string, any>)) {
+          if (data?.tokens) {
+            usage.inputTokens =
+              (usage.inputTokens ?? 0) +
+              (data.tokens.input ?? data.tokens.prompt ?? 0);
+            usage.outputTokens =
+              (usage.outputTokens ?? 0) + (data.tokens.output ?? 0);
+            found = true;
+          }
+        }
+      }
+    } catch {
+      // not single JSON
+    }
+  }
+
+  return found ? usage : undefined;
 }
 
 export abstract class BaseCliAgent implements Agent<any, any, any> {
