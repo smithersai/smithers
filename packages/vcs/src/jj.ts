@@ -1,6 +1,6 @@
 import * as Command from "@effect/platform/Command";
 import * as BunContext from "@effect/platform-bun/BunContext";
-import { Duration, Effect, Fiber, Layer, Metric, Stream } from "effect";
+import { Duration, Effect, Fiber, Metric, Stream } from "effect";
 import { vcsDuration } from "@smithers/observability/metrics";
 
 const platformLayer = BunContext.layer;
