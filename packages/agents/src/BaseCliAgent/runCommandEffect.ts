@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-// TODO: verify @smithers/driver/child-process resolves correctly
 import { spawnCaptureEffect } from "@smithers/driver/child-process";
 import type { SmithersError } from "@smithers/errors/SmithersError";
 import type { RunCommandResult } from "./RunCommandResult";
