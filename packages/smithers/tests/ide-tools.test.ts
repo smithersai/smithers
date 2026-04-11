@@ -333,7 +333,7 @@ describe("Smithers IDE tools", () => {
       SMITHERS_IDE: "1",
     });
 
-    const availability = await runPromise(
+    const availability = await Effect.runPromise(
       detectSmithersIdeAvailabilityEffect({ env }),
     );
 

@@ -1,7 +1,6 @@
 import { accessSync, constants } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import { Context, Effect, Layer } from "effect";
-// TODO: verify @smithers/driver/child-process resolves correctly
 import { spawnCaptureEffect } from "@smithers/driver/child-process";
 import { SmithersError } from "@smithers/errors/SmithersError";
 
