@@ -52,7 +52,7 @@ export class WatchTree {
       this.changedFiles.clear();
       return Promise.resolve(files);
     }
-    return runPromise(this.waitEffect());
+    return Effect.runPromise(this.waitEffect());
   }
 
   /** Stop all watchers and clean up. */

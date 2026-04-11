@@ -24,17 +24,21 @@
         "smithers": "./src/index.ts",
       },
       "dependencies": {
+        "@effect/workflow": "^0.18.0",
         "@modelcontextprotocol/sdk": "^1.27.0",
         "@opentui/core": "^0.1.92",
         "@opentui/react": "^0.1.92",
         "@smithers/agents": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
+        "@smithers/durables": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
         "@smithers/scheduler": "workspace:*",
         "@smithers/server": "workspace:*",
         "@smithers/time-travel": "workspace:*",
+        "@smithers/tools": "workspace:*",
+        "effect": "^3.21.0",
         "incur": "^0.3.3",
         "picocolors": "^1.1.1",
         "react": "^18.3.0 || ^19.0.0",
@@ -55,8 +59,23 @@
         "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
-        "@smithers/runtime": "workspace:*",
         "ai": "^6.0.69",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "~5.9.3",
+      },
+    },
+    "packages/core": {
+      "name": "@smithers/core",
+      "version": "0.0.0",
+      "dependencies": {
+        "@smithers/driver": "workspace:*",
+        "@smithers/errors": "workspace:*",
+        "@smithers/graph": "workspace:*",
+        "@smithers/scheduler": "workspace:*",
+        "effect": "^3.21.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
@@ -177,13 +196,14 @@
       "version": "0.0.0",
       "dependencies": {
         "@smithers/db": "workspace:*",
+        "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
         "@smithers/rag": "workspace:*",
-        "@smithers/runtime": "workspace:*",
         "@smithers/scheduler": "workspace:*",
         "ai": "^6.0.69",
         "drizzle-orm": "^0.45.1",
+        "effect": "^3.21.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
@@ -264,7 +284,6 @@
         "@smithers/graph": "workspace:*",
         "@smithers/memory": "workspace:*",
         "@smithers/react-reconciler": "workspace:*",
-        "@smithers/runtime": "workspace:*",
         "@smithers/scheduler": "workspace:*",
         "@smithers/scorers": "workspace:*",
         "@smithers/voice": "workspace:*",
@@ -316,10 +335,10 @@
       "version": "0.0.0",
       "dependencies": {
         "@smithers/db": "workspace:*",
+        "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/graph": "workspace:*",
         "@smithers/observability": "workspace:*",
-        "@smithers/runtime": "workspace:*",
         "@smithers/scheduler": "workspace:*",
         "@smithers/tools": "workspace:*",
       },
@@ -347,9 +366,9 @@
       "dependencies": {
         "@smithers/agents": "workspace:*",
         "@smithers/db": "workspace:*",
+        "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
-        "@smithers/runtime": "workspace:*",
         "@smithers/scheduler": "workspace:*",
         "zod": "^4.3.6",
       },
@@ -362,15 +381,18 @@
       "name": "@smithers/server",
       "version": "0.0.0",
       "dependencies": {
+        "@effect/workflow": "^0.18.0",
         "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
+        "@smithers/durables": "workspace:*",
         "@smithers/engine": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
-        "@smithers/runtime": "workspace:*",
         "@smithers/scheduler": "workspace:*",
         "@smithers/time-travel": "workspace:*",
+        "@smithers/tools": "workspace:*",
         "cron-parser": "^5.5.0",
+        "effect": "^3.21.0",
         "hono": "^4.12.8",
         "ws": "^8.18.0",
       },
@@ -436,6 +458,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@effect/platform": "^0.96.0",
+        "@effect/platform-bun": "^0.89.0",
         "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
@@ -444,6 +467,7 @@
         "@smithers/scheduler": "workspace:*",
         "ai": "^6.0.69",
         "diff": "^5.2.0",
+        "effect": "^3.21.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
@@ -457,7 +481,6 @@
       "dependencies": {
         "@effect/platform": "^0.96.0",
         "@smithers/observability": "workspace:*",
-        "@smithers/runtime": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -708,6 +731,8 @@
     "@smithers/agents": ["@smithers/agents@workspace:packages/agents"],
 
     "@smithers/cli": ["@smithers/cli@workspace:apps/cli"],
+
+    "@smithers/core": ["@smithers/core@workspace:packages/core"],
 
     "@smithers/db": ["@smithers/db@workspace:packages/db"],
 
@@ -1207,6 +1232,8 @@
 
     "@smithers/cli/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
 
+    "@smithers/core/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
+
     "@smithers/db/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
 
     "@smithers/devtools/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
@@ -1268,6 +1295,8 @@
     "@smithers/agents/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
     "@smithers/cli/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
+
+    "@smithers/core/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
     "@smithers/db/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
