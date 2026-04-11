@@ -1,4 +1,4 @@
-import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type { RunOptions } from "@smithers/driver/RunOptions";
 import type { RunResult } from "@smithers/driver/RunResult";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
@@ -11,7 +11,7 @@ import {
   type EngineDecision,
   type WaitReason,
 } from "@smithers/scheduler";
-import { ReactWorkflowDriver } from "@smithers/react/driver";
+import { ReactWorkflowDriver } from "@smithers/react-reconciler/driver";
 import type { WorkflowGraph } from "@smithers/graph/types";
 import { SmithersRenderer } from "@smithers/react-reconciler/dom/renderer";
 import { buildContext } from "@smithers/driver/buildContext";
@@ -4357,9 +4357,11 @@ export async function legacyExecuteTask(
       desc.nodeId,
       desc.iteration,
     ));
-    if (
-      attempts.filter((a: any) => a.state === "failed").length <= desc.retries
-    ) {
+    const failedAttempts = attempts.filter((a: any) => a.state === "failed");
+    const hasNonRetryableFailure = failedAttempts.some(
+      (attempt: any) => !isRetryableTaskFailure(attempt),
+    );
+    if (!hasNonRetryableFailure && failedAttempts.length <= desc.retries) {
       await eventBus.emitEventWithPersist({
         type: "NodeRetrying",
         runId,

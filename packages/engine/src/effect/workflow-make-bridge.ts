@@ -5,7 +5,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { SmithersDb } from "@smithers/db/adapter";
 import type { RunOptions } from "@smithers/driver/RunOptions";
 import type { RunResult } from "@smithers/driver/RunResult";
-import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 
 type RunBodyResult = RunResult | (RunResult & { status: "continued"; nextRunId: string });
 

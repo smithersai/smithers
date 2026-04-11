@@ -29,7 +29,7 @@
     "@smithers/graph": "workspace:*",
     "@smithers/memory": "workspace:*",
     "@smithers/observability": "workspace:*",
-    "@smithers/react": "workspace:*",
+    "@smithers/components": "workspace:*",
     "@smithers/react-reconciler": "workspace:*",
     "@smithers/sandbox": "workspace:*",
     "@smithers/scheduler": "workspace:*",

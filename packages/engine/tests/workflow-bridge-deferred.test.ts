@@ -9,7 +9,7 @@ import {
   resolveDeferredTaskStateBridge,
 } from "../src/effect/workflow-bridge";
 import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
-import { approvalDecisionSchema } from "@smithers/react/components/Approval";
+import { approvalDecisionSchema } from "@smithers/components/components/Approval";
 import { createTestSmithers } from "../../smithers/tests/helpers";
 
 function makeApprovalDescriptor(

@@ -6,7 +6,7 @@ import {
   Workflow,
   runWorkflow,
 } from "smithers";
-import { HumanTask } from "@smithers/react/components/index";
+import { HumanTask } from "@smithers/components/components/index";
 import { buildHumanRequestId } from "../src/human-requests";
 import { createTestSmithers } from "../../smithers/tests/helpers";
 

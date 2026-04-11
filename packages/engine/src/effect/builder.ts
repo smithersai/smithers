@@ -26,7 +26,7 @@ import {
   Task,
   Worktree,
   Workflow,
-} from "@smithers/react/components/index";
+} from "@smithers/components/components/index";
 import { camelToSnake } from "@smithers/db/utils/camelToSnake";
 import { SmithersError } from "@smithers/errors/SmithersError";
 

@@ -25,7 +25,7 @@ import {
 } from "../human-requests";
 import { parseAttemptMetaJson } from "./bridge-utils";
 import { updateAsyncExternalWaitPending } from "@smithers/observability/metrics";
-import { markdownComponents } from "@smithers/react/markdownComponents";
+import { markdownComponents } from "@smithers/components/markdownComponents";
 import { errorToJson } from "@smithers/errors/errorToJson";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { nowMs } from "@smithers/scheduler/nowMs";

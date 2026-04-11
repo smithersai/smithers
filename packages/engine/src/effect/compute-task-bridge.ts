@@ -874,10 +874,10 @@ export const executeComputeTaskBridge = async (
       desc.nodeId,
       desc.iteration,
     ));
-    if (
-      updatedAttempts.filter((attempt: any) => attempt.state === "failed").length <=
-      desc.retries
-    ) {
+    const failedAttempts = updatedAttempts.filter(
+      (attempt: any) => attempt.state === "failed",
+    );
+    if (attemptMeta.failureRetryable !== false && failedAttempts.length <= desc.retries) {
       await eventBus.emitEventWithPersist({
         type: "NodeRetrying",
         runId,

@@ -13,7 +13,7 @@ import {
   runWorkflow,
   usePatched,
 } from "smithers";
-import { Subflow } from "@smithers/react/components/index";
+import { Subflow } from "@smithers/components/components/index";
 import { approveNode } from "../src/approvals";
 import { createTestSmithers, sleep } from "../../smithers/tests/helpers";
 

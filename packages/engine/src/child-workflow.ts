@@ -1,4 +1,4 @@
-import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type { RunResult } from "@smithers/driver/RunResult";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { SmithersDb } from "@smithers/db/adapter";

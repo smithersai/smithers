@@ -8,7 +8,7 @@ import {
   cleanupGenerationsEffect,
   resolveOverlayEntry,
 } from "./overlay";
-import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type { HotReloadOptions } from "@smithers/driver/RunOptions";
 import { Metric } from "effect";
 import { fromPromise } from "@smithers/driver/interop";

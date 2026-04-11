@@ -14,6 +14,7 @@ import {
   RetriableTaskFailure,
   type TaskActivityContext,
 } from "./activity-bridge";
+import { parseAttemptMetaJson } from "./bridge-utils";
 import {
   canExecuteBridgeManagedComputeTask,
   executeComputeTaskBridge,
@@ -96,6 +97,27 @@ type BridgeManagedTaskKind = WorkerDispatchKind;
 const inflightTaskExecutions = new Map<string, Promise<void>>();
 const completedTaskExecutions = new Map<string, Promise<void>>();
 
+function parseAttemptErrorCode(errorJson?: string | null): string | null {
+  if (!errorJson) return null;
+  try {
+    const parsed = JSON.parse(errorJson);
+    return typeof parsed?.code === "string" ? parsed.code : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRetryableBridgeTaskFailure(
+  attempt?: { errorJson?: string | null; metaJson?: string | null } | null,
+) {
+  const meta = parseAttemptMetaJson(attempt?.metaJson);
+  if (meta?.failureRetryable === false) {
+    return false;
+  }
+  const kind = typeof meta?.kind === "string" ? meta.kind : null;
+  return !(kind !== "agent" && parseAttemptErrorCode(attempt?.errorJson) === "INVALID_OUTPUT");
+}
+
 export type TaskBridgeToolConfig = {
   rootDir: string;
   allowNetwork: boolean;
@@ -133,7 +155,10 @@ const classifyTaskAttempt = async (
 
   if (latestState === "failed") {
     const failedAttempts = attempts.filter((attempt: any) => attempt.state === "failed");
-    if (failedAttempts.length <= desc.retries) {
+    const hasNonRetryableFailure = failedAttempts.some(
+      (attempt: any) => !isRetryableBridgeTaskFailure(attempt),
+    );
+    if (!hasNonRetryableFailure && failedAttempts.length <= desc.retries) {
       throw new RetriableTaskFailure(desc.nodeId, latestAttempt);
     }
   }
