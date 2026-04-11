@@ -4,8 +4,8 @@
 
 import { tool, zodSchema } from "ai";
 import { Effect, Metric } from "effect";
-import { runPromise } from "../effect/runtime";
-import { nowMs } from "../utils/time";
+import { runPromise } from "@smithers/runtime/runtime";
+import { nowMs } from "@smithers/core/utils/time";
 import {
   openApiToolCallsTotal,
   openApiToolCallErrorsTotal,

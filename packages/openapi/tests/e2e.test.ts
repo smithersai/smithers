@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
-import { createOpenApiTools, createOpenApiTool } from "../../src/openapi/tool-factory";
+import { createOpenApiTools, createOpenApiTool } from "../src/tool-factory";
 import { petStoreSpec } from "./fixtures";
 
 const originalFetch = globalThis.fetch;

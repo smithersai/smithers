@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { describe, test, expect } from "bun:test";
-import { extractOperations, loadSpecSync } from "../../src/openapi/spec-parser";
+import { extractOperations, loadSpecSync } from "../src/spec-parser";
 import { petStoreSpec, refSpec, noOperationIdSpec } from "./fixtures";
 
 describe("loadSpecSync", () => {

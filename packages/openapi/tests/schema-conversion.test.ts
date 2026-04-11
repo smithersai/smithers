@@ -4,8 +4,8 @@
 
 import { describe, test, expect } from "bun:test";
 import { z } from "zod";
-import { jsonSchemaToZod, buildOperationSchema } from "../../src/openapi/schema-converter";
-import type { OpenApiSpec, SchemaObject, ParameterObject, RequestBodyObject } from "../../src/openapi/types";
+import { jsonSchemaToZod, buildOperationSchema } from "../src/schema-converter";
+import type { OpenApiSpec, SchemaObject, ParameterObject, RequestBodyObject } from "../src/types";
 
 const emptySpec: OpenApiSpec = {
   openapi: "3.0.0",

@@ -4,7 +4,7 @@
 
 import { readFileSync } from "node:fs";
 import { Effect } from "effect";
-import { fromPromise, fromSync } from "../effect/interop";
+import { fromPromise, fromSync } from "@smithers/runtime/interop";
 import { deref } from "./ref-resolver";
 import {
   HTTP_METHODS,

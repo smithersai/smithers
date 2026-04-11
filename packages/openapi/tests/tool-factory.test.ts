@@ -7,7 +7,7 @@ import {
   createOpenApiToolsSync,
   createOpenApiToolSync,
   listOperations,
-} from "../../src/openapi/tool-factory";
+} from "../src/tool-factory";
 import { petStoreSpec, complexSchemaSpec } from "./fixtures";
 
 describe("createOpenApiToolsSync", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isRef, resolveRef, deref } from "../src/openapi/ref-resolver";
+import { isRef, resolveRef, deref } from "../src/ref-resolver";
 
 // ---------------------------------------------------------------------------
 // isRef — type guard for $ref objects

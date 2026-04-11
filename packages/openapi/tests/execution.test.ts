@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
-import { createOpenApiToolsSync } from "../../src/openapi/tool-factory";
+import { createOpenApiToolsSync } from "../src/tool-factory";
 import { petStoreSpec, complexSchemaSpec } from "./fixtures";
 
 // Save original fetch

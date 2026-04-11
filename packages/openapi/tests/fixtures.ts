@@ -2,7 +2,7 @@
 // Shared test fixtures for OpenAPI tests
 // ---------------------------------------------------------------------------
 
-import type { OpenApiSpec } from "../../src/openapi/types";
+import type { OpenApiSpec } from "../src/types";
 
 export const petStoreSpec: OpenApiSpec = {
   openapi: "3.0.0",
