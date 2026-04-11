@@ -8,7 +8,7 @@ import {
   Sequence,
   Task,
   Workflow,
-} from "@smithers/react/components/index";
+} from "@smithers/components/components/index";
 import { SmithersRenderer } from "@smithers/react-reconciler/dom/renderer";
 import { createSmithers, runWorkflow } from "../src/index";
 import { createTestSmithers } from "./helpers";

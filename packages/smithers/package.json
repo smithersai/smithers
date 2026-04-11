@@ -36,7 +36,7 @@
     "@smithers/observability": "workspace:*",
     "@smithers/openapi": "workspace:*",
     "@smithers/rag": "workspace:*",
-    "@smithers/react": "workspace:*",
+    "@smithers/components": "workspace:*",
     "@smithers/react-reconciler": "workspace:*",
     "@smithers/sandbox": "workspace:*",
     "@smithers/scheduler": "workspace:*",

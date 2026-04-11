@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { zodSchemaToJsonExample } from "@smithers/react/zod-to-example";
+import { zodSchemaToJsonExample } from "@smithers/components/zod-to-example";
 import { z } from "zod";
 
 describe("zodSchemaToJsonExample", () => {

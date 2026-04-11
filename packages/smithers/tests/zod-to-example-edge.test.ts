@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { zodSchemaToJsonExample } from "@smithers/react/zod-to-example";
+import { zodSchemaToJsonExample } from "@smithers/components/zod-to-example";
 
 function parseExample(schema: z.ZodObject<any>) {
   return JSON.parse(zodSchemaToJsonExample(schema)) as Record<string, any>;

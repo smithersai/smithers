@@ -1,5 +1,5 @@
 export type { AgentLike } from "@smithers/agents/AgentLike";
-export type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+export type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 export type { SmithersCtx } from "@smithers/driver/SmithersCtx";
 
 export {
@@ -14,7 +14,7 @@ export {
   Loop,
   Ralph,
   Worktree,
-} from "@smithers/react";
+} from "@smithers/components";
 export type {
   ApprovalDecision,
   ApprovalProps,
@@ -23,7 +23,7 @@ export type {
   OutputTarget,
   DepsSpec,
   InferDeps,
-} from "@smithers/react";
+} from "@smithers/components";
 
 export { ClaudeCodeAgent } from "@smithers/agents/ClaudeCodeAgent";
 export { KimiAgent } from "@smithers/agents/KimiAgent";

@@ -24,7 +24,7 @@ export type {
   SmithersWorkflowOptions,
 } from "@smithers/scheduler/SmithersWorkflowOptions";
 export type { SchemaRegistryEntry } from "@smithers/db/SchemaRegistryEntry";
-export type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+export type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 export type { SmithersCtx } from "@smithers/driver/SmithersCtx";
 export type { OutputAccessor, InferRow, InferOutputEntry } from "@smithers/driver/OutputAccessor";
 export type { SmithersEvent } from "@smithers/observability/SmithersEvent";
@@ -76,7 +76,7 @@ export {
   Signal,
   Timer,
   WaitForEvent,
-} from "@smithers/react";
+} from "@smithers/components";
 export type {
   ApprovalAutoApprove,
   ApprovalDecision,
@@ -105,7 +105,7 @@ export type {
   SandboxRuntime,
   SandboxVolumeMount,
   SandboxWorkspaceSpec,
-} from "@smithers/react";
+} from "@smithers/components";
 
 // Agents
 export {
@@ -400,10 +400,10 @@ export type {
 
 // Utilities
 export { mdxPlugin } from "./mdx-plugin";
-export { markdownComponents } from "@smithers/react/markdownComponents";
-export { renderMdx } from "@smithers/react/renderMdx";
+export { markdownComponents } from "@smithers/components/markdownComponents";
+export { renderMdx } from "@smithers/components/renderMdx";
 export { zodToTable } from "@smithers/db/zodToTable";
 export { zodToCreateTableSQL } from "@smithers/db/zodToCreateTableSQL";
 export { camelToSnake } from "@smithers/db/utils/camelToSnake";
 export { unwrapZodType } from "@smithers/db/unwrapZodType";
-export { zodSchemaToJsonExample } from "@smithers/react/zod-to-example";
+export { zodSchemaToJsonExample } from "@smithers/components/zod-to-example";

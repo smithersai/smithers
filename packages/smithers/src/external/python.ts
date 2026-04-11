@@ -1,4 +1,4 @@
-import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type { AgentLike } from "@smithers/agents/AgentLike";
 import { createExternalSmithers } from "./create-external-smithers";
 import { createPythonBuildFn, discoverPythonSchemas } from "./python-subprocess";

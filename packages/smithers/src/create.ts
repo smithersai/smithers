@@ -1,4 +1,4 @@
-import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type {
   SmithersAlertPolicy,
   SmithersAlertPolicyDefaults,
@@ -11,7 +11,7 @@ import { Database } from "bun:sqlite";
 import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import React from "react";
-import { createSmithersContext, SmithersContext as GlobalSmithersContext } from "@smithers/react/context";
+import { createSmithersContext, SmithersContext as GlobalSmithersContext } from "@smithers/react-reconciler/context";
 import {
   Approval as BaseApproval,
   Workflow as BaseWorkflow,
@@ -28,7 +28,7 @@ import {
   Sandbox as BaseSandbox,
   Signal as BaseSignal,
   Timer as BaseTimer,
-} from "@smithers/react";
+} from "@smithers/components";
 import type {
   ApprovalProps,
   SandboxProps,
@@ -37,7 +37,7 @@ import type {
   TaskProps,
   DepsSpec,
   TimerProps,
-} from "@smithers/react";
+} from "@smithers/components";
 
 import { zodToTable } from "@smithers/db/zodToTable";
 import { zodToCreateTableSQL } from "@smithers/db/zodToCreateTableSQL";
