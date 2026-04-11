@@ -4,10 +4,28 @@ import { ReactWorkflowDriver } from "../src/driver";
 import type {
   EngineDecision,
   SmithersWorkflow,
+  TaskDescriptor,
   WorkflowGraph,
   WorkflowRuntime,
   WorkflowSession,
 } from "../src/types";
+
+function taskDescriptor(overrides: Partial<TaskDescriptor>): TaskDescriptor {
+  return {
+    nodeId: "task-a",
+    ordinal: 0,
+    iteration: 0,
+    outputTable: null,
+    outputTableName: "",
+    needsApproval: false,
+    skipIf: false,
+    retries: 0,
+    timeoutMs: null,
+    heartbeatTimeoutMs: null,
+    continueOnFail: false,
+    ...overrides,
+  };
+}
 
 describe("ReactWorkflowDriver", () => {
   it("drives render, submit, execute, re-render, and finish through the session API", async () => {
@@ -52,11 +70,11 @@ describe("ReactWorkflowDriver", () => {
         graph: {
           xml: null,
           tasks: [
-            {
+            taskDescriptor({
               nodeId: "task-a",
               iteration: 0,
               outputTableName: "out",
-            },
+            }),
           ],
           mountedTaskIds: ["task-a::0"],
         },
@@ -81,11 +99,11 @@ describe("ReactWorkflowDriver", () => {
           return {
             _tag: "Execute",
             tasks: [
-              {
+              taskDescriptor({
                 nodeId: "task-a",
                 iteration: 0,
                 staticPayload: "done",
-              },
+              }),
             ],
           } satisfies EngineDecision;
         }

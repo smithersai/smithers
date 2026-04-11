@@ -12,4 +12,25 @@ export type SmithersWorkflow<Schema = unknown> = Workflow<
 export type SmithersWorkflowDriverOptions<Schema = unknown> =
   WorkflowDriverOptions<Schema, React.ReactElement>;
 
-export type * from "@smithers/core/workflow-types";
+export type {
+  EngineDecision,
+  RenderContext,
+  RunOptions,
+  RunResult,
+  SmithersCtx,
+  SmithersWorkflowOptions,
+  WaitReason,
+  WorkflowRuntime,
+  WorkflowSession,
+} from "@smithers/core";
+export type {
+  ExtractOptions,
+  HostElement,
+  HostNode,
+  HostText,
+  TaskDescriptor,
+  WorkflowGraph,
+  XmlElement,
+  XmlNode,
+  XmlText,
+} from "@smithers/graph";

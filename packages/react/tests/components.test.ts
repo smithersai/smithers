@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Readable } from "node:stream";
 import React from "react";
 import { z } from "zod";
 import {
@@ -115,6 +116,10 @@ describe("components", () => {
     const outputSchema = z.object({ value: z.string() });
     const signalSchema = z.object({ changed: z.boolean() });
     const renderer = new SmithersRenderer({ extractGraph: graphFrom });
+    const voiceProvider = {
+      name: "test-voice",
+      speak: async () => Readable.from([]),
+    };
 
     await renderer.render(
       React.createElement(
@@ -128,7 +133,7 @@ describe("components", () => {
             { id: "wt", path: "." },
             React.createElement(
               Voice,
-              { provider: { speak: true }, speaker: "narrator" },
+              { provider: voiceProvider, speaker: "narrator" },
               React.createElement(
                 Parallel,
                 { id: "group", maxConcurrency: 2 },
@@ -137,7 +142,7 @@ describe("components", () => {
                   {
                     id: "task-a",
                     output: outputSchema,
-                    agent: { execute: () => "ok" },
+                    agent: { generate: async () => "ok" },
                   },
                   "Do work",
                 ),
@@ -197,8 +202,23 @@ describe("components", () => {
 
   it("passes task props through to @smithers/core extraction", async () => {
     const outputSchema = z.object({ value: z.number() });
-    const primary = { execute: () => ({ value: 1 }) };
-    const fallback = { execute: () => ({ value: 2 }) };
+    const primary = { generate: async () => ({ value: 1 }) };
+    const fallback = { generate: async () => ({ value: 2 }) };
+    const scorers = {
+      quality: {
+        scorer: {
+          id: "quality",
+          name: "Quality",
+          description: "Quality score",
+          score: async () => ({ score: 1 }),
+        },
+      },
+    };
+    const memory = {
+      recall: {
+        namespace: { kind: "global" as const, id: "test" },
+      },
+    };
     const renderer = new SmithersRenderer();
 
     const graph = await renderer.render(
@@ -220,8 +240,8 @@ describe("components", () => {
           retryPolicy: { backoff: "linear", initialDelayMs: 10 },
           continueOnFail: true,
           cache: { key: "cache-key", scope: "run" },
-          scorers: { quality: {} },
-          memory: { namespace: "test" },
+          scorers,
+          memory,
           allowTools: ["Read"],
           label: "Full task",
           meta: { feature: "props" },
@@ -242,8 +262,8 @@ describe("components", () => {
     expect(task.retryPolicy).toEqual({ backoff: "linear", initialDelayMs: 10 });
     expect(task.continueOnFail).toBe(true);
     expect(task.cachePolicy).toEqual({ key: "cache-key", scope: "run" });
-    expect(task.scorers).toEqual({ quality: {} });
-    expect(task.memoryConfig).toEqual({ namespace: "test" });
+    expect(task.scorers).toEqual(scorers);
+    expect(task.memoryConfig).toEqual(memory);
     expect(task.label).toBe("Full task");
     expect(task.meta).toEqual({ feature: "props" });
     expect(Array.isArray(task.agent)).toBe(true);
