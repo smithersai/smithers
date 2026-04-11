@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import React from "react";
-import { extractFromHost, type HostElement, type HostText, type HostNode } from "../src/dom/extract";
+import { extractFromHost, type HostElement, type HostText, type HostNode } from "@smithers/graph/dom/extract";
 import { SmithersRenderer } from "../src/dom/renderer";
-import { runWorkflow } from "../src/engine";
-import { createTestSmithers } from "./helpers";
+import { runWorkflow } from "@smithers/engine";
+import { createTestSmithers } from "../../smithers/tests/helpers";
 import { z } from "zod";
 
 const schemas = {

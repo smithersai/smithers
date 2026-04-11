@@ -1,7 +1,7 @@
 /** @jsxImportSource smithers */
 import { describe, expect, test } from "bun:test";
-import { runWorkflow } from "../src";
-import workflow from "./fixtures/jsx-ai-release-notes";
+import { runWorkflow } from "@smithers/engine";
+import workflow from "../../smithers/tests/fixtures/jsx-ai-release-notes";
 
 describe("JSX AI fixtures", () => {
   test("release notes agent summarizes changelog", async () => {

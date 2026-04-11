@@ -1,0 +1,34 @@
+{
+  "name": "@smithers/react-reconciler",
+  "version": "0.0.0",
+  "description": "Custom React reconciler that renders Smithers host trees",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "test": "bun test tests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@smithers/graph": "workspace:*",
+    "react": "^18.3.0 || ^19.0.0",
+    "react-reconciler": "^0.31.0",
+    "bippy": "^0.5.32"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "~5.9.3"
+  }
+}

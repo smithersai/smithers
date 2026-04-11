@@ -1,4 +1,4 @@
-import type { ExtractGraph } from "./core-types";
+import type { ExtractGraph } from "@smithers/graph/types";
 
 const CORE_SPECIFIER = "@smithers/core";
 const LOCAL_CORE_SPECIFIER = "../../core/src/index.ts";

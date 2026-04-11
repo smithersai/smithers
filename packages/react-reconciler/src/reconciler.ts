@@ -4,22 +4,36 @@ import { installRDTHook } from "bippy";
 import type {
   ExtractGraph,
   ExtractOptions,
-  HostElement,
   HostNode,
-  HostText,
   WorkflowGraph,
-} from "../core-types";
-import { resolveExtractGraph } from "../core-peer";
+} from "@smithers/graph/types";
+import { resolveExtractGraph } from "./core-peer";
 
 export type HostContainer = {
   root: HostNode | null;
+};
+
+type MutableHostElement = {
+  kind: "element";
+  tag: string;
+  props: Record<string, string>;
+  rawProps: Record<string, unknown>;
+  children: HostNode[];
+};
+
+type MutableHostText = {
+  kind: "text";
+  text: string;
 };
 
 export type SmithersRendererOptions = {
   extractGraph?: ExtractGraph;
 };
 
-function createElement(type: string, props: Record<string, unknown>): HostElement {
+function createElement(
+  type: string,
+  props: Record<string, unknown>,
+): MutableHostElement {
   const { children: _children, ...rest } = props || {};
   const stringProps: Record<string, string> = {};
   for (const [key, value] of Object.entries(rest)) {
@@ -64,25 +78,25 @@ const hostConfig: any = {
     return createElement(type, props);
   },
   createTextInstance(text: string) {
-    return { kind: "text", text } satisfies HostText;
+    return { kind: "text", text } satisfies MutableHostText;
   },
-  appendInitialChild(parent: HostElement, child: HostNode) {
+  appendInitialChild(parent: MutableHostElement, child: HostNode) {
     parent.children.push(child);
   },
-  appendChild(parent: HostElement, child: HostNode) {
+  appendChild(parent: MutableHostElement, child: HostNode) {
     parent.children.push(child);
   },
   appendChildToContainer(container: HostContainer, child: HostNode) {
     container.root = child;
   },
-  removeChild(parent: HostElement, child: HostNode) {
+  removeChild(parent: MutableHostElement, child: HostNode) {
     const idx = parent.children.indexOf(child);
     if (idx >= 0) parent.children.splice(idx, 1);
   },
   removeChildFromContainer(container: HostContainer) {
     container.root = null;
   },
-  insertBefore(parent: HostElement, child: HostNode, beforeChild: HostNode) {
+  insertBefore(parent: MutableHostElement, child: HostNode, beforeChild: HostNode) {
     const idx = parent.children.indexOf(beforeChild);
     if (idx >= 0) parent.children.splice(idx, 0, child);
     else parent.children.push(child);
@@ -95,7 +109,7 @@ const hostConfig: any = {
     container.root = child;
   },
   prepareUpdate(
-    _instance: HostElement,
+    _instance: MutableHostElement,
     _type: string,
     oldProps: unknown,
     newProps: unknown,
@@ -103,7 +117,7 @@ const hostConfig: any = {
     if (oldProps === newProps) return null;
     return newProps;
   },
-  commitUpdate(instance: HostElement, ...args: unknown[]) {
+  commitUpdate(instance: MutableHostElement, ...args: unknown[]) {
     let nextProps: Record<string, unknown> | null = null;
     const first = args[0];
     const second = args[1];
@@ -123,7 +137,11 @@ const hostConfig: any = {
     instance.props = next.props;
     instance.rawProps = next.rawProps;
   },
-  commitTextUpdate(textInstance: HostText, _oldText: string, newText: string) {
+  commitTextUpdate(
+    textInstance: MutableHostText,
+    _oldText: string,
+    newText: string,
+  ) {
     textInstance.text = newText;
   },
   finalizeInitialChildren() {
