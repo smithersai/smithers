@@ -2,14 +2,22 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "paths": {
-      "smithers": ["./src/examples-entry.ts"],
-      "smithers/jsx-runtime": ["./src/jsx-runtime.ts"],
-      "smithers/jsx-dev-runtime": ["./src/jsx-runtime.ts"],
-      "smithers/tools": ["./src/tools/index.ts"],
-      "smithers-orchestrator": ["./src/examples-entry.ts"],
-      "smithers-orchestrator/tools": ["./src/tools/index.ts"]
+      "smithers": ["./packages/smithers/src/examples-entry.ts"],
+      "smithers/jsx-runtime": ["./packages/smithers/src/jsx-runtime.ts"],
+      "smithers/jsx-dev-runtime": ["./packages/smithers/src/jsx-runtime.ts"],
+      "smithers/tools": ["./packages/smithers/src/tools/index.ts"],
+      "smithers-orchestrator": ["./packages/smithers/src/examples-entry.ts"],
+      "smithers-orchestrator/tools": ["./packages/smithers/src/tools/index.ts"]
     }
   },
-  "include": ["examples/**/*", "src/examples-entry.ts", "src/**/*"],
-  "exclude": ["tests/**/*", "src/pi-plugin/**/*", "src/devtools/**/*"]
+  "include": [
+    "examples/**/*",
+    "packages/smithers/src/examples-entry.ts",
+    "packages/smithers/src/**/*"
+  ],
+  "exclude": [
+    "packages/smithers/tests/**/*",
+    "packages/smithers/src/pi-plugin/**/*",
+    "packages/smithers/src/devtools/**/*"
+  ]
 }

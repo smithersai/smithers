@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-files=()
-while IFS= read -r file; do
-  files+=("$file")
-done < <(find tests -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) | sort)
+# Run tests for every package that has a tests/ directory
+for pkg_dir in packages/*/; do
+  pkg_name=$(basename "$pkg_dir")
+  test_dir="${pkg_dir}tests"
 
-if [ "${#files[@]}" -eq 0 ]; then
-  echo "No root test files found under tests/" >&2
-  exit 0
-fi
+  if [ ! -d "$test_dir" ]; then
+    continue
+  fi
 
-for file in "${files[@]}"; do
+  files=()
+  while IFS= read -r file; do
+    files+=("$file")
+  done < <(find "$test_dir" -type f \( -name '*.test.ts' -o -name '*.test.tsx' \) | sort)
+
+  if [ "${#files[@]}" -eq 0 ]; then
+    continue
+  fi
+
   echo
-  echo "==> $file"
-  bun test "$file"
+  echo "==> packages/${pkg_name} (${#files[@]} test files)"
+  for file in "${files[@]}"; do
+    bun test "$file"
+  done
 done
-
-echo
-echo "==> apps/cli"
-(cd apps/cli && bun test)
