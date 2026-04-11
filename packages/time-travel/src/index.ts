@@ -19,13 +19,9 @@ export type { TimelineTree } from "./TimelineTree";
 
 export {
   captureSnapshot,
-  captureSnapshotEffect,
   loadSnapshot,
-  loadSnapshotEffect,
   loadLatestSnapshot,
-  loadLatestSnapshotEffect,
   listSnapshots,
-  listSnapshotsEffect,
   parseSnapshot,
 } from "./snapshot";
 export type { SnapshotData } from "./snapshot";
@@ -39,36 +35,26 @@ export {
 
 export {
   forkRun,
-  forkRunEffect,
   listBranches,
-  listBranchesEffect,
   getBranchInfo,
-  getBranchInfoEffect,
 } from "./fork";
 
 export {
   replayFromCheckpoint,
-  replayFromCheckpointEffect,
 } from "./replay";
 export type { ReplayResult } from "./replay";
 
 export {
   tagSnapshotVcs,
-  tagSnapshotVcsEffect,
   loadVcsTag,
-  loadVcsTagEffect,
   resolveWorkflowAtRevision,
-  resolveWorkflowAtRevisionEffect,
   rerunAtRevision,
-  rerunAtRevisionEffect,
 } from "./vcs-version";
 export type { VcsTag } from "./vcs-version";
 
 export {
   buildTimeline,
-  buildTimelineEffect,
   buildTimelineTree,
-  buildTimelineTreeEffect,
   formatTimelineForTui,
   formatTimelineAsJson,
 } from "./timeline";

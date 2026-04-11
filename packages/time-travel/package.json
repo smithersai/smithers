@@ -47,7 +47,6 @@
     "@smithers/errors": "workspace:*",
     "@smithers/graph": "workspace:*",
     "@smithers/observability": "workspace:*",
-    "@smithers/runtime": "workspace:*",
     "@smithers/scheduler": "workspace:*",
     "@smithers/vcs": "workspace:*",
     "drizzle-orm": "^0.45.1",

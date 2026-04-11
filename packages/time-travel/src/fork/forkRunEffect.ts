@@ -5,7 +5,7 @@ import { nowMs } from "@smithers/scheduler/nowMs";
 import { newRunId } from "@smithers/driver/newRunId";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { smithersBranches, smithersSnapshots } from "../schema";
-import { loadSnapshotEffect } from "../snapshot/loadSnapshotEffect";
+import { loadSnapshot } from "../snapshot/loadSnapshotEffect";
 import { parseSnapshot } from "../snapshot/parseSnapshot";
 import { runForksCreated } from "../runForksCreated";
 import { expandResetSet } from "./_helpers";
@@ -22,7 +22,7 @@ export function forkRun(
     const { parentRunId, frameNo, inputOverrides, resetNodes, branchLabel, forkDescription } = params;
 
     // 1. Load source snapshot
-    const source = yield* loadSnapshotEffect(adapter, parentRunId, frameNo);
+    const source = yield* loadSnapshot(adapter, parentRunId, frameNo);
     if (!source) {
       return yield* Effect.fail(
         new SmithersError(
