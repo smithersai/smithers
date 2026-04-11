@@ -27,7 +27,6 @@
   },
   "dependencies": {
     "@smithers/agents": "workspace:*",
-    "@smithers/core": "workspace:*",
     "@smithers/driver": "workspace:*",
     "effect": "^3.21.0",
     "@effect/opentelemetry": "^0.61.0",
