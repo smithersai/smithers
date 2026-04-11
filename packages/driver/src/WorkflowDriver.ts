@@ -23,8 +23,8 @@ import type { WorkflowDefinition } from "./WorkflowDefinition.ts";
 import { defaultTaskExecutor } from "./defaultTaskExecutor.ts";
 import { withAbort } from "./withAbort.ts";
 
-const CORE_SPECIFIER = "@smithers/core";
-const LOCAL_CORE_SPECIFIER = "../index.ts";
+const SCHEDULER_SPECIFIER = "@smithers/scheduler";
+const LOCAL_SCHEDULER_SPECIFIER = "../../scheduler/src/index.ts";
 
 function createRunId() {
   return `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -122,7 +122,7 @@ function mergeOutputSnapshots(base: OutputSnapshot, live: OutputSnapshot): Outpu
 }
 
 async function loadCreateSession(): Promise<CreateWorkflowSession | null> {
-  for (const specifier of [CORE_SPECIFIER, LOCAL_CORE_SPECIFIER]) {
+  for (const specifier of [SCHEDULER_SPECIFIER, LOCAL_SCHEDULER_SPECIFIER]) {
     let mod: {
       createSession?: CreateWorkflowSession;
       makeWorkflowSession?: CreateWorkflowSession;
@@ -279,7 +279,7 @@ export class WorkflowDriver<Schema = unknown, Element = unknown> {
     const createSession = this.createSession ?? (await loadCreateSession());
     if (!createSession) {
       throw new Error(
-        "WorkflowDriver requires a WorkflowSession or createSession from @smithers/core.",
+        "WorkflowDriver requires a WorkflowSession or createSession from @smithers/scheduler.",
       );
     }
     const created = createSession({
