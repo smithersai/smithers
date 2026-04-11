@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import { revertToJjPointer } from "@smithers/vcs/jj";
@@ -23,12 +24,12 @@ export async function revertToAttempt(
 ): Promise<RevertResult> {
   const { runId, nodeId, iteration, attempt, onProgress } = opts;
 
-  const attemptRow = await adapter.getAttempt(
+  const attemptRow = await Effect.runPromise(adapter.getAttempt(
     runId,
     nodeId,
     iteration,
     attempt,
-  );
+  ));
   if (!attemptRow) {
     return {
       success: false,
@@ -74,7 +75,7 @@ export async function revertToAttempt(
   // Clean up DB frames recorded after the reverted attempt started.
   // Find the latest frame created before the attempt's start time and
   // discard everything after it so the DB matches the reverted VCS state.
-  const frames = await adapter.listFrames(runId, 1_000_000);
+  const frames = await Effect.runPromise(adapter.listFrames(runId, 1_000_000));
   const cutoff = attemptRow.startedAtMs;
   let lastValidFrameNo = -1;
   for (const f of frames) {
@@ -83,7 +84,7 @@ export async function revertToAttempt(
     }
   }
   if (lastValidFrameNo >= 0) {
-    await adapter.deleteFramesAfter(runId, lastValidFrameNo);
+    await Effect.runPromise(adapter.deleteFramesAfter(runId, lastValidFrameNo));
   }
 
   return { success: true, jjPointer };
