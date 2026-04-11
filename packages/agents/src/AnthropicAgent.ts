@@ -5,11 +5,9 @@ import {
   type GenerateTextResult,
   type ToolSet,
 } from "ai";
-import {
-  resolveSdkModel,
-  streamResultToGenerateResult,
-  type SdkAgentOptions,
-} from "./sdk-shared";
+import { resolveSdkModel } from "./resolveSdkModel";
+import { streamResultToGenerateResult } from "./streamResultToGenerateResult";
+import type { SdkAgentOptions } from "./SdkAgentOptions";
 
 export type AnthropicAgentOptions<
   CALL_OPTIONS = never,

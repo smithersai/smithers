@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveSdkModel } from "../src/sdk-shared";
+import { resolveSdkModel } from "../src/resolveSdkModel";
 
 describe("resolveSdkModel", () => {
   test("returns model instance as-is when not a string", () => {

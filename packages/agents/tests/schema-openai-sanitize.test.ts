@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { zodToOpenAISchema, sanitizeForOpenAI } from "../src/schema";
+import { zodToOpenAISchema } from "../src/zodToOpenAISchema";
+import { sanitizeForOpenAI } from "../src/sanitizeForOpenAI";
 
 describe("zodToOpenAISchema", () => {
   test("basic object schema is unchanged", async () => {

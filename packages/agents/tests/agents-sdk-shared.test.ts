@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import {
-  resolveSdkModel,
-  streamResultToGenerateResult,
-} from "../src/sdk-shared";
+import { resolveSdkModel } from "../src/resolveSdkModel";
+import { streamResultToGenerateResult } from "../src/streamResultToGenerateResult";
 
 // ---------------------------------------------------------------------------
 // resolveSdkModel — model factory pattern

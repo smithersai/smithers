@@ -26,4 +26,5 @@ export { KimiAgent } from "./KimiAgent";
 
 export { ForgeAgent } from "./ForgeAgent";
 
-export { zodToOpenAISchema, sanitizeForOpenAI } from "./schema";
+export { zodToOpenAISchema } from "./zodToOpenAISchema";
+export { sanitizeForOpenAI } from "./sanitizeForOpenAI";

@@ -9,6 +9,26 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./BaseCliAgent": {
+      "types": "./src/BaseCliAgent/index.ts",
+      "default": "./src/BaseCliAgent/index.ts"
+    },
+    "./agent-contract": {
+      "types": "./src/agent-contract/index.ts",
+      "default": "./src/agent-contract/index.ts"
+    },
+    "./diagnostics": {
+      "types": "./src/diagnostics/index.ts",
+      "default": "./src/diagnostics/index.ts"
+    },
+    "./capability-registry": {
+      "types": "./src/capability-registry/index.ts",
+      "default": "./src/capability-registry/index.ts"
+    },
+    "./cli-capabilities": {
+      "types": "./src/cli-capabilities/index.ts",
+      "default": "./src/cli-capabilities/index.ts"
+    },
     "./*": {
       "types": "./src/*.ts",
       "default": "./src/*.ts"

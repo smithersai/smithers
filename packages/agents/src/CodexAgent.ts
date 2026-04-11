@@ -16,7 +16,7 @@ import {
   normalizeCapabilityStringList,
   type AgentCapabilityRegistry,
 } from "./capability-registry";
-import { sanitizeForOpenAI } from "./schema";
+import { sanitizeForOpenAI } from "./sanitizeForOpenAI";
 
 type CodexAgentOptions = BaseCliAgentOptions & {
   config?: CodexConfigOverrides;

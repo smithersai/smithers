@@ -1,37 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { SmithersError } from "@smithers/core/errors";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type DiagnosticCheckId =
-  | "cli_installed"
-  | "api_key_valid"
-  | "rate_limit_status";
-
-export type DiagnosticCheckStatus = "pass" | "fail" | "skip" | "error";
-
-export type DiagnosticCheck = {
-  id: DiagnosticCheckId;
-  status: DiagnosticCheckStatus;
-  message: string;
-  detail?: Record<string, unknown>;
-  durationMs: number;
-};
-
-export type DiagnosticReport = {
-  agentId: string;
-  command: string;
-  timestamp: string;
-  checks: DiagnosticCheck[];
-  durationMs: number;
-};
-
-export type DiagnosticContext = {
-  env: Record<string, string>;
-  cwd: string;
-};
+import type { DiagnosticCheckId } from "./DiagnosticCheckId";
+import type { DiagnosticCheck } from "./DiagnosticCheck";
+import type { DiagnosticContext } from "./DiagnosticContext";
 
 type DiagnosticCheckDef = {
   id: DiagnosticCheckId;
@@ -43,61 +13,6 @@ type AgentDiagnosticStrategy = {
   command: string;
   checks: DiagnosticCheckDef[];
 };
-
-// ---------------------------------------------------------------------------
-// Runner
-// ---------------------------------------------------------------------------
-
-const PER_CHECK_TIMEOUT_MS = 5_000;
-
-async function runCheck(
-  check: DiagnosticCheckDef,
-  ctx: DiagnosticContext,
-): Promise<DiagnosticCheck> {
-  const start = performance.now();
-  try {
-    return await Promise.race([
-      check.run(ctx),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new SmithersError(
-                "AGENT_DIAGNOSTIC_TIMEOUT",
-                "diagnostic check timed out",
-                { timeoutMs: PER_CHECK_TIMEOUT_MS },
-              ),
-            ),
-          PER_CHECK_TIMEOUT_MS,
-        ),
-      ),
-    ]);
-  } catch (err) {
-    return {
-      id: check.id,
-      status: "error",
-      message: err instanceof Error ? err.message : String(err),
-      durationMs: performance.now() - start,
-    };
-  }
-}
-
-export async function runDiagnostics(
-  strategy: AgentDiagnosticStrategy,
-  ctx: DiagnosticContext,
-): Promise<DiagnosticReport> {
-  const start = performance.now();
-  const results = await Promise.all(
-    strategy.checks.map((check) => runCheck(check, ctx)),
-  );
-  return {
-    agentId: strategy.agentId,
-    command: strategy.command,
-    timestamp: new Date().toISOString(),
-    checks: results,
-    durationMs: performance.now() - start,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Shared check helpers
@@ -133,6 +48,12 @@ function checkCliInstalled(
       };
     },
   };
+}
+
+function parseHeaderInt(value: string | null): number | undefined {
+  if (value == null) return undefined;
+  const n = parseInt(value, 10);
+  return Number.isNaN(n) ? undefined : n;
 }
 
 // ---------------------------------------------------------------------------
@@ -622,83 +543,4 @@ export function getDiagnosticStrategy(
   command: string,
 ): AgentDiagnosticStrategy | null {
   return strategies[command] ?? null;
-}
-
-// ---------------------------------------------------------------------------
-// Post-hoc error analysis
-// ---------------------------------------------------------------------------
-
-const RATE_LIMIT_PATTERNS = [
-  /rate.?limit/i,
-  /\b429\b/,
-  /credit balance.*(too low|insufficient|exhausted)/i,
-  /overloaded/i,
-  /too many requests/i,
-  /quota.*(exceeded|exhausted)/i,
-  /retry.?after/i,
-];
-
-export function enrichReportWithErrorAnalysis(
-  report: DiagnosticReport,
-  errorMessage: string,
-): void {
-  if (!errorMessage) return;
-
-  const rateLimitCheck = report.checks.find(
-    (c) => c.id === "rate_limit_status",
-  );
-  // Only enrich if the rate limit check was skipped or passed —
-  // if it already failed, the pre-flight probe already caught it.
-  if (rateLimitCheck && (rateLimitCheck.status === "skip" || rateLimitCheck.status === "pass")) {
-    const matched = RATE_LIMIT_PATTERNS.some((p) => p.test(errorMessage));
-    if (matched) {
-      rateLimitCheck.status = "fail";
-      rateLimitCheck.message = `Rate limit detected in error: ${errorMessage.slice(0, 200)}`;
-      rateLimitCheck.detail = {
-        ...rateLimitCheck.detail,
-        detectedPostHoc: true,
-        errorExcerpt: errorMessage.slice(0, 500),
-      };
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Summary formatter
-// ---------------------------------------------------------------------------
-
-export function formatDiagnosticSummary(report: DiagnosticReport): string {
-  const failed = report.checks.filter((c) => c.status === "fail");
-  const errors = report.checks.filter((c) => c.status === "error");
-  if (failed.length === 0 && errors.length === 0) {
-    return `[diagnostics] ${report.agentId}: all checks passed (${Math.round(report.durationMs)}ms)`;
-  }
-  const issues = [...failed, ...errors]
-    .map((c) => `${c.id}=${c.status}: ${c.message}`)
-    .join("; ");
-  return `[diagnostics] ${report.agentId}: ${issues} (${Math.round(report.durationMs)}ms)`;
-}
-
-// ---------------------------------------------------------------------------
-// Launch helper (used by BaseCliAgent / PiAgent)
-// ---------------------------------------------------------------------------
-
-export function launchDiagnostics(
-  command: string,
-  env: Record<string, string>,
-  cwd: string,
-): Promise<DiagnosticReport> | null {
-  const strategy = getDiagnosticStrategy(command);
-  if (!strategy) return null;
-  return runDiagnostics(strategy, { env, cwd }).catch(() => null as any);
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function parseHeaderInt(value: string | null): number | undefined {
-  if (value == null) return undefined;
-  const n = parseInt(value, 10);
-  return Number.isNaN(n) ? undefined : n;
 }
