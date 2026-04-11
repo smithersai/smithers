@@ -97,6 +97,15 @@ type BridgeManagedTaskKind = WorkerDispatchKind;
 const inflightTaskExecutions = new Map<string, Promise<void>>();
 const completedTaskExecutions = new Map<string, Promise<void>>();
 
+const runEffectOrPromise = async <A>(
+  value: Effect.Effect<A, unknown, never> | PromiseLike<A> | A,
+): Promise<A> => {
+  if ((Effect as any).isEffect?.(value)) {
+    return Effect.runPromise(value as Effect.Effect<A, unknown, never>);
+  }
+  return await value;
+};
+
 function parseAttemptErrorCode(errorJson?: string | null): string | null {
   if (!errorJson) return null;
   try {
@@ -148,7 +157,7 @@ const classifyTaskAttempt = async (
   desc: TaskDescriptor,
   context: TaskActivityContext,
 ) => {
-  const attempts = await Effect.runPromise(adapter.listAttempts(runId, desc.nodeId, desc.iteration));
+  const attempts = await runEffectOrPromise(adapter.listAttempts(runId, desc.nodeId, desc.iteration));
   const latest = attempts[0];
   const latestAttempt = latest?.attempt ?? context.attempt;
   const latestState = latest?.state ?? null;
@@ -175,7 +184,7 @@ const getNextTaskActivityAttempt = async (
   runId: string,
   desc: TaskDescriptor,
 ) => {
-  const attempts = await Effect.runPromise(adapter.listAttempts(runId, desc.nodeId, desc.iteration));
+  const attempts = await runEffectOrPromise(adapter.listAttempts(runId, desc.nodeId, desc.iteration));
   const latestAttempt = attempts[0]?.attempt ?? 0;
   return latestAttempt + 1;
 };
