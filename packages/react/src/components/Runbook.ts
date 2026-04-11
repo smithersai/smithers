@@ -1,5 +1,5 @@
 import React from "react";
-import type { AgentLike } from "@smithers/core/AgentLike";
+import type { AgentLike } from "@smithers/agents/AgentLike";
 import { Sequence } from "./Sequence";
 import { Task } from "./Task";
 import { Approval } from "./Approval";

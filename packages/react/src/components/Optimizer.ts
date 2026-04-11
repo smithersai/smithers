@@ -1,5 +1,5 @@
 import React from "react";
-import type { AgentLike } from "@smithers/core/AgentLike";
+import type { AgentLike } from "@smithers/agents/AgentLike";
 import type { OutputTarget } from "./Task";
 import { Loop } from "./Ralph";
 import { Sequence } from "./Sequence";

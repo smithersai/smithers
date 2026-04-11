@@ -1,5 +1,5 @@
 import React from "react";
-import type { AgentLike } from "@smithers/core/AgentLike";
+import type { AgentLike } from "@smithers/agents/AgentLike";
 import { SmithersContext } from "../context";
 import type { OutputTarget, TaskProps } from "./Task";
 import { Task } from "./Task";

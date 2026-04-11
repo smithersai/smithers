@@ -4,7 +4,7 @@ import { Branch } from "./Branch";
 import { Task } from "./Task";
 import { Approval } from "./Approval";
 import type { ApprovalRequest } from "./Approval";
-import type { AgentLike } from "@smithers/core/AgentLike";
+import type { AgentLike } from "@smithers/agents/AgentLike";
 
 /** Valid output targets: Zod schema, Drizzle table, or string key. */
 type OutputTarget = import("zod").ZodObject<any> | { $inferSelect: any } | string;

@@ -8,7 +8,7 @@ export { SmithersContext, buildContext, createSmithersContext } from "./context"
 export { SmithersError, SmithersError as SmithersErrorInstance } from "@smithers/errors/SmithersError";
 export { markdownComponents } from "./markdownComponents";
 export { zodSchemaToJsonExample } from "./zod-to-example";
-export type { AgentLike } from "@smithers/core/AgentLike";
+export type { AgentLike } from "@smithers/agents/AgentLike";
 export type { CachePolicy } from "@smithers/scheduler/CachePolicy";
 export type { OutputAccessor, InferOutputEntry, InferRow } from "@smithers/driver/OutputAccessor";
 export type { OutputKey } from "@smithers/driver/OutputKey";
