@@ -42,12 +42,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@smithers/core": "workspace:*",
-    "@smithers/runtime": "workspace:*",
-    "@smithers/observability": "workspace:*",
-    "ai": "^6.0.69",
     "@ai-sdk/anthropic": "^3.0.36",
     "@ai-sdk/openai": "^3.0.41",
+    "@smithers/core": "workspace:*",
+    "@smithers/driver": "workspace:*",
+    "@smithers/errors": "workspace:*",
+    "@smithers/observability": "workspace:*",
+    "@smithers/runtime": "workspace:*",
+    "ai": "^6.0.69",
     "zod": "^4.3.6"
   },
   "devDependencies": {
