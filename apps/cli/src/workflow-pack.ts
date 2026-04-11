@@ -49,8 +49,8 @@ function readPackageVersion(path: string, fallback: string) {
 }
 
 function readDependencyVersions(): DependencyVersions {
-  const rootPackage = readJson(new URL("../../package.json", import.meta.url).pathname);
-  const nodeModulesRoot = new URL("../../node_modules/", import.meta.url).pathname;
+  const rootPackage = readJson(new URL("../../../package.json", import.meta.url).pathname);
+  const nodeModulesRoot = new URL("../../../node_modules/", import.meta.url).pathname;
 
   return {
     smithersVersion: String(rootPackage.version ?? "0.0.0"),

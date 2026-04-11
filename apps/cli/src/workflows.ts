@@ -61,7 +61,7 @@ export function discoverWorkflows(root: string): DiscoveredWorkflow[] {
 export function validateWorkflowName(name: string) {
   if (!WORKFLOW_NAME_PATTERN.test(name)) {
     throw new SmithersError(
-      "INVALID_INPUT",
+      "INVALID_WORKFLOW_NAME",
       `Invalid workflow name: ${name}. Use lowercase kebab-case.`,
       { name },
     );
@@ -95,9 +95,12 @@ export function createWorkflowFile(name: string, root: string): DiscoveredWorkfl
     [
       "// smithers-source: generated",
       `// smithers-display-name: ${name}`,
+      "/** @jsxImportSource smithers */",
       'import { createSmithers, Workflow } from "smithers";',
       "",
-      "export default createSmithers(() => <Workflow />);",
+      "const { smithers } = createSmithers({});",
+      "",
+      `export default smithers(() => <Workflow name="${name}" />);`,
       "",
     ].join("\n"),
   );
