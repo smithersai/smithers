@@ -8,7 +8,7 @@ import {
 } from "../src/diagnostics";
 import type { DiagnosticReport } from "../src/diagnostics";
 import { BaseCliAgent } from "../src/BaseCliAgent";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 // ---------------------------------------------------------------------------
 // runDiagnostics

@@ -1,3 +1,4 @@
+export type { AgentLike } from "./AgentLike";
 export { BaseCliAgent } from "./BaseCliAgent";
 export type {
   AgentCapabilityRegistry,
