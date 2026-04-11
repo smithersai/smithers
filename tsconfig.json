@@ -61,8 +61,6 @@
       "@smithers/react/*": ["./packages/react/src/*.ts", "./packages/react/src/*/index.ts"],
       "@smithers/react-reconciler": ["./packages/react-reconciler/src/index.ts"],
       "@smithers/react-reconciler/*": ["./packages/react-reconciler/src/*.ts", "./packages/react-reconciler/src/*/index.ts"],
-      "@smithers/runtime": ["./packages/runtime/src/index.ts"],
-      "@smithers/runtime/*": ["./packages/runtime/src/*.ts", "./packages/runtime/src/*/index.ts"],
       "@smithers/sandbox": ["./packages/sandbox/src/index.ts"],
       "@smithers/sandbox/*": ["./packages/sandbox/src/*.ts", "./packages/sandbox/src/*/index.ts"],
       "@smithers/scorers": ["./packages/scorers/src/index.ts"],
