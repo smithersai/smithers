@@ -35,7 +35,6 @@
     "@smithers/graph": "workspace:*",
     "@smithers/memory": "workspace:*",
     "@smithers/react-reconciler": "workspace:*",
-    "@smithers/runtime": "workspace:*",
     "@smithers/scheduler": "workspace:*",
     "@smithers/scorers": "workspace:*",
     "@smithers/voice": "workspace:*",
