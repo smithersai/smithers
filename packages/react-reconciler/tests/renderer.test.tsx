@@ -1,7 +1,7 @@
 /** @jsxImportSource smithers */
 import { describe, expect, test } from "bun:test";
 import { SmithersRenderer } from "../src/dom/renderer";
-import { Task, Workflow } from "@smithers/react/components/index";
+import { Task, Workflow } from "@smithers/components/components/index";
 import { outputSchemas } from "../../smithers/tests/schema";
 
 describe("renderer updates", () => {
