@@ -1,7 +1,7 @@
 import type {
   HumanRequestKind,
   HumanRequestStatus,
-} from "@smithers/core/human-requests";
+} from "@smithers/durables";
 
 export type HumanRequestRow = {
   requestId: string;

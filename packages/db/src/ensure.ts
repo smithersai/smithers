@@ -2,7 +2,7 @@ import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Effect } from "effect";
 import { runSync } from "@smithers/runtime/runtime";
 import { ensureSqlMessageStorageEffect } from "./sql-message-storage";
-import type { SmithersError } from "@smithers/core/errors";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 
 export function ensureSmithersTablesEffect(
   db: BunSQLiteDatabase<any>,

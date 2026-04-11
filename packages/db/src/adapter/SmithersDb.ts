@@ -7,7 +7,7 @@ import { getSqlMessageStorage, type SqlMessageStorage } from "../sql-message-sto
 import type {
   HumanRequestKind,
   HumanRequestStatus,
-} from "@smithers/core/human-requests";
+} from "@smithers/durables";
 import {
   alertsAcknowledgedTotal,
   alertsFiredTotal,
@@ -16,7 +16,8 @@ import {
   dbTransactionRetries,
   dbTransactionRollbacks,
 } from "@smithers/observability/metrics";
-import { toSmithersError, type SmithersError } from "@smithers/core/errors";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import {
   assertOptionalStringMaxLength,
   assertPositiveFiniteNumber,

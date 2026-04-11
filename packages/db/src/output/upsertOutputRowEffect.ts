@@ -1,7 +1,7 @@
 import type { Table } from "drizzle-orm";
 import { Effect } from "effect";
 import { fromPromise } from "@smithers/runtime/interop";
-import type { SmithersError } from "@smithers/core/errors";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import { withSqliteWriteRetryEffect } from "../write-retry";
 import { getKeyColumns } from "./getKeyColumns";
 import type { OutputKey } from "./OutputKey";

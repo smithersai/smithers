@@ -2,10 +2,10 @@ import { eq } from "drizzle-orm";
 import { getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
 import { Effect, Option } from "effect";
-import type { OutputSnapshot } from "@smithers/core/context";
+import type { OutputSnapshot } from "@smithers/driver/OutputSnapshot";
 import { fromPromise, fromSync } from "@smithers/runtime/interop";
 import { runPromise } from "@smithers/runtime/runtime";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 /**
  * Detect columns declared with `{ mode: "boolean" }` in a Drizzle table.

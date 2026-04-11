@@ -7,8 +7,8 @@ import {
   ScheduleIntervals,
 } from "effect";
 import { dbRetries } from "@smithers/observability/metrics";
-import { retryPolicyToSchedule } from "@smithers/core/utils/retry";
-import type { SmithersError } from "@smithers/core/errors";
+import { retryPolicyToSchedule } from "@smithers/scheduler/retryPolicyToSchedule";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import type { SqliteWriteRetryOptions } from "./SqliteWriteRetryOptions";
 import { isRetryableSqliteWriteError } from "./isRetryableSqliteWriteError";
 

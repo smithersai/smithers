@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
 import { Effect } from "effect";
 import { fromPromise } from "@smithers/runtime/interop";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 export function loadInputEffect(
   db: any,

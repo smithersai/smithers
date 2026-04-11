@@ -1,4 +1,4 @@
-import type { OutputSnapshot } from "@smithers/core/context";
+import type { OutputSnapshot } from "@smithers/driver/OutputSnapshot";
 import { runPromise } from "@smithers/runtime/runtime";
 import { loadOutputsEffect } from "./loadOutputsEffect";
 

@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { runPromise } from "@smithers/runtime/runtime";
-import { toSmithersError } from "@smithers/core/errors";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { withSqliteWriteRetryEffect } from "./withSqliteWriteRetryEffect";
 import type { SqliteWriteRetryOptions } from "./SqliteWriteRetryOptions";
 

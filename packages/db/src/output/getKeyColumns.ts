@@ -1,6 +1,6 @@
 import { getTableColumns } from "drizzle-orm/utils";
 import type { AnyColumn, Table } from "drizzle-orm";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 export function getKeyColumns(table: Table): {
   runId: AnyColumn;

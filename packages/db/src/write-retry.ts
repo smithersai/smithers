@@ -8,8 +8,9 @@ import {
 } from "effect";
 import { dbRetries } from "@smithers/observability/metrics";
 import { runPromise } from "@smithers/runtime/runtime";
-import { retryPolicyToSchedule } from "@smithers/core/utils/retry";
-import { type SmithersError, toSmithersError } from "@smithers/core/errors";
+import { retryPolicyToSchedule } from "@smithers/scheduler/retryPolicyToSchedule";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_BASE_DELAY_MS = 50;

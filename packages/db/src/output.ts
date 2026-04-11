@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { z } from "zod";
 import { fromPromise } from "@smithers/runtime/interop";
 import { runPromise } from "@smithers/runtime/runtime";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 import { withSqliteWriteRetryEffect } from "./write-retry";
 
 export type OutputKey = { runId: string; nodeId: string; iteration?: number };
