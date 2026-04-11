@@ -1,5 +1,5 @@
 import type { SmithersEvent } from "@smithers/core/SmithersEvent";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 const DEFAULT_BASE = "http://127.0.0.1:7331";
 

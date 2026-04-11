@@ -4,9 +4,9 @@ import type {
   SmithersAlertPolicyDefaults,
   SmithersAlertPolicyRule,
   SmithersWorkflowOptions,
-} from "@smithers/core/SmithersWorkflowOptions";
+} from "@smithers/scheduler/SmithersWorkflowOptions";
 import type { SchemaRegistryEntry } from "@smithers/core/SchemaRegistryEntry";
-import type { SmithersCtx } from "@smithers/core/SmithersCtx";
+import type { SmithersCtx } from "@smithers/driver/SmithersCtx";
 import { Database } from "bun:sqlite";
 import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -44,7 +44,7 @@ import { zodToCreateTableSQL } from "@smithers/db/zodToCreateTableSQL";
 import { camelToSnake } from "@smithers/db/utils/camelToSnake";
 import { resolve } from "node:path";
 import type { z } from "zod";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 type HotCacheEntry = {
   api: CreateSmithersApi<any>;

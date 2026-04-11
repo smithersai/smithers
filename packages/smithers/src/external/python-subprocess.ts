@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 import type { SerializedCtx, HostNodeJson } from "./create-external-smithers";
 
 export type PythonSubprocessConfig = {

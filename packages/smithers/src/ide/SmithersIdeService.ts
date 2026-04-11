@@ -2,7 +2,7 @@ import { accessSync, constants } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import { Context, Effect, Layer } from "effect";
 import { spawnCaptureEffect } from "@smithers/runtime/child-process";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 const DEFAULT_COMMAND = "smithers-ctl";
 const DEFAULT_TIMEOUT_MS = 10_000;

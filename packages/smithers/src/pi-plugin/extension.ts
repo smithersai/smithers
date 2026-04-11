@@ -48,7 +48,7 @@ import {
   type SmithersMetricDefinition,
   type SmithersMetricUnit,
 } from "@smithers/observability/metrics";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 import {
   createSmithersAgentContract,
   renderSmithersAgentPromptGuidance,

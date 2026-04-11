@@ -8,10 +8,10 @@ export type {
 export { hashCapabilityRegistry } from "@smithers/agents/capability-registry";
 export type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
 export type { GraphSnapshot } from "@smithers/graph/GraphSnapshot";
-export type { RunStatus } from "@smithers/core/RunStatus";
-export type { RunOptions } from "@smithers/core/RunOptions";
-export type { RunResult } from "@smithers/core/RunResult";
-export type { OutputKey } from "@smithers/core/OutputKey";
+export type { RunStatus } from "@smithers/driver/RunStatus";
+export type { RunOptions } from "@smithers/driver/RunOptions";
+export type { RunResult } from "@smithers/driver/RunResult";
+export type { OutputKey } from "@smithers/driver/OutputKey";
 export type {
   SmithersAlertLabels,
   SmithersAlertPolicy,
@@ -22,24 +22,27 @@ export type {
   SmithersAlertReactionRef,
   SmithersAlertSeverity,
   SmithersWorkflowOptions,
-} from "@smithers/core/SmithersWorkflowOptions";
+} from "@smithers/scheduler/SmithersWorkflowOptions";
 export type { SchemaRegistryEntry } from "@smithers/core/SchemaRegistryEntry";
 export type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
-export type { SmithersCtx } from "@smithers/core/SmithersCtx";
-export type { OutputAccessor, InferRow, InferOutputEntry } from "@smithers/core/OutputAccessor";
+export type { SmithersCtx } from "@smithers/driver/SmithersCtx";
+export type { OutputAccessor, InferRow, InferOutputEntry } from "@smithers/driver/OutputAccessor";
 export type { SmithersEvent } from "@smithers/core/SmithersEvent";
-export type { SmithersError } from "@smithers/core/SmithersError";
+export type { SmithersError } from "@smithers/errors/SmithersError";
 export {
   ERROR_REFERENCE_URL,
+} from "@smithers/errors/ERROR_REFERENCE_URL";
+export {
   SmithersError as SmithersErrorInstance,
-  errorToJson,
-  getSmithersErrorDefinition,
-  getSmithersErrorDocsUrl,
-  isKnownSmithersErrorCode,
-  isSmithersError,
-  knownSmithersErrorCodes,
-} from "@smithers/core/errors";
-export type { KnownSmithersErrorCode, SmithersErrorCode } from "@smithers/core/errors";
+} from "@smithers/errors/SmithersError";
+export { errorToJson } from "@smithers/errors/errorToJson";
+export { getSmithersErrorDefinition } from "@smithers/errors/getSmithersErrorDefinition";
+export { getSmithersErrorDocsUrl } from "@smithers/errors/getSmithersErrorDocsUrl";
+export { isKnownSmithersErrorCode } from "@smithers/errors/isKnownSmithersErrorCode";
+export { isSmithersError } from "@smithers/errors/isSmithersError";
+export { knownSmithersErrorCodes } from "@smithers/errors/knownSmithersErrorCodes";
+export type { KnownSmithersErrorCode } from "@smithers/errors/KnownSmithersErrorCode";
+export type { SmithersErrorCode } from "@smithers/errors/SmithersErrorCode";
 export type {
   ResolvedSmithersObservabilityOptions,
   SmithersLogFormat,
