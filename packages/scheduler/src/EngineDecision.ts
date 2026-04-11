@@ -1,5 +1,4 @@
 import type { TaskDescriptor } from "@smithers/graph";
-import type { SmithersError } from "@smithers/errors/SmithersError";
 import type { ContinueAsNewTransition } from "./ContinueAsNewTransition.ts";
 import type { RenderContext } from "./RenderContext.ts";
 import type { RunResult } from "./RunResult.ts";
@@ -17,4 +16,4 @@ export type EngineDecision =
       readonly transition: ContinueAsNewTransition;
     }
   | { readonly _tag: "Finished"; readonly result: RunResult }
-  | { readonly _tag: "Failed"; readonly error: SmithersError };
+  | { readonly _tag: "Failed"; readonly error: unknown };
