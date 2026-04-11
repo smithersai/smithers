@@ -417,7 +417,7 @@ function buildMirrorOnProgress(
   const mirrorEventEffect = (event: SmithersEvent) =>
     Effect.gen(function* () {
       yield* fromPromise("ensure mirrored run", () => ensureRun());
-      yield* adapter.insertEventWithNextSeqEffect({
+      yield* adapter.insertEventWithNextSeq({
         runId,
         timestampMs: event.timestampMs,
         type: event.type,
@@ -425,7 +425,7 @@ function buildMirrorOnProgress(
       });
       switch (event.type) {
         case "RunStarted":
-          yield* adapter.updateRunEffect(runId, {
+          yield* adapter.updateRun(runId, {
             status: "running",
             startedAtMs: event.timestampMs,
             heartbeatAtMs: event.timestampMs,
@@ -433,10 +433,10 @@ function buildMirrorOnProgress(
           });
           break;
         case "RunStatusChanged":
-          yield* adapter.updateRunEffect(runId, { status: event.status });
+          yield* adapter.updateRun(runId, { status: event.status });
           break;
         case "RunContinuedAsNew":
-          yield* adapter.updateRunEffect(runId, {
+          yield* adapter.updateRun(runId, {
             status: "continued",
             finishedAtMs: event.timestampMs,
             heartbeatAtMs: null,
@@ -445,7 +445,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "RunFinished":
-          yield* adapter.updateRunEffect(runId, {
+          yield* adapter.updateRun(runId, {
             status: "finished",
             finishedAtMs: event.timestampMs,
             heartbeatAtMs: null,
@@ -454,7 +454,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "RunFailed":
-          yield* adapter.updateRunEffect(runId, {
+          yield* adapter.updateRun(runId, {
             status: "failed",
             finishedAtMs: event.timestampMs,
             heartbeatAtMs: null,
@@ -464,7 +464,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "RunCancelled":
-          yield* adapter.updateRunEffect(runId, {
+          yield* adapter.updateRun(runId, {
             status: "cancelled",
             finishedAtMs: event.timestampMs,
             heartbeatAtMs: null,
@@ -473,7 +473,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "NodePending":
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId: event.runId,
             nodeId: event.nodeId,
             iteration: event.iteration,
@@ -485,7 +485,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "NodeWaitingApproval":
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId: event.runId,
             nodeId: event.nodeId,
             iteration: event.iteration,
@@ -497,7 +497,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "NodeWaitingTimer":
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId: event.runId,
             nodeId: event.nodeId,
             iteration: event.iteration,
@@ -509,7 +509,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "NodeStarted":
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId: event.runId,
             nodeId: event.nodeId,
             iteration: event.iteration,
@@ -521,7 +521,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "NodeFinished":
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId: event.runId,
             nodeId: event.nodeId,
             iteration: event.iteration,
@@ -533,7 +533,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "NodeFailed":
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId: event.runId,
             nodeId: event.nodeId,
             iteration: event.iteration,
@@ -545,7 +545,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "NodeCancelled":
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId: event.runId,
             nodeId: event.nodeId,
             iteration: event.iteration,
@@ -557,7 +557,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "NodeSkipped":
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId: event.runId,
             nodeId: event.nodeId,
             iteration: event.iteration,
@@ -569,7 +569,7 @@ function buildMirrorOnProgress(
           });
           break;
         case "NodeRetrying":
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId: event.runId,
             nodeId: event.nodeId,
             iteration: event.iteration,
@@ -1250,7 +1250,7 @@ function startServerInternal(opts: ServerOptions = {}) {
 
         const approvals = await runPromise(
           Effect.gen(function* () {
-            const rows = yield* serverAdapter.listAllPendingApprovalsEffect();
+            const rows = yield* serverAdapter.listAllPendingApprovals();
             const now = nowMs();
             const mapped = rows.map((row: any) => {
               const requestedAtMs = row.requestedAtMs ?? null;
