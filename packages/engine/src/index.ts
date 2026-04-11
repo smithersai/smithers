@@ -79,6 +79,7 @@ import {
   trackEvent,
 } from "@smithers/observability/metrics";
 import { runScorersAsync } from "@smithers/scorers/run-scorers";
+import type { ScorersMap as RuntimeScorersMap } from "@smithers/scorers/types";
 import { dirname, resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -4156,7 +4157,7 @@ export async function legacyExecuteTask(
     // Fire async scorers if the task has any attached
     if (desc.scorers && Object.keys(desc.scorers).length > 0) {
       runScorersAsync(
-        desc.scorers,
+        desc.scorers as RuntimeScorersMap,
         {
           runId,
           nodeId: desc.nodeId,
