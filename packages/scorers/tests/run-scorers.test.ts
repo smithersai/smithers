@@ -3,12 +3,12 @@ import { createScorer } from "../src/create-scorer";
 import { runScorersBatch } from "../src/run-scorers";
 import type { ScorersMap, ScorerContext } from "../src/types";
 
-// Mock DB adapter — only needs insertScorerResultEffect for our tests
+// Mock DB adapter — only needs insertScorerResult for our tests
 function createMockAdapter() {
   const rows: any[] = [];
   return {
     rows,
-    insertScorerResultEffect: mock((_row: any) => {
+    insertScorerResult: mock((_row: any) => {
       rows.push(_row);
       // Return an Effect-like object that succeeds synchronously
       const { Effect } = require("effect");
@@ -144,7 +144,7 @@ describe("runScorersBatch", () => {
     };
 
     await runScorersBatch(scorers, makeContext(), adapter);
-    expect(adapter.insertScorerResultEffect).toHaveBeenCalledTimes(1);
+    expect(adapter.insertScorerResult).toHaveBeenCalledTimes(1);
 
     const insertedRow = adapter.rows[0];
     expect(insertedRow).toBeDefined();
