@@ -28,7 +28,7 @@ import {
 import { fromPromise } from "@smithers/runtime/interop";
 import { runPromise } from "@smithers/runtime/runtime";
 import { getToolContext } from "@smithers/tools/context";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 import { enrichReportWithErrorAnalysis, launchDiagnostics } from "./diagnostics";
 
 export type { PiExtensionUiRequest, PiExtensionUiResponse };

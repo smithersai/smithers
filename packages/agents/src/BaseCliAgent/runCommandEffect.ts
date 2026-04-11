@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { spawnCaptureEffect } from "@smithers/runtime/child-process";
-import type { SmithersError } from "@smithers/core/errors";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import type { RunCommandResult } from "./RunCommandResult";
 
 type RunCommandOptions = {

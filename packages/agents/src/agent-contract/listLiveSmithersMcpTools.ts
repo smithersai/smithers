@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 import type { SmithersToolSurface } from "./SmithersToolSurface";
 import type { SmithersListedTool } from "./SmithersListedTool";
 import { buildSmithersMcpLaunchSpec } from "./buildSmithersMcpLaunchSpec";

@@ -1,4 +1,4 @@
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 import type { DiagnosticCheckId } from "./DiagnosticCheckId";
 import type { DiagnosticCheck } from "./DiagnosticCheck";
 import type { DiagnosticReport } from "./DiagnosticReport";

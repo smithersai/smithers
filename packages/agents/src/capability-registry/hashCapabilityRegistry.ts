@@ -1,4 +1,4 @@
-import { sha256Hex } from "@smithers/core/utils/hash";
+import { sha256Hex } from "@smithers/driver/sha256Hex";
 import type { AgentCapabilityRegistry } from "./AgentCapabilityRegistry";
 import { normalizeCapabilityRegistry } from "./normalizeCapabilityRegistry";
 

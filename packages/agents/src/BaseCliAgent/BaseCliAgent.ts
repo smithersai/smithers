@@ -19,7 +19,7 @@ import {
   toolOutputTruncatedTotal,
 } from "@smithers/observability/metrics";
 import { getToolContext } from "@smithers/tools/context";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 import { launchDiagnostics, enrichReportWithErrorAnalysis, formatDiagnosticSummary } from "../diagnostics";
 import type { BaseCliAgentOptions } from "./BaseCliAgentOptions";
 import type { AgentCliEvent } from "./AgentCliEvent";
@@ -262,17 +262,52 @@ function extractTextFromJsonPayload(raw: string): string | undefined {
     // Possibly JSONL
   }
   const lines = trimmed.split(/\r?\n/).filter(Boolean);
-  const chunks: string[] = [];
+  const parsedLines: any[] = [];
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line);
-      const text = extractTextFromJsonValue(parsed);
-      if (text) chunks.push(text);
+      parsedLines.push(parsed);
     } catch {
       continue;
     }
   }
+
+  for (let i = parsedLines.length - 1; i >= 0; i--) {
+    const parsed = parsedLines[i];
+    const type = typeof parsed?.type === "string" ? parsed.type : "";
+    if (
+      (type === "turn_end" || type === "message_end") &&
+      parsed?.message?.role === "assistant"
+    ) {
+      const text = extractTextFromJsonValue(parsed.message);
+      if (text) return text;
+    }
+    if (type === "agent_end" && Array.isArray(parsed?.messages)) {
+      for (let j = parsed.messages.length - 1; j >= 0; j--) {
+        const message = parsed.messages[j];
+        if (message?.role !== "assistant") continue;
+        const text = extractTextFromJsonValue(message);
+        if (text) return text;
+      }
+    }
+  }
+
+  const chunks: string[] = [];
+  for (const parsed of parsedLines) {
+    const text = extractTextFromJsonValue(parsed);
+    if (text) chunks.push(text);
+  }
   return chunks.length ? chunks.join("") : undefined;
+}
+
+function inferOutputFormatFromArgs(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--output-format" || arg === "--mode") {
+      return args[i + 1];
+    }
+  }
+  return undefined;
 }
 
 function emptyUsage() {
@@ -615,20 +650,22 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
           engine: resolveAgentEngineTag(this, commandSpec.command),
           model: normalizeMetricTag(this.model ?? commandSpec.command),
         };
+        const outputFormat =
+          commandSpec.outputFormat ?? inferOutputFormatFromArgs(commandSpec.args);
         commandLogAnnotations = {
           ...spanAnnotations,
           agentEngine: metricTags.engine,
           agentModel: metricTags.model ?? "unknown",
           agentCommand: commandSpec.command,
           agentArgs: commandSpec.args.join(" "),
-          outputFormat: commandSpec.outputFormat ?? "text",
+          outputFormat: outputFormat ?? "text",
         };
 
         const commandEnv = commandSpec.env
           ? ({ ...env, ...commandSpec.env } as Record<string, string>)
           : env;
         stdoutEmitter = createAgentStdoutTextEmitter({
-          outputFormat: commandSpec.outputFormat,
+          outputFormat,
           onText: options?.onStdout,
         });
         const interpreter = this.createOutputInterpreter();
@@ -765,7 +802,6 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
             }
           }
 
-          const outputFormat = commandSpec.outputFormat;
           const extractedText =
             outputFormat === "json" || outputFormat === "stream-json"
               ? (extractTextFromJsonPayload(rawText) ?? rawText)
