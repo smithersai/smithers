@@ -19823,29 +19823,25 @@ The agent contract describes the Smithers [MCP server](/integrations/mcp-server)
 
 `SmithersToolSurface` is `"raw"` or `"semantic"`. The semantic surface groups and renames tools to reduce noise for general-purpose agents. The raw surface exposes every tool name as-is.
 
-```ts
-import { buildSmithersMcpConfigFile } from "smithers-orchestrator";
-
-const { path, cleanup } = buildSmithersMcpConfigFile("semantic");
-// Writes a temporary mcp.json pointing at the Smithers MCP server
-```
-
-### Live MCP Tool Probe
-
-`listLiveSmithersMcpTools` starts the Smithers [MCP server](/integrations/mcp-server) in a subprocess and calls `tools/list` to retrieve the live tool set. Use this to build a contract from the actual running server rather than a static snapshot.
+`smithers ask` builds the MCP launch configuration and probes the live tool surface internally. For direct package use, build a contract from the tools you expose to an agent:
 
 ```ts
-import { listLiveSmithersMcpTools } from "smithers-orchestrator";
+import { createSmithersAgentContract } from "smithers-orchestrator";
 
-const tools = await listLiveSmithersMcpTools({ toolSurface: "semantic" });
-```
-
-`probeSmithersAgentContract` wraps the probe and returns a full `SmithersAgentContract`:
-
-```ts
-import { probeSmithersAgentContract } from "smithers-orchestrator";
-
-const contract = await probeSmithersAgentContract({ toolSurface: "semantic" });
+const contract = createSmithersAgentContract({
+  serverName: "smithers",
+  toolSurface: "semantic",
+  tools: [
+    {
+      name: "list_workflows",
+      description: "List discovered local Smithers workflows.",
+    },
+    {
+      name: "run_workflow",
+      description: "Start a discovered workflow directly through the engine.",
+    },
+  ],
+});
 ```
 
 ### Prompt Guidance
@@ -19901,7 +19897,7 @@ console.log(result.usage);
 
 ### Usage Extraction
 
-`extractUsageFromOutput` parses the raw CLI stdout to find token counts. The extraction strategy is format-specific:
+`BaseCliAgent` parses raw CLI stdout to find token counts. The extraction strategy is format-specific:
 
 | Agent / Format | Source |
 |---|---|
@@ -29614,6 +29610,19 @@ try {
 | `TASK_HEARTBEAT_TIMEOUT` | A task has not heartbeated within its configured timeout. | `{ nodeId, iteration, attempt, timeoutMs, staleForMs, lastHeartbeatAtMs }` |
 | `HEARTBEAT_PAYLOAD_TOO_LARGE` | A task heartbeat payload exceeds the maximum allowed size. | `{ nodeId, sizeBytes, maxBytes }` |
 | `HEARTBEAT_PAYLOAD_NOT_JSON_SERIALIZABLE` | A task heartbeat payload cannot be serialized to JSON. | `{ nodeId }` |
+| `RUN_CANCELLED` | A run is cancelled while runtime work is still active. | `{ runId }` |
+| `RUN_NOT_RESUMABLE` | A resume request targets a run state that cannot be resumed. | `{ runId, status }` |
+| `RUN_OWNER_ALIVE` | Resume recovery is skipped because the previous runtime owner is still heartbeating. | `{ runId, runtimeOwnerId }` |
+| `RUN_STILL_RUNNING` | A recovery or resume operation finds a run that is still active. | `{ runId }` |
+| `RUN_RESUME_CLAIM_LOST` | A runtime loses the resume claim before it can update the run. | `{ runId, runtimeOwnerId }` |
+| `RUN_RESUME_CLAIM_FAILED` | A runtime cannot claim a stale run for resume. | `{ runId, runtimeOwnerId }` |
+| `RUN_RESUME_ACTIVATION_FAILED` | A claimed run cannot be moved back into active execution. | `{ runId, runtimeOwnerId }` |
+| `RUN_HIJACKED` | A run is interrupted because another runtime hijacked execution. | `{ runId, hijackTarget }` |
+| `CONTINUATION_STATE_TOO_LARGE` | Continue-as-new state exceeds the configured serialized size limit. | `{ runId, sizeBytes, maxBytes }` |
+| `INVALID_CONTINUATION_STATE` | Continue-as-new state cannot be parsed or applied. | -- |
+| `RALPH_MAX_REACHED` | A Ralph loop reaches maxIterations with fail-on-max behavior. | `{ ralphId, maxIterations }` |
+| `SCHEDULER_ERROR` | The scheduler cannot produce a valid execution decision. | -- |
+| `SESSION_ERROR` | The workflow session state machine reaches an invalid or failed state. | -- |
 
 ## Components
 
@@ -29630,6 +29639,7 @@ try {
 | `DEP_NOT_SATISFIED` | A typed dep on `<Task>` references an upstream output that has not been produced yet. | `{ taskId, depKey, resolvedNodeId }` |
 | `ASPECT_BUDGET_EXCEEDED` | An Aspects budget (tokens, latency, or cost) has been exceeded. | `{ kind, limit, current }` |
 | `APPROVAL_OUTSIDE_TASK` | `<Approval>` is resolved outside the active task runtime. | -- |
+| `APPROVAL_OPTIONS_REQUIRED` | An approval mode that requires explicit options is missing them. | -- |
 | `WORKFLOW_MISSING_DEFAULT` | A workflow module does not export a default Smithers workflow. | -- |
 
 ## Tools
@@ -29664,6 +29674,7 @@ try {
 | `DB_REQUIRES_BUN_SQLITE` | The database adapter is not backed by a Bun SQLite client with `exec()`. | -- |
 | `DB_QUERY_FAILED` | A database read query throws or rejects while running inside an Effect. | -- |
 | `DB_WRITE_FAILED` | A database write or migration fails, including after SQLite retry exhaustion. | -- |
+| `STORAGE_ERROR` | A storage service operation fails before surfacing a more specific database code. | -- |
 
 ## Effect / Runtime
 
@@ -30673,3 +30684,4 @@ function usePatched(patchId: string): boolean
 ```
 
 `usePatched` calls `resolve()` on the ambient `WorkflowVersioningRuntime`. Outside a versioning scope it always returns `false`.
+
