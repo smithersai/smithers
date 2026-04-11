@@ -5,7 +5,7 @@ import type {
   SmithersAlertPolicyRule,
   SmithersWorkflowOptions,
 } from "@smithers/scheduler/SmithersWorkflowOptions";
-import type { SchemaRegistryEntry } from "@smithers/core/SchemaRegistryEntry";
+import type { SchemaRegistryEntry } from "@smithers/db/SchemaRegistryEntry";
 import type { SmithersCtx } from "@smithers/driver/SmithersCtx";
 import { Database } from "bun:sqlite";
 import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";

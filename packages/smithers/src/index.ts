@@ -23,7 +23,7 @@ export type {
   SmithersAlertSeverity,
   SmithersWorkflowOptions,
 } from "@smithers/scheduler/SmithersWorkflowOptions";
-export type { SchemaRegistryEntry } from "@smithers/core/SchemaRegistryEntry";
+export type { SchemaRegistryEntry } from "@smithers/db/SchemaRegistryEntry";
 export type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
 export type { SmithersCtx } from "@smithers/driver/SmithersCtx";
 export type { OutputAccessor, InferRow, InferOutputEntry } from "@smithers/driver/OutputAccessor";
