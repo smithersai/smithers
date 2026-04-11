@@ -14,7 +14,7 @@ export type { OutputAccessor, InferOutputEntry, InferRow } from "@smithers/drive
 export type { OutputKey } from "@smithers/driver/OutputKey";
 export type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
 export type { RunAuthContext } from "@smithers/driver/RunAuthContext";
-export type { SchemaRegistryEntry } from "@smithers/core/SchemaRegistryEntry";
+export type { SchemaRegistryEntry } from "@smithers/db/SchemaRegistryEntry";
 export type {
   SmithersAlertLabels,
   SmithersAlertPolicy,
