@@ -1,7 +1,7 @@
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { SmithersEvent } from "@smithers/core/SmithersEvent";
 import { revertToJjPointer } from "@smithers/vcs/jj";
-import { nowMs } from "@smithers/core/utils/time";
+import { nowMs } from "@smithers/scheduler/nowMs";
 
 export type RevertOptions = {
   runId: string;

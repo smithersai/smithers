@@ -2,8 +2,8 @@ import type { CommandExecutor } from "@effect/platform/CommandExecutor";
 import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import { fromPromise } from "@smithers/runtime/interop";
-import { nowMs } from "@smithers/core/utils/time";
-import type { SmithersError } from "@smithers/core/errors";
+import { nowMs } from "@smithers/scheduler/nowMs";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import { smithersVcsTags } from "../schema";
 import {
   getJjPointerEffect,

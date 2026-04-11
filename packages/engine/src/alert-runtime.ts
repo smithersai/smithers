@@ -1,4 +1,4 @@
-import type { SmithersAlertPolicy } from "@smithers/scheduler/SmithersWorkflowOptions";
+import type { SmithersAlertPolicy } from "@smithers/core/SmithersWorkflowOptions";
 
 export type AlertHumanRequestOptions = {
   runId: string;

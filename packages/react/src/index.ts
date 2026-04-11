@@ -25,6 +25,7 @@ export type {
   SmithersAlertReactionRef,
   SmithersAlertSeverity,
 } from "@smithers/scheduler/SmithersWorkflowOptions";
+} from "@smithers/core/SmithersWorkflowOptions";
 export type { SmithersErrorCode } from "@smithers/errors/SmithersErrorCode";
 export type {
   EngineDecision,

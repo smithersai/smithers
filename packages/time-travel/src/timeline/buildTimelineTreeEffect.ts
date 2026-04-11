@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
-import type { SmithersError } from "@smithers/core/errors";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import { buildTimelineEffect } from "./buildTimelineEffect";
 import type { TimelineTree } from "../TimelineTree";
 

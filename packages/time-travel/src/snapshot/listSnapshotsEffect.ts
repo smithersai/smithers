@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import { fromPromise } from "@smithers/runtime/interop";
 import { runPromise } from "@smithers/runtime/runtime";
-import type { SmithersError } from "@smithers/core/errors";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import { smithersSnapshots } from "../schema";
 import type { Snapshot } from "./Snapshot";
 

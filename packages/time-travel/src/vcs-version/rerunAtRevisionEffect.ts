@@ -1,7 +1,7 @@
 import type { CommandExecutor } from "@effect/platform/CommandExecutor";
 import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
-import type { SmithersError } from "@smithers/core/errors";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import { revertToJjPointerEffect } from "@smithers/vcs/jj";
 import { loadVcsTagEffect } from "./loadVcsTagEffect";
 

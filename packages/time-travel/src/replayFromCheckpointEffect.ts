@@ -1,7 +1,7 @@
 import { Effect, Metric } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import { fromPromise } from "@smithers/runtime/interop";
-import type { SmithersError } from "@smithers/core/errors";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import { forkRunEffect } from "./fork";
 import { rerunAtRevision } from "./vcs-version";
 import { replaysStarted } from "./replaysStarted";
