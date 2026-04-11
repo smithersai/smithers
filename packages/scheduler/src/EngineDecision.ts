@@ -1,5 +1,5 @@
 import type { TaskDescriptor } from "@smithers/graph";
-import type { SmithersError } from "@smithers/errors/SmithersError.ts";
+import type { SmithersError } from "@smithers/errors/SmithersError";
 import type { ContinueAsNewTransition } from "./ContinueAsNewTransition.ts";
 import type { RenderContext } from "./RenderContext.ts";
 import type { RunResult } from "./RunResult.ts";

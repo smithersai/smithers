@@ -77,6 +77,10 @@
       "types": "./src/Scheduler.ts",
       "default": "./src/Scheduler.ts"
     },
+    "./SchedulerLive": {
+      "types": "./src/SchedulerLive.ts",
+      "default": "./src/SchedulerLive.ts"
+    },
     "./buildPlanTree": {
       "types": "./src/buildPlanTree.ts",
       "default": "./src/buildPlanTree.ts"
