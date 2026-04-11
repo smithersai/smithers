@@ -78,6 +78,7 @@
   },
   "dependencies": {
     "@smithers/core": "workspace:*",
+    "@smithers/db": "workspace:*",
     "@smithers/errors": "workspace:*",
     "@smithers/graph": "workspace:*",
     "@smithers/observability": "workspace:*",

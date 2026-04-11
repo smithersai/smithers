@@ -1,6 +1,7 @@
 export { WorkflowDriver, WorkflowDriver as CoreWorkflowDriver } from "./WorkflowDriver.ts";
 export { defaultTaskExecutor } from "./defaultTaskExecutor.ts";
 export { withAbort } from "./withAbort.ts";
+export type { Workflow } from "./Workflow.ts";
 export type { WorkflowDriverOptions } from "./WorkflowDriverOptions.ts";
 export type { WorkflowDefinition } from "./WorkflowDefinition.ts";
 export type { WorkflowGraphRenderer } from "./WorkflowGraphRenderer.ts";
