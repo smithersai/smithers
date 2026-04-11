@@ -15,7 +15,7 @@ import { createTestSmithers } from "./helpers";
 import { outputSchemas } from "./schema";
 import { SmithersDb } from "@smithers/db/adapter";
 import { read } from "@smithers/tools";
-import { buildContext } from "@smithers/core/context";
+import { buildContext } from "@smithers/driver/context";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

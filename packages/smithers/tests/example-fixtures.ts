@@ -1,5 +1,5 @@
 import { renderFrame, zodSchemaToJsonExample } from "../src/index";
-import { buildContext, type OutputSnapshot } from "@smithers/core/context";
+import { buildContext, type OutputSnapshot } from "@smithers/driver/context";
 
 const sharedExampleInput: Record<string, unknown> = {
   topic: "AI workflow orchestration",

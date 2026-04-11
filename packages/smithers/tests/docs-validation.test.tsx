@@ -121,7 +121,7 @@ import {
   unwrapZodType,
   zodSchemaToJsonExample,
 } from "../src/index";
-import { buildContext } from "@smithers/core/context";
+import { buildContext } from "@smithers/driver/context";
 import { approveNode, denyNode } from "@smithers/engine/approvals";
 import { createTestSmithers } from "./helpers";
 import { z } from "zod";

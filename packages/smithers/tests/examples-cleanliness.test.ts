@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildContext } from "@smithers/core/context";
+import { buildContext } from "@smithers/driver/context";
 import { renderFrame } from "../src/index";
 
 const examplesDir = join(process.cwd(), "examples");
