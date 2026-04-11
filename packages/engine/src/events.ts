@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
-import { fromPromise } from "@smithers/driver/interop";
+import { fromPromise, fromSync } from "@smithers/driver/interop";
 import { trackEvent } from "@smithers/observability/metrics";
 import type { CorrelationContext } from "@smithers/observability/correlation";
 import {
@@ -33,11 +33,12 @@ export class EventBus extends EventEmitter {
 
   emitEventEffect(event: SmithersEvent) {
     const correlatedEvent = this.attachCorrelation(event);
+    const self = this;
     return withCurrentCorrelationContext(
-      Effect.gen(this, function* () {
-        yield* this.emitAndTrackEffect(correlatedEvent);
-        if (this.db) {
-          yield* this.persistDbEffect(correlatedEvent);
+      Effect.gen(function* () {
+        yield* self.emitAndTrackEffect(correlatedEvent);
+        if (self.db) {
+          yield* self.persistDbEffect(correlatedEvent);
         }
       }).pipe(
         Effect.annotateLogs(this.eventLogAnnotations(correlatedEvent)),
@@ -52,10 +53,11 @@ export class EventBus extends EventEmitter {
 
   emitEventWithPersistEffect(event: SmithersEvent) {
     const correlatedEvent = this.attachCorrelation(event);
+    const self = this;
     return withCurrentCorrelationContext(
-      Effect.gen(this, function* () {
-        yield* this.emitAndTrackEffect(correlatedEvent);
-        yield* this.persistEffect(correlatedEvent);
+      Effect.gen(function* () {
+        yield* self.emitAndTrackEffect(correlatedEvent);
+        yield* self.persistEffect(correlatedEvent);
       }).pipe(
         Effect.annotateLogs(this.eventLogAnnotations(correlatedEvent)),
         Effect.withLogSpan(`event:${correlatedEvent.type}:persist`),
@@ -97,10 +99,11 @@ export class EventBus extends EventEmitter {
   }
 
   persistEffect(event: CorrelatedSmithersEvent) {
+    const self = this;
     return withCurrentCorrelationContext(
-      Effect.gen(this, function* () {
-        yield* this.persistDbEffect(event);
-        const persistedLog = yield* Effect.either(this.persistLogEffect(event));
+      Effect.gen(function* () {
+        yield* self.persistDbEffect(event);
+        const persistedLog = yield* Effect.either(self.persistLogEffect(event));
         if (persistedLog._tag === "Left") {
           yield* Effect.logWarning(
             `[smithers] failed to append event log: ${persistedLog.left instanceof Error ? persistedLog.left.message : String(persistedLog.left)}`,
@@ -118,8 +121,9 @@ export class EventBus extends EventEmitter {
   }
 
   private emitAndTrackEffect(event: CorrelatedSmithersEvent) {
-    return Effect.gen(this, function* () {
-      yield* Effect.sync(() => this.emit("event", event));
+    const self = this;
+    return Effect.gen(function* () {
+      yield* Effect.sync(() => self.emit("event", event));
       yield* trackEvent(event);
     });
   }
@@ -132,27 +136,73 @@ export class EventBus extends EventEmitter {
     return fromPromise("enqueue event persistence", () => task);
   }
 
-  private persistDbEffect(event: CorrelatedSmithersEvent): Effect.Effect<void> {
+  private persistDbEffect(event: CorrelatedSmithersEvent): Effect.Effect<void, unknown> {
     if (!this.db) return Effect.void;
     const payloadJson = JSON.stringify(event);
+    const nextSeqRow = {
+      runId: event.runId,
+      timestampMs: event.timestampMs,
+      type: event.type,
+      payloadJson,
+    };
+    const eventRow = {
+      ...nextSeqRow,
+      seq: this.seq++,
+    };
+
+    if (typeof this.db.insertEventWithNextSeqEffect === "function") {
+      return this.callDbPersistenceEffect(
+        `insert event ${event.type}`,
+        this.db.insertEventWithNextSeqEffect,
+        nextSeqRow,
+      );
+    }
     if (typeof this.db.insertEventWithNextSeq === "function") {
-      return this.db.insertEventWithNextSeq({
-        runId: event.runId,
-        timestampMs: event.timestampMs,
-        type: event.type,
-        payloadJson,
-      }) as Effect.Effect<void>;
+      return this.callDbPersistenceEffect(
+        `insert event ${event.type}`,
+        this.db.insertEventWithNextSeq,
+        nextSeqRow,
+      );
+    }
+    if (typeof this.db.insertEventEffect === "function") {
+      return this.callDbPersistenceEffect(
+        `insert event ${event.type}`,
+        this.db.insertEventEffect,
+        eventRow,
+      );
     }
     if (typeof this.db.insertEvent === "function") {
-      return this.db.insertEvent({
-        runId: event.runId,
-        seq: this.seq++,
-        timestampMs: event.timestampMs,
-        type: event.type,
-        payloadJson,
-      }) as Effect.Effect<void>;
+      return this.callDbPersistenceEffect(
+        `insert event ${event.type}`,
+        this.db.insertEvent,
+        eventRow,
+      );
     }
     return Effect.void;
+  }
+
+  private callDbPersistenceEffect(
+    label: string,
+    method: (row: any) => unknown,
+    row: any,
+  ): Effect.Effect<void, unknown> {
+    const db = this.db;
+    return fromSync(label, () => method.call(db, row)).pipe(
+      Effect.flatMap((result) => {
+        if (Effect.isEffect(result)) {
+          return result as Effect.Effect<unknown, unknown, never>;
+        }
+        if (
+          result &&
+          typeof result === "object" &&
+          typeof (result as PromiseLike<unknown>).then === "function"
+        ) {
+          return fromPromise(label, () => result as PromiseLike<unknown>);
+        }
+        return Effect.void;
+      }),
+      Effect.asVoid,
+    );
   }
 
   private persistLogEffect(event: CorrelatedSmithersEvent) {
