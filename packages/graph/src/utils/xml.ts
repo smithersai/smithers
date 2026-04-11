@@ -1,4 +1,4 @@
-import type { XmlNode, XmlElement } from "../XmlNode";
+import type { XmlNode, XmlElement } from "@smithers/graph/XmlNode";
 
 function sortProps(props: Record<string, string>): Record<string, string> {
   const entries = Object.entries(props).sort(([a], [b]) =>

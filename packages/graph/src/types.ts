@@ -16,15 +16,15 @@ export type HostNode = HostElement | HostText;
 
 export type HostElement = {
   readonly kind: "element";
-  tag: string;
-  props: Record<string, string>;
-  rawProps: Record<string, unknown>;
-  children: HostNode[];
+  readonly tag: string;
+  readonly props: Record<string, string>;
+  readonly rawProps: Record<string, unknown>;
+  readonly children: readonly HostNode[];
 };
 
 export type HostText = {
   readonly kind: "text";
-  text: string;
+  readonly text: string;
 };
 
 export type RetryPolicy = {
@@ -42,10 +42,10 @@ export type CachePolicy = {
   readonly [key: string]: unknown;
 };
 
-export type AgentLike = any;
+export type VoiceProvider = unknown;
+export type AgentLike = unknown;
 export type ScorersMap = Record<string, unknown>;
 export type TaskMemoryConfig = Record<string, unknown>;
-export type VoiceProvider = any;
 
 export type ApprovalOption = {
   readonly key: string;
@@ -107,6 +107,13 @@ export type WorkflowGraph = {
   readonly xml: XmlNode | null;
   readonly tasks: readonly TaskDescriptor[];
   readonly mountedTaskIds: readonly string[];
+};
+
+export type GraphSnapshot = {
+  readonly runId: string;
+  readonly frameNo: number;
+  readonly xml: XmlNode | null;
+  readonly tasks: readonly TaskDescriptor[];
 };
 
 export type ExtractOptions = {

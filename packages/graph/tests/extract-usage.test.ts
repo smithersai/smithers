@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extractUsageFromOutput } from "../src/agents/BaseCliAgent";
+import { extractUsageFromOutput } from "@smithers/agents/BaseCliAgent";
 
 describe("extractUsageFromOutput", () => {
   test("extracts tokens from Claude Code stream-json NDJSON", () => {

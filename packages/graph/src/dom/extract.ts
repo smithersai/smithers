@@ -1,16 +1,14 @@
-import type { XmlNode, XmlElement } from "../XmlNode";
-import type { TaskDescriptor } from "../TaskDescriptor";
-import type { VoiceProvider } from "../voice/types";
-import { resolveStableId } from "../utils/tree-ids";
+import type { XmlNode, XmlElement } from "@smithers/graph/XmlNode";
+import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
+import type { VoiceProvider } from "../types";
+import { resolveStableId } from "@smithers/graph/utils/tree-ids";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { getTableName } from "drizzle-orm";
 import {
   DEFAULT_MERGE_QUEUE_CONCURRENCY,
   WORKTREE_EMPTY_PATH_ERROR,
-} from "../constants";
-import { SmithersError } from "../utils/errors";
-import { executeChildWorkflow } from "../engine/child-workflow";
-import { executeSandbox } from "../sandbox/execute";
+} from "@smithers/graph/constants";
+import { SmithersError } from "@smithers/core/errors";
 
 // TODO(migration): Delegate extractFromHost to
 // @smithers/core/graph.extractGraph once core extraction reaches full
@@ -21,6 +19,11 @@ import { executeSandbox } from "../sandbox/execute";
 // - Inline <Subflow> validation and some legacy descriptor-shape details still
 //   differ, so replacing this implementation would not produce identical output
 //   for all inputs.
+
+const loadRuntimeModule = new Function(
+  "specifier",
+  "return import(specifier)",
+) as (specifier: string) => Promise<any>;
 
 export type HostNode = HostElement | HostText;
 
@@ -371,6 +374,9 @@ export function extractFromHost(
         prompt: undefined,
         staticPayload: undefined,
         computeFn: async () => {
+          const { executeChildWorkflow } = await loadRuntimeModule(
+            "@smithers/engine/child-workflow",
+          );
           const result = await executeChildWorkflow(undefined, {
             workflow: raw.__smithersSubflowWorkflow,
             input: raw.__smithersSubflowInput,
@@ -494,6 +500,9 @@ export function extractFromHost(
         prompt: undefined,
         staticPayload: undefined,
         computeFn: async () => {
+          const { executeSandbox } = await loadRuntimeModule(
+            "@smithers/sandbox/execute",
+          );
           if (!workflowDef) {
             throw new SmithersError(
               "INVALID_INPUT",
