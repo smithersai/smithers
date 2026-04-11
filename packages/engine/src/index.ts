@@ -1246,7 +1246,7 @@ async function continueRunAsNew(
     );
   }
 
-  const sourceInputRow = await Effect.runPromise(loadInput(db, inputTable, runId));
+  const sourceInputRow = await loadInput(db, inputTable, runId);
   if (!sourceInputRow) {
     throw new SmithersError(
       "MISSING_INPUT",
@@ -1505,7 +1505,7 @@ async function buildCacheContext(
   descriptorMap: Map<string, TaskDescriptor>,
   attempt: number,
 ): Promise<Record<string, unknown>> {
-  const inputRow = await Effect.runPromise(loadInput(db, inputTable, runId));
+  const inputRow = await loadInput(db, inputTable, runId);
   const ctx: Record<string, unknown> = {
     input: normalizeInputRow(inputRow),
     executionId: runId,
@@ -5210,8 +5210,8 @@ async function runWorkflowBodyDriver<Schema>(
 
     const snapNodes = await Effect.runPromise(adapter.listNodes(runId));
     const snapRalph = await Effect.runPromise(adapter.listRalph(runId));
-    const snapInputRow = await Effect.runPromise(loadInput(db, inputTable, runId));
-    const snapOutputs = await Effect.runPromise(loadOutputs(db, schema, runId));
+    const snapInputRow = await loadInput(db, inputTable, runId);
+    const snapOutputs = await loadOutputs(db, schema, runId);
     const snapshotData = {
       nodes: (snapNodes as any[]).map((node: any) => ({
         nodeId: node.nodeId,
@@ -5544,7 +5544,7 @@ async function runWorkflowBodyDriver<Schema>(
         });
       }
     } else {
-      let existingInput = await Effect.runPromise(loadInput(db, inputTable, runId));
+      let existingInput = await loadInput(db, inputTable, runId);
       if (!existingInput) {
         const restored = await restoreDurableStateFromSnapshot(
           adapter,
@@ -5554,7 +5554,7 @@ async function runWorkflowBodyDriver<Schema>(
           runId,
         );
         if (restored) {
-          existingInput = await Effect.runPromise(loadInput(db, inputTable, runId));
+          existingInput = await loadInput(db, inputTable, runId);
         }
       }
       if (!existingInput) {
@@ -5813,7 +5813,7 @@ async function runWorkflowBodyDriver<Schema>(
         ),
     };
 
-    const activeInput = await Effect.runPromise(loadInput(db, inputTable, runId));
+    const activeInput = await loadInput(db, inputTable, runId);
     const driver = new ReactWorkflowDriver<Schema>({
       workflow: driverWorkflow as any,
       runtime: { runPromise: Effect.runPromise as any },
@@ -5919,7 +5919,7 @@ async function runWorkflowBodyDriver<Schema>(
       ...opts,
       runId,
       input: (activeInput ?? opts.input) as Record<string, unknown>,
-      initialOutputs: await Effect.runPromise(loadOutputs(db, schema, runId)),
+      initialOutputs: await loadOutputs(db, schema, runId),
       initialIteration: defaultIteration,
       initialIterations: ralphIterationsObject(ralphState),
       rootDir,
@@ -6195,7 +6195,7 @@ async function runWorkflowBodyLegacy<Schema>(
         });
       }
     } else {
-      let existingInput = await Effect.runPromise(loadInput(db, inputTable, runId));
+      let existingInput = await loadInput(db, inputTable, runId);
       if (!existingInput) {
         const restored = await restoreDurableStateFromSnapshot(
           adapter,
@@ -6205,7 +6205,7 @@ async function runWorkflowBodyLegacy<Schema>(
           runId,
         );
         if (restored) {
-          existingInput = await Effect.runPromise(loadInput(db, inputTable, runId));
+          existingInput = await loadInput(db, inputTable, runId);
         }
       }
       if (!existingInput) {
@@ -6922,8 +6922,8 @@ async function runWorkflowBodyLegacy<Schema>(
         }
       }
 
-      const inputRow = await Effect.runPromise(loadInput(db, inputTable, runId));
-      const outputs = await Effect.runPromise(loadOutputs(db, schema, runId));
+      const inputRow = await loadInput(db, inputTable, runId);
+      const outputs = await loadOutputs(db, schema, runId);
       const ralphIterations = ralphIterationsFromState(ralphState);
       const cliAgentToolsDefault =
         runConfig.cliAgentToolsDefault === "all" ||
@@ -7016,8 +7016,8 @@ async function runWorkflowBodyLegacy<Schema>(
 
       const snapNodes = await Effect.runPromise(adapter.listNodes(runId));
       const snapRalph = await Effect.runPromise(adapter.listRalph(runId));
-      const snapInputRow = await Effect.runPromise(loadInput(db, inputTable, runId));
-      const snapOutputs = await Effect.runPromise(loadOutputs(db, schema, runId));
+      const snapInputRow = await loadInput(db, inputTable, runId);
+      const snapOutputs = await loadOutputs(db, schema, runId);
       const snapshotData = {
         nodes: (snapNodes as any[]).map((n: any) => ({
           nodeId: n.nodeId,
@@ -7499,7 +7499,7 @@ async function runWorkflowBodyLegacy<Schema>(
           // it correctly, so skip the extra work.
           const freshUntilMap = new Map<string, boolean>();
           if (!singleRalphId) {
-            const freshOutputs = await Effect.runPromise(loadOutputs(db, schema, runId));
+            const freshOutputs = await loadOutputs(db, schema, runId);
             const evalRenderer = new SmithersRenderer();
             for (const ralph of schedule.readyRalphs) {
               const rState = ralphState.get(ralph.id);

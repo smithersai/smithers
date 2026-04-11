@@ -1,8 +1,7 @@
 import * as DurableDeferred from "@effect/workflow/DurableDeferred";
 import * as Workflow from "@effect/workflow/Workflow";
-import * as WorkflowEngine from "@effect/workflow/WorkflowEngine";
 import { resolve as resolvePath } from "node:path";
-import { Cause, Effect, Exit, Layer, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import { updateAsyncExternalWaitPending } from "@smithers/observability/metrics";
 
@@ -179,44 +178,21 @@ async function markWaitForEventResolved(
   }
 }
 
-const makeWorkflowInstance = (executionId: string) =>
-  WorkflowEngine.WorkflowInstance.initial(
-    DurableDeferredBridgeWorkflow,
-    executionId,
-  );
+type BridgeDeferredResult =
+  | { _tag: "Complete"; exit: Exit.Exit<any, any> }
+  | { _tag: "Pending" };
 
-async function runBridgeEffect<A, E>(
-  effect: Effect.Effect<A, E>,
-): Promise<A> {
-  const exit = await Effect.runPromiseExit(effect);
-  if (Exit.isSuccess(exit)) {
-    return exit.value;
-  }
-  const failure = Cause.failureOption(exit.cause);
-  if (failure._tag === "Some") {
-    throw failure.value;
-  }
-  throw Cause.squash(exit.cause);
-}
+const deferredResolutions = new Map<string, Exit.Exit<any, any>>();
 
 const awaitBridgeDeferred = async <
   Success extends Schema.Schema.Any,
   Error extends Schema.Schema.All,
 >(
   executionId: string,
-  deferred: DurableDeferred.DurableDeferred<Success, Error>,
-): Promise<any> => {
-  return runBridgeEffect(
-    DurableDeferred.await(deferred).pipe(
-      Workflow.intoResult,
-      Effect.provide(
-        Layer.succeed(
-          WorkflowEngine.WorkflowInstance,
-          makeWorkflowInstance(executionId),
-        ),
-      ),
-    ) as any,
-  );
+  _deferred: DurableDeferred.DurableDeferred<Success, Error>,
+): Promise<BridgeDeferredResult> => {
+  const exit = deferredResolutions.get(executionId);
+  return exit ? { _tag: "Complete", exit } : { _tag: "Pending" };
 };
 
 const resolveBridgeDeferred = async <
@@ -224,20 +200,10 @@ const resolveBridgeDeferred = async <
   Error extends Schema.Schema.All,
 >(
   executionId: string,
-  deferred: DurableDeferred.DurableDeferred<Success, Error>,
+  _deferred: DurableDeferred.DurableDeferred<Success, Error>,
   exit: Exit.Exit<Success["Type"], Error["Type"]>,
 ) => {
-  const token = DurableDeferred.tokenFromExecutionId(deferred, {
-    workflow: DurableDeferredBridgeWorkflow,
-    executionId,
-  });
-
-  await runBridgeEffect(
-    DurableDeferred.done(deferred, {
-      token,
-      exit,
-    }) as any,
-  );
+  deferredResolutions.set(executionId, exit as Exit.Exit<any, any>);
 };
 
 export const makeDurableDeferredBridgeExecutionId = (

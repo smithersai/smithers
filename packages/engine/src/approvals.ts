@@ -1,4 +1,4 @@
-import { Effect, Metric } from "effect";
+import { Cause, Effect, Exit, Metric } from "effect";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { SmithersDb } from "@smithers/db/adapter";
 import {
@@ -33,6 +33,20 @@ function isAsyncApprovalRequest(requestJson?: string | null) {
   } catch {
     return false;
   }
+}
+
+async function runApprovalEffect<A, E>(
+  effect: Effect.Effect<A, E>,
+): Promise<A> {
+  const exit = await Effect.runPromiseExit(effect as Effect.Effect<A, E, never>);
+  if (Exit.isSuccess(exit)) {
+    return exit.value;
+  }
+  const failure = Cause.failureOption(exit.cause);
+  if (failure._tag === "Some") {
+    throw failure.value;
+  }
+  throw Cause.squash(exit.cause);
 }
 
 function assertNodeWaitingForApproval(
@@ -145,7 +159,7 @@ export async function approveNode(
   decidedBy?: string,
   decision?: unknown,
 ) {
-  await Effect.runPromise(
+  await runApprovalEffect(
     approveNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy, decision),
   );
   await bridgeApprovalResolve(adapter, runId, nodeId, iteration, {
@@ -249,7 +263,7 @@ export async function denyNode(
   decidedBy?: string,
   decision?: unknown,
 ) {
-  await Effect.runPromise(
+  await runApprovalEffect(
     denyNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy, decision),
   );
   await bridgeApprovalResolve(adapter, runId, nodeId, iteration, {
@@ -271,7 +285,7 @@ export async function autoApproveNode(
     decision?: unknown;
   },
 ) {
-  await Effect.runPromise(
+  await runApprovalEffect(
     approveNodeEffect(
       adapter,
       runId,
