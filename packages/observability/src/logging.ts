@@ -1,11 +1,11 @@
 import { Effect } from "effect";
-import { getCurrentSmithersTraceAnnotations } from "../observability";
-import { runFork } from "./runtime";
+import { runFork } from "@smithers/runtime/runtime";
+import { getCurrentSmithersTraceAnnotations } from "./index";
 import {
   correlationContextToLogAnnotations,
   getCurrentCorrelationContext,
   withCurrentCorrelationContext,
-} from "../observability/correlation";
+} from "./correlation";
 
 type LogAnnotations = Record<string, unknown> | undefined;
 

@@ -6,37 +6,37 @@ import {
   type PrometheusSample,
 } from "@smithers/core/observability";
 import { Effect, Metric, MetricBoundaries, MetricState } from "effect";
-import type { SmithersEvent } from "../SmithersEvent";
+import type { SmithersEvent } from "@smithers/core/SmithersEvent";
 import {
   ragEmbedDuration,
   ragIngestCount,
   ragRetrieveCount,
   ragRetrieveDuration,
-} from "../rag/metrics";
+} from "@smithers/rag/metrics";
 import {
   memoryFactReads,
   memoryFactWrites,
   memoryRecallDuration,
   memoryRecallQueries,
   memoryMessageSaves,
-} from "../memory/metrics";
+} from "@smithers/memory/metrics";
 import {
   openApiToolCallsTotal,
   openApiToolCallErrorsTotal,
   openApiToolDuration,
-} from "../openapi/metrics";
+} from "@smithers/openapi/metrics";
 import {
   scorerDuration,
   scorersFailed,
   scorersFinished,
   scorersStarted,
-} from "../scorers/metrics";
+} from "@smithers/scorers/metrics";
 import {
   replaysStarted,
   runForksCreated,
   snapshotDuration,
   snapshotsCaptured,
-} from "../time-travel/metrics";
+} from "@smithers/time-travel/metrics";
 
 // ---------------------------------------------------------------------------
 // Counters — existing

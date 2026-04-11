@@ -2,8 +2,8 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import {
   resolveSmithersObservabilityOptions,
   renderPrometheusMetrics,
-} from "../src/observability";
-import type { SmithersLogFormat } from "../src/observability";
+} from "../src";
+import type { SmithersLogFormat } from "../src";
 import { LogLevel } from "effect";
 
 describe("resolveSmithersObservabilityOptions", () => {

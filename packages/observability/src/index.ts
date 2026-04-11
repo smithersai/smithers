@@ -101,7 +101,7 @@ import {
   trackEvent,
   updateProcessMetrics,
   vcsDuration,
-} from "../effect/metrics";
+} from "./metrics";
 
 export {
   MetricsService,

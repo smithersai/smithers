@@ -70,7 +70,7 @@ import {
   heartbeatDataSizeBytes,
   heartbeatIntervalMs,
   updateProcessMetrics,
-} from "../src/effect/metrics";
+} from "@smithers/observability/metrics";
 
 describe("effect/metrics definitions", () => {
   test("all counters can be incremented without error", async () => {

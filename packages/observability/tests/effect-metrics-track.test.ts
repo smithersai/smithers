@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { trackEvent } from "../src/effect/metrics";
+import { trackEvent } from "@smithers/observability/metrics";
 
 // trackEvent returns an Effect — we test that it produces an Effect for each event type
 // without throwing, and that the returned effect is well-formed.

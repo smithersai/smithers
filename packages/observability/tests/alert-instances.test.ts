@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { type AlertRow, SmithersDb } from "../src/db/adapter";
-import { ensureSmithersTables } from "../src/db/ensure";
-import { createTempRepo, runSmithers } from "./e2e-helpers";
+import { type AlertRow, SmithersDb } from "@smithers/db/adapter";
+import { ensureSmithersTables } from "@smithers/db/ensure";
+import { createTempRepo, runSmithers } from "../../smithers/tests/e2e-helpers";
 
 function createAdapter() {
   const sqlite = new Database(":memory:");

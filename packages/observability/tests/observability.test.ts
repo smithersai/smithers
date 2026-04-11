@@ -4,8 +4,8 @@ import {
   httpRequestDuration,
   renderPrometheusMetrics,
   runsTotal,
-} from "../src/observability";
-import { runPromise } from "../src/effect/runtime";
+} from "../src";
+import { runPromise } from "@smithers/runtime/runtime";
 
 describe("Prometheus metrics", () => {
   test("renders built-in Smithers metrics in Prometheus exposition format", async () => {

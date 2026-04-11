@@ -4,7 +4,7 @@ import {
   externalWaitAsyncPending,
   renderPrometheusMetrics,
   prometheusContentType,
-} from "../src/observability";
+} from "../src";
 
 describe("renderPrometheusMetrics", () => {
   test("returns a string", () => {
