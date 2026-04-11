@@ -1,11 +1,12 @@
 import { SmithersError } from "./SmithersError";
 import { EngineError } from "./EngineError";
 import { fromTaggedError } from "./fromTaggedError";
+import { isSmithersError } from "./isSmithersError";
 import type { ErrorWrapOptions } from "./ErrorWrapOptions";
 
 function causeSummary(cause: unknown): string {
-  if (cause instanceof SmithersError) {
-    return cause.summary;
+  if (isSmithersErrorLike(cause)) {
+    return typeof cause.summary === "string" ? cause.summary : cause.message;
   }
   if (cause instanceof EngineError) {
     return cause.message;
@@ -16,6 +17,10 @@ function causeSummary(cause: unknown): string {
   return String(cause);
 }
 
+function isSmithersErrorLike(cause: unknown): cause is SmithersError {
+  return cause instanceof SmithersError || isSmithersError(cause);
+}
+
 export function toSmithersError(
   cause: unknown,
   label?: string,
@@ -23,8 +28,9 @@ export function toSmithersError(
 ): SmithersError {
   const taggedError = fromTaggedError(cause);
   const normalizedCause = taggedError ?? cause;
+  const smithersCause = isSmithersErrorLike(normalizedCause);
   if (
-    normalizedCause instanceof SmithersError &&
+    smithersCause &&
     !label &&
     !options.code &&
     !options.details
@@ -33,13 +39,13 @@ export function toSmithersError(
   }
   const code =
     options.code ??
-    (normalizedCause instanceof SmithersError
+    (smithersCause
       ? normalizedCause.code
       : normalizedCause instanceof EngineError
         ? normalizedCause.code
         : "INTERNAL_ERROR");
   const details = {
-    ...(normalizedCause instanceof SmithersError ? normalizedCause.details : {}),
+    ...(smithersCause ? normalizedCause.details : {}),
     ...(normalizedCause instanceof EngineError ? normalizedCause.context : {}),
     ...options.details,
   };
