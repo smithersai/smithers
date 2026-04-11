@@ -1,5 +1,6 @@
 /** @jsxImportSource smithers */
 import { describe, expect, test } from "bun:test";
+import { Effect } from "effect";
 import { Parallel, Ralph, Sequence, Task, Timer, Workflow, runWorkflow } from "smithers";
 import { SmithersDb } from "@smithers/db/adapter";
 import { createTestSmithers, sleep } from "./helpers";
@@ -141,7 +142,7 @@ describe("timer runtime", () => {
     expect(cancelled.status).toBe("cancelled");
 
     const adapter = new SmithersDb(db as any);
-    const attempts = await adapter.listAttempts(first.runId, "hold", 0);
+    const attempts = await Effect.runPromise(adapter.listAttempts(first.runId, "hold", 0));
     expect((attempts as any[])[0]?.state).toBe("cancelled");
     cleanup();
   });

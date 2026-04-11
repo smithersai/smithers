@@ -1,6 +1,7 @@
 /** @jsxImportSource smithers */
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
+import { Effect } from "effect";
 import { z } from "zod";
 import { SmithersDb, runWorkflow } from "smithers";
 import { createTestSmithers } from "./helpers";
@@ -89,8 +90,8 @@ describe("continue-as-new", () => {
       5,
     );
 
-    const run2Attempts = await adapter.listAttemptsForRun(run2Id);
-    const run3Attempts = await adapter.listAttemptsForRun(run3Id);
+    const run2Attempts = await Effect.runPromise(adapter.listAttemptsForRun(run2Id));
+    const run3Attempts = await Effect.runPromise(adapter.listAttemptsForRun(run3Id));
     expect((run2Attempts as any[]).filter((a) => a.nodeId === "tick").length).toBe(
       5,
     );
