@@ -220,7 +220,7 @@ export async function timeTravel(
   await adapter.withTransaction(
     "time-travel",
     Effect.gen(function* () {
-      const frames = yield* adapter.listFramesEffect(runId, 1_000_000);
+      const frames = yield* adapter.listFrames(runId, 1_000_000);
       const cutoff = targetAttempt.startedAtMs;
       let lastValidFrameNo = -1;
       for (const frame of frames) {
@@ -229,7 +229,7 @@ export async function timeTravel(
         }
       }
       if (lastValidFrameNo >= 0) {
-        yield* adapter.deleteFramesAfterEffect(runId, lastValidFrameNo);
+        yield* adapter.deleteFramesAfter(runId, lastValidFrameNo);
       }
 
       for (const resetNode of resetNodes as any[]) {
@@ -244,7 +244,7 @@ export async function timeTravel(
           if (attempt.finishedAtMs == null) {
             patch.finishedAtMs = nowMs();
           }
-          yield* adapter.updateAttemptEffect(
+          yield* adapter.updateAttempt(
             runId,
             resetNode.nodeId,
             resetNode.iteration ?? 0,
@@ -253,16 +253,16 @@ export async function timeTravel(
           );
         }
         if (resetNode.outputTable) {
-          yield* adapter.deleteOutputRowEffect(resetNode.outputTable, {
+          yield* adapter.deleteOutputRow(resetNode.outputTable, {
             runId,
             nodeId: resetNode.nodeId,
             iteration: resetNode.iteration ?? 0,
           });
         }
-        yield* adapter.insertNodeEffect(buildPendingNode(resetNode));
+        yield* adapter.insertNode(buildPendingNode(resetNode));
       }
 
-      yield* adapter.updateRunEffect(runId, {
+      yield* adapter.updateRun(runId, {
         status: "running",
         finishedAtMs: null,
         heartbeatAtMs: null,
