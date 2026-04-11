@@ -1,6 +1,6 @@
 import { tool, zodSchema } from "ai";
 import type { z } from "zod";
-import { nowMs } from "@smithers/core/utils/time";
+import { nowMs } from "@smithers/scheduler/nowMs";
 import {
   getToolContext,
   getToolIdempotencyKey,

@@ -3,7 +3,7 @@ import { realpath } from "node:fs/promises";
 import { Effect } from "effect";
 import { fromPromise } from "@smithers/runtime/interop";
 import { runPromise } from "@smithers/runtime/runtime";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 
 export function resolveSandboxPath(rootDir: string, inputPath: string): string {
   if (!inputPath || typeof inputPath !== "string") {

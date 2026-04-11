@@ -1,13 +1,13 @@
 import { tool, zodSchema } from "ai";
 import { Effect } from "effect";
 import { z } from "zod";
-import { nowMs } from "@smithers/core/utils/time";
+import { nowMs } from "@smithers/scheduler/nowMs";
 import { spawnCaptureEffect } from "@smithers/runtime/child-process";
 import { fromSync } from "@smithers/runtime/interop";
 import { runPromise } from "@smithers/runtime/runtime";
 import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 import { logToolCallEffect, logToolCallStartEffect } from "./logToolCall";
 
 export function grepToolEffect(pattern: string, path?: string) {

@@ -2,12 +2,12 @@ import { tool, zodSchema } from "ai";
 import * as FileSystem from "@effect/platform/FileSystem";
 import { Effect, Metric } from "effect";
 import { z } from "zod";
-import { nowMs } from "@smithers/core/utils/time";
+import { nowMs } from "@smithers/scheduler/nowMs";
 import { fromSync } from "@smithers/runtime/interop";
 import { runPromise } from "@smithers/runtime/runtime";
 import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors/SmithersError";
 import { toolOutputTruncatedTotal } from "@smithers/observability/metrics";
 import {
   logToolCallEffect,
