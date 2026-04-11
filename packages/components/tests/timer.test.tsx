@@ -1,0 +1,272 @@
+/** @jsxImportSource smithers */
+import { describe, expect, test } from "bun:test";
+import { Effect } from "effect";
+import { Parallel, Ralph, Sequence, Task, Timer, Workflow, runWorkflow } from "smithers";
+import { SmithersDb } from "@smithers/db/adapter";
+import { createTestSmithers, sleep } from "./helpers";
+import { z } from "zod";
+
+async function resumeUntilDone(
+  workflow: any,
+  runId: string,
+  options?: { maxAttempts?: number; intervalMs?: number },
+) {
+  const maxAttempts = options?.maxAttempts ?? 12;
+  const intervalMs = options?.intervalMs ?? 75;
+  let result: any = { runId, status: "waiting-timer" };
+  for (let i = 0; i < maxAttempts; i++) {
+    await sleep(intervalMs);
+    result = await runWorkflow(workflow, { input: {}, runId, resume: true });
+    if (result.status !== "waiting-timer") return result;
+  }
+  return result;
+}
+
+describe("timer runtime", () => {
+  test("duration timer waits, then resumes and finishes", async () => {
+    const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
+      out: z.object({ v: z.number() }),
+    });
+
+    const workflow = smithers(() => (
+      <Workflow name="timer-duration">
+        <Sequence>
+          <Timer id="cooldown" duration="120ms" />
+          <Task id="after" output={outputs.out}>{{ v: 1 }}</Task>
+        </Sequence>
+      </Workflow>
+    ));
+
+    const first = await runWorkflow(workflow, { input: {} });
+    expect(first.status).toBe("waiting-timer");
+
+    await sleep(180);
+    const resumed = await runWorkflow(workflow, {
+      input: {},
+      runId: first.runId,
+      resume: true,
+    });
+    expect(resumed.status).toBe("finished");
+
+    const rows = await (db as any).select().from(tables.out);
+    expect(rows).toHaveLength(1);
+
+    const adapter = new SmithersDb(db as any);
+    const events = await adapter.listEvents(first.runId, -1, 500);
+    const types = (events as any[]).map((event) => event.type);
+    expect(types).toContain("TimerCreated");
+    expect(types).toContain("TimerFired");
+    expect(types).toContain("NodeWaitingTimer");
+    cleanup();
+  });
+
+  test("absolute timer waits, then resumes", async () => {
+    const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
+      out: z.object({ v: z.number() }),
+    });
+    // Leave enough slack for engine startup so the first run still observes a
+    // future absolute deadline on slower machines.
+    const until = new Date(Date.now() + 900).toISOString();
+
+    const workflow = smithers(() => (
+      <Workflow name="timer-absolute">
+        <Sequence>
+          <Timer id="market-open" until={until} />
+          <Task id="after" output={outputs.out}>{{ v: 2 }}</Task>
+        </Sequence>
+      </Workflow>
+    ));
+
+    const first = await runWorkflow(workflow, { input: {} });
+    expect(first.status).toBe("waiting-timer");
+
+    await sleep(980);
+    const resumed = await runWorkflow(workflow, {
+      input: {},
+      runId: first.runId,
+      resume: true,
+    });
+    expect(resumed.status).toBe("finished");
+
+    const rows = await (db as any).select().from(tables.out);
+    expect(rows).toHaveLength(1);
+    cleanup();
+  });
+
+  test("zero duration and past-until timers fire immediately", async () => {
+    const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
+      out: z.object({ v: z.number() }),
+    });
+
+    const workflow = smithers(() => (
+      <Workflow name="timer-immediate">
+        <Sequence>
+          <Timer id="zero" duration="0s" />
+          <Timer id="past" until="2020-01-01T00:00:00Z" />
+          <Task id="after" output={outputs.out}>{{ v: 3 }}</Task>
+        </Sequence>
+      </Workflow>
+    ));
+
+    const result = await runWorkflow(workflow, { input: {} });
+    expect(result.status).toBe("finished");
+    const rows = await (db as any).select().from(tables.out);
+    expect(rows).toHaveLength(1);
+    cleanup();
+  });
+
+  test("timer cancellation marks pending timer attempt cancelled", async () => {
+    const { smithers, outputs, db, cleanup } = createTestSmithers({
+      out: z.object({ v: z.number() }),
+    });
+    const workflow = smithers(() => (
+      <Workflow name="timer-cancel">
+        <Sequence>
+          <Timer id="hold" duration="10s" />
+          <Task id="after" output={outputs.out}>{{ v: 4 }}</Task>
+        </Sequence>
+      </Workflow>
+    ));
+
+    const first = await runWorkflow(workflow, { input: {} });
+    expect(first.status).toBe("waiting-timer");
+
+    const controller = new AbortController();
+    controller.abort();
+    const cancelled = await runWorkflow(workflow, {
+      input: {},
+      runId: first.runId,
+      resume: true,
+      signal: controller.signal,
+    });
+    expect(cancelled.status).toBe("cancelled");
+
+    const adapter = new SmithersDb(db as any);
+    const attempts = await Effect.runPromise(adapter.listAttempts(first.runId, "hold", 0));
+    expect((attempts as any[])[0]?.state).toBe("cancelled");
+    cleanup();
+  });
+
+  test("timer in loop gates each iteration", async () => {
+    const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
+      out: z.object({ v: z.number() }),
+    });
+    const workflow = smithers((ctx) => (
+      <Workflow name="timer-loop">
+        <Ralph id="loop" until={ctx.outputs("out").length >= 2}>
+          <Sequence>
+            <Timer id="tick" duration="40ms" />
+            <Task id="step" output={outputs.out}>
+              {{ v: ctx.outputs("out").length }}
+            </Task>
+          </Sequence>
+        </Ralph>
+      </Workflow>
+    ));
+
+    const first = await runWorkflow(workflow, { input: {} });
+    expect(first.status).toBe("waiting-timer");
+    const done = await resumeUntilDone(workflow, first.runId, {
+      maxAttempts: 16,
+      intervalMs: 70,
+    });
+    expect(done.status).toBe("finished");
+
+    const rows = await (db as any).select().from(tables.out);
+    expect(rows).toHaveLength(2);
+
+    const adapter = new SmithersDb(db as any);
+    const events = await adapter.listEvents(first.runId, -1, 1_000);
+    const timerCreatedCount = (events as any[]).filter((event) => event.type === "TimerCreated").length;
+    const timerFiredCount = (events as any[]).filter((event) => event.type === "TimerFired").length;
+    expect(timerCreatedCount).toBeGreaterThanOrEqual(2);
+    expect(timerFiredCount).toBeGreaterThanOrEqual(2);
+    cleanup();
+  });
+
+  test("multiple timers in parallel fire independently", async () => {
+    const { smithers, outputs, tables, db, cleanup } = createTestSmithers({
+      left: z.object({ v: z.number() }),
+      right: z.object({ v: z.number() }),
+    });
+
+    const workflow = smithers(() => (
+      <Workflow name="parallel-timers">
+        <Parallel>
+          <Sequence>
+            <Timer id="left-timer" duration="80ms" />
+            <Task id="left-task" output={outputs.left}>{{ v: 1 }}</Task>
+          </Sequence>
+          <Sequence>
+            <Timer id="right-timer" duration="1600ms" />
+            <Task id="right-task" output={outputs.right}>{{ v: 2 }}</Task>
+          </Sequence>
+        </Parallel>
+      </Workflow>
+    ));
+
+    const first = await runWorkflow(workflow, { input: {} });
+    expect(first.status).toBe("waiting-timer");
+
+    await sleep(140);
+    const second = await runWorkflow(workflow, {
+      input: {},
+      runId: first.runId,
+      resume: true,
+    });
+    expect(second.status).toBe("waiting-timer");
+
+    const leftRowsAfterSecond = await (db as any).select().from(tables.left);
+    const rightRowsAfterSecond = await (db as any).select().from(tables.right);
+    expect(leftRowsAfterSecond).toHaveLength(1);
+    expect(rightRowsAfterSecond).toHaveLength(0);
+
+    const third = await resumeUntilDone(workflow, first.runId, {
+      maxAttempts: 20,
+      intervalMs: 120,
+    });
+    expect(third.status).toBe("finished");
+
+    const leftRows = await (db as any).select().from(tables.left);
+    const rightRows = await (db as any).select().from(tables.right);
+    expect(leftRows).toHaveLength(1);
+    expect(rightRows).toHaveLength(1);
+    cleanup();
+  });
+});
+
+describe("timer validation", () => {
+  test("duplicate timer ids fail extraction", async () => {
+    const { smithers, cleanup } = createTestSmithers({
+      out: z.object({ v: z.number() }),
+    });
+    const workflow = smithers(() => (
+      <Workflow name="dup-timer">
+        <Sequence>
+          <Timer id="same" duration="1s" />
+          <Timer id="same" duration="1s" />
+        </Sequence>
+      </Workflow>
+    ));
+
+    const result = await runWorkflow(workflow, { input: {} });
+    expect(result.status).toBe("failed");
+    cleanup();
+  });
+
+  test("timer id longer than 256 chars is rejected", async () => {
+    const { smithers, cleanup } = createTestSmithers({
+      out: z.object({ v: z.number() }),
+    });
+    const id = "t".repeat(257);
+    const workflow = smithers(() => (
+      <Workflow name="timer-long-id">
+        <Timer id={id} duration="1s" />
+      </Workflow>
+    ));
+
+    const result = await runWorkflow(workflow, { input: {} });
+    expect(result.status).toBe("failed");
+    cleanup();
+  });
+});
