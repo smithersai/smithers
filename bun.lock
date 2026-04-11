@@ -30,6 +30,10 @@
         "@smithers/agents": "workspace:*",
         "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
+        "@smithers/driver": "workspace:*",
+        "@smithers/errors": "workspace:*",
+        "@smithers/observability": "workspace:*",
+        "@smithers/scheduler": "workspace:*",
         "@smithers/server": "workspace:*",
         "@smithers/time-travel": "workspace:*",
         "incur": "^0.3.3",
@@ -111,8 +115,10 @@
       "version": "0.0.0",
       "dependencies": {
         "@smithers/core": "workspace:*",
+        "@smithers/db": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/graph": "workspace:*",
+        "@smithers/observability": "workspace:*",
         "@smithers/scheduler": "workspace:*",
         "effect": "^3.21.0",
         "zod": "^4.3.6",
@@ -176,6 +182,7 @@
       "name": "@smithers/graph",
       "version": "0.0.0",
       "dependencies": {
+        "@smithers/agents": "workspace:*",
         "@smithers/core": "workspace:*",
         "@smithers/errors": "workspace:*",
       },
@@ -211,7 +218,9 @@
         "@effect/opentelemetry": "^0.61.0",
         "@effect/platform": "^0.96.0",
         "@effect/platform-bun": "^0.89.0",
+        "@smithers/agents": "workspace:*",
         "@smithers/core": "workspace:*",
+        "@smithers/driver": "workspace:*",
         "effect": "^3.21.0",
       },
       "devDependencies": {
@@ -313,10 +322,12 @@
       "dependencies": {
         "@effect/platform": "^0.96.0",
         "@effect/workflow": "^0.18.0",
-        "@smithers/core": "workspace:*",
         "@smithers/driver": "workspace:*",
+        "@smithers/durables": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
+        "@smithers/scheduler": "workspace:*",
+        "@smithers/tools": "workspace:*",
         "effect": "^3.21.0",
       },
       "devDependencies": {
@@ -455,6 +466,7 @@
       "dependencies": {
         "@effect/platform": "^0.96.0",
         "@smithers/core": "workspace:*",
+        "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
@@ -489,6 +501,7 @@
       "dependencies": {
         "@smithers/core": "workspace:*",
         "@smithers/errors": "workspace:*",
+        "@smithers/observability": "workspace:*",
         "ai": "^6.0.69",
         "effect": "^3.21.0",
         "ws": "^8.18.0",
