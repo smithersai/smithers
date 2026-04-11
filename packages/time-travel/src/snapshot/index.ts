@@ -1,43 +1,42 @@
-export { captureSnapshot } from "./captureSnapshotEffect";
-export {
-  loadLatestSnapshot,
-  loadSnapshot,
+import { Effect } from "effect";
+import { captureSnapshot as captureSnapshotEffect } from "./captureSnapshotEffect";
+import {
+  loadLatestSnapshot as loadLatestSnapshotEffect,
+  loadSnapshot as loadSnapshotEffect,
 } from "./loadSnapshotEffect";
-export { listSnapshots } from "./listSnapshotsEffect";
+import { listSnapshots as listSnapshotsEffect } from "./listSnapshotsEffect";
+export { parseSnapshot } from "./parseSnapshot";
+
+export {
+  captureSnapshotEffect,
+  listSnapshotsEffect,
+  loadLatestSnapshotEffect,
+  loadSnapshotEffect,
+};
 
 export type { Snapshot } from "./Snapshot";
 export type { SnapshotData } from "./SnapshotData";
 
-import type {
-  NodeSnapshot,
-  ParsedSnapshot,
-  RalphSnapshot,
-  Snapshot,
-} from "../types";
+export function captureSnapshot(
+  ...args: Parameters<typeof captureSnapshotEffect>
+) {
+  return Effect.runPromise(captureSnapshotEffect(...args));
+}
 
-export function parseSnapshot(snapshot: Snapshot): ParsedSnapshot {
-  const nodesArr: NodeSnapshot[] = JSON.parse(snapshot.nodesJson);
-  const nodes: Record<string, NodeSnapshot> = {};
-  for (const node of nodesArr) {
-    nodes[`${node.nodeId}::${node.iteration}`] = node;
-  }
+export function loadSnapshot(
+  ...args: Parameters<typeof loadSnapshotEffect>
+) {
+  return Effect.runPromise(loadSnapshotEffect(...args));
+}
 
-  const ralphArr: RalphSnapshot[] = JSON.parse(snapshot.ralphJson);
-  const ralph: Record<string, RalphSnapshot> = {};
-  for (const entry of ralphArr) {
-    ralph[entry.ralphId] = entry;
-  }
+export function loadLatestSnapshot(
+  ...args: Parameters<typeof loadLatestSnapshotEffect>
+) {
+  return Effect.runPromise(loadLatestSnapshotEffect(...args));
+}
 
-  return {
-    runId: snapshot.runId,
-    frameNo: snapshot.frameNo,
-    nodes,
-    outputs: JSON.parse(snapshot.outputsJson),
-    ralph,
-    input: JSON.parse(snapshot.inputJson),
-    vcsPointer: snapshot.vcsPointer,
-    workflowHash: snapshot.workflowHash,
-    contentHash: snapshot.contentHash,
-    createdAtMs: snapshot.createdAtMs,
-  };
+export function listSnapshots(
+  ...args: Parameters<typeof listSnapshotsEffect>
+) {
+  return Effect.runPromise(listSnapshotsEffect(...args));
 }

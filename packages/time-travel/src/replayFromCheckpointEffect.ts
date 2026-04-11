@@ -1,8 +1,8 @@
 import { Effect, Metric } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { SmithersError } from "@smithers/errors/SmithersError";
-import { forkRun } from "./fork";
-import { rerunAtRevision } from "./vcs-version";
+import { forkRun as forkRunEffect } from "./fork/forkRunEffect";
+import { rerunAtRevision as rerunAtRevisionEffect } from "./vcs-version/rerunAtRevisionEffect";
 import { replaysStarted } from "./replaysStarted";
 import type { ReplayParams } from "./ReplayParams";
 import type { ReplayResult } from "./ReplayResult";
@@ -28,7 +28,7 @@ export function replayFromCheckpoint(
     } = params;
 
     // 1. Fork the run
-    const { runId, branch, snapshot } = yield* forkRun(adapter, {
+    const { runId, branch, snapshot } = yield* forkRunEffect(adapter, {
       parentRunId,
       frameNo,
       inputOverrides,
@@ -43,7 +43,7 @@ export function replayFromCheckpoint(
     let vcsError: string | undefined;
 
     if (restoreVcs) {
-      const vcsResult = yield* rerunAtRevision(adapter, parentRunId, frameNo, { cwd });
+      const vcsResult = yield* rerunAtRevisionEffect(adapter, parentRunId, frameNo, { cwd });
       vcsRestored = vcsResult.restored;
       vcsPointer = vcsResult.vcsPointer;
       vcsError = vcsResult.error;
