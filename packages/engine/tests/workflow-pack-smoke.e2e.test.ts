@@ -8,6 +8,8 @@ import {
   writeFakeGeminiBinary,
 } from "../../smithers/tests/e2e-helpers";
 
+const WORKFLOW_PACK_SMOKE_TIMEOUT_MS = 30_000;
+
 function buildWorkflowPackEnv(homeDir: string) {
   const binDir = createExecutableDir();
   writeFakeClaudeBinary(binDir);
@@ -57,7 +59,7 @@ test("seeded implement workflow runs end-to-end and writes logs under .smithers/
   const runId = (result.json as { runId?: string } | undefined)?.runId;
   expect(typeof runId).toBe("string");
   expect(repo.exists(`.smithers/executions/${runId}/logs`)).toBe(true);
-});
+}, WORKFLOW_PACK_SMOKE_TIMEOUT_MS);
 
 test("seeded review workflow runs end-to-end with fake agents", () => {
   const { repo, env } = initWorkflowPack();
@@ -72,7 +74,7 @@ test("seeded review workflow runs end-to-end with fake agents", () => {
   expect(result.json).toMatchObject({
     status: "finished",
   });
-});
+}, WORKFLOW_PACK_SMOKE_TIMEOUT_MS);
 
 test("seeded plan workflow runs end-to-end with fake agents", () => {
   const { repo, env } = initWorkflowPack();
@@ -87,7 +89,7 @@ test("seeded plan workflow runs end-to-end with fake agents", () => {
   expect(result.json).toMatchObject({
     status: "finished",
   });
-});
+}, WORKFLOW_PACK_SMOKE_TIMEOUT_MS);
 
 test("seeded improve-test-coverage workflow resolves and runs end-to-end", () => {
   const { repo, env } = initWorkflowPack();
@@ -102,4 +104,4 @@ test("seeded improve-test-coverage workflow resolves and runs end-to-end", () =>
   expect(result.json).toMatchObject({
     status: "finished",
   });
-});
+}, WORKFLOW_PACK_SMOKE_TIMEOUT_MS);
