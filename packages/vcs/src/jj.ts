@@ -77,6 +77,7 @@ export function runJjEffect(
         stderr: error instanceof Error ? error.message : String(error),
       }),
     ),
+    Effect.provide(platformLayer),
   );
 }
 
