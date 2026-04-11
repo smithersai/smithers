@@ -12,7 +12,7 @@ import {
   assertOptionalArrayMaxLength,
   assertOptionalStringMaxLength,
   assertPositiveFiniteInteger,
-} from "@smithers/core/utils/input-bounds";
+} from "@smithers/db/input-bounds";
 import { toolOutputTruncatedTotal } from "@smithers/observability/metrics";
 import {
   logToolCallEffect,

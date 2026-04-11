@@ -24,6 +24,7 @@
   "dependencies": {
     "@effect/platform": "^0.96.0",
     "@smithers/core": "workspace:*",
+    "@smithers/db": "workspace:*",
     "@smithers/driver": "workspace:*",
     "@smithers/errors": "workspace:*",
     "@smithers/observability": "workspace:*",

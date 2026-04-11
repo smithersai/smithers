@@ -14,11 +14,10 @@ export type {
   EngineDecision,
   RenderContext,
   WaitReason,
-  WorkflowSession,
   SmithersWorkflowOptions,
 } from "@smithers/scheduler";
 export type { RunOptions, RunResult, SmithersCtx } from "@smithers/driver";
-export type { WorkflowRuntime } from "@smithers/core";
+export type { WorkflowRuntime, WorkflowSession } from "@smithers/core/workflow-types";
 export type {
   ExtractOptions,
   HostElement,
