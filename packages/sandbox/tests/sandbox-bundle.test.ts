@@ -7,7 +7,7 @@ import {
   SANDBOX_MAX_README_BYTES,
   validateSandboxBundle,
   writeSandboxBundle,
-} from "../src/sandbox/bundle";
+} from "../src/bundle";
 
 function tempDir(prefix: string) {
   return mkdtempSync(join(tmpdir(), prefix));

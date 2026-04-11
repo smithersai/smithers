@@ -2,13 +2,13 @@ import { Context, Effect, Layer } from "effect";
 import {
   CodeplaneSandboxExecutorLive,
   DockerSandboxExecutorLive,
-} from "../effect/http-runner";
+} from "./effect/http-runner";
 import {
   SandboxEntityExecutor,
   makeSandboxTransportServiceEffect,
-} from "../effect/sandbox-entity";
-import { BubblewrapSandboxExecutorLive } from "../effect/socket-runner";
-import { type SmithersError } from "../utils/errors";
+} from "./effect/sandbox-entity";
+import { BubblewrapSandboxExecutorLive } from "./effect/socket-runner";
+import { type SmithersError } from "@smithers/core/errors";
 
 export type SandboxRuntime = "bubblewrap" | "docker" | "codeplane";
 

@@ -6,7 +6,7 @@ import {
   makeSandboxTransportLayer,
   type SandboxHandle,
   type SandboxTransportConfig,
-} from "../src/sandbox/transport";
+} from "../src/transport";
 
 const config: SandboxTransportConfig = {
   runId: "run-entity-contract",

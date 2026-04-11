@@ -1,12 +1,12 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { SmithersError } from "../utils/errors";
+import { SmithersError } from "@smithers/core/errors";
 import {
   assertJsonPayloadWithinBounds,
   assertOptionalArrayMaxLength,
   assertOptionalStringMaxLength,
-} from "../utils/input-bounds";
-import { resolveSandboxPath } from "../tools/utils";
+} from "@smithers/core/utils/input-bounds";
+import { resolveSandboxPath } from "@smithers/tools/utils";
 
 export const SANDBOX_MAX_BUNDLE_BYTES = 100 * 1024 * 1024; // 100MB
 export const SANDBOX_MAX_README_BYTES = 5 * 1024 * 1024; // 5MB
