@@ -1,11 +1,11 @@
 import type { EmbeddingModel } from "ai";
 import { Effect, Metric } from "effect";
-import { fromPromise } from "../effect/interop";
-import { runPromise } from "../effect/runtime";
-import type { VectorStore, RetrievalResult } from "../rag/types";
-import { embedQueryEffect, embedChunksEffect } from "../rag/embedder";
-import type { SmithersError } from "../utils/errors";
-import { nowMs } from "../utils/time";
+import { fromPromise } from "@smithers/runtime/interop";
+import { runPromise } from "@smithers/runtime/runtime";
+import type { VectorStore, RetrievalResult } from "@smithers/rag/types";
+import { embedQueryEffect, embedChunksEffect } from "@smithers/rag/embedder";
+import type { SmithersError } from "@smithers/core/errors";
+import { nowMs } from "@smithers/core/utils/time";
 import type { MemoryNamespace, SemanticRecallConfig } from "./types";
 import { namespaceToString } from "./types";
 import { memoryRecallQueries, memoryRecallDuration } from "./metrics";

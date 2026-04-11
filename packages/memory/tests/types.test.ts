@@ -3,7 +3,7 @@ import {
   namespaceToString,
   parseNamespace,
   type MemoryNamespace,
-} from "../../src/memory/types";
+} from "../src/types";
 
 describe("namespaceToString", () => {
   test("workflow namespace", () => {

@@ -1,13 +1,13 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { ensureSmithersTables } from "../../src/db/ensure";
-import { createMemoryStore, type MemoryStore } from "../../src/memory/store";
-import { createSqliteVectorStore } from "../../src/rag/vector-store";
-import { createSemanticMemory, type SemanticMemory } from "../../src/memory/semantic";
-import { TtlGarbageCollector } from "../../src/memory/processors";
-import { namespaceToString, parseNamespace } from "../../src/memory/types";
-import type { MemoryNamespace } from "../../src/memory/types";
+import { ensureSmithersTables } from "@smithers/db/ensure";
+import { createMemoryStore, type MemoryStore } from "../src/store";
+import { createSqliteVectorStore } from "@smithers/rag/vector-store";
+import { createSemanticMemory, type SemanticMemory } from "../src/semantic";
+import { TtlGarbageCollector } from "../src/processors";
+import { namespaceToString, parseNamespace } from "../src/types";
+import type { MemoryNamespace } from "../src/types";
 
 function createMockEmbeddingModel() {
   function textToVector(text: string): number[] {

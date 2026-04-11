@@ -1,10 +1,10 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { ensureSmithersTables } from "../../src/db/ensure";
-import { createSqliteVectorStore } from "../../src/rag/vector-store";
-import { createSemanticMemory, type SemanticMemory } from "../../src/memory/semantic";
-import type { MemoryNamespace } from "../../src/memory/types";
+import { ensureSmithersTables } from "@smithers/db/ensure";
+import { createSqliteVectorStore } from "@smithers/rag/vector-store";
+import { createSemanticMemory, type SemanticMemory } from "../src/semantic";
+import type { MemoryNamespace } from "../src/types";
 
 // ---------------------------------------------------------------------------
 // Mock embedding model that returns deterministic vectors

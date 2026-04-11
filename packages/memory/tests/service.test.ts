@@ -2,9 +2,9 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Effect, Layer } from "effect";
-import { ensureSmithersTables } from "../../src/db/ensure";
-import { MemoryService, createMemoryLayer } from "../../src/memory/service";
-import type { MemoryNamespace } from "../../src/memory/types";
+import { ensureSmithersTables } from "@smithers/db/ensure";
+import { MemoryService, createMemoryLayer } from "../src/service";
+import type { MemoryNamespace } from "../src/types";
 
 const WF_NS: MemoryNamespace = { kind: "workflow", id: "test-service" };
 

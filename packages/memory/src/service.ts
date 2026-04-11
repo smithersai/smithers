@@ -1,8 +1,8 @@
 import { Context, Effect, Layer } from "effect";
 import type { EmbeddingModel } from "ai";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
-import type { SmithersError } from "../utils/errors";
-import type { VectorStore, RetrievalResult } from "../rag/types";
+import type { SmithersError } from "@smithers/core/errors";
+import type { VectorStore, RetrievalResult } from "@smithers/rag/types";
 import type {
   MemoryNamespace,
   MemoryFact,

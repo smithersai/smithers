@@ -1,14 +1,14 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { ensureSmithersTables } from "../../src/db/ensure";
-import { createMemoryStore, type MemoryStore } from "../../src/memory/store";
+import { ensureSmithersTables } from "@smithers/db/ensure";
+import { createMemoryStore, type MemoryStore } from "../src/store";
 import {
   TtlGarbageCollector,
   TokenLimiter,
   Summarizer,
-} from "../../src/memory/processors";
-import type { MemoryNamespace } from "../../src/memory/types";
+} from "../src/processors";
+import type { MemoryNamespace } from "../src/types";
 
 const WF_NS: MemoryNamespace = { kind: "workflow", id: "test-proc" };
 

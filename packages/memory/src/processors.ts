@@ -1,8 +1,8 @@
 import { Effect, Metric } from "effect";
-import { fromPromise } from "../../effect/interop";
-import { runPromise } from "../../effect/runtime";
-import type { SmithersError } from "../../utils/errors";
-import type { MemoryStore } from "../store";
+import { fromPromise } from "@smithers/runtime/interop";
+import { runPromise } from "@smithers/runtime/runtime";
+import type { SmithersError } from "@smithers/core/errors";
+import type { MemoryStore } from "./store";
 
 // ---------------------------------------------------------------------------
 // Processor interface
