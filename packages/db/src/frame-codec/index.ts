@@ -1,0 +1,12 @@
+export type { FrameEncoding } from "./FrameEncoding";
+export type { JsonPathSegment } from "./JsonPathSegment";
+export type { JsonPath } from "./JsonPath";
+export type { FrameDeltaOp } from "./FrameDeltaOp";
+export type { FrameDelta } from "./FrameDelta";
+export { FRAME_KEYFRAME_INTERVAL } from "./FRAME_KEYFRAME_INTERVAL";
+export { normalizeFrameEncoding } from "./normalizeFrameEncoding";
+export { parseFrameDelta } from "./parseFrameDelta";
+export { serializeFrameDelta } from "./serializeFrameDelta";
+export { encodeFrameDelta } from "./encodeFrameDelta";
+export { applyFrameDelta } from "./applyFrameDelta";
+export { applyFrameDeltaJson } from "./applyFrameDeltaJson";

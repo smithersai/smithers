@@ -4,7 +4,6 @@ export * from "./frame-codec";
 export * from "./input";
 export * from "./internal-schema";
 export * from "./output";
-export * from "./react-output";
 export * from "./schema-signature";
 export * from "./snapshot";
 export * from "./sql-message-storage";

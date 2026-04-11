@@ -1,0 +1,1 @@
+export const FRAME_KEYFRAME_INTERVAL = 50;

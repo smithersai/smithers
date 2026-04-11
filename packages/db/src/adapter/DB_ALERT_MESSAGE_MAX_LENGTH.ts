@@ -1,0 +1,1 @@
+export const DB_ALERT_MESSAGE_MAX_LENGTH = 4096;
