@@ -17,7 +17,7 @@ beforeAll(() => {
 });
 
 const fixturesDir = resolve(import.meta.dir, "fixtures");
-const sdkPath = resolve(import.meta.dir, "../packages/smithers-py");
+const sdkPath = resolve(import.meta.dir, "../../smithers-py");
 
 const schemas = {
   outputA: z.object({ value: z.number() }),

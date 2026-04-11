@@ -17,7 +17,7 @@ beforeAll(() => {
 });
 
 const fixturesDir = resolve(import.meta.dir, "fixtures");
-const sdkPath = resolve(import.meta.dir, "../packages/smithers-py");
+const sdkPath = resolve(import.meta.dir, "../../smithers-py");
 const env = { PYTHONPATH: sdkPath };
 
 function pydanticWf(scriptName: string, agents: Record<string, any> = {}) {
