@@ -40,6 +40,7 @@
         "./packages/core/src/protocol/*.ts",
         "./packages/core/src/protocol/*/index.ts"
       ],
+      "@smithers/core/utils/*": ["./packages/core/src/utils/*.ts"],
       "@smithers/core-react": ["./packages/react/src/index.ts"],
       "@smithers/core-react/*": ["./packages/react/src/*.ts", "./packages/react/src/*/index.ts"],
       "@smithers/db": ["./packages/db/src/index.ts"],

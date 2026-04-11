@@ -28,7 +28,6 @@
         "@opentui/core": "^0.1.92",
         "@opentui/react": "^0.1.92",
         "@smithers/agents": "workspace:*",
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
@@ -53,25 +52,11 @@
       "dependencies": {
         "@ai-sdk/anthropic": "^3.0.36",
         "@ai-sdk/openai": "^3.0.41",
-        "@smithers/core": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
         "@smithers/runtime": "workspace:*",
         "ai": "^6.0.69",
-        "zod": "^4.3.6",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "~5.9.3",
-      },
-    },
-    "packages/core": {
-      "name": "@smithers/core",
-      "version": "0.0.0",
-      "dependencies": {
-        "@smithers/graph": "workspace:*",
-        "effect": "^3.21.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
@@ -85,7 +70,6 @@
       "dependencies": {
         "@effect/experimental": "^0.58.0",
         "@effect/sql": "^0.51.0",
-        "@smithers/core": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/durables": "workspace:*",
         "@smithers/errors": "workspace:*",
@@ -114,7 +98,6 @@
       "name": "@smithers/driver",
       "version": "0.0.0",
       "dependencies": {
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/graph": "workspace:*",
@@ -144,7 +127,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@smithers/agents": "workspace:*",
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
@@ -183,7 +165,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@smithers/agents": "workspace:*",
-        "@smithers/core": "workspace:*",
         "@smithers/errors": "workspace:*",
       },
       "devDependencies": {
@@ -195,7 +176,6 @@
       "name": "@smithers/memory",
       "version": "0.0.0",
       "dependencies": {
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
@@ -219,7 +199,6 @@
         "@effect/platform": "^0.96.0",
         "@effect/platform-bun": "^0.89.0",
         "@smithers/agents": "workspace:*",
-        "@smithers/core": "workspace:*",
         "@smithers/driver": "workspace:*",
         "effect": "^3.21.0",
       },
@@ -232,7 +211,6 @@
       "name": "@smithers/openapi",
       "version": "0.0.0",
       "dependencies": {
-        "@smithers/core": "workspace:*",
         "@smithers/observability": "workspace:*",
         "@smithers/runtime": "workspace:*",
         "@smithers/scheduler": "workspace:*",
@@ -261,7 +239,6 @@
       "name": "@smithers/rag",
       "version": "0.0.0",
       "dependencies": {
-        "@smithers/core": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
         "@smithers/runtime": "workspace:*",
@@ -279,7 +256,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@smithers/agents": "workspace:*",
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/devtools": "workspace:*",
         "@smithers/driver": "workspace:*",
@@ -339,7 +315,6 @@
       "name": "@smithers/sandbox",
       "version": "0.0.0",
       "dependencies": {
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/graph": "workspace:*",
@@ -371,7 +346,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@smithers/agents": "workspace:*",
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
@@ -388,7 +362,6 @@
       "name": "@smithers/server",
       "version": "0.0.0",
       "dependencies": {
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/engine": "workspace:*",
@@ -411,7 +384,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@smithers/agents": "workspace:*",
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/engine": "workspace:*",
@@ -443,7 +415,6 @@
       "name": "@smithers/time-travel",
       "version": "0.0.0",
       "dependencies": {
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
@@ -465,7 +436,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@effect/platform": "^0.96.0",
-        "@smithers/core": "workspace:*",
         "@smithers/db": "workspace:*",
         "@smithers/driver": "workspace:*",
         "@smithers/errors": "workspace:*",
@@ -486,7 +456,6 @@
       "version": "0.0.0",
       "dependencies": {
         "@effect/platform": "^0.96.0",
-        "@smithers/core": "workspace:*",
         "@smithers/observability": "workspace:*",
         "@smithers/runtime": "workspace:*",
       },
@@ -499,7 +468,6 @@
       "name": "@smithers/voice",
       "version": "0.0.0",
       "dependencies": {
-        "@smithers/core": "workspace:*",
         "@smithers/errors": "workspace:*",
         "@smithers/observability": "workspace:*",
         "ai": "^6.0.69",
@@ -740,8 +708,6 @@
     "@smithers/agents": ["@smithers/agents@workspace:packages/agents"],
 
     "@smithers/cli": ["@smithers/cli@workspace:apps/cli"],
-
-    "@smithers/core": ["@smithers/core@workspace:packages/core"],
 
     "@smithers/db": ["@smithers/db@workspace:packages/db"],
 
@@ -1241,8 +1207,6 @@
 
     "@smithers/cli/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
 
-    "@smithers/core/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
-
     "@smithers/db/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
 
     "@smithers/devtools/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
@@ -1304,8 +1268,6 @@
     "@smithers/agents/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
     "@smithers/cli/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
-
-    "@smithers/core/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
     "@smithers/db/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
