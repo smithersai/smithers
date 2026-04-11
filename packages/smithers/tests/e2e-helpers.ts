@@ -15,7 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 export const REPO_ROOT = resolve(import.meta.dir, "../../..");
-const CLI_ENTRY = resolve(REPO_ROOT, "packages/cli/src/index.ts");
+const CLI_ENTRY = resolve(REPO_ROOT, "apps/cli/src/index.ts");
 const ROOT_NODE_MODULES = resolve(REPO_ROOT, "node_modules");
 const BUN_BINARY = process.execPath;
 const EXECUTABLE_SHEBANG = `#!${BUN_BINARY}`;
