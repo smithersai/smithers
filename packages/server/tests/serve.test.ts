@@ -135,8 +135,21 @@ describe("Hono Serve Mode", () => {
 const fakeAgent = {
   id: "fake",
   tools: {},
-  generate: async () => {
-    await new Promise(r => setTimeout(r, 60000));
+  generate: async (args) => {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 60000);
+      const abort = () => {
+        clearTimeout(timer);
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        reject(err);
+      };
+      if (args.abortSignal?.aborted) {
+        abort();
+        return;
+      }
+      args.abortSignal?.addEventListener("abort", abort, { once: true });
+    });
     return { output: { value: 1 } };
   },
 };`
