@@ -4,14 +4,13 @@ import { runPromise } from "@smithers/runtime/runtime";
 import { chunk } from "./chunker";
 import { loadDocument } from "./document";
 import { embedChunksEffect, embedQueryEffect } from "./embedder";
-import { ragIngestCount, ragRetrieveCount } from "./metrics";
+import { ragIngestCount } from "./ragIngestCount";
+import { ragRetrieveCount } from "./ragRetrieveCount";
 import { acquireVectorStore } from "./vector-store";
-import type {
-  Document,
-  RagPipeline,
-  RagPipelineConfig,
-  RetrievalResult,
-} from "./types";
+import type { Document } from "./document";
+import type { RagPipeline } from "./RagPipeline";
+import type { RagPipelineConfig } from "./RagPipelineConfig";
+import type { RetrievalResult } from "./RetrievalResult";
 
 // ---------------------------------------------------------------------------
 // Pipeline factory

@@ -1,6 +1,6 @@
 import { tool, zodSchema } from "ai";
 import { z } from "zod";
-import type { RagPipeline } from "./types";
+import type { RagPipeline } from "./RagPipeline";
 
 // ---------------------------------------------------------------------------
 // RAG tool options

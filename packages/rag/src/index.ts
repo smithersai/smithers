@@ -1,17 +1,15 @@
 // Types
-export type {
-  Document,
-  DocumentFormat,
-  Chunk,
-  ChunkStrategy,
-  ChunkOptions,
-  EmbeddedChunk,
-  RetrievalResult,
-  VectorStore,
-  VectorQueryOptions,
-  RagPipelineConfig,
-  RagPipeline,
-} from "./types";
+export type { Document } from "./document";
+export type { DocumentFormat } from "./DocumentFormat";
+export type { Chunk } from "./Chunk";
+export type { ChunkStrategy } from "./ChunkStrategy";
+export type { ChunkOptions } from "./ChunkOptions";
+export type { EmbeddedChunk } from "./EmbeddedChunk";
+export type { RetrievalResult } from "./RetrievalResult";
+export type { VectorStore } from "./VectorStore";
+export type { VectorQueryOptions } from "./VectorQueryOptions";
+export type { RagPipelineConfig } from "./RagPipelineConfig";
+export type { RagPipeline } from "./RagPipeline";
 
 // Document
 export { createDocument, loadDocument } from "./document";
@@ -55,9 +53,7 @@ export {
 } from "./effect";
 
 // Metrics
-export {
-  ragIngestCount,
-  ragRetrieveCount,
-  ragRetrieveDuration,
-  ragEmbedDuration,
-} from "./metrics";
+export { ragIngestCount } from "./ragIngestCount";
+export { ragRetrieveCount } from "./ragRetrieveCount";
+export { ragRetrieveDuration } from "./ragRetrieveDuration";
+export { ragEmbedDuration } from "./ragEmbedDuration";

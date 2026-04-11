@@ -1,6 +1,8 @@
 import { Context, Effect, Layer } from "effect";
 import type { SmithersError } from "@smithers/core/errors";
-import type { Document, RagPipelineConfig, RetrievalResult } from "./types";
+import type { Document } from "./document";
+import type { RagPipelineConfig } from "./RagPipelineConfig";
+import type { RetrievalResult } from "./RetrievalResult";
 import { ingestEffect, retrieveEffect } from "./pipeline";
 
 // ---------------------------------------------------------------------------

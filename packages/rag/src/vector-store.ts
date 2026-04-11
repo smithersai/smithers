@@ -2,16 +2,14 @@ import { cosineSimilarity } from "ai";
 import { Effect, Metric } from "effect";
 import { fromPromise } from "@smithers/runtime/interop";
 import { nowMs } from "@smithers/core/utils/time";
-import { ragRetrieveDuration } from "./metrics";
-import type {
-  Chunk,
-  EmbeddedChunk,
-  RetrievalResult,
-  VectorQueryOptions,
-  VectorStore,
-} from "./types";
+import { ragRetrieveDuration } from "./ragRetrieveDuration";
+import type { Chunk } from "./Chunk";
+import type { EmbeddedChunk } from "./EmbeddedChunk";
+import type { RetrievalResult } from "./RetrievalResult";
+import type { VectorQueryOptions } from "./VectorQueryOptions";
+import type { VectorStore } from "./VectorStore";
 
-declare module "./types" {
+declare module "./VectorStore" {
   interface VectorStore {
     cleanup?(): Promise<void> | void;
     dispose?(): Promise<void> | void;

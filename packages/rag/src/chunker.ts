@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
-import type { Document, Chunk, ChunkOptions } from "./types";
+import type { Document } from "./document";
+import type { Chunk } from "./Chunk";
+import type { ChunkOptions } from "./ChunkOptions";
 
 // ---------------------------------------------------------------------------
 // Default options

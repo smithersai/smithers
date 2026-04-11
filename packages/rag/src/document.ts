@@ -1,7 +1,18 @@
 import { readFileSync } from "node:fs";
 import { resolve, extname } from "node:path";
 import crypto from "node:crypto";
-import type { Document, DocumentFormat } from "./types";
+import type { DocumentFormat } from "./DocumentFormat";
+
+// ---------------------------------------------------------------------------
+// Document type
+// ---------------------------------------------------------------------------
+
+export type Document = {
+  id: string;
+  content: string;
+  metadata?: Record<string, unknown>;
+  format?: DocumentFormat;
+};
 
 // ---------------------------------------------------------------------------
 // Format detection
