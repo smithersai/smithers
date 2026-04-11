@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import type { SmithersDb } from "@smithers/db/adapter";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors";
 
 export type NativeHijackEngine =
   | "claude-code"

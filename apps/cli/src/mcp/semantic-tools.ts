@@ -26,10 +26,11 @@ import { approveNode, denyNode } from "@smithers/engine/approvals";
 import { runWorkflow } from "@smithers/engine";
 import { revertToAttempt } from "@smithers/time-travel/revert";
 import { runPromise } from "@smithers/runtime/runtime";
-import type { RunResult } from "@smithers/core/RunResult";
+import type { RunResult } from "@smithers/driver/RunResult";
 import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
-import { newRunId } from "@smithers/core/utils/ids";
-import { SmithersError, toSmithersError } from "@smithers/core/errors";
+import { newRunId } from "@smithers/driver/newRunId";
+import { SmithersError } from "@smithers/errors";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 
 export const SEMANTIC_TOOL_NAMES = [
   "list_workflows",

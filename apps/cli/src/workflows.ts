@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors";
 
 export type WorkflowSourceType = "user" | "seeded" | "generated" | string;
 

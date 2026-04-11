@@ -12,7 +12,7 @@ import { signalRun } from "@smithers/engine/signals";
 import { loadInput, loadOutputs } from "@smithers/db/snapshot";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { SmithersDb } from "@smithers/db/adapter";
-import { buildContext } from "@smithers/core/context";
+import { buildContext } from "@smithers/driver";
 import { fromPromise } from "@smithers/runtime/interop";
 import { runFork, runPromise } from "@smithers/runtime/runtime";
 import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
@@ -24,7 +24,7 @@ import { timeTravel } from "@smithers/time-travel/timetravel";
 import { runSync } from "@smithers/runtime/runtime";
 import { spawn } from "node:child_process";
 import { isHumanRequestPastTimeout, validateHumanRequestValue } from "@smithers/engine/human-requests";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors";
 import { assertMaxBytes, assertMaxStringLength } from "@smithers/db/input-bounds";
 import { findAndOpenDb } from "./find-db";
 import {

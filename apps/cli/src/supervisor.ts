@@ -7,7 +7,7 @@ import type { SmithersDb, StaleRunRecord } from "@smithers/db/adapter";
 import { fromSync } from "@smithers/runtime/interop";
 import { trackEvent } from "@smithers/observability/metrics";
 import { isPidAlive, parseRuntimeOwnerPid } from "@smithers/engine/runtime-owner";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors";
 import { resumeRunDetached } from "./resume-detached";
 
 export const DEFAULT_SUPERVISOR_INTERVAL_MS = 10_000;

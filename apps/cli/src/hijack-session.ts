@@ -4,11 +4,11 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
 import type { SmithersDb } from "@smithers/db/adapter";
-import { buildContext } from "@smithers/core/context";
+import { buildContext } from "@smithers/driver";
 import { loadInput, loadOutputs } from "@smithers/db/snapshot";
 import { renderFrame, resolveSchema } from "@smithers/engine";
 import { mdxPlugin } from "smithers/mdx-plugin";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors";
 import type { HijackCandidate } from "./hijack";
 
 function cloneJsonValue<T>(value: T): T | undefined {

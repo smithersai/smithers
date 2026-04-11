@@ -10,7 +10,7 @@ import { CodexAgent } from "@smithers/agents/CodexAgent";
 import { GeminiAgent } from "@smithers/agents/GeminiAgent";
 import { KimiAgent } from "@smithers/agents/KimiAgent";
 import { PiAgent } from "@smithers/agents/PiAgent";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors";
 import {
   createSmithersAgentContract,
   renderSmithersAgentPromptGuidance,

@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors";
 
 const MAX_TOOL_PAYLOAD_BYTES_HUMAN = 1024;
 const MAX_VALIDATED_OUTPUT_BYTES_HUMAN = 10 * 1024;

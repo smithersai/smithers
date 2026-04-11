@@ -2,7 +2,7 @@ import { resolve, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";
-import { SmithersError } from "@smithers/core/errors";
+import { SmithersError } from "@smithers/errors";
 
 export type FindDbWaitOptions = {
   timeoutMs?: number;
