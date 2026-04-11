@@ -5,15 +5,15 @@ export { PiAgent } from "@smithers/agents/PiAgent";
 export { ReactWorkflowDriver } from "./driver";
 export { SmithersRenderer } from "@smithers/react-reconciler";
 export { SmithersContext, buildContext, createSmithersContext } from "./context";
-export { SmithersError, SmithersError as SmithersErrorInstance } from "@smithers/core/errors";
+export { SmithersError, SmithersError as SmithersErrorInstance } from "@smithers/errors/SmithersError";
 export { markdownComponents } from "./markdownComponents";
 export { zodSchemaToJsonExample } from "./zod-to-example";
 export type { AgentLike } from "@smithers/core/AgentLike";
-export type { CachePolicy } from "@smithers/core/CachePolicy";
-export type { OutputAccessor, InferOutputEntry, InferRow } from "@smithers/core/OutputAccessor";
-export type { OutputKey } from "@smithers/core/OutputKey";
-export type { RetryPolicy } from "@smithers/core/RetryPolicy";
-export type { RunAuthContext } from "@smithers/core/RunAuthContext";
+export type { CachePolicy } from "@smithers/scheduler/CachePolicy";
+export type { OutputAccessor, InferOutputEntry, InferRow } from "@smithers/driver/OutputAccessor";
+export type { OutputKey } from "@smithers/driver/OutputKey";
+export type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
+export type { RunAuthContext } from "@smithers/driver/RunAuthContext";
 export type { SchemaRegistryEntry } from "@smithers/core/SchemaRegistryEntry";
 export type {
   SmithersAlertLabels,
@@ -24,8 +24,8 @@ export type {
   SmithersAlertReactionKind,
   SmithersAlertReactionRef,
   SmithersAlertSeverity,
-} from "@smithers/core/SmithersWorkflowOptions";
-export type { SmithersErrorCode } from "@smithers/core/errors";
+} from "@smithers/scheduler/SmithersWorkflowOptions";
+export type { SmithersErrorCode } from "@smithers/errors/SmithersErrorCode";
 export type {
   EngineDecision,
   ExtractOptions,

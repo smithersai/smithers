@@ -20,7 +20,7 @@ import {
   type SmithersDevToolsOptions,
   type SmithersNodeType,
   type TaskExecutionState,
-} from "@smithers/core/devtools";
+} from "@smithers/devtools";
 
 export type {
   DevToolsEventBus,
@@ -31,7 +31,7 @@ export type {
   SmithersDevToolsOptions,
   SmithersNodeType,
   TaskExecutionState,
-} from "@smithers/core/devtools";
+} from "@smithers/devtools";
 
 // ---------------------------------------------------------------------------
 // React host tag mapping
