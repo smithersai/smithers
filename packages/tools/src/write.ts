@@ -1,12 +1,12 @@
 import { tool, zodSchema } from "ai";
 import * as FileSystem from "@effect/platform/FileSystem";
+import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import { Effect } from "effect";
 import { z } from "zod";
 import { dirname } from "node:path";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { sha256Hex } from "@smithers/driver/sha256Hex";
-import { fromSync } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromSync } from "@smithers/driver/interop";
 import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -60,6 +60,8 @@ export const write = tool({
   description: "Write a file",
   inputSchema: zodSchema(z.object({ path: z.string(), content: z.string() })),
   execute: async ({ path, content }: { path: string; content: string }) => {
-    return runPromise(writeToolEffect(path, content));
+    return Effect.runPromise(
+      writeToolEffect(path, content).pipe(Effect.provide(BunFileSystem.layer)),
+    );
   },
 });

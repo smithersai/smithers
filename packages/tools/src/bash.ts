@@ -2,9 +2,9 @@ import { tool, zodSchema } from "ai";
 import { Effect, Metric } from "effect";
 import { z } from "zod";
 import { nowMs } from "@smithers/scheduler/nowMs";
+// TODO: Move spawnCaptureEffect to @smithers/driver/child-process
 import { spawnCaptureEffect } from "@smithers/runtime/child-process";
-import { fromSync } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromSync } from "@smithers/driver/interop";
 import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -213,6 +213,6 @@ export const bash: any = tool({
     args?: string[];
     opts?: { cwd?: string };
   }) => {
-    return runPromise(bashToolEffect(cmd, args, opts));
+    return Effect.runPromise(bashToolEffect(cmd, args, opts));
   },
 });

@@ -1,10 +1,10 @@
 import { tool, zodSchema } from "ai";
 import * as FileSystem from "@effect/platform/FileSystem";
+import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import { Effect, Metric } from "effect";
 import { z } from "zod";
 import { nowMs } from "@smithers/scheduler/nowMs";
-import { fromSync } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromSync } from "@smithers/driver/interop";
 import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -64,6 +64,8 @@ export const read: any = tool({
   description: "Read a file",
   inputSchema: zodSchema(z.object({ path: z.string() })),
   execute: async ({ path }: { path: string }) => {
-    return runPromise(readToolEffect(path));
+    return Effect.runPromise(
+      readToolEffect(path).pipe(Effect.provide(BunFileSystem.layer)),
+    );
   },
 });

@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@effect/platform": "^0.96.0",
+    "@effect/platform-bun": "^0.89.0",
     "@smithers/db": "workspace:*",
     "@smithers/driver": "workspace:*",
     "@smithers/errors": "workspace:*",
@@ -31,6 +32,7 @@
     "@smithers/scheduler": "workspace:*",
     "ai": "^6.0.69",
     "diff": "^5.2.0",
+    "effect": "^3.21.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

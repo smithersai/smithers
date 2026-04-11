@@ -2,7 +2,6 @@ import { Effect, Metric } from "effect";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { errorToJson } from "@smithers/errors/errorToJson";
 import { getToolContext, nextToolSeq } from "./context";
-import { runPromise } from "@smithers/runtime/runtime";
 import { toolDuration, toolOutputTruncatedTotal } from "@smithers/observability/metrics";
 import {
   correlationContextToLogAnnotations,
@@ -133,7 +132,7 @@ export async function logToolCall(
   error?: unknown,
   startedAtMs?: number,
 ) {
-  await runPromise(
+  await Effect.runPromise(
     logToolCallEffect(toolName, input, output, status, error, startedAtMs),
   );
 }

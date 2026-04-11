@@ -1,12 +1,12 @@
 import { tool, zodSchema } from "ai";
 import * as FileSystem from "@effect/platform/FileSystem";
+import * as BunFileSystem from "@effect/platform-bun/BunFileSystem";
 import { Effect } from "effect";
 import { z } from "zod";
 import { applyPatch } from "diff";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { sha256Hex } from "@smithers/driver/sha256Hex";
-import { fromSync } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromSync } from "@smithers/driver/interop";
 import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -70,6 +70,8 @@ export const edit = tool({
   description: "Apply a unified diff patch to a file",
   inputSchema: zodSchema(z.object({ path: z.string(), patch: z.string() })),
   execute: async ({ path, patch }: { path: string; patch: string }) => {
-    return runPromise(editToolEffect(path, patch));
+    return Effect.runPromise(
+      editToolEffect(path, patch).pipe(Effect.provide(BunFileSystem.layer)),
+    );
   },
 });

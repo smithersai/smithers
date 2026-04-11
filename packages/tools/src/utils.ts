@@ -1,8 +1,7 @@
 import { resolve, isAbsolute, sep, dirname } from "node:path";
 import { realpath } from "node:fs/promises";
 import { Effect } from "effect";
-import { fromPromise } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromPromise } from "@smithers/driver/interop";
 import { SmithersError } from "@smithers/errors/SmithersError";
 
 export function resolveSandboxPath(rootDir: string, inputPath: string): string {
@@ -61,5 +60,5 @@ export async function assertPathWithinRoot(
   rootDir: string,
   resolvedPath: string,
 ) {
-  return runPromise(assertPathWithinRootEffect(rootDir, resolvedPath));
+  return Effect.runPromise(assertPathWithinRootEffect(rootDir, resolvedPath));
 }

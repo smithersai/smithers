@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runWithToolContext, type ToolContext } from "../src/context";
-import { runPromise } from "@smithers/runtime/runtime";
+import { Effect } from "effect";
 import { grepToolEffect } from "../src/grep";
 
 const TMP = join(tmpdir(), `smithers-grep-test-${Date.now()}`);
@@ -39,7 +39,7 @@ describe("grepToolEffect", () => {
   test("finds matching lines in files", async () => {
     const ctx = makeToolContext(TMP);
     const result = await runWithToolContext(ctx, () =>
-      runPromise(grepToolEffect("Hello", ".")),
+      Effect.runPromise(grepToolEffect("Hello", ".")),
     );
     expect(result).toContain("Hello World");
     expect(result).toContain("Hello Again");
@@ -48,7 +48,7 @@ describe("grepToolEffect", () => {
   test("searches nested directories", async () => {
     const ctx = makeToolContext(TMP);
     const result = await runWithToolContext(ctx, () =>
-      runPromise(grepToolEffect("Nested", ".")),
+      Effect.runPromise(grepToolEffect("Nested", ".")),
     );
     expect(result).toContain("Nested Hello");
   });
@@ -56,7 +56,7 @@ describe("grepToolEffect", () => {
   test("returns empty output for no matches", async () => {
     const ctx = makeToolContext(TMP);
     const result = await runWithToolContext(ctx, () =>
-      runPromise(grepToolEffect("NONEXISTENT_PATTERN_XYZ", ".")),
+      Effect.runPromise(grepToolEffect("NONEXISTENT_PATTERN_XYZ", ".")),
     );
     expect(result).toBe("");
   });
@@ -64,7 +64,7 @@ describe("grepToolEffect", () => {
   test("searches specific file via path", async () => {
     const ctx = makeToolContext(TMP);
     const result = await runWithToolContext(ctx, () =>
-      runPromise(grepToolEffect("key", "data.json")),
+      Effect.runPromise(grepToolEffect("key", "data.json")),
     );
     expect(result).toContain("key");
   });
@@ -72,7 +72,7 @@ describe("grepToolEffect", () => {
   test("uses regex patterns", async () => {
     const ctx = makeToolContext(TMP);
     const result = await runWithToolContext(ctx, () =>
-      runPromise(grepToolEffect("Hello.*World", ".")),
+      Effect.runPromise(grepToolEffect("Hello.*World", ".")),
     );
     expect(result).toContain("Hello World");
     // "Hello Again" should NOT match the pattern "Hello.*World"

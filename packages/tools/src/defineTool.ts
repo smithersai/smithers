@@ -1,4 +1,5 @@
 import { tool, zodSchema } from "ai";
+import { Effect } from "effect";
 import type { z } from "zod";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import {
@@ -7,7 +8,6 @@ import {
   type ToolContext,
 } from "./context";
 import { logToolCallEffect, logToolCallStartEffect } from "./logToolCall";
-import { runPromise } from "@smithers/runtime/runtime";
 
 const smithersToolMetadata = Symbol.for("smithers.tool.metadata");
 const warnedToolNames = new Set<string>();
@@ -88,12 +88,12 @@ export function defineTool<Schema extends z.ZodTypeAny, Result>(
       };
 
       const startedAtMs = nowMs();
-      const seq = await runPromise(
+      const seq = await Effect.runPromise(
         logToolCallStartEffect(options.name, startedAtMs),
       );
       try {
         const result = await options.execute(args, definedContext);
-        await runPromise(
+        await Effect.runPromise(
           logToolCallEffect(
             options.name,
             args,
@@ -106,7 +106,7 @@ export function defineTool<Schema extends z.ZodTypeAny, Result>(
         );
         return result;
       } catch (error) {
-        await runPromise(
+        await Effect.runPromise(
           logToolCallEffect(
             options.name,
             args,

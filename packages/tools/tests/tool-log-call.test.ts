@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { runPromise } from "@smithers/runtime/runtime";
+import { Effect } from "effect";
 import { renderPrometheusMetrics } from "@smithers/observability";
 import { runWithToolContext } from "../src/context";
 import { logToolCallEffect } from "../src/logToolCall";
@@ -34,7 +34,7 @@ describe("logToolCallEffect", () => {
         seq: 0,
       },
       () =>
-        runPromise(
+        Effect.runPromise(
           logToolCallEffect(
             "test-tool",
             { input: "x".repeat(256) },
@@ -63,7 +63,7 @@ describe("logToolCallEffect", () => {
           seq: 0,
         },
         () =>
-          runPromise(
+          Effect.runPromise(
             logToolCallEffect(
               "test-tool",
               { input: "ok" },

@@ -2,9 +2,9 @@ import { tool, zodSchema } from "ai";
 import { Effect } from "effect";
 import { z } from "zod";
 import { nowMs } from "@smithers/scheduler/nowMs";
+// TODO: Move spawnCaptureEffect to @smithers/driver/child-process
 import { spawnCaptureEffect } from "@smithers/runtime/child-process";
-import { fromSync } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromSync } from "@smithers/driver/interop";
 import { resolveSandboxPath, assertPathWithinRootEffect } from "./utils";
 import { getToolContext } from "./context";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -75,6 +75,6 @@ export const grep = tool({
     z.object({ pattern: z.string(), path: z.string().optional() }),
   ),
   execute: async ({ pattern, path }: { pattern: string; path?: string }) => {
-    return runPromise(grepToolEffect(pattern, path));
+    return Effect.runPromise(grepToolEffect(pattern, path));
   },
 });
