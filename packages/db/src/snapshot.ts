@@ -53,7 +53,7 @@ function coerceBooleanColumns(rows: any[], boolKeys: string[]): any[] {
   });
 }
 
-export function loadInput(
+export function loadInputEffect(
   db: any,
   inputTable: any,
   runId: string,
@@ -80,7 +80,15 @@ export function loadInput(
   );
 }
 
-export function loadOutputs(
+export function loadInput(
+  db: any,
+  inputTable: any,
+  runId: string,
+): Promise<any> {
+  return Effect.runPromise(loadInputEffect(db, inputTable, runId));
+}
+
+export function loadOutputsEffect(
   db: any,
   schema: Record<string, any>,
   runId: string,
@@ -126,4 +134,12 @@ export function loadOutputs(
     Effect.annotateLogs({ runId }),
     Effect.withLogSpan("db:load-outputs"),
   );
+}
+
+export function loadOutputs(
+  db: any,
+  schema: Record<string, any>,
+  runId: string,
+): Promise<OutputSnapshot> {
+  return Effect.runPromise(loadOutputsEffect(db, schema, runId));
 }
