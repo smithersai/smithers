@@ -81,7 +81,7 @@ export function buildKeyWhere(table: Table, key: OutputKey) {
   return and(...clauses);
 }
 
-export function selectOutputRow<T>(
+export function selectOutputRowEffect<T>(
   db: any,
   table: Table,
   key: OutputKey,
@@ -111,7 +111,15 @@ export function selectOutputRow<T>(
   );
 }
 
-export function upsertOutputRow(
+export function selectOutputRow<T>(
+  db: any,
+  table: Table,
+  key: OutputKey,
+): Promise<T | undefined> {
+  return Effect.runPromise(selectOutputRowEffect<T>(db, table, key));
+}
+
+export function upsertOutputRowEffect(
   db: any,
   table: Table,
   key: OutputKey,
@@ -157,6 +165,15 @@ export function upsertOutputRow(
     }),
     Effect.withLogSpan("db:upsert-output-row"),
   );
+}
+
+export function upsertOutputRow(
+  db: any,
+  table: Table,
+  key: OutputKey,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  return Effect.runPromise(upsertOutputRowEffect(db, table, key, payload));
 }
 
 export function validateOutput(
