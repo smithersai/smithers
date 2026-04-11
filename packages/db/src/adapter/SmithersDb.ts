@@ -393,6 +393,25 @@ function classifyRunRowStatus<T extends { status: string; heartbeatAtMs: number 
   return row;
 }
 
+type RunnableEffect<A, E = SmithersError> = Effect.Effect<A, E> & PromiseLike<A>;
+
+function runnableEffect<A, E>(effect: Effect.Effect<A, E>): RunnableEffect<A, E> {
+  const runnable = effect as RunnableEffect<A, E>;
+  if (typeof (runnable as any).then !== "function") {
+    Object.defineProperty(runnable, "then", {
+      configurable: true,
+      value: (
+        onfulfilled?: ((value: A) => unknown) | null,
+        onrejected?: ((reason: unknown) => unknown) | null,
+      ) => Effect.runPromise(effect as Effect.Effect<A, E, never>).then(
+        onfulfilled as any,
+        onrejected as any,
+      ),
+    });
+  }
+  return runnable;
+}
+
 export class SmithersDb {
   private internalStorage: SqlMessageStorage;
   private reconstructedFrameXmlCache = new Map<string, string>();
@@ -441,7 +460,7 @@ export class SmithersDb {
 
   rawQuery(queryString: string) {
     const self = this;
-    return Effect.gen(function* () {
+    return runnableEffect(Effect.gen(function* () {
       const validatedQuery = yield* fromSync(
         "validate raw query",
         () => validateReadOnlyRawQuery(queryString),
@@ -455,7 +474,7 @@ export class SmithersDb {
         const stmt = client.query(validatedQuery);
         return Promise.resolve(stmt.all());
       });
-    });
+    }));
   }
 
   private ownsActiveTransaction(currentFiberThread: string): boolean {
@@ -468,9 +487,9 @@ export class SmithersDb {
   private read<A>(
     label: string,
     operation: () => PromiseLike<A>,
-  ): Effect.Effect<A, SmithersError> {
+  ): RunnableEffect<A> {
     const self = this;
-    return Effect.gen(function* () {
+    return runnableEffect(Effect.gen(function* () {
       const start = performance.now();
       const readOperation = fromPromise(label, operation, {
         code: "DB_QUERY_FAILED",
@@ -496,15 +515,15 @@ export class SmithersDb {
     }).pipe(
       Effect.annotateLogs({ dbOperation: label }),
       Effect.withLogSpan(`db:${label}`),
-    );
+    ));
   }
 
   private write<A>(
     label: string,
     operation: () => PromiseLike<A>,
-  ): Effect.Effect<A, SmithersError> {
+  ): RunnableEffect<A> {
     const self = this;
-    return Effect.gen(function* () {
+    return runnableEffect(Effect.gen(function* () {
       const start = performance.now();
       const writeOperation = fromPromise(label, operation, {
         code: "DB_WRITE_FAILED",
@@ -533,7 +552,7 @@ export class SmithersDb {
     }).pipe(
       Effect.annotateLogs({ dbOperation: label }),
       Effect.withLogSpan(`db:${label}`),
-    );
+    ));
   }
 
   private getSqliteTransactionClient() {
@@ -570,11 +589,11 @@ export class SmithersDb {
   withTransaction<A>(
     writeGroup: string,
     operation: Effect.Effect<A, SmithersError>,
-  ): Effect.Effect<A, SmithersError> {
+  ): RunnableEffect<A> {
     const self = this;
     const label = `sqlite transaction ${writeGroup}`;
 
-    return withSqliteWriteRetryEffect(
+    return runnableEffect(withSqliteWriteRetryEffect(
       () =>
         Effect.gen(function* () {
           const currentFiberId = yield* Effect.fiberId;
@@ -673,7 +692,7 @@ export class SmithersDb {
     ).pipe(
       Effect.annotateLogs({ writeGroup }),
       Effect.withLogSpan("db:transaction"),
-    );
+    ));
   }
 
   insertRun(row: any) {
