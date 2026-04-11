@@ -1,5 +1,5 @@
 import * as Activity from "@effect/workflow/Activity";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
 
