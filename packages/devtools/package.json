@@ -1,0 +1,91 @@
+{
+  "name": "@smithers/devtools",
+  "version": "0.0.0",
+  "description": "Devtools and debugging utilities for Smithers workflow inspection",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./DevToolsEventBus": {
+      "types": "./src/DevToolsEventBus.ts",
+      "default": "./src/DevToolsEventBus.ts"
+    },
+    "./DevToolsEventHandler": {
+      "types": "./src/DevToolsEventHandler.ts",
+      "default": "./src/DevToolsEventHandler.ts"
+    },
+    "./DevToolsNode": {
+      "types": "./src/DevToolsNode.ts",
+      "default": "./src/DevToolsNode.ts"
+    },
+    "./DevToolsRunStore": {
+      "types": "./src/DevToolsRunStore.ts",
+      "default": "./src/DevToolsRunStore.ts"
+    },
+    "./DevToolsRunStoreOptions": {
+      "types": "./src/DevToolsRunStoreOptions.ts",
+      "default": "./src/DevToolsRunStoreOptions.ts"
+    },
+    "./DevToolsSnapshot": {
+      "types": "./src/DevToolsSnapshot.ts",
+      "default": "./src/DevToolsSnapshot.ts"
+    },
+    "./RunExecutionState": {
+      "types": "./src/RunExecutionState.ts",
+      "default": "./src/RunExecutionState.ts"
+    },
+    "./SMITHERS_NODE_ICONS": {
+      "types": "./src/SMITHERS_NODE_ICONS.ts",
+      "default": "./src/SMITHERS_NODE_ICONS.ts"
+    },
+    "./SmithersDevToolsCore": {
+      "types": "./src/SmithersDevToolsCore.ts",
+      "default": "./src/SmithersDevToolsCore.ts"
+    },
+    "./SmithersDevToolsOptions": {
+      "types": "./src/SmithersDevToolsOptions.ts",
+      "default": "./src/SmithersDevToolsOptions.ts"
+    },
+    "./SmithersNodeType": {
+      "types": "./src/SmithersNodeType.ts",
+      "default": "./src/SmithersNodeType.ts"
+    },
+    "./TaskExecutionState": {
+      "types": "./src/TaskExecutionState.ts",
+      "default": "./src/TaskExecutionState.ts"
+    },
+    "./buildSnapshot": {
+      "types": "./src/buildSnapshot.ts",
+      "default": "./src/buildSnapshot.ts"
+    },
+    "./collectTasks": {
+      "types": "./src/collectTasks.ts",
+      "default": "./src/collectTasks.ts"
+    },
+    "./countNodes": {
+      "types": "./src/countNodes.ts",
+      "default": "./src/countNodes.ts"
+    },
+    "./findNodeById": {
+      "types": "./src/findNodeById.ts",
+      "default": "./src/findNodeById.ts"
+    },
+    "./printTree": {
+      "types": "./src/printTree.ts",
+      "default": "./src/printTree.ts"
+    }
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "~5.9.3"
+  }
+}
