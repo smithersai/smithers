@@ -177,12 +177,12 @@ async function ensurePendingHumanRequest(
   }
 
   const requestId = buildHumanRequestId(runId, desc.nodeId, desc.iteration);
-  const existing = await adapter.getHumanRequest(requestId);
+  const existing = await Effect.runPromise(adapter.getHumanRequest(requestId));
   if (existing) {
     return;
   }
 
-  await adapter.insertHumanRequest({
+  await Effect.runPromise(adapter.insertHumanRequest({
     requestId,
     runId,
     nodeId: desc.nodeId,
@@ -198,7 +198,7 @@ async function ensurePendingHumanRequest(
     answeredBy: null,
     timeoutAtMs:
       typeof desc.timeoutMs === "number" ? requestedAtMs + desc.timeoutMs : null,
-  });
+  }));
 }
 
 const HUMAN_REQUEST_REOPEN_ERROR_CODES = new Set([
@@ -228,12 +228,12 @@ async function reconcileHumanRequestValidationFailure(
   }
 
   const requestId = buildHumanRequestId(runId, desc.nodeId, desc.iteration);
-  const request = await adapter.getHumanRequest(requestId);
+  const request = await Effect.runPromise(adapter.getHumanRequest(requestId));
   if (!request || request.status !== "answered") {
     return request;
   }
 
-  const attempts = await adapter.listAttempts(runId, desc.nodeId, desc.iteration);
+  const attempts = await Effect.runPromise(adapter.listAttempts(runId, desc.nodeId, desc.iteration));
   const latestAttempt = attempts[0];
   if (
     latestAttempt?.state !== "failed" ||
@@ -252,7 +252,7 @@ async function reconcileHumanRequestValidationFailure(
     return request;
   }
 
-  await adapter.reopenHumanRequest(requestId);
+  await Effect.runPromise(adapter.reopenHumanRequest(requestId));
   return {
     ...request,
     status: "pending" as const,
@@ -295,12 +295,12 @@ async function shouldAutoApprove(
     return true;
   }
 
-  const run = await adapter.getRun(runId);
+  const run = await Effect.runPromise(adapter.getRun(runId));
   if (!run?.workflowName) {
     return false;
   }
 
-  const history = await adapter.listApprovalHistoryForNode(run.workflowName, desc.nodeId, after + 10);
+  const history = await Effect.runPromise(adapter.listApprovalHistoryForNode(run.workflowName, desc.nodeId, after + 10));
   let consecutive = 0;
   for (const entry of history as any[]) {
     if (entry.runId === runId) {
@@ -629,7 +629,7 @@ async function resolveTimerTaskStateBridge(
   }
 
   const now = nowMs();
-  const attempts = await adapter.listAttempts(runId, desc.nodeId, desc.iteration);
+  const attempts = await Effect.runPromise(adapter.listAttempts(runId, desc.nodeId, desc.iteration));
   const latest = attempts[0];
   const latestTimerSnapshot = parseTimerSnapshot(latest?.metaJson);
 
@@ -647,10 +647,10 @@ async function resolveTimerTaskStateBridge(
     );
     const nodeState = immediateFire ? "finished" : "waiting-timer";
 
-    await adapter.withTransaction(
+    await Effect.runPromise(adapter.withTransaction(
       "timer-start",
       Effect.gen(function* () {
-        yield* adapter.insertAttemptEffect({
+        yield* adapter.insertAttempt({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -665,7 +665,7 @@ async function resolveTimerTaskStateBridge(
           metaJson,
           responseText: null,
         });
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -676,7 +676,7 @@ async function resolveTimerTaskStateBridge(
           label: desc.label ?? null,
         });
       }),
-    );
+    ));
 
     await eventBus.emitEventWithPersist({
       type: "TimerCreated",
@@ -722,7 +722,7 @@ async function resolveTimerTaskStateBridge(
   if (latest.state === "waiting-timer") {
     const snapshot = latestTimerSnapshot ?? buildTimerSnapshot(desc, now);
     if (snapshot.firesAtMs > now) {
-      await adapter.insertNode({
+      await Effect.runPromise(adapter.insertNode({
         runId,
         nodeId: desc.nodeId,
         iteration: desc.iteration,
@@ -731,7 +731,7 @@ async function resolveTimerTaskStateBridge(
         updatedAtMs: now,
         outputTable: desc.outputTableName,
         label: desc.label ?? null,
-      });
+      }));
       return { handled: true, state: "waiting-timer" };
     }
 
@@ -740,10 +740,10 @@ async function resolveTimerTaskStateBridge(
       ...snapshot,
       firedAtMs,
     };
-    await adapter.withTransaction(
+    await Effect.runPromise(adapter.withTransaction(
       "timer-fire",
       Effect.gen(function* () {
-        yield* adapter.updateAttemptEffect(
+        yield* adapter.updateAttempt(
           runId,
           desc.nodeId,
           desc.iteration,
@@ -754,7 +754,7 @@ async function resolveTimerTaskStateBridge(
             metaJson: JSON.stringify(buildTimerAttemptMeta(firedSnapshot)),
           },
         );
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -765,7 +765,7 @@ async function resolveTimerTaskStateBridge(
           label: desc.label ?? null,
         });
       }),
-    );
+    ));
     await eventBus.emitEventWithPersist({
       type: "TimerFired",
       runId,
@@ -787,7 +787,7 @@ async function resolveTimerTaskStateBridge(
   }
 
   if (latest.state === "finished") {
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -796,12 +796,12 @@ async function resolveTimerTaskStateBridge(
       updatedAtMs: now,
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     return { handled: true, state: "finished" };
   }
 
   if (latest.state === "cancelled") {
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -810,12 +810,12 @@ async function resolveTimerTaskStateBridge(
       updatedAtMs: now,
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     return { handled: true, state: "skipped" };
   }
 
   if (latest.state === "failed") {
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -824,7 +824,7 @@ async function resolveTimerTaskStateBridge(
       updatedAtMs: now,
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     return { handled: true, state: "failed" };
   }
 
@@ -842,10 +842,10 @@ async function failWaitForEventTaskBridge(
 ): Promise<DeferredBridgeResolution> {
   const finishedAtMs = nowMs();
   const errorJson = JSON.stringify(errorToJson(error));
-  await adapter.withTransaction(
+  await Effect.runPromise(adapter.withTransaction(
     "wait-event-fail",
     Effect.gen(function* () {
-      yield* adapter.updateAttemptEffect(
+      yield* adapter.updateAttempt(
         runId,
         desc.nodeId,
         desc.iteration,
@@ -857,7 +857,7 @@ async function failWaitForEventTaskBridge(
           metaJson: JSON.stringify(buildWaitForEventAttemptMeta(snapshot)),
         },
       );
-      yield* adapter.insertNodeEffect({
+      yield* adapter.insertNode({
         runId,
         nodeId: desc.nodeId,
         iteration: desc.iteration,
@@ -868,7 +868,7 @@ async function failWaitForEventTaskBridge(
         label: desc.label ?? null,
       });
     }),
-  );
+  ));
   if (shouldClearAsyncWaitMetric(snapshot)) {
     await updateAsyncExternalWaitPendingSafe("event", -1);
   }
@@ -886,15 +886,15 @@ async function finishWaitForEventTaskBridge(
 ): Promise<DeferredBridgeResolution> {
   const outputPayload = validateDeferredOutputPayload(desc, runId, payload);
   const finishedAtMs = nowMs();
-  await adapter.withTransaction(
+  await Effect.runPromise(adapter.withTransaction(
     "wait-event-finish",
     Effect.gen(function* () {
-      yield* adapter.upsertOutputRowEffect(
+      yield* adapter.upsertOutputRow(
         desc.outputTable as any,
         { runId, nodeId: desc.nodeId, iteration: desc.iteration },
         outputPayload,
       );
-      yield* adapter.updateAttemptEffect(
+      yield* adapter.updateAttempt(
         runId,
         desc.nodeId,
         desc.iteration,
@@ -906,7 +906,7 @@ async function finishWaitForEventTaskBridge(
           metaJson: JSON.stringify(buildWaitForEventAttemptMeta(snapshot)),
         },
       );
-      yield* adapter.insertNodeEffect({
+      yield* adapter.insertNode({
         runId,
         nodeId: desc.nodeId,
         iteration: desc.iteration,
@@ -917,7 +917,7 @@ async function finishWaitForEventTaskBridge(
         label: desc.label ?? null,
       });
     }),
-  );
+  ));
   if (shouldClearAsyncWaitMetric(snapshot)) {
     await updateAsyncExternalWaitPendingSafe("event", -1);
   }
@@ -962,10 +962,10 @@ async function resolveWaitForEventTimeoutBridge(
   }
 
   if (snapshot.onTimeout === "skip") {
-    await adapter.withTransaction(
+    await Effect.runPromise(adapter.withTransaction(
       "wait-event-skip",
       Effect.gen(function* () {
-        yield* adapter.updateAttemptEffect(
+        yield* adapter.updateAttempt(
           runId,
           desc.nodeId,
           desc.iteration,
@@ -977,7 +977,7 @@ async function resolveWaitForEventTimeoutBridge(
             metaJson: JSON.stringify(buildWaitForEventAttemptMeta(timeoutSnapshot)),
           },
         );
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -988,7 +988,7 @@ async function resolveWaitForEventTimeoutBridge(
           label: desc.label ?? null,
         });
       }),
-    );
+    ));
     if (shouldClearAsyncWaitMetric(timeoutSnapshot)) {
       await updateAsyncExternalWaitPendingSafe("event", -1);
     }
@@ -1023,13 +1023,13 @@ async function syncWaitForEventDurableDeferredFromDb(
   snapshot: WaitForEventSnapshot,
   startedAtMs?: number,
 ) {
-  const [signal] = await adapter.listSignals(runId, {
+  const [signal] = await Effect.runPromise(adapter.listSignals(runId, {
     signalName: snapshot.signalName,
     correlationId: snapshot.correlationId ?? null,
     receivedAfterMs:
       typeof startedAtMs === "number" ? startedAtMs : undefined,
     limit: 1,
-  });
+  }));
 
   if (!signal) {
     return;
@@ -1082,17 +1082,17 @@ async function resolveWaitForEventTaskStateBridge(
   }
 
   const now = nowMs();
-  const attempts = await adapter.listAttempts(runId, desc.nodeId, desc.iteration);
+  const attempts = await Effect.runPromise(adapter.listAttempts(runId, desc.nodeId, desc.iteration));
   let latest = attempts[0] as any;
   let latestSnapshot = parseWaitForEventSnapshot(latest?.metaJson);
 
   if (!latest) {
     const snapshot = buildWaitForEventSnapshot(desc, now);
     const metaJson = JSON.stringify(buildWaitForEventAttemptMeta(snapshot));
-    await adapter.withTransaction(
+    await Effect.runPromise(adapter.withTransaction(
       "wait-event-start",
       Effect.gen(function* () {
-        yield* adapter.insertAttemptEffect({
+        yield* adapter.insertAttempt({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -1107,7 +1107,7 @@ async function resolveWaitForEventTaskStateBridge(
           metaJson,
           responseText: null,
         });
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -1118,7 +1118,7 @@ async function resolveWaitForEventTaskStateBridge(
           label: desc.label ?? null,
         });
       }),
-    );
+    ));
     if (snapshot.waitAsync) {
       await updateAsyncExternalWaitPendingSafe("event", 1);
     }
@@ -1144,7 +1144,7 @@ async function resolveWaitForEventTaskStateBridge(
     if (outputRow) {
       const valid = validateExistingOutput(desc.outputTable as any, outputRow);
       if (valid.ok) {
-        await adapter.insertNode({
+        await Effect.runPromise(adapter.insertNode({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -1153,7 +1153,7 @@ async function resolveWaitForEventTaskStateBridge(
           updatedAtMs: nowMs(),
           outputTable: desc.outputTableName,
           label: desc.label ?? null,
-        });
+        }));
         return { handled: true, state: "finished" };
       }
     }
@@ -1224,7 +1224,7 @@ async function resolveWaitForEventTaskStateBridge(
       );
     }
 
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -1233,12 +1233,12 @@ async function resolveWaitForEventTaskStateBridge(
       updatedAtMs: now,
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     return { handled: true, state: "waiting-event" };
   }
 
   if (latest.state === "finished") {
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -1247,12 +1247,12 @@ async function resolveWaitForEventTaskStateBridge(
       updatedAtMs: now,
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     return { handled: true, state: "finished" };
   }
 
   if (latest.state === "skipped") {
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -1261,13 +1261,13 @@ async function resolveWaitForEventTaskStateBridge(
       updatedAtMs: now,
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     await emitStateEvent?.("skipped");
     return { handled: true, state: "skipped" };
   }
 
   if (latest.state === "cancelled") {
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -1276,13 +1276,13 @@ async function resolveWaitForEventTaskStateBridge(
       updatedAtMs: now,
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     await emitStateEvent?.("skipped");
     return { handled: true, state: "skipped" };
   }
 
   if (latest.state === "failed") {
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -1291,7 +1291,7 @@ async function resolveWaitForEventTaskStateBridge(
       updatedAtMs: now,
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     await emitStateEvent?.("failed");
     return { handled: true, state: "failed" };
   }
@@ -1311,7 +1311,7 @@ async function resolveApprovalTaskStateBridge(
     return { handled: false };
   }
 
-  let approval = await adapter.getApproval(runId, desc.nodeId, desc.iteration);
+  let approval = await Effect.runPromise(adapter.getApproval(runId, desc.nodeId, desc.iteration));
 
   if (!approval) {
     const requestedAtMs = nowMs();
@@ -1331,7 +1331,7 @@ async function resolveApprovalTaskStateBridge(
         decisionJson,
         autoApproved: true,
       };
-      await adapter.insertOrUpdateApproval(approval);
+      await Effect.runPromise(adapter.insertOrUpdateApproval(approval));
       await bridgeApprovalResolve(adapter, runId, desc.nodeId, desc.iteration, {
         approved: true,
         note: approval.note,
@@ -1360,7 +1360,7 @@ async function resolveApprovalTaskStateBridge(
         decisionJson: null,
         autoApproved: false,
       };
-      await adapter.insertOrUpdateApproval(approval);
+      await Effect.runPromise(adapter.insertOrUpdateApproval(approval));
       if (desc.waitAsync) {
         await updateAsyncExternalWaitPendingSafe("approval", 1);
       }
@@ -1397,7 +1397,7 @@ async function resolveApprovalTaskStateBridge(
     desc,
   );
   if (approval?.status === "approved" && humanRequest?.status === "pending") {
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -1406,7 +1406,7 @@ async function resolveApprovalTaskStateBridge(
       updatedAtMs: nowMs(),
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     return { handled: true, state: "waiting-approval" };
   }
 
@@ -1420,7 +1420,7 @@ async function resolveApprovalTaskStateBridge(
   );
 
   if (awaited._tag !== "Complete" || !Exit.isSuccess(awaited.exit)) {
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -1429,11 +1429,11 @@ async function resolveApprovalTaskStateBridge(
       updatedAtMs: nowMs(),
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     return { handled: true, state: "waiting-approval" };
   }
 
-  approval = (await adapter.getApproval(runId, desc.nodeId, desc.iteration)) ?? approval;
+  approval = (await Effect.runPromise(adapter.getApproval(runId, desc.nodeId, desc.iteration)) ?? approval);
 
   if (approval?.status === "denied") {
     if (desc.approvalMode !== "gate" && desc.approvalOnDeny !== "fail") {
@@ -1445,7 +1445,7 @@ async function resolveApprovalTaskStateBridge(
       if (outputRow) {
         const valid = validateExistingOutput(desc.outputTable as any, outputRow);
         if (valid.ok) {
-          await adapter.insertNode({
+          await Effect.runPromise(adapter.insertNode({
             runId,
             nodeId: desc.nodeId,
             iteration: desc.iteration,
@@ -1454,12 +1454,12 @@ async function resolveApprovalTaskStateBridge(
             updatedAtMs: nowMs(),
             outputTable: desc.outputTableName,
             label: desc.label ?? null,
-          });
+          }));
           return { handled: true, state: "finished" };
         }
       }
 
-      await adapter.insertNode({
+      await Effect.runPromise(adapter.insertNode({
         runId,
         nodeId: desc.nodeId,
         iteration: desc.iteration,
@@ -1468,7 +1468,7 @@ async function resolveApprovalTaskStateBridge(
         updatedAtMs: nowMs(),
         outputTable: desc.outputTableName,
         label: desc.label ?? null,
-      });
+      }));
       await emitStateEvent?.("pending");
       return { handled: true, state: "pending" };
     }
@@ -1476,7 +1476,7 @@ async function resolveApprovalTaskStateBridge(
     const state: "failed" | "skipped" = desc.continueOnFail
       ? "skipped"
       : "failed";
-    await adapter.insertNode({
+    await Effect.runPromise(adapter.insertNode({
       runId,
       nodeId: desc.nodeId,
       iteration: desc.iteration,
@@ -1485,7 +1485,7 @@ async function resolveApprovalTaskStateBridge(
       updatedAtMs: nowMs(),
       outputTable: desc.outputTableName,
       label: desc.label ?? null,
-    });
+    }));
     await emitStateEvent?.(state);
     return { handled: true, state };
   }
@@ -1494,7 +1494,7 @@ async function resolveApprovalTaskStateBridge(
     return { handled: false };
   }
 
-  await adapter.insertNode({
+  await Effect.runPromise(adapter.insertNode({
     runId,
     nodeId: desc.nodeId,
     iteration: desc.iteration,
@@ -1503,7 +1503,7 @@ async function resolveApprovalTaskStateBridge(
     updatedAtMs: nowMs(),
     outputTable: desc.outputTableName,
     label: desc.label ?? null,
-  });
+  }));
   return { handled: true, state: "waiting-approval" };
 }
 
@@ -1546,24 +1546,24 @@ export async function cancelPendingTimersBridge(
   eventBus: EventBus,
   reason: string,
 ) {
-  const nodes = await adapter.listNodes(runId);
+  const nodes = await Effect.runPromise(adapter.listNodes(runId));
   for (const node of nodes) {
     if (node.state !== "waiting-timer") continue;
-    const attempts = await adapter.listAttempts(
+    const attempts = await Effect.runPromise(adapter.listAttempts(
       runId,
       node.nodeId,
       node.iteration ?? 0,
-    );
+    ));
     const waiting = attempts.find(
       (attempt: any) => attempt.state === "waiting-timer",
     );
     if (!waiting) continue;
 
     const cancelledAtMs = nowMs();
-    await adapter.withTransaction(
+    await Effect.runPromise(adapter.withTransaction(
       "cancel-pending-timer",
       Effect.gen(function* () {
-        yield* adapter.updateAttemptEffect(
+        yield* adapter.updateAttempt(
           runId,
           node.nodeId,
           node.iteration ?? 0,
@@ -1573,7 +1573,7 @@ export async function cancelPendingTimersBridge(
             finishedAtMs: cancelledAtMs,
           },
         );
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId: node.nodeId,
           iteration: node.iteration ?? 0,
@@ -1584,7 +1584,7 @@ export async function cancelPendingTimersBridge(
           label: node.label ?? null,
         });
       }),
-    );
+    ));
     await eventBus.emitEventWithPersist({
       type: "TimerCancelled",
       runId,

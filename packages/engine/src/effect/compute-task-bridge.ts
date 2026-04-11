@@ -238,7 +238,7 @@ export const executeComputeTaskBridge = async (
   signal?: AbortSignal,
 ): Promise<void> => {
   const taskStartMs = performance.now();
-  const attempts = await adapter.listAttempts(runId, desc.nodeId, desc.iteration);
+  const attempts = await Effect.runPromise(adapter.listAttempts(runId, desc.nodeId, desc.iteration));
   const previousHeartbeat = (() => {
     for (const attempt of attempts) {
       const parsed = parseAttemptHeartbeatData(attempt.heartbeatDataJson);
@@ -292,14 +292,14 @@ export const executeComputeTaskBridge = async (
     heartbeatLastReceivedAtMs = heartbeatAtMs;
 
     try {
-      await adapter.heartbeatAttempt(
+      await Effect.runPromise(adapter.heartbeatAttempt(
         runId,
         desc.nodeId,
         desc.iteration,
         attemptNo,
         heartbeatAtMs,
         heartbeatDataJson,
-      );
+      ));
       heartbeatLastPersistedWriteAtMs = nowMs();
       logDebug(
         "bridge-managed compute task heartbeat recorded",
@@ -484,10 +484,10 @@ export const executeComputeTaskBridge = async (
     hijackHandoff: null,
   };
 
-  await adapter.withTransaction(
+  await Effect.runPromise(adapter.withTransaction(
     "task-start",
     Effect.gen(function* () {
-      yield* adapter.insertAttemptEffect({
+      yield* adapter.insertAttempt({
         runId,
         nodeId: desc.nodeId,
         iteration: desc.iteration,
@@ -503,7 +503,7 @@ export const executeComputeTaskBridge = async (
         cached: false,
         metaJson: JSON.stringify(attemptMeta),
       });
-      yield* adapter.insertNodeEffect({
+      yield* adapter.insertNode({
         runId,
         nodeId: desc.nodeId,
         iteration: desc.iteration,
@@ -514,7 +514,7 @@ export const executeComputeTaskBridge = async (
         label: desc.label ?? null,
       });
     }),
-  );
+  ));
 
   await eventBus.emitEventWithPersist({
     type: "NodeStarted",
@@ -647,15 +647,15 @@ export const executeComputeTaskBridge = async (
     await flushHeartbeat(true);
     taskCompleted = true;
     const completedAtMs = nowMs();
-    await adapter.withTransaction(
+    await Effect.runPromise(adapter.withTransaction(
       "task-completion",
       Effect.gen(function* () {
-        yield* adapter.upsertOutputRowEffect(
+        yield* adapter.upsertOutputRow(
           desc.outputTable as any,
           { runId, nodeId: desc.nodeId, iteration: desc.iteration },
           payload as Record<string, unknown>,
         );
-        yield* adapter.updateAttemptEffect(
+        yield* adapter.updateAttempt(
           runId,
           desc.nodeId,
           desc.iteration,
@@ -669,7 +669,7 @@ export const executeComputeTaskBridge = async (
             responseText: null,
           },
         );
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -680,7 +680,7 @@ export const executeComputeTaskBridge = async (
           label: desc.label ?? null,
         });
       }),
-    );
+    ));
 
     await eventBus.emitEventWithPersist({
       type: "NodeFinished",
@@ -755,10 +755,10 @@ export const executeComputeTaskBridge = async (
       await flushHeartbeat(true);
       taskCompleted = true;
       const cancelledAtMs = nowMs();
-      await adapter.withTransaction(
+      await Effect.runPromise(adapter.withTransaction(
         "task-cancel",
         Effect.gen(function* () {
-          yield* adapter.updateAttemptEffect(
+          yield* adapter.updateAttempt(
             runId,
             desc.nodeId,
             desc.iteration,
@@ -771,7 +771,7 @@ export const executeComputeTaskBridge = async (
               responseText: null,
             },
           );
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId,
             nodeId: desc.nodeId,
             iteration: desc.iteration,
@@ -782,7 +782,7 @@ export const executeComputeTaskBridge = async (
             label: desc.label ?? null,
           });
         }),
-      );
+      ));
 
       await eventBus.emitEventWithPersist({
         type: "NodeCancelled",
@@ -830,10 +830,10 @@ export const executeComputeTaskBridge = async (
       "engine:task",
     );
     const failedAtMs = nowMs();
-    await adapter.withTransaction(
+    await Effect.runPromise(adapter.withTransaction(
       "task-fail",
       Effect.gen(function* () {
-        yield* adapter.updateAttemptEffect(
+        yield* adapter.updateAttempt(
           runId,
           desc.nodeId,
           desc.iteration,
@@ -846,7 +846,7 @@ export const executeComputeTaskBridge = async (
             responseText: null,
           },
         );
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -857,7 +857,7 @@ export const executeComputeTaskBridge = async (
           label: desc.label ?? null,
         });
       }),
-    );
+    ));
 
     await eventBus.emitEventWithPersist({
       type: "NodeFailed",
@@ -869,11 +869,11 @@ export const executeComputeTaskBridge = async (
       timestampMs: nowMs(),
     });
 
-    const updatedAttempts = await adapter.listAttempts(
+    const updatedAttempts = await Effect.runPromise(adapter.listAttempts(
       runId,
       desc.nodeId,
       desc.iteration,
-    );
+    ));
     if (
       updatedAttempts.filter((attempt: any) => attempt.state === "failed").length <=
       desc.retries

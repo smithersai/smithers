@@ -136,25 +136,15 @@ export class EventBus extends EventEmitter {
     if (!this.db) return Effect.void;
     const payloadJson = JSON.stringify(event);
     if (typeof this.db.insertEventWithNextSeq === "function") {
-      if (typeof this.db.insertEventWithNextSeqEffect === "function") {
-        return this.db.insertEventWithNextSeqEffect({
-          runId: event.runId,
-          timestampMs: event.timestampMs,
-          type: event.type,
-          payloadJson,
-        });
-      }
-      return fromPromise("persist event db row", () =>
-        this.db.insertEventWithNextSeq({
-          runId: event.runId,
-          timestampMs: event.timestampMs,
-          type: event.type,
-          payloadJson,
-        }),
-      );
+      return this.db.insertEventWithNextSeq({
+        runId: event.runId,
+        timestampMs: event.timestampMs,
+        type: event.type,
+        payloadJson,
+      });
     }
-    if (typeof this.db.insertEventEffect === "function") {
-      return this.db.insertEventEffect({
+    if (typeof this.db.insertEvent === "function") {
+      return this.db.insertEvent({
         runId: event.runId,
         seq: this.seq++,
         timestampMs: event.timestampMs,
@@ -162,15 +152,7 @@ export class EventBus extends EventEmitter {
         payloadJson,
       });
     }
-    return fromPromise("persist event db row", () =>
-      this.db.insertEvent({
-        runId: event.runId,
-        seq: this.seq++,
-        timestampMs: event.timestampMs,
-        type: event.type,
-        payloadJson,
-      }),
-    );
+    return Effect.void;
   }
 
   private persistLogEffect(event: CorrelatedSmithersEvent) {

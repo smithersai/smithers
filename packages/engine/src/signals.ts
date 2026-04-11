@@ -50,14 +50,14 @@ export function signalRunEffect(
   const payloadJson = serializeSignalPayload(payload);
   const receivedAtMs = options.timestampMs ?? nowMs();
   return Effect.gen(function* () {
-    const run = yield* adapter.getRunEffect(runId);
+    const run = yield* adapter.getRun(runId);
     if (!run) {
       throw new SmithersError("RUN_NOT_FOUND", `Run not found: ${runId}`, {
         runId,
       });
     }
 
-    const seq = yield* adapter.insertSignalWithNextSeqEffect({
+    const seq = yield* adapter.insertSignalWithNextSeq({
       runId,
       signalName: normalizedSignalName,
       correlationId: options.correlationId ?? null,

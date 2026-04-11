@@ -58,7 +58,7 @@ export const executeStaticTaskBridge = async (
   signal?: AbortSignal,
 ): Promise<void> => {
   const taskStartMs = performance.now();
-  const attempts = await adapter.listAttempts(runId, desc.nodeId, desc.iteration);
+  const attempts = await Effect.runPromise(adapter.listAttempts(runId, desc.nodeId, desc.iteration));
   const attemptNo = (attempts[0]?.attempt ?? 0) + 1;
   const taskAbortController = new AbortController();
   const removeAbortForwarder = wireAbortSignal(taskAbortController, signal);
@@ -85,10 +85,10 @@ export const executeStaticTaskBridge = async (
     hijackHandoff: null,
   };
 
-  await adapter.withTransaction(
+  await Effect.runPromise(adapter.withTransaction(
     "task-start",
     Effect.gen(function* () {
-      yield* adapter.insertAttemptEffect({
+      yield* adapter.insertAttempt({
         runId,
         nodeId: desc.nodeId,
         iteration: desc.iteration,
@@ -104,7 +104,7 @@ export const executeStaticTaskBridge = async (
         cached: false,
         metaJson: JSON.stringify(attemptMeta),
       });
-      yield* adapter.insertNodeEffect({
+      yield* adapter.insertNode({
         runId,
         nodeId: desc.nodeId,
         iteration: desc.iteration,
@@ -115,7 +115,7 @@ export const executeStaticTaskBridge = async (
         label: desc.label ?? null,
       });
     }),
-  );
+  ));
 
   await eventBus.emitEventWithPersist({
     type: "NodeStarted",
@@ -180,15 +180,15 @@ export const executeStaticTaskBridge = async (
     const completedAtMs = nowMs();
     const jjPointer = await getJjPointer(toolConfig.rootDir);
 
-    await adapter.withTransaction(
+    await Effect.runPromise(adapter.withTransaction(
       "task-completion",
       Effect.gen(function* () {
-        yield* adapter.upsertOutputRowEffect(
+        yield* adapter.upsertOutputRow(
           desc.outputTable as any,
           { runId, nodeId: desc.nodeId, iteration: desc.iteration },
           payload as Record<string, unknown>,
         );
-        yield* adapter.updateAttemptEffect(
+        yield* adapter.updateAttempt(
           runId,
           desc.nodeId,
           desc.iteration,
@@ -202,7 +202,7 @@ export const executeStaticTaskBridge = async (
             responseText: null,
           },
         );
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -213,7 +213,7 @@ export const executeStaticTaskBridge = async (
           label: desc.label ?? null,
         });
       }),
-    );
+    ));
 
     await eventBus.emitEventWithPersist({
       type: "NodeFinished",
@@ -258,10 +258,10 @@ export const executeStaticTaskBridge = async (
 
     if (aborted) {
       const cancelledAtMs = nowMs();
-      await adapter.withTransaction(
+      await Effect.runPromise(adapter.withTransaction(
         "task-cancel",
         Effect.gen(function* () {
-          yield* adapter.updateAttemptEffect(
+          yield* adapter.updateAttempt(
             runId,
             desc.nodeId,
             desc.iteration,
@@ -274,7 +274,7 @@ export const executeStaticTaskBridge = async (
               responseText: null,
             },
           );
-          yield* adapter.insertNodeEffect({
+          yield* adapter.insertNode({
             runId,
             nodeId: desc.nodeId,
             iteration: desc.iteration,
@@ -285,7 +285,7 @@ export const executeStaticTaskBridge = async (
             label: desc.label ?? null,
           });
         }),
-      );
+      ));
 
       await eventBus.emitEventWithPersist({
         type: "NodeCancelled",
@@ -331,10 +331,10 @@ export const executeStaticTaskBridge = async (
     );
 
     const failedAtMs = nowMs();
-    await adapter.withTransaction(
+    await Effect.runPromise(adapter.withTransaction(
       "task-fail",
       Effect.gen(function* () {
-        yield* adapter.updateAttemptEffect(
+        yield* adapter.updateAttempt(
           runId,
           desc.nodeId,
           desc.iteration,
@@ -347,7 +347,7 @@ export const executeStaticTaskBridge = async (
             responseText: null,
           },
         );
-        yield* adapter.insertNodeEffect({
+        yield* adapter.insertNode({
           runId,
           nodeId: desc.nodeId,
           iteration: desc.iteration,
@@ -358,7 +358,7 @@ export const executeStaticTaskBridge = async (
           label: desc.label ?? null,
         });
       }),
-    );
+    ));
 
     await eventBus.emitEventWithPersist({
       type: "NodeFailed",
@@ -370,11 +370,11 @@ export const executeStaticTaskBridge = async (
       timestampMs: nowMs(),
     });
 
-    const updatedAttempts = await adapter.listAttempts(
+    const updatedAttempts = await Effect.runPromise(adapter.listAttempts(
       runId,
       desc.nodeId,
       desc.iteration,
-    );
+    ));
     if (
       updatedAttempts.filter((attempt: any) => attempt.state === "failed").length <=
       desc.retries

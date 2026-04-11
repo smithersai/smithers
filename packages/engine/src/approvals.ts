@@ -102,10 +102,10 @@ export function approveNodeEffect(
 
         const run = yield* adapter.getRun(runId);
         if (run) {
-          const pending = yield* adapter.listPendingApprovalsEffect(runId);
+          const pending = yield* adapter.listPendingApprovals(runId);
           const nextStatus = nextRunStatusForApproval(run.status, pending.length);
           if (nextStatus && run.status !== nextStatus) {
-            yield* adapter.updateRunEffect(runId, { status: nextStatus });
+            yield* adapter.updateRun(runId, { status: nextStatus });
           }
         }
       }),
@@ -116,7 +116,7 @@ export function approveNodeEffect(
     if (existing?.status === "requested" && isAsyncApprovalRequest(existing.requestJson)) {
       yield* updateAsyncExternalWaitPending("approval", -1);
     }
-    yield* adapter.insertEventWithNextSeqEffect({
+    yield* adapter.insertEventWithNextSeq({
       runId,
       timestampMs: ts,
       type: event.type,
@@ -206,10 +206,10 @@ export function denyNodeEffect(
 
         const run = yield* adapter.getRun(runId);
         if (run) {
-          const pending = yield* adapter.listPendingApprovalsEffect(runId);
+          const pending = yield* adapter.listPendingApprovals(runId);
           const nextStatus = nextRunStatusForApproval(run.status, pending.length);
           if (nextStatus && run.status !== nextStatus) {
-            yield* adapter.updateRunEffect(runId, { status: nextStatus });
+            yield* adapter.updateRun(runId, { status: nextStatus });
           }
         }
       }),
@@ -220,7 +220,7 @@ export function denyNodeEffect(
     if (existing?.status === "requested" && isAsyncApprovalRequest(existing.requestJson)) {
       yield* updateAsyncExternalWaitPending("approval", -1);
     }
-    yield* adapter.insertEventWithNextSeqEffect({
+    yield* adapter.insertEventWithNextSeq({
       runId,
       timestampMs: ts,
       type: "ApprovalDenied",
