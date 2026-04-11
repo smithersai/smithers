@@ -44,28 +44,6 @@ export type AmpAgentOptions = BaseCliAgentOptions & {
   jetbrains?: boolean;
 };
 
-export function createAmpCapabilityRegistry(): AgentCapabilityRegistry {
-  return {
-    version: 1,
-    engine: "amp",
-    runtimeTools: {},
-    mcp: {
-      bootstrap: "project-config",
-      supportsProjectScope: true,
-      supportsUserScope: false,
-    },
-    skills: {
-      supportsSkills: false,
-      smithersSkillIds: [],
-    },
-    humanInteraction: {
-      supportsUiRequests: false,
-      methods: [],
-    },
-    builtIns: ["default"],
-  };
-}
-
 /**
  * Agent implementation that wraps the 'amp' CLI executable.
  * It translates generation requests into CLI arguments and executes the process.
@@ -83,7 +61,25 @@ export class AmpAgent extends BaseCliAgent {
   constructor(opts: AmpAgentOptions = {}) {
     super(opts);
     this.opts = opts;
-    this.capabilities = createAmpCapabilityRegistry();
+    this.capabilities = {
+      version: 1,
+      engine: "amp",
+      runtimeTools: {},
+      mcp: {
+        bootstrap: "project-config",
+        supportsProjectScope: true,
+        supportsUserScope: false,
+      },
+      skills: {
+        supportsSkills: false,
+        smithersSkillIds: [],
+      },
+      humanInteraction: {
+        supportsUiRequests: false,
+        methods: [],
+      },
+      builtIns: ["default"],
+    };
   }
 
   protected createOutputInterpreter(): CliOutputInterpreter {

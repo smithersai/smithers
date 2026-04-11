@@ -20,28 +20,6 @@ type ForgeAgentOptions = BaseCliAgentOptions & {
   conversation?: string;
 };
 
-export function createForgeCapabilityRegistry(): AgentCapabilityRegistry {
-  return {
-    version: 1,
-    engine: "forge",
-    runtimeTools: {},
-    mcp: {
-      bootstrap: "unsupported",
-      supportsProjectScope: false,
-      supportsUserScope: false,
-    },
-    skills: {
-      supportsSkills: false,
-      smithersSkillIds: [],
-    },
-    humanInteraction: {
-      supportsUiRequests: false,
-      methods: [],
-    },
-    builtIns: ["default"],
-  };
-}
-
 export class ForgeAgent extends BaseCliAgent {
   private readonly opts: ForgeAgentOptions;
   readonly capabilities: AgentCapabilityRegistry;
@@ -51,7 +29,25 @@ export class ForgeAgent extends BaseCliAgent {
   constructor(opts: ForgeAgentOptions = {}) {
     super(opts);
     this.opts = opts;
-    this.capabilities = createForgeCapabilityRegistry();
+    this.capabilities = {
+      version: 1,
+      engine: "forge",
+      runtimeTools: {},
+      mcp: {
+        bootstrap: "unsupported",
+        supportsProjectScope: false,
+        supportsUserScope: false,
+      },
+      skills: {
+        supportsSkills: false,
+        smithersSkillIds: [],
+      },
+      humanInteraction: {
+        supportsUiRequests: false,
+        methods: [],
+      },
+      builtIns: ["default"],
+    };
   }
 
   protected createOutputInterpreter(): CliOutputInterpreter {
