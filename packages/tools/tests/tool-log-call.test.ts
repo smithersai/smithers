@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { Effect } from "effect";
 import { renderPrometheusMetrics } from "@smithers/observability";
 import { runWithToolContext } from "../src/context";
 import { logToolCallEffect } from "../src/logToolCall";
