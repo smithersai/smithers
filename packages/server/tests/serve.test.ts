@@ -3,13 +3,13 @@ import { describe, expect, test, afterEach, beforeEach } from "bun:test";
 import { resolve } from "node:path";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { sleep } from "./helpers";
-import { createServeApp } from "../src/server/serve";
-import { SmithersDb } from "../src/db/adapter";
-import { ensureSmithersTables } from "../src/db/ensure";
-import { runWorkflow } from "../src/engine";
-import type { SmithersWorkflow } from "../src/SmithersWorkflow";
-import { renderPrometheusMetrics } from "../src/observability";
+import { sleep } from "../../smithers/tests/helpers";
+import { createServeApp } from "../src/serve";
+import { SmithersDb } from "@smithers/db/adapter";
+import { ensureSmithersTables } from "@smithers/db/ensure";
+import { runWorkflow } from "@smithers/engine";
+import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import { renderPrometheusMetrics } from "@smithers/observability";
 
 // ---------------------------------------------------------------------------
 // Prometheus helpers

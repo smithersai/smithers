@@ -6,7 +6,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { z } from "zod";
-import { sleep } from "./helpers";
+import { sleep } from "../../smithers/tests/helpers";
 
 const engineModulePath = new URL("../src/engine/index.ts", import.meta.url).pathname;
 
@@ -113,10 +113,10 @@ describe("Gateway webhook ingestion", () => {
   let dbPaths: string[] = [];
 
   beforeAll(async () => {
-    createSmithers = (await import("../src/create")).createSmithers;
+    createSmithers = (await import("smithers/create")).createSmithers;
     Gateway = (await import("../src/gateway")).Gateway;
-    SmithersDb = (await import("../src/db/adapter")).SmithersDb;
-    WaitForEvent = (await import("../src/components/WaitForEvent")).WaitForEvent;
+    SmithersDb = (await import("@smithers/db/adapter")).SmithersDb;
+    WaitForEvent = (await import("@smithers/react/components/WaitForEvent")).WaitForEvent;
   });
 
   beforeEach(() => {

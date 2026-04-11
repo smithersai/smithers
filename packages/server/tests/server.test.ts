@@ -2,11 +2,11 @@
 import { describe, expect, test, afterEach, beforeEach } from "bun:test";
 import type { Server } from "node:http";
 import { Database } from "bun:sqlite";
-import { startServer, type ServerOptions } from "../src/server/index";
-import { ensureSmithersTables } from "../src/db/ensure";
-import { createTestDb, sleep } from "./helpers";
-import { ddl, schema } from "./schema";
-import { SmithersDb } from "../src/db/adapter";
+import { startServer, type ServerOptions } from "../src/index";
+import { ensureSmithersTables } from "@smithers/db/ensure";
+import { createTestDb, sleep } from "../../smithers/tests/helpers";
+import { ddl, schema } from "../../smithers/tests/schema";
+import { SmithersDb } from "@smithers/db/adapter";
 
 import { resolve } from "node:path";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";

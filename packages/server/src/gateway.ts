@@ -3,13 +3,13 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { CronExpressionParser } from "cron-parser";
 import { Effect, Metric } from "effect";
 import { WebSocketServer, type WebSocket } from "ws";
-import { runWorkflow } from "../engine";
-import { approveNode, denyNode } from "../engine/approvals";
-import { signalRun } from "../engine/signals";
-import type { SmithersWorkflow } from "../SmithersWorkflow";
-import type { SmithersEvent } from "../SmithersEvent";
-import { SmithersDb } from "../db/adapter";
-import { ensureSmithersTables } from "../db/ensure";
+import { runWorkflow } from "@smithers/engine";
+import { approveNode, denyNode } from "@smithers/engine/approvals";
+import { signalRun } from "@smithers/engine/signals";
+import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import type { SmithersEvent } from "@smithers/core/SmithersEvent";
+import { SmithersDb } from "@smithers/db/adapter";
+import { ensureSmithersTables } from "@smithers/db/ensure";
 import {
   gatewayApprovalDecisionsTotal,
   gatewayAuthEventsTotal,
@@ -29,19 +29,19 @@ import {
   gatewayWebhooksReceivedTotal,
   gatewayWebhooksRejectedTotal,
   gatewayWebhooksVerifiedTotal,
-} from "../effect/metrics";
-import { runFork, runPromise } from "../effect/runtime";
-import { prometheusContentType, renderPrometheusMetrics } from "../observability";
-import { nowMs } from "../utils/time";
-import { newRunId } from "../utils/ids";
-import { errorToJson, isSmithersError, SmithersError } from "../utils/errors";
+} from "@smithers/observability/metrics";
+import { runFork, runPromise } from "@smithers/runtime/runtime";
+import { prometheusContentType, renderPrometheusMetrics } from "@smithers/observability";
+import { nowMs } from "@smithers/core/utils/time";
+import { newRunId } from "@smithers/core/utils/ids";
+import { errorToJson, isSmithersError, SmithersError } from "@smithers/core/errors";
 import {
   assertJsonPayloadWithinBounds,
   assertOptionalStringMaxLength,
   assertPositiveFiniteInteger,
-} from "../utils/input-bounds";
-import { loadLatestSnapshot, loadSnapshot } from "../time-travel/snapshot";
-import { diffRawSnapshots } from "../time-travel/diff";
+} from "@smithers/core/utils/input-bounds";
+import { loadLatestSnapshot, loadSnapshot } from "@smithers/time-travel/snapshot";
+import { diffRawSnapshots } from "@smithers/time-travel/diff";
 
 export type RequestFrame = {
   type: "req";
@@ -440,11 +440,13 @@ function gatewayErrorCode(error: unknown): string {
 }
 
 function gatewayErrorAnnotations(error: unknown): Record<string, unknown> {
-  const serialized = errorToJson(error);
+  const serialized = asObject(errorToJson(error)) ?? { message: String(error) };
+  const summary = asString(serialized.summary);
+  const message = asString(serialized.message);
   return {
     errorCode: gatewayErrorCode(error),
-    ...(serialized.summary ? { errorSummary: serialized.summary } : {}),
-    ...(serialized.message ? { errorMessage: serialized.message } : {}),
+    ...(summary ? { errorSummary: summary } : {}),
+    ...(message ? { errorMessage: message } : {}),
     error: serialized,
   };
 }

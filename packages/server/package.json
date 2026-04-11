@@ -1,0 +1,39 @@
+{
+  "name": "@smithers/server",
+  "version": "0.0.0",
+  "description": "HTTP, WebSocket, gateway, cron, webhook, and metrics servers for Smithers",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "test": "bun test tests",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@smithers/core": "workspace:*",
+    "@smithers/engine": "workspace:*",
+    "@smithers/db": "workspace:*",
+    "@smithers/time-travel": "workspace:*",
+    "@smithers/runtime": "workspace:*",
+    "@smithers/observability": "workspace:*",
+    "hono": "^4.12.8",
+    "ws": "^8.18.0",
+    "cron-parser": "^5.5.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "~5.9.3"
+  }
+}

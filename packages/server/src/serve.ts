@@ -1,18 +1,18 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { Effect, Metric } from "effect";
-import type { SmithersWorkflow } from "../SmithersWorkflow";
-import { SmithersDb } from "../db/adapter";
-import { approveNode, denyNode } from "../engine/approvals";
-import { isRunHeartbeatFresh } from "../engine";
-import { nowMs } from "../utils/time";
+import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
+import { SmithersDb } from "@smithers/db/adapter";
+import { approveNode, denyNode } from "@smithers/engine/approvals";
+import { isRunHeartbeatFresh } from "@smithers/engine";
+import { nowMs } from "@smithers/core/utils/time";
 import {
   prometheusContentType,
   renderPrometheusMetrics,
-} from "../observability";
-import { logWarning } from "../effect/logging";
-import { runPromise } from "../effect/runtime";
-import { httpRequests, httpRequestDuration, trackEvent } from "../effect/metrics";
+} from "@smithers/observability";
+import { logWarning } from "@smithers/observability/logging";
+import { runPromise } from "@smithers/runtime/runtime";
+import { httpRequests, httpRequestDuration, trackEvent } from "@smithers/observability/metrics";
 
 export type ServeOptions = {
   workflow: SmithersWorkflow<any>;

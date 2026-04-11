@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
 import { z } from "zod";
-import { createSmithers } from "../src/index";
-import { SmithersDb } from "../src/db/adapter";
+import { createSmithers } from "smithers";
+import { SmithersDb } from "@smithers/db/adapter";
 import { Gateway } from "../src/gateway";
-import { sleep } from "./helpers";
+import { sleep } from "../../smithers/tests/helpers";
 
 type GatewayMessage = Record<string, any>;
 

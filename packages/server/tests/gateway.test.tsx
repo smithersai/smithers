@@ -7,10 +7,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
 import { z } from "zod";
-import { createSmithers } from "../src/index";
+import { createSmithers } from "smithers";
 import { Gateway } from "../src/gateway";
-import { SmithersDb } from "../src/db/adapter";
-import { sleep } from "./helpers";
+import { SmithersDb } from "@smithers/db/adapter";
+import { sleep } from "../../smithers/tests/helpers";
 
 type GatewayMessage = Record<string, any>;
 
