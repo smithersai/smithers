@@ -8,7 +8,7 @@ export {
   createOpenApiTool,
   createOpenApiToolSync,
   listOperations,
-} from "./tool-factory";
+} from "./tool-factory/index";
 
 export type {
   OpenApiSpec,
@@ -23,5 +23,8 @@ export {
   openApiToolDuration,
 } from "./metrics";
 
-export { extractOperations, loadSpecEffect, loadSpecSync } from "./spec-parser";
-export { jsonSchemaToZod, buildOperationSchema } from "./schema-converter";
+export { extractOperations } from "./extractOperations";
+export { loadSpecEffect } from "./loadSpecEffect";
+export { loadSpecSync } from "./loadSpecSync";
+export { jsonSchemaToZod } from "./jsonSchemaToZod";
+export { buildOperationSchema } from "./buildOperationSchema";
