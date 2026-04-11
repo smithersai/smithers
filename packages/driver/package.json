@@ -65,6 +65,14 @@
       "types": "./src/newRunId.ts",
       "default": "./src/newRunId.ts"
     },
+    "./task-runtime": {
+      "types": "./src/task-runtime.ts",
+      "default": "./src/task-runtime.ts"
+    },
+    "./child-process": {
+      "types": "./src/child-process.ts",
+      "default": "./src/child-process.ts"
+    },
     "./*": {
       "types": "./src/*.ts",
       "default": "./src/*.ts"
