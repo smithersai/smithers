@@ -24,7 +24,6 @@
   "dependencies": {
     "@effect/experimental": "^0.58.0",
     "@effect/sql": "^0.51.0",
-    "@smithers/core": "workspace:*",
     "@smithers/driver": "workspace:*",
     "@smithers/durables": "workspace:*",
     "@smithers/errors": "workspace:*",
