@@ -457,6 +457,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@effect/platform": "^0.96.0",
+        "@effect/platform-bun": "^0.89.0",
         "@smithers/observability": "workspace:*",
       },
       "devDependencies": {
