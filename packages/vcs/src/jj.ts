@@ -1,6 +1,5 @@
 import * as Command from "@effect/platform/Command";
 import { Duration, Effect, Fiber, Metric, Stream } from "effect";
-import { runPromise } from "@smithers/runtime/runtime";
 import { vcsDuration } from "@smithers/observability/metrics";
 
 /**
@@ -82,7 +81,7 @@ export function runJj(
   args: string[],
   opts: RunJjOptions = {},
 ): Promise<RunJjResult> {
-  return runPromise(runJjEffect(args, opts));
+  return Effect.runPromise(runJjEffect(args, opts));
 }
 
 function jjError(res: RunJjResult): string {
@@ -118,7 +117,7 @@ export function getJjPointerEffect(cwd?: string) {
 }
 
 export function getJjPointer(cwd?: string): Promise<string | null> {
-  return runPromise(getJjPointerEffect(cwd));
+  return Effect.runPromise(getJjPointerEffect(cwd));
 }
 
 export type JjRevertResult = {
@@ -149,7 +148,7 @@ export function revertToJjPointer(
   pointer: string,
   cwd?: string,
 ): Promise<JjRevertResult> {
-  return runPromise(revertToJjPointerEffect(pointer, cwd));
+  return Effect.runPromise(revertToJjPointerEffect(pointer, cwd));
 }
 
 /**
@@ -166,7 +165,7 @@ export function isJjRepoEffect(cwd?: string) {
 }
 
 export function isJjRepo(cwd?: string): Promise<boolean> {
-  return runPromise(isJjRepoEffect(cwd));
+  return Effect.runPromise(isJjRepoEffect(cwd));
 }
 
 export type WorkspaceAddOptions = {
@@ -243,7 +242,7 @@ export function workspaceAdd(
   path: string,
   opts: WorkspaceAddOptions = {},
 ): Promise<WorkspaceResult> {
-  return runPromise(workspaceAddEffect(name, path, opts));
+  return Effect.runPromise(workspaceAddEffect(name, path, opts));
 }
 
 export type WorkspaceInfo = {
@@ -291,7 +290,7 @@ export function workspaceListEffect(
 }
 
 export function workspaceList(cwd?: string): Promise<WorkspaceInfo[]> {
-  return runPromise(workspaceListEffect(cwd));
+  return Effect.runPromise(workspaceListEffect(cwd));
 }
 
 /**
@@ -316,5 +315,5 @@ export function workspaceClose(
   name: string,
   opts: { cwd?: string } = {},
 ): Promise<WorkspaceResult> {
-  return runPromise(workspaceCloseEffect(name, opts));
+  return Effect.runPromise(workspaceCloseEffect(name, opts));
 }

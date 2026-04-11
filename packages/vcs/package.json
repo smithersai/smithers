@@ -22,7 +22,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@smithers/runtime": "workspace:*",
     "@smithers/observability": "workspace:*",
     "@effect/platform": "^0.96.0"
   },
