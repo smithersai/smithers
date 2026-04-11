@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   createSmithersAgentContract,
-  probeSmithersAgentContract,
   renderSmithersAgentPromptGuidance,
 } from "../src/agent-contract";
 import { buildSmithersPiSystemPrompt } from "smithers/pi-plugin/extension";
@@ -11,20 +10,42 @@ function extractBacktickedNames(text: string) {
 }
 
 describe("smithers agent contract", () => {
-  test("contract renderer only references live tools", async () => {
+  test("contract renderer only references provided tools", () => {
     for (const toolSurface of ["semantic", "raw"] as const) {
-      const contract = await probeSmithersAgentContract({
-        cwd: process.cwd(),
+      const contract = createSmithersAgentContract({
+        serverName: "smithers",
         toolSurface,
+        tools: [
+          {
+            name: "list_workflows",
+            description: "List discovered local Smithers workflows.",
+          },
+          {
+            name: "run_workflow",
+            description: "Start a discovered workflow directly through the engine.",
+          },
+          {
+            name: "list_runs",
+            description: "List recent Smithers runs with stable structured summaries.",
+          },
+          {
+            name: "get_run",
+            description: "Get enriched structured state for a specific run.",
+          },
+          {
+            name: "cancel",
+            description: "Destructive: cancel a running Smithers run.",
+          },
+        ],
       });
-      const liveToolNames = new Set(contract.tools.map((tool) => tool.name));
+      const toolNames = new Set(contract.tools.map((tool) => tool.name));
       const mentionedToolNames = new Set([
         ...extractBacktickedNames(contract.promptGuidance),
         ...extractBacktickedNames(contract.docsGuidance),
       ]);
 
       const staleMentions = [...mentionedToolNames].filter(
-        (name) => !liveToolNames.has(name),
+        (name) => !toolNames.has(name),
       );
       expect(staleMentions).toEqual([]);
     }
