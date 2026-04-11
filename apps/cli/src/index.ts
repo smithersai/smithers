@@ -25,7 +25,7 @@ import { runSync } from "@smithers/runtime/runtime";
 import { spawn } from "node:child_process";
 import { isHumanRequestPastTimeout, validateHumanRequestValue } from "@smithers/engine/human-requests";
 import { SmithersError } from "@smithers/core/errors";
-import { assertMaxBytes, assertMaxStringLength } from "@smithers/core/utils/input-bounds";
+import { assertMaxBytes, assertMaxStringLength } from "@smithers/db/input-bounds";
 import { findAndOpenDb } from "./find-db";
 import {
   chatAttemptKey,
