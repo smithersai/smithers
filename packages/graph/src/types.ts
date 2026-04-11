@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { AgentCapabilityRegistry } from "@smithers/core/agents/capability-registry";
+import type { AgentCapabilityRegistry } from "@smithers/agents/capability-registry";
 
 export type XmlNode = XmlElement | XmlText;
 
