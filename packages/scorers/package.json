@@ -23,7 +23,6 @@
   },
   "dependencies": {
     "@smithers/agents": "workspace:*",
-    "@smithers/core": "workspace:*",
     "@smithers/db": "workspace:*",
     "@smithers/errors": "workspace:*",
     "@smithers/observability": "workspace:*",
