@@ -1,5 +1,5 @@
 import { Effect, Metric } from "effect";
-import { fromPromise } from "@smithers/runtime/interop";
+import { fromPromise } from "@smithers/driver/interop";
 import { embedQueryEffect } from "./embedder";
 import { ragRetrieveCount } from "./ragRetrieveCount";
 import { acquireVectorStore } from "./vector-store";

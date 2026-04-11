@@ -1,6 +1,6 @@
 import { embed, embedMany, type EmbeddingModel } from "ai";
 import { Effect, Metric } from "effect";
-import { fromPromise } from "@smithers/runtime/interop";
+import { fromPromise } from "@smithers/driver/interop";
 import type { SmithersError } from "@smithers/errors/SmithersError";
 import { ragEmbedDuration } from "./ragEmbedDuration";
 import type { Chunk } from "./Chunk";

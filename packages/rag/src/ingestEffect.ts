@@ -1,5 +1,5 @@
 import { Effect, Metric } from "effect";
-import { fromPromise } from "@smithers/runtime/interop";
+import { fromPromise } from "@smithers/driver/interop";
 import { chunk } from "./chunker";
 import { embedChunksEffect } from "./embedder";
 import { ragIngestCount } from "./ragIngestCount";

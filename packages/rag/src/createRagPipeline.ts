@@ -1,4 +1,4 @@
-import { runPromise } from "@smithers/runtime/runtime";
+import { Effect } from "effect";
 import { loadDocument } from "./document";
 import { ingestEffect } from "./ingestEffect";
 import { retrieveEffect } from "./retrieveEffect";
@@ -10,18 +10,18 @@ import type { RetrievalResult } from "./RetrievalResult";
 export function createRagPipeline(config: RagPipelineConfig): RagPipeline {
   return {
     async ingest(documents: Document[]): Promise<void> {
-      await runPromise(ingestEffect(config, documents));
+      await Effect.runPromise(ingestEffect(config, documents));
     },
 
     async ingestFile(path: string): Promise<void> {
-      await runPromise(ingestEffect(config, [loadDocument(path)]));
+      await Effect.runPromise(ingestEffect(config, [loadDocument(path)]));
     },
 
     async retrieve(
       query: string,
       opts?: { topK?: number },
     ): Promise<RetrievalResult[]> {
-      return runPromise(retrieveEffect(config, query, opts?.topK));
+      return Effect.runPromise(retrieveEffect(config, query, opts?.topK));
     },
   };
 }
