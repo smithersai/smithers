@@ -1,4 +1,4 @@
-import type { AgentLike } from "@smithers/core/AgentLike";
+import type { AgentLike } from "@smithers/agents/AgentLike";
 import type { ScorerInput } from "./types";
 
 export type LlmJudgeConfig = {

@@ -1,4 +1,4 @@
-import type { AgentLike } from "@smithers/core/AgentLike";
+import type { AgentLike } from "@smithers/agents/AgentLike";
 import type { Scorer, ScorerInput } from "./types";
 import { llmJudge } from "./llmJudge";
 
