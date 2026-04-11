@@ -1,4 +1,5 @@
 import type { RunAuthContext } from "./RunAuthContext.ts";
+import type { SmithersEvent } from "@smithers/core/SmithersEvent";
 
 export type HotReloadOptions = {
   /** Root directory to watch for changes (default: auto-detect from workflow entry) */
@@ -18,7 +19,7 @@ export type RunOptions = {
   parentRunId?: string | null;
   input: Record<string, unknown>;
   maxConcurrency?: number;
-  onProgress?: (e: unknown) => void;
+  onProgress?: (e: SmithersEvent) => void;
   signal?: AbortSignal;
   resume?: boolean;
   force?: boolean;
