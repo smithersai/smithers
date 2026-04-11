@@ -74,9 +74,9 @@ export type ApprovalProps<Row = ApprovalDecision, Output extends OutputTarget = 
   heartbeatTimeoutMs?: number;
   heartbeatTimeout?: number;
   retries?: number;
-  retryPolicy?: import("@smithers/core/RetryPolicy").RetryPolicy;
+  retryPolicy?: import("@smithers/scheduler/RetryPolicy").RetryPolicy;
   continueOnFail?: boolean;
-  cache?: import("@smithers/core/CachePolicy").CachePolicy;
+  cache?: import("@smithers/scheduler/CachePolicy").CachePolicy;
   label?: string;
   meta?: Record<string, unknown>;
   key?: string;

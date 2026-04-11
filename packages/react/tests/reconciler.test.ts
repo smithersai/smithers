@@ -18,7 +18,7 @@ describe("SmithersRenderer", () => {
     expect(typeof hook.inject).toBe("function");
   });
 
-  it("uses @smithers/core extractGraph by default", async () => {
+  it("uses @smithers/graph extractGraph by default", async () => {
     const renderer = new SmithersRenderer();
 
     const graph = await renderer.render(

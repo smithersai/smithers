@@ -200,7 +200,7 @@ describe("components", () => {
     expect(tags).toContain("smithers:timer");
   });
 
-  it("passes task props through to @smithers/core extraction", async () => {
+  it("passes task props through to @smithers/graph extraction", async () => {
     const outputSchema = z.object({ value: z.number() });
     const primary = { generate: async () => ({ value: 1 }) };
     const fallback = { generate: async () => ({ value: 2 }) };
