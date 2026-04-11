@@ -23,11 +23,13 @@
   },
   "dependencies": {
     "@smithers/core": "workspace:*",
-    "@smithers/runtime": "workspace:*",
-    "@smithers/observability": "workspace:*",
     "@smithers/db": "workspace:*",
-    "@smithers/tools": "workspace:*",
-    "@smithers/graph": "workspace:*"
+    "@smithers/errors": "workspace:*",
+    "@smithers/graph": "workspace:*",
+    "@smithers/observability": "workspace:*",
+    "@smithers/runtime": "workspace:*",
+    "@smithers/scheduler": "workspace:*",
+    "@smithers/tools": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",
