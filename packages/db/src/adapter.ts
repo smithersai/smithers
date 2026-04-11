@@ -864,7 +864,7 @@ export class SmithersDb {
     ).pipe(
       Effect.annotateLogs({ writeGroup }),
       Effect.withLogSpan("db:transaction"),
-	    ));
+    ));
   }
 
   withTransaction<A>(
@@ -1308,13 +1308,13 @@ export class SmithersDb {
   }
 
   getRawNodeOutput(tableName: string, runId: string, nodeId: string) {
-    return this.read(`get raw node output ${tableName}`, () => {
+    return runnableEffect(this.read(`get raw node output ${tableName}`, () => {
       const query = sql.raw(`SELECT * FROM "${tableName}" WHERE run_id = '${runId}' AND node_id = '${nodeId}' ORDER BY iteration DESC LIMIT 1`);
       const res = this.db.get(query);
       return Promise.resolve(res ?? null);
     }).pipe(
       Effect.catchAll(() => Effect.succeed(null))
-    );
+    ));
   }
 
   getRawNodeOutputForIteration(
@@ -1323,7 +1323,7 @@ export class SmithersDb {
     nodeId: string,
     iteration: number,
   ) {
-    return this.read(
+    return runnableEffect(this.read(
       `get raw node output ${tableName} iteration ${iteration}`,
       () => {
         const escaped = tableName.replaceAll(`"`, `""`);
@@ -1334,7 +1334,7 @@ export class SmithersDb {
         const row = stmt.get(runId, nodeId, iteration);
         return Promise.resolve(row ?? null);
       },
-    ).pipe(Effect.catchAll(() => Effect.succeed(null)));
+    ).pipe(Effect.catchAll(() => Effect.succeed(null))));
   }
 
   insertAttempt(row: any) {
@@ -1980,7 +1980,7 @@ export class SmithersDb {
   }) {
     const label = `insert signal ${row.signalName}`;
     const self = this;
-    return withSqliteWriteRetryEffect(
+    return runnableEffect(withSqliteWriteRetryEffect(
       () =>
         Effect.gen(function* () {
           const existing = yield* self.read(label, () =>
@@ -2069,7 +2069,7 @@ export class SmithersDb {
         correlationId: row.correlationId ?? null,
       }),
       Effect.withLogSpan(`db:${label}`),
-    );
+    ));
   }
 
   getLastSignalSeq(runId: string) {
@@ -2175,7 +2175,7 @@ export class SmithersDb {
   }) {
     const label = `insert event ${row.type}`;
     const self = this;
-    return withSqliteWriteRetryEffect(
+    return runnableEffect(withSqliteWriteRetryEffect(
       () =>
         Effect.gen(function* () {
           const existing = yield* self.read(label, () =>
@@ -2239,7 +2239,7 @@ export class SmithersDb {
     ).pipe(
       Effect.annotateLogs({ dbOperation: label }),
       Effect.withLogSpan(`db:${label}`),
-    );
+    ));
   }
 
   getLastEventSeq(runId: string) {
