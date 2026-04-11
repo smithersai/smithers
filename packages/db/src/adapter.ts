@@ -1,8 +1,7 @@
 import { getTableName, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Effect, Exit, FiberId, Metric } from "effect";
-import { fromPromise, fromSync } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromPromise, fromSync } from "@smithers/driver/interop";
 import { getSqlMessageStorage, type SqlMessageStorage } from "./sql-message-storage";
 import type {
   HumanRequestKind,
@@ -32,7 +31,7 @@ import {
   type FrameEncoding,
 } from "./frame-codec";
 import { getKeyColumns, type OutputKey } from "./output";
-import { withSqliteWriteRetryEffect } from "./write-retry";
+import { withSqliteWriteRetry } from "./write-retry";
 import { camelToSnake } from "./utils/camelToSnake";
 
 export type RunRow = {
@@ -612,7 +611,7 @@ export class SmithersDb {
     }
   }
 
-  rawQueryEffect(queryString: string) {
+  rawQuery(queryString: string) {
     const self = this;
     return Effect.gen(function* () {
       const validatedQuery = yield* fromSync(
@@ -623,16 +622,12 @@ export class SmithersDb {
           details: { operation: "raw query validation" },
         },
       );
-      return yield* self.readEffect(`raw query ${validatedQuery.slice(0, 20)}`, () => {
+      return yield* self.read(`raw query ${validatedQuery.slice(0, 20)}`, () => {
         const client = (self.db as any).session.client;
         const stmt = client.query(validatedQuery);
         return Promise.resolve(stmt.all());
       });
     });
-  }
-
-  rawQuery(queryString: string) {
-    return runPromise(this.rawQueryEffect(queryString));
   }
 
   private ownsActiveTransaction(currentFiberThread: string): boolean {
@@ -642,7 +637,7 @@ export class SmithersDb {
     );
   }
 
-  private readEffect<A>(
+  private read<A>(
     label: string,
     operation: () => PromiseLike<A>,
   ): Effect.Effect<A, SmithersError> {
@@ -659,7 +654,7 @@ export class SmithersDb {
       if (self.ownsActiveTransaction(currentFiberThread)) {
         result = yield* readOperation;
       } else {
-        const releaseTurn = yield* self.acquireTransactionTurnEffect();
+        const releaseTurn = yield* self.acquireTransactionTurn();
         result = yield* readOperation.pipe(
           Effect.ensuring(
             Effect.sync(() => {
@@ -676,7 +671,7 @@ export class SmithersDb {
     );
   }
 
-  private writeEffect<A>(
+  private write<A>(
     label: string,
     operation: () => PromiseLike<A>,
   ): Effect.Effect<A, SmithersError> {
@@ -693,8 +688,8 @@ export class SmithersDb {
       if (self.ownsActiveTransaction(currentFiberThread)) {
         result = yield* writeOperation;
       } else {
-        const releaseTurn = yield* self.acquireTransactionTurnEffect();
-        result = yield* withSqliteWriteRetryEffect(
+        const releaseTurn = yield* self.acquireTransactionTurn();
+        result = yield* withSqliteWriteRetry(
           () => writeOperation,
           { label },
         ).pipe(
@@ -713,7 +708,7 @@ export class SmithersDb {
     );
   }
 
-  private getSqliteTransactionClientEffect() {
+  private getSqliteTransactionClient() {
     return fromSync("resolve sqlite transaction client", () => {
       const candidate = (this.db as any).session?.client ?? (this.db as any).$client;
       if (!candidate || typeof candidate.run !== "function") {
@@ -728,7 +723,7 @@ export class SmithersDb {
     });
   }
 
-  private acquireTransactionTurnEffect() {
+  private acquireTransactionTurn() {
     return fromPromise("acquire sqlite transaction turn", async () => {
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
@@ -744,14 +739,14 @@ export class SmithersDb {
     });
   }
 
-  withTransactionEffect<A>(
+  withTransaction<A>(
     writeGroup: string,
     operation: Effect.Effect<A, SmithersError>,
   ): Effect.Effect<A, SmithersError> {
     const self = this;
     const label = `sqlite transaction ${writeGroup}`;
 
-    return withSqliteWriteRetryEffect(
+    return withSqliteWriteRetry(
       () =>
         Effect.gen(function* () {
           const currentFiberId = yield* Effect.fiberId;
@@ -770,10 +765,10 @@ export class SmithersDb {
               ),
             );
           }
-          const releaseTurn = yield* self.acquireTransactionTurnEffect();
+          const releaseTurn = yield* self.acquireTransactionTurn();
           const start = performance.now();
           return yield* Effect.gen(function* () {
-            const client = yield* self.getSqliteTransactionClientEffect();
+            const client = yield* self.getSqliteTransactionClient();
             const rollback = (
               phase: "operation" | "commit",
               error: unknown,
@@ -853,41 +848,26 @@ export class SmithersDb {
     );
   }
 
-  withTransaction<A>(
-    writeGroup: string,
-    operation: Effect.Effect<A, SmithersError>,
-  ) {
-    return runPromise(this.withTransactionEffect(writeGroup, operation));
-  }
-
-  insertRunEffect(row: any) {
+  insertRun(row: any) {
     validateRunRow(row);
-    return this.writeEffect("insert run", () =>
+    return this.write("insert run", () =>
       this.internalStorage.insertIgnore("_smithers_runs", row),
     );
   }
 
-  insertRun(row: any) {
-    return runPromise(this.insertRunEffect(row));
-  }
-
-  updateRunEffect(runId: string, patch: any) {
+  updateRun(runId: string, patch: any) {
     validateRunPatch(patch);
-    return this.writeEffect(`update run ${runId}`, () =>
+    return this.write(`update run ${runId}`, () =>
       this.internalStorage.updateWhere("_smithers_runs", patch, "run_id = ?", [runId]),
     );
   }
 
-  updateRun(runId: string, patch: any) {
-    return runPromise(this.updateRunEffect(runId, patch));
-  }
-
-  heartbeatRunEffect(
+  heartbeatRun(
     runId: string,
     runtimeOwnerId: string,
     heartbeatAtMs: number,
   ) {
-    return this.writeEffect(`heartbeat run ${runId}`, () =>
+    return this.write(`heartbeat run ${runId}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_runs",
         { heartbeatAtMs },
@@ -897,14 +877,8 @@ export class SmithersDb {
     );
   }
 
-  heartbeatRun(runId: string, runtimeOwnerId: string, heartbeatAtMs: number) {
-    return runPromise(
-      this.heartbeatRunEffect(runId, runtimeOwnerId, heartbeatAtMs),
-    );
-  }
-
-  requestRunCancelEffect(runId: string, cancelRequestedAtMs: number) {
-    return this.writeEffect(`cancel run ${runId}`, () =>
+  requestRunCancel(runId: string, cancelRequestedAtMs: number) {
+    return this.write(`cancel run ${runId}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_runs",
         { cancelRequestedAtMs },
@@ -914,16 +888,12 @@ export class SmithersDb {
     );
   }
 
-  requestRunCancel(runId: string, cancelRequestedAtMs: number) {
-    return runPromise(this.requestRunCancelEffect(runId, cancelRequestedAtMs));
-  }
-
-  requestRunHijackEffect(
+  requestRunHijack(
     runId: string,
     hijackRequestedAtMs: number,
     hijackTarget?: string | null,
   ) {
-    return this.writeEffect(`hijack run ${runId}`, () =>
+    return this.write(`hijack run ${runId}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_runs",
         {
@@ -936,18 +906,8 @@ export class SmithersDb {
     );
   }
 
-  requestRunHijack(
-    runId: string,
-    hijackRequestedAtMs: number,
-    hijackTarget?: string | null,
-  ) {
-    return runPromise(
-      this.requestRunHijackEffect(runId, hijackRequestedAtMs, hijackTarget),
-    );
-  }
-
-  clearRunHijackEffect(runId: string) {
-    return this.writeEffect(`clear hijack run ${runId}`, () =>
+  clearRunHijack(runId: string) {
+    return this.write(`clear hijack run ${runId}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_runs",
         {
@@ -960,12 +920,8 @@ export class SmithersDb {
     );
   }
 
-  clearRunHijack(runId: string) {
-    return runPromise(this.clearRunHijackEffect(runId));
-  }
-
-  getRunEffect(runId: string) {
-    return this.readEffect(`get run ${runId}`, async () => {
+  getRun(runId: string) {
+    return this.read(`get run ${runId}`, async () => {
       const row = await this.internalStorage.queryOne<RunRow>(
         `SELECT *
          FROM _smithers_runs
@@ -977,12 +933,8 @@ export class SmithersDb {
     });
   }
 
-  getRun(runId: string) {
-    return runPromise(this.getRunEffect(runId));
-  }
-
-  listRunAncestryEffect(runId: string, limit = 1000) {
-    return this.readEffect(`list run ancestry ${runId}`, () =>
+  listRunAncestry(runId: string, limit = 1000) {
+    return this.read(`list run ancestry ${runId}`, () =>
       this.internalStorage.queryAll<RunAncestryRow>(
         `WITH RECURSIVE ancestry(run_id, parent_run_id, depth) AS (
            SELECT run_id, parent_run_id, 0
@@ -1006,12 +958,8 @@ export class SmithersDb {
     );
   }
 
-  listRunAncestry(runId: string, limit = 1000) {
-    return runPromise(this.listRunAncestryEffect(runId, limit));
-  }
-
-  getLatestChildRunEffect(parentRunId: string) {
-    return this.readEffect(`get latest child run ${parentRunId}`, () =>
+  getLatestChildRun(parentRunId: string) {
+    return this.read(`get latest child run ${parentRunId}`, () =>
       this.internalStorage.queryOne<RunRow>(
         `SELECT *
          FROM _smithers_runs
@@ -1023,12 +971,8 @@ export class SmithersDb {
     );
   }
 
-  getLatestChildRun(parentRunId: string) {
-    return runPromise(this.getLatestChildRunEffect(parentRunId));
-  }
-
-  listRunsEffect(limit = 50, status?: string) {
-    return this.readEffect(`list runs ${status ?? "all"}`, async () => {
+  listRuns(limit = 50, status?: string) {
+    return this.read(`list runs ${status ?? "all"}`, async () => {
       const clauses: string[] = [];
       const params: Array<string | number> = [];
       if (status === "running") {
@@ -1051,12 +995,8 @@ export class SmithersDb {
     });
   }
 
-  listRuns(limit = 50, status?: string) {
-    return runPromise(this.listRunsEffect(limit, status));
-  }
-
-  listStaleRunningRunsEffect(staleBeforeMs: number, limit = 1000) {
-    return this.readEffect(
+  listStaleRunningRuns(staleBeforeMs: number, limit = 1000) {
+    return this.read(
       `list stale running runs before ${staleBeforeMs}`,
       () =>
         this.internalStorage.queryAll<StaleRunRecord>(
@@ -1076,11 +1016,7 @@ export class SmithersDb {
     );
   }
 
-  listStaleRunningRuns(staleBeforeMs: number, limit = 1000) {
-    return runPromise(this.listStaleRunningRunsEffect(staleBeforeMs, limit));
-  }
-
-  claimRunForResumeEffect(params: {
+  claimRunForResume(params: {
     runId: string;
     expectedStatus?: string;
     expectedRuntimeOwnerId: string | null;
@@ -1090,7 +1026,7 @@ export class SmithersDb {
     claimHeartbeatAtMs: number;
     requireStale?: boolean;
   }) {
-    return this.writeEffect(`claim stale run ${params.runId}`, () => {
+    return this.write(`claim stale run ${params.runId}`, () => {
       const client = (this.db as any).session.client;
       const expectedStatus = params.expectedStatus ?? "running";
       const requireStale =
@@ -1121,26 +1057,13 @@ export class SmithersDb {
     });
   }
 
-  claimRunForResume(params: {
-    runId: string;
-    expectedStatus?: string;
-    expectedRuntimeOwnerId: string | null;
-    expectedHeartbeatAtMs: number | null;
-    staleBeforeMs: number;
-    claimOwnerId: string;
-    claimHeartbeatAtMs: number;
-    requireStale?: boolean;
-  }) {
-    return runPromise(this.claimRunForResumeEffect(params));
-  }
-
-  releaseRunResumeClaimEffect(params: {
+  releaseRunResumeClaim(params: {
     runId: string;
     claimOwnerId: string;
     restoreRuntimeOwnerId: string | null;
     restoreHeartbeatAtMs: number | null;
   }) {
-    return this.writeEffect(`release stale run claim ${params.runId}`, () => {
+    return this.write(`release stale run claim ${params.runId}`, () => {
       return this.internalStorage.execute(
         `UPDATE _smithers_runs
          SET runtime_owner_id = ?, heartbeat_at_ms = ?
@@ -1155,23 +1078,14 @@ export class SmithersDb {
     });
   }
 
-  releaseRunResumeClaim(params: {
-    runId: string;
-    claimOwnerId: string;
-    restoreRuntimeOwnerId: string | null;
-    restoreHeartbeatAtMs: number | null;
-  }) {
-    return runPromise(this.releaseRunResumeClaimEffect(params));
-  }
-
-  updateClaimedRunEffect(params: {
+  updateClaimedRun(params: {
     runId: string;
     expectedRuntimeOwnerId: string;
     expectedHeartbeatAtMs: number | null;
     patch: any;
   }) {
     validateRunPatch(params.patch);
-    return this.writeEffect(`update claimed run ${params.runId}`, () => {
+    return this.write(`update claimed run ${params.runId}`, () => {
       const client = (this.db as any).session.client;
       const patchEntries = Object.entries(params.patch);
       if (patchEntries.length === 0) {
@@ -1198,17 +1112,8 @@ export class SmithersDb {
     });
   }
 
-  updateClaimedRun(params: {
-    runId: string;
-    expectedRuntimeOwnerId: string;
-    expectedHeartbeatAtMs: number | null;
-    patch: any;
-  }) {
-    return runPromise(this.updateClaimedRunEffect(params));
-  }
-
-  insertNodeEffect(row: any) {
-    return this.writeEffect(`insert node ${row.nodeId}`, () =>
+  insertNode(row: any) {
+    return this.write(`insert node ${row.nodeId}`, () =>
       this.internalStorage.upsert(
         "_smithers_nodes",
         row,
@@ -1217,12 +1122,8 @@ export class SmithersDb {
     );
   }
 
-  insertNode(row: any) {
-    return runPromise(this.insertNodeEffect(row));
-  }
-
-  getNodeEffect(runId: string, nodeId: string, iteration: number) {
-    return this.readEffect(`get node ${nodeId}`, () =>
+  getNode(runId: string, nodeId: string, iteration: number) {
+    return this.read(`get node ${nodeId}`, () =>
       this.internalStorage.queryOne<NodeRow>(
         `SELECT *
          FROM _smithers_nodes
@@ -1233,12 +1134,8 @@ export class SmithersDb {
     );
   }
 
-  getNode(runId: string, nodeId: string, iteration: number) {
-    return runPromise(this.getNodeEffect(runId, nodeId, iteration));
-  }
-
-  listNodeIterationsEffect(runId: string, nodeId: string) {
-    return this.readEffect(`list node iterations ${nodeId}`, () =>
+  listNodeIterations(runId: string, nodeId: string) {
+    return this.read(`list node iterations ${nodeId}`, () =>
       this.internalStorage.queryAll<NodeRow>(
         `SELECT *
          FROM _smithers_nodes
@@ -1249,12 +1146,8 @@ export class SmithersDb {
     );
   }
 
-  listNodeIterations(runId: string, nodeId: string) {
-    return runPromise(this.listNodeIterationsEffect(runId, nodeId));
-  }
-
-  listNodesEffect(runId: string) {
-    return this.readEffect(`list nodes ${runId}`, () =>
+  listNodes(runId: string) {
+    return this.read(`list nodes ${runId}`, () =>
       this.internalStorage.queryAll<NodeRow>(
         `SELECT *
          FROM _smithers_nodes
@@ -1264,11 +1157,7 @@ export class SmithersDb {
     );
   }
 
-  listNodes(runId: string) {
-    return runPromise(this.listNodesEffect(runId));
-  }
-
-  upsertOutputRowEffect(
+  upsertOutputRow(
     table: any,
     key: OutputKey,
     payload: Record<string, unknown>,
@@ -1286,7 +1175,7 @@ export class SmithersDb {
       : [cols.runId, cols.nodeId];
     const tableName = (table as any)?.["_"]?.name ?? "output";
 
-    return this.writeEffect(`upsert output ${tableName}`, () =>
+    return this.write(`upsert output ${tableName}`, () =>
       this.db
         .insert(table)
         .values(values)
@@ -1297,16 +1186,8 @@ export class SmithersDb {
     );
   }
 
-  upsertOutputRow(
-    table: any,
-    key: OutputKey,
-    payload: Record<string, unknown>,
-  ) {
-    return runPromise(this.upsertOutputRowEffect(table, key, payload));
-  }
-
-  deleteOutputRowEffect(tableName: string, key: OutputKey) {
-    return this.writeEffect(`delete output ${tableName}`, () => {
+  deleteOutputRow(tableName: string, key: OutputKey) {
+    return this.write(`delete output ${tableName}`, () => {
       const client = (this.db as any).session.client;
       let resolvedTableName = tableName;
       let escapedTableName = resolvedTableName.replaceAll(`"`, `""`);
@@ -1380,12 +1261,8 @@ export class SmithersDb {
     });
   }
 
-  deleteOutputRow(tableName: string, key: OutputKey) {
-    return runPromise(this.deleteOutputRowEffect(tableName, key));
-  }
-
-  getRawNodeOutputEffect(tableName: string, runId: string, nodeId: string) {
-    return this.readEffect(`get raw node output ${tableName}`, () => {
+  getRawNodeOutput(tableName: string, runId: string, nodeId: string) {
+    return this.read(`get raw node output ${tableName}`, () => {
       const query = sql.raw(`SELECT * FROM "${tableName}" WHERE run_id = '${runId}' AND node_id = '${nodeId}' ORDER BY iteration DESC LIMIT 1`);
       const res = this.db.get(query);
       return Promise.resolve(res ?? null);
@@ -1394,17 +1271,13 @@ export class SmithersDb {
     );
   }
 
-  getRawNodeOutput(tableName: string, runId: string, nodeId: string) {
-    return runPromise(this.getRawNodeOutputEffect(tableName, runId, nodeId));
-  }
-
-  getRawNodeOutputForIterationEffect(
+  getRawNodeOutputForIteration(
     tableName: string,
     runId: string,
     nodeId: string,
     iteration: number,
   ) {
-    return this.readEffect(
+    return this.read(
       `get raw node output ${tableName} iteration ${iteration}`,
       () => {
         const escaped = tableName.replaceAll(`"`, `""`);
@@ -1418,49 +1291,12 @@ export class SmithersDb {
     ).pipe(Effect.catchAll(() => Effect.succeed(null)));
   }
 
-  getRawNodeOutputForIteration(
-    tableName: string,
-    runId: string,
-    nodeId: string,
-    iteration: number,
-  ) {
-    return runPromise(
-      this.getRawNodeOutputForIterationEffect(
-        tableName,
-        runId,
-        nodeId,
-        iteration,
-      ),
-    );
-  }
-
-  insertAttemptEffect(row: any) {
-    return this.writeEffect(`insert attempt ${row.nodeId}#${row.attempt}`, () =>
+  insertAttempt(row: any) {
+    return this.write(`insert attempt ${row.nodeId}#${row.attempt}`, () =>
       this.internalStorage.upsert(
         "_smithers_attempts",
         row,
         ["runId", "nodeId", "iteration", "attempt"],
-      ),
-    );
-  }
-
-  insertAttempt(row: any) {
-    return runPromise(this.insertAttemptEffect(row));
-  }
-
-  updateAttemptEffect(
-    runId: string,
-    nodeId: string,
-    iteration: number,
-    attempt: number,
-    patch: any,
-  ) {
-    return this.writeEffect(`update attempt ${nodeId}#${attempt}`, () =>
-      this.internalStorage.updateWhere(
-        "_smithers_attempts",
-        patch,
-        "run_id = ? AND node_id = ? AND iteration = ? AND attempt = ?",
-        [runId, nodeId, iteration, attempt],
       ),
     );
   }
@@ -1472,28 +1308,12 @@ export class SmithersDb {
     attempt: number,
     patch: any,
   ) {
-    return runPromise(
-      this.updateAttemptEffect(runId, nodeId, iteration, attempt, patch),
-    );
-  }
-
-  heartbeatAttemptEffect(
-    runId: string,
-    nodeId: string,
-    iteration: number,
-    attempt: number,
-    heartbeatAtMs: number,
-    heartbeatDataJson: string | null,
-  ) {
-    return this.writeEffect(`heartbeat attempt ${nodeId}#${attempt}`, () =>
+    return this.write(`update attempt ${nodeId}#${attempt}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_attempts",
-        {
-          heartbeatAtMs,
-          heartbeatDataJson,
-        },
-        "run_id = ? AND node_id = ? AND iteration = ? AND attempt = ? AND state = ?",
-        [runId, nodeId, iteration, attempt, "in-progress"],
+        patch,
+        "run_id = ? AND node_id = ? AND iteration = ? AND attempt = ?",
+        [runId, nodeId, iteration, attempt],
       ),
     );
   }
@@ -1506,20 +1326,21 @@ export class SmithersDb {
     heartbeatAtMs: number,
     heartbeatDataJson: string | null,
   ) {
-    return runPromise(
-      this.heartbeatAttemptEffect(
-        runId,
-        nodeId,
-        iteration,
-        attempt,
-        heartbeatAtMs,
-        heartbeatDataJson,
+    return this.write(`heartbeat attempt ${nodeId}#${attempt}`, () =>
+      this.internalStorage.updateWhere(
+        "_smithers_attempts",
+        {
+          heartbeatAtMs,
+          heartbeatDataJson,
+        },
+        "run_id = ? AND node_id = ? AND iteration = ? AND attempt = ? AND state = ?",
+        [runId, nodeId, iteration, attempt, "in-progress"],
       ),
     );
   }
 
-  listAttemptsEffect(runId: string, nodeId: string, iteration: number): Effect.Effect<AttemptRow[], SmithersError> {
-    return this.readEffect(`list attempts ${nodeId}`, () =>
+  listAttempts(runId: string, nodeId: string, iteration: number): Effect.Effect<AttemptRow[], SmithersError> {
+    return this.read(`list attempts ${nodeId}`, () =>
       this.internalStorage.queryAll<AttemptRow>(
         `SELECT *
          FROM _smithers_attempts
@@ -1531,12 +1352,8 @@ export class SmithersDb {
     );
   }
 
-  listAttempts(runId: string, nodeId: string, iteration: number) {
-    return runPromise(this.listAttemptsEffect(runId, nodeId, iteration));
-  }
-
-  listAttemptsForRunEffect(runId: string): Effect.Effect<AttemptRow[], SmithersError> {
-    return this.readEffect(`list attempts for run ${runId}`, () =>
+  listAttemptsForRun(runId: string): Effect.Effect<AttemptRow[], SmithersError> {
+    return this.read(`list attempts for run ${runId}`, () =>
       this.internalStorage.queryAll<AttemptRow>(
         `SELECT *
          FROM _smithers_attempts
@@ -1548,17 +1365,13 @@ export class SmithersDb {
     );
   }
 
-  listAttemptsForRun(runId: string) {
-    return runPromise(this.listAttemptsForRunEffect(runId));
-  }
-
-  getAttemptEffect(
+  getAttempt(
     runId: string,
     nodeId: string,
     iteration: number,
     attempt: number,
   ): Effect.Effect<AttemptRow | undefined, SmithersError> {
-    return this.readEffect(`get attempt ${nodeId}#${attempt}`, () =>
+    return this.read(`get attempt ${nodeId}#${attempt}`, () =>
       this.internalStorage.queryOne<AttemptRow>(
         `SELECT *
          FROM _smithers_attempts
@@ -1570,12 +1383,8 @@ export class SmithersDb {
     );
   }
 
-  getAttempt(runId: string, nodeId: string, iteration: number, attempt: number) {
-    return runPromise(this.getAttemptEffect(runId, nodeId, iteration, attempt));
-  }
-
-  listInProgressAttemptsEffect(runId: string): Effect.Effect<AttemptRow[], SmithersError> {
-    return this.readEffect(`list in-progress attempts ${runId}`, () =>
+  listInProgressAttempts(runId: string): Effect.Effect<AttemptRow[], SmithersError> {
+    return this.read(`list in-progress attempts ${runId}`, () =>
       this.internalStorage.queryAll<AttemptRow>(
         `SELECT *
          FROM _smithers_attempts
@@ -1586,12 +1395,8 @@ export class SmithersDb {
     );
   }
 
-  listInProgressAttempts(runId: string) {
-    return runPromise(this.listInProgressAttemptsEffect(runId));
-  }
-
-  listAllInProgressAttemptsEffect(): Effect.Effect<any[], SmithersError> {
-    return this.readEffect("list all in-progress attempts", () =>
+  listAllInProgressAttempts(): Effect.Effect<any[], SmithersError> {
+    return this.read("list all in-progress attempts", () =>
       this.internalStorage.queryAll<any>(
         `SELECT *
          FROM _smithers_attempts
@@ -1602,16 +1407,12 @@ export class SmithersDb {
     );
   }
 
-  listAllInProgressAttempts() {
-    return runPromise(this.listAllInProgressAttemptsEffect());
-  }
-
-  private listFrameChainDescEffect(
+  private listFrameChainDesc(
     runId: string,
     frameNo: number,
     limit?: number,
   ) {
-    return this.readEffect(`list frame chain ${runId}:${frameNo}`, () =>
+    return this.read(`list frame chain ${runId}:${frameNo}`, () =>
       this.internalStorage.queryAll(
         `SELECT *
          FROM _smithers_frames
@@ -1622,7 +1423,7 @@ export class SmithersDb {
     );
   }
 
-  private reconstructFrameXmlEffect(
+  private reconstructFrameXml(
     runId: string,
     frameNo: number,
     localCache = new Map<number, string>(),
@@ -1638,7 +1439,7 @@ export class SmithersDb {
         return cacheHit;
       }
 
-      let rows = (yield* self.listFrameChainDescEffect(
+      let rows = (yield* self.listFrameChainDesc(
         runId,
         frameNo,
         FRAME_KEYFRAME_INTERVAL + 2,
@@ -1650,7 +1451,7 @@ export class SmithersDb {
       );
 
       if (anchorIndex < 0) {
-        rows = (yield* self.listFrameChainDescEffect(runId, frameNo)) as any[];
+        rows = (yield* self.listFrameChainDesc(runId, frameNo)) as any[];
         anchorIndex = rows.findIndex(
           (row) => normalizeFrameEncoding(row.encoding) !== "delta",
         );
@@ -1687,7 +1488,7 @@ export class SmithersDb {
     });
   }
 
-  private inflateFrameRowEffect(
+  private inflateFrameRow(
     row: any,
     localCache = new Map<number, string>(),
   ) {
@@ -1701,7 +1502,7 @@ export class SmithersDb {
         return { ...row, encoding, xmlJson };
       }
 
-      const xmlJson = yield* self.reconstructFrameXmlEffect(
+      const xmlJson = yield* self.reconstructFrameXml(
         row.runId,
         row.frameNo,
         localCache,
@@ -1714,7 +1515,7 @@ export class SmithersDb {
     });
   }
 
-  insertFrameEffect(row: any) {
+  insertFrame(row: any) {
     const self = this;
     return Effect.gen(function* () {
       const runId = String(row.runId);
@@ -1725,7 +1526,7 @@ export class SmithersDb {
       let persistedXmlJson = fullXmlJson;
 
       if (frameNo > 0 && frameNo % FRAME_KEYFRAME_INTERVAL !== 0) {
-        const previousXmlJson = yield* self.reconstructFrameXmlEffect(
+        const previousXmlJson = yield* self.reconstructFrameXml(
           runId,
           frameNo - 1,
         );
@@ -1752,7 +1553,7 @@ export class SmithersDb {
         encoding,
       };
 
-      yield* self.writeEffect(`insert frame ${frameNo}`, () =>
+      yield* self.write(`insert frame ${frameNo}`, () =>
         self.internalStorage.upsert(
           "_smithers_frames",
           persistedRow,
@@ -1765,14 +1566,10 @@ export class SmithersDb {
     });
   }
 
-  insertFrame(row: any) {
-    return runPromise(this.insertFrameEffect(row));
-  }
-
-  getLastFrameEffect(runId: string) {
+  getLastFrame(runId: string) {
     const self = this;
     return Effect.gen(function* () {
-      const row = yield* self.readEffect(`get last frame ${runId}`, () =>
+      const row = yield* self.read(`get last frame ${runId}`, () =>
         self.internalStorage.queryOne(
           `SELECT *
            FROM _smithers_frames
@@ -1783,17 +1580,13 @@ export class SmithersDb {
         ),
       );
       if (!row) return undefined;
-      return yield* self.inflateFrameRowEffect(row);
+      return yield* self.inflateFrameRow(row);
     });
   }
 
-  getLastFrame(runId: string) {
-    return runPromise(this.getLastFrameEffect(runId));
-  }
 
-
-  insertOrUpdateApprovalEffect(row: any) {
-    return this.writeEffect(`upsert approval ${row.nodeId}`, () =>
+  insertOrUpdateApproval(row: any) {
+    return this.write(`upsert approval ${row.nodeId}`, () =>
       this.internalStorage.upsert(
         "_smithers_approvals",
         row,
@@ -1802,12 +1595,8 @@ export class SmithersDb {
     );
   }
 
-  insertOrUpdateApproval(row: any) {
-    return runPromise(this.insertOrUpdateApprovalEffect(row));
-  }
-
-  getApprovalEffect(runId: string, nodeId: string, iteration: number) {
-    return this.readEffect(`get approval ${nodeId}`, () =>
+  getApproval(runId: string, nodeId: string, iteration: number) {
+    return this.read(`get approval ${nodeId}`, () =>
       this.internalStorage.queryOne<ApprovalRow>(
         `SELECT *
          FROM _smithers_approvals
@@ -1819,22 +1608,14 @@ export class SmithersDb {
     );
   }
 
-  getApproval(runId: string, nodeId: string, iteration: number) {
-    return runPromise(this.getApprovalEffect(runId, nodeId, iteration));
-  }
-
-  insertHumanRequestEffect(row: HumanRequestRow) {
-    return this.writeEffect(`insert human request ${row.requestId}`, () =>
+  insertHumanRequest(row: HumanRequestRow) {
+    return this.write(`insert human request ${row.requestId}`, () =>
       this.internalStorage.insertIgnore("_smithers_human_requests", row),
     );
   }
 
-  insertHumanRequest(row: HumanRequestRow) {
-    return runPromise(this.insertHumanRequestEffect(row));
-  }
-
-  getHumanRequestEffect(requestId: string) {
-    return this.readEffect(`get human request ${requestId}`, () =>
+  getHumanRequest(requestId: string) {
+    return this.read(`get human request ${requestId}`, () =>
       this.internalStorage.queryOne<HumanRequestRow>(
         `SELECT *
          FROM _smithers_human_requests
@@ -1845,12 +1626,8 @@ export class SmithersDb {
     );
   }
 
-  getHumanRequest(requestId: string) {
-    return runPromise(this.getHumanRequestEffect(requestId));
-  }
-
-  reopenHumanRequestEffect(requestId: string) {
-    return this.writeEffect(`reopen human request ${requestId}`, () =>
+  reopenHumanRequest(requestId: string) {
+    return this.write(`reopen human request ${requestId}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_human_requests",
         {
@@ -1865,12 +1642,8 @@ export class SmithersDb {
     );
   }
 
-  reopenHumanRequest(requestId: string) {
-    return runPromise(this.reopenHumanRequestEffect(requestId));
-  }
-
-  expireStaleHumanRequestsEffect(nowMs = Date.now()) {
-    return this.writeEffect(`expire stale human requests before ${nowMs}`, () =>
+  expireStaleHumanRequests(nowMs = Date.now()) {
+    return this.write(`expire stale human requests before ${nowMs}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_human_requests",
         {
@@ -1885,15 +1658,11 @@ export class SmithersDb {
     );
   }
 
-  expireStaleHumanRequests(nowMs = Date.now()) {
-    return runPromise(this.expireStaleHumanRequestsEffect(nowMs));
-  }
-
-  listPendingHumanRequestsEffect(nowMs = Date.now()) {
+  listPendingHumanRequests(nowMs = Date.now()) {
     const self = this;
     return Effect.gen(function* () {
-      yield* self.expireStaleHumanRequestsEffect(nowMs);
-      return yield* self.readEffect("list pending human requests", () =>
+      yield* self.expireStaleHumanRequests(nowMs);
+      return yield* self.read("list pending human requests", () =>
         self.internalStorage.queryAll<PendingHumanRequestRow>(
           `SELECT
              h.request_id,
@@ -1927,17 +1696,13 @@ export class SmithersDb {
     });
   }
 
-  listPendingHumanRequests(nowMs = Date.now()) {
-    return runPromise(this.listPendingHumanRequestsEffect(nowMs));
-  }
-
-  answerHumanRequestEffect(
+  answerHumanRequest(
     requestId: string,
     responseJson: string,
     answeredAtMs: number,
     answeredBy?: string | null,
   ) {
-    return this.writeEffect(`answer human request ${requestId}`, () =>
+    return this.write(`answer human request ${requestId}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_human_requests",
         {
@@ -1952,24 +1717,8 @@ export class SmithersDb {
     );
   }
 
-  answerHumanRequest(
-    requestId: string,
-    responseJson: string,
-    answeredAtMs: number,
-    answeredBy?: string | null,
-  ) {
-    return runPromise(
-      this.answerHumanRequestEffect(
-        requestId,
-        responseJson,
-        answeredAtMs,
-        answeredBy,
-      ),
-    );
-  }
-
-  cancelHumanRequestEffect(requestId: string) {
-    return this.writeEffect(`cancel human request ${requestId}`, () =>
+  cancelHumanRequest(requestId: string) {
+    return this.write(`cancel human request ${requestId}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_human_requests",
         {
@@ -1981,22 +1730,18 @@ export class SmithersDb {
     );
   }
 
-  cancelHumanRequest(requestId: string) {
-    return runPromise(this.cancelHumanRequestEffect(requestId));
-  }
-
-  insertAlertEffect(row: AlertRow) {
+  insertAlert(row: AlertRow) {
     validateAlertRow(row);
     const self = this;
-    return this.withTransactionEffect(
+    return this.withTransaction(
       `insert alert ${row.alertId}`,
       Effect.gen(function* () {
-        const existing = yield* self.getAlertEffect(row.alertId);
+        const existing = yield* self.getAlert(row.alertId);
         if (existing) {
           return existing;
         }
 
-        yield* self.writeEffect(`insert alert ${row.alertId}`, () =>
+        yield* self.write(`insert alert ${row.alertId}`, () =>
           self.internalStorage.insertIgnore("_smithers_alerts", row),
         );
         yield* Metric.increment(
@@ -2009,17 +1754,13 @@ export class SmithersDb {
         if (isAlertActiveStatus(row.status)) {
           yield* Metric.update(alertsActive, 1);
         }
-        return yield* self.getAlertEffect(row.alertId);
+        return yield* self.getAlert(row.alertId);
       }),
     );
   }
 
-  insertAlert(row: AlertRow) {
-    return runPromise(this.insertAlertEffect(row));
-  }
-
-  getAlertEffect(alertId: string) {
-    return this.readEffect(`get alert ${alertId}`, () =>
+  getAlert(alertId: string) {
+    return this.read(`get alert ${alertId}`, () =>
       this.internalStorage.queryOne<AlertRow>(
         `SELECT *
          FROM _smithers_alerts
@@ -2030,11 +1771,7 @@ export class SmithersDb {
     );
   }
 
-  getAlert(alertId: string) {
-    return runPromise(this.getAlertEffect(alertId));
-  }
-
-  listAlertsEffect(limit = 100, statuses?: readonly AlertStatus[]) {
+  listAlerts(limit = 100, statuses?: readonly AlertStatus[]) {
     if (statuses) {
       for (const status of statuses) {
         validateAlertStatus(status);
@@ -2042,7 +1779,7 @@ export class SmithersDb {
     }
 
     const normalizedLimit = Math.max(1, Math.floor(limit));
-    return this.readEffect("list alerts", () => {
+    return this.read("list alerts", () => {
       const clauses: string[] = [];
       const params: Array<string | number> = [];
 
@@ -2072,20 +1809,16 @@ export class SmithersDb {
     });
   }
 
-  listAlerts(limit = 100, statuses?: readonly AlertStatus[]) {
-    return runPromise(this.listAlertsEffect(limit, statuses));
-  }
-
-  acknowledgeAlertEffect(alertId: string, acknowledgedAtMs = Date.now()) {
+  acknowledgeAlert(alertId: string, acknowledgedAtMs = Date.now()) {
     validateOptionalPositiveTimestamp(
       { acknowledgedAtMs },
       "acknowledgedAtMs",
     );
     const self = this;
-    return this.withTransactionEffect(
+    return this.withTransaction(
       `acknowledge alert ${alertId}`,
       Effect.gen(function* () {
-        const alert = yield* self.getAlertEffect(alertId);
+        const alert = yield* self.getAlert(alertId);
         if (!alert) {
           return undefined;
         }
@@ -2093,7 +1826,7 @@ export class SmithersDb {
           return alert;
         }
 
-        yield* self.writeEffect(`acknowledge alert ${alertId}`, () =>
+        yield* self.write(`acknowledge alert ${alertId}`, () =>
           self.internalStorage.updateWhere(
             "_smithers_alerts",
             {
@@ -2107,22 +1840,18 @@ export class SmithersDb {
         yield* Metric.increment(
           Metric.tagged(alertsAcknowledgedTotal, "policy", alert.policyName),
         );
-        return yield* self.getAlertEffect(alertId);
+        return yield* self.getAlert(alertId);
       }),
     );
   }
 
-  acknowledgeAlert(alertId: string, acknowledgedAtMs = Date.now()) {
-    return runPromise(this.acknowledgeAlertEffect(alertId, acknowledgedAtMs));
-  }
-
-  resolveAlertEffect(alertId: string, resolvedAtMs = Date.now()) {
+  resolveAlert(alertId: string, resolvedAtMs = Date.now()) {
     validateOptionalPositiveTimestamp({ resolvedAtMs }, "resolvedAtMs");
     const self = this;
-    return this.withTransactionEffect(
+    return this.withTransaction(
       `resolve alert ${alertId}`,
       Effect.gen(function* () {
-        const alert = yield* self.getAlertEffect(alertId);
+        const alert = yield* self.getAlert(alertId);
         if (!alert) {
           return undefined;
         }
@@ -2130,7 +1859,7 @@ export class SmithersDb {
           return alert;
         }
 
-        yield* self.writeEffect(`resolve alert ${alertId}`, () =>
+        yield* self.write(`resolve alert ${alertId}`, () =>
           self.internalStorage.updateWhere(
             "_smithers_alerts",
             {
@@ -2144,21 +1873,17 @@ export class SmithersDb {
         if (isAlertActiveStatus(alert.status)) {
           yield* Metric.update(alertsActive, -1);
         }
-        return yield* self.getAlertEffect(alertId);
+        return yield* self.getAlert(alertId);
       }),
     );
   }
 
-  resolveAlert(alertId: string, resolvedAtMs = Date.now()) {
-    return runPromise(this.resolveAlertEffect(alertId, resolvedAtMs));
-  }
-
-  silenceAlertEffect(alertId: string) {
+  silenceAlert(alertId: string) {
     const self = this;
-    return this.withTransactionEffect(
+    return this.withTransaction(
       `silence alert ${alertId}`,
       Effect.gen(function* () {
-        const alert = yield* self.getAlertEffect(alertId);
+        const alert = yield* self.getAlert(alertId);
         if (!alert) {
           return undefined;
         }
@@ -2166,7 +1891,7 @@ export class SmithersDb {
           return alert;
         }
 
-        yield* self.writeEffect(`silence alert ${alertId}`, () =>
+        yield* self.write(`silence alert ${alertId}`, () =>
           self.internalStorage.updateWhere(
             "_smithers_alerts",
             {
@@ -2176,16 +1901,12 @@ export class SmithersDb {
             [alertId, "resolved", "silenced"],
           ),
         );
-        return yield* self.getAlertEffect(alertId);
+        return yield* self.getAlert(alertId);
       }),
     );
   }
 
-  silenceAlert(alertId: string) {
-    return runPromise(this.silenceAlertEffect(alertId));
-  }
-
-  insertSignalWithNextSeqEffect(row: {
+  insertSignalWithNextSeq(row: {
     runId: string;
     signalName: string;
     correlationId: string | null;
@@ -2195,10 +1916,10 @@ export class SmithersDb {
   }) {
     const label = `insert signal ${row.signalName}`;
     const self = this;
-    return withSqliteWriteRetryEffect(
+    return withSqliteWriteRetry(
       () =>
         Effect.gen(function* () {
-          const existing = yield* self.readEffect(label, () =>
+          const existing = yield* self.read(label, () =>
             self.internalStorage.queryOne<{ seq: number }>(
               `SELECT seq
                FROM _smithers_signals
@@ -2230,7 +1951,7 @@ export class SmithersDb {
             typeof client.exec !== "function" ||
             typeof client.query !== "function"
           ) {
-            const lastSeq = (yield* self.getLastSignalSeqEffect(row.runId)) ?? -1;
+            const lastSeq = (yield* self.getLastSignalSeq(row.runId)) ?? -1;
             const seq = lastSeq + 1;
             yield* fromPromise("insert fallback signal row", () =>
               self.internalStorage.insertIgnore("_smithers_signals", {
@@ -2287,30 +2008,15 @@ export class SmithersDb {
     );
   }
 
-  insertSignalWithNextSeq(row: {
-    runId: string;
-    signalName: string;
-    correlationId: string | null;
-    payloadJson: string;
-    receivedAtMs: number;
-    receivedBy?: string | null;
-  }) {
-    return runPromise(this.insertSignalWithNextSeqEffect(row));
-  }
-
-  getLastSignalSeqEffect(runId: string) {
-    return this.readEffect(`get last signal seq ${runId}`, () =>
+  getLastSignalSeq(runId: string) {
+    return this.read(`get last signal seq ${runId}`, () =>
       this.internalStorage.getLastSignalSeq(runId),
     );
   }
 
-  getLastSignalSeq(runId: string) {
-    return runPromise(this.getLastSignalSeqEffect(runId));
-  }
-
-  listSignalsEffect(runId: string, query: SignalQuery = {}) {
+  listSignals(runId: string, query: SignalQuery = {}) {
     const limit = Math.max(1, Math.floor(query.limit ?? 200));
-    return this.readEffect(`list signals ${runId}`, () => {
+    return this.read(`list signals ${runId}`, () => {
       const clauses = ["run_id = ?"];
       const params: Array<string | number | null> = [runId];
       if (query.signalName) {
@@ -2340,22 +2046,14 @@ export class SmithersDb {
     });
   }
 
-  listSignals(runId: string, query: SignalQuery = {}) {
-    return runPromise(this.listSignalsEffect(runId, query));
-  }
-
-  insertToolCallEffect(row: any) {
-    return this.writeEffect(`insert tool call ${row.toolName}`, () =>
+  insertToolCall(row: any) {
+    return this.write(`insert tool call ${row.toolName}`, () =>
       this.internalStorage.insertIgnore("_smithers_tool_calls", row),
     );
   }
 
-  insertToolCall(row: any) {
-    return runPromise(this.insertToolCallEffect(row));
-  }
-
-  upsertSandboxEffect(row: any) {
-    return this.writeEffect(`upsert sandbox ${row.sandboxId}`, () =>
+  upsertSandbox(row: any) {
+    return this.write(`upsert sandbox ${row.sandboxId}`, () =>
       this.internalStorage.upsert(
         "_smithers_sandboxes",
         row,
@@ -2364,12 +2062,8 @@ export class SmithersDb {
     );
   }
 
-  upsertSandbox(row: any) {
-    return runPromise(this.upsertSandboxEffect(row));
-  }
-
-  getSandboxEffect(runId: string, sandboxId: string) {
-    return this.readEffect(`get sandbox ${sandboxId}`, () =>
+  getSandbox(runId: string, sandboxId: string) {
+    return this.read(`get sandbox ${sandboxId}`, () =>
       this.internalStorage.queryOne(
         `SELECT *
          FROM _smithers_sandboxes
@@ -2380,12 +2074,8 @@ export class SmithersDb {
     );
   }
 
-  getSandbox(runId: string, sandboxId: string) {
-    return runPromise(this.getSandboxEffect(runId, sandboxId));
-  }
-
-  listSandboxesEffect(runId: string) {
-    return this.readEffect(`list sandboxes ${runId}`, () =>
+  listSandboxes(runId: string) {
+    return this.read(`list sandboxes ${runId}`, () =>
       this.internalStorage.queryAll(
         `SELECT *
          FROM _smithers_sandboxes
@@ -2395,12 +2085,8 @@ export class SmithersDb {
     );
   }
 
-  listSandboxes(runId: string) {
-    return runPromise(this.listSandboxesEffect(runId));
-  }
-
-  listToolCallsEffect(runId: string, nodeId: string, iteration: number) {
-    return this.readEffect(`list tool calls ${nodeId}`, () =>
+  listToolCalls(runId: string, nodeId: string, iteration: number) {
+    return this.read(`list tool calls ${nodeId}`, () =>
       this.internalStorage.queryAll(
         `SELECT *
          FROM _smithers_tool_calls
@@ -2411,21 +2097,13 @@ export class SmithersDb {
     );
   }
 
-  listToolCalls(runId: string, nodeId: string, iteration: number) {
-    return runPromise(this.listToolCallsEffect(runId, nodeId, iteration));
-  }
-
-  insertEventEffect(row: any) {
-    return this.writeEffect(`insert event ${row.type}`, () =>
+  insertEvent(row: any) {
+    return this.write(`insert event ${row.type}`, () =>
       this.internalStorage.insertIgnore("_smithers_events", row),
     );
   }
 
-  insertEvent(row: any) {
-    return runPromise(this.insertEventEffect(row));
-  }
-
-  insertEventWithNextSeqEffect(row: {
+  insertEventWithNextSeq(row: {
     runId: string;
     timestampMs: number;
     type: string;
@@ -2433,10 +2111,10 @@ export class SmithersDb {
   }) {
     const label = `insert event ${row.type}`;
     const self = this;
-    return withSqliteWriteRetryEffect(
+    return withSqliteWriteRetry(
       () =>
         Effect.gen(function* () {
-          const existing = yield* self.readEffect(label, () =>
+          const existing = yield* self.read(label, () =>
             self.internalStorage.queryOne<{ seq: number }>(
               `SELECT seq
                FROM _smithers_events
@@ -2459,7 +2137,7 @@ export class SmithersDb {
             typeof client.exec !== "function" ||
             typeof client.query !== "function"
           ) {
-            const lastSeq = (yield* self.getLastEventSeqEffect(row.runId)) ?? -1;
+            const lastSeq = (yield* self.getLastEventSeq(row.runId)) ?? -1;
             const seq = lastSeq + 1;
             yield* fromPromise("insert fallback event row", () =>
               self.internalStorage.insertIgnore("_smithers_events", { ...row, seq }),
@@ -2500,23 +2178,10 @@ export class SmithersDb {
     );
   }
 
-  insertEventWithNextSeq(row: {
-    runId: string;
-    timestampMs: number;
-    type: string;
-    payloadJson: string;
-  }) {
-    return runPromise(this.insertEventWithNextSeqEffect(row));
-  }
-
-  getLastEventSeqEffect(runId: string) {
-    return this.readEffect(`get last event seq ${runId}`, () =>
+  getLastEventSeq(runId: string) {
+    return this.read(`get last event seq ${runId}`, () =>
       this.internalStorage.getLastEventSeq(runId),
     );
-  }
-
-  getLastEventSeq(runId: string) {
-    return runPromise(this.getLastEventSeqEffect(runId));
   }
 
   private buildEventHistoryWhere(
@@ -2547,46 +2212,30 @@ export class SmithersDb {
     };
   }
 
-  listEventHistoryEffect(runId: string, query: EventHistoryQuery = {}) {
-    return this.readEffect(`list event history ${runId}`, () =>
+  listEventHistory(runId: string, query: EventHistoryQuery = {}) {
+    return this.read(`list event history ${runId}`, () =>
       this.internalStorage.listEventHistory(runId, query),
     );
   }
 
-  listEventHistory(runId: string, query: EventHistoryQuery = {}) {
-    return runPromise(this.listEventHistoryEffect(runId, query));
-  }
-
-  countEventHistoryEffect(runId: string, query: EventHistoryQuery = {}) {
-    return this.readEffect(`count event history ${runId}`, () =>
+  countEventHistory(runId: string, query: EventHistoryQuery = {}) {
+    return this.read(`count event history ${runId}`, () =>
       this.internalStorage.countEventHistory(runId, query),
     );
   }
 
-  countEventHistory(runId: string, query: EventHistoryQuery = {}) {
-    return runPromise(this.countEventHistoryEffect(runId, query));
-  }
-
-  listEventsEffect(runId: string, afterSeq: number, limit = 200) {
-    return this.listEventHistoryEffect(runId, { afterSeq, limit });
-  }
-
   listEvents(runId: string, afterSeq: number, limit = 200) {
-    return runPromise(this.listEventsEffect(runId, afterSeq, limit));
+    return this.listEventHistory(runId, { afterSeq, limit });
   }
 
-  listEventsByTypeEffect(runId: string, type: string) {
-    return this.readEffect(`list events by type ${type}`, () =>
+  listEventsByType(runId: string, type: string) {
+    return this.read(`list events by type ${type}`, () =>
       this.internalStorage.listEventsByType(runId, type),
     );
   }
 
-  listEventsByType(runId: string, type: string) {
-    return runPromise(this.listEventsByTypeEffect(runId, type));
-  }
-
-  insertOrUpdateRalphEffect(row: any) {
-    return this.writeEffect(`upsert ralph ${row.ralphId}`, () =>
+  insertOrUpdateRalph(row: any) {
+    return this.write(`upsert ralph ${row.ralphId}`, () =>
       this.internalStorage.upsert(
         "_smithers_ralph",
         row,
@@ -2595,12 +2244,8 @@ export class SmithersDb {
     );
   }
 
-  insertOrUpdateRalph(row: any) {
-    return runPromise(this.insertOrUpdateRalphEffect(row));
-  }
-
-  listRalphEffect(runId: string) {
-    return this.readEffect(`list ralph ${runId}`, () =>
+  listRalph(runId: string) {
+    return this.read(`list ralph ${runId}`, () =>
       this.internalStorage.queryAll(
         `SELECT *
          FROM _smithers_ralph
@@ -2611,12 +2256,8 @@ export class SmithersDb {
     );
   }
 
-  listRalph(runId: string) {
-    return runPromise(this.listRalphEffect(runId));
-  }
-
-  listPendingApprovalsEffect(runId: string) {
-    return this.readEffect(`list pending approvals ${runId}`, () =>
+  listPendingApprovals(runId: string) {
+    return this.read(`list pending approvals ${runId}`, () =>
       this.internalStorage.queryAll<ApprovalRow>(
         `SELECT *
          FROM _smithers_approvals
@@ -2627,12 +2268,8 @@ export class SmithersDb {
     );
   }
 
-  listPendingApprovals(runId: string) {
-    return runPromise(this.listPendingApprovalsEffect(runId));
-  }
-
-  listAllPendingApprovalsEffect() {
-    return this.readEffect("list all pending approvals", () =>
+  listAllPendingApprovals() {
+    return this.read("list all pending approvals", () =>
       this.internalStorage.queryAll(
         `SELECT
            a.run_id,
@@ -2658,12 +2295,8 @@ export class SmithersDb {
     );
   }
 
-  listAllPendingApprovals() {
-    return runPromise(this.listAllPendingApprovalsEffect());
-  }
-
-  listApprovalHistoryForNodeEffect(workflowName: string, nodeId: string, limit = 50) {
-    return this.readEffect(`list approval history ${workflowName}:${nodeId}`, () =>
+  listApprovalHistoryForNode(workflowName: string, nodeId: string, limit = 50) {
+    return this.read(`list approval history ${workflowName}:${nodeId}`, () =>
       this.internalStorage.queryAll(
         `SELECT
            a.run_id,
@@ -2690,12 +2323,8 @@ export class SmithersDb {
     );
   }
 
-  listApprovalHistoryForNode(workflowName: string, nodeId: string, limit = 50) {
-    return runPromise(this.listApprovalHistoryForNodeEffect(workflowName, nodeId, limit));
-  }
-
-  getRalphEffect(runId: string, ralphId: string) {
-    return this.readEffect(`get ralph ${ralphId}`, () =>
+  getRalph(runId: string, ralphId: string) {
+    return this.read(`get ralph ${ralphId}`, () =>
       this.internalStorage.queryOne(
         `SELECT *
          FROM _smithers_ralph
@@ -2707,22 +2336,14 @@ export class SmithersDb {
     );
   }
 
-  getRalph(runId: string, ralphId: string) {
-    return runPromise(this.getRalphEffect(runId, ralphId));
-  }
-
-  insertCacheEffect(row: any) {
-    return this.writeEffect(`insert cache ${row.cacheKey}`, () =>
+  insertCache(row: any) {
+    return this.write(`insert cache ${row.cacheKey}`, () =>
       this.internalStorage.insertIgnore("_smithers_cache", row),
     );
   }
 
-  insertCache(row: any) {
-    return runPromise(this.insertCacheEffect(row));
-  }
-
-  getCacheEffect(cacheKey: string) {
-    return this.readEffect(`get cache ${cacheKey}`, () =>
+  getCache(cacheKey: string) {
+    return this.read(`get cache ${cacheKey}`, () =>
       this.internalStorage.queryOne<CacheRow>(
         `SELECT *
          FROM _smithers_cache
@@ -2733,16 +2354,12 @@ export class SmithersDb {
     );
   }
 
-  getCache(cacheKey: string) {
-    return runPromise(this.getCacheEffect(cacheKey));
-  }
-
-  listCacheByNodeEffect(
+  listCacheByNode(
     nodeId: string,
     outputTable?: string,
     limit = 20,
   ) {
-    return this.readEffect(`list cache by node ${nodeId}`, () =>
+    return this.read(`list cache by node ${nodeId}`, () =>
       this.internalStorage.queryAll(
         `SELECT *
          FROM _smithers_cache
@@ -2754,18 +2371,10 @@ export class SmithersDb {
     );
   }
 
-  listCacheByNode(
-    nodeId: string,
-    outputTable?: string,
-    limit = 20,
-  ) {
-    return runPromise(this.listCacheByNodeEffect(nodeId, outputTable, limit));
-  }
-
-  deleteFramesAfterEffect(runId: string, frameNo: number) {
+  deleteFramesAfter(runId: string, frameNo: number) {
     const self = this;
     return Effect.gen(function* () {
-      yield* self.writeEffect(`delete frames after ${frameNo}`, () =>
+      yield* self.write(`delete frames after ${frameNo}`, () =>
         self.internalStorage.deleteWhere(
           "_smithers_frames",
           "run_id = ? AND frame_no > ?",
@@ -2776,14 +2385,10 @@ export class SmithersDb {
     });
   }
 
-  deleteFramesAfter(runId: string, frameNo: number) {
-    return runPromise(this.deleteFramesAfterEffect(runId, frameNo));
-  }
-
-  listFramesEffect(runId: string, limit: number, afterFrameNo?: number) {
+  listFrames(runId: string, limit: number, afterFrameNo?: number) {
     const self = this;
     return Effect.gen(function* () {
-      const rows = (yield* self.readEffect(`list frames ${runId}`, () =>
+      const rows = (yield* self.read(`list frames ${runId}`, () =>
         self.internalStorage.queryAll(
           `SELECT *
            FROM _smithers_frames
@@ -2799,18 +2404,14 @@ export class SmithersDb {
       const localCache = new Map<number, string>();
       const expanded: any[] = [];
       for (const row of rows) {
-        expanded.push(yield* self.inflateFrameRowEffect(row, localCache));
+        expanded.push(yield* self.inflateFrameRow(row, localCache));
       }
       return expanded;
     });
   }
 
-  listFrames(runId: string, limit: number, afterFrameNo?: number) {
-    return runPromise(this.listFramesEffect(runId, limit, afterFrameNo));
-  }
-
-  countNodesByStateEffect(runId: string) {
-    return this.readEffect(`count nodes by state ${runId}`, () =>
+  countNodesByState(runId: string) {
+    return this.read(`count nodes by state ${runId}`, () =>
       this.internalStorage.queryAll(
         `SELECT state, COUNT(*) AS count
          FROM _smithers_nodes
@@ -2821,12 +2422,8 @@ export class SmithersDb {
     );
   }
 
-  countNodesByState(runId: string) {
-    return runPromise(this.countNodesByStateEffect(runId));
-  }
-
-  upsertCronEffect(row: any) {
-    return this.writeEffect("upsert cron", () =>
+  upsertCron(row: any) {
+    return this.write("upsert cron", () =>
       this.internalStorage.upsert(
         "_smithers_cron",
         row,
@@ -2836,12 +2433,8 @@ export class SmithersDb {
     );
   }
 
-  upsertCron(row: any) {
-    return runPromise(this.upsertCronEffect(row));
-  }
-
-  listCronsEffect(enabledOnly = true) {
-    return this.readEffect("list crons", () =>
+  listCrons(enabledOnly = true) {
+    return this.read("list crons", () =>
       this.internalStorage.queryAll(
         `SELECT *
          FROM _smithers_cron${enabledOnly ? " WHERE enabled = ?" : ""}`,
@@ -2851,12 +2444,8 @@ export class SmithersDb {
     );
   }
 
-  listCrons(enabledOnly = true) {
-    return runPromise(this.listCronsEffect(enabledOnly));
-  }
-
-  updateCronRunTimeEffect(cronId: string, lastRunAtMs: number, nextRunAtMs: number, errorJson?: string | null) {
-    return this.writeEffect(`update cron run time ${cronId}`, () =>
+  updateCronRunTime(cronId: string, lastRunAtMs: number, nextRunAtMs: number, errorJson?: string | null) {
+    return this.write(`update cron run time ${cronId}`, () =>
       this.internalStorage.updateWhere(
         "_smithers_cron",
         { lastRunAtMs, nextRunAtMs, errorJson: errorJson ?? null },
@@ -2866,36 +2455,24 @@ export class SmithersDb {
     );
   }
 
-  updateCronRunTime(cronId: string, lastRunAtMs: number, nextRunAtMs: number, errorJson?: string | null) {
-    return runPromise(this.updateCronRunTimeEffect(cronId, lastRunAtMs, nextRunAtMs, errorJson));
-  }
-
-  deleteCronEffect(cronId: string) {
-    return this.writeEffect(`delete cron ${cronId}`, () =>
+  deleteCron(cronId: string) {
+    return this.write(`delete cron ${cronId}`, () =>
       this.internalStorage.deleteWhere("_smithers_cron", "cron_id = ?", [cronId]),
     );
-  }
-
-  deleteCron(cronId: string) {
-    return runPromise(this.deleteCronEffect(cronId));
   }
 
   // ---------------------------------------------------------------------------
   // Scorer results
   // ---------------------------------------------------------------------------
 
-  insertScorerResultEffect(row: any) {
-    return this.writeEffect(`insert scorer result ${row.scorerId}`, () =>
+  insertScorerResult(row: any) {
+    return this.write(`insert scorer result ${row.scorerId}`, () =>
       this.internalStorage.insertIgnore("_smithers_scorers", row),
     );
   }
 
-  insertScorerResult(row: any) {
-    return runPromise(this.insertScorerResultEffect(row));
-  }
-
-  listScorerResultsEffect(runId: string, nodeId?: string) {
-    return this.readEffect(`list scorer results ${runId}`, () =>
+  listScorerResults(runId: string, nodeId?: string) {
+    return this.read(`list scorer results ${runId}`, () =>
       this.internalStorage.queryAll(
         `SELECT *
          FROM _smithers_scorers
@@ -2904,9 +2481,5 @@ export class SmithersDb {
         nodeId ? [runId, nodeId] : [runId],
       ),
     );
-  }
-
-  listScorerResults(runId: string, nodeId?: string) {
-    return runPromise(this.listScorerResultsEffect(runId, nodeId));
   }
 }
