@@ -1,62 +1,18 @@
-import { and, eq } from "drizzle-orm";
 import { Effect, Metric } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import { fromPromise } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
 import { nowMs } from "@smithers/core/utils/time";
 import { newRunId } from "@smithers/core/utils/ids";
 import { SmithersError } from "@smithers/core/errors";
-import { smithersBranches, smithersSnapshots } from "./schema";
-import { loadSnapshotEffect } from "./snapshot/loadSnapshotEffect";
-import { parseSnapshot } from "./snapshot/parseSnapshot";
-import { runForksCreated } from "./runForksCreated";
-import type { ForkParams } from "./ForkParams";
-import type { BranchInfo } from "./BranchInfo";
-import type { Snapshot } from "./snapshot/Snapshot";
-import type { NodeSnapshot } from "./NodeSnapshot";
-
-// ---------------------------------------------------------------------------
-// Downstream detection
-// ---------------------------------------------------------------------------
-
-/**
- * Given a set of node IDs to reset, compute the full transitive set including
- * all downstream dependents.  In the absence of an explicit dependency graph,
- * we reset every node whose iteration >= the minimum iteration of the reset
- * set. This is intentionally conservative — it re-runs more rather than less.
- */
-function expandResetSet(
-  nodes: Record<string, NodeSnapshot>,
-  resetNodeIds: string[],
-): string[] {
-  if (resetNodeIds.length === 0) return [];
-
-  const resetSet = new Set(resetNodeIds);
-  const result = new Set<string>();
-
-  // Collect all unique base nodeIds from the snapshot keyed as "nodeId::iteration"
-  for (const key of Object.keys(nodes)) {
-    const baseId = key.split("::")[0]!;
-    if (resetSet.has(baseId)) {
-      result.add(key);
-    }
-  }
-
-  // If we found nothing via base nodeId, try exact key match
-  if (result.size === 0) {
-    for (const id of resetNodeIds) {
-      if (nodes[id]) {
-        result.add(id);
-      }
-    }
-  }
-
-  return [...result];
-}
-
-// ---------------------------------------------------------------------------
-// Fork
-// ---------------------------------------------------------------------------
+import { smithersBranches, smithersSnapshots } from "../schema";
+import { loadSnapshotEffect } from "../snapshot/loadSnapshotEffect";
+import { parseSnapshot } from "../snapshot/parseSnapshot";
+import { runForksCreated } from "../runForksCreated";
+import { expandResetSet } from "./_helpers";
+import type { ForkParams } from "../ForkParams";
+import type { BranchInfo } from "../BranchInfo";
+import type { Snapshot } from "../snapshot/Snapshot";
+import type { NodeSnapshot } from "../NodeSnapshot";
 
 export function forkRunEffect(
   adapter: SmithersDb,
@@ -216,73 +172,4 @@ export function forkRunEffect(
     }),
     Effect.withLogSpan("time-travel:fork-run"),
   );
-}
-
-export function forkRun(
-  adapter: SmithersDb,
-  params: ForkParams,
-): Promise<{ runId: string; branch: BranchInfo; snapshot: Snapshot }> {
-  return runPromise(forkRunEffect(adapter, params));
-}
-
-// ---------------------------------------------------------------------------
-// List branches for a run
-// ---------------------------------------------------------------------------
-
-export function listBranchesEffect(
-  adapter: SmithersDb,
-  parentRunId: string,
-): Effect.Effect<BranchInfo[], SmithersError> {
-  return fromPromise("list branches", (): Promise<BranchInfo[]> =>
-    (adapter as any).db
-      .select()
-      .from(smithersBranches)
-      .where(eq(smithersBranches.parentRunId, parentRunId)),
-  {
-    code: "DB_QUERY_FAILED",
-    details: { parentRunId },
-  },
-  ).pipe(
-    Effect.annotateLogs({ parentRunId }),
-    Effect.withLogSpan("time-travel:list-branches"),
-  );
-}
-
-export function listBranches(
-  adapter: SmithersDb,
-  parentRunId: string,
-): Promise<BranchInfo[]> {
-  return runPromise(listBranchesEffect(adapter, parentRunId));
-}
-
-// ---------------------------------------------------------------------------
-// Get branch info for a child run
-// ---------------------------------------------------------------------------
-
-export function getBranchInfoEffect(
-  adapter: SmithersDb,
-  runId: string,
-): Effect.Effect<BranchInfo | undefined, SmithersError> {
-  return fromPromise("get branch info", (): Promise<BranchInfo[]> =>
-    (adapter as any).db
-      .select()
-      .from(smithersBranches)
-      .where(eq(smithersBranches.runId, runId))
-      .limit(1),
-  {
-    code: "DB_QUERY_FAILED",
-    details: { runId },
-  },
-  ).pipe(
-    Effect.map((rows: any[]) => rows[0] as BranchInfo | undefined),
-    Effect.annotateLogs({ runId }),
-    Effect.withLogSpan("time-travel:get-branch-info"),
-  );
-}
-
-export function getBranchInfo(
-  adapter: SmithersDb,
-  runId: string,
-): Promise<BranchInfo | undefined> {
-  return runPromise(getBranchInfoEffect(adapter, runId));
 }
