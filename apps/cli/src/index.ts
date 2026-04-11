@@ -13,15 +13,15 @@ import { loadInput, loadOutputs } from "@smithers/db/snapshot";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { SmithersDb } from "@smithers/db/adapter";
 import { buildContext } from "@smithers/driver";
-import { fromPromise } from "@smithers/runtime/interop";
-import { runFork, runPromise } from "@smithers/runtime/runtime";
+import { fromPromise } from "@smithers/driver/interop";
+import { runFork, runPromise } from "./smithersRuntime";
 import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
 import { trackEvent } from "@smithers/observability/metrics";
 
 import { revertToAttempt } from "@smithers/time-travel/revert";
 import { retryTask } from "@smithers/time-travel/retry-task";
 import { timeTravel } from "@smithers/time-travel/timetravel";
-import { runSync } from "@smithers/runtime/runtime";
+import { runSync } from "./smithersRuntime";
 import { spawn } from "node:child_process";
 import { isHumanRequestPastTimeout, validateHumanRequestValue } from "@smithers/engine/human-requests";
 import { SmithersError } from "@smithers/errors";

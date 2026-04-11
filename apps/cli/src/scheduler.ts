@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { CronExpressionParser } from "cron-parser";
 import { Effect, Schedule } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
-import { fromPromise, fromSync } from "@smithers/runtime/interop";
-import { runPromise } from "@smithers/runtime/runtime";
+import { fromPromise, fromSync } from "@smithers/driver/interop";
+import { runPromise } from "./smithersRuntime";
 import { findAndOpenDb } from "./find-db";
 
 type SchedulerCronRecord = {

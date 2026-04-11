@@ -4,7 +4,7 @@ import { isAbsolute, resolve } from "node:path";
 import { Effect, Schedule } from "effect";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import type { SmithersDb, StaleRunRecord } from "@smithers/db/adapter";
-import { fromSync } from "@smithers/runtime/interop";
+import { fromSync } from "@smithers/driver/interop";
 import { trackEvent } from "@smithers/observability/metrics";
 import { isPidAlive, parseRuntimeOwnerPid } from "@smithers/engine/runtime-owner";
 import { SmithersError } from "@smithers/errors";

@@ -25,7 +25,7 @@ import { mdxPlugin } from "smithers/mdx-plugin";
 import { approveNode, denyNode } from "@smithers/engine/approvals";
 import { runWorkflow } from "@smithers/engine";
 import { revertToAttempt } from "@smithers/time-travel/revert";
-import { runPromise } from "@smithers/runtime/runtime";
+import { runPromise } from "../smithersRuntime";
 import type { RunResult } from "@smithers/driver/RunResult";
 import type { SmithersWorkflow } from "@smithers/react/SmithersWorkflow";
 import { newRunId } from "@smithers/driver/newRunId";
