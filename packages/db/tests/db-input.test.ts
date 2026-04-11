@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { validateInput } from "../src/db/input";
+import { validateInput } from "../src/input";
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { zodToTable } from "../src/zodToTable";
 

@@ -239,13 +239,13 @@ export const smithersRalph = sqliteTable(
   }),
 );
 
-export { smithersScorers } from "../scorers/schema";
+export { smithersScorers } from "@smithers/scorers/schema";
 
 export {
   smithersMemoryFacts,
   smithersMemoryThreads,
   smithersMemoryMessages,
-} from "../memory/schema";
+} from "@smithers/memory/schema";
 
 export const smithersVectors = sqliteTable("_smithers_vectors", {
   id: text("id").primaryKey(),

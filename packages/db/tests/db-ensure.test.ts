@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ensureSmithersTables } from "../src/db/ensure";
+import { ensureSmithersTables } from "../src/ensure";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 

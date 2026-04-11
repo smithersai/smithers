@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { loadInput, loadOutputs } from "../src/db/snapshot";
+import { loadInput, loadOutputs } from "../src/snapshot";
 import { zodToTable } from "../src/zodToTable";
 import { zodToCreateTableSQL } from "../src/zodToCreateTableSQL";
 import { z } from "zod";

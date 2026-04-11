@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
-import { schemaSignature } from "../src/db/schema-signature";
+import { schemaSignature } from "../src/schema-signature";
 
 describe("schemaSignature", () => {
   test("produces a hex string", () => {

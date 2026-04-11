@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
   withSqliteWriteRetryEffect,
   isRetryableSqliteWriteError,
-} from "../src/db/write-retry";
+} from "../src/write-retry";
 import { Effect } from "effect";
-import { SmithersError } from "../src/utils/errors";
+import { SmithersError } from "@smithers/core/errors";
 
 // ---------------------------------------------------------------------------
 // Helpers

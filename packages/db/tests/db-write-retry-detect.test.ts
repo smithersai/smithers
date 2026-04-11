@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isRetryableSqliteWriteError } from "../src/db/write-retry";
+import { isRetryableSqliteWriteError } from "../src/write-retry";
 
 describe("isRetryableSqliteWriteError", () => {
   test("returns true for SQLITE_BUSY code", () => {

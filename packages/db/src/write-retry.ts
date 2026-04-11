@@ -6,10 +6,10 @@ import {
   ScheduleDecision,
   ScheduleIntervals,
 } from "effect";
-import { dbRetries } from "../effect/metrics";
-import { runPromise } from "../effect/runtime";
-import { retryPolicyToSchedule } from "../utils/retry";
-import { type SmithersError, toSmithersError } from "../utils/errors";
+import { dbRetries } from "@smithers/observability/metrics";
+import { runPromise } from "@smithers/runtime/runtime";
+import { retryPolicyToSchedule } from "@smithers/core/utils/retry";
+import { type SmithersError, toSmithersError } from "@smithers/core/errors";
 
 const DEFAULT_MAX_ATTEMPTS = 6;
 const DEFAULT_BASE_DELAY_MS = 50;

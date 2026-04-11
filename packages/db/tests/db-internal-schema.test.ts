@@ -13,7 +13,7 @@ import {
   smithersRalph,
   smithersCron,
   smithersScorers,
-} from "../src/db/internal-schema";
+} from "../src/internal-schema";
 
 describe("internal schema table definitions", () => {
   test("smithersRuns table name is _smithers_runs", () => {

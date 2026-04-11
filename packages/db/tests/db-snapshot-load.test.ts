@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
-import { loadInput, loadOutputs } from "../src/db/snapshot";
+import { loadInput, loadOutputs } from "../src/snapshot";
 
 const testInput = sqliteTable("test_input", {
   runId: text("run_id").notNull(),

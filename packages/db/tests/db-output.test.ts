@@ -6,7 +6,7 @@ import {
   validateExistingOutput,
   getAgentOutputSchema,
   describeSchemaShape,
-} from "../src/db/output";
+} from "../src/output";
 import { zodToTable } from "../src/zodToTable";
 import { zodToCreateTableSQL } from "../src/zodToCreateTableSQL";
 import { z } from "zod";

@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { XmlNode } from "../src/XmlNode";
+import type { XmlNode } from "@smithers/graph/XmlNode";
 import {
   applyFrameDelta,
   encodeFrameDelta,
   parseFrameDelta,
   serializeFrameDelta,
-} from "../src/db/frame-codec";
-import { canonicalizeXml } from "../src/utils/xml";
+} from "../src/frame-codec";
+import { canonicalizeXml } from "@smithers/graph/utils/xml";
 
 function workflowNode(children: XmlNode[]): XmlNode {
   return {

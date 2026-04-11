@@ -6,7 +6,7 @@ import * as Statement from "@effect/sql/Statement";
 import { Database } from "bun:sqlite";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Context, Effect, Layer, ManagedRuntime, Scope } from "effect";
-import { camelToSnake } from "../utils/camelToSnake";
+import { camelToSnake } from "./utils/camelToSnake";
 
 type SqliteParam =
   | string

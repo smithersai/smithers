@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   isRetryableSqliteWriteError,
   withSqliteWriteRetry,
-} from "../src/db/write-retry";
-import { SmithersError } from "../src/utils/errors";
+} from "../src/write-retry";
+import { SmithersError } from "@smithers/core/errors";
 
 describe("isRetryableSqliteWriteError", () => {
   test("SQLITE_BUSY code is retryable", () => {

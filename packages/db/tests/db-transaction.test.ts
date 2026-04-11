@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Effect } from "effect";
-import { SmithersDb } from "../src/db/adapter";
-import { ensureSmithersTables } from "../src/db/ensure";
-import { toSmithersError } from "../src/utils/errors";
+import { SmithersDb } from "../src/adapter";
+import { ensureSmithersTables } from "../src/ensure";
+import { toSmithersError } from "@smithers/core/errors";
 
 function createTestDb() {
   const sqlite = new Database(":memory:");

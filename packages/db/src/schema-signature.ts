@@ -1,7 +1,7 @@
 import type { AnyColumn, Table } from "drizzle-orm";
 import { getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
-import { sha256Hex } from "../utils/hash";
+import { sha256Hex } from "@smithers/core/utils/hash";
 
 export function schemaSignature(table: Table): string {
   const cols = getTableColumns(table as any) as Record<string, AnyColumn>;

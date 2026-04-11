@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { schemaSignature } from "../src/db/schema-signature";
+import { schemaSignature } from "../src/schema-signature";
 import { zodToTable } from "../src/zodToTable";
 import { z } from "zod";
 

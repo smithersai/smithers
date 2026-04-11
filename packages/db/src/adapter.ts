@@ -1,13 +1,13 @@
 import { getTableName, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Effect, Exit, FiberId, Metric } from "effect";
-import { fromPromise, fromSync } from "../effect/interop";
-import { runPromise } from "../effect/runtime";
-import { getSqlMessageStorage, type SqlMessageStorage } from "../effect/sql-message-storage";
+import { fromPromise, fromSync } from "@smithers/runtime/interop";
+import { runPromise } from "@smithers/runtime/runtime";
+import { getSqlMessageStorage, type SqlMessageStorage } from "./sql-message-storage";
 import type {
   HumanRequestKind,
   HumanRequestStatus,
-} from "../human-requests";
+} from "@smithers/core/human-requests";
 import {
   alertsAcknowledgedTotal,
   alertsActive,
@@ -16,12 +16,12 @@ import {
   dbTransactionDuration,
   dbTransactionRetries,
   dbTransactionRollbacks,
-} from "../effect/metrics";
-import { toSmithersError, type SmithersError } from "../utils/errors";
+} from "@smithers/observability/metrics";
+import { toSmithersError, type SmithersError } from "@smithers/core/errors";
 import {
   assertOptionalStringMaxLength,
   assertPositiveFiniteNumber,
-} from "../utils/input-bounds";
+} from "@smithers/core/utils/input-bounds";
 import {
   FRAME_KEYFRAME_INTERVAL,
   applyFrameDeltaJson,
@@ -32,7 +32,7 @@ import {
 } from "./frame-codec";
 import { getKeyColumns, type OutputKey } from "./output";
 import { withSqliteWriteRetryEffect } from "./write-retry";
-import { camelToSnake } from "../utils/camelToSnake";
+import { camelToSnake } from "./utils/camelToSnake";
 
 export type RunRow = {
   runId: string;

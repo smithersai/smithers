@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   isRetryableSqliteWriteError,
   withSqliteWriteRetry,
-} from "../src/db/write-retry";
+} from "../src/write-retry";
 
 describe("sqlite write retry", () => {
   test("retries retryable sqlite I/O errors with backoff", async () => {

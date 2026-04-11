@@ -1,5 +1,5 @@
-import type { XmlNode } from "../XmlNode";
-import { canonicalizeXml, parseXmlJson } from "../utils/xml";
+import type { XmlNode } from "@smithers/graph/XmlNode";
+import { canonicalizeXml, parseXmlJson } from "@smithers/graph/utils/xml";
 
 export type FrameEncoding = "full" | "delta" | "keyframe";
 
