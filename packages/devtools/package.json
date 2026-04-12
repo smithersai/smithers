@@ -6,76 +6,76 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "import": "./src/index.js",
+      "default": "./src/index.js",
+      "types": "./src/index.ts"
     },
     "./DevToolsEventBus": {
-      "types": "./src/DevToolsEventBus.ts",
-      "default": "./src/DevToolsEventBus.ts"
+      "types": "./src/DevToolsEventBus.ts"
     },
     "./DevToolsEventHandler": {
-      "types": "./src/DevToolsEventHandler.ts",
-      "default": "./src/DevToolsEventHandler.ts"
+      "types": "./src/DevToolsEventHandler.ts"
     },
     "./DevToolsNode": {
-      "types": "./src/DevToolsNode.ts",
-      "default": "./src/DevToolsNode.ts"
+      "types": "./src/DevToolsNode.ts"
     },
     "./DevToolsRunStore": {
-      "types": "./src/DevToolsRunStore.ts",
-      "default": "./src/DevToolsRunStore.ts"
+      "import": "./src/DevToolsRunStore.js",
+      "default": "./src/DevToolsRunStore.js",
+      "types": "./src/DevToolsRunStore.ts"
     },
     "./DevToolsRunStoreOptions": {
-      "types": "./src/DevToolsRunStoreOptions.ts",
-      "default": "./src/DevToolsRunStoreOptions.ts"
+      "types": "./src/DevToolsRunStoreOptions.ts"
     },
     "./DevToolsSnapshot": {
-      "types": "./src/DevToolsSnapshot.ts",
-      "default": "./src/DevToolsSnapshot.ts"
+      "types": "./src/DevToolsSnapshot.ts"
     },
     "./RunExecutionState": {
-      "types": "./src/RunExecutionState.ts",
-      "default": "./src/RunExecutionState.ts"
+      "types": "./src/RunExecutionState.ts"
     },
     "./SMITHERS_NODE_ICONS": {
-      "types": "./src/SMITHERS_NODE_ICONS.ts",
-      "default": "./src/SMITHERS_NODE_ICONS.ts"
+      "import": "./src/SMITHERS_NODE_ICONS.js",
+      "default": "./src/SMITHERS_NODE_ICONS.js",
+      "types": "./src/SMITHERS_NODE_ICONS.ts"
     },
     "./SmithersDevToolsCore": {
-      "types": "./src/SmithersDevToolsCore.ts",
-      "default": "./src/SmithersDevToolsCore.ts"
+      "import": "./src/SmithersDevToolsCore.js",
+      "default": "./src/SmithersDevToolsCore.js",
+      "types": "./src/SmithersDevToolsCore.ts"
     },
     "./SmithersDevToolsOptions": {
-      "types": "./src/SmithersDevToolsOptions.ts",
-      "default": "./src/SmithersDevToolsOptions.ts"
+      "types": "./src/SmithersDevToolsOptions.ts"
     },
     "./SmithersNodeType": {
-      "types": "./src/SmithersNodeType.ts",
-      "default": "./src/SmithersNodeType.ts"
+      "types": "./src/SmithersNodeType.ts"
     },
     "./TaskExecutionState": {
-      "types": "./src/TaskExecutionState.ts",
-      "default": "./src/TaskExecutionState.ts"
+      "types": "./src/TaskExecutionState.ts"
     },
     "./buildSnapshot": {
-      "types": "./src/buildSnapshot.ts",
-      "default": "./src/buildSnapshot.ts"
+      "import": "./src/buildSnapshot.js",
+      "default": "./src/buildSnapshot.js",
+      "types": "./src/buildSnapshot.ts"
     },
     "./collectTasks": {
-      "types": "./src/collectTasks.ts",
-      "default": "./src/collectTasks.ts"
+      "import": "./src/collectTasks.js",
+      "default": "./src/collectTasks.js",
+      "types": "./src/collectTasks.ts"
     },
     "./countNodes": {
-      "types": "./src/countNodes.ts",
-      "default": "./src/countNodes.ts"
+      "import": "./src/countNodes.js",
+      "default": "./src/countNodes.js",
+      "types": "./src/countNodes.ts"
     },
     "./findNodeById": {
-      "types": "./src/findNodeById.ts",
-      "default": "./src/findNodeById.ts"
+      "import": "./src/findNodeById.js",
+      "default": "./src/findNodeById.js",
+      "types": "./src/findNodeById.ts"
     },
     "./printTree": {
-      "types": "./src/printTree.ts",
-      "default": "./src/printTree.ts"
+      "import": "./src/printTree.js",
+      "default": "./src/printTree.js",
+      "types": "./src/printTree.ts"
     }
   },
   "files": [
