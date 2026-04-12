@@ -1,3 +1,2 @@
 import { Metric } from "effect";
-
-export const memoryRecallQueries = Metric.counter("smithers.memory.recall_queries");
+export declare const memoryRecallQueries: Metric.Metric.Counter<number>;

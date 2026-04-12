@@ -1,3 +1,2 @@
 import { Metric } from "effect";
-
-export const memoryMessageSaves = Metric.counter("smithers.memory.message_saves");
+export declare const memoryMessageSaves: Metric.Metric.Counter<number>;

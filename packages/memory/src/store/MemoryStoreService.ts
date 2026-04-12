@@ -1,7 +1,6 @@
 import { Context } from "effect";
 import type { MemoryStore } from "./MemoryStore";
-
-export class MemoryStoreService extends Context.Tag("MemoryStoreService")<
-  MemoryStoreService,
-  MemoryStore
->() {}
+declare const MemoryStoreService_base: Context.TagClass<MemoryStoreService, "MemoryStoreService", MemoryStore>;
+export declare class MemoryStoreService extends MemoryStoreService_base {
+}
+export {};
