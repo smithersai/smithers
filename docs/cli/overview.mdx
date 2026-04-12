@@ -65,7 +65,6 @@ If you are new to Smithers, read [CLI Quickstart](/cli/quickstart) before using 
 | `human` | List and resolve durable human requests from a `<HumanTask>` node. |
 | `agents` | Inspect built-in CLI agent capability registries and validate metadata. |
 | `memory` | View and query cross-run memory facts. |
-| `rag` | Ingest documents and query the RAG knowledge base. |
 | `openapi` | Preview AI SDK tools generated from an OpenAPI spec. |
 | `workflow` | Discover, create, resolve, and run flat workflows in `.smithers/workflows`. |
 | `cron` | Register and run background schedule triggers. |
@@ -269,7 +268,7 @@ bunx smithers-orchestrator events <runId> [options]
 | Option | Description |
 |---|---|
 | `--node`, `-n <string>` | Filter events by node ID. |
-| `--type`, `-t <string>` | Filter by event category: `agent`, `approval`, `frame`, `memory`, `node`, `openapi`, `output`, `rag`, `revert`, `run`, `sandbox`, `scorer`, `snapshot`, `supervisor`, `timer`, `token`, `tool-call`, `voice`, `workflow`. |
+| `--type`, `-t <string>` | Filter by event category: `agent`, `approval`, `frame`, `memory`, `node`, `openapi`, `output`, `revert`, `run`, `sandbox`, `scorer`, `snapshot`, `supervisor`, `timer`, `token`, `tool-call`, `workflow`. |
 | `--since`, `-s <string>` | Filter to a recent duration window (e.g. `5m`, `2h`). |
 | `--limit`, `-l <number>` | Maximum events to display. Default: `1000`. Max: `100000`. |
 | `--json`, `-j <boolean>` | Output NDJSON for piping. Default: `false`. |
@@ -997,72 +996,6 @@ Use this to audit a spec before wiring it into a workflow with `openApiTools()`.
 
 See [OpenAPI Tools](/concepts/openapi-tools) and [OpenAPI Tools Quickstart](/guides/openapi-tools-quickstart) for the authoring model.
 
-### rag
-
-Ingest documents into the RAG store or query it for relevant chunks.
-
-```bash
-bunx smithers-orchestrator rag <subcommand> [options]
-```
-
-| Subcommand | Purpose |
-|---|---|
-| `rag ingest <file>` | Chunk, embed, and store a document in the vector store. |
-| `rag query <query>` | Retrieve the most relevant chunks for a search query. |
-
-Both subcommands require `--workflow` to locate the `smithers.db` for the target workflow.
-
-#### rag ingest
-
-Chunk and embed a document into the SQLite vector store.
-
-```bash
-bunx smithers-orchestrator rag ingest <file> [options]
-```
-
-Arguments:
-
-- `file`: Path to the file to ingest.
-
-| Option | Description |
-|---|---|
-| `--workflow`, `-w <string>` | Path to a `.tsx` workflow file. Required to locate the database. |
-| `--namespace`, `-n <string>` | Vector namespace. Default: `default`. |
-| `--strategy <string>` | Chunking strategy: `recursive`, `character`, `sentence`, `markdown`, `token`. Default: `recursive`. |
-| `--size <number>` | Chunk size in tokens or characters. Default: `1000`. |
-| `--overlap <number>` | Chunk overlap. Default: `200`. |
-
-```bash
-bunx smithers-orchestrator rag ingest ./docs/api-reference.md -w .smithers/workflows/implement.tsx
-bunx smithers-orchestrator rag ingest ./data/knowledge-base.txt -w .smithers/workflows/implement.tsx --namespace kb --strategy markdown
-bunx smithers-orchestrator rag ingest ./src/README.md -w .smithers/workflows/implement.tsx --size 500 --overlap 100
-```
-
-#### rag query
-
-Search the vector store for chunks most relevant to a query.
-
-```bash
-bunx smithers-orchestrator rag query <query> [options]
-```
-
-Arguments:
-
-- `query`: Natural language search query.
-
-| Option | Description |
-|---|---|
-| `--workflow`, `-w <string>` | Path to a `.tsx` workflow file. Required to locate the database. |
-| `--namespace`, `-n <string>` | Vector namespace to search. Default: `default`. |
-| `--top-k`, `-k <number>` | Number of results to return. Default: `5`. |
-
-```bash
-bunx smithers-orchestrator rag query "how does authentication work" -w .smithers/workflows/implement.tsx
-bunx smithers-orchestrator rag query "database connection pooling" -w .smithers/workflows/implement.tsx --namespace kb --top-k 10
-```
-
-See [RAG](/concepts/rag) and [RAG Quickstart](/guides/rag-quickstart) for the retrieval model.
-
 ### workflow
 
 Manage flat workflows in `.smithers/workflows/*.tsx`.
@@ -1420,7 +1353,7 @@ On process exit, SIGINT, or SIGTERM the CLI closes the SQLite connection via `cl
 [+MM:SS.mmm] <symbol> <summary>
 ```
 
-Symbols are color-coded: `✓` green for success, `✗` red for failure, `⏸` for approvals, `⏱` for timers, `🔧` for tool calls, `📚` for RAG, `🧠` for memory. Payloads are truncated to 240 characters by default.
+Symbols are color-coded: `✓` green for success, `✗` red for failure, `⏸` for approvals, `⏱` for timers, `🔧` for tool calls, `🧠` for memory. Payloads are truncated to 240 characters by default.
 
 ## Exit Codes
 

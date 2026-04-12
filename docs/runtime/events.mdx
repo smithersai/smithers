@@ -858,99 +858,6 @@ Emitted when the time-travel operation completes.
 
 `vcsRestored`: Whether VCS state was successfully rewound. `resetNodes`: Node IDs that were cleared as part of the rewind. `error`: Set if time-travel failed.
 
-### Voice Events
-
-#### VoiceStarted
-
-Emitted when a voice operation begins.
-
-```ts
-{
-  type: "VoiceStarted",
-  runId: string,
-  nodeId: string,
-  iteration: number,
-  operation: "speak" | "listen",
-  provider: string,
-  timestampMs: number,
-}
-```
-
-`operation`: `"speak"` for text-to-speech; `"listen"` for speech-to-text. `provider`: The voice provider in use (e.g. `"openai"`, `"elevenlabs"`).
-
-#### VoiceFinished
-
-Emitted when a voice operation completes successfully.
-
-```ts
-{
-  type: "VoiceFinished",
-  runId: string,
-  nodeId: string,
-  iteration: number,
-  operation: "speak" | "listen",
-  provider: string,
-  durationMs: number,
-  timestampMs: number,
-}
-```
-
-`durationMs`: Wall time for the voice operation.
-
-#### VoiceError
-
-Emitted when a voice operation fails.
-
-```ts
-{
-  type: "VoiceError",
-  runId: string,
-  nodeId: string,
-  iteration: number,
-  operation: "speak" | "listen",
-  provider: string,
-  error: unknown,
-  timestampMs: number,
-}
-```
-
-### RAG Events
-
-#### RagIngested
-
-Emitted after documents are chunked and embedded into a vector store namespace.
-
-```ts
-{
-  type: "RagIngested",
-  runId: string,
-  documentCount: number,
-  chunkCount: number,
-  namespace: string,
-  timestampMs: number,
-}
-```
-
-`documentCount`: Number of source documents ingested. `chunkCount`: Number of chunks stored after splitting. `namespace`: The vector store namespace written to.
-
-#### RagRetrieved
-
-Emitted after a semantic search query completes.
-
-```ts
-{
-  type: "RagRetrieved",
-  runId: string,
-  query: string,
-  resultCount: number,
-  namespace: string,
-  topScore: number,
-  timestampMs: number,
-}
-```
-
-`query`: The query string submitted. `resultCount`: Number of chunks returned. `topScore`: Similarity score of the highest-ranked result.
-
 ### Memory Events
 
 #### MemoryFactSet
@@ -1189,11 +1096,7 @@ See [Evals & Scorers](/concepts/evals) for the full scoring system documentation
 | `RetryTaskFinished` | Retry / Time-Travel | `nodeId`, `iteration`, `resetNodes`, `success`, `error?` |
 | `TimeTravelStarted` | Retry / Time-Travel | `nodeId`, `iteration`, `attempt`, `jjPointer?` |
 | `TimeTravelFinished` | Retry / Time-Travel | `nodeId`, `iteration`, `attempt`, `jjPointer?`, `success`, `vcsRestored`, `resetNodes`, `error?` |
-| `VoiceStarted` | Voice | `nodeId`, `iteration`, `operation`, `provider` |
-| `VoiceFinished` | Voice | `nodeId`, `iteration`, `operation`, `provider`, `durationMs` |
-| `VoiceError` | Voice | `nodeId`, `iteration`, `operation`, `provider`, `error` |
-| `RagIngested` | RAG | `documentCount`, `chunkCount`, `namespace` |
-| `RagRetrieved` | RAG | `query`, `resultCount`, `namespace`, `topScore` |
+
 | `MemoryFactSet` | Memory | `namespace`, `key` |
 | `MemoryRecalled` | Memory | `namespace`, `query`, `resultCount` |
 | `MemoryMessageSaved` | Memory | `threadId`, `role` |

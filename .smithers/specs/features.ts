@@ -13,7 +13,7 @@
  * - src/ide/, src/mcp/semantic-tools.ts
  * - src/memory/ (store, semantic, processors, service)
  * - src/time-travel/ (snapshot, fork, replay, timeline, diff)
- * - src/voice/, src/rag/, src/openapi/, src/scorers/
+ * - src/openapi/, src/scorers/
  * - src/tools/, src/effect/, src/server/, src/gateway/, src/external/, src/sandbox/
  * - src/observability/, src/devtools/, src/hot/, src/dom/
  * - .smithers/workflows/, .smithers/components/, .smithers/prompts/
@@ -464,7 +464,6 @@ export const FeatureGroups = {
     "CLI_INIT_COMMAND",
     "CLI_OBSERVABILITY_COMMAND",
     "CLI_OPENAPI_COMMAND",
-    "CLI_RAG_COMMAND",
     "CLI_FORK_COMMAND",
     "CLI_REPLAY_COMMAND",
     "CLI_TIMELINE_COMMAND",
@@ -494,8 +493,6 @@ export const FeatureGroups = {
     "CLI_CRON_RM_SUBCOMMAND",
     "CLI_MEMORY_LIST_SUBCOMMAND",
     "CLI_MEMORY_RECALL_SUBCOMMAND",
-    "CLI_RAG_INGEST_SUBCOMMAND",
-    "CLI_RAG_QUERY_SUBCOMMAND",
     "CLI_OPENAPI_LIST_SUBCOMMAND",
     "CLI_MCP_ADD_SUBCOMMAND",
     "CLI_SKILLS_ADD_SUBCOMMAND",
@@ -578,9 +575,6 @@ export const FeatureGroups = {
     "CLI_OBSERVABILITY_DOWN_MODE",
     "CLI_MEMORY_NAMESPACE_FILTER",
     "CLI_MEMORY_TOP_K",
-    "CLI_RAG_NAMESPACE_SELECTION",
-    "CLI_RAG_CHUNK_STRATEGY_SELECTION",
-    "CLI_RAG_TOP_K",
     "CLI_GRAPH_INPUT_OVERRIDE",
     "CLI_REVERT_ATTEMPT_SELECTION",
     "CLI_FORK_INPUT_OVERRIDES",
@@ -798,61 +792,7 @@ export const FeatureGroups = {
     "SNAPSHOT_RESTORE_ON_RESUME",
   ],
 
-  // Source: src/voice/realtime.ts, ai-sdk-voice.ts, composite.ts, effect.ts, types.ts
-  VOICE_REALTIME: [
-    "OPENAI_REALTIME_VOICE_STREAMING",
-    "OPENAI_REALTIME_SESSION_MANAGEMENT",
-    "OPENAI_REALTIME_SPEAKER_SELECTION",
-    "OPENAI_REALTIME_AUDIO_QUEUING",
-    "AI_SDK_VOICE_BATCH_TTS",
-    "AI_SDK_VOICE_BATCH_STT",
-    "COMPOSITE_VOICE_PIPELINE",
-    "COMPOSITE_VOICE_PRIORITY_ROUTING",
-    "VOICE_EFFECT_SERVICE",
-    "VOICE_SPEAK_FUNCTION",
-    "VOICE_LISTEN_FUNCTION",
-    "VOICE_AUDIO_FORMAT_SUPPORT",
-    "VOICE_EVENT_CALLBACKS",
-    "VOICE_COMPONENT",
-    "VOICE_GET_SPEAKERS_FUNCTION",
-    "VOICE_RUNTIME_CONFIG_UPDATES",
-    "OPENAI_REALTIME_RESPONSE_TRIGGERING",
-    "VOICE_CONTEXT_PROPAGATION",
-    "OPENAI_REALTIME_MODEL_OVERRIDE",
-    "OPENAI_REALTIME_URL_OVERRIDE",
-    "OPENAI_REALTIME_TRANSCRIBER_CONFIGURATION",
-    "OPENAI_REALTIME_API_KEY_ENV_FALLBACK",
-    "VOICE_DEFAULT_SPEAKER_SELECTION",
-  ],
 
-  // Source: src/rag/document.ts, chunker.ts, embedder.ts, vector-store.ts, pipeline.ts, tool.ts, effect.ts, metrics.ts
-  RAG_PIPELINE: [
-    "RAG_DOCUMENT_CREATION",
-    "RAG_DOCUMENT_LOADING",
-    "RAG_FORMAT_DETECTION",
-    "RAG_TEXT_CHUNKING",
-    "RAG_CHUNK_STRATEGY_RECURSIVE",
-    "RAG_CHUNK_STRATEGY_CHARACTER",
-    "RAG_CHUNK_STRATEGY_SENTENCE",
-    "RAG_CHUNK_STRATEGY_MARKDOWN",
-    "RAG_CHUNK_STRATEGY_TOKEN",
-    "RAG_CHUNK_SIZE_AND_OVERLAP",
-    "RAG_EMBEDDING_GENERATION",
-    "RAG_EMBEDDING_QUERY",
-    "RAG_SQLITE_VECTOR_STORE",
-    "RAG_COSINE_SIMILARITY_SCORING",
-    "RAG_PIPELINE_ORCHESTRATION",
-    "RAG_FILE_INGESTION",
-    "RAG_TOOL_INTEGRATION",
-    "RAG_EFFECT_SERVICE",
-    "RAG_METRICS",
-    "RAG_NAMESPACE_SCOPING",
-    "RAG_RETRIEVAL_TOP_K_CONFIGURATION",
-    "RAG_VECTOR_DELETE",
-    "RAG_VECTOR_COUNT",
-    "RAG_METADATA_PERSISTENCE",
-    "RAG_VECTOR_QUERY_FILTERS",
-  ],
 
   // Source: src/openapi/spec-parser.ts, schema-converter.ts, ref-resolver.ts, tool-factory.ts, metrics.ts
   OPENAPI_INTEGRATION: [

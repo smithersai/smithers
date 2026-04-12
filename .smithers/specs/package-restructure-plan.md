@@ -8,7 +8,7 @@ I read the current source layout in `packages/react/src`, `packages/core/src`, a
 - `packages/core/src` is mostly an Effect state-machine core, but `graph/types.ts` and `graph/extract.ts` are not Effect-specific. They are framework-neutral workflow graph code.
 - `src/agents` are AI SDK and CLI model adapters. They do not depend on React. They currently depend on Effect runtime helpers, subprocess helpers, metrics, diagnostics, and tool context.
 - `src/dom/renderer.ts` is just the React reconciler export. `src/dom/extract.ts` is host-tree-to-workflow-graph extraction plus legacy runtime compute handlers for Subflow and Sandbox. Rendering React to `HostNode` and extracting `WorkflowGraph` from `HostNode` are adjacent but different concerns.
-- `src/tools`, `src/voice`, `src/rag`, `src/memory`, `src/scorers`, `src/openapi`, and `src/sandbox` are independent feature areas. Some currently import Effect or DB plumbing, but none are React concerns.
+- `src/tools`, `src/voice`, `src/memory`, `src/scorers`, `src/openapi`, and `src/sandbox` are independent feature areas. Some currently import Effect or DB plumbing, but none are React concerns.
 - `src/gateway` and `src/server` are leaf network integrations over the engine and DB. They should not be depended on by core packages.
 - `src/db` is a real package boundary, but not clean yet because it owns or imports feature schemas and runtime-specific Effect helpers.
 
@@ -28,7 +28,7 @@ The recommended structure below optimizes for one-way dependencies and for packa
 
 6. **DB is a clean boundary after one fix.** The DB adapter, internal schema, frame codec, input/output validation, write retry, and schema signatures belong together. Memory, scorers, and time-travel should own their feature tables/migrations or register them with DB instead of DB importing feature packages.
 
-7. **The main `smithers` package should be the facade.** It should provide `createSmithers`, JSX runtime exports, default workflow authoring API, and convenience re-exports. It should not contain primary implementations of agents, tools, graph extraction, gateway, server, voice, RAG, memory, scorers, or OpenAPI.
+7. **The main `smithers` package should be the facade.** It should provide `createSmithers`, JSX runtime exports, default workflow authoring API, and convenience re-exports. It should not contain primary implementations of agents, tools, graph extraction, gateway, server, voice, memory, scorers, or OpenAPI.
 
 ## Dependency Graph
 
@@ -100,18 +100,11 @@ The recommended structure below optimizes for one-way dependencies and for packa
   -> ws
   -> effect
 
-@smithers/rag
-  -> @smithers/protocol
-  -> @smithers/runtime
-  -> @smithers/observability
-  -> ai
-
 @smithers/memory
   -> @smithers/protocol
   -> @smithers/runtime
   -> @smithers/observability
   -> @smithers/db
-  -> @smithers/rag
 
 @smithers/scorers
   -> @smithers/protocol
@@ -265,7 +258,7 @@ No package below `@smithers/engine` may depend on `@smithers/server`, `@smithers
 - React reconciler or components
 - Drizzle/Bun SQLite adapter
 - Concrete HTTP/WebSocket servers
-- Agents, tools, voice, RAG, memory, scorers, OpenAPI
+- Agents, tools, voice, memory, scorers, OpenAPI
 - Concrete OpenTelemetry exporters
 - Shared subprocess/runtime helpers that currently import app/tool context
 - Graph extraction, except as an import from `@smithers/graph`
@@ -309,7 +302,7 @@ No package below `@smithers/engine` may depend on `@smithers/server`, `@smithers
 
 **Depends on:** `@smithers/protocol`, `@smithers/core`, `@smithers/observability`, `effect`, `@effect/platform`, `@effect/workflow`.
 
-**Depends on it:** `@smithers/db`, `@smithers/agents`, `@smithers/tools`, `@smithers/rag`, `@smithers/memory`, `@smithers/scorers`, `@smithers/openapi`, `@smithers/vcs`, `@smithers/sandbox`, `@smithers/time-travel`, `@smithers/engine`, `@smithers/server`.
+**Depends on it:** `@smithers/db`, `@smithers/agents`, `@smithers/tools`, `@smithers/memory`, `@smithers/scorers`, `@smithers/openapi`, `@smithers/vcs`, `@smithers/sandbox`, `@smithers/time-travel`, `@smithers/engine`, `@smithers/server`.
 
 **Why separate package:** Agents, tools, DB, VCS, and server code all need process execution and `runPromise`, but they should not depend on the full workflow engine. This package is the concrete platform layer above the abstract core.
 
@@ -473,29 +466,6 @@ No package below `@smithers/engine` may depend on `@smithers/server`, `@smithers
 
 **Why separate package:** Voice is a provider system with independent APIs and dependencies. It should be installable without React, DB, or the workflow engine.
 
-### `@smithers/rag`
-
-**Responsibility:** Document loading, chunking, embedding, vector store, retrieval pipeline, and RAG tool factory.
-
-**What goes in it:**
-
-- `src/rag/chunker.ts`
-- `src/rag/document.ts`
-- `src/rag/effect.ts`
-- `src/rag/embedder.ts`
-- `src/rag/index.ts`
-- `src/rag/metrics.ts`
-- `src/rag/pipeline.ts`
-- `src/rag/tool.ts`
-- `src/rag/types.ts`
-- `src/rag/vector-store.ts`
-
-**Depends on:** `@smithers/protocol`, `@smithers/runtime`, `@smithers/observability`, `ai`, `zod`, Node fs/path/crypto.
-
-**Depends on it:** `@smithers/memory`, `smithers`, users who want the RAG pipeline or RAG AI SDK tool.
-
-**Why separate package:** RAG is an independent feature area with obvious standalone use. It should not require workflow engine, React, gateway, or DB unless a specific store adapter needs DB.
-
 ### `@smithers/memory`
 
 **Responsibility:** Persistent working memory, message history, semantic memory, and memory processors.
@@ -511,7 +481,7 @@ No package below `@smithers/engine` may depend on `@smithers/server`, `@smithers
 - `src/memory/store.ts`
 - `src/memory/types.ts`
 
-**Depends on:** `@smithers/protocol`, `@smithers/runtime`, `@smithers/observability`, `@smithers/db`, `@smithers/rag`, `drizzle-orm`, `ai`, `zod`.
+**Depends on:** `@smithers/protocol`, `@smithers/runtime`, `@smithers/observability`, `@smithers/db`, `drizzle-orm`, `ai`, `zod`.
 
 **Depends on it:** `@smithers/engine`, `smithers`, users who want memory without the full workflow server.
 
@@ -737,7 +707,7 @@ No package below `@smithers/engine` may depend on `@smithers/server`, `@smithers
 - `src/examples-entry.ts`
 - `src/mdx-plugin.ts`
 - Public `jsx-runtime` exports that delegate to `@smithers/react`
-- Compatibility re-exports for `./gateway`, `./server`, `./tools`, `./voice`, `./rag`, `./memory`, `./openapi`, `./scorers`
+- Compatibility re-exports for `./gateway`, `./server`, `./tools`, `./voice`, `./memory`, `./openapi`, `./scorers`
 - Main package docs and migration aliases
 
 **Depends on:** The public packages above. It is allowed to be a convenience package with broad dependencies.
@@ -800,7 +770,6 @@ The current `src` tree should not become one package. Split it by ownership:
 - `agents` -> `@smithers/agents`
 - `tools` -> `@smithers/tools`
 - `voice` -> `@smithers/voice`
-- `rag` -> `@smithers/rag`
 - `memory` -> `@smithers/memory`
 - `scorers` -> `@smithers/scorers`
 - `openapi` -> `@smithers/openapi`
@@ -823,7 +792,7 @@ The current `src` tree should not become one package. Split it by ownership:
 1. Create `@smithers/protocol` and `@smithers/graph`; make `packages/core` and `packages/react` import from them.
 2. Split `@smithers/react-reconciler` out of `packages/react`; keep `@smithers/react` for components/context/driver.
 3. Extract `@smithers/observability` and `@smithers/runtime` so agents, tools, DB, and VCS do not depend on engine.
-4. Move `src/agents`, `src/tools`, `src/voice`, `src/rag`, `src/openapi`, and `src/scorers` into packages with compatibility re-exports from `smithers`.
+4. Move `src/agents`, `src/tools`, `src/voice`, `src/openapi`, and `src/scorers` into packages with compatibility re-exports from `smithers`.
 5. Extract `@smithers/db`; remove feature-schema imports by adding feature table registration.
 6. Move `@smithers/memory`, `@smithers/sandbox`, `@smithers/time-travel`, and `@smithers/vcs`.
 7. Move `@smithers/engine`; replace legacy `src/dom/extract.ts` runtime closures with graph metadata interpreted by engine.

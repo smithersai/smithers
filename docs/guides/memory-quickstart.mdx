@@ -6,7 +6,6 @@ description: Set up cross-run memory, add recall to tasks, and use loop memory w
 ## Prerequisites
 
 - `smithers-orchestrator` version 0.14 or later
-- An embedding model (OpenAI, Google, Cohere -- anything the AI SDK supports)
 
 ## Set Up the Memory Store
 
@@ -38,31 +37,6 @@ await store.setFact(ns, "reviewer-preference", { style: "thorough", language: "t
 const fact = await store.getFact(ns, "reviewer-preference");
 console.log(JSON.parse(fact!.valueJson));
 // { style: "thorough", language: "typescript" }
-```
-
-## Add Semantic Recall
-
-Set up semantic memory by connecting the RAG vector store and an embedding model:
-
-```ts
-import { createSemanticMemory } from "smithers-orchestrator/memory";
-import { createSqliteVectorStore } from "smithers-orchestrator/rag";
-import { openai } from "@ai-sdk/openai";
-
-const vectorStore = createSqliteVectorStore(workflow.db);
-const embeddingModel = openai.embedding("text-embedding-3-small");
-const semantic = createSemanticMemory(vectorStore, embeddingModel);
-```
-
-Store and retrieve by meaning:
-
-```ts
-await semantic.remember(ns, "The code-review workflow detected 3 critical bugs in the auth module");
-
-const results = await semantic.recall(ns, "What bugs were found?", { topK: 3 });
-for (const r of results) {
-  console.log(r.score.toFixed(2), r.chunk.content);
-}
 ```
 
 ## Add Memory to a Task
@@ -173,7 +147,4 @@ Inspect memory from the command line:
 ```bash
 # List all facts in a namespace
 smithers memory list workflow:code-review
-
-# Semantic search
-smithers memory recall "What bugs were found?" --namespace workflow:code-review
 ```

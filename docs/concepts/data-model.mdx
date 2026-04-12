@@ -120,7 +120,6 @@ Open your database and you will see tables prefixed with `_smithers_`. Do not be
 | `_smithers_ralph` | Loop (`<Loop>`) iteration counters and completion flags. |
 | `_smithers_cron` | Cron schedule definitions, last-run and next-run timestamps. |
 | `_smithers_scorers` | Scorer results for each task attempt: score, reason, and latency. |
-| `_smithers_vectors` | RAG vector store: chunk text, embeddings (as BLOBs), and metadata. |
 | `_smithers_signals` | Inbound signals received by waiting runs. |
 
 This is the machinery that lets Smithers resume a crashed run, retry a failed task, or tell you exactly what happened at 3 a.m. It exists so your output tables never have to carry orchestration concerns.

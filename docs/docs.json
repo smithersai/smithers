@@ -53,8 +53,6 @@
           "concepts/time-travel",
           "concepts/evals",
           "concepts/memory",
-          "concepts/rag",
-
           "concepts/openapi-tools",
           "concepts/planner-internals"
         ]
@@ -81,7 +79,6 @@
           "guides/evals-quickstart",
 
           "guides/memory-quickstart",
-          "guides/rag-quickstart",
           "guides/openapi-tools-quickstart",
           "guides/troubleshooting"
         ]

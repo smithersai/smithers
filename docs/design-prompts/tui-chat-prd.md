@@ -27,7 +27,7 @@ Transform the TUI's main screen from a dashboard into a **chat-first interface**
 ## Non-Goals
 
 - Multi-turn streaming (v1 uses single-turn `agent.generate()`)
-- Voice input/output in the TUI
+
 - Remote collaboration features
 - Replacing the web-based Burns UI
 
