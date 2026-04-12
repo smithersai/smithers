@@ -1,6 +1,12 @@
 FROM oven/bun:1.3 AS base
 
-RUN apt-get update && apt-get install -y git curl && rm -rf /var/lib/apt/lists/*
+RUN sed -i \
+    -e 's|URIs: http://deb.debian.org/debian$|URIs: http://snapshot.debian.org/archive/debian/20260406T000000Z|' \
+    -e 's|URIs: http://deb.debian.org/debian-security$|URIs: http://snapshot.debian.org/archive/debian-security/20260406T000000Z|' \
+    /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
+  && apt-get install -y git curl \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY package.json bun.lock* ./
