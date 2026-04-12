@@ -1,10 +1,10 @@
-export const smithersTaggedErrorCodes = {
-  TaskAborted: "TASK_ABORTED",
-  TaskTimeout: "TASK_TIMEOUT",
-  TaskHeartbeatTimeout: "TASK_HEARTBEAT_TIMEOUT",
-  RunNotFound: "RUN_NOT_FOUND",
-  InvalidInput: "INVALID_INPUT",
-  DbWriteFailed: "DB_WRITE_FAILED",
-  AgentCliError: "AGENT_CLI_ERROR",
-  WorkflowFailed: "WORKFLOW_EXECUTION_FAILED",
-} as const;
+export declare const smithersTaggedErrorCodes: {
+    readonly TaskAborted: "TASK_ABORTED";
+    readonly TaskTimeout: "TASK_TIMEOUT";
+    readonly TaskHeartbeatTimeout: "TASK_HEARTBEAT_TIMEOUT";
+    readonly RunNotFound: "RUN_NOT_FOUND";
+    readonly InvalidInput: "INVALID_INPUT";
+    readonly DbWriteFailed: "DB_WRITE_FAILED";
+    readonly AgentCliError: "AGENT_CLI_ERROR";
+    readonly WorkflowFailed: "WORKFLOW_EXECUTION_FAILED";
+};

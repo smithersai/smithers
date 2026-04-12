@@ -6,12 +6,14 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "import": "./src/index.js",
+      "default": "./src/index.js",
+      "types": "./src/index.ts"
     },
     "./*": {
-      "types": "./src/*.ts",
-      "default": "./src/*.ts"
+      "import": "./src/*.js",
+      "default": "./src/*.js",
+      "types": "./src/*.ts"
     }
   },
   "files": [
