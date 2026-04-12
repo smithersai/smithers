@@ -461,52 +461,6 @@ export type SmithersEvent =
       restoreVcs: boolean;
       timestampMs: number;
     }
-  | {
-      type: "VoiceStarted";
-      runId: string;
-      nodeId: string;
-      iteration: number;
-      operation: "speak" | "listen";
-      provider: string;
-      timestampMs: number;
-    }
-  | {
-      type: "VoiceFinished";
-      runId: string;
-      nodeId: string;
-      iteration: number;
-      operation: "speak" | "listen";
-      provider: string;
-      durationMs: number;
-      timestampMs: number;
-    }
-  | {
-      type: "VoiceError";
-      runId: string;
-      nodeId: string;
-      iteration: number;
-      operation: "speak" | "listen";
-      provider: string;
-      error: unknown;
-      timestampMs: number;
-    }
-  | {
-      type: "RagIngested";
-      runId: string;
-      documentCount: number;
-      chunkCount: number;
-      namespace: string;
-      timestampMs: number;
-    }
-  | {
-      type: "RagRetrieved";
-      runId: string;
-      query: string;
-      resultCount: number;
-      namespace: string;
-      topScore: number;
-      timestampMs: number;
-    }
 | {
       type: "MemoryFactSet";
       runId: string;

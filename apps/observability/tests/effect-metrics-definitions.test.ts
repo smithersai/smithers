@@ -38,8 +38,7 @@ import {
   nodeRetriesTotal,
   toolCallErrorsTotal,
   toolOutputTruncatedTotal,
-  voiceOperationsTotal,
-  voiceErrorsTotal,
+
   eventsEmittedTotal,
   taskHeartbeatsTotal,
   taskHeartbeatTimeoutTotal,
@@ -63,7 +62,7 @@ import {
   promptSizeBytes,
   responseSizeBytes,
   approvalWaitDuration,
-  voiceDuration,
+
   schedulerWaitDuration,
   supervisorPollDuration,
   supervisorResumeLag,
@@ -112,8 +111,7 @@ describe("effect/metrics definitions", () => {
       nodeRetriesTotal,
       toolCallErrorsTotal,
       toolOutputTruncatedTotal,
-      voiceOperationsTotal,
-      voiceErrorsTotal,
+
       eventsEmittedTotal,
       taskHeartbeatsTotal,
       taskHeartbeatTimeoutTotal,
@@ -156,7 +154,7 @@ describe("effect/metrics definitions", () => {
       promptSizeBytes,
       responseSizeBytes,
       approvalWaitDuration,
-      voiceDuration,
+    
       schedulerWaitDuration,
       supervisorPollDuration,
       supervisorResumeLag,

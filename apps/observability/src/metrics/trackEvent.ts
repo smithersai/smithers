@@ -1,10 +1,6 @@
 import { Effect, Metric } from "effect";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import {
-  ragIngestCount,
-  ragRetrieveCount,
-} from "@smithers/rag/metrics";
-import {
   memoryFactWrites,
   memoryRecallQueries,
   memoryMessageSaves,
@@ -65,9 +61,7 @@ import { sandboxActive } from "./sandboxActive";
 import { sandboxBundleSizeBytes } from "./sandboxBundleSizeBytes";
 import { sandboxDurationMs } from "./sandboxDurationMs";
 import { sandboxPatchCount } from "./sandboxPatchCount";
-import { voiceOperationsTotal } from "./voiceOperationsTotal";
-import { voiceErrorsTotal } from "./voiceErrorsTotal";
-import { voiceDuration } from "./voiceDuration";
+
 import { taskHeartbeatsTotal } from "./taskHeartbeatsTotal";
 import { taskHeartbeatTimeoutTotal } from "./taskHeartbeatTimeoutTotal";
 import { heartbeatDataSizeBytes } from "./heartbeatDataSizeBytes";
@@ -671,37 +665,6 @@ export function trackEvent(event: SmithersEvent): Effect.Effect<void> {
 
     case "ReplayStarted":
       return countEvent;
-
-    case "VoiceStarted":
-      return Effect.all([
-        countEvent,
-        Metric.increment(voiceOperationsTotal),
-      ], { discard: true });
-
-    case "VoiceFinished":
-      return Effect.all([
-        countEvent,
-        Metric.update(voiceDuration, event.durationMs),
-      ], { discard: true });
-
-    case "VoiceError":
-      return Effect.all([
-        countEvent,
-        Metric.increment(voiceErrorsTotal),
-        Metric.increment(errorsTotal),
-      ], { discard: true });
-
-    case "RagIngested":
-      return Effect.all([
-        countEvent,
-        Metric.incrementBy(ragIngestCount, event.documentCount),
-      ], { discard: true });
-
-    case "RagRetrieved":
-      return Effect.all([
-        countEvent,
-        Metric.increment(ragRetrieveCount),
-      ], { discard: true });
 
     case "MemoryFactSet":
       return Effect.all([

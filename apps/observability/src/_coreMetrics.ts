@@ -138,8 +138,7 @@ export const smithersMetricCatalog: readonly SmithersMetricDefinition[] = [
   metricDefinition("agentEventsTotal", "smithers.agent_events_total", "counter", { label: "Agent events", unit: "count", labels: ["engine", "event_type", "source"] }),
   metricDefinition("agentSessionsTotal", "smithers.agent_sessions_total", "counter", { label: "Agent sessions", unit: "count", labels: ["engine", "model", "resume", "source", "status"] }),
   metricDefinition("agentActionsTotal", "smithers.agent_actions_total", "counter", { label: "Agent actions", unit: "count", labels: ["action_name", "action_type", "engine", "source"] }),
-  metricDefinition("voiceOperationsTotal", "smithers.voice.operations_total", "counter", { label: "Voice operations", unit: "count" }),
-  metricDefinition("voiceErrorsTotal", "smithers.voice.errors_total", "counter", { label: "Voice errors", unit: "count" }),
+
   metricDefinition("gatewayConnectionsTotal", "smithers.gateway.connections_total", "counter", { label: "Gateway connections opened", unit: "count", labels: ["transport"] }),
   metricDefinition("gatewayConnectionsClosedTotal", "smithers.gateway.connections_closed_total", "counter", { label: "Gateway connections closed", unit: "count", labels: ["code", "reason", "transport"] }),
   metricDefinition("gatewayMessagesReceivedTotal", "smithers.gateway.messages_received_total", "counter", { label: "Gateway messages received", unit: "count", labels: ["kind", "transport"] }),
@@ -191,7 +190,7 @@ export const smithersMetricCatalog: readonly SmithersMetricDefinition[] = [
   metricDefinition("responseSizeBytes", "smithers.response.size_bytes", "histogram", { label: "Response size", unit: "bytes", boundaries: SIZE_BUCKETS }),
   metricDefinition("approvalWaitDuration", "smithers.approval.wait_duration_ms", "histogram", { label: "Approval wait duration", unit: "milliseconds", boundaries: DURATION_BUCKETS }),
   metricDefinition("timerDelayDuration", "smithers.timers.delay_ms", "histogram", { label: "Timer delay", unit: "milliseconds", boundaries: DURATION_BUCKETS }),
-  metricDefinition("voiceDuration", "smithers.voice.duration_ms", "histogram", { label: "Voice duration", unit: "milliseconds", boundaries: DURATION_BUCKETS }),
+
   metricDefinition("gatewayRpcDuration", "smithers.gateway.rpc_duration_ms", "histogram", { label: "Gateway RPC duration", unit: "milliseconds", labels: ["method", "transport"], boundaries: DURATION_BUCKETS }),
   metricDefinition("schedulerWaitDuration", "smithers.scheduler.wait_duration_ms", "histogram", { label: "Scheduler wait duration", unit: "milliseconds", boundaries: DURATION_BUCKETS }),
   metricDefinition("supervisorPollDuration", "smithers.supervisor.poll_duration_ms", "histogram", { label: "Supervisor poll duration", unit: "milliseconds", boundaries: FAST_BUCKETS }),

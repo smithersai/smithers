@@ -77,8 +77,7 @@ export { agentRetriesTotal } from "./agentRetriesTotal";
 export { agentEventsTotal } from "./agentEventsTotal";
 export { agentSessionsTotal } from "./agentSessionsTotal";
 export { agentActionsTotal } from "./agentActionsTotal";
-export { voiceOperationsTotal } from "./voiceOperationsTotal";
-export { voiceErrorsTotal } from "./voiceErrorsTotal";
+
 export { gatewayConnectionsTotal } from "./gatewayConnectionsTotal";
 export { gatewayConnectionsClosedTotal } from "./gatewayConnectionsClosedTotal";
 export { gatewayMessagesReceivedTotal } from "./gatewayMessagesReceivedTotal";
@@ -133,7 +132,7 @@ export { promptSizeBytes } from "./promptSizeBytes";
 export { responseSizeBytes } from "./responseSizeBytes";
 export { approvalWaitDuration } from "./approvalWaitDuration";
 export { timerDelayDuration } from "./timerDelayDuration";
-export { voiceDuration } from "./voiceDuration";
+
 export { gatewayRpcDuration } from "./gatewayRpcDuration";
 export { schedulerWaitDuration } from "./schedulerWaitDuration";
 export { supervisorPollDuration } from "./supervisorPollDuration";

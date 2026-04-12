@@ -319,31 +319,6 @@ describe("trackEvent", () => {
     });
   });
 
-  test("handles VoiceStarted event", async () => {
-    await runTrack({
-      type: "VoiceStarted",
-      runId: "run-1",
-      timestampMs: Date.now(),
-    });
-  });
-
-  test("handles VoiceFinished event", async () => {
-    await runTrack({
-      type: "VoiceFinished",
-      runId: "run-1",
-      durationMs: 5000,
-      timestampMs: Date.now(),
-    });
-  });
-
-  test("handles VoiceError event", async () => {
-    await runTrack({
-      type: "VoiceError",
-      runId: "run-1",
-      error: "mic failure",
-      timestampMs: Date.now(),
-    });
-  });
 
   test("handles McpToolCalled success event", async () => {
     await runTrack({
@@ -385,24 +360,6 @@ describe("trackEvent", () => {
       toolName: "get-user",
       status: "error",
       durationMs: 100,
-      timestampMs: Date.now(),
-    });
-  });
-
-  test("handles RagIngested event", async () => {
-    await runTrack({
-      type: "RagIngested",
-      runId: "run-1",
-      documentCount: 5,
-      timestampMs: Date.now(),
-    });
-  });
-
-  test("handles RagRetrieved event", async () => {
-    await runTrack({
-      type: "RagRetrieved",
-      runId: "run-1",
-      resultCount: 3,
       timestampMs: Date.now(),
     });
   });

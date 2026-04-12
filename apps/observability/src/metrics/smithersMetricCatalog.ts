@@ -15,12 +15,6 @@ import {
 
 // External package metrics
 import {
-  ragEmbedDuration,
-  ragIngestCount,
-  ragRetrieveCount,
-  ragRetrieveDuration,
-} from "@smithers/rag/metrics";
-import {
   memoryFactReads,
   memoryFactWrites,
   memoryRecallDuration,
@@ -98,8 +92,7 @@ import { agentRetriesTotal } from "./agentRetriesTotal";
 import { agentEventsTotal } from "./agentEventsTotal";
 import { agentSessionsTotal } from "./agentSessionsTotal";
 import { agentActionsTotal } from "./agentActionsTotal";
-import { voiceOperationsTotal } from "./voiceOperationsTotal";
-import { voiceErrorsTotal } from "./voiceErrorsTotal";
+
 import { gatewayConnectionsTotal } from "./gatewayConnectionsTotal";
 import { gatewayConnectionsClosedTotal } from "./gatewayConnectionsClosedTotal";
 import { gatewayMessagesReceivedTotal } from "./gatewayMessagesReceivedTotal";
@@ -149,7 +142,7 @@ import { promptSizeBytes } from "./promptSizeBytes";
 import { responseSizeBytes } from "./responseSizeBytes";
 import { approvalWaitDuration } from "./approvalWaitDuration";
 import { timerDelayDuration } from "./timerDelayDuration";
-import { voiceDuration } from "./voiceDuration";
+
 import { gatewayRpcDuration } from "./gatewayRpcDuration";
 import { schedulerWaitDuration } from "./schedulerWaitDuration";
 import { supervisorPollDuration } from "./supervisorPollDuration";
@@ -337,8 +330,7 @@ export const smithersMetricCatalog: ReadonlyArray<SmithersMetricDefinition> = [
     unit: "count",
     labels: ["action_name", "action_type", "engine", "source"],
   }),
-  metricDefinition("voiceOperationsTotal", voiceOperationsTotal, "smithers.voice.operations_total", "counter", { label: "Voice operations", unit: "count" }),
-  metricDefinition("voiceErrorsTotal", voiceErrorsTotal, "smithers.voice.errors_total", "counter", { label: "Voice errors", unit: "count" }),
+
   metricDefinition("gatewayConnectionsTotal", gatewayConnectionsTotal, "smithers.gateway.connections_total", "counter", {
     label: "Gateway connections opened",
     unit: "count",
@@ -418,8 +410,6 @@ export const smithersMetricCatalog: ReadonlyArray<SmithersMetricDefinition> = [
   metricDefinition("eventsEmittedTotal", eventsEmittedTotal, "smithers.events.emitted_total", "counter", { label: "Events emitted", unit: "count" }),
   metricDefinition("taskHeartbeatsTotal", taskHeartbeatsTotal, "smithers.heartbeats.total", "counter", { label: "Task heartbeats", unit: "count" }),
   metricDefinition("taskHeartbeatTimeoutTotal", taskHeartbeatTimeoutTotal, "smithers.heartbeats.timeout_total", "counter", { label: "Task heartbeat timeouts", unit: "count" }),
-  metricDefinition("ragIngestCount", ragIngestCount, "smithers.rag.ingest_total", "counter", { label: "RAG documents ingested", unit: "count" }),
-  metricDefinition("ragRetrieveCount", ragRetrieveCount, "smithers.rag.retrieve_total", "counter", { label: "RAG retrievals", unit: "count" }),
   metricDefinition("memoryFactReads", memoryFactReads, "smithers.memory.fact_reads", "counter", { label: "Memory fact reads", unit: "count" }),
   metricDefinition("memoryFactWrites", memoryFactWrites, "smithers.memory.fact_writes", "counter", { label: "Memory fact writes", unit: "count" }),
   metricDefinition("memoryRecallQueries", memoryRecallQueries, "smithers.memory.recall_queries", "counter", { label: "Memory recall queries", unit: "count" }),
@@ -509,7 +499,7 @@ export const smithersMetricCatalog: ReadonlyArray<SmithersMetricDefinition> = [
   metricDefinition("responseSizeBytes", responseSizeBytes, "smithers.response.size_bytes", "histogram", { label: "Response size", unit: "bytes", boundaries: sizeBucketValues }),
   metricDefinition("approvalWaitDuration", approvalWaitDuration, "smithers.approval.wait_duration_ms", "histogram", { label: "Approval wait duration", unit: "milliseconds", boundaries: durationBucketValues }),
   metricDefinition("timerDelayDuration", timerDelayDuration, "smithers.timers.delay_ms", "histogram", { label: "Timer delay", unit: "milliseconds", boundaries: durationBucketValues }),
-  metricDefinition("voiceDuration", voiceDuration, "smithers.voice.duration_ms", "histogram", { label: "Voice duration", unit: "milliseconds", boundaries: durationBucketValues }),
+
   metricDefinition("gatewayRpcDuration", gatewayRpcDuration, "smithers.gateway.rpc_duration_ms", "histogram", {
     label: "Gateway RPC duration",
     unit: "milliseconds",
@@ -527,8 +517,6 @@ export const smithersMetricCatalog: ReadonlyArray<SmithersMetricDefinition> = [
   metricDefinition("sandboxPatchCount", sandboxPatchCount, "smithers.sandbox.patch_count", "histogram", { label: "Sandbox patch count", unit: "count", boundaries: tokenBucketValues }),
   metricDefinition("heartbeatDataSizeBytes", heartbeatDataSizeBytes, "smithers.heartbeats.data_size_bytes", "histogram", { label: "Heartbeat data size", unit: "bytes", boundaries: sizeBucketValues }),
   metricDefinition("heartbeatIntervalMs", heartbeatIntervalMs, "smithers.heartbeats.interval_ms", "histogram", { label: "Heartbeat interval", unit: "milliseconds", boundaries: fastBucketValues }),
-  metricDefinition("ragRetrieveDuration", ragRetrieveDuration, "smithers.rag.retrieve_duration_ms", "histogram", { label: "RAG retrieval duration", unit: "milliseconds", boundaries: metricHistogramBoundaries(ragRetrieveDuration) }),
-  metricDefinition("ragEmbedDuration", ragEmbedDuration, "smithers.rag.embed_duration_ms", "histogram", { label: "RAG embedding duration", unit: "milliseconds", boundaries: metricHistogramBoundaries(ragEmbedDuration) }),
   metricDefinition("memoryRecallDuration", memoryRecallDuration, "smithers.memory.recall_duration_ms", "histogram", { label: "Memory recall duration", unit: "milliseconds", boundaries: metricHistogramBoundaries(memoryRecallDuration) }),
   metricDefinition("openApiToolDuration", openApiToolDuration, "smithers.openapi.tool_duration_ms", "histogram", { label: "OpenAPI tool duration", unit: "milliseconds", boundaries: metricHistogramBoundaries(openApiToolDuration) }),
   metricDefinition("scorerDuration", scorerDuration, "smithers.scorer.duration_ms", "histogram", { label: "Scorer duration", unit: "milliseconds", boundaries: metricHistogramBoundaries(scorerDuration) }),
