@@ -1,0 +1,131 @@
+// @smithers-type-exports-begin
+/** @typedef {import("./activity-bridge.ts").TaskActivityRetryOptions} TaskActivityRetryOptions */
+// @smithers-type-exports-end
+
+import * as Activity from "@effect/workflow/Activity";
+import { Effect, Schema } from "effect";
+/** @typedef {import("./activity-bridge.ts").ExecuteTaskActivityOptions} ExecuteTaskActivityOptions */
+/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("./activity-bridge.ts").TaskActivityContext} TaskActivityContext */
+/** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
+
+const adapterNamespaces = new WeakMap();
+const completedActivityResults = new Map();
+let nextAdapterNamespace = 0;
+/**
+ * @param {SmithersDb} adapter
+ * @returns {string}
+ */
+const getAdapterNamespace = (adapter) => {
+    const existing = adapterNamespaces.get(adapter);
+    if (existing) {
+        return existing;
+    }
+    const created = `adapter-${++nextAdapterNamespace}`;
+    adapterNamespaces.set(adapter, created);
+    return created;
+};
+export class RetriableTaskFailure extends Error {
+    nodeId;
+    attempt;
+    /**
+   * @param {string} nodeId
+   * @param {number} attempt
+   */
+    constructor(nodeId, attempt) {
+        super(`Task ${nodeId} failed on attempt ${attempt} and should be retried`);
+        this.name = "RetriableTaskFailure";
+        this.nodeId = nodeId;
+        this.attempt = attempt;
+    }
+}
+/**
+ * @param {unknown} error
+ * @returns {error is RetriableTaskFailure}
+ */
+const isRetriableTaskFailure = (error) => error instanceof RetriableTaskFailure;
+/**
+ * @param {SmithersDb} adapter
+ * @param {string} workflowName
+ * @param {string} runId
+ * @param {TaskDescriptor} desc
+ * @returns {string}
+ */
+export const makeTaskBridgeKey = (adapter, workflowName, runId, desc) => [
+    "smithers-task-bridge",
+    getAdapterNamespace(adapter),
+    workflowName,
+    runId,
+    desc.nodeId,
+    String(desc.iteration),
+].join(":");
+/**
+ * @param {SmithersDb} adapter
+ * @param {string} workflowName
+ * @param {string} runId
+ * @param {TaskDescriptor} desc
+ * @param {number} attempt
+ * @param {boolean} [includeAttempt]
+ * @returns {string}
+ */
+const makeActivityIdempotencyKey = (adapter, workflowName, runId, desc, attempt, includeAttempt) => {
+    const base = makeTaskBridgeKey(adapter, workflowName, runId, desc);
+    return includeAttempt ? `${base}:attempt:${attempt}` : base;
+};
+/**
+ * @template A
+ * @param {TaskDescriptor} desc
+ * @param {(context: TaskActivityContext) => Promise<A> | A} executeFn
+ * @param {Pick<ExecuteTaskActivityOptions, "includeAttemptInIdempotencyKey">} [options]
+ */
+export const makeTaskActivity = (desc, executeFn, options) => Activity.make({
+    name: desc.nodeId,
+    success: Schema.Unknown,
+    error: Schema.Unknown,
+    execute: Effect.gen(function* () {
+        const attempt = yield* Activity.CurrentAttempt;
+        const idempotencyKey = yield* Activity.idempotencyKey(desc.nodeId, {
+            includeAttempt: options?.includeAttemptInIdempotencyKey,
+        });
+        return yield* Effect.tryPromise({
+            try: () => Promise.resolve(executeFn({ attempt, idempotencyKey })),
+            catch: (error) => error,
+        });
+    }),
+});
+/**
+ * @template A
+ * @param {SmithersDb} adapter
+ * @param {string} workflowName
+ * @param {string} runId
+ * @param {TaskDescriptor} desc
+ * @param {(context: TaskActivityContext) => Promise<A> | A} executeFn
+ * @param {ExecuteTaskActivityOptions} [options]
+ * @returns {Promise<A>}
+ */
+export const executeTaskActivity = async (adapter, workflowName, runId, desc, executeFn, options) => {
+    const initialAttempt = Math.max(1, options?.initialAttempt ?? 1);
+    const retry = options?.retry === undefined
+        ? { times: desc.retries, while: isRetriableTaskFailure }
+        : options.retry;
+    let attempt = initialAttempt;
+    while (true) {
+        const idempotencyKey = makeActivityIdempotencyKey(adapter, workflowName, runId, desc, attempt, options?.includeAttemptInIdempotencyKey);
+        if (completedActivityResults.has(idempotencyKey)) {
+            return completedActivityResults.get(idempotencyKey);
+        }
+        try {
+            const result = await Promise.resolve(executeFn({ attempt, idempotencyKey }));
+            completedActivityResults.set(idempotencyKey, result);
+            return result;
+        }
+        catch (error) {
+            if (retry === false ||
+                attempt - initialAttempt >= retry.times ||
+                !(retry.while ?? isRetriableTaskFailure)(error)) {
+                throw error;
+            }
+            attempt += 1;
+        }
+    }
+};

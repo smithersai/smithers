@@ -1,130 +1,247 @@
 import * as Rpc from "@effect/rpc/Rpc";
 import * as RpcGroup from "@effect/rpc/RpcGroup";
 import { Schema } from "effect";
-
-export const RunStatusSchema = Schema.Literal(
-  "running",
-  "waiting-approval",
-  "waiting-event",
-  "waiting-timer",
-  "finished",
-  "continued",
-  "failed",
-  "cancelled",
-);
+export declare const RunStatusSchema: Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>;
 export type RunStatusSchema = Schema.Schema.Type<typeof RunStatusSchema>;
-
-export const ApprovalPayloadSchema = Schema.Struct({
-  runId: Schema.String,
-  nodeId: Schema.String,
-  iteration: Schema.optional(Schema.Number),
-  note: Schema.optional(Schema.String),
-  decidedBy: Schema.optional(Schema.String),
-});
+export declare const ApprovalPayloadSchema: Schema.Struct<{
+    runId: typeof Schema.String;
+    nodeId: typeof Schema.String;
+    iteration: Schema.optional<typeof Schema.Number>;
+    note: Schema.optional<typeof Schema.String>;
+    decidedBy: Schema.optional<typeof Schema.String>;
+}>;
 export type ApprovalPayload = Schema.Schema.Type<typeof ApprovalPayloadSchema>;
-
-export const ApprovalResultSchema = Schema.Struct({
-  runId: Schema.String,
-  nodeId: Schema.String,
-  iteration: Schema.Number,
-  approved: Schema.Boolean,
-});
+export declare const ApprovalResultSchema: Schema.Struct<{
+    runId: typeof Schema.String;
+    nodeId: typeof Schema.String;
+    iteration: typeof Schema.Number;
+    approved: typeof Schema.Boolean;
+}>;
 export type ApprovalResult = Schema.Schema.Type<typeof ApprovalResultSchema>;
-
-export const CancelPayloadSchema = Schema.Struct({
-  runId: Schema.String,
-});
+export declare const CancelPayloadSchema: Schema.Struct<{
+    runId: typeof Schema.String;
+}>;
 export type CancelPayload = Schema.Schema.Type<typeof CancelPayloadSchema>;
-
-export const CancelResultSchema = Schema.Struct({
-  runId: Schema.String,
-  status: Schema.Literal("cancelling", "cancelled"),
-});
+export declare const CancelResultSchema: Schema.Struct<{
+    runId: typeof Schema.String;
+    status: Schema.Literal<["cancelling", "cancelled"]>;
+}>;
 export type CancelResult = Schema.Schema.Type<typeof CancelResultSchema>;
-
-export const SignalPayloadSchema = Schema.Struct({
-  runId: Schema.String,
-  signalName: Schema.String,
-  data: Schema.optional(Schema.Unknown),
-  correlationId: Schema.optional(Schema.String),
-  sentBy: Schema.optional(Schema.String),
-});
+export declare const SignalPayloadSchema: Schema.Struct<{
+    runId: typeof Schema.String;
+    signalName: typeof Schema.String;
+    data: Schema.optional<typeof Schema.Unknown>;
+    correlationId: Schema.optional<typeof Schema.String>;
+    sentBy: Schema.optional<typeof Schema.String>;
+}>;
 export type SignalPayload = Schema.Schema.Type<typeof SignalPayloadSchema>;
-
-export const SignalResultSchema = Schema.Struct({
-  runId: Schema.String,
-  signalName: Schema.String,
-  delivered: Schema.Boolean,
-  status: Schema.Literal("signalled", "ignored"),
-});
+export declare const SignalResultSchema: Schema.Struct<{
+    runId: typeof Schema.String;
+    signalName: typeof Schema.String;
+    delivered: typeof Schema.Boolean;
+    status: Schema.Literal<["signalled", "ignored"]>;
+}>;
 export type SignalResult = Schema.Schema.Type<typeof SignalResultSchema>;
-
-export const ListRunsPayloadSchema = Schema.Struct({
-  limit: Schema.optional(Schema.Number),
-  status: Schema.optional(RunStatusSchema),
-});
+export declare const ListRunsPayloadSchema: Schema.Struct<{
+    limit: Schema.optional<typeof Schema.Number>;
+    status: Schema.optional<Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>>;
+}>;
 export type ListRunsPayload = Schema.Schema.Type<typeof ListRunsPayloadSchema>;
-
-export const RunSummarySchema = Schema.Struct({
-  runId: Schema.String,
-  parentRunId: Schema.NullOr(Schema.String),
-  workflowName: Schema.String,
-  workflowPath: Schema.NullOr(Schema.String),
-  workflowHash: Schema.NullOr(Schema.String),
-  status: RunStatusSchema,
-  createdAtMs: Schema.Number,
-  startedAtMs: Schema.NullOr(Schema.Number),
-  finishedAtMs: Schema.NullOr(Schema.Number),
-  heartbeatAtMs: Schema.NullOr(Schema.Number),
-  runtimeOwnerId: Schema.NullOr(Schema.String),
-  cancelRequestedAtMs: Schema.NullOr(Schema.Number),
-  hijackRequestedAtMs: Schema.NullOr(Schema.Number),
-  hijackTarget: Schema.NullOr(Schema.String),
-  vcsType: Schema.NullOr(Schema.String),
-  vcsRoot: Schema.NullOr(Schema.String),
-  vcsRevision: Schema.NullOr(Schema.String),
-  errorJson: Schema.NullOr(Schema.String),
-  configJson: Schema.NullOr(Schema.String),
-});
+export declare const RunSummarySchema: Schema.Struct<{
+    runId: typeof Schema.String;
+    parentRunId: Schema.NullOr<typeof Schema.String>;
+    workflowName: typeof Schema.String;
+    workflowPath: Schema.NullOr<typeof Schema.String>;
+    workflowHash: Schema.NullOr<typeof Schema.String>;
+    status: Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>;
+    createdAtMs: typeof Schema.Number;
+    startedAtMs: Schema.NullOr<typeof Schema.Number>;
+    finishedAtMs: Schema.NullOr<typeof Schema.Number>;
+    heartbeatAtMs: Schema.NullOr<typeof Schema.Number>;
+    runtimeOwnerId: Schema.NullOr<typeof Schema.String>;
+    cancelRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackTarget: Schema.NullOr<typeof Schema.String>;
+    vcsType: Schema.NullOr<typeof Schema.String>;
+    vcsRoot: Schema.NullOr<typeof Schema.String>;
+    vcsRevision: Schema.NullOr<typeof Schema.String>;
+    errorJson: Schema.NullOr<typeof Schema.String>;
+    configJson: Schema.NullOr<typeof Schema.String>;
+}>;
 export type RunSummary = Schema.Schema.Type<typeof RunSummarySchema>;
-
-export const GetRunPayloadSchema = Schema.Struct({
-  runId: Schema.String,
-});
+export declare const GetRunPayloadSchema: Schema.Struct<{
+    runId: typeof Schema.String;
+}>;
 export type GetRunPayload = Schema.Schema.Type<typeof GetRunPayloadSchema>;
-
-export const GetRunResultSchema = Schema.NullOr(RunSummarySchema);
+export declare const GetRunResultSchema: Schema.NullOr<Schema.Struct<{
+    runId: typeof Schema.String;
+    parentRunId: Schema.NullOr<typeof Schema.String>;
+    workflowName: typeof Schema.String;
+    workflowPath: Schema.NullOr<typeof Schema.String>;
+    workflowHash: Schema.NullOr<typeof Schema.String>;
+    status: Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>;
+    createdAtMs: typeof Schema.Number;
+    startedAtMs: Schema.NullOr<typeof Schema.Number>;
+    finishedAtMs: Schema.NullOr<typeof Schema.Number>;
+    heartbeatAtMs: Schema.NullOr<typeof Schema.Number>;
+    runtimeOwnerId: Schema.NullOr<typeof Schema.String>;
+    cancelRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackTarget: Schema.NullOr<typeof Schema.String>;
+    vcsType: Schema.NullOr<typeof Schema.String>;
+    vcsRoot: Schema.NullOr<typeof Schema.String>;
+    vcsRevision: Schema.NullOr<typeof Schema.String>;
+    errorJson: Schema.NullOr<typeof Schema.String>;
+    configJson: Schema.NullOr<typeof Schema.String>;
+}>>;
 export type GetRunResult = Schema.Schema.Type<typeof GetRunResultSchema>;
-
-export const approve = Rpc.make("approve", {
-  payload: ApprovalPayloadSchema,
-  success: ApprovalResultSchema,
-});
-
-export const cancel = Rpc.make("cancel", {
-  payload: CancelPayloadSchema,
-  success: CancelResultSchema,
-});
-
-export const signal = Rpc.make("signal", {
-  payload: SignalPayloadSchema,
-  success: SignalResultSchema,
-});
-
-export const listRuns = Rpc.make("listRuns", {
-  payload: ListRunsPayloadSchema,
-  success: Schema.Array(RunSummarySchema),
-});
-
-export const getRun = Rpc.make("getRun", {
-  payload: GetRunPayloadSchema,
-  success: GetRunResultSchema,
-});
-
-export const SmithersRpcGroup = RpcGroup.make(
-  approve,
-  cancel,
-  signal,
-  listRuns,
-  getRun,
-);
+export declare const approve: Rpc.Rpc<"approve", Schema.Struct<{
+    runId: typeof Schema.String;
+    nodeId: typeof Schema.String;
+    iteration: Schema.optional<typeof Schema.Number>;
+    note: Schema.optional<typeof Schema.String>;
+    decidedBy: Schema.optional<typeof Schema.String>;
+}>, Schema.Struct<{
+    runId: typeof Schema.String;
+    nodeId: typeof Schema.String;
+    iteration: typeof Schema.Number;
+    approved: typeof Schema.Boolean;
+}>, typeof Schema.Never, never>;
+export declare const cancel: Rpc.Rpc<"cancel", Schema.Struct<{
+    runId: typeof Schema.String;
+}>, Schema.Struct<{
+    runId: typeof Schema.String;
+    status: Schema.Literal<["cancelling", "cancelled"]>;
+}>, typeof Schema.Never, never>;
+export declare const signal: Rpc.Rpc<"signal", Schema.Struct<{
+    runId: typeof Schema.String;
+    signalName: typeof Schema.String;
+    data: Schema.optional<typeof Schema.Unknown>;
+    correlationId: Schema.optional<typeof Schema.String>;
+    sentBy: Schema.optional<typeof Schema.String>;
+}>, Schema.Struct<{
+    runId: typeof Schema.String;
+    signalName: typeof Schema.String;
+    delivered: typeof Schema.Boolean;
+    status: Schema.Literal<["signalled", "ignored"]>;
+}>, typeof Schema.Never, never>;
+export declare const listRuns: Rpc.Rpc<"listRuns", Schema.Struct<{
+    limit: Schema.optional<typeof Schema.Number>;
+    status: Schema.optional<Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>>;
+}>, Schema.Array$<Schema.Struct<{
+    runId: typeof Schema.String;
+    parentRunId: Schema.NullOr<typeof Schema.String>;
+    workflowName: typeof Schema.String;
+    workflowPath: Schema.NullOr<typeof Schema.String>;
+    workflowHash: Schema.NullOr<typeof Schema.String>;
+    status: Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>;
+    createdAtMs: typeof Schema.Number;
+    startedAtMs: Schema.NullOr<typeof Schema.Number>;
+    finishedAtMs: Schema.NullOr<typeof Schema.Number>;
+    heartbeatAtMs: Schema.NullOr<typeof Schema.Number>;
+    runtimeOwnerId: Schema.NullOr<typeof Schema.String>;
+    cancelRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackTarget: Schema.NullOr<typeof Schema.String>;
+    vcsType: Schema.NullOr<typeof Schema.String>;
+    vcsRoot: Schema.NullOr<typeof Schema.String>;
+    vcsRevision: Schema.NullOr<typeof Schema.String>;
+    errorJson: Schema.NullOr<typeof Schema.String>;
+    configJson: Schema.NullOr<typeof Schema.String>;
+}>>, typeof Schema.Never, never>;
+export declare const getRun: Rpc.Rpc<"getRun", Schema.Struct<{
+    runId: typeof Schema.String;
+}>, Schema.NullOr<Schema.Struct<{
+    runId: typeof Schema.String;
+    parentRunId: Schema.NullOr<typeof Schema.String>;
+    workflowName: typeof Schema.String;
+    workflowPath: Schema.NullOr<typeof Schema.String>;
+    workflowHash: Schema.NullOr<typeof Schema.String>;
+    status: Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>;
+    createdAtMs: typeof Schema.Number;
+    startedAtMs: Schema.NullOr<typeof Schema.Number>;
+    finishedAtMs: Schema.NullOr<typeof Schema.Number>;
+    heartbeatAtMs: Schema.NullOr<typeof Schema.Number>;
+    runtimeOwnerId: Schema.NullOr<typeof Schema.String>;
+    cancelRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackTarget: Schema.NullOr<typeof Schema.String>;
+    vcsType: Schema.NullOr<typeof Schema.String>;
+    vcsRoot: Schema.NullOr<typeof Schema.String>;
+    vcsRevision: Schema.NullOr<typeof Schema.String>;
+    errorJson: Schema.NullOr<typeof Schema.String>;
+    configJson: Schema.NullOr<typeof Schema.String>;
+}>>, typeof Schema.Never, never>;
+export declare const SmithersRpcGroup: RpcGroup.RpcGroup<Rpc.Rpc<"approve", Schema.Struct<{
+    runId: typeof Schema.String;
+    nodeId: typeof Schema.String;
+    iteration: Schema.optional<typeof Schema.Number>;
+    note: Schema.optional<typeof Schema.String>;
+    decidedBy: Schema.optional<typeof Schema.String>;
+}>, Schema.Struct<{
+    runId: typeof Schema.String;
+    nodeId: typeof Schema.String;
+    iteration: typeof Schema.Number;
+    approved: typeof Schema.Boolean;
+}>, typeof Schema.Never, never> | Rpc.Rpc<"cancel", Schema.Struct<{
+    runId: typeof Schema.String;
+}>, Schema.Struct<{
+    runId: typeof Schema.String;
+    status: Schema.Literal<["cancelling", "cancelled"]>;
+}>, typeof Schema.Never, never> | Rpc.Rpc<"signal", Schema.Struct<{
+    runId: typeof Schema.String;
+    signalName: typeof Schema.String;
+    data: Schema.optional<typeof Schema.Unknown>;
+    correlationId: Schema.optional<typeof Schema.String>;
+    sentBy: Schema.optional<typeof Schema.String>;
+}>, Schema.Struct<{
+    runId: typeof Schema.String;
+    signalName: typeof Schema.String;
+    delivered: typeof Schema.Boolean;
+    status: Schema.Literal<["signalled", "ignored"]>;
+}>, typeof Schema.Never, never> | Rpc.Rpc<"listRuns", Schema.Struct<{
+    limit: Schema.optional<typeof Schema.Number>;
+    status: Schema.optional<Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>>;
+}>, Schema.Array$<Schema.Struct<{
+    runId: typeof Schema.String;
+    parentRunId: Schema.NullOr<typeof Schema.String>;
+    workflowName: typeof Schema.String;
+    workflowPath: Schema.NullOr<typeof Schema.String>;
+    workflowHash: Schema.NullOr<typeof Schema.String>;
+    status: Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>;
+    createdAtMs: typeof Schema.Number;
+    startedAtMs: Schema.NullOr<typeof Schema.Number>;
+    finishedAtMs: Schema.NullOr<typeof Schema.Number>;
+    heartbeatAtMs: Schema.NullOr<typeof Schema.Number>;
+    runtimeOwnerId: Schema.NullOr<typeof Schema.String>;
+    cancelRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackTarget: Schema.NullOr<typeof Schema.String>;
+    vcsType: Schema.NullOr<typeof Schema.String>;
+    vcsRoot: Schema.NullOr<typeof Schema.String>;
+    vcsRevision: Schema.NullOr<typeof Schema.String>;
+    errorJson: Schema.NullOr<typeof Schema.String>;
+    configJson: Schema.NullOr<typeof Schema.String>;
+}>>, typeof Schema.Never, never> | Rpc.Rpc<"getRun", Schema.Struct<{
+    runId: typeof Schema.String;
+}>, Schema.NullOr<Schema.Struct<{
+    runId: typeof Schema.String;
+    parentRunId: Schema.NullOr<typeof Schema.String>;
+    workflowName: typeof Schema.String;
+    workflowPath: Schema.NullOr<typeof Schema.String>;
+    workflowHash: Schema.NullOr<typeof Schema.String>;
+    status: Schema.Literal<["running", "waiting-approval", "waiting-event", "waiting-timer", "finished", "continued", "failed", "cancelled"]>;
+    createdAtMs: typeof Schema.Number;
+    startedAtMs: Schema.NullOr<typeof Schema.Number>;
+    finishedAtMs: Schema.NullOr<typeof Schema.Number>;
+    heartbeatAtMs: Schema.NullOr<typeof Schema.Number>;
+    runtimeOwnerId: Schema.NullOr<typeof Schema.String>;
+    cancelRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackRequestedAtMs: Schema.NullOr<typeof Schema.Number>;
+    hijackTarget: Schema.NullOr<typeof Schema.String>;
+    vcsType: Schema.NullOr<typeof Schema.String>;
+    vcsRoot: Schema.NullOr<typeof Schema.String>;
+    vcsRevision: Schema.NullOr<typeof Schema.String>;
+    errorJson: Schema.NullOr<typeof Schema.String>;
+    configJson: Schema.NullOr<typeof Schema.String>;
+}>>, typeof Schema.Never, never>>;
