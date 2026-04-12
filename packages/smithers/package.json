@@ -22,7 +22,6 @@
     "src/"
   ],
   "scripts": {
-    "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

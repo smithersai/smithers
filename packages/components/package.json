@@ -29,6 +29,7 @@
     "@smithers/errors": "workspace:*",
     "@smithers/graph": "workspace:*",
     "@smithers/memory": "workspace:*",
+    "@smithers/observability": "workspace:*",
     "@smithers/react-reconciler": "workspace:*",
     "@smithers/scheduler": "workspace:*",
     "@smithers/scorers": "workspace:*",
