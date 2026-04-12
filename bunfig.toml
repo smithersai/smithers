@@ -1,5 +1,5 @@
-preload = ["./preload.ts"]
+preload = ["./preload.js"]
 
 [test]
 root = "."
-preload = ["./preload.ts"]
+preload = ["./preload.js"]

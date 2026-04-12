@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "target": "ESNext",
     "module": "ESNext",
     "moduleDetection": "force",
@@ -18,49 +22,151 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
     "paths": {
-      "smithers": ["./packages/smithers/src/index.ts"],
-      "smithers/jsx-runtime": ["./packages/smithers/src/jsx-runtime.ts"],
-      "smithers/jsx-dev-runtime": ["./packages/smithers/src/jsx-runtime.ts"],
-      "smithers-orchestrator": ["./packages/smithers/src/index.ts"],
-      "smithers-orchestrator/jsx-runtime": ["./packages/smithers/src/jsx-runtime.ts"],
-      "smithers-orchestrator/jsx-dev-runtime": ["./packages/smithers/src/jsx-runtime.ts"],
-      "smithers-orchestrator/scorers": ["./packages/scorers/src/index.ts"],
-      "@smithers/smithers": ["./packages/smithers/src/index.ts"],
-      "@smithers/smithers/*": ["./packages/smithers/src/*.ts", "./packages/smithers/src/*/index.ts"],
-      "@smithers/agents": ["./packages/agents/src/index.ts"],
-      "@smithers/agents/*": ["./packages/agents/src/*.ts", "./packages/agents/src/*/index.ts"],
-      "@smithers/cli": ["./apps/cli/src/index.ts"],
-      "@smithers/cli/*": ["./apps/cli/src/*.ts", "./apps/cli/src/*/index.ts"],
-      "@smithers/core-react": ["./packages/react/src/index.ts"],
-      "@smithers/core-react/*": ["./packages/react/src/*.ts", "./packages/react/src/*/index.ts"],
-      "@smithers/db": ["./packages/db/src/index.ts"],
-      "@smithers/db/*": ["./packages/db/src/*.ts", "./packages/db/src/*/index.ts"],
-      "@smithers/engine": ["./packages/engine/src/index.ts"],
-      "@smithers/engine/*": ["./packages/engine/src/*.ts", "./packages/engine/src/*/index.ts"],
-      "@smithers/graph": ["./packages/graph/src/index.ts"],
-      "@smithers/graph/*": ["./packages/graph/src/*.ts", "./packages/graph/src/*/index.ts"],
-      "@smithers/memory": ["./packages/memory/src/index.ts"],
-      "@smithers/memory/*": ["./packages/memory/src/*.ts", "./packages/memory/src/*/index.ts"],
-      "@smithers/observability": ["./apps/observability/src/index.ts"],
-      "@smithers/observability/*": ["./apps/observability/src/*.ts", "./apps/observability/src/*/index.ts"],
-      "@smithers/openapi": ["./packages/openapi/src/index.ts"],
-      "@smithers/openapi/*": ["./packages/openapi/src/*.ts", "./packages/openapi/src/*/index.ts"],
-      "@smithers/components": ["./packages/components/src/index.ts"],
-      "@smithers/components/*": ["./packages/components/src/*.ts", "./packages/components/src/*/index.ts"],
-      "@smithers/react-reconciler": ["./packages/react-reconciler/src/index.ts"],
-      "@smithers/react-reconciler/*": ["./packages/react-reconciler/src/*.ts", "./packages/react-reconciler/src/*/index.ts"],
-      "@smithers/sandbox": ["./packages/sandbox/src/index.ts"],
-      "@smithers/sandbox/*": ["./packages/sandbox/src/*.ts", "./packages/sandbox/src/*/index.ts"],
-      "@smithers/scorers": ["./packages/scorers/src/index.ts"],
-      "@smithers/scorers/*": ["./packages/scorers/src/*.ts", "./packages/scorers/src/*/index.ts"],
-      "@smithers/server": ["./packages/server/src/index.ts"],
-      "@smithers/server/*": ["./packages/server/src/*.ts", "./packages/server/src/*/index.ts"],
-      "@smithers/time-travel": ["./packages/time-travel/src/index.ts"],
-      "@smithers/time-travel/*": ["./packages/time-travel/src/*.ts", "./packages/time-travel/src/*/index.ts"],
-      "@smithers/vcs": ["./packages/vcs/src/index.ts"],
-      "@smithers/vcs/*": ["./packages/vcs/src/*.ts", "./packages/vcs/src/*/index.ts"]
+      "smithers": [
+        "./packages/smithers/src/index.js"
+      ],
+      "smithers/jsx-runtime": [
+        "./packages/smithers/src/jsx-runtime.js"
+      ],
+      "smithers/jsx-dev-runtime": [
+        "./packages/smithers/src/jsx-runtime.js"
+      ],
+      "smithers-orchestrator": [
+        "./packages/smithers/src/index.js"
+      ],
+      "smithers-orchestrator/jsx-runtime": [
+        "./packages/smithers/src/jsx-runtime.js"
+      ],
+      "smithers-orchestrator/jsx-dev-runtime": [
+        "./packages/smithers/src/jsx-runtime.js"
+      ],
+      "smithers-orchestrator/scorers": [
+        "./packages/scorers/src/index.js"
+      ],
+      "@smithers/smithers": [
+        "./packages/smithers/src/index.js"
+      ],
+      "@smithers/smithers/*": [
+        "./packages/smithers/src/*.js",
+        "./packages/smithers/src/*/index.js"
+      ],
+      "@smithers/agents": [
+        "./packages/agents/src/index.js"
+      ],
+      "@smithers/agents/*": [
+        "./packages/agents/src/*.js",
+        "./packages/agents/src/*/index.js"
+      ],
+      "@smithers/cli": [
+        "./apps/cli/src/index.js"
+      ],
+      "@smithers/cli/*": [
+        "./apps/cli/src/*.js",
+        "./apps/cli/src/*/index.js"
+      ],
+      "@smithers/core-react": [
+        "./packages/react/src/index.js"
+      ],
+      "@smithers/core-react/*": [
+        "./packages/react/src/*.js",
+        "./packages/react/src/*/index.js"
+      ],
+      "@smithers/db": [
+        "./packages/db/src/index.js"
+      ],
+      "@smithers/db/*": [
+        "./packages/db/src/*.js",
+        "./packages/db/src/*/index.js"
+      ],
+      "@smithers/engine": [
+        "./packages/engine/src/index.js"
+      ],
+      "@smithers/engine/*": [
+        "./packages/engine/src/*.js",
+        "./packages/engine/src/*/index.js"
+      ],
+      "@smithers/graph": [
+        "./packages/graph/src/index.js"
+      ],
+      "@smithers/graph/*": [
+        "./packages/graph/src/*.js",
+        "./packages/graph/src/*/index.js"
+      ],
+      "@smithers/memory": [
+        "./packages/memory/src/index.js"
+      ],
+      "@smithers/memory/*": [
+        "./packages/memory/src/*.js",
+        "./packages/memory/src/*/index.js"
+      ],
+      "@smithers/observability": [
+        "./apps/observability/src/index.js"
+      ],
+      "@smithers/observability/*": [
+        "./apps/observability/src/*.js",
+        "./apps/observability/src/*/index.js"
+      ],
+      "@smithers/openapi": [
+        "./packages/openapi/src/index.js"
+      ],
+      "@smithers/openapi/*": [
+        "./packages/openapi/src/*.js",
+        "./packages/openapi/src/*/index.js"
+      ],
+      "@smithers/components": [
+        "./packages/components/src/index.js"
+      ],
+      "@smithers/components/*": [
+        "./packages/components/src/*.js",
+        "./packages/components/src/*/index.js"
+      ],
+      "@smithers/react-reconciler": [
+        "./packages/react-reconciler/src/index.js"
+      ],
+      "@smithers/react-reconciler/*": [
+        "./packages/react-reconciler/src/*.js",
+        "./packages/react-reconciler/src/*/index.js"
+      ],
+      "@smithers/sandbox": [
+        "./packages/sandbox/src/index.js"
+      ],
+      "@smithers/sandbox/*": [
+        "./packages/sandbox/src/*.js",
+        "./packages/sandbox/src/*/index.js"
+      ],
+      "@smithers/scorers": [
+        "./packages/scorers/src/index.js"
+      ],
+      "@smithers/scorers/*": [
+        "./packages/scorers/src/*.js",
+        "./packages/scorers/src/*/index.js"
+      ],
+      "@smithers/server": [
+        "./packages/server/src/index.js"
+      ],
+      "@smithers/server/*": [
+        "./packages/server/src/*.js",
+        "./packages/server/src/*/index.js"
+      ],
+      "@smithers/time-travel": [
+        "./packages/time-travel/src/index.js"
+      ],
+      "@smithers/time-travel/*": [
+        "./packages/time-travel/src/*.js",
+        "./packages/time-travel/src/*/index.js"
+      ],
+      "@smithers/vcs": [
+        "./packages/vcs/src/index.js"
+      ],
+      "@smithers/vcs/*": [
+        "./packages/vcs/src/*.js",
+        "./packages/vcs/src/*/index.js"
+      ]
     },
-    "typeRoots": ["./packages/smithers/src/types", "./node_modules/@types"]
+    "typeRoots": [
+      "./packages/smithers/src/types",
+      "./node_modules/@types"
+    ]
   },
   "include": [
     "packages/smithers/src/**/*",
