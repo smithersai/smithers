@@ -6,12 +6,14 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "import": "./src/index.js",
+      "default": "./src/index.js",
+      "types": "./src/index.ts"
     },
     "./*": {
-      "types": "./src/*.ts",
-      "default": "./src/*.ts"
+      "import": "./src/*.js",
+      "default": "./src/*.js",
+      "types": "./src/*.ts"
     }
   },
   "files": [
@@ -25,7 +27,6 @@
     "@smithers/agents": "workspace:*",
     "@smithers/db": "workspace:*",
     "@smithers/driver": "workspace:*",
-    "@smithers/durables": "workspace:*",
     "@smithers/errors": "workspace:*",
     "@smithers/graph": "workspace:*",
     "@smithers/memory": "workspace:*",
@@ -33,7 +34,6 @@
     "@smithers/react-reconciler": "workspace:*",
     "@smithers/scheduler": "workspace:*",
     "@smithers/scorers": "workspace:*",
-
     "bippy": "^0.5.32",
     "react": "^18.3.0 || ^19.0.0",
     "react-dom": "^18.3.0 || ^19.0.0",
