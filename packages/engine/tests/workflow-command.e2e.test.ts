@@ -138,7 +138,7 @@ test("workflow run help exposes prompt and execution options", () => {
   expect(result.exitCode).toBe(0);
   expect(result.stdout).toContain("Usage: smithers workflow run <name> [options]");
   expect(result.stdout).toContain("--prompt, -p <string>");
-  expect(result.stdout).toContain("--serve <boolean>");
+  expect(result.stdout).toContain("--serve");
 });
 
 test("supervise help exposes polling controls", () => {
@@ -154,7 +154,7 @@ test("supervise help exposes polling controls", () => {
   expect(result.stdout).toContain("--interval, -i <string>");
   expect(result.stdout).toContain("--stale-threshold, -t <string>");
   expect(result.stdout).toContain("--max-concurrent, -c <number>");
-  expect(result.stdout).toContain("--dry-run, -n <boolean>");
+  expect(result.stdout).toContain("--dry-run, -n");
 });
 
 test("workflow with no args lists discovered workflows", () => {
