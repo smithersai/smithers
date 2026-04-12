@@ -11,6 +11,7 @@ import { errorToJson } from "@smithers/errors/errorToJson";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { getJjPointer } from "@smithers/vcs/jj";
+import * as BunContext from "@effect/platform-bun/BunContext";
 
 type StaticTaskBridgeToolConfig = {
   rootDir: string;
@@ -178,7 +179,7 @@ export const executeStaticTaskBridge = async (
 
     payload = validation.data;
     const completedAtMs = nowMs();
-    const jjPointer = await getJjPointer(toolConfig.rootDir);
+    const jjPointer = await Effect.runPromise(getJjPointer(toolConfig.rootDir).pipe(Effect.provide(BunContext.layer)));
 
     await adapter.withTransaction(
       "task-completion",

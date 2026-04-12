@@ -3,7 +3,7 @@ import type { HijackState } from "../index";
 import { Effect } from "effect";
 import { SmithersDb } from "@smithers/db/adapter";
 import { EventBus } from "../events";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import {
   makeWorkerTask,
   type WorkerDispatchKind,
@@ -413,22 +413,24 @@ export const executeTaskBridgeEffect = (
   hijackState?: HijackState,
   legacyExecuteTaskFn?: LegacyExecuteTaskFn,
 ) =>
-  fromPromise("execute task bridge", () =>
-    executeTaskBridge(
-      adapter,
-      db,
-      runId,
-      desc,
-      descriptorMap,
-      inputTable,
-      eventBus,
-      toolConfig,
-      workflowName,
-      cacheEnabled,
-      signal,
-      disabledAgents,
-      runAbortController,
-      hijackState,
-      legacyExecuteTaskFn,
-    ),
-  );
+  Effect.tryPromise({
+    try: () =>
+      executeTaskBridge(
+        adapter,
+        db,
+        runId,
+        desc,
+        descriptorMap,
+        inputTable,
+        eventBus,
+        toolConfig,
+        workflowName,
+        cacheEnabled,
+        signal,
+        disabledAgents,
+        runAbortController,
+        hijackState,
+        legacyExecuteTaskFn,
+      ),
+    catch: (cause) => toSmithersError(cause, "execute task bridge"),
+  });

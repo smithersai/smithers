@@ -1,7 +1,6 @@
 import * as WorkflowEngine from "@effect/workflow/WorkflowEngine";
 import { Cause, Effect, Exit, Layer, ManagedRuntime } from "effect";
 import { DurablePrimitivesLive } from "@smithers/durables/DurablePrimitivesLive";
-import { ExecutionServiceLive } from "@smithers/driver/ExecutionServiceLive";
 import { SchedulerLive, WorkflowSessionLive } from "@smithers/scheduler";
 import {
   CorrelationContextLive,
@@ -24,7 +23,6 @@ const SmithersCoreLayer = Layer.mergeAll(
   ObservabilityLayer,
   SchedulerLive.pipe(Layer.provide(ObservabilityLayer)),
   DurablePrimitivesLive,
-  ExecutionServiceLive,
   WorkflowSessionLive,
 );
 

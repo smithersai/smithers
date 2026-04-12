@@ -47,7 +47,7 @@ export type CachePolicy<Ctx = any> = {
   [key: string]: unknown;
 };
 
-export type VoiceProvider = unknown;
+
 export type AgentLike = {
   id?: string;
   tools?: Record<string, any>;
@@ -162,8 +162,7 @@ export type TaskDescriptor = {
   label?: string;
   meta?: Record<string, unknown>;
   scorers?: ScorersMap;
-  voice?: VoiceProvider;
-  voiceSpeaker?: string;
+
   memoryConfig?: TaskMemoryConfig;
 };
 

@@ -11,7 +11,7 @@ import {
 import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type { HotReloadOptions } from "@smithers/driver/RunOptions";
 import { Metric } from "effect";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { logInfo, logWarning } from "@smithers/observability/logging";
 import { hotReloads, hotReloadFailures, hotReloadDuration } from "@smithers/observability/metrics";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -81,9 +81,10 @@ export class HotWorkflowController {
 
   initEffect() {
     return Effect.gen(this, function* () {
-      yield* fromPromise("create hot reload output dir", () =>
-        mkdir(this.outDir, { recursive: true }),
-      );
+      yield* Effect.tryPromise({
+        try: () => mkdir(this.outDir, { recursive: true }),
+        catch: (cause) => toSmithersError(cause, "create hot reload output dir"),
+      });
       yield* this.watcher.startEffect();
       yield* Effect.sync(() => {
         logInfo("initialized hot workflow controller", {
@@ -131,7 +132,10 @@ export class HotWorkflowController {
       const overlayUrl = pathToFileURL(overlayEntry).href;
 
       const mod = yield* Effect.either(
-        fromPromise("import hot workflow generation", () => import(overlayUrl)),
+        Effect.tryPromise({
+          try: () => import(overlayUrl),
+          catch: (cause) => toSmithersError(cause, "import hot workflow generation"),
+        }),
       );
       if (mod._tag === "Left") {
         logWarning("hot workflow import failed", {
@@ -236,9 +240,10 @@ export class HotWorkflowController {
       this.closed = true;
       this.watcher.close();
       yield* Effect.either(
-        fromPromise("remove hot reload output dir", () =>
-          rm(this.outDir, { recursive: true, force: true }),
-        ),
+        Effect.tryPromise({
+          try: () => rm(this.outDir, { recursive: true, force: true }),
+          catch: (cause) => toSmithersError(cause, "remove hot reload output dir"),
+        }),
       );
       logInfo("closed hot workflow controller", {
         entryPath: this.entryPath,

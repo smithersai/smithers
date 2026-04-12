@@ -33,7 +33,6 @@ import {
 import { runFork, runPromise } from "./smithersRuntime";
 import { prometheusContentType, renderPrometheusMetrics } from "@smithers/observability";
 import { nowMs } from "@smithers/scheduler/nowMs";
-import { newRunId } from "@smithers/driver/newRunId";
 import { errorToJson } from "@smithers/errors/errorToJson";
 import { isSmithersError } from "@smithers/errors/isSmithersError";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -1802,7 +1801,7 @@ export class Gateway {
     workflowKey: string,
     input: Record<string, unknown>,
     auth: RunStartAuthContext,
-    runId = newRunId(),
+    runId = crypto.randomUUID(),
     options?: { resume?: boolean },
   ) {
     const entry = this.workflows.get(workflowKey);
@@ -1847,7 +1846,7 @@ export class Gateway {
       auth.subscribeConnection.subscribedRuns.add(runId);
     }
 
-    const runPromise = runWorkflow(entry.workflow, {
+    const runPromise = Effect.runPromise(runWorkflow(entry.workflow, {
       runId,
       input,
       resume: options?.resume,
@@ -1864,7 +1863,7 @@ export class Gateway {
         role: auth.role,
         createdAt: new Date().toISOString(),
       },
-    } as any)
+    } as any))
       .catch((error) => {
         emitGatewayEffect(
           Effect.all([
@@ -2803,7 +2802,7 @@ export class Gateway {
               role: connection.role ?? "operator",
               subscribeConnection: connection,
             },
-            asString(params.runId) ?? newRunId(),
+            asString(params.runId) ?? crypto.randomUUID(),
             { resume: false },
           ),
         );

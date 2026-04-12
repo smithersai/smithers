@@ -1,11 +1,10 @@
 import React from "react";
-import type { SmithersCtx } from "@smithers/driver/SmithersCtx";
+import { SmithersCtx } from "@smithers/driver/SmithersCtx";
 import { SmithersError } from "@smithers/errors/SmithersError";
 
-export * from "@smithers/driver/buildContext";
-export type { SmithersCtx } from "@smithers/driver/SmithersCtx";
+export { SmithersCtx } from "@smithers/driver/SmithersCtx";
+export type { SmithersCtxOptions } from "@smithers/driver/SmithersCtx";
 export type { OutputSnapshot } from "@smithers/driver/OutputSnapshot";
-export type { BuildContextOptions } from "@smithers/driver/BuildContextOptions";
 
 export const SmithersContext = React.createContext<SmithersCtx<any> | null>(null);
 SmithersContext.displayName = "SmithersContext";

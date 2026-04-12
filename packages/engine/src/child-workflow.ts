@@ -1,5 +1,6 @@
 import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type { RunResult } from "@smithers/driver/RunResult";
+import { Effect } from "effect";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { SmithersDb } from "@smithers/db/adapter";
 import { requireTaskRuntime } from "@smithers/driver/task-runtime";
@@ -159,7 +160,7 @@ export async function executeChildWorkflow(
     };
   }
   const { runWorkflow } = await import("./index");
-  const result = await runWorkflow(childWorkflow, {
+  const result = await Effect.runPromise(runWorkflow(childWorkflow, {
     input,
     runId: childRunId,
     resume,
@@ -170,7 +171,7 @@ export async function executeChildWorkflow(
     maxOutputBytes: options.maxOutputBytes,
     toolTimeoutMs: options.toolTimeoutMs,
     signal: options.signal ?? runtime.signal,
-  });
+  }));
   return {
     runId: result.runId,
     status: result.status,

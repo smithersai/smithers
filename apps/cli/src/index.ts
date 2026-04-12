@@ -12,8 +12,8 @@ import { signalRun } from "@smithers/engine/signals";
 import { loadInput, loadOutputs } from "@smithers/db/snapshot";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { SmithersDb } from "@smithers/db/adapter";
-import { buildContext } from "@smithers/driver";
-import { fromPromise } from "@smithers/driver/interop";
+import { SmithersCtx } from "@smithers/driver";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { runFork, runPromise } from "./smithersRuntime";
 import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import { trackEvent } from "@smithers/observability/metrics";
@@ -104,7 +104,10 @@ async function loadWorkflowAsync(path: string): Promise<SmithersWorkflow<any>> {
 }
 
 function loadWorkflowEffect(path: string) {
-  return fromPromise("cli load workflow", () => loadWorkflowAsync(path)).pipe(
+  return Effect.tryPromise({
+    try: () => loadWorkflowAsync(path),
+    catch: (cause) => toSmithersError(cause, "cli load workflow"),
+  }).pipe(
     Effect.annotateLogs({ workflowPath: path }),
     Effect.withLogSpan("cli:load-workflow"),
   );
@@ -1717,7 +1720,7 @@ async function executeUpCommand(
         );
       }
 
-      const workflowPromise = runWorkflow(workflow!, {
+      const workflowPromise = Effect.runPromise(runWorkflow(workflow!, {
         input,
         runId: effectiveRunId,
         resume,
@@ -1732,7 +1735,7 @@ async function executeUpCommand(
         hot: options.hot,
         onProgress,
         signal: abort.signal,
-      });
+      }));
 
       workflowPromise.then((result) => {
         process.stderr.write(
@@ -1778,7 +1781,7 @@ async function executeUpCommand(
       });
     }
 
-    const result = await runWorkflow(workflow!, {
+    const result = await Effect.runPromise(runWorkflow(workflow!, {
       input,
       runId,
       resume,
@@ -1793,7 +1796,7 @@ async function executeUpCommand(
       hot: options.hot,
       onProgress,
       signal: abort.signal,
-    });
+    }));
 
     process.exitCode = formatStatusExitCode(result.status);
     return c.ok(result, {
@@ -1932,21 +1935,13 @@ const cronPathArgs = z.object({
 const memoryListArgs = z.object({
   namespace: z.string().describe("Namespace to list facts for (e.g. 'workflow:my-flow')"),
 });
-const memoryRecallArgs = z.object({
-  query: z.string().describe("Search query for semantic recall"),
-});
-const memoryRecallOptions = z.object({
-  namespace: z.string().default("global:default").describe("Namespace for recall"),
-  workflow: z.string().describe("Path to a .tsx workflow file"),
-  topK: z.number().int().min(1).default(5).describe("Number of results to return"),
-});
 const memoryListOptions = z.object({
   workflow: z.string().describe("Path to a .tsx workflow file"),
 });
 
 const memoryCli = Cli.create({
   name: "memory",
-  description: "View and query cross-run memory facts and semantic recall.",
+  description: "View and query cross-run memory facts.",
 })
   .command("list", {
     description: "List all memory facts in a namespace.",
@@ -1977,158 +1972,6 @@ const memoryCli = Cli.create({
       } catch (err: any) {
         console.error(`Error: ${err?.message ?? String(err)}`);
         return c.error({ code: "MEMORY_LIST_FAILED", message: err?.message ?? String(err) });
-      }
-    },
-  })
-  .command("recall", {
-    description: "Search semantic memory by similarity.",
-    args: memoryRecallArgs,
-    options: memoryRecallOptions,
-    alias: { workflow: "w", namespace: "n", topK: "k" },
-    async run(c) {
-      try {
-        const { createSemanticMemory } = await import("@smithers/memory/semantic");
-        const { parseNamespace } = await import("@smithers/memory/types");
-        const { createSqliteVectorStore } = await import("@smithers/rag/vector-store");
-        const { openai } = await import("@ai-sdk/openai");
-
-        const workflow = await loadWorkflowAsync(c.options.workflow);
-        ensureSmithersTables(workflow.db as any);
-        setupSqliteCleanup(workflow);
-
-        const vectorStore = createSqliteVectorStore(workflow.db);
-        const semantic = createSemanticMemory(
-          vectorStore,
-          openai.embedding("text-embedding-3-small"),
-        );
-
-        const ns = parseNamespace(c.options.namespace);
-        const results = await semantic.recall(ns, c.args.query, { topK: c.options.topK });
-        if (results.length === 0) {
-          console.log("No results found.");
-          return c.ok({ query: c.args.query, namespace: c.options.namespace, results: [] });
-        }
-        for (const r of results) {
-          const preview = r.chunk.content.replace(/\n/g, " ").slice(0, 120);
-          console.log(`[${r.score.toFixed(4)}] ${preview}${r.chunk.content.length > 120 ? "..." : ""}`);
-        }
-        return c.ok({
-          query: c.args.query,
-          namespace: c.options.namespace,
-          results: results.map((r) => ({
-            score: r.score,
-            content: r.chunk.content,
-            metadata: r.metadata,
-          })),
-        });
-      } catch (err: any) {
-        console.error(`Error: ${err?.message ?? String(err)}`);
-        return c.error({ code: "MEMORY_RECALL_FAILED", message: err?.message ?? String(err) });
-      }
-    },
-  });
-
-const ragIngestArgs = z.object({
-  file: z.string().describe("Path to the file to ingest"),
-});
-const ragIngestOptions = z.object({
-  workflow: z.string().describe("Path to a .tsx workflow file"),
-  namespace: z.string().default("default").describe("Vector namespace"),
-  strategy: z.string().default("recursive").describe("Chunking strategy: recursive, character, sentence, markdown, token"),
-  size: z.number().int().min(1).default(1000).describe("Chunk size"),
-  overlap: z.number().int().min(0).default(200).describe("Chunk overlap"),
-});
-const ragQueryArgs = z.object({
-  query: z.string().describe("Search query"),
-});
-const ragQueryOptions = z.object({
-  workflow: z.string().describe("Path to a .tsx workflow file"),
-  namespace: z.string().default("default").describe("Vector namespace"),
-  topK: z.number().int().min(1).default(5).describe("Number of results to return"),
-});
-
-const ragCli = Cli.create({
-  name: "rag",
-  description: "Ingest documents and query the RAG knowledge base.",
-})
-  .command("ingest", {
-    description: "Chunk and embed a file into the vector store.",
-    args: ragIngestArgs,
-    options: ragIngestOptions,
-    alias: { workflow: "w", namespace: "n" },
-    async run(c) {
-      try {
-        const { createSqliteVectorStore } = await import("@smithers/rag/vector-store");
-        const { createRagPipeline } = await import("@smithers/rag/pipeline");
-        const { loadDocument } = await import("@smithers/rag/document");
-        const { openai } = await import("@ai-sdk/openai");
-
-        const workflow = await loadWorkflowAsync(c.options.workflow);
-        ensureSmithersTables(workflow.db as any);
-        setupSqliteCleanup(workflow);
-
-        const store = createSqliteVectorStore(workflow.db);
-        const pipeline = createRagPipeline({
-          vectorStore: store,
-          embeddingModel: openai.embedding("text-embedding-3-small"),
-          chunkOptions: {
-            strategy: c.options.strategy as any,
-            size: c.options.size,
-            overlap: c.options.overlap,
-          },
-          namespace: c.options.namespace,
-        });
-
-        const doc = loadDocument(c.args.file);
-        await pipeline.ingest([doc]);
-        const count = await store.count(c.options.namespace);
-        console.log(`[+] Ingested ${c.args.file} into namespace "${c.options.namespace}" (${count} total chunks)`);
-        return c.ok({ file: c.args.file, namespace: c.options.namespace, totalChunks: count });
-      } catch (err: any) {
-        console.error(`Error: ${err?.message ?? String(err)}`);
-        return c.error({ code: "RAG_INGEST_FAILED", message: err?.message ?? String(err) });
-      }
-    },
-  })
-  .command("query", {
-    description: "Search the vector store for relevant chunks.",
-    args: ragQueryArgs,
-    options: ragQueryOptions,
-    alias: { workflow: "w", namespace: "n", topK: "k" },
-    async run(c) {
-      try {
-        const { createSqliteVectorStore } = await import("@smithers/rag/vector-store");
-        const { createRagPipeline } = await import("@smithers/rag/pipeline");
-        const { openai } = await import("@ai-sdk/openai");
-
-        const workflow = await loadWorkflowAsync(c.options.workflow);
-        ensureSmithersTables(workflow.db as any);
-        setupSqliteCleanup(workflow);
-
-        const store = createSqliteVectorStore(workflow.db);
-        const pipeline = createRagPipeline({
-          vectorStore: store,
-          embeddingModel: openai.embedding("text-embedding-3-small"),
-          namespace: c.options.namespace,
-        });
-
-        const results = await pipeline.retrieve(c.args.query, { topK: c.options.topK });
-        for (const r of results) {
-          const preview = r.chunk.content.replace(/\n/g, " ").slice(0, 120);
-          console.log(`[${r.score.toFixed(4)}] ${preview}${r.chunk.content.length > 120 ? "..." : ""}`);
-        }
-        return c.ok({
-          query: c.args.query,
-          namespace: c.options.namespace,
-          results: results.map((r) => ({
-            score: r.score,
-            content: r.chunk.content,
-            metadata: r.metadata,
-          })),
-        });
-      } catch (err: any) {
-        console.error(`Error: ${err?.message ?? String(err)}`);
-        return c.error({ code: "RAG_QUERY_FAILED", message: err?.message ?? String(err) });
       }
     },
   });
@@ -4149,7 +3992,7 @@ const cli = Cli.create({
             ? ((await loadInput(workflow.db as any, inputTable, c.options.runId)) ?? {})
             : {};
         const outputs = await loadOutputs(workflow.db as any, schema, c.options.runId);
-        const ctx = buildContext({
+        const ctx = new SmithersCtx({
           runId: c.options.runId,
           iteration: 0,
           input: inputRow ?? {},
@@ -4251,7 +4094,7 @@ const cli = Cli.create({
 
           const workflow = await loadWorkflow(c.args.workflow);
           const abort = setupAbortSignal();
-          const runResult = await runWorkflow(workflow, {
+          const runResult = await Effect.runPromise(runWorkflow(workflow, {
             input: {},
             runId: c.options.runId,
             workflowPath: c.args.workflow,
@@ -4259,7 +4102,7 @@ const cli = Cli.create({
             force: c.options.force,
             onProgress,
             signal: abort.signal,
-          });
+          }));
           process.exitCode = formatStatusExitCode(runResult.status);
           return c.ok({
             ...resetResult,
@@ -4335,7 +4178,7 @@ const cli = Cli.create({
           const workflow = await loadWorkflow(c.args.workflow);
           const onProgress = buildProgressReporter();
           const abort = setupAbortSignal();
-          const runResult = await runWorkflow(workflow, {
+          const runResult = await Effect.runPromise(runWorkflow(workflow, {
             input: {},
             runId: c.options.runId,
             workflowPath: c.args.workflow,
@@ -4343,7 +4186,7 @@ const cli = Cli.create({
             force: true,
             onProgress,
             signal: abort.signal,
-          });
+          }));
           process.exitCode = formatStatusExitCode(runResult.status);
           return c.ok({
             ...result,
@@ -4529,8 +4372,8 @@ const cli = Cli.create({
           const workflow = await loadWorkflow(c.args.workflow);
           const onProgress = buildProgressReporter();
           const abort = setupAbortSignal();
-          const { runWorkflow } = await import("@smithers/engine");
-          const runResult = await runWorkflow(workflow, {
+          const engine = await import("@smithers/engine");
+          const runResult = await Effect.runPromise(engine.runWorkflow(workflow, {
             input: {},
             runId: result.runId,
             workflowPath: c.args.workflow,
@@ -4538,7 +4381,7 @@ const cli = Cli.create({
             force: true,
             onProgress,
             signal: abort.signal,
-          });
+          }));
           process.exitCode = formatStatusExitCode(runResult.status);
           return c.ok({
             forkedRunId: result.runId,
@@ -4650,8 +4493,8 @@ const cli = Cli.create({
             const workflow = await loadWorkflow(c.args.workflow);
             const onProgress = buildProgressReporter();
             const abort = setupAbortSignal();
-            const { runWorkflow } = await import("@smithers/engine");
-            const runResult = await runWorkflow(workflow, {
+            const engine = await import("@smithers/engine");
+            const runResult = await Effect.runPromise(engine.runWorkflow(workflow, {
               input: {},
               runId: result.runId,
               workflowPath: c.args.workflow,
@@ -4659,7 +4502,7 @@ const cli = Cli.create({
               force: true,
               onProgress,
               signal: abort.signal,
-            });
+            }));
             process.exitCode = formatStatusExitCode(runResult.status);
             return c.ok({
               forkedRunId: result.runId,
@@ -4731,7 +4574,6 @@ const cli = Cli.create({
 
   .command(workflowCli)
   .command(cronCli)
-  .command(ragCli)
 
   .command(agentsCli)
   .command(memoryCli)
@@ -4750,7 +4592,7 @@ wrapCliCommandHandlersWithInputBounds(cliCommands);
 const KNOWN_COMMANDS = new Set([
   "init", "up", "supervise", "down", "ps", "logs", "events", "chat", "inspect", "node", "why", "approve", "deny",
   "cancel", "graph", "revert", "scores", "observability", "workflow", "ask", "cron",
-  "replay", "diff", "fork", "timeline", "rag", "memory", "openapi", "agents", "alerts",
+  "replay", "diff", "fork", "timeline", "memory", "openapi", "agents", "alerts",
 ]);
 
 const BUILTIN_FLAGS_WITH_VALUES = new Set([

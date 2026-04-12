@@ -7,7 +7,7 @@ import type {
   StreamTextResult,
 } from "ai";
 import type { AgentCapabilityRegistry } from "../capability-registry";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { logDebug, logInfo, logWarning } from "@smithers/observability/logging";
 import {
   agentDurationMs,
@@ -646,14 +646,16 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
       ),
     ], { discard: true }).pipe(
       Effect.andThen(
-        fromPromise("build agent command", () =>
-          this.buildCommand({
-            prompt,
-            systemPrompt: combinedSystem,
-            cwd,
-            options,
-          }),
-        ),
+        Effect.tryPromise({
+          try: () =>
+            this.buildCommand({
+              prompt,
+              systemPrompt: combinedSystem,
+              cwd,
+              options,
+            }),
+          catch: (cause) => toSmithersError(cause, "build agent command"),
+        }),
       ),
       Effect.flatMap((commandSpec) => {
         cleanup = commandSpec.cleanup;
@@ -763,9 +765,10 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
           emitEvents(interpreter?.onExit?.(result));
 
           const stdout = commandSpec.outputFile
-            ? yield* fromPromise("read output file", () =>
-                fs.readFile(commandSpec.outputFile!, "utf8"),
-              ).pipe(Effect.catchAll(() => Effect.succeed(result.stdout)))
+            ? yield* Effect.tryPromise({
+                try: () => fs.readFile(commandSpec.outputFile!, "utf8"),
+                catch: (cause) => toSmithersError(cause, "read output file"),
+              }).pipe(Effect.catchAll(() => Effect.succeed(result.stdout)))
             : result.stdout;
 
           if (result.exitCode && result.exitCode !== 0) {
@@ -874,14 +877,17 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
               durationMs: performance.now() - invocationStart,
             }),
           ),
-          fromPromise("enrich diagnostics", async () => {
-            if (!diagnosticsPromise) return;
-            const report = await diagnosticsPromise.catch(() => null);
-            if (report && err instanceof SmithersError) {
-              enrichReportWithErrorAnalysis(report, err.message);
-              err.details = { ...err.details, diagnostics: report };
-              logWarning(formatDiagnosticSummary(report), {}, span);
-            }
+          Effect.tryPromise({
+            try: async () => {
+              if (!diagnosticsPromise) return;
+              const report = await diagnosticsPromise.catch(() => null);
+              if (report && err instanceof SmithersError) {
+                enrichReportWithErrorAnalysis(report, err.message);
+                err.details = { ...err.details, diagnostics: report };
+                logWarning(formatDiagnosticSummary(report), {}, span);
+              }
+            },
+            catch: (cause) => toSmithersError(cause, "enrich diagnostics"),
           }).pipe(Effect.ignore),
         ], { discard: true }),
       ),
@@ -889,7 +895,10 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
       Effect.ensuring(Effect.suspend(() => {
         const cleanupFn = cleanup;
         return cleanupFn
-          ? fromPromise("agent cleanup", () => cleanupFn()).pipe(Effect.ignore)
+          ? Effect.tryPromise({
+              try: () => cleanupFn(),
+              catch: (cause) => toSmithersError(cause, "agent cleanup"),
+            }).pipe(Effect.ignore)
           : Effect.void;
       })),
       Effect.ensuring(recordDurationMetric()),

@@ -5,13 +5,12 @@ import { pathToFileURL } from "node:url";
 import { resolve, dirname, sep, basename } from "node:path";
 import { Effect } from "effect";
 import { isRunHeartbeatFresh, runWorkflow } from "@smithers/engine";
-import { newRunId } from "@smithers/driver/newRunId";
 import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { Metric } from "effect";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { logError, logInfo, logWarning } from "@smithers/observability/logging";
 import { runPromise, runSync } from "./smithersRuntime";
 import { httpRequests, httpRequestDuration, trackEvent } from "@smithers/observability/metrics";
@@ -182,7 +181,10 @@ async function loadWorkflow(absPath: string): Promise<SmithersWorkflow<any>> {
 }
 
 function loadWorkflowEffect(absPath: string) {
-  return fromPromise("load workflow module", () => loadWorkflow(absPath)).pipe(
+  return Effect.tryPromise({
+    try: () => loadWorkflow(absPath),
+    catch: (cause) => toSmithersError(cause, "load workflow module"),
+  }).pipe(
     Effect.annotateLogs({ workflowPath: absPath }),
     Effect.withLogSpan("server:load-workflow"),
   );
@@ -416,7 +418,10 @@ function buildMirrorOnProgress(
 
   const mirrorEventEffect = (event: SmithersEvent) =>
     Effect.gen(function* () {
-      yield* fromPromise("ensure mirrored run", () => ensureRun());
+      yield* Effect.tryPromise({
+        try: () => ensureRun(),
+        catch: (cause) => toSmithersError(cause, "ensure mirrored run"),
+      });
       yield* adapter.insertEventWithNextSeq({
         runId,
         timestampMs: event.timestampMs,
@@ -712,7 +717,7 @@ function startServerInternal(opts: ServerOptions = {}) {
             "runId is required when resume is true",
           );
         }
-        const runId = body.runId ?? newRunId();
+        const runId = body.runId ?? crypto.randomUUID();
         const adapter = new SmithersDb(workflow.db as any);
         const existing = await adapter.getRun(runId);
         if (body.resume && existing && isRunHeartbeatFresh(existing)) {
@@ -756,7 +761,7 @@ function startServerInternal(opts: ServerOptions = {}) {
           sameDb,
         }, "server:run");
 
-        runWorkflow(workflow, {
+        Effect.runPromise(runWorkflow(workflow, {
           runId,
           input: body.input ?? {},
           resume: body.resume ?? false,
@@ -766,7 +771,7 @@ function startServerInternal(opts: ServerOptions = {}) {
           rootDir: effectiveRoot,
           allowNetwork,
           onProgress: mirrorOnProgress,
-        })
+        }))
           .then((result) => {
             finalizeRunRecord(result.runId, result.status, Boolean(serverDb));
           })
@@ -861,7 +866,7 @@ function startServerInternal(opts: ServerOptions = {}) {
           }),
         );
 
-        runWorkflow(workflow, {
+        Effect.runPromise(runWorkflow(workflow, {
           runId,
           input: body.input ?? {},
           resume: true,
@@ -871,7 +876,7 @@ function startServerInternal(opts: ServerOptions = {}) {
           rootDir: effectiveRoot,
           allowNetwork,
           onProgress: mirrorOnProgress,
-        })
+        }))
           .then((result) => {
             finalizeRunRecord(runId, result.status, Boolean(serverDb));
           })

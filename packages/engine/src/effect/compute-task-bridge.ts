@@ -15,6 +15,7 @@ import { fromTaggedError } from "@smithers/errors/fromTaggedError";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { getJjPointer } from "@smithers/vcs/jj";
+import * as BunContext from "@effect/platform-bun/BunContext";
 
 const TASK_HEARTBEAT_THROTTLE_MS = 500;
 const TASK_HEARTBEAT_MAX_PAYLOAD_BYTES = 1_000_000;
@@ -655,7 +656,7 @@ export const executeComputeTaskBridge = async (
     payload = validation.data;
     taskExecutionReturned = true;
     await eventBus.flush();
-    const jjPointer = await getJjPointer(toolConfig.rootDir);
+    const jjPointer = await Effect.runPromise(getJjPointer(toolConfig.rootDir).pipe(Effect.provide(BunContext.layer)));
 
     await waitForHeartbeatWriteDrain();
     await flushHeartbeat(true);

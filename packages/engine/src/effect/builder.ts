@@ -952,10 +952,10 @@ function createWorkflow(options: { name: string; input: AnySchema }) {
                     opts: {},
                   } as any;
 
-                  const result = await runWorkflow(workflow, {
+                  const result = await Effect.runPromise(runWorkflow(workflow, {
                     ...opts,
                     input: encodedInput as Record<string, unknown>,
-                  });
+                  }));
 
                   if (result.status === "finished") {
                     return await extractResult(root, runtime.db, result.runId, decodedInput);

@@ -4,7 +4,7 @@ import { isAbsolute, resolve } from "node:path";
 import { Effect, Schedule } from "effect";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import type { SmithersDb, StaleRunRecord } from "@smithers/db/adapter";
-import { fromSync } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { trackEvent } from "@smithers/observability/metrics";
 import { isPidAlive, parseRuntimeOwnerPid } from "@smithers/engine/runtime-owner";
 import { SmithersError } from "@smithers/errors";
@@ -311,20 +311,19 @@ function processCandidateEffect(
         return "skipped" as const;
       }
 
-      const spawnResult = yield* fromSync(
-        `resume stale run ${staleRun.runId}`,
-        () =>
+      const spawnResult = yield* Effect.try({
+        try: () =>
           options.deps.spawnResumeDetached(workflowPath, staleRun.runId, {
             claimOwnerId,
             claimHeartbeatAtMs,
             restoreRuntimeOwnerId: staleRun.runtimeOwnerId ?? null,
             restoreHeartbeatAtMs: staleRun.heartbeatAtMs ?? null,
           }),
-        {
+        catch: (cause) => toSmithersError(cause, `resume stale run ${staleRun.runId}`, {
           code: "PROCESS_SPAWN_FAILED",
           details: { runId: staleRun.runId, workflowPath },
-        },
-      ).pipe(
+        }),
+      }).pipe(
         Effect.either,
       );
 
@@ -422,14 +421,13 @@ function processTimerCandidateEffect(
         return "skipped" as const;
       }
 
-      const spawnResult = yield* fromSync(
-        `resume timer run ${run.runId}`,
-        () => options.deps.spawnResumeDetached(workflowPath, run.runId),
-        {
+      const spawnResult = yield* Effect.try({
+        try: () => options.deps.spawnResumeDetached(workflowPath, run.runId),
+        catch: (cause) => toSmithersError(cause, `resume timer run ${run.runId}`, {
           code: "PROCESS_SPAWN_FAILED",
           details: { runId: run.runId, workflowPath },
-        },
-      ).pipe(Effect.either);
+        }),
+      }).pipe(Effect.either);
 
       if (spawnResult._tag === "Left") {
         yield* Effect.logWarning(

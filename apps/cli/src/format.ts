@@ -252,16 +252,7 @@ export function formatEventLine(event: {
       return `${prefix}${payload?.success ? "✓" : "✗"} Time travel ${payload?.success ? "finished" : "failed"} on ${payload?.nodeId ?? "?"}`;
     case "OpenApiToolCalled":
       return `${prefix}🌐 ${payload?.method ?? "?"} ${payload?.path ?? payload?.operationId ?? "?"} (${payload?.status ?? "unknown"})`;
-    case "VoiceStarted":
-      return `${prefix}🗣 Voice ${payload?.operation ?? "operation"} started (${payload?.provider ?? "provider"})`;
-    case "VoiceFinished":
-      return `${prefix}🗣 Voice ${payload?.operation ?? "operation"} finished (${payload?.durationMs ?? 0}ms)`;
-    case "VoiceError":
-      return `${prefix}🗣 Voice ${payload?.operation ?? "operation"} error`;
-    case "RagIngested":
-      return `${prefix}📚 RAG ingested ${payload?.documentCount ?? 0} docs`;
-    case "RagRetrieved":
-      return `${prefix}📚 RAG retrieved ${payload?.resultCount ?? 0} results`;
+
     case "MemoryFactSet":
       return `${prefix}🧠 Memory set ${payload?.namespace ?? "default"}/${payload?.key ?? "?"}`;
     case "MemoryRecalled":

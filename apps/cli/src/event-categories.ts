@@ -10,7 +10,6 @@ export type EventCategory =
   | "node"
   | "openapi"
   | "output"
-  | "rag"
   | "revert"
   | "run"
   | "sandbox"
@@ -20,7 +19,7 @@ export type EventCategory =
   | "timer"
   | "token"
   | "tool-call"
-  | "voice"
+
   | "workflow";
 
 const EVENT_CATEGORY_BY_TYPE: Record<SmithersEventType, EventCategory> = {
@@ -82,11 +81,7 @@ const EVENT_CATEGORY_BY_TYPE: Record<SmithersEventType, EventCategory> = {
   SnapshotCaptured: "snapshot",
   RunForked: "run",
   ReplayStarted: "run",
-  VoiceStarted: "voice",
-  VoiceFinished: "voice",
-  VoiceError: "voice",
-  RagIngested: "rag",
-  RagRetrieved: "rag",
+
   MemoryFactSet: "memory",
   MemoryRecalled: "memory",
   MemoryMessageSaved: "memory",
@@ -105,7 +100,6 @@ const CATEGORY_ALIASES: Record<string, EventCategory> = {
   node: "node",
   openapi: "openapi",
   output: "output",
-  rag: "rag",
   revert: "revert",
   run: "run",
   sandbox: "sandbox",
@@ -118,7 +112,7 @@ const CATEGORY_ALIASES: Record<string, EventCategory> = {
   toolcall: "tool-call",
   "tool-call": "tool-call",
   "tool_call": "tool-call",
-  voice: "voice",
+
   workflow: "workflow",
   reload: "workflow",
 };
@@ -139,7 +133,6 @@ const EVENT_TYPES_BY_CATEGORY = Object.entries(
     node: [],
     openapi: [],
     output: [],
-    rag: [],
     revert: [],
     run: [],
     sandbox: [],
@@ -149,7 +142,7 @@ const EVENT_TYPES_BY_CATEGORY = Object.entries(
     timer: [],
     token: [],
     "tool-call": [],
-    voice: [],
+
     workflow: [],
   },
 );

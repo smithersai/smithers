@@ -28,7 +28,6 @@ import { revertToAttempt } from "@smithers/time-travel/revert";
 import { runPromise } from "../smithersRuntime";
 import type { RunResult } from "@smithers/driver/RunResult";
 import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
-import { newRunId } from "@smithers/driver/newRunId";
 import { SmithersError } from "@smithers/errors";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 
@@ -831,7 +830,7 @@ export function createSemanticToolDefinitions(
       annotations: { readOnlyHint: false, openWorldHint: true },
       handler: (input) =>
         executeSemanticTool("run_workflow", async () => {
-          const runId = input.runId ?? newRunId();
+          const runId = input.runId ?? crypto.randomUUID();
           const { workflow, summary } = await loadWorkflowById(
             input.workflowId,
             context.cwd(),
@@ -853,7 +852,7 @@ export function createSemanticToolDefinitions(
             error: null,
           };
 
-          const launchPromise = runWorkflow(workflow, {
+          const launchPromise = Effect.runPromise(runWorkflow(workflow, {
             input: workflowInput,
             runId,
             resume: input.resume,
@@ -866,7 +865,7 @@ export function createSemanticToolDefinitions(
             maxOutputBytes: input.maxOutputBytes,
             toolTimeoutMs: input.toolTimeoutMs,
             hot: input.hot,
-          }).then(
+          })).then(
             (result) => {
               launchState.settled = true;
               launchState.result = result;

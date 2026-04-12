@@ -1,6 +1,6 @@
 import type { XmlNode, XmlElement } from "@smithers/graph/XmlNode";
 import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
-import type { VoiceProvider } from "../types";
+
 import { resolveStableId } from "@smithers/graph/utils/tree-ids";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { getTableName } from "drizzle-orm";
@@ -208,8 +208,7 @@ export function extractFromHost(
        * The top of the stack controls the effective root override for tasks.
        */
       worktreeStack: { id: string; path: string; branch?: string; baseBranch?: string }[];
-      /** Stack of active <Voice> contexts (outermost -> innermost). */
-      voiceStack: { provider: VoiceProvider; speaker?: string }[];
+
       /** Stack of ancestor loop scopes (outermost -> innermost). */
       loopStack: { ralphId: string; iteration: number }[];
     },
@@ -220,7 +219,7 @@ export function extractFromHost(
     const parallelStack = ctx.parallelStack;
     let ralphId = ctx.ralphId;
     const worktreeStack = ctx.worktreeStack;
-    let voiceStack = ctx.voiceStack;
+
     let loopStack = ctx.loopStack;
 
     if (node.tag === "smithers:ralph") {
@@ -283,15 +282,7 @@ export function extractFromHost(
       const baseBranch = node.rawProps?.baseBranch ? String(node.rawProps.baseBranch) : undefined;
       nextWorktreeStack = [...worktreeStack, { id, path: normPath, branch, baseBranch }];
     }
-    // Entering a Voice node: push onto the voice stack
-    let nextVoiceStack = voiceStack;
-    if (node.tag === "smithers:voice") {
-      const voiceProvider = node.rawProps?.provider as VoiceProvider | undefined;
-      if (voiceProvider) {
-        const voiceSpeaker = node.rawProps?.speaker ? String(node.rawProps.speaker) : undefined;
-        nextVoiceStack = [...voiceStack, { provider: voiceProvider, speaker: voiceSpeaker }];
-      }
-    }
+
     if (node.tag === "smithers:subflow") {
       const raw = node.rawProps || {};
       const logicalNodeId = raw.id;
@@ -894,7 +885,7 @@ export function extractFromHost(
       const parallelGroup = nextParallelStack[nextParallelStack.length - 1];
 
       const topWorktree = nextWorktreeStack[nextWorktreeStack.length - 1];
-      const topVoice = nextVoiceStack[nextVoiceStack.length - 1];
+
       const descriptor: TaskDescriptor = {
         nodeId,
         ordinal: ordinal++,
@@ -934,8 +925,7 @@ export function extractFromHost(
         scorers: raw.scorers,
         parallelGroupId: parallelGroup?.id,
         parallelMaxConcurrency: parallelGroup?.max,
-        voice: topVoice?.provider,
-        voiceSpeaker: topVoice?.speaker,
+
         memoryConfig: raw.memory ?? undefined,
       };
 
@@ -956,13 +946,13 @@ export function extractFromHost(
         parentIsRalph: node.tag === "smithers:ralph",
         parallelStack: nextParallelStack,
         worktreeStack: nextWorktreeStack,
-        voiceStack: nextVoiceStack,
+
         loopStack,
       });
     }
   }
 
-  walk(root, { path: [], iteration: 0, parentIsRalph: false, parallelStack: [], worktreeStack: [], voiceStack: [], loopStack: [] });
+  walk(root, { path: [], iteration: 0, parentIsRalph: false, parallelStack: [], worktreeStack: [], loopStack: [] });
 
   return { xml: toXmlNode(root), tasks, mountedTaskIds };
 }

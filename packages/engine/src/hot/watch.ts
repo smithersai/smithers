@@ -2,7 +2,7 @@ import { watch, type FSWatcher } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolve, relative } from "node:path";
 import { Effect } from "effect";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { logDebug, logInfo } from "@smithers/observability/logging";
 
 const DEFAULT_IGNORE = [
@@ -74,7 +74,10 @@ export class WatchTree {
   }
 
   startEffect() {
-    return fromPromise("start hot watch tree", () => this.watchDir(this.rootDir)).pipe(
+    return Effect.tryPromise({
+      try: () => this.watchDir(this.rootDir),
+      catch: (cause) => toSmithersError(cause, "start hot watch tree"),
+    }).pipe(
       Effect.annotateLogs({
         rootDir: this.rootDir,
         debounceMs: this.debounceMs,

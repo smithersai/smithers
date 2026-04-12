@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { CronExpressionParser } from "cron-parser";
 import { Effect, Schedule } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
-import { fromPromise, fromSync } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { runPromise } from "./smithersRuntime";
 import { findAndOpenDb } from "./find-db";
 
@@ -19,7 +19,10 @@ function formatError(error: unknown) {
 
 function acquireSchedulerDbEffect() {
   return Effect.acquireRelease(
-    fromPromise("find and open scheduler db", () => findAndOpenDb()),
+    Effect.tryPromise({
+      try: () => findAndOpenDb(),
+      catch: (cause) => toSmithersError(cause, "find and open scheduler db"),
+    }),
     ({ cleanup }) => Effect.sync(() => cleanup()),
   );
 }
@@ -34,26 +37,29 @@ function processCronEffect(
       `[smithers-cron] Triggering due workflow: ${job.workflowPath} (Schedule: ${job.pattern})`,
     );
 
-    yield* fromSync(`spawn cron workflow ${job.cronId}`, () => {
-      const proc = spawn(
-        "bun",
-        ["run", "src/cli/index.ts", "up", job.workflowPath, "-d"],
-        {
-          cwd: process.cwd(),
-          detached: true,
-          stdio: "ignore",
-        },
-      );
-      proc.unref();
+    yield* Effect.try({
+      try: () => {
+        const proc = spawn(
+          "bun",
+          ["run", "src/cli/index.ts", "up", job.workflowPath, "-d"],
+          {
+            cwd: process.cwd(),
+            detached: true,
+            stdio: "ignore",
+          },
+        );
+        proc.unref();
+      },
+      catch: (cause) => toSmithersError(cause, `spawn cron workflow ${job.cronId}`),
     });
 
-    const nextRunAtMs = yield* fromSync(
-      `calculate next run for cron ${job.cronId}`,
-      () => {
+    const nextRunAtMs = yield* Effect.try({
+      try: () => {
         const interval = CronExpressionParser.parse(job.pattern);
         return interval.next().getTime();
       },
-    );
+      catch: (cause) => toSmithersError(cause, `calculate next run for cron ${job.cronId}`),
+    });
 
     yield* adapter.updateCronRunTimeEffect(job.cronId, now, nextRunAtMs);
   }).pipe(

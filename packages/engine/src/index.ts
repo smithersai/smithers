@@ -14,7 +14,7 @@ import {
 import { ReactWorkflowDriver } from "@smithers/react-reconciler/driver";
 import type { WorkflowGraph } from "@smithers/graph/types";
 import { SmithersRenderer } from "@smithers/react-reconciler/dom/renderer";
-import { buildContext } from "@smithers/driver/buildContext";
+import { SmithersCtx } from "@smithers/driver/SmithersCtx";
 import { loadInput, loadOutputs } from "@smithers/db/snapshot";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { SmithersDb } from "@smithers/db/adapter";
@@ -31,9 +31,7 @@ import { validateInput } from "@smithers/db/input";
 import { schemaSignature } from "@smithers/db/schema-signature";
 import { withSqliteWriteRetry } from "@smithers/db/write-retry";
 import { canonicalizeXml } from "@smithers/graph/utils/xml";
-import { sha256Hex } from "@smithers/driver/sha256Hex";
 import { nowMs } from "@smithers/scheduler/nowMs";
-import { newRunId } from "@smithers/driver/newRunId";
 import { errorToJson } from "@smithers/errors/errorToJson";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import {
@@ -84,13 +82,13 @@ import type { ScorersMap as RuntimeScorersMap } from "@smithers/scorers/types";
 import { dirname, resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { logDebug, logError, logInfo, logWarning } from "@smithers/observability/logging";
 import { isPidAlive, parseRuntimeOwnerPid } from "./runtime-owner";
 import { HotWorkflowController } from "./hot";
 import type { HotReloadOptions } from "@smithers/driver/RunOptions";
 import { spawn as nodeSpawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { platform } from "node:os";
 import {
   annotateSmithersTrace,
@@ -118,6 +116,10 @@ import {
   updateCurrentCorrelationContext,
   withCorrelationContext,
 } from "@smithers/observability/correlation";
+
+function sha256Hex(input: string): string {
+  return createHash("sha256").update(input).digest("hex");
+}
 
 /**
  * Track which worktree paths have already been created this run so we don't
@@ -1255,7 +1257,7 @@ async function continueRunAsNew(
 
   const ancestry = await Effect.runPromise(adapter.listRunAncestry(runId, 10_000));
   const ancestryDepth = ancestry.length;
-  const targetRunId = newRunId();
+  const targetRunId = crypto.randomUUID();
   const ts = nowMs();
   const carriedRalphState = continuation.nextRalphState
     ? cloneRalphStateMap(continuation.nextRalphState)
@@ -4392,7 +4394,10 @@ export function renderFrameEffect<Schema>(
   ctx: any,
   opts?: { baseRootDir?: string; workflowPath?: string | null },
 ) {
-  return fromPromise("render frame", () => renderFrameAsync(workflow, ctx, opts)).pipe(
+  return Effect.tryPromise({
+    try: () => renderFrameAsync(workflow, ctx, opts),
+    catch: (cause) => toSmithersError(cause, "render frame"),
+  }).pipe(
     Effect.annotateLogs({
       runId: ctx?.runId ?? "",
       iteration: ctx?.iteration ?? 0,
@@ -4591,7 +4596,7 @@ async function runWorkflowAsync<Schema>(
   opts: RunOptions,
 ): Promise<RunResult> {
   validateRunOptions(opts);
-  const runId = opts.runId ?? newRunId();
+  const runId = opts.runId ?? crypto.randomUUID();
   return runWithCorrelationContext(
     {
       runId,
@@ -4667,7 +4672,7 @@ async function runWorkflowBodyDriver<Schema>(
   const db = workflow.db as any;
   ensureSmithersTables(db);
   const adapter = new SmithersDb(db);
-  const runId = opts.runId ?? newRunId();
+  const runId = opts.runId ?? crypto.randomUUID();
   const schema = resolveSchema(db);
   const inputTable = schema.input;
   if (!inputTable) {
@@ -5974,7 +5979,7 @@ async function runWorkflowBodyLegacy<Schema>(
   const db = workflow.db as any;
   ensureSmithersTables(db);
   const adapter = new SmithersDb(db);
-  const runId = opts.runId ?? newRunId();
+  const runId = opts.runId ?? crypto.randomUUID();
   let workflowSessionShadow: ReturnType<typeof makeWorkflowSession> | null = null;
   try {
     workflowSessionShadow = makeWorkflowSession({
@@ -6604,10 +6609,10 @@ async function runWorkflowBodyLegacy<Schema>(
       });
     const watchExternalSchedulerEventsEffect = Effect.gen(function* () {
       const initialState = yield* Effect.either(
-        fromPromise(
-          "read scheduler external event state",
-          readExternalSchedulerState,
-        ),
+        Effect.tryPromise({
+          try: () => readExternalSchedulerState(),
+          catch: (cause) => toSmithersError(cause, "read scheduler external event state"),
+        }),
       );
       let previous =
         initialState._tag === "Right"
@@ -6628,10 +6633,10 @@ async function runWorkflowBodyLegacy<Schema>(
       while (true) {
         yield* Effect.sleep(Duration.millis(SCHEDULER_EXTERNAL_EVENT_POLL_MS));
         const nextState = yield* Effect.either(
-          fromPromise(
-            "poll scheduler external event state",
-            readExternalSchedulerState,
-          ),
+          Effect.tryPromise({
+            try: () => readExternalSchedulerState(),
+            catch: (cause) => toSmithersError(cause, "poll scheduler external event state"),
+          }),
         );
         if (nextState._tag === "Left") {
           yield* Effect.sync(() => {
@@ -6903,7 +6908,7 @@ async function runWorkflowBodyLegacy<Schema>(
           ? runConfig.cliAgentToolsDefault
           : undefined;
 
-      const ctx = buildContext<Schema>({
+      const ctx = new SmithersCtx<Schema>({
         runId,
         iteration: defaultIteration,
         iterations: ralphIterationsObject(ralphState),
@@ -7371,9 +7376,8 @@ async function runWorkflowBodyLegacy<Schema>(
           let transition: ContinueAsNewTransition;
           try {
             transition = await Effect.runPromise(
-              fromPromise(
-                "continue-as-new explicit transition",
-                () =>
+              Effect.tryPromise({
+                try: () =>
                   continueRunAsNew({
                     db,
                     adapter,
@@ -7394,7 +7398,8 @@ async function runWorkflowBodyLegacy<Schema>(
                     },
                     ralphState,
                   }),
-              ).pipe(
+                catch: (cause) => toSmithersError(cause, "continue-as-new explicit transition"),
+              }).pipe(
                 Effect.annotateLogs({
                   runId,
                   iteration: continuationIteration,
@@ -7476,7 +7481,7 @@ async function runWorkflowBodyLegacy<Schema>(
             for (const ralph of schedule.readyRalphs) {
               const rState = ralphState.get(ralph.id);
               const ralphIteration = rState?.iteration ?? 0;
-              const perRalphCtx = buildContext<Schema>({
+              const perRalphCtx = new SmithersCtx<Schema>({
                 runId,
                 iteration: ralphIteration,
                 iterations: ralphIterationsObject(ralphState),
@@ -7553,9 +7558,8 @@ async function runWorkflowBodyLegacy<Schema>(
               let transition: ContinueAsNewTransition;
               try {
                 transition = await Effect.runPromise(
-                  fromPromise(
-                    "continue-as-new loop transition",
-                    () =>
+                  Effect.tryPromise({
+                    try: () =>
                       continueRunAsNew({
                         db,
                         adapter,
@@ -7583,7 +7587,8 @@ async function runWorkflowBodyLegacy<Schema>(
                         },
                         ralphState,
                       }),
-                  ).pipe(
+                    catch: (cause) => toSmithersError(cause, "continue-as-new loop transition"),
+                  }).pipe(
                     Effect.annotateLogs({
                       runId,
                       ralphId: ralph.id,
@@ -7802,10 +7807,10 @@ async function runWorkflowBodyLegacy<Schema>(
             throw error;
           }
 
-          const action = yield* fromPromise(
-            "run scheduler iteration",
-            runSchedulerIteration,
-          );
+          const action = yield* Effect.tryPromise({
+            try: () => runSchedulerIteration(),
+            catch: (cause) => toSmithersError(cause, "run scheduler iteration"),
+          });
 
           if (action.type === "return") {
             return action.result;
@@ -7855,10 +7860,10 @@ async function runWorkflowBodyLegacy<Schema>(
                       legacyExecuteTask,
                     ).pipe(
                       Effect.tap(() =>
-                        fromPromise(
-                          "workflow session shadow task settled",
-                          () => notifyWorkflowSessionTaskSettled(task),
-                        ),
+                        Effect.tryPromise({
+                          try: () => notifyWorkflowSessionTaskSettled(task),
+                          catch: (cause) => toSmithersError(cause, "workflow session shadow task settled"),
+                        }),
                       ),
                     ),
                     {
@@ -7878,10 +7883,10 @@ async function runWorkflowBodyLegacy<Schema>(
                 ).pipe(
                   Effect.catchAll((error) =>
                     Effect.gen(function* () {
-                      yield* fromPromise(
-                        "workflow session shadow task failed",
-                        () => notifyWorkflowSessionTaskSettled(task, error),
-                      );
+                      yield* Effect.tryPromise({
+                        try: () => notifyWorkflowSessionTaskSettled(task, error),
+                        catch: (cause) => toSmithersError(cause, "workflow session shadow task failed"),
+                      });
                       if (schedulerTaskError == null) {
                         schedulerTaskError = error;
                       }
@@ -7992,19 +7997,21 @@ async function runWorkflowBodyLegacy<Schema>(
   }
 }
 
-export function runWorkflowEffect<Schema>(
+export function runWorkflow<Schema>(
   workflow: SmithersWorkflow<Schema>,
   opts: RunOptions,
-) {
-  const runId = opts.runId ?? newRunId();
+): Effect.Effect<RunResult, SmithersError> {
+  const runId = opts.runId ?? crypto.randomUUID();
   return withSmithersSpan(
     smithersSpanNames.run,
-    fromPromise("run workflow", () =>
-      runWorkflowAsync(workflow, {
-        ...opts,
-        runId,
-      }),
-    ),
+    Effect.tryPromise({
+      try: () =>
+        runWorkflowAsync(workflow, {
+          ...opts,
+          runId,
+        }),
+      catch: (cause) => toSmithersError(cause, "run workflow"),
+    }),
     {
       runId,
       status: "running",
@@ -8017,11 +8024,4 @@ export function runWorkflowEffect<Schema>(
       root: true,
     },
   );
-}
-
-export async function runWorkflow<Schema>(
-  workflow: SmithersWorkflow<Schema>,
-  opts: RunOptions,
-): Promise<RunResult> {
-  return Effect.runPromise(runWorkflowEffect(workflow, opts));
 }

@@ -1,4 +1,4 @@
-import { sha256Hex } from "@smithers/driver/sha256Hex";
+import { createHash } from "node:crypto";
 import type { AgentCapabilityRegistry } from "./AgentCapabilityRegistry";
 import { normalizeCapabilityRegistry } from "./normalizeCapabilityRegistry";
 
@@ -43,9 +43,8 @@ function stableStringify(value: unknown): string {
 export function hashCapabilityRegistry(
   registry: AgentCapabilityRegistry | null | undefined,
 ): string {
-  return sha256Hex(
-    stableStringify({
-      capabilityRegistry: normalizeCapabilityRegistry(registry),
-    }),
-  );
+  const input = stableStringify({
+    capabilityRegistry: normalizeCapabilityRegistry(registry),
+  });
+  return createHash("sha256").update(input).digest("hex");
 }

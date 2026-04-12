@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 import type { SmithersDb } from "@smithers/db/adapter";
-import { buildContext } from "@smithers/driver";
+import { SmithersCtx } from "@smithers/driver";
 import { loadInput, loadOutputs } from "@smithers/db/snapshot";
 import { renderFrame, resolveSchema } from "@smithers/engine";
 import { mdxPlugin } from "smithers/mdx-plugin";
@@ -64,7 +64,7 @@ async function resolveConversationAgent(
     ? ((await loadInput(workflow.db as any, inputTable, candidate.runId)) ?? {})
     : {};
   const outputs = await loadOutputs(workflow.db as any, schema, candidate.runId);
-  const ctx = buildContext({
+  const ctx = new SmithersCtx({
     runId: candidate.runId,
     iteration: candidate.iteration,
     input: inputRow ?? {},

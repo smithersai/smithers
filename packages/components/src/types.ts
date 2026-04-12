@@ -1,14 +1,5 @@
-import type React from "react";
-import type { Workflow } from "@smithers/driver/Workflow";
-import type { WorkflowDriverOptions } from "@smithers/driver/WorkflowDriverOptions";
-
-export type SmithersWorkflow<Schema = unknown> = Workflow<
-  Schema,
-  React.ReactElement
->;
-
-export type SmithersWorkflowDriverOptions<Schema = unknown> =
-  WorkflowDriverOptions<Schema, React.ReactElement>;
+export type { WorkflowDefinition as SmithersWorkflow } from "@smithers/driver/WorkflowDefinition";
+export type { WorkflowDriverOptions as SmithersWorkflowDriverOptions } from "@smithers/driver/WorkflowDriverOptions";
 
 export type {
   EngineDecision,

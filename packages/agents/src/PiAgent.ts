@@ -26,7 +26,7 @@ import {
   normalizeCapabilityStringList,
   type AgentCapabilityRegistry,
 } from "./capability-registry";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { enrichReportWithErrorAnalysis, launchDiagnostics } from "./diagnostics";
 
@@ -442,13 +442,16 @@ export class PiAgent extends BaseCliAgent {
     };
 
     const diagnosticsEnrichment = (err: unknown) =>
-      fromPromise("enrich diagnostics", async () => {
-        if (!diagnosticsPromise) return;
-        const report = await diagnosticsPromise.catch(() => null);
-        if (report && err instanceof SmithersError) {
-          enrichReportWithErrorAnalysis(report, err.message);
-          err.details = { ...err.details, diagnostics: report };
-        }
+      Effect.tryPromise({
+        try: async () => {
+          if (!diagnosticsPromise) return;
+          const report = await diagnosticsPromise.catch(() => null);
+          if (report && err instanceof SmithersError) {
+            enrichReportWithErrorAnalysis(report, err.message);
+            err.details = { ...err.details, diagnostics: report };
+          }
+        },
+        catch: (cause) => toSmithersError(cause, "enrich diagnostics"),
       }).pipe(Effect.ignore);
 
     const rpcProgram = Effect.gen(this, function* () {

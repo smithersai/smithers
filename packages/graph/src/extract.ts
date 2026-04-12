@@ -294,7 +294,7 @@ export function extractGraph(
         readonly branch?: string;
         readonly baseBranch?: string;
       }[];
-      readonly voiceStack: readonly { readonly provider: unknown; readonly speaker?: string }[];
+
       readonly loopStack: readonly { readonly ralphId: string; readonly iteration: number }[];
     },
   ) {
@@ -306,7 +306,7 @@ export function extractGraph(
     let loopStack = ctx.loopStack;
     let nextParallelStack = ctx.parallelStack;
     let nextWorktreeStack = ctx.worktreeStack;
-    let nextVoiceStack = ctx.voiceStack;
+
 
     if (node.tag === "smithers:ralph") {
       if (ctx.parentIsRalph) {
@@ -366,21 +366,11 @@ export function extractGraph(
         },
       ];
     }
-    if (node.tag === "smithers:voice" && raw.provider) {
-      nextVoiceStack = [
-        ...ctx.voiceStack,
-        {
-          provider: raw.provider,
-          ...(raw.speaker ? { speaker: String(raw.speaker) } : {}),
-        },
-      ];
-    }
 
     const ancestorScope =
       loopStack.length > 1 ? buildLoopScope(loopStack.slice(0, -1)) : "";
     const parallelGroup = nextParallelStack[nextParallelStack.length - 1];
     const topWorktree = nextWorktreeStack[nextWorktreeStack.length - 1];
-    const topVoice = nextVoiceStack[nextVoiceStack.length - 1];
 
     const common = {
       iteration,
@@ -653,8 +643,7 @@ export function extractGraph(
           raw.scorers && typeof raw.scorers === "object" && !Array.isArray(raw.scorers)
             ? (raw.scorers as TaskDescriptor["scorers"])
             : undefined,
-        voice: topVoice?.provider,
-        voiceSpeaker: topVoice?.speaker,
+
         memoryConfig:
           raw.memory && typeof raw.memory === "object" && !Array.isArray(raw.memory)
             ? (raw.memory as Record<string, unknown>)
@@ -673,7 +662,7 @@ export function extractGraph(
         parentIsRalph: node.tag === "smithers:ralph",
         parallelStack: nextParallelStack,
         worktreeStack: nextWorktreeStack,
-        voiceStack: nextVoiceStack,
+
         loopStack,
       });
     }
@@ -685,7 +674,7 @@ export function extractGraph(
     parentIsRalph: false,
     parallelStack: [],
     worktreeStack: [],
-    voiceStack: [],
+
     loopStack: [],
   });
 

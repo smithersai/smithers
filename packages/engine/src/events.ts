@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
-import { fromPromise, fromSync } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { trackEvent } from "@smithers/observability/metrics";
 import type { CorrelationContext } from "@smithers/observability/correlation";
 import {
@@ -83,13 +83,16 @@ export class EventBus extends EventEmitter {
 
   flushEffect() {
     return withCurrentCorrelationContext(
-      fromPromise("flush queued events", async () => {
-        await this.persistTail;
-        if (this.persistError) {
-          const err = this.persistError;
-          this.persistError = null;
-          throw err;
-        }
+      Effect.tryPromise({
+        try: async () => {
+          await this.persistTail;
+          if (this.persistError) {
+            const err = this.persistError;
+            this.persistError = null;
+            throw err;
+          }
+        },
+        catch: (cause) => toSmithersError(cause, "flush queued events"),
       }).pipe(Effect.withLogSpan("event:flush")),
     );
   }
@@ -133,7 +136,10 @@ export class EventBus extends EventEmitter {
     this.persistTail = task.catch((error) => {
       this.persistError = error;
     });
-    return fromPromise("enqueue event persistence", () => task);
+    return Effect.tryPromise({
+      try: () => task,
+      catch: (cause) => toSmithersError(cause, "enqueue event persistence"),
+    });
   }
 
   private persistDbEffect(event: CorrelatedSmithersEvent): Effect.Effect<void, unknown> {
@@ -187,7 +193,10 @@ export class EventBus extends EventEmitter {
     row: any,
   ): Effect.Effect<void, unknown> {
     const db = this.db;
-    return fromSync(label, () => method.call(db, row)).pipe(
+    return Effect.try({
+      try: () => method.call(db, row),
+      catch: (cause) => toSmithersError(cause, label),
+    }).pipe(
       Effect.flatMap((result) => {
         if (Effect.isEffect(result)) {
           return result as Effect.Effect<unknown, unknown, never>;
@@ -197,7 +206,10 @@ export class EventBus extends EventEmitter {
           typeof result === "object" &&
           typeof (result as PromiseLike<unknown>).then === "function"
         ) {
-          return fromPromise(label, () => result as PromiseLike<unknown>);
+          return Effect.tryPromise({
+            try: () => result as PromiseLike<unknown>,
+            catch: (cause) => toSmithersError(cause, label),
+          });
         }
         return Effect.void;
       }),
@@ -208,7 +220,8 @@ export class EventBus extends EventEmitter {
   private persistLogEffect(event: CorrelatedSmithersEvent) {
     if (!this.logDir) return Effect.void;
     const dir = this.logDir;
-    return fromPromise("append event log", async () => {
+    return Effect.tryPromise({
+      try: async () => {
       await mkdir(dir, { recursive: true });
       const file = join(dir, "stream.ndjson");
       const line = JSON.stringify(event) + "\n";
@@ -225,6 +238,8 @@ export class EventBus extends EventEmitter {
         }
       }
       await writeFile(file, prefix + line);
+      },
+      catch: (cause) => toSmithersError(cause, "append event log"),
     });
   }
 
