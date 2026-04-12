@@ -6,176 +6,169 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "import": "./src/index.js",
+      "default": "./src/index.js",
+      "types": "./src/index.ts"
     },
     "./TaskState": {
-      "types": "./src/TaskState.ts",
-      "default": "./src/TaskState.ts"
+      "types": "./src/TaskState.ts"
     },
     "./TaskStateMap": {
-      "types": "./src/TaskStateMap.ts",
-      "default": "./src/TaskStateMap.ts"
+      "types": "./src/TaskStateMap.ts"
     },
     "./ReadonlyTaskStateMap": {
-      "types": "./src/ReadonlyTaskStateMap.ts",
-      "default": "./src/ReadonlyTaskStateMap.ts"
+      "types": "./src/ReadonlyTaskStateMap.ts"
     },
     "./TaskRecord": {
-      "types": "./src/TaskRecord.ts",
-      "default": "./src/TaskRecord.ts"
+      "types": "./src/TaskRecord.ts"
     },
     "./buildStateKey": {
-      "types": "./src/buildStateKey.ts",
-      "default": "./src/buildStateKey.ts"
+      "import": "./src/buildStateKey.js",
+      "default": "./src/buildStateKey.js",
+      "types": "./src/buildStateKey.ts"
     },
     "./parseStateKey": {
-      "types": "./src/parseStateKey.ts",
-      "default": "./src/parseStateKey.ts"
+      "import": "./src/parseStateKey.js",
+      "default": "./src/parseStateKey.js",
+      "types": "./src/parseStateKey.ts"
     },
     "./cloneTaskStateMap": {
-      "types": "./src/cloneTaskStateMap.ts",
-      "default": "./src/cloneTaskStateMap.ts"
+      "import": "./src/cloneTaskStateMap.js",
+      "default": "./src/cloneTaskStateMap.js",
+      "types": "./src/cloneTaskStateMap.ts"
     },
     "./isTerminalState": {
-      "types": "./src/isTerminalState.ts",
-      "default": "./src/isTerminalState.ts"
+      "import": "./src/isTerminalState.js",
+      "default": "./src/isTerminalState.js",
+      "types": "./src/isTerminalState.ts"
     },
     "./PlanNode": {
-      "types": "./src/PlanNode.ts",
-      "default": "./src/PlanNode.ts"
+      "types": "./src/PlanNode.ts"
     },
     "./ScheduleResult": {
-      "types": "./src/ScheduleResult.ts",
-      "default": "./src/ScheduleResult.ts"
+      "types": "./src/ScheduleResult.ts"
     },
     "./RalphMeta": {
-      "types": "./src/RalphMeta.ts",
-      "default": "./src/RalphMeta.ts"
+      "types": "./src/RalphMeta.ts"
     },
     "./ContinuationRequest": {
-      "types": "./src/ContinuationRequest.ts",
-      "default": "./src/ContinuationRequest.ts"
+      "types": "./src/ContinuationRequest.ts"
     },
     "./RalphState": {
-      "types": "./src/RalphState.ts",
-      "default": "./src/RalphState.ts"
+      "types": "./src/RalphState.ts"
     },
     "./RalphStateMap": {
-      "types": "./src/RalphStateMap.ts",
-      "default": "./src/RalphStateMap.ts"
+      "types": "./src/RalphStateMap.ts"
     },
     "./RetryWaitMap": {
-      "types": "./src/RetryWaitMap.ts",
-      "default": "./src/RetryWaitMap.ts"
+      "types": "./src/RetryWaitMap.ts"
     },
     "./ScheduleSnapshot": {
-      "types": "./src/ScheduleSnapshot.ts",
-      "default": "./src/ScheduleSnapshot.ts"
+      "types": "./src/ScheduleSnapshot.ts"
     },
     "./Scheduler": {
-      "types": "./src/Scheduler.ts",
-      "default": "./src/Scheduler.ts"
+      "import": "./src/Scheduler.js",
+      "default": "./src/Scheduler.js",
+      "types": "./src/Scheduler.ts"
     },
     "./SchedulerLive": {
-      "types": "./src/SchedulerLive.ts",
-      "default": "./src/SchedulerLive.ts"
+      "import": "./src/SchedulerLive.js",
+      "default": "./src/SchedulerLive.js",
+      "types": "./src/SchedulerLive.ts"
     },
     "./buildPlanTree": {
-      "types": "./src/buildPlanTree.ts",
-      "default": "./src/buildPlanTree.ts"
+      "import": "./src/buildPlanTree.js",
+      "default": "./src/buildPlanTree.js",
+      "types": "./src/buildPlanTree.ts"
     },
     "./scheduleTasks": {
-      "types": "./src/scheduleTasks.ts",
-      "default": "./src/scheduleTasks.ts"
+      "import": "./src/scheduleTasks.js",
+      "default": "./src/scheduleTasks.js",
+      "types": "./src/scheduleTasks.ts"
     },
     "./WorkflowSession": {
-      "types": "./src/WorkflowSession.ts",
-      "default": "./src/WorkflowSession.ts"
+      "import": "./src/WorkflowSession.js",
+      "default": "./src/WorkflowSession.js",
+      "types": "./src/WorkflowSession.ts"
     },
     "./WorkflowSessionService": {
-      "types": "./src/WorkflowSessionService.ts",
-      "default": "./src/WorkflowSessionService.ts"
+      "import": "./src/WorkflowSessionService.js",
+      "default": "./src/WorkflowSessionService.js",
+      "types": "./src/WorkflowSessionService.ts"
     },
     "./WorkflowSessionOptions": {
-      "types": "./src/WorkflowSessionOptions.ts",
-      "default": "./src/WorkflowSessionOptions.ts"
+      "types": "./src/WorkflowSessionOptions.ts"
     },
     "./makeWorkflowSession": {
-      "types": "./src/makeWorkflowSession.ts",
-      "default": "./src/makeWorkflowSession.ts"
+      "import": "./src/makeWorkflowSession.js",
+      "default": "./src/makeWorkflowSession.js",
+      "types": "./src/makeWorkflowSession.ts"
     },
     "./WorkflowSessionLive": {
-      "types": "./src/WorkflowSessionLive.ts",
-      "default": "./src/WorkflowSessionLive.ts"
+      "import": "./src/WorkflowSessionLive.js",
+      "default": "./src/WorkflowSessionLive.js",
+      "types": "./src/WorkflowSessionLive.ts"
     },
     "./EngineDecision": {
-      "types": "./src/EngineDecision.ts",
-      "default": "./src/EngineDecision.ts"
+      "types": "./src/EngineDecision.ts"
     },
     "./RenderContext": {
-      "types": "./src/RenderContext.ts",
-      "default": "./src/RenderContext.ts"
+      "types": "./src/RenderContext.ts"
     },
     "./WaitReason": {
-      "types": "./src/WaitReason.ts",
-      "default": "./src/WaitReason.ts"
+      "types": "./src/WaitReason.ts"
     },
     "./RunResult": {
-      "types": "./src/RunResult.ts",
-      "default": "./src/RunResult.ts"
+      "types": "./src/RunResult.ts"
     },
     "./TaskOutput": {
-      "types": "./src/TaskOutput.ts",
-      "default": "./src/TaskOutput.ts"
+      "types": "./src/TaskOutput.ts"
     },
     "./TaskFailure": {
-      "types": "./src/TaskFailure.ts",
-      "default": "./src/TaskFailure.ts"
+      "types": "./src/TaskFailure.ts"
     },
     "./TokenUsage": {
-      "types": "./src/TokenUsage.ts",
-      "default": "./src/TokenUsage.ts"
+      "types": "./src/TokenUsage.ts"
     },
     "./RetryPolicy": {
-      "types": "./src/RetryPolicy.ts",
-      "default": "./src/RetryPolicy.ts"
+      "types": "./src/RetryPolicy.ts"
     },
     "./CachePolicy": {
-      "types": "./src/CachePolicy.ts",
-      "default": "./src/CachePolicy.ts"
+      "types": "./src/CachePolicy.ts"
     },
     "./SmithersWorkflowOptions": {
-      "types": "./src/SmithersWorkflowOptions.ts",
-      "default": "./src/SmithersWorkflowOptions.ts"
+      "types": "./src/SmithersWorkflowOptions.ts"
     },
     "./ApprovalResolution": {
-      "types": "./src/ApprovalResolution.ts",
-      "default": "./src/ApprovalResolution.ts"
+      "types": "./src/ApprovalResolution.ts"
     },
     "./ContinueAsNewTransition": {
-      "types": "./src/ContinueAsNewTransition.ts",
-      "default": "./src/ContinueAsNewTransition.ts"
+      "types": "./src/ContinueAsNewTransition.ts"
     },
     "./retryPolicyToSchedule": {
-      "types": "./src/retryPolicyToSchedule.ts",
-      "default": "./src/retryPolicyToSchedule.ts"
+      "import": "./src/retryPolicyToSchedule.js",
+      "default": "./src/retryPolicyToSchedule.js",
+      "types": "./src/retryPolicyToSchedule.ts"
     },
     "./retryScheduleDelayMs": {
-      "types": "./src/retryScheduleDelayMs.ts",
-      "default": "./src/retryScheduleDelayMs.ts"
+      "import": "./src/retryScheduleDelayMs.js",
+      "default": "./src/retryScheduleDelayMs.js",
+      "types": "./src/retryScheduleDelayMs.ts"
     },
     "./computeRetryDelayMs": {
-      "types": "./src/computeRetryDelayMs.ts",
-      "default": "./src/computeRetryDelayMs.ts"
+      "import": "./src/computeRetryDelayMs.js",
+      "default": "./src/computeRetryDelayMs.js",
+      "types": "./src/computeRetryDelayMs.ts"
     },
     "./nowMs": {
-      "types": "./src/nowMs.ts",
-      "default": "./src/nowMs.ts"
+      "import": "./src/nowMs.js",
+      "default": "./src/nowMs.js",
+      "types": "./src/nowMs.ts"
     },
     "./*": {
-      "types": "./src/*.ts",
-      "default": "./src/*.ts"
+      "import": "./src/*.js",
+      "default": "./src/*.js",
+      "types": "./src/*.ts"
     }
   },
   "files": [
