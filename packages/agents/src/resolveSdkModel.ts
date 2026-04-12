@@ -1,6 +1,1 @@
-export function resolveSdkModel<MODEL>(
-  value: string | MODEL,
-  create: (modelId: string) => MODEL,
-): MODEL {
-  return typeof value === "string" ? create(value) : value;
-}
+export declare function resolveSdkModel<MODEL>(value: string | MODEL, create: (modelId: string) => MODEL): MODEL;

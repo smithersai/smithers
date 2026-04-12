@@ -6,32 +6,39 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "import": "./src/index.js",
+      "default": "./src/index.js",
+      "types": "./src/index.ts"
     },
     "./BaseCliAgent": {
-      "types": "./src/BaseCliAgent/index.ts",
-      "default": "./src/BaseCliAgent/index.ts"
+      "import": "./src/BaseCliAgent/index.js",
+      "default": "./src/BaseCliAgent/index.js",
+      "types": "./src/BaseCliAgent/index.ts"
     },
     "./agent-contract": {
-      "types": "./src/agent-contract/index.ts",
-      "default": "./src/agent-contract/index.ts"
+      "import": "./src/agent-contract/index.js",
+      "default": "./src/agent-contract/index.js",
+      "types": "./src/agent-contract/index.ts"
     },
     "./diagnostics": {
-      "types": "./src/diagnostics/index.ts",
-      "default": "./src/diagnostics/index.ts"
+      "import": "./src/diagnostics/index.js",
+      "default": "./src/diagnostics/index.js",
+      "types": "./src/diagnostics/index.ts"
     },
     "./capability-registry": {
-      "types": "./src/capability-registry/index.ts",
-      "default": "./src/capability-registry/index.ts"
+      "import": "./src/capability-registry/index.js",
+      "default": "./src/capability-registry/index.js",
+      "types": "./src/capability-registry/index.ts"
     },
     "./cli-capabilities": {
-      "types": "./src/cli-capabilities/index.ts",
-      "default": "./src/cli-capabilities/index.ts"
+      "import": "./src/cli-capabilities/index.js",
+      "default": "./src/cli-capabilities/index.js",
+      "types": "./src/cli-capabilities/index.ts"
     },
     "./*": {
-      "types": "./src/*.ts",
-      "default": "./src/*.ts"
+      "import": "./src/*.js",
+      "default": "./src/*.js",
+      "types": "./src/*.ts"
     }
   },
   "files": [
