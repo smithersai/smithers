@@ -27,7 +27,6 @@ import {
   type AgentCapabilityRegistry,
 } from "./capability-registry";
 import { fromPromise } from "@smithers/driver/interop";
-import { getToolContext } from "@smithers/driver/toolContext";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { enrichReportWithErrorAnalysis, launchDiagnostics } from "./diagnostics";
 
@@ -426,7 +425,7 @@ export class PiAgent extends BaseCliAgent {
       totalMs: this.timeoutMs,
       idleMs: this.idleTimeoutMs,
     });
-    const cwd = this.cwd ?? getToolContext()?.rootDir ?? process.cwd();
+    const cwd = this.cwd ?? options?.rootDir ?? process.cwd();
     const env = { ...process.env, ...this.env } as Record<string, string>;
     const args = this.buildArgs({ prompt, cwd, options, mode });
     const diagnosticsPromise = launchDiagnostics("pi", env, cwd);
@@ -460,7 +459,7 @@ export class PiAgent extends BaseCliAgent {
         timeoutMs: callTimeouts.totalMs,
         idleTimeoutMs: callTimeouts.idleMs,
         signal: options?.abortSignal,
-        maxOutputBytes: this.maxOutputBytes ?? getToolContext()?.maxOutputBytes,
+        maxOutputBytes: this.maxOutputBytes ?? options?.maxOutputBytes,
         onStdout: options?.onStdout,
         onStderr: options?.onStderr,
         onJsonEvent: (event) => emitEvents(interpreter.onStdoutLine?.(JSON.stringify(event))),

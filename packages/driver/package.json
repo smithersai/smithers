@@ -73,10 +73,6 @@
       "types": "./src/child-process.ts",
       "default": "./src/child-process.ts"
     },
-    "./toolContext": {
-      "types": "./src/toolContext.ts",
-      "default": "./src/toolContext.ts"
-    },
     "./*": {
       "types": "./src/*.ts",
       "default": "./src/*.ts"

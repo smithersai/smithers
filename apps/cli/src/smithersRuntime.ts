@@ -10,10 +10,7 @@ import {
   createSmithersRuntimeLayer,
   getCurrentSmithersTraceAnnotations,
   getCurrentSmithersTraceSpan,
-  makeSmithersSpanAttributes,
-  smithersSpanNames,
 } from "@smithers/observability";
-import { getToolContext } from "@smithers/driver/toolContext";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 import type { SmithersError } from "@smithers/errors/SmithersError";
 
@@ -52,22 +49,6 @@ function decorate<A, E, R>(effect: Effect.Effect<A, E, R>) {
   const parentSpan = getCurrentSmithersTraceSpan();
   if (parentSpan) {
     program = program.pipe(Effect.withParentSpan(parentSpan));
-  }
-  const toolContext = getToolContext();
-  if (
-    toolContext &&
-    !(parentSpan && parentSpan._tag === "Span" && parentSpan.name === smithersSpanNames.tool)
-  ) {
-    program = program.pipe(
-      Effect.withSpan(smithersSpanNames.tool, {
-        attributes: makeSmithersSpanAttributes({
-          runId: toolContext.runId,
-          nodeId: toolContext.nodeId,
-          iteration: toolContext.iteration,
-          attempt: toolContext.attempt,
-        }),
-      }),
-    );
   }
   return program;
 }

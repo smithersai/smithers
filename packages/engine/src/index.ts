@@ -51,7 +51,6 @@ import {
   type TaskStateMap,
   type RalphStateMap,
 } from "./scheduler";
-import { runWithToolContext } from "@smithers/driver/toolContext";
 import { getDefinedToolMetadata } from "./getDefinedToolMetadata";
 import {
   captureSnapshotEffect,
@@ -3429,22 +3428,7 @@ export async function legacyExecuteTask(
           result = await Effect.runPromise(
             withSmithersSpan(
               smithersSpanNames.agent,
-              Effect.promise(() =>
-                runWithToolContext(
-                  {
-                    db: adapter,
-                    runId,
-                    nodeId: desc.nodeId,
-                    iteration: desc.iteration,
-                    attempt: attemptNo,
-                    rootDir: taskRoot,
-                    allowNetwork: toolConfig.allowNetwork,
-                    maxOutputBytes: toolConfig.maxOutputBytes,
-                    timeoutMs: desc.timeoutMs ?? toolConfig.toolTimeoutMs,
-                    seq: 0,
-                    emitEvent: (event) => eventBus.emitEventQueued(event),
-                  },
-                  async () => {
+              Effect.promise(() => {
                     const agentCall = guidedResumeMessages?.length
                       ? {
                           messages: guidedResumeMessages,
@@ -3458,6 +3442,8 @@ export async function legacyExecuteTask(
                       ...agentCall,
                       resumeSession,
                       lastHeartbeat: previousHeartbeat,
+                      rootDir: taskRoot,
+                      maxOutputBytes: toolConfig.maxOutputBytes,
                       timeout: desc.timeoutMs
                         ? { totalMs: desc.timeoutMs }
                         : undefined,
@@ -3473,9 +3459,7 @@ export async function legacyExecuteTask(
                       onStepFinish: handleSdkStepFinish,
                       outputSchema: desc.outputSchema,
                     });
-                  },
-                ),
-              ),
+              }),
               {
                 ...taskSpanContext,
                 agent:
@@ -3953,24 +3937,12 @@ export async function legacyExecuteTask(
           { role: "user", content: schemaRetryPrompt },
         ];
 
-        const schemaRetryResult = await runWithToolContext(
-          {
-            db: adapter,
-            runId,
-            nodeId: desc.nodeId,
-            iteration: desc.iteration,
-            attempt: attemptNo,
-            rootDir: taskRoot,
-            allowNetwork: toolConfig.allowNetwork,
-            maxOutputBytes: toolConfig.maxOutputBytes,
-            timeoutMs: desc.timeoutMs ?? toolConfig.toolTimeoutMs,
-            seq: 0,
-            emitEvent: (event) => eventBus.emitEventQueued(event),
-          },
-          async () => (effectiveAgent as any).generate({
+        const schemaRetryResult = await (effectiveAgent as any).generate({
             options: undefined as any,
             abortSignal: taskSignal,
             messages: retryMessages,
+            rootDir: taskRoot,
+            maxOutputBytes: toolConfig.maxOutputBytes,
             timeout: desc.timeoutMs ? { totalMs: desc.timeoutMs } : undefined,
             onStdout: (text: string) => {
               recordInternalHeartbeat();
@@ -3980,8 +3952,7 @@ export async function legacyExecuteTask(
               recordInternalHeartbeat();
               emitOutput(text, "stderr");
             },
-          }),
-        );
+          });
         const retryText = ((schemaRetryResult as any).text ?? "").trim();
         responseText = retryText || responseText;
 

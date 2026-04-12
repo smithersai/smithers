@@ -17,7 +17,6 @@ import {
   agentTokensTotal,
   toolOutputTruncatedTotal,
 } from "@smithers/observability/metrics";
-import { getToolContext } from "@smithers/driver/toolContext";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { launchDiagnostics, enrichReportWithErrorAnalysis, formatDiagnosticSummary } from "../diagnostics";
 import type { BaseCliAgentOptions } from "./BaseCliAgentOptions";
@@ -566,7 +565,7 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
       totalMs: this.timeoutMs,
       idleMs: this.idleTimeoutMs,
     });
-    const cwd = this.cwd ?? getToolContext()?.rootDir ?? process.cwd();
+    const cwd = this.cwd ?? options?.rootDir ?? process.cwd();
     const env = { ...process.env, ...this.env } as Record<
       string,
       string
@@ -749,7 +748,7 @@ export abstract class BaseCliAgent implements Agent<any, any, any> {
             timeoutMs: callTimeouts.totalMs,
             idleTimeoutMs: callTimeouts.idleMs,
             signal: options?.abortSignal,
-            maxOutputBytes: this.maxOutputBytes ?? getToolContext()?.maxOutputBytes,
+            maxOutputBytes: this.maxOutputBytes ?? options?.maxOutputBytes,
             onStdout: (chunk) => {
               stdoutEmitter?.push(chunk);
               handleInterpreterChunk("stdout", chunk);
