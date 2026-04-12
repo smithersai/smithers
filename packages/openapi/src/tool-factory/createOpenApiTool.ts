@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// createOpenApiTool — async single tool creation from OpenAPI spec
-// ---------------------------------------------------------------------------
-
-import { Effect } from "effect";
-import { loadSpecEffect } from "../spec-parser";
 import type { OpenApiSpec, OpenApiToolsOptions } from "../types";
-import { createOpenApiToolFromSpec } from "./_helpers";
-
 /**
  * Create a single AI SDK tool from an OpenAPI spec by operationId.
  *
@@ -15,11 +7,4 @@ import { createOpenApiToolFromSpec } from "./_helpers";
  * @param options - Configuration for auth, base URL, etc.
  * @returns A single AI SDK tool
  */
-export async function createOpenApiTool(
-  input: string | OpenApiSpec,
-  operationId: string,
-  options: OpenApiToolsOptions = {},
-): Promise<any> {
-  const spec = await Effect.runPromise(loadSpecEffect(input));
-  return createOpenApiToolFromSpec(spec, operationId, options);
-}
+export declare function createOpenApiTool(input: string | OpenApiSpec, operationId: string, options?: OpenApiToolsOptions): Promise<any>;
