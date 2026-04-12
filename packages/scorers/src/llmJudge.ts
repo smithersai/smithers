@@ -1,6 +1,5 @@
-import type { Scorer, ScorerFn, ScorerInput, ScoreResult } from "./types";
+import type { Scorer } from "./types";
 import type { LlmJudgeConfig } from "./LlmJudgeConfig";
-
 /**
  * Creates an LLM-as-judge scorer that delegates evaluation to an AI agent.
  *
@@ -19,49 +18,4 @@ import type { LlmJudgeConfig } from "./LlmJudgeConfig";
  * });
  * ```
  */
-export function llmJudge(config: LlmJudgeConfig): Scorer {
-  const { id, name, description, judge, instructions, promptTemplate } = config;
-
-  const score: ScorerFn = async (input: ScorerInput): Promise<ScoreResult> => {
-    const prompt = promptTemplate(input);
-
-    const response = await judge.generate({
-      prompt: `${instructions}\n\n${prompt}`,
-    });
-
-    // The response can be a string, or an object with a text field
-    const text =
-      typeof response === "string"
-        ? response
-        : typeof response?.text === "string"
-          ? response.text
-          : JSON.stringify(response);
-
-    // Try to parse JSON from the response
-    const jsonMatch = text.match(/\{[\s\S]*?"score"\s*:\s*[\d.]+[\s\S]*?\}/);
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]);
-        const rawScore = Number(parsed.score);
-        return {
-          score: Number.isFinite(rawScore)
-            ? Math.max(0, Math.min(1, rawScore))
-            : 0,
-          reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
-          meta: { raw: text },
-        };
-      } catch {
-        // fall through to default
-      }
-    }
-
-    // If we can't parse JSON, return a low-confidence score
-    return {
-      score: 0,
-      reason: "Failed to parse judge response as JSON",
-      meta: { raw: text },
-    };
-  };
-
-  return { id, name, description, score };
-}
+export declare function llmJudge(config: LlmJudgeConfig): Scorer;

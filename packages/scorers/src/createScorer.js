@@ -1,5 +1,3 @@
-import type { Scorer } from "./types";
-import type { CreateScorerConfig } from "./CreateScorerConfig";
 /**
  * Creates a scorer from a plain configuration object.
  *
@@ -14,4 +12,11 @@ import type { CreateScorerConfig } from "./CreateScorerConfig";
  * });
  * ```
  */
-export declare function createScorer(config: CreateScorerConfig): Scorer;
+export function createScorer(config) {
+    return {
+        id: config.id,
+        name: config.name,
+        description: config.description,
+        score: config.score,
+    };
+}
