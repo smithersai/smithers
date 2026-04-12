@@ -283,7 +283,6 @@ export type {
 // Memory
 export {
   createMemoryStore,
-  createSemanticMemory,
   createMemoryLayer,
   MemoryService,
   TtlGarbageCollector,
@@ -304,7 +303,6 @@ export type {
   MemoryThread,
   MemoryMessage,
   MemoryStore,
-  SemanticMemory,
   MemoryProcessor,
   MemoryServiceApi,
   MemoryLayerConfig,
