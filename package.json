@@ -9,7 +9,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    ".smithers"
   ],
   "bin": {
     "smithers": "apps/cli/src/index.ts"
@@ -61,7 +62,7 @@
     "lint": "oxlint --react-plugin --node-plugin --import-plugin --ignore-path .gitignore packages/*/src packages/*/tests",
     "lint:fix": "oxlint --react-plugin --node-plugin --import-plugin --ignore-path .gitignore --fix packages/*/src packages/*/tests",
     "cli": "bun run apps/cli/src/index.ts",
-    "test": "bash ./scripts/run-all-tests.sh",
+    "test": "pnpm -r test",
     "e2e": "playwright test",
     "docs": "cd docs && bunx mintlify dev"
   },
