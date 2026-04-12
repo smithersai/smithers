@@ -218,6 +218,14 @@
         ]
       },
       {
+        "group": "Changelogs",
+        "pages": [
+          "changelogs/0.15.1",
+          "changelogs/0.15.0",
+          "changelogs/0.14.0"
+        ]
+      },
+      {
         "group": "Reference",
         "pages": [
           "reference/types",
