@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Metric } from "effect";
+import { Effect, Metric } from "effect";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { SmithersDb } from "@smithers/db/adapter";
 import {
@@ -35,37 +35,26 @@ function isAsyncApprovalRequest(requestJson?: string | null) {
   }
 }
 
-async function runApprovalEffect<A, E>(
-  effect: Effect.Effect<A, E>,
-): Promise<A> {
-  const exit = await Effect.runPromiseExit(effect as Effect.Effect<A, E, never>);
-  if (Exit.isSuccess(exit)) {
-    return exit.value;
-  }
-  const failure = Cause.failureOption(exit.cause);
-  if (failure._tag === "Some") {
-    throw failure.value;
-  }
-  throw Cause.squash(exit.cause);
-}
 
-function assertNodeWaitingForApproval(
+function validateNodeWaitingForApproval(
   runId: string,
   nodeId: string,
   iteration: number,
   state: string | null | undefined,
-) {
+): Effect.Effect<void, SmithersError> {
   if (state === "waiting-approval" || state === "waiting_approval") {
-    return;
+    return Effect.void;
   }
-  throw new SmithersError(
-    "INVALID_INPUT",
-    `Node ${nodeId} is not waiting for approval.`,
-    { runId, nodeId, iteration, state: state ?? null },
+  return Effect.fail(
+    new SmithersError(
+      "INVALID_INPUT",
+      `Node ${nodeId} is not waiting for approval.`,
+      { runId, nodeId, iteration, state: state ?? null },
+    ),
   );
 }
 
-export function approveNodeEffect(
+export function approveNode(
   adapter: SmithersDb,
   runId: string,
   nodeId: string,
@@ -86,7 +75,7 @@ export function approveNodeEffect(
   return Effect.gen(function* () {
     const existing = yield* adapter.getApproval(runId, nodeId, iteration);
     const currentNode = yield* adapter.getNode(runId, nodeId, iteration);
-    assertNodeWaitingForApproval(runId, nodeId, iteration, currentNode?.state);
+    yield* validateNodeWaitingForApproval(runId, nodeId, iteration, currentNode?.state);
     yield* adapter.withTransactionEffect(
       "approval",
       Effect.gen(function* () {
@@ -138,6 +127,15 @@ export function approveNodeEffect(
     });
     yield* trackEvent(event);
     yield* Effect.logInfo(autoApproved ? "approval auto-approved" : "approval granted");
+    yield* Effect.promise(() =>
+      bridgeApprovalResolve(adapter, runId, nodeId, iteration, {
+        approved: true,
+        note: note ?? null,
+        decidedBy: decidedBy ?? null,
+        decisionJson: serializeDecision(decision),
+        autoApproved,
+      }),
+    );
   }).pipe(
     Effect.annotateLogs({
       runId,
@@ -150,27 +148,7 @@ export function approveNodeEffect(
   );
 }
 
-export async function approveNode(
-  adapter: SmithersDb,
-  runId: string,
-  nodeId: string,
-  iteration: number,
-  note?: string,
-  decidedBy?: string,
-  decision?: unknown,
-) {
-  await runApprovalEffect(
-    approveNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy, decision),
-  );
-  await bridgeApprovalResolve(adapter, runId, nodeId, iteration, {
-    approved: true,
-    note: note ?? null,
-    decidedBy: decidedBy ?? null,
-    decisionJson: serializeDecision(decision),
-  });
-}
-
-export function denyNodeEffect(
+export function denyNode(
   adapter: SmithersDb,
   runId: string,
   nodeId: string,
@@ -190,7 +168,7 @@ export function denyNodeEffect(
   return Effect.gen(function* () {
     const existing = yield* adapter.getApproval(runId, nodeId, iteration);
     const currentNode = yield* adapter.getNode(runId, nodeId, iteration);
-    assertNodeWaitingForApproval(runId, nodeId, iteration, currentNode?.state);
+    yield* validateNodeWaitingForApproval(runId, nodeId, iteration, currentNode?.state);
     yield* adapter.withTransactionEffect(
       "approval",
       Effect.gen(function* () {
@@ -242,6 +220,14 @@ export function denyNodeEffect(
     });
     yield* trackEvent(event);
     yield* Effect.logInfo("approval denied");
+    yield* Effect.promise(() =>
+      bridgeApprovalResolve(adapter, runId, nodeId, iteration, {
+        approved: false,
+        note: note ?? null,
+        decidedBy: decidedBy ?? null,
+        decisionJson: serializeDecision(decision),
+      }),
+    );
   }).pipe(
     Effect.annotateLogs({
       runId,
@@ -252,56 +238,4 @@ export function denyNodeEffect(
     }),
     Effect.withLogSpan("approval:deny"),
   );
-}
-
-export async function denyNode(
-  adapter: SmithersDb,
-  runId: string,
-  nodeId: string,
-  iteration: number,
-  note?: string,
-  decidedBy?: string,
-  decision?: unknown,
-) {
-  await runApprovalEffect(
-    denyNodeEffect(adapter, runId, nodeId, iteration, note, decidedBy, decision),
-  );
-  await bridgeApprovalResolve(adapter, runId, nodeId, iteration, {
-    approved: false,
-    note: note ?? null,
-    decidedBy: decidedBy ?? null,
-    decisionJson: serializeDecision(decision),
-  });
-}
-
-export async function autoApproveNode(
-  adapter: SmithersDb,
-  runId: string,
-  nodeId: string,
-  iteration: number,
-  options?: {
-    note?: string;
-    decidedBy?: string;
-    decision?: unknown;
-  },
-) {
-  await runApprovalEffect(
-    approveNodeEffect(
-      adapter,
-      runId,
-      nodeId,
-      iteration,
-      options?.note,
-      options?.decidedBy ?? "smithers:auto",
-      options?.decision,
-      true,
-    ),
-  );
-  await bridgeApprovalResolve(adapter, runId, nodeId, iteration, {
-    approved: true,
-    note: options?.note ?? null,
-    decidedBy: options?.decidedBy ?? "smithers:auto",
-    decisionJson: serializeDecision(options?.decision),
-    autoApproved: true,
-  });
 }

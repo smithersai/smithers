@@ -40,12 +40,12 @@ describe("<Approval>", () => {
       </Workflow>
     ));
 
-    const snapshot = await renderFrame(workflow, {
+    const snapshot = await Effect.runPromise(renderFrame(workflow, {
       runId: "approval-render",
       iteration: 0,
       input: {},
       outputs: {},
-    });
+    }));
 
     expect(snapshot.tasks).toHaveLength(1);
     expect(snapshot.tasks[0]?.needsApproval).toBe(true);
@@ -86,12 +86,12 @@ describe("<Approval>", () => {
       </Workflow>
     ));
 
-    const snapshot = await renderFrame(workflow, {
+    const snapshot = await Effect.runPromise(renderFrame(workflow, {
       runId: "approval-select-render",
       iteration: 0,
       input: {},
       outputs: {},
-    });
+    }));
 
     expect(snapshot.tasks).toHaveLength(1);
     expect(snapshot.tasks[0]?.approvalMode).toBe("select");
@@ -134,12 +134,12 @@ describe("<Approval>", () => {
       </Workflow>
     ));
 
-    const snapshot = await renderFrame(workflow, {
+    const snapshot = await Effect.runPromise(renderFrame(workflow, {
       runId: "approval-rank-render",
       iteration: 0,
       input: {},
       outputs: {},
-    });
+    }));
 
     expect(snapshot.tasks).toHaveLength(1);
     expect(snapshot.tasks[0]?.approvalMode).toBe("rank");
@@ -193,14 +193,14 @@ describe("<Approval>", () => {
       expect(first.status).toBe("waiting-approval");
 
       const adapter = new SmithersDb(db as any);
-      await denyNode(
+      await Effect.runPromise(denyNode(
         adapter,
         first.runId,
         "publish-gate",
         0,
         "Needs another review",
         "qa-user",
-      );
+      ));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},

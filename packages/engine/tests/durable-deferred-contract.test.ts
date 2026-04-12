@@ -55,14 +55,14 @@ describe("durable deferred contract", () => {
       const first = await Effect.runPromise(runWorkflow(workflow, { input: {} }));
       expect(first.status).toBe("waiting-approval");
 
-      await approveNode(
+      await Effect.runPromise(approveNode(
         new SmithersDb(db as any),
         first.runId,
         "gate",
         0,
         "ship it",
         "reviewer",
-      );
+      ));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
@@ -125,14 +125,14 @@ describe("durable deferred contract", () => {
       const first = await Effect.runPromise(runWorkflow(workflow, { input: {} }));
       expect(first.status).toBe("waiting-approval");
 
-      await denyNode(
+      await Effect.runPromise(denyNode(
         new SmithersDb(db as any),
         first.runId,
         "gate",
         0,
         "not yet",
         "reviewer",
-      );
+      ));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
@@ -186,13 +186,13 @@ describe("durable deferred contract", () => {
       const first = await Effect.runPromise(runWorkflow(workflow, { input: {} }));
       expect(first.status).toBe("waiting-event");
 
-      await signalRun(
+      await Effect.runPromise(signalRun(
         new SmithersDb(db as any),
         first.runId,
         "deploy.ready",
         { ok: true },
         { correlationId: "ticket-42", receivedBy: "tester" },
-      );
+      ));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
@@ -235,13 +235,13 @@ describe("durable deferred contract", () => {
       expect(first.status).toBe("waiting-event");
 
       const adapter = new SmithersDb(db as any);
-      await signalRun(
+      await Effect.runPromise(signalRun(
         adapter,
         first.runId,
         "deploy.ready",
         { ok: false },
         { correlationId: "ticket-99", receivedBy: "tester" },
-      );
+      ));
 
       const stillWaiting = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
@@ -250,13 +250,13 @@ describe("durable deferred contract", () => {
       }));
       expect(stillWaiting.status).toBe("waiting-event");
 
-      await signalRun(
+      await Effect.runPromise(signalRun(
         adapter,
         first.runId,
         "deploy.ready",
         { ok: true },
         { correlationId: "ticket-42", receivedBy: "tester" },
-      );
+      ));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},

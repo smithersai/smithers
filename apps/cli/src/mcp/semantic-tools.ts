@@ -1112,7 +1112,7 @@ export function createSemanticToolDefinitions(
 
             const approval = matches[0]!;
             if (input.action === "approve") {
-              await approveNode(
+              await Effect.runPromise(approveNode(
                 adapter,
                 approval.runId,
                 approval.nodeId,
@@ -1120,9 +1120,9 @@ export function createSemanticToolDefinitions(
                 input.note,
                 input.decidedBy,
                 input.decision,
-              );
+              ));
             } else {
-              await denyNode(
+              await Effect.runPromise(denyNode(
                 adapter,
                 approval.runId,
                 approval.nodeId,
@@ -1130,7 +1130,7 @@ export function createSemanticToolDefinitions(
                 input.note,
                 input.decidedBy,
                 input.decision,
-              );
+              ));
             }
 
             const run = await adapter.getRun(approval.runId);

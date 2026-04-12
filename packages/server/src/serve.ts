@@ -242,14 +242,14 @@ export function createServeApp(opts: ServeOptions) {
   app.post("/approve/:nodeId", async (c) => {
     const nodeId = c.req.param("nodeId");
     const body = await c.req.json().catch(() => ({}));
-    await approveNode(
+    await Effect.runPromise(approveNode(
       adapter,
       runId,
       nodeId,
       body.iteration ?? 0,
       body.note,
       body.decidedBy,
-    );
+    ));
     return c.json({ runId });
   });
 
@@ -257,14 +257,14 @@ export function createServeApp(opts: ServeOptions) {
   app.post("/deny/:nodeId", async (c) => {
     const nodeId = c.req.param("nodeId");
     const body = await c.req.json().catch(() => ({}));
-    await denyNode(
+    await Effect.runPromise(denyNode(
       adapter,
       runId,
       nodeId,
       body.iteration ?? 0,
       body.note,
       body.decidedBy,
-    );
+    ));
     return c.json({ runId });
   });
 

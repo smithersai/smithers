@@ -57,7 +57,7 @@ describe("approval extended", () => {
     expect(first.status).toBe("waiting-approval");
 
     const adapter = new SmithersDb(db as any);
-    await denyNode(adapter, first.runId, "gate", 0, "rejected", "tester");
+    await Effect.runPromise(denyNode(adapter, first.runId, "gate", 0, "rejected", "tester"));
 
     const resumed = await runInTestRoot(workflow, dbPath, {
       input: {},
@@ -88,7 +88,7 @@ describe("approval extended", () => {
     expect(first.status).toBe("waiting-approval");
 
     const adapter = new SmithersDb(db as any);
-    await denyNode(adapter, first.runId, "gate", 0, "nope", "tester");
+    await Effect.runPromise(denyNode(adapter, first.runId, "gate", 0, "nope", "tester"));
 
     const resumed = await runInTestRoot(workflow, dbPath, {
       input: {},
@@ -121,7 +121,7 @@ describe("approval extended", () => {
     expect(r1.status).toBe("waiting-approval");
 
     const adapter = new SmithersDb(db as any);
-    await approveNode(adapter, r1.runId, "gate1", 0, "ok", "tester");
+    await Effect.runPromise(approveNode(adapter, r1.runId, "gate1", 0, "ok", "tester"));
 
     // Resume - stops at gate2
     const r2 = await runInTestRoot(workflow, dbPath, {
@@ -131,7 +131,7 @@ describe("approval extended", () => {
     });
     expect(r2.status).toBe("waiting-approval");
 
-    await approveNode(adapter, r1.runId, "gate2", 0, "ok", "tester");
+    await Effect.runPromise(approveNode(adapter, r1.runId, "gate2", 0, "ok", "tester"));
 
     // Final resume - finishes
     const r3 = await runInTestRoot(workflow, dbPath, {
@@ -156,7 +156,7 @@ describe("approval extended", () => {
 
     const r = await runInTestRoot(workflow, dbPath, { input: {} });
     const adapter = new SmithersDb(db as any);
-    await approveNode(adapter, r.runId, "gate", 0, "looks good", "alice");
+    await Effect.runPromise(approveNode(adapter, r.runId, "gate", 0, "looks good", "alice"));
 
     const approval = await adapter.getApproval(r.runId, "gate", 0);
     expect(approval).toBeDefined();
@@ -206,7 +206,7 @@ describe("approval extended", () => {
       ]);
 
       const adapter = new SmithersDb(db as any);
-      await approveNode(adapter, first.runId, "gate", 0, "ok", "tester");
+      await Effect.runPromise(approveNode(adapter, first.runId, "gate", 0, "ok", "tester"));
       expect(asyncPendingMetric("approval")).toBe(metricBefore);
 
       const resumed = await runInTestRoot(workflow, dbPath, {
@@ -256,7 +256,7 @@ describe("approval extended", () => {
     expect(first.status).toBe("waiting-approval");
 
     const adapter = new SmithersDb(db as any);
-    await approveNode(
+    await Effect.runPromise(approveNode(
       adapter,
       first.runId,
       "pick-plan",
@@ -264,7 +264,7 @@ describe("approval extended", () => {
       "balanced is safest",
       "planner",
       { selected: "balanced", notes: "balanced is safest" },
-    );
+    ));
 
     const resumed = await runInTestRoot(workflow, dbPath, {
       input: {},
@@ -326,7 +326,7 @@ describe("approval extended", () => {
     expect(first.status).toBe("waiting-approval");
 
     const adapter = new SmithersDb(db as any);
-    await approveNode(
+    await Effect.runPromise(approveNode(
       adapter,
       first.runId,
       "rank-plans",
@@ -334,7 +334,7 @@ describe("approval extended", () => {
       "canary first",
       "planner",
       { ranked: ["canary", "regional", "global"], notes: "canary first" },
-    );
+    ));
 
     const resumed = await runInTestRoot(workflow, dbPath, {
       input: {},
@@ -380,7 +380,7 @@ describe("approval extended", () => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const run = await runInTestRoot(workflow, dbPath, { input: {} });
       expect(run.status).toBe("waiting-approval");
-      await approveNode(adapter, run.runId, "checkout", 0, "ok", `human-${attempt + 1}`);
+      await Effect.runPromise(approveNode(adapter, run.runId, "checkout", 0, "ok", `human-${attempt + 1}`));
       const resumed = await runInTestRoot(workflow, dbPath, {
         input: {},
         runId: run.runId,

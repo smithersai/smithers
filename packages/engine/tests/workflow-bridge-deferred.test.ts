@@ -11,6 +11,7 @@ import {
 import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
 import { approvalDecisionSchema } from "@smithers/components/components/Approval";
 import { createTestSmithers } from "../../smithers/tests/helpers";
+import { Effect } from "effect";
 
 function makeApprovalDescriptor(
   outputTable: any,
@@ -309,13 +310,13 @@ describe("workflow bridge deferred contract", () => {
       const waitingAttempts = await adapter.listAttempts(runId, "await-signal", 0);
       expect(waitingAttempts[0]?.state).toBe("waiting-event");
 
-      await signalRun(
+      await Effect.runPromise(signalRun(
         adapter,
         runId,
         "deploy.ready",
         { ok: true },
         { correlationId: "ticket-42", receivedBy: "tester" },
-      );
+      ));
 
       const second = await resolveDeferredTaskStateBridge(
         adapter,

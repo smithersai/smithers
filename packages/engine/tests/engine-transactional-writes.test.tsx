@@ -157,7 +157,7 @@ describe("transactional state writes", () => {
       }));
       expect(first.status).toBe("waiting-approval");
 
-      await approveNode(new SmithersDb(db as any), first.runId, "gate", 0, "ok", "tester");
+      await Effect.runPromise(approveNode(new SmithersDb(db as any), first.runId, "gate", 0, "ok", "tester"));
 
       const client = queryClient(db);
       const row = client

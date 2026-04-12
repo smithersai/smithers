@@ -3,11 +3,10 @@ import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { SmithersDb } from "@smithers/db/adapter";
+import { Effect } from "effect";
 import {
   approveNode,
   denyNode,
-  approveNodeEffect,
-  denyNodeEffect,
 } from "../src/approvals";
 
 function createTestDb() {
@@ -52,7 +51,7 @@ describe("approveNode", () => {
       decidedBy: null,
     });
 
-    await approveNode(adapter, "run-1", "node-1", 0, "looks good", "alice");
+    await Effect.runPromise(approveNode(adapter, "run-1", "node-1", 0, "looks good", "alice"));
 
     const approval = await adapter.getApproval("run-1", "node-1", 0);
     const node = await adapter.getNode("run-1", "node-1", 0);
@@ -87,7 +86,7 @@ describe("approveNode", () => {
       label: null,
     });
 
-    await approveNode(adapter, "run-2", "node-1", 0);
+    await Effect.runPromise(approveNode(adapter, "run-2", "node-1", 0));
 
     const approval = await adapter.getApproval("run-2", "node-1", 0);
     expect(approval?.status).toBe("approved");
@@ -129,7 +128,7 @@ describe("denyNode", () => {
       decidedBy: null,
     });
 
-    await denyNode(adapter, "run-3", "node-1", 0, "not ready", "bob");
+    await Effect.runPromise(denyNode(adapter, "run-3", "node-1", 0, "not ready", "bob"));
 
     const approval = await adapter.getApproval("run-3", "node-1", 0);
     const node = await adapter.getNode("run-3", "node-1", 0);
@@ -164,7 +163,7 @@ describe("denyNode", () => {
       label: null,
     });
 
-    await denyNode(adapter, "run-4", "node-1", 0);
+    await Effect.runPromise(denyNode(adapter, "run-4", "node-1", 0));
 
     const approval = await adapter.getApproval("run-4", "node-1", 0);
     expect(approval?.status).toBe("denied");

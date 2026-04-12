@@ -63,7 +63,7 @@ describe("deferred contract", () => {
       const beforeRows = await (db as any).select().from(tables.out);
       expect(beforeRows).toHaveLength(0);
 
-      await approveNode(new SmithersDb(db as any), first.runId, "gate", 0);
+      await Effect.runPromise(approveNode(new SmithersDb(db as any), first.runId, "gate", 0));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
@@ -113,7 +113,7 @@ describe("deferred contract", () => {
       const first = await Effect.runPromise(runWorkflow(workflow, { input: {} }));
       expect(first.status).toBe("waiting-approval");
 
-      await approveNode(new SmithersDb(db as any), first.runId, "gate", 0);
+      await Effect.runPromise(approveNode(new SmithersDb(db as any), first.runId, "gate", 0));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
@@ -155,7 +155,7 @@ describe("deferred contract", () => {
       const first = await Effect.runPromise(runWorkflow(workflow, { input: {} }));
       expect(first.status).toBe("waiting-approval");
 
-      await denyNode(new SmithersDb(db as any), first.runId, "gate", 0);
+      await Effect.runPromise(denyNode(new SmithersDb(db as any), first.runId, "gate", 0));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
@@ -200,7 +200,7 @@ describe("deferred contract", () => {
       const first = await Effect.runPromise(runWorkflow(workflow, { input: {} }));
       expect(first.status).toBe("waiting-approval");
 
-      await denyNode(new SmithersDb(db as any), first.runId, "gate", 0);
+      await Effect.runPromise(denyNode(new SmithersDb(db as any), first.runId, "gate", 0));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
@@ -348,12 +348,12 @@ describe("deferred contract", () => {
       const first = await Effect.runPromise(runWorkflow(workflow, { input: {} }));
       expect(first.status).toBe("waiting-event");
 
-      await signalRun(
+      await Effect.runPromise(signalRun(
         new SmithersDb(db as any),
         first.runId,
         "deploy.ready",
         { ok: true },
-      );
+      ));
 
       const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},

@@ -40,7 +40,7 @@ describe("approval observability", () => {
       expect(first.status).toBe("waiting-approval");
 
       const adapter = new SmithersDb(db as any);
-      await denyNode(adapter, first.runId, "gate", 0, "rejected", "tester");
+      await Effect.runPromise(denyNode(adapter, first.runId, "gate", 0, "rejected", "tester"));
 
       expect(metricValue("smithers_approvals_denied")).toBe(beforeDenied + 1);
       expect(metricValue("smithers_approval_wait_duration_ms_count")).toBe(beforeWaitCount + 1);
@@ -66,7 +66,7 @@ describe("approval observability", () => {
       expect(first.status).toBe("waiting-approval");
 
       const adapter = new SmithersDb(db as any);
-      await approveNode(adapter, first.runId, "gate", 0, "approved", "tester");
+      await Effect.runPromise(approveNode(adapter, first.runId, "gate", 0, "approved", "tester"));
 
       expect(metricValue("smithers_approval_wait_duration_ms_count")).toBe(beforeWaitCount + 1);
     } finally {

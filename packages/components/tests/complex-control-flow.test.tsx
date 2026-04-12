@@ -221,12 +221,12 @@ describe("renderFrame", () => {
       </Workflow>
     ));
 
-    const frame = await renderFrame(workflow, {
+    const frame = await Effect.runPromise(renderFrame(workflow, {
       runId: "test",
       iteration: 0,
       input: {},
       outputs: {},
-    });
+    }));
 
     expect(executed).toBe(false);
     expect(frame.tasks.length).toBe(1);
@@ -249,12 +249,12 @@ describe("renderFrame", () => {
       </Workflow>
     ));
 
-    const frame = await renderFrame(workflow, {
+    const frame = await Effect.runPromise(renderFrame(workflow, {
       runId: "test",
       iteration: 0,
       input: {},
       outputs: {},
-    });
+    }));
 
     const ordinals = frame.tasks.map((t) => t.ordinal);
     expect(ordinals[0]).toBeLessThan(ordinals[1]);

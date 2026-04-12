@@ -39,7 +39,7 @@ function serializeSignalPayload(payload: unknown): string {
   }
 }
 
-export function signalRunEffect(
+export function signalRun(
   adapter: SmithersDb,
   runId: string,
   signalName: string,
@@ -66,13 +66,25 @@ export function signalRunEffect(
       receivedBy: options.receivedBy ?? null,
     });
 
-    return {
+    const delivered = {
       runId,
       seq,
       signalName: normalizedSignalName,
       correlationId: options.correlationId ?? null,
       receivedAtMs,
     };
+
+    yield* Effect.promise(() =>
+      bridgeSignalResolve(adapter, runId, {
+        signalName: delivered.signalName,
+        correlationId: delivered.correlationId ?? null,
+        payloadJson,
+        seq: delivered.seq,
+        receivedAtMs: delivered.receivedAtMs,
+      }),
+    );
+
+    return delivered;
   }).pipe(
     Effect.annotateLogs({
       runId,
@@ -81,25 +93,4 @@ export function signalRunEffect(
     }),
     Effect.withLogSpan("signal:send"),
   );
-}
-
-export async function signalRun(
-  adapter: SmithersDb,
-  runId: string,
-  signalName: string,
-  payload: unknown,
-  options: SignalRunOptions = {},
-) {
-  const payloadJson = serializeSignalPayload(payload);
-  const delivered = await Effect.runPromise(
-    signalRunEffect(adapter, runId, signalName, payload, options),
-  );
-  await bridgeSignalResolve(adapter, runId, {
-    signalName: delivered.signalName,
-    correlationId: delivered.correlationId ?? null,
-    payloadJson,
-    seq: delivered.seq,
-    receivedAtMs: delivered.receivedAtMs,
-  });
-  return delivered;
 }

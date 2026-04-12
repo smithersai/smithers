@@ -3,10 +3,11 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createSmithers } from "smithers";
 import { renderFrame } from "@smithers/engine";
-import { buildContext } from "@smithers/react-reconciler/context";
+import { SmithersCtx } from "@smithers/react-reconciler/context";
 import { ClaudeCodeAgent } from "@smithers/agents/ClaudeCodeAgent";
 import { GeminiAgent } from "@smithers/agents/GeminiAgent";
 import { PiAgent } from "@smithers/agents/PiAgent";
+import { Effect } from "effect";
 
 describe("Task allowTools", () => {
   test("passes an allowlist through to ClaudeCodeAgent tasks", async () => {
@@ -30,12 +31,12 @@ describe("Task allowTools", () => {
       </api.Workflow>
     ));
 
-    const frame = await renderFrame(workflow, {
+    const frame = await Effect.runPromise(renderFrame(workflow, {
       runId: "preview",
       iteration: 0,
       input: {},
       outputs: {},
-    });
+    }));
     const taskAgent = frame.tasks[0]?.agent as any;
     const command = await taskAgent.buildCommand({
       prompt: "prompt",
@@ -72,12 +73,12 @@ describe("Task allowTools", () => {
       </api.Workflow>
     ));
 
-    const frame = await renderFrame(workflow, {
+    const frame = await Effect.runPromise(renderFrame(workflow, {
       runId: "preview",
       iteration: 0,
       input: {},
       outputs: {},
-    });
+    }));
     const taskAgent = frame.tasks[0]?.agent as any;
     const args = taskAgent.buildArgs({
       prompt: "prompt",
@@ -111,12 +112,12 @@ describe("Task allowTools", () => {
       </api.Workflow>
     ));
 
-    const frame = await renderFrame(workflow, {
+    const frame = await Effect.runPromise(renderFrame(workflow, {
       runId: "preview",
       iteration: 0,
       input: {},
       outputs: {},
-    });
+    }));
     const taskAgent = frame.tasks[0]?.agent as any;
     const command = await taskAgent.buildCommand({
       prompt: "prompt",
@@ -149,9 +150,9 @@ describe("Task allowTools", () => {
       </api.Workflow>
     ));
 
-    const frame = await renderFrame(
+    const frame = await Effect.runPromise(renderFrame(
       workflow,
-      buildContext({
+      new SmithersCtx({
         runId: "preview",
         iteration: 0,
         input: {},
@@ -161,7 +162,7 @@ describe("Task allowTools", () => {
           cliAgentToolsDefault: "explicit-only",
         },
       }),
-    );
+    ));
     const taskAgent = frame.tasks[0]?.agent as any;
     const args = taskAgent.buildArgs({
       prompt: "prompt",

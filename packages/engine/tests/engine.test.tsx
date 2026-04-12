@@ -157,7 +157,7 @@ describe("Approvals", () => {
     expect(first.status).toBe("waiting-approval");
 
     const adapter = new SmithersDb(db as any);
-    await approveNode(adapter, first.runId, "gate", 0, "ok", "test");
+    await Effect.runPromise(approveNode(adapter, first.runId, "gate", 0, "ok", "test"));
 
     const resumed = await Effect.runPromise(runWorkflow(workflow, {
       input: {},

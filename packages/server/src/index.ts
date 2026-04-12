@@ -16,7 +16,6 @@ import { runPromise, runSync } from "./smithersRuntime";
 import { httpRequests, httpRequestDuration, trackEvent } from "@smithers/observability/metrics";
 import { approveNode, denyNode } from "@smithers/engine/approvals";
 import { signalRun } from "@smithers/engine/signals";
-import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { errorToJson } from "@smithers/errors/errorToJson";
 import { SmithersError } from "@smithers/errors/SmithersError";
@@ -374,8 +373,8 @@ function getDbIdentity(db: any): string | undefined {
 }
 
 function isSameDb(
-  serverDb: BunSQLiteDatabase<any> | null,
-  workflowDb: BunSQLiteDatabase<any>,
+  serverDb: unknown | null,
+  workflowDb: unknown,
 ): boolean {
   if (!serverDb) return false;
   if (serverDb === workflowDb) return true;
@@ -614,7 +613,7 @@ function eventLoopNow() {
 
 export type ServerOptions = {
   port?: number;
-  db?: BunSQLiteDatabase<any>;
+  db?: unknown;
   authToken?: string;
   maxBodyBytes?: number;
   rootDir?: string;
@@ -629,9 +628,9 @@ function startServerInternal(opts: ServerOptions = {}) {
   const rootDir = opts.rootDir ? resolve(opts.rootDir) : undefined;
   const allowNetwork = Boolean(opts.allowNetwork);
   if (serverDb) {
-    ensureSmithersTables(serverDb);
+    ensureSmithersTables(serverDb as any);
   }
-  const serverAdapter = serverDb ? new SmithersDb(serverDb) : null;
+  const serverAdapter = serverDb ? new SmithersDb(serverDb as any) : null;
   logInfo("starting smithers server", {
     port,
     rootDir: rootDir ?? null,
@@ -1154,14 +1153,14 @@ function startServerInternal(opts: ServerOptions = {}) {
           return sendJson(res, 404, {
             error: { code: "NOT_FOUND", message: "Run not found" },
           });
-        await approveNode(
+        await Effect.runPromise(approveNode(
           adapter,
           runId,
           nodeId,
           body.iteration ?? 0,
           body.note,
           body.decidedBy,
-        );
+        ));
         return sendJson(res, 200, { runId });
       }
 
@@ -1186,14 +1185,14 @@ function startServerInternal(opts: ServerOptions = {}) {
           return sendJson(res, 404, {
             error: { code: "NOT_FOUND", message: "Run not found" },
           });
-        await denyNode(
+        await Effect.runPromise(denyNode(
           adapter,
           runId,
           nodeId,
           body.iteration ?? 0,
           body.note,
           body.decidedBy,
-        );
+        ));
         return sendJson(res, 200, { runId });
       }
 
@@ -1218,7 +1217,7 @@ function startServerInternal(opts: ServerOptions = {}) {
           return sendJson(res, 404, {
             error: { code: "NOT_FOUND", message: "Run not found" },
           });
-        const delivered = await signalRun(
+        const delivered = await Effect.runPromise(signalRun(
           adapter,
           runId,
           signalName,
@@ -1231,7 +1230,7 @@ function startServerInternal(opts: ServerOptions = {}) {
             receivedBy:
               typeof body.receivedBy === "string" ? body.receivedBy : undefined,
           },
-        );
+        ));
         return sendJson(res, 200, delivered);
       }
 

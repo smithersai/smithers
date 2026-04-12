@@ -1476,7 +1476,7 @@ export class Gateway {
       const delivered: GatewayWebhookDelivery[] = [];
 
       for (const runId of matchedRunIds) {
-        const signal = await signalRun(
+        const signal = await Effect.runPromise(signalRun(
           adapter,
           runId,
           signalConfig!.name,
@@ -1485,7 +1485,7 @@ export class Gateway {
             correlationId,
             receivedBy: triggeredBy,
           },
-        );
+        ));
         delivered.push({
           runId,
           seq: signal.seq,
@@ -1801,7 +1801,7 @@ export class Gateway {
     workflowKey: string,
     input: Record<string, unknown>,
     auth: RunStartAuthContext,
-    runId = crypto.randomUUID(),
+    runId: string = crypto.randomUUID(),
     options?: { resume?: boolean },
   ) {
     const entry = this.workflows.get(workflowKey);
@@ -2956,7 +2956,7 @@ export class Gateway {
           }
         }
         if (approved) {
-          await approveNode(
+          await Effect.runPromise(approveNode(
             resolved.adapter,
             runId,
             nodeId,
@@ -2964,9 +2964,9 @@ export class Gateway {
             asString(params.note),
             connection.userId ?? undefined,
             decision,
-          );
+          ));
         } else {
-          await denyNode(
+          await Effect.runPromise(denyNode(
             resolved.adapter,
             runId,
             nodeId,
@@ -2974,7 +2974,7 @@ export class Gateway {
             asString(params.note),
             connection.userId ?? undefined,
             decision,
-          );
+          ));
         }
         await this.resumeRunIfNeeded(runId, resolved.workflowKey, resolved.adapter, {
           triggeredBy: connection.userId ?? "gateway",
@@ -2994,7 +2994,7 @@ export class Gateway {
         if (!resolved) {
           return responseError(frame.id, "NOT_FOUND", `Run not found: ${runId}`);
         }
-        const delivered = await signalRun(
+        const delivered = await Effect.runPromise(signalRun(
           resolved.adapter,
           runId,
           signalName,
@@ -3003,7 +3003,7 @@ export class Gateway {
             correlationId: asString(params.correlationId),
             receivedBy: connection.userId,
           },
-        );
+        ));
         await this.resumeRunIfNeeded(runId, resolved.workflowKey, resolved.adapter, {
           triggeredBy: connection.userId ?? "gateway",
           scopes: [...connection.scopes],

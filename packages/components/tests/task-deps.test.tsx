@@ -1,6 +1,6 @@
 /** @jsxImportSource smithers */
 import { describe, expect, test } from "bun:test";
-import { buildContext } from "@smithers/react-reconciler/context";
+import { SmithersCtx } from "@smithers/react-reconciler/context";
 import { renderFrame, runWorkflow } from "smithers";
 import { createTestSmithers } from "./helpers";
 import { z } from "zod";
@@ -55,21 +55,21 @@ describe("Task deps", () => {
       </Workflow>
     ));
 
-    const before = await renderFrame(
+    const before = await Effect.runPromise(renderFrame(
       workflow,
-      buildContext({
+      new SmithersCtx({
         runId: "deps-before",
         iteration: 0,
         input: {},
         outputs: {},
         zodToKeyName: workflow.zodToKeyName,
       }),
-    );
+    ));
     expect(before.tasks.map((task) => task.nodeId)).toEqual(["source"]);
 
-    const after = await renderFrame(
+    const after = await Effect.runPromise(renderFrame(
       workflow,
-      buildContext({
+      new SmithersCtx({
         runId: "deps-after",
         iteration: 0,
         input: {},
@@ -78,7 +78,7 @@ describe("Task deps", () => {
         },
         zodToKeyName: workflow.zodToKeyName,
       }),
-    );
+    ));
 
     const report = after.tasks.find((task) => task.nodeId === "report");
     expect(report).toBeDefined();
@@ -150,7 +150,7 @@ describe("Task deps", () => {
         </>
       ));
 
-      const ctx = buildContext<{ source: typeof api1.outputs.source }>({
+      const ctx = new SmithersCtx<{ source: typeof api1.outputs.source }>({
         runId: "ctx-one",
         iteration: 0,
         input: {},

@@ -10,6 +10,7 @@ import { renderFrame, resolveSchema } from "@smithers/engine";
 import { mdxPlugin } from "smithers/mdx-plugin";
 import { SmithersError } from "@smithers/errors";
 import type { HijackCandidate } from "./hijack";
+import { Effect } from "effect";
 
 function cloneJsonValue<T>(value: T): T | undefined {
   if (value === undefined) return undefined;
@@ -72,10 +73,10 @@ async function resolveConversationAgent(
     zodToKeyName: workflow.zodToKeyName,
   });
   const baseRootDir = dirname(resolve(workflowPath));
-  const snap = await renderFrame(workflow, ctx, {
+  const snap = await Effect.runPromise(renderFrame(workflow, ctx, {
     baseRootDir,
     workflowPath,
-  });
+  }));
   const task = snap.tasks.find((entry) =>
     entry.nodeId === candidate.nodeId &&
     (entry.iteration ?? 0) === candidate.iteration

@@ -3437,14 +3437,14 @@ const cli = Cli.create({
             const responseJson = JSON.stringify(value);
 
             if (approval?.status === "requested") {
-              await approveNode(
+              await Effect.runPromise(approveNode(
                 adapter,
                 request.runId,
                 request.nodeId,
                 request.iteration,
                 responseJson,
                 c.options.by,
-              );
+              ));
             }
 
             await adapter.answerHumanRequest(
@@ -3464,14 +3464,14 @@ const cli = Cli.create({
           }
 
           if (approval?.status === "requested") {
-            await denyNode(
+            await Effect.runPromise(denyNode(
               adapter,
               request.runId,
               request.nodeId,
               request.iteration,
               `Human request cancelled: ${requestId}`,
               c.options.by,
-            );
+            ));
           }
 
           await adapter.cancelHumanRequest(requestId);
@@ -3662,7 +3662,7 @@ const cli = Cli.create({
             nodeId = (pending as any[])[0].nodeId;
           }
 
-          await approveNode(adapter, c.args.runId, nodeId!, c.options.iteration, c.options.note, c.options.by);
+          await Effect.runPromise(approveNode(adapter, c.args.runId, nodeId!, c.options.iteration, c.options.note, c.options.by));
 
           return c.ok(
             { runId: c.args.runId, nodeId, status: "approved" },
@@ -3709,7 +3709,7 @@ const cli = Cli.create({
             });
           }
 
-          const delivered = await signalRun(
+          const delivered = await Effect.runPromise(signalRun(
             adapter,
             c.args.runId,
             c.args.signalName,
@@ -3718,7 +3718,7 @@ const cli = Cli.create({
               correlationId: c.options.correlation,
               receivedBy: c.options.by,
             },
-          );
+          ));
 
           const commands = [
             { command: `why ${c.args.runId}`, description: "Explain remaining blockers" },
@@ -3796,7 +3796,7 @@ const cli = Cli.create({
             nodeId = (pending as any[])[0].nodeId;
           }
 
-          await denyNode(adapter, c.args.runId, nodeId!, c.options.iteration, c.options.note, c.options.by);
+          await Effect.runPromise(denyNode(adapter, c.args.runId, nodeId!, c.options.iteration, c.options.note, c.options.by));
 
           return c.ok(
             { runId: c.args.runId, nodeId, status: "denied" },
@@ -3999,10 +3999,10 @@ const cli = Cli.create({
           outputs,
         });
         const baseRootDir = dirname(resolvedWorkflowPath);
-        const snap = await renderFrame(workflow, ctx, {
+        const snap = await Effect.runPromise(renderFrame(workflow, ctx, {
           baseRootDir,
           workflowPath: resolvedWorkflowPath,
-        });
+        }));
         const seen = new WeakSet<object>();
         return c.ok(
           JSON.parse(

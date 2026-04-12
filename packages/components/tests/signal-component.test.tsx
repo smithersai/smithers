@@ -67,12 +67,12 @@ describe("Signal component", () => {
       expect(first.status).toBe("waiting-event");
       expect(seenPayloads).toEqual([]);
 
-      await signalRun(
+      await Effect.runPromise(signalRun(
         new SmithersDb(db as any),
         first.runId,
         "user-feedback",
         { rating: 5, comment: "great" },
-      );
+      ));
 
       const resumed = await runInTestRoot(workflow, dbPath, {
         input: {},
@@ -164,12 +164,12 @@ describe("Signal component", () => {
       const beforeRows = await (db as any).select().from(tables.result);
       expect(beforeRows).toEqual([]);
 
-      await signalRun(
+      await Effect.runPromise(signalRun(
         new SmithersDb(db as any),
         first.runId,
         "new-data",
         { value: 7 },
-      );
+      ));
 
       const resumed = await runInTestRoot(workflow, dbPath, {
         input: {},
@@ -249,12 +249,12 @@ describe("Signal component", () => {
         }),
       ]);
 
-      await signalRun(
+      await Effect.runPromise(signalRun(
         new SmithersDb(db as any),
         first.runId,
         "new-data",
         { value: 3 },
-      );
+      ));
       expect(asyncPendingMetric("event")).toBe(metricBefore);
 
       const resumed = await runInTestRoot(workflow, dbPath, {

@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { Effect } from "effect";
 import { z } from "zod";
 import {
   Approval,
@@ -257,14 +258,14 @@ describe("workflow make contract", () => {
       }));
       expect(first.status).toBe("waiting-approval");
 
-      await approveNode(
+      await Effect.runPromise(approveNode(
         new SmithersDb(db as any),
         first.runId,
         "gate",
         0,
         "ship it",
         "reviewer",
-      );
+      ));
 
       const resumed = await Effect.runPromise(runWorkflow(buildWorkflow(true), {
         input: {},
@@ -287,14 +288,14 @@ describe("workflow make contract", () => {
       }));
       expect(second.status).toBe("waiting-approval");
 
-      await approveNode(
+      await Effect.runPromise(approveNode(
         new SmithersDb(db as any),
         second.runId,
         "gate",
         0,
         "ship it",
         "reviewer",
-      );
+      ));
 
       const secondResumed = await Effect.runPromise(runWorkflow(buildWorkflow(true), {
         input: {},
