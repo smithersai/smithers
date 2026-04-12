@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import type { SmithersError } from "@smithers/errors/SmithersError";
 import { smithersSnapshots } from "../schema";
 import type { Snapshot } from "./Snapshot";
@@ -11,22 +11,23 @@ export function loadSnapshot(
   runId: string,
   frameNo: number,
 ): Effect.Effect<Snapshot | undefined, SmithersError> {
-  return fromPromise("load snapshot", (): Promise<Snapshot[]> =>
-    (adapter as any).db
-      .select()
-      .from(smithersSnapshots)
-      .where(
-        and(
-          eq(smithersSnapshots.runId, runId),
-          eq(smithersSnapshots.frameNo, frameNo),
-        ),
-      )
-      .limit(1),
-  {
-    code: "DB_QUERY_FAILED",
-    details: { frameNo, runId },
-  },
-  ).pipe(
+  return Effect.tryPromise({
+    try: (): Promise<Snapshot[]> =>
+      (adapter as any).db
+        .select()
+        .from(smithersSnapshots)
+        .where(
+          and(
+            eq(smithersSnapshots.runId, runId),
+            eq(smithersSnapshots.frameNo, frameNo),
+          ),
+        )
+        .limit(1),
+    catch: (cause) => toSmithersError(cause, "load snapshot", {
+      code: "DB_QUERY_FAILED",
+      details: { frameNo, runId },
+    }),
+  }).pipe(
     Effect.map((rows: any[]) => rows[0] as Snapshot | undefined),
     Effect.annotateLogs({ runId, frameNo: String(frameNo) }),
     Effect.withLogSpan("time-travel:load-snapshot"),
@@ -37,18 +38,19 @@ export function loadLatestSnapshot(
   adapter: SmithersDb,
   runId: string,
 ): Effect.Effect<Snapshot | undefined, SmithersError> {
-  return fromPromise("load latest snapshot", (): Promise<Snapshot[]> =>
-    (adapter as any).db
-      .select()
-      .from(smithersSnapshots)
-      .where(eq(smithersSnapshots.runId, runId))
-      .orderBy(desc(smithersSnapshots.frameNo))
-      .limit(1),
-  {
-    code: "DB_QUERY_FAILED",
-    details: { runId },
-  },
-  ).pipe(
+  return Effect.tryPromise({
+    try: (): Promise<Snapshot[]> =>
+      (adapter as any).db
+        .select()
+        .from(smithersSnapshots)
+        .where(eq(smithersSnapshots.runId, runId))
+        .orderBy(desc(smithersSnapshots.frameNo))
+        .limit(1),
+    catch: (cause) => toSmithersError(cause, "load latest snapshot", {
+      code: "DB_QUERY_FAILED",
+      details: { runId },
+    }),
+  }).pipe(
     Effect.map((rows: any[]) => rows[0] as Snapshot | undefined),
     Effect.annotateLogs({ runId }),
     Effect.withLogSpan("time-travel:load-latest-snapshot"),

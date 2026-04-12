@@ -1,7 +1,7 @@
 import { getTableName, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Effect, Exit, FiberId, Metric } from "effect";
-import { fromPromise, fromSync } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { getSqlMessageStorage, type SqlMessageStorage } from "./sql-message-storage";
 import type {
   HumanRequestKind,
@@ -16,7 +16,6 @@ import {
   dbTransactionRetries,
   dbTransactionRollbacks,
 } from "@smithers/observability/metrics";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
 import type { SmithersError } from "@smithers/errors/SmithersError";
 import {
   assertOptionalStringMaxLength,
@@ -633,14 +632,13 @@ export class SmithersDb {
   rawQuery(queryString: string) {
     const self = this;
     return runnableEffect(Effect.gen(function* () {
-      const validatedQuery = yield* fromSync(
-        "validate raw query",
-        () => validateReadOnlyRawQuery(queryString),
-        {
+      const validatedQuery = yield* Effect.try({
+        try: () => validateReadOnlyRawQuery(queryString),
+        catch: (cause) => toSmithersError(cause, "validate raw query", {
           code: "INVALID_INPUT",
           details: { operation: "raw query validation" },
-        },
-      );
+        }),
+      });
       return yield* self.read(`raw query ${validatedQuery.slice(0, 20)}`, () => {
         const client = (self.db as any).session.client;
         const stmt = client.query(validatedQuery);
@@ -663,9 +661,12 @@ export class SmithersDb {
     const self = this;
     return runnableEffect(Effect.gen(function* () {
       const start = performance.now();
-      const readOperation = fromPromise(label, operation, {
-        code: "DB_QUERY_FAILED",
-        details: { operation: label },
+      const readOperation = Effect.tryPromise({
+        try: () => operation(),
+        catch: (cause) => toSmithersError(cause, label, {
+          code: "DB_QUERY_FAILED",
+          details: { operation: label },
+        }),
       });
       const currentFiberId = yield* Effect.fiberId;
       const currentFiberThread = FiberId.threadName(currentFiberId);
@@ -697,9 +698,12 @@ export class SmithersDb {
     const self = this;
     return runnableEffect(Effect.gen(function* () {
       const start = performance.now();
-      const writeOperation = fromPromise(label, operation, {
-        code: "DB_WRITE_FAILED",
-        details: { operation: label },
+      const writeOperation = Effect.tryPromise({
+        try: () => operation(),
+        catch: (cause) => toSmithersError(cause, label, {
+          code: "DB_WRITE_FAILED",
+          details: { operation: label },
+        }),
       });
       const currentFiberId = yield* Effect.fiberId;
       const currentFiberThread = FiberId.threadName(currentFiberId);
@@ -728,33 +732,39 @@ export class SmithersDb {
   }
 
   private getSqliteTransactionClient() {
-    return fromSync("resolve sqlite transaction client", () => {
-      const candidate = (this.db as any).session?.client ?? (this.db as any).$client;
-      if (!candidate || typeof candidate.run !== "function") {
-        throw new Error(
-          "SmithersDb.withTransaction requires Bun SQLite client transaction primitives.",
-        );
-      }
-      return candidate as { run: (sql: string) => unknown };
-    }, {
-      code: "DB_WRITE_FAILED",
-      details: { operation: "resolve sqlite transaction client" },
+    return Effect.try({
+      try: () => {
+        const candidate = (this.db as any).session?.client ?? (this.db as any).$client;
+        if (!candidate || typeof candidate.run !== "function") {
+          throw new Error(
+            "SmithersDb.withTransaction requires Bun SQLite client transaction primitives.",
+          );
+        }
+        return candidate as { run: (sql: string) => unknown };
+      },
+      catch: (cause) => toSmithersError(cause, "resolve sqlite transaction client", {
+        code: "DB_WRITE_FAILED",
+        details: { operation: "resolve sqlite transaction client" },
+      }),
     });
   }
 
   private acquireTransactionTurn() {
-    return fromPromise("acquire sqlite transaction turn", async () => {
-      let release!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const previous = this.transactionTail.catch(() => undefined);
-      this.transactionTail = previous.then(() => gate);
-      await previous;
-      return release;
-    }, {
-      code: "DB_WRITE_FAILED",
-      details: { operation: "acquire sqlite transaction turn" },
+    return Effect.tryPromise({
+      try: async () => {
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const previous = this.transactionTail.catch(() => undefined);
+        this.transactionTail = previous.then(() => gate);
+        await previous;
+        return release;
+      },
+      catch: (cause) => toSmithersError(cause, "acquire sqlite transaction turn", {
+        code: "DB_WRITE_FAILED",
+        details: { operation: "acquire sqlite transaction turn" },
+      }),
     });
   }
 
@@ -810,13 +820,16 @@ export class SmithersDb {
                 });
               });
 
-            yield* fromSync("begin sqlite transaction", () => {
-              client.run("BEGIN IMMEDIATE");
-              self.transactionDepth += 1;
-              self.transactionOwnerThread = currentFiberThread;
-            }, {
-              code: "DB_WRITE_FAILED",
-              details: { writeGroup, phase: "begin" },
+            yield* Effect.try({
+              try: () => {
+                client.run("BEGIN IMMEDIATE");
+                self.transactionDepth += 1;
+                self.transactionOwnerThread = currentFiberThread;
+              },
+              catch: (cause) => toSmithersError(cause, "begin sqlite transaction", {
+                code: "DB_WRITE_FAILED",
+                details: { writeGroup, phase: "begin" },
+              }),
             });
 
             const operationExit = yield* Effect.exit(operation);
@@ -826,11 +839,14 @@ export class SmithersDb {
             }
 
             const commitExit = yield* Effect.exit(
-              fromSync("commit sqlite transaction", () => {
-                client.run("COMMIT");
-              }, {
-                code: "DB_WRITE_FAILED",
-                details: { writeGroup, phase: "commit" },
+              Effect.try({
+                try: () => {
+                  client.run("COMMIT");
+                },
+                catch: (cause) => toSmithersError(cause, "commit sqlite transaction", {
+                  code: "DB_WRITE_FAILED",
+                  details: { writeGroup, phase: "commit" },
+                }),
               }),
             );
             if (Exit.isFailure(commitExit)) {
@@ -1529,14 +1545,13 @@ export class SmithersDb {
           if (!currentXml) {
             currentXml = String(frameRow.xmlJson ?? "null");
           } else {
-            currentXml = yield* fromSync(
-              `apply frame delta ${runId}:${frameRow.frameNo}`,
-              () => applyFrameDeltaJson(currentXml, String(frameRow.xmlJson ?? "")),
-              {
+            currentXml = yield* Effect.try({
+              try: () => applyFrameDeltaJson(currentXml, String(frameRow.xmlJson ?? "")),
+              catch: (cause) => toSmithersError(cause, `apply frame delta ${runId}:${frameRow.frameNo}`, {
                 code: "DB_QUERY_FAILED",
                 details: { runId, frameNo: frameRow.frameNo },
-              },
-            );
+              }),
+            });
           }
         } else {
           currentXml = String(frameRow.xmlJson ?? "null");
@@ -1591,14 +1606,13 @@ export class SmithersDb {
           frameNo - 1,
         );
         if (typeof previousXmlJson === "string") {
-          const delta = yield* fromSync(
-            `encode frame delta ${runId}:${frameNo}`,
-            () => encodeFrameDelta(previousXmlJson, fullXmlJson),
-            {
+          const delta = yield* Effect.try({
+            try: () => encodeFrameDelta(previousXmlJson, fullXmlJson),
+            catch: (cause) => toSmithersError(cause, `encode frame delta ${runId}:${frameNo}`, {
               code: "DB_WRITE_FAILED",
               details: { runId, frameNo },
-            },
-          );
+            }),
+          });
           const deltaJson = serializeFrameDelta(delta);
           if (deltaJson.length < fullXmlJson.length) {
             encoding = "delta";
@@ -2017,48 +2031,53 @@ export class SmithersDb {
           ) {
             const lastSeq = (yield* self.getLastSignalSeq(row.runId)) ?? -1;
             const seq = lastSeq + 1;
-            yield* fromPromise("insert fallback signal row", () =>
-              self.internalStorage.insertIgnore("_smithers_signals", {
-                ...row,
-                receivedBy: row.receivedBy ?? null,
-                seq,
-              }),
-            );
+            yield* Effect.tryPromise({
+              try: () =>
+                self.internalStorage.insertIgnore("_smithers_signals", {
+                  ...row,
+                  receivedBy: row.receivedBy ?? null,
+                  seq,
+                }),
+              catch: (cause) => toSmithersError(cause, "insert fallback signal row"),
+            });
             return seq;
           }
 
-          return yield* fromSync("insert signal transaction", () => {
-            client.run("BEGIN IMMEDIATE");
-            try {
-              const res = client
-                .query(
-                  "SELECT COALESCE(MAX(seq), -1) + 1 AS seq FROM _smithers_signals WHERE run_id = ?",
-                )
-                .get(row.runId);
-              const seq = Number(res?.seq ?? 0);
-              client
-                .query(
-                  "INSERT INTO _smithers_signals (run_id, seq, signal_name, correlation_id, payload_json, received_at_ms, received_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                )
-                .run(
-                  row.runId,
-                  seq,
-                  row.signalName,
-                  row.correlationId,
-                  row.payloadJson,
-                  row.receivedAtMs,
-                  row.receivedBy ?? null,
-                );
-              client.run("COMMIT");
-              return seq;
-            } catch (error) {
+          return yield* Effect.try({
+            try: () => {
+              client.run("BEGIN IMMEDIATE");
               try {
-                client.run("ROLLBACK");
-              } catch {
-                // ignore rollback failures
+                const res = client
+                  .query(
+                    "SELECT COALESCE(MAX(seq), -1) + 1 AS seq FROM _smithers_signals WHERE run_id = ?",
+                  )
+                  .get(row.runId);
+                const seq = Number(res?.seq ?? 0);
+                client
+                  .query(
+                    "INSERT INTO _smithers_signals (run_id, seq, signal_name, correlation_id, payload_json, received_at_ms, received_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  )
+                  .run(
+                    row.runId,
+                    seq,
+                    row.signalName,
+                    row.correlationId,
+                    row.payloadJson,
+                    row.receivedAtMs,
+                    row.receivedBy ?? null,
+                  );
+                client.run("COMMIT");
+                return seq;
+              } catch (error) {
+                try {
+                  client.run("ROLLBACK");
+                } catch {
+                  // ignore rollback failures
+                }
+                throw error;
               }
-              throw error;
-            }
+            },
+            catch: (cause) => toSmithersError(cause, "insert signal transaction"),
           });
         }),
       { label },
@@ -2203,36 +2222,41 @@ export class SmithersDb {
           ) {
             const lastSeq = (yield* self.getLastEventSeq(row.runId)) ?? -1;
             const seq = lastSeq + 1;
-            yield* fromPromise("insert fallback event row", () =>
-              self.internalStorage.insertIgnore("_smithers_events", { ...row, seq }),
-            );
+            yield* Effect.tryPromise({
+              try: () =>
+                self.internalStorage.insertIgnore("_smithers_events", { ...row, seq }),
+              catch: (cause) => toSmithersError(cause, "insert fallback event row"),
+            });
             return seq;
           }
 
-          return yield* fromSync("insert event transaction", () => {
-            client.run("BEGIN IMMEDIATE");
-            try {
-              const res = client
-                .query(
-                  "SELECT COALESCE(MAX(seq), -1) + 1 AS seq FROM _smithers_events WHERE run_id = ?",
-                )
-                .get(row.runId);
-              const seq = Number(res?.seq ?? 0);
-              client
-                .query(
-                  "INSERT INTO _smithers_events (run_id, seq, timestamp_ms, type, payload_json) VALUES (?, ?, ?, ?, ?)",
-                )
-                .run(row.runId, seq, row.timestampMs, row.type, row.payloadJson);
-              client.run("COMMIT");
-              return seq;
-            } catch (error) {
+          return yield* Effect.try({
+            try: () => {
+              client.run("BEGIN IMMEDIATE");
               try {
-                client.run("ROLLBACK");
-              } catch {
-                // ignore rollback failures
+                const res = client
+                  .query(
+                    "SELECT COALESCE(MAX(seq), -1) + 1 AS seq FROM _smithers_events WHERE run_id = ?",
+                  )
+                  .get(row.runId);
+                const seq = Number(res?.seq ?? 0);
+                client
+                  .query(
+                    "INSERT INTO _smithers_events (run_id, seq, timestamp_ms, type, payload_json) VALUES (?, ?, ?, ?, ?)",
+                  )
+                  .run(row.runId, seq, row.timestampMs, row.type, row.payloadJson);
+                client.run("COMMIT");
+                return seq;
+              } catch (error) {
+                try {
+                  client.run("ROLLBACK");
+                } catch {
+                  // ignore rollback failures
+                }
+                throw error;
               }
-              throw error;
-            }
+            },
+            catch: (cause) => toSmithersError(cause, "insert event transaction"),
           });
         }),
       { label },

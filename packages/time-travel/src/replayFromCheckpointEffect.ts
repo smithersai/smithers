@@ -1,3 +1,4 @@
+import type { CommandExecutor } from "@effect/platform/CommandExecutor";
 import { Effect, Metric } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { SmithersError } from "@smithers/errors/SmithersError";
@@ -15,7 +16,7 @@ import type { ReplayResult } from "./ReplayResult";
 export function replayFromCheckpoint(
   adapter: SmithersDb,
   params: ReplayParams,
-): Effect.Effect<ReplayResult, SmithersError> {
+): Effect.Effect<ReplayResult, SmithersError, CommandExecutor> {
   return Effect.gen(function* () {
     const {
       parentRunId,

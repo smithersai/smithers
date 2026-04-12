@@ -1,5 +1,5 @@
 import { Effect, Metric } from "effect";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { scorerDuration, scorersFinished, scorersFailed, scorersStarted } from "./metrics";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { EventBus } from "@smithers/engine/events";
@@ -62,23 +62,24 @@ function runSingleScorerEffect(
     }
 
     const start = performance.now();
-    const result = yield* fromPromise(`scorer:${scorer.id}`, () =>
-      scorer.score({
-        input: ctx.input,
-        output: ctx.output,
-        latencyMs: ctx.latencyMs,
-        outputSchema: ctx.outputSchema,
+    const result = yield* Effect.tryPromise({
+      try: () =>
+        scorer.score({
+          input: ctx.input,
+          output: ctx.output,
+          latencyMs: ctx.latencyMs,
+          outputSchema: ctx.outputSchema,
+        }),
+      catch: (cause) => toSmithersError(cause, `scorer:${scorer.id}`, {
+        code: "SCORER_FAILED",
+        details: {
+          bindingKey: key,
+          scorerId: scorer.id,
+          scorerName: scorer.name,
+          source,
+        },
       }),
-    {
-      code: "SCORER_FAILED",
-      details: {
-        bindingKey: key,
-        scorerId: scorer.id,
-        scorerName: scorer.name,
-        source,
-      },
-    },
-    ).pipe(
+    }).pipe(
       Effect.tapError((err) =>
         Effect.gen(function* () {
           yield* Metric.increment(scorersFailed);

@@ -2,7 +2,7 @@ import type { CommandExecutor } from "@effect/platform/CommandExecutor";
 import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { SmithersError } from "@smithers/errors/SmithersError";
-import { revertToJjPointerEffect } from "@smithers/vcs/jj";
+import { revertToJjPointer } from "@smithers/vcs/jj";
 import { loadVcsTag } from "./loadVcsTagEffect";
 
 export function rerunAtRevision(
@@ -21,7 +21,7 @@ export function rerunAtRevision(
       return { restored: false, vcsPointer: null };
     }
 
-    const result = yield* revertToJjPointerEffect(
+    const result = yield* revertToJjPointer(
       tag.vcsPointer,
       opts.cwd ?? tag.vcsRoot ?? undefined,
     );

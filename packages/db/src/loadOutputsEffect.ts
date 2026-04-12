@@ -3,7 +3,7 @@ import { getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
 import { Effect, Option } from "effect";
 import type { OutputSnapshot } from "@smithers/driver/OutputSnapshot";
-import { fromPromise, fromSync } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SmithersError } from "@smithers/errors/SmithersError";
 
 /**
@@ -63,32 +63,31 @@ export function loadOutputs(
     for (const [key, table] of Object.entries(schema)) {
       if (!table || typeof table !== "object") continue;
       if (key === "input") continue;
-      const colsOpt = yield* fromSync(
-        "get table columns",
-        () => getTableColumns(table as any) as Record<string, any>,
-        { code: "DB_QUERY_FAILED", details: { runId, schemaKey: key } },
-      ).pipe(Effect.option);
+      const colsOpt = yield* Effect.try({
+        try: () => getTableColumns(table as any) as Record<string, any>,
+        catch: (cause) => toSmithersError(cause, "get table columns", { code: "DB_QUERY_FAILED", details: { runId, schemaKey: key } }),
+      }).pipe(Effect.option);
       if (Option.isNone(colsOpt)) continue;
       const cols = colsOpt.value;
       const runIdCol = cols.runId;
       if (!runIdCol) continue;
-      const tableNameOpt = yield* fromSync(
-        "get table name",
-        () => getTableName(table as any),
-        { code: "DB_QUERY_FAILED", details: { runId, schemaKey: key } },
-      ).pipe(Effect.option);
+      const tableNameOpt = yield* Effect.try({
+        try: () => getTableName(table as any),
+        catch: (cause) => toSmithersError(cause, "get table name", { code: "DB_QUERY_FAILED", details: { runId, schemaKey: key } }),
+      }).pipe(Effect.option);
       if (Option.isNone(tableNameOpt)) continue;
       const tableName = tableNameOpt.value;
-      const rawRows = yield* fromPromise<any[]>(`load outputs ${tableName}`, () =>
-        db
-          .select()
-          .from(table as any)
-          .where(eq(runIdCol, runId)),
-      {
-        code: "DB_QUERY_FAILED",
-        details: { runId, tableName },
-      },
-      );
+      const rawRows = yield* Effect.tryPromise({
+        try: () =>
+          db
+            .select()
+            .from(table as any)
+            .where(eq(runIdCol, runId)) as Promise<any[]>,
+        catch: (cause) => toSmithersError(cause, `load outputs ${tableName}`, {
+          code: "DB_QUERY_FAILED",
+          details: { runId, tableName },
+        }),
+      });
       const boolKeys = getBooleanColumnKeys(table);
       const rows = coerceBooleanColumns(rawRows, boolKeys);
       out[tableName] = rows;

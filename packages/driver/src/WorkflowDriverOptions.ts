@@ -10,10 +10,10 @@ import type {
 import type { WorkflowDefinition } from "./WorkflowDefinition.ts";
 import type { WorkflowGraphRenderer } from "./WorkflowGraphRenderer.ts";
 
-export type WorkflowDriverOptions<Schema = unknown, Element = unknown> = {
-  workflow: WorkflowDefinition<Schema, Element>;
+export type WorkflowDriverOptions<Schema = unknown> = {
+  workflow: WorkflowDefinition<Schema>;
   runtime: WorkflowRuntime;
-  renderer: WorkflowGraphRenderer<Element>;
+  renderer: WorkflowGraphRenderer;
   session?: WorkflowSession;
   createSession?: CreateWorkflowSession;
   db?: unknown;

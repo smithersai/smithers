@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { Effect, Metric } from "effect";
-import { fromSync, ignoreSyncError, toError } from "./interop";
+import { ignoreSyncError } from "./interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { toolOutputTruncatedTotal } from "@smithers/observability/metrics";
 import { logDebug, logWarning } from "@smithers/observability/logging";
@@ -213,7 +214,7 @@ export function spawnCaptureEffect(
       if (idleTimer) clearTimeout(idleTimer);
       if (!settled) {
         settled = true;
-        const smithersError = toError(error, `spawn ${command}`, {
+        const smithersError = toSmithersError(error, `spawn ${command}`, {
           code: "PROCESS_SPAWN_FAILED",
           details: errorDetails,
         });
@@ -244,15 +245,18 @@ export function spawnCaptureEffect(
       if (totalTimer) clearTimeout(totalTimer);
       if (idleTimer) clearTimeout(idleTimer);
       if (!settled) {
-        yield* fromSync("kill process group", () => {
-          if (detached && child.pid) {
-            process.kill(-child.pid, "SIGKILL");
-          } else {
-            child.kill("SIGKILL");
-          }
-        }, {
-          code: "PROCESS_ABORTED",
-          details: errorDetails,
+        yield* Effect.try({
+          try: () => {
+            if (detached && child.pid) {
+              process.kill(-child.pid, "SIGKILL");
+            } else {
+              child.kill("SIGKILL");
+            }
+          },
+          catch: (cause) => toSmithersError(cause, "kill process group", {
+            code: "PROCESS_ABORTED",
+            details: errorDetails,
+          }),
         }).pipe(
           Effect.catchAll(() => ignoreSyncError("kill fallback", () => child.kill("SIGKILL"))),
         );

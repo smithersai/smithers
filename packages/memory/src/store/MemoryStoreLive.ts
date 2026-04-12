@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { Effect, Layer, Metric } from "effect";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { dbQueryDuration } from "@smithers/observability/metrics";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import type { SmithersError } from "@smithers/errors/SmithersError";
@@ -32,9 +32,12 @@ function readEffect<A>(
 ): Effect.Effect<A, SmithersError> {
   return Effect.gen(function* () {
     const start = performance.now();
-    const result = yield* fromPromise(label, operation, {
-      code: "DB_QUERY_FAILED",
-      details: { operation: label },
+    const result = yield* Effect.tryPromise({
+      try: () => operation(),
+      catch: (cause) => toSmithersError(cause, label, {
+        code: "DB_QUERY_FAILED",
+        details: { operation: label },
+      }),
     });
     yield* Metric.update(dbQueryDuration, performance.now() - start);
     return result;
@@ -50,9 +53,12 @@ function writeEffect<A>(
 ): Effect.Effect<A, SmithersError> {
   return Effect.gen(function* () {
     const start = performance.now();
-    const result = yield* fromPromise(label, operation, {
-      code: "DB_WRITE_FAILED",
-      details: { operation: label },
+    const result = yield* Effect.tryPromise({
+      try: () => operation(),
+      catch: (cause) => toSmithersError(cause, label, {
+        code: "DB_WRITE_FAILED",
+        details: { operation: label },
+      }),
     });
     yield* Metric.update(dbQueryDuration, performance.now() - start);
     return result;

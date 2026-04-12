@@ -3,6 +3,7 @@ import type { SmithersDb, AttemptRow, NodeRow } from "@smithers/db/adapter";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { revertToJjPointer } from "@smithers/vcs/jj";
+import * as BunContext from "@effect/platform-bun/BunContext";
 
 export type TimeTravelOptions = {
   runId: string;
@@ -158,10 +159,10 @@ export async function timeTravel(
 
   let vcsRestored = false;
   if (restoreVcs && jjPointer) {
-    const vcsResult = await revertToJjPointer(
+    const vcsResult = await Effect.runPromise(revertToJjPointer(
       jjPointer,
       targetAttempt.jjCwd ?? undefined,
-    );
+    ).pipe(Effect.provide(BunContext.layer)));
     vcsRestored = vcsResult.success;
     if (!vcsResult.success) {
       const error = vcsResult.error ?? "Failed to restore VCS state";

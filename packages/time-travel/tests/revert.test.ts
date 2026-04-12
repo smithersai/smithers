@@ -2,6 +2,8 @@ import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { revertToJjPointer, getJjPointer } from "@smithers/vcs/jj";
+import * as BunContext from "@effect/platform-bun/BunContext";
+import { Effect } from "effect";
 import { revertToAttempt, type RevertResult } from "../src/revert";
 import { createTestDb } from "../../smithers/tests/helpers";
 import { schema, ddl } from "../../smithers/tests/schema";
@@ -15,12 +17,12 @@ function buildDb() {
 
 describe("revertToJjPointer", () => {
   test("calls jj restore with correct pointer", async () => {
-    const result = await revertToJjPointer("abc123");
+    const result = await Effect.runPromise(revertToJjPointer("abc123").pipe(Effect.provide(BunContext.layer)));
     expect(result).toHaveProperty("success");
   });
 
   test("returns error when jj is not available", async () => {
-    const result = await revertToJjPointer("invalid-pointer-that-should-fail");
+    const result = await Effect.runPromise(revertToJjPointer("invalid-pointer-that-should-fail").pipe(Effect.provide(BunContext.layer)));
     expect(result).toHaveProperty("success");
   });
 });

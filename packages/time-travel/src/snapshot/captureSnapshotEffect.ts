@@ -1,7 +1,7 @@
 import { Effect, Metric } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
-import { fromPromise } from "@smithers/driver/interop";
-import { sha256Hex } from "@smithers/driver/sha256Hex";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { createHash } from "node:crypto";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import type { SmithersError } from "@smithers/errors/SmithersError";
 import { smithersSnapshots } from "../schema";
@@ -32,7 +32,7 @@ export function captureSnapshot(
     const outputsJson = JSON.stringify(data.outputs);
     const ralphJson = JSON.stringify(data.ralph);
     const inputJson = JSON.stringify(data.input);
-    const contentHash = sha256Hex(serializeSnapshotContent(data));
+    const contentHash = createHash("sha256").update(serializeSnapshotContent(data)).digest("hex");
     const ts = nowMs();
 
     const row = {
@@ -48,19 +48,20 @@ export function captureSnapshot(
       createdAtMs: ts,
     };
 
-    yield* fromPromise("insert snapshot", () =>
-      (adapter as any).db
-        .insert(smithersSnapshots)
-        .values(row)
-        .onConflictDoUpdate({
-          target: [smithersSnapshots.runId, smithersSnapshots.frameNo],
-          set: row,
-        }),
-    {
-      code: "DB_WRITE_FAILED",
-      details: { frameNo, runId },
-    },
-    );
+    yield* Effect.tryPromise({
+      try: () =>
+        (adapter as any).db
+          .insert(smithersSnapshots)
+          .values(row)
+          .onConflictDoUpdate({
+            target: [smithersSnapshots.runId, smithersSnapshots.frameNo],
+            set: row,
+          }),
+      catch: (cause) => toSmithersError(cause, "insert snapshot", {
+        code: "DB_WRITE_FAILED",
+        details: { frameNo, runId },
+      }),
+    });
 
     yield* Metric.increment(snapshotsCaptured);
     yield* Metric.update(snapshotDuration, performance.now() - start);

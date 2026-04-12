@@ -2,7 +2,7 @@ import type { CommandExecutor } from "@effect/platform/CommandExecutor";
 import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import { SmithersError } from "@smithers/errors/SmithersError";
-import { workspaceAddEffect } from "@smithers/vcs/jj";
+import { workspaceAdd } from "@smithers/vcs/jj";
 import { loadVcsTag } from "./loadVcsTagEffect";
 
 /**
@@ -24,7 +24,7 @@ export function resolveWorkflowAtRevision(
     if (!tag) return null;
 
     const workspaceName = `smithers-replay-${runId.slice(0, 8)}-f${frameNo}`;
-    const result = yield* workspaceAddEffect(workspaceName, workspacePath, {
+    const result = yield* workspaceAdd(workspaceName, workspacePath, {
       cwd: tag.vcsRoot ?? undefined,
       atRev: tag.vcsPointer,
     });

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Effect, Layer } from "effect";
 import type { SandboxHandle, SandboxTransportConfig } from "../transport";
 import { SmithersError } from "@smithers/errors/SmithersError";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SandboxEntityExecutor } from "./sandbox-entity";
 
 function baseHandle(config: SandboxTransportConfig): SandboxHandle {
@@ -60,18 +60,24 @@ export const BubblewrapSandboxExecutorLive = Layer.succeed(
 
         const handle = baseHandle(config);
 
-        yield* fromPromise("create sandbox workspace", async () => {
-          await mkdir(handle.requestPath, { recursive: true });
-          await mkdir(handle.resultPath, { recursive: true });
+        yield* Effect.tryPromise({
+          try: async () => {
+            await mkdir(handle.requestPath, { recursive: true });
+            await mkdir(handle.resultPath, { recursive: true });
+          },
+          catch: (cause) => toSmithersError(cause, "create sandbox workspace"),
         });
 
         return handle;
       }),
     ship: (bundlePath, handle) =>
-      fromPromise("ship sandbox bundle", async () => {
-        await rm(handle.requestPath, { recursive: true, force: true });
-        await mkdir(handle.requestPath, { recursive: true });
-        await cp(bundlePath, handle.requestPath, { recursive: true });
+      Effect.tryPromise({
+        try: async () => {
+          await rm(handle.requestPath, { recursive: true, force: true });
+          await mkdir(handle.requestPath, { recursive: true });
+          await cp(bundlePath, handle.requestPath, { recursive: true });
+        },
+        catch: (cause) => toSmithersError(cause, "ship sandbox bundle"),
       }),
     execute: (_command, _handle) => Effect.succeed({ exitCode: 0 }),
     collect: (handle) => Effect.succeed({ bundlePath: handle.resultPath }),

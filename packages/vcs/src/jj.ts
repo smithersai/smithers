@@ -1,9 +1,6 @@
 import * as Command from "@effect/platform/Command";
-import * as BunContext from "@effect/platform-bun/BunContext";
 import { Duration, Effect, Fiber, Metric, Stream } from "effect";
 import { vcsDuration } from "@smithers/observability/metrics";
-
-const platformLayer = BunContext.layer;
 
 /**
  * Cross-version-safe JJ helpers.
@@ -37,7 +34,7 @@ function collectUtf8(stream: Stream.Stream<Uint8Array, unknown, never>) {
  * Run a `jj` command and capture output.
  * Minimal helper used by vcs features and safe to call when jj is missing.
  */
-export function runJjEffect(
+export function runJj(
   args: string[],
   opts: RunJjOptions = {},
 ) {
@@ -77,15 +74,7 @@ export function runJjEffect(
         stderr: error instanceof Error ? error.message : String(error),
       }),
     ),
-    Effect.provide(platformLayer),
   );
-}
-
-export function runJj(
-  args: string[],
-  opts: RunJjOptions = {},
-): Promise<RunJjResult> {
-  return Effect.runPromise(runJjEffect(args, opts).pipe(Effect.provide(platformLayer)));
 }
 
 function jjError(res: RunJjResult): string {
@@ -96,8 +85,8 @@ function jjError(res: RunJjResult): string {
  * Returns the current workspace change id (jj `change_id`) or null on failure.
  * Accepts optional `cwd` to run inside a target repository.
  */
-export function getJjPointerEffect(cwd?: string) {
-  return runJjEffect(
+export function getJjPointer(cwd?: string) {
+  return runJj(
     ["log", "-r", "@", "--no-graph", "--template", "change_id"],
     { cwd },
   ).pipe(
@@ -120,10 +109,6 @@ export function getJjPointerEffect(cwd?: string) {
   );
 }
 
-export function getJjPointer(cwd?: string): Promise<string | null> {
-  return Effect.runPromise(getJjPointerEffect(cwd).pipe(Effect.provide(platformLayer)));
-}
-
 export type JjRevertResult = {
   success: boolean;
   error?: string;
@@ -133,11 +118,11 @@ export type JjRevertResult = {
  * Restore the working copy to a previously recorded jujutsu `change_id`.
  * Used by the engine to revert attempts within the correct repo/worktree (via `cwd`).
  */
-export function revertToJjPointerEffect(
+export function revertToJjPointer(
   pointer: string,
   cwd?: string,
 ) {
-  return runJjEffect(["restore", "--from", pointer], { cwd }).pipe(
+  return runJj(["restore", "--from", pointer], { cwd }).pipe(
     Effect.map((res) =>
       res.code === 0
         ? { success: true as const }
@@ -148,28 +133,17 @@ export function revertToJjPointerEffect(
   );
 }
 
-export function revertToJjPointer(
-  pointer: string,
-  cwd?: string,
-): Promise<JjRevertResult> {
-  return Effect.runPromise(revertToJjPointerEffect(pointer, cwd).pipe(Effect.provide(platformLayer)));
-}
-
 /**
  * Quick repo detection by executing a read-only jj command.
  */
-export function isJjRepoEffect(cwd?: string) {
-  return runJjEffect(["log", "-r", "@", "-n", "1", "--no-graph"], {
+export function isJjRepo(cwd?: string) {
+  return runJj(["log", "-r", "@", "-n", "1", "--no-graph"], {
     cwd,
   }).pipe(
     Effect.map((res) => res.code === 0),
     Effect.annotateLogs({ cwd: cwd ?? "" }),
     Effect.withLogSpan("vcs:jj-is-repo"),
   );
-}
-
-export function isJjRepo(cwd?: string): Promise<boolean> {
-  return Effect.runPromise(isJjRepoEffect(cwd).pipe(Effect.provide(platformLayer)));
 }
 
 export type WorkspaceAddOptions = {
@@ -186,7 +160,7 @@ export type WorkspaceResult = {
  * Create a new JJ workspace at `path` with a friendly `name`.
  * NOTE: Syntax may vary between JJ versions; this helper aims to be permissive.
  */
-export function workspaceAddEffect(
+export function workspaceAdd(
   name: string,
   path: string,
   opts: WorkspaceAddOptions = {},
@@ -203,9 +177,9 @@ export function workspaceAddEffect(
 
   return Effect.gen(function* () {
     // Pre-check: forget stale workspace + ensure parent dir exists
-    const listRes = yield* runJjEffect(["workspace", "list"], { cwd: opts.cwd });
+    const listRes = yield* runJj(["workspace", "list"], { cwd: opts.cwd });
     if (listRes.code === 0 && listRes.stdout.includes(`${name}:`)) {
-      yield* runJjEffect(["workspace", "forget", name], { cwd: opts.cwd });
+      yield* runJj(["workspace", "forget", name], { cwd: opts.cwd });
     }
     try {
       const fs = require("node:fs");
@@ -221,7 +195,7 @@ export function workspaceAddEffect(
 
     let lastErr = "";
     for (const args of attempts) {
-      const res = yield* runJjEffect(args, { cwd: opts.cwd });
+      const res = yield* runJj(args, { cwd: opts.cwd });
       if (res.code === 0) {
         return { success: true as const };
       }
@@ -241,14 +215,6 @@ export function workspaceAddEffect(
   );
 }
 
-export function workspaceAdd(
-  name: string,
-  path: string,
-  opts: WorkspaceAddOptions = {},
-): Promise<WorkspaceResult> {
-  return Effect.runPromise(workspaceAddEffect(name, path, opts).pipe(Effect.provide(platformLayer)));
-}
-
 export type WorkspaceInfo = {
   name: string;
   path: string | null;
@@ -259,11 +225,9 @@ export type WorkspaceInfo = {
  * List existing workspaces using a JJ template for structured output.
  * Falls back to parsing human output if `-T` is unavailable.
  */
-export function workspaceListEffect(
-  cwd?: string,
-) {
+export function workspaceList(cwd?: string) {
   return Effect.gen(function* () {
-    let res = yield* runJjEffect(["workspace", "list", "-T", 'name ++ "\\n"'], {
+    let res = yield* runJj(["workspace", "list", "-T", 'name ++ "\\n"'], {
       cwd,
     });
     if (res.code === 0) {
@@ -274,7 +238,7 @@ export function workspaceListEffect(
       return lines.map((name) => ({ name, path: null, selected: false }));
     }
 
-    res = yield* runJjEffect(["workspace", "list"], { cwd });
+    res = yield* runJj(["workspace", "list"], { cwd });
     if (res.code !== 0) return [];
     const rows: WorkspaceInfo[] = [];
     for (const raw of res.stdout.split(/\r?\n/)) {
@@ -293,18 +257,14 @@ export function workspaceListEffect(
   );
 }
 
-export function workspaceList(cwd?: string): Promise<WorkspaceInfo[]> {
-  return Effect.runPromise(workspaceListEffect(cwd).pipe(Effect.provide(platformLayer)));
-}
-
 /**
  * Close the given workspace by name.
  */
-export function workspaceCloseEffect(
+export function workspaceClose(
   name: string,
   opts: { cwd?: string } = {},
 ) {
-  return runJjEffect(["workspace", "forget", name], { cwd: opts.cwd }).pipe(
+  return runJj(["workspace", "forget", name], { cwd: opts.cwd }).pipe(
     Effect.map((res) =>
       res.code === 0
         ? { success: true as const }
@@ -313,11 +273,4 @@ export function workspaceCloseEffect(
     Effect.annotateLogs({ cwd: opts.cwd ?? "", workspaceName: name }),
     Effect.withLogSpan("vcs:jj-workspace-close"),
   );
-}
-
-export function workspaceClose(
-  name: string,
-  opts: { cwd?: string } = {},
-): Promise<WorkspaceResult> {
-  return Effect.runPromise(workspaceCloseEffect(name, opts).pipe(Effect.provide(platformLayer)));
 }

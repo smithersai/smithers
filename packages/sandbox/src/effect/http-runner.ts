@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect";
 import type { SandboxHandle, SandboxTransportConfig } from "../transport";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { spawnCaptureEffect } from "@smithers/driver/child-process";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SandboxEntityExecutor } from "./sandbox-entity";
 
 function baseHandle(config: SandboxTransportConfig): SandboxHandle {
@@ -51,18 +51,24 @@ export const DockerSandboxExecutorLive = Layer.succeed(
           ),
         );
 
-        yield* fromPromise("create docker sandbox workspace", async () => {
-          await mkdir(handle.requestPath, { recursive: true });
-          await mkdir(handle.resultPath, { recursive: true });
+        yield* Effect.tryPromise({
+          try: async () => {
+            await mkdir(handle.requestPath, { recursive: true });
+            await mkdir(handle.resultPath, { recursive: true });
+          },
+          catch: (cause) => toSmithersError(cause, "create docker sandbox workspace"),
         });
 
         return handle;
       }),
     ship: (bundlePath, handle) =>
-      fromPromise("ship docker bundle", async () => {
-        await rm(handle.requestPath, { recursive: true, force: true });
-        await mkdir(handle.requestPath, { recursive: true });
-        await cp(bundlePath, handle.requestPath, { recursive: true });
+      Effect.tryPromise({
+        try: async () => {
+          await rm(handle.requestPath, { recursive: true, force: true });
+          await mkdir(handle.requestPath, { recursive: true });
+          await cp(bundlePath, handle.requestPath, { recursive: true });
+        },
+        catch: (cause) => toSmithersError(cause, "ship docker bundle"),
       }),
     execute: (_command, _handle) => Effect.succeed({ exitCode: 0 }),
     collect: (handle) => Effect.succeed({ bundlePath: handle.resultPath }),
@@ -89,9 +95,12 @@ export const CodeplaneSandboxExecutorLive = Layer.succeed(
 
         const handle = baseHandle(config);
 
-        yield* fromPromise("create codeplane sandbox workspace", async () => {
-          await mkdir(handle.requestPath, { recursive: true });
-          await mkdir(handle.resultPath, { recursive: true });
+        yield* Effect.tryPromise({
+          try: async () => {
+            await mkdir(handle.requestPath, { recursive: true });
+            await mkdir(handle.resultPath, { recursive: true });
+          },
+          catch: (cause) => toSmithersError(cause, "create codeplane sandbox workspace"),
         });
 
         return {
@@ -100,10 +109,13 @@ export const CodeplaneSandboxExecutorLive = Layer.succeed(
         };
       }),
     ship: (bundlePath, handle) =>
-      fromPromise("ship codeplane bundle", async () => {
-        await rm(handle.requestPath, { recursive: true, force: true });
-        await mkdir(handle.requestPath, { recursive: true });
-        await cp(bundlePath, handle.requestPath, { recursive: true });
+      Effect.tryPromise({
+        try: async () => {
+          await rm(handle.requestPath, { recursive: true, force: true });
+          await mkdir(handle.requestPath, { recursive: true });
+          await cp(bundlePath, handle.requestPath, { recursive: true });
+        },
+        catch: (cause) => toSmithersError(cause, "ship codeplane bundle"),
       }),
     execute: (_command, _handle) => Effect.succeed({ exitCode: 0 }),
     collect: (handle) => Effect.succeed({ bundlePath: handle.resultPath }),

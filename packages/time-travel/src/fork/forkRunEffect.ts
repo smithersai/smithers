@@ -1,8 +1,7 @@
 import { Effect, Metric } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { nowMs } from "@smithers/scheduler/nowMs";
-import { newRunId } from "@smithers/driver/newRunId";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { smithersBranches, smithersSnapshots } from "../schema";
 import { loadSnapshot } from "../snapshot/loadSnapshotEffect";
@@ -34,16 +33,15 @@ export function forkRun(
     }
 
     // 2. Create new run ID
-    const childRunId = newRunId();
+    const childRunId = crypto.randomUUID();
     const ts = nowMs();
-    const parentRun = yield* fromPromise(
-      "load parent run metadata",
-      () => adapter.getRun(parentRunId),
-      {
+    const parentRun = yield* Effect.tryPromise({
+      try: () => adapter.getRun(parentRunId),
+      catch: (cause) => toSmithersError(cause, "load parent run metadata", {
         code: "DB_QUERY_FAILED",
         details: { runId: parentRunId },
-      },
-    );
+      }),
+    });
 
     // 3. Optionally override input and reset nodes
     let nodesJson = source.nodesJson;
@@ -83,24 +81,24 @@ export function forkRun(
       createdAtMs: ts,
     };
 
-    yield* fromPromise("insert forked snapshot", () =>
-      (adapter as any).db
-        .insert(smithersSnapshots)
-        .values(childSnapshot)
-        .onConflictDoUpdate({
-          target: [smithersSnapshots.runId, smithersSnapshots.frameNo],
-          set: childSnapshot,
-        }),
-    {
-      code: "DB_WRITE_FAILED",
-      details: { frameNo: 0, runId: childRunId },
-    },
-    );
+    yield* Effect.tryPromise({
+      try: () =>
+        (adapter as any).db
+          .insert(smithersSnapshots)
+          .values(childSnapshot)
+          .onConflictDoUpdate({
+            target: [smithersSnapshots.runId, smithersSnapshots.frameNo],
+            set: childSnapshot,
+          }),
+      catch: (cause) => toSmithersError(cause, "insert forked snapshot", {
+        code: "DB_WRITE_FAILED",
+        details: { frameNo: 0, runId: childRunId },
+      }),
+    });
 
     if (parentRun) {
-      yield* fromPromise(
-        "insert forked run",
-        () =>
+      yield* Effect.tryPromise({
+        try: () =>
           adapter.insertRun({
             runId: childRunId,
             parentRunId,
@@ -122,11 +120,11 @@ export function forkRun(
             errorJson: null,
             configJson: parentRun.configJson ?? null,
           }),
-        {
+        catch: (cause) => toSmithersError(cause, "insert forked run", {
           code: "DB_WRITE_FAILED",
           details: { runId: childRunId },
-        },
-      );
+        }),
+      });
     }
 
     // 5. Record branch relationship
@@ -139,19 +137,20 @@ export function forkRun(
       createdAtMs: ts,
     };
 
-    yield* fromPromise("insert branch", () =>
-      (adapter as any).db
-        .insert(smithersBranches)
-        .values(branch)
-        .onConflictDoUpdate({
-          target: smithersBranches.runId,
-          set: branch,
-        }),
-    {
-      code: "DB_WRITE_FAILED",
-      details: { runId: childRunId },
-    },
-    );
+    yield* Effect.tryPromise({
+      try: () =>
+        (adapter as any).db
+          .insert(smithersBranches)
+          .values(branch)
+          .onConflictDoUpdate({
+            target: smithersBranches.runId,
+            set: branch,
+          }),
+      catch: (cause) => toSmithersError(cause, "insert branch", {
+        code: "DB_WRITE_FAILED",
+        details: { runId: childRunId },
+      }),
+    });
 
     yield* Metric.increment(runForksCreated);
 

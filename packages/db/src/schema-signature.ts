@@ -1,7 +1,7 @@
 import type { AnyColumn, Table } from "drizzle-orm";
 import { getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
-import { sha256Hex } from "@smithers/driver/sha256Hex";
+import { createHash } from "node:crypto";
 
 export function schemaSignature(table: Table): string {
   const cols = getTableColumns(table as any) as Record<string, AnyColumn>;
@@ -15,5 +15,5 @@ export function schemaSignature(table: Table): string {
     const primary = col?.primary ? "1" : "0";
     parts.push(`${key}:${type}:${notNull}:${primary}`);
   }
-  return sha256Hex(parts.join("|"));
+  return createHash("sha256").update(parts.join("|")).digest("hex");
 }

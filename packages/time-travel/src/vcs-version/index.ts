@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import * as BunContext from "@effect/platform-bun/BunContext";
 import { loadVcsTag as loadVcsTagEffect } from "./loadVcsTagEffect";
 import { rerunAtRevision as rerunAtRevisionEffect } from "./rerunAtRevisionEffect";
 import { resolveWorkflowAtRevision as resolveWorkflowAtRevisionEffect } from "./resolveWorkflowAtRevisionEffect";
@@ -15,7 +16,7 @@ export {
 export function tagSnapshotVcs(
   ...args: Parameters<typeof tagSnapshotVcsEffect>
 ) {
-  return Effect.runPromise(tagSnapshotVcsEffect(...args));
+  return Effect.runPromise(tagSnapshotVcsEffect(...args).pipe(Effect.provide(BunContext.layer)));
 }
 
 export function loadVcsTag(
@@ -27,11 +28,11 @@ export function loadVcsTag(
 export function resolveWorkflowAtRevision(
   ...args: Parameters<typeof resolveWorkflowAtRevisionEffect>
 ) {
-  return Effect.runPromise(resolveWorkflowAtRevisionEffect(...args));
+  return Effect.runPromise(resolveWorkflowAtRevisionEffect(...args).pipe(Effect.provide(BunContext.layer)));
 }
 
 export function rerunAtRevision(
   ...args: Parameters<typeof rerunAtRevisionEffect>
 ) {
-  return Effect.runPromise(rerunAtRevisionEffect(...args));
+  return Effect.runPromise(rerunAtRevisionEffect(...args).pipe(Effect.provide(BunContext.layer)));
 }

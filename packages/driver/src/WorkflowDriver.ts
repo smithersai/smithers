@@ -15,7 +15,7 @@ import type { ContinueAsNewHandler } from "./ContinueAsNewHandler.ts";
 import type { WorkflowRuntime } from "./WorkflowRuntime.ts";
 import type { WorkflowSession } from "./WorkflowSession.ts";
 import type { WorkflowGraph, TaskDescriptor } from "@smithers/graph";
-import { buildContext } from "./buildContext.ts";
+import { SmithersCtx } from "./SmithersCtx.ts";
 import type { OutputSnapshot } from "./OutputSnapshot.ts";
 import type { WorkflowDriverOptions } from "./WorkflowDriverOptions.ts";
 import type { WorkflowGraphRenderer } from "./WorkflowGraphRenderer.ts";
@@ -168,8 +168,8 @@ async function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
   }
 }
 
-export class WorkflowDriver<Schema = unknown, Element = unknown> {
-  private readonly workflow: WorkflowDriverOptions<Schema, Element>["workflow"];
+export class WorkflowDriver<Schema = unknown> {
+  private readonly workflow: WorkflowDriverOptions<Schema>["workflow"];
   private readonly runtime: WorkflowRuntime;
   private readonly db?: unknown;
   private readonly configuredRunId?: string;
@@ -180,7 +180,7 @@ export class WorkflowDriver<Schema = unknown, Element = unknown> {
   private readonly onWait?: WaitHandler;
   private readonly continueAsNewHandler?: ContinueAsNewHandler;
   private readonly createSession?: CreateWorkflowSession;
-  private readonly renderer: WorkflowGraphRenderer<Element>;
+  private readonly renderer: WorkflowGraphRenderer;
 
   private session?: WorkflowSession;
   private activeRunId = "";
@@ -189,7 +189,7 @@ export class WorkflowDriver<Schema = unknown, Element = unknown> {
   private readonly outputTablesByNodeId = new Map<string, string>();
   private baseOutputs: OutputSnapshot = {};
 
-  constructor(options: WorkflowDriverOptions<Schema, Element>) {
+  constructor(options: WorkflowDriverOptions<Schema>) {
     this.workflow = options.workflow;
     this.runtime = options.runtime;
     this.db = options.db ?? options.workflow.db;
@@ -303,7 +303,7 @@ export class WorkflowDriver<Schema = unknown, Element = unknown> {
     const iterations = recordFromIterations(
       context.iterations ?? context.ralphIterations,
     );
-    const ctx = buildContext<Schema>({
+    const ctx = new SmithersCtx<Schema>({
       runId: context.runId,
       iteration,
       iterations,

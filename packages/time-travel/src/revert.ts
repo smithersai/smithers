@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import { revertToJjPointer } from "@smithers/vcs/jj";
+import * as BunContext from "@effect/platform-bun/BunContext";
 import { nowMs } from "@smithers/scheduler/nowMs";
 
 export type RevertOptions = {
@@ -54,7 +55,7 @@ export async function revertToAttempt(
 
   // Revert must target the same repository/worktree where the attempt ran.
   const cwd: string | undefined = attemptRow.jjCwd ?? undefined;
-  const result = await revertToJjPointer(jjPointer, cwd);
+  const result = await Effect.runPromise(revertToJjPointer(jjPointer, cwd).pipe(Effect.provide(BunContext.layer)));
 
   onProgress?.({
     type: "RevertFinished",

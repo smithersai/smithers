@@ -5,6 +5,7 @@ import { retryTask } from "../src/retry-task";
 import { runWorkflow } from "smithers";
 import { createTestSmithers } from "../../smithers/tests/helpers";
 import { outputSchemas } from "../../smithers/tests/schema";
+import { Effect } from "effect";
 
 function makeAgent(
   nodeId: string,
@@ -61,7 +62,7 @@ describe("retry-task e2e", () => {
       ));
 
       const runId = "retry-single-failed-task-run";
-      const failed = await runWorkflow(workflow, { input: {}, runId });
+      const failed = await Effect.runPromise(runWorkflow(workflow, { input: {}, runId }));
       expect(failed.status).toBe("failed");
       expect(callCounts.analyze).toBe(1);
       expect(callCounts.implement).toBe(1);
@@ -71,11 +72,11 @@ describe("retry-task e2e", () => {
       expect(reset.success).toBe(true);
       expect(reset.resetNodes).toContain("implement");
 
-      const resumed = await runWorkflow(workflow, {
+      const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
         runId,
         resume: true,
-      });
+      }));
 
       expect(resumed.status).toBe("finished");
       expect(callCounts.analyze).toBe(1);
@@ -107,7 +108,7 @@ describe("retry-task e2e", () => {
       ));
 
       const runId = "retry-reset-dependents-run";
-      const finished = await runWorkflow(workflow, { input: {}, runId });
+      const finished = await Effect.runPromise(runWorkflow(workflow, { input: {}, runId }));
       expect(finished.status).toBe("finished");
       expect(callCounts).toMatchObject({ A: 1, B: 1, C: 1 });
 
@@ -122,11 +123,11 @@ describe("retry-task e2e", () => {
       expect(nodeB?.state).toBe("pending");
       expect(nodeC?.state).toBe("pending");
 
-      const resumed = await runWorkflow(workflow, {
+      const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
         runId,
         resume: true,
-      });
+      }));
 
       expect(resumed.status).toBe("finished");
       expect(callCounts).toMatchObject({ A: 2, B: 2, C: 2 });
@@ -156,7 +157,7 @@ describe("retry-task e2e", () => {
       ));
 
       const runId = "retry-no-deps-run";
-      const finished = await runWorkflow(workflow, { input: {}, runId });
+      const finished = await Effect.runPromise(runWorkflow(workflow, { input: {}, runId }));
       expect(finished.status).toBe("finished");
       expect(callCounts).toMatchObject({ A: 1, B: 1, C: 1 });
 
@@ -175,11 +176,11 @@ describe("retry-task e2e", () => {
       expect(nodeB?.state).toBe("pending");
       expect(nodeC?.state).toBe("finished");
 
-      const resumed = await runWorkflow(workflow, {
+      const resumed = await Effect.runPromise(runWorkflow(workflow, {
         input: {},
         runId,
         resume: true,
-      });
+      }));
 
       expect(resumed.status).toBe("finished");
       expect(callCounts).toMatchObject({ A: 1, B: 2, C: 1 });
@@ -202,7 +203,7 @@ describe("retry-task e2e", () => {
       ));
 
       const runId = "retry-missing-node-run";
-      const finished = await runWorkflow(workflow, { input: {}, runId });
+      const finished = await Effect.runPromise(runWorkflow(workflow, { input: {}, runId }));
       expect(finished.status).toBe("finished");
 
       const reset = await retryTask(adapter, {
@@ -231,7 +232,7 @@ describe("retry-task e2e", () => {
       ));
 
       const runId = "retry-running-run-id";
-      const finished = await runWorkflow(workflow, { input: {}, runId });
+      const finished = await Effect.runPromise(runWorkflow(workflow, { input: {}, runId }));
       expect(finished.status).toBe("finished");
 
       await adapter.updateRun(runId, {

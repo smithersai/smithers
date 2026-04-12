@@ -1,7 +1,7 @@
 import { resolve, isAbsolute, sep, dirname } from "node:path";
 import { realpath } from "node:fs/promises";
 import { Effect } from "effect";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SmithersError } from "@smithers/errors/SmithersError";
 
 export function resolveSandboxPath(rootDir: string, inputPath: string): string {
@@ -23,11 +23,17 @@ export function assertPathWithinRootEffect(
   resolvedPath: string,
 ) {
   return Effect.gen(function* () {
-    const root = yield* fromPromise("realpath root", () => realpath(resolve(rootDir)));
+    const root = yield* Effect.tryPromise({
+      try: () => realpath(resolve(rootDir)),
+      catch: (cause) => toSmithersError(cause, "realpath root"),
+    });
     let current = resolvedPath;
     while (true) {
       const result = yield* Effect.either(
-        fromPromise("realpath check", () => realpath(current)),
+        Effect.tryPromise({
+          try: () => realpath(current),
+          catch: (cause) => toSmithersError(cause, "realpath check"),
+        }),
       );
       if (result._tag === "Right") {
         const target = result.right;

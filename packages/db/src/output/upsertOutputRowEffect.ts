@@ -1,6 +1,6 @@
 import type { Table } from "drizzle-orm";
 import { Effect } from "effect";
-import { fromPromise } from "@smithers/driver/interop";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import type { SmithersError } from "@smithers/errors/SmithersError";
 import { withSqliteWriteRetryEffect } from "../write-retry";
 import { getKeyColumns } from "./getKeyColumns";
@@ -26,9 +26,8 @@ export function upsertOutputRow(
 
   return withSqliteWriteRetryEffect(
     () =>
-      fromPromise<any[]>(
-        `upsert output ${(table as any)["_"]?.name ?? "output"}`,
-        () =>
+      Effect.tryPromise({
+        try: () =>
           db
             .insert(table as any)
             .values(values)
@@ -36,11 +35,11 @@ export function upsertOutputRow(
               target,
               set: values,
             }),
-        {
+        catch: (cause) => toSmithersError(cause, `upsert output ${(table as any)["_"]?.name ?? "output"}`, {
           code: "DB_WRITE_FAILED",
           details: { outputTable: (table as any)["_"]?.name ?? "output" },
-        },
-      ),
+        }),
+      }),
     { label: `upsert output ${(table as any)["_"]?.name ?? "output"}` },
   ).pipe(
     Effect.asVoid,

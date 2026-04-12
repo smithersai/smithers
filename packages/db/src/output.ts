@@ -4,8 +4,8 @@ import type { AnyColumn, Table } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { Effect } from "effect";
 import { z } from "zod";
-import { fromPromise } from "@smithers/driver/interop";
 import { SmithersError } from "@smithers/errors/SmithersError";
+import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { withSqliteWriteRetryEffect } from "./write-retry";
 
 export type OutputKey = { runId: string; nodeId: string; iteration?: number };
@@ -87,19 +87,18 @@ export function selectOutputRowEffect<T>(
   key: OutputKey,
 ): Effect.Effect<T | undefined, SmithersError> {
   const where = buildKeyWhere(table, key);
-  return fromPromise<T[]>(
-    `select output ${(table as any)["_"]?.name ?? "output"}`,
-    () =>
+  return Effect.tryPromise({
+    try: () =>
       db
         .select()
         .from(table as any)
         .where(where)
-        .limit(1),
-    {
+        .limit(1) as Promise<T[]>,
+    catch: (cause) => toSmithersError(cause, `select output ${(table as any)["_"]?.name ?? "output"}`, {
       code: "DB_QUERY_FAILED",
       details: { outputTable: (table as any)["_"]?.name ?? "output" },
-    },
-  ).pipe(
+    }),
+  }).pipe(
     Effect.map((rows) => rows[0] as T | undefined),
     Effect.annotateLogs({
       outputTable: (table as any)["_"]?.name ?? "output",
@@ -139,9 +138,8 @@ export function upsertOutputRowEffect(
 
   return withSqliteWriteRetryEffect(
     () =>
-      fromPromise<any[]>(
-        `upsert output ${(table as any)["_"]?.name ?? "output"}`,
-        () =>
+      Effect.tryPromise({
+        try: () =>
           db
             .insert(table as any)
             .values(values)
@@ -149,11 +147,11 @@ export function upsertOutputRowEffect(
               target,
               set: values,
             }),
-        {
+        catch: (cause) => toSmithersError(cause, `upsert output ${(table as any)["_"]?.name ?? "output"}`, {
           code: "DB_WRITE_FAILED",
           details: { outputTable: (table as any)["_"]?.name ?? "output" },
-        },
-      ),
+        }),
+      }),
     { label: `upsert output ${(table as any)["_"]?.name ?? "output"}` },
   ).pipe(
     Effect.asVoid,

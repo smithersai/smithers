@@ -5,6 +5,7 @@ import { ensureSmithersTables } from "@smithers/db/ensure";
 import { Task, Workflow, runWorkflow } from "smithers";
 import { createTestSmithers } from "../../smithers/tests/helpers";
 import { outputSchemas } from "../../smithers/tests/schema";
+import { Effect } from "effect";
 
 const END_TO_END_TIMEOUT_MS = 15_000;
 
@@ -42,7 +43,7 @@ describe("timeTravel e2e", () => {
 
       try {
         const workflow = buildThreeTaskWorkflow(smithers, outputs);
-        const result = await runWorkflow(workflow, { input: {}, runId: "timetravel-reset" });
+        const result = await Effect.runPromise(runWorkflow(workflow, { input: {}, runId: "timetravel-reset" }));
         expect(result.status).toBe("finished");
 
         const implementAttempts = await adapter.listAttempts(result.runId, "implement", 0);
@@ -87,7 +88,7 @@ describe("timeTravel e2e", () => {
 
       try {
         const workflow = buildThreeTaskWorkflow(smithers, outputs);
-        const result = await runWorkflow(workflow, { input: {}, runId: "timetravel-vcs" });
+        const result = await Effect.runPromise(runWorkflow(workflow, { input: {}, runId: "timetravel-vcs" }));
         expect(result.status).toBe("finished");
 
         const implementAttempts = await adapter.listAttempts(result.runId, "implement", 0);
@@ -154,10 +155,10 @@ describe("timeTravel e2e", () => {
           </Workflow>
         ));
 
-        const first = await runWorkflow(workflow, {
+        const first = await Effect.runPromise(runWorkflow(workflow, {
           input: {},
           runId: "timetravel-resume",
-        });
+        }));
         expect(first.status).toBe("failed");
         expect(analyzeCalls).toBe(1);
         expect(implementCalls).toBe(1);
@@ -170,11 +171,11 @@ describe("timeTravel e2e", () => {
         });
         expect(travel.success).toBe(true);
 
-        const resumed = await runWorkflow(workflow, {
+        const resumed = await Effect.runPromise(runWorkflow(workflow, {
           input: {},
           runId: first.runId,
           resume: true,
-        });
+        }));
         expect(resumed.status).toBe("finished");
         expect(analyzeCalls).toBe(1);
         expect(implementCalls).toBe(2);
@@ -208,7 +209,7 @@ describe("timeTravel e2e", () => {
           </Workflow>
         ));
 
-        const result = await runWorkflow(workflow, { input: {}, runId: "timetravel-node-only" });
+        const result = await Effect.runPromise(runWorkflow(workflow, { input: {}, runId: "timetravel-node-only" }));
         expect(result.status).toBe("finished");
 
         const travel = await timeTravel(adapter, {
@@ -276,10 +277,10 @@ describe("timeTravel e2e", () => {
           </Workflow>
         ));
 
-        const result = await runWorkflow(workflow, {
+        const result = await Effect.runPromise(runWorkflow(workflow, {
           input: {},
           runId: "timetravel-attempt-selection",
-        });
+        }));
         expect(result.status).toBe("finished");
 
         const attempts = await adapter.listAttempts(result.runId, "flaky", 0);
