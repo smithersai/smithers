@@ -103,7 +103,7 @@ const runEffectOrPromise = async <A>(
   if ((Effect as any).isEffect?.(value)) {
     return Effect.runPromise(value as Effect.Effect<A, unknown, never>);
   }
-  return await value;
+  return await (value as A | PromiseLike<A>);
 };
 
 function parseAttemptErrorCode(errorJson?: string | null): string | null {
