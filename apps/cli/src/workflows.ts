@@ -47,6 +47,13 @@ function workflowFromFile(file: string, root: string): DiscoveredWorkflow {
   };
 }
 
+function displayNameFromWorkflowName(name: string): string {
+  return name
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 export function discoverWorkflows(root: string): DiscoveredWorkflow[] {
   const dir = workflowsDir(root);
   if (!existsSync(dir)) return [];
@@ -94,7 +101,7 @@ export function createWorkflowFile(name: string, root: string): DiscoveredWorkfl
     entryFile,
     [
       "// smithers-source: generated",
-      `// smithers-display-name: ${name}`,
+      `// smithers-display-name: ${displayNameFromWorkflowName(name)}`,
       "/** @jsxImportSource smithers */",
       'import { createSmithers, Workflow } from "smithers";',
       "",
