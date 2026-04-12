@@ -30,9 +30,7 @@
     "@smithers/driver": "workspace:*",
     "@smithers/errors": "workspace:*",
     "@smithers/observability": "workspace:*",
-    "@smithers/rag": "workspace:*",
     "@smithers/scheduler": "workspace:*",
-    "ai": "^6.0.69",
     "drizzle-orm": "^0.45.1",
     "effect": "^3.21.0",
     "zod": "^4.3.6"

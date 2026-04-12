@@ -279,39 +279,6 @@ export type {
 } from "@smithers/scorers";
 
 
-// RAG
-export {
-  createDocument,
-  loadDocument,
-  chunk,
-  embedChunks,
-  embedQuery,
-  createSqliteVectorStore,
-  createRagPipeline,
-  createRagTool,
-  RagService,
-  createRagServiceLayer,
-  ragIngestCount,
-  ragRetrieveCount,
-  ragRetrieveDuration,
-  ragEmbedDuration,
-} from "@smithers/rag";
-export type {
-  Document as RagDocument,
-  DocumentFormat,
-  Chunk as RagChunk,
-  ChunkStrategy,
-  ChunkOptions,
-  EmbeddedChunk,
-  RetrievalResult,
-  VectorStore,
-  VectorQueryOptions,
-  RagPipelineConfig,
-  RagPipeline,
-  CreateDocumentOptions,
-  RagToolOptions,
-} from "@smithers/rag";
-
 
 // Memory
 export {

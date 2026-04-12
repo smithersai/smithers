@@ -42,8 +42,6 @@ export type { ContinueAsNewProps } from "./ContinueAsNew";
 export { Worktree } from "./Worktree";
 export type { WorktreeProps } from "./Worktree";
 
-export { Voice } from "./Voice";
-export type { VoiceProps } from "./Voice";
 
 // --- Composite Components ---
 

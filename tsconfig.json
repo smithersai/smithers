@@ -45,8 +45,6 @@
       "@smithers/observability/*": ["./apps/observability/src/*.ts", "./apps/observability/src/*/index.ts"],
       "@smithers/openapi": ["./packages/openapi/src/index.ts"],
       "@smithers/openapi/*": ["./packages/openapi/src/*.ts", "./packages/openapi/src/*/index.ts"],
-      "@smithers/rag": ["./packages/rag/src/index.ts"],
-      "@smithers/rag/*": ["./packages/rag/src/*.ts", "./packages/rag/src/*/index.ts"],
       "@smithers/components": ["./packages/components/src/index.ts"],
       "@smithers/components/*": ["./packages/components/src/*.ts", "./packages/components/src/*/index.ts"],
       "@smithers/react-reconciler": ["./packages/react-reconciler/src/index.ts"],

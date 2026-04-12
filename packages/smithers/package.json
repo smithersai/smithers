@@ -35,7 +35,6 @@
     "@smithers/memory": "workspace:*",
     "@smithers/observability": "workspace:*",
     "@smithers/openapi": "workspace:*",
-    "@smithers/rag": "workspace:*",
     "@smithers/components": "workspace:*",
     "@smithers/react-reconciler": "workspace:*",
     "@smithers/sandbox": "workspace:*",

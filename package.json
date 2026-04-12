@@ -28,8 +28,6 @@
     "./dom/renderer": "./packages/react-reconciler/src/dom/renderer.ts",
     "./serve": "./packages/server/src/serve.ts",
     "./scorers": "./packages/scorers/src/index.ts",
-
-    "./rag": "./packages/rag/src/index.ts",
     "./memory": "./packages/memory/src/index.ts",
     "./openapi": "./packages/openapi/src/index.ts"
   },

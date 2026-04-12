@@ -23,10 +23,6 @@ export {
 export { createMemoryStore } from "./store/createMemoryStore";
 export type { MemoryStore } from "./store/MemoryStore";
 
-// Semantic
-export { createSemanticMemory } from "./semantic";
-export type { SemanticMemory } from "./semantic";
-
 // Processors
 export { TtlGarbageCollector } from "./TtlGarbageCollector";
 export { TokenLimiter } from "./TokenLimiter";

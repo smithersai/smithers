@@ -1,13 +1,10 @@
 import { Effect } from "effect";
 import type { SmithersError } from "@smithers/errors/SmithersError";
-import type { RetrievalResult } from "@smithers/rag/types";
 import type { MemoryNamespace } from "./MemoryNamespace";
 import type { MemoryFact } from "./MemoryFact";
 import type { MemoryThread } from "./MemoryThread";
 import type { MemoryMessage } from "./MemoryMessage";
-import type { SemanticRecallConfig } from "./SemanticRecallConfig";
 import type { MemoryStore } from "./store/MemoryStore";
-import type { SemanticMemory } from "./semantic";
 
 export type MemoryServiceApi = {
   // Working memory
@@ -28,18 +25,6 @@ export type MemoryServiceApi = {
   readonly listFacts: (
     ns: MemoryNamespace,
   ) => Effect.Effect<MemoryFact[], SmithersError>;
-
-  // Semantic recall
-  readonly remember: (
-    ns: MemoryNamespace,
-    content: string,
-    metadata?: Record<string, unknown>,
-  ) => Effect.Effect<void, SmithersError>;
-  readonly recall: (
-    ns: MemoryNamespace,
-    query: string,
-    config?: SemanticRecallConfig,
-  ) => Effect.Effect<RetrievalResult[], SmithersError>;
 
   // Threads & messages
   readonly createThread: (
@@ -66,7 +51,6 @@ export type MemoryServiceApi = {
   // Maintenance
   readonly deleteExpiredFacts: () => Effect.Effect<number, SmithersError>;
 
-  // Access underlying stores
+  // Access underlying store
   readonly store: MemoryStore;
-  readonly semantic: SemanticMemory | null;
 };
