@@ -6,7 +6,7 @@ import {
   runSmithers,
   type TempRepo,
   writeFakeCodexBinary,
-} from "../../smithers/tests/e2e-helpers";
+} from "../../../packages/smithers/tests/e2e-helpers";
 
 function buildInitEnv(homeDir: string) {
   const binDir = createExecutableDir();

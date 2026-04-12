@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";
-import { createTempRepo, runSmithers } from "../../smithers/tests/e2e-helpers";
+import { createTempRepo, runSmithers } from "../../../packages/smithers/tests/e2e-helpers";
 
 function openRepoDb(repo: ReturnType<typeof createTempRepo>) {
   const sqlite = new Database(repo.path("smithers.db"));

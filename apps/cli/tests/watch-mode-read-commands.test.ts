@@ -5,10 +5,10 @@ import { resolve } from "node:path";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";
-import { createTempRepo, type TempRepo } from "../../smithers/tests/e2e-helpers";
+import { createTempRepo, type TempRepo } from "../../../packages/smithers/tests/e2e-helpers";
 
 const BUN_BINARY = process.execPath;
-const CLI_ENTRY = resolve(import.meta.dir, "../src/cli/index.ts");
+const CLI_ENTRY = resolve(import.meta.dir, "../src/index.ts");
 const CLEAR_SCREEN_SEQUENCE = "\x1B[2J\x1B[0f";
 const WATCH_STARTUP_TIMEOUT_MS = 20_000;
 

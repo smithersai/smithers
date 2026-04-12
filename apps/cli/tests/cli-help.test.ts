@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createTempRepo, runSmithers } from "../../smithers/tests/e2e-helpers";
+import { createTempRepo, runSmithers } from "../../../packages/smithers/tests/e2e-helpers";
 
 test("help surface does not advertise the removed ui command", () => {
   const repo = createTempRepo();

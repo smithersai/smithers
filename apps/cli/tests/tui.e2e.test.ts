@@ -2,7 +2,7 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { launchTUI, BUN, TUI_ENTRY } from "../../smithers/tests/tui-helpers";
+import { launchTUI, BUN, TUI_ENTRY } from "../../../packages/smithers/tests/tui-helpers";
 
 const TUI_WAIT_TIMEOUT_MS = 20_000;
 const TUI_TEST_TIMEOUT_MS = 30_000;
@@ -12,7 +12,7 @@ describe("TUI E2E", () => {
   const runLabel = "fan-out-fan";
 
   beforeAll(async () => {
-    const workflowPath = resolve(process.cwd(), "examples/fan-out-fan-in.tsx");
+    const workflowPath = resolve(import.meta.dir, "../../../examples/fan-out-fan-in.tsx");
     testDir = await mkdtemp(join(tmpdir(), "smithers-tui-e2e-"));
 
     // Run a background workflow to ensure the database has something

@@ -6,7 +6,7 @@ import {
   writeFakeClaudeBinary,
   writeFakeCodexBinary,
   writeFakeGeminiBinary,
-} from "../../smithers/tests/e2e-helpers";
+} from "../../../packages/smithers/tests/e2e-helpers";
 
 function buildEnv(homeDir: string, binDir: string, extra: Record<string, string> = {}) {
   return {
