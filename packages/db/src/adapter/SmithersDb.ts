@@ -2402,4 +2402,106 @@ export class SmithersDb {
       ),
     );
   }
+
+  getRunEffect(runId: string) {
+    return this.getRun(runId);
+  }
+
+  listRunsEffect(limit = 50, status?: string) {
+    return this.listRuns(limit, status);
+  }
+
+  listStaleRunningRunsEffect(staleBeforeMs: number, limit = 1000) {
+    return this.listStaleRunningRuns(staleBeforeMs, limit);
+  }
+
+  claimRunForResumeEffect(params: Parameters<SmithersDb["claimRunForResume"]>[0]) {
+    return this.claimRunForResume(params);
+  }
+
+  releaseRunResumeClaimEffect(
+    params: Parameters<SmithersDb["releaseRunResumeClaim"]>[0],
+  ) {
+    return this.releaseRunResumeClaim(params);
+  }
+
+  listNodeIterationsEffect(runId: string, nodeId: string) {
+    return this.listNodeIterations(runId, nodeId);
+  }
+
+  listNodesEffect(runId: string) {
+    return this.listNodes(runId);
+  }
+
+  listAttemptsEffect(runId: string, nodeId: string, iteration: number) {
+    return this.listAttempts(runId, nodeId, iteration);
+  }
+
+  listAttemptsForRunEffect(runId: string) {
+    return this.listAttemptsForRun(runId);
+  }
+
+  listToolCallsEffect(runId: string, nodeId: string, iteration: number) {
+    return this.listToolCalls(runId, nodeId, iteration);
+  }
+
+  getRawNodeOutputForIterationEffect(
+    tableName: string,
+    runId: string,
+    nodeId: string,
+    iteration: number,
+  ) {
+    return this.getRawNodeOutputForIteration(tableName, runId, nodeId, iteration);
+  }
+
+  insertEventWithNextSeqEffect(
+    row: Parameters<SmithersDb["insertEventWithNextSeq"]>[0],
+  ) {
+    return this.insertEventWithNextSeq(row);
+  }
+
+  getLastEventSeqEffect(runId: string) {
+    return this.getLastEventSeq(runId);
+  }
+
+  listEventHistoryEffect(runId: string, query: EventHistoryQuery = {}) {
+    return this.listEventHistory(runId, query);
+  }
+
+  countEventHistoryEffect(runId: string, query: EventHistoryQuery = {}) {
+    return this.countEventHistory(runId, query);
+  }
+
+  listEventsByTypeEffect(runId: string, type: string) {
+    return this.listEventsByType(runId, type);
+  }
+
+  listPendingApprovalsEffect(runId: string) {
+    return this.listPendingApprovals(runId);
+  }
+
+  getLastFrameEffect(runId: string) {
+    return this.getLastFrame(runId);
+  }
+
+  listCacheByNodeEffect(nodeId: string, outputTable?: string, limit = 20) {
+    return this.listCacheByNode(nodeId, outputTable, limit);
+  }
+
+  listCronsEffect(enabledOnly = true) {
+    return this.listCrons(enabledOnly);
+  }
+
+  updateCronRunTimeEffect(
+    cronId: string,
+    lastRunAtMs: number,
+    nextRunAtMs: number,
+    errorJson?: string | null,
+  ) {
+    return this.updateCronRunTime(cronId, lastRunAtMs, nextRunAtMs, errorJson);
+  }
+
+  listScorerResultsEffect(runId: string, nodeId?: string) {
+    return this.listScorerResults(runId, nodeId);
+  }
 }
