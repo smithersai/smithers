@@ -32,6 +32,8 @@ export function extractTextFromJsonValue(value) {
         if (parts.trim())
             return parts;
     }
+    if (record.type === "text" && record.part)
+        return extractTextFromJsonValue(record.part);
     if (record.response)
         return extractTextFromJsonValue(record.response);
     if (record.message)

@@ -303,6 +303,20 @@ function extractTextFromJsonPayload(raw) {
                     return text;
             }
         }
+        // OpenCode-style CLIs emit a final "finish" or "done" event with the
+        // complete response text directly on the payload. Prefer this over
+        // concatenating all text_delta chunks which would duplicate content.
+        if (type === "finish" || type === "done") {
+            const text = typeof parsed?.text === "string" ? parsed.text : undefined;
+            if (text)
+                return text;
+        }
+        // OpenCode nd-JSON format: "text" events carry part.text with finalized
+        // text chunks. Accumulate these as a fallback when the interpreter's
+        // completed event isn't surfaced properly.
+        if (type === "text" && parsed?.part?.text) {
+            // Don't return early — accumulate via the chunks path below
+        }
     }
     const chunks = [];
     for (const parsed of parsedLines) {
