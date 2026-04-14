@@ -366,6 +366,50 @@ describe("supervisor e2e", () => {
             workflows.cleanup();
         }
     });
+    test("consecutive polls dont double-resume due waiting-timer runs", async () => {
+        const { adapter, sqlite } = createTestDb();
+        const workflows = createWorkflowDir();
+        const resumed = [];
+        try {
+            await insertDueTimerRun(adapter, "run-timer-idempotent", workflows.workflowPath("run-timer-idempotent"), now - 10);
+            const options = {
+                adapter,
+                staleThresholdMs: 30_000,
+                supervisorId: "timer-idempotent-e2e",
+                deps: {
+                    now: () => now,
+                    isPidAlive: () => false,
+                    spawnResumeDetached: (_workflowPath, runId) => {
+                        resumed.push(runId);
+                        return 7_000 + resumed.length;
+                    },
+                },
+            };
+            const first = await Effect.runPromise(supervisorPollEffect(options));
+            const second = await Effect.runPromise(supervisorPollEffect(options));
+            expect(first).toEqual({
+                staleCount: 0,
+                resumedCount: 1,
+                skippedCount: 0,
+                durationMs: 0,
+            });
+            expect(second).toEqual({
+                staleCount: 0,
+                resumedCount: 0,
+                skippedCount: 0,
+                durationMs: 0,
+            });
+            expect(resumed).toEqual(["run-timer-idempotent"]);
+            const run = await adapter.getRun("run-timer-idempotent");
+            expect(run?.runtimeOwnerId).toBe("supervisor:timer-idempotent-e2e");
+            expect(run?.heartbeatAtMs).toBe(now);
+            expect(await eventPayloads(adapter, "run-timer-idempotent", "RunAutoResumed")).toHaveLength(1);
+        }
+        finally {
+            sqlite.close();
+            workflows.cleanup();
+        }
+    });
     test("supervisor emits accurate summary metrics", async () => {
         const { adapter, sqlite } = createTestDb();
         const workflows = createWorkflowDir();
