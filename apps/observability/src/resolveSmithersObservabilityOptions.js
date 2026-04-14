@@ -10,7 +10,7 @@ import { LogLevel } from "effect";
  */
 function resolveLogLevel(value) {
     if (typeof value !== "string") {
-        return value ?? LogLevel.Info;
+        return value ?? LogLevel.Warning;
     }
     switch (value.toLowerCase()) {
         case "none":
