@@ -4823,6 +4823,18 @@ async function runWorkflowBodyDriver(workflow, opts) {
                 }
             }
             if (!existingInput) {
+                // Workflows without a user-defined input schema use a fallback
+                // (run_id, payload) table. Insert an empty row so resume can proceed.
+                const fallbackRow = buildInputRow(inputTable, runId, {});
+                try {
+                    await withSqliteWriteRetry(() => db.insert(inputTable).values(fallbackRow).onConflictDoNothing(), { label: "insert fallback input row for resume" });
+                    existingInput = await loadInput(db, inputTable, runId);
+                }
+                catch {
+                    // ignore — will fail below if still missing
+                }
+            }
+            if (!existingInput) {
                 throw new SmithersError("MISSING_INPUT", "Cannot resume without an existing input row");
             }
         }
@@ -5360,6 +5372,18 @@ async function runWorkflowBodyLegacy(workflow, opts) {
                 const restored = await restoreDurableStateFromSnapshot(adapter, db, schema, inputTable, runId);
                 if (restored) {
                     existingInput = await loadInput(db, inputTable, runId);
+                }
+            }
+            if (!existingInput) {
+                // Workflows without a user-defined input schema use a fallback
+                // (run_id, payload) table. Insert an empty row so resume can proceed.
+                const fallbackRow = buildInputRow(inputTable, runId, {});
+                try {
+                    await withSqliteWriteRetry(() => db.insert(inputTable).values(fallbackRow).onConflictDoNothing(), { label: "insert fallback input row for resume" });
+                    existingInput = await loadInput(db, inputTable, runId);
+                }
+                catch {
+                    // ignore — will fail below if still missing
                 }
             }
             if (!existingInput) {
