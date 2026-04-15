@@ -586,6 +586,91 @@ process.stdout.write('${stepFinish()}' + "\\n");
     }
   });
 
+  test("prepends Smithers systemPrompt to the positional prompt", async () => {
+    const argsFileDir = await mkdtemp(
+      join(tmpdir(), "smithers-opencode-args-")
+    );
+    const argsFile = join(argsFileDir, "args.json");
+
+    const fake = await makeFakeOpenCode(`
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+if (process.env.OPENCODE_ARGS_FILE) {
+  fs.writeFileSync(process.env.OPENCODE_ARGS_FILE, JSON.stringify({ args }), "utf8");
+}
+process.stdout.write('${stepStart()}' + "\\n");
+process.stdout.write('${textEvent("ok")}' + "\\n");
+process.stdout.write('${stepFinish()}' + "\\n");
+`);
+
+    try {
+      process.env.PATH = `${fake.dir}:${originalPath}`;
+      process.env.OPENCODE_ARGS_FILE = argsFile;
+
+      const agent = new OpenCodeAgent({
+        model: "anthropic/claude-opus-4-20250514",
+        systemPrompt: "You are a careful reviewer.",
+        env: { PATH: process.env.PATH },
+      });
+
+      await agent.generate({
+        messages: [{ role: "user", content: "Analyze this diff" }],
+      });
+
+      const captured = JSON.parse(await readFile(argsFile, "utf8"));
+      const prompt = captured.args[captured.args.length - 1];
+
+      expect(prompt).toContain("You are a careful reviewer.");
+      expect(prompt).toContain("USER: Analyze this diff");
+      expect(prompt.indexOf("You are a careful reviewer.")).toBeLessThan(
+        prompt.indexOf("USER: Analyze this diff")
+      );
+    } finally {
+      await rm(fake.dir, { recursive: true, force: true });
+      await rm(argsFileDir, { recursive: true, force: true });
+    }
+  });
+
+  test("uses per-call resumeSession as --session", async () => {
+    const argsFileDir = await mkdtemp(
+      join(tmpdir(), "smithers-opencode-args-")
+    );
+    const argsFile = join(argsFileDir, "args.json");
+
+    const fake = await makeFakeOpenCode(`
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+if (process.env.OPENCODE_ARGS_FILE) {
+  fs.writeFileSync(process.env.OPENCODE_ARGS_FILE, JSON.stringify({ args }), "utf8");
+}
+process.stdout.write('${stepStart()}' + "\\n");
+process.stdout.write('${textEvent("ok")}' + "\\n");
+process.stdout.write('${stepFinish()}' + "\\n");
+`);
+
+    try {
+      process.env.PATH = `${fake.dir}:${originalPath}`;
+      process.env.OPENCODE_ARGS_FILE = argsFile;
+
+      const agent = new OpenCodeAgent({
+        model: "anthropic/claude-opus-4-20250514",
+        env: { PATH: process.env.PATH },
+      });
+
+      await agent.generate({
+        messages: [{ role: "user", content: "Resume work" }],
+        resumeSession: "resume-123",
+      });
+
+      const captured = JSON.parse(await readFile(argsFile, "utf8"));
+      expect(captured.args).toContain("--session");
+      expect(captured.args).toContain("resume-123");
+    } finally {
+      await rm(fake.dir, { recursive: true, force: true });
+      await rm(argsFileDir, { recursive: true, force: true });
+    }
+  });
+
   // -----------------------------------------------------------------------
   // Output interpreter tests (real nd-JSON format)
   // -----------------------------------------------------------------------
@@ -811,6 +896,48 @@ process.stdout.write('${stepFinish({
     }
   });
 
+  test("extracts usage/tokens from step_finish into generate() result usage", async () => {
+    const fake = await makeFakeOpenCode(`
+process.stdout.write('${stepStart("s-1")}' + "\\n");
+process.stdout.write('${textEvent("Hello", "s-1")}' + "\\n");
+process.stdout.write('${stepFinish({
+  sessionID: "s-1",
+  reason: "stop",
+  tokens: {
+    total: 1500,
+    input: 1000,
+    output: 500,
+    reasoning: 50,
+    cache: { write: 10, read: 200 },
+  },
+  cost: 0.01,
+})}' + "\\n");
+`);
+
+    try {
+      process.env.PATH = `${fake.dir}:${originalPath}`;
+
+      const agent = new OpenCodeAgent({
+        model: "anthropic/claude-opus-4-20250514",
+        env: { PATH: process.env.PATH },
+      });
+
+      const result = await agent.generate({
+        messages: [{ role: "user", content: "Hi" }],
+      });
+
+      expect(result.usage).toBeDefined();
+      expect(result.usage.inputTokens).toBe(1000);
+      expect(result.usage.inputTokenDetails.cacheReadTokens).toBe(200);
+      expect(result.usage.inputTokenDetails.cacheWriteTokens).toBe(10);
+      expect(result.usage.outputTokens).toBe(500);
+      expect(result.usage.outputTokenDetails.reasoningTokens).toBe(50);
+      expect(result.usage.totalTokens).toBe(1500);
+    } finally {
+      await rm(fake.dir, { recursive: true, force: true });
+    }
+  });
+
   test("declares opencode as cliEngine and has correct capabilities", () => {
     const agent = new OpenCodeAgent({
       model: "anthropic/claude-opus-4-20250514",
@@ -821,6 +948,24 @@ process.stdout.write('${stepFinish({
     expect(agent.capabilities.engine).toBe("opencode");
     expect(agent.capabilities.mcp.supportsProjectScope).toBe(true);
     expect(agent.capabilities.skills.supportsSkills).toBe(true);
+    expect(agent.capabilities.builtIns).toEqual(
+      expect.arrayContaining([
+        "read",
+        "write",
+        "edit",
+        "bash",
+        "glob",
+        "grep",
+        "list",
+        "task",
+        "skill",
+        "todowrite",
+        "webfetch",
+        "websearch",
+        "question",
+        "apply_patch",
+      ])
+    );
   });
 
   test("passes --dir from cwd constructor option", async () => {
@@ -945,6 +1090,35 @@ process.exit(1);
       expect(completedEvents.length).toBe(1);
       expect(completedEvents[0].ok).toBe(false);
       expect(completedEvents[0].error).toContain("Invalid API key");
+    } finally {
+      await rm(fake.dir, { recursive: true, force: true });
+    }
+  });
+
+  test("throws with structured OpenCode error instead of generic CLI failure", async () => {
+    const fake = await makeFakeOpenCode(`
+process.stdout.write('${stepStart("s-1")}' + "\\n");
+process.stdout.write('${errorEvent({
+  sessionID: "s-1",
+  name: "ProviderAuthError",
+  message: "Invalid API key",
+})}' + "\\n");
+process.exit(1);
+`);
+
+    try {
+      process.env.PATH = `${fake.dir}:${originalPath}`;
+
+      const agent = new OpenCodeAgent({
+        model: "anthropic/claude-opus-4-20250514",
+        env: { PATH: process.env.PATH },
+      });
+
+      await expect(
+        agent.generate({
+          messages: [{ role: "user", content: "test" }],
+        })
+      ).rejects.toThrow("Invalid API key");
     } finally {
       await rm(fake.dir, { recursive: true, force: true });
     }

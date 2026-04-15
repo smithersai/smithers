@@ -56,10 +56,15 @@ export function createOpenCodeCapabilityRegistry(opts = {}) {
       "read",
       "write",
       "edit",
+      "apply_patch",
       "bash",
       "glob",
       "grep",
+      "list",
       "webfetch",
+      "websearch",
+      "codesearch",
+      "question",
       "task",
       "todowrite",
       "skill",
@@ -406,6 +411,9 @@ export class OpenCodeAgent extends BaseCliAgent {
    * @param {{ prompt: string; systemPrompt?: string; cwd: string; options: any }} params
    */
   async buildCommand(params) {
+    const resumeSession = typeof params.options?.resumeSession === "string"
+      ? params.options.resumeSession
+      : undefined;
     const args = ["run"];
 
     // Model selection
@@ -431,7 +439,7 @@ export class OpenCodeAgent extends BaseCliAgent {
     if (this.opts.continueSession) {
       args.push("--continue");
     }
-    pushFlag(args, "--session", this.opts.sessionId);
+    pushFlag(args, "--session", resumeSession ?? this.opts.sessionId);
 
     // Variant / reasoning effort
     pushFlag(args, "--variant", this.opts.variant);
@@ -451,11 +459,16 @@ export class OpenCodeAgent extends BaseCliAgent {
       args.push(...this.extraArgs);
     }
 
+    const systemPrefix = params.systemPrompt
+      ? `${params.systemPrompt}\n\n`
+      : "";
+    const fullPrompt = `${systemPrefix}${params.prompt ?? ""}`;
+
     // When flags like -f (yargs [array] type) are present, subsequent
     // positional arguments can be consumed as flag values. Insert '--'
     // to tell yargs to stop parsing flags and treat the rest as positional.
-    if (params.prompt) {
-      args.push("--", params.prompt);
+    if (fullPrompt) {
+      args.push("--", fullPrompt);
     }
 
     return {
