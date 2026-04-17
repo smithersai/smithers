@@ -6,9 +6,10 @@
 
 /**
  * @param {string} text
- * @returns {any}
+ * @returns {Record<string, unknown>}
  */
 export function parseSpecText(text) {
+    /** @type {unknown} */
     let parsed;
     // Try JSON first
     try {
@@ -31,7 +32,7 @@ export function parseSpecText(text) {
         !("paths" in parsed || "info" in parsed)) {
         throw new Error("Parsed content does not appear to be a valid OpenAPI spec (missing openapi/paths/info fields)");
     }
-    return parsed;
+    return /** @type {Record<string, unknown>} */ (parsed);
 }
 /**
  * Merge path-level and operation-level parameters. Operation-level wins

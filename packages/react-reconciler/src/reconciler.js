@@ -10,6 +10,29 @@ import { resolveExtractGraph } from "./core-peer.js";
 /** @typedef {import("react").default} React */
 /** @typedef {import("./SmithersRendererOptions.ts").SmithersRendererOptions} SmithersRendererOptions */
 /** @typedef {import("@smithers/graph/types").WorkflowGraph} WorkflowGraph */
+/**
+ * Minimal local shape for a react-reconciler instance. `@types/react-reconciler`
+ * is not installed here, so we describe only the methods we call.
+ * @typedef {{
+ *   createContainer: (
+ *     rootContainer: unknown,
+ *     tag: number,
+ *     hydrationCallbacks: unknown,
+ *     isStrictMode: boolean,
+ *     concurrentUpdatesByDefaultOverride: unknown,
+ *     identifierPrefix: string,
+ *     onUncaughtError: unknown,
+ *     onCaughtError: unknown,
+ *     onRecoverableError: unknown,
+ *     transitionCallbacks: unknown,
+ *   ) => unknown;
+ *   updateContainerSync: (element: unknown, container: unknown, parentComponent: unknown, callback: () => void) => void;
+ *   flushSyncWork: () => void;
+ *   injectIntoDevTools: (devtools: unknown) => void;
+ *   defaultOnUncaughtError: unknown;
+ *   defaultOnCaughtError: unknown;
+ *   defaultOnRecoverableError: unknown;
+ * }} ReconcilerInstance */
 
 /**
  * @param {string} type
@@ -45,14 +68,21 @@ const hostConfig = {
     supportsHydration: false,
     isPrimaryRenderer: true,
     supportsMicrotasks: true,
+    /**
+   * @returns {Record<string, unknown>}
+   */
     getRootHostContext() {
         return {};
     },
+    /**
+   * @returns {Record<string, unknown>}
+   */
     getChildHostContext() {
         return {};
     },
     /**
    * @param {unknown} instance
+   * @returns {unknown}
    */
     getPublicInstance(instance) {
         return instance;
@@ -60,12 +90,14 @@ const hostConfig = {
     /**
    * @param {string} type
    * @param {Record<string, unknown>} props
+   * @returns {MutableHostElement}
    */
     createInstance(type, props) {
         return createElement(type, props);
     },
     /**
    * @param {string} text
+   * @returns {MutableHostText}
    */
     createTextInstance(text) {
         return { kind: "text", text };
@@ -73,6 +105,7 @@ const hostConfig = {
     /**
    * @param {MutableHostElement} parent
    * @param {HostNode} child
+   * @returns {void}
    */
     appendInitialChild(parent, child) {
         parent.children.push(child);
@@ -80,6 +113,7 @@ const hostConfig = {
     /**
    * @param {MutableHostElement} parent
    * @param {HostNode} child
+   * @returns {void}
    */
     appendChild(parent, child) {
         parent.children.push(child);
@@ -87,6 +121,7 @@ const hostConfig = {
     /**
    * @param {HostContainer} container
    * @param {HostNode} child
+   * @returns {void}
    */
     appendChildToContainer(container, child) {
         container.root = child;
@@ -94,6 +129,7 @@ const hostConfig = {
     /**
    * @param {MutableHostElement} parent
    * @param {HostNode} child
+   * @returns {void}
    */
     removeChild(parent, child) {
         const idx = parent.children.indexOf(child);
@@ -102,6 +138,7 @@ const hostConfig = {
     },
     /**
    * @param {HostContainer} container
+   * @returns {void}
    */
     removeChildFromContainer(container) {
         container.root = null;
@@ -110,6 +147,7 @@ const hostConfig = {
    * @param {MutableHostElement} parent
    * @param {HostNode} child
    * @param {HostNode} beforeChild
+   * @returns {void}
    */
     insertBefore(parent, child, beforeChild) {
         const idx = parent.children.indexOf(beforeChild);
@@ -122,6 +160,7 @@ const hostConfig = {
    * @param {HostContainer} container
    * @param {HostNode} child
    * @param {HostNode} _beforeChild
+   * @returns {void}
    */
     insertInContainerBefore(container, child, _beforeChild) {
         container.root = child;
@@ -131,6 +170,7 @@ const hostConfig = {
    * @param {string} _type
    * @param {unknown} oldProps
    * @param {unknown} newProps
+   * @returns {unknown}
    */
     prepareUpdate(_instance, _type, oldProps, newProps) {
         if (oldProps === newProps)
@@ -139,7 +179,8 @@ const hostConfig = {
     },
     /**
    * @param {MutableHostElement} instance
-   * @param {unknown[]} ...args
+   * @param {unknown[]} args
+   * @returns {void}
    */
     commitUpdate(instance, ...args) {
         let nextProps = null;
@@ -167,46 +208,88 @@ const hostConfig = {
    * @param {MutableHostText} textInstance
    * @param {string} _oldText
    * @param {string} newText
+   * @returns {void}
    */
     commitTextUpdate(textInstance, _oldText, newText) {
         textInstance.text = newText;
     },
+    /**
+   * @returns {boolean}
+   */
     finalizeInitialChildren() {
         return false;
     },
+    /**
+   * @returns {null}
+   */
     prepareForCommit() {
         return null;
     },
+    /**
+   * @returns {void}
+   */
     resetAfterCommit() { },
+    /**
+   * @returns {boolean}
+   */
     shouldSetTextContent() {
         return false;
     },
     /**
    * @param {HostContainer} container
+   * @returns {void}
    */
     clearContainer(container) {
         container.root = null;
     },
+    /**
+   * @returns {number}
+   */
     getCurrentEventPriority() {
         return 1;
     },
+    /**
+   * @returns {boolean}
+   */
     shouldAttemptEagerTransition() {
         return false;
     },
+    /**
+   * @returns {boolean}
+   */
     maySuspendCommit() {
         return false;
     },
+    /**
+   * @returns {void}
+   */
     preloadInstance() { },
+    /**
+   * @returns {void}
+   */
     startSuspendingCommit() { },
+    /**
+   * @returns {void}
+   */
     suspendInstance() { },
+    /**
+   * @returns {null}
+   */
     waitForCommitToBeReady() {
         return null;
     },
+    /**
+   * @returns {void}
+   */
     resetFormInstance() { },
+    /**
+   * @returns {void}
+   */
     detachDeletedInstance() { },
     /**
    * @param {"error" | "warn" | "info" | "log"} type
    * @param {unknown[]} args
+   * @returns {() => void}
    */
     bindToConsole(type, args) {
         return () => {
@@ -214,41 +297,51 @@ const hostConfig = {
             fn(...args);
         };
     },
+    /**
+   * @returns {number}
+   */
     getCurrentUpdatePriority() {
         return currentUpdatePriority;
     },
     /**
    * @param {number} priority
+   * @returns {void}
    */
     setCurrentUpdatePriority(priority) {
         currentUpdatePriority = priority;
     },
+    /**
+   * @returns {number}
+   */
     resolveUpdatePriority() {
         return currentUpdatePriority;
     },
     /**
    * @param {(...args: unknown[]) => void} fn
    * @param {number} [delay]
+   * @returns {ReturnType<typeof setTimeout>}
    */
     scheduleTimeout(fn, delay) {
         return setTimeout(fn, delay ?? 0);
     },
     /**
    * @param {() => void} fn
+   * @returns {void}
    */
     scheduleMicrotask(fn) {
         queueMicrotask(fn);
     },
     /**
    * @param {ReturnType<typeof setTimeout>} id
+   * @returns {void}
    */
     cancelTimeout(id) {
         clearTimeout(id);
     },
     noTimeout: -1,
 };
-/** @type {any} */
-const reconciler = Reconciler(hostConfig);
+/** @type {ReconcilerInstance} */
+const reconciler = /** @type {ReconcilerInstance} */ (Reconciler(hostConfig));
 const hookHost = globalThis;
 if (!hookHost.__REACT_DEVTOOLS_GLOBAL_HOOK__) {
     installRDTHook();
@@ -262,7 +355,7 @@ reconciler.injectIntoDevTools({
 export class SmithersRenderer {
     /** @type {HostContainer} */
     container;
-    /** @type {any} */
+    /** @type {unknown} */
     root;
     /** @type {ExtractGraph | undefined} */
     extractGraph;

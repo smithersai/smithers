@@ -38,7 +38,7 @@ export type RetryPolicy = {
   jitter?: boolean;
 };
 
-export type CachePolicy<Ctx = any> = {
+export type CachePolicy<Ctx = unknown> = {
   by?: (ctx: Ctx) => unknown;
   version?: string;
   key?: string;
@@ -50,9 +50,9 @@ export type CachePolicy<Ctx = any> = {
 
 export type AgentLike = {
   id?: string;
-  tools?: Record<string, any>;
+  tools?: Record<string, unknown>;
   capabilities?: AgentCapabilityRegistry;
-  generate: (args: any) => Promise<any>;
+  generate: (args: unknown) => Promise<unknown>;
 };
 
 export type ScoreResult = {
@@ -67,7 +67,7 @@ export type ScorerInput = {
   groundTruth?: unknown;
   context?: unknown;
   latencyMs?: number;
-  outputSchema?: z.ZodObject<any>;
+  outputSchema?: z.ZodObject;
 };
 
 export type ScorerFn = (input: ScorerInput) => Promise<ScoreResult>;
@@ -131,8 +131,8 @@ export type TaskDescriptor = {
   worktreeBaseBranch?: string;
   outputTable: unknown | null;
   outputTableName: string;
-  outputRef?: z.ZodObject<any>;
-  outputSchema?: z.ZodObject<any>;
+  outputRef?: z.ZodObject;
+  outputSchema?: z.ZodObject;
   parallelGroupId?: string;
   parallelMaxConcurrency?: number;
   needsApproval: boolean;

@@ -3,7 +3,7 @@ import type { ChildWorkflowDefinition } from "@smithers/engine/child-workflow";
 import type { SandboxRuntime } from "./SandboxRuntime.ts";
 
 export type ExecuteSandboxOptions = {
-    parentWorkflow?: SmithersWorkflow<any>;
+    parentWorkflow?: SmithersWorkflow<unknown>;
     sandboxId: string;
     runtime?: SandboxRuntime;
     workflow: ChildWorkflowDefinition;

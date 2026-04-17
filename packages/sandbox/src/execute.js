@@ -14,11 +14,13 @@ import { SandboxTransport, layerForSandboxRuntime, resolveSandboxRuntime, } from
 /** @typedef {import("./SandboxRuntime.ts").SandboxRuntime} SandboxRuntime */
 /** @typedef {import("./SandboxHandle.ts").SandboxHandle} SandboxHandle */
 /** @typedef {import("./SandboxTransportService.ts").SandboxTransportService} SandboxTransportService */
+/** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
 
 const DEFAULT_MAX_CONCURRENT_SANDBOXES = 10;
 /**
- * @param {any} db
+ * @param {ConstructorParameters<typeof SmithersDb>[0]} db
  * @param {SmithersEvent} event
+ * @returns {Promise<void>}
  */
 async function emitSandboxEvent(db, event) {
     const adapter = new SmithersDb(db);
@@ -46,6 +48,7 @@ async function directorySize(path) {
  * @template A
  * @param {SandboxRuntime} runtime
  * @param {Effect.Effect<A, SmithersError, SandboxTransport>} effect
+ * @returns {Effect.Effect<A, SmithersError, never>}
  */
 function runtimeServiceEffect(runtime, effect) {
     return effect.pipe(Effect.provide(layerForSandboxRuntime(runtime)));
@@ -54,6 +57,7 @@ function runtimeServiceEffect(runtime, effect) {
  * @template A
  * @param {SandboxRuntime} runtime
  * @param {Effect.Effect<A, SmithersError, SandboxTransport>} effect
+ * @returns {Promise<A>}
  */
 async function transportCall(runtime, effect) {
     const started = performance.now();

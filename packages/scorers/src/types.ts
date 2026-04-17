@@ -27,7 +27,7 @@ export type ScorerInput = {
   /** How long the task took in milliseconds (optional). */
   latencyMs?: number;
   /** The Zod schema the output should match (optional). */
-  outputSchema?: ZodObject<any>;
+  outputSchema?: ZodObject;
 };
 
 /** An async function that evaluates a scorer input and returns a score result. */
@@ -113,5 +113,5 @@ export type ScorerContext = {
   input: unknown;
   output: unknown;
   latencyMs?: number;
-  outputSchema?: ZodObject<any>;
+  outputSchema?: ZodObject;
 };

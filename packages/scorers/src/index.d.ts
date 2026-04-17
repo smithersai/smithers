@@ -2,8 +2,6 @@ import * as _smithers_agents_AgentLike from '@smithers/agents/AgentLike';
 import { AgentLike as AgentLike$3 } from '@smithers/agents/AgentLike';
 import { ZodObject } from 'zod';
 import * as _smithers_db_adapter from '@smithers/db/adapter';
-import * as drizzle_orm_sqlite_core from 'drizzle-orm/sqlite-core';
-import * as _smithers_engine_events from '@smithers/engine/events';
 import * as effect_MetricState from 'effect/MetricState';
 import * as effect_MetricKeyType from 'effect/MetricKeyType';
 import { Metric } from 'effect';
@@ -30,7 +28,7 @@ type ScorerInput$1 = {
     /** How long the task took in milliseconds (optional). */
     latencyMs?: number;
     /** The Zod schema the output should match (optional). */
-    outputSchema?: ZodObject<any>;
+    outputSchema?: ZodObject;
 };
 /** An async function that evaluates a scorer input and returns a score result. */
 type ScorerFn$1 = (input: ScorerInput$1) => Promise<ScoreResult$2>;
@@ -100,7 +98,7 @@ type ScorerContext$2 = {
     input: unknown;
     output: unknown;
     latencyMs?: number;
-    outputSchema?: ZodObject<any>;
+    outputSchema?: ZodObject;
 };
 
 type LlmJudgeConfig$2 = {
@@ -158,305 +156,7 @@ type SmithersDb$1 = _smithers_db_adapter.SmithersDb;
  * Drizzle table definition for the `_smithers_scorers` table.
  * Stores individual scorer results for each task execution.
  */
-declare const smithersScorers: drizzle_orm_sqlite_core.SQLiteTableWithColumns<{
-    name: "_smithers_scorers";
-    schema: undefined;
-    columns: {
-        id: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "id";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: true;
-            hasDefault: false;
-            isPrimaryKey: true;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        runId: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "run_id";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: true;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        nodeId: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "node_id";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: true;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        iteration: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "iteration";
-            tableName: "_smithers_scorers";
-            dataType: "number";
-            columnType: "SQLiteInteger";
-            data: number;
-            driverParam: number;
-            notNull: true;
-            hasDefault: true;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
-        attempt: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "attempt";
-            tableName: "_smithers_scorers";
-            dataType: "number";
-            columnType: "SQLiteInteger";
-            data: number;
-            driverParam: number;
-            notNull: true;
-            hasDefault: true;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
-        scorerId: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "scorer_id";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: true;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        scorerName: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "scorer_name";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: true;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        source: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "source";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: true;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        score: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "score";
-            tableName: "_smithers_scorers";
-            dataType: "number";
-            columnType: "SQLiteReal";
-            data: number;
-            driverParam: number;
-            notNull: true;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
-        reason: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "reason";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: false;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        metaJson: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "meta_json";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: false;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        inputJson: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "input_json";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: false;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        outputJson: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "output_json";
-            tableName: "_smithers_scorers";
-            dataType: "string";
-            columnType: "SQLiteText";
-            data: string;
-            driverParam: string;
-            notNull: false;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: [string, ...string[]];
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {
-            length: number | undefined;
-        }>;
-        latencyMs: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "latency_ms";
-            tableName: "_smithers_scorers";
-            dataType: "number";
-            columnType: "SQLiteReal";
-            data: number;
-            driverParam: number;
-            notNull: false;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
-        scoredAtMs: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "scored_at_ms";
-            tableName: "_smithers_scorers";
-            dataType: "number";
-            columnType: "SQLiteInteger";
-            data: number;
-            driverParam: number;
-            notNull: true;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
-        durationMs: drizzle_orm_sqlite_core.SQLiteColumn<{
-            name: "duration_ms";
-            tableName: "_smithers_scorers";
-            dataType: "number";
-            columnType: "SQLiteReal";
-            data: number;
-            driverParam: number;
-            notNull: false;
-            hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
-    };
-    dialect: "sqlite";
-}>;
+declare const smithersScorers: any;
 
 /** @typedef {import("./CreateScorerConfig.js").CreateScorerConfig} CreateScorerConfig */
 /** @typedef {import("./types.js").Scorer} Scorer */
@@ -595,7 +295,7 @@ declare function runScorersAsync(scorers: ScorersMap$1, ctx: ScorerContext$1, ad
  * @returns {Promise<Record<string, ScoreResult | null>>}
  */
 declare function runScorersBatch(scorers: ScorersMap$1, ctx: ScorerContext$1, adapter: SmithersDb | null, eventBus?: EventBus | null): Promise<Record<string, ScoreResult$1 | null>>;
-type EventBus = _smithers_engine_events.EventBus;
+type EventBus = any;
 type ScoreResult$1 = ScoreResult$2;
 type ScorerContext$1 = ScorerContext$2;
 type ScorersMap$1 = ScorersMap$2;

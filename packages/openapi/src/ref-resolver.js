@@ -27,10 +27,14 @@ export function resolveRef(spec, ref) {
         throw new Error(`Unsupported $ref format: ${ref}`);
     }
     const parts = ref.slice(2).split("/");
-    let current = /** @type {any} */ (spec);
+    /** @type {unknown} */
+    let current = spec;
     for (const part of parts) {
         const decoded = part.replace(/~1/g, "/").replace(/~0/g, "~");
-        current = current?.[decoded];
+        if (current === null || typeof current !== "object") {
+            throw new Error(`Could not resolve $ref: ${ref}`);
+        }
+        current = /** @type {Record<string, unknown>} */ (current)[decoded];
         if (current === undefined) {
             throw new Error(`Could not resolve $ref: ${ref}`);
         }

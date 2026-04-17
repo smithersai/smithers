@@ -12,7 +12,8 @@ import { SmithersDevToolsCore, printTree, } from "@smithers/devtools";
 /** @typedef {import("@smithers/devtools").DevToolsNode} DevToolsNode */
 /** @typedef {import("@smithers/devtools").SmithersDevToolsCore} SmithersDevToolsCoreType */
 /** @typedef {import("@smithers/devtools").SmithersDevToolsOptions} SmithersDevToolsOptions */
-/** @typedef {any} Fiber */
+/** @typedef {import("bippy").Fiber} Fiber */
+/** @typedef {import("bippy").FiberRoot} FiberRoot */
 
 // ---------------------------------------------------------------------------
 // React host tag mapping
@@ -165,7 +166,7 @@ function fiberToNode(fiber, depth) {
 // Walk fiber root to find Smithers root
 // ---------------------------------------------------------------------------
 /**
- * @param {any} fiberRoot
+ * @param {FiberRoot | null | undefined} fiberRoot
  * @returns {Fiber | null}
  */
 function findSmithersRoot(fiberRoot) {
@@ -226,7 +227,8 @@ export class SmithersDevTools {
         instrument(secure({
             /**
      * @param {number} rendererID
-     * @param {any} root
+     * @param {FiberRoot} root
+     * @returns {void}
      */
             onCommitFiberRoot(rendererID, root) {
                 const smithersRoot = findSmithersRoot(root);
@@ -241,7 +243,8 @@ export class SmithersDevTools {
             },
             /**
      * @param {number} _rendererID
-     * @param {any} fiber
+     * @param {Fiber} fiber
+     * @returns {void}
      */
             onCommitFiberUnmount(_rendererID, fiber) {
                 const nodeType = resolveNodeType(fiber);

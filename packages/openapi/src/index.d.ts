@@ -1,6 +1,7 @@
 import * as effect from 'effect';
 import { Effect } from 'effect';
 import { z } from 'zod';
+import { Tool } from 'ai';
 import * as effect_MetricState from 'effect/MetricState';
 import * as effect_MetricKeyType from 'effect/MetricKeyType';
 
@@ -233,7 +234,15 @@ declare function createOpenApiTool(input: string | OpenApiSpec$3, operationId: s
 type OpenApiSpec$3 = OpenApiSpec$b;
 type OpenApiToolsOptions$2 = OpenApiToolsOptions$5;
 
+/**
+ * Type alias for an AI SDK tool produced from an OpenAPI operation.
+ * Re-exported here so JSDoc files can reference a stable name without
+ * reaching into the `ai` package directly.
+ */
+type OpenApiTool$1 = Tool;
+
 /** @typedef {import("../OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+/** @typedef {import("../OpenApiTool.ts").OpenApiTool} OpenApiTool */
 /** @typedef {import("../OpenApiToolsOptions.ts").OpenApiToolsOptions} OpenApiToolsOptions */
 /**
  * Synchronous version — only works with specs that are objects or local files.
@@ -241,10 +250,11 @@ type OpenApiToolsOptions$2 = OpenApiToolsOptions$5;
  * @param {string | OpenApiSpec} input
  * @param {string} operationId
  * @param {OpenApiToolsOptions} [options]
- * @returns {any}
+ * @returns {OpenApiTool}
  */
-declare function createOpenApiToolSync(input: string | OpenApiSpec$2, operationId: string, options?: OpenApiToolsOptions$1): any;
+declare function createOpenApiToolSync(input: string | OpenApiSpec$2, operationId: string, options?: OpenApiToolsOptions$1): OpenApiTool;
 type OpenApiSpec$2 = OpenApiSpec$b;
+type OpenApiTool = OpenApiTool$1;
 type OpenApiToolsOptions$1 = OpenApiToolsOptions$5;
 
 /** @typedef {import("../OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */

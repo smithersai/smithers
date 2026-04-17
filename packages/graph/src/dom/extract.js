@@ -52,7 +52,7 @@ function isZodObject(value) {
     return Boolean(value && typeof value === "object" && "shape" in value);
 }
 /**
- * @param {Record<string, any>} raw
+ * @param {Record<string, unknown>} raw
  * @returns {number | null}
  */
 function parseHeartbeatTimeoutMs(raw) {
@@ -99,7 +99,7 @@ function getRalphIteration(opts, id) {
     return typeof value === "number" ? value : fallback;
 }
 /**
- * @param {Record<string, any>} raw
+ * @param {Record<string, unknown>} raw
  */
 function resolveRetryConfig(raw) {
     const noRetry = Boolean(raw.noRetry);
@@ -110,10 +110,10 @@ function resolveRetryConfig(raw) {
     const retries = noRetry || defaultNoRetryForContinueOnFail
         ? 0
         : hasExplicitRetries
-            ? raw.retries
+            ? /** @type {number} */ (raw.retries)
             : Infinity;
     const retryPolicy = hasExplicitRetryPolicy
-        ? raw.retryPolicy
+        ? /** @type {import("../RetryPolicy.ts").RetryPolicy} */ (raw.retryPolicy)
         : retries > 0
             ? { backoff: "exponential", initialDelayMs: 1000 }
             : undefined;

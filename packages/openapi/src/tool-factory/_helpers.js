@@ -8,6 +8,7 @@ import { openApiToolCallsTotal, openApiToolCallErrorsTotal, openApiToolDuration,
 import { buildOperationSchema } from "../schema-converter.js";
 import { extractOperations } from "../spec-parser.js";
 /** @typedef {import("../OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+/** @typedef {import("../OpenApiTool.ts").OpenApiTool} OpenApiTool */
 /** @typedef {import("../OpenApiToolsOptions.ts").OpenApiToolsOptions} OpenApiToolsOptions */
 /** @typedef {import("../ParsedOperation.ts").ParsedOperation} ParsedOperation */
 
@@ -69,14 +70,17 @@ export function buildUrl(baseUrl, path, pathParams, queryParams, options) {
 }
 /**
  * @param {ParsedOperation} operation
- * @param {Record<string, any>} args
+ * @param {Record<string, unknown>} args
  * @param {string} baseUrl
  * @param {OpenApiToolsOptions} options
  * @returns {Promise<unknown>}
  */
 export async function executeRequest(operation, args, baseUrl, options) {
+    /** @type {Record<string, string>} */
     const pathParams = {};
+    /** @type {Record<string, string>} */
     const queryParams = {};
+    /** @type {Record<string, string>} */
     const headerParams = {};
     // Sort parameters into buckets
     for (const param of operation.parameters) {
@@ -97,10 +101,12 @@ export async function executeRequest(operation, args, baseUrl, options) {
         }
     }
     const url = buildUrl(baseUrl, operation.path, pathParams, queryParams, options);
+    /** @type {Record<string, string>} */
     const headers = {
         ...buildAuthHeaders(options),
         ...headerParams,
     };
+    /** @type {RequestInit} */
     const fetchInit = {
         method: operation.method.toUpperCase(),
         headers,
@@ -123,7 +129,7 @@ export async function executeRequest(operation, args, baseUrl, options) {
 // ---------------------------------------------------------------------------
 /**
  * @param {ParsedOperation} operation
- * @param {Record<string, any>} args
+ * @param {Record<string, unknown>} args
  * @param {string} baseUrl
  * @param {OpenApiToolsOptions} options
  * @returns {Effect.Effect<unknown, unknown, never>}
@@ -153,7 +159,7 @@ export function executeToolEffect(operation, args, baseUrl, options) {
  * @param {OpenApiSpec} spec
  * @param {string} baseUrl
  * @param {OpenApiToolsOptions} options
- * @returns {any}
+ * @returns {{ name: string; tool: OpenApiTool }}
  */
 export function createToolFromOperation(operation, spec, baseUrl, options) {
     const inputSchema = buildOperationSchema(operation.parameters, operation.requestBody, spec);
@@ -166,13 +172,14 @@ export function createToolFromOperation(operation, spec, baseUrl, options) {
             inputSchema: zodSchema(inputSchema),
             execute: async (args) => {
                 try {
-                    return await Effect.runPromise(executeToolEffect(operation, args, baseUrl, options));
+                    return await Effect.runPromise(executeToolEffect(operation, /** @type {Record<string, unknown>} */ (args), baseUrl, options));
                 }
                 catch (error) {
                     // Return error info as tool result instead of throwing
+                    const e = /** @type {{ message?: string }} */ (error);
                     return {
                         error: true,
-                        message: error?.message ?? String(error),
+                        message: e?.message ?? String(error),
                         status: "failed",
                     };
                 }
@@ -195,11 +202,12 @@ export function resolveBaseUrl(spec, options) {
 /**
  * @param {OpenApiSpec} spec
  * @param {OpenApiToolsOptions} options
- * @returns {Record<string, any>}
+ * @returns {Record<string, OpenApiTool>}
  */
 export function createOpenApiToolsFromSpec(spec, options) {
     const operations = extractOperations(spec);
     const baseUrl = resolveBaseUrl(spec, options);
+    /** @type {Record<string, OpenApiTool>} */
     const tools = {};
     for (const op of operations) {
         // Apply include/exclude filters
@@ -216,7 +224,7 @@ export function createOpenApiToolsFromSpec(spec, options) {
  * @param {OpenApiSpec} spec
  * @param {string} operationId
  * @param {OpenApiToolsOptions} options
- * @returns {any}
+ * @returns {OpenApiTool}
  */
 export function createOpenApiToolFromSpec(spec, operationId, options) {
     const operations = extractOperations(spec);

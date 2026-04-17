@@ -1,6 +1,7 @@
+import * as _smithers_observability_SmithersEvent from '@smithers/observability/SmithersEvent';
 import { SmithersWorkflow } from '@smithers/components/SmithersWorkflow';
 import { ChildWorkflowDefinition } from '@smithers/engine/child-workflow';
-import { Context, Effect, Layer } from 'effect';
+import { Effect, Context, Layer } from 'effect';
 import { SmithersError } from '@smithers/errors/SmithersError';
 
 type SandboxBundleManifest$1 = {
@@ -90,7 +91,7 @@ type SandboxTransportService = {
 };
 
 type ExecuteSandboxOptions$1 = {
-    parentWorkflow?: SmithersWorkflow<any>;
+    parentWorkflow?: SmithersWorkflow<unknown>;
     sandboxId: string;
     runtime?: SandboxRuntime$1;
     workflow: ChildWorkflowDefinition;
@@ -110,6 +111,7 @@ type ExecuteSandboxOptions$1 = {
  */
 declare function executeSandbox(options: ExecuteSandboxOptions): Promise<unknown>;
 type ExecuteSandboxOptions = ExecuteSandboxOptions$1;
+type SmithersEvent = _smithers_observability_SmithersEvent.SmithersEvent;
 
 declare class SandboxEntityExecutor extends Context.TagClassShape<"SandboxEntityExecutor", SandboxTransportService> {
 }
@@ -135,4 +137,4 @@ type SandboxBundleResult = SandboxBundleResult$1;
 type SandboxTransportConfig = SandboxTransportConfig$1;
 type SandboxRuntime = SandboxRuntime$1;
 
-export { type ExecuteSandboxOptions, SANDBOX_BUNDLE_OUTPUT_MAX_ARRAY_LENGTH, SANDBOX_BUNDLE_OUTPUT_MAX_DEPTH, SANDBOX_BUNDLE_OUTPUT_MAX_STRING_LENGTH, SANDBOX_BUNDLE_PATH_MAX_LENGTH, SANDBOX_BUNDLE_RUN_ID_MAX_LENGTH, SANDBOX_MAX_BUNDLE_BYTES, SANDBOX_MAX_PATCH_FILES, SANDBOX_MAX_README_BYTES, type SandboxBundleManifest, type SandboxBundleResult, SandboxTransport, type SandboxTransportConfig, type ValidatedSandboxBundle, executeSandbox, layerForSandboxRuntime, makeSandboxTransportLayer, resolveSandboxRuntime, validateSandboxBundle, writeSandboxBundle };
+export { type ExecuteSandboxOptions, SANDBOX_BUNDLE_OUTPUT_MAX_ARRAY_LENGTH, SANDBOX_BUNDLE_OUTPUT_MAX_DEPTH, SANDBOX_BUNDLE_OUTPUT_MAX_STRING_LENGTH, SANDBOX_BUNDLE_PATH_MAX_LENGTH, SANDBOX_BUNDLE_RUN_ID_MAX_LENGTH, SANDBOX_MAX_BUNDLE_BYTES, SANDBOX_MAX_PATCH_FILES, SANDBOX_MAX_README_BYTES, type SandboxBundleManifest, type SandboxBundleResult, SandboxTransport, type SandboxTransportConfig, type SmithersEvent, type ValidatedSandboxBundle, executeSandbox, layerForSandboxRuntime, makeSandboxTransportLayer, resolveSandboxRuntime, validateSandboxBundle, writeSandboxBundle };
