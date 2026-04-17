@@ -10,6 +10,11 @@
       "import": "./src/index.js",
       "default": "./src/index.js"
     },
+    "./tools": {
+      "types": "./src/tools.d.ts",
+      "import": "./src/tools.js",
+      "default": "./src/tools.js"
+    },
     "./*": {
       "types": "./src/index.d.ts",
       "import": "./src/*.js",
@@ -46,6 +51,8 @@
     "@smithers/server": "workspace:*",
     "@smithers/time-travel": "workspace:*",
     "@smithers/vcs": "workspace:*",
+    "ai": "^6.0.69",
+    "diff": "^5.2.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

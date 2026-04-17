@@ -174,7 +174,16 @@ export { runWorkflow, renderFrame } from "@smithers/engine";
 export { signalRun } from "@smithers/engine/signals";
 export { usePatched } from "@smithers/engine/effect/versioning";
 // Tools
-export { getDefinedToolMetadata } from "@smithers/engine/getDefinedToolMetadata";
+export {
+  bash,
+  defineTool,
+  edit,
+  getDefinedToolMetadata,
+  grep,
+  read,
+  tools,
+  write,
+} from "./tools.js";
 // Server
 export { startServer } from "@smithers/server";
 export { Gateway } from "@smithers/server/gateway";
