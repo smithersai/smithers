@@ -1,40 +1,29 @@
 ---
 title: <EscalationChain>
-description: Sequential agent escalation with optional human fallback when automated levels are exhausted.
+description: Sequential agent escalation with optional human fallback.
 ---
 
-Runs a series of agents in order. If a level fails or its `escalateIf` predicate returns `true`, the next level takes over. Optionally ends with a human approval fallback.
-
-## Import
-
-```tsx
+```ts
+// Props
 import { EscalationChain } from "smithers-orchestrator";
+
+type EscalationChainProps = {
+  id?: string; // default "escalation"
+  levels: EscalationLevel[];
+  humanFallback?: boolean; // default false
+  humanRequest?: ApprovalRequest;
+  escalationOutput: z.ZodObject | Table | string;
+  skipIf?: boolean;
+  children?: ReactNode; // prompt forwarded to every level
+};
+
+type EscalationLevel = {
+  agent: AgentLike;
+  output: z.ZodObject | Table | string;
+  label?: string;
+  escalateIf?: (result: any) => boolean; // true -> next level
+};
 ```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | `"escalation"` | ID prefix for generated nodes. |
-| `levels` | `EscalationLevel[]` | **(required)** | Ordered escalation levels. |
-| `humanFallback` | `boolean` | `false` | Append a human approval node as final escalation. |
-| `humanRequest` | `ApprovalRequest` | Auto-generated | Approval request config for the human fallback. |
-| `escalationOutput` | `z.ZodObject \| Table \| string` | **(required)** | Output target for escalation-tracking nodes. |
-| `skipIf` | `boolean` | `false` | Skip the entire chain. |
-| `children` | `ReactNode` | `undefined` | Prompt/input forwarded to each agent level. |
-
-### EscalationLevel
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `agent` | `AgentLike` | Agent to handle this level. |
-| `output` | `z.ZodObject \| Table \| string` | Output target for this level's result. |
-| `label` | `string` | Optional display label. |
-| `escalateIf` | `(result: any) => boolean` | Predicate on the level's result. Return `true` to escalate. |
-
-## Basic usage
-
-A three-tier support chain: fast model, powerful model, human.
 
 ```tsx
 <Workflow name="support-ticket">
@@ -42,93 +31,18 @@ A three-tier support chain: fast model, powerful model, human.
     id="support"
     escalationOutput={outputs.escalation}
     humanFallback
-    humanRequest={{
-      title: "Ticket needs human support",
-      summary: "Automated agents could not resolve the issue.",
-    }}
+    humanRequest={{ title: "Ticket needs human support", summary: "Agents could not resolve." }}
     levels={[
-      {
-        agent: fastAgent,
-        output: outputs.tier1,
-        label: "Tier 1 -- fast model",
-        escalateIf: (r) => r.confidence < 0.7,
-      },
-      {
-        agent: powerAgent,
-        output: outputs.tier2,
-        label: "Tier 2 -- reasoning model",
-        escalateIf: (r) => r.confidence < 0.9,
-      },
+      { agent: fastAgent, output: outputs.tier1, label: "Tier 1", escalateIf: (r) => r.confidence < 0.7 },
+      { agent: powerAgent, output: outputs.tier2, label: "Tier 2", escalateIf: (r) => r.confidence < 0.9 },
     ]}
   >
-    Resolve this customer support ticket: {ctx.input.ticketBody}
+    Resolve this ticket: {ctx.input.ticketBody}
   </EscalationChain>
 </Workflow>
 ```
 
-## Without human fallback
-
-```tsx
-<EscalationChain
-  id="code-review"
-  escalationOutput={outputs.reviewEscalation}
-  levels={[
-    {
-      agent: lintAgent,
-      output: outputs.lint,
-      label: "Lint check",
-      escalateIf: (r) => r.issues.length > 0,
-    },
-    {
-      agent: reviewAgent,
-      output: outputs.review,
-      label: "Deep review",
-    },
-  ]}
->
-  Review the PR diff.
-</EscalationChain>
-```
-
-## Two-level with custom labels
-
-```tsx
-<EscalationChain
-  id="triage"
-  escalationOutput={outputs.triageEscalation}
-  levels={[
-    {
-      agent: classifierAgent,
-      output: outputs.classify,
-      label: "Auto-classify",
-      escalateIf: (r) => r.category === "unknown",
-    },
-    {
-      agent: seniorAgent,
-      output: outputs.seniorClassify,
-      label: "Senior classifier",
-    },
-  ]}
->
-  Classify this incoming request.
-</EscalationChain>
-```
-
-## How it works
-
-`<EscalationChain>` renders a `<Sequence>` containing:
-
-1. **Level 0** -- always runs with `continueOnFail: true`.
-2. **Check node** -- a compute Task that records the escalation decision.
-3. **Level 1** -- gated by a `<Branch>`, runs only when escalation is triggered.
-4. Repeat for each subsequent level.
-5. **Human fallback** (optional) -- an `<Approval>` node appended at the end.
-
-Each agent Task uses `continueOnFail` so that failures propagate to the next level rather than halting the workflow.
-
 ## Notes
 
-- The `children` prop (prompt text) is forwarded to every agent level, so each agent receives the same input context.
-- `escalateIf` is evaluated at task execution time, not at render time.
-- If no level resolves successfully and `humanFallback` is `false`, the chain completes with the last level's failure.
-- Combine with `skipIf` to bypass the chain entirely.
+- Each level uses `continueOnFail`; failures propagate to the next level.
+- `escalateIf` runs at task-execution time, not render time.

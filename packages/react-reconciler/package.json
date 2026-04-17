@@ -6,44 +6,45 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "types": "./src/index.d.ts",
       "import": "./src/index.js",
-      "default": "./src/index.js",
-      "types": "./src/index.ts"
+      "default": "./src/index.js"
     },
     "./context": {
+      "types": "./src/index.d.ts",
       "import": "./src/context.js",
-      "default": "./src/context.js",
-      "types": "./src/context.ts"
+      "default": "./src/context.js"
     },
     "./devtools": {
+      "types": "./src/index.d.ts",
       "import": "./src/devtools/index.js",
-      "default": "./src/devtools/index.js",
-      "types": "./src/devtools/index.ts"
+      "default": "./src/devtools/index.js"
     },
     "./devtools/preload": {
       "import": "./src/devtools/preload.js",
       "default": "./src/devtools/preload.js"
     },
     "./driver": {
+      "types": "./src/index.d.ts",
       "import": "./src/driver.js",
-      "default": "./src/driver.js",
-      "types": "./src/driver.ts"
+      "default": "./src/driver.js"
     },
     "./jsx-runtime": {
+      "types": "./src/index.d.ts",
       "import": "./src/jsx-runtime.js",
-      "default": "./src/jsx-runtime.js",
-      "types": "./src/jsx-runtime.ts"
+      "default": "./src/jsx-runtime.js"
     },
     "./*": {
+      "types": "./src/index.d.ts",
       "import": "./src/*.js",
-      "default": "./src/*.js",
-      "types": "./src/*.ts"
+      "default": "./src/*.js"
     }
   },
   "files": [
     "src/"
   ],
   "scripts": {
+    "build": "tsup --dts-only",
     "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./service.ts").MemoryLayerConfig} MemoryLayerConfig */
-/** @typedef {import("./service.ts").MemoryServiceApi} MemoryServiceApi */
+/** @typedef {import("./MemoryLayerConfig.ts").MemoryLayerConfig} MemoryLayerConfig */
+/** @typedef {import("./MemoryServiceApi.ts").MemoryServiceApi} MemoryServiceApi */
 // @smithers-type-exports-end
 
 export { MemoryService } from "./MemoryService.js";

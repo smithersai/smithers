@@ -1,26 +1,16 @@
-// @smithers-type-exports-begin
-/** @typedef {import("./_coreMetrics.ts").MetricName} MetricName */
-/** @typedef {import("./_coreMetrics.ts").MetricsServiceShape} MetricsServiceShape */
-/** @typedef {import("./_coreMetrics.ts").MetricsSnapshot} MetricsSnapshot */
-/** @typedef {import("./_coreMetrics.ts").SmithersMetricEvent} SmithersMetricEvent */
-/** @typedef {import("./_coreMetrics.ts").SmithersMetricUnit} SmithersMetricUnit */
-// @smithers-type-exports-end
-
 import { Context, Effect, Layer } from "effect";
 import { renderPrometheusSamples, toPrometheusMetricName, } from "./_corePrometheus.js";
+/** @typedef {import("./MetricName.ts").MetricName} MetricName */
 /** @typedef {import("./SmithersMetricType.ts").SmithersMetricType} SmithersMetricType */
-/** @typedef {import("./_corePrometheus.ts")._corePrometheus} _corePrometheus */
-
-/**
- * @typedef {{ readonly type: "counter"; value: number; readonly labels: MetricLabels; }} CounterEntry
- */
-/**
- * @typedef {{ readonly type: "gauge"; value: number; readonly labels: MetricLabels; }} GaugeEntry
- */
-/**
- * @typedef {{ readonly type: "histogram"; sum: number; count: number; readonly labels: MetricLabels; readonly buckets: Map<number, number>; }} HistogramEntry
- */
-/** @typedef {import("./_corePrometheus.ts").MetricLabels} MetricLabels */
+/** @typedef {import("./SmithersMetricUnit.ts").SmithersMetricUnit} SmithersMetricUnit */
+/** @typedef {import("./_corePrometheusShape.ts").MetricLabels} MetricLabels */
+/** @typedef {import("./_corePrometheusShape.ts").PrometheusSample} PrometheusSample */
+/** @typedef {import("./_coreMetricsShape.ts").CounterEntry} CounterEntry */
+/** @typedef {import("./_coreMetricsShape.ts").GaugeEntry} GaugeEntry */
+/** @typedef {import("./_coreMetricsShape.ts").HistogramEntry} HistogramEntry */
+/** @typedef {import("./_coreMetricsShape.ts").MetricsSnapshot} MetricsSnapshot */
+/** @typedef {import("./_coreMetricsShape.ts").MetricsServiceShape} MetricsServiceShape */
+/** @typedef {import("./_coreMetricsShape.ts").SmithersMetricEvent} SmithersMetricEvent */
 /** @typedef {import("./SmithersMetricDefinition.ts").SmithersMetricDefinition} SmithersMetricDefinition */
 
 /**
@@ -211,7 +201,8 @@ export const smithersMetricCatalogByKey = new Map(smithersMetricCatalog.map((met
 export const smithersMetricCatalogByPrometheusName = new Map(smithersMetricCatalog.map((metric) => [metric.prometheusName, metric]));
 export const smithersMetricCatalogByName = new Map(smithersMetricCatalog.map((metric) => [metric.name, metric]));
 export const smithersMetrics = Object.freeze(Object.fromEntries(smithersMetricCatalog.map((metric) => [metric.key, metric.name])));
-export class MetricsService extends Context.Tag("MetricsService")() {
+const _MetricsServiceBase = /** @type {Context.TagClass<MetricsService, "MetricsService", MetricsServiceShape>} */ (/** @type {unknown} */ (Context.Tag("MetricsService")()));
+export class MetricsService extends _MetricsServiceBase {
 }
 const DEFAULT_HISTOGRAM_BUCKETS = [
     1,
@@ -503,7 +494,9 @@ export function makeInMemoryMetricsService() {
     };
     return service;
 }
+/** @type {Layer.Layer<MetricsService, never, never>} */
 export const MetricsServiceLive = Layer.sync(MetricsService, makeInMemoryMetricsService);
+/** @type {Layer.Layer<MetricsService, never, never>} */
 export const MetricsServiceNoop = Layer.succeed(MetricsService, {
     increment: () => Effect.void,
     incrementBy: () => Effect.void,

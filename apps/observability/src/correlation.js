@@ -1,12 +1,7 @@
-// @smithers-type-exports-begin
-/** @typedef {import("./correlation.ts").CorrelationContext} CorrelationContext */
-/** @typedef {import("./correlation.ts").CorrelationContextPatch} CorrelationContextPatch */
-// @smithers-type-exports-end
-
 import { getCurrentCorrelationContext as getCoreCurrentCorrelationContext, mergeCorrelationContext as mergeCoreCorrelationContext, } from "./_coreCorrelation/index.js";
-/** @typedef {import("./index.ts").index} index */
-
-/** @typedef {import("./_coreCorrelation/index.ts").CorrelationPatch} CorrelationPatch */
+/** @typedef {import("./_coreCorrelation/CorrelationContext.ts").CorrelationContext} CorrelationContext */
+/** @typedef {import("./_coreCorrelation/CorrelationPatch.ts").CorrelationPatch} CorrelationPatch */
+/** @typedef {CorrelationPatch} CorrelationContextPatch */
 
 export { correlationContextFiberRef, correlationContextToLogAnnotations, CorrelationContextLive, CorrelationContextService, getCurrentCorrelationContext, getCurrentCorrelationContextEffect, mergeCorrelationContext, runWithCorrelationContext, withCorrelationContext, withCurrentCorrelationContext, } from "./_coreCorrelation/index.js";
 /**

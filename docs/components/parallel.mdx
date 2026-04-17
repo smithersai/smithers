@@ -1,26 +1,22 @@
 ---
 title: <Parallel>
-description: Execute child tasks concurrently with optional concurrency limits.
+description: Run children concurrently with an optional concurrency cap.
 ---
 
-```tsx
+```ts
 import { Parallel } from "smithers-orchestrator";
+
+type ParallelProps = {
+  id?: string;
+  maxConcurrency?: number; // default Infinity
+  skipIf?: boolean;
+  children?: ReactNode;
+};
 ```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | `undefined` | Optional stable id for tracking and deduping. |
-| `maxConcurrency` | `number` | `Infinity` | Max simultaneous children. Remaining tasks queue until a slot opens. |
-| `skipIf` | `boolean` | `false` | Skip the entire group. Returns `null`; no children are mounted. |
-| `children` | `ReactNode` | `undefined` | [`<Task>`](/components/task) and [control-flow components](/concepts/control-flow) to execute concurrently. |
-
-## Basic usage
 
 ```tsx
 <Workflow name="checks">
-  <Parallel>
+  <Parallel maxConcurrency={2}>
     <Task id="lint" output={outputs.lint}>
       {{ errors: 0 }}
     </Task>
@@ -34,62 +30,7 @@ import { Parallel } from "smithers-orchestrator";
 </Workflow>
 ```
 
-## Limiting concurrency
-
-```tsx
-<Parallel maxConcurrency={2}>
-  <Task id="analyze-repo-1" output={outputs.analyzeRepo1} agent={analyst}>
-    Analyze repository alpha.
-  </Task>
-  <Task id="analyze-repo-2" output={outputs.analyzeRepo2} agent={analyst}>
-    Analyze repository beta.
-  </Task>
-  <Task id="analyze-repo-3" output={outputs.analyzeRepo3} agent={analyst}>
-    Analyze repository gamma.
-  </Task>
-  <Task id="analyze-repo-4" output={outputs.analyzeRepo4} agent={analyst}>
-    Analyze repository delta.
-  </Task>
-</Parallel>
-```
-
-At most two agent calls run simultaneously. As each completes, the next queued task starts.
-
-## Combining with [Sequence](/components/sequence)
-
-```tsx
-<Workflow name="ci">
-  <Parallel maxConcurrency={3}>
-    <Sequence>
-      <Task id="build-web" output={outputs.buildWeb}>{{ ok: true }}</Task>
-      <Task id="deploy-web" output={outputs.deployWeb}>{{ ok: true }}</Task>
-    </Sequence>
-    <Sequence>
-      <Task id="build-api" output={outputs.buildApi}>{{ ok: true }}</Task>
-      <Task id="deploy-api" output={outputs.deployApi}>{{ ok: true }}</Task>
-    </Sequence>
-  </Parallel>
-</Workflow>
-```
-
-The two [`<Sequence>`](/components/sequence) groups run in parallel. Within each, tasks run sequentially.
-
-## Conditional skipping
-
-```tsx
-<Parallel skipIf={!ctx.input.runChecks}>
-  <Task id="lint" output={outputs.lint}>{{ errors: 0 }}</Task>
-  <Task id="test" output={outputs.test}>{{ passed: true }}</Task>
-</Parallel>
-```
-
-## Rendering
-
-`<Parallel>` renders as a `<smithers:parallel>` host element (or `null` when skipped). Each child receives `parallelGroupId` and `parallelMaxConcurrency` in its task descriptor.
-
 ## Notes
 
-- Omitting `maxConcurrency` (or setting `Infinity`) starts all children simultaneously.
-- The group completes when all children finish (or fail, if `continueOnFail` is set on individual tasks).
-- Nestable inside [`<Sequence>`](/components/sequence), [`<Branch>`](/components/branch), [`<Loop>`](/components/loop), or another `<Parallel>`.
-- An empty `<Parallel>` is valid and completes immediately.
+- Group completes when all children finish (or fail, unless `continueOnFail`).
+- Children receive `parallelGroupId` and `parallelMaxConcurrency` in their descriptor.

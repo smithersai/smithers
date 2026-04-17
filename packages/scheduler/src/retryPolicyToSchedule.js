@@ -1,7 +1,11 @@
 import { Duration, Schedule } from "effect";
+/** @typedef {import("./RetryPolicy.ts").RetryPolicy} RetryPolicy */
 const MAX_RETRY_DELAY_MS = 5 * 60 * 1000;
 /**
  * Convert a RetryPolicy to an Effect Schedule for use with Effect.retry.
+ *
+ * @param {RetryPolicy} policy
+ * @returns {Schedule.Schedule<unknown>}
  */
 export function retryPolicyToSchedule(policy) {
     const base = typeof policy.initialDelayMs === "number"

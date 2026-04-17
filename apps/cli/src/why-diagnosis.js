@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./why-diagnosis.ts").WhyBlockerKind} WhyBlockerKind */
+/** @typedef {import("./WhyBlockerKind.ts").WhyBlockerKind} WhyBlockerKind */
 // @smithers-type-exports-end
 
 import { Effect } from "effect";
@@ -8,8 +8,8 @@ import { computeRetryDelayMs } from "@smithers/scheduler/computeRetryDelayMs";
 import { SmithersError } from "@smithers/errors";
 import { formatAge } from "./format.js";
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("./why-diagnosis.ts").WhyBlocker} WhyBlocker */
-/** @typedef {import("./why-diagnosis.ts").WhyDiagnosis} WhyDiagnosis */
+/** @typedef {import("./WhyBlocker.ts").WhyBlocker} WhyBlocker */
+/** @typedef {import("./WhyDiagnosis.ts").WhyDiagnosis} WhyDiagnosis */
 
 const RECENT_EVENTS_LIMIT = 50;
 const MAX_CTA_COMMANDS = 5;

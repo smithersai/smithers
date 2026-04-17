@@ -48,18 +48,13 @@ import { executeChildWorkflow } from "./child-workflow.js";
 import { runWorkflowWithMakeBridge } from "./effect/workflow-make-bridge.js";
 import { createWorkflowVersioningRuntime, getWorkflowPatchDecisions, withWorkflowVersioningRuntime, } from "./effect/versioning.js";
 import { runWithCorrelationContext, updateCurrentCorrelationContext, withCorrelationContext, } from "@smithers/observability/correlation";
-/** @typedef {import("./scheduler.ts").scheduler} scheduler */
-
 /** @typedef {import("@smithers/graph/GraphSnapshot").GraphSnapshot} GraphSnapshot */
-/**
- * @typedef {{ requestedAtMs: number; nodeId: string; iteration: number; attempt: number; engine: string; mode: "native-cli" | "conversation"; resume?: string; messages?: unknown[]; cwd: string; }} HijackCompletion
- */
-/** @typedef {import("./engine.ts").HijackState} HijackState */
+/** @typedef {import("./HijackState.ts").HijackState} HijackState */
 /** @typedef {import("@smithers/driver/RunOptions").RunOptions} RunOptions */
 /** @typedef {import("@smithers/driver/RunResult").RunResult} RunResult */
 /** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow} SmithersWorkflow */
 /** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
-/** @typedef {import("./scheduler.ts").TaskStateMap} TaskStateMap */
+/** @typedef {import("@smithers/scheduler").TaskStateMap} TaskStateMap */
 
 /**
  * @param {string} input
@@ -2216,6 +2211,12 @@ async function computeTaskStates(adapter, db, runId, tasks, eventBus, ralphDone)
  * Per-group caps (Parallel/MergeQueue) are enforced upstream by the scheduler
  * when selecting runnable tasks. Keeping group logic in a single place avoids
  * double-enforcement and admission drift.
+ *
+ * @param {TaskDescriptor[]} runnable
+ * @param {TaskStateMap} stateMap
+ * @param {number} maxConcurrency
+ * @param {TaskDescriptor[]} allTasks
+ * @returns {TaskDescriptor[]}
  */
 export function applyConcurrencyLimits(runnable, stateMap, maxConcurrency, allTasks) {
     const selected = [];

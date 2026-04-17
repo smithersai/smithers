@@ -3,12 +3,12 @@ title: Serve Mode
 description: Run a single workflow as an HTTP server with Hono — interact with it over REST, stream events via SSE, and manage approvals remotely.
 ---
 
-Serve mode starts a Hono-based HTTP server alongside a running workflow. Every route operates on the single active run — no workflow path or run ID needed in requests.
+Serve mode starts a Hono-based HTTP server alongside a running workflow. Every route operates on the single active run — no workflow path or run ID in requests.
 
 ## CLI
 
 ```bash
-smithers up workflow.tsx --serve --port 3000 --host 0.0.0.0
+bunx smithers-orchestrator up workflow.tsx --serve --port 3000 --host 0.0.0.0
 ```
 
 | Flag | Default | Description |
@@ -19,12 +19,12 @@ smithers up workflow.tsx --serve --port 3000 --host 0.0.0.0
 | `--auth-token` | `SMITHERS_API_KEY` env | Bearer token for auth |
 | `--metrics` | `true` | Expose `/metrics` Prometheus endpoint |
 
-The process stays alive after the workflow completes so you can still query final state. Ctrl+C stops both the server and the workflow.
+The process stays alive after the workflow completes so final state remains queryable. Ctrl+C stops both the server and the workflow.
 
-Detached mode works too:
+Detached mode:
 
 ```bash
-smithers up workflow.tsx --serve --port 8080 -d
+bunx smithers-orchestrator up workflow.tsx --serve --port 8080 -d
 ```
 
 ## Programmatic
@@ -43,29 +43,20 @@ const app = createServeApp({
 Bun.serve({ port: 3000, fetch: app.fetch });
 ```
 
-`createServeApp` returns a standard Hono app. Mount it with `Bun.serve`, pass it to another Hono app via `app.route()`, or use `app.fetch` directly in tests.
+`createServeApp` returns a standard Hono app. Mount it with `Bun.serve`, pass it to another Hono app via `app.route()`, or use `app.fetch` in tests.
 
 ## ServeOptions
 
 ```ts
 type ServeOptions = {
-  workflow: SmithersWorkflow<any>;
-  adapter: SmithersDb;
-  runId: string;
-  abort: AbortController;
-  authToken?: string;
-  metrics?: boolean;
+  workflow: SmithersWorkflow<any>;   // loaded workflow instance
+  adapter: SmithersDb;               // database adapter for the workflow
+  runId: string;                     // active run ID
+  abort: AbortController;            // shared cancellation controller
+  authToken?: string;                // bearer token; falls back to SMITHERS_API_KEY; disabled if unset
+  metrics?: boolean;                 // expose /metrics; default true
 };
 ```
-
-| Option | Type | Description |
-|---|---|---|
-| `workflow` | `SmithersWorkflow` | Loaded workflow instance |
-| `adapter` | `SmithersDb` | Database adapter for the workflow |
-| `runId` | `string` | Active run ID |
-| `abort` | `AbortController` | Shared abort controller for cancellation |
-| `authToken` | `string` | Bearer token. Falls back to `SMITHERS_API_KEY`. Disabled if unset. |
-| `metrics` | `boolean` | Expose `/metrics` endpoint. Default: `true`. |
 
 ---
 
@@ -84,7 +75,7 @@ Missing or invalid tokens receive `401`.
 
 ### GET /health
 
-Always returns `200` regardless of auth.
+Returns `200` regardless of auth.
 
 ```json
 { "ok": true }
@@ -138,7 +129,7 @@ Rendered workflow frames.
 
 ### POST /approve/:nodeId
 
-Approve a pending approval gate.
+Approve a pending approval gate. All fields optional. Returns `{ "runId": "run-1234" }`.
 
 ```json
 {
@@ -147,8 +138,6 @@ Approve a pending approval gate.
   "decidedBy": "alice"
 }
 ```
-
-All fields optional. Returns `{ "runId": "run-1234" }`.
 
 ### POST /deny/:nodeId
 
@@ -200,20 +189,20 @@ Unknown routes return `404` with code `NOT_FOUND`.
 
 ```bash
 # Start a workflow with serve mode
-smithers up workflow.tsx --serve --port 8080 --auth-token sk-secret
+bunx smithers-orchestrator up workflow.tsx --serve --port 8080 --auth-token sk-secret
 
-# Check status
+# Status
 curl http://localhost:8080/ -H "Authorization: Bearer sk-secret"
 
 # Stream events
 curl -N http://localhost:8080/events -H "Authorization: Bearer sk-secret"
 
-# Approve a gate
+# Approve
 curl -X POST http://localhost:8080/approve/deploy \
   -H "Authorization: Bearer sk-secret" \
   -H "Content-Type: application/json" \
   -d '{"note": "Ship it", "decidedBy": "alice"}'
 
-# Health check (no auth needed)
+# Health (no auth)
 curl http://localhost:8080/health
 ```

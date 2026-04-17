@@ -5,6 +5,7 @@ import React from "react";
 function fragment(...parts) {
     return React.createElement(React.Fragment, null, ...parts);
 }
+/** @type {Record<string, React.FC<any>>} */
 export const markdownComponents = {
     h1: ({ children }) => fragment("# ", children, "\n\n"),
     h2: ({ children }) => fragment("## ", children, "\n\n"),

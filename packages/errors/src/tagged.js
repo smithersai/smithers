@@ -1,10 +1,10 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./tagged.ts").EngineErrorCode} EngineErrorCode */
-/** @typedef {import("./tagged.ts").GenericTaggedErrorArgs} GenericTaggedErrorArgs */
-/** @typedef {import("./tagged.ts").SmithersTaggedError} SmithersTaggedError */
-/** @typedef {import("./tagged.ts").SmithersTaggedErrorPayload} SmithersTaggedErrorPayload */
-/** @typedef {import("./tagged.ts").SmithersTaggedErrorTag} SmithersTaggedErrorTag */
-/** @typedef {import("./tagged.ts").TaggedErrorDetails} TaggedErrorDetails */
+/** @typedef {import("./EngineErrorCode.ts").EngineErrorCode} EngineErrorCode */
+/** @typedef {import("./TaggedErrorDetails.ts").GenericTaggedErrorArgs} GenericTaggedErrorArgs */
+/** @typedef {import("./SmithersTaggedError.ts").SmithersTaggedError} SmithersTaggedError */
+/** @typedef {import("./SmithersTaggedErrorPayload.ts").SmithersTaggedErrorPayload} SmithersTaggedErrorPayload */
+/** @typedef {import("./SmithersTaggedErrorTag.ts").SmithersTaggedErrorTag} SmithersTaggedErrorTag */
+/** @typedef {import("./TaggedErrorDetails.ts").TaggedErrorDetails} TaggedErrorDetails */
 // @smithers-type-exports-end
 
 export * from "./AgentCliError.js";

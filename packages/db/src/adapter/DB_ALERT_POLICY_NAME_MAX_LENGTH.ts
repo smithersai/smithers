@@ -1,1 +1,0 @@
-export declare const DB_ALERT_POLICY_NAME_MAX_LENGTH = 256;

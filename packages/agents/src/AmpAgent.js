@@ -1,9 +1,9 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./AmpAgent.ts").AmpAgentOptions} AmpAgentOptions */
+/** @typedef {import("./AmpAgentOptions.ts").AmpAgentOptions} AmpAgentOptions */
 // @smithers-type-exports-end
 
 import { BaseCliAgent, pushFlag, isRecord, asString, toolKindFromName, createSyntheticIdGenerator, } from "./BaseCliAgent/index.js";
-/** @typedef {import("./BaseCliAgent/index.ts").CliOutputInterpreter} CliOutputInterpreter */
+/** @typedef {import("./BaseCliAgent/CliOutputInterpreter.ts").CliOutputInterpreter} CliOutputInterpreter */
 
 /**
  * Agent implementation that wraps the 'amp' CLI executable.
@@ -16,7 +16,7 @@ export class AmpAgent extends BaseCliAgent {
     /**
      * Initializes a new AmpAgent with the given options.
      *
-     * @param opts - Configuration options for the agent
+     * @param {AmpAgentOptions} [opts] - Configuration options for the agent
      */
     constructor(opts = {}) {
         super(opts);

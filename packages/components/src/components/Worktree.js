@@ -1,7 +1,7 @@
 import React from "react";
 import { WORKTREE_EMPTY_PATH_ERROR } from "@smithers/graph/constants";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./Worktree.ts").WorktreeProps} WorktreeProps */
+/** @typedef {import("./WorktreeProps.ts").WorktreeProps} WorktreeProps */
 
 /**
  * @param {WorktreeProps} props

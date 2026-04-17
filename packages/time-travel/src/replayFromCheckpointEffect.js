@@ -2,10 +2,18 @@ import { Effect, Metric } from "effect";
 import { forkRun as forkRunEffect } from "./fork/forkRunEffect.js";
 import { rerunAtRevision as rerunAtRevisionEffect } from "./vcs-version/rerunAtRevisionEffect.js";
 import { replaysStarted } from "./replaysStarted.js";
+
+/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("./ReplayParams.ts").ReplayParams} ReplayParams */
+/** @typedef {import("./ReplayResult.ts").ReplayResult} ReplayResult */
+
 /**
  * Fork a run from a checkpoint, optionally restore the VCS working copy
  * to the revision that was active at the source frame, then return the
  * new run metadata so the caller can resume execution.
+ *
+ * @param {SmithersDb} adapter
+ * @param {ReplayParams} params
  */
 export function replayFromCheckpoint(adapter, params) {
     return Effect.gen(function* () {

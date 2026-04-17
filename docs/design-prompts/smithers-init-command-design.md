@@ -13,8 +13,8 @@ This document proposes a simpler local-first Smithers experience centered on:
 The key product insight is that users mostly want a ready-made folder of workflows they can use immediately and edit later if they choose. The hello-world path should feel like:
 
 ```bash
-smithers init
-smithers workflow implement --prompt "Commit the .smithers folder created with smithers init"
+bunx smithers-orchestrator init
+bunx smithers-orchestrator workflow implement --prompt "Commit the .smithers folder created with smithers init"
 ```
 
 ## Goals
@@ -201,14 +201,14 @@ Why this shape:
 Recommended command surface:
 
 ```bash
-smithers init
-smithers workflow               # same as workflow list
-smithers workflow list
-smithers workflow <name>
-smithers workflow run <name>
-smithers workflow create <name>
-smithers workflow path <name>
-smithers workflow doctor [<name>]
+bunx smithers-orchestrator init
+bunx smithers-orchestrator workflow               # same as workflow list
+bunx smithers-orchestrator workflow list
+bunx smithers-orchestrator workflow <name>
+bunx smithers-orchestrator workflow run <name>
+bunx smithers-orchestrator workflow create <name>
+bunx smithers-orchestrator workflow path <name>
+bunx smithers-orchestrator workflow doctor [<name>]
 ```
 
 Behavior:

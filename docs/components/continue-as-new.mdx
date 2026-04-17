@@ -1,56 +1,19 @@
 ---
 title: <ContinueAsNew>
-description: End the current run and start a fresh run with carried state, preventing unbounded workflow history growth.
+description: Close the current run; start a fresh one with optional carried state.
 ---
 
-Every Temporal workflow run accumulates an event history. For very long-running workflows — think a daemon that processes events indefinitely or a poller that runs for months — that history grows without bound, increasing replay time and memory pressure. `<ContinueAsNew>` solves this by closing the current run cleanly and immediately starting a fresh one, optionally carrying state across the boundary.
-
-The new run begins with a clean history. From the outside it looks like the same workflow is still running. Inside, the state you passed arrives as `ctx.input.__smithersContinuation.payload`.
-
-## Import
-
-```tsx
+```ts
 import { ContinueAsNew, continueAsNew } from "smithers-orchestrator";
+
+type ContinueAsNewProps = {
+  state?: unknown; // JSON-serializable; arrives as ctx.input.__smithersContinuation.payload
+};
+
+// continueAsNew(state?) is a helper equivalent to <ContinueAsNew state={state} />
 ```
 
-`continueAsNew(state?)` is a convenience helper that returns a `<ContinueAsNew>` element. Both forms are identical in behavior.
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `state` | `unknown` | `undefined` | Optional JSON-serializable payload carried into the next run as `ctx.input.__smithersContinuation.payload`. |
-
-## Basic usage
-
-Unconditionally hand off to a fresh run:
-
 ```tsx
-import { ContinueAsNew, Workflow, createSmithers } from "smithers-orchestrator";
-
-const { smithers } = createSmithers({});
-
-export default smithers(() => (
-  <Workflow name="always-continues">
-    <ContinueAsNew />
-  </Workflow>
-));
-```
-
-This closes the run immediately and starts a new one with no carried state.
-
-## Carrying state into the next run
-
-Pass a JSON-serializable object via the `state` prop. The next run receives it at `ctx.input.__smithersContinuation.payload`:
-
-```tsx
-import { ContinueAsNew, Sequence, Task, Workflow, createSmithers } from "smithers-orchestrator";
-import { z } from "zod";
-
-const { smithers, outputs } = createSmithers({
-  processed: z.object({ count: z.number(), lastCursor: z.string().nullable() }),
-});
-
 export default smithers((ctx) => {
   const continuation = (ctx.input as any)?.__smithersContinuation as
     | { payload?: { cursor?: string; count?: number } }
@@ -63,7 +26,7 @@ export default smithers((ctx) => {
     <Workflow name="paginated-processor">
       <Sequence>
         <Task id="process-batch" output={outputs.processed} agent={processorAgent}>
-          {`Process the next page. Cursor: ${cursor ?? "start"}. Total so far: ${count}.`}
+          {`Process next page. Cursor: ${cursor ?? "start"}. Total so far: ${count}.`}
         </Task>
         <ContinueAsNew
           state={{
@@ -77,87 +40,8 @@ export default smithers((ctx) => {
 });
 ```
 
-## Conditional continuation
-
-Most workflows only continue-as-new under certain conditions — for example, after a fixed number of iterations or when a sentinel value signals the end of input:
-
-```tsx
-export default smithers((ctx) => {
-  const continuation = (ctx.input as any)?.__smithersContinuation as
-    | { payload?: { cursor?: string } }
-    | undefined;
-
-  const nextCursor = ctx.outputMaybe(outputs.batch, { nodeId: "fetch" })?.nextCursor;
-  const isDone = nextCursor == null;
-
-  return (
-    <Workflow name="cursor-drain">
-      <Sequence>
-        <Task id="fetch" output={outputs.batch} agent={fetcherAgent}>
-          {`Fetch from cursor: ${continuation?.payload?.cursor ?? "start"}`}
-        </Task>
-        {isDone ? null : continueAsNew({ cursor: nextCursor })}
-        {isDone ? (
-          <Task id="finalize" output={outputs.summary} agent={summarizerAgent}>
-            All pages processed. Write the final summary.
-          </Task>
-        ) : null}
-      </Sequence>
-    </Workflow>
-  );
-});
-```
-
-## Combined with Loop
-
-A `<Loop>` is the right tool when the number of iterations is bounded and known at design time. Use `<ContinueAsNew>` when the workflow genuinely needs to run indefinitely or when total iteration count is unknown:
-
-```tsx
-export default smithers((ctx) => {
-  const continuation = (ctx.input as any)?.__smithersContinuation as
-    | { payload?: { generation?: number } }
-    | undefined;
-
-  const generation = continuation?.payload?.generation ?? 0;
-  const MAX_PER_RUN = 50;
-
-  return (
-    <Workflow name="generational-worker">
-      <Loop
-        until={ctx.iterationCount("work", "do-work") >= MAX_PER_RUN}
-        maxIterations={MAX_PER_RUN}
-        onMaxReached="return-last"
-      >
-        <Task id="do-work" output={outputs.result} agent={workerAgent}>
-          {`Generation ${generation}, iteration ${ctx.iteration}. Do the work.`}
-        </Task>
-      </Loop>
-      <ContinueAsNew state={{ generation: generation + 1 }} />
-    </Workflow>
-  );
-});
-```
-
-Each workflow run handles `MAX_PER_RUN` iterations via the loop, then hands off to a fresh run, keeping event history bounded in both dimensions.
-
-## Behavior
-
-- When the scheduler encounters `<ContinueAsNew>`, it signals the current run to close with status `continued`.
-- The engine emits a `RunContinuedAsNew` event and immediately starts a new run of the same workflow.
-- If `state` is provided, it is serialized to JSON. Non-serializable payloads fail the run synchronously at render time.
-- The new run receives the payload at `ctx.input.__smithersContinuation.payload`.
-- Any tasks or nodes rendered after `<ContinueAsNew>` in the same sequence do not execute — the handoff happens immediately.
-- The workflow id is preserved across continuations. Only the run id increments.
-
-## Rendering
-
-`<ContinueAsNew>` renders as a `smithers:continue-as-new` host element.
-
 ## Notes
 
-- Use `<ContinueAsNew>` for workflows that run indefinitely (daemons, pollers, event processors). For bounded iteration, [`<Loop>`](/components/loop) is simpler.
-- The `state` payload must be JSON-serializable. Classes, functions, `undefined` nested inside objects, and circular references are not supported.
-- The serialized continuation state (including the `__smithersContinuation` envelope) must be under **10 MB**. Exceeding this limit fails the run.
-- Access the carried payload via `ctx.input.__smithersContinuation.payload`. Type-cast as needed since the input type does not include this field by default.
-- Temporal imposes a maximum event history size (default 50,000 events / 50 MB). `<ContinueAsNew>` before approaching this limit is the recommended mitigation.
-- The `continueAsNew(state?)` helper is interchangeable with `<ContinueAsNew state={state} />` — choose whichever reads more clearly in context.
+- `state` must be JSON-serializable; total continuation envelope < 10 MB.
+- Workflow id is preserved across continuations; only run id increments.
+- Nodes rendered after `<ContinueAsNew>` in the same sequence don't execute.

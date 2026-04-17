@@ -39,11 +39,11 @@ import { Type } from "@sinclair/typebox";
 import { smithersMetricCatalog, toPrometheusMetricName, } from "@smithers/observability/metrics";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { createSmithersAgentContract, renderSmithersAgentPromptGuidance, } from "@smithers/agents/agent-contract";
-/** @typedef {import("./extension.ts").extension} extension */
+/** @typedef {import("./extension.js").extension} extension */
 
 /** @typedef {import("@mariozechner/pi-coding-agent").ExtensionAPI} ExtensionAPI */
 /** @typedef {import("@smithers/agents/agent-contract").SmithersAgentContract} SmithersAgentContract */
-/** @typedef {import("./extension.ts").SmithersPiRunContext} SmithersPiRunContext */
+/** @typedef {import("./SmithersPiRunContext.ts").SmithersPiRunContext} SmithersPiRunContext */
 
 // ---------------------------------------------------------------------------
 // Docs loader

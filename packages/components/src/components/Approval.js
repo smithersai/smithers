@@ -1,8 +1,8 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Approval.ts").ApprovalDecision} ApprovalDecision */
-/** @typedef {import("./Approval.ts").ApprovalRanking} ApprovalRanking */
-/** @typedef {import("./Approval.ts").ApprovalRequest} ApprovalRequest */
-/** @typedef {import("./Approval.ts").ApprovalSelection} ApprovalSelection */
+/** @typedef {import("./ApprovalDecision.ts").ApprovalDecision} ApprovalDecision */
+/** @typedef {import("./ApprovalRanking.ts").ApprovalRanking} ApprovalRanking */
+/** @typedef {import("./ApprovalRequest.ts").ApprovalRequest} ApprovalRequest */
+/** @typedef {import("./ApprovalSelection.ts").ApprovalSelection} ApprovalSelection */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -11,10 +11,13 @@ import { SmithersContext } from "@smithers/react-reconciler/context";
 import { getTaskRuntime } from "@smithers/driver/task-runtime";
 import { SmithersDb } from "@smithers/db/adapter";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./Approval.ts").ApprovalAutoApprove} ApprovalAutoApprove */
-/** @typedef {import("./Approval.ts").ApprovalMode} ApprovalMode */
-/** @typedef {import("./Approval.ts").ApprovalOption} ApprovalOption */
-/** @typedef {import("./Approval.ts").ApprovalProps} ApprovalProps */
+/** @typedef {import("./ApprovalAutoApprove.ts").ApprovalAutoApprove} ApprovalAutoApprove */
+/** @typedef {import("./ApprovalMode.ts").ApprovalMode} ApprovalMode */
+/** @typedef {import("./ApprovalOption.ts").ApprovalOption} ApprovalOption */
+/**
+ * @template Row, Output
+ * @typedef {import("./ApprovalProps.ts").ApprovalProps<Row, Output>} ApprovalProps
+ */
 
 export const approvalDecisionSchema = z.object({
     approved: z.boolean(),

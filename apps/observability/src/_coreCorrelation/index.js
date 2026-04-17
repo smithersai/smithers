@@ -1,7 +1,5 @@
-// @smithers-type-exports-begin
-/** @typedef {import("./index.ts").CorrelationContext} CorrelationContext */
-/** @typedef {import("./index.ts").CorrelationPatch} CorrelationPatch */
-// @smithers-type-exports-end
+/** @typedef {import("./CorrelationContext.ts").CorrelationContext} CorrelationContext */
+/** @typedef {import("./CorrelationPatch.ts").CorrelationPatch} CorrelationPatch */
 
 export { correlationContextFiberRef } from "./correlationContextFiberRef.js";
 export { CorrelationContextService } from "./CorrelationContextService.js";

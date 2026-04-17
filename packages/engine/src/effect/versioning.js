@@ -1,10 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import React from "react";
-/** @typedef {import("./versioning.ts").WorkflowPatchDecisionRecord} WorkflowPatchDecisionRecord */
-/** @typedef {import("./versioning.ts").versioning} versioning */
-
-/** @typedef {import("./versioning.ts").WorkflowPatchDecisions} WorkflowPatchDecisions */
-/** @typedef {import("./versioning.ts").WorkflowVersioningRuntime} WorkflowVersioningRuntime */
+/** @typedef {import("./WorkflowPatchDecisionRecord.ts").WorkflowPatchDecisionRecord} WorkflowPatchDecisionRecord */
+/** @typedef {import("./WorkflowPatchDecisions.ts").WorkflowPatchDecisions} WorkflowPatchDecisions */
+/** @typedef {import("./WorkflowVersioningRuntime.ts").WorkflowVersioningRuntime} WorkflowVersioningRuntime */
 /**
  * @typedef {{ baseConfig: Record<string, unknown>; initialDecisions?: WorkflowPatchDecisions; isNewRun: boolean; persist: (config: Record<string, unknown>) => Promise<void>; recordDecision?: (record: WorkflowPatchDecisionRecord) => Promise<void>; }} WorkflowVersioningRuntimeOptions
  */

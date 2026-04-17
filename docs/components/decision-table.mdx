@@ -1,169 +1,48 @@
 ---
 title: <DecisionTable>
-description: Structured deterministic routing that replaces nested Branches with a flat, declarative rule table.
+description: Flat rule table that replaces nested Branch trees with declarative routing.
 ---
 
-Maps a list of `{ when, then }` rules to workflow elements. Replaces deeply nested `<Branch>` trees with a readable, policy-like table.
-
-## Import
-
-```tsx
+```ts
+// Props
 import { DecisionTable } from "smithers-orchestrator";
+
+type DecisionTableProps = {
+  id?: string;
+  rules: DecisionRule[];
+  default?: ReactElement; // rendered when no rule matches
+  strategy?: "first-match" | "all-match"; // default "first-match"
+  skipIf?: boolean;
+};
+
+type DecisionRule = {
+  when: boolean; // evaluated at render time
+  then: ReactElement;
+  label?: string;
+};
 ```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | `undefined` | ID prefix for wrapper nodes. |
-| `rules` | `DecisionRule[]` | **(required)** | Ordered list of rules. |
-| `default` | `ReactElement` | `undefined` | Fallback element when no rules match. |
-| `strategy` | `"first-match" \| "all-match"` | `"first-match"` | `"first-match"`: first matching rule wins. `"all-match"`: all matching rules run in parallel. |
-| `skipIf` | `boolean` | `false` | Skip the entire table. |
-
-### DecisionRule
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `when` | `boolean` | Condition evaluated at render time. |
-| `then` | `ReactElement` | Element to render when this rule matches. |
-| `label` | `string` | Optional display label for the rule. |
-
-## Basic usage -- first-match
-
-Route a support ticket by severity. First matching rule wins.
-
-```tsx
-const triage = ctx.output(outputs.triage, { nodeId: "triage" });
-
-<Workflow name="ticket-router">
-  <Sequence>
-    <Task id="triage" output={outputs.triage} agent={triageAgent}>
-      Classify this ticket by severity.
-    </Task>
-
-    <DecisionTable
-      rules={[
-        {
-          when: triage.severity === "critical",
-          label: "Critical path",
-          then: (
-            <Task id="page-oncall" output={outputs.page} agent={pagerAgent}>
-              Page the on-call engineer immediately.
-            </Task>
-          ),
-        },
-        {
-          when: triage.severity === "high",
-          label: "High priority",
-          then: (
-            <Task id="assign-senior" output={outputs.assign}>
-              {{ assignee: "senior-pool", priority: "high" }}
-            </Task>
-          ),
-        },
-        {
-          when: triage.severity === "low",
-          label: "Low priority",
-          then: (
-            <Task id="add-backlog" output={outputs.backlog}>
-              {{ queued: true }}
-            </Task>
-          ),
-        },
-      ]}
-      default={
-        <Task id="default-assign" output={outputs.assign}>
-          {{ assignee: "general-pool", priority: "medium" }}
-        </Task>
-      }
-    />
-  </Sequence>
-</Workflow>
-```
-
-## All-match strategy
-
-Run all applicable compliance checks in parallel.
 
 ```tsx
 <DecisionTable
-  id="compliance"
-  strategy="all-match"
   rules={[
     {
-      when: ctx.input.region === "EU",
-      label: "GDPR check",
+      when: triage.severity === "critical",
       then: (
-        <Task id="gdpr" output={outputs.gdpr} agent={gdprAgent}>
-          Verify GDPR compliance.
+        <Task id="page-oncall" output={outputs.page} agent={pagerAgent}>
+          Page the on-call engineer immediately.
         </Task>
       ),
     },
     {
-      when: ctx.input.hasPII,
-      label: "PII scan",
-      then: (
-        <Task id="pii-scan" output={outputs.pii} agent={piiAgent}>
-          Scan for unprotected PII.
-        </Task>
-      ),
-    },
-    {
-      when: ctx.input.amount > 50_000,
-      label: "Financial audit",
-      then: (
-        <Task id="audit" output={outputs.audit} agent={auditAgent}>
-          Run financial audit checks.
-        </Task>
-      ),
+      when: triage.severity === "high",
+      then: <Task id="assign-senior" output={outputs.assign}>{{ assignee: "senior-pool" }}</Task>,
     },
   ]}
-  default={
-    <Task id="no-checks" output={outputs.noChecks}>
-      {{ passed: true, note: "No compliance checks required" }}
-    </Task>
-  }
+  default={<Task id="default-assign" output={outputs.assign}>{{ assignee: "general-pool" }}</Task>}
 />
 ```
-
-## With skipIf
-
-```tsx
-<DecisionTable
-  skipIf={ctx.input.dryRun}
-  rules={[
-    {
-      when: testsPass,
-      then: <Task id="deploy" output={outputs.deploy}>{{ ok: true }}</Task>,
-    },
-  ]}
-  default={
-    <Task id="skip-deploy" output={outputs.deploy}>{{ ok: false }}</Task>
-  }
-/>
-```
-
-## How it works
-
-**`"first-match"`** builds nested `<Branch>` elements from the rules array. The first rule whose `when` is `true` renders its `then` element. If no rules match, the `default` element renders (or `null` if no default).
-
-```
-Branch(rule[0].when)
-  then: rule[0].then
-  else: Branch(rule[1].when)
-    then: rule[1].then
-    else: Branch(rule[2].when)
-      then: rule[2].then
-      else: default
-```
-
-**`"all-match"`** collects every rule where `when` is `true` and wraps their `then` elements in a `<Parallel>`. If no rules match, the `default` renders.
 
 ## Notes
 
-- All `when` conditions are evaluated at render time, just like `<Branch>`.
-- For `"first-match"`, rule order matters -- put higher-priority rules first.
-- For `"all-match"`, all matching rules execute concurrently with no ordering guarantee.
-- Each `then` element accepts any workflow element: a single `<Task>`, a `<Sequence>`, a `<Parallel>`, or another composite.
-- Conditions are re-evaluated each render frame, enabling data-dependent routing.
+- `first-match` builds nested Branches; order matters.
+- `all-match` wraps every matching rule in a Parallel; no ordering guarantee.

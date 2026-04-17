@@ -1,0 +1,18 @@
+export type EventCategory =
+    | "agent"
+    | "approval"
+    | "frame"
+    | "memory"
+    | "node"
+    | "openapi"
+    | "output"
+    | "revert"
+    | "run"
+    | "sandbox"
+    | "scorer"
+    | "snapshot"
+    | "supervisor"
+    | "timer"
+    | "token"
+    | "tool-call"
+    | "workflow";

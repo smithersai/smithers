@@ -1,10 +1,8 @@
 import { spawn } from "node:child_process";
 import { SmithersError } from "@smithers/errors";
-/** @typedef {import("./hijack.ts").hijack} hijack */
-
-/** @typedef {import("./hijack.ts").HijackCandidate} HijackCandidate */
-/** @typedef {import("./hijack.ts").HijackLaunchSpec} HijackLaunchSpec */
-/** @typedef {import("./hijack.ts").NativeHijackEngine} NativeHijackEngine */
+/** @typedef {import("./HijackCandidate.ts").HijackCandidate} HijackCandidate */
+/** @typedef {import("./HijackLaunchSpec.ts").HijackLaunchSpec} HijackLaunchSpec */
+/** @typedef {import("./NativeHijackEngine.ts").NativeHijackEngine} NativeHijackEngine */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 
 /**

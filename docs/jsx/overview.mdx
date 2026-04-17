@@ -1,37 +1,57 @@
 ---
 title: JSX API
-description: Build Smithers workflows as JSX trees with render-time branching, reusable components, and MDX prompts.
+description: Author workflows as JSX trees. Setup, tsconfig, and the render model on one page.
 ---
 
-The [JSX](https://react.dev/learn/writing-markup-with-jsx) API is Smithers' component-based authoring layer. You describe the workflow as a tree of [`<Workflow>`](/components/workflow), [`<Task>`](/components/task), and [control-flow](/concepts/control-flow) components, and Smithers renders that tree into an execution plan.
+Workflows are JSX trees. Smithers renders the tree, extracts ready tasks, executes them, persists their outputs, and re-renders. Branching, looping, and parallelism are normal JSX.
 
-You can mix normal [`<Task>`](/components/task) nodes and [MDX prompt](/guides/mdx-prompts) components in the same JSX tree.
+## Setup
 
-Use JSX when you want:
+Most projects should use `bunx smithers-orchestrator init` — it scaffolds everything below.
 
-- component composition and reusable workflow fragments
-- explicit control-flow nodes like [`<Approval>`](/components/approval), [`<Parallel>`](/components/parallel), `<MergeQueue>`, and [`<Worktree>`](/components/worktree)
-- [render-time branching](/concepts/reactivity) driven by `ctx.outputMaybe(...)`
-- [MDX prompt templates](/guides/mdx-prompts)
-- a TSX-first workflow authoring model
+To embed into an existing codebase:
 
-## What JSX Looks Like
+```bash
+bun add smithers-orchestrator ai @ai-sdk/anthropic zod
+bun add -d typescript @types/bun @types/ws @types/diff
+```
+
+Minimal `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "smithers-orchestrator",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  }
+}
+```
+
+`jsxImportSource` is the only non-standard line — it routes JSX through `smithers-orchestrator/jsx-runtime` instead of React DOM.
+
+Optional MDX prompts: add `bun add -d @types/mdx` and a `preload.ts` that calls `mdxPlugin()`, register it in `bunfig.toml` as `preload = ["./preload.ts"]`.
+
+Verify with `bunx tsc --noEmit` and `bunx smithers-orchestrator --help`.
+
+## A minimal workflow
 
 ```tsx
 /** @jsxImportSource smithers-orchestrator */
 import { createSmithers, Sequence, Task } from "smithers-orchestrator";
 import { z } from "zod";
 
-const analysisSchema = z.object({
-  summary: z.string(),
-});
-
 const { Workflow, smithers, outputs } = createSmithers({
-  analysis: analysisSchema,
+  analysis: z.object({ summary: z.string() }),
 });
 
 export default smithers((ctx) => (
-  <Workflow name="analyze-repo">
+  <Workflow name="analyze">
     <Sequence>
       <Task id="analyze" output={outputs.analysis}>
         {{ summary: `Analyze ${ctx.input.repo}` }}
@@ -41,56 +61,21 @@ export default smithers((ctx) => (
 ));
 ```
 
-The `outputs` object returned by `createSmithers` maps each schema key to its [Zod](https://zod.dev) schema. Passing `output={outputs.analysis}` instead of a magic string gives you compile-time type checking — a typo like `output={outputs.anaylsis}` is a type error, not a runtime surprise.
+`outputs.analysis` is the typed reference for the Zod schema — typos are compile errors.
 
-## How JSX Execution Works
+## Reactivity
 
-The JSX API is [render-driven](/concepts/execution-model):
-
-1. Smithers renders the workflow tree with the current `ctx`.
-2. It extracts executable task descriptors from the rendered tree.
-3. It runs the ready tasks and persists their outputs.
-4. It renders again with the updated outputs in `ctx`.
-
-That means branching and task visibility are usually expressed with normal JSX conditions:
+The tree re-renders on every frame, so branching is a normal JSX conditional:
 
 ```tsx
 const analysis = ctx.outputMaybe(outputs.analysis, { nodeId: "analyze" });
-
-return (
-  <Workflow name="code-review">
-    <Task id="analyze" output={outputs.analysis}>...</Task>
-    {analysis ? (
-      <Task id="fix" output={outputs.fix}>...</Task>
-    ) : null}
-  </Workflow>
-);
+{analysis ? <Task id="report" output={outputs.report} agent={writer}>...</Task> : null}
 ```
 
-## Two Common JSX Styles
+The `report` Task doesn't exist in the plan until `analysis` completes. No placeholder, no skipped node — the conditional IS the dependency.
 
-### Schema-driven JSX
+## Read next
 
-Use `createSmithers(...)` with [Zod](https://zod.dev) schemas and the returned `outputs` object. This is the fastest JSX path and the best default for new workflows. The `output` prop is type-checked against the registered schemas.
-
-### Manual JSX
-
-Use `smithers(db, build)` with explicit Drizzle table objects when you want lower-level control over persistence.
-
-Both styles compile to the same JSX renderer and execution engine.
-
-## Why JSX Works Well
-
-- component composition keeps large workflows modular
-- normal JSX conditions make branching and gating easy to read
-- [TypeScript](https://www.typescriptlang.org) and [Zod](https://zod.dev) keep workflow data explicit and type-checked
-- MDX prompts fit naturally into the same authoring model
-
-## Next Steps
-
-- [JSX Installation](/jsx/installation) — Set up Bun, TypeScript, and optional MDX prompts.
-- [JSX Quickstart](/jsx/quickstart) — Build a two-step workflow.
-- [Execution Model](/concepts/execution-model) — Understand the render and run loop behind JSX workflows.
-- [Workflow State](/concepts/workflow-state) — Learn how `ctx.outputMaybe(...)` reads persisted task outputs.
-- [Control Flow](/concepts/control-flow) — Choose between branching, approvals, loops, and parallel paths.
-- [Workflow](/components/workflow) — Start with the root component reference.
+- [Tour](/tour) — six-step worked example with agents, schemas, approvals, resume.
+- [How It Works](/how-it-works) — the render → execute → persist loop.
+- [Components](/components/workflow) — full prop surface for every JSX element.

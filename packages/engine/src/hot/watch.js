@@ -4,7 +4,7 @@ import { resolve, relative } from "node:path";
 import { Effect } from "effect";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { logDebug, logInfo } from "@smithers/observability/logging";
-/** @typedef {import("./watch.ts").WatchTreeOptions} WatchTreeOptions */
+/** @typedef {import("./WatchTreeOptions.ts").WatchTreeOptions} WatchTreeOptions */
 
 const DEFAULT_IGNORE = [
     "node_modules",

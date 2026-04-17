@@ -8,9 +8,7 @@ import { renderFrame, resolveSchema } from "@smithers/engine";
 import { mdxPlugin } from "smithers/mdx-plugin";
 import { SmithersError } from "@smithers/errors";
 import { Effect } from "effect";
-/** @typedef {import("./hijack.ts").hijack} hijack */
-
-/** @typedef {import("./hijack.ts").HijackCandidate} HijackCandidate */
+/** @typedef {import("./HijackCandidate.ts").HijackCandidate} HijackCandidate */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 
 /**

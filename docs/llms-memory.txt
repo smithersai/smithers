@@ -1,0 +1,92 @@
+# Smithers Memory
+
+> Smithers cross-run memory: working memory, message history, semantic recall, processors.
+
+---
+
+## Memory
+
+> Cross-run state — facts, message history, semantic recall.
+
+Memory persists state **across runs**. Task outputs are per-run; memory is per-namespace and survives every workflow execution.
+
+## Three layers
+
+```ts
+import { createMemoryStore } from "smithers-orchestrator/memory";
+import { Database } from "bun:sqlite";
+
+const store = createMemoryStore(new Database("smithers.db"));
+const ns = { kind: "workflow" as const, id: "code-review" };
+```
+
+| Layer | API | Use for |
+|---|---|---|
+| Working memory | `store.set(ns, key, value)` / `store.get(ns, key)` | Facts. Optional TTL. Last-write-wins. |
+| Message history | `store.saveMessage(threadId, msg)` / `store.listMessages(threadId, limit)` | Ordered chat threads per agent or user. |
+| Semantic recall | `store.recall(ns, query, topK)` | Vector search over stored facts. Requires embedding setup. |
+
+## Namespaces
+
+```ts
+type MemoryNamespace = { kind: "workflow" | "agent" | "user" | "global"; id: string };
+```
+
+Pick the kind to match the lifetime: `workflow` is scoped to a workflow definition; `agent` to an agent identity; `user` to an end user; `global` is shared across everything.
+
+## Wire memory into a Task
+
+```tsx
+<Task
+  id="review"
+  output={outputs.review}
+  agent={reviewer}
+  memory={{
+    recall:   { namespace: ns, topK: 3 },               // inject relevant past facts into prompt
+    remember: { namespace: ns, key: "last-review" },    // persist this output as a fact
+    threadId: `${ctx.input.repo}:reviews`,              // append messages to this thread
+  }}
+>
+  Review the latest PR.
+</Task>
+```
+
+`recall` adds matching facts to the prompt before the agent runs. `remember` writes the validated output into memory after success. `threadId` ties the agent's prompt/response to a durable conversation.
+
+## Processors
+
+Maintenance jobs you run periodically:
+
+```ts
+import { TtlGarbageCollector, TokenLimiter, Summarizer } from "smithers-orchestrator/memory";
+
+const gc         = TtlGarbageCollector();   // expire facts past their TTL
+const limiter    = TokenLimiter(4000);      // keep history under token budget
+const summarizer = Summarizer(myAgent);     // compress old messages with an LLM
+
+await gc.process(store);
+await limiter.process(store);
+await summarizer.process(store);
+```
+
+## Inspect from the CLI
+
+```bash
+bunx smithers-orchestrator memory list workflow:code-review -w workflow.tsx
+bunx smithers-orchestrator memory recall "auth bugs" -w workflow.tsx --top-k 10
+```
+
+## Notes
+
+- Memory and task outputs are **distinct stores**. Don't use memory for run-scoped state — it's not transactional with the workflow's frame commits.
+- Semantic recall requires an embedding provider; configure via `SemanticRecallConfig.embedding`.
+- Working-memory writes are unordered. Use message history when sequence matters.
+
+---
+
+## Memory Quickstart
+
+> Folded into the opt-in memory fragment.
+
+This material is now in the opt-in [`/llms-memory.txt`](/llms-memory.txt) fragment.
+

@@ -1,36 +1,202 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "../tsconfig.json",
   "compilerOptions": {
     "paths": {
       "smithers": [
-        "./packages/smithers/src/examples-entry.js"
+        "../packages/smithers/src/examples-entry.js"
       ],
       "smithers/jsx-runtime": [
-        "./packages/smithers/src/jsx-runtime.js"
+        "../packages/smithers/src/jsx-runtime.js"
       ],
       "smithers/jsx-dev-runtime": [
-        "./packages/smithers/src/jsx-runtime.js"
+        "../packages/smithers/src/jsx-runtime.js"
       ],
       "smithers/tools": [
-        "./packages/smithers/src/tools/index.js"
+        "../packages/smithers/src/tools/index.js"
       ],
       "smithers-orchestrator": [
-        "./packages/smithers/src/examples-entry.js"
+        "../packages/smithers/src/examples-entry.js"
+      ],
+      "smithers-orchestrator/jsx-runtime": [
+        "../packages/smithers/src/jsx-runtime.js"
+      ],
+      "smithers-orchestrator/jsx-dev-runtime": [
+        "../packages/smithers/src/jsx-runtime.js"
       ],
       "smithers-orchestrator/tools": [
-        "./packages/smithers/src/tools/index.js"
+        "../packages/smithers/src/tools/index.js"
+      ],
+      "smithers-orchestrator/scorers": [
+        "../packages/scorers/src/index.js"
+      ],
+      "@smithers/agents": [
+        "../packages/agents/src/index.js"
+      ],
+      "@smithers/agents/*": [
+        "../packages/agents/src/*.ts",
+        "../packages/agents/src/*.js",
+        "../packages/agents/src/*/index.js"
+      ],
+      "@smithers/components": [
+        "../packages/components/src/index.js"
+      ],
+      "@smithers/components/*": [
+        "../packages/components/src/*.ts",
+        "../packages/components/src/*.js",
+        "../packages/components/src/*/index.js"
+      ],
+      "@smithers/db": [
+        "../packages/db/src/index.ts",
+        "../packages/db/src/index.js"
+      ],
+      "@smithers/db/runState": [
+        "../packages/db/src/runState-types.ts",
+        "../packages/db/src/runState.js"
+      ],
+      "@smithers/db/*": [
+        "../packages/db/src/*.ts",
+        "../packages/db/src/*.js",
+        "../packages/db/src/*/index.js"
+      ],
+      "@smithers/devtools": [
+        "../packages/devtools/src/index.js"
+      ],
+      "@smithers/devtools/*": [
+        "../packages/devtools/src/*.ts",
+        "../packages/devtools/src/*.js",
+        "../packages/devtools/src/*/index.js"
+      ],
+      "@smithers/driver": [
+        "../packages/driver/src/index.js"
+      ],
+      "@smithers/driver/*": [
+        "../packages/driver/src/*.ts",
+        "../packages/driver/src/*.js",
+        "../packages/driver/src/*/index.js"
+      ],
+      "@smithers/engine": [
+        "../packages/engine/src/index.js"
+      ],
+      "@smithers/engine/*": [
+        "../packages/engine/src/*.ts",
+        "../packages/engine/src/*.js",
+        "../packages/engine/src/*/index.js"
+      ],
+      "@smithers/errors": [
+        "../packages/errors/src/index.js"
+      ],
+      "@smithers/errors/*": [
+        "../packages/errors/src/*.ts",
+        "../packages/errors/src/*.js",
+        "../packages/errors/src/*/index.js"
+      ],
+      "@smithers/graph": [
+        "../packages/graph/src/index.js"
+      ],
+      "@smithers/graph/*": [
+        "../packages/graph/src/*.ts",
+        "../packages/graph/src/*.js",
+        "../packages/graph/src/*/index.js"
+      ],
+      "@smithers/memory": [
+        "../packages/memory/src/index.js"
+      ],
+      "@smithers/memory/*": [
+        "../packages/memory/src/*.ts",
+        "../packages/memory/src/*.js",
+        "../packages/memory/src/*/index.js"
+      ],
+      "@smithers/observability": [
+        "../apps/observability/src/index.js"
+      ],
+      "@smithers/observability/*": [
+        "../apps/observability/src/*.ts",
+        "../apps/observability/src/*.js",
+        "../apps/observability/src/*/index.js"
+      ],
+      "@smithers/openapi": [
+        "../packages/openapi/src/index.js"
+      ],
+      "@smithers/openapi/*": [
+        "../packages/openapi/src/*.ts",
+        "../packages/openapi/src/*.js",
+        "../packages/openapi/src/*/index.js"
+      ],
+      "@smithers/protocol": [
+        "../packages/protocol/src/index.js"
+      ],
+      "@smithers/protocol/*": [
+        "../packages/protocol/src/*.ts",
+        "../packages/protocol/src/*.js",
+        "../packages/protocol/src/*/index.js"
+      ],
+      "@smithers/react-reconciler": [
+        "../packages/react-reconciler/src/index.js"
+      ],
+      "@smithers/react-reconciler/*": [
+        "../packages/react-reconciler/src/*.ts",
+        "../packages/react-reconciler/src/*.js",
+        "../packages/react-reconciler/src/*/index.js"
+      ],
+      "@smithers/sandbox": [
+        "../packages/sandbox/src/index.js"
+      ],
+      "@smithers/sandbox/*": [
+        "../packages/sandbox/src/*.ts",
+        "../packages/sandbox/src/*.js",
+        "../packages/sandbox/src/*/index.js"
+      ],
+      "@smithers/scheduler": [
+        "../packages/scheduler/src/index.js"
+      ],
+      "@smithers/scheduler/*": [
+        "../packages/scheduler/src/*.ts",
+        "../packages/scheduler/src/*.js",
+        "../packages/scheduler/src/*/index.js"
+      ],
+      "@smithers/scorers": [
+        "../packages/scorers/src/index.js"
+      ],
+      "@smithers/scorers/*": [
+        "../packages/scorers/src/*.ts",
+        "../packages/scorers/src/*.js",
+        "../packages/scorers/src/*/index.js"
+      ],
+      "@smithers/server": [
+        "../packages/server/src/index.js"
+      ],
+      "@smithers/server/*": [
+        "../packages/server/src/*.ts",
+        "../packages/server/src/*.js",
+        "../packages/server/src/*/index.js"
+      ],
+      "@smithers/time-travel": [
+        "../packages/time-travel/src/index.js"
+      ],
+      "@smithers/time-travel/*": [
+        "../packages/time-travel/src/*.ts",
+        "../packages/time-travel/src/*.js",
+        "../packages/time-travel/src/*/index.js"
+      ],
+      "@smithers/vcs": [
+        "../packages/vcs/src/index.js"
+      ],
+      "@smithers/vcs/*": [
+        "../packages/vcs/src/*.ts",
+        "../packages/vcs/src/*.js",
+        "../packages/vcs/src/*/index.js"
       ]
     },
     "allowJs": true
   },
   "include": [
-    "examples/**/*",
-    "packages/smithers/src/examples-entry.ts",
-    "packages/smithers/src/**/*"
+    "**/*",
+    "../packages/smithers/src/examples-entry.ts",
+    "../packages/smithers/src/**/*"
   ],
   "exclude": [
-    "packages/smithers/tests/**/*",
-    "packages/smithers/src/pi-plugin/**/*",
-    "packages/smithers/src/devtools/**/*"
+    "../packages/smithers/tests/**/*",
+    "../packages/smithers/src/pi-plugin/**/*",
+    "../packages/smithers/src/devtools/**/*"
   ]
 }

@@ -1,10 +1,10 @@
 // @smithers-type-exports-begin
 /**
  * @template S
- * @typedef {import("./create-external-smithers.ts").ExternalSmithersConfig<S>} ExternalSmithersConfig
+ * @typedef {import("./ExternalSmithersConfig.ts").ExternalSmithersConfig<S>} ExternalSmithersConfig
  */
-/** @typedef {import("./create-external-smithers.ts").HostNodeJson} HostNodeJson */
-/** @typedef {import("./create-external-smithers.ts").SerializedCtx} SerializedCtx */
+/** @typedef {import("./HostNodeJson.ts").HostNodeJson} HostNodeJson */
+/** @typedef {import("./SerializedCtx.ts").SerializedCtx} SerializedCtx */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -18,8 +18,12 @@ import { SmithersError } from "@smithers/errors/SmithersError";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<any>} SmithersWorkflow */
 /**
  * Serialize a SmithersCtx into a plain JSON-safe object for external processes.
+ * @param {import("@smithers/driver/SmithersCtx").SmithersCtx<any>} ctx
+ * @returns {SerializedCtx}
  */
 export function serializeCtx(ctx) {
     const outputs = {};
@@ -41,6 +45,9 @@ export function serializeCtx(ctx) {
 }
 /**
  * Convert a HostNodeJson tree to React elements, resolving string agent references.
+ * @param {HostNodeJson} node
+ * @param {Record<string, AgentLike>} agents
+ * @returns {React.ReactNode}
  */
 export function hostNodeToReact(node, agents) {
     if (node.kind === "text")
@@ -62,6 +69,10 @@ export function hostNodeToReact(node, agents) {
  *
  * Schemas and agents are defined in TS. The build function produces a HostNode JSON tree
  * that maps 1:1 to what the JSX renderer would produce.
+ *
+ * @template {Record<string, import("zod").ZodObject<any>>} S
+ * @param {ExternalSmithersConfig<S>} config
+ * @returns {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<S> & { tables: Record<string, any>; cleanup: () => void }}
  */
 export function createExternalSmithers(config) {
     const { schemas, agents, buildFn } = config;

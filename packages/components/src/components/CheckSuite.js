@@ -1,12 +1,12 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./CheckSuite.ts").CheckSuiteProps} CheckSuiteProps */
+/** @typedef {import("./CheckSuiteProps.ts").CheckSuiteProps} CheckSuiteProps */
 // @smithers-type-exports-end
 
 import React from "react";
 import { Sequence } from "./Sequence.js";
 import { Parallel } from "./Parallel.js";
 import { Task } from "./Task.js";
-/** @typedef {import("./CheckSuite.ts").CheckConfig} CheckConfig */
+/** @typedef {import("./CheckConfig.ts").CheckConfig} CheckConfig */
 
 /**
  * @param {CheckConfig[] | Record<string, Omit<CheckConfig, "id">>} checks
@@ -24,6 +24,7 @@ function normalizeChecks(checks) {
  * <CheckSuite> — Parallel checks with auto-aggregated pass/fail verdict.
  *
  * Composes: Sequence > Parallel[Task per check] > Task(verdict aggregator)
+ * @param {CheckSuiteProps} props
  */
 export function CheckSuite(props) {
     if (props.skipIf)

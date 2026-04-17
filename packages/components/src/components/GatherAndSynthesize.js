@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./GatherAndSynthesize.ts").GatherAndSynthesizeProps} GatherAndSynthesizeProps */
-/** @typedef {import("./GatherAndSynthesize.ts").SourceDef} SourceDef */
+/** @typedef {import("./GatherAndSynthesizeProps.ts").GatherAndSynthesizeProps} GatherAndSynthesizeProps */
+/** @typedef {import("./SourceDef.ts").SourceDef} SourceDef */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -14,6 +14,7 @@ import { Task } from "./Task.js";
  * Composes Sequence, Parallel, and Task. First a Parallel block gathers data
  * from each source agent, then a synthesis Task receives all gathered data
  * and produces a combined output.
+ * @param {GatherAndSynthesizeProps} props
  */
 export function GatherAndSynthesize(props) {
     if (props.skipIf)

@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./ReviewLoop.ts").ReviewLoopProps} ReviewLoopProps */
+/** @typedef {import("./ReviewLoopProps.ts").ReviewLoopProps} ReviewLoopProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -12,6 +12,7 @@ import { Task } from "./Task.js";
  * Composes Loop, Sequence, and Task to create a standard
  * review-loop pattern. The producer receives the reviewer's
  * feedback on subsequent iterations.
+ * @param {ReviewLoopProps} props
  */
 export function ReviewLoop(props) {
     if (props.skipIf)

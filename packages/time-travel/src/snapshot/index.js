@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").Snapshot} Snapshot */
-/** @typedef {import("./index.ts").SnapshotData} SnapshotData */
+/** @typedef {import("./Snapshot.ts").Snapshot} Snapshot */
+/** @typedef {import("./SnapshotData.ts").SnapshotData} SnapshotData */
 // @smithers-type-exports-end
 
 import { Effect } from "effect";

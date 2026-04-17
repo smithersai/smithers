@@ -72,11 +72,33 @@
         "./packages/react/src/*/index.js"
       ],
       "@smithers/db": [
+        "./packages/db/src/index.ts",
         "./packages/db/src/index.js"
       ],
+      "@smithers/db/runState": [
+        "./packages/db/src/runState-types.ts",
+        "./packages/db/src/runState.js"
+      ],
       "@smithers/db/*": [
+        "./packages/db/src/*.ts",
         "./packages/db/src/*.js",
         "./packages/db/src/*/index.js"
+      ],
+      "@smithers/devtools": [
+        "./packages/devtools/src/index.js"
+      ],
+      "@smithers/devtools/*": [
+        "./packages/devtools/src/*.ts",
+        "./packages/devtools/src/*.js",
+        "./packages/devtools/src/*/index.js"
+      ],
+      "@smithers/driver": [
+        "./packages/driver/src/index.js"
+      ],
+      "@smithers/driver/*": [
+        "./packages/driver/src/*.ts",
+        "./packages/driver/src/*.js",
+        "./packages/driver/src/*/index.js"
       ],
       "@smithers/engine": [
         "./packages/engine/src/index.js"
@@ -84,6 +106,14 @@
       "@smithers/engine/*": [
         "./packages/engine/src/*.js",
         "./packages/engine/src/*/index.js"
+      ],
+      "@smithers/errors": [
+        "./packages/errors/src/index.js"
+      ],
+      "@smithers/errors/*": [
+        "./packages/errors/src/*.ts",
+        "./packages/errors/src/*.js",
+        "./packages/errors/src/*/index.js"
       ],
       "@smithers/graph": [
         "./packages/graph/src/index.js"
@@ -113,6 +143,14 @@
         "./packages/openapi/src/*.js",
         "./packages/openapi/src/*/index.js"
       ],
+      "@smithers/protocol": [
+        "./packages/protocol/src/index.js"
+      ],
+      "@smithers/protocol/*": [
+        "./packages/protocol/src/*.ts",
+        "./packages/protocol/src/*.js",
+        "./packages/protocol/src/*/index.js"
+      ],
       "@smithers/components": [
         "./packages/components/src/index.js"
       ],
@@ -140,6 +178,14 @@
       "@smithers/scorers/*": [
         "./packages/scorers/src/*.js",
         "./packages/scorers/src/*/index.js"
+      ],
+      "@smithers/scheduler": [
+        "./packages/scheduler/src/index.js"
+      ],
+      "@smithers/scheduler/*": [
+        "./packages/scheduler/src/*.ts",
+        "./packages/scheduler/src/*.js",
+        "./packages/scheduler/src/*/index.js"
       ],
       "@smithers/server": [
         "./packages/server/src/index.js"

@@ -1,16 +1,16 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").EngineErrorCode} EngineErrorCode */
-/** @typedef {import("./index.ts").ErrorWrapOptions} ErrorWrapOptions */
-/** @typedef {import("./index.ts").GenericTaggedErrorArgs} GenericTaggedErrorArgs */
-/** @typedef {import("./index.ts").KnownSmithersErrorCode} KnownSmithersErrorCode */
-/** @typedef {import("./index.ts").SmithersErrorCategory} SmithersErrorCategory */
-/** @typedef {import("./index.ts").SmithersErrorCode} SmithersErrorCode */
-/** @typedef {import("./index.ts").SmithersErrorDefinition} SmithersErrorDefinition */
-/** @typedef {import("./index.ts").SmithersErrorOptions} SmithersErrorOptions */
-/** @typedef {import("./index.ts").SmithersTaggedError} SmithersTaggedError */
-/** @typedef {import("./index.ts").SmithersTaggedErrorPayload} SmithersTaggedErrorPayload */
-/** @typedef {import("./index.ts").SmithersTaggedErrorTag} SmithersTaggedErrorTag */
-/** @typedef {import("./index.ts").TaggedErrorDetails} TaggedErrorDetails */
+/** @typedef {import("./EngineErrorCode.ts").EngineErrorCode} EngineErrorCode */
+/** @typedef {import("./ErrorWrapOptions.ts").ErrorWrapOptions} ErrorWrapOptions */
+/** @typedef {import("./TaggedErrorDetails.ts").GenericTaggedErrorArgs} GenericTaggedErrorArgs */
+/** @typedef {import("./KnownSmithersErrorCode.ts").KnownSmithersErrorCode} KnownSmithersErrorCode */
+/** @typedef {import("./SmithersErrorCategory.ts").SmithersErrorCategory} SmithersErrorCategory */
+/** @typedef {import("./SmithersErrorCode.ts").SmithersErrorCode} SmithersErrorCode */
+/** @typedef {import("./SmithersErrorDefinition.ts").SmithersErrorDefinition} SmithersErrorDefinition */
+/** @typedef {import("./SmithersErrorOptions.ts").SmithersErrorOptions} SmithersErrorOptions */
+/** @typedef {import("./SmithersTaggedError.ts").SmithersTaggedError} SmithersTaggedError */
+/** @typedef {import("./SmithersTaggedErrorPayload.ts").SmithersTaggedErrorPayload} SmithersTaggedErrorPayload */
+/** @typedef {import("./SmithersTaggedErrorTag.ts").SmithersTaggedErrorTag} SmithersTaggedErrorTag */
+/** @typedef {import("./TaggedErrorDetails.ts").TaggedErrorDetails} TaggedErrorDetails */
 // @smithers-type-exports-end
 
 export * from "./AgentCliError.js";

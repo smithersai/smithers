@@ -6,39 +6,39 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "types": "./src/index.d.ts",
       "import": "./src/index.js",
-      "default": "./src/index.js",
-      "types": "./src/index.ts"
+      "default": "./src/index.js"
     },
     "./BaseCliAgent": {
+      "types": "./src/index.d.ts",
       "import": "./src/BaseCliAgent/index.js",
-      "default": "./src/BaseCliAgent/index.js",
-      "types": "./src/BaseCliAgent/index.ts"
+      "default": "./src/BaseCliAgent/index.js"
     },
     "./agent-contract": {
+      "types": "./src/index.d.ts",
       "import": "./src/agent-contract/index.js",
-      "default": "./src/agent-contract/index.js",
-      "types": "./src/agent-contract/index.ts"
+      "default": "./src/agent-contract/index.js"
     },
     "./diagnostics": {
+      "types": "./src/index.d.ts",
       "import": "./src/diagnostics/index.js",
-      "default": "./src/diagnostics/index.js",
-      "types": "./src/diagnostics/index.ts"
+      "default": "./src/diagnostics/index.js"
     },
     "./capability-registry": {
+      "types": "./src/index.d.ts",
       "import": "./src/capability-registry/index.js",
-      "default": "./src/capability-registry/index.js",
-      "types": "./src/capability-registry/index.ts"
+      "default": "./src/capability-registry/index.js"
     },
     "./cli-capabilities": {
+      "types": "./src/index.d.ts",
       "import": "./src/cli-capabilities/index.js",
-      "default": "./src/cli-capabilities/index.js",
-      "types": "./src/cli-capabilities/index.ts"
+      "default": "./src/cli-capabilities/index.js"
     },
     "./*": {
+      "types": "./src/index.d.ts",
       "import": "./src/*.js",
-      "default": "./src/*.js",
-      "types": "./src/*.ts"
+      "default": "./src/*.js"
     }
   },
   "files": [
@@ -46,7 +46,8 @@
   ],
   "scripts": {
     "test": "bun test tests",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsup --dts-only"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.36",

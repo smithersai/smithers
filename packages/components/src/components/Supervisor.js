@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Supervisor.ts").SupervisorProps} SupervisorProps */
+/** @typedef {import("./SupervisorProps.ts").SupervisorProps} SupervisorProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -12,6 +12,7 @@ import { Worktree } from "./Worktree.js";
  * <Supervisor> — Boss plans, delegates to parallel workers, reviews, re-delegates failures.
  *
  * Composes: Sequence → [plan Task, Loop(until allDone) [Parallel worker Tasks, review Task], final Task]
+ * @param {SupervisorProps} props
  */
 export function Supervisor(props) {
     if (props.skipIf)

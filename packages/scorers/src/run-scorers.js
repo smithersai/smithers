@@ -3,12 +3,13 @@ import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { scorerDuration, scorersFinished, scorersFailed, scorersStarted } from "./metrics.js";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import crypto from "node:crypto";
-/** @typedef {import("./types.ts").types} types */
-
 /** @typedef {import("@smithers/engine/events").EventBus} EventBus */
-/** @typedef {import("./types.ts").ScoreResult} ScoreResult */
-/** @typedef {import("./types.ts").ScorerContext} ScorerContext */
+/** @typedef {import("./types.js").ScoreResult} ScoreResult */
+/** @typedef {import("./types.js").ScorerContext} ScorerContext */
+/** @typedef {import("./types.js").ScorerBinding} ScorerBinding */
+/** @typedef {import("./types.js").ScorersMap} ScorersMap */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
 
 // ---------------------------------------------------------------------------
 // Sampling
@@ -151,6 +152,12 @@ function safeJsonStringify(value) {
 /**
  * Fire-and-forget scorer execution. Runs all scorers via Effect.runFork
  * so they never block the workflow. Used for live scoring during execution.
+ *
+ * @param {ScorersMap} scorers
+ * @param {ScorerContext} ctx
+ * @param {SmithersDb | null} adapter
+ * @param {EventBus | null} [eventBus]
+ * @returns {void}
  */
 export function runScorersAsync(scorers, ctx, adapter, eventBus) {
     const entries = Object.entries(scorers);
@@ -163,6 +170,12 @@ export function runScorersAsync(scorers, ctx, adapter, eventBus) {
 /**
  * Blocking scorer execution. Runs all scorers and waits for completion.
  * Returns a map of key -> ScoreResult. Used for batch/test evaluation.
+ *
+ * @param {ScorersMap} scorers
+ * @param {ScorerContext} ctx
+ * @param {SmithersDb | null} adapter
+ * @param {EventBus | null} [eventBus]
+ * @returns {Promise<Record<string, ScoreResult | null>>}
  */
 export async function runScorersBatch(scorers, ctx, adapter, eventBus) {
     const entries = Object.entries(scorers);

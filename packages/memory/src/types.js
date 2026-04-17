@@ -1,19 +1,19 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./types.ts").MemoryFact} MemoryFact */
-/** @typedef {import("./types.ts").MemoryLayerConfig} MemoryLayerConfig */
-/** @typedef {import("./types.ts").MemoryMessage} MemoryMessage */
-/** @typedef {import("./types.ts").MemoryNamespace} MemoryNamespace */
-/** @typedef {import("./types.ts").MemoryNamespaceKind} MemoryNamespaceKind */
-/** @typedef {import("./types.ts").MemoryProcessor} MemoryProcessor */
-/** @typedef {import("./types.ts").MemoryProcessorConfig} MemoryProcessorConfig */
-/** @typedef {import("./types.ts").MemoryServiceApi} MemoryServiceApi */
-/** @typedef {import("./types.ts").MemoryThread} MemoryThread */
-/** @typedef {import("./types.ts").MessageHistoryConfig} MessageHistoryConfig */
-/** @typedef {import("./types.ts").SemanticRecallConfig} SemanticRecallConfig */
-/** @typedef {import("./types.ts").TaskMemoryConfig} TaskMemoryConfig */
+/** @typedef {import("./MemoryFact.ts").MemoryFact} MemoryFact */
+/** @typedef {import("./MemoryLayerConfig.ts").MemoryLayerConfig} MemoryLayerConfig */
+/** @typedef {import("./MemoryMessage.ts").MemoryMessage} MemoryMessage */
+/** @typedef {import("./MemoryNamespace.ts").MemoryNamespace} MemoryNamespace */
+/** @typedef {import("./MemoryNamespaceKind.ts").MemoryNamespaceKind} MemoryNamespaceKind */
+/** @typedef {import("./MemoryProcessor.ts").MemoryProcessor} MemoryProcessor */
+/** @typedef {import("./MemoryProcessorConfig.ts").MemoryProcessorConfig} MemoryProcessorConfig */
+/** @typedef {import("./MemoryServiceApi.ts").MemoryServiceApi} MemoryServiceApi */
+/** @typedef {import("./MemoryThread.ts").MemoryThread} MemoryThread */
+/** @typedef {import("./MessageHistoryConfig.ts").MessageHistoryConfig} MessageHistoryConfig */
+/** @typedef {import("./SemanticRecallConfig.ts").SemanticRecallConfig} SemanticRecallConfig */
+/** @typedef {import("./TaskMemoryConfig.ts").TaskMemoryConfig} TaskMemoryConfig */
 /**
- * @template T
- * @typedef {import("./types.ts").WorkingMemoryConfig<T>} WorkingMemoryConfig
+ * @template {import("zod").z.ZodObject<any>} [T=import("zod").z.ZodObject<any>]
+ * @typedef {import("./WorkingMemoryConfig.ts").WorkingMemoryConfig<T>} WorkingMemoryConfig
  */
 // @smithers-type-exports-end
 

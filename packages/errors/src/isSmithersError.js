@@ -1,5 +1,5 @@
 
-/** @typedef {import("./SmithersError.ts").SmithersError} SmithersError */
+/** @typedef {import("./SmithersError.js").SmithersError} SmithersError */
 /**
  * @param {unknown} value
  * @returns {value is SmithersError}

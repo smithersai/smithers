@@ -6,82 +6,22 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "types": "./src/index.d.ts",
       "import": "./src/index.js",
-      "default": "./src/index.js",
-      "types": "./src/index.ts"
+      "default": "./src/index.js"
     },
-    "./DevToolsEventBus": {
-      "types": "./src/DevToolsEventBus.ts"
-    },
-    "./DevToolsEventHandler": {
-      "types": "./src/DevToolsEventHandler.ts"
-    },
-    "./DevToolsNode": {
-      "types": "./src/DevToolsNode.ts"
-    },
-    "./DevToolsRunStore": {
-      "import": "./src/DevToolsRunStore.js",
-      "default": "./src/DevToolsRunStore.js",
-      "types": "./src/DevToolsRunStore.ts"
-    },
-    "./DevToolsRunStoreOptions": {
-      "types": "./src/DevToolsRunStoreOptions.ts"
-    },
-    "./DevToolsSnapshot": {
-      "types": "./src/DevToolsSnapshot.ts"
-    },
-    "./RunExecutionState": {
-      "types": "./src/RunExecutionState.ts"
-    },
-    "./SMITHERS_NODE_ICONS": {
-      "import": "./src/SMITHERS_NODE_ICONS.js",
-      "default": "./src/SMITHERS_NODE_ICONS.js",
-      "types": "./src/SMITHERS_NODE_ICONS.ts"
-    },
-    "./SmithersDevToolsCore": {
-      "import": "./src/SmithersDevToolsCore.js",
-      "default": "./src/SmithersDevToolsCore.js",
-      "types": "./src/SmithersDevToolsCore.ts"
-    },
-    "./SmithersDevToolsOptions": {
-      "types": "./src/SmithersDevToolsOptions.ts"
-    },
-    "./SmithersNodeType": {
-      "types": "./src/SmithersNodeType.ts"
-    },
-    "./TaskExecutionState": {
-      "types": "./src/TaskExecutionState.ts"
-    },
-    "./buildSnapshot": {
-      "import": "./src/buildSnapshot.js",
-      "default": "./src/buildSnapshot.js",
-      "types": "./src/buildSnapshot.ts"
-    },
-    "./collectTasks": {
-      "import": "./src/collectTasks.js",
-      "default": "./src/collectTasks.js",
-      "types": "./src/collectTasks.ts"
-    },
-    "./countNodes": {
-      "import": "./src/countNodes.js",
-      "default": "./src/countNodes.js",
-      "types": "./src/countNodes.ts"
-    },
-    "./findNodeById": {
-      "import": "./src/findNodeById.js",
-      "default": "./src/findNodeById.js",
-      "types": "./src/findNodeById.ts"
-    },
-    "./printTree": {
-      "import": "./src/printTree.js",
-      "default": "./src/printTree.js",
-      "types": "./src/printTree.ts"
+    "./*": {
+      "types": "./src/index.d.ts",
+      "import": "./src/*.js",
+      "default": "./src/*.js"
     }
   },
   "files": [
     "src/"
   ],
   "scripts": {
+    "build": "tsup --dts-only",
+    "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

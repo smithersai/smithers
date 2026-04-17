@@ -160,7 +160,6 @@ export default smithers((ctx) => {
         <Sequence>
           {selectedTopics.map((topicKey) => (
             <ForEachFeature
-              key={topicKey}
               idPrefix={topicKey.toLowerCase()}
               agent={tier.work}
               features={bootstrap.features}

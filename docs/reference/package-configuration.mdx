@@ -3,7 +3,7 @@ title: Package Configuration
 description: Reference for the smithers-orchestrator package exports, binary entry, TypeScript configuration, and Bun preload setup.
 ---
 
-This page documents the build and package configuration shipped with `smithers-orchestrator`. Use it when setting up a new project, debugging import resolution, or understanding why your `tsconfig.json` needs specific options.
+Build and package configuration shipped with `smithers-orchestrator`. Use it when setting up a new project, debugging import resolution, or understanding why your `tsconfig.json` needs specific options.
 
 ## Binary
 
@@ -13,11 +13,11 @@ This page documents the build and package configuration shipped with `smithers-o
 }
 ```
 
-After installing `smithers-orchestrator`, the `smithers` command is available via `bunx smithers-orchestrator` or globally if linked. See [CLI Reference](/cli/overview) for all commands.
+After installing `smithers-orchestrator`, the `smithers` command is invoked with `bunx smithers-orchestrator`. No global install needed. See [CLI Reference](/cli/overview) for all commands.
 
 ## Subpath Exports
 
-Every public import path is listed below. Use the subpath form to import only the surface you need.
+Use the subpath form to import only the surface you need.
 
 | Import path | Entry file | Purpose |
 |---|---|---|
@@ -67,13 +67,13 @@ import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
 }
 ```
 
-This tells TypeScript to resolve JSX transforms from `smithers-orchestrator/jsx-runtime` instead of `react/jsx-runtime`. The Smithers JSX runtime re-exports React's runtime, so component behavior is identical -- but this setting enables proper type resolution for Smithers workflow components.
+This tells TypeScript to resolve JSX transforms from `smithers-orchestrator/jsx-runtime` instead of `react/jsx-runtime`. The Smithers JSX runtime re-exports React's runtime, so component behavior is identical -- this setting enables proper type resolution for Smithers workflow components.
 
 See [JSX Installation](/jsx/installation) for the complete TypeScript setup.
 
 ### Path Aliases
 
-If you are developing inside the `smithers-orchestrator` monorepo, the root `tsconfig.json` defines path aliases so that source imports resolve without a build step:
+When developing inside the `smithers-orchestrator` monorepo, the root `tsconfig.json` defines path aliases so source imports resolve without a build step:
 
 ```json
 "paths": {
@@ -87,9 +87,9 @@ If you are developing inside the `smithers-orchestrator` monorepo, the root `tsc
 }
 ```
 
-The `smithers-orchestrator` entries are backward-compatibility aliases. The package was renamed from `smithers-orchestrator` to `smithers` internally, and these aliases ensure that existing imports and example code continue to resolve.
+The `smithers-orchestrator` entries are backward-compatibility aliases. The package was renamed from `smithers-orchestrator` to `smithers` internally; these aliases keep existing imports and example code resolving.
 
-**End users do not need path aliases.** Path aliases are only needed when developing the framework itself. When you install `smithers-orchestrator` as a dependency, Node/Bun module resolution handles import paths automatically.
+**End users do not need path aliases** — only framework developers do. Installing `smithers-orchestrator` as a dependency lets Node/Bun module resolution handle import paths automatically.
 
 ### Local Type Root Shims
 
@@ -97,11 +97,11 @@ The `smithers-orchestrator` entries are backward-compatibility aliases. The pack
 "typeRoots": ["./src/types", "./node_modules/@types"]
 ```
 
-The `./src/types` directory contains ambient type declarations that fill gaps in third-party packages. Currently it ships a single shim:
+The `./src/types` directory contains ambient type declarations that fill gaps in third-party packages. One shim ships today:
 
-- `react-dom-server.d.ts` -- Declares the `react-dom/server` module so TypeScript does not error when server-side rendering types are referenced.
+- `react-dom-server.d.ts` -- Declares the `react-dom/server` module so TypeScript doesn't error when server-side rendering types are referenced.
 
-End users should add `@types/react-dom` to their `devDependencies` instead of relying on this shim.
+End users should add `@types/react-dom` to `devDependencies` instead of relying on this shim.
 
 ## Bun Configuration
 
@@ -112,7 +112,7 @@ End users should add `@types/react-dom` to their `devDependencies` instead of re
 preload = ["./preload.ts"]
 ```
 
-The preload script registers the MDX esbuild plugin with Bun's bundler so that `.mdx` files can be imported as JSX components at runtime. See [MDX Prompts](/guides/mdx-prompts) for details.
+The preload script registers the MDX esbuild plugin with Bun's bundler so `.mdx` files can be imported as JSX components at runtime. See [MDX Prompts](/guides/mdx-prompts) for details.
 
 ### Test Configuration
 
@@ -127,11 +127,11 @@ preload = ["./preload.ts"]
 | `root` | `./tests` | Bun discovers test files from this directory instead of scanning the entire project |
 | `preload` | `["./preload.ts"]` | Registers the MDX plugin for test files so `.mdx` imports work in tests |
 
-The test preload is separate from the runtime preload. Both point to the same file, but Bun's `[test]` section only applies when running `bun test`. Without it, tests that import `.mdx` files would fail with a module resolution error.
+The test preload is separate from the runtime preload. Both point to the same file, but Bun's `[test]` section only applies when running `bun test`. Without it, tests that import `.mdx` files fail with a module resolution error.
 
 ## npm Scripts
 
-These scripts are defined in the root `package.json` for development:
+Defined in the root `package.json` for development:
 
 | Script | Command | Purpose |
 |---|---|---|
@@ -144,7 +144,7 @@ These scripts are defined in the root `package.json` for development:
 
 ### For end-user projects
 
-When scaffolding your own project (via `smithers init` or manually), add a typecheck script:
+When scaffolding your own project (with `smithers init` or manually), add a typecheck script:
 
 ```json
 {

@@ -1,0 +1,85 @@
+# Smithers OpenAPI Tools
+
+> Smithers OpenAPI tools: turn an OpenAPI spec into AI SDK tools, with auth, filters, and observability.
+
+---
+
+## OpenAPI Tools
+
+> Generate AI SDK tools from an OpenAPI spec. Auth, filtering, observability built in.
+
+`createOpenApiTools` parses an OpenAPI 3.x spec and returns AI SDK tools — one per operation, with Zod schemas converted from the spec's JSON schemas.
+
+```ts
+import { createOpenApiTools } from "smithers-orchestrator/openapi";
+
+const tools = await createOpenApiTools("./petstore.json", {
+  baseUrl: "https://api.petstore.example.com",
+  auth: { type: "bearer", token: process.env.PETSTORE_TOKEN! },
+});
+
+const agent = new ToolLoopAgent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools,
+});
+```
+
+## Options
+
+```ts
+type OpenApiToolsOptions = {
+  spec: object | string;             // parsed spec, file path, or URL
+  baseUrl?: string;                  // overrides spec.servers[0].url
+  auth?:
+    | { type: "none" }
+    | { type: "apiKey"; name: string; in: "header" | "query" | "cookie"; value: string }
+    | { type: "bearer"; token: string }
+    | { type: "basicAuth"; username: string; password: string };
+  includeOperations?: string[];      // operationId allowlist
+  excludeOperations?: string[];      // operationId blocklist
+};
+```
+
+## CLI preview
+
+```bash
+bunx smithers-orchestrator openapi list ./api/openapi.yaml
+```
+
+Lists every operationId, method, path, and summary — useful for auditing what an agent will be able to call before wiring it up.
+
+## What gets generated
+
+For each operation:
+
+- A Zod schema for the request body + path/query/header parameters.
+- An `execute(args)` function that performs the HTTP call.
+- The operation's `summary` / `description` becomes the tool description.
+
+## Response handling
+
+- JSON responses are parsed and returned as objects.
+- Non-JSON responses are returned as strings.
+- HTTP errors are wrapped as `{ error: true, message, status }` and **returned**, not thrown — the agent can react in its loop.
+
+## Filtering
+
+`includeOperations` / `excludeOperations` accept arrays of `operationId`. If both are set, exclude wins. Useful for limiting an agent's surface area to a specific feature ("just the inventory endpoints").
+
+## Observability
+
+Each tool call emits an `OpenApiToolCalled` event with `operationId`, `method`, `path`, `durationMs`, `status`. Visible via `bunx smithers-orchestrator events <run-id> --type openapi`.
+
+## Notes
+
+- Schema composition (`allOf`, `anyOf`, `oneOf`) is supported — converts to Zod unions/intersections.
+- Nullable fields and defaults from the spec are preserved.
+
+---
+
+## OpenAPI Tools Quickstart
+
+> Folded into the opt-in OpenAPI fragment.
+
+This material is now in the opt-in [`/llms-openapi.txt`](/llms-openapi.txt) fragment.
+

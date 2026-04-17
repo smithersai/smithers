@@ -1,169 +1,51 @@
 ---
 title: <Runbook>
-description: Composite component that executes sequential steps with risk classification, auto-executing safe steps and gating risky ones with approval.
+description: Sequential steps with risk classification; safe auto-runs, risky/critical gate on approval.
 ---
 
-A higher-level component that composes `Sequence`, `Task`, and `Approval` into a runbook workflow. Safe steps auto-execute. Risky and critical steps pause for human approval before proceeding.
-
-## Import
-
-```tsx
-import { Runbook } from "smithers-orchestrator";
-```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | `"runbook"` | ID prefix for all generated nodes. |
-| `steps` | `RunbookStep[]` | **(required)** | Ordered steps to execute. See step shape below. |
-| `defaultAgent` | `AgentLike` | `undefined` | Default agent for steps that don't specify one. |
-| `stepOutput` | `OutputTarget` | **(required)** | Default output schema for step results. |
-| `approvalRequest` | `Partial<ApprovalRequest>` | `undefined` | Template for approval requests on risky/critical steps. |
-| `onDeny` | `"fail" \| "skip"` | `"fail"` | Behavior when a risky/critical step is denied. |
-| `skipIf` | `boolean` | `false` | Skip the entire runbook. |
-
-### RunbookStep
-
 ```ts
+// Props
+import { Runbook } from "smithers-orchestrator";
+
+type RunbookProps = {
+  id?: string; // default "runbook"
+  steps: RunbookStep[];
+  defaultAgent?: AgentLike;
+  stepOutput: OutputTarget;
+  approvalRequest?: Partial<ApprovalRequest>;
+  onDeny?: "fail" | "skip"; // default "fail"
+  skipIf?: boolean;
+};
+
 type RunbookStep = {
-  id: string;                              // Unique step identifier
-  agent?: AgentLike;                       // Per-step agent override
-  command?: string;                        // Shell command or instruction
-  risk: "safe" | "risky" | "critical";     // Risk classification
-  label?: string;                          // Human-readable label
-  output?: OutputTarget;                   // Per-step output override
+  id: string;
+  agent?: AgentLike;
+  command?: string;
+  risk: "safe" | "risky" | "critical"; // critical adds `elevated: true` to approval meta
+  label?: string;
+  output?: OutputTarget;
 };
 ```
 
-## Generated structure
-
-Each step expands differently based on risk:
-
-```
-Sequence
-  ├── Task (safe step)              id: "{prefix}-{step.id}"
-  ├── Approval (risky gate)         id: "{prefix}-{step.id}-approval"
-  ├── Task (risky step)             id: "{prefix}-{step.id}"
-  ├── Approval (critical gate)      id: "{prefix}-{step.id}-approval"    meta: { elevated: true }
-  └── Task (critical step)          id: "{prefix}-{step.id}"
-```
-
-Steps are chained sequentially: each step's `needs` references the previous step so execution order is guaranteed.
-
-## Basic usage
-
 ```tsx
-import { Workflow, Runbook, createSmithers } from "smithers-orchestrator";
-import { ToolLoopAgent as Agent } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
-import { z } from "zod";
-
-const stepResultSchema = z.object({
-  stepId: z.string(),
-  success: z.boolean(),
-  output: z.string(),
-});
-
-const { Workflow, smithers, outputs } = createSmithers({
-  stepResult: stepResultSchema,
-});
-
-const ops = new Agent({
-  model: anthropic("claude-sonnet-4-20250514"),
-  instructions: "You are an ops engineer. Execute runbook steps carefully.",
-});
-
 export default smithers(() => (
   <Workflow name="deploy-runbook">
     <Runbook
       defaultAgent={ops}
       stepOutput={outputs.stepResult}
       steps={[
-        { id: "health-check", command: "curl -f https://api.example.com/health", risk: "safe", label: "Health check" },
-        { id: "backup-db", command: "pg_dump prod > backup.sql", risk: "risky", label: "Backup database" },
-        { id: "run-migration", command: "npx prisma migrate deploy", risk: "critical", label: "Run migration" },
-        { id: "smoke-test", command: "npm run test:smoke", risk: "safe", label: "Smoke tests" },
+        { id: "health-check", command: "curl -f https://api.example.com/health", risk: "safe" },
+        { id: "backup-db", command: "pg_dump prod > backup.sql", risk: "risky" },
+        { id: "run-migration", command: "npx prisma migrate deploy", risk: "critical" },
+        { id: "smoke-test", command: "npm run test:smoke", risk: "safe" },
       ]}
     />
   </Workflow>
 ));
 ```
 
-In this example:
-- **health-check** and **smoke-test** auto-execute (safe).
-- **backup-db** pauses for approval (risky).
-- **run-migration** pauses for elevated approval (critical, with `elevated: true` metadata).
-
-## Approval customization
-
-Override the default approval prompt with `approvalRequest`:
-
-```tsx
-<Runbook
-  defaultAgent={ops}
-  stepOutput={outputs.stepResult}
-  approvalRequest={{
-    title: "Production change requires approval",
-    summary: "An operator must approve before this step runs.",
-    metadata: { team: "platform", environment: "production" },
-  }}
-  steps={[
-    { id: "scale-down", command: "kubectl scale deployment/api --replicas=0", risk: "risky" },
-    { id: "deploy", command: "kubectl apply -f deploy.yaml", risk: "critical" },
-    { id: "scale-up", command: "kubectl scale deployment/api --replicas=3", risk: "safe" },
-  ]}
-/>
-```
-
-## Deny behavior
-
-Control what happens when approval is denied:
-
-| `onDeny` | Behavior |
-| --- | --- |
-| `"fail"` | Workflow fails immediately (default). |
-| `"skip"` | The denied step is skipped; subsequent steps continue. |
-
-```tsx
-<Runbook
-  defaultAgent={ops}
-  stepOutput={outputs.stepResult}
-  onDeny="skip"
-  steps={[
-    { id: "optional-cleanup", command: "rm -rf /tmp/cache", risk: "risky" },
-    { id: "verify", command: "npm test", risk: "safe" },
-  ]}
-/>
-```
-
-## Per-step agents and outputs
-
-Override the agent or output schema for individual steps:
-
-```tsx
-<Runbook
-  defaultAgent={ops}
-  stepOutput={outputs.stepResult}
-  steps={[
-    { id: "analyze", agent: analyst, output: outputs.analysis, command: "Analyze system metrics", risk: "safe" },
-    { id: "remediate", command: "systemctl restart api", risk: "critical" },
-  ]}
-/>
-```
-
-## Node IDs
-
-| Node | ID |
-| --- | --- |
-| Safe step | `{id}-{step.id}` |
-| Risky/critical approval | `{id}-{step.id}-approval` |
-| Risky/critical step | `{id}-{step.id}` |
-
 ## Notes
 
-- Steps execute in declaration order. Each step depends on the previous via `needs`.
-- Critical steps include `elevated: true` in the approval metadata, which can be used by custom approval UIs to require stronger authorization.
-- The approval output for each gated step is stored at `{prefix}-{step.id}-approval-decision`.
-- Combine with `<Sequence>` to place a Runbook alongside other workflow steps.
-- If no `agent` is provided on a step and no `defaultAgent` is set, the Task renders as a static or compute node.
+- Each step depends on the previous via `needs`; execution order is guaranteed.
+- Critical steps set `elevated: true` in approval metadata for stronger auth UIs.
+- Approval output is stored at `{prefix}-{step.id}-approval-decision`.

@@ -3,9 +3,9 @@ title: MCP Server
 description: Expose Smithers as a Model Context Protocol stdio server so any MCP client — Claude Code, Cursor, Codex, or your own agent — can list, run, inspect, and control workflows without shell scripting.
 ---
 
-Smithers ships a built-in MCP stdio server. When you pass `--mcp` to the CLI it speaks the Model Context Protocol over stdin/stdout instead of acting as an interactive CLI. Any MCP-aware client can connect, discover your workflows, start runs, watch progress, resolve approvals, and revert bad attempts — all through structured, machine-readable tool calls.
+Smithers ships a built-in MCP stdio server. Passing `--mcp` to the CLI speaks the Model Context Protocol over stdin/stdout instead of acting as an interactive CLI. Any MCP-aware client can connect, discover workflows, start runs, watch progress, resolve approvals, and revert bad attempts through structured tool calls.
 
-Use the MCP server when you want an AI agent to drive Smithers autonomously. Use the [HTTP Server](/integrations/server) when you need REST endpoints for human-written code or webhooks.
+Use the MCP server when an AI agent should drive Smithers autonomously. Use the [HTTP Server](/integrations/server) for REST endpoints for human-written code or webhooks.
 
 ---
 
@@ -17,7 +17,7 @@ Use the MCP server when you want an AI agent to drive Smithers autonomously. Use
 smithers --mcp
 ```
 
-By default this starts the semantic surface — a stable, structured set of tools designed for AI agent consumption. The semantic surface is what this page documents.
+This starts the semantic surface — a stable, structured tool set for AI agent consumption, documented on this page.
 
 Two additional surfaces are available via `--surface`:
 
@@ -32,7 +32,7 @@ smithers --mcp --surface raw
 smithers --mcp --surface both
 ```
 
-Use `--surface raw` only when you need direct CLI parity. The semantic surface is strongly preferred for new integrations: every tool returns a consistent `{ ok, data, error }` envelope and uses validated Zod schemas for both input and output.
+Use `--surface raw` only for direct CLI parity. Prefer the semantic surface for new integrations: every tool returns a `{ ok, data, error }` envelope with Zod-validated input and output schemas.
 
 ### Register with Claude Code
 
@@ -40,7 +40,7 @@ Use `--surface raw` only when you need direct CLI parity. The semantic surface i
 smithers mcp add
 ```
 
-`smithers mcp add` writes the server entry to the appropriate MCP config file for the detected agent. Pass `--agent` to target a specific client, `--no-global` to install project-locally, or `--command` to override the launch command:
+`smithers mcp add` writes the server entry to the MCP config file for the detected agent. Pass `--agent` to target a specific client, `--no-global` to install project-locally, or `--command` to override the launch command:
 
 ```bash
 smithers mcp add --agent claude-code
@@ -50,7 +50,7 @@ smithers mcp add --command "pnpm smithers --mcp"
 
 ### Register manually
 
-For clients that read a JSON config directly, add an entry like this:
+For clients that read JSON config directly:
 
 ```json
 {
@@ -63,7 +63,7 @@ For clients that read a JSON config directly, add an entry like this:
 }
 ```
 
-For project-scoped installs (e.g. a monorepo where Smithers is a dev dependency):
+Project-scoped install (e.g. a monorepo where Smithers is a dev dependency):
 
 ```json
 {
@@ -80,15 +80,15 @@ For project-scoped installs (e.g. a monorepo where Smithers is a dev dependency)
 
 ## Tool Registration
 
-When the server starts it calls `registerSemanticTools`, which loops over the tool definitions produced by `createSemanticToolDefinitions` and registers each one via `server.registerTool`. Every tool carries:
+On start, the server calls `registerSemanticTools`, which loops over `createSemanticToolDefinitions` and registers each via `server.registerTool`. Every tool carries:
 
-- **`inputSchema`** — a Zod object schema describing accepted parameters.
-- **`outputSchema`** — a Zod schema for the structured response envelope.
+- **`inputSchema`** — Zod object describing accepted parameters.
+- **`outputSchema`** — Zod schema for the structured response envelope.
 - **`annotations`** — MCP annotation metadata (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`).
 
 ### Structured tool envelope
 
-Every tool returns the same top-level shape:
+Every tool returns the same shape:
 
 ```ts
 {
@@ -103,7 +103,7 @@ Every tool returns the same top-level shape:
 }
 ```
 
-The response is also echoed as a `text` content block so clients that do not parse `structuredContent` still receive the JSON payload.
+The response is also echoed as a `text` content block, so clients that do not parse `structuredContent` still receive the JSON payload.
 
 ### Tool annotations
 
@@ -180,13 +180,13 @@ Start or resume a discovered workflow.
 
 **Background vs. waited launch**
 
-By default (`waitForTerminal: false`) the tool fires the workflow and returns immediately with `launchMode: "background"`. The `observedRun` field reflects the run state polled during `waitForStartMs`. Use `watch_run` to track progress after launch.
+By default (`waitForTerminal: false`) the tool fires the workflow and returns immediately with `launchMode: "background"`. `observedRun` reflects the run state polled during `waitForStartMs`. Use `watch_run` to track progress.
 
-Set `waitForTerminal: true` to block until the workflow finishes. The `result` field is populated and `launchMode` is `"waited"`.
+Set `waitForTerminal: true` to block until the workflow finishes. `result` is populated and `launchMode` is `"waited"`.
 
 **Run option forwarding**
 
-`rootDir`, `logDir`, `allowNetwork`, `maxOutputBytes`, `toolTimeoutMs`, and `hot` are forwarded verbatim to the engine's `runWorkflow` call. They override any values baked into the workflow file.
+`rootDir`, `logDir`, `allowNetwork`, `maxOutputBytes`, `toolTimeoutMs`, and `hot` are forwarded verbatim to `runWorkflow`. They override values baked into the workflow file.
 
 ---
 
@@ -267,7 +267,7 @@ Poll a run at a fixed interval until it reaches a terminal state or a timeout ex
 }
 ```
 
-When `timedOut` is `true` the run is still active; call `watch_run` again or increase `timeoutMs`. Terminal statuses are `finished`, `failed`, and `cancelled`.
+When `timedOut` is `true` the run is still active — call `watch_run` again or raise `timeoutMs`. Terminal statuses: `finished`, `failed`, `cancelled`.
 
 ---
 
@@ -310,7 +310,7 @@ Return a structured diagnosis explaining why a run is blocked, waiting, or stale
 }
 ```
 
-The `summary` field is a human-readable sentence. `blockers` lists every node currently preventing progress, with `unblocker` describing what action or event would unblock it.
+`summary` is a human-readable sentence. `blockers` lists every node preventing progress; `unblocker` describes what action or event would unblock it.
 
 ---
 
@@ -326,7 +326,7 @@ List approvals that are waiting for a human decision, optionally filtered by run
 | `workflowName` | `string` | Filter by workflow name |
 | `nodeId` | `string` | Filter by node ID |
 
-All parameters are optional. Omit all to list every pending approval across all runs.
+All parameters optional. Omit all to list every pending approval across all runs.
 
 **Output:**
 
@@ -372,7 +372,7 @@ Approve or deny a pending approval. This tool is destructive and non-idempotent.
 
 **Ambiguity guard**
 
-If the filters match zero approvals the tool errors with `INVALID_INPUT`. If the filters match more than one approval the tool errors with `INVALID_INPUT` and returns the list of matches in `details.matches` — add `runId`, `nodeId`, or `iteration` to narrow the selection. The tool never guesses when multiple approvals match.
+Zero matches errors with `INVALID_INPUT`. More than one match errors with `INVALID_INPUT` and returns matches in `details.matches` — add `runId`, `nodeId`, or `iteration` to narrow the selection. The tool never guesses when multiple approvals match.
 
 **Output:**
 
@@ -490,7 +490,7 @@ List structured output artifacts produced by nodes in a run.
 }
 ```
 
-Only nodes that have an `outputTable` and a non-`none` output source are included.
+Only nodes with an `outputTable` and a non-`none` output source are included.
 
 ---
 
@@ -538,7 +538,7 @@ Return the structured agent chat transcript for a run, grouped by attempts.
 }
 ```
 
-Messages are sorted by `timestampMs`. Use `tail` to limit context window usage when transcripts are long.
+Messages are sorted by `timestampMs`. Use `tail` to limit context window usage on long transcripts.
 
 ---
 
@@ -572,7 +572,7 @@ Return the raw structured event history for a run with optional filtering.
 }
 ```
 
-Paginate using `afterSeq`: pass the `seq` of the last received event to fetch the next page.
+Paginate via `afterSeq`: pass the `seq` of the last received event to fetch the next page.
 
 ---
 
@@ -699,7 +699,7 @@ Paginate using `afterSeq`: pass the `seq` of the last received event to fetch th
 
 ## Error Codes
 
-All errors follow the structured envelope. Common codes:
+Errors follow the structured envelope. Common codes:
 
 | Code | Meaning |
 |---|---|

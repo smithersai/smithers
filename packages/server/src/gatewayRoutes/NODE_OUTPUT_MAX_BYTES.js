@@ -1,0 +1,1 @@
+export const NODE_OUTPUT_MAX_BYTES = 100 * 1024 * 1024;

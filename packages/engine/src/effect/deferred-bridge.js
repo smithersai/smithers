@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./deferred-bridge.ts").ApprovalDeferredResolution} ApprovalDeferredResolution */
-/** @typedef {import("./deferred-bridge.ts").DeferredResolution} DeferredResolution */
+/** @typedef {import("./ApprovalDeferredResolution.ts").ApprovalDeferredResolution} ApprovalDeferredResolution */
+/** @typedef {import("./DeferredResolution.ts").DeferredResolution} DeferredResolution */
 // @smithers-type-exports-end
 
 import * as DurableDeferred from "@effect/workflow/DurableDeferred";
@@ -58,5 +58,6 @@ export const bridgeTimerResolve = (runId, nodeId, iteration) => {
  * @param {string} runId
  * @param {string} nodeId
  * @param {number} iteration
+ * @returns {DeferredResolution | undefined}
  */
 export const getDeferredResolution = (runId, nodeId, iteration) => deferredResolutions.get(makeDeferredBridgeKey(runId, nodeId, iteration));

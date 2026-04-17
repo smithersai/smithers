@@ -12,6 +12,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY apps ./apps
 COPY packages ./packages
+COPY .smithers ./.smithers
 COPY examples/kubernetes ./examples/kubernetes
 RUN bun install --frozen-lockfile
 

@@ -6,87 +6,63 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "types": "./src/index.d.ts",
       "import": "./src/index.js",
-      "default": "./src/index.js",
-      "types": "./src/index.ts"
-    },
-    "./driver": {
-      "import": "./src/driver.js",
-      "default": "./src/driver.js",
-      "types": "./src/driver.ts"
-    },
-    "./execution": {
-      "import": "./src/execution.js",
-      "default": "./src/execution.js",
-      "types": "./src/execution.ts"
-    },
-    "./context": {
-      "import": "./src/context.js",
-      "default": "./src/context.js",
-      "types": "./src/context.ts"
+      "default": "./src/index.js"
     },
     "./interop": {
+      "types": "./src/index.d.ts",
       "import": "./src/interop.js",
-      "default": "./src/interop.js",
-      "types": "./src/interop.ts"
+      "default": "./src/interop.js"
     },
     "./RunOptions": {
-      "types": "./src/RunOptions.ts"
+      "types": "./src/index.d.ts"
     },
     "./RunResult": {
-      "types": "./src/RunResult.ts"
+      "types": "./src/index.d.ts"
     },
     "./RunStatus": {
-      "types": "./src/RunStatus.ts"
+      "types": "./src/index.d.ts"
     },
     "./RunAuthContext": {
-      "types": "./src/RunAuthContext.ts"
+      "types": "./src/index.d.ts"
     },
     "./SmithersCtx": {
+      "types": "./src/index.d.ts",
       "import": "./src/SmithersCtx.js",
-      "default": "./src/SmithersCtx.js",
-      "types": "./src/SmithersCtx.ts"
+      "default": "./src/SmithersCtx.js"
     },
     "./OutputAccessor": {
-      "types": "./src/OutputAccessor.ts"
+      "types": "./src/index.d.ts"
     },
     "./OutputKey": {
-      "types": "./src/OutputKey.ts"
+      "types": "./src/index.d.ts"
     },
     "./workflow-types": {
-      "types": "./src/workflow-types.ts"
-    },
-    "./sha256Hex": {
-      "import": "./src/sha256Hex.js",
-      "default": "./src/sha256Hex.js",
-      "types": "./src/sha256Hex.ts"
-    },
-    "./newRunId": {
-      "import": "./src/newRunId.js",
-      "default": "./src/newRunId.js",
-      "types": "./src/newRunId.ts"
+      "types": "./src/index.d.ts"
     },
     "./task-runtime": {
+      "types": "./src/index.d.ts",
       "import": "./src/task-runtime.js",
-      "default": "./src/task-runtime.js",
-      "types": "./src/task-runtime.ts"
+      "default": "./src/task-runtime.js"
     },
     "./child-process": {
+      "types": "./src/index.d.ts",
       "import": "./src/child-process.js",
-      "default": "./src/child-process.js",
-      "types": "./src/child-process.ts"
+      "default": "./src/child-process.js"
     },
     "./*": {
+      "types": "./src/index.d.ts",
       "import": "./src/*.js",
-      "default": "./src/*.js",
-      "types": "./src/*.ts"
+      "default": "./src/*.js"
     }
   },
   "files": [
     "src/"
   ],
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsup --dts-only"
   },
   "dependencies": {
     "@smithers/db": "workspace:*",

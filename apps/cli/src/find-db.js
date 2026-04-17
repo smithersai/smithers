@@ -3,11 +3,14 @@ import { existsSync } from "node:fs";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { SmithersError } from "@smithers/errors";
-/** @typedef {import("./find-db.ts").FindDbWaitOptions} FindDbWaitOptions */
+/** @typedef {import("./FindDbWaitOptions.ts").FindDbWaitOptions} FindDbWaitOptions */
 
 /**
  * Walk from `from` (default: cwd) upward looking for smithers.db.
  * Returns the absolute path to the database file.
+ *
+ * @param {string} [from]
+ * @returns {string}
  */
 export function findSmithersDb(from) {
     let dir = resolve(from ?? process.cwd());
@@ -56,6 +59,9 @@ export async function waitForSmithersDb(from, opts = {}) {
 }
 /**
  * Open a smithers.db file and return a SmithersDb adapter with cleanup function.
+ *
+ * @param {string} dbPath
+ * @returns {Promise<{ adapter: SmithersDb; cleanup: () => void }>}
  */
 export async function openSmithersDb(dbPath) {
     const { Database } = await import("bun:sqlite");
@@ -75,6 +81,10 @@ export async function openSmithersDb(dbPath) {
 }
 /**
  * Find and open the nearest smithers.db.
+ *
+ * @param {string} [from]
+ * @param {FindDbWaitOptions} [opts]
+ * @returns {Promise<{ adapter: SmithersDb; dbPath: string; cleanup: () => void }>}
  */
 export async function findAndOpenDb(from, opts) {
     const dbPath = await waitForSmithersDb(from, opts);

@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").OutputKey} OutputKey */
+/** @typedef {import("./OutputKey.ts").OutputKey} OutputKey */
 // @smithers-type-exports-end
 
 export { buildOutputRow } from "./buildOutputRow.js";

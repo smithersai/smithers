@@ -1,5 +1,5 @@
 import React from "react";
-/** @typedef {import("./Branch.ts").BranchProps} BranchProps */
+/** @typedef {import("./BranchProps.ts").BranchProps} BranchProps */
 
 /**
  * @param {BranchProps} props

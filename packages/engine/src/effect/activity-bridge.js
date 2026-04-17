@@ -1,12 +1,12 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./activity-bridge.ts").TaskActivityRetryOptions} TaskActivityRetryOptions */
+/** @typedef {import("./TaskActivityRetryOptions.ts").TaskActivityRetryOptions} TaskActivityRetryOptions */
+/** @typedef {import("./ExecuteTaskActivityOptions.ts").ExecuteTaskActivityOptions} ExecuteTaskActivityOptions */
+/** @typedef {import("./TaskActivityContext.ts").TaskActivityContext} TaskActivityContext */
 // @smithers-type-exports-end
 
 import * as Activity from "@effect/workflow/Activity";
 import { Effect, Schema } from "effect";
-/** @typedef {import("./activity-bridge.ts").ExecuteTaskActivityOptions} ExecuteTaskActivityOptions */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("./activity-bridge.ts").TaskActivityContext} TaskActivityContext */
 /** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
 
 const adapterNamespaces = new WeakMap();

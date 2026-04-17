@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Optimizer.ts").OptimizerProps} OptimizerProps */
+/** @typedef {import("./OptimizerProps.ts").OptimizerProps} OptimizerProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -12,6 +12,7 @@ import { Task } from "./Task.js";
  * Composes Loop, Sequence, and Task to create an iterative
  * optimization pattern. Each iteration receives the previous
  * score and feedback to guide improvement.
+ * @param {OptimizerProps} props
  */
 export function Optimizer(props) {
     if (props.skipIf)

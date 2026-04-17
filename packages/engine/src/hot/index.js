@@ -1,7 +1,7 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").HotReloadEvent} HotReloadEvent */
-/** @typedef {import("./index.ts").OverlayOptions} OverlayOptions */
-/** @typedef {import("./index.ts").WatchTreeOptions} WatchTreeOptions */
+/** @typedef {import("./HotReloadEvent.ts").HotReloadEvent} HotReloadEvent */
+/** @typedef {import("./OverlayOptions.ts").OverlayOptions} OverlayOptions */
+/** @typedef {import("./WatchTreeOptions.ts").WatchTreeOptions} WatchTreeOptions */
 // @smithers-type-exports-end
 
 export { WatchTree } from "./watch.js";

@@ -6,25 +6,26 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "types": "./src/index.d.ts",
       "import": "./src/index.js",
-      "default": "./src/index.js",
-      "types": "./src/index.ts"
+      "default": "./src/index.js"
     },
     "./metrics": {
+      "types": "./src/index.d.ts",
       "import": "./src/metrics/index.js",
-      "default": "./src/metrics/index.js",
-      "types": "./src/metrics/index.ts"
+      "default": "./src/metrics/index.js"
     },
     "./*": {
+      "types": "./src/index.d.ts",
       "import": "./src/*.js",
-      "default": "./src/*.js",
-      "types": "./src/*.ts"
+      "default": "./src/*.js"
     }
   },
   "files": [
     "src/"
   ],
   "scripts": {
+    "build": "tsup --dts-only",
     "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

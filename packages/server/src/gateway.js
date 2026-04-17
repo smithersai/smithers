@@ -1,12 +1,12 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./gateway.ts").EventFrame} EventFrame */
-/** @typedef {import("./gateway.ts").GatewayDefaults} GatewayDefaults */
-/** @typedef {import("./gateway.ts").GatewayTokenGrant} GatewayTokenGrant */
-/** @typedef {import("./gateway.ts").HelloResponse} HelloResponse */
+/** @typedef {import("./EventFrame.js").EventFrame} EventFrame */
+/** @typedef {import("./GatewayDefaults.js").GatewayDefaults} GatewayDefaults */
+/** @typedef {import("./GatewayTokenGrant.js").GatewayTokenGrant} GatewayTokenGrant */
+/** @typedef {import("./HelloResponse.js").HelloResponse} HelloResponse */
 // @smithers-type-exports-end
 
 import { createServer } from "node:http";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { CronExpressionParser } from "cron-parser";
 import { Effect, Metric } from "effect";
 import { WebSocketServer } from "ws";
@@ -14,8 +14,9 @@ import { runWorkflow } from "@smithers/engine";
 import { approveNode, denyNode } from "@smithers/engine/approvals";
 import { signalRun } from "@smithers/engine/signals";
 import { SmithersDb } from "@smithers/db/adapter";
+import { computeRunStateFromRow } from "@smithers/db/runState";
 import { ensureSmithersTables } from "@smithers/db/ensure";
-import { gatewayApprovalDecisionsTotal, gatewayAuthEventsTotal, gatewayConnectionsActive, gatewayConnectionsClosedTotal, gatewayConnectionsTotal, gatewayCronTriggersTotal, gatewayErrorsTotal, gatewayHeartbeatTicksTotal, gatewayMessagesReceivedTotal, gatewayMessagesSentTotal, gatewayRpcCallsTotal, gatewayRpcDuration, gatewayRunsCompletedTotal, gatewayRunsStartedTotal, gatewaySignalsTotal, gatewayWebhooksReceivedTotal, gatewayWebhooksRejectedTotal, gatewayWebhooksVerifiedTotal, } from "@smithers/observability/metrics";
+import { devtoolsActiveSubscribers, devtoolsBackpressureDisconnectTotal, devtoolsDeltaBuildMs, devtoolsEventBytes, devtoolsEventTotal, devtoolsSnapshotBuildMs, devtoolsSubscribeTotal, gatewayApprovalDecisionsTotal, gatewayAuthEventsTotal, gatewayConnectionsActive, gatewayConnectionsClosedTotal, gatewayConnectionsTotal, gatewayCronTriggersTotal, gatewayErrorsTotal, gatewayHeartbeatTicksTotal, gatewayMessagesReceivedTotal, gatewayMessagesSentTotal, gatewayRpcCallsTotal, gatewayRpcDuration, gatewayRunsCompletedTotal, gatewayRunsStartedTotal, gatewaySignalsTotal, gatewayWebhooksReceivedTotal, gatewayWebhooksRejectedTotal, gatewayWebhooksVerifiedTotal, } from "@smithers/observability/metrics";
 import { runFork, runPromise } from "./smithersRuntime.js";
 import { prometheusContentType, renderPrometheusMetrics } from "@smithers/observability";
 import { nowMs } from "@smithers/scheduler/nowMs";
@@ -25,25 +26,76 @@ import { SmithersError } from "@smithers/errors/SmithersError";
 import { assertJsonPayloadWithinBounds, assertOptionalStringMaxLength, assertPositiveFiniteInteger, } from "@smithers/db/input-bounds";
 import { loadLatestSnapshot, loadSnapshot } from "@smithers/time-travel/snapshot";
 import { diffRawSnapshots } from "@smithers/time-travel/diff";
-/**
- * @typedef {{ enabled?: boolean; inputPath?: string; }} GatewayWebhookRunConfig
- */
-/**
- * @typedef {{ name: string; correlationIdPath?: string; runIdPath?: string; payloadPath?: string; }} GatewayWebhookSignalConfig
- */
-/** @typedef {import("./gateway.ts").gateway} gateway */
-
-/** @typedef {import("./gateway.ts").ConnectRequest} ConnectRequest */
-/** @typedef {import("./gateway.ts").GatewayAuthConfig} GatewayAuthConfig */
-/** @typedef {import("./gateway.ts").GatewayOptions} GatewayOptions */
-/**
- * @typedef {{ secret: string; signatureHeader?: string; signaturePrefix?: string; signal?: GatewayWebhookSignalConfig; run?: GatewayWebhookRunConfig; }} GatewayWebhookConfig
- */
+import { getNodeOutputRoute } from "./gatewayRoutes/getNodeOutput.js";
+import { NodeOutputRouteError } from "./gatewayRoutes/NodeOutputRouteError.js";
+import { getNodeDiffRoute } from "./gatewayRoutes/getNodeDiff.js";
+import { DevToolsRouteError, getDevToolsSnapshotRoute, validateFrameNoInput, validateFromSeqInput, validateRunId } from "./gatewayRoutes/getDevToolsSnapshot.js";
+import { streamDevToolsRoute } from "./gatewayRoutes/streamDevTools.js";
+import { jumpToFrameRoute, JumpToFrameError } from "./gatewayRoutes/jumpToFrame.js";
+import { writeRewindAuditRow } from "@smithers/time-travel/writeRewindAuditRow";
+import { recoverInProgressRewindAudits } from "@smithers/time-travel/recoverInProgressRewindAudits";
+/** @typedef {import("./GatewayWebhookRunConfig.js").GatewayWebhookRunConfig} GatewayWebhookRunConfig */
+/** @typedef {import("./GatewayWebhookSignalConfig.js").GatewayWebhookSignalConfig} GatewayWebhookSignalConfig */
+/** @typedef {import("./ConnectRequest.js").ConnectRequest} ConnectRequest */
+/** @typedef {import("./GatewayAuthConfig.js").GatewayAuthConfig} GatewayAuthConfig */
+/** @typedef {import("./GatewayOptions.js").GatewayOptions} GatewayOptions */
+/** @typedef {import("./GatewayWebhookConfig.js").GatewayWebhookConfig} GatewayWebhookConfig */
 /** @typedef {import("node:http").IncomingMessage} IncomingMessage */
-/** @typedef {import("./gateway.ts").RequestFrame} RequestFrame */
-/** @typedef {import("./gateway.ts").ResponseFrame} ResponseFrame */
+/** @typedef {import("./RequestFrame.js").RequestFrame} RequestFrame */
+/** @typedef {import("./ResponseFrame.js").ResponseFrame} ResponseFrame */
 /** @typedef {import("node:http").ServerResponse} ServerResponse */
-/** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow} SmithersWorkflow */
+/** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<any>} SmithersWorkflow */
+/** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+/** @typedef {Record<string, string | number | null | undefined>} GatewayMetricLabels */
+/** @typedef {"ws" | "http"} GatewayTransport */
+/**
+ * @typedef {{
+ *   connectionId?: string;
+ *   role?: string;
+ *   scopes?: string[];
+ *   userId?: string | null;
+ *   origin?: string;
+ *   transport?: GatewayTransport;
+ * }} GatewayRequestContext
+ */
+/**
+ * @typedef {{
+ *   id: string;
+ *   ws?: unknown;
+ *   role: string;
+ *   scopes: string[];
+ *   userId: string | null;
+ *   subscribe?: Set<string>;
+ *   heartbeat?: unknown;
+ *   lastActivity?: number;
+ *   closed?: boolean;
+ * } & Record<string, unknown>} ConnectionState
+ */
+/**
+ * @typedef {{
+ *   role: string;
+ *   scopes: string[];
+ *   userId?: string | null;
+ *   connectionId?: string;
+ * }} RunStartAuthContext
+ */
+/**
+ * @typedef {{
+ *   workflow: SmithersWorkflow;
+ *   adapter: SmithersDb;
+ *   key: string;
+ *   schedule?: string;
+ *   webhook?: GatewayWebhookConfig;
+ * }} RegisteredWorkflow
+ */
+/**
+ * @typedef {{
+ *   runId: string;
+ *   workflowKey: string;
+ *   workflow: SmithersWorkflow;
+ *   adapter: SmithersDb;
+ * }} ResolvedRun
+ */
 
 const DEFAULT_PROTOCOL = 1;
 const DEFAULT_HEARTBEAT_MS = 15_000;
@@ -57,7 +109,7 @@ export const GATEWAY_METHOD_NAME_MAX_LENGTH = 64;
 export const GATEWAY_FRAME_ID_MAX_LENGTH = 128;
 export const GATEWAY_RPC_INPUT_MAX_BYTES = GATEWAY_RPC_MAX_PAYLOAD_BYTES;
 export const GATEWAY_RPC_INPUT_MAX_DEPTH = GATEWAY_RPC_MAX_DEPTH;
-const GATEWAY_METHOD_NAME_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/;
+const GATEWAY_METHOD_NAME_PATTERN = /^[a-z][a-zA-Z0-9]*(?:\.[a-z][a-zA-Z0-9]*)*$/;
 const ACCESS_RANK = {
     read: 1,
     execute: 2,
@@ -69,6 +121,17 @@ const METHOD_ACCESS = {
     "runs.list": "read",
     "runs.get": "read",
     "runs.diff": "read",
+    getNodeDiff: "read",
+    "devtools.getNodeDiff": "read",
+    getNodeOutput: "read",
+    "devtools.getNodeOutput": "read",
+    getDevToolsSnapshot: "read",
+    streamDevTools: "read",
+    // jumpToFrame authorizes per-request: owner OR admin role may rewind.
+    // Require only `execute` scope so non-admin owners are not pre-blocked
+    // at the scope gate; the run handler performs the final auth check.
+    jumpToFrame: "execute",
+    "devtools.jumpToFrame": "execute",
     "frames.list": "read",
     "frames.get": "read",
     "attempts.list": "read",
@@ -98,6 +161,16 @@ function parseJson(value) {
     catch {
         return null;
     }
+}
+/**
+ * @param {unknown} run
+ * @returns {string | null}
+ */
+function resolveRunOwnerId(run) {
+    const config = parseJson(typeof run?.configJson === "string" ? run.configJson : null);
+    const auth = asObject(config?.auth);
+    const owner = asString(auth?.triggeredBy);
+    return owner ? owner : null;
 }
 /**
  * @param {ServerResponse} res
@@ -261,6 +334,13 @@ function gatewayRunAnnotations(params, payload) {
         annotations.rightRunId = rightRunId;
     }
     return annotations;
+}
+/**
+ * @param {string} runId
+ * @returns {string}
+ */
+function devtoolsRunMetricTag(runId) {
+    return createHash("sha1").update(runId).digest("hex").slice(0, 12);
 }
 /**
  * @param {GatewayRequestContext} context
@@ -534,9 +614,10 @@ function validateGatewayRpcInput(input) {
 /**
  * @param {string | undefined} code
  */
-function statusForRpcError(code) {
+export function statusForRpcError(code) {
     switch (code) {
         case "UNAUTHORIZED":
+        case "Unauthorized":
             return 401;
         case "FORBIDDEN":
             return 403;
@@ -547,7 +628,35 @@ function statusForRpcError(code) {
         case "INVALID_FRAME":
         case "INVALID_INPUT":
         case "PROTOCOL_UNSUPPORTED":
+        case "InvalidRunId":
+        case "InvalidNodeId":
+        case "InvalidIteration":
+        case "InvalidDelta":
+        case "InvalidFrameNo":
+        case "ConfirmationRequired":
+        case "FrameOutOfRange":
+        case "SeqOutOfRange":
             return 400;
+        case "RunNotFound":
+        case "NodeNotFound":
+        case "AttemptNotFound":
+        case "IterationNotFound":
+        case "NodeHasNoOutput":
+            return 404;
+        case "AttemptNotFinished":
+        case "Busy":
+            return 409;
+        case "DiffTooLarge":
+        case "PayloadTooLarge":
+            return 413;
+        case "RateLimited":
+        case "BackpressureDisconnect":
+            return 429;
+        case "UnsupportedSandbox":
+            return 501;
+        case "VcsError":
+        case "RewindFailed":
+            return 500;
         default:
             return 500;
     }
@@ -949,6 +1058,11 @@ export class Gateway {
     runRegistry = new Map();
     activeRuns = new Map();
     inflightRuns = new Map();
+    devtoolsSubscribers = new Map();
+    /** Absolute active subscriber count per runId (gauge source of truth). */
+    devtoolsSubscriberCounts = new Map();
+    /** Flagged subscriber IDs that should force a snapshot on their next emit. */
+    devtoolsInvalidateFlags = new Set();
     server = null;
     wsServer = null;
     schedulerTimer = null;
@@ -975,6 +1089,149 @@ export class Gateway {
     }
     authModeLabel() {
         return gatewayAuthMode(this.auth);
+    }
+    /**
+   * @param {string} [runId]
+   * @returns {number}
+   */
+    getDevToolsSubscriberCount(runId) {
+        if (!runId) {
+            return this.devtoolsSubscribers.size;
+        }
+        let count = 0;
+        for (const subscriber of this.devtoolsSubscribers.values()) {
+            if (subscriber.runId === runId) {
+                count += 1;
+            }
+        }
+        return count;
+    }
+    /**
+   * Record a single subscribe attempt outcome. Centralised so that invalid
+   * runId, missing run, SeqOutOfRange, etc. still update
+   * `smithers_devtools_subscribe_total{result="error"}`.
+   *
+   * @param {"ok" | "error"} result
+   */
+    recordDevToolsSubscribeAttempt(result) {
+        emitGatewayEffect(Metric.increment(taggedMetric(devtoolsSubscribeTotal, { result })));
+    }
+    /**
+   * Push the absolute active-subscriber count to the Prometheus gauge. The
+   * `runId` is hashed for bounded cardinality.
+   *
+   * @param {string} runId
+   */
+    publishDevToolsActiveSubscribersGauge(runId) {
+        const runMetricLabel = devtoolsRunMetricTag(runId);
+        const value = this.devtoolsSubscriberCounts.get(runId) ?? 0;
+        emitGatewayEffect(Metric.update(taggedMetric(devtoolsActiveSubscribers, { runId: runMetricLabel }), value));
+    }
+    /**
+   * @param {ConnectionState} connection
+   * @param {string} streamId
+   * @param {string} runId
+   * @returns {AbortController}
+   */
+    registerDevToolsSubscriber(connection, streamId, runId) {
+        const abort = new AbortController();
+        if (!connection.devtoolsStreams) {
+            connection.devtoolsStreams = new Map();
+        }
+        connection.devtoolsStreams.set(streamId, {
+            runId,
+            abort,
+        });
+        this.devtoolsSubscribers.set(streamId, {
+            runId,
+            connectionId: connection.connectionId,
+            abort,
+            startedAtMs: Date.now(),
+        });
+        const previous = this.devtoolsSubscriberCounts.get(runId) ?? 0;
+        this.devtoolsSubscriberCounts.set(runId, previous + 1);
+        this.recordDevToolsSubscribeAttempt("ok");
+        this.publishDevToolsActiveSubscribersGauge(runId);
+        return abort;
+    }
+    /**
+   * @param {ConnectionState} connection
+   * @param {string} streamId
+   * @param {Record<string, unknown>} [details]
+   */
+    unregisterDevToolsSubscriber(connection, streamId, details = {}) {
+        const stream = connection.devtoolsStreams?.get(streamId);
+        if (stream) {
+            stream.abort.abort();
+            connection.devtoolsStreams?.delete(streamId);
+        }
+        const subscriber = this.devtoolsSubscribers.get(streamId);
+        if (!subscriber) {
+            return;
+        }
+        this.devtoolsSubscribers.delete(streamId);
+        this.devtoolsInvalidateFlags.delete(streamId);
+        const previous = this.devtoolsSubscriberCounts.get(subscriber.runId) ?? 0;
+        const nextCount = Math.max(0, previous - 1);
+        if (nextCount === 0) {
+            this.devtoolsSubscriberCounts.delete(subscriber.runId);
+        }
+        else {
+            this.devtoolsSubscriberCounts.set(subscriber.runId, nextCount);
+        }
+        this.publishDevToolsActiveSubscribersGauge(subscriber.runId);
+        emitGatewayLog("info", "devtools stream unsubscribed", {
+            runId: subscriber.runId,
+            streamId,
+            durationMs: Date.now() - subscriber.startedAtMs,
+            ...details,
+        }, "gateway:devtools");
+    }
+    /**
+   * Flag every active subscriber for `runId` to rebaseline on its next emit.
+   * Called when the gateway observes `TimeTravelJumped` for that run.
+   *
+   * @param {string} runId
+   */
+    invalidateDevToolsSubscribersForRun(runId) {
+        for (const [streamId, subscriber] of this.devtoolsSubscribers.entries()) {
+            if (subscriber.runId === runId) {
+                this.devtoolsInvalidateFlags.add(streamId);
+            }
+        }
+    }
+    /**
+   * Authorize a devtools request against the connection's `subscribe` set.
+   *
+   * If the client provided a `subscribe` filter at `connect` time, the run
+   * must be in that set before any DB lookup happens.
+   *
+   * @param {ConnectionState | null | undefined} connection
+   * @param {string} runId
+   * @returns {boolean}
+   */
+    isDevToolsRunAuthorized(connection, runId) {
+        if (!connection) {
+            return true;
+        }
+        if (!connection.subscribedRuns || connection.subscribedRuns.size === 0) {
+            return true;
+        }
+        return connection.subscribedRuns.has(runId);
+    }
+    /**
+   * @param {ConnectionState} connection
+   */
+    cleanupDevToolsSubscribers(connection) {
+        const streams = connection.devtoolsStreams;
+        if (!streams || streams.size === 0) {
+            return;
+        }
+        for (const streamId of streams.keys()) {
+            this.unregisterDevToolsSubscriber(connection, streamId, {
+                reason: "connection_closed",
+            });
+        }
     }
     /**
    * @param {GatewayTransport} transport
@@ -1360,6 +1617,17 @@ export class Gateway {
             schedule: options?.schedule,
             webhook: options?.webhook,
         });
+        // Startup recovery: any audit row left in `in_progress` from a prior
+        // crash is flipped to `partial` and the associated run is flagged as
+        // `needs_attention`. Runs asynchronously; failures are logged and
+        // never block registration.
+        const adapter = new SmithersDb(workflow.db);
+        recoverInProgressRewindAudits(adapter).catch((error) => {
+            emitGatewayLog("warning", "rewind audit recovery failed", {
+                workflow: key,
+                ...gatewayErrorAnnotations(error),
+            }, "gateway:startup-recovery");
+        });
         return this;
     }
     /**
@@ -1701,6 +1969,7 @@ export class Gateway {
             scopes: [],
             userId: null,
             subscribedRuns: null,
+            devtoolsStreams: new Map(),
             heartbeatTimer: null,
         };
         this.connections.add(connection);
@@ -1766,6 +2035,7 @@ export class Gateway {
                 clearInterval(connection.heartbeatTimer);
             }
             this.connections.delete(connection);
+            this.cleanupDevToolsSubscribers(connection);
             emitGatewayEffect(Effect.all([
                 updateMetric(gatewayConnectionsActive, -1, { transport: "ws" }),
                 incrementMetric(gatewayConnectionsClosedTotal, {
@@ -1996,6 +2266,7 @@ export class Gateway {
             scopes: [],
             userId: null,
             subscribedRuns: null,
+            devtoolsStreams: null,
         };
         let context = baseContext;
         this.recordMessageReceived("http", "request");
@@ -2268,6 +2539,12 @@ export class Gateway {
    * @param {SmithersEvent} event
    */
     handleSmithersEvent(event) {
+        // Invalidate devtools baselines before we broadcast the jump event so
+        // that in-flight streams emit a fresh full snapshot, not a delta rooted
+        // on a stale baseline.
+        if (event.type === "TimeTravelJumped" && typeof event.runId === "string") {
+            this.invalidateDevToolsSubscribersForRun(event.runId);
+        }
         const mapped = this.mapEvent(event);
         if (!mapped) {
             return;
@@ -2366,6 +2643,17 @@ export class Gateway {
                         attempt: event.attempt,
                     },
                 };
+            case "TimeTravelJumped":
+                return {
+                    event: "run.time_travel_jumped",
+                    payload: {
+                        runId: event.runId,
+                        fromFrameNo: event.fromFrameNo,
+                        toFrameNo: event.toFrameNo,
+                        timestampMs: event.timestampMs,
+                        caller: event.caller ?? null,
+                    },
+                };
             case "RunFinished":
                 return {
                     event: "run.completed",
@@ -2454,6 +2742,10 @@ export class Gateway {
                     return responseError(frame.id, "NOT_FOUND", `Run not found: ${runId}`);
                 }
                 const summary = await resolved.adapter.countNodesByState(runId);
+                const runState = await computeRunStateFromRow(
+                    resolved.adapter,
+                    run,
+                ).catch(() => undefined);
                 return responseOk(frame.id, {
                     ...run,
                     workflowKey: resolved.workflowKey,
@@ -2461,6 +2753,7 @@ export class Gateway {
                         acc[row.state] = row.count;
                         return acc;
                     }, {}),
+                    ...(runState ? { runState } : {}),
                 });
             }
             case "frames.list": {
@@ -2527,6 +2820,361 @@ export class Gateway {
                     return responseError(frame.id, "NOT_FOUND", "Attempt not found");
                 }
                 return responseOk(frame.id, row);
+            }
+            case "getNodeOutput":
+            case "devtools.getNodeOutput": {
+                try {
+                    const payload = await getNodeOutputRoute({
+                        runId: params.runId,
+                        nodeId: params.nodeId,
+                        iteration: params.iteration,
+                        resolveRun: this.resolveRun.bind(this),
+                    });
+                    return responseOk(frame.id, payload);
+                }
+                catch (error) {
+                    if (error instanceof NodeOutputRouteError) {
+                        return responseError(frame.id, error.code, error.message);
+                    }
+                    throw error;
+                }
+            }
+            case "getNodeDiff":
+            case "devtools.getNodeDiff": {
+                const result = await runPromise(Effect.promise(() => getNodeDiffRoute({
+                    runId: params.runId,
+                    nodeId: params.nodeId,
+                    iteration: params.iteration,
+                    resolveRun: this.resolveRun.bind(this),
+                })).pipe(Effect.withLogSpan("devtools.getNodeDiff")));
+                if (!result.ok) {
+                    return responseError(frame.id, result.error.code, result.error.message);
+                }
+                return responseOk(frame.id, result.payload);
+            }
+            case "getDevToolsSnapshot": {
+                const runId = asString(params.runId);
+                if (!runId) {
+                    return responseError(frame.id, "InvalidRunId", "runId is required");
+                }
+                try {
+                    // Full route-level validation runs at the gateway boundary
+                    // before any DB lookup. Malformed inputs never reach
+                    // resolveRun() or the adapter.
+                    validateRunId(runId);
+                    validateFrameNoInput(params.frameNo);
+                    if (!this.isDevToolsRunAuthorized(connection, runId)) {
+                        return responseError(frame.id, "Unauthorized", "Connection is not subscribed to this runId.");
+                    }
+                    const resolved = await this.resolveRun(runId);
+                    if (!resolved) {
+                        return responseError(frame.id, "RunNotFound", `Run not found: ${runId}`);
+                    }
+                    const payload = await getDevToolsSnapshotRoute({
+                        adapter: resolved.adapter,
+                        runId,
+                        frameNo: params.frameNo,
+                        onWarning: (warning) => {
+                            emitGatewayLog("warning", "devtools snapshot serializer warning", {
+                                runId,
+                                code: warning.code,
+                                path: warning.path,
+                            }, "gateway:devtools");
+                        },
+                    });
+                    return responseOk(frame.id, payload);
+                }
+                catch (error) {
+                    if (error instanceof DevToolsRouteError) {
+                        return responseError(frame.id, error.code, error.message);
+                    }
+                    throw error;
+                }
+            }
+            case "streamDevTools": {
+                if (connection.transport !== "ws" || !connection.ws) {
+                    this.recordDevToolsSubscribeAttempt("error");
+                    return responseError(frame.id, "INVALID_REQUEST", "streamDevTools is only supported over websocket connections");
+                }
+                const runId = asString(params.runId);
+                if (!runId) {
+                    this.recordDevToolsSubscribeAttempt("error");
+                    return responseError(frame.id, "InvalidRunId", "runId is required");
+                }
+                const fromSeq = params.fromSeq;
+                const streamId = randomUUID();
+                try {
+                    // Full route-level validation at the gateway boundary so
+                    // malformed numeric inputs never reach resolveRun() or
+                    // getLastFrame() below.
+                    validateRunId(runId);
+                    validateFromSeqInput(fromSeq);
+                    if (!this.isDevToolsRunAuthorized(connection, runId)) {
+                        this.recordDevToolsSubscribeAttempt("error");
+                        return responseError(frame.id, "Unauthorized", "Connection is not subscribed to this runId.");
+                    }
+                    const resolved = await this.resolveRun(runId);
+                    if (!resolved) {
+                        this.recordDevToolsSubscribeAttempt("error");
+                        return responseError(frame.id, "RunNotFound", `Run not found: ${runId}`);
+                    }
+                    if (typeof fromSeq === "number") {
+                        const latestFrame = await resolved.adapter.getLastFrame(runId);
+                        // Zero-frame runs: current seq is 0. fromSeq > 0 is in
+                        // the future relative to current seq and must reject.
+                        const latestSeq = latestFrame?.frameNo ?? 0;
+                        if (fromSeq > latestSeq) {
+                            this.recordDevToolsSubscribeAttempt("error");
+                            return responseError(frame.id, "SeqOutOfRange", `fromSeq ${fromSeq} is newer than current seq ${latestSeq}`);
+                        }
+                    }
+                    const abort = this.registerDevToolsSubscriber(connection, streamId, runId);
+                    emitGatewayLog("info", "devtools stream subscribed", {
+                        runId,
+                        fromSeq: typeof fromSeq === "number" ? fromSeq : null,
+                        streamId,
+                        subscriberId: connection.connectionId,
+                    }, "gateway:devtools");
+                    // Per-subscriber outbound queue gated on actual WS send
+                    // pressure. If the WS socket has buffered > limit bytes,
+                    // we queue locally up to 1000 events; exceeding that is a
+                    // BackpressureDisconnect that tears down only this stream.
+                    const outboundQueue = [];
+                    const OUTBOUND_QUEUE_LIMIT = 1_000;
+                    const WS_BUFFERED_HIGH_WATER_BYTES = 8 * 1024 * 1024;
+                    let flushPending = false;
+                    const drainOutboundQueue = () => {
+                        if (flushPending) return;
+                        flushPending = true;
+                        queueMicrotask(() => {
+                            try {
+                                while (outboundQueue.length > 0 && connection.ws.readyState === connection.ws.OPEN) {
+                                    const ws = connection.ws;
+                                    if (typeof ws.bufferedAmount === "number" && ws.bufferedAmount > WS_BUFFERED_HIGH_WATER_BYTES) {
+                                        setTimeout(() => {
+                                            flushPending = false;
+                                            drainOutboundQueue();
+                                        }, 10);
+                                        return;
+                                    }
+                                    const payload = outboundQueue.shift();
+                                    if (!payload) continue;
+                                    this.sendEvent(connection, "devtools.event", payload);
+                                }
+                            }
+                            finally {
+                                flushPending = false;
+                            }
+                        });
+                    };
+                    /**
+                     * Send a devtools event through the outbound queue. Applies
+                     * WS-level backpressure detection and raises a typed
+                     * BackpressureDisconnect if the queue overflows.
+                     */
+                    const enqueueDevToolsEvent = (payload) => {
+                        if (outboundQueue.length >= OUTBOUND_QUEUE_LIMIT) {
+                            throw new DevToolsRouteError(
+                                "BackpressureDisconnect",
+                                `Subscriber outbound queue exceeded ${OUTBOUND_QUEUE_LIMIT} events.`,
+                            );
+                        }
+                        outboundQueue.push(payload);
+                        drainOutboundQueue();
+                    };
+                    void (async () => {
+                        let eventsDelivered = 0;
+                        try {
+                            for await (const event of streamDevToolsRoute({
+                                adapter: resolved.adapter,
+                                runId,
+                                fromSeq: typeof fromSeq === "number" ? fromSeq : undefined,
+                                subscriberId: connection.connectionId,
+                                signal: abort.signal,
+                                invalidateSnapshot: () => {
+                                    if (this.devtoolsInvalidateFlags.has(streamId)) {
+                                        this.devtoolsInvalidateFlags.delete(streamId);
+                                        return true;
+                                    }
+                                    return false;
+                                },
+                                onWarning: (warning) => {
+                                    emitGatewayLog("warning", "devtools snapshot serializer warning", {
+                                        runId,
+                                        code: warning.code,
+                                        path: warning.path,
+                                    }, "gateway:devtools");
+                                },
+                                onLog: (level, message, fields) => {
+                                    emitGatewayLog(level === "warn" ? "warning" : level, message, fields, "gateway:devtools");
+                                },
+                                onEvent: (event, stats) => {
+                                    const kind = event.kind;
+                                    emitGatewayEffect(Effect.all([
+                                        Metric.increment(taggedMetric(devtoolsEventTotal, { kind })),
+                                        Metric.update(devtoolsEventBytes, stats.bytes),
+                                        ...(kind === "snapshot"
+                                            ? [Metric.update(devtoolsSnapshotBuildMs, stats.durationMs)]
+                                            : [Metric.update(devtoolsDeltaBuildMs, stats.durationMs)]),
+                                    ], { discard: true }));
+                                },
+                                onClose: ({ errorCode }) => {
+                                    if (errorCode === "BackpressureDisconnect") {
+                                        emitGatewayEffect(Metric.increment(devtoolsBackpressureDisconnectTotal));
+                                    }
+                                },
+                            })) {
+                                eventsDelivered += 1;
+                                enqueueDevToolsEvent({
+                                    streamId,
+                                    runId,
+                                    event,
+                                });
+                            }
+                        }
+                        catch (error) {
+                            const code = error?.code ?? "SERVER_ERROR";
+                            if (code === "BackpressureDisconnect") {
+                                emitGatewayEffect(Metric.increment(devtoolsBackpressureDisconnectTotal));
+                            }
+                            emitGatewayLog("error", "devtools stream failed", {
+                                runId,
+                                streamId,
+                                code,
+                                message: error?.message ?? "stream failed",
+                            }, "gateway:devtools");
+                            // Notify ONLY the offending subscriber. The WS
+                            // stays open so other subscribers on the same
+                            // connection continue to receive events.
+                            this.sendEvent(connection, "devtools.error", {
+                                streamId,
+                                runId,
+                                error: {
+                                    code,
+                                    message: error?.message ?? "stream failed",
+                                },
+                            });
+                        }
+                        finally {
+                            this.unregisterDevToolsSubscriber(connection, streamId, {
+                                runId,
+                                streamId,
+                                eventsDelivered,
+                            });
+                        }
+                    })();
+                    return responseOk(frame.id, {
+                        streamId,
+                        runId,
+                        fromSeq: typeof fromSeq === "number" ? fromSeq : null,
+                    });
+                }
+                catch (error) {
+                    this.recordDevToolsSubscribeAttempt("error");
+                    if (error instanceof DevToolsRouteError) {
+                        return responseError(frame.id, error.code, error.message);
+                    }
+                    throw error;
+                }
+            }
+            case "jumpToFrame":
+            case "devtools.jumpToFrame": {
+                const runId = asString(params.runId);
+                if (!runId) {
+                    return responseError(frame.id, "InvalidRunId", "runId is required");
+                }
+                const frameNo = asNumber(params.frameNo);
+                if (frameNo === undefined) {
+                    return responseError(frame.id, "InvalidFrameNo", "frameNo is required");
+                }
+                const confirm = asBoolean(params.confirm);
+                const resolved = await this.resolveRun(runId);
+                if (!resolved) {
+                    return responseError(frame.id, "RunNotFound", `Run not found: ${runId}`);
+                }
+                const run = await resolved.adapter.getRun(runId);
+                if (!run) {
+                    return responseError(frame.id, "RunNotFound", `Run not found: ${runId}`);
+                }
+                const ownerId = resolveRunOwnerId(run);
+                const isAdmin = (connection.role ?? "").toLowerCase() === "admin";
+                const isOwner = Boolean(ownerId && connection.userId && ownerId === connection.userId);
+                if (!isAdmin && !isOwner) {
+                    // Record the unauthorized attempt so the audit log contains
+                    // every rewind request — successful or not.
+                    try {
+                        await writeRewindAuditRow(resolved.adapter, {
+                            runId,
+                            fromFrameNo: -1,
+                            toFrameNo: Number.isInteger(frameNo) ? frameNo : -1,
+                            caller: connection.userId ?? "gateway",
+                            timestampMs: nowMs(),
+                            result: "failed",
+                            durationMs: 0,
+                        });
+                    }
+                    catch (auditError) {
+                        emitGatewayLog("warning", "Gateway jumpToFrame unauthorized audit-write failed", {
+                            runId,
+                            ...gatewayErrorAnnotations(auditError),
+                        }, "gateway:jump-to-frame");
+                    }
+                    return responseError(frame.id, "Unauthorized", "Only the run owner or an admin may rewind this run.");
+                }
+                const active = this.activeRuns.get(runId);
+                try {
+                    const payload = await jumpToFrameRoute({
+                        adapter: resolved.adapter,
+                        runId,
+                        frameNo,
+                        confirm,
+                        caller: connection.userId ?? "gateway",
+                        pauseRunLoop: async () => {
+                            if (!active) {
+                                return;
+                            }
+                            active.abort.abort();
+                            const timeoutAt = Date.now() + 10_000;
+                            while (this.activeRuns.has(runId) && Date.now() < timeoutAt) {
+                                await delay(25);
+                            }
+                            // Hard stop: if the task is still live after the grace
+                            // window, abort the rewind rather than mutating the DB
+                            // underneath a running task.
+                            if (this.activeRuns.has(runId)) {
+                                throw new JumpToFrameError("RewindFailed", `Run ${runId} did not stop within 10s of abort; refusing to rewind a live task.`, {
+                                    details: { runId, stage: "pause" },
+                                });
+                            }
+                        },
+                        resumeRunLoop: async () => {
+                            await this.resumeRunIfNeeded(runId, resolved.workflowKey, resolved.adapter, {
+                                triggeredBy: connection.userId ?? "gateway",
+                                scopes: [...connection.scopes],
+                                role: connection.role ?? "operator",
+                                subscribeConnection: connection.transport === "ws" ? connection : undefined,
+                            });
+                        },
+                        emitEvent: async (event) => {
+                            this.handleSmithersEvent(event);
+                        },
+                        onLog: async (level, message, fields) => {
+                            emitGatewayLog(level === "warn" ? "warning" : level, message, {
+                                runId,
+                                frameNo,
+                                caller: connection.userId ?? "gateway",
+                                ...fields,
+                            }, "gateway:jump-to-frame");
+                        },
+                    });
+                    return responseOk(frame.id, payload);
+                }
+                catch (error) {
+                    if (error instanceof JumpToFrameError) {
+                        return responseError(frame.id, error.code, error.message);
+                    }
+                    throw error;
+                }
             }
             case "runs.diff": {
                 const leftRunId = asString(params.leftRunId);

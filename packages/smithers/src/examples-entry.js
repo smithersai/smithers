@@ -1,24 +1,27 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./examples-entry.ts").AgentLike} AgentLike */
-/** @typedef {import("./examples-entry.ts").ApprovalDecision} ApprovalDecision */
-/** @typedef {import("./examples-entry.ts").ApprovalProps} ApprovalProps */
-/** @typedef {import("./examples-entry.ts").ApprovalRequest} ApprovalRequest */
+/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("@smithers/components").ApprovalDecision} ApprovalDecision */
+/** @typedef {import("@smithers/components").ApprovalProps} ApprovalProps */
+/** @typedef {import("@smithers/components").ApprovalRequest} ApprovalRequest */
 /**
  * @template Schema
- * @typedef {import("./examples-entry.ts").CreateSmithersApi<Schema>} CreateSmithersApi
+ * @typedef {import("./CreateSmithersApi.ts").CreateSmithersApi<Schema>} CreateSmithersApi
  */
-/** @typedef {import("./examples-entry.ts").DepsSpec} DepsSpec */
-/** @typedef {import("./examples-entry.ts").InferDeps} InferDeps */
-/** @typedef {import("./examples-entry.ts").OutputTarget} OutputTarget */
-/** @typedef {import("./examples-entry.ts").SmithersCtx} SmithersCtx */
+/** @typedef {import("@smithers/components").DepsSpec} DepsSpec */
+/** @typedef {import("@smithers/components").InferDeps} InferDeps */
+/** @typedef {import("@smithers/components").OutputTarget} OutputTarget */
+/** @typedef {import("@smithers/driver/SmithersCtx").SmithersCtx} SmithersCtx */
+/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
 /**
  * @template Schema
- * @typedef {import("./examples-entry.ts").SmithersWorkflow<Schema>} SmithersWorkflow
+ * @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<Schema>} SmithersWorkflow
  */
-/** @typedef {import("./examples-entry.ts").TaskProps} TaskProps */
+/** @typedef {import("@smithers/components").TaskProps} TaskProps */
+/** @typedef {import("@smithers/components").WaitForEventProps} WaitForEventProps */
 // @smithers-type-exports-end
 
 export { Approval, approvalDecisionSchema, Workflow, Task, Sequence, Parallel, MergeQueue, Branch, Loop, Ralph, Worktree, } from "@smithers/components";
+export { Timer } from "@smithers/components";
 export { ClaudeCodeAgent } from "@smithers/agents/ClaudeCodeAgent";
 export { KimiAgent } from "@smithers/agents/KimiAgent";
 export { PiAgent } from "@smithers/agents/PiAgent";

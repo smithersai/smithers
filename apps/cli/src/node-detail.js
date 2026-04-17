@@ -1,14 +1,14 @@
 import { Effect } from "effect";
 import { SmithersError } from "@smithers/errors";
-/** @typedef {import("./node-detail.ts").AggregateNodeDetailParams} AggregateNodeDetailParams */
+/** @typedef {import("./AggregateNodeDetailParams.ts").AggregateNodeDetailParams} AggregateNodeDetailParams */
 /**
  * @typedef {{ total: number; failed: number; cancelled: number; succeeded: number; waiting: number; }} AttemptSummary
  */
-/** @typedef {import("./node-detail.ts").EnrichedNodeDetail} EnrichedNodeDetail */
-/** @typedef {import("./node-detail.ts").NodeDetailAttempt} NodeDetailAttempt */
-/** @typedef {import("./node-detail.ts").NodeDetailTokenUsage} NodeDetailTokenUsage */
-/** @typedef {import("./node-detail.ts").NodeDetailToolCall} NodeDetailToolCall */
-/** @typedef {import("./node-detail.ts").RenderNodeDetailOptions} RenderNodeDetailOptions */
+/** @typedef {import("./EnrichedNodeDetail.ts").EnrichedNodeDetail} EnrichedNodeDetail */
+/** @typedef {import("./NodeDetailAttempt.ts").NodeDetailAttempt} NodeDetailAttempt */
+/** @typedef {import("./NodeDetailTokenUsage.ts").NodeDetailTokenUsage} NodeDetailTokenUsage */
+/** @typedef {import("./NodeDetailToolCall.ts").NodeDetailToolCall} NodeDetailToolCall */
+/** @typedef {import("./RenderNodeDetailOptions.ts").RenderNodeDetailOptions} RenderNodeDetailOptions */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 
 const MAX_TOOL_PAYLOAD_BYTES_HUMAN = 1024;

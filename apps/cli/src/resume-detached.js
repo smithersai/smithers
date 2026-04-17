@@ -1,9 +1,17 @@
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** @typedef {import("./SupervisorOptions.ts").SupervisorSpawnClaim} SupervisorSpawnClaim */
+
 /**
  * Resume an existing run by launching `smithers up ... --resume` as a detached process.
  * Returns the spawned PID when available.
+ *
+ * @param {string} workflowPath
+ * @param {string} runId
+ * @param {SupervisorSpawnClaim} [claim]
+ * @returns {number | null}
  */
 export function resumeRunDetached(workflowPath, runId, claim) {
     const cliPath = fileURLToPath(new URL("./index.js", import.meta.url));

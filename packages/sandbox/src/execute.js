@@ -10,11 +10,10 @@ import { requireTaskRuntime } from "@smithers/driver/task-runtime";
 import { executeChildWorkflow } from "@smithers/engine/child-workflow";
 import { validateSandboxBundle, writeSandboxBundle } from "./bundle.js";
 import { SandboxTransport, layerForSandboxRuntime, resolveSandboxRuntime, } from "./transport.js";
-/** @typedef {import("./execute.ts").execute} execute */
-/** @typedef {import("./transport.ts").transport} transport */
-
-/** @typedef {import("./execute.ts").ExecuteSandboxOptions} ExecuteSandboxOptions */
-/** @typedef {import("./transport.ts").SandboxRuntime} SandboxRuntime */
+/** @typedef {import("./ExecuteSandboxOptions.ts").ExecuteSandboxOptions} ExecuteSandboxOptions */
+/** @typedef {import("./SandboxRuntime.ts").SandboxRuntime} SandboxRuntime */
+/** @typedef {import("./SandboxHandle.ts").SandboxHandle} SandboxHandle */
+/** @typedef {import("./SandboxTransportService.ts").SandboxTransportService} SandboxTransportService */
 
 const DEFAULT_MAX_CONCURRENT_SANDBOXES = 10;
 /**

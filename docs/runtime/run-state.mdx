@@ -1,0 +1,136 @@
+---
+title: Run State
+description: The single typed model for "what is this run doing right now?"
+---
+
+Every Smithers surface — CLI, TUI, GUI, Gateway, DevTools — answers
+"what is this run doing right now?" by reading the same `RunStateView`,
+computed server-side from persisted state plus liveness signals.
+
+Surfaces never infer status from `ps`, event absence, or partial table
+reads. They call `computeRunState`.
+
+## RunState
+
+```ts
+type RunState =
+  | "running"           // owner alive, work progressing
+  | "waiting-approval"  // blocked on a human decision
+  | "waiting-event"     // blocked on an external signal
+  | "waiting-timer"     // blocked on a scheduled wakeup
+  | "recovering"        // supervisor replaying / resuming
+  | "stale"             // owner heartbeat expired, not yet recovered
+  | "orphaned"          // owner gone, no supervisor candidate
+  | "failed"
+  | "cancelled"
+  | "succeeded"
+  | "unknown"           // telemetry gap; never invent a state
+```
+
+`idle` is gone. When a signal is missing, the state is `unknown` —
+never `succeeded`, never `running`.
+
+The legacy run-row `status` column maps to `RunState` like this:
+
+| `_smithers_runs.status` | `RunState`                     |
+| ----------------------- | ------------------------------ |
+| `running` (fresh)       | `running`                      |
+| `running` (stale)       | `stale` or `orphaned`          |
+| `waiting-approval`      | `waiting-approval`             |
+| `waiting-event`         | `waiting-event`                |
+| `waiting-timer`         | `waiting-timer`                |
+| `finished`              | `succeeded`                    |
+| `continued`             | `succeeded`                    |
+| `failed`                | `failed`                       |
+| `cancelled`             | `cancelled`                    |
+| missing / unknown text  | `unknown`                      |
+
+`recovering` is reserved for the supervisor takeover window; it is not
+emitted today (the supervisor will set it once
+[ticket 0018](https://github.com/codeplaneapp/smithers) lands).
+
+## ReasonBlocked / ReasonUnhealthy
+
+Every non-terminal, non-`running` state carries a typed reason.
+
+```ts
+type ReasonBlocked =
+  | { kind: "approval"; nodeId: string; requestedAt: string }
+  | { kind: "event";    nodeId: string; correlationKey: string }
+  | { kind: "timer";    nodeId: string; wakeAt: string }
+  | { kind: "provider"; nodeId: string; code: "rate-limit" | "auth" | "timeout" }
+  | { kind: "tool";     nodeId: string; toolName: string; code: string }
+
+type ReasonUnhealthy =
+  | { kind: "engine-heartbeat-stale"; lastHeartbeatAt: string }
+  | { kind: "ui-heartbeat-stale";     lastSeenAt: string }
+  | { kind: "db-lock" }
+  | { kind: "sandbox-unreachable" }
+  | { kind: "supervisor-backoff"; attempt: number; nextAt: string }
+```
+
+Timestamps are ISO-8601 strings.
+
+## RunStateView
+
+```ts
+type RunStateView = {
+  runId: string;
+  state: RunState;
+  blocked?: ReasonBlocked;
+  unhealthy?: ReasonUnhealthy;
+  computedAt: string;        // ISO-8601
+};
+```
+
+`blocked` is set when `state` is one of the `waiting-*` values.
+`unhealthy` is set when `state` is `stale`, `orphaned`, or `recovering`.
+Terminal states (`succeeded`, `failed`, `cancelled`) carry neither.
+
+## computeRunState
+
+```ts
+import { computeRunState } from "@smithers/db/runState";
+
+const view = await computeRunState(adapter, runId);
+view.state;       // "running" | ...
+view.blocked;     // present iff state is "waiting-*"
+view.unhealthy;   // present iff state is "stale" | "orphaned" | "recovering"
+```
+
+`computeRunState` is pure over the DB plus the heartbeat / lease signals
+on the run row. It does not call `ps`, does not probe sockets, and does
+not run heuristics.
+
+`deriveRunState` is the underlying pure function — useful in tests or
+when you already have the rows in memory:
+
+```ts
+import { deriveRunState } from "@smithers/db/runState";
+
+const view = deriveRunState({
+  run,
+  pendingApproval,
+  pendingTimer,
+  pendingEvent,
+  now: 1_700_000_000_000,
+  staleThresholdMs: 30_000,
+});
+```
+
+The default `staleThresholdMs` is `30_000` — the same threshold the
+engine uses for `isRunHeartbeatFresh`.
+
+## Where it shows up
+
+`RunStateView` is the wire format on every read surface:
+
+- `smithers inspect <runId>` — top-level `runState` field on the JSON
+  output (and rendered in the human view).
+- Gateway RPC `runs.get` — `runState` field on the response.
+- DevTools snapshot header — `runState?: RunStateView` field.
+- Event stream — `RunStateChanged` event with `before` and `after`
+  (emitted by the recovery state machine in ticket 0018).
+
+A run id that does not exist is not a `RunState` — it's an error
+(`RUN_NOT_FOUND`). `unknown` is for ambiguity, not for "doesn't exist."

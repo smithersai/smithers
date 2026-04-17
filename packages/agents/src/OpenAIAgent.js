@@ -9,7 +9,10 @@ import { streamResultToGenerateResult } from "./streamResultToGenerateResult.js"
  * @typedef {AgentCallParameters<CALL_OPTIONS, TOOLS> & { onStdout?: (text: string) => void; onStderr?: (text: string) => void; onEvent?: (event: unknown) => Promise<void> | void; outputSchema?: import("zod").ZodTypeAny; resumeSession?: string; }} ExtendedGenerateArgs
  */
 /** @typedef {import("ai").GenerateTextResult} GenerateTextResult */
-/** @typedef {import("./OpenAIAgent.ts").OpenAIAgentOptions} OpenAIAgentOptions */
+/**
+ * @template [CALL_OPTIONS=never], [TOOLS=import("ai").ToolSet]
+ * @typedef {import("./OpenAIAgentOptions.ts").OpenAIAgentOptions<CALL_OPTIONS, TOOLS>} OpenAIAgentOptions
+ */
 
 export class OpenAIAgent extends ToolLoopAgent {
     hijackEngine = "openai-sdk";

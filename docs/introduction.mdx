@@ -1,70 +1,35 @@
 ---
 title: Introduction
-description: Understand what Smithers is, how the CLI and JSX API fit together, and when the workflow runtime is worth using.
+description: What Smithers is and when to use it.
 ---
 
-Think of Smithers as a runtime for [durable agent work](/concepts/execution-model).
+Smithers is a durable workflow runtime. You write a workflow as a JSX tree, and Smithers repeatedly renders it. Each render answers: given what has already finished, what can run now? Tasks produce outputs validated by Zod schemas; the runtime persists them to SQLite. Crashes, restarts, and approvals are first-class — the runtime resumes from the last persisted state without re-running completed work.
 
-If React turns state into UI, Smithers turns state into executable work. Each render answers one question: given what has already completed, what can run now?
-
-That matters because real agent jobs do not stay single-step for long. A useful task becomes:
-
-- analyze a codebase
-- propose a fix
-- apply the fix
-- run validation
-- ask for [approval](/concepts/approvals)
-- [resume later](/concepts/suspend-and-resume) if the process crashes
-
-You can script all of that by hand. Most teams do at first. Then the retries, [persistence](/concepts/workflow-state), audit trail, and [branching logic](/concepts/control-flow) start taking over the project. Smithers exists to make that coordination the default instead of the afterthought.
-
-## The Three Surfaces
-
-### CLI
-
-The CLI is the operations surface. You use it to scaffold workflow packs, launch runs, inspect state, read logs, answer [approvals](/concepts/approvals), send [signals](/components/signal), and recover from failure.
-
-Start with [CLI Quickstart](/cli/quickstart) if that is your immediate job.
-
-### JSX API
-
-The JSX API is the authoring surface. You describe the workflow as a tree of [`<Workflow>`](/components/workflow), [`<Task>`](/components/task), and [control-flow components](/concepts/control-flow), and Smithers repeatedly renders that tree as outputs become available.
-
-Start with [JSX API](/jsx/overview) if you are building workflows.
-
-### Runtime
-
-The runtime is the durable engine beneath both surfaces. It validates [structured output](/guides/structured-output), persists it to [SQLite](https://sqlite.org), emits [events](/runtime/events), and resumes safely after interruption.
-
-Start with [Workflows Overview](/concepts/workflows-overview) if you want the model before the mechanics.
-
-## What Happens During a Run
-
-1. Smithers renders your workflow tree with the current `ctx`.
-2. It finds the tasks that are ready to execute.
-3. It runs those tasks and validates their outputs.
-4. It persists the outputs and runtime metadata to SQLite.
-5. It renders again with the updated state.
-
-That loop continues until the workflow finishes, fails, pauses for [human input](/concepts/human-in-the-loop), or is cancelled.
-
-## When Smithers Is the Right Tool
+```tsx
+<Workflow name="review">
+  <Sequence>
+    <Task id="analyze" output={outputs.analysis} agent={analyst}>
+      {`Review ${ctx.input.repo}`}
+    </Task>
+    {analysis ? (
+      <Task id="fix" output={outputs.fix} agent={fixer}>
+        {`Fix: ${analysis.issues}`}
+      </Task>
+    ) : null}
+  </Workflow>
+</Workflow>
+```
 
 Use Smithers when:
 
 - order matters across multiple AI or compute steps
-- you need [resumability](/guides/resumability) or crash recovery
-- humans must [approve](/concepts/approvals) or answer questions mid-run
-- different tasks need different [models](/guides/model-selection), [tools](/integrations/tools), or policies
-- you want the workflow itself to stay readable and testable
+- you need crash recovery
+- humans must approve or answer questions mid-run
+- different tasks need different models, tools, or policies
 
-If you only need one prompt and one response, a workflow is probably overkill.
+Don't use it for a single prompt → single response. That's just an `Agent.generate(...)` call.
 
-## Read Next
+## Read next
 
-- [Installation](/installation) to get the workflow pack into your project.
-- [Quickstart](/quickstart) for the fastest first run.
-- [CLI Quickstart](/cli/quickstart) to learn the operational flow.
-- [JSX Quickstart](/jsx/quickstart) to build a workflow from scratch.
-- [Workflows Overview](/concepts/workflows-overview) for the mental model.
-- [Execution Model](/concepts/execution-model) to understand how renders, state, and resumability fit together.
+- [Tour](/tour) for a working code-review example.
+- [How It Works](/how-it-works) for the execution model.

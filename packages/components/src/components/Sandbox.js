@@ -1,11 +1,11 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Sandbox.ts").SandboxRuntime} SandboxRuntime */
-/** @typedef {import("./Sandbox.ts").SandboxVolumeMount} SandboxVolumeMount */
-/** @typedef {import("./Sandbox.ts").SandboxWorkspaceSpec} SandboxWorkspaceSpec */
+/** @typedef {import("./SandboxRuntime.ts").SandboxRuntime} SandboxRuntime */
+/** @typedef {import("./SandboxVolumeMount.ts").SandboxVolumeMount} SandboxVolumeMount */
+/** @typedef {import("./SandboxWorkspaceSpec.ts").SandboxWorkspaceSpec} SandboxWorkspaceSpec */
 // @smithers-type-exports-end
 
 import React from "react";
-/** @typedef {import("./Sandbox.ts").SandboxProps} SandboxProps */
+/** @typedef {import("./SandboxProps.ts").SandboxProps} SandboxProps */
 
 /**
  * @param {SandboxProps} props

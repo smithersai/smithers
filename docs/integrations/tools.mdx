@@ -46,7 +46,7 @@ Every invocation is logged to `_smithers_tool_calls`:
 
 ## defineTool
 
-Use `defineTool()` to wrap custom [AI SDK](https://ai-sdk.dev) tools with Smithers runtime context, deterministic idempotency keys, and durable tool-call logging.
+`defineTool()` wraps custom [AI SDK](https://ai-sdk.dev) tools with Smithers runtime context, deterministic idempotency keys, and durable tool-call logging.
 
 ```ts
 import { defineTool } from "smithers-orchestrator";
@@ -71,27 +71,27 @@ const placeOrder = defineTool({
 
 - `ctx.idempotencyKey` is stable across retries and resumes for the same task iteration.
 - `sideEffect: true` opts the tool into Smithers side-effect tracking.
-- `idempotent: false` tells Smithers to warn resumed/retried agent loops when the tool was already called in a previous attempt.
-- Smithers logs start/finish records for every `defineTool()` call in `_smithers_tool_calls`.
+- `idempotent: false` warns resumed/retried agent loops when the tool was called in a previous attempt.
+- Every `defineTool()` call is logged to `_smithers_tool_calls`.
 
 ### Side Effects and Idempotency
 
-Every custom tool that modifies external state **must** declare `sideEffect: true`. This is how Smithers knows to protect your [workflow](/concepts/workflows-overview) during retries and resumes. Without it, Smithers treats the tool as a pure read and will replay it freely — potentially sending duplicate emails, double-charging payments, or creating duplicate records.
+Every custom tool that modifies external state **must** declare `sideEffect: true`. This is how Smithers protects your [workflow](/concepts/workflows-overview) during retries and resumes. Without it, Smithers treats the tool as a pure read and replays it freely — potentially sending duplicate emails, double-charging payments, or creating duplicate records.
 
 The two flags work together:
 
 | `sideEffect` | `idempotent` | Smithers behavior |
 |---|---|---|
 | `false` (default) | `true` (default) | Pure read. Safe to replay on retry. No warnings. |
-| `true` | `true` | Mutates external state, but calling it twice with the same input produces the same result (e.g. an upsert, a PUT request). Safe to replay. No warnings. |
-| `true` | `false` | Mutates external state and is **not** safe to replay (e.g. sending an email, placing an order, charging a payment). On retry, Smithers injects a warning telling the agent the tool was already called and it should verify external state before calling it again. |
+| `true` | `true` | Mutates external state, but calling twice with the same input produces the same result (e.g. an upsert, a PUT request). Safe to replay. No warnings. |
+| `true` | `false` | Mutates external state and is **not** safe to replay (e.g. sending an email, placing an order, charging a payment). On retry, Smithers injects a warning listing the tool as already called so the agent can verify external state before calling again. |
 
-When `sideEffect: true` and `idempotent: false`, Smithers does two things on retry:
+With `sideEffect: true` and `idempotent: false`, Smithers does two things on retry:
 
-1. **Warns the agent.** The retry prompt includes a message listing which non-idempotent tools were already called, so the agent can check external state before repeating them.
-2. **Provides a stable idempotency key.** `ctx.idempotencyKey` is deterministic for a given task + iteration, so you can pass it to external APIs that support idempotency (Stripe, AWS, etc.) to deduplicate on their end.
+1. **Warns the agent.** The retry prompt lists which non-idempotent tools were already called.
+2. **Provides a stable idempotency key.** `ctx.idempotencyKey` is deterministic for a given task + iteration; pass it to external APIs that support idempotency (Stripe, AWS) to deduplicate.
 
-If your `execute` function has `sideEffect: true, idempotent: false` but does not accept the `ctx` parameter, Smithers logs a warning at startup. This is almost always a bug — you need `ctx.idempotencyKey` to safely handle retries.
+If your `execute` function has `sideEffect: true, idempotent: false` but omits the `ctx` parameter, Smithers logs a startup warning. This is almost always a bug — you need `ctx.idempotencyKey` to handle retries safely.
 
 ```ts
 // ✗ Bad: non-idempotent side effect without ctx
@@ -119,9 +119,9 @@ const sendEmail = defineTool({
 
 ### What counts as a side effect
 
-A side effect is any mutation of state **outside the [sandbox](/components/sandbox)**. If the tool talks to an external API, writes to a database, sends a message, or triggers a webhook, it has a side effect. Mark it.
+A side effect is any mutation of state **outside the [sandbox](/components/sandbox)**. If the tool talks to an external API, writes to a database, sends a message, or triggers a webhook, mark it.
 
-File system changes inside the sandbox — writing files, editing code, running `git commit` — are **not** side effects in this sense. The built-in `write`, `edit`, and `bash` tools modify the working directory, but those changes are local, sandboxed, and tracked by git. They are inherently reversible (`git checkout`, `git reset`) and inspectable (`git diff`, `git log`). Smithers does not need retry warnings or idempotency keys for them.
+File system changes inside the sandbox — writing files, editing code, running `git commit` — are **not** side effects. The built-in `write`, `edit`, and `bash` tools modify the working directory, but those changes are local, sandboxed, and tracked by git. They are reversible (`git checkout`, `git reset`) and inspectable (`git diff`, `git log`). Smithers does not need retry warnings or idempotency keys for them.
 
 | Tool | Side effect? | Why |
 |---|---|---|
@@ -289,7 +289,7 @@ const devAgent = new Agent({
 
 ## Using Tools with Agents
 
-Pass tools to an [AI SDK](https://ai-sdk.dev) agent, assign the agent to a [`<Task>`](/components/task):
+Pass tools to an [AI SDK](https://ai-sdk.dev) agent and assign the agent to a [`<Task>`](/components/task):
 
 ```tsx
 import { ToolLoopAgent as Agent } from "ai";

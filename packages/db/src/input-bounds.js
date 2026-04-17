@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./input-bounds.ts").JsonBounds} JsonBounds */
+/** @typedef {import("./JsonBounds.ts").JsonBounds} JsonBounds */
 // @smithers-type-exports-end
 
 export { assertMaxStringLength } from "./assertMaxStringLength.js";

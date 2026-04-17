@@ -1,0 +1,880 @@
+# Smithers Integrations
+
+> Smithers integrations: agent runtimes (Claude Code, Codex, Gemini, Pi), tool surfaces, ecosystem partners.
+
+---
+
+## Integrations
+
+> Three patterns for connecting Smithers to external services.
+
+Smithers ships no first-party clients for Linear, Notion, Slack, or similar services. Treat them as external integrations your app owns and pick one of three wirings: tools on an SDK agent, skills/plugins/MCP on a CLI agent, or an external CLI run inside a task.
+
+## Pattern 1: Pass tools to an SDK agent
+
+Use this when the agent needs judgment but the external calls should stay explicit and reviewable.
+
+```ts
+import { ToolLoopAgent as Agent, tool, zodSchema } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
+
+const linearGetIssue = tool({
+  description: "Fetch a Linear issue",
+  inputSchema: zodSchema(z.object({ id: z.string() })),
+  execute: async ({ id }) => linearClient.getIssue(id),
+});
+
+const opsAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { linearGetIssue },
+});
+```
+
+## Pattern 2: Pass a skill / plugin / MCP config to a CLI agent
+
+Use this when your CLI agent already supports external integrations and Smithers should only orchestrate the task.
+
+```ts
+import { PiAgent } from "smithers-orchestrator";
+
+const pi = new PiAgent({
+  provider: "openai",
+  model: "gpt-5.2-codex",
+  skill: ["./skills/linear", "./skills/notion"],
+});
+```
+
+```tsx
+<Task id="ticket-review" output={outputs.review} agent={pi}>
+  {`Use the Linear skill to inspect ${ctx.input.issueId}, then summarize next actions.`}
+</Task>
+```
+
+## Pattern 3: Run an external CLI in a task
+
+Use this when the step is deterministic and you do not need the model involved.
+
+```tsx
+<Task id="load-linear" output={outputs.linearIssue}>
+  {async () => {
+    const proc = Bun.spawn(["linear", "issue", "view", ctx.input.issueId, "--json"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    if (await proc.exited !== 0) throw new Error(stderr || stdout);
+    return JSON.parse(stdout);
+  }}
+</Task>
+```
+
+## Choosing between them
+
+| If you need | Prefer |
+|---|---|
+| AI judgment over a small integration surface | Pattern 1 (SDK agent with narrow tools) |
+| Existing CLI ecosystem support (skills, plugins, MCP) | Pattern 2 (CLI agent) |
+| Deterministic sync or publish steps | Pattern 3 (compute task) |
+
+## See also
+
+For React hook patterns see [/recipes#custom-hooks-over-ctx](/recipes#custom-hooks-over-ctx); for agent-class details see [/llms-integrations.txt](/llms-integrations.txt).
+
+---
+
+## CLI Agents
+
+> Spawn external CLI tools (Claude Code, Codex, Pi, …) and pipe them through the workflow runtime.
+
+CLI-backed agent classes wrap external AI command-line tools and implement the [AI SDK](https://ai-sdk.dev) `Agent` interface. Use them anywhere Smithers accepts an agent, including [`<Task>`](/components/task). Reach for these for a vendor's full CLI surface (sessions, sandboxes, slash commands, MCP). For API-billed provider wrappers, see [SDK Agents](/integrations/sdk-agents).
+
+## Quick Start
+
+```tsx
+import { ClaudeCodeAgent } from "smithers-orchestrator";
+
+const claude = new ClaudeCodeAgent({
+  model: "claude-sonnet-4-20250514",
+  systemPrompt: "You are a careful code reviewer.",
+  timeoutMs: 30 * 60 * 1000,
+});
+
+export default smithers((ctx) => (
+  <Workflow name="review">
+    <Task id="analysis" output={outputs.analysis} agent={claude}>
+      {`Analyze the codebase and identify potential improvements.`}
+    </Task>
+  </Workflow>
+));
+```
+
+## Available agents
+
+```toon
+agents[7]{class,cli,defaultModel,hijack,notes}:
+  ClaudeCodeAgent,claude,claude-sonnet-4-20250514,native session id,Anthropic Claude Code CLI
+  CodexAgent,codex,gpt-4.1,native session id,OpenAI Codex CLI (codex exec via stdin)
+  GeminiAgent,gemini,gemini-2.5-pro,native session id,Google Gemini CLI (falls back to gcloud auth)
+  PiAgent,pi,gpt-5.2-codex,native session id,Pi CLI (text/json/rpc modes + extension UI hooks)
+  KimiAgent,kimi,kimi-latest,native session id,Moonshot Kimi CLI (auto-isolates KIMI_SHARE_DIR)
+  ForgeAgent,forge,anthropic/claude-sonnet-4-20250514,conversation id,Forge CLI (300+ models)
+  AmpAgent,amp,claude-sonnet-4-20250514,thread id,Amp CLI (--execute headless mode)
+```
+
+CLI binaries must be on `PATH`: `claude`, `codex`, `gemini`, `pi`, `kimi`, `forge`, `amp`.
+
+## Common options
+
+All CLI agents accept the same base option surface:
+
+```ts
+type BaseCliAgentOptions = {
+  id?: string;                       // Agent instance id (default: random UUID)
+  model?: string;                    // Model name passed to --model
+  systemPrompt?: string;             // Prepended to the user prompt
+  instructions?: string;             // Alias for systemPrompt
+  cwd?: string;                      // Working directory (default: tool ctx rootDir or process.cwd())
+  env?: Record<string, string>;      // Extra env vars merged with process.env
+  yolo?: boolean;                    // Skip permission prompts (default: true)
+  timeoutMs?: number;                // Hard wall-clock cap
+  idleTimeoutMs?: number;            // Inactivity cap; resets on any stdout/stderr
+  maxOutputBytes?: number;           // Truncate captured output
+  extraArgs?: string[];              // Additional CLI flags appended to the command
+};
+```
+
+Per-call timeout override:
+
+```ts
+await agent.generate({
+  prompt: "do the thing",
+  timeout: { totalMs: 15 * 60 * 1000, idleMs: 2 * 60 * 1000 },
+});
+```
+
+## Per-agent extras
+
+```ts
+import { ClaudeCodeAgent } from "smithers-orchestrator";
+new ClaudeCodeAgent({
+  permissionMode?: "acceptEdits" | "bypassPermissions" | "default" | "delegate" | "dontAsk" | "plan";
+  allowedTools?: string[]; disallowedTools?: string[]; disableSlashCommands?: boolean;
+  addDir?: string[]; file?: string[]; fromPr?: string; fallbackModel?: string;
+  appendSystemPrompt?: string; agents?: Record<string, { description?: string; prompt?: string }> | string;
+  betas?: string[]; pluginDir?: string[]; resume?: string; sessionId?: string;
+  mcpConfig?: string[]; mcpDebug?: boolean; maxBudgetUsd?: number; jsonSchema?: string;
+  outputFormat?: "text" | "json" | "stream-json"; // default stream-json
+});
+```
+
+```ts
+import { CodexAgent } from "smithers-orchestrator";
+new CodexAgent({
+  sandbox?: "read-only" | "workspace-write" | "danger-full-access";
+  fullAuto?: boolean; dangerouslyBypassApprovalsAndSandbox?: boolean;
+  config?: Record<string, unknown> | string[]; oss?: boolean; localProvider?: string;
+  image?: string[]; outputSchema?: string; outputLastMessage?: string; profile?: string;
+});
+```
+
+```ts
+import { GeminiAgent } from "smithers-orchestrator";
+new GeminiAgent({
+  sandbox?: boolean; approvalMode?: "default" | "auto_edit" | "yolo" | "plan";
+  allowedTools?: string[]; allowedMcpServerNames?: string[];
+  extensions?: string[]; resume?: string; includeDirectories?: string[];
+  outputFormat?: "text" | "json" | "stream-json"; // default json
+});
+```
+
+```ts
+import { PiAgent, type PiExtensionUiRequest, type PiExtensionUiResponse } from "smithers-orchestrator";
+new PiAgent({
+  provider?: string; mode?: "text" | "json" | "rpc";
+  print?: boolean; continue?: boolean; resume?: boolean; session?: string;
+  sessionDir?: string; noSession?: boolean;
+  extension?: string[]; skill?: string[]; promptTemplate?: string[]; theme?: string[];
+  tools?: string[]; noTools?: boolean; files?: string[];
+  thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  onExtensionUiRequest?: (req: PiExtensionUiRequest) => Promise<PiExtensionUiResponse | null>;
+});
+```
+
+```ts
+import { KimiAgent } from "smithers-orchestrator";
+new KimiAgent({
+  thinking?: boolean; outputFormat?: "text" | "stream-json";
+  finalMessageOnly?: boolean; quiet?: boolean;
+  agent?: "default" | "okabe"; agentFile?: string;
+  workDir?: string; session?: string; continue?: boolean;
+  skillsDir?: string; mcpConfigFile?: string[]; mcpConfig?: string[];
+  maxStepsPerTurn?: number; maxRetriesPerStep?: number; maxRalphIterations?: number;
+});
+```
+
+```ts
+import { ForgeAgent } from "smithers-orchestrator";
+new ForgeAgent({
+  directory?: string; provider?: string; agent?: string;
+  conversationId?: string; sandbox?: string; restricted?: boolean;
+  workflow?: string; event?: string; conversation?: string;
+});
+```
+
+```ts
+import { AmpAgent } from "smithers-orchestrator";
+new AmpAgent({
+  visibility?: "private" | "public" | "workspace" | "group";
+  mcpConfig?: string; settingsFile?: string;
+  logLevel?: "error" | "warn" | "info" | "debug" | "audit"; logFile?: string;
+  dangerouslyAllowAll?: boolean;
+});
+```
+
+## Hijack handoff
+
+Every built-in CLI agent supports `bunx smithers-orchestrator hijack <runId>`, which relaunches the agent in its native CLI session for interactive takeover. Smithers persists the native session id (or conversation id for Forge / thread id for Amp) on each task event; on hijack it waits for a safe boundary between blocking tool calls, then reopens the session via the vendor's resume flag (`claude --resume`, `codex resume`, `gemini --resume`, `pi --session`, `kimi --session`, `forge --conversation-id`, `amp threads continue`). On clean exit the workflow resumes in detached mode. See [How it works → Durability and resume](/how-it-works#durability--resume).
+
+## Notes
+
+- **Yolo defaults.** `yolo: true` (default) maps to each CLI's "skip approvals" flag (`--dangerously-skip-permissions`, `--dangerously-bypass-approvals-and-sandbox`, `--yolo`, `--dangerously-allow-all`). Set `yolo: false` or use the agent-specific approval option for tighter control.
+- **PI rpc mode** sends prompts as JSON over stdin and is required for `onExtensionUiRequest` callbacks; text/json modes pass the prompt as a positional arg with `files` emitted as `@path`.
+- **Kimi share dir.** `KimiAgent` auto-creates an isolated `KIMI_SHARE_DIR` per invocation to prevent `kimi.json` corruption under concurrent runs. Set `env.KIMI_SHARE_DIR` to opt out.
+- **Gemini auth** falls back to `gcloud auth application-default login` when neither `GOOGLE_API_KEY` nor `GEMINI_API_KEY` is set.
+- **Non-idempotent retries.** When a `<Task>` retries, Smithers prepends a warning listing previously-called side-effect tools so the agent can verify external state before re-invoking them.
+
+---
+
+## SDK Agents
+
+> Provider-backed AI SDK agent wrappers for Anthropic and OpenAI that work like first-class Smithers agents.
+
+`AnthropicAgent` and `OpenAIAgent` are thin wrappers around the [AI SDK](https://ai-sdk.dev) `ToolLoopAgent` with class-style ergonomics matching the [CLI agents](/integrations/cli-agents).
+
+## Import
+
+```ts
+import {
+  AnthropicAgent,
+  OpenAIAgent,
+  tools,
+} from "smithers-orchestrator";
+import { stepCountIs } from "ai";
+```
+
+## Quick Start
+
+```ts
+const claude = new AnthropicAgent({
+  model: "claude-opus-4-6",
+  tools,
+  instructions: "You are a careful planner.",
+  stopWhen: stepCountIs(40),
+});
+
+const codex = new OpenAIAgent({
+  model: "gpt-5.3-codex",
+  tools,
+  instructions: "You are a precise implementation agent.",
+  stopWhen: stepCountIs(40),
+});
+```
+
+```tsx
+{/* outputs comes from createSmithers() */}
+<Task id="plan" output={outputs.plan} agent={claude}>
+  Analyze the repository and propose a migration plan.
+</Task>
+```
+
+## Model Input
+
+Both classes accept a model ID string (`"claude-opus-4-6"`, `"gpt-5.3-codex"`) or a prebuilt AI SDK language model instance.
+
+## Options
+
+Constructors forward standard AI SDK `ToolLoopAgent` settings: `instructions`, `tools`, `stopWhen`, `maxOutputTokens`, `temperature`, `providerOptions`, `prepareCall`. The wrapper adds `model`, which resolves model-ID strings automatically.
+
+## Hijack Support
+
+SDK agents do not reopen a provider-native CLI. Smithers persists the agent conversation and reopens it through a Smithers-managed REPL via `smithers hijack <runId>`.
+
+Live-run behavior:
+
+- Smithers captures response history after each step via `onStepFinish`.
+- `smithers hijack` waits until history is durable, cancels the live run, and opens the REPL.
+- On clean REPL exit, Smithers writes updated message history back and resumes the workflow automatically.
+
+Limits:
+
+- Conversation hijack stays on the same agent implementation. Cross-engine hijack is not supported.
+- Smithers reconstructs the original task agent from the workflow source.
+
+## CLI vs SDK
+
+| | CLI Agents | SDK Agents |
+|---|---|---|
+| Billing | Provider subscription / local CLI | API billing |
+| Tools | Provider CLI tool ecosystem | Smithers [tools](/integrations/tools) [sandbox](/components/sandbox) |
+| Flexibility | Native CLI flags | AI SDK `providerOptions` |
+
+Pass a raw `ToolLoopAgent` directly if you prefer — the wrappers are convenience, not a separate runtime.
+
+## Example: Dual Setup
+
+```ts
+const useCli = process.env.USE_CLI_AGENTS === "1";
+
+export const claude = useCli
+  ? new ClaudeCodeAgent({
+      model: "claude-opus-4-6",
+      dangerouslySkipPermissions: true,
+    })
+  : new AnthropicAgent({
+      model: "claude-opus-4-6",
+      tools,
+      instructions: "You are a careful planner.",
+      stopWhen: stepCountIs(40),
+    });
+```
+
+## Next Steps
+
+- [CLI Agents](/integrations/cli-agents)
+- [Built-in Tools](/integrations/tools)
+- [Agents and Tools](/concepts/agents-and-tools)
+
+---
+
+## Built-in Tools
+
+> Sandboxed file and shell tools for AI agent tasks, with exact input schemas, security policies, and usage examples.
+
+```ts
+import { tools, read, write, edit, grep, bash, defineTool } from "smithers-orchestrator";
+```
+
+`tools` bundles all five tools keyed by name:
+
+```ts
+const { read, write, edit, grep, bash } = tools;
+```
+
+## Sandboxing
+
+All tools are sandboxed to `rootDir` (defaults to the workflow directory). Paths are resolved relative to this root; escapes via symlinks are rejected.
+
+| Policy | Behavior |
+|---|---|
+| Path resolution | Relative paths resolve against `rootDir`. Absolute paths must fall within root. |
+| Symlinks | Rejected if target is outside sandbox. |
+| Output size | Truncated to `maxOutputBytes` (default 200KB). |
+| Timeouts | `bash` and `grep` default to 60s; exceeded processes killed with `SIGKILL`. |
+| Network | `bash` blocks network commands by default. See [bash](#bash). |
+
+## Tool Call Logging
+
+Every invocation is logged to `_smithers_tool_calls`:
+
+| Field | Description |
+|---|---|
+| `runId` | Workflow run ID |
+| `nodeId` | Task node that invoked the tool |
+| `iteration` | Loop iteration |
+| `attempt` | Retry attempt number |
+| `seq` | Sequential call counter within the task |
+| `toolName` | `read`, `write`, `edit`, `grep`, or `bash` |
+| `inputJson` | Serialized input arguments |
+| `outputJson` | Serialized output (truncated if over limit) |
+| `startedAtMs` | Start timestamp |
+| `finishedAtMs` | End timestamp |
+| `status` | `"success"` or `"error"` |
+| `errorJson` | Error details (if `"error"`) |
+
+## defineTool
+
+`defineTool()` wraps custom [AI SDK](https://ai-sdk.dev) tools with Smithers runtime context, deterministic idempotency keys, and durable tool-call logging.
+
+```ts
+import { defineTool } from "smithers-orchestrator";
+import { z } from "zod";
+
+const placeOrder = defineTool({
+  name: "wholefoods.place_order",
+  description: "Place a grocery order",
+  schema: z.object({
+    sku: z.string(),
+  }),
+  sideEffect: true,
+  idempotent: false,
+  async execute(args, ctx) {
+    return await wholeFoods.placeOrder({
+      sku: args.sku,
+      idempotencyKey: ctx.idempotencyKey,
+    });
+  },
+});
+```
+
+- `ctx.idempotencyKey` is stable across retries and resumes for the same task iteration.
+- `sideEffect: true` opts the tool into Smithers side-effect tracking.
+- `idempotent: false` warns resumed/retried agent loops when the tool was called in a previous attempt.
+- Every `defineTool()` call is logged to `_smithers_tool_calls`.
+
+### Side Effects and Idempotency
+
+Every custom tool that modifies external state **must** declare `sideEffect: true`. This is how Smithers protects your [workflow](/concepts/workflows-overview) during retries and resumes. Without it, Smithers treats the tool as a pure read and replays it freely — potentially sending duplicate emails, double-charging payments, or creating duplicate records.
+
+The two flags work together:
+
+| `sideEffect` | `idempotent` | Smithers behavior |
+|---|---|---|
+| `false` (default) | `true` (default) | Pure read. Safe to replay on retry. No warnings. |
+| `true` | `true` | Mutates external state, but calling twice with the same input produces the same result (e.g. an upsert, a PUT request). Safe to replay. No warnings. |
+| `true` | `false` | Mutates external state and is **not** safe to replay (e.g. sending an email, placing an order, charging a payment). On retry, Smithers injects a warning listing the tool as already called so the agent can verify external state before calling again. |
+
+With `sideEffect: true` and `idempotent: false`, Smithers does two things on retry:
+
+1. **Warns the agent.** The retry prompt lists which non-idempotent tools were already called.
+2. **Provides a stable idempotency key.** `ctx.idempotencyKey` is deterministic for a given task + iteration; pass it to external APIs that support idempotency (Stripe, AWS) to deduplicate.
+
+If your `execute` function has `sideEffect: true, idempotent: false` but omits the `ctx` parameter, Smithers logs a startup warning. This is almost always a bug — you need `ctx.idempotencyKey` to handle retries safely.
+
+```ts
+// ✗ Bad: non-idempotent side effect without ctx
+const sendEmail = defineTool({
+  name: "email.send",
+  schema: z.object({ to: z.string(), body: z.string() }),
+  sideEffect: true,
+  idempotent: false,
+  async execute(args) {  // ← missing ctx parameter, Smithers warns
+    await mailer.send(args);
+  },
+});
+
+// ✓ Good: uses ctx.idempotencyKey to deduplicate
+const sendEmail = defineTool({
+  name: "email.send",
+  schema: z.object({ to: z.string(), body: z.string() }),
+  sideEffect: true,
+  idempotent: false,
+  async execute(args, ctx) {
+    await mailer.send({ ...args, idempotencyKey: ctx.idempotencyKey });
+  },
+});
+```
+
+### What counts as a side effect
+
+A side effect is any mutation of state **outside the [sandbox](/components/sandbox)**. If the tool talks to an external API, writes to a database, sends a message, or triggers a webhook, mark it.
+
+File system changes inside the sandbox — writing files, editing code, running `git commit` — are **not** side effects. The built-in `write`, `edit`, and `bash` tools modify the working directory, but those changes are local, sandboxed, and tracked by git. They are reversible (`git checkout`, `git reset`) and inspectable (`git diff`, `git log`). Smithers does not need retry warnings or idempotency keys for them.
+
+| Tool | Side effect? | Why |
+|---|---|---|
+| Built-in `read`, `grep` | No | Pure reads |
+| Built-in `write`, `edit` | No | Sandboxed file changes, tracked by git |
+| Built-in `bash` (local commands) | No | Local execution within sandbox |
+| Custom tool calling an external API | **Yes** | Mutates state outside the sandbox |
+| Custom tool writing to a database | **Yes** | External persistent state |
+| Custom tool sending a Slack message | **Yes** | Irreversible external communication |
+| Custom tool creating a GitHub PR | **Yes** | External state visible to others |
+
+The rule is simple: **if you cannot undo it with `git reset`, mark it as a side effect.**
+
+---
+
+## read
+
+Read a file from the sandbox.
+
+```ts
+{ path: string }  // relative to rootDir or absolute
+```
+
+Returns file contents as UTF-8. Throws `"File too large"` if size exceeds `maxOutputBytes`.
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { read, grep } from "smithers-orchestrator";
+
+const codeAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, grep },
+});
+```
+
+```tsx
+{/* outputs comes from createSmithers() */}
+<Task id="review" output={outputs.review} agent={codeAgent}>
+  Read the file src/auth.ts and identify any security vulnerabilities.
+</Task>
+```
+
+---
+
+## write
+
+Write content to a file. Creates parent directories as needed.
+
+```ts
+{
+  path: string      // relative to rootDir or absolute
+  content: string
+}
+```
+
+Returns `"ok"`. Throws `"Content too large"` if content exceeds `maxOutputBytes`. Logs content hash (SHA-256) and byte size; full content is not stored.
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { write, read } from "smithers-orchestrator";
+
+const writerAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { write, read },
+});
+```
+
+---
+
+## edit
+
+Apply a unified diff patch to an existing file.
+
+```ts
+{
+  path: string    // file to patch
+  patch: string   // unified diff format
+}
+```
+
+Returns `"ok"`. The file must exist. Reads current contents, applies the patch via `applyPatch`, writes back. Throws on size limits (`"Patch too large"`, `"File too large"`) or mismatched context (`"Failed to apply patch"`). Logs patch hash and byte size.
+
+```
+--- a/src/auth.ts
++++ b/src/auth.ts
+@@ -10,3 +10,4 @@
+   const token = jwt.sign(payload, secret);
++  logger.info("Token issued", { userId: payload.sub });
+   return token;
+```
+
+---
+
+## grep
+
+Search for a regex pattern using `ripgrep`.
+
+```ts
+{
+  pattern: string    // regex
+  path?: string      // directory or file (default: rootDir)
+}
+```
+
+Returns matching lines with file paths and line numbers (`rg -n` format). Exit code 1 (no matches) returns empty string. Exit code 2 throws stderr as error. Requires `ripgrep` in PATH.
+
+```
+src/auth.ts:15:  if (token.expired()) {
+src/auth.ts:42:  validateToken(token);
+tests/auth.test.ts:8:  const token = createTestToken();
+```
+
+---
+
+## bash
+
+Execute a shell command.
+
+```ts
+{
+  cmd: string                     // executable or command
+  args?: string[]                 // arguments
+  opts?: { cwd?: string }        // working directory (sandboxed)
+}
+```
+
+Returns combined stdout and stderr. Working directory defaults to `rootDir`. Timeout: 60s (killed with `SIGKILL` via process group). Non-zero exit codes throw.
+
+### Network Blocking
+
+Controlled by `allowNetwork` in `RunOptions`, `--allow-network` on CLI, or server config. Default: blocked.
+
+When blocked, the command string (executable + args) is checked against these fragments:
+
+| Category | Blocked strings |
+|---|---|
+| HTTP clients | `curl`, `wget` |
+| URL prefixes | `http://`, `https://` |
+| Package managers | `npm`, `bun`, `pip` |
+| Git remote ops | `git push`, `git pull`, `git fetch`, `git clone`, `git remote` |
+
+Local git commands (`git status`, `git diff`, `git log`) are allowed.
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { bash } from "smithers-orchestrator";
+
+const devAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { bash },
+});
+```
+
+```tsx
+{/* outputs comes from createSmithers() */}
+<Task id="lint" output={outputs.lint} agent={devAgent}>
+  Run the linter on src/ and report any issues.
+</Task>
+```
+
+---
+
+## Using Tools with Agents
+
+Pass tools to an [AI SDK](https://ai-sdk.dev) agent and assign the agent to a [`<Task>`](/components/task):
+
+```tsx
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { read, write, edit, grep, bash } from "smithers-orchestrator";
+
+const codeAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools: { read, write, edit, grep, bash },
+  instructions: "You are a senior engineer. Use the available tools to complete tasks.",
+});
+
+const { Workflow, smithers, outputs } = createSmithers({
+  result: z.object({ summary: z.string() }),
+});
+
+export default smithers((ctx) => (
+  <Workflow name="refactor">
+    <Task id="refactor" output={outputs.result} agent={codeAgent}>
+      {`Refactor the function in ${ctx.input.file} to improve readability.`}
+    </Task>
+  </Workflow>
+));
+```
+
+The full bundle works too:
+
+```ts
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+import { tools } from "smithers-orchestrator";
+
+const fullAgent = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  tools,
+});
+```
+
+## Configuration
+
+| Option | Default | Description |
+|---|---|---|
+| `rootDir` | Workflow directory | Sandbox root |
+| `allowNetwork` | `false` | Allow network commands in `bash` |
+| `maxOutputBytes` | `200000` (200KB) | Max output size per tool |
+| `toolTimeoutMs` | `60000` (60s) | Timeout for `bash` and `grep` |
+
+```ts
+const result = await runWorkflow(workflow, {
+  input: { file: "src/auth.ts" },
+  rootDir: "/home/project",
+  allowNetwork: false,
+  maxOutputBytes: 500_000,
+  toolTimeoutMs: 120_000,
+});
+```
+
+## See Also
+
+- [Agents and Tools](/concepts/agents-and-tools)
+- [Sandbox](/components/sandbox)
+- [Common External Tools](/integrations/common-tools)
+- [Tools Agent Example](/examples/tools-agent)
+
+---
+
+## Common External Tools
+
+> Patterns for hitting GitHub, Linear, Notion, Slack, Obsidian as tools.
+
+For each external service, you have three choices:
+
+1. **OpenAPI tools** — point `createOpenApiTools()` at the service's OpenAPI spec. See `/llms-openapi.txt`.
+2. **CLI in a task** — if the service has a CLI (`gh`, `linear`, `notion`, `slack`), run it inside a `<Task>` via the `bash` tool. See `/recipes#side-effect-tools-with-idempotency`.
+3. **Custom `defineTool`** — wrap the service's REST API in a Zod-validated tool. See `/llms-integrations.txt#definetool`.
+
+## Quick decision
+
+| Service | Recommended approach |
+|---|---|
+| GitHub      | `gh` CLI in a task (auth via `gh auth login`) |
+| Linear      | `linear` CLI in a task, or OpenAPI tools |
+| Notion      | OpenAPI tools (Notion publishes a spec) |
+| Slack       | OpenAPI tools or `slack` CLI |
+| Obsidian    | `bash` tool with vault path; no API needed |
+
+Always mark side-effecting tools with `sideEffect: true` and use `ctx.idempotencyKey` so retries don't double-fire.
+
+---
+
+## Ecosystem
+
+> Community projects built on Smithers.
+
+## Burns
+
+Workspace-first local control plane for Smithers. Single UI for authoring, running, and supervising workflows across repositories. Register repos, launch runs, stream events, inspect frames, handle approvals.
+
+- React web app, ElectroBun desktop shell, or headless CLI
+- AI-assisted workflow authoring via local agent CLIs
+- SQLite-backed workspace registry
+
+<Card title="Burns" icon="github" href="https://github.com/l3wi/burns">
+  github.com/l3wi/burns
+</Card>
+
+## Ralphinho
+
+Multi-agent development workflows. Two independent workflows:
+
+- **Ralphinho** (scheduled-work) -- decomposes RFC into work units, runs tier-based quality pipelines (implement, test, review), lands via merge queue with CI verification.
+- **Improvinho** (review-discovery) -- three parallel discovery lenses (refactoring, type safety, architecture), deduplicates findings. Optionally pushes to Linear.
+
+Requires Bun and Jujutsu (`jj`). Supports Claude and Codex agents.
+
+<Card title="Ralphinho" icon="github" href="https://github.com/enitrat/ralphinho">
+  github.com/enitrat/ralphinho
+</Card>
+
+## Cairo Coder
+
+AI-powered Cairo smart contract generator. RAG pipeline (DSPy) converting natural language to Cairo contracts for Starknet. Uses Smithers with Claude and Codex agents.
+
+<Card title="Cairo Coder" icon="github" href="https://github.com/KasarLabs/cairo-coder">
+  github.com/KasarLabs/cairo-coder
+</Card>
+
+## Agentix
+
+Opinionated RFC-to-production orchestrator. Multi-phase pipelines: research, plan, implement, test, review. Role-based agents, conflict-aware merge queues, security/performance gates. DDD + BDD + TDD by default.
+
+<Card title="Agentix" icon="github" href="https://github.com/AbdelStark/agentix">
+  github.com/AbdelStark/agentix
+</Card>
+
+## Era
+
+Generic multi-phase development workflow engine. Research, Plan, Implementation, Testing, Review, Fix, Final Review pipeline with outer Loop. Role-based agents, intelligent caching, dual-layer prompts.
+
+<Card title="Era" icon="github" href="https://github.com/ClementWalter/era">
+  github.com/ClementWalter/era
+</Card>
+
+## Local Isolated Ralph
+
+Kubernetes-native Smithers workflow runner. Runs workflows as isolated K8s Jobs and CronJobs via k3s/k3d. Sandboxed container execution.
+
+<Card title="Local Isolated Ralph" icon="github" href="https://github.com/SamuelLHuber/local-isolated-ralph">
+  github.com/SamuelLHuber/local-isolated-ralph
+</Card>
+
+---
+
+## PI Integration
+
+> Use PI as a Smithers workflow CLI backend and understand how PI extensibility composes with Smithers declarative orchestration.
+
+Smithers provides deterministic orchestration (workflow graph, approvals, retries, durable state). PI provides adaptive agent capabilities (providers, models, extensions, skills, prompt templates). Use both when you need deterministic execution with flexible agent behavior.
+
+## Integration Modes
+
+### 1) PI as Workflow Agent
+
+```tsx
+import { PiAgent } from "smithers-orchestrator";
+
+const pi = new PiAgent({
+  provider: "openai",
+  model: "gpt-5.2-codex",
+  mode: "text",
+});
+
+{/* outputs comes from createSmithers() */}
+<Task id="implementation" output={outputs.implementation} agent={pi}>
+  {`Implement feature X and explain tradeoffs.`}
+</Task>
+```
+
+`PiAgent` supports all PI CLI flags: provider/model, tools, extensions, skills, prompt templates, themes, sessions. Text mode uses `--print` by default; JSON/RPC modes set `--mode` and omit `--print`.
+
+PI sessions are first-class hijack targets. `smithers hijack <runId> --target pi` reopens the PI session for local steering.
+
+### 2) PI Server Client
+
+Drive Smithers server APIs from a PI extension or any Node process via `pi-plugin`:
+
+```ts
+import { runWorkflow, approve, streamEvents } from "smithers-orchestrator/pi-plugin";
+```
+
+### 3) Hybrid: PI Extensibility + Smithers Orchestration
+
+- Keep orchestration in Smithers (`<Sequence>`, `<Parallel>`, `<Branch>`, `<Loop>`).
+- Run adaptive logic in PI tasks (extensions/skills/provider overrides).
+
+Patterns:
+
+1. PI skill-driven coding task inside a Smithers `<Task>`.
+2. PI extension command that starts/resumes Smithers workflows via server API or pi-plugin.
+3. Smithers workflow output persisted to SQLite and consumed by later PI-assisted tasks.
+
+## Hijacking PI Sessions
+
+PI is a native-session hijack backend.
+
+- Live run: Smithers watches PI's event stream, waits between blocking tool calls, then hands off the session.
+- Finished/cancelled run: Smithers reopens the latest persisted PI session.
+- Relaunch uses the stored session ID: `pi --session <id>`.
+- Clean exit resumes the workflow automatically.
+
+Session persistence:
+
+- `PiAgent` defaults `noSession` to `true` for one-shot calls.
+- For workflow hijack/resume/streaming, Smithers keeps session persistence enabled automatically.
+- `mode: "json"` is not required for hijack support.
+
+## Setup
+
+1. Install PI CLI and add to `PATH`.
+2. Configure PI credentials via env/config (prefer over CLI args for API keys).
+3. Instantiate `PiAgent` with explicit options in workflows.
+4. For server-driven workflows, use `pi-plugin`.
+
+```bash
+pi --version
+bun run test
+```
+
+## Design Guidance
+
+| Use `PiAgent` tasks when | Use Smithers-native tasks when |
+|---|---|
+| You need PI capabilities inside deterministic workflows | You need strict reproducibility and narrow tool contracts |
+| You want PI calls as auditable workflow steps | |
+
+## Limitations
+
+Chat-provider integration lives in host applications, not this repo.
+

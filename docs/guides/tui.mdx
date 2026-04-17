@@ -4,16 +4,16 @@ description: Chat-first terminal control plane for orchestrating, monitoring, an
 ---
 
 ```bash
-smithers tui
+bunx smithers-orchestrator tui
 ```
 
-The TUI is a chat-first orchestration console. The default surface is a unified activity feed and composer, not a dashboard. Monitoring, approvals, and telemetry are visible without leaving the main workspace.
+A chat-first orchestration console. The default surface is a unified activity feed and composer, not a dashboard. Monitoring, approvals, and telemetry are visible without leaving the main workspace.
 
 ## Product stance
 
 Smithers TUI complements the CLI. Every meaningful UI action maps to a Smithers API or CLI operation, preserving the same durable, scriptable mental model.
 
-The TUI is **not** a full replacement for Claude Code, Codex CLI, Gemini CLI, or Amp. It is not a direct-edit harness by default. It is the orchestration layer above harnesses and API providers.
+The TUI is **not** a replacement for Claude Code, Codex CLI, Gemini CLI, or Amp. It is not a direct-edit harness by default. It is the orchestration layer above harnesses and API providers.
 
 ## Shell layout
 
@@ -49,7 +49,7 @@ budget 18k ctx   Enter send   Alt+Enter queue   Ctrl+G editor
 
 ## Workspaces
 
-A workspace is the top-level unit of activity. It contains a title, repo/cwd, current provider profile, mode, feed history, queued messages, linked runs, pinned context, and approval state.
+A workspace is the top-level unit of activity. It holds a title, repo/cwd, current provider profile, mode, feed history, queued messages, linked runs, pinned context, and approval state.
 
 The left rail shows all open workspaces. Each row displays:
 
@@ -85,19 +85,19 @@ The center pane is a unified activity feed that mixes all orchestration activity
 | Error | Red label, compact summary first, stack collapsed underneath |
 | Summary | Assistant-generated summaries for long activity blocks |
 
-The feed streams incrementally and auto-scrolls unless you manually scroll away. A `LIVE` / `PAUSED` indicator appears in the feed header. To prevent scroll-blindness, active long-running workflows pin a sticky status header tracking progress, and related tool events are grouped with vertical ASCII spines.
+The feed streams incrementally and auto-scrolls unless you scroll away. A `LIVE` / `PAUSED` indicator appears in the feed header. Long-running workflows pin a sticky status header tracking progress, and related tool events group with vertical ASCII spines.
 
 ### Empty states
 
-New workspaces avoid the "blank terminal" syndrome by rendering a non-persistent Welcome Bento Board in the feed area. It displays current repo git status and proposes 3 suggested actions based on the repository heuristcs (e.g. noticing a `package.json` and suggesting a test workflow). This board naturally scrolls away once feed items occur.
+New workspaces avoid the "blank terminal" syndrome by rendering a non-persistent Welcome Bento Board in the feed area. It displays current repo git status and proposes 3 suggested actions based on repository heuristics (e.g. spotting a `package.json` and suggesting a test workflow). The board scrolls away once feed items appear.
 
 ## Inspector
 
-The right rail shows details for the currently selected feed item. 
+The right rail shows details for the currently selected feed item.
 
-The inspector is a dynamic, context-sensitive precision surface. Instead of showing persistent empty tabs, the pane's title and contents morph based entirely on the selection. A breadcrumb (e.g., `Inspector • Run a93f` or `Inspector • src/auth.ts`) grounds the user.
+A dynamic, context-sensitive precision surface. Instead of persistent empty tabs, the pane's title and contents morph with the selection. A breadcrumb (e.g., `Inspector • Run a93f` or `Inspector • src/auth.ts`) grounds the user.
 
-Depending on the selection, the inspector can render:
+Depending on the selection, the inspector renders:
 - **Run** -- run graph, status, steps, cost
 - **Context** -- pinned context items, token budget
 - **Workflow** -- schema, last runs, provider hints
@@ -109,7 +109,7 @@ The inspector reacts to the current feed selection immediately. Selecting a run 
 
 ## Composer
 
-The composer is a small command desk at the bottom of the shell.
+A small command desk at the bottom of the shell.
 
 ```text
 [#review-pr] [@src/auth.ts] [@README.md] [+2]
@@ -174,7 +174,7 @@ No global single-key kill/approve while unfocused. Approval actions only appear 
 
 ## Modes
 
-The TUI supports three operating modes, switchable via `/mode` or `Ctrl+L`:
+Three operating modes, switchable with `/mode` or `Ctrl+L`:
 
 ### Operator (default)
 
@@ -206,7 +206,7 @@ A provider profile routes work by task class. Example:
 - Repo implementation -> Claude Code or Codex harness
 - Final summary -> cheap model
 
-The current provider and routing policy are visible in the top line and editable via `/provider` and `/profiles`.
+The current provider and routing policy are visible in the top line and editable with `/provider` and `/profiles`.
 
 ## Workflow catalog
 
@@ -248,7 +248,7 @@ The inspector supports deep run inspection:
 - Raw/structured output
 - Retry, resume, and cancel actions
 
-Navigate from a feed item to the deep run inspector in one action. Attach to any active run. Run state persists if the TUI exits.
+Navigate from a feed item to the deep run inspector in one action. Attach to any active run. Run state persists across TUI exits.
 
 ## Notifications
 
@@ -313,7 +313,7 @@ Notifications appear as in-app badges on the workspace rail. Terminal bell, OSC 
 
 ## Command palette
 
-Press `Ctrl+O` to open the global command palette. All slash commands and contextual actions are searchable here. Natural language also works -- type what you want and the assistant interprets it.
+Press `Ctrl+O` to open the global command palette. All slash commands and contextual actions are searchable here. Natural language works too — type what you want and the assistant interprets it.
 
 ## Persistence and recovery
 
@@ -328,7 +328,7 @@ Persisted state includes: last active workspace, composer draft, attachment chip
 
 ## Monitoring with Claude Code
 
-Smithers persists all state to SQLite and exposes it through the CLI, so Claude Code can query status and report progress without interrupting execution.
+Smithers persists all state to SQLite and exposes it through the CLI, so Claude Code queries status and reports progress without interrupting execution.
 
 Set up a recurring health check with `/cron`:
 
@@ -360,6 +360,6 @@ Other patterns:
 
 ## Next steps
 
-- [CLI Reference](/cli/overview) -- All CLI commands including `smithers tui`.
-- [Monitoring & Logs](/guides/monitoring-logs) -- Observability with Grafana and Prometheus.
-- [Debugging](/guides/debugging) -- Diagnosing workflow issues.
+- [CLI Reference](/cli/overview) -- all CLI commands including `smithers tui`.
+- [Monitoring & Logs](/guides/monitoring-logs) -- observability with Grafana and Prometheus.
+- [Debugging](/guides/debugging) -- diagnosing workflow issues.

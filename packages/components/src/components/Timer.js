@@ -1,6 +1,6 @@
 import React from "react";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./Timer.ts").TimerProps} TimerProps */
+/** @typedef {import("./TimerProps.ts").TimerProps} TimerProps */
 
 /**
  * @param {TimerProps} props

@@ -1,13 +1,13 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./adapter.ts").AlertSeverity} AlertSeverity */
-/** @typedef {import("./adapter.ts").ApprovalRow} ApprovalRow */
-/** @typedef {import("./adapter.ts").CacheRow} CacheRow */
-/** @typedef {import("./adapter.ts").NodeRow} NodeRow */
-/** @typedef {import("./adapter.ts").PendingHumanRequestRow} PendingHumanRequestRow */
-/** @typedef {import("./adapter.ts").RunAncestryRow} RunAncestryRow */
-/** @typedef {import("./adapter.ts").RunRow} RunRow */
-/** @typedef {import("./adapter.ts").SignalRow} SignalRow */
-/** @typedef {import("./adapter.ts").StaleRunRecord} StaleRunRecord */
+/** @typedef {import("./adapter/AlertSeverity.ts").AlertSeverity} AlertSeverity */
+/** @typedef {import("./adapter/ApprovalRow.ts").ApprovalRow} ApprovalRow */
+/** @typedef {import("./adapter/CacheRow.ts").CacheRow} CacheRow */
+/** @typedef {import("./adapter/NodeRow.ts").NodeRow} NodeRow */
+/** @typedef {import("./adapter/PendingHumanRequestRow.ts").PendingHumanRequestRow} PendingHumanRequestRow */
+/** @typedef {import("./adapter/RunAncestryRow.ts").RunAncestryRow} RunAncestryRow */
+/** @typedef {import("./adapter/RunRow.ts").RunRow} RunRow */
+/** @typedef {import("./adapter/SignalRow.ts").SignalRow} SignalRow */
+/** @typedef {import("./adapter/StaleRunRecord.ts").StaleRunRecord} StaleRunRecord */
 // @smithers-type-exports-end
 
 import { getTableName, sql } from "drizzle-orm";
@@ -20,21 +20,18 @@ import { FRAME_KEYFRAME_INTERVAL, applyFrameDeltaJson, encodeFrameDelta, normali
 import { getKeyColumns } from "./output.js";
 import { withSqliteWriteRetryEffect } from "./write-retry.js";
 import { camelToSnake } from "./utils/camelToSnake.js";
-/** @typedef {import("./adapter.ts").adapter} adapter */
-/** @typedef {import("./output.ts").output} output */
-
-/** @typedef {import("./adapter.ts").AlertRow} AlertRow */
-/** @typedef {import("./adapter.ts").AlertStatus} AlertStatus */
-/** @typedef {import("./adapter.ts").AttemptRow} AttemptRow */
+/** @typedef {import("./adapter/AlertRow.ts").AlertRow} AlertRow */
+/** @typedef {import("./adapter/AlertStatus.ts").AlertStatus} AlertStatus */
+/** @typedef {import("./adapter/AttemptRow.ts").AttemptRow} AttemptRow */
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} BunSQLiteDatabase */
-/** @typedef {import("./adapter.ts").EventHistoryQuery} EventHistoryQuery */
-/** @typedef {import("./adapter.ts").HumanRequestRow} HumanRequestRow */
-/** @typedef {import("./output.ts").OutputKey} OutputKey */
+/** @typedef {import("./adapter/EventHistoryQuery.ts").EventHistoryQuery} EventHistoryQuery */
+/** @typedef {import("./adapter/HumanRequestRow.ts").HumanRequestRow} HumanRequestRow */
+/** @typedef {import("./output/OutputKey.ts").OutputKey} OutputKey */
 /**
  * @template A, E
  * @typedef {Effect.Effect<A, E> & PromiseLike<A>} RunnableEffect
  */
-/** @typedef {import("./adapter.ts").SignalQuery} SignalQuery */
+/** @typedef {import("./adapter/SignalQuery.ts").SignalQuery} SignalQuery */
 /** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
 
 export const DB_ALERT_ID_MAX_LENGTH = 256;
@@ -306,23 +303,20 @@ function isAlertActiveStatus(status) {
     return status !== undefined && status !== null && ACTIVE_ALERT_STATUSES.has(status);
 }
 /**
+ * Returns the row unchanged. Historically this helper relabeled
+ * stale-heartbeat "running" rows as "continued", which is wrong: "continued"
+ * is reserved for runs that successfully forked into a new run, and
+ * `deriveRunState` then maps "continued" → "succeeded" — so a dead workflow
+ * was being reported as a success. Heartbeat-based classification now lives
+ * exclusively in `deriveRunState`, which correctly returns "stale" or
+ * "orphaned". This shim is kept so the `listRuns` / `getRun` call sites
+ * continue to compile; remove it once they call `deriveRunState` directly.
+ *
  * @template T
  * @param {T} row
  * @returns {T}
  */
 function classifyRunRowStatus(row) {
-    const isRunHeartbeatFresh = Boolean(row.status === "running" &&
-        typeof row.heartbeatAtMs === "number" &&
-        Date.now() - row.heartbeatAtMs <= RUN_HEARTBEAT_STALE_MS);
-    if (row.status === "running" &&
-        typeof row.heartbeatAtMs === "number" &&
-        row.heartbeatAtMs > 0 &&
-        !isRunHeartbeatFresh) {
-        return {
-            ...row,
-            status: "continued",
-        };
-    }
     return row;
 }
 /**
@@ -1856,6 +1850,108 @@ export class SmithersDb {
          FROM _smithers_cache
          WHERE cache_key = ?
          LIMIT 1`, [cacheKey]));
+    }
+    /**
+   * @param {{ runId: string; nodeId: string; iteration: number; baseRef: string; diffJson: string; computedAtMs: number; sizeBytes: number; }} row
+   */
+    upsertNodeDiffCache(row) {
+        return this.write(`upsert node diff ${row.nodeId}@${row.iteration}`, () => this.internalStorage.upsert("_smithers_node_diffs", row, ["runId", "nodeId", "iteration", "baseRef"]));
+    }
+    /**
+   * @param {string} runId
+   * @param {string} nodeId
+   * @param {number} iteration
+   * @param {string} baseRef
+   */
+    getNodeDiffCache(runId, nodeId, iteration, baseRef) {
+        return this.read(`get node diff ${nodeId}@${iteration}`, () => this.internalStorage.queryOne(`SELECT *
+         FROM _smithers_node_diffs
+         WHERE run_id = ? AND node_id = ? AND iteration = ? AND base_ref = ?
+         LIMIT 1`, [runId, nodeId, iteration, baseRef]));
+    }
+    /**
+   * @param {string} [runId]
+   */
+    countNodeDiffCacheRows(runId) {
+        const self = this;
+        return runnableEffect(Effect.gen(function* () {
+            const row = yield* (runId
+                ? self.read(`count node diff cache rows ${runId}`, () => self.internalStorage.queryOne(`SELECT COUNT(*) AS count
+           FROM _smithers_node_diffs
+           WHERE run_id = ?`, [runId]))
+                : self.read("count node diff cache rows", () => self.internalStorage.queryOne(`SELECT COUNT(*) AS count
+           FROM _smithers_node_diffs`)));
+            return Number(row?.count ?? 0);
+        }));
+    }
+    /**
+   * @param {string} runId
+   * @param {number} targetFrameNo
+   */
+    invalidateNodeDiffsAfterFrame(runId, targetFrameNo) {
+        const self = this;
+        return runnableEffect(Effect.gen(function* () {
+            // Frame-based invalidation (not timestamp-based):
+            // An attempt "belongs to" frame F where F is the lowest
+            // frame_no whose created_at_ms >= attempt.started_at_ms
+            // (i.e. the first frame that could record the attempt's
+            // effects). If no such frame exists, the attempt is
+            // conceptually beyond all captured frames and MUST be
+            // invalidated whenever we truncate.
+            //
+            // An attempt is invalidated iff its frameNo > targetFrameNo.
+            // Equivalently: there is NO frame F with
+            //   F.frame_no <= targetFrameNo AND F.created_at_ms >= a.started_at_ms.
+            const targetFrame = yield* self.read(`get target frame ${runId}:${targetFrameNo}`, () => self.internalStorage.queryOne(`SELECT created_at_ms AS createdAtMs
+           FROM _smithers_frames
+           WHERE run_id = ? AND frame_no = ?
+           LIMIT 1`, [runId, targetFrameNo]));
+            if (!targetFrame || typeof targetFrame.createdAtMs !== "number") {
+                return 0;
+            }
+            // Reference the target frame's created_at_ms to silence unused
+            // reads on SQLite engines that strip selects; the real frame
+            // membership check happens inside the NOT EXISTS below.
+            void targetFrame;
+            const attemptPredicate = `EXISTS (
+               SELECT 1
+               FROM _smithers_attempts a
+               WHERE a.run_id = d.run_id
+                 AND a.node_id = d.node_id
+                 AND a.iteration = d.iteration
+                 AND NOT EXISTS (
+                   SELECT 1
+                   FROM _smithers_frames f
+                   WHERE f.run_id = a.run_id
+                     AND f.frame_no <= ?
+                     AND f.created_at_ms >= a.started_at_ms
+                 )
+             )`;
+            const countRow = yield* self.read(`count node diff invalidation ${runId}:${targetFrameNo}`, () => self.internalStorage.queryOne(`SELECT COUNT(*) AS count
+           FROM _smithers_node_diffs d
+           WHERE d.run_id = ?
+             AND ${attemptPredicate}`, [runId, targetFrameNo]));
+            const deleted = Number(countRow?.count ?? 0);
+            if (deleted === 0) {
+                return 0;
+            }
+            yield* self.write(`invalidate node diffs ${runId}:${targetFrameNo}`, () => self.internalStorage.deleteWhere("_smithers_node_diffs", `run_id = ?
+         AND EXISTS (
+           SELECT 1
+           FROM _smithers_attempts a
+           WHERE a.run_id = _smithers_node_diffs.run_id
+             AND a.node_id = _smithers_node_diffs.node_id
+             AND a.iteration = _smithers_node_diffs.iteration
+             AND NOT EXISTS (
+               SELECT 1
+               FROM _smithers_frames f
+               WHERE f.run_id = a.run_id
+                 AND f.frame_no <= ?
+                 AND f.created_at_ms >= a.started_at_ms
+             )
+         )`, [runId, targetFrameNo]));
+            return deleted;
+        }));
     }
     /**
    * @param {string} nodeId

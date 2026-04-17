@@ -1,143 +1,58 @@
 ---
 title: <Aspects>
-description: Declarative cross-cutting concerns — token budgets, latency SLOs, and cost tracking — applied at workflow scope without modifying individual tasks.
+description: Propagate token, latency, and cost budgets to descendant tasks.
 ---
 
-```tsx
+```ts
 import { Aspects } from "smithers-orchestrator";
+
+type TokenBudgetConfig = {
+  max: number;
+  perTask?: number;
+  onExceeded?: "fail" | "warn" | "skip-remaining"; // default "fail"
+};
+
+type LatencySloConfig = {
+  maxMs: number;
+  perTask?: number;
+  onExceeded?: "fail" | "warn"; // default "fail"
+};
+
+type CostBudgetConfig = {
+  maxUsd: number;
+  onExceeded?: "fail" | "warn" | "skip-remaining"; // default "fail"
+};
+
+type TrackingConfig = { tokens?: boolean; latency?: boolean; cost?: boolean };
+
+type AspectsProps = {
+  tokenBudget?: TokenBudgetConfig;
+  latencySlo?: LatencySloConfig;
+  costBudget?: CostBudgetConfig;
+  tracking?: TrackingConfig; // default all true
+  children: ReactNode;
+};
 ```
 
-Aspects wraps a section of the workflow tree and propagates budget constraints and tracking configuration to all descendant `<Task>` components. Individual tasks do not need to be modified — the constraints flow through React context.
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `tokenBudget` | `TokenBudgetConfig` | `undefined` | Token budget for all tasks in scope. |
-| `latencySlo` | `LatencySloConfig` | `undefined` | Latency SLO for all tasks in scope. |
-| `costBudget` | `CostBudgetConfig` | `undefined` | Cost budget in USD for all tasks in scope. |
-| `tracking` | `TrackingConfig` | `{ tokens: true, latency: true, cost: true }` | Which metrics to track. |
-| `children` | `ReactNode` | — | Workflow content these aspects apply to. |
-
-### TokenBudgetConfig
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `max` | `number` | **(required)** | Maximum total tokens across all tasks in scope. |
-| `perTask` | `number` | `undefined` | Optional per-task token limit. |
-| `onExceeded` | `"fail" \| "warn" \| "skip-remaining"` | `"fail"` | Behavior when the budget is exceeded. |
-
-### LatencySloConfig
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `maxMs` | `number` | **(required)** | Maximum total latency in ms across all tasks. |
-| `perTask` | `number` | `undefined` | Optional per-task latency limit in ms. |
-| `onExceeded` | `"fail" \| "warn"` | `"fail"` | Behavior when the SLO is exceeded. |
-
-### CostBudgetConfig
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `maxUsd` | `number` | **(required)** | Maximum total cost in USD across all tasks. |
-| `onExceeded` | `"fail" \| "warn" \| "skip-remaining"` | `"fail"` | Behavior when the budget is exceeded. |
-
-### TrackingConfig
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `tokens` | `boolean` | `true` | Track token usage. |
-| `latency` | `boolean` | `true` | Track latency. |
-| `cost` | `boolean` | `true` | Track cost. |
-
-## Basic usage
-
-Wrap any section of your workflow with `<Aspects>` to apply budgets:
-
 ```tsx
-import { createSmithers, Aspects } from "smithers-orchestrator";
-import { z } from "zod";
-
-const { Workflow, smithers, outputs } = createSmithers({
-  analysis: z.object({ summary: z.string() }),
-  review: z.object({ verdict: z.string() }),
-});
-
-export default smithers((ctx) => (
-  <Workflow name="budgeted-workflow">
-    <Aspects
-      tokenBudget={{ max: 100_000, perTask: 25_000, onExceeded: "warn" }}
-      latencySlo={{ maxMs: 30_000, onExceeded: "fail" }}
-    >
-      <Task id="analyze" output={outputs.analysis} agent={codeAgent}>
-        Analyze the repository.
-      </Task>
-      <Task id="review" output={outputs.review} agent={reviewAgent}>
-        Review the analysis.
-      </Task>
-    </Aspects>
-  </Workflow>
-));
-```
-
-Both tasks inherit the token budget and latency SLO without any per-task configuration.
-
-## Cost tracking
-
-Track and limit spending across a workflow scope:
-
-```tsx
-<Aspects
-  costBudget={{ maxUsd: 5.00, onExceeded: "skip-remaining" }}
-  tracking={{ cost: true, tokens: true, latency: false }}
->
-  <Task id="expensive-analysis" output={outputs.analysis} agent={gpt4Agent}>
-    Perform deep analysis.
-  </Task>
-  <Task id="summary" output={outputs.summary} agent={fastAgent}>
-    Summarize the results.
-  </Task>
-</Aspects>
-```
-
-When the cost budget is exceeded with `onExceeded: "skip-remaining"`, subsequent tasks in the scope are skipped.
-
-## Nesting
-
-Aspects can be nested. Inner scopes inherit from outer scopes, with inner values taking precedence:
-
-```tsx
-<Aspects tokenBudget={{ max: 200_000 }}>
-  <Task id="step1" output={outputs.step1} agent={agent}>
-    Step 1
-  </Task>
-
-  <Aspects tokenBudget={{ max: 50_000, perTask: 10_000 }}>
-    <Task id="step2" output={outputs.step2} agent={agent}>
-      Step 2 — tighter budget
+<Workflow name="budgeted-workflow">
+  <Aspects
+    tokenBudget={{ max: 100_000, perTask: 25_000, onExceeded: "warn" }}
+    latencySlo={{ maxMs: 30_000, onExceeded: "fail" }}
+    costBudget={{ maxUsd: 5.0, onExceeded: "skip-remaining" }}
+  >
+    <Task id="analyze" output={outputs.analysis} agent={codeAgent}>
+      Analyze the repository.
+    </Task>
+    <Task id="review" output={outputs.review} agent={reviewAgent}>
+      Review the analysis.
     </Task>
   </Aspects>
-</Aspects>
+</Workflow>
 ```
-
-The inner `<Aspects>` overrides `tokenBudget` but inherits any `latencySlo` or `costBudget` from the outer scope.
-
-## Exceeded behavior
-
-| `onExceeded` value | Behavior |
-| --- | --- |
-| `"fail"` | Task fails with `SmithersError` code `ASPECT_BUDGET_EXCEEDED`. Follows normal retry/`continueOnFail` behavior. |
-| `"warn"` | Task completes normally. A warning event is emitted. |
-| `"skip-remaining"` | Current task completes. Subsequent tasks in the Aspects scope are skipped. |
-
-## How it works
-
-`<Aspects>` is a React context provider. It creates an `AspectContext` that descendant `<Task>` components read during rendering. When the engine executes a task, it checks the attached aspect metadata for budget limits and tracking configuration.
-
-The accumulator tracks running totals (tokens, latency, cost) across all tasks in the scope. Each task execution updates the accumulator, and subsequent tasks check against the configured limits.
 
 ## Notes
 
-- Aspects only apply to tasks mounted as descendants in the React tree. Tasks outside the `<Aspects>` wrapper are unaffected.
-- Budget tracking is per-run. Resuming a workflow resets the accumulator.
-- The `tracking` prop controls which metrics are collected, not which budgets are enforced. You can set a `tokenBudget` without enabling token tracking (the budget still applies; the metric just is not recorded for observability).
+- Nested `<Aspects>` inherit outer values; inner fields override per-config.
+- Budgets enforce regardless of `tracking`; `tracking` controls metric emission only.
+- Accumulator is per-run and resets on resume.

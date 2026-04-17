@@ -2,10 +2,8 @@ import { Effect } from "effect";
 import { revertToJjPointer } from "@smithers/vcs/jj";
 import * as BunContext from "@effect/platform-bun/BunContext";
 import { nowMs } from "@smithers/scheduler/nowMs";
-/** @typedef {import("./revert.ts").revert} revert */
-
-/** @typedef {import("./revert.ts").RevertOptions} RevertOptions */
-/** @typedef {import("./revert.ts").RevertResult} RevertResult */
+/** @typedef {import("./RevertOptions.ts").RevertOptions} RevertOptions */
+/** @typedef {import("./RevertResult.ts").RevertResult} RevertResult */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 
 /**

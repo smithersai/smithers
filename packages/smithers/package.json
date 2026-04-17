@@ -6,26 +6,27 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "types": "./src/index.d.ts",
       "import": "./src/index.js",
-      "default": "./src/index.js",
-      "types": "./src/index.ts"
+      "default": "./src/index.js"
     },
     "./*": {
+      "types": "./src/index.d.ts",
       "import": "./src/*.js",
-      "default": "./src/*.js",
-      "types": "./src/*.ts"
+      "default": "./src/*.js"
     },
     "./jsx-dev-runtime": {
+      "types": "./src/index.d.ts",
       "import": "./src/jsx-runtime.js",
-      "default": "./src/jsx-runtime.js",
-      "types": "./src/jsx-runtime.ts"
+      "default": "./src/jsx-runtime.js"
     }
   },
   "files": [
     "src/"
   ],
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsup --dts-only"
   },
   "dependencies": {
     "@smithers/agents": "workspace:*",

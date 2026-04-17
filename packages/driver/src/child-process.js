@@ -5,8 +5,8 @@ import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { toolOutputTruncatedTotal } from "@smithers/observability/metrics";
 import { logDebug, logWarning } from "@smithers/observability/logging";
-/** @typedef {import("./child-process.ts").SpawnCaptureOptions} SpawnCaptureOptions */
-/** @typedef {import("./child-process.ts").SpawnCaptureResult} SpawnCaptureResult */
+/** @typedef {import("./SpawnCaptureOptions.ts").SpawnCaptureOptions} SpawnCaptureOptions */
+/** @typedef {import("./SpawnCaptureResult.ts").SpawnCaptureResult} SpawnCaptureResult */
 
 /**
  * @param {string} text

@@ -1,41 +1,8 @@
 ---
 title: Troubleshooting
-description: Common setup, runtime, and workflow issues with diagnosis paths.
+description: Folded into the CLI overview.
 ---
 
-## By Subsystem
+This material is now in [CLI Overview](/cli/overview).
 
-| Symptom | Guide |
-|---|---|
-| Workflow state, stuck runs, SQLite inspection | [Debugging](/guides/debugging) |
-| Retries, timeouts, skips, graceful degradation | [Error Handling](/guides/error-handling) |
-| File-watcher and prompt reload behavior | [Hot Reload](/guides/hot-reload) |
-| Event streaming, approvals, server APIs | [Server Integration](/integrations/server) |
-| Workspace snapshots and revert behavior | [VCS Integration](/guides/vcs) |
-
-## Common Failures
-
-**A task did not rerun** -- Smithers resumes by `runId`. If a node already completed for the current `runId`, it is skipped. Use a new `runId` for a fresh run, or inspect persisted attempts first.
-
-**MDX prompt rendered as `[object Object]`** -- The MDX preload was not registered. Confirm `preload.ts` calls `mdxPlugin()` and `bunfig.toml` points at the preload file. If running tests, verify that the `[test]` section in `bunfig.toml` also lists the preload. See [Package Configuration](/reference/package-configuration#test-configuration).
-
-**Workflow code changed but running task did not** -- Hot reload only affects unscheduled work. In-flight tasks continue with the code they started with.
-
-## General Diagnosis
-
-```bash
-smithers inspect <runId>
-smithers logs <runId> --tail 20 --follow false
-```
-
-If the CLI summary is insufficient, query SQLite directly. See [Debugging](/guides/debugging).
-
-## Agent Diagnostics
-
-When a CLI agent fails, Smithers automatically runs diagnostics to check for common issues (binary not installed, API key invalid, rate limit hit). The diagnostic summary is printed to stderr:
-
-```
-[diagnostics] claude: api_key_valid=fail: Rate limit detected in error (142ms)
-```
-
-The full diagnostic report is also attached to the error's `details.diagnostics` field for programmatic inspection.
+When a CLI agent fails, Smithers automatically runs diagnostics (binary installed, API key valid, rate limit hit) and prints a one-line summary to stderr; the full report is attached to the error's `details.diagnostics` field.

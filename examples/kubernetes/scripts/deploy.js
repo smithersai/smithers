@@ -16,7 +16,7 @@ async function deploy() {
             }
             // Build images
             console.log("Building Docker images...");
-            await $ `bun run scripts/build.ts`;
+            await $ `bun run scripts/build.js`;
             // Load into minikube
             console.log("Loading images into minikube...");
             await $ `minikube image load smithers-orchestrator:latest`;

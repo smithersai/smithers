@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./SuperSmithers.ts").SuperSmithersProps} SuperSmithersProps */
+/** @typedef {import("./SuperSmithersProps.ts").SuperSmithersProps} SuperSmithersProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -27,6 +27,7 @@ import React from "react";
  *   reportOutput={outputs.report}
  * />
  * ```
+ * @param {SuperSmithersProps} props
  */
 export function SuperSmithers(props) {
     const { id: idPrefix, strategy, agent, targetFiles, reportOutput, dryRun, skipIf, } = props;

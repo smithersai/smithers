@@ -1,9 +1,9 @@
 // @smithers-type-exports-begin
 /**
  * @template D
- * @typedef {import("./Task.ts").InferDeps<D>} InferDeps
+ * @typedef {import("./InferDeps.ts").InferDeps<D>} InferDeps
  */
-/** @typedef {import("./Task.ts").OutputTarget} OutputTarget */
+/** @typedef {import("./OutputTarget.ts").OutputTarget} OutputTarget */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -17,8 +17,11 @@ import { ClaudeCodeAgent } from "@smithers/agents/ClaudeCodeAgent";
 import { GeminiAgent } from "@smithers/agents/GeminiAgent";
 import { PiAgent } from "@smithers/agents/PiAgent";
 /** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
-/** @typedef {import("./Task.ts").DepsSpec} DepsSpec */
-/** @typedef {import("./Task.ts").TaskProps} TaskProps */
+/** @typedef {import("./DepsSpec.ts").DepsSpec} DepsSpec */
+/**
+ * @template Row, Output, D
+ * @typedef {import("./TaskProps.ts").TaskProps<Row, Output, D>} TaskProps
+ */
 
 /**
  * Render a prompt React node to plain markdown text.
@@ -27,6 +30,8 @@ import { PiAgent } from "@smithers/agents/PiAgent";
  * `markdownComponents` via the standard MDX `components` prop so that
  * renderToStaticMarkup outputs clean markdown instead of HTML.
  * No HTML tag stripping or entity decoding needed.
+ * @param {any} prompt
+ * @returns {string}
  */
 export function renderPromptToText(prompt) {
     if (prompt == null)

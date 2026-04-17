@@ -1,16 +1,18 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./SmithersDevTools.ts").DevToolsEventBus} DevToolsEventBus */
-/** @typedef {import("./SmithersDevTools.ts").DevToolsEventHandler} DevToolsEventHandler */
-/** @typedef {import("./SmithersDevTools.ts").DevToolsSnapshot} DevToolsSnapshot */
-/** @typedef {import("./SmithersDevTools.ts").RunExecutionState} RunExecutionState */
-/** @typedef {import("./SmithersDevTools.ts").SmithersNodeType} SmithersNodeType */
-/** @typedef {import("./SmithersDevTools.ts").TaskExecutionState} TaskExecutionState */
+/** @typedef {import("@smithers/devtools").DevToolsEventBus} DevToolsEventBus */
+/** @typedef {import("@smithers/devtools").DevToolsEventHandler} DevToolsEventHandler */
+/** @typedef {import("@smithers/devtools").DevToolsSnapshot} DevToolsSnapshot */
+/** @typedef {import("@smithers/devtools").RunExecutionState} RunExecutionState */
+/** @typedef {import("@smithers/devtools").SmithersNodeType} SmithersNodeType */
+/** @typedef {import("@smithers/devtools").TaskExecutionState} TaskExecutionState */
 // @smithers-type-exports-end
 
 import { instrument, secure, installRDTHook, traverseFiber, getDisplayName, isHostFiber, getFiberId, setFiberId, } from "bippy";
 import { SmithersDevToolsCore, printTree, } from "@smithers/devtools";
 /** @typedef {import("@smithers/devtools").DevToolsNode} DevToolsNode */
+/** @typedef {import("@smithers/devtools").SmithersDevToolsCore} SmithersDevToolsCoreType */
 /** @typedef {import("@smithers/devtools").SmithersDevToolsOptions} SmithersDevToolsOptions */
+/** @typedef {any} Fiber */
 
 // ---------------------------------------------------------------------------
 // React host tag mapping
@@ -185,7 +187,9 @@ function findSmithersRoot(fiberRoot) {
 // React adapter
 // ---------------------------------------------------------------------------
 export class SmithersDevTools {
+    /** @type {SmithersDevToolsOptions} */
     options;
+    /** @type {SmithersDevToolsCoreType} */
     core;
     _active = false;
     _cleanup = null;
@@ -253,12 +257,21 @@ export class SmithersDevTools {
         this._cleanup = () => {
             if (!hook)
                 return;
-            if (hook.onCommitFiberRoot === installedRootHandler && previousRootHandler) {
-                hook.onCommitFiberRoot = previousRootHandler;
+            if (hook.onCommitFiberRoot === installedRootHandler) {
+                if (previousRootHandler) {
+                    hook.onCommitFiberRoot = previousRootHandler;
+                }
+                else {
+                    delete hook.onCommitFiberRoot;
+                }
             }
-            if (hook.onCommitFiberUnmount === installedUnmountHandler &&
-                previousUnmountHandler) {
-                hook.onCommitFiberUnmount = previousUnmountHandler;
+            if (hook.onCommitFiberUnmount === installedUnmountHandler) {
+                if (previousUnmountHandler) {
+                    hook.onCommitFiberUnmount = previousUnmountHandler;
+                }
+                else {
+                    delete hook.onCommitFiberUnmount;
+                }
             }
         };
         return this;
@@ -273,40 +286,71 @@ export class SmithersDevTools {
     /**
      * Attach to a Smithers EventBus to track task execution state.
      * Listens for SmithersEvent emissions and builds up a run state model.
+     * @param {DevToolsEventBus} bus
+     * @returns {this}
      */
     attachEventBus(bus) {
         this.core.attachEventBus(bus);
         return this;
     }
-    /** Get execution state for a specific run. */
+    /**
+     * Get execution state for a specific run.
+     * @param {string} runId
+     * @returns {RunExecutionState | undefined}
+     */
     getRun(runId) {
         return this.core.getRun(runId);
     }
-    /** Get all tracked runs. */
+    /**
+     * Get all tracked runs.
+     * @returns {Map<string, RunExecutionState>}
+     */
     get runs() {
         return this.core.runs;
     }
-    /** Get task execution state by nodeId within a run. Searches all iterations. */
+    /**
+     * Get task execution state by nodeId within a run. Searches all iterations.
+     * @param {string} runId
+     * @param {string} nodeId
+     * @param {number} [iteration]
+     * @returns {TaskExecutionState | undefined}
+     */
     getTaskState(runId, nodeId, iteration) {
         return this.core.getTaskState(runId, nodeId, iteration);
     }
-    /** Get the last captured snapshot. */
+    /**
+     * Get the last captured snapshot.
+     * @returns {DevToolsSnapshot | null}
+     */
     get snapshot() {
         return this.core.snapshot;
     }
-    /** Get the current tree (shorthand). */
+    /**
+     * Get the current tree (shorthand).
+     * @returns {DevToolsNode | null}
+     */
     get tree() {
         return this.core.tree;
     }
-    /** Pretty-print the current tree to a string. */
+    /**
+     * Pretty-print the current tree to a string.
+     * @returns {string}
+     */
     printTree() {
         return this.core.printTree();
     }
-    /** Find a node by task nodeId. */
+    /**
+     * Find a node by task nodeId.
+     * @param {string} nodeId
+     * @returns {DevToolsNode | null}
+     */
     findTask(nodeId) {
         return this.core.findTask(nodeId);
     }
-    /** List all tasks in the current tree. */
+    /**
+     * List all tasks in the current tree.
+     * @returns {DevToolsNode[]}
+     */
     listTasks() {
         return this.core.listTasks();
     }

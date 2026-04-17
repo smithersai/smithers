@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { nowMs } from "@smithers/scheduler/nowMs";
-/** @typedef {import("./retry-task.ts").RetryTaskOptions} RetryTaskOptions */
-/** @typedef {import("./retry-task.ts").RetryTaskResult} RetryTaskResult */
+/** @typedef {import("./RetryTaskOptions.ts").RetryTaskOptions} RetryTaskOptions */
+/** @typedef {import("./RetryTaskResult.ts").RetryTaskResult} RetryTaskResult */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 
 /**

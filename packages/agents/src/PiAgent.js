@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./PiAgent.ts").PiExtensionUiRequest} PiExtensionUiRequest */
-/** @typedef {import("./PiAgent.ts").PiExtensionUiResponse} PiExtensionUiResponse */
+/** @typedef {import("./BaseCliAgent/PiExtensionUiRequest.ts").PiExtensionUiRequest} PiExtensionUiRequest */
+/** @typedef {import("./BaseCliAgent/PiExtensionUiResponse.ts").PiExtensionUiResponse} PiExtensionUiResponse */
 // @smithers-type-exports-end
 
 import { Effect } from "effect";
@@ -9,10 +9,10 @@ import { normalizeCapabilityStringList, } from "./capability-registry/index.js";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { enrichReportWithErrorAnalysis, launchDiagnostics } from "./diagnostics/index.js";
-/** @typedef {import("./capability-registry/index.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
-/** @typedef {import("./BaseCliAgent/index.ts").CliOutputInterpreter} CliOutputInterpreter */
-/** @typedef {import("ai").GenerateTextResult} GenerateTextResult */
-/** @typedef {import("./PiAgent.ts").PiAgentOptions} PiAgentOptions */
+/** @typedef {import("./capability-registry/AgentCapabilityRegistry.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
+/** @typedef {import("./BaseCliAgent/CliOutputInterpreter.ts").CliOutputInterpreter} CliOutputInterpreter */
+/** @typedef {import("ai").GenerateTextResult<any, any>} GenerateTextResult */
+/** @typedef {import("./PiAgentOptions.ts").PiAgentOptions} PiAgentOptions */
 
 /**
  * @param {PiAgentOptions} opts

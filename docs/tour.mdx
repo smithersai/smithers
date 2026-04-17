@@ -1,0 +1,245 @@
+---
+title: Tour
+description: Build a code-review workflow in six steps. Every core feature shows up.
+---
+
+A code-review workflow built one capability at a time. Each step is a diff against the previous. Reading time: 15 minutes.
+
+## 1. Install and scaffold
+
+```bash
+bunx smithers-orchestrator init
+bun add smithers-orchestrator ai @ai-sdk/anthropic zod
+bun add -d typescript @types/bun
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
+`init` creates `.smithers/` with seeded workflows, prompts, and components. The bun deps add the AI SDK, Anthropic provider, and Zod (schemas).
+
+A minimal `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "jsxImportSource": "smithers-orchestrator",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  }
+}
+```
+
+`jsxImportSource` is the only line specific to Smithers — it routes JSX through the workflow runtime instead of React DOM.
+
+## 2. One-task workflow
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import { createSmithers, Sequence, Task } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  greeting: z.object({ message: z.string() }),
+});
+
+export default smithers((ctx) => (
+  <Workflow name="hello">
+    <Sequence>
+      <Task id="greet" output={outputs.greeting}>
+        {{ message: `Hello, ${ctx.input.name}` }}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+`createSmithers` registers Zod schemas; each becomes a SQLite table. `outputs.greeting` is the typed reference for the `greeting` schema — using it as the `output` prop gives compile-time checks (typo `outputs.greting` is a type error).
+
+This Task has no `agent`, just a literal value. Run it.
+
+```bash
+bunx smithers-orchestrator up workflow.tsx --input '{"name":"world"}'
+```
+
+Inspect:
+
+```bash
+bunx smithers-orchestrator ps                  # find the run id
+bunx smithers-orchestrator inspect <run-id>    # structured state
+sqlite3 smithers.db "SELECT * FROM greeting;"  # the persisted output
+```
+
+## 3. Add an agent task
+
+Replace the literal Task with an agent Task whose output is structured.
+
+```tsx
+import { ToolLoopAgent as Agent } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: z.object({
+    summary: z.string(),
+    issues: z.array(z.object({
+      file: z.string(),
+      line: z.number(),
+      severity: z.enum(["low", "medium", "high"]),
+      description: z.string(),
+    })),
+  }),
+});
+
+const analyst = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "You are a senior code reviewer. Return structured JSON.",
+});
+
+export default smithers((ctx) => (
+  <Workflow name="review">
+    <Sequence>
+      <Task id="analyze" output={outputs.analysis} agent={analyst}>
+        {`Review the code in ${ctx.input.repo} and return analysis as JSON.`}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
+
+The runtime injects a JSON-schema description of `outputs.analysis` into the prompt, parses the agent's response, validates against Zod, and persists. Validation failure triggers a retry.
+
+## 4. A second task that depends on the first
+
+Tasks see each other's outputs through `ctx.outputMaybe(...)`. An incomplete upstream returns `undefined`; on the next render frame the upstream output appears and the downstream Task mounts.
+
+```tsx
+const { Workflow, smithers, outputs } = createSmithers({
+  analysis: AnalysisSchema,
+  fix: z.object({
+    patch: z.string(),
+    filesChanged: z.array(z.string()),
+  }),
+});
+
+const fixer = new Agent({
+  model: anthropic("claude-sonnet-4-20250514"),
+  instructions: "Write minimal, correct fixes as a unified diff.",
+});
+
+export default smithers((ctx) => {
+  const analysis = ctx.outputMaybe(outputs.analysis, { nodeId: "analyze" });
+
+  return (
+    <Workflow name="review">
+      <Sequence>
+        <Task id="analyze" output={outputs.analysis} agent={analyst}>
+          {`Review ${ctx.input.repo}`}
+        </Task>
+        {analysis ? (
+          <Task id="fix" output={outputs.fix} agent={fixer}>
+            {`Fix these issues:\n${analysis.issues.map(i =>
+              `- [${i.severity}] ${i.file}:${i.line} — ${i.description}`
+            ).join("\n")}`}
+          </Task>
+        ) : null}
+      </Sequence>
+    </Workflow>
+  );
+});
+```
+
+Render 1: only `analyze` is mounted. Render 2 (after `analyze` finishes): `analysis` is populated, `fix` mounts and runs. The entire reactivity story — no hooks, no subscriptions, JSX conditionals over persisted state.
+
+Same shape works for branching, parallel groups, and loops:
+
+```tsx
+<Parallel maxConcurrency={3}>
+  <Task id="lint"  output={outputs.lint}  agent={linter}>...</Task>
+  <Task id="test"  output={outputs.test}  agent={tester}>...</Task>
+  <Task id="audit" output={outputs.audit} agent={auditor}>...</Task>
+</Parallel>
+
+<Loop until={!!review?.approved} maxIterations={5}>
+  <Task id="implement" output={outputs.impl} agent={implementer}>...</Task>
+  <Task id="review"    output={outputs.review} agent={reviewer}>...</Task>
+</Loop>
+```
+
+## 5. An approval gate
+
+Pause for a human. The runtime persists the pending decision and exits cleanly; an operator approves or denies through the CLI; resume picks up from the gate.
+
+```tsx
+import { Approval } from "smithers-orchestrator";
+
+{analysis ? (
+  <Approval
+    id="confirm-fix"
+    output={outputs.confirmFix}
+    request={{
+      title: `Apply fixes for ${analysis.issues.length} issues?`,
+      summary: analysis.summary,
+    }}
+    onDeny="skip"
+  >
+    {/* children rendered after approval */}
+  </Approval>
+) : null}
+
+{ctx.outputMaybe(outputs.confirmFix, { nodeId: "confirm-fix" })?.approved ? (
+  <Task id="fix" output={outputs.fix} agent={fixer}>
+    {`Apply patches`}
+  </Task>
+) : null}
+```
+
+Operator side:
+
+```bash
+bunx smithers-orchestrator ps --status waiting-approval     # find paused runs
+bunx smithers-orchestrator inspect <run-id>                  # see the request
+bunx smithers-orchestrator approve <run-id> --node confirm-fix --by alice
+bunx smithers-orchestrator up workflow.tsx --run-id <run-id> --resume true
+```
+
+`onDeny` controls behavior on rejection: `"fail"` aborts the run, `"continue"` proceeds without the approved branch, `"skip"` skips the gated tasks.
+
+## 6. Crash, then resume
+
+Every completed task's output sits in SQLite. A crash, kill, or restart loses no work — the next run with `--resume true` skips finished tasks.
+
+```bash
+bunx smithers-orchestrator up workflow.tsx --input '{"repo":"."}' --run-id review-1
+# ...analyze finishes, fix is mid-flight, you Ctrl+C
+
+bunx smithers-orchestrator up workflow.tsx --run-id review-1 --resume true
+# analyze is skipped (already in DB), fix re-runs from scratch (was incomplete)
+```
+
+In-flight attempts are marked stale and re-tried; finished tasks are not. Resume is deterministic — same input + same code = same task IDs.
+
+For unattended recovery, run the supervisor:
+
+```bash
+bunx smithers-orchestrator supervise --interval 30s --stale-threshold 1m
+```
+
+It auto-resumes runs whose owner process died.
+
+## What you skipped (and where to find it)
+
+- **Time travel** (replay a frame, fork a run, diff two runs): `bunx smithers-orchestrator replay|fork|diff|timeline` — see [How It Works → Time travel](/how-it-works#time-travel).
+- **Scorers** (attach evaluators to Tasks): see [Recipes → Scoring tasks](/recipes#scoring-tasks).
+- **Memory** (cross-run facts, semantic recall): see [llms-memory.txt](/llms-memory.txt).
+- **RAG**, **voice**, **OpenAPI tools**: opt-in fragments — see the index in [llms.txt](/llms.txt).
+- **Tool sandbox** (read/grep/bash with path containment): see [Recipes → Tools](/recipes#tools).
+
+## Read next
+
+- [How It Works](/how-it-works) — the render → execute → persist loop.
+- [Components](/components/workflow) — JSX surface reference.
+- [CLI](/cli/overview) — every command in one TOON table.
+- [Recipes](/recipes) — patterns from production workflows.

@@ -1,0 +1,175 @@
+# 0.16.0
+
+0.16.0 is a rebase-the-whole-codebase release. The runtime has been migrated
+from TypeScript to plain JavaScript with type-only `.ts` stubs, the package
+graph has been pruned and reorganized, and a new **live-run DevTools** surface
+lands alongside a derived `RunState` model for richer run observability.
+
+---
+
+## Breaking changes
+
+- **Runtime is now JavaScript, types live in `.ts` stubs.** Every runtime
+  package (`smithers`, `engine`, `db`, `driver`, `server`, `cli`, `components`,
+  `react-reconciler`, `agents`, `observability`, `devtools`, `time-travel`,
+  `sandbox`, `scheduler`, `scorers`, `openapi`, `memory`, `vcs`, `graph`,
+  `errors`, `protocol`, and `examples`) has been migrated to `.js` files with
+  `.d.ts`-style type-only `.ts` stubs next to each module. Build, test, and
+  import paths are unchanged — but anyone patching the runtime should expect to
+  edit `.js` sources rather than `.ts`.
+
+- **Removed packages.** The following have been deleted outright:
+
+  - `packages/durables` — no longer used by the engine.
+  - `packages/rag` and `packages/voice` — dropped from the product surface;
+    matching metrics have been removed from observability.
+  - `packages/tools` — tool context moved into `driver`; sandbox path helpers
+    moved into `sandbox`.
+  - Python SDK, examples, and integration code — smithers is TypeScript/JS only
+    now.
+  - `jjhub` workflows, the IDE / GitHub bot / Pi plugin integrations docs, and
+    the Effect-ts integration doc page.
+
+- **`AsyncLocalStorage`-based `ToolContext` removed.** Tool context is now
+  passed explicitly through the driver. Any custom tools that relied on
+  `getToolContext()` returning ambient state must accept the context as an
+  argument.
+
+- **`observability` moved to `apps/observability`.** It is now an app, not a
+  package. Update imports that referenced `@smithers/observability` via the
+  package path.
+
+- **`runtime` package renamed to `driver`.** Imports from `@smithers/runtime`
+  should move to `@smithers/driver`. Runtime-adjacent helpers have been
+  consolidated into the driver package.
+
+- **Engine control APIs return `Effect`.** `engine.start`, `engine.stop`,
+  `engine.resume`, `engine.pause`, and friends now return `Effect`s rather
+  than plain promises. Callers that awaited the old promise API should run
+  the returned effect through the engine's runtime.
+
+---
+
+## New: Live-run DevTools
+
+A first cut of live-run DevTools lands in this release. It streams per-frame
+JSX tree snapshots, node-level diffs, and per-node tool output over the
+Gateway so that a debugger UI can follow an active run in real time and
+scrub backwards through history.
+
+- **Snapshot serializer and delta apply/diff.** `packages/devtools` now ships
+  a stable serializer for React-reconciler trees, plus apply/diff helpers so
+  clients can reconstruct any historical frame from a base snapshot and a
+  delta stream.
+
+- **Gateway DevTools stream + new HTTP routes.** The server exposes a live
+  DevTools WebSocket stream and three new routes: per-node diff, per-node
+  output, and jump-to-frame.
+
+- **Jump-to-frame with rewind lock, audit, and rate-limit.** Time-travel jumps
+  acquire a per-run rewind lock, write an audit row, and are rate-limited so
+  that a runaway debugger client cannot thrash an active run.
+
+- **Protocol additions.** `packages/protocol` gains `devtools`, `outputs`,
+  and `errors` types for the new stream and routes.
+
+- **DB: node-diffs cache + time-travel audit schema.** New tables back the
+  DevTools stream so historical frames can be reconstructed without replaying
+  the full event log.
+
+- **Observability: DevTools + rewind metrics.** New metrics cover DevTools
+  stream fan-out, rewind lock contention, and jump-to-frame latency.
+
+- **React reconciler: devtools stop handling.** The reconciler now emits
+  clean DevTools stop events when a run ends so clients can flush their
+  buffers.
+
+- **CLI: new `diff`, `output`, `rewind`, and `tree` commands.** The CLI ships
+  thin clients for the new DevTools routes so you can inspect and rewind a
+  run from the terminal without a GUI.
+
+---
+
+## New: `RunState` model
+
+A derived `RunState` view now lives in `packages/db/src/runState`. It takes
+raw run rows, events, and timers and computes a single view-model with a
+normalized state, block reasons, unhealthy reasons, and a heartbeat-staleness
+check (`RUN_STATE_HEARTBEAT_STALE_MS`). The Gateway, CLI, and DevTools all
+consume the same derived state, so a run looks the same from every surface.
+
+See [the RunState runtime doc](/runtime/run-state) for the full shape.
+
+---
+
+## New: Workflow metadata
+
+- **`WorkflowDefinition` gains `readableName` and `description`.** Used by the
+  CLI, Gateway, and DevTools to render workflows with a human-friendly label
+  instead of the programmatic ID.
+
+---
+
+## Fixes
+
+- **Prevent `SQLITE_IOERR_VNODE` under concurrent Worktree runs.** Multiple
+  concurrent runs sharing a worktree no longer race on the SQLite DB file.
+
+- **Fix resume for workflows without a user-defined input schema.** Resume
+  used to crash when the workflow did not declare an input schema; it now
+  resumes cleanly.
+
+- **Fix `smithers chat` to display agent tool calls and file changes.** Tool
+  calls and file changes now render in the chat transcript instead of being
+  silently dropped.
+
+- **Default log level is now `warning` for `smithers up`.** `smithers up`
+  output is quiet by default; opt into verbose logging explicitly.
+
+- **Waiting-timer supervisor no longer double-resumes.** Regression covered
+  by a new test in `apps/cli/tests` (#124).
+
+- **Engine runtime split.** The engine's runtime implementation has been
+  split into a dedicated module so Effect interop helpers and control APIs
+  can be inlined without circular imports.
+
+---
+
+## Docs
+
+The documentation site has been rewritten end-to-end:
+
+llms-full.txt has been reduced from 250k tokens to 66k tokens making it viable to put entire smithers docs in context
+
+- New **Tour**, **How It Works**, and **Recipes** pages on the landing path.
+- Hero pages (`start`, `installation`, `quickstart`) rewritten and merged
+  into a single JSX overview.
+- CLI reference converted to a TOON command catalog.
+- Reference types condensed to a `.d.ts` dump, with the event union
+  extracted as its own page.
+- Runtime API pages slimmed; every component page compressed to props plus
+  one example.
+- Concept and guide pages consolidated — `memory` and `openapi` fleshed out;
+  merged pages stubbed with redirects.
+- Aggressive trim across the integrations surface; the IDE, GitHub bot, Pi
+  extension, Pi plugin, and Effect-ts integration pages are gone.
+- `bunx` invocation normalized across examples, design docs, and changelogs.
+- Tickets restructured into `gui`, `jjhub`, and `smithers` directories.
+- DevTools live-run UI spec and tickets added under `docs/tickets`.
+- `docs.json` nav restructured; redirects added for merged pages.
+- `llms-*` artifacts regenerated against the new MDX surface.
+
+---
+
+## Internal / chore
+
+- **CI workflow files removed.** The `.github/workflows` directory is gone;
+  CI is managed externally.
+- **`bun.lock` replaced with `pnpm-lock.yaml`.** The monorepo uses pnpm for
+  installs and `pnpm -r test` as the root test script.
+- **Workspace package graph defined.** `packages/*` and `apps/*` now declare
+  their dependency graph explicitly so changes propagate predictably.
+- **Cursor rules, dev shell scripts, worktree-feature scripts, docs
+  generation scripts, `AGENTS.md`, `DEVTOOLS_HANDOFF.md`, `.env.example`,
+  and the Codex skill definition removed.** Repo surface trimmed to what
+  ships.

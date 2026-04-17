@@ -1,7 +1,13 @@
 import { llmJudge } from "./llmJudge.js";
+/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("./types.js").Scorer} Scorer */
+
 /**
  * Creates a relevancy scorer that uses an LLM judge to evaluate whether
  * the output is relevant to the input.
+ *
+ * @param {AgentLike} judge
+ * @returns {Scorer}
  */
 export function relevancyScorer(judge) {
     return llmJudge({

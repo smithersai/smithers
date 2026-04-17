@@ -1,9 +1,9 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").FrameDelta} FrameDelta */
-/** @typedef {import("./index.ts").FrameDeltaOp} FrameDeltaOp */
-/** @typedef {import("./index.ts").FrameEncoding} FrameEncoding */
-/** @typedef {import("./index.ts").JsonPath} JsonPath */
-/** @typedef {import("./index.ts").JsonPathSegment} JsonPathSegment */
+/** @typedef {import("./FrameDelta.ts").FrameDelta} FrameDelta */
+/** @typedef {import("./FrameDeltaOp.ts").FrameDeltaOp} FrameDeltaOp */
+/** @typedef {import("./FrameEncoding.ts").FrameEncoding} FrameEncoding */
+/** @typedef {import("./JsonPath.ts").JsonPath} JsonPath */
+/** @typedef {import("./JsonPathSegment.ts").JsonPathSegment} JsonPathSegment */
 // @smithers-type-exports-end
 
 export { FRAME_KEYFRAME_INTERVAL } from "./FRAME_KEYFRAME_INTERVAL.js";

@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./processors.ts").MemoryProcessor} MemoryProcessor */
+/** @typedef {import("./MemoryProcessor.ts").MemoryProcessor} MemoryProcessor */
 // @smithers-type-exports-end
 
 export { TtlGarbageCollector } from "./TtlGarbageCollector.js";

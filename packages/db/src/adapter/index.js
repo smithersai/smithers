@@ -1,19 +1,19 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").AlertRow} AlertRow */
-/** @typedef {import("./index.ts").AlertSeverity} AlertSeverity */
-/** @typedef {import("./index.ts").AlertStatus} AlertStatus */
-/** @typedef {import("./index.ts").ApprovalRow} ApprovalRow */
-/** @typedef {import("./index.ts").AttemptRow} AttemptRow */
-/** @typedef {import("./index.ts").CacheRow} CacheRow */
-/** @typedef {import("./index.ts").EventHistoryQuery} EventHistoryQuery */
-/** @typedef {import("./index.ts").HumanRequestRow} HumanRequestRow */
-/** @typedef {import("./index.ts").NodeRow} NodeRow */
-/** @typedef {import("./index.ts").PendingHumanRequestRow} PendingHumanRequestRow */
-/** @typedef {import("./index.ts").RunAncestryRow} RunAncestryRow */
-/** @typedef {import("./index.ts").RunRow} RunRow */
-/** @typedef {import("./index.ts").SignalQuery} SignalQuery */
-/** @typedef {import("./index.ts").SignalRow} SignalRow */
-/** @typedef {import("./index.ts").StaleRunRecord} StaleRunRecord */
+/** @typedef {import("./AlertRow.ts").AlertRow} AlertRow */
+/** @typedef {import("./AlertSeverity.ts").AlertSeverity} AlertSeverity */
+/** @typedef {import("./AlertStatus.ts").AlertStatus} AlertStatus */
+/** @typedef {import("./ApprovalRow.ts").ApprovalRow} ApprovalRow */
+/** @typedef {import("./AttemptRow.ts").AttemptRow} AttemptRow */
+/** @typedef {import("./CacheRow.ts").CacheRow} CacheRow */
+/** @typedef {import("./EventHistoryQuery.ts").EventHistoryQuery} EventHistoryQuery */
+/** @typedef {import("./HumanRequestRow.ts").HumanRequestRow} HumanRequestRow */
+/** @typedef {import("./NodeRow.ts").NodeRow} NodeRow */
+/** @typedef {import("./PendingHumanRequestRow.ts").PendingHumanRequestRow} PendingHumanRequestRow */
+/** @typedef {import("./RunAncestryRow.ts").RunAncestryRow} RunAncestryRow */
+/** @typedef {import("./RunRow.ts").RunRow} RunRow */
+/** @typedef {import("./SignalQuery.ts").SignalQuery} SignalQuery */
+/** @typedef {import("./SignalRow.ts").SignalRow} SignalRow */
+/** @typedef {import("./StaleRunRecord.ts").StaleRunRecord} StaleRunRecord */
 // @smithers-type-exports-end
 
 export { DB_ALERT_ID_MAX_LENGTH } from "./DB_ALERT_ID_MAX_LENGTH.js";

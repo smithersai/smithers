@@ -1,15 +1,15 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./rpc-schema.ts").ApprovalPayload} ApprovalPayload */
-/** @typedef {import("./rpc-schema.ts").ApprovalResult} ApprovalResult */
-/** @typedef {import("./rpc-schema.ts").CancelPayload} CancelPayload */
-/** @typedef {import("./rpc-schema.ts").CancelResult} CancelResult */
-/** @typedef {import("./rpc-schema.ts").GetRunPayload} GetRunPayload */
-/** @typedef {import("./rpc-schema.ts").GetRunResult} GetRunResult */
-/** @typedef {import("./rpc-schema.ts").ListRunsPayload} ListRunsPayload */
-/** @typedef {import("./rpc-schema.ts").RunStatusSchema} RunStatusSchema */
-/** @typedef {import("./rpc-schema.ts").RunSummary} RunSummary */
-/** @typedef {import("./rpc-schema.ts").SignalPayload} SignalPayload */
-/** @typedef {import("./rpc-schema.ts").SignalResult} SignalResult */
+/** @typedef {import("./ApprovalPayload.ts").ApprovalPayload} ApprovalPayload */
+/** @typedef {import("./ApprovalResult.ts").ApprovalResult} ApprovalResult */
+/** @typedef {import("./CancelPayload.ts").CancelPayload} CancelPayload */
+/** @typedef {import("./CancelResult.ts").CancelResult} CancelResult */
+/** @typedef {import("./GetRunPayload.ts").GetRunPayload} GetRunPayload */
+/** @typedef {import("./GetRunResult.ts").GetRunResult} GetRunResult */
+/** @typedef {import("./ListRunsPayload.ts").ListRunsPayload} ListRunsPayload */
+/** @typedef {import("./RunStatusSchema.ts").RunStatusSchema} RunStatusSchema */
+/** @typedef {import("./RunSummary.ts").RunSummary} RunSummary */
+/** @typedef {import("./SignalPayload.ts").SignalPayload} SignalPayload */
+/** @typedef {import("./SignalResult.ts").SignalResult} SignalResult */
 // @smithers-type-exports-end
 
 import * as Rpc from "@effect/rpc/Rpc";

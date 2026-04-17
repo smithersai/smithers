@@ -1,4 +1,4 @@
-import type { MetricLabels } from "./_corePrometheus.ts";
+import type { MetricLabels } from "./_corePrometheusShape.ts";
 import type { SmithersMetricType } from "./SmithersMetricType.ts";
 import type { SmithersMetricUnit } from "./SmithersMetricUnit.ts";
 

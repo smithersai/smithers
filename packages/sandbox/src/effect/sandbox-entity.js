@@ -69,7 +69,11 @@ export const SandboxEntity = Entity.make("Sandbox", [
     SandboxCollectRpc,
     SandboxCleanupRpc,
 ]);
-export class SandboxEntityExecutor extends Context.Tag("SandboxEntityExecutor")() {
+/** @typedef {import("../SandboxTransportService.ts").SandboxTransportService} SandboxTransportService */
+const SandboxEntityExecutorTag = /** @type {Context.TagClass<SandboxEntityExecutor, "SandboxEntityExecutor", SandboxTransportService>} */ (
+    Context.Tag("SandboxEntityExecutor")()
+);
+export class SandboxEntityExecutor extends SandboxEntityExecutorTag {
 }
 /**
  * @param {{ runId: string; sandboxId: string; }} input
@@ -118,6 +122,7 @@ export const makeSandboxTransportServiceEffect = (executorLayer) => Effect.gen(f
         sandboxId: input.sandboxId,
         ...details,
     })));
+    /** @type {SandboxTransportService} */
     const service = {
         create: (config) => withClient(config, "create", { runtime: config.runtime, rootDir: config.rootDir }, (client) => client.create(config)),
         ship: (bundlePath, handle) => withClient(handle, "ship", { bundlePath }, (client) => client.ship({ bundlePath, handle })),

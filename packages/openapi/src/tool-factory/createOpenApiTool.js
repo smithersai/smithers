@@ -4,13 +4,17 @@
 import { Effect } from "effect";
 import { loadSpecEffect } from "../spec-parser.js";
 import { createOpenApiToolFromSpec } from "./_helpers.js";
+
+/** @typedef {import("../OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+/** @typedef {import("../OpenApiToolsOptions.ts").OpenApiToolsOptions} OpenApiToolsOptions */
+
 /**
  * Create a single AI SDK tool from an OpenAPI spec by operationId.
  *
- * @param input - OpenAPI spec as JSON object, file path, URL, or raw text
- * @param operationId - The operationId of the operation to create a tool for
- * @param options - Configuration for auth, base URL, etc.
- * @returns A single AI SDK tool
+ * @param {string | OpenApiSpec} input - OpenAPI spec as JSON object, file path, URL, or raw text
+ * @param {string} operationId - The operationId of the operation to create a tool for
+ * @param {OpenApiToolsOptions} [options] - Configuration for auth, base URL, etc.
+ * @returns {Promise<any>} A single AI SDK tool
  */
 export async function createOpenApiTool(input, operationId, options = {}) {
     const spec = await Effect.runPromise(loadSpecEffect(input));

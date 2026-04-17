@@ -1,8 +1,7 @@
 
-/** @typedef {import("./_corePrometheus.ts")._corePrometheus} _corePrometheus */
-
-/** @typedef {import("./_corePrometheus.ts").MetricLabels} MetricLabels */
-/** @typedef {import("./_corePrometheus.ts").PrometheusSample} PrometheusSample */
+/** @typedef {import("./_corePrometheusShape.ts").MetricLabels} MetricLabels */
+/** @typedef {import("./_corePrometheusShape.ts").PrometheusSample} PrometheusSample */
+export {};
 /**
  * @param {string} name
  * @returns {string}

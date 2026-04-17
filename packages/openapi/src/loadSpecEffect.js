@@ -5,8 +5,14 @@ import { readFileSync } from "node:fs";
 import { Effect } from "effect";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { parseSpecText } from "./_specHelpers.js";
+
+/** @typedef {import("./OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+
 /**
  * Load an OpenAPI spec from a JSON/YAML string, URL, file path, or object.
+ *
+ * @param {string | OpenApiSpec} input
+ * @returns {Effect.Effect<OpenApiSpec, unknown>}
  */
 export function loadSpecEffect(input) {
     if (typeof input === "object" && input !== null && "openapi" in input) {

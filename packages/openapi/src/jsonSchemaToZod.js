@@ -3,15 +3,19 @@
 // ---------------------------------------------------------------------------
 import { z } from "zod";
 import { isRef, resolveRef } from "./ref-resolver.js";
-/** @typedef {import("./types.ts").types} types */
 
-/** @typedef {import("./types.ts").OpenApiSpec} OpenApiSpec */
-/** @typedef {import("./types.ts").RefObject} RefObject */
-/** @typedef {import("./types.ts").SchemaObject} SchemaObject */
+/** @typedef {import("./OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+/** @typedef {import("./RefObject.ts").RefObject} RefObject */
+/** @typedef {import("./SchemaObject.ts").SchemaObject} SchemaObject */
 
 /**
  * Convert an OpenAPI JSON Schema object to a Zod schema.
  * Falls back to z.any() for schemas that cannot be cleanly represented.
+ *
+ * @param {SchemaObject | RefObject | undefined} schema
+ * @param {OpenApiSpec} spec
+ * @param {Set<string>} [visited]
+ * @returns {z.ZodType}
  */
 export function jsonSchemaToZod(schema, spec, visited = new Set()) {
     if (!schema)

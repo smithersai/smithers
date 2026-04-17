@@ -8,10 +8,14 @@ import { parseAttemptMetaJson } from "./bridge-utils.js";
 import { canExecuteBridgeManagedComputeTask, executeComputeTaskBridge, } from "./compute-task-bridge.js";
 import { canExecuteBridgeManagedStaticTask, executeStaticTaskBridge, } from "./static-task-bridge.js";
 import { dispatchWorkerTask } from "./single-runner.js";
-/** @typedef {import("../engine.ts").HijackState} HijackState */
-/** @typedef {import("./workflow-bridge.ts").LegacyExecuteTaskFn} LegacyExecuteTaskFn */
-/** @typedef {import("./workflow-bridge.ts").TaskBridgeToolConfig} TaskBridgeToolConfig */
+/** @typedef {import("../HijackState.ts").HijackState} HijackState */
+/** @typedef {import("./LegacyExecuteTaskFn.ts").LegacyExecuteTaskFn} LegacyExecuteTaskFn */
+/** @typedef {import("./TaskBridgeToolConfig.ts").TaskBridgeToolConfig} TaskBridgeToolConfig */
 /** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("./TaskActivityContext.ts").TaskActivityContext} TaskActivityContext */
+/**
+ * @typedef {"compute" | "static" | "legacy"} BridgeManagedTaskKind
+ */
 
 export { bridgeApprovalResolve, bridgeSignalResolve, bridgeWaitForEventResolve, awaitApprovalDurableDeferred, awaitWaitForEventDurableDeferred, makeApprovalDurableDeferred, makeDurableDeferredBridgeExecutionId, makeWaitForEventDurableDeferred, } from "./durable-deferred-bridge.js";
 export { cancelPendingTimersBridge, isBridgeManagedTimerTask, isBridgeManagedWaitForEventTask, resolveDeferredTaskStateBridge, } from "./deferred-state-bridge.js";
@@ -246,6 +250,7 @@ export const executeTaskBridge = (adapter, db, runId, desc, descriptorMap, input
  * @param {AbortController} [runAbortController]
  * @param {HijackState} [hijackState]
  * @param {LegacyExecuteTaskFn} [legacyExecuteTaskFn]
+ * @returns {Effect.Effect<void, import("@smithers/errors/SmithersError").SmithersError, never>}
  */
 export const executeTaskBridgeEffect = (adapter, db, runId, desc, descriptorMap, inputTable, eventBus, toolConfig, workflowName, cacheEnabled, signal, disabledAgents, runAbortController, hijackState, legacyExecuteTaskFn) => Effect.tryPromise({
     try: () => executeTaskBridge(adapter, db, runId, desc, descriptorMap, inputTable, eventBus, toolConfig, workflowName, cacheEnabled, signal, disabledAgents, runAbortController, hijackState, legacyExecuteTaskFn),

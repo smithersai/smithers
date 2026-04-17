@@ -15,6 +15,8 @@ function mapChildren(node) {
 /**
  * Failure-boundary components need inner tasks to fail "softly" so the
  * scheduler can decide whether to run catch/finally or compensations.
+ * @param {React.ReactNode} node
+ * @returns {React.ReactNode}
  */
 export function forceContinueOnFail(node) {
     if (!React.isValidElement(node)) {

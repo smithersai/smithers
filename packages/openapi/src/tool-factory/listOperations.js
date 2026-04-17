@@ -3,8 +3,14 @@
 // ---------------------------------------------------------------------------
 import { loadSpecSync } from "../spec-parser.js";
 import { extractOperations } from "../spec-parser.js";
+
+/** @typedef {import("../OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+
 /**
  * List all operations from a spec (for CLI preview).
+ *
+ * @param {string | OpenApiSpec} input
+ * @returns {Array<{ operationId: string; method: string; path: string; summary: string }>}
  */
 export function listOperations(input) {
     const spec = loadSpecSync(input);

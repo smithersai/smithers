@@ -3,10 +3,8 @@ import { dirname, join, relative } from "node:path";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { assertJsonPayloadWithinBounds, assertOptionalArrayMaxLength, assertOptionalStringMaxLength, } from "@smithers/db/input-bounds";
 import { resolveSandboxPath } from "./sandboxPath.js";
-/** @typedef {import("./bundle.ts").bundle} bundle */
-
-/** @typedef {import("./bundle.ts").SandboxBundleManifest} SandboxBundleManifest */
-/** @typedef {import("./bundle.ts").ValidatedSandboxBundle} ValidatedSandboxBundle */
+/** @typedef {import("./SandboxBundleManifest.ts").SandboxBundleManifest} SandboxBundleManifest */
+/** @typedef {import("./ValidatedSandboxBundle.ts").ValidatedSandboxBundle} ValidatedSandboxBundle */
 
 export const SANDBOX_MAX_BUNDLE_BYTES = 100 * 1024 * 1024; // 100MB
 export const SANDBOX_MAX_README_BYTES = 5 * 1024 * 1024; // 5MB

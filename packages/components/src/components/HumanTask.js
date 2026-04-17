@@ -4,7 +4,7 @@ import { getTaskRuntime } from "@smithers/driver/task-runtime";
 import { SmithersDb } from "@smithers/db/adapter";
 import { buildHumanRequestId } from "@smithers/db/buildHumanRequestId";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./HumanTask.ts").HumanTaskProps} HumanTaskProps */
+/** @typedef {import("./HumanTaskProps.ts").HumanTaskProps} HumanTaskProps */
 
 /**
  * @param {any} value

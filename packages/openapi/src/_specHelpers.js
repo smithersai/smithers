@@ -1,6 +1,9 @@
 // ---------------------------------------------------------------------------
 // Shared private helpers for spec parsing
 // ---------------------------------------------------------------------------
+/** @typedef {import("./HttpMethod.ts").HttpMethod} HttpMethod */
+/** @typedef {import("./ParameterObject.ts").ParameterObject} ParameterObject */
+
 /**
  * @param {string} text
  * @returns {any}
@@ -33,6 +36,10 @@ export function parseSpecText(text) {
 /**
  * Merge path-level and operation-level parameters. Operation-level wins
  * when there is a name+in collision.
+ *
+ * @param {ParameterObject[]} pathLevel
+ * @param {ParameterObject[]} opLevel
+ * @returns {ParameterObject[]}
  */
 export function mergeParameters(pathLevel, opLevel) {
     const opKeys = new Set(opLevel.map((p) => `${p.in}:${p.name}`));
@@ -42,6 +49,10 @@ export function mergeParameters(pathLevel, opLevel) {
 /**
  * Generate an operationId from method + path when one is not provided.
  * e.g. GET /pets/{petId} → get_pets_petId
+ *
+ * @param {HttpMethod} method
+ * @param {string} path
+ * @returns {string}
  */
 export function generateOperationId(method, path) {
     const cleaned = path

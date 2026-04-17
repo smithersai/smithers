@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./TryCatchFinally.ts").TryCatchFinallyProps} TryCatchFinallyProps */
+/** @typedef {import("./TryCatchFinallyProps.ts").TryCatchFinallyProps} TryCatchFinallyProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -13,6 +13,7 @@ import { forceContinueOnFail } from "./control-flow-utils.js";
  * - The `finally` block always runs after try (success) or catch (failure).
  *
  * Renders to `<smithers:try-catch-finally>`.
+ * @param {TryCatchFinallyProps} props
  */
 export function TryCatchFinally(props) {
     if (props.skipIf)

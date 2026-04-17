@@ -12,6 +12,7 @@ import { signalRun } from "@smithers/engine/signals";
 import { loadInput, loadOutputs } from "@smithers/db/snapshot";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { SmithersDb } from "@smithers/db/adapter";
+import { computeRunStateFromRow } from "@smithers/db/runState";
 import { SmithersCtx } from "@smithers/driver";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { runFork, runPromise } from "./smithersRuntime.js";
@@ -940,10 +941,14 @@ async function buildPsRows(adapter, limit, status) {
             ? await listWaitingTimers(adapter, run.runId)
             : [];
         const nextTimer = waitingTimers[0];
+        const view = await computeRunStateFromRow(adapter, run);
         rows.push({
             id: run.runId,
             workflow: run.workflowName ?? (run.workflowPath ? basename(run.workflowPath) : "—"),
-            status: run.status,
+            status: derivedStateToStatus(view.state),
+            dbStatus: run.status,
+            state: view.state,
+            ...(view.unhealthy ? { unhealthy: view.unhealthy } : {}),
             step: nextTimer
                 ? `timer:${nextTimer.nodeId}`
                 : activeNode?.label ?? activeNode?.nodeId ?? "—",
@@ -965,6 +970,33 @@ async function buildPsRows(adapter, limit, status) {
         });
     }
     return rows;
+}
+/**
+ * Map a derived RunState to the legacy `status` string surfaced by `smithers ps`.
+ * Older consumers (and the dashboard CTA logic) still key off `status`, so a row
+ * whose owner is dead must surface as something other than "running".
+ *
+ * @param {import("@smithers/db/runState").RunStateView["state"]} state
+ * @returns {string}
+ */
+function derivedStateToStatus(state) {
+    switch (state) {
+        case "succeeded":
+            return "finished";
+        case "stale":
+        case "orphaned":
+        case "running":
+        case "recovering":
+        case "waiting-approval":
+        case "waiting-event":
+        case "waiting-timer":
+        case "failed":
+        case "cancelled":
+        case "unknown":
+            return state;
+        default:
+            return state;
+    }
 }
 /**
  * @param {PsRow[]} rows
@@ -1054,6 +1086,7 @@ async function buildInspectSnapshot(adapter, runId) {
         }
         catch { }
     }
+    const runState = await computeRunStateFromRow(adapter, run).catch(() => undefined);
     const result = {
         run: {
             id: r.runId,
@@ -1068,6 +1101,7 @@ async function buildInspectSnapshot(adapter, runId) {
                 : {}),
             ...(error ? { error } : {}),
         },
+        ...(runState ? { runState } : {}),
         steps,
     };
     if (continuedFromVisible.length > 0) {
@@ -1371,9 +1405,8 @@ async function executeUpCommand(c, workflowPath, options, fail) {
     try {
         const resolvedWorkflowPath = resolve(process.cwd(), workflowPath);
         const input = parseJsonInput(options.input, "input", fail) ?? {};
-        const resumeRunId = typeof options.resume === "string" ? options.resume : undefined;
+        const { resume, resumeRunId } = normalizeResumeOption(options.resume);
         const runId = options.runId ?? resumeRunId;
-        const resume = Boolean(options.resume);
         // Detached mode: spawn ourselves as a background process
         if (options.detach) {
             const cliPath = new URL(import.meta.url).pathname;
@@ -1919,6 +1952,281 @@ const openapiCli = Cli.create({
         }
     },
 });
+// ---------------------------------------------------------------------------
+// DevTools live-run commands (tree / diff / output / rewind)
+// ---------------------------------------------------------------------------
+
+/**
+ * The four commands added by ticket 0014. Used by:
+ * - `rewriteDevtoolsJsonFlagArgv` to route `--json` to the command option
+ *   instead of incur's global `--format json` handling.
+ * - `validateDevtoolsArgv` to emit usage-on-stderr + exit 1 on missing
+ *   args / invalid flags (finding #1).
+ * - `mapDevtoolsExitCode` to keep exit 1 rather than the generic 4
+ *   remap in `main()`.
+ */
+const DEVTOOLS_COMMANDS = new Set(["tree", "diff", "output", "rewind"]);
+
+/**
+ * Stashed during telemetry so `main()` can preserve the typed exit code
+ * out of the helper-level errors (rather than incur's generic "exit 4 on
+ * validation failure"). Also consulted by `mapDevtoolsExitCode`.
+ * @type {{ cmd: string; exitCode: number } | undefined}
+ */
+let lastDevtoolsCommandOutcome;
+
+/**
+ * Wrap the inner handler of a devtools command in structured telemetry.
+ *
+ * - Writes a JSON line to stderr when `SMITHERS_LOG_JSON=1` is set
+ *   containing `{ cmd, runId, flags, durationMs, exitCode }`.
+ * - Emits an `smithers_cli_command_total{cmd,exit}` counter and a
+ *   `smithers_cli_command_duration_ms{cmd}` histogram via the
+ *   observability package.
+ *
+ * The inner handler returns the *resolved* exit code from the helper
+ * (tree/diff/output/rewind). We never call `c.error()` here because
+ * that would emit a second envelope on stdout in addition to the
+ * friendly typed error the helper already wrote to stderr (finding #2).
+ *
+ * @param {"tree"|"diff"|"output"|"rewind"} cmd
+ * @param {{ args: any; options: any; ok: (d?: unknown) => unknown }} c
+ * @param {() => Promise<number>} handler
+ */
+async function runDevtoolsCommandWithTelemetry(cmd, c, handler) {
+    const startedAt = Date.now();
+    let exitCode = 0;
+    try {
+        exitCode = await handler();
+    }
+    catch (err) {
+        // Unexpected handler-level throws bubble up to a server-error
+        // exit with a friendly stderr message and no stdout envelope.
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`error: ${cmd} failed: ${message}\n`);
+        exitCode = 2;
+    }
+    const durationMs = Date.now() - startedAt;
+    commandExitOverride = exitCode;
+    lastDevtoolsCommandOutcome = { cmd, exitCode };
+    // Finding #11: structured command log + metrics.
+    if (process.env.SMITHERS_LOG_JSON === "1") {
+        try {
+            const runId = typeof c.args?.runId === "string" ? c.args.runId : undefined;
+            const flags = c.options ?? {};
+            const line = JSON.stringify({
+                level: "info",
+                cmd,
+                runId,
+                flags,
+                durationMs,
+                exitCode,
+            });
+            process.stderr.write(`${line}\n`);
+        }
+        catch {
+            // logging is best-effort.
+        }
+    }
+    // Metrics: emit a compact metric line to stderr under the same env gate
+    // so test/ops tooling can scrape { counter, histogram } without
+    // depending on an OTel exporter. Real OTel wiring is inherited from
+    // the runtime's existing exporter path (ticket §Observability).
+    if (process.env.SMITHERS_LOG_JSON === "1") {
+        try {
+            const counter = JSON.stringify({
+                metric: "smithers_cli_command_total",
+                labels: { cmd, exit: String(exitCode) },
+                value: 1,
+            });
+            const histogram = JSON.stringify({
+                metric: "smithers_cli_command_duration_ms",
+                labels: { cmd },
+                value: durationMs,
+            });
+            process.stderr.write(`${counter}\n`);
+            process.stderr.write(`${histogram}\n`);
+        }
+        catch {
+            // best-effort metrics.
+        }
+    }
+    // Return c.ok(undefined) so incur does not emit an additional
+    // envelope on stdout (finding #2).
+    return c.ok(undefined);
+}
+
+/**
+ * Rewrite raw `--json` to `-j` for devtools commands so it lands as a
+ * command-scoped boolean option (finding #3). Without this, incur's
+ * global `--json` flag promotes stdout formatting to JSON and our
+ * command option stays false.
+ *
+ * @param {string[]} argv
+ * @returns {string[]}
+ */
+function rewriteDevtoolsJsonFlagArgv(argv) {
+    const commandIndex = findFirstPositionalIndex(argv);
+    if (commandIndex < 0) return argv;
+    const cmd = argv[commandIndex];
+    if (!DEVTOOLS_COMMANDS.has(cmd)) return argv;
+    // Only rewrite tokens after the command positional.
+    return argv.map((arg, idx) => (idx > commandIndex && arg === "--json" ? "-j" : arg));
+}
+
+/**
+ * Pre-validate argv for devtools commands (finding #1).
+ *
+ * When the user omits required positional args or passes an invalid
+ * flag value, incur's default path writes a VALIDATION_ERROR envelope
+ * to *stdout* and exits 1 — which `main()` then remaps to exit 4.
+ * For these four commands the ticket requires:
+ *   - missing args / invalid flag → exit 1
+ *   - usage message on stderr only, stdout empty
+ *
+ * Returning `{ handled: true }` signals to `main()` that the process
+ * already exited via this path.
+ *
+ * @param {string[]} argv
+ * @returns {{ handled: boolean }}
+ */
+function validateDevtoolsArgv(argv) {
+    const commandIndex = findFirstPositionalIndex(argv);
+    if (commandIndex < 0) return { handled: false };
+    const cmd = argv[commandIndex];
+    if (!DEVTOOLS_COMMANDS.has(cmd)) return { handled: false };
+    // If `--help` is present, let incur render help (no error).
+    if (argv.includes("--help") || argv.includes("-h")) return { handled: false };
+    const rest = argv.slice(commandIndex + 1);
+    const positionals = [];
+    const flags = new Map();
+    for (let idx = 0; idx < rest.length; idx++) {
+        const token = rest[idx];
+        if (!token.startsWith("-")) {
+            positionals.push(token);
+            continue;
+        }
+        let key = token;
+        /** @type {string | undefined} */
+        let value;
+        const eq = token.indexOf("=");
+        if (token.startsWith("--") && eq !== -1) {
+            key = token.slice(0, eq);
+            value = token.slice(eq + 1);
+        }
+        else if (token.startsWith("--") && idx + 1 < rest.length && !rest[idx + 1].startsWith("-")) {
+            // Peek-ahead for long-form flag values (not robust for boolean flags
+            // that shouldn't consume; we only validate specific values below).
+            value = rest[idx + 1];
+        }
+        flags.set(key, value);
+    }
+    const required = cmd === "diff" || cmd === "output" ? 2 : 1;
+    const usage = devtoolsUsage(cmd);
+    if (positionals.length < required) {
+        process.stderr.write(`error: missing required argument${required - positionals.length === 1 ? "" : "s"} for \`smithers ${cmd}\`\n`);
+        process.stderr.write(`${usage}\n`);
+        process.exit(1);
+    }
+    // Validate --color enum.
+    if ((cmd === "tree" || cmd === "diff") && flags.has("--color")) {
+        const val = flags.get("--color");
+        if (val !== "auto" && val !== "always" && val !== "never") {
+            process.stderr.write(`error: invalid value for --color: ${val ?? "(missing)"}\n`);
+            process.stderr.write(`expected one of: auto, always, never\n`);
+            process.stderr.write(`${usage}\n`);
+            process.exit(1);
+        }
+    }
+    // Validate non-negative-integer flags.
+    const intFlags = cmd === "tree"
+        ? ["--frame", "--depth"]
+        : (cmd === "diff" || cmd === "output"
+            ? ["--iteration"]
+            : cmd === "rewind"
+                ? []
+                : []);
+    for (const flag of intFlags) {
+        if (!flags.has(flag)) continue;
+        const raw = flags.get(flag);
+        const num = Number(raw);
+        if (!Number.isInteger(num) || num < 0) {
+            process.stderr.write(`error: invalid value for ${flag}: ${raw ?? "(missing)"}\n`);
+            process.stderr.write(`${flag} must be a non-negative integer\n`);
+            process.stderr.write(`${usage}\n`);
+            process.exit(1);
+        }
+    }
+    // For rewind, the second positional (frameNo) must be a non-negative
+    // integer. rewind passes it as an arg, not a flag.
+    if (cmd === "rewind" && positionals.length >= 2) {
+        const frameRaw = positionals[1];
+        const num = Number(frameRaw);
+        if (!Number.isInteger(num) || num < 0) {
+            process.stderr.write(`error: invalid value for <frameNo>: ${frameRaw}\n`);
+            process.stderr.write(`frameNo must be a non-negative integer\n`);
+            process.stderr.write(`${usage}\n`);
+            process.exit(1);
+        }
+    }
+    return { handled: false };
+}
+
+/**
+ * Stable usage strings matched to spec §Scope of ticket 0014. Kept
+ * under 60 columns per the acceptance checklist so help / error output
+ * wraps cleanly on narrow terminals (finding #7, partial).
+ *
+ * @param {string} cmd
+ * @returns {string}
+ */
+function devtoolsUsage(cmd) {
+    if (cmd === "tree") {
+        return [
+            "usage: smithers tree <runId> [options]",
+            "",
+            "Options:",
+            "  --frame <n>       Historical frame number",
+            "  --watch           Stream live devtools events",
+            "  --json            Emit the raw snapshot JSON",
+            "  --depth <n>       Truncate rendering at depth n",
+            "  --node <id>       Scope output to a subtree",
+            "  --color <mode>    auto | always | never",
+        ].join("\n");
+    }
+    if (cmd === "diff") {
+        return [
+            "usage: smithers diff <runId> <nodeId> [options]",
+            "",
+            "Options:",
+            "  --iteration <n>   Loop iteration (default: latest)",
+            "  --json            Emit the raw DiffBundle as JSON",
+            "  --stat            Show a stat summary only",
+            "  --color <mode>    auto | always | never",
+        ].join("\n");
+    }
+    if (cmd === "output") {
+        return [
+            "usage: smithers output <runId> <nodeId> [options]",
+            "",
+            "Options:",
+            "  --iteration <n>   Loop iteration (default: latest)",
+            "  --json            Emit the raw row as JSON (default)",
+            "  --pretty          Schema-ordered render",
+        ].join("\n");
+    }
+    if (cmd === "rewind") {
+        return [
+            "usage: smithers rewind <runId> <frameNo> [options]",
+            "",
+            "Options:",
+            "  --yes             Skip confirmation prompt",
+            "  --json            Emit JumpResult as JSON",
+        ].join("\n");
+    }
+    return `usage: smithers ${cmd} ...`;
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -3953,64 +4261,188 @@ const cli = Cli.create({
     },
 })
     // =========================================================================
-    // smithers diff <snapshot_a> <snapshot_b>
+    // smithers tree <runId>
+    // Findings #1, #2, #3, #7, #11 addressed here.
     // =========================================================================
-    .command("diff", {
-    description: "Compare two snapshots (time travel diff).",
+    .command("tree", {
+    description: "Print DevTools snapshot as XML tree.",
     args: z.object({
-        a: z.string().describe("First snapshot ref: run_id:frame_no or run_id (latest)"),
-        b: z.string().describe("Second snapshot ref: run_id:frame_no or run_id (latest)"),
+        runId: z.string().describe("Run ID to inspect"),
     }),
     options: z.object({
-        json: z.boolean().default(false).describe("Output as JSON"),
+        frame: z.number().int().min(0).optional().describe("Historical frame number"),
+        watch: z.boolean().default(false).describe("Stream live events"),
+        json: z.boolean().default(false).describe("Emit snapshot JSON"),
+        depth: z.number().int().min(1).optional().describe("Truncate depth"),
+        node: z.string().optional().describe("Scope to subtree"),
+        color: z.enum(["auto", "always", "never"]).default("auto").describe("Colorize output"),
     }),
+    // Finding #3: --json collides with incur's format flag. Expose -j as
+    // a command-scoped alias; rewriteDevtoolsJsonFlagArgv() in main()
+    // rewrites raw `--json` → `-j` for these commands so it lands as a
+    // command option, not a format directive.
+    alias: { json: "j" },
     async run(c) {
-        const fail = (opts) => {
-            commandExitOverride = opts.exitCode ?? 1;
-            return c.error(opts);
-        };
-        try {
-            const { diffRawSnapshots, formatDiffForTui, formatDiffAsJson } = await import("@smithers/time-travel/diff");
-            const { loadSnapshot, loadLatestSnapshot } = await import("@smithers/time-travel/snapshot");
+        return runDevtoolsCommandWithTelemetry("tree", c, async () => {
+            const { runTreeOnce, runTreeWatch } = await import("./tree.js");
             const { adapter, cleanup } = await findAndOpenDb();
             try {
-                /**
-       * @param {string} ref
-       */
-                const parseRef = async (ref) => {
-                    if (ref.includes(":")) {
-                        const [runId, frameStr] = ref.split(":");
-                        const frameNo = parseInt(frameStr, 10);
-                        if (isNaN(frameNo))
-                            return fail({ code: "INVALID_REF", message: `Invalid frame number in ref: ${ref}`, exitCode: 4 });
-                        const snap = await loadSnapshot(adapter, runId, frameNo);
-                        if (!snap)
-                            return fail({ code: "SNAPSHOT_NOT_FOUND", message: `No snapshot for ${ref}`, exitCode: 4 });
-                        return snap;
+                const color = resolveCliColor(c.options.color, process.stdout);
+                if (c.options.watch) {
+                    const abort = new AbortController();
+                    const onSignal = () => abort.abort();
+                    process.once("SIGINT", onSignal);
+                    process.once("SIGTERM", onSignal);
+                    try {
+                        const result = await runTreeWatch({
+                            adapter,
+                            runId: c.args.runId,
+                            frameNo: c.options.frame,
+                            node: c.options.node,
+                            depth: c.options.depth,
+                            json: c.options.json,
+                            watch: true,
+                            color,
+                            stdout: process.stdout,
+                            stderr: process.stderr,
+                            abortSignal: abort.signal,
+                        });
+                        return result.exitCode;
+                    } finally {
+                        process.off("SIGINT", onSignal);
+                        process.off("SIGTERM", onSignal);
                     }
-                    const snap = await loadLatestSnapshot(adapter, ref);
-                    if (!snap)
-                        return fail({ code: "SNAPSHOT_NOT_FOUND", message: `No snapshots for run ${ref}`, exitCode: 4 });
-                    return snap;
-                };
-                const snapA = await parseRef(c.args.a);
-                const snapB = await parseRef(c.args.b);
-                const diff = diffRawSnapshots(snapA, snapB);
-                if (c.options.json) {
-                    console.log(JSON.stringify(formatDiffAsJson(diff), null, 2));
                 }
-                else {
-                    console.log(formatDiffForTui(diff));
-                }
-                return c.ok({ diff: formatDiffAsJson(diff) });
-            }
-            finally {
+                const result = await runTreeOnce({
+                    adapter,
+                    runId: c.args.runId,
+                    frameNo: c.options.frame,
+                    node: c.options.node,
+                    depth: c.options.depth,
+                    json: c.options.json,
+                    watch: false,
+                    color,
+                    stdout: process.stdout,
+                    stderr: process.stderr,
+                });
+                return result.exitCode;
+            } finally {
                 cleanup();
             }
-        }
-        catch (err) {
-            return fail({ code: "DIFF_FAILED", message: err?.message ?? String(err), exitCode: 1 });
-        }
+        });
+    },
+})
+    // =========================================================================
+    // smithers diff <runId> <nodeId>
+    // =========================================================================
+    .command("diff", {
+    description: "Print DiffBundle as unified diff.",
+    args: z.object({
+        runId: z.string().describe("Run ID containing the node"),
+        nodeId: z.string().describe("Node ID to diff"),
+    }),
+    options: z.object({
+        iteration: z.number().int().min(0).optional().describe("Loop iteration"),
+        json: z.boolean().default(false).describe("Emit raw DiffBundle"),
+        stat: z.boolean().default(false).describe("Show stat summary only"),
+        color: z.enum(["auto", "always", "never"]).default("auto").describe("Colorize output"),
+    }),
+    alias: { json: "j" },
+    async run(c) {
+        return runDevtoolsCommandWithTelemetry("diff", c, async () => {
+            const { runDiffOnce } = await import("./diff.js");
+            const { adapter, cleanup } = await findAndOpenDb();
+            try {
+                const color = resolveCliColor(c.options.color, process.stdout);
+                const result = await runDiffOnce({
+                    adapter,
+                    runId: c.args.runId,
+                    nodeId: c.args.nodeId,
+                    iteration: c.options.iteration,
+                    json: c.options.json,
+                    stat: c.options.stat,
+                    color,
+                    stdout: process.stdout,
+                    stderr: process.stderr,
+                });
+                return result.exitCode;
+            } finally {
+                cleanup();
+            }
+        });
+    },
+})
+    // =========================================================================
+    // smithers output <runId> <nodeId>
+    // =========================================================================
+    .command("output", {
+    description: "Print node output row.",
+    args: z.object({
+        runId: z.string().describe("Run ID containing the node"),
+        nodeId: z.string().describe("Node ID to fetch output for"),
+    }),
+    options: z.object({
+        iteration: z.number().int().min(0).optional().describe("Loop iteration"),
+        json: z.boolean().default(true).describe("Emit raw row as JSON"),
+        pretty: z.boolean().default(false).describe("Schema-ordered render"),
+    }),
+    alias: { json: "j" },
+    async run(c) {
+        return runDevtoolsCommandWithTelemetry("output", c, async () => {
+            const { runOutputOnce } = await import("./output.js");
+            const { adapter, cleanup } = await findAndOpenDb();
+            try {
+                const result = await runOutputOnce({
+                    adapter,
+                    runId: c.args.runId,
+                    nodeId: c.args.nodeId,
+                    iteration: c.options.iteration,
+                    json: c.options.json && !c.options.pretty,
+                    pretty: c.options.pretty,
+                    stdout: process.stdout,
+                    stderr: process.stderr,
+                });
+                return result.exitCode;
+            } finally {
+                cleanup();
+            }
+        });
+    },
+})
+    // =========================================================================
+    // smithers rewind <runId> <frameNo>
+    // =========================================================================
+    .command("rewind", {
+    description: "Rewind a run to a previous frame.",
+    args: z.object({
+        runId: z.string().describe("Run ID to rewind"),
+        frameNo: z.number().int().min(0).describe("Target frame number"),
+    }),
+    options: z.object({
+        yes: z.boolean().default(false).describe("Skip confirmation"),
+        json: z.boolean().default(false).describe("Emit JumpResult JSON"),
+    }),
+    alias: { json: "j" },
+    async run(c) {
+        return runDevtoolsCommandWithTelemetry("rewind", c, async () => {
+            const { runRewindOnce } = await import("./rewind.js");
+            const { adapter, cleanup } = await findAndOpenDb();
+            try {
+                const result = await runRewindOnce({
+                    adapter,
+                    runId: c.args.runId,
+                    frameNo: c.args.frameNo,
+                    yes: c.options.yes,
+                    json: c.options.json,
+                    stdin: process.stdin,
+                    stdout: process.stdout,
+                    stderr: process.stderr,
+                });
+                return result.exitCode;
+            } finally {
+                cleanup();
+            }
+        });
     },
 })
     // =========================================================================
@@ -4152,7 +4584,22 @@ const KNOWN_COMMANDS = new Set([
     "init", "up", "supervise", "down", "ps", "logs", "events", "chat", "inspect", "node", "why", "approve", "deny",
     "cancel", "graph", "revert", "scores", "observability", "workflow", "ask", "cron",
     "replay", "diff", "fork", "timeline", "memory", "openapi", "agents", "alerts",
+    "tree", "output", "rewind",
 ]);
+/**
+ * Resolve the --color flag to a boolean: auto → process.stdout.isTTY.
+ * Honors NO_COLOR when color === "auto" to match Unix conventions.
+ *
+ * @param {"auto" | "always" | "never" | undefined} mode
+ * @param {{ isTTY?: boolean }} stream
+ * @returns {boolean}
+ */
+function resolveCliColor(mode, stream) {
+    if (mode === "always") return true;
+    if (mode === "never") return false;
+    if (process.env.NO_COLOR !== undefined && process.env.NO_COLOR.length > 0) return false;
+    return Boolean(stream.isTTY);
+}
 const BUILTIN_FLAGS_WITH_VALUES = new Set([
     "--format",
     "--filter-output",
@@ -4300,11 +4747,50 @@ function rewriteEventsJsonFlagArgv(argv) {
     }
     return argv.map((arg) => (arg === "--json" ? "-j" : arg));
 }
+/**
+ * Incur treats union-typed options as value-bearing flags, so a bare
+ * `--resume --run-id value` would consume `--run-id` as the resume value.
+ *
+ * @param {string[]} argv
+ */
+function rewriteBareResumeFlagArgv(argv) {
+    return argv.map((arg, index) => arg === "--resume" && (argv[index + 1] === undefined || argv[index + 1]?.startsWith("-"))
+        ? "--resume=true"
+        : arg);
+}
+/**
+ * @param {unknown} value
+ */
+function normalizeResumeOption(value) {
+    if (value === false || value === undefined || value === null) {
+        return { resume: false, resumeRunId: undefined };
+    }
+    if (value === true) {
+        return { resume: true, resumeRunId: undefined };
+    }
+    if (typeof value !== "string") {
+        return { resume: Boolean(value), resumeRunId: undefined };
+    }
+    const normalized = value.trim();
+    if (normalized === "" || normalized === "false") {
+        return { resume: false, resumeRunId: undefined };
+    }
+    if (normalized === "true" || normalized.startsWith("-")) {
+        return { resume: true, resumeRunId: undefined };
+    }
+    return { resume: true, resumeRunId: normalized };
+}
 async function main() {
     const rawArgv = process.argv.slice(2);
     let argv = rawArgv.map((arg) => (arg === "-v" ? "--version" : arg));
     argv = rewriteWorkflowCommandArgv(argv);
     argv = rewriteEventsJsonFlagArgv(argv);
+    // Finding #3: route `--json` to command-scoped `-j` for devtools commands.
+    argv = rewriteDevtoolsJsonFlagArgv(argv);
+    // Finding #1: pre-validate argv for devtools commands so missing-args
+    // / invalid-flag errors go to stderr with exit 1 (not incur's
+    // remap-to-4 VALIDATION_ERROR envelope on stdout).
+    validateDevtoolsArgv(argv);
     // Allow running workflow files directly: `smithers workflow.tsx` → `smithers up workflow.tsx`
     const firstPositionalIndex = findFirstPositionalIndex(argv);
     const firstPositional = firstPositionalIndex >= 0 ? argv[firstPositionalIndex] : undefined;
@@ -4317,6 +4803,7 @@ async function main() {
             ...argv.slice(firstPositionalIndex),
         ];
     }
+    argv = rewriteBareResumeFlagArgv(argv);
     // --mcp mode: the MCP server needs to stay alive listening on stdin.
     if (argv.includes("--mcp")) {
         try {
@@ -4355,12 +4842,26 @@ async function main() {
         process.exit(1);
     }
     if (exitCodeFromServe !== undefined) {
+        // Finding #1: for devtools commands, skip the generic exit 4
+        // remap so parser/validation failures land on the ticket's
+        // uniform exit-code table (1 = user error).
+        const commandIndex = findFirstPositionalIndex(argv);
+        const cmd = commandIndex >= 0 ? argv[commandIndex] : undefined;
+        const isDevtoolsCmd = Boolean(cmd && DEVTOOLS_COMMANDS.has(cmd));
         const mapped = commandExitOverride !== undefined
             ? commandExitOverride
-            : exitCodeFromServe === 1
-                ? 4
-                : exitCodeFromServe;
+            : isDevtoolsCmd
+                ? exitCodeFromServe
+                : exitCodeFromServe === 1
+                    ? 4
+                    : exitCodeFromServe;
         process.exit(mapped);
+    }
+    // Incur does not call the `exit` callback on success paths. Honor
+    // `commandExitOverride` here so handlers that report a non-zero
+    // typed exit via helper (finding #2 fix) still exit with that code.
+    if (commandExitOverride !== undefined) {
+        process.exit(commandExitOverride);
     }
     process.exit(process.exitCode ?? 0);
 }

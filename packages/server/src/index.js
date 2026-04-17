@@ -7,6 +7,7 @@ import { Effect } from "effect";
 import { isRunHeartbeatFresh, runWorkflow } from "@smithers/engine";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";
+import { computeRunStateFromRow } from "@smithers/db/runState";
 import { Metric } from "effect";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { logError, logInfo, logWarning } from "@smithers/observability/logging";
@@ -19,9 +20,24 @@ import { errorToJson } from "@smithers/errors/errorToJson";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { assertMaxBytes, assertMaxJsonDepth } from "@smithers/db/input-bounds";
 import { prometheusContentType, renderPrometheusMetrics, } from "@smithers/observability";
-/** @typedef {import("./index.ts").index} index */
+/** @typedef {import("./ServerOptions.js").ServerOptions} ServerOptions */
 
-/** @typedef {import("./index.ts").ServerOptions} ServerOptions */
+// Re-export the full public surface so the tsup-bundled `src/index.d.ts`
+// covers every module reachable via the `./*` wildcard export.
+export * from "./gateway.js";
+export * from "./serve.js";
+export * from "./smithersRuntime.js";
+export * from "./gatewayRoutes/NODE_OUTPUT_MAX_BYTES.js";
+export * from "./gatewayRoutes/NODE_OUTPUT_WARN_BYTES.js";
+export * from "./gatewayRoutes/NodeOutputRouteError.js";
+export * from "./gatewayRoutes/getDevToolsSnapshot.js";
+export * from "./gatewayRoutes/getNodeDiff.js";
+export * from "./gatewayRoutes/getNodeOutput.js";
+export * from "./gatewayRoutes/jumpToFrame.js";
+export * from "./gatewayRoutes/streamDevTools.js";
+// Type-only stubs reachable via `./*` that are NOT already transitively
+// re-exported through the JS modules above.
+export * from "./ServerOptions.js";
 
 const runs = new Map();
 const DEFAULT_MAX_BODY_BYTES = 1_048_576;
@@ -212,6 +228,14 @@ function sendJson(res, status, payload) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.end(JSON.stringify(payload));
+}
+/**
+ * @param {SmithersDb} adapter
+ * @param {any} run
+ */
+async function withRunState(adapter, run) {
+    const runState = await computeRunStateFromRow(adapter, run).catch(() => undefined);
+    return runState ? { ...run, runState } : run;
 }
 /**
  * @param {ServerResponse} res
@@ -1004,12 +1028,14 @@ function startServerInternal(opts = {}) {
                     });
                 }
                 const summary = await adapter.countNodesByState(runId);
+                const runState = await computeRunStateFromRow(adapter, run).catch(() => undefined);
                 return sendJson(res, 200, {
                     runId,
                     workflowName: run?.workflowName ?? "workflow",
                     status: run?.status ?? "unknown",
                     startedAtMs: run?.startedAtMs ?? null,
                     finishedAtMs: run?.finishedAtMs ?? null,
+                    ...(runState ? { runState } : {}),
                     summary: summary.reduce((acc, row) => {
                         acc[row.state] = row.count;
                         return acc;
@@ -1151,7 +1177,7 @@ function startServerInternal(opts = {}) {
                 const limit = parsePositiveInt(url.searchParams.get("limit"), 50);
                 const status = url.searchParams.get("status") ?? undefined;
                 const runs = await serverAdapter.listRuns(limit, status);
-                return sendJson(res, 200, runs);
+                return sendJson(res, 200, await Promise.all(runs.map((run) => withRunState(serverAdapter, run))));
             }
             sendJson(res, 404, {
                 error: { code: "NOT_FOUND", message: "Route not found" },

@@ -1,10 +1,9 @@
 import { formatTimestamp } from "./format.js";
-/** @typedef {import("./chat.ts").chat} chat */
 
-/** @typedef {import("./chat.ts").ChatAttemptMeta} ChatAttemptMeta */
-/** @typedef {import("./chat.ts").ChatAttemptRow} ChatAttemptRow */
-/** @typedef {import("./chat.ts").ChatOutputEvent} ChatOutputEvent */
-/** @typedef {import("./chat.ts").ParsedNodeOutputEvent} ParsedNodeOutputEvent */
+/** @typedef {import("./ChatAttemptMeta.ts").ChatAttemptMeta} ChatAttemptMeta */
+/** @typedef {import("./ChatAttemptRow.ts").ChatAttemptRow} ChatAttemptRow */
+/** @typedef {import("./ChatOutputEvent.ts").ChatOutputEvent} ChatOutputEvent */
+/** @typedef {import("./ParsedNodeOutputEvent.ts").ParsedNodeOutputEvent} ParsedNodeOutputEvent */
 
 /**
  * @param {string | null} [metaJson]

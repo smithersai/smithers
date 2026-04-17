@@ -146,6 +146,29 @@ export const smithersCache = sqliteTable("_smithers_cache", {
     jjPointer: text("jj_pointer"),
     payloadJson: text("payload_json").notNull(),
 });
+export const smithersNodeDiffs = sqliteTable("_smithers_node_diffs", {
+    runId: text("run_id").notNull(),
+    nodeId: text("node_id").notNull(),
+    iteration: integer("iteration").notNull(),
+    baseRef: text("base_ref").notNull(),
+    diffJson: text("diff_json").notNull(),
+    computedAtMs: integer("computed_at_ms").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+}, (t) => ({
+    pk: primaryKey({
+        columns: [t.runId, t.nodeId, t.iteration, t.baseRef],
+    }),
+}));
+export const smithersTimeTravelAudit = sqliteTable("_smithers_time_travel_audit", {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    runId: text("run_id").notNull(),
+    fromFrameNo: integer("from_frame_no").notNull(),
+    toFrameNo: integer("to_frame_no").notNull(),
+    caller: text("caller").notNull(),
+    timestampMs: integer("timestamp_ms").notNull(),
+    result: text("result").notNull(),
+    durationMs: integer("duration_ms"),
+});
 export const smithersSandboxes = sqliteTable("_smithers_sandboxes", {
     runId: text("run_id").notNull(),
     sandboxId: text("sandbox_id").notNull(),

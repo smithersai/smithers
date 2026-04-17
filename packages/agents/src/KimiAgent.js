@@ -4,13 +4,10 @@ import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { BaseCliAgent, pushFlag, pushList, isRecord, asString, toolKindFromName, createSyntheticIdGenerator, } from "./BaseCliAgent/index.js";
 import { normalizeCapabilityStringList, } from "./capability-registry/index.js";
-/** @typedef {import("./BaseCliAgent/index.ts").BaseCliAgentOptions} BaseCliAgentOptions */
-
-/** @typedef {import("./capability-registry/index.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
-/** @typedef {import("./BaseCliAgent/index.ts").CliOutputInterpreter} CliOutputInterpreter */
-/**
- * @typedef {BaseCliAgentOptions & { workDir?: string; session?: string; continue?: boolean; thinking?: boolean; outputFormat?: "text" | "stream-json"; finalMessageOnly?: boolean; quiet?: boolean; agent?: "default" | "okabe"; agentFile?: string; mcpConfigFile?: string[]; mcpConfig?: string[]; skillsDir?: string; maxStepsPerTurn?: number; maxRetriesPerStep?: number; maxRalphIterations?: number; verbose?: boolean; debug?: boolean; }} KimiAgentOptions
- */
+/** @typedef {import("./BaseCliAgent/BaseCliAgentOptions.ts").BaseCliAgentOptions} BaseCliAgentOptions */
+/** @typedef {import("./capability-registry/AgentCapabilityRegistry.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
+/** @typedef {import("./BaseCliAgent/CliOutputInterpreter.ts").CliOutputInterpreter} CliOutputInterpreter */
+/** @typedef {import("./KimiAgentOptions.ts").KimiAgentOptions} KimiAgentOptions */
 
 function resolveKimiBuiltIns() {
     return ["default"];

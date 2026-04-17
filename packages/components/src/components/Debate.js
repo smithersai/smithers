@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Debate.ts").DebateProps} DebateProps */
+/** @typedef {import("./DebateProps.ts").DebateProps} DebateProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -11,6 +11,7 @@ import { Task } from "./Task.js";
  * <Debate> — Adversarial rounds with rebuttals, followed by a judge verdict.
  *
  * Composes: Sequence > Loop[Parallel(proposer, opponent)] > Task(judge)
+ * @param {DebateProps} props
  */
 export function Debate(props) {
     if (props.skipIf)

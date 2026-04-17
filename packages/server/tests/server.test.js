@@ -519,7 +519,7 @@ const fakeAgent = {
             expect(Array.isArray(data)).toBe(true);
             cleanup();
         });
-        test("reclassifies stale running runs in the runs API", async () => {
+        test("keeps stale persisted status and exposes derived runState in the runs API", async () => {
             const { db, cleanup } = buildDb();
             ensureSmithersTables(db);
             const adapter = new SmithersDb(db);
@@ -530,13 +530,16 @@ const fakeAgent = {
                 createdAtMs: Date.now() - 60_000,
                 startedAtMs: Date.now() - 60_000,
                 heartbeatAtMs: Date.now() - 60_000,
+                runtimeOwnerId: "worker-1",
             });
             startTestServer({ db: db });
             const { status, data } = await request("/v1/runs?limit=10");
             expect(status).toBe(200);
             expect(Array.isArray(data)).toBe(true);
             expect(data[0]?.runId).toBe("stale-running");
-            expect(data[0]?.status).toBe("continued");
+            expect(data[0]?.status).toBe("running");
+            expect(data[0]?.runState?.state).toBe("stale");
+            expect(data[0]?.runState?.unhealthy?.kind).toBe("engine-heartbeat-stale");
             cleanup();
         });
     });

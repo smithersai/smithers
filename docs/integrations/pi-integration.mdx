@@ -24,13 +24,13 @@ const pi = new PiAgent({
 </Task>
 ```
 
-`PiAgent` supports all PI CLI flags: provider/model, tools, extensions, skills, prompt templates, themes, and sessions. Text mode uses `--print` by default; JSON/RPC modes set `--mode` and omit `--print`.
+`PiAgent` supports all PI CLI flags: provider/model, tools, extensions, skills, prompt templates, themes, sessions. Text mode uses `--print` by default; JSON/RPC modes set `--mode` and omit `--print`.
 
 PI sessions are first-class hijack targets. `smithers hijack <runId> --target pi` reopens the PI session for local steering.
 
 ### 2) PI Server Client
 
-Use `pi-plugin` to drive Smithers server APIs from a PI extension or any Node process:
+Drive Smithers server APIs from a PI extension or any Node process via `pi-plugin`:
 
 ```ts
 import { runWorkflow, approve, streamEvents } from "smithers-orchestrator/pi-plugin";
@@ -60,7 +60,7 @@ Session persistence:
 
 - `PiAgent` defaults `noSession` to `true` for one-shot calls.
 - For workflow hijack/resume/streaming, Smithers keeps session persistence enabled automatically.
-- No need to set `mode: "json"` manually for hijack support.
+- `mode: "json"` is not required for hijack support.
 
 ## Setup
 

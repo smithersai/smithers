@@ -5,14 +5,11 @@ import { randomUUID } from "node:crypto";
 import { BaseCliAgent, normalizeCodexConfig, pushFlag, pushList, isRecord, asString, asNumber, truncate, shouldSurfaceUnparsedStdout, createSyntheticIdGenerator, } from "./BaseCliAgent/index.js";
 import { normalizeCapabilityStringList, } from "./capability-registry/index.js";
 import { sanitizeForOpenAI } from "./sanitizeForOpenAI.js";
-/** @typedef {import("./BaseCliAgent/index.ts").BaseCliAgentOptions} BaseCliAgentOptions */
-/** @typedef {import("./BaseCliAgent/index.ts").CodexConfigOverrides} CodexConfigOverrides */
-
-/** @typedef {import("./capability-registry/index.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
-/** @typedef {import("./BaseCliAgent/index.ts").CliOutputInterpreter} CliOutputInterpreter */
-/**
- * @typedef {BaseCliAgentOptions & { config?: CodexConfigOverrides; enable?: string[]; disable?: string[]; image?: string[]; model?: string; oss?: boolean; localProvider?: string; sandbox?: "read-only" | "workspace-write" | "danger-full-access"; profile?: string; fullAuto?: boolean; dangerouslyBypassApprovalsAndSandbox?: boolean; cd?: string; skipGitRepoCheck?: boolean; addDir?: string[]; outputSchema?: string; color?: "always" | "never" | "auto"; json?: boolean; outputLastMessage?: string; }} CodexAgentOptions
- */
+/** @typedef {import("./BaseCliAgent/BaseCliAgentOptions.ts").BaseCliAgentOptions} BaseCliAgentOptions */
+/** @typedef {import("./BaseCliAgent/CodexConfigOverrides.ts").CodexConfigOverrides} CodexConfigOverrides */
+/** @typedef {import("./capability-registry/AgentCapabilityRegistry.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
+/** @typedef {import("./BaseCliAgent/CliOutputInterpreter.ts").CliOutputInterpreter} CliOutputInterpreter */
+/** @typedef {import("./CodexAgentOptions.ts").CodexAgentOptions} CodexAgentOptions */
 
 /**
  * @param {CodexAgentOptions} opts

@@ -7,9 +7,9 @@ import { nowMs } from "@smithers/scheduler/nowMs";
 import { openApiToolCallsTotal, openApiToolCallErrorsTotal, openApiToolDuration, } from "../metrics.js";
 import { buildOperationSchema } from "../schema-converter.js";
 import { extractOperations } from "../spec-parser.js";
-/** @typedef {import("../types.ts").OpenApiSpec} OpenApiSpec */
-/** @typedef {import("../types.ts").OpenApiToolsOptions} OpenApiToolsOptions */
-/** @typedef {import("../types.ts").ParsedOperation} ParsedOperation */
+/** @typedef {import("../OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+/** @typedef {import("../OpenApiToolsOptions.ts").OpenApiToolsOptions} OpenApiToolsOptions */
+/** @typedef {import("../ParsedOperation.ts").ParsedOperation} ParsedOperation */
 
 // ---------------------------------------------------------------------------
 // HTTP execution
@@ -126,6 +126,7 @@ export async function executeRequest(operation, args, baseUrl, options) {
  * @param {Record<string, any>} args
  * @param {string} baseUrl
  * @param {OpenApiToolsOptions} options
+ * @returns {Effect.Effect<unknown, unknown, never>}
  */
 export function executeToolEffect(operation, args, baseUrl, options) {
     const started = nowMs();

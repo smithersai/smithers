@@ -1,8 +1,8 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").OpenApiAuth} OpenApiAuth */
-/** @typedef {import("./index.ts").OpenApiSpec} OpenApiSpec */
-/** @typedef {import("./index.ts").OpenApiToolsOptions} OpenApiToolsOptions */
-/** @typedef {import("./index.ts").ParsedOperation} ParsedOperation */
+/** @typedef {import("./OpenApiAuth.ts").OpenApiAuth} OpenApiAuth */
+/** @typedef {import("./OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+/** @typedef {import("./OpenApiToolsOptions.ts").OpenApiToolsOptions} OpenApiToolsOptions */
+/** @typedef {import("./ParsedOperation.ts").ParsedOperation} ParsedOperation */
 // @smithers-type-exports-end
 
 // ---------------------------------------------------------------------------

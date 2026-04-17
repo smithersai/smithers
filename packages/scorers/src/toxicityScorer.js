@@ -1,7 +1,13 @@
 import { llmJudge } from "./llmJudge.js";
+/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("./types.js").Scorer} Scorer */
+
 /**
  * Creates a toxicity scorer that uses an LLM judge to detect toxic,
  * harmful, or inappropriate content in the output.
+ *
+ * @param {AgentLike} judge
+ * @returns {Scorer}
  */
 export function toxicityScorer(judge) {
     return llmJudge({

@@ -1,77 +1,52 @@
 ---
 title: <Sandbox>
-description: Run a child workflow inside an isolated execution environment — Docker, Codeplane, or Bubblewrap — and collect its output bundle back into the parent workflow.
+description: Run a child workflow in an isolated runtime; collect its result bundle.
 ---
 
-```tsx
+```ts
 import { Sandbox } from "smithers-orchestrator";
-```
 
-`<Sandbox>` spawns a child workflow inside an isolated runtime, ships a request bundle to it, waits for execution to finish, and collects the result bundle back into the parent workflow. Diffs produced inside the sandbox can be reviewed and optionally auto-accepted before they are applied to the host environment. Use `<Sandbox>` when a task needs a clean filesystem, network isolation, or a reproducible dependency environment that must not share state with the caller.
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | required | Unique sandbox identifier within the workflow run. |
-| `output` | `ZodObject \| DrizzleTable \| string` | required | Output target for the collected bundle result. |
-| `workflow` | `(...args: any[]) => any` | `undefined` | Child workflow definition to execute inside the sandbox. |
-| `input` | `unknown` | `undefined` | Input value passed to the child workflow. |
-| `runtime` | `"bubblewrap" \| "docker" \| "codeplane"` | `"bubblewrap"` | Execution runtime. Falls back to `"bubblewrap"` if Docker is not available. |
-| `allowNetwork` | `boolean` | `false` | Whether the sandbox has outbound network access. |
-| `reviewDiffs` | `boolean` | `true` | Trigger the diff review event when the bundle contains patch files. |
-| `autoAcceptDiffs` | `boolean` | `false` | Automatically accept diffs without requiring human approval. |
-| `image` | `string` | `undefined` | Docker image to use for the `docker` runtime. |
-| `env` | `Record<string, string>` | `undefined` | Environment variables injected into the container. |
-| `ports` | `Array<{ host: number; container: number }>` | `undefined` | Port mappings for Docker containers. |
-| `volumes` | `SandboxVolumeMount[]` | `undefined` | Volume mounts for Docker containers. |
-| `memoryLimit` | `string` | `undefined` | Memory limit for the container (e.g. `"512m"`, `"2g"`). |
-| `cpuLimit` | `string` | `undefined` | CPU limit for the container (e.g. `"0.5"`, `"2"`). |
-| `command` | `string` | `undefined` | Override the default entrypoint command inside the sandbox. |
-| `workspace` | `SandboxWorkspaceSpec` | `undefined` | Codeplane workspace configuration. |
-| `skipIf` | `boolean` | `false` | Skip the sandbox entirely. Returns `null`. |
-| `timeoutMs` | `number` | `undefined` | Total sandbox execution timeout in milliseconds. |
-| `heartbeatTimeoutMs` | `number` | `undefined` | Heartbeat timeout in milliseconds. |
-| `retries` | `number` | `undefined` | Number of retry attempts on failure. |
-| `retryPolicy` | `RetryPolicy` | `undefined` | Retry policy configuration. |
-| `continueOnFail` | `boolean` | `false` | Continue workflow execution even if the sandbox fails. |
-| `cache` | `CachePolicy` | `undefined` | Cache policy for the sandbox result. |
-| `dependsOn` | `string[]` | `undefined` | Explicit dependency IDs that must complete before this sandbox starts. |
-| `needs` | `Record<string, string>` | `undefined` | Named output bindings from other steps. |
-| `label` | `string` | `id` | Display label shown in the workflow UI. |
-| `meta` | `Record<string, unknown>` | `undefined` | Arbitrary metadata attached to the sandbox event. |
-| `children` | `ReactNode` | `undefined` | Child workflow body when using a `createSmithers()`-bound `Sandbox` wrapper. |
-
-### SandboxVolumeMount
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `host` | `string` | Absolute path on the host machine. |
-| `container` | `string` | Path inside the container. |
-| `readonly` | `boolean` | Mount as read-only if `true`. |
-
-### SandboxWorkspaceSpec
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `name` | `string` | Workspace name in the Codeplane account. |
-| `snapshotId` | `string` | Snapshot ID to restore before execution. |
-| `idleTimeoutSecs` | `number` | Seconds of inactivity before the workspace stops. |
-| `persistence` | `"ephemeral" \| "sticky"` | Whether the workspace is discarded after each run (`"ephemeral"`) or kept between runs (`"sticky"`). |
-
-## Basic usage with Docker
-
-Run a code-generation workflow inside a Docker container with a specific image and resource limits:
-
-```tsx
-import { Sandbox } from "smithers-orchestrator";
-import { z } from "zod";
-import { generateCodeWorkflow } from "./workflows/generate-code";
-
-const outputs = {
-  result: z.object({ files: z.array(z.string()), summary: z.string() }),
+type SandboxVolumeMount = { host: string; container: string; readonly?: boolean };
+type SandboxWorkspaceSpec = {
+  name: string;
+  snapshotId?: string;
+  idleTimeoutSecs?: number;
+  persistence?: "ephemeral" | "sticky";
 };
 
+type SandboxProps = {
+  id: string;
+  output: ZodObject | DrizzleTable | string;
+  workflow?: (...args: any[]) => any;
+  input?: unknown;
+  runtime?: "bubblewrap" | "docker" | "codeplane"; // default "bubblewrap"; docker auto-falls back
+  allowNetwork?: boolean; // default false
+  reviewDiffs?: boolean; // default true
+  autoAcceptDiffs?: boolean; // default false
+  image?: string;
+  env?: Record<string, string>;
+  ports?: Array<{ host: number; container: number }>;
+  volumes?: SandboxVolumeMount[];
+  memoryLimit?: string; // e.g. "512m", "2g"
+  cpuLimit?: string; // e.g. "0.5", "2"
+  command?: string; // override default `smithers up bundle.tsx`
+  workspace?: SandboxWorkspaceSpec; // codeplane only
+  skipIf?: boolean;
+  timeoutMs?: number;
+  heartbeatTimeoutMs?: number;
+  retries?: number;
+  retryPolicy?: RetryPolicy;
+  continueOnFail?: boolean;
+  cache?: CachePolicy;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  label?: string;
+  meta?: Record<string, unknown>;
+  children?: ReactNode;
+};
+```
+
+```tsx
 <Workflow name="code-gen-sandbox">
   <Sandbox
     id="generate"
@@ -80,246 +55,18 @@ const outputs = {
     output={outputs.result}
     runtime="docker"
     image="node:20-alpine"
-    env={{ NODE_ENV: "production", LOG_LEVEL: "info" }}
-    ports={[{ host: 3000, container: 3000 }]}
+    env={{ NODE_ENV: "production" }}
     memoryLimit="1g"
     cpuLimit="1"
     allowNetwork={false}
-    reviewDiffs={true}
-    autoAcceptDiffs={false}
+    reviewDiffs
     timeoutMs={300_000}
   />
 </Workflow>
 ```
 
-## Codeplane persistent workspace
-
-Use a Codeplane workspace with a pre-built snapshot for faster startup and sticky persistence across runs:
-
-```tsx
-import { Sandbox } from "smithers-orchestrator";
-import { z } from "zod";
-import { testRunnerWorkflow } from "./workflows/test-runner";
-
-const outputs = {
-  testResult: z.object({
-    passed: z.number(),
-    failed: z.number(),
-    coverage: z.number(),
-  }),
-};
-
-<Workflow name="test-in-codeplane">
-  <Sandbox
-    id="run-tests"
-    workflow={testRunnerWorkflow}
-    input={{ branch: ctx.input.branch, suite: "integration" }}
-    output={outputs.testResult}
-    runtime="codeplane"
-    workspace={{
-      name: "test-runner",
-      snapshotId: "snap_abc123",
-      persistence: "sticky",
-      idleTimeoutSecs: 300,
-    }}
-    allowNetwork={true}
-    reviewDiffs={false}
-    timeoutMs={600_000}
-  />
-</Workflow>
-```
-
-## With diff review and conditional auto-accept
-
-Run a refactoring workflow that produces patches. Auto-accept only when the parent input explicitly approves:
-
-```tsx
-import { Sandbox } from "smithers-orchestrator";
-import { z } from "zod";
-import { refactorWorkflow } from "./workflows/refactor";
-
-const outputs = {
-  refactor: z.object({ summary: z.string(), patchCount: z.number() }),
-};
-
-<Workflow name="refactor-sandbox">
-  <Sandbox
-    id="refactor"
-    workflow={refactorWorkflow}
-    input={{ target: ctx.input.filepath, style: ctx.input.styleGuide }}
-    output={outputs.refactor}
-    runtime="docker"
-    image="node:20-alpine"
-    allowNetwork={false}
-    reviewDiffs={true}
-    autoAcceptDiffs={ctx.input.autoApprove === true}
-    timeoutMs={180_000}
-    retries={1}
-    continueOnFail={false}
-  />
-</Workflow>
-```
-
-## Runtime comparison
-
-| Feature | `bubblewrap` | `docker` | `codeplane` |
-| --- | --- | --- | --- |
-| Requires external daemon | No | Yes (Docker) | Yes (API credentials) |
-| Custom image | No | Yes (`image`) | Workspace snapshot |
-| Port mapping | No | Yes (`ports`) | No |
-| Volume mounts | No | Yes (`volumes`) | No |
-| Resource limits | No | Yes (`memoryLimit`, `cpuLimit`) | No |
-| Environment variables | No | Yes (`env`) | No |
-| Persistent workspace | No | No | Yes (`persistence: "sticky"`) |
-| Snapshot restore | No | No | Yes (`snapshotId`) |
-| Idle timeout | No | No | Yes (`idleTimeoutSecs`) |
-| Auto-fallback target | — | `bubblewrap` | — |
-| External credentials required | No | No | `CODEPLANE_API_URL`, `CODEPLANE_API_KEY` |
-
-## How sandbox execution works
-
-When the engine mounts a `<Sandbox>` node it follows this sequence:
-
-1. Checks the active sandbox count against the concurrency limit. Fails immediately if the limit is reached.
-2. Creates a `request-bundle` directory under `.smithers/sandboxes/<runId>/<sandboxId>/` and writes an initial `README.md` manifest with `status: "pending"`.
-3. Calls the transport layer's `create` to provision the runtime environment (container, workspace, or local process).
-4. Ships the request bundle to the sandbox via `ship`.
-5. Executes `smithers up bundle.tsx` inside the sandbox.
-6. Runs the child workflow as a detached child run.
-7. Writes the child run's output and logs into a result bundle.
-8. Calls `collect` on the transport to retrieve the result bundle path.
-9. Validates the bundle: size, manifest structure, and patch path safety.
-10. If the bundle contains patches and `reviewDiffs` is `true`, emits `SandboxDiffReviewRequested`. If `autoAcceptDiffs` is `false`, throws and leaves patches unapplied.
-11. If `autoAcceptDiffs` is `true`, emits `SandboxDiffAccepted` and returns `manifest.outputs` to the parent workflow.
-12. Always calls `cleanup` on the transport handle in a `finally` block, even on failure.
-
-## Delta transport
-
-The sandbox communicates with the host through a file-based delta transport. The host writes a request bundle — a directory containing a `README.md` JSON manifest — and the sandbox writes a result bundle back to a separate `result/` directory. The transport layer (`SandboxTransport`) abstracts the mechanics of moving those directories into and out of the runtime. Each transport operation is timed and reported to the `sandboxTransportDurationMs` metric.
-
-The `SandboxTransportService` interface exposes five operations:
-
-| Method | Description |
-| --- | --- |
-| `create(config)` | Provision the runtime and return a `SandboxHandle`. |
-| `ship(bundlePath, handle)` | Copy the request bundle into the runtime. |
-| `execute(command, handle)` | Run a command inside the runtime. |
-| `collect(handle)` | Retrieve the result bundle from the runtime. |
-| `cleanup(handle)` | Destroy or release the runtime environment. |
-
-## Bundle structure and validation
-
-Every result bundle must pass validation before the parent workflow receives its outputs.
-
-```
-<sandboxId>/
-  README.md           — JSON manifest (required)
-  patches/            — Unified diff files (.patch)
-  artifacts/          — Arbitrary output files
-  logs/
-    stream.ndjson     — Streaming log capture (optional)
-```
-
-The `README.md` manifest is a JSON object with this shape:
-
-```json
-{
-  "status": "finished",
-  "runId": "run_abc123",
-  "outputs": { "summary": "Done" },
-  "patches": ["patches/change.patch"]
-}
-```
-
-`status` must be one of `"finished"`, `"failed"`, or `"cancelled"`. Any other value causes validation to throw before the bundle is used.
-
-### Bundle limits
-
-| Limit | Value |
-| --- | --- |
-| Total bundle size | 100 MB |
-| `README.md` size | 5 MB |
-| Maximum patch files | 1,000 |
-| Bundle path length | 1,024 characters |
-| Run ID length | 256 characters |
-| Output JSON depth | 16 levels |
-| Output array length | 512 items |
-| Output string length | 64 KB per string |
-
-## Runtime auto-fallback
-
-When `runtime="docker"` is set and the Docker daemon is not reachable at startup, `<Sandbox>` silently falls back to `"bubblewrap"`. The resolved runtime is recorded in the sandbox config and surfaced in the `SandboxCreated` event. No other runtime combination triggers automatic fallback.
-
-## Concurrency limits
-
-The maximum number of simultaneously active sandboxes within a single workflow run is controlled by the `SMITHERS_MAX_CONCURRENT_SANDBOXES` environment variable. It defaults to `10`. If the limit is reached when a new `<Sandbox>` node is mounted, the component throws immediately with `SANDBOX_EXECUTION_FAILED`.
-
-```bash
-SMITHERS_MAX_CONCURRENT_SANDBOXES=5 smithers up workflow.tsx
-```
-
-## Streaming log capture
-
-If the child workflow produces a `logs/stream.ndjson` file during execution, that file is included in the result bundle and its path is available as `logsPath` in the validated bundle. Log capture does not contribute to the bundle size estimate until the bundle is written.
-
-## Custom command override
-
-Use `command` to replace the default `smithers up bundle.tsx` entrypoint:
-
-```tsx
-<Sandbox
-  id="custom-run"
-  workflow={myWorkflow}
-  output={outputs.result}
-  runtime="docker"
-  image="node:20-alpine"
-  command="node dist/runner.js"
-/>
-```
-
-## Passing input to the sandbox
-
-The `input` prop is serialized into the request bundle manifest and passed directly to the child workflow as its `input`. Any JSON-serializable value is valid:
-
-```tsx
-<Sandbox
-  id="analyze"
-  workflow={analyzeWorkflow}
-  input={{
-    repo: ctx.input.repo,
-    ref: ctx.input.sha,
-    checks: ["lint", "types", "tests"],
-  }}
-  output={outputs.analysis}
-  runtime="bubblewrap"
-/>
-```
-
-## Security notes
-
-`<Sandbox>` enforces several controls to prevent unsafe bundles from affecting the host filesystem.
-
-**Path traversal protection.** Every patch file path in the bundle manifest is resolved relative to `patches/` and checked with `path.relative`. Any path that resolves outside the bundle root (`..`) causes an immediate `TOOL_PATH_ESCAPE` error and the bundle is rejected before any files are applied.
-
-**Patch file limit.** Bundles with more than 1,000 `.patch` files are rejected. This prevents resource exhaustion from unbounded file enumeration during bundle validation.
-
-**README.md size limit.** The `README.md` manifest is capped at 5 MB. Oversized manifests are rejected before their JSON is parsed, preventing memory exhaustion from malformed bundles.
-
-**Network isolation.** `allowNetwork` defaults to `false`. Each runtime enforces this constraint at the environment level, not in application code.
-
-**Docker image pinning.** Specify an exact digest or a pinned tag in `image` to prevent image drift between runs. Untagged images pull `latest` which is non-deterministic.
-
-**Codeplane credentials.** The `codeplane` runtime requires `CODEPLANE_API_URL` and `CODEPLANE_API_KEY` environment variables. If either is missing, the sandbox fails at `create` time with `INVALID_INPUT` rather than at execution time.
-
-## Rendering
-
-`<Sandbox>` renders to a `<smithers:sandbox>` host element. The child workflow definition is passed as the internal `__smithersSandboxWorkflow` attribute and the input as `__smithersSandboxInput`. These internal attributes are consumed by the engine and are not visible in the workflow tree. When `skipIf` is `true` the component returns `null` and no sandbox is provisioned.
-
 ## Notes
 
-- A sandbox that fails during execution records `status: "failed"` in the local database and emits a `SandboxFailed` event. The error is re-thrown to the parent workflow unless `continueOnFail={true}`.
-- `cleanup` is always called in a `finally` block. Cleanup errors are silently swallowed to avoid masking the original failure.
-- `reviewDiffs` defaults to `true`. Set `autoAcceptDiffs={true}` to bypass the approval gate in automated pipelines.
-- The `workspace.persistence` field only affects the Codeplane runtime. `"ephemeral"` workspaces are destroyed after each run; `"sticky"` workspaces are retained and reused on the next run with the same `workspace.name`.
-- `snapshotId` restores a named Codeplane snapshot before execution begins, enabling fast environment setup without a full install step on every run.
-- Steps declared in `dependsOn` must complete successfully before the sandbox is provisioned. The sandbox does not count toward the concurrency limit until provisioning begins.
+- Bundle limits: 100 MB total, 5 MB manifest, 1,000 patches max; path traversal rejected.
+- Concurrency cap via `SMITHERS_MAX_CONCURRENT_SANDBOXES` (default 10).
+- `cleanup` always runs in `finally`; `codeplane` requires `CODEPLANE_API_URL` and `CODEPLANE_API_KEY`.

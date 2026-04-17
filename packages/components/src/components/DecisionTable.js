@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./DecisionTable.ts").DecisionRule} DecisionRule */
-/** @typedef {import("./DecisionTable.ts").DecisionTableProps} DecisionTableProps */
+/** @typedef {import("./DecisionRule.ts").DecisionRule} DecisionRule */
+/** @typedef {import("./DecisionTableProps.ts").DecisionTableProps} DecisionTableProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -14,6 +14,7 @@ import { Parallel } from "./Parallel.js";
  * - `"all-match"` gathers all matching rules' `then` elements into a Parallel.
  *
  * Composes Branch and Parallel internally.
+ * @param {DecisionTableProps} props
  */
 export function DecisionTable(props) {
     if (props.skipIf)

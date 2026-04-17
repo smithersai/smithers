@@ -1,250 +1,141 @@
 ---
-title: Core Type Reference
-description: Reference for the core exported Smithers runtime, component, server, and error types.
+title: Types
+description: Public TypeScript surface for smithers-orchestrator.
 ---
 
-The types on this page are the core JSX/runtime types most Smithers users work with directly. They are exported from `smithers-orchestrator` unless noted otherwise.
-
-Additional public type families are also exported for adjacent surfaces:
-
-| Family | Exports |
-|---|---|
-| Workflow builder | `CreateSmithersApi` |
-| Serve app | `ServeOptions` |
-| Observability | `ResolvedSmithersObservabilityOptions`, `SmithersLogFormat`, `SmithersObservabilityOptions`, `SmithersObservabilityService` |
-| Agents | `AnthropicAgentOptions`, `OpenAIAgentOptions`, `PiAgentOptions`, `PiExtensionUiRequest`, `PiExtensionUiResponse` |
-| Scorers | `ScoreResult`, `ScorerInput`, `ScorerFn`, `Scorer`, `SamplingConfig`, `ScorerBinding`, `ScorersMap`, `ScoreRow`, `AggregateScore`, `ScorerContext`, `CreateScorerConfig`, `LlmJudgeConfig`, `AggregateOptions` from `smithers-orchestrator/scorers` |
-| Renderer / builder internals | `HostContainer`, `SmithersSqliteOptions` |
-| VCS helpers | `RunJjOptions`, `RunJjResult`, `JjRevertResult`, `WorkspaceAddOptions`, `WorkspaceResult`, `WorkspaceInfo` |
-
-## Workflow Types
-
-### SmithersWorkflow\<Schema\>
+One source of truth: `tsc --emitDeclarationOnly` would produce something close to this. Import these types from `smithers-orchestrator` unless noted otherwise.
 
 ```ts
-type SmithersWorkflow<Schema> = {
-  db: unknown;
-  build: (ctx: SmithersCtx<Schema>) => React.ReactElement;
-  opts: SmithersWorkflowOptions;
-  schemaRegistry?: Map<string, SchemaRegistryEntry>;
-};
-```
+// =============================================================================
+// Workflow
+// =============================================================================
 
-| Field | Type | Description |
-|---|---|---|
-| `db` | `unknown` | Drizzle ORM database instance |
-| `build` | `(ctx: SmithersCtx<Schema>) => ReactElement` | Renders the workflow JSX tree |
-| `opts` | `SmithersWorkflowOptions` | Workflow-level options |
-| `schemaRegistry` | `Map<string, SchemaRegistryEntry>` | Output table names to schema entries |
+interface SmithersWorkflow<Schema = unknown> {
+  readonly readableName?: string;
+  readonly description?: string;
+  readonly db?: unknown;
+  readonly build: (ctx: SmithersCtx<Schema>) => JSX.Element;
+  readonly opts: SmithersWorkflowOptions;
+  readonly schemaRegistry?: Map<string, SchemaRegistryEntry>;
+}
 
----
-
-### SmithersWorkflowOptions
-
-```ts
 type SmithersWorkflowOptions = {
+  alertPolicy?: SmithersAlertPolicy;
   cache?: boolean;
+  workflowHash?: string;
 };
-```
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `cache` | `boolean` | `undefined` | Enable task output caching across runs |
-
----
-
-### SchemaRegistryEntry
-
-```ts
 type SchemaRegistryEntry = {
   table: any;
   zodSchema: import("zod").ZodObject<any>;
 };
-```
 
-| Field | Type | Description |
-|---|---|---|
-| `table` | `any` | Drizzle ORM table definition |
-| `zodSchema` | `ZodObject<any>` | Zod schema for output validation |
+type SmithersAlertPolicy = {
+  defaults?: SmithersAlertPolicyDefaults;
+  rules?: Record<string, SmithersAlertPolicyRule>;
+  reactions?: Record<string, SmithersAlertReaction>;
+};
 
----
+type SmithersAlertSeverity = "info" | "warning" | "critical";
+type SmithersAlertLabels = Record<string, string>;
+type SmithersAlertPolicyDefaults = {
+  owner?: string;
+  severity?: SmithersAlertSeverity;
+  runbook?: string;
+  labels?: SmithersAlertLabels;
+};
+type SmithersAlertPolicyRule = SmithersAlertPolicyDefaults & {
+  afterMs?: number;
+  reaction?: string | SmithersAlertReaction;
+};
+type SmithersAlertReaction =
+  | { kind: "emit-only" }
+  | { kind: "pause" }
+  | { kind: "cancel" }
+  | { kind: "open-approval" }
+  | { kind: "deliver"; destination: string };
 
-## Context Types
+// =============================================================================
+// Context
+// =============================================================================
 
-### SmithersCtx\<Schema\>
+declare class SmithersCtx<Schema = unknown> {
+  readonly runId: string;
+  readonly iteration: number;
+  readonly iterations?: Record<string, number>;
+  readonly input: Schema extends { input: infer T } ? T : any;
+  readonly auth: RunAuthContext | null;
+  readonly outputs: OutputAccessor<Schema>;
 
-```ts
-interface SmithersCtx<Schema> {
-  runId: string;
-  iteration: number;
-  iterations?: Record<string, number>;
-  input: Schema extends { input: infer T } ? T : any;
-  auth: RunAuthContext | null;
-  outputs: OutputAccessor<Schema>;
-
-  output<T extends keyof Schema>(
-    table: Schema[T],
-    key: OutputKey,
-  ): InferRow<Schema[T]>;
-
-  outputMaybe<T extends keyof Schema>(
-    table: Schema[T],
-    key: OutputKey,
-  ): InferRow<Schema[T]> | undefined;
-
-  latest(table: any, nodeId: string): any;
-
-  latestArray(value: unknown, schema: import("zod").ZodType): any[];
-
+  output(table: any, key: OutputKey): any;
+  outputMaybe(table: any, key: OutputKey): any | undefined;
+  latest(table: any, nodeId: string): any | undefined;
+  latestArray(value: unknown, schema: any): unknown[];
   iterationCount(table: any, nodeId: string): number;
 }
-```
 
-| Field / Method | Type | Description |
-|---|---|---|
-| `runId` | `string` | Current run ID |
-| `iteration` | `number` | Current Loop iteration (0 outside loops) |
-| `iterations` | `Record<string, number>` | Loop ID to current iteration count |
-| `input` | Inferred from Schema | Typed input data |
-| `auth` | `RunAuthContext \| null` | Authentication context passed via `RunOptions.auth`. `null` when no auth context is configured. |
-| `outputs` | `OutputAccessor<Schema>` | Accessor for all output rows |
-| `output(table, key)` | `InferRow<T>` | Get output row. Throws if missing. The `table` parameter accepts a Zod schema from `outputs`, a Drizzle table, or a string schema key. |
-| `outputMaybe(table, key)` | `InferRow<T> \| undefined` | Get output row or `undefined`. Same table resolution as `output()`. |
-| `latest(table, nodeId)` | `any` | Latest output row (highest iteration). Same table resolution as `output()`. |
-| `latestArray(value, schema)` | `any[]` | JSON-parse `value` if it is a string, coerce to array, then validate each element against `schema` (Zod). Invalid items are silently dropped. |
-| `iterationCount(table, nodeId)` | `number` | Distinct iteration count for a node |
-
----
-
-### OutputKey
-
-```ts
-type OutputKey = {
-  nodeId: string;
-  iteration?: number;
-};
-```
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `nodeId` | `string` | -- | Task node ID |
-| `iteration` | `number` | `0` | Loop iteration |
-
----
-
-### OutputAccessor\<Schema\>
-
-Callable object that retrieves output rows. Can be called as a function or accessed as a property.
-
-```ts
+type OutputKey = { nodeId: string; iteration?: number };
 type OutputAccessor<Schema> = ((table: any) => any[]) & Record<string, any[]>;
-```
-
----
-
-### InferRow\<TTable\>
-
-Extracts the select row type from a Drizzle table.
-
-```ts
 type InferRow<TTable> = TTable extends { $inferSelect: infer R } ? R : never;
-```
+type InferOutputEntry<T> =
+  T extends import("zod").ZodTypeAny ? import("zod").infer<T>
+  : T extends { $inferSelect: any } ? InferRow<T>
+  : never;
 
----
+type RunAuthContext = {
+  triggeredBy: string;
+  scopes: string[];
+  role: string;
+  createdAt: string;
+};
 
-## Run Types
+// =============================================================================
+// Run
+// =============================================================================
 
-### RunOptions
-
-```ts
 type RunOptions = {
   runId?: string;
-  parentRunId?: string;
+  parentRunId?: string | null;
   input: Record<string, unknown>;
-  maxConcurrency?: number;
+  maxConcurrency?: number;          // default 4
   onProgress?: (e: SmithersEvent) => void;
   signal?: AbortSignal;
   resume?: boolean;
-  force?: boolean;
+  force?: boolean;                  // resume even if marked running
   workflowPath?: string;
   rootDir?: string;
   logDir?: string | null;
-  allowNetwork?: boolean;
-  maxOutputBytes?: number;
-  toolTimeoutMs?: number;
+  allowNetwork?: boolean;           // default false; bash tool network access
+  maxOutputBytes?: number;          // default 200000
+  toolTimeoutMs?: number;           // default 60000
   hot?: boolean | HotReloadOptions;
-  auth?: RunAuthContext;
-  cliAgentToolsDefault?: "all" | "explicit-only";
+  auth?: RunAuthContext | null;
+  config?: Record<string, unknown>;
+  cliAgentToolsDefault?: "all" | "explicit-only";  // default "all"
+  resumeClaim?: {                   // internal supervisor coordination
+    claimOwnerId: string;
+    claimHeartbeatAtMs: number;
+    restoreRuntimeOwnerId?: string | null;
+    restoreHeartbeatAtMs?: number | null;
+  };
 };
-```
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `runId` | `string` | Auto-generated | Custom run identifier. Falls back to `randomUUID()` when omitted. |
-| `parentRunId` | `string` | `undefined` | Parent run ID for child workflow / subflow tracking. |
-| `input` | `Record<string, unknown>` | -- | Input data (required) |
-| `maxConcurrency` | `number` | `4` | Max parallel tasks |
-| `onProgress` | `(e: SmithersEvent) => void` | `undefined` | Lifecycle event callback |
-| `signal` | `AbortSignal` | `undefined` | Cancellation signal |
-| `resume` | `boolean` | `false` | Resume from last checkpoint |
-| `force` | `boolean` | `false` | Allow resume even if the run is still active (overrides liveness check) |
-| `workflowPath` | `string` | `undefined` | Workflow file path (for tool context) |
-| `rootDir` | `string` | `undefined` | Sandbox root for tools |
-| `logDir` | `string \| null` | `undefined` | Event log directory (`null` to disable) |
-| `allowNetwork` | `boolean` | `false` | Allow `bash` network access |
-| `maxOutputBytes` | `number` | `200000` | Max output bytes per tool call |
-| `toolTimeoutMs` | `number` | `60000` | Tool execution timeout (ms) |
-| `hot` | `boolean \| HotReloadOptions` | `undefined` | Hot-reload mode |
-| `auth` | `RunAuthContext` | `undefined` | Authentication context. Accessible as `ctx.auth` inside the workflow. |
-| `cliAgentToolsDefault` | `"all" \| "explicit-only"` | `"all"` | Default tool access policy for CLI-backed agents. `"explicit-only"` restricts agents to tools listed in `allowTools`. |
-
----
-
-### HotReloadOptions
-
-```ts
 type HotReloadOptions = {
   rootDir?: string;
-  outDir?: string;
-  maxGenerations?: number;
-  cancelUnmounted?: boolean;
-  debounceMs?: number;
+  outDir?: string;                  // default .smithers/hmr/<runId>
+  maxGenerations?: number;          // default 3
+  cancelUnmounted?: boolean;        // default false
+  debounceMs?: number;              // default 100
 };
-```
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `rootDir` | `string` | Auto-detect | Directory to watch |
-| `outDir` | `string` | `.smithers/hmr/<runId>` | Generation overlay directory |
-| `maxGenerations` | `number` | `3` | Max overlay generations |
-| `cancelUnmounted` | `boolean` | `false` | Cancel unmounted tasks after reload |
-| `debounceMs` | `number` | `100` | File change debounce (ms) |
-
----
-
-### RunResult
-
-```ts
 type RunResult = {
-  runId: string;
-  status: "finished" | "failed" | "cancelled" | "continued" | "waiting-approval" | "waiting-event" | "waiting-timer";
-  output?: unknown;
-  error?: unknown;
+  readonly runId: string;
+  readonly status: RunStatus;
+  readonly output?: unknown;
+  readonly error?: unknown;
+  readonly nextRunId?: string;      // set when the run continued-as-new
 };
-```
 
-| Field | Type | Description |
-|---|---|---|
-| `runId` | `string` | Run identifier |
-| `status` | `string` | Terminal status |
-| `output` | `unknown` | Final output (if finished) |
-| `error` | `unknown` | Error details (if failed) |
-
----
-
-### RunStatus
-
-```ts
 type RunStatus =
   | "running"
   | "waiting-approval"
@@ -254,28 +145,26 @@ type RunStatus =
   | "continued"
   | "failed"
   | "cancelled";
-```
 
-| Value | Description |
-|---|---|
-| `"running"` | Actively executing |
-| `"waiting-approval"` | Awaiting human approval |
-| `"waiting-event"` | Awaiting an external signal or event |
-| `"waiting-timer"` | Suspended until a durable timer fires |
-| `"finished"` | All tasks completed |
-| `"continued"` | Run ended via `<ContinueAsNew>` and a fresh run has started |
-| `"failed"` | Unrecoverable task failure |
-| `"cancelled"` | Cancelled via `AbortSignal` or API |
+type RetryTaskOptions = {
+  runId: string;
+  nodeId: string;
+  iteration?: number;
+  resetDependents?: boolean;        // default true
+  force?: boolean;                  // default false
+  onProgress?: (e: SmithersEvent) => void;
+};
 
----
+type RetryTaskResult = {
+  success: boolean;
+  resetNodes: string[];
+  error?: string;
+};
 
-## Task Types
+// =============================================================================
+// Task
+// =============================================================================
 
-### TaskDescriptor
-
-Internal representation of a task extracted from the JSX tree. Scheduled and executed by the engine.
-
-```ts
 type TaskDescriptor = {
   nodeId: string;
   ordinal: number;
@@ -286,362 +175,127 @@ type TaskDescriptor = {
   worktreeId?: string;
   worktreePath?: string;
   worktreeBranch?: string;
-
-  outputTable: Table | null;
+  worktreeBaseBranch?: string;
+  outputTable: unknown | null;
   outputTableName: string;
   outputRef?: import("zod").ZodObject<any>;
   outputSchema?: import("zod").ZodObject<any>;
-
   parallelGroupId?: string;
   parallelMaxConcurrency?: number;
-
   needsApproval: boolean;
-  approvalMode?: "gate" | "decision";
+  waitAsync?: boolean;
+  approvalMode?: "gate" | "decision" | "select" | "rank";
   approvalOnDeny?: "fail" | "continue" | "skip";
+  approvalOptions?: ApprovalOption[];
+  approvalAllowedScopes?: string[];
+  approvalAllowedUsers?: string[];
+  approvalAutoApprove?: {
+    after?: number;
+    audit?: boolean;
+    conditionMet?: boolean;
+    revertOnMet?: boolean;
+  };
   skipIf: boolean;
   retries: number;
   retryPolicy?: RetryPolicy;
   timeoutMs: number | null;
+  heartbeatTimeoutMs: number | null;
   continueOnFail: boolean;
   cachePolicy?: CachePolicy;
-
   agent?: AgentLike | AgentLike[];
   prompt?: string;
   staticPayload?: unknown;
   computeFn?: () => unknown | Promise<unknown>;
-
   label?: string;
   meta?: Record<string, unknown>;
+  scorers?: ScorersMap;
+  memoryConfig?: TaskMemoryConfig;
 };
-```
-
-| Field | Type | Description |
-|---|---|---|
-| `nodeId` | `string` | Unique task identifier (from `id` prop) |
-| `ordinal` | `number` | Execution order position (depth-first) |
-| `iteration` | `number` | Current Loop iteration |
-| `ralphId` | `string` | Parent Loop ID |
-| `dependsOn` | `string[]` | Explicit dependency node IDs |
-| `needs` | `Record<string, string>` | Named dependencies (keys = context keys, values = node IDs) |
-| `worktreeId` | `string` | Assigned git worktree ID |
-| `worktreePath` | `string` | Worktree filesystem path |
-| `worktreeBranch` | `string` | Worktree branch name |
-| `outputTable` | `Table \| null` | Drizzle table for output persistence |
-| `outputTableName` | `string` | Output table name |
-| `outputRef` | `ZodObject<any>` | Zod schema reference from `output` prop |
-| `outputSchema` | `ZodObject<any>` | Zod schema for validating agent output |
-| `parallelGroupId` | `string` | Parent `<Parallel>` group ID |
-| `parallelMaxConcurrency` | `number` | Concurrency limit from parent `<Parallel>` |
-| `needsApproval` | `boolean` | Requires human approval |
-| `approvalMode` | `"gate" \| "decision"` | `"gate"` pauses before execution; `"decision"` records a decision |
-| `approvalOnDeny` | `"fail" \| "continue" \| "skip"` | Behavior on denial |
-| `skipIf` | `boolean` | Skip this task |
-| `retries` | `number` | Retry attempts on failure |
-| `retryPolicy` | `RetryPolicy` | Backoff configuration |
-| `timeoutMs` | `number \| null` | Task timeout (ms) |
-| `continueOnFail` | `boolean` | Continue workflow on failure |
-| `cachePolicy` | `CachePolicy` | Cache configuration |
-| `agent` | `AgentLike \| AgentLike[]` | Agent or fallback chain |
-| `prompt` | `string` | Prompt text (from children) |
-| `staticPayload` | `unknown` | Pre-computed payload (non-agent tasks) |
-| `computeFn` | `() => unknown \| Promise<unknown>` | Compute callback |
-| `label` | `string` | Display label |
-| `meta` | `Record<string, unknown>` | Arbitrary metadata |
-
----
-
-### AgentLike
-
-```ts
-type AgentLike = Agent<any, any, any>;
-```
-
----
-
-### RetryPolicy
-
-```ts
-type RetryBackoff = "fixed" | "linear" | "exponential";
 
 type RetryPolicy = {
-  backoff?: RetryBackoff;
-  initialDelayMs?: number;
+  backoff?: "fixed" | "linear" | "exponential";   // default "fixed"
+  initialDelayMs?: number;                         // default 0
+  maxDelayMs?: number;
+  multiplier?: number;
+  jitter?: boolean;
 };
-```
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `backoff` | `"fixed" \| "linear" \| "exponential"` | `"fixed"` | Backoff strategy. `"fixed"`: constant delay. `"linear"`: delay increases by `initialDelayMs` each attempt. `"exponential"`: delay doubles each attempt. |
-| `initialDelayMs` | `number` | `0` | Base delay in milliseconds. When `0`, retries execute immediately with no schedule. |
-
-Backoff delay formulas (attempt 1-indexed):
-
-| Strategy | Delay formula |
-|---|---|
-| `"fixed"` | `initialDelayMs` every attempt |
-| `"linear"` | `initialDelayMs * attempt` |
-| `"exponential"` | `initialDelayMs * 2^(attempt - 1)` |
-
-When `retries` is set on a `<Task>` without a `retryPolicy`, the task retries immediately (no delay).
-
----
-
-### RetryTaskOptions
-
-Options for the programmatic `retryTask()` function, which resets a task and its dependents for re-execution.
-
-```ts
-type RetryTaskOptions = {
-  runId: string;
-  nodeId: string;
-  iteration?: number;
-  resetDependents?: boolean;
-  force?: boolean;
-  onProgress?: (event: SmithersEvent) => void;
-};
-```
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `runId` | `string` | -- | Run ID containing the task to retry |
-| `nodeId` | `string` | -- | Node ID of the task to retry |
-| `iteration` | `number` | `0` | Loop iteration to retry |
-| `resetDependents` | `boolean` | `true` | Also reset downstream tasks that depend on this node |
-| `force` | `boolean` | `false` | Allow retry even if the run is still active |
-| `onProgress` | `(event: SmithersEvent) => void` | `undefined` | Event callback for `RetryTaskStarted` and `RetryTaskFinished` events |
-
----
-
-### RetryTaskResult
-
-```ts
-type RetryTaskResult = {
-  success: boolean;
-  resetNodes: string[];
-  error?: string;
-};
-```
-
-| Field | Type | Description |
-|---|---|---|
-| `success` | `boolean` | Whether the retry operation succeeded |
-| `resetNodes` | `string[]` | Node IDs that were reset to `"pending"` |
-| `error` | `string` | Error message if the retry operation failed |
-
----
-
-### CachePolicy
-
-```ts
 type CachePolicy<Ctx = any> = {
   by?: (ctx: Ctx) => unknown;
   version?: string;
+  key?: string;
+  ttlMs?: number;
+  scope?: "run" | "workflow" | "global";
 };
-```
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `by` | `(ctx: Ctx) => unknown` | `undefined` | Cache key function. Same key reuses cached output. |
-| `version` | `string` | `undefined` | Cache version. Changing it invalidates cached outputs. |
+type AgentLike = {
+  id?: string;
+  tools?: Record<string, any>;
+  capabilities?: any;
+  generate: (args: any) => Promise<any>;
+};
 
----
+type TaskMemoryConfig = {
+  recall?: { namespace?: MemoryNamespace; query?: string; topK?: number };
+  remember?: { namespace?: MemoryNamespace; key?: string };
+  threadId?: string;
+};
 
-## Graph Types
+type MemoryNamespace = { kind: MemoryNamespaceKind; id: string };
+type MemoryNamespaceKind = "workflow" | "agent" | "user" | "global";
 
-### GraphSnapshot
+// =============================================================================
+// Graph
+// =============================================================================
 
-```ts
 type GraphSnapshot = {
-  runId: string;
-  frameNo: number;
-  xml: XmlNode | null;
-  tasks: TaskDescriptor[];
+  readonly runId: string;
+  readonly frameNo: number;
+  readonly xml: XmlNode | null;
+  readonly tasks: readonly TaskDescriptor[];
 };
-```
 
-| Field | Type | Description |
-|---|---|---|
-| `runId` | `string` | Run identifier |
-| `frameNo` | `number` | Render frame number (monotonically increasing) |
-| `xml` | `XmlNode \| null` | Rendered XML tree |
-| `tasks` | `TaskDescriptor[]` | Ordered task list |
-
----
-
-### XmlNode
-
-```ts
 type XmlNode = XmlElement | XmlText;
-```
 
----
-
-### XmlElement
-
-```ts
 type XmlElement = {
-  kind: "element";
-  tag: string;
-  props: Record<string, string>;
-  children: XmlNode[];
+  readonly kind: "element";
+  readonly tag: string;             // "Workflow" | "Task" | "Sequence" | ...
+  readonly props: Record<string, string>;
+  readonly children: readonly XmlNode[];
 };
-```
 
-| Field | Type | Description |
-|---|---|---|
-| `kind` | `"element"` | Discriminant |
-| `tag` | `string` | Tag name (`"Workflow"`, `"Task"`, `"Parallel"`, etc.) |
-| `props` | `Record<string, string>` | Attributes |
-| `children` | `XmlNode[]` | Child nodes |
+type XmlText = { readonly kind: "text"; readonly text: string };
 
----
+// =============================================================================
+// Events
+// =============================================================================
+//
+// `SmithersEvent` is a discriminated union of every lifecycle event the runtime
+// emits. The full union (~50 variants) is documented separately to keep this
+// file usable as the everyday type reference.
+//
+// See: docs/reference/event-types.mdx (rendered) or /llms-events.txt (LLM fragment).
 
-### XmlText
+type SmithersEvent = { type: string; runId: string; timestampMs: number } & Record<string, unknown>;
+// (Each variant has additional fields per its `type`. See event-types.)
 
-```ts
-type XmlText = {
-  kind: "text";
-  text: string;
-};
-```
+// =============================================================================
+// Component props
+// =============================================================================
 
-| Field | Type | Description |
-|---|---|---|
-| `kind` | `"text"` | Discriminant |
-| `text` | `string` | Content |
-
----
-
-## Event Types
-
-### SmithersEvent
-
-Discriminated union of all lifecycle events. Every event includes `runId` and `timestampMs`.
-
-```ts
-type SmithersEvent =
-  | RunStarted
-  | RunStatusChanged
-  | RunFinished
-  | RunFailed
-  | RunCancelled
-  | RunContinuedAsNew
-  | RunHijackRequested
-  | RunHijacked
-  | FrameCommitted
-  | NodePending
-  | NodeStarted
-  | NodeFinished
-  | NodeFailed
-  | NodeCancelled
-  | NodeSkipped
-  | NodeRetrying
-  | NodeWaitingApproval
-  | ApprovalRequested
-  | ApprovalGranted
-  | ApprovalDenied
-  | ToolCallStarted
-  | ToolCallFinished
-  | NodeOutput
-  | AgentEvent
-  | RevertStarted
-  | RevertFinished
-  | WorkflowReloadDetected
-  | WorkflowReloaded
-  | WorkflowReloadFailed
-  | WorkflowReloadUnsafe
-  | ScorerStarted
-  | ScorerFinished
-  | ScorerFailed
-  | TokenUsageReported;
-```
-
-#### Run Events
-
-| Event | Fields | Description |
-|---|---|---|
-| `RunStarted` | `runId`, `timestampMs` | Execution began |
-| `RunStatusChanged` | `runId`, `status: RunStatus`, `timestampMs` | Status transition |
-| `RunFinished` | `runId`, `timestampMs` | All tasks completed |
-| `RunFailed` | `runId`, `error: unknown`, `timestampMs` | Failed |
-| `RunCancelled` | `runId`, `timestampMs` | Cancelled |
-| `RunContinuedAsNew` | `runId`, `newRunId`, `iteration`, `carriedStateSize`, `ancestryDepth?`, `timestampMs` | Continued as new run |
-| `RunHijackRequested` | `runId`, `target?`, `timestampMs` | Hijack requested |
-| `RunHijacked` | `runId`, `nodeId`, `iteration`, `attempt`, `engine`, `mode`, `resume?`, `cwd`, `timestampMs` | Hijack completed |
-
-#### Frame Events
-
-| Event | Fields | Description |
-|---|---|---|
-| `FrameCommitted` | `runId`, `frameNo`, `xmlHash`, `timestampMs` | Frame persisted |
-
-#### Node Events
-
-| Event | Fields | Description |
-|---|---|---|
-| `NodePending` | `runId`, `nodeId`, `iteration`, `timestampMs` | Queued |
-| `NodeStarted` | `runId`, `nodeId`, `iteration`, `attempt`, `timestampMs` | Execution began |
-| `NodeFinished` | `runId`, `nodeId`, `iteration`, `attempt`, `timestampMs` | Completed |
-| `NodeFailed` | `runId`, `nodeId`, `iteration`, `attempt`, `error`, `timestampMs` | Failed |
-| `NodeCancelled` | `runId`, `nodeId`, `iteration`, `attempt?`, `reason?`, `timestampMs` | Cancelled |
-| `NodeSkipped` | `runId`, `nodeId`, `iteration`, `timestampMs` | Skipped |
-| `NodeRetrying` | `runId`, `nodeId`, `iteration`, `attempt`, `timestampMs` | Retrying |
-
-#### Approval Events
-
-| Event | Fields | Description |
-|---|---|---|
-| `NodeWaitingApproval` | `runId`, `nodeId`, `iteration`, `timestampMs` | Awaiting approval |
-| `ApprovalRequested` | `runId`, `nodeId`, `iteration`, `timestampMs` | Approval requested |
-| `ApprovalGranted` | `runId`, `nodeId`, `iteration`, `timestampMs` | Approved |
-| `ApprovalDenied` | `runId`, `nodeId`, `iteration`, `timestampMs` | Denied |
-
-#### Tool Events
-
-| Event | Fields | Description |
-|---|---|---|
-| `ToolCallStarted` | `runId`, `nodeId`, `iteration`, `attempt`, `toolName`, `seq`, `timestampMs` | Tool call began |
-| `ToolCallFinished` | `runId`, `nodeId`, `iteration`, `attempt`, `toolName`, `seq`, `status`, `timestampMs` | Tool call completed |
-
-#### Output Events
-
-| Event | Fields | Description |
-|---|---|---|
-| `NodeOutput` | `runId`, `nodeId`, `iteration`, `attempt`, `text`, `stream`, `timestampMs` | Agent output text |
-
-#### Revert Events
-
-| Event | Fields | Description |
-|---|---|---|
-| `RevertStarted` | `runId`, `nodeId`, `iteration`, `attempt`, `jjPointer`, `timestampMs` | VCS revert started |
-| `RevertFinished` | `runId`, `nodeId`, `iteration`, `attempt`, `jjPointer`, `success`, `error?`, `timestampMs` | VCS revert completed |
-
----
-
-## Component Props
-
-### WorkflowProps
-
-```ts
 type WorkflowProps = {
   name: string;
   cache?: boolean;
   children?: React.ReactNode;
 };
-```
 
-| Prop | Type | Required | Description |
-|---|---|---|---|
-| `name` | `string` | Yes | Workflow name for logging and database |
-| `cache` | `boolean` | No | Enable output caching |
-| `children` | `ReactNode` | No | Child components |
+type OutputTarget = import("zod").ZodObject<any> | { $inferSelect: any } | string;
+type DepsSpec = Record<string, OutputTarget>;
+type InferDeps<D extends DepsSpec> = {
+  [K in keyof D]: D[K] extends string ? unknown : InferOutputEntry<D[K]>;
+};
 
----
-
-### TaskProps\<Row, D\>
-
-```ts
-type TaskProps<Row, Output, D extends DepsSpec = {}> = {
+type TaskProps<Row, Output extends OutputTarget = OutputTarget, D extends DepsSpec = {}> = {
   key?: string;
   id: string;
   output: Output;
@@ -653,145 +307,66 @@ type TaskProps<Row, Output, D extends DepsSpec = {}> = {
   deps?: D;
   skipIf?: boolean;
   needsApproval?: boolean;
+  async?: boolean;                  // only with needsApproval
   timeoutMs?: number;
-  retries?: number;
-  retryPolicy?: RetryPolicy;
+  heartbeatTimeoutMs?: number;
+  noRetry?: boolean;
+  retries?: number;                 // default Infinity (set 0 to disable)
+  retryPolicy?: RetryPolicy;        // default exponential, 1000ms, capped 5min
   continueOnFail?: boolean;
   cache?: CachePolicy;
   scorers?: ScorersMap;
+  memory?: TaskMemoryConfig;
+  allowTools?: string[];            // CLI-agent tool allowlist
   label?: string;
   meta?: Record<string, unknown>;
   children: string | Row | (() => Row | Promise<Row>) | React.ReactNode | ((deps: InferDeps<D>) => Row | React.ReactNode);
 };
-```
 
-| Prop | Type | Required | Description |
-|---|---|---|---|
-| `id` | `string` | Yes | Unique task identifier |
-| `output` | `ZodObject<any> \| Table \| string` | Yes | Output target: Zod schema from `outputs` (recommended), Drizzle table, or string key |
-| `outputSchema` | `ZodObject<any>` | No | Zod schema for agent output validation |
-| `agent` | `AgentLike \| AgentLike[]` | No | Agent or fallback chain |
-| `fallbackAgent` | `AgentLike` | No | Append one fallback agent |
-| `dependsOn` | `string[]` | No | Explicit dependency node IDs |
-| `needs` | `Record<string, string>` | No | Named dependencies (keys = context keys, values = node IDs) |
-| `deps` | `Record<string, OutputTarget>` | No | Typed render-time dependencies. Keys resolve from task ids or `needs` entries. |
-| `skipIf` | `boolean` | No | Skip when true |
-| `needsApproval` | `boolean` | No | Pause for human approval |
-| `timeoutMs` | `number` | No | Timeout (ms) |
-| `retries` | `number` | No | Retry attempts (default: 0) |
-| `retryPolicy` | `RetryPolicy` | No | Retry timing |
-| `continueOnFail` | `boolean` | No | Continue workflow on failure |
-| `cache` | `CachePolicy` | No | Cache configuration |
-| `scorers` | `ScorersMap` | No | Scorers to evaluate task output after completion |
-| `label` | `string` | No | Display label |
-| `meta` | `Record<string, unknown>` | No | Arbitrary metadata |
-| `children` | `string \| Row \| (() => Row) \| ReactNode \| ((deps) => Row \| ReactNode)` | Yes | Prompt, compute callback, static payload, deps function, or nested elements |
-
----
-
-### SequenceProps
-
-```ts
-type SequenceProps = {
-  skipIf?: boolean;
-  children?: React.ReactNode;
-};
-```
-
-| Prop | Type | Required | Description |
-|---|---|---|---|
-| `skipIf` | `boolean` | No | Skip entire sequence when true |
-| `children` | `ReactNode` | No | Child tasks |
-
----
-
-### ParallelProps
-
-```ts
-type ParallelProps = {
+type SequenceProps  = { skipIf?: boolean; children?: React.ReactNode };
+type ParallelProps  = { id?: string; maxConcurrency?: number; skipIf?: boolean; children?: React.ReactNode };
+type BranchProps    = { if: boolean; then: React.ReactElement; else?: React.ReactElement | null; skipIf?: boolean };
+type LoopProps      = {
   id?: string;
-  maxConcurrency?: number;
-  skipIf?: boolean;
-  children?: React.ReactNode;
-};
-```
-
-| Prop | Type | Required | Description |
-|---|---|---|---|
-| `id` | `string` | No | Group identifier |
-| `maxConcurrency` | `number` | No | Max concurrent tasks |
-| `skipIf` | `boolean` | No | Skip entire group when true |
-| `children` | `ReactNode` | No | Child tasks |
-
----
-
-### BranchProps
-
-```ts
-type BranchProps = {
-  if: boolean;
-  then: React.ReactElement;
-  else?: React.ReactElement;
-  skipIf?: boolean;
-};
-```
-
-| Prop | Type | Required | Description |
-|---|---|---|---|
-| `if` | `boolean` | Yes | Condition |
-| `then` | `ReactElement` | Yes | Rendered when true |
-| `else` | `ReactElement` | No | Rendered when false |
-| `skipIf` | `boolean` | No | Skip entirely when true |
-
----
-
-### LoopProps
-
-```ts
-type LoopProps = {
-  id?: string;
-  until: boolean;
+  until?: boolean;
   maxIterations?: number;
-  onMaxReached?: "fail" | "return-last";
+  onMaxReached?: "fail" | "return-last";   // default "return-last"
+  continueAsNewEvery?: number;
   skipIf?: boolean;
   children?: React.ReactNode;
 };
-```
+type RalphProps     = LoopProps;            // deprecated alias
 
-| Prop | Type | Required | Description |
-|---|---|---|---|
-| `id` | `string` | No | Loop identifier (auto-generated if omitted) |
-| `until` | `boolean` | Yes | Exit when true |
-| `maxIterations` | `number` | No | Max iterations |
-| `onMaxReached` | `"fail" \| "return-last"` | No | Behavior on limit: fail or return last output |
-| `skipIf` | `boolean` | No | Skip loop when true |
-| `children` | `ReactNode` | No | Tasks per iteration |
+type ApprovalDecision  = { approved: boolean; note: string | null; decidedBy: string | null; decidedAt: string | null };
+type ApprovalSelection = { selected: string; notes: string | null };
+type ApprovalRanking   = { ranked: string[]; notes: string | null };
+type ApprovalRequest   = { title: string; summary?: string; metadata?: Record<string, unknown> };
+type ApprovalMode      = "approve" | "select" | "rank";
+type ApprovalOption    = { key: string; label: string; summary?: string; metadata?: Record<string, unknown> };
+type ApprovalAutoApprove = {
+  after?: number;
+  condition?: ((ctx: any) => boolean) | (() => boolean);
+  audit?: boolean;
+  revertOn?: ((ctx: any) => boolean) | (() => boolean);
+};
 
----
-
-### RalphProps
-
-> **Deprecated:** Use `LoopProps`.
-
-```ts
-type RalphProps = LoopProps;
-```
-
----
-
-### ApprovalProps\<Row\>
-
-```ts
-type ApprovalProps<Row = ApprovalDecision> = {
+type ApprovalProps<Row = ApprovalDecision, Output extends OutputTarget = OutputTarget> = {
   id: string;
-  output: ZodObject<any> | Table | string;
+  mode?: ApprovalMode;
+  options?: ApprovalOption[];
+  output: Output;
   outputSchema?: import("zod").ZodObject<any>;
   request: ApprovalRequest;
   onDeny?: "fail" | "continue" | "skip";
+  allowedScopes?: string[];
+  allowedUsers?: string[];
+  autoApprove?: ApprovalAutoApprove;
+  async?: boolean;
   dependsOn?: string[];
   needs?: Record<string, string>;
   skipIf?: boolean;
   timeoutMs?: number;
+  heartbeatTimeoutMs?: number;
   retries?: number;
   retryPolicy?: RetryPolicy;
   continueOnFail?: boolean;
@@ -802,140 +377,320 @@ type ApprovalProps<Row = ApprovalDecision> = {
   children?: React.ReactNode;
 };
 
-type ApprovalRequest = {
-  title: string;
-  summary?: string;
-  metadata?: Record<string, unknown>;
+type SignalProps<S extends import("zod").ZodObject<any> = import("zod").ZodObject<any>> = {
+  id: string;
+  schema: S;
+  correlationId?: string;
+  timeoutMs?: number;
+  onTimeout?: "fail" | "skip" | "continue";
+  async?: boolean;
+  skipIf?: boolean;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  label?: string;
+  meta?: Record<string, unknown>;
+  key?: string;
+  children?: (data: import("zod").infer<S>) => React.ReactNode;
 };
 
-type ApprovalDecision = {
-  approved: boolean;
-  note: string | null;
-  decidedBy: string | null;
-  decidedAt: string | null;
+type WaitForEventProps = {
+  id: string;
+  event: string;
+  correlationId?: string;
+  output: OutputTarget;
+  outputSchema?: import("zod").ZodObject<any>;
+  timeoutMs?: number;
+  onTimeout?: "fail" | "skip" | "continue";
+  async?: boolean;
+  skipIf?: boolean;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  label?: string;
+  meta?: Record<string, unknown>;
+  key?: string;
 };
-```
 
-| Prop | Type | Required | Description |
-|---|---|---|---|
-| `id` | `string` | Yes | Approval node identifier |
-| `output` | `ZodObject<any> \| Table \| string` | Yes | Persistence target for decision |
-| `outputSchema` | `ZodObject<any>` | No | Decision output validation |
-| `request` | `ApprovalRequest` | Yes | Title, summary, metadata |
-| `onDeny` | `"fail" \| "continue" \| "skip"` | No | Behavior on denial |
-| `dependsOn` | `string[]` | No | Dependency node IDs |
-| `needs` | `Record<string, string>` | No | Named dependencies |
-| `skipIf` | `boolean` | No | Skip when true |
-| `timeoutMs` | `number` | No | Timeout (ms) |
-| `retries` | `number` | No | Retry attempts |
-| `retryPolicy` | `RetryPolicy` | No | Retry backoff |
-| `continueOnFail` | `boolean` | No | Continue on failure |
-| `cache` | `CachePolicy` | No | Cache configuration |
-| `label` | `string` | No | Display label (defaults to `request.title`) |
-| `meta` | `Record<string, unknown>` | No | Arbitrary metadata |
-| `children` | `ReactNode` | No | Child elements |
-
----
-
-## Error Types
-
-### SmithersError
-
-```ts
-type SmithersError = {
-  code: SmithersErrorCode;
-  message: string;
-  summary: string;
-  docsUrl: string;
-  details?: Record<string, unknown>;
-  cause?: unknown;
+type TimerProps = {
+  id: string;
+  duration?: string;                // e.g. "30s", "5m"
+  until?: string | Date;            // absolute timestamp
+  every?: string;                   // periodic
+  skipIf?: boolean;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  label?: string;
+  meta?: Record<string, unknown>;
+  key?: string;
 };
-```
 
-| Field | Type | Description |
-|---|---|---|
-| `code` | `SmithersErrorCode` | Machine-readable error code |
-| `message` | `string` | Error description |
-| `summary` | `string` | Short error summary without docs URL suffixing |
-| `docsUrl` | `string` | Documentation URL for the error reference |
-| `details` | `Record<string, unknown>` | Additional context |
-| `cause` | `unknown` | Original nested cause when one is preserved |
+type SagaStepDef    = { id: string; action: React.ReactElement; compensation: React.ReactElement; label?: string };
+type SagaProps      = { id?: string; steps?: SagaStepDef[]; onFailure?: "compensate" | "compensate-and-fail" | "fail"; skipIf?: boolean; children?: React.ReactNode };
+type SagaStepProps  = { id: string; compensation: React.ReactElement; children: React.ReactElement };
 
-### SmithersErrorCode
+type TryCatchFinallyProps = {
+  id?: string;
+  try: React.ReactElement;
+  catch?: React.ReactElement | ((error: SmithersError) => React.ReactElement);
+  catchErrors?: SmithersErrorCode[];
+  finally?: React.ReactElement;
+  skipIf?: boolean;
+};
 
-```ts
-type SmithersErrorCode =
-  | KnownSmithersErrorCode
-  | (string & {});
-```
+// Higher-level composites
+type PollerProps = {
+  id?: string;
+  check: AgentLike | ((...args: any[]) => any);
+  checkOutput: OutputTarget;
+  maxAttempts?: number;
+  backoff?: "fixed" | "linear" | "exponential";
+  intervalMs?: number;
+  onTimeout?: "fail" | "return-last";
+  skipIf?: boolean;
+  children?: React.ReactNode;
+};
 
-Use `KnownSmithersErrorCode` when you want exhaustive switching over built-in Smithers failures. See [Error Reference](/reference/errors) for the full built-in list.
+type ColumnDef = {
+  name: string;
+  agent: AgentLike;
+  output: OutputTarget;
+  prompt?: (ctx: { item: unknown; column: string }) => string;
+  task?: Partial<TaskProps<unknown>>;
+};
 
-### KnownSmithersErrorCode
+type KanbanProps = {
+  id?: string;
+  columns: ColumnDef[];
+  useTickets: () => Array<{ id: string; [key: string]: unknown }>;
+  agents?: Record<string, AgentLike>;
+  maxConcurrency?: number;
+  onComplete?: OutputTarget;
+  until?: boolean;
+  maxIterations?: number;
+  skipIf?: boolean;
+  children?: React.ReactNode | Record<string, unknown>;
+};
 
-```ts
+// Sandbox
+type SandboxRuntime = "bubblewrap" | "docker" | "codeplane";
+type SandboxVolumeMount = { host: string; container: string; readonly?: boolean };
+type SandboxWorkspaceSpec = {
+  name: string;
+  snapshotId?: string;
+  idleTimeoutSecs?: number;
+  persistence?: "ephemeral" | "sticky";
+};
+
+type SandboxProps = {
+  id: string;
+  workflow?: (...args: any[]) => any;
+  input?: unknown;
+  output: OutputTarget;
+  runtime?: SandboxRuntime;
+  allowNetwork?: boolean;
+  reviewDiffs?: boolean;
+  autoAcceptDiffs?: boolean;
+  image?: string;
+  env?: Record<string, string>;
+  ports?: Array<{ host: number; container: number }>;
+  volumes?: SandboxVolumeMount[];
+  memoryLimit?: string;
+  cpuLimit?: string;
+  command?: string;
+  workspace?: SandboxWorkspaceSpec;
+  skipIf?: boolean;
+  timeoutMs?: number;
+  heartbeatTimeoutMs?: number;
+  retries?: number;
+  retryPolicy?: RetryPolicy;
+  continueOnFail?: boolean;
+  cache?: CachePolicy;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  label?: string;
+  meta?: Record<string, unknown>;
+  key?: string;
+  children?: React.ReactNode;
+};
+
+// =============================================================================
+// Errors
+// =============================================================================
+//
+// Every Smithers error is a SmithersError with a typed code. See the Errors page
+// for the full list of built-in codes.
+
+declare class SmithersError extends Error {
+  readonly code: SmithersErrorCode;
+  readonly summary: string;
+  readonly docsUrl: string;
+  readonly details?: Record<string, unknown>;
+  readonly cause?: unknown;
+}
+
+type SmithersErrorCode = KnownSmithersErrorCode | (string & {});
 type KnownSmithersErrorCode =
-  | "INVALID_INPUT"
-  | "MISSING_INPUT"
-  | "MISSING_INPUT_TABLE"
-  // ... all built-in Smithers runtime codes
-```
+  | "INVALID_INPUT" | "MISSING_INPUT" | "MISSING_INPUT_TABLE" | "RESUME_METADATA_MISMATCH"
+  | "UNKNOWN_OUTPUT_SCHEMA" | "INVALID_OUTPUT" | "WORKTREE_CREATE_FAILED" | "VCS_NOT_FOUND"
+  | "SNAPSHOT_NOT_FOUND" | "VCS_WORKSPACE_CREATE_FAILED" | "TASK_TIMEOUT" | "TASK_ABORTED"
+  | "RUN_NOT_FOUND" | "NODE_NOT_FOUND" | "UI_COMMAND_FAILED" | "INVALID_EVENTS_OPTIONS"
+  | "SANDBOX_BUNDLE_INVALID" | "SANDBOX_BUNDLE_TOO_LARGE" | "WORKFLOW_EXECUTION_FAILED"
+  | "SANDBOX_EXECUTION_FAILED" | "TASK_HEARTBEAT_TIMEOUT" | "HEARTBEAT_PAYLOAD_TOO_LARGE"
+  | "HEARTBEAT_PAYLOAD_NOT_JSON_SERIALIZABLE" | "RUN_CANCELLED" | "RUN_NOT_RESUMABLE"
+  | "RUN_OWNER_ALIVE" | "RUN_STILL_RUNNING" | "RUN_RESUME_CLAIM_LOST" | "RUN_RESUME_CLAIM_FAILED"
+  | "RUN_RESUME_ACTIVATION_FAILED" | "RUN_HIJACKED" | "CONTINUATION_STATE_TOO_LARGE"
+  | "INVALID_CONTINUATION_STATE" | "RALPH_MAX_REACHED" | "SCHEDULER_ERROR" | "SESSION_ERROR"
+  | "TASK_ID_REQUIRED" | "TASK_MISSING_OUTPUT" | "DUPLICATE_ID" | "NESTED_LOOP"
+  | "WORKTREE_EMPTY_PATH" | "MDX_PRELOAD_INACTIVE" | "CONTEXT_OUTSIDE_WORKFLOW"
+  | "MISSING_OUTPUT" | "DEP_NOT_SATISFIED" | "ASPECT_BUDGET_EXCEEDED" | "APPROVAL_OUTSIDE_TASK"
+  | "APPROVAL_OPTIONS_REQUIRED" | "WORKFLOW_MISSING_DEFAULT"
+  | "TOOL_PATH_INVALID" | "TOOL_PATH_ESCAPE" | "TOOL_FILE_TOO_LARGE" | "TOOL_CONTENT_TOO_LARGE"
+  | "TOOL_PATCH_TOO_LARGE" | "TOOL_PATCH_FAILED" | "TOOL_NETWORK_DISABLED"
+  | "TOOL_GIT_REMOTE_DISABLED" | "TOOL_COMMAND_FAILED" | "TOOL_GREP_FAILED"
+  | "AGENT_CLI_ERROR" | "AGENT_RPC_FILE_ARGS" | "AGENT_BUILD_COMMAND" | "AGENT_DIAGNOSTIC_TIMEOUT"
+  | "DB_MISSING_COLUMNS" | "DB_REQUIRES_BUN_SQLITE" | "DB_QUERY_FAILED" | "DB_WRITE_FAILED"
+  | "STORAGE_ERROR" | "INTERNAL_ERROR" | "PROCESS_ABORTED" | "PROCESS_TIMEOUT"
+  | "PROCESS_IDLE_TIMEOUT" | "PROCESS_SPAWN_FAILED" | "TASK_RUNTIME_UNAVAILABLE"
+  | "SCHEMA_CHANGE_HOT" | "HOT_OVERLAY_FAILED" | "HOT_RELOAD_INVALID_MODULE"
+  | "SCORER_FAILED" | "WORKFLOW_EXISTS" | "PROMPT_EXISTS" | "PROMPT_MDX_INVALID"
+  | "TICKET_EXISTS" | "TICKET_NOT_FOUND" | "CLI_DB_NOT_FOUND" | "CLI_AGENT_UNSUPPORTED"
+  | "PI_HTTP_ERROR" | "EXTERNAL_BUILD_FAILED" | "SCHEMA_DISCOVERY_FAILED"
+  | "OPENAPI_SPEC_LOAD_FAILED" | "OPENAPI_OPERATION_NOT_FOUND" | "OPENAPI_TOOL_EXECUTION_FAILED";
 
-This union excludes the custom string escape hatch and is the right type for exhaustive `switch` statements over built-in Smithers errors.
+// =============================================================================
+// Server
+// =============================================================================
 
----
-
-## Server Types
-
-### ServerOptions
-
-See [HTTP Server](/integrations/server) for details.
-
-```ts
 type ServerOptions = {
   port?: number;
-  db?: BunSQLiteDatabase<any>;
+  db?: unknown;
   authToken?: string;
   maxBodyBytes?: number;
   rootDir?: string;
   allowNetwork?: boolean;
 };
-```
 
-### ServeOptions
-
-Options for `createServeApp(...)`, the single-run Hono app exported from the root package.
-
-```ts
 type ServeOptions = {
   workflow: SmithersWorkflow<any>;
-  adapter: SmithersDb;
+  adapter: any;
   runId: string;
   abort: AbortController;
   authToken?: string;
   metrics?: boolean;
 };
-```
 
----
+type GatewayTokenGrant = { role: string; scopes: string[]; userId?: string };
+type GatewayAuthConfig =
+  | { mode: "token"; tokens: Record<string, GatewayTokenGrant> }
+  | { mode: "jwt"; issuer: string; audience: string | string[]; secret: string;
+      scopesClaim?: string; roleClaim?: string; userClaim?: string;
+      defaultRole?: string; defaultScopes?: string[]; clockSkewSeconds?: number }
+  | { mode: "trusted-proxy"; trustedHeaders?: string[]; allowedOrigins?: string[];
+      defaultRole?: string; defaultScopes?: string[] };
 
-## Tool Context Types
-
-### ToolContext
-
-Internal context provided to tools via `AsyncLocalStorage`. Not typically used directly.
-
-```ts
-type ToolContext = {
-  db: SmithersDb;
-  runId: string;
-  nodeId: string;
-  iteration: number;
-  attempt: number;
-  rootDir: string;
-  allowNetwork: boolean;
-  maxOutputBytes: number;
-  timeoutMs: number;
-  seq: number;
+type GatewayOptions = {
+  protocol?: number;
+  features?: string[];
+  heartbeatMs?: number;
+  auth?: GatewayAuthConfig;
+  defaults?: { cliAgentTools?: "all" | "explicit-only" };
+  maxBodyBytes?: number;
+  maxPayload?: number;
+  maxConnections?: number;
 };
+
+// =============================================================================
+// Scorers (smithers-orchestrator/scorers)
+// =============================================================================
+
+type ScoreResult  = { score: number; reason?: string; meta?: Record<string, unknown> };
+type ScorerInput  = { input: unknown; output: unknown; groundTruth?: unknown; context?: unknown; latencyMs?: number; outputSchema?: import("zod").ZodObject<any> };
+type ScorerFn     = (input: ScorerInput) => Promise<ScoreResult>;
+type Scorer       = { id: string; name: string; description: string; score: ScorerFn };
+type SamplingConfig =
+  | { type: "all" }
+  | { type: "ratio"; rate: number }
+  | { type: "none" };
+type ScorerBinding = { scorer: Scorer; sampling?: SamplingConfig };
+type ScorersMap    = Record<string, ScorerBinding>;
+
+type LlmJudgeConfig    = { model: string; systemPrompt?: string; temperature?: number; maxTokens?: number };
+type CreateScorerConfig = {
+  id: string;
+  name: string;
+  description: string;
+  model: string;
+  criteria: string;
+  examples?: Array<{ input: unknown; output: unknown; score: number; explanation: string }>;
+};
+
+// =============================================================================
+// Memory (smithers-orchestrator/memory)
+// =============================================================================
+
+type MemoryFact    = { key: string; value: unknown; metadata?: Record<string, unknown>; createdAt?: number; expiresAt?: number };
+type MemoryMessage = { role: "user" | "assistant" | "system"; content: string; createdAt?: number };
+type MemoryThread  = { id: string; messages: MemoryMessage[] };
+
+type MemoryStore = {
+  set(namespace: MemoryNamespace, key: string, value: unknown): Promise<void>;
+  get(namespace: MemoryNamespace, key: string): Promise<unknown | null>;
+  recall(namespace: MemoryNamespace, query: string, topK?: number): Promise<MemoryFact[]>;
+  saveMessage(threadId: string, message: MemoryMessage): Promise<void>;
+  getMessages(threadId: string): Promise<MemoryMessage[]>;
+};
+
+// =============================================================================
+// OpenAPI tools (smithers-orchestrator/openapi)
+// =============================================================================
+
+type OpenApiAuth =
+  | { type: "none" }
+  | { type: "apiKey"; name: string; in: "header" | "query" | "cookie"; value: string }
+  | { type: "bearer"; token: string }
+  | { type: "basicAuth"; username: string; password: string };
+
+type OpenApiToolsOptions = {
+  spec: unknown | string;            // OpenAPI spec object or path/URL
+  auth?: OpenApiAuth;
+  baseUrl?: string;
+  includeOperations?: string[];
+  excludeOperations?: string[];
+};
+
+// =============================================================================
+// CreateSmithers (createSmithers(...) return)
+// =============================================================================
+
+type CreateSmithersApi<Schema = any> = {
+  Workflow: (props: WorkflowProps) => React.ReactElement;
+  Approval: <Row>(props: ApprovalProps<Row>) => React.ReactElement;
+  Task: <Row, D extends DepsSpec = {}>(props: TaskProps<Row, any, D>) => React.ReactElement;
+  Sequence: (props: SequenceProps) => React.ReactElement;
+  Parallel: (props: ParallelProps) => React.ReactElement;
+  Branch: (props: BranchProps) => React.ReactElement;
+  Loop: (props: LoopProps) => React.ReactElement;
+  Ralph: (props: LoopProps) => React.ReactElement;
+  Worktree: any;
+  Sandbox: (props: SandboxProps) => React.ReactElement;
+  Signal: <S extends import("zod").ZodObject<any>>(props: SignalProps<S>) => React.ReactElement;
+  Timer: (props: TimerProps) => React.ReactElement;
+  ContinueAsNew: any;
+  continueAsNew: any;
+  useCtx: () => SmithersCtx<Schema>;
+  smithers: (build: (ctx: SmithersCtx<Schema>) => React.ReactElement, opts?: SmithersWorkflowOptions) => SmithersWorkflow<Schema>;
+  db: any;
+  tables: Record<string, any>;
+  outputs: Record<string, any>;
+};
+
+// =============================================================================
+// Observability (smithers-orchestrator/observability)
+// =============================================================================
+
+type SmithersLogFormat = "json" | "pretty";
+type SmithersObservabilityService = { emit(event: SmithersEvent): void | Promise<void> };
+type SmithersObservabilityOptions = { service?: SmithersObservabilityService; logFormat?: SmithersLogFormat };
+type ResolvedSmithersObservabilityOptions = SmithersObservabilityOptions & { metricsPort?: number; metricsPath?: string };
 ```
+
+For canonical, machine-checked types, install `smithers-orchestrator` and use editor go-to-definition. For runtime errors, see [Errors](/reference/errors).

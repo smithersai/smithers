@@ -23,7 +23,7 @@ import { alertsActive } from "@smithers/observability/metrics";
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} BunSQLiteDatabase */
 /** @typedef {import("./EventHistoryQuery.ts").EventHistoryQuery} EventHistoryQuery */
 /** @typedef {import("./HumanRequestRow.ts").HumanRequestRow} HumanRequestRow */
-/** @typedef {import("../output.ts").OutputKey} OutputKey */
+/** @typedef {import("../output/OutputKey.ts").OutputKey} OutputKey */
 /**
  * @template A, E
  * @typedef {Effect.Effect<A, E> & PromiseLike<A>} RunnableEffect
@@ -274,23 +274,16 @@ function isAlertActiveStatus(status) {
     return status !== undefined && status !== null && ACTIVE_ALERT_STATUSES.has(status);
 }
 /**
+ * Returns the row unchanged. Heartbeat-based classification now lives in
+ * `deriveRunState`, which correctly returns "stale" / "orphaned" rather than
+ * misusing "continued" (which means the run forked into a new run, and is
+ * treated as a success by `deriveRunState`).
+ *
  * @template T
  * @param {T} row
  * @returns {T}
  */
 function classifyRunRowStatus(row) {
-    const isRunHeartbeatFresh = Boolean(row.status === "running" &&
-        typeof row.heartbeatAtMs === "number" &&
-        Date.now() - row.heartbeatAtMs <= RUN_HEARTBEAT_STALE_MS);
-    if (row.status === "running" &&
-        typeof row.heartbeatAtMs === "number" &&
-        row.heartbeatAtMs > 0 &&
-        !isRunHeartbeatFresh) {
-        return {
-            ...row,
-            status: "continued",
-        };
-    }
     return row;
 }
 /**

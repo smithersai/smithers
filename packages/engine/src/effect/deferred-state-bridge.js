@@ -12,6 +12,9 @@ import { errorToJson } from "@smithers/errors/errorToJson";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { nowMs } from "@smithers/scheduler/nowMs";
 /**
+ * @typedef {"pending" | "waiting-approval" | "waiting-event" | "waiting-timer" | "finished" | "failed" | "skipped"} DeferredBridgeState
+ */
+/**
  * @typedef {{ handled: false; } | { handled: true; state: DeferredBridgeState; }} DeferredBridgeResolution
  */
 /**

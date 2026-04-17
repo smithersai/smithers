@@ -1,3 +1,6 @@
+/** @typedef {import("./SmithersNodeType.ts").SmithersNodeType} SmithersNodeType */
+
+/** @type {Record<SmithersNodeType, string>} */
 export const SMITHERS_NODE_ICONS = {
     workflow: "📋",
     task: "⚡",

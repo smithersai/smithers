@@ -49,9 +49,9 @@ examples/kubernetes/
 │   ├── gateway.yaml          # Gateway Service (LoadBalancer)
 │   └── secrets.yaml          # API keys (template — fill in your own)
 └── scripts/
-    ├── build.ts              # Build Docker images
-    ├── deploy.ts             # Deploy to Kubernetes
-    └── teardown.ts           # Remove everything
+    ├── build.js              # Build Docker images
+    ├── deploy.js             # Deploy to Kubernetes
+    └── teardown.js           # Remove everything
 ```
 
 ## How It Works

@@ -4,10 +4,14 @@ import { filterRowsByNodeId } from "./filterRowsByNodeId.js";
 import { normalizeInputRow } from "./normalizeInputRow.js";
 import { withLogicalIterationShortcuts } from "./withLogicalIterationShortcuts.js";
 /** @typedef {import("./OutputKey.ts").OutputKey} OutputKey */
+/** @typedef {import("./SafeParser.ts").SafeParser} SafeParser */
+/** @typedef {import("./SmithersCtxOptions.ts").SmithersCtxOptions} SmithersCtxOptions */
+/** @typedef {import("./RunAuthContext.ts").RunAuthContext} RunAuthContext */
+/** @typedef {import("./SmithersRuntimeConfig.ts").SmithersRuntimeConfig} SmithersRuntimeConfig */
 /**
- * @typedef {{ safeParse(value: unknown): { success: true; data: unknown; } | { success: false; error?: unknown; }; }} SafeParser
+ * @template Schema
+ * @typedef {import("./OutputAccessor.ts").OutputAccessor<Schema>} OutputAccessor
  */
-/** @typedef {import("./SmithersCtx.ts").SmithersCtxOptions} SmithersCtxOptions */
 
 /**
  * @param {any} table
@@ -26,44 +30,58 @@ function resolveDrizzleName(table) {
         return table.name;
     return undefined;
 }
+
+/**
+ * @template {unknown} [Schema=unknown]
+ */
 export class SmithersCtx {
+    /** @type {string} */
     runId;
+    /** @type {number} */
     iteration;
+    /** @type {Record<string, number> | undefined} */
     iterations;
+    /** @type {Schema extends { input: infer T } ? T : any} */
     input;
+    /** @type {RunAuthContext | null} */
     auth;
+    /** @type {SmithersRuntimeConfig | null | undefined} */
     __smithersRuntime;
+    /** @type {OutputAccessor<Schema>} */
     outputs;
+    /** @type {import("./OutputSnapshot.ts").OutputSnapshot} */
     _outputs;
+    /** @type {Map<any, string> | undefined} */
     _zodToKeyName;
+    /** @type {Set<string>} */
     _currentScopes;
     /**
-   * @param {SmithersCtxOptions} opts
-   */
+     * @param {SmithersCtxOptions} opts
+     */
     constructor(opts) {
         this.runId = opts.runId;
         this.iteration = opts.iteration;
         this.iterations = withLogicalIterationShortcuts(opts.iterations);
-        this.input = normalizeInputRow(opts.input);
+        this.input = /** @type {any} */ (normalizeInputRow(opts.input));
         this.auth = opts.auth ?? null;
         this.__smithersRuntime = opts.runtimeConfig ?? null;
         this._outputs = opts.outputs;
         this._zodToKeyName = opts.zodToKeyName;
         this._currentScopes = buildCurrentScopes(this.iterations);
         /**
-     * @param {string} table
-     */
+         * @param {string} table
+         */
         const outputsFn = (table) => opts.outputs[table] ?? [];
         for (const [name, rows] of Object.entries(opts.outputs)) {
             outputsFn[name] = rows;
         }
-        this.outputs = outputsFn;
+        this.outputs = /** @type {OutputAccessor<Schema>} */ (/** @type {unknown} */ (outputsFn));
     }
     /**
-   * @param {any} table
-   * @param {OutputKey} key
-   * @returns {any}
-   */
+     * @param {any} table
+     * @param {OutputKey} key
+     * @returns {any}
+     */
     output(table, key) {
         const row = this.resolveRow(table, key);
         if (!row) {
@@ -72,18 +90,18 @@ export class SmithersCtx {
         return row;
     }
     /**
-   * @param {any} table
-   * @param {OutputKey} key
-   * @returns {any}
-   */
+     * @param {any} table
+     * @param {OutputKey} key
+     * @returns {any | undefined}
+     */
     outputMaybe(table, key) {
         return this.resolveRow(table, key);
     }
     /**
-   * @param {any} table
-   * @param {string} nodeId
-   * @returns {any}
-   */
+     * @param {any} table
+     * @param {string} nodeId
+     * @returns {any | undefined}
+     */
     latest(table, nodeId) {
         const tableName = this.resolveTableName(table);
         const rows = this._outputs[tableName] ?? [];
@@ -102,10 +120,10 @@ export class SmithersCtx {
         return best;
     }
     /**
-   * @param {unknown} value
-   * @param {SafeParser} schema
-   * @returns {unknown[]}
-   */
+     * @param {unknown} value
+     * @param {SafeParser} schema
+     * @returns {unknown[]}
+     */
     latestArray(value, schema) {
         if (value == null)
             return [];
@@ -128,10 +146,10 @@ export class SmithersCtx {
         });
     }
     /**
-   * @param {any} table
-   * @param {string} nodeId
-   * @returns {number}
-   */
+     * @param {any} table
+     * @param {string} nodeId
+     * @returns {number}
+     */
     iterationCount(table, nodeId) {
         const tableName = this.resolveTableName(table);
         const rows = this._outputs[tableName] ?? [];
@@ -146,9 +164,9 @@ export class SmithersCtx {
         return seen.size;
     }
     /**
-   * @param {any} table
-   * @returns {string}
-   */
+     * @param {any} table
+     * @returns {string}
+     */
     resolveTableName(table) {
         if (typeof table === "string")
             return table;
@@ -158,10 +176,10 @@ export class SmithersCtx {
         return resolveDrizzleName(table) ?? String(table);
     }
     /**
-   * @param {any} table
-   * @param {OutputKey} key
-   * @returns {any | undefined}
-   */
+     * @param {any} table
+     * @param {OutputKey} key
+     * @returns {any | undefined}
+     */
     resolveRow(table, key) {
         const tableName = this.resolveTableName(table);
         const rows = this._outputs[tableName] ?? [];

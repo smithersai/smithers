@@ -3,9 +3,7 @@ import { SmithersDb } from "@smithers/db/adapter";
 import { bridgeSignalResolve } from "./effect/durable-deferred-bridge.js";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { nowMs } from "@smithers/scheduler/nowMs";
-/** @typedef {import("./signals.ts").signals} signals */
-
-/** @typedef {import("./signals.ts").SignalRunOptions} SignalRunOptions */
+/** @typedef {import("./SignalRunOptions.ts").SignalRunOptions} SignalRunOptions */
 
 /**
  * @param {string} signalName
@@ -40,6 +38,7 @@ function serializeSignalPayload(payload) {
  * @param {string} signalName
  * @param {unknown} payload
  * @param {SignalRunOptions} [options]
+ * @returns {Effect.Effect<{ runId: string; seq: number; signalName: string; correlationId: string | null; receivedAtMs: number }, SmithersError, never>}
  */
 export function signalRun(adapter, runId, signalName, payload, options = {}) {
     const normalizedSignalName = normalizeSignalName(signalName);

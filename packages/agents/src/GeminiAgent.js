@@ -1,12 +1,9 @@
 import { BaseCliAgent, pushFlag, pushList, isRecord, asString, truncate, toolKindFromName, createSyntheticIdGenerator, } from "./BaseCliAgent/index.js";
 import { normalizeCapabilityStringList, } from "./capability-registry/index.js";
-/** @typedef {import("./BaseCliAgent/index.ts").BaseCliAgentOptions} BaseCliAgentOptions */
-
-/** @typedef {import("./capability-registry/index.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
-/** @typedef {import("./BaseCliAgent/index.ts").CliOutputInterpreter} CliOutputInterpreter */
-/**
- * @typedef {BaseCliAgentOptions & { debug?: boolean; model?: string; sandbox?: boolean; yolo?: boolean; approvalMode?: "default" | "auto_edit" | "yolo" | "plan"; experimentalAcp?: boolean; allowedMcpServerNames?: string[]; allowedTools?: string[]; extensions?: string[]; listExtensions?: boolean; resume?: string; listSessions?: boolean; deleteSession?: string; includeDirectories?: string[]; screenReader?: boolean; outputFormat?: "text" | "json" | "stream-json"; }} GeminiAgentOptions
- */
+/** @typedef {import("./BaseCliAgent/BaseCliAgentOptions.ts").BaseCliAgentOptions} BaseCliAgentOptions */
+/** @typedef {import("./capability-registry/AgentCapabilityRegistry.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
+/** @typedef {import("./BaseCliAgent/CliOutputInterpreter.ts").CliOutputInterpreter} CliOutputInterpreter */
+/** @typedef {import("./GeminiAgentOptions.ts").GeminiAgentOptions} GeminiAgentOptions */
 
 /**
  * @param {GeminiAgentOptions} opts

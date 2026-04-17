@@ -1,7 +1,12 @@
 import { createScorer } from "./createScorer.js";
+/** @typedef {import("./types.js").Scorer} Scorer */
+
 /**
  * Creates a latency scorer that scores based on execution time.
  * Returns 1.0 at or below `targetMs`, linearly decreasing to 0.0 at `maxMs`.
+ *
+ * @param {{ targetMs: number; maxMs: number }} opts
+ * @returns {Scorer}
  */
 export function latencyScorer(opts) {
     const { targetMs, maxMs } = opts;

@@ -1,11 +1,9 @@
 import { canonicalizeXml, parseXmlJson } from "@smithers/graph/utils/xml";
-/** @typedef {import("./frame-codec.ts").FrameDelta} FrameDelta */
-/** @typedef {import("./frame-codec.ts").FrameDeltaOp} FrameDeltaOp */
-/** @typedef {import("./frame-codec.ts").FrameEncoding} FrameEncoding */
-/** @typedef {import("./frame-codec.ts").JsonPath} JsonPath */
-/**
- * @typedef {string | number} JsonPathSegment
- */
+/** @typedef {import("./frame-codec/FrameDelta.ts").FrameDelta} FrameDelta */
+/** @typedef {import("./frame-codec/FrameDeltaOp.ts").FrameDeltaOp} FrameDeltaOp */
+/** @typedef {import("./frame-codec/FrameEncoding.ts").FrameEncoding} FrameEncoding */
+/** @typedef {import("./frame-codec/JsonPath.ts").JsonPath} JsonPath */
+/** @typedef {import("./frame-codec/JsonPathSegment.ts").JsonPathSegment} JsonPathSegment */
 
 export const FRAME_KEYFRAME_INTERVAL = 50;
 const FRAME_DELTA_VERSION = 1;

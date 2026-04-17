@@ -1,7 +1,13 @@
 import { llmJudge } from "./llmJudge.js";
+/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("./types.js").Scorer} Scorer */
+
 /**
  * Creates a faithfulness scorer that uses an LLM judge to check whether
  * the output is faithful to the provided context (no hallucinations).
+ *
+ * @param {AgentLike} judge
+ * @returns {Scorer}
  */
 export function faithfulnessScorer(judge) {
     return llmJudge({

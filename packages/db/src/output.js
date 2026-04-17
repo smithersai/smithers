@@ -6,10 +6,8 @@ import { z } from "zod";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { withSqliteWriteRetryEffect } from "./write-retry.js";
-/** @typedef {import("./output.ts").output} output */
-
 /** @typedef {import("drizzle-orm").AnyColumn} AnyColumn */
-/** @typedef {import("./output.ts").OutputKey} OutputKey */
+/** @typedef {import("./output/OutputKey.ts").OutputKey} OutputKey */
 /** @typedef {import("drizzle-orm").Table} Table */
 
 /**

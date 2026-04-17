@@ -1,5 +1,75 @@
-import type { RunStatus } from "@smithers/driver/RunStatus";
-import type { AgentCliEvent } from "@smithers/agents/BaseCliAgent";
+type RunStatus =
+  | "running"
+  | "waiting-approval"
+  | "waiting-event"
+  | "waiting-timer"
+  | "finished"
+  | "continued"
+  | "failed"
+  | "cancelled";
+
+type RunState =
+  | "running"
+  | "waiting-approval"
+  | "waiting-event"
+  | "waiting-timer"
+  | "recovering"
+  | "stale"
+  | "orphaned"
+  | "failed"
+  | "cancelled"
+  | "succeeded"
+  | "unknown";
+
+type AgentCliActionKind =
+  | "turn"
+  | "command"
+  | "tool"
+  | "file_change"
+  | "web_search"
+  | "todo_list"
+  | "reasoning"
+  | "warning"
+  | "note";
+
+type AgentCliActionPhase = "started" | "updated" | "completed";
+type AgentCliEventLevel = "debug" | "info" | "warning" | "error";
+
+type AgentCliStartedEvent = {
+  type: "started";
+  engine: string;
+  title: string;
+  resume?: string;
+  detail?: Record<string, unknown>;
+};
+
+type AgentCliActionEvent = {
+  type: "action";
+  engine: string;
+  phase: AgentCliActionPhase;
+  entryType?: "thought" | "message";
+  action: {
+    id: string;
+    kind: AgentCliActionKind;
+    title: string;
+    detail?: Record<string, unknown>;
+  };
+  message?: string;
+  ok?: boolean;
+  level?: AgentCliEventLevel;
+};
+
+type AgentCliCompletedEvent = {
+  type: "completed";
+  engine: string;
+  ok: boolean;
+  answer?: string;
+  error?: string;
+  resume?: string;
+  usage?: Record<string, unknown>;
+};
+
+type AgentCliEvent = AgentCliStartedEvent | AgentCliActionEvent | AgentCliCompletedEvent;
 
 export type SmithersEvent =
   | {
@@ -36,6 +106,13 @@ export type SmithersEvent =
       type: "RunStatusChanged";
       runId: string;
       status: RunStatus;
+      timestampMs: number;
+    }
+  | {
+      type: "RunStateChanged";
+      runId: string;
+      before: RunState;
+      after: RunState;
       timestampMs: number;
     }
   | { type: "RunFinished"; runId: string; timestampMs: number }
@@ -369,6 +446,14 @@ export type SmithersEvent =
       resetNodes: string[];
       error?: string;
       timestampMs: number;
+    }
+  | {
+      type: "TimeTravelJumped";
+      runId: string;
+      fromFrameNo: number;
+      toFrameNo: number;
+      timestampMs: number;
+      caller?: string;
     }
   | {
       type: "WorkflowReloadDetected";

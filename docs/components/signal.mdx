@@ -1,47 +1,34 @@
 ---
 title: <Signal>
-description: "A typed wrapper around <WaitForEvent> for external signals keyed by node id."
+description: Typed wrapper around &lt;WaitForEvent&gt;; signal name equals node id.
 ---
 
-`<Signal>` is the ergonomic form of [`<WaitForEvent>`](/components/wait-for-event) when the signal name should match the node id and the payload should be typed by a Zod schema.
-
-## Import
-
-```tsx
+```ts
 import { Signal } from "smithers-orchestrator";
+
+type SignalProps = {
+  id: string; // signal name and node id
+  schema: z.ZodObject; // typed payload + output target
+  correlationId?: string;
+  timeoutMs?: number;
+  onTimeout?: "fail" | "skip" | "continue"; // default "fail"
+  async?: boolean;
+  skipIf?: boolean;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  label?: string;
+  meta?: Record<string, unknown>;
+  children?: (data) => ReactNode; // mounts only after payload arrives
+};
 ```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | **(required)** | Signal name and node id. |
-| `schema` | `z.ZodObject` | **(required)** | Typed payload schema and output target. |
-| `correlationId` | `string` | `undefined` | Correlation key for matching a specific signal instance. |
-| `timeoutMs` | `number` | `undefined` | Max wait time in ms. |
-| `onTimeout` | `"fail" \| "skip" \| "continue"` | `"fail"` | Timeout behavior. |
-| `async` | `boolean` | `false` | When `true`, unrelated downstream flow can continue while the signal is still pending. Explicit dependencies still wait for the payload. |
-| `skipIf` | `boolean` | `false` | Skip this node entirely. |
-| `dependsOn` | `string[]` | `undefined` | Task IDs that must complete first. |
-| `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
-| `label` | `string` | `signal:<id>` | Display label override. |
-| `meta` | `Record<string, unknown>` | `undefined` | Extra metadata. |
-| `children` | `(data) => ReactNode` | `undefined` | Optional typed render callback that mounts only after the signal payload exists. |
-
-## Example
 
 ```tsx
 import { Signal, Task, Workflow, createSmithers } from "smithers-orchestrator";
 import { z } from "zod";
 
 const { smithers, outputs } = createSmithers({
-  feedback: z.object({
-    rating: z.number(),
-    comment: z.string(),
-  }),
-  summary: z.object({
-    upper: z.string(),
-  }),
+  feedback: z.object({ rating: z.number(), comment: z.string() }),
+  summary: z.object({ upper: z.string() }),
 });
 
 export default smithers(() => (
@@ -57,9 +44,7 @@ export default smithers(() => (
 ));
 ```
 
-## Behavior
+## Notes
 
-- `<Signal>` renders a [`<WaitForEvent>`](/components/wait-for-event) internally with `event={id}` and `output={schema}`.
-- Without `children`, it behaves like a plain typed [`<WaitForEvent>`](/components/wait-for-event).
-- With `children`, the callback runs only after the payload has been received and validated.
-- Async signal waits contribute to `smithers_external_wait_async_pending{kind="event"}` while unresolved.
+- Renders `<WaitForEvent event={id} output={schema}>` internally.
+- Async waits show in `smithers_external_wait_async_pending{kind="event"}`.

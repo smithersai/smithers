@@ -21,15 +21,15 @@ import type {
 } from "smithers-orchestrator";
 ```
 
-Every built-in `SmithersErrorInstance` now carries three pieces of documentation metadata:
+Every built-in `SmithersErrorInstance` carries three pieces of documentation metadata:
 
 | Field | Meaning |
 |---|---|
 | `message` | Human-readable message with a docs link appended. |
-| `summary` | The raw message without the docs suffix. |
-| `docsUrl` | The reference URL for Smithers errors. |
+| `summary` | Raw message without the docs suffix. |
+| `docsUrl` | Reference URL for Smithers errors. |
 
-Use `KnownSmithersErrorCode` when you want an exhaustive switch over the built-in Smithers codes. `SmithersErrorCode` still includes the `(string & {})` escape hatch for user-defined custom codes.
+Use `KnownSmithersErrorCode` for an exhaustive switch over built-in Smithers codes. `SmithersErrorCode` includes the `(string & {})` escape hatch for user-defined custom codes.
 
 | Export | Kind | Description |
 |---|---|---|
@@ -163,7 +163,7 @@ try {
 
 | Code | When | Details |
 |---|---|---|
-| `INTERNAL_ERROR` | An unexpected internal exception crossed an Effect boundary without a more specific Smithers code. | -- |
+| `INTERNAL_ERROR` | An unexpected internal exception crossed a runtime boundary without a more specific Smithers code. | -- |
 | `PROCESS_ABORTED` | A spawned child process is aborted by signal or shutdown. | `{ command, args, cwd }` |
 | `PROCESS_TIMEOUT` | A spawned child process exceeds its total timeout. | `{ command, args, cwd, timeoutMs }` |
 | `PROCESS_IDLE_TIMEOUT` | A spawned child process stops producing output longer than its idle timeout. | `{ command, args, cwd, idleTimeoutMs }` |
@@ -209,7 +209,7 @@ try {
 
 ## HTTP API Errors
 
-These are JSON response codes, not `SmithersErrorInstance` objects.
+JSON response codes, not `SmithersErrorInstance` objects.
 
 | Code | Status | When |
 |---|---|---|

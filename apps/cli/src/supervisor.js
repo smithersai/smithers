@@ -7,12 +7,10 @@ import { trackEvent } from "@smithers/observability/metrics";
 import { isPidAlive, parseRuntimeOwnerPid } from "@smithers/engine/runtime-owner";
 import { SmithersError } from "@smithers/errors";
 import { resumeRunDetached } from "./resume-detached.js";
-/** @typedef {import("./supervisor.ts").supervisor} supervisor */
-
-/** @typedef {import("./supervisor.ts").RunAutoResumeSkipReason} RunAutoResumeSkipReason */
+/** @typedef {import("./RunAutoResumeSkipReason.ts").RunAutoResumeSkipReason} RunAutoResumeSkipReason */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("./supervisor.ts").SupervisorOptions} SupervisorOptions */
-/** @typedef {import("./supervisor.ts").SupervisorPollSummary} SupervisorPollSummary */
+/** @typedef {import("./SupervisorOptions.ts").SupervisorOptions} SupervisorOptions */
+/** @typedef {import("./SupervisorPollSummary.ts").SupervisorPollSummary} SupervisorPollSummary */
 
 export const DEFAULT_SUPERVISOR_INTERVAL_MS = 10_000;
 export const DEFAULT_SUPERVISOR_STALE_THRESHOLD_MS = 30_000;
@@ -242,9 +240,10 @@ function processCandidateEffect(options, staleRun, staleBeforeMs) {
 /**
  * @param {NormalizedSupervisorOptions} options
  * @param {any} run
+ * @param {number} staleBeforeMs
  * @returns {Effect.Effect<"resumed" | "skipped", never>}
  */
-function processTimerCandidateEffect(options, run) {
+function processTimerCandidateEffect(options, run, staleBeforeMs) {
     const workflowPath = resolveWorkflowPath(run.workflowPath ?? null);
     const runAnnotations = {
         runId: run.runId,
@@ -267,8 +266,31 @@ function processTimerCandidateEffect(options, run) {
             yield* Effect.logInfo(`Dry-run: would resume due timer run ${run.runId}`);
             return "skipped";
         }
+        const claimOwnerId = `supervisor:${options.supervisorId}`;
+        const claimHeartbeatAtMs = options.deps.now();
+        const claimed = yield* options.adapter
+            .claimRunForResumeEffect({
+            runId: run.runId,
+            expectedStatus: "waiting-timer",
+            expectedRuntimeOwnerId: run.runtimeOwnerId ?? null,
+            expectedHeartbeatAtMs: run.heartbeatAtMs ?? null,
+            staleBeforeMs,
+            claimOwnerId,
+            claimHeartbeatAtMs,
+            requireStale: true,
+        })
+            .pipe(Effect.catchAll((error) => Effect.logWarning(`[supervisor] failed to claim timer run ${run.runId}: ${error instanceof Error ? error.message : String(error)}`).pipe(Effect.as(false))));
+        if (!claimed) {
+            yield* Effect.logDebug(`Skipping timer run ${run.runId}: claim not acquired`);
+            return "skipped";
+        }
         const spawnResult = yield* Effect.try({
-            try: () => options.deps.spawnResumeDetached(workflowPath, run.runId),
+            try: () => options.deps.spawnResumeDetached(workflowPath, run.runId, {
+                claimOwnerId,
+                claimHeartbeatAtMs,
+                restoreRuntimeOwnerId: run.runtimeOwnerId ?? null,
+                restoreHeartbeatAtMs: run.heartbeatAtMs ?? null,
+            }),
             catch: (cause) => toSmithersError(cause, `resume timer run ${run.runId}`, {
                 code: "PROCESS_SPAWN_FAILED",
                 details: { runId: run.runId, workflowPath },
@@ -276,10 +298,27 @@ function processTimerCandidateEffect(options, run) {
         }).pipe(Effect.either);
         if (spawnResult._tag === "Left") {
             yield* Effect.logWarning(`[supervisor] failed to resume timer run ${run.runId}: ${spawnResult.left.message}`);
+            yield* options.adapter
+                .releaseRunResumeClaimEffect({
+                runId: run.runId,
+                claimOwnerId,
+                restoreRuntimeOwnerId: run.runtimeOwnerId ?? null,
+                restoreHeartbeatAtMs: run.heartbeatAtMs ?? null,
+            })
+                .pipe(Effect.catchAll((error) => Effect.logWarning(`[supervisor] failed to release timer claim for run ${run.runId}: ${error instanceof Error ? error.message : String(error)}`)));
             return "skipped";
         }
         const resumePid = spawnResult.right;
         yield* Effect.logInfo(`Resuming timer-blocked run ${run.runId}${resumePid ? ` with pid ${resumePid}` : ""}`);
+        yield* emitEventEffect(options.adapter, {
+            type: "RunAutoResumed",
+            runId: run.runId,
+            lastHeartbeatAtMs: run.heartbeatAtMs ?? null,
+            staleDurationMs: typeof run.heartbeatAtMs === "number"
+                ? Math.max(0, options.deps.now() - run.heartbeatAtMs)
+                : 0,
+            timestampMs: options.deps.now(),
+        });
         return "resumed";
     }).pipe(Effect.annotateLogs(runAnnotations))).pipe(Effect.catchAll((error) => Effect.logWarning(`[supervisor] failed while processing timer run ${run.runId}: ${String(error)}`).pipe(Effect.as("skipped"))));
 }
@@ -312,15 +351,16 @@ function pollEffect(options) {
         const waitingTimerRuns = yield* options.adapter
             .listRunsEffect(500, "waiting-timer")
             .pipe(Effect.catchAll((error) => Effect.logWarning(`[supervisor] waiting-timer query failed: ${error instanceof Error ? error.message : String(error)}`).pipe(Effect.as([]))));
-        const timerDueChecks = yield* Effect.all(waitingTimerRuns.map((run) => runHasDueTimerEffect(options, run.runId, pollStartedAtMs)), { concurrency: options.maxConcurrent });
-        const dueTimerRuns = waitingTimerRuns.filter((_run, index) => timerDueChecks[index]);
+        const claimableTimerRuns = waitingTimerRuns.filter((run) => run.heartbeatAtMs == null || run.heartbeatAtMs < staleBeforeMs);
+        const timerDueChecks = yield* Effect.all(claimableTimerRuns.map((run) => runHasDueTimerEffect(options, run.runId, pollStartedAtMs)), { concurrency: options.maxConcurrent });
+        const dueTimerRuns = claimableTimerRuns.filter((_run, index) => timerDueChecks[index]);
         const timerSlots = Math.max(0, options.maxConcurrent - staleResumedCount);
         const timerResumable = dueTimerRuns.slice(0, timerSlots);
         const timerRateLimited = dueTimerRuns.slice(timerSlots);
         for (const run of timerRateLimited) {
             yield* emitSkipEventEffect(options, run.runId, "rate-limited");
         }
-        const timerResults = yield* Effect.all(timerResumable.map((run) => processTimerCandidateEffect(options, run)), { concurrency: options.maxConcurrent });
+        const timerResults = yield* Effect.all(timerResumable.map((run) => processTimerCandidateEffect(options, run, staleBeforeMs)), { concurrency: options.maxConcurrent });
         const resumedCount = staleResumedCount +
             timerResults.filter((result) => result === "resumed").length;
         const skippedCount = staleSkippedCount +

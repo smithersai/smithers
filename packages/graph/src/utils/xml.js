@@ -1,5 +1,5 @@
 
-/** @typedef {import("@smithers/graph/XmlNode").XmlNode} XmlNode */
+/** @typedef {import("../XmlNode.ts").XmlNode} XmlNode */
 /**
  * @param {Record<string, string>} props
  * @returns {Record<string, string>}

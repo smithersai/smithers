@@ -1,62 +1,44 @@
 ---
 title: Smithers
-description: Durable AI workflow orchestration for multi-step agent work that needs structure, visibility, and resumability.
+description: Durable AI workflow orchestration as a JSX runtime.
 ---
 
-Smithers is what you reach for when one agent call turns into a real process.
+Smithers turns a JSX tree into a durable, resumable workflow.
 
-The moment the job becomes "analyze, fix, validate, ask for approval, then resume tomorrow," you need a workflow runtime, not a longer prompt. Smithers gives you that runtime. You author the graph in JSX, run and steer it from the CLI, and rely on durable state in SQLite so completed work survives crashes and restarts.
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import { createSmithers, Sequence, Task } from "smithers-orchestrator";
+import { z } from "zod";
 
-## Start Here
+const { Workflow, smithers, outputs } = createSmithers({
+  hello: z.object({ message: z.string() }),
+});
 
-- [Quickstart](/quickstart) for the fastest path to a successful run.
-- [CLI Quickstart](/cli/quickstart) if you need to operate Smithers from the terminal.
-- [JSX API](/jsx/overview) if you want to build your own workflows.
-- [Workflows Overview](/concepts/workflows-overview) if you want the mental model first.
+export default smithers((ctx) => (
+  <Workflow name="hello">
+    <Sequence>
+      <Task id="greet" output={outputs.hello}>
+        {{ message: `Hello, ${ctx.input.name}` }}
+      </Task>
+    </Sequence>
+  </Workflow>
+));
+```
 
-## Choose the Path That Matches Your Job
+Run it:
 
-### I need something running today
+```bash
+bunx smithers-orchestrator init
+bunx smithers-orchestrator up workflow.tsx --input '{"name":"world"}'
+```
 
-- [Installation](/installation) gets the workflow pack into your project.
-- [Quickstart](/quickstart) walks through your first run.
-- [CLI Quickstart](/cli/quickstart) shows how to inspect, resume, and unblock runs.
+Outputs are validated by Zod, persisted to SQLite, and survive crashes. Resume with `--resume true`.
 
-### I need to build workflows
+## Read next
 
-- [JSX API](/jsx/overview) explains the authoring model.
-- [JSX Quickstart](/jsx/quickstart) builds a small workflow from scratch.
-- [Tutorial: Build a Workflow](/guides/tutorial-workflow) expands that into a production-style example.
-- [Components](/components/workflow) is the reference set for the JSX surface.
-
-### I need production operations
-
-- [CLI Reference](/cli/overview) is the full command reference.
-- [Observability](/guides/monitoring-logs) covers logs, spans, and metrics.
-- [Resumability](/guides/resumability) explains what survives failure and how to recover.
-- [Time Travel Quickstart](/guides/time-travel-quickstart) covers replay, diff, and fork workflows.
-
-## How Smithers Is Organized
-
-| Surface | What it is for | Start here |
-| --- | --- | --- |
-| CLI | Run, inspect, resume, approve, debug, and operate workflows | [CLI Quickstart](/cli/quickstart) |
-| JSX API | Define workflows as TSX components with typed outputs | [JSX API](/jsx/overview) |
-| Runtime API | Execute or render workflows programmatically | [runWorkflow](/runtime/run-workflow) |
-| Concepts | Learn the execution model and data flow | [Workflows Overview](/concepts/workflows-overview) |
-| Guides | Learn common production patterns | [Best Practices](/guides/best-practices) |
-
-## Why Teams Adopt It
-
-- Completed task outputs are persisted to SQLite, so resumed runs skip finished work.
-- Zod schemas make task output contracts explicit instead of "hope the model returns JSON."
-- JSX keeps the workflow readable to humans and writable by code assistants.
-- Approval gates, signals, time travel, and observability are part of the runtime instead of custom glue.
-
-## A Good First Reading Order
-
-1. [Quickstart](/quickstart)
-2. [CLI Quickstart](/cli/quickstart)
-3. [JSX API](/jsx/overview)
-4. [Workflows Overview](/concepts/workflows-overview)
-5. [Review Loop Guide](/guides/review-loop)
+- [Tour](/tour) — a 6-step worked example that introduces every core feature.
+- [How It Works](/how-it-works) — the render → execute → persist loop.
+- [Components](/components/workflow) — JSX surface reference.
+- [CLI](/cli/overview) — every command in one table.
+- [Recipes](/recipes) — common patterns.
+- [Types](/reference/types) — public TypeScript surface.

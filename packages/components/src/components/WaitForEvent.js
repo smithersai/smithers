@@ -2,7 +2,7 @@ import React from "react";
 import { getTaskRuntime } from "@smithers/driver/task-runtime";
 import { SmithersDb } from "@smithers/db/adapter";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./WaitForEvent.ts").WaitForEventProps} WaitForEventProps */
+/** @typedef {import("./WaitForEventProps.ts").WaitForEventProps} WaitForEventProps */
 
 /**
  * @param {WaitForEventProps} props

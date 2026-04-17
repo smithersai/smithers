@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Kanban.ts").ColumnDef} ColumnDef */
-/** @typedef {import("./Kanban.ts").KanbanProps} KanbanProps */
+/** @typedef {import("./ColumnDef.ts").ColumnDef} ColumnDef */
+/** @typedef {import("./KanbanProps.ts").KanbanProps} KanbanProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -14,6 +14,7 @@ import { Task } from "./Task.js";
  * Composes Loop, Sequence, Parallel, and Task to create a board where items
  * flow through columns. Each column processes items via its assigned agent.
  * Items in the same column can be processed in parallel.
+ * @param {KanbanProps} props
  */
 export function Kanban(props) {
     if (props.skipIf)

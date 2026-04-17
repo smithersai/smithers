@@ -1,7 +1,7 @@
 // @smithers-type-exports-begin
 /**
  * @template Schema
- * @typedef {import("./create.ts").CreateSmithersApi<Schema>} CreateSmithersApi
+ * @typedef {import("./CreateSmithersApi.ts").CreateSmithersApi<Schema>} CreateSmithersApi
  */
 // @smithers-type-exports-end
 
@@ -16,14 +16,23 @@ import { zodToCreateTableSQL } from "@smithers/db/zodToCreateTableSQL";
 import { camelToSnake } from "@smithers/db/utils/camelToSnake";
 import { resolve } from "node:path";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("@smithers/components").ApprovalProps} ApprovalProps */
+/** @typedef {import("@smithers/components").ApprovalProps<any, any>} ApprovalProps */
 /** @typedef {import("@smithers/components").SandboxProps} SandboxProps */
-/** @typedef {import("@smithers/components").SignalProps} SignalProps */
+/** @typedef {import("@smithers/components").SignalProps<any>} SignalProps */
 /** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicy} SmithersAlertPolicy */
-/** @typedef {import("@smithers/driver/SmithersCtx").SmithersCtx} SmithersCtx */
-/** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow} SmithersWorkflow */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyDefaults} SmithersAlertPolicyDefaults */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyRule} SmithersAlertPolicyRule */
+/**
+ * @template Schema
+ * @typedef {import("@smithers/driver/SmithersCtx").SmithersCtx<Schema>} SmithersCtx
+ */
+/**
+ * @template Schema
+ * @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<Schema>} SmithersWorkflow
+ */
 /** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersWorkflowOptions} SmithersWorkflowOptions */
 /** @typedef {import("@smithers/components").WorkflowProps} WorkflowProps */
+/** @typedef {import("./CreateSmithersOptions.ts").CreateSmithersOptions} CreateSmithersOptions */
 
 const hotCache = new Map();
 /**
@@ -130,6 +139,11 @@ function mergeAlertPolicies(base, override) {
 }
 /**
  * Schema-driven API — users define only Zod schemas, the framework owns the entire storage layer.
+ *
+ * @template {Record<string, import("zod").ZodObject<any>>} Schemas
+ * @param {Schemas} schemas
+ * @param {CreateSmithersOptions} [opts]
+ * @returns {import("./CreateSmithersApi.ts").CreateSmithersApi<Schemas>}
  *
  * @example
  * ```ts

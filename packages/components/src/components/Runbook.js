@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Runbook.ts").RunbookProps} RunbookProps */
-/** @typedef {import("./Runbook.ts").RunbookStep} RunbookStep */
+/** @typedef {import("./RunbookProps.ts").RunbookProps} RunbookProps */
+/** @typedef {import("./RunbookStep.ts").RunbookStep} RunbookStep */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -12,6 +12,7 @@ import { Approval } from "./Approval.js";
  *
  * Safe steps auto-execute. Risky and critical steps require human approval first.
  * Composes: Sequence of [Approval? → Task] per step, chained via `needs`.
+ * @param {RunbookProps} props
  */
 export function Runbook(props) {
     if (props.skipIf)

@@ -1,9 +1,9 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Ralph.ts").RalphProps} RalphProps */
+/** @typedef {import("./RalphProps.ts").RalphProps} RalphProps */
 // @smithers-type-exports-end
 
 import React from "react";
-/** @typedef {import("./Ralph.ts").LoopProps} LoopProps */
+/** @typedef {import("./LoopProps.ts").LoopProps} LoopProps */
 
 /**
  * @param {LoopProps} props

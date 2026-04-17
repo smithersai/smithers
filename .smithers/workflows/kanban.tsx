@@ -104,7 +104,6 @@ export default smithers((ctx) => {
             const { feedback, done } = buildFeedback(ctx, ticket.slug);
             return (
               <Worktree
-                key={ticket.slug}
                 path={`.worktrees/${ticket.slug}`}
                 branch={`ticket/${ticket.slug}`}
               >

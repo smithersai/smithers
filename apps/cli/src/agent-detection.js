@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { SmithersError } from "@smithers/errors";
-/** @typedef {import("./agent-detection.ts").AgentAvailability} AgentAvailability */
-/** @typedef {import("./agent-detection.ts").AgentAvailabilityStatus} AgentAvailabilityStatus */
+/** @typedef {import("./AgentAvailability.ts").AgentAvailability} AgentAvailability */
+/** @typedef {import("./AgentAvailabilityStatus.ts").AgentAvailabilityStatus} AgentAvailabilityStatus */
 
 const DETECTORS = [
     {

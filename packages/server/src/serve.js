@@ -9,9 +9,7 @@ import { prometheusContentType, renderPrometheusMetrics, } from "@smithers/obser
 import { logWarning } from "@smithers/observability/logging";
 import { runPromise } from "./smithersRuntime.js";
 import { httpRequests, httpRequestDuration, trackEvent } from "@smithers/observability/metrics";
-/** @typedef {import("./serve.ts").serve} serve */
-
-/** @typedef {import("./serve.ts").ServeOptions} ServeOptions */
+/** @typedef {import("./ServeOptions.js").ServeOptions} ServeOptions */
 
 class HttpError extends Error {
     status;

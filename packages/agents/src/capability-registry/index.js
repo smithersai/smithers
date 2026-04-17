@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
-/** @typedef {import("./index.ts").AgentToolDescriptor} AgentToolDescriptor */
+/** @typedef {import("./AgentCapabilityRegistry.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
+/** @typedef {import("./AgentToolDescriptor.ts").AgentToolDescriptor} AgentToolDescriptor */
 // @smithers-type-exports-end
 
 export { normalizeCapabilityStringList } from "./normalizeCapabilityStringList.js";

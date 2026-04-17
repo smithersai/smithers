@@ -1,33 +1,13 @@
 ---
 title: Integrations
-description: Connect Smithers workflows to Linear, Notion, Slack, Telegram, email, SMS, and other external systems through tools, CLI skills, MCP, or deterministic tasks.
+description: Three patterns for connecting Smithers to external services.
 ---
 
-Smithers does **not** ship first-party clients for Linear, Notion, Slack, Telegram, email, or SMS.
-
-Treat those systems as external integrations your application, skill, or CLI already owns. Smithers provides the orchestration layer around them:
-
-- Durable workflows (`<Workflow>`, `<Task>`, `<Sequence>`, `<Parallel>`, `<Loop>`)
-- SDK agents with custom tool objects
-- CLI agents with skills, plugins, or MCP config
-- Compute tasks for deterministic CLI or API calls
-
-## Popular Integrations
-
-| Service | Common actions | Best Smithers wiring |
-|---|---|---|
-| Linear | `getIssue`, `listIssues`, `comment`, `updateState` | SDK tool, CLI skill, or task calling your `linear` CLI |
-| Notion | `search`, `getPage`, `createPage`, `appendBlock` | SDK tool, CLI skill, or task calling your `notion` CLI |
-| Slack | `postMessage`, `replyInThread`, `listChannelHistory` | SDK tool, CLI MCP/server, or deterministic publish task |
-| Telegram | `sendMessage`, `sendPhoto`, `pollUpdates` | SDK tool or deterministic bot task |
-| Email | `listInbox`, `getThread`, `sendEmail` | SDK tool or deterministic task against your mail provider |
-| SMS | `sendSms`, `listMessages`, `lookupNumber` | SDK tool or deterministic task against Twilio or another provider |
-
-Same rule for all of them: keep the integration surface narrow and hand Smithers only the operations the workflow actually needs.
+Smithers ships no first-party clients for Linear, Notion, Slack, or similar services. Treat them as external integrations your app owns and pick one of three wirings: tools on an SDK agent, skills/plugins/MCP on a CLI agent, or an external CLI run inside a task.
 
 ## Pattern 1: Pass tools to an SDK agent
 
-Use this when the agent needs judgment, but the external system calls should stay explicit and reviewable.
+Use this when the agent needs judgment but the external calls should stay explicit and reviewable.
 
 ```ts
 import { ToolLoopAgent as Agent, tool, zodSchema } from "ai";
@@ -40,229 +20,59 @@ const linearGetIssue = tool({
   execute: async ({ id }) => linearClient.getIssue(id),
 });
 
-const notionSearch = tool({
-  description: "Search Notion pages",
-  inputSchema: zodSchema(z.object({ query: z.string() })),
-  execute: async ({ query }) => notionClient.search(query),
-});
-
-const slackPostMessage = tool({
-  description: "Post a Slack message",
-  inputSchema: zodSchema(z.object({ channel: z.string(), text: z.string() })),
-  execute: async ({ channel, text }) => slackClient.postMessage(channel, text),
-});
-
-const telegramSendMessage = tool({
-  description: "Send a Telegram message",
-  inputSchema: zodSchema(z.object({ chatId: z.string(), text: z.string() })),
-  execute: async ({ chatId, text }) => telegramClient.sendMessage(chatId, text),
-});
-
-const sendEmail = tool({
-  description: "Send an email",
-  inputSchema: zodSchema(z.object({
-    to: z.string().email(),
-    subject: z.string(),
-    body: z.string(),
-  })),
-  execute: async (input) => emailClient.send(input),
-});
-
-const sendSms = tool({
-  description: "Send an SMS",
-  inputSchema: zodSchema(z.object({ to: z.string(), body: z.string() })),
-  execute: async (input) => smsClient.send(input),
-});
-
 const opsAgent = new Agent({
   model: anthropic("claude-sonnet-4-20250514"),
-  tools: {
-    linearGetIssue,
-    notionSearch,
-    slackPostMessage,
-    telegramSendMessage,
-    sendEmail,
-    sendSms,
-  },
+  tools: { linearGetIssue },
 });
 ```
 
-```tsx
-{/* outputs comes from createSmithers() */}
-<Task id="triage" output={outputs.triage} agent={opsAgent}>
-  {`Read Linear issue ${ctx.input.issueId}, find the matching Notion spec, and decide whether to notify Slack, Telegram, email, or SMS.`}
-</Task>
-```
-
-Put auth, retries, and provider-specific code in small helper modules such as `./integrations/linear.ts` or `./integrations/slack.ts`. Do not give the agent a full provider SDK if it only needs two or three actions.
-
-## Pattern 2: Pass a skill, plugin, or MCP config to a CLI agent
+## Pattern 2: Pass a skill / plugin / MCP config to a CLI agent
 
 Use this when your CLI agent already supports external integrations and Smithers should only orchestrate the task.
 
 ```ts
-import { ClaudeCodeAgent, PiAgent, KimiAgent } from "smithers-orchestrator";
-
-const claude = new ClaudeCodeAgent({
-  model: "claude-sonnet-4-20250514",
-  mcpConfig: ["./mcp.json"],
-  pluginDir: ["./.claude/plugins"],
-});
+import { PiAgent } from "smithers-orchestrator";
 
 const pi = new PiAgent({
   provider: "openai",
   model: "gpt-5.2-codex",
   skill: ["./skills/linear", "./skills/notion"],
 });
-
-const kimi = new KimiAgent({
-  model: "kimi-latest",
-  mcpConfigFile: ["./mcp.json"],
-  skillsDir: "./skills",
-});
 ```
 
 ```tsx
 <Task id="ticket-review" output={outputs.review} agent={pi}>
-  {`Use the Linear skill to inspect ${ctx.input.issueId}, use the Notion skill to load the spec, then summarize next actions.`}
+  {`Use the Linear skill to inspect ${ctx.input.issueId}, then summarize next actions.`}
 </Task>
 ```
 
-Smithers manages retries, durable outputs, approvals, and sequencing. The CLI agent manages the Linear or Notion connection through its skill, plugin, or MCP layer.
-
-## Pattern 3: Run the `linear` or `notion` CLI in a task
+## Pattern 3: Run an external CLI in a task
 
 Use this when the step is deterministic and you do not need the model involved.
 
 ```tsx
 <Task id="load-linear" output={outputs.linearIssue}>
   {async () => {
-    const proc = Bun.spawn(["linear", /* your args here */], {
+    const proc = Bun.spawn(["linear", "issue", "view", ctx.input.issueId, "--json"], {
       stdout: "pipe",
       stderr: "pipe",
     });
-
     const stdout = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
-
-    if (await proc.exited !== 0) {
-      throw new Error(stderr || stdout);
-    }
-
-    return JSON.parse(stdout);
-  }}
-</Task>
-
-<Task id="publish-notion" output={outputs.publishResult}>
-  {async () => {
-    const proc = Bun.spawn(["notion", /* your args here */], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-
-    if (await proc.exited !== 0) {
-      throw new Error(stderr || stdout);
-    }
-
+    if (await proc.exited !== 0) throw new Error(stderr || stdout);
     return JSON.parse(stdout);
   }}
 </Task>
 ```
 
-Replace the argument arrays with the exact `linear` or `notion` commands your team already uses. The point is the pattern: compute task in, structured JSON out.
-
-## React Hook Libraries
-
-If you are building a React frontend on top of Smithers-backed routes or your own AI endpoints, these libraries fit well:
-
-| Library | Use it for | Notes |
-|---|---|---|
-| `@ai-sdk/react` | Chat, completion, streamed objects, assistant-style UIs | Best default if your app already uses the Vercel AI SDK transport and UI stream format |
-| `@tanstack/ai-react` | Typed chat clients, SSE adapters, tool approval flows, client tools, generation hooks | Good fit if you want TanStack-style client state and typed tool execution |
-| `@tanstack/react-query` | Thread lists, run history, side panels, metadata, optimistic mutations | Complementary cache/query layer, not a replacement for chat streaming hooks |
-| `@tambo-ai/react` | Generative React UI with provider-based hooks and thread state | Worth considering if your frontend is more component-generation than plain chat |
-
-### Vercel AI SDK React Hooks
-
-Use `@ai-sdk/react` when the client speaks the AI SDK UI protocol and you want batteries-included hooks such as `useChat`, `useCompletion`, `useObject`, and `useAssistant`.
-
-```tsx
-import { useChat } from "@ai-sdk/react";
-
-export function ChatPanel() {
-  const { messages, sendMessage, status } = useChat({
-    api: "/api/chat",
-  });
-
-  return (
-    <div>
-      {messages.map((message) => (
-        <div key={message.id}>{message.role}</div>
-      ))}
-      <button
-        disabled={status !== "ready"}
-        onClick={() => sendMessage({ text: "Summarize the latest Linear issue." })}
-      >
-        Send
-      </button>
-    </div>
-  );
-}
-```
-
-### TanStack AI
-
-Use `@tanstack/ai-react` when you want a typed chat client with connection adapters, tool approval support, and TanStack-style generation hooks beyond chat.
-
-```tsx
-import { useChat, fetchServerSentEvents } from "@tanstack/ai-react";
-
-export function ChatPanel() {
-  const { messages, sendMessage, isLoading } = useChat({
-    connection: fetchServerSentEvents("/api/chat"),
-  });
-
-  return (
-    <div>
-      {messages.map((message) => (
-        <div key={message.id}>{message.role}</div>
-      ))}
-      <button disabled={isLoading} onClick={() => sendMessage("Summarize the latest Linear issue.")}>
-        Send
-      </button>
-    </div>
-  );
-}
-```
-
-### TanStack Query and Beads
-
-- `@tanstack/react-query` is useful alongside the chat hooks above for fetching Smithers runs, approvals, ticket metadata, user settings, and other non-streaming resources.
-- Beads is **not** a React hook library. It is a persistent task and memory system for coding agents, so it belongs in agent/runtime tooling, not your React chat-hook layer.
-
-## Choosing the Right Pattern
+## Choosing between them
 
 | If you need | Prefer |
 |---|---|
-| AI judgment over a small integration surface | SDK agent with narrow tools |
-| Existing CLI ecosystem support | CLI agent with skills, plugins, or MCP |
-| Deterministic sync or publish steps | Compute task calling the external CLI or API |
+| AI judgment over a small integration surface | Pattern 1 (SDK agent with narrow tools) |
+| Existing CLI ecosystem support (skills, plugins, MCP) | Pattern 2 (CLI agent) |
+| Deterministic sync or publish steps | Pattern 3 (compute task) |
 
-## Non-Existent APIs
+## See also
 
-Smithers does **not** ship:
-
-- `smithers-orchestrator/linear`
-- `smithers-orchestrator/notion`
-- Built-in Slack, Telegram, email, or SMS clients
-- Built-in webhook helpers for those services
-
-## See Also
-
-- [Agents and Tools](/concepts/agents-and-tools)
-- [Built-in Tools](/integrations/tools)
-- [CLI Agents](/integrations/cli-agents)
-- [SDK Agents](/integrations/sdk-agents)
+For React hook patterns see [/recipes#custom-hooks-over-ctx](/recipes#custom-hooks-over-ctx); for agent-class details see [/llms-integrations.txt](/llms-integrations.txt).

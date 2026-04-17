@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").MemoryStore} MemoryStore */
+/** @typedef {import("./MemoryStore.ts").MemoryStore} MemoryStore */
 // @smithers-type-exports-end
 
 export { MemoryStoreDb } from "./MemoryStoreDb.js";

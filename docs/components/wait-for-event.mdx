@@ -1,154 +1,49 @@
 ---
 title: <WaitForEvent>
-description: Durably suspend until a correlated external event or webhook arrives, or timeout.
+description: Durably suspend until a correlated external event arrives, or time out.
 ---
 
-Push-based complement to polling. A `<WaitForEvent>` durably suspends the workflow until a matching external event arrives (or the timeout expires). The event payload is written to the configured output.
-
-## Import
-
-```tsx
+```ts
 import { WaitForEvent } from "smithers-orchestrator";
+
+type WaitForEventProps = {
+  id: string;
+  event: string;
+  output: z.ZodObject | Table | string;
+  correlationId?: string;
+  outputSchema?: z.ZodObject;
+  timeoutMs?: number;
+  onTimeout?: "fail" | "skip" | "continue"; // default "fail"
+  async?: boolean; // unrelated downstream may proceed while pending
+  skipIf?: boolean;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  label?: string;
+  meta?: Record<string, unknown>;
+};
 ```
 
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | **(required)** | Unique node id within the workflow. |
-| `event` | `string` | **(required)** | Event name/type to wait for (e.g. `"deploy.completed"`). |
-| `correlationId` | `string` | `undefined` | Correlation key to match the right event instance. |
-| `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to store the event payload. |
-| `outputSchema` | `z.ZodObject` | `undefined` | Zod schema for validating the event payload. |
-| `timeoutMs` | `number` | `undefined` | Max wait time in ms before timeout behavior triggers. |
-| `onTimeout` | `"fail" \| "skip" \| "continue"` | `"fail"` | What happens when the timeout expires. |
-| `async` | `boolean` | `false` | When `true`, unrelated downstream flow can continue while the event is still pending. Explicit dependencies still wait for the payload. |
-| `skipIf` | `boolean` | `false` | Skip this node entirely. |
-| `dependsOn` | `string[]` | `undefined` | Task IDs that must complete first. |
-| `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
-| `label` | `string` | `wait:<event>` | Display label override. |
-| `meta` | `Record<string, unknown>` | `undefined` | Extra metadata. |
-
-## Basic Usage
-
 ```tsx
-import {
-  Workflow,
-  Sequence,
-  Task,
-  WaitForEvent,
-  createSmithers,
-} from "smithers-orchestrator";
-import { z } from "zod";
-
-const deployPayload = z.object({
-  environment: z.string(),
-  sha: z.string(),
-  status: z.enum(["success", "failure"]),
-});
-
-const { smithers, outputs } = createSmithers({
-  deployEvent: deployPayload,
-  summary: z.object({ message: z.string() }),
-});
-
-export default smithers((ctx) => (
-  <Workflow name="deploy-watcher">
-    <Sequence>
-      <WaitForEvent
-        id="wait-deploy"
-        event="deploy.completed"
-        correlationId={ctx.input.deployId}
-        output={outputs.deployEvent}
-        outputSchema={deployPayload}
-        timeoutMs={600_000}
-        onTimeout="fail"
-      />
-
-      <Task id="notify" output={outputs.summary} agent={notifier}>
-        The deploy finished. Summarize the result.
-      </Task>
-    </Sequence>
-  </Workflow>
-));
-```
-
-## Timeout Behaviors
-
-| `onTimeout` | Effect |
-| --- | --- |
-| `"fail"` | Node fails. Workflow stops (unless `continueOnFail` is set on a parent). |
-| `"skip"` | Node is skipped. Downstream nodes that depend on it see `skipped` status. |
-| `"continue"` | Node completes with a null/empty payload. Downstream nodes proceed. |
-
-## Correlated Events
-
-Use `correlationId` to match specific event instances when multiple events of the same type may arrive:
-
-```tsx
-<WaitForEvent
-  id="wait-pr-merged"
-  event="github.pull_request.merged"
-  correlationId={`pr-${ctx.input.prNumber}`}
-  output={outputs.mergeEvent}
-  timeoutMs={86_400_000}
-/>
-```
-
-## Durable Deferred Resolution
-
-When `async` is `true`, the wait node becomes a **durable deferred**: the workflow records the subscription durably and allows unrelated downstream work to proceed immediately. The deferred resolves when the event arrives. Any task that explicitly depends on this node (via `dependsOn` or `needs`) still blocks until the payload is available.
-
-This pattern is useful when you want to kick off a long-running external process and continue with independent work while waiting:
-
-```tsx
-<Workflow name="async-deploy">
+<Workflow name="deploy-watcher">
   <Sequence>
-    <Task id="trigger-build" output={outputs.trigger} agent={ciAgent}>
-      Trigger a CI build and return the build ID.
-    </Task>
-
     <WaitForEvent
-      id="build-done"
-      event="ci.build.completed"
-      correlationId={ctx.outputMaybe(outputs.trigger, { nodeId: "trigger-build" })?.buildId}
-      output={outputs.buildResult}
-      timeoutMs={1_800_000}
+      id="wait-deploy"
+      event="deploy.completed"
+      correlationId={ctx.input.deployId}
+      output={outputs.deployEvent}
+      outputSchema={deployPayload}
+      timeoutMs={600_000}
       onTimeout="fail"
-      async
     />
-
-    {/* This runs immediately — it does not depend on the build result */}
-    <Task id="notify-started" output={outputs.notifyStarted}>
-      {{ message: "Build triggered, waiting for completion." }}
-    </Task>
-
-    {/* This blocks until the build event payload is available */}
-    <Task id="deploy" output={outputs.deploy} dependsOn={["build-done"]} agent={deployAgent}>
-      Deploy the completed build.
+    <Task id="notify" output={outputs.summary} agent={notifier}>
+      The deploy finished. Summarize the result.
     </Task>
   </Sequence>
 </Workflow>
 ```
 
-The subscription survives worker restarts — the Temporal runtime checkpoints the event wait durably. When the matching event arrives, the deferred resolves and any blocked dependents resume.
-
-## Behavior
-
-- When the scheduler reaches this node, it enters `waiting-event` status.
-- The engine durably records the event subscription (event name + correlation ID).
-- When a matching event arrives (via webhook, API call, or event bus), the node resumes and writes the payload to `output`.
-- If `timeoutMs` elapses first, the `onTimeout` behavior applies.
-- With `async`, later unrelated nodes can continue before the event arrives. Use explicit `dependsOn` / `needs` when later work really requires the payload.
-
-## Rendering
-
-`<WaitForEvent>` renders as a `smithers:wait-for-event` host element. The scheduler treats it like a task node that enters `waiting-event` status instead of `in-progress`.
-
 ## Notes
 
-- This is a push-based primitive. For poll-based external checks, use a `<Task>` with a compute function.
-- The event payload is validated against `outputSchema` when provided.
-- Combine with `<Sequence>` to gate downstream work on external events.
-- Multiple `<WaitForEvent>` nodes can wait for different events in a `<Parallel>` block.
-- Async event waits contribute to the Prometheus gauge `smithers_external_wait_async_pending{kind="event"}` while unresolved.
+- Push-based; for poll-based checks use `<Task>` with a compute function.
+- With `async`, dependents via `dependsOn`/`needs` still block until payload arrives.
+- Async waits increment `smithers_external_wait_async_pending{kind="event"}` while pending.

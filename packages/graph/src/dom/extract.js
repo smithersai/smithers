@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./extract.ts").HostElement} HostElement */
-/** @typedef {import("./extract.ts").HostText} HostText */
+/** @typedef {import("../HostElement.ts").HostElement} HostElement */
+/** @typedef {import("../HostText.ts").HostText} HostText */
 // @smithers-type-exports-end
 
 import { resolveStableId } from "@smithers/graph/utils/tree-ids";
@@ -8,12 +8,11 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 import { getTableName } from "drizzle-orm";
 import { DEFAULT_MERGE_QUEUE_CONCURRENCY, WORKTREE_EMPTY_PATH_ERROR, } from "@smithers/graph/constants";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./extract.ts").extract} extract */
 
-/** @typedef {import("./extract.ts").ExtractOptions} ExtractOptions */
-/** @typedef {import("./extract.ts").ExtractResult} ExtractResult */
-/** @typedef {import("./extract.ts").HostNode} HostNode */
-/** @typedef {import("@smithers/graph/XmlNode").XmlNode} XmlNode */
+/** @typedef {import("../ExtractOptions.ts").ExtractOptions} ExtractOptions */
+/** @typedef {import("../ExtractResult.ts").ExtractResult} ExtractResult */
+/** @typedef {import("../HostNode.ts").HostNode} HostNode */
+/** @typedef {import("../XmlNode.ts").XmlNode} XmlNode */
 
 // TODO(migration): Delegate extractFromHost to
 // @smithers/graph.extractGraph once core extraction reaches full

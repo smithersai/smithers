@@ -1,11 +1,8 @@
 import { BaseCliAgent, pushFlag, } from "./BaseCliAgent/index.js";
 import { randomUUID } from "node:crypto";
-/** @typedef {import("./BaseCliAgent/index.ts").BaseCliAgentOptions} BaseCliAgentOptions */
-
-/** @typedef {import("./BaseCliAgent/index.ts").CliOutputInterpreter} CliOutputInterpreter */
-/**
- * @typedef {BaseCliAgentOptions & { directory?: string; provider?: string; agent?: string; conversationId?: string; sandbox?: string; restricted?: boolean; verbose?: boolean; workflow?: string; event?: string; conversation?: string; }} ForgeAgentOptions
- */
+/** @typedef {import("./BaseCliAgent/BaseCliAgentOptions.ts").BaseCliAgentOptions} BaseCliAgentOptions */
+/** @typedef {import("./BaseCliAgent/CliOutputInterpreter.ts").CliOutputInterpreter} CliOutputInterpreter */
+/** @typedef {import("./ForgeAgentOptions.ts").ForgeAgentOptions} ForgeAgentOptions */
 
 export class ForgeAgent extends BaseCliAgent {
     opts;

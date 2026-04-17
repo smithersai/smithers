@@ -1,7 +1,6 @@
 node_modules
 .git
 .jj
-.smithers
 .worktrees
 .cache
 coverage
@@ -10,6 +9,14 @@ out
 playwright-report
 test-results
 tests/.test-*
+.smithers/state
+.smithers/tmp
+.smithers/node_modules
+.smithers/executions
+.smithers/runs
+.smithers/sandboxes
+.smithers/workflows/.smithers
+.smithers/workflows/.worktrees
 *.db
 *.db-shm
 *.db-wal

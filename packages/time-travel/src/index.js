@@ -1,21 +1,26 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").BranchInfo} BranchInfo */
-/** @typedef {import("./index.ts").ForkParams} ForkParams */
-/** @typedef {import("./index.ts").NodeChange} NodeChange */
-/** @typedef {import("./index.ts").NodeSnapshot} NodeSnapshot */
-/** @typedef {import("./index.ts").OutputChange} OutputChange */
-/** @typedef {import("./index.ts").ParsedSnapshot} ParsedSnapshot */
-/** @typedef {import("./index.ts").RalphChange} RalphChange */
-/** @typedef {import("./index.ts").RalphSnapshot} RalphSnapshot */
-/** @typedef {import("./index.ts").ReplayParams} ReplayParams */
-/** @typedef {import("./index.ts").ReplayResult} ReplayResult */
-/** @typedef {import("./index.ts").RunTimeline} RunTimeline */
-/** @typedef {import("./index.ts").Snapshot} Snapshot */
-/** @typedef {import("./index.ts").SnapshotData} SnapshotData */
-/** @typedef {import("./index.ts").SnapshotDiff} SnapshotDiff */
-/** @typedef {import("./index.ts").TimelineFrame} TimelineFrame */
-/** @typedef {import("./index.ts").TimelineTree} TimelineTree */
-/** @typedef {import("./index.ts").VcsTag} VcsTag */
+/** @typedef {import("./BranchInfo.ts").BranchInfo} BranchInfo */
+/** @typedef {import("./ForkParams.ts").ForkParams} ForkParams */
+/** @typedef {import("./NodeChange.ts").NodeChange} NodeChange */
+/** @typedef {import("./NodeSnapshot.ts").NodeSnapshot} NodeSnapshot */
+/** @typedef {import("./OutputChange.ts").OutputChange} OutputChange */
+/** @typedef {import("./ParsedSnapshot.ts").ParsedSnapshot} ParsedSnapshot */
+/** @typedef {import("./RalphChange.ts").RalphChange} RalphChange */
+/** @typedef {import("./RalphSnapshot.ts").RalphSnapshot} RalphSnapshot */
+/** @typedef {import("./ReplayParams.ts").ReplayParams} ReplayParams */
+/** @typedef {import("./ReplayResult.ts").ReplayResult} ReplayResult */
+/** @typedef {import("./RunTimeline.ts").RunTimeline} RunTimeline */
+/** @typedef {import("./snapshot/Snapshot.ts").Snapshot} Snapshot */
+/** @typedef {import("./snapshot/SnapshotData.ts").SnapshotData} SnapshotData */
+/** @typedef {import("./SnapshotDiff.ts").SnapshotDiff} SnapshotDiff */
+/** @typedef {import("./TimelineFrame.ts").TimelineFrame} TimelineFrame */
+/** @typedef {import("./TimelineTree.ts").TimelineTree} TimelineTree */
+/** @typedef {import("./vcs-version/VcsTag.ts").VcsTag} VcsTag */
+/** @typedef {import("./JumpResult.ts").JumpResult} JumpResult */
+/** @typedef {import("./JumpToFrameInput.ts").JumpToFrameInput} JumpToFrameInput */
+/** @typedef {import("./JumpStepName.ts").JumpStepName} JumpStepName */
+/** @typedef {import("./RewindLockHandle.ts").RewindLockHandle} RewindLockHandle */
+/** @typedef {import("./RewindAuditResult.ts").RewindAuditResult} RewindAuditResult */
 // @smithers-type-exports-end
 
 // ---------------------------------------------------------------------------
@@ -32,3 +37,7 @@ export { snapshotsCaptured } from "./snapshotsCaptured.js";
 export { runForksCreated } from "./runForksCreated.js";
 export { replaysStarted } from "./replaysStarted.js";
 export { snapshotDuration } from "./snapshotDuration.js";
+export { jumpToFrame, JumpToFrameError, validateJumpRunId, validateJumpFrameNo } from "./jumpToFrame.js";
+export { acquireRewindLock, hasRewindLock, resetRewindLocksForTests } from "./rewindLock.js";
+export { evaluateRewindRateLimit, REWIND_RATE_LIMIT_MAX, REWIND_RATE_LIMIT_WINDOW_MS } from "./rewindRateLimit.js";
+export { writeRewindAuditRow, countRecentRewindAuditRows, listRewindAuditRows, updateRewindAuditRow, recoverInProgressRewindAudits } from "./rewindAudit.js";

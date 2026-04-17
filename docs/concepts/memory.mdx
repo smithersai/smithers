@@ -1,156 +1,78 @@
 ---
-title: Cross-Run Memory
-description: How Smithers persists facts and messages across workflow runs.
+title: Memory
+description: Cross-run state — facts, message history, semantic recall.
 ---
 
-Your workflow completes a task, produces useful output, and exits. Next time it runs, that knowledge is gone. The agent starts from scratch every time. Cross-run memory fixes this by giving workflows a persistent brain -- facts they can write and read back, and messages they can recall.
+Memory persists state **across runs**. Task outputs are per-run; memory is per-namespace and survives every workflow execution.
 
-## Two Kinds of Memory
-
-Smithers memory has two layers, each solving a different problem:
-
-| Layer | What it stores | How you access it | When to use it |
-|-------|---------------|-------------------|----------------|
-| **Working Memory** | Key-value facts with optional TTL | `getFact` / `setFact` | Config, counters, last-known-good values |
-| **Message History** | Ordered messages per thread | `saveMessage` / `listMessages` | Conversation logs, audit trails |
-
-Working memory is fast and exact -- you know the key, you get the value. Message history is ordered and complete -- you get the last N messages from a conversation.
-
-## Namespaces
-
-Every piece of memory lives in a namespace. A namespace scopes memory so that different workflows, agents, or users do not collide.
-
-```ts
-import type { MemoryNamespace } from "smithers-orchestrator/memory";
-
-const ns: MemoryNamespace = { kind: "workflow", id: "code-review" };
-// Serializes to: "workflow:code-review"
-```
-
-Four namespace kinds exist:
-
-- `workflow` -- scoped to a specific workflow definition
-- `agent` -- scoped to a specific agent identity
-- `user` -- scoped to an end user
-- `global` -- shared across everything
-
-The `namespaceToString()` helper produces the canonical string form (`"workflow:code-review"`). All database queries filter by this string, so memory in one namespace never leaks into another.
-
-## Working Memory
-
-Working memory stores structured facts as JSON. Each fact has a namespace, a string key, and a JSON value. Optionally, a TTL in milliseconds causes the fact to expire automatically.
+## Three layers
 
 ```ts
 import { createMemoryStore } from "smithers-orchestrator/memory";
+import { Database } from "bun:sqlite";
 
-const store = createMemoryStore(db);
-
-// Write a fact
-await store.setFact(ns, "last-reviewer", { name: "Alice", score: 0.95 });
-
-// Read it back
-const fact = await store.getFact(ns, "last-reviewer");
-// { namespace: "workflow:code-review", key: "last-reviewer", valueJson: '{"name":"Alice","score":0.95}', ... }
-
-// List all facts in a namespace
-const facts = await store.listFacts(ns);
-
-// Delete
-await store.deleteFact(ns, "last-reviewer");
+const store = createMemoryStore(new Database("smithers.db"));
+const ns = { kind: "workflow" as const, id: "code-review" };
 ```
 
-Facts are upserted -- writing the same key twice replaces the previous value and updates the timestamp.
+| Layer | API | Use for |
+|---|---|---|
+| Working memory | `store.set(ns, key, value)` / `store.get(ns, key)` | Facts. Optional TTL. Last-write-wins. |
+| Message history | `store.saveMessage(threadId, msg)` / `store.listMessages(threadId, limit)` | Ordered chat threads per agent or user. |
+| Semantic recall | `store.recall(ns, query, topK)` | Vector search over stored facts. Requires embedding setup. |
 
-## Message History
-
-Message history records ordered messages in threads. A thread belongs to a namespace and can hold messages from any role (user, assistant, system, tool).
+## Namespaces
 
 ```ts
-// Create a thread
-const thread = await store.createThread(ns, "Review session #42");
-
-// Save messages
-await store.saveMessage({
-  threadId: thread.threadId,
-  role: "user",
-  contentJson: JSON.stringify({ text: "Review this PR" }),
-  runId: "run-123",
-  nodeId: "review-task",
-});
-
-// List the last 20 messages
-const messages = await store.listMessages(thread.threadId, 20);
-
-// Count messages in a thread
-const total = await store.countMessages(thread.threadId);
-
-// Look up a thread by ID
-const existing = await store.getThread(thread.threadId);
-
-// Delete a thread and all its messages
-await store.deleteThread(thread.threadId);
+type MemoryNamespace = { kind: "workflow" | "agent" | "user" | "global"; id: string };
 ```
 
-Threads are useful for building multi-turn conversations that persist across runs. A Ralph loop can write to the same thread each iteration, building up context over time.
+Pick the kind to match the lifetime: `workflow` is scoped to a workflow definition; `agent` to an agent identity; `user` to an end user; `global` is shared across everything.
+
+## Wire memory into a Task
+
+```tsx
+<Task
+  id="review"
+  output={outputs.review}
+  agent={reviewer}
+  memory={{
+    recall:   { namespace: ns, topK: 3 },               // inject relevant past facts into prompt
+    remember: { namespace: ns, key: "last-review" },    // persist this output as a fact
+    threadId: `${ctx.input.repo}:reviews`,              // append messages to this thread
+  }}
+>
+  Review the latest PR.
+</Task>
+```
+
+`recall` adds matching facts to the prompt before the agent runs. `remember` writes the validated output into memory after success. `threadId` ties the agent's prompt/response to a durable conversation.
 
 ## Processors
 
-Memory processors run maintenance operations on stored data. Each processor implements the `MemoryProcessor` interface with both Promise and Effect variants.
-
-- **TtlGarbageCollector** -- deletes expired facts based on their `ttlMs` field
-- **TokenLimiter** -- compresses message history when it exceeds a token budget
-- **Summarizer** -- uses an LLM to summarize old messages, replacing many messages with a single summary
+Maintenance jobs you run periodically:
 
 ```ts
 import { TtlGarbageCollector, TokenLimiter, Summarizer } from "smithers-orchestrator/memory";
 
-// Delete all expired facts
-const gc = TtlGarbageCollector();
+const gc         = TtlGarbageCollector();   // expire facts past their TTL
+const limiter    = TokenLimiter(4000);      // keep history under token budget
+const summarizer = Summarizer(myAgent);     // compress old messages with an LLM
+
 await gc.process(store);
-
-// Limit message history to ~4000 tokens
-const limiter = TokenLimiter(4000);
 await limiter.process(store);
-
-// Summarize old messages using an LLM agent
-const summarizer = Summarizer(myAgent);
 await summarizer.process(store);
 ```
 
-Processors run on-demand or can be wired into the workflow lifecycle.
+## Inspect from the CLI
 
-## Effect Service
-
-The `MemoryService` Effect tag bundles working memory and message history into a single service layer. This is the recommended way to use memory in Effect-based code.
-
-```ts
-import { MemoryService, createMemoryLayer } from "smithers-orchestrator/memory";
-import { Effect } from "effect";
-
-const layer = createMemoryLayer({ db });
-
-const program = Effect.gen(function* () {
-  const memory = yield* MemoryService;
-  yield* memory.setFact(ns, "key", { value: 42 });
-  const fact = yield* memory.getFact(ns, "key");
-  return fact;
-});
+```bash
+bunx smithers-orchestrator memory list workflow:code-review -w workflow.tsx
+bunx smithers-orchestrator memory recall "auth bugs" -w workflow.tsx --top-k 10
 ```
 
-## Storage
+## Notes
 
-Memory uses three SQLite tables, all created automatically:
-
-| Table | Purpose |
-|-------|---------|
-| `_smithers_memory_facts` | Working memory key-value pairs |
-| `_smithers_memory_threads` | Message thread metadata |
-| `_smithers_memory_messages` | Individual messages within threads |
-
-## Observability
-
-Memory operations emit structured events and update Effect metrics:
-
-- `MemoryFactSet` / `MemoryMessageSaved` events
-- `smithers.memory.fact_reads` / `smithers.memory.fact_writes` counters
-- `smithers.memory.message_saves` counter
+- Memory and task outputs are **distinct stores**. Don't use memory for run-scoped state — it's not transactional with the workflow's frame commits.
+- Semantic recall requires an embedding provider; configure via `SemanticRecallConfig.embedding`.
+- Working-memory writes are unordered. Use message history when sequence matters.

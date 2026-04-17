@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./EscalationChain.ts").EscalationChainProps} EscalationChainProps */
-/** @typedef {import("./EscalationChain.ts").EscalationLevel} EscalationLevel */
+/** @typedef {import("./EscalationChainProps.ts").EscalationChainProps} EscalationChainProps */
+/** @typedef {import("./EscalationLevel.ts").EscalationLevel} EscalationLevel */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -13,6 +13,7 @@ import { Approval } from "./Approval.js";
  * `escalateIf` returns `true`. Optionally ends with a human approval fallback.
  *
  * Composes Sequence + Task (with `continueOnFail`) + Branch + Approval.
+ * @param {EscalationChainProps} props
  */
 export function EscalationChain(props) {
     if (props.skipIf)

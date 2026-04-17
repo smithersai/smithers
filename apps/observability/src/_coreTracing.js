@@ -1,21 +1,20 @@
-// @smithers-type-exports-begin
-/** @typedef {import("./_coreTracing.ts").SmithersLogFormat} SmithersLogFormat */
-// @smithers-type-exports-end
-
 import { Context, Effect, Layer } from "effect";
 import { correlationContextToLogAnnotations, getCurrentCorrelationContext, withCorrelationContext, } from "./_coreCorrelation/index.js";
-/** @typedef {import("./_coreTracing.ts")._coreTracing} _coreTracing */
+/** @typedef {import("./SmithersLogFormat.ts").SmithersLogFormat} SmithersLogFormat */
+/** @typedef {import("./_coreTracingShape.ts").SmithersSpanAttributesInput} SmithersSpanAttributesInput */
+/** @typedef {import("./_coreTracingShape.ts").TracingServiceShape} TracingServiceShape */
 
-/** @typedef {import("./_coreTracing.ts").SmithersSpanAttributesInput} SmithersSpanAttributesInput */
-
+/** @type {"text/plain; version=0.0.4; charset=utf-8"} */
 export const prometheusContentType = "text/plain; version=0.0.4; charset=utf-8";
+/** @type {{ readonly run: "smithers.run"; readonly task: "smithers.task"; readonly agent: "smithers.agent"; readonly tool: "smithers.tool" }} */
 export const smithersSpanNames = {
     run: "smithers.run",
     task: "smithers.task",
     agent: "smithers.agent",
     tool: "smithers.tool",
 };
-export class TracingService extends Context.Tag("TracingService")() {
+const _TracingServiceBase = /** @type {Context.TagClass<TracingService, "TracingService", TracingServiceShape>} */ (/** @type {unknown} */ (Context.Tag("TracingService")()));
+export class TracingService extends _TracingServiceBase {
 }
 /**
  * @returns {| Readonly<Record<string, string>> | undefined}
@@ -128,6 +127,7 @@ export function withSmithersSpan(name, effect, attributes) {
     }
     return program.pipe(Effect.withLogSpan(name), Effect.withSpan(inferSmithersSpanName(name, attributes)));
 }
+/** @type {Layer.Layer<TracingService, never, never>} */
 export const TracingServiceLive = Layer.succeed(TracingService, {
     withSpan: (name, effect, attributes) => {
         return withSmithersSpan(name, effect, attributes);

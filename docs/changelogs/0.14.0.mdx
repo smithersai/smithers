@@ -65,7 +65,7 @@ tasks.
 ```
 
 ```bash
-smithers signal abc123 user-feedback --data '{"rating": 5}'
+bunx smithers-orchestrator signal abc123 user-feedback --data '{"rating": 5}'
 ```
 
 ---
@@ -78,7 +78,7 @@ A diagnostic engine that calculates exactly what's blocking a run and tells you
 how to fix it.
 
 ```
-$ smithers why abc123
+$ bunx smithers-orchestrator why abc123
 Run abc123 is waiting-approval
   Blocked node:  review-gate
   Reason:        Approval requested — no decision yet
@@ -94,7 +94,7 @@ Filter by node, category, or time. Events stream incrementally so you never run
 out of memory on large runs.
 
 ```bash
-smithers events abc123 --type approval --since 5m
+bunx smithers-orchestrator events abc123 --type approval --since 5m
 ```
 
 ### `smithers node` — Deep-dive into a single node
@@ -103,7 +103,7 @@ Aggregates task attempts, tool calls, schema validation errors, Zod-validated
 outputs, and token usage with pricing.
 
 ```bash
-smithers node review-step -r abc123 --tools --attempts
+bunx smithers-orchestrator node review-step -r abc123 --tools --attempts
 ```
 
 ### `--watch` flag
@@ -111,7 +111,7 @@ smithers node review-step -r abc123 --tools --attempts
 Live-updating views for `ps`, `inspect`, and `events`.
 
 ```bash
-smithers ps --watch --interval 2
+bunx smithers-orchestrator ps --watch --interval 2
 ```
 
 ---
@@ -133,7 +133,7 @@ smithers ps --watch --interval 2
   and resumes them automatically. Atomic DB claim lock prevents concurrent
   supervisor races.
   ```bash
-  smithers supervise
+  bunx smithers-orchestrator supervise
   ```
 
 ---

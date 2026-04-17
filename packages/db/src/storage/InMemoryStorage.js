@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import { StorageService } from "./StorageService.js";
-/** @typedef {import("./StorageService.ts").StorageServiceShape} StorageServiceShape */
+/** @typedef {import("./StorageServiceShape.ts").StorageServiceShape} StorageServiceShape */
 
 /**
  * @param {string} runId

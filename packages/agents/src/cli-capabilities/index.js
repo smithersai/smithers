@@ -1,9 +1,9 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").CliAgentCapabilityAdapterId} CliAgentCapabilityAdapterId */
-/** @typedef {import("./index.ts").CliAgentCapabilityDoctorEntry} CliAgentCapabilityDoctorEntry */
-/** @typedef {import("./index.ts").CliAgentCapabilityDoctorReport} CliAgentCapabilityDoctorReport */
-/** @typedef {import("./index.ts").CliAgentCapabilityIssue} CliAgentCapabilityIssue */
-/** @typedef {import("./index.ts").CliAgentCapabilityReportEntry} CliAgentCapabilityReportEntry */
+/** @typedef {import("./CliAgentCapabilityAdapterId.ts").CliAgentCapabilityAdapterId} CliAgentCapabilityAdapterId */
+/** @typedef {import("./CliAgentCapabilityDoctorReport.ts").CliAgentCapabilityDoctorEntry} CliAgentCapabilityDoctorEntry */
+/** @typedef {import("./CliAgentCapabilityDoctorReport.ts").CliAgentCapabilityDoctorReport} CliAgentCapabilityDoctorReport */
+/** @typedef {import("./CliAgentCapabilityDoctorReport.ts").CliAgentCapabilityIssue} CliAgentCapabilityIssue */
+/** @typedef {import("./CliAgentCapabilityReportEntry.ts").CliAgentCapabilityReportEntry} CliAgentCapabilityReportEntry */
 // @smithers-type-exports-end
 
 export { getCliAgentCapabilityReport } from "./getCliAgentCapabilityReport.js";

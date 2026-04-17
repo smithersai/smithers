@@ -17,6 +17,8 @@ describe("ensureSmithersTables", () => {
         expect(tableNames).toContain("_smithers_frames");
         expect(tableNames).toContain("_smithers_approvals");
         expect(tableNames).toContain("_smithers_cache");
+        expect(tableNames).toContain("_smithers_node_diffs");
+        expect(tableNames).toContain("_smithers_time_travel_audit");
         expect(tableNames).toContain("_smithers_sandboxes");
         expect(tableNames).toContain("_smithers_tool_calls");
         expect(tableNames).toContain("_smithers_events");
@@ -60,6 +62,33 @@ describe("ensureSmithersTables", () => {
             .all();
         const frameColNames = frameCols.map((c) => c.name);
         expect(frameColNames).toContain("encoding");
+        const nodeDiffCols = sqlite
+            .query('PRAGMA table_info("_smithers_node_diffs")')
+            .all();
+        const nodeDiffColNames = nodeDiffCols.map((c) => c.name);
+        expect(nodeDiffColNames).toEqual(expect.arrayContaining([
+            "run_id",
+            "node_id",
+            "iteration",
+            "base_ref",
+            "diff_json",
+            "computed_at_ms",
+            "size_bytes",
+        ]));
+        const auditCols = sqlite
+            .query('PRAGMA table_info("_smithers_time_travel_audit")')
+            .all();
+        const auditColNames = auditCols.map((c) => c.name);
+        expect(auditColNames).toEqual(expect.arrayContaining([
+            "id",
+            "run_id",
+            "from_frame_no",
+            "to_frame_no",
+            "caller",
+            "timestamp_ms",
+            "result",
+            "duration_ms",
+        ]));
         const runIndexes = sqlite
             .query('PRAGMA index_list("_smithers_runs")')
             .all();

@@ -1,13 +1,11 @@
 import { BaseCliAgent, pushFlag, pushList, isRecord, asString, truncate, toolKindFromName, shouldSurfaceUnparsedStdout, isLikelyRuntimeMetadata, createSyntheticIdGenerator, } from "./BaseCliAgent/index.js";
 import { normalizeCapabilityStringList, } from "./capability-registry/index.js";
 import { logWarning } from "@smithers/observability/logging";
-/** @typedef {import("./BaseCliAgent/index.ts").BaseCliAgentOptions} BaseCliAgentOptions */
-
-/** @typedef {import("./capability-registry/index.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
-/**
- * @typedef {BaseCliAgentOptions & { addDir?: string[]; agent?: string; agents?: Record<string, { description?: string; prompt?: string; }> | string; allowDangerouslySkipPermissions?: boolean; allowedTools?: string[]; appendSystemPrompt?: string; betas?: string[]; chrome?: boolean; continue?: boolean; dangerouslySkipPermissions?: boolean; debug?: boolean | string; debugFile?: string; disableSlashCommands?: boolean; disallowedTools?: string[]; fallbackModel?: string; file?: string[]; forkSession?: boolean; fromPr?: string; ide?: boolean; includePartialMessages?: boolean; inputFormat?: "text" | "stream-json"; jsonSchema?: string; maxBudgetUsd?: number; mcpConfig?: string[]; mcpDebug?: boolean; model?: string; noChrome?: boolean; noSessionPersistence?: boolean; outputFormat?: "text" | "json" | "stream-json"; permissionMode?: "acceptEdits" | "bypassPermissions" | "default" | "delegate" | "dontAsk" | "plan"; pluginDir?: string[]; replayUserMessages?: boolean; resume?: string; sessionId?: string; settingSources?: string; settings?: string; strictMcpConfig?: boolean; systemPrompt?: string; tools?: string[] | "default" | ""; verbose?: boolean; }} ClaudeCodeAgentOptions
- */
-/** @typedef {import("./BaseCliAgent/index.ts").CliOutputInterpreter} CliOutputInterpreter */
+/** @typedef {import("./BaseCliAgent/BaseCliAgentOptions.ts").BaseCliAgentOptions} BaseCliAgentOptions */
+/** @typedef {import("./capability-registry/AgentCapabilityRegistry.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
+/** @typedef {import("./ClaudeCodeAgentOptions.ts").ClaudeCodeAgentOptions} ClaudeCodeAgentOptions */
+/** @typedef {import("./BaseCliAgent/CliOutputInterpreter.ts").CliOutputInterpreter} CliOutputInterpreter */
+/** @typedef {import("./BaseCliAgent/AgentCliEvent.ts").AgentCliEvent} AgentCliEvent */
 
 /**
  * @param {ClaudeCodeAgentOptions} opts

@@ -1,9 +1,9 @@
-import type { JSX } from "smithers/jsx-runtime";
 import type { ExtractOptions, WorkflowGraph } from "@smithers/graph";
+import type { WorkflowElement } from "./WorkflowElement.ts";
 
 export type WorkflowGraphRenderer = {
   render(
-    element: JSX.Element,
+    element: WorkflowElement,
     opts?: ExtractOptions,
   ): Promise<WorkflowGraph> | WorkflowGraph;
 };

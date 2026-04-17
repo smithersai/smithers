@@ -1,156 +1,156 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").AgentCapabilityRegistry} AgentCapabilityRegistry */
-/** @typedef {import("./index.ts").AgentLike} AgentLike */
-/** @typedef {import("./index.ts").AgentToolDescriptor} AgentToolDescriptor */
-/** @typedef {import("./index.ts").AggregateOptions} AggregateOptions */
-/** @typedef {import("./index.ts").AggregateScore} AggregateScore */
+/** @typedef {import("@smithers/agents/capability-registry").AgentCapabilityRegistry} AgentCapabilityRegistry */
+/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("@smithers/agents/capability-registry").AgentToolDescriptor} AgentToolDescriptor */
+/** @typedef {import("@smithers/scorers").AggregateOptions} AggregateOptions */
+/** @typedef {import("@smithers/scorers").AggregateScore} AggregateScore */
 /**
  * @template CALL_OPTIONS
  * @template TOOLS
- * @typedef {import("./index.ts").AnthropicAgentOptions<CALL_OPTIONS, TOOLS>} AnthropicAgentOptions
+ * @typedef {import("@smithers/agents").AnthropicAgentOptions<CALL_OPTIONS, TOOLS>} AnthropicAgentOptions
  */
-/** @typedef {import("./index.ts").ApprovalAutoApprove} ApprovalAutoApprove */
-/** @typedef {import("./index.ts").ApprovalDecision} ApprovalDecision */
-/** @typedef {import("./index.ts").ApprovalMode} ApprovalMode */
-/** @typedef {import("./index.ts").ApprovalOption} ApprovalOption */
-/** @typedef {import("./index.ts").ApprovalProps} ApprovalProps */
-/** @typedef {import("./index.ts").ApprovalRanking} ApprovalRanking */
-/** @typedef {import("./index.ts").ApprovalRequest} ApprovalRequest */
-/** @typedef {import("./index.ts").ApprovalSelection} ApprovalSelection */
-/** @typedef {import("./index.ts").ColumnDef} ColumnDef */
-/** @typedef {import("./index.ts").ConnectRequest} ConnectRequest */
-/** @typedef {import("./index.ts").ContinueAsNewProps} ContinueAsNewProps */
-/** @typedef {import("./index.ts").CreateScorerConfig} CreateScorerConfig */
+/** @typedef {import("@smithers/components").ApprovalAutoApprove} ApprovalAutoApprove */
+/** @typedef {import("@smithers/components").ApprovalDecision} ApprovalDecision */
+/** @typedef {import("@smithers/components").ApprovalMode} ApprovalMode */
+/** @typedef {import("@smithers/components").ApprovalOption} ApprovalOption */
+/** @typedef {import("@smithers/components").ApprovalProps} ApprovalProps */
+/** @typedef {import("@smithers/components").ApprovalRanking} ApprovalRanking */
+/** @typedef {import("@smithers/components").ApprovalRequest} ApprovalRequest */
+/** @typedef {import("@smithers/components").ApprovalSelection} ApprovalSelection */
+/** @typedef {import("@smithers/components").ColumnDef} ColumnDef */
+/** @typedef {import("@smithers/server/gateway").ConnectRequest} ConnectRequest */
+/** @typedef {import("@smithers/components").ContinueAsNewProps} ContinueAsNewProps */
+/** @typedef {import("@smithers/scorers").CreateScorerConfig} CreateScorerConfig */
 /**
  * @template Schema
- * @typedef {import("./index.ts").CreateSmithersApi<Schema>} CreateSmithersApi
+ * @typedef {import("./CreateSmithersApi.ts").CreateSmithersApi<Schema>} CreateSmithersApi
  */
-/** @typedef {import("./index.ts").DepsSpec} DepsSpec */
-/** @typedef {import("./index.ts").EventFrame} EventFrame */
+/** @typedef {import("@smithers/components").DepsSpec} DepsSpec */
+/** @typedef {import("@smithers/server/gateway").EventFrame} EventFrame */
 /**
  * @template S
- * @typedef {import("./index.ts").ExternalSmithersConfig<S>} ExternalSmithersConfig
+ * @typedef {import("./external/ExternalSmithersConfig.ts").ExternalSmithersConfig<S>} ExternalSmithersConfig
  */
-/** @typedef {import("./index.ts").GatewayAuthConfig} GatewayAuthConfig */
-/** @typedef {import("./index.ts").GatewayDefaults} GatewayDefaults */
-/** @typedef {import("./index.ts").GatewayOptions} GatewayOptions */
-/** @typedef {import("./index.ts").GatewayTokenGrant} GatewayTokenGrant */
-/** @typedef {import("./index.ts").GraphSnapshot} GraphSnapshot */
-/** @typedef {import("./index.ts").HelloResponse} HelloResponse */
-/** @typedef {import("./index.ts").HostContainer} HostContainer */
-/** @typedef {import("./index.ts").HostNodeJson} HostNodeJson */
-/** @typedef {import("./index.ts").InferDeps} InferDeps */
+/** @typedef {import("@smithers/server/gateway").GatewayAuthConfig} GatewayAuthConfig */
+/** @typedef {import("@smithers/server/gateway").GatewayDefaults} GatewayDefaults */
+/** @typedef {import("@smithers/server/gateway").GatewayOptions} GatewayOptions */
+/** @typedef {import("@smithers/server/gateway").GatewayTokenGrant} GatewayTokenGrant */
+/** @typedef {import("@smithers/graph/GraphSnapshot").GraphSnapshot} GraphSnapshot */
+/** @typedef {import("@smithers/server/gateway").HelloResponse} HelloResponse */
+/** @typedef {import("@smithers/react-reconciler/dom/renderer").HostContainer} HostContainer */
+/** @typedef {import("./external/HostNodeJson.ts").HostNodeJson} HostNodeJson */
+/** @typedef {import("@smithers/components").InferDeps} InferDeps */
 /**
  * @template T
- * @typedef {import("./index.ts").InferOutputEntry<T>} InferOutputEntry
+ * @typedef {import("@smithers/driver/OutputAccessor").InferOutputEntry<T>} InferOutputEntry
  */
 /**
  * @template TTable
- * @typedef {import("./index.ts").InferRow<TTable>} InferRow
+ * @typedef {import("@smithers/driver/OutputAccessor").InferRow<TTable>} InferRow
  */
-/** @typedef {import("./index.ts").JjRevertResult} JjRevertResult */
-/** @typedef {import("./index.ts").KanbanProps} KanbanProps */
-/** @typedef {import("./index.ts").KnownSmithersErrorCode} KnownSmithersErrorCode */
-/** @typedef {import("./index.ts").LlmJudgeConfig} LlmJudgeConfig */
-/** @typedef {import("./index.ts").MemoryFact} MemoryFact */
-/** @typedef {import("./index.ts").MemoryLayerConfig} MemoryLayerConfig */
-/** @typedef {import("./index.ts").MemoryMessage} MemoryMessage */
-/** @typedef {import("./index.ts").MemoryNamespace} MemoryNamespace */
-/** @typedef {import("./index.ts").MemoryNamespaceKind} MemoryNamespaceKind */
-/** @typedef {import("./index.ts").MemoryProcessor} MemoryProcessor */
-/** @typedef {import("./index.ts").MemoryProcessorConfig} MemoryProcessorConfig */
-/** @typedef {import("./index.ts").MemoryServiceApi} MemoryServiceApi */
-/** @typedef {import("./index.ts").MemoryStore} MemoryStore */
-/** @typedef {import("./index.ts").MemoryThread} MemoryThread */
-/** @typedef {import("./index.ts").MessageHistoryConfig} MessageHistoryConfig */
+/** @typedef {import("@smithers/vcs/jj").JjRevertResult} JjRevertResult */
+/** @typedef {import("@smithers/components").KanbanProps} KanbanProps */
+/** @typedef {import("@smithers/errors/KnownSmithersErrorCode").KnownSmithersErrorCode} KnownSmithersErrorCode */
+/** @typedef {import("@smithers/scorers").LlmJudgeConfig} LlmJudgeConfig */
+/** @typedef {import("@smithers/memory").MemoryFact} MemoryFact */
+/** @typedef {import("@smithers/memory").MemoryLayerConfig} MemoryLayerConfig */
+/** @typedef {import("@smithers/memory").MemoryMessage} MemoryMessage */
+/** @typedef {import("@smithers/memory").MemoryNamespace} MemoryNamespace */
+/** @typedef {import("@smithers/memory").MemoryNamespaceKind} MemoryNamespaceKind */
+/** @typedef {import("@smithers/memory").MemoryProcessor} MemoryProcessor */
+/** @typedef {import("@smithers/memory").MemoryProcessorConfig} MemoryProcessorConfig */
+/** @typedef {import("@smithers/memory").MemoryServiceApi} MemoryServiceApi */
+/** @typedef {import("@smithers/memory").MemoryStore} MemoryStore */
+/** @typedef {import("@smithers/memory").MemoryThread} MemoryThread */
+/** @typedef {import("@smithers/memory").MessageHistoryConfig} MessageHistoryConfig */
 /**
  * @template CALL_OPTIONS
  * @template TOOLS
- * @typedef {import("./index.ts").OpenAIAgentOptions<CALL_OPTIONS, TOOLS>} OpenAIAgentOptions
+ * @typedef {import("@smithers/agents").OpenAIAgentOptions<CALL_OPTIONS, TOOLS>} OpenAIAgentOptions
  */
-/** @typedef {import("./index.ts").OpenApiAuth} OpenApiAuth */
-/** @typedef {import("./index.ts").OpenApiSpec} OpenApiSpec */
-/** @typedef {import("./index.ts").OpenApiToolsOptions} OpenApiToolsOptions */
+/** @typedef {import("@smithers/openapi").OpenApiAuth} OpenApiAuth */
+/** @typedef {import("@smithers/openapi").OpenApiSpec} OpenApiSpec */
+/** @typedef {import("@smithers/openapi").OpenApiToolsOptions} OpenApiToolsOptions */
 /**
  * @template Schema
- * @typedef {import("./index.ts").OutputAccessor<Schema>} OutputAccessor
+ * @typedef {import("@smithers/driver/OutputAccessor").OutputAccessor<Schema>} OutputAccessor
  */
-/** @typedef {import("./index.ts").OutputKey} OutputKey */
-/** @typedef {import("./index.ts").OutputTarget} OutputTarget */
-/** @typedef {import("./index.ts").PiAgentOptions} PiAgentOptions */
-/** @typedef {import("./index.ts").PiExtensionUiRequest} PiExtensionUiRequest */
-/** @typedef {import("./index.ts").PiExtensionUiResponse} PiExtensionUiResponse */
-/** @typedef {import("./index.ts").PollerProps} PollerProps */
-/** @typedef {import("./index.ts").RequestFrame} RequestFrame */
-/** @typedef {import("./index.ts").ResolvedSmithersObservabilityOptions} ResolvedSmithersObservabilityOptions */
-/** @typedef {import("./index.ts").ResponseFrame} ResponseFrame */
-/** @typedef {import("./index.ts").RevertOptions} RevertOptions */
-/** @typedef {import("./index.ts").RevertResult} RevertResult */
-/** @typedef {import("./index.ts").RunJjOptions} RunJjOptions */
-/** @typedef {import("./index.ts").RunJjResult} RunJjResult */
-/** @typedef {import("./index.ts").RunOptions} RunOptions */
-/** @typedef {import("./index.ts").RunResult} RunResult */
-/** @typedef {import("./index.ts").RunStatus} RunStatus */
-/** @typedef {import("./index.ts").SagaProps} SagaProps */
-/** @typedef {import("./index.ts").SagaStepDef} SagaStepDef */
-/** @typedef {import("./index.ts").SagaStepProps} SagaStepProps */
-/** @typedef {import("./index.ts").SamplingConfig} SamplingConfig */
-/** @typedef {import("./index.ts").SandboxProps} SandboxProps */
-/** @typedef {import("./index.ts").SandboxRuntime} SandboxRuntime */
-/** @typedef {import("./index.ts").SandboxVolumeMount} SandboxVolumeMount */
-/** @typedef {import("./index.ts").SandboxWorkspaceSpec} SandboxWorkspaceSpec */
-/** @typedef {import("./index.ts").SchemaRegistryEntry} SchemaRegistryEntry */
-/** @typedef {import("./index.ts").Scorer} Scorer */
-/** @typedef {import("./index.ts").ScorerBinding} ScorerBinding */
-/** @typedef {import("./index.ts").ScorerContext} ScorerContext */
-/** @typedef {import("./index.ts").ScoreResult} ScoreResult */
-/** @typedef {import("./index.ts").ScorerFn} ScorerFn */
-/** @typedef {import("./index.ts").ScorerInput} ScorerInput */
-/** @typedef {import("./index.ts").ScoreRow} ScoreRow */
-/** @typedef {import("./index.ts").ScorersMap} ScorersMap */
-/** @typedef {import("./index.ts").SemanticRecallConfig} SemanticRecallConfig */
-/** @typedef {import("./index.ts").SerializedCtx} SerializedCtx */
-/** @typedef {import("./index.ts").ServeOptions} ServeOptions */
-/** @typedef {import("./index.ts").ServerOptions} ServerOptions */
-/** @typedef {import("./index.ts").SignalProps} SignalProps */
-/** @typedef {import("./index.ts").SmithersAlertLabels} SmithersAlertLabels */
-/** @typedef {import("./index.ts").SmithersAlertPolicy} SmithersAlertPolicy */
-/** @typedef {import("./index.ts").SmithersAlertPolicyDefaults} SmithersAlertPolicyDefaults */
-/** @typedef {import("./index.ts").SmithersAlertPolicyRule} SmithersAlertPolicyRule */
-/** @typedef {import("./index.ts").SmithersAlertReaction} SmithersAlertReaction */
-/** @typedef {import("./index.ts").SmithersAlertReactionKind} SmithersAlertReactionKind */
-/** @typedef {import("./index.ts").SmithersAlertReactionRef} SmithersAlertReactionRef */
-/** @typedef {import("./index.ts").SmithersAlertSeverity} SmithersAlertSeverity */
-/** @typedef {import("./index.ts").SmithersCtx} SmithersCtx */
-/** @typedef {import("./index.ts").SmithersError} SmithersError */
-/** @typedef {import("./index.ts").SmithersErrorCode} SmithersErrorCode */
-/** @typedef {import("./index.ts").SmithersEvent} SmithersEvent */
-/** @typedef {import("./index.ts").SmithersLogFormat} SmithersLogFormat */
-/** @typedef {import("./index.ts").SmithersObservabilityOptions} SmithersObservabilityOptions */
-/** @typedef {import("./index.ts").SmithersObservabilityService} SmithersObservabilityService */
+/** @typedef {import("@smithers/driver/OutputKey").OutputKey} OutputKey */
+/** @typedef {import("@smithers/components").OutputTarget} OutputTarget */
+/** @typedef {import("@smithers/agents").PiAgentOptions} PiAgentOptions */
+/** @typedef {import("@smithers/agents").PiExtensionUiRequest} PiExtensionUiRequest */
+/** @typedef {import("@smithers/agents").PiExtensionUiResponse} PiExtensionUiResponse */
+/** @typedef {import("@smithers/components").PollerProps} PollerProps */
+/** @typedef {import("@smithers/server/gateway").RequestFrame} RequestFrame */
+/** @typedef {import("@smithers/observability").ResolvedSmithersObservabilityOptions} ResolvedSmithersObservabilityOptions */
+/** @typedef {import("@smithers/server/gateway").ResponseFrame} ResponseFrame */
+/** @typedef {import("@smithers/time-travel/revert").RevertOptions} RevertOptions */
+/** @typedef {import("@smithers/time-travel/revert").RevertResult} RevertResult */
+/** @typedef {import("@smithers/vcs/jj").RunJjOptions} RunJjOptions */
+/** @typedef {import("@smithers/vcs/jj").RunJjResult} RunJjResult */
+/** @typedef {import("@smithers/driver/RunOptions").RunOptions} RunOptions */
+/** @typedef {import("@smithers/driver/RunResult").RunResult} RunResult */
+/** @typedef {import("@smithers/driver/RunStatus").RunStatus} RunStatus */
+/** @typedef {import("@smithers/components").SagaProps} SagaProps */
+/** @typedef {import("@smithers/components").SagaStepDef} SagaStepDef */
+/** @typedef {import("@smithers/components").SagaStepProps} SagaStepProps */
+/** @typedef {import("@smithers/scorers").SamplingConfig} SamplingConfig */
+/** @typedef {import("@smithers/components").SandboxProps} SandboxProps */
+/** @typedef {import("@smithers/components").SandboxRuntime} SandboxRuntime */
+/** @typedef {import("@smithers/components").SandboxVolumeMount} SandboxVolumeMount */
+/** @typedef {import("@smithers/components").SandboxWorkspaceSpec} SandboxWorkspaceSpec */
+/** @typedef {import("@smithers/db/SchemaRegistryEntry").SchemaRegistryEntry} SchemaRegistryEntry */
+/** @typedef {import("@smithers/scorers").Scorer} Scorer */
+/** @typedef {import("@smithers/scorers").ScorerBinding} ScorerBinding */
+/** @typedef {import("@smithers/scorers").ScorerContext} ScorerContext */
+/** @typedef {import("@smithers/scorers").ScoreResult} ScoreResult */
+/** @typedef {import("@smithers/scorers").ScorerFn} ScorerFn */
+/** @typedef {import("@smithers/scorers").ScorerInput} ScorerInput */
+/** @typedef {import("@smithers/scorers").ScoreRow} ScoreRow */
+/** @typedef {import("@smithers/scorers").ScorersMap} ScorersMap */
+/** @typedef {import("@smithers/memory").SemanticRecallConfig} SemanticRecallConfig */
+/** @typedef {import("./external/SerializedCtx.ts").SerializedCtx} SerializedCtx */
+/** @typedef {import("@smithers/server/serve").ServeOptions} ServeOptions */
+/** @typedef {import("@smithers/server").ServerOptions} ServerOptions */
+/** @typedef {import("@smithers/components").SignalProps} SignalProps */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertLabels} SmithersAlertLabels */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicy} SmithersAlertPolicy */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyDefaults} SmithersAlertPolicyDefaults */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyRule} SmithersAlertPolicyRule */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertReaction} SmithersAlertReaction */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertReactionKind} SmithersAlertReactionKind */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertReactionRef} SmithersAlertReactionRef */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertSeverity} SmithersAlertSeverity */
+/** @typedef {import("@smithers/driver/SmithersCtx").SmithersCtx} SmithersCtx */
+/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers/errors/SmithersErrorCode").SmithersErrorCode} SmithersErrorCode */
+/** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+/** @typedef {import("@smithers/observability").SmithersLogFormat} SmithersLogFormat */
+/** @typedef {import("@smithers/observability").SmithersObservabilityOptions} SmithersObservabilityOptions */
+/** @typedef {import("@smithers/observability").SmithersObservabilityService} SmithersObservabilityService */
 /**
  * @template Schema
- * @typedef {import("./index.ts").SmithersWorkflow<Schema>} SmithersWorkflow
+ * @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<Schema>} SmithersWorkflow
  */
-/** @typedef {import("./index.ts").SmithersWorkflowOptions} SmithersWorkflowOptions */
-/** @typedef {import("./index.ts").TaskDescriptor} TaskDescriptor */
-/** @typedef {import("./index.ts").TaskMemoryConfig} TaskMemoryConfig */
-/** @typedef {import("./index.ts").TaskProps} TaskProps */
-/** @typedef {import("./index.ts").TimerProps} TimerProps */
-/** @typedef {import("./index.ts").TimeTravelOptions} TimeTravelOptions */
-/** @typedef {import("./index.ts").TimeTravelResult} TimeTravelResult */
-/** @typedef {import("./index.ts").TryCatchFinallyProps} TryCatchFinallyProps */
-/** @typedef {import("./index.ts").WaitForEventProps} WaitForEventProps */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersWorkflowOptions} SmithersWorkflowOptions */
+/** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("@smithers/memory").TaskMemoryConfig} TaskMemoryConfig */
+/** @typedef {import("@smithers/components").TaskProps} TaskProps */
+/** @typedef {import("@smithers/components").TimerProps} TimerProps */
+/** @typedef {import("@smithers/time-travel/timetravel").TimeTravelOptions} TimeTravelOptions */
+/** @typedef {import("@smithers/time-travel/timetravel").TimeTravelResult} TimeTravelResult */
+/** @typedef {import("@smithers/components").TryCatchFinallyProps} TryCatchFinallyProps */
+/** @typedef {import("@smithers/components").WaitForEventProps} WaitForEventProps */
 /**
  * @template T
- * @typedef {import("./index.ts").WorkingMemoryConfig<T>} WorkingMemoryConfig
+ * @typedef {import("@smithers/memory").WorkingMemoryConfig<T>} WorkingMemoryConfig
  */
-/** @typedef {import("./index.ts").WorkspaceAddOptions} WorkspaceAddOptions */
-/** @typedef {import("./index.ts").WorkspaceInfo} WorkspaceInfo */
-/** @typedef {import("./index.ts").WorkspaceResult} WorkspaceResult */
-/** @typedef {import("./index.ts").XmlElement} XmlElement */
-/** @typedef {import("./index.ts").XmlNode} XmlNode */
-/** @typedef {import("./index.ts").XmlText} XmlText */
+/** @typedef {import("@smithers/vcs/jj").WorkspaceAddOptions} WorkspaceAddOptions */
+/** @typedef {import("@smithers/vcs/jj").WorkspaceInfo} WorkspaceInfo */
+/** @typedef {import("@smithers/vcs/jj").WorkspaceResult} WorkspaceResult */
+/** @typedef {import("@smithers/graph/XmlNode").XmlElement} XmlElement */
+/** @typedef {import("@smithers/graph/XmlNode").XmlNode} XmlNode */
+/** @typedef {import("@smithers/graph/XmlNode").XmlText} XmlText */
 // @smithers-type-exports-end
 
 export { hashCapabilityRegistry } from "@smithers/agents/capability-registry";

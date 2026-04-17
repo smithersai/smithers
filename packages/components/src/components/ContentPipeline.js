@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./ContentPipeline.ts").ContentPipelineProps} ContentPipelineProps */
-/** @typedef {import("./ContentPipeline.ts").ContentPipelineStage} ContentPipelineStage */
+/** @typedef {import("./ContentPipelineProps.ts").ContentPipelineProps} ContentPipelineProps */
+/** @typedef {import("./ContentPipelineStage.ts").ContentPipelineStage} ContentPipelineStage */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -12,6 +12,7 @@ import { Task } from "./Task.js";
  * Composes Sequence and Task to create a typed waterfall where each
  * stage is explicitly defined. Each Task uses `needs` to depend on
  * the previous stage, passing output forward through the pipeline.
+ * @param {ContentPipelineProps} props
  */
 export function ContentPipeline(props) {
     if (props.skipIf)

@@ -1,123 +1,41 @@
 ---
 title: <SuperSmithers>
-description: Workflow wrapper that reads and modifies source code to intervene via hot reload, driven by a markdown strategy document.
+description: Reads and modifies source code at runtime via a markdown strategy doc.
 ---
 
-```tsx
+```ts
 import { SuperSmithers } from "smithers-orchestrator";
+
+type SuperSmithersProps = {
+  strategy: string | ReactElement; // markdown or MDX strategy document
+  agent: AgentLike;
+  id?: string; // default "super-smithers"; prefixes internal task ids
+  targetFiles?: string[]; // glob patterns scoped to the agent prompt
+  reportOutput?: OutputTarget;
+  dryRun?: boolean; // default false; skips the apply step
+  skipIf?: boolean;
+};
 ```
-
-SuperSmithers is a composite component that orchestrates source-code intervention. Given a strategy document and an agent, it reads target files, proposes modifications, optionally applies them (triggering hot reload), and generates a report.
-
-This component is unique because it modifies source files at runtime, leveraging the [hot reload](/guides/hot-reload) system to propagate changes back into the running workflow.
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | `"super-smithers"` | ID prefix for all generated internal task IDs. |
-| `strategy` | `string \| ReactElement` | **(required)** | Markdown string or MDX component describing the intervention strategy. |
-| `agent` | `AgentLike` | **(required)** | Agent that reads code and decides modifications. |
-| `targetFiles` | `string[]` | `undefined` | Glob patterns of files the agent can modify. |
-| `reportOutput` | `OutputTarget` | `undefined` | Output schema for the intervention report. |
-| `dryRun` | `boolean` | `false` | If true, reports changes without applying them. |
-| `skipIf` | `boolean` | `false` | Standard skip predicate. |
-
-## Basic usage
 
 ```tsx
-import { createSmithers, SuperSmithers } from "smithers-orchestrator";
-import { z } from "zod";
-
-const { Workflow, smithers, outputs } = createSmithers({
-  report: z.object({
-    filesChanged: z.array(z.string()),
-    summary: z.string(),
-  }),
-});
-
-const codeAgent = new Agent({
-  model: anthropic("claude-sonnet-4-20250514"),
-  instructions: "You are a senior software engineer performing code interventions.",
-});
-
-export default smithers((ctx) => (
-  <Workflow name="intervention">
-    <SuperSmithers
-      id="refactor"
-      strategy={`
-        ## Refactoring Strategy
-
-        1. Find all deprecated API calls in the target files
-        2. Replace them with the new API equivalents
-        3. Ensure all imports are updated
-      `}
-      agent={codeAgent}
-      targetFiles={["src/**/*.ts"]}
-      reportOutput={outputs.report}
-    />
-  </Workflow>
-));
+<Workflow name="intervention">
+  <SuperSmithers
+    id="refactor"
+    strategy={`
+      ## Refactoring Strategy
+      1. Find all deprecated API calls in the target files
+      2. Replace them with the new API equivalents
+      3. Ensure all imports are updated
+    `}
+    agent={codeAgent}
+    targetFiles={["src/**/*.ts"]}
+    reportOutput={outputs.report}
+  />
+</Workflow>
 ```
-
-## MDX strategy
-
-The strategy can be an MDX component for richer, parameterized documents:
-
-```tsx
-import RefactorStrategy from "./strategies/refactor.mdx";
-
-<SuperSmithers
-  id="refactor"
-  strategy={<RefactorStrategy apiVersion="v2" targetModule="auth" />}
-  agent={codeAgent}
-  targetFiles={["src/auth/**/*.ts"]}
-  reportOutput={outputs.report}
-/>
-```
-
-## Dry run
-
-Use `dryRun` to preview changes without applying them:
-
-```tsx
-<SuperSmithers
-  id="preview"
-  strategy={strategyDoc}
-  agent={codeAgent}
-  targetFiles={["src/**/*.ts"]}
-  reportOutput={outputs.report}
-  dryRun
-/>
-```
-
-In dry-run mode, the apply step is skipped entirely. The agent still reads files and proposes modifications, but nothing is written to disk. The report describes what *would* change.
-
-## Internal task structure
-
-SuperSmithers expands to a sequence of four tasks (three in dry-run mode):
-
-1. **`{id}-read`** — Agent reads the strategy document and target files, analyzes the codebase.
-2. **`{id}-propose`** — Agent proposes specific code modifications based on the analysis.
-3. **`{id}-apply`** *(skipped in dry-run)* — Compute task writes modifications to disk, triggering hot reload.
-4. **`{id}-report`** — Agent generates a summary report of the intervention.
-
-Each task depends on the previous one via `dependsOn`.
-
-## Hot reload integration
-
-When `dryRun` is false, the apply step writes modified files to disk. If the workflow is running in [hot mode](/guides/hot-reload), the file watcher detects the changes and triggers a hot reload cycle:
-
-1. SuperSmithers apply task writes files
-2. Hot reload watcher detects changes
-3. Workflow module is re-imported from the overlay
-4. Engine swaps the build function and re-renders
-
-This creates a feedback loop where the agent can modify its own workflow definition at runtime.
 
 ## Notes
 
-- SuperSmithers only operates meaningfully in hot-reload mode. Without hot reload, the apply step writes files but the running workflow does not pick up the changes until the next run.
-- The `targetFiles` patterns are informational — they are included in the agent prompt to scope its analysis. File system access is governed by the agent's tool configuration.
-- Each internal task uses the same `agent`. For different agents at each stage, compose the tasks manually using `<Task>` and `<Sequence>`.
-- The `reportOutput` schema is used for the final report task. If not provided, internal string keys are used.
+- Expands to read → propose → apply → report (`dryRun` skips apply).
+- Only meaningful in hot-reload mode; otherwise changes apply on the next run.
+- All internal tasks share `agent`; for per-stage agents compose `<Task>` manually.

@@ -1,8 +1,8 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./transport.ts").SandboxBundleResult} SandboxBundleResult */
-/** @typedef {import("./transport.ts").SandboxHandle} SandboxHandle */
-/** @typedef {import("./transport.ts").SandboxTransportConfig} SandboxTransportConfig */
-/** @typedef {import("./transport.ts").SandboxTransportService} SandboxTransportService */
+/** @typedef {import("./SandboxBundleResult.ts").SandboxBundleResult} SandboxBundleResult */
+/** @typedef {import("./SandboxHandle.ts").SandboxHandle} SandboxHandle */
+/** @typedef {import("./SandboxTransportConfig.ts").SandboxTransportConfig} SandboxTransportConfig */
+/** @typedef {import("./SandboxTransportService.ts").SandboxTransportService} SandboxTransportService */
 // @smithers-type-exports-end
 
 import { Context, Effect, Layer } from "effect";
@@ -10,11 +10,12 @@ import { CodeplaneSandboxExecutorLive, DockerSandboxExecutorLive, } from "./effe
 import { SandboxEntityExecutor, makeSandboxTransportServiceEffect, } from "./effect/sandbox-entity.js";
 import { BubblewrapSandboxExecutorLive } from "./effect/socket-runner.js";
 import {} from "@smithers/errors/SmithersError";
-/** @typedef {import("./transport.ts").transport} transport */
+/** @typedef {import("./SandboxRuntime.ts").SandboxRuntime} SandboxRuntime */
 
-/** @typedef {import("./transport.ts").SandboxRuntime} SandboxRuntime */
-
-export class SandboxTransport extends Context.Tag("SandboxTransport")() {
+const SandboxTransportTag = /** @type {Context.TagClass<SandboxTransport, "SandboxTransport", SandboxTransportService>} */ (
+    Context.Tag("SandboxTransport")()
+);
+export class SandboxTransport extends SandboxTransportTag {
 }
 /**
  * @template R, E

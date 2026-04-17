@@ -1,5 +1,5 @@
 import React from "react";
-/** @typedef {import("./Subflow.ts").SubflowProps} SubflowProps */
+/** @typedef {import("./SubflowProps.ts").SubflowProps} SubflowProps */
 
 /**
  * @param {SubflowProps} props

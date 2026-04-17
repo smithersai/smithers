@@ -1,12 +1,12 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeAskUserResult} SmithersIdeAskUserResult */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeAvailability} SmithersIdeAvailability */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeCommandBaseResult} SmithersIdeCommandBaseResult */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeOpenDiffResult} SmithersIdeOpenDiffResult */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeOpenFileResult} SmithersIdeOpenFileResult */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeOpenWebviewResult} SmithersIdeOpenWebviewResult */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeOverlayResult} SmithersIdeOverlayResult */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeRunTerminalResult} SmithersIdeRunTerminalResult */
+/** @typedef {import("./SmithersIdeAskUserResult.ts").SmithersIdeAskUserResult} SmithersIdeAskUserResult */
+/** @typedef {import("./SmithersIdeAvailability.ts").SmithersIdeAvailability} SmithersIdeAvailability */
+/** @typedef {import("./SmithersIdeCommandBaseResult.ts").SmithersIdeCommandBaseResult} SmithersIdeCommandBaseResult */
+/** @typedef {import("./SmithersIdeOpenDiffResult.ts").SmithersIdeOpenDiffResult} SmithersIdeOpenDiffResult */
+/** @typedef {import("./SmithersIdeOpenFileResult.ts").SmithersIdeOpenFileResult} SmithersIdeOpenFileResult */
+/** @typedef {import("./SmithersIdeOpenWebviewResult.ts").SmithersIdeOpenWebviewResult} SmithersIdeOpenWebviewResult */
+/** @typedef {import("./SmithersIdeOverlayResult.ts").SmithersIdeOverlayResult} SmithersIdeOverlayResult */
+/** @typedef {import("./SmithersIdeRunTerminalResult.ts").SmithersIdeRunTerminalResult} SmithersIdeRunTerminalResult */
 // @smithers-type-exports-end
 
 import { accessSync, constants } from "node:fs";
@@ -14,11 +14,11 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { Context, Effect, Layer } from "effect";
 import { spawnCaptureEffect } from "@smithers/driver/child-process";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeOverlayOptions} SmithersIdeOverlayOptions */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeOverlayType} SmithersIdeOverlayType */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeResolvedConfig} SmithersIdeResolvedConfig */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeServiceApi} SmithersIdeServiceApi */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeServiceConfig} SmithersIdeServiceConfig */
+/** @typedef {import("./SmithersIdeOverlayOptions.ts").SmithersIdeOverlayOptions} SmithersIdeOverlayOptions */
+/** @typedef {import("./SmithersIdeOverlayType.ts").SmithersIdeOverlayType} SmithersIdeOverlayType */
+/** @typedef {import("./SmithersIdeResolvedConfig.ts").SmithersIdeResolvedConfig} SmithersIdeResolvedConfig */
+/** @typedef {import("./SmithersIdeServiceApi.ts").SmithersIdeServiceApi} SmithersIdeServiceApi */
+/** @typedef {import("./SmithersIdeServiceConfig.ts").SmithersIdeServiceConfig} SmithersIdeServiceConfig */
 
 const DEFAULT_COMMAND = "smithers-ctl";
 const DEFAULT_TIMEOUT_MS = 10_000;

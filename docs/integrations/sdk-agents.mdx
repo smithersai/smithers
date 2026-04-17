@@ -47,17 +47,7 @@ Both classes accept a model ID string (`"claude-opus-4-6"`, `"gpt-5.3-codex"`) o
 
 ## Options
 
-Constructors forward standard AI SDK `ToolLoopAgent` settings:
-
-- `instructions`
-- `tools`
-- `stopWhen`
-- `maxOutputTokens`
-- `temperature`
-- `providerOptions`
-- `prepareCall`
-
-The only addition is `model`: the wrapper resolves model-ID strings automatically.
+Constructors forward standard AI SDK `ToolLoopAgent` settings: `instructions`, `tools`, `stopWhen`, `maxOutputTokens`, `temperature`, `providerOptions`, `prepareCall`. The wrapper adds `model`, which resolves model-ID strings automatically.
 
 ## Hijack Support
 
@@ -82,7 +72,7 @@ Limits:
 | Tools | Provider CLI tool ecosystem | Smithers [tools](/integrations/tools) [sandbox](/components/sandbox) |
 | Flexibility | Native CLI flags | AI SDK `providerOptions` |
 
-Pass a raw `ToolLoopAgent` directly if you prefer. The wrappers are convenience, not a separate runtime.
+Pass a raw `ToolLoopAgent` directly if you prefer — the wrappers are convenience, not a separate runtime.
 
 ## Example: Dual Setup
 

@@ -1,27 +1,28 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").SmithersIdeAskUserResult} SmithersIdeAskUserResult */
-/** @typedef {import("./index.ts").SmithersIdeCommandBaseResult} SmithersIdeCommandBaseResult */
-/** @typedef {import("./index.ts").SmithersIdeOpenDiffResult} SmithersIdeOpenDiffResult */
-/** @typedef {import("./index.ts").SmithersIdeOpenFileResult} SmithersIdeOpenFileResult */
-/** @typedef {import("./index.ts").SmithersIdeOpenWebviewResult} SmithersIdeOpenWebviewResult */
-/** @typedef {import("./index.ts").SmithersIdeOverlayOptions} SmithersIdeOverlayOptions */
-/** @typedef {import("./index.ts").SmithersIdeOverlayResult} SmithersIdeOverlayResult */
-/** @typedef {import("./index.ts").SmithersIdeOverlayType} SmithersIdeOverlayType */
-/** @typedef {import("./index.ts").SmithersIdeResolvedConfig} SmithersIdeResolvedConfig */
-/** @typedef {import("./index.ts").SmithersIdeRunTerminalResult} SmithersIdeRunTerminalResult */
-/** @typedef {import("./index.ts").SmithersIdeServiceApi} SmithersIdeServiceApi */
+/** @typedef {import("./SmithersIdeAskUserResult.ts").SmithersIdeAskUserResult} SmithersIdeAskUserResult */
+/** @typedef {import("./SmithersIdeCommandBaseResult.ts").SmithersIdeCommandBaseResult} SmithersIdeCommandBaseResult */
+/** @typedef {import("./SmithersIdeOpenDiffResult.ts").SmithersIdeOpenDiffResult} SmithersIdeOpenDiffResult */
+/** @typedef {import("./SmithersIdeOpenFileResult.ts").SmithersIdeOpenFileResult} SmithersIdeOpenFileResult */
+/** @typedef {import("./SmithersIdeOpenWebviewResult.ts").SmithersIdeOpenWebviewResult} SmithersIdeOpenWebviewResult */
+/** @typedef {import("./SmithersIdeOverlayOptions.ts").SmithersIdeOverlayOptions} SmithersIdeOverlayOptions */
+/** @typedef {import("./SmithersIdeOverlayResult.ts").SmithersIdeOverlayResult} SmithersIdeOverlayResult */
+/** @typedef {import("./SmithersIdeOverlayType.ts").SmithersIdeOverlayType} SmithersIdeOverlayType */
+/** @typedef {import("./SmithersIdeResolvedConfig.ts").SmithersIdeResolvedConfig} SmithersIdeResolvedConfig */
+/** @typedef {import("./SmithersIdeRunTerminalResult.ts").SmithersIdeRunTerminalResult} SmithersIdeRunTerminalResult */
+/** @typedef {import("./SmithersIdeServiceApi.ts").SmithersIdeServiceApi} SmithersIdeServiceApi */
+/** @typedef {import("./SmithersIdeAvailability.ts").SmithersIdeAvailability} SmithersIdeAvailability */
+/** @typedef {import("./SmithersIdeServiceConfig.ts").SmithersIdeServiceConfig} SmithersIdeServiceConfig */
 // @smithers-type-exports-end
 
 import { Effect } from "effect";
 import { createSmithersIdeService, createSmithersIdeLayer, detectSmithersIdeAvailabilityEffect, SmithersIdeService, } from "./SmithersIdeService.js";
 import { createSmithersIdeCli, SMITHERS_IDE_TOOL_NAMES } from "./tools.js";
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeAvailability} SmithersIdeAvailability */
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeServiceConfig} SmithersIdeServiceConfig */
 
 export { askUser, createSmithersIdeLayer, createSmithersIdeService, detectSmithersIdeAvailabilityEffect, openDiff, openFile, openWebview, runTerminal, showOverlay, SmithersIdeService, } from "./SmithersIdeService.js";
 export { createSmithersIdeCli, SMITHERS_IDE_TOOL_NAMES, } from "./tools.js";
 /**
  * @param {SmithersIdeServiceConfig} [config]
+ * @returns {Promise<boolean>}
  */
 export function isSmithersIdeAvailable(config = {}) {
     return getSmithersIdeAvailability(config).then((availability) => availability.available);
@@ -35,6 +36,7 @@ export async function getSmithersIdeAvailability(config = {}) {
 }
 /**
  * @param {SmithersIdeServiceConfig} [config]
+ * @returns {Promise<ReturnType<typeof createSmithersIdeCli> | null>}
  */
 export async function createAvailableSmithersIdeCli(config = {}) {
     const availability = await getSmithersIdeAvailability(config);

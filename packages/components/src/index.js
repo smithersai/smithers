@@ -1,59 +1,59 @@
 // @smithers-type-exports-begin
 /**
  * @template Ctx
- * @typedef {import("./index.ts").CachePolicy<Ctx>} CachePolicy
+ * @typedef {import("@smithers/scheduler/CachePolicy").CachePolicy<Ctx>} CachePolicy
  */
-/** @typedef {import("./index.ts").EngineDecision} EngineDecision */
-/** @typedef {import("./index.ts").ExtractOptions} ExtractOptions */
-/** @typedef {import("./index.ts").HostElement} HostElement */
-/** @typedef {import("./index.ts").HostNode} HostNode */
-/** @typedef {import("./index.ts").HostText} HostText */
+/** @typedef {import("@smithers/scheduler").EngineDecision} EngineDecision */
+/** @typedef {import("@smithers/graph").ExtractOptions} ExtractOptions */
+/** @typedef {import("@smithers/graph").HostElement} HostElement */
+/** @typedef {import("@smithers/graph").HostNode} HostNode */
+/** @typedef {import("@smithers/graph").HostText} HostText */
 /**
  * @template T
- * @typedef {import("./index.ts").InferOutputEntry<T>} InferOutputEntry
+ * @typedef {import("@smithers/driver/OutputAccessor").InferOutputEntry<T>} InferOutputEntry
  */
 /**
  * @template TTable
- * @typedef {import("./index.ts").InferRow<TTable>} InferRow
+ * @typedef {import("@smithers/driver/OutputAccessor").InferRow<TTable>} InferRow
  */
 /**
  * @template Schema
- * @typedef {import("./index.ts").OutputAccessor<Schema>} OutputAccessor
+ * @typedef {import("@smithers/driver/OutputAccessor").OutputAccessor<Schema>} OutputAccessor
  */
-/** @typedef {import("./index.ts").OutputKey} OutputKey */
-/** @typedef {import("./index.ts").RenderContext} RenderContext */
-/** @typedef {import("./index.ts").RetryPolicy} RetryPolicy */
-/** @typedef {import("./index.ts").RunAuthContext} RunAuthContext */
-/** @typedef {import("./index.ts").RunOptions} RunOptions */
-/** @typedef {import("./index.ts").RunResult} RunResult */
-/** @typedef {import("./index.ts").SchemaRegistryEntry} SchemaRegistryEntry */
-/** @typedef {import("./index.ts").SmithersAlertLabels} SmithersAlertLabels */
-/** @typedef {import("./index.ts").SmithersAlertPolicy} SmithersAlertPolicy */
-/** @typedef {import("./index.ts").SmithersAlertPolicyDefaults} SmithersAlertPolicyDefaults */
-/** @typedef {import("./index.ts").SmithersAlertPolicyRule} SmithersAlertPolicyRule */
-/** @typedef {import("./index.ts").SmithersAlertReaction} SmithersAlertReaction */
-/** @typedef {import("./index.ts").SmithersAlertReactionKind} SmithersAlertReactionKind */
-/** @typedef {import("./index.ts").SmithersAlertReactionRef} SmithersAlertReactionRef */
-/** @typedef {import("./index.ts").SmithersAlertSeverity} SmithersAlertSeverity */
-/** @typedef {import("./index.ts").SmithersCtx} SmithersCtx */
-/** @typedef {import("./index.ts").SmithersErrorCode} SmithersErrorCode */
+/** @typedef {import("@smithers/driver/OutputKey").OutputKey} OutputKey */
+/** @typedef {import("@smithers/scheduler").RenderContext} RenderContext */
+/** @typedef {import("@smithers/scheduler/RetryPolicy").RetryPolicy} RetryPolicy */
+/** @typedef {import("@smithers/driver/RunAuthContext").RunAuthContext} RunAuthContext */
+/** @typedef {import("@smithers/driver").RunOptions} RunOptions */
+/** @typedef {import("@smithers/driver").RunResult} RunResult */
+/** @typedef {import("@smithers/db/SchemaRegistryEntry").SchemaRegistryEntry} SchemaRegistryEntry */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertLabels} SmithersAlertLabels */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicy} SmithersAlertPolicy */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyDefaults} SmithersAlertPolicyDefaults */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyRule} SmithersAlertPolicyRule */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertReaction} SmithersAlertReaction */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertReactionKind} SmithersAlertReactionKind */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertReactionRef} SmithersAlertReactionRef */
+/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertSeverity} SmithersAlertSeverity */
+/** @typedef {import("@smithers/driver").SmithersCtx} SmithersCtx */
+/** @typedef {import("@smithers/errors/SmithersErrorCode").SmithersErrorCode} SmithersErrorCode */
 /**
  * @template Schema
- * @typedef {import("./index.ts").SmithersWorkflow<Schema>} SmithersWorkflow
+ * @typedef {import("@smithers/driver/WorkflowDefinition").WorkflowDefinition<Schema>} SmithersWorkflow
  */
 /**
  * @template Schema
- * @typedef {import("./index.ts").SmithersWorkflowDriverOptions<Schema>} SmithersWorkflowDriverOptions
+ * @typedef {import("@smithers/driver/WorkflowDriverOptions").WorkflowDriverOptions<Schema>} SmithersWorkflowDriverOptions
  */
-/** @typedef {import("./index.ts").SmithersWorkflowOptions} SmithersWorkflowOptions */
-/** @typedef {import("./index.ts").TaskDescriptor} TaskDescriptor */
-/** @typedef {import("./index.ts").WaitReason} WaitReason */
-/** @typedef {import("./index.ts").WorkflowGraph} WorkflowGraph */
-/** @typedef {import("./index.ts").WorkflowRuntime} WorkflowRuntime */
-/** @typedef {import("./index.ts").WorkflowSession} WorkflowSession */
-/** @typedef {import("./index.ts").XmlElement} XmlElement */
-/** @typedef {import("./index.ts").XmlNode} XmlNode */
-/** @typedef {import("./index.ts").XmlText} XmlText */
+/** @typedef {import("@smithers/scheduler").SmithersWorkflowOptions} SmithersWorkflowOptions */
+/** @typedef {import("@smithers/graph").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("@smithers/scheduler").WaitReason} WaitReason */
+/** @typedef {import("@smithers/graph").WorkflowGraph} WorkflowGraph */
+/** @typedef {import("@smithers/driver/workflow-types").WorkflowRuntime} WorkflowRuntime */
+/** @typedef {import("@smithers/driver/workflow-types").WorkflowSession} WorkflowSession */
+/** @typedef {import("@smithers/graph").XmlElement} XmlElement */
+/** @typedef {import("@smithers/graph").XmlNode} XmlNode */
+/** @typedef {import("@smithers/graph").XmlText} XmlText */
 // @smithers-type-exports-end
 
 export * from "./components/index.js";

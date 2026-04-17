@@ -3,9 +3,17 @@ title: Installation
 description: Install smithers-orchestrator with the workflow pack, or manually for standalone JSX workflow projects.
 ---
 
-Most teams should start with the workflow pack. It gives you a working `.smithers/` directory, seeded workflows, prompts, and agent configuration instead of asking you to assemble the project structure by hand.
+Most teams should start with the workflow pack. It gives you a working `.smithers/` directory with seeded workflows, prompts, and agent configuration instead of assembling the project structure by hand.
 
-All commands on this page use [`bunx`](https://bun.sh) `smithers-orchestrator ...`. The published npm package is [`smithers-orchestrator`](https://www.npmjs.com/package/smithers-orchestrator), so do not use bare `smithers` or `bunx smithers` for these install commands.
+## Always Run with `bunx`
+
+Every CLI invocation in these docs is `bunx smithers-orchestrator <command>`. Do **not** install Smithers globally and do **not** use the bare `smithers` or `bunx smithers` shorthand.
+
+- `bunx` resolves the package locally if your project depends on it, otherwise it pulls and runs the latest published version.
+- The published npm package is [`smithers-orchestrator`](https://www.npmjs.com/package/smithers-orchestrator). The bare name `smithers` is a different package, so `bunx smithers` runs something else entirely.
+- A global install creates version-drift problems across machines, CI, and contributors. With `bunx`, every project pins Smithers through its own `package.json`.
+
+If you previously ran `npm i -g smithers-orchestrator`, uninstall it (`npm rm -g smithers-orchestrator`) and switch to `bunx`.
 
 ## Recommended: Install the Workflow Pack
 
@@ -38,7 +46,7 @@ bunx smithers-orchestrator init --force
 
 ## When to Use Manual Installation
 
-Use manual installation when you are embedding Smithers into an existing TypeScript codebase and want to author a standalone [workflow project](/guides/project-structure) from scratch.
+Use manual installation when embedding Smithers into an existing TypeScript codebase to author a standalone [workflow project](/guides/project-structure) from scratch.
 
 See [JSX Installation](/jsx/installation) for the package list, TypeScript configuration, and optional MDX prompt setup.
 
@@ -48,12 +56,27 @@ See [JSX Installation](/jsx/installation) for the package list, TypeScript confi
 - TypeScript >= 5
 - Model or provider credentials (e.g. [Anthropic](https://docs.anthropic.com) `ANTHROPIC_API_KEY`)
 
+## Desktop App (macOS)
+
+The Smithers desktop GUI is a separate download. It's a native macOS app (Apple Silicon) that includes the orchestrator, an embedded terminal, and workflow tooling.
+
+<a href="https://get.smithers.sh/SmithersGUI.dmg">Download SmithersGUI.dmg</a>
+
+Or from the terminal:
+
+```bash
+curl -LO https://get.smithers.sh/SmithersGUI.dmg
+open SmithersGUI.dmg
+```
+
+<Tip>
+The current build is unsigned. The first time you open it, right-click the app and choose **Open**, then confirm the Gatekeeper dialog. This only needs to be done once.
+</Tip>
+
 ## After Installation
 
-Choose the next page based on what you need:
-
-- [Quickstart](/quickstart) to run a seeded workflow immediately.
-- [CLI Quickstart](/cli/quickstart) to learn the operational workflow.
-- [JSX Installation](/jsx/installation) to set up manual TSX authoring.
-- [Project Structure](/guides/project-structure) to understand how a standalone workflow project fits together.
-- [Tools Integration](/integrations/tools) to understand the built-in tool sandbox.
+- [Quickstart](/quickstart) — run a seeded workflow immediately.
+- [CLI Quickstart](/cli/quickstart) — operational workflow.
+- [JSX Installation](/jsx/installation) — manual TSX authoring setup.
+- [Project Structure](/guides/project-structure) — how a standalone workflow project fits together.
+- [Tools Integration](/integrations/tools) — the built-in tool sandbox.

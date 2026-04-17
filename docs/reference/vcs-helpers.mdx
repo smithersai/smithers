@@ -3,12 +3,12 @@ title: VCS Helper Reference
 description: Public JJ helper APIs exported by smithers-orchestrator for repo detection, snapshot inspection, and workspace management.
 ---
 
-Smithers exports a small JJ helper surface for applications that want to inspect or manage Jujutsu state directly.
+Smithers exports a small JJ helper surface for applications that inspect or manage Jujutsu state directly.
 
-These helpers are intentionally lightweight:
+Lightweight by design:
 
-- every helper accepts an optional `cwd` so you can target a specific repository
-- spawn failures are normalized instead of throwing, which makes them safe to call even when `jj` is not installed
+- every helper accepts an optional `cwd` to target a specific repository
+- spawn failures are normalized instead of throwing — safe to call even when `jj` is not installed
 - workspace helpers try a few command shapes to tolerate JJ version drift
 
 ## Import
@@ -49,7 +49,7 @@ Notes:
 
 - returns `{ code: 127, stdout: "", stderr: "..." }` when `jj` cannot be started
 - does not throw for ordinary process failures
-- useful when you need a raw escape hatch beyond the higher-level helpers below
+- a raw escape hatch beyond the higher-level helpers below
 
 ## `getJjPointer(cwd?)`
 
@@ -139,7 +139,7 @@ type WorkspaceInfo = {
 };
 ```
 
-The current implementation prefers template output when supported, then falls back to parsing the human-readable `jj workspace list` output.
+Prefers template output when supported, falls back to parsing the human-readable `jj workspace list` output.
 
 ## `workspaceClose(name, opts?)`
 
@@ -168,7 +168,7 @@ Use these helpers when your application needs to:
 - record or inspect a pointer outside the Smithers engine
 - manage JJ workspaces directly from an app or integration layer
 
-If you only need workflow-level revert behavior, prefer the runtime and CLI docs:
+For workflow-level revert behavior, prefer the runtime and CLI docs:
 
 - [VCS Integration](/guides/vcs)
 - [CLI Reference](/cli/overview)

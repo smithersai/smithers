@@ -6,6 +6,7 @@ import { MemoryService } from "./MemoryService.js";
 
 /**
  * @param {MemoryLayerConfig} config
+ * @returns {Layer.Layer<MemoryService, never, never>}
  */
 export function createMemoryLayer(config) {
     return Layer.effect(MemoryService, Effect.map(MemoryStoreService, (store) => ({

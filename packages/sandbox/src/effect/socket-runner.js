@@ -5,6 +5,8 @@ import { Effect, Layer } from "effect";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SandboxEntityExecutor } from "./sandbox-entity.js";
+/** @typedef {import("../SandboxTransportConfig.ts").SandboxTransportConfig} SandboxTransportConfig */
+/** @typedef {import("../SandboxHandle.ts").SandboxHandle} SandboxHandle */
 /**
  * @param {SandboxTransportConfig} config
  * @returns {SandboxHandle}
@@ -20,6 +22,7 @@ function baseHandle(config) {
         resultPath: join(sandboxRoot, "result"),
     };
 }
+/** @type {Layer.Layer<SandboxEntityExecutor, never, never>} */
 export const BubblewrapSandboxExecutorLive = Layer.succeed(SandboxEntityExecutor, SandboxEntityExecutor.of({
     create: (config) => Effect.gen(function* () {
         if (process.platform === "linux") {

@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./ApprovalGate.ts").ApprovalGateProps} ApprovalGateProps */
+/** @typedef {import("./ApprovalGateProps.ts").ApprovalGateProps} ApprovalGateProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -11,6 +11,7 @@ import { Task } from "./Task.js";
  * otherwise auto-approves with a static `{ approved: true }` decision.
  *
  * Composes Branch + Approval + Task internally.
+ * @param {ApprovalGateProps} props
  */
 export function ApprovalGate(props) {
     if (props.skipIf)

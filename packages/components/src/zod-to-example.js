@@ -1,7 +1,8 @@
 
-/** @typedef {import("zod").z} z */
+/** @typedef {import("zod").ZodObject<any>} ZodObject */
+/** @typedef {import("zod").ZodTypeAny} ZodTypeAny */
 /**
- * @param {z.ZodObject<any>} schema
+ * @param {import("zod").ZodObject<any>} schema
  * @returns {string}
  */
 export function zodSchemaToJsonExample(schema) {
@@ -12,7 +13,7 @@ export function zodSchemaToJsonExample(schema) {
     return JSON.stringify(example, null, 2);
 }
 /**
- * @param {z.ZodTypeAny} field
+ * @param {ZodTypeAny} field
  * @returns {any}
  */
 function zodFieldToExample(field) {

@@ -3,8 +3,8 @@ import { spawn } from "node:child_process";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./diff-bundle.ts").DiffBundle} DiffBundle */
-/** @typedef {import("./diff-bundle.ts").FilePatch} FilePatch */
+/** @typedef {import("./DiffBundle.ts").DiffBundle} DiffBundle */
+/** @typedef {import("./FilePatch.ts").FilePatch} FilePatch */
 
 /**
  * @param {string} cwd
@@ -170,6 +170,86 @@ async function computeUntrackedDiffs(currentDir) {
         }
     }
     return diffs;
+}
+/**
+ * Compute a diff bundle strictly between two immutable refs.
+ *
+ * Unlike {@link computeDiffBundle}, this variant does NOT read the working
+ * tree or untracked files. It is the preferred entry point for historical
+ * diffs (e.g. the `getNodeDiff` RPC) because it is read-only and cannot be
+ * contaminated by concurrent runs mutating the checkout.
+ *
+ * @param {string} baseRef
+ * @param {string} targetRef
+ * @param {string} currentDir
+ * @param {number} [seq]
+ * @returns {Promise<DiffBundle>}
+ */
+export async function computeDiffBundleBetweenRefs(baseRef, targetRef, currentDir, seq = 1) {
+    const [{ stdout: trackedDiff }, { stdout: numstat }] = await Promise.all([
+        runGit(currentDir, [
+            "diff",
+            "--binary",
+            "--find-renames=100%",
+            "--no-ext-diff",
+            baseRef,
+            targetRef,
+            "--",
+            ".",
+        ]),
+        runGit(currentDir, [
+            "diff",
+            "--numstat",
+            "--find-renames=100%",
+            baseRef,
+            targetRef,
+            "--",
+            ".",
+        ]),
+    ]);
+    const binaryPaths = new Set();
+    for (const line of numstat.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed)
+            continue;
+        const [added, removed, ...rest] = trimmed.split("\t");
+        if (added === "-" && removed === "-" && rest.length > 0) {
+            binaryPaths.add(rest.join("\t"));
+        }
+    }
+    const patches = [];
+    const chunks = splitGitDiff(trackedDiff);
+    for (const chunk of chunks) {
+        const path = extractPatchPath(chunk);
+        const operation = extractOperation(chunk);
+        const binary = isBinaryPatch(chunk) || binaryPaths.has(path);
+        let binaryContent;
+        if (binary && operation !== "delete") {
+            try {
+                const { stdout } = await runGit(currentDir, [
+                    "show",
+                    `${targetRef}:${path}`,
+                ]);
+                binaryContent = Buffer.from(stdout, "binary").toString("base64");
+            }
+            catch {
+                // File may not be readable as a blob at targetRef; fall through
+                // without binaryContent. Caller receives operation + diff only.
+                binaryContent = undefined;
+            }
+        }
+        patches.push({
+            path,
+            operation,
+            diff: chunk,
+            binaryContent,
+        });
+    }
+    return {
+        seq,
+        baseRef,
+        patches,
+    };
 }
 /**
  * @param {string} baseRef

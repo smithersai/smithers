@@ -12,6 +12,9 @@ import { z } from "zod";
 
 /**
  * Convert a JSON Schema to a Zod object schema.
+ *
+ * @param {JsonSchema} rootSchema
+ * @returns {z.ZodObject<any>}
  */
 export function jsonSchemaToZod(rootSchema) {
     const result = convertNode(rootSchema, rootSchema, new Set());

@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./durable-deferred-bridge.ts").ApprovalDurableDeferredResolution} ApprovalDurableDeferredResolution */
-/** @typedef {import("./durable-deferred-bridge.ts").WaitForEventDurableDeferredResolution} WaitForEventDurableDeferredResolution */
+/** @typedef {import("./ApprovalDurableDeferredResolution.ts").ApprovalDurableDeferredResolution} ApprovalDurableDeferredResolution */
+/** @typedef {import("./WaitForEventDurableDeferredResolution.ts").WaitForEventDurableDeferredResolution} WaitForEventDurableDeferredResolution */
 // @smithers-type-exports-end
 
 import * as DurableDeferred from "@effect/workflow/DurableDeferred";

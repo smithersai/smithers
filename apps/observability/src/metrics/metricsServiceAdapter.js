@@ -9,6 +9,10 @@ import { trackEvent } from "./trackEvent.js";
 import { updateProcessMetrics } from "./updateProcessMetrics.js";
 import { updateAsyncExternalWaitPending } from "./updateAsyncExternalWaitPending.js";
 /** @typedef {import("./SmithersMetricDefinition.ts").SmithersMetricDefinition} SmithersMetricDefinition */
+/** @typedef {import("../_coreMetricsShape.ts").MetricsServiceShape} MetricsServiceShape */
+/** @typedef {import("../_corePrometheusShape.ts").MetricLabels} MetricLabels */
+/** @typedef {import("../_corePrometheusShape.ts").PrometheusSample} PrometheusSample */
+/** @typedef {import("../_coreMetricsShape.ts").MetricsSnapshot} MetricsSnapshot */
 
 /**
  * @param {string} name
@@ -170,6 +174,7 @@ function metricsServiceSnapshot() {
     }
     return result;
 }
+/** @type {MetricsServiceShape} */
 export const metricsServiceAdapter = {
     increment: (name, labels) => Metric.incrementBy(counterOrGaugeMetric(name, labels), 1),
     incrementBy: (name, value, labels) => Metric.incrementBy(counterOrGaugeMetric(name, labels), value),

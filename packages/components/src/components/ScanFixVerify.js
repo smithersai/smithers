@@ -3,7 +3,7 @@ import { Task } from "./Task.js";
 import { Sequence } from "./Sequence.js";
 import { Parallel } from "./Parallel.js";
 import { Loop } from "./Ralph.js";
-/** @typedef {import("./ScanFixVerify.ts").ScanFixVerifyProps} ScanFixVerifyProps */
+/** @typedef {import("./ScanFixVerifyProps.ts").ScanFixVerifyProps} ScanFixVerifyProps */
 
 /**
  * @param {ScanFixVerifyProps} props

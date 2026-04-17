@@ -1,3 +1,6 @@
+/** @typedef {import("./CreateScorerConfig.js").CreateScorerConfig} CreateScorerConfig */
+/** @typedef {import("./types.js").Scorer} Scorer */
+
 /**
  * Creates a scorer from a plain configuration object.
  *
@@ -11,6 +14,9 @@
  *   }),
  * });
  * ```
+ *
+ * @param {CreateScorerConfig} config
+ * @returns {Scorer}
  */
 export function createScorer(config) {
     return {

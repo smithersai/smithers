@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Aspects.ts").AspectsProps} AspectsProps */
+/** @typedef {import("./AspectsProps.ts").AspectsProps} AspectsProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -17,6 +17,7 @@ import { AspectContext, createAccumulator, } from "../aspects/AspectContext.js";
  *   <Task id="step2" ...>...</Task>
  * </Aspects>
  * ```
+ * @param {AspectsProps} props
  */
 export function Aspects(props) {
     const { tokenBudget, latencySlo, costBudget, tracking, children } = props;

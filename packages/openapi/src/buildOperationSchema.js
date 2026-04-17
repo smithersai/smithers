@@ -4,12 +4,22 @@
 import { z } from "zod";
 import { isRef } from "./ref-resolver.js";
 import { jsonSchemaToZod } from "./jsonSchemaToZod.js";
+
+/** @typedef {import("./OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+/** @typedef {import("./ParameterObject.ts").ParameterObject} ParameterObject */
+/** @typedef {import("./RequestBodyObject.ts").RequestBodyObject} RequestBodyObject */
+
 /**
  * Build a single Zod object schema for an operation's input, combining:
  * - path parameters
  * - query parameters
  * - header parameters
  * - request body fields
+ *
+ * @param {ParameterObject[]} parameters
+ * @param {RequestBodyObject | undefined} requestBody
+ * @param {OpenApiSpec} spec
+ * @returns {z.ZodType}
  */
 export function buildOperationSchema(parameters, requestBody, spec) {
     const props = {};

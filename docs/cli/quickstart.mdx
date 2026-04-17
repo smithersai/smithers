@@ -1,125 +1,18 @@
 ---
 title: CLI Quickstart
-description: "Learn the core Smithers terminal workflow: launch a run, inspect it, read logs, answer approvals, and resume safely."
+description: Short operational cheatsheet. The full catalog lives in CLI.
 ---
 
-This page is about using Smithers, not authoring it.
-
-If JSX defines the workflow graph, the CLI is how you actually operate that graph in day-to-day work.
-
-## Before You Start
-
-You need:
-
-- a project with `.smithers/` installed via `bunx smithers-orchestrator init`
-- provider or agent credentials configured for the workflow you want to run
-- a discovered workflow under `.smithers/workflows` or an explicit `.tsx` workflow file
-
-## 1. Start a Run
-
-Run a discovered workflow from the local workflow pack:
-
 ```bash
-bunx smithers-orchestrator workflow run implement --prompt "Add pagination to the activity feed"
+bunx smithers-orchestrator init                                       # scaffold .smithers/
+bunx smithers-orchestrator workflow run implement --prompt "…"        # launch a seeded workflow
+bunx smithers-orchestrator ps                                         # list runs
+bunx smithers-orchestrator inspect <run-id>                           # structured run state
+bunx smithers-orchestrator logs <run-id> --tail 20 --follow           # stream events
+bunx smithers-orchestrator why <run-id>                               # why is it paused?
+bunx smithers-orchestrator approve <run-id> --node <id> --by <name>
+bunx smithers-orchestrator up workflow.tsx --run-id <id> --resume true   # resume
+bunx smithers-orchestrator cancel <run-id>
 ```
 
-`workflow run <name>` resolves `.smithers/workflows/<name>.tsx`. The `--prompt` flag maps the string to `input.prompt`.
-
-Or run an explicit workflow file:
-
-```bash
-bunx smithers-orchestrator up workflow.tsx --input '{"task":"Add pagination to the activity feed"}'
-```
-
-## 2. Find the Run You Care About
-
-```bash
-bunx smithers-orchestrator ps
-```
-
-This shows recent and active runs. Once you have the run ID, everything else becomes precise.
-
-## 3. Inspect the Run
-
-```bash
-bunx smithers-orchestrator inspect <run-id>
-```
-
-Use `inspect` when you need the structured view: status, current steps, approvals, outputs, retries, and loop state.
-
-## 4. Read the Live Trail
-
-Use logs for lifecycle events. `--tail` shows recent events first and `--follow` keeps tailing:
-
-```bash
-bunx smithers-orchestrator logs <run-id> --tail 50 --follow
-```
-
-Use chat for agent prompts, model replies, and stderr. `--tail` limits chat blocks and `--follow` watches for new output:
-
-```bash
-bunx smithers-orchestrator chat <run-id> --tail 20 --follow
-```
-
-Use `node` when you need one node's details instead of the whole run. Pass the node ID directly and add `--run-id` when you want to scope it to a specific run:
-
-```bash
-bunx smithers-orchestrator node <node-id> --run-id <run-id>
-```
-
-## 5. Handle Pauses
-
-If a workflow pauses for approval:
-
-```bash
-bunx smithers-orchestrator approve <run-id>
-# or
-bunx smithers-orchestrator deny <run-id>
-```
-
-If a workflow is waiting on a signal:
-
-```bash
-bunx smithers-orchestrator signal <run-id> wait-for-input --data '{"choice":"ship-it"}'
-```
-
-If you are not sure why the run is blocked:
-
-```bash
-bunx smithers-orchestrator why <run-id>
-```
-
-## 6. Resume Safely
-
-If the process exits or your machine restarts, resume the same run ID with the same entrypoint you started with:
-
-```bash
-bunx smithers-orchestrator workflow run implement --run-id <run-id> --resume
-# or, if you launched a file directly:
-bunx smithers-orchestrator up workflow.tsx --run-id <run-id> --resume
-```
-
-That is the durability story in one command. Completed tasks are not re-run.
-
-## 7. Know When to Switch to JSX
-
-Stay in the CLI when your job is:
-
-- launching workflows
-- inspecting state
-- debugging and recovery
-- approvals, signals, and operations
-
-Switch to JSX when your job is:
-
-- defining tasks and schemas
-- changing workflow structure
-- adding branching, loops, approvals, or subflows
-- building reusable workflow components
-
-## Next Steps
-
-- [CLI Reference](/cli/overview) for the full command surface.
-- [JSX API](/jsx/overview) if you want to build or modify workflows.
-- [Debugging](/guides/debugging) for failure analysis.
-- [Resumability](/guides/resumability) for the crash-recovery model.
+See [Tour](/tour) for the full worked example. See [CLI](/cli/overview) for every command with flags and examples.

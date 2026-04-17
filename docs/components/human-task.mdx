@@ -1,71 +1,53 @@
 ---
 title: <HumanTask>
-description: A task where the human is the agent -- enters JSON matching the output schema with validation retries.
+description: Suspend until a human submits JSON matching the output schema.
 ---
 
-Like a [`<Task>`](/components/task) but the human is the agent. The [workflow suspends](/concepts/suspend-and-resume) until a human provides JSON input matching the output schema. If the input fails validation, the human gets up to `maxAttempts` retries (default 10).
-
-## Import
-
-```tsx
+```ts
 import { HumanTask } from "smithers-orchestrator";
+
+type HumanTaskProps = {
+  id: string;
+  output: z.ZodObject | Table | string;
+  outputSchema?: z.ZodObject; // inferred when output is a Zod schema
+  prompt: string | ReactNode;
+  maxAttempts?: number; // default 10
+  async?: boolean; // unrelated downstream may continue while pending
+  skipIf?: boolean;
+  timeoutMs?: number;
+  continueOnFail?: boolean;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  label?: string;
+  meta?: Record<string, unknown>;
+};
 ```
 
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | **(required)** | Unique node id within the workflow. |
-| `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to store the human's response. |
-| `outputSchema` | `z.ZodObject` | `undefined` | Zod schema the human must conform to. Inferred from `output` when it is a Zod schema. |
-| `prompt` | `string \| ReactNode` | **(required)** | Instructions shown to the human. |
-| `maxAttempts` | `number` | `10` | Max validation retries before failure. |
-| `async` | `boolean` | `false` | When `true`, unrelated downstream flow can continue while the human response is still pending. Explicit dependencies still wait for the validated output. |
-| `skipIf` | `boolean` | `false` | Skip this node entirely. |
-| `timeoutMs` | `number` | `undefined` | Max wait time in ms. |
-| `continueOnFail` | `boolean` | `false` | Workflow continues even if this node fails. |
-| `dependsOn` | `string[]` | `undefined` | Task IDs that must complete first. |
-| `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
-| `label` | `string` | `human:<id>` | Display label override. |
-| `meta` | `Record<string, unknown>` | `undefined` | Extra metadata. |
-
-## Schema-driven Example
-
 ```tsx
-import {
-  Workflow,
-  Sequence,
-  Task,
-  HumanTask,
-  createSmithers,
-} from "smithers-orchestrator";
+import { Workflow, Sequence, Task, HumanTask, createSmithers } from "smithers-orchestrator";
 import { z } from "zod";
 
-const reviewSchema = z.object({
-  approved: z.boolean(),
-  comments: z.string(),
-  severity: z.enum(["low", "medium", "high"]),
-});
-
 const { smithers, outputs } = createSmithers({
-  review: reviewSchema,
+  review: z.object({
+    approved: z.boolean(),
+    comments: z.string(),
+    severity: z.enum(["low", "medium", "high"]),
+  }),
   summary: z.object({ status: z.string() }),
 });
 
 export default smithers((ctx) => {
   const review = ctx.outputMaybe(outputs.review, { nodeId: "human-review" });
-
   return (
     <Workflow name="review-flow">
       <Sequence>
         <HumanTask
           id="human-review"
           output={outputs.review}
-          prompt="Please review the PR and provide your assessment. Fill in approved (boolean), comments (string), and severity (low/medium/high)."
+          prompt="Review the PR. Provide approved (boolean), comments (string), severity (low|medium|high)."
           maxAttempts={5}
           timeoutMs={86_400_000}
         />
-
         {review ? (
           <Task id="record" output={outputs.summary}>
             {{ status: review.approved ? "approved" : "changes-requested" }}
@@ -77,83 +59,8 @@ export default smithers((ctx) => {
 });
 ```
 
-## How It Works
-
-1. The workflow reaches the `<HumanTask>` node and enters [`waiting-approval`](/concepts/approvals) status.
-2. The human submits JSON input via `smithers approve` (the input goes in the `note` field).
-3. The compute function parses and validates the JSON against the `outputSchema`.
-4. If validation fails, the task retries -- the human is prompted again (up to `maxAttempts`).
-5. On success, the validated data is written to the configured `output`.
-
-## Submitting Input
-
-Use the CLI to submit human input:
-
-```bash
-smithers approve <run-id> <node-id> --note '{"approved": true, "comments": "LGTM", "severity": "low"}'
-```
-
-## Validation Retries
-
-When the human provides invalid JSON (wrong shape, missing fields, wrong types), the task fails validation and retries. The retry policy uses zero delay (`fixed` backoff, 0ms) so the human can immediately re-attempt.
-
-```tsx
-<HumanTask
-  id="data-entry"
-  output={outputs.formData}
-  prompt="Enter the customer record as JSON with fields: name (string), email (string), tier (free|pro|enterprise)."
-  maxAttempts={10}
-/>
-```
-
-If the human cannot provide valid input within `maxAttempts`, the task fails.
-
-## Prompt fallback
-
-When the task meta is read back from the database (for example by a UI or the [CLI](/cli/overview)), the display prompt is resolved with a fallback chain:
-
-1. The `prompt` prop value rendered to plain text at component creation time is stored in `meta.prompt`.
-2. At display time, `getHumanTaskPrompt(meta, fallback)` returns `meta.prompt` if it is a non-empty string, otherwise it returns the provided `fallback` string.
-3. If `prompt` is a React element (e.g. an MDX component), it is rendered to markdown before storage via `renderPromptToText`. The result is what humans see; no JSX or HTML tags reach the UI.
-
-This means a `<HumanTask>` always has a stable text representation of its prompt regardless of whether the original JSX tree is still in scope.
-
-## Request ID generation
-
-Each `<HumanTask>` creates a human request record identified by a deterministic ID:
-
-```
-human:<runId>:<nodeId>:<iteration>
-```
-
-The ID is built by `buildHumanRequestId(runId, nodeId, iteration)` and is stable across retries within the same iteration. It is also used to link the human request record to the corresponding approval record: when a human submits input via `smithers approve`, the compute function looks up both records by this ID, prefers `humanRequest.responseJson` if present, and falls back to `approval.note` for backwards compatibility with approval-only submissions.
-
-## Durable deferred resolution
-
-`<HumanTask>` uses the same durable deferred mechanism as [`<Approval>`](/components/approval). When the node enters `waiting-approval` state, an `@effect/workflow DurableDeferred` is created and awaited by the executing task fiber. The deferred is keyed to the run, node, and iteration, so it survives process restarts: if the worker crashes while waiting, the next worker that picks up the task will re-await the same deferred and receive the resolution as soon as a human submits input.
-
-When `smithers approve` is called, `bridgeApprovalResolve` resolves the deferred, which unblocks the awaiting fiber and lets the compute function proceed to read and validate the human input. No polling is needed.
-
-## Behavior
-
-- Internally creates a `smithers:task` host element with `needsApproval: true` and a compute function that reads human input from the database.
-- Same approval flow as [`<Approval>`](/components/approval) -- the node suspends and waits for human input.
-- With `async`, later unrelated nodes in the same sequence may continue rendering and executing before the human submits input.
-- Schema validation happens at compute time, not at submission time.
-- The `retries` prop is set to `maxAttempts - 1` (first attempt + retries = total attempts).
-
-## `<HumanTask>` vs `<Approval>` vs `needsApproval`
-
-| Use | When |
-| --- | --- |
-| `<HumanTask>` | Human provides structured data matching a schema. Validation + retries. |
-| [`<Approval>`](/components/approval) | Human approves or denies. Decision persisted as `ApprovalDecision`. |
-| `needsApproval` on [`<Task>`](/components/task) | Simple pause before an agent task. No separate value needed. |
-
 ## Notes
 
-- The human's JSON input is stored in the approval `note` field as a JSON string.
-- `outputSchema` is inferred from `output` when `output` is a Zod schema.
-- Combine with [`<Sequence>`](/components/sequence) to gate downstream work on human input.
-- Use `ctx.outputMaybe(...)` when rendering branches that consume an async human task's result.
-- The `meta` field includes `humanTask: true`, `maxAttempts`, and the `prompt` for UI rendering.
+- Submit via `bunx smithers-orchestrator approve <runId> <nodeId> --note '<json>'`.
+- Failed JSON re-prompts up to `maxAttempts` with zero backoff.
+- Same durable deferred mechanism as `<Approval>`; survives restarts.

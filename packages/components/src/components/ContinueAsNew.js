@@ -1,5 +1,5 @@
 import React from "react";
-/** @typedef {import("./ContinueAsNew.ts").ContinueAsNewProps} ContinueAsNewProps */
+/** @typedef {import("./ContinueAsNewProps.ts").ContinueAsNewProps} ContinueAsNewProps */
 
 /**
  * @param {unknown} state

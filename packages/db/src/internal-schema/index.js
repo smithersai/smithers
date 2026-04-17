@@ -7,6 +7,8 @@ export { smithersHumanRequests } from "./smithersHumanRequests.js";
 export { smithersAlerts } from "./smithersAlerts.js";
 export { smithersSignals } from "./smithersSignals.js";
 export { smithersCache } from "./smithersCache.js";
+export { smithersNodeDiffs } from "./smithersNodeDiffs.js";
+export { smithersTimeTravelAudit } from "./smithersTimeTravelAudit.js";
 export { smithersSandboxes } from "./smithersSandboxes.js";
 export { smithersToolCalls } from "./smithersToolCalls.js";
 export { smithersEvents } from "./smithersEvents.js";

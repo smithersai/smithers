@@ -4,7 +4,10 @@ import { SmithersContext } from "@smithers/react-reconciler/context";
 import { stripAutoColumns } from "@smithers/db/react-output";
 import { SmithersError } from "@smithers/errors/SmithersError";
 import { WaitForEvent } from "./WaitForEvent.js";
-/** @typedef {import("./Signal.ts").SignalProps} SignalProps */
+/**
+ * @template Schema
+ * @typedef {import("./SignalProps.ts").SignalProps<Schema>} SignalProps
+ */
 
 /**
  * @template Schema

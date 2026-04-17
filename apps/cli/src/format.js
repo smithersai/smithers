@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./format.ts").FormatEventLineOptions} FormatEventLineOptions */
+/** @typedef {import("./FormatEventLineOptions.ts").FormatEventLineOptions} FormatEventLineOptions */
 // @smithers-type-exports-end
 
 import pc from "picocolors";

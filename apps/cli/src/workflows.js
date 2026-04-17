@@ -1,13 +1,12 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./workflows.ts").WorkflowSourceType} WorkflowSourceType */
+/** @typedef {import("./WorkflowSourceType.ts").WorkflowSourceType} WorkflowSourceType */
 // @smithers-type-exports-end
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, } from "node:fs";
 import { join } from "node:path";
 import { SmithersError } from "@smithers/errors";
-/** @typedef {import("./workflows.ts").workflows} workflows */
 
-/** @typedef {import("./workflows.ts").DiscoveredWorkflow} DiscoveredWorkflow */
+/** @typedef {import("./DiscoveredWorkflow.ts").DiscoveredWorkflow} DiscoveredWorkflow */
 
 const WORKFLOW_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**

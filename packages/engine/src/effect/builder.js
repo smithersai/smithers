@@ -11,21 +11,19 @@ import { requireTaskRuntime } from "@smithers/driver/task-runtime";
 import { Branch, Loop, Parallel, Sequence, Task, Worktree, Workflow, } from "@smithers/components/components/index";
 import { camelToSnake } from "@smithers/db/utils/camelToSnake";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./builder.ts").builder} builder */
-
 /**
  * @typedef {any} AnySchema
  */
 /**
  * @typedef {{ needs?: Record<string, BuilderStepHandle>; request: (ctx: Record<string, unknown>) => { title: string; summary?: string | null; }; onDeny?: "fail" | "continue" | "skip"; }} ApprovalOptions
  */
-/** @typedef {import("./builder.ts").BuilderNode} BuilderNode */
+/** @typedef {import("./BuilderNode.ts").BuilderNode} BuilderNode */
 /**
  * @typedef {Record<string, unknown> & { input: unknown; executionId: string; stepId: string; attempt: number; signal: AbortSignal; iteration: number; heartbeat: (data?: unknown) => void; lastHeartbeat: unknown | null; }} BuilderStepContext
  */
-/** @typedef {import("./builder.ts").BuilderStepHandle} BuilderStepHandle */
+/** @typedef {import("./BuilderStepHandle.ts").BuilderStepHandle} BuilderStepHandle */
 /** @typedef {import("@smithers/scheduler/RetryPolicy").RetryPolicy} RetryPolicy */
-/** @typedef {import("./builder.ts").SmithersSqliteOptions} SmithersSqliteOptions */
+/** @typedef {import("./SmithersSqliteOptions.ts").SmithersSqliteOptions} SmithersSqliteOptions */
 
 const SmithersSqlite = Context.GenericTag("smithers/effect/sqlite");
 class ApprovalDecision extends Schema.Class("ApprovalDecision")({
@@ -833,6 +831,7 @@ function createComponent(options) {
 function sqlite(options) {
     return Layer.succeed(SmithersSqlite, options);
 }
+/** @type {{ sqlite: typeof sqlite }} */
 export const Smithers = {
     sqlite,
 };

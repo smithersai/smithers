@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./replay.ts").ReplayResult} ReplayResult */
+/** @typedef {import("./ReplayResult.ts").ReplayResult} ReplayResult */
 // @smithers-type-exports-end
 
 import { Effect } from "effect";

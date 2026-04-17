@@ -1,8 +1,6 @@
-// @smithers-type-exports-begin
-/** @typedef {import("./index.ts").SmithersMetricDefinition} SmithersMetricDefinition */
-/** @typedef {import("./index.ts").SmithersMetricType} SmithersMetricType */
-/** @typedef {import("./index.ts").SmithersMetricUnit} SmithersMetricUnit */
-// @smithers-type-exports-end
+/** @typedef {import("../SmithersMetricDefinition.ts").SmithersMetricDefinition} SmithersMetricDefinition */
+/** @typedef {import("../SmithersMetricType.ts").SmithersMetricType} SmithersMetricType */
+/** @typedef {import("../SmithersMetricUnit.ts").SmithersMetricUnit} SmithersMetricUnit */
 
 // Functions
 export { toPrometheusMetricName } from "./toPrometheusMetricName.js";
@@ -91,6 +89,9 @@ export { gatewayCronTriggersTotal } from "./gatewayCronTriggersTotal.js";
 export { gatewayWebhooksReceivedTotal } from "./gatewayWebhooksReceivedTotal.js";
 export { gatewayWebhooksVerifiedTotal } from "./gatewayWebhooksVerifiedTotal.js";
 export { gatewayWebhooksRejectedTotal } from "./gatewayWebhooksRejectedTotal.js";
+export { devtoolsSubscribeTotal } from "./devtoolsSubscribeTotal.js";
+export { devtoolsEventTotal } from "./devtoolsEventTotal.js";
+export { devtoolsBackpressureDisconnectTotal } from "./devtoolsBackpressureDisconnectTotal.js";
 export { eventsEmittedTotal } from "./eventsEmittedTotal.js";
 export { taskHeartbeatsTotal } from "./taskHeartbeatsTotal.js";
 export { taskHeartbeatTimeoutTotal } from "./taskHeartbeatTimeoutTotal.js";
@@ -109,6 +110,7 @@ export { schedulerConcurrencyUtilization } from "./schedulerConcurrencyUtilizati
 export { processUptimeSeconds } from "./processUptimeSeconds.js";
 export { processMemoryRssBytes } from "./processMemoryRssBytes.js";
 export { processHeapUsedBytes } from "./processHeapUsedBytes.js";
+export { devtoolsActiveSubscribers } from "./devtoolsActiveSubscribers.js";
 // Histograms
 export { nodeDuration } from "./nodeDuration.js";
 export { attemptDuration } from "./attemptDuration.js";
@@ -139,3 +141,11 @@ export { sandboxTransportDurationMs } from "./sandboxTransportDurationMs.js";
 export { sandboxPatchCount } from "./sandboxPatchCount.js";
 export { heartbeatDataSizeBytes } from "./heartbeatDataSizeBytes.js";
 export { heartbeatIntervalMs } from "./heartbeatIntervalMs.js";
+export { devtoolsSnapshotBuildMs } from "./devtoolsSnapshotBuildMs.js";
+export { devtoolsDeltaBuildMs } from "./devtoolsDeltaBuildMs.js";
+export { devtoolsEventBytes } from "./devtoolsEventBytes.js";
+export { rewindTotal } from "./rewindTotal.js";
+export { rewindRollbackTotal } from "./rewindRollbackTotal.js";
+export { rewindDurationMs } from "./rewindDurationMs.js";
+export { rewindFramesDeleted } from "./rewindFramesDeleted.js";
+export { rewindSandboxesReverted } from "./rewindSandboxesReverted.js";

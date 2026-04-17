@@ -1,12 +1,16 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./watch.ts").WatchRenderContext} WatchRenderContext */
+/** @typedef {import("./WatchRenderContext.ts").WatchRenderContext} WatchRenderContext */
 // @smithers-type-exports-end
 
 
-/** @typedef {import("./watch.ts").watch} watch */
-
-/** @typedef {import("./watch.ts").WatchLoopOptions} WatchLoopOptions */
-/** @typedef {import("./watch.ts").WatchLoopResult} WatchLoopResult */
+/**
+ * @template T
+ * @typedef {import("./WatchLoopOptions.ts").WatchLoopOptions<T>} WatchLoopOptions
+ */
+/**
+ * @template T
+ * @typedef {import("./WatchLoopResult.ts").WatchLoopResult<T>} WatchLoopResult
+ */
 const CLEAR_SCREEN_SEQUENCE = "\x1B[2J\x1B[0f";
 export const WATCH_MIN_INTERVAL_MS = 500;
 /**

@@ -3,9 +3,8 @@ import { resolve, relative, join, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { Effect } from "effect";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
-/** @typedef {import("./overlay.ts").overlay} overlay */
-
-/** @typedef {import("./overlay.ts").OverlayOptions} OverlayOptions */
+/** @typedef {import("./OverlayOptions.ts").OverlayOptions} OverlayOptions */
+/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
 
 const DEFAULT_EXCLUDE = [
     "node_modules",
@@ -19,6 +18,12 @@ const DEFAULT_EXCLUDE = [
  * tree into a new generation directory.
  *
  * Returns the absolute path to the overlay directory.
+ *
+ * @param {string} hotRoot
+ * @param {string} outDir
+ * @param {number} generation
+ * @param {OverlayOptions} [opts]
+ * @returns {Effect.Effect<string, SmithersError>}
  */
 export function buildOverlayEffect(hotRoot, outDir, generation, opts) {
     const exclude = new Set(opts?.exclude ?? DEFAULT_EXCLUDE);
@@ -110,6 +115,10 @@ function mirrorTreeEffect(src, dest, exclude) {
 }
 /**
  * Remove old generation directories, keeping only the last `keepLast`.
+ *
+ * @param {string} outDir
+ * @param {number} keepLast
+ * @returns {Effect.Effect<void, SmithersError>}
  */
 export function cleanupGenerationsEffect(outDir, keepLast) {
     return Effect.gen(function* () {
@@ -156,6 +165,11 @@ export async function cleanupGenerations(outDir, keepLast) {
 /**
  * Resolve the overlay entry path given the original entry path,
  * the hot root, and the overlay generation directory.
+ *
+ * @param {string} entryPath
+ * @param {string} hotRoot
+ * @param {string} genDir
+ * @returns {string}
  */
 export function resolveOverlayEntry(entryPath, hotRoot, genDir) {
     const rel = relative(hotRoot, entryPath);

@@ -1,135 +1,36 @@
 ---
 title: <Timer>
-description: Durably suspend a workflow for a relative duration or until an absolute point in time.
+description: Durably suspend for a relative duration or until an absolute time.
 ---
 
-Think of `<Timer>` as a durable `sleep`. When the scheduler reaches this node, the [workflow suspends](/concepts/suspend-and-resume) — no polling, no busy-waiting. The Temporal runtime checkpoints the delay and resumes execution once the wall-clock condition is satisfied, even if the worker restarts in the meantime.
-
-## Import
-
-```tsx
+```ts
 import { Timer } from "smithers-orchestrator";
+
+type TimerProps = {
+  id: string;
+  duration?: string; // "500ms" | "30s" | "2h" | "7d"; exactly one of duration/until required
+  until?: string | Date; // ISO 8601 string or Date
+  skipIf?: boolean;
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  label?: string;
+  meta?: Record<string, unknown>;
+};
 ```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | **(required)** | Unique node id within the workflow. |
-| `duration` | `string` | `undefined` | Relative delay as a human-readable string (e.g. `"500ms"`, `"30s"`, `"2h"`, `"7d"`). Exactly one of `duration` or `until` is required. |
-| `until` | `string \| Date` | `undefined` | Absolute fire time as an ISO 8601 timestamp string or a `Date` object. Exactly one of `duration` or `until` is required. |
-| `skipIf` | `boolean` | `false` | Skip this node entirely. The node resolves immediately with no delay. |
-| `dependsOn` | `string[]` | `undefined` | Task IDs that must complete before the timer starts. |
-| `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
-| `label` | `string` | `timer:<id>` | Display label override. |
-| `meta` | `Record<string, unknown>` | `undefined` | Extra metadata attached to the node record. |
-
-<Warning>
-Exactly one of `duration` or `until` must be provided. Providing both, or neither, throws at render time.
-</Warning>
-
-<Warning>
-The `every` prop (recurring timer) is reserved for a future phase and is not supported. Passing it throws at render time.
-</Warning>
-
-## Duration strings
-
-The `duration` prop accepts a concise human-readable format.
-
-| String | Meaning |
-| --- | --- |
-| `"500ms"` | 500 milliseconds |
-| `"1s"` / `"30s"` | 1 second / 30 seconds |
-| `"5m"` / `"30m"` | 5 minutes / 30 minutes |
-| `"1h"` / `"2h"` | 1 hour / 2 hours |
-| `"1d"` / `"7d"` | 1 day / 7 days |
-
-## Relative delay
-
-Pause for 30 seconds before proceeding to the next step:
 
 ```tsx
-import { Sequence, Task, Timer, Workflow, createSmithers } from "smithers-orchestrator";
-import { z } from "zod";
-
-const { smithers, outputs } = createSmithers({
-  report: z.object({ summary: z.string() }),
-});
-
-export default smithers(() => (
-  <Workflow name="delayed-report">
-    <Sequence>
-      <Timer id="cooldown" duration="30s" />
-      <Task id="report" output={outputs.report} agent={reportAgent}>
-        Generate the daily summary report.
-      </Task>
-    </Sequence>
-  </Workflow>
-));
+<Workflow name="delayed-report">
+  <Sequence>
+    <Timer id="cooldown" duration="30s" />
+    <Task id="report" output={outputs.report} agent={reportAgent}>
+      Generate the daily summary report.
+    </Task>
+  </Sequence>
+</Workflow>
 ```
-
-## Absolute timestamp
-
-Use `until` when the target time is computed at runtime — for example, a deadline stored in the workflow input:
-
-```tsx
-export default smithers((ctx) => (
-  <Workflow name="scheduled-reminder">
-    <Sequence>
-      <Timer id="wait-until-deadline" until={ctx.input.reminderAt} />
-      <Task id="send-reminder" output={outputs.notification} agent={notifierAgent}>
-        Send the reminder to the user.
-      </Task>
-    </Sequence>
-  </Workflow>
-));
-```
-
-`ctx.input.reminderAt` can be an ISO string (`"2026-06-01T09:00:00Z"`) or a `Date` object — both are accepted. If the timestamp is already in the past when the node is reached, the timer fires immediately.
-
-## Timer inside a [`<Loop>`](/components/loop)
-
-Derive a duration from context at render time to implement a simple backoff:
-
-```tsx
-export default smithers((ctx) => {
-  const delay = ctx.iteration === 0 ? "5m" : "30m";
-
-  return (
-    <Workflow name="retry-with-backoff">
-      <Loop
-        until={ctx.outputMaybe(outputs.result)?.success === true}
-        maxIterations={5}
-      >
-        <Sequence>
-          <Timer id="backoff" duration={delay} />
-          <Task id="attempt" output={outputs.result} agent={workerAgent}>
-            Attempt the operation.
-          </Task>
-        </Sequence>
-      </Loop>
-    </Workflow>
-  );
-});
-```
-
-## Behavior
-
-- When the scheduler reaches a `<Timer>` node, it enters `waiting-timer` status.
-- The engine records the timer target — a resolved UTC timestamp — durably in the workflow history.
-- The worker thread releases the execution slot. No resources are held during the wait.
-- When the target time arrives, Temporal wakes the workflow and the node transitions to `completed`. Downstream nodes are then eligible to run.
-- If `skipIf` is `true`, the node resolves immediately without any delay.
-- Worker restarts or redeployments during the wait do not reset the timer — the checkpoint is stored in the Temporal event history.
-- Timers in separate [parallel](/components/parallel) branches wait independently.
-
-## Rendering
-
-`<Timer>` renders as a `smithers:timer` host element. The scheduler treats it as a leaf node that blocks the [sequence](/components/sequence) until the timer fires.
 
 ## Notes
 
-- `<Timer>` produces no output. It has no `output` prop. It is a pure synchronization point.
-- Use `dependsOn` or `needs` when the timer should start only after specific upstream tasks, rather than relying on sequence position alone.
-- For event-driven delays (wait for an external signal rather than a fixed time), use [`<WaitForEvent>`](/components/wait-for-event) instead.
-- Timers inside a `<Loop>` body reset each iteration because each iteration is a fresh render of the tree.
+- Exactly one of `duration` or `until` is required; both or neither throws at render time.
+- Produces no output. Past `until` timestamps fire immediately.
+- Worker restarts during the wait don't reset the timer.

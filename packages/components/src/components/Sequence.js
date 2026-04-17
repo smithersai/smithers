@@ -1,5 +1,5 @@
 import React from "react";
-/** @typedef {import("./Sequence.ts").SequenceProps} SequenceProps */
+/** @typedef {import("./SequenceProps.ts").SequenceProps} SequenceProps */
 
 /**
  * @param {SequenceProps} props

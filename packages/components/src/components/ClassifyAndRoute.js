@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./ClassifyAndRoute.ts").ClassifyAndRouteProps} ClassifyAndRouteProps */
+/** @typedef {import("./ClassifyAndRouteProps.ts").ClassifyAndRouteProps} ClassifyAndRouteProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -7,7 +7,7 @@ import { Sequence } from "./Sequence.js";
 import { Parallel } from "./Parallel.js";
 import { Task } from "./Task.js";
 /** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
-/** @typedef {import("./ClassifyAndRoute.ts").CategoryConfig} CategoryConfig */
+/** @typedef {import("./CategoryConfig.ts").CategoryConfig} CategoryConfig */
 
 /**
  * @param {AgentLike | CategoryConfig} value
@@ -22,6 +22,7 @@ function isConfig(value) {
  * Composes Sequence, Task, and Parallel. First a classifier Task assigns items
  * to categories, then a Parallel block routes each classified item to the
  * appropriate category agent.
+ * @param {ClassifyAndRouteProps} props
  */
 export function ClassifyAndRoute(props) {
     if (props.skipIf)

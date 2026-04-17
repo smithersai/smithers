@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { getTableName } from "drizzle-orm";
-import { smithersRuns, smithersNodes, smithersAttempts, smithersFrames, smithersApprovals, smithersCache, smithersSandboxes, smithersToolCalls, smithersEvents, smithersRalph, smithersCron, smithersScorers, } from "../src/internal-schema.js";
+import { smithersRuns, smithersNodes, smithersAttempts, smithersFrames, smithersApprovals, smithersCache, smithersNodeDiffs, smithersTimeTravelAudit, smithersSandboxes, smithersToolCalls, smithersEvents, smithersRalph, smithersCron, smithersScorers, } from "../src/internal-schema.js";
 describe("internal schema table definitions", () => {
     test("smithersRuns table name is _smithers_runs", () => {
         expect(getTableName(smithersRuns)).toBe("_smithers_runs");
@@ -19,6 +19,12 @@ describe("internal schema table definitions", () => {
     });
     test("smithersCache table name is _smithers_cache", () => {
         expect(getTableName(smithersCache)).toBe("_smithers_cache");
+    });
+    test("smithersNodeDiffs table name is _smithers_node_diffs", () => {
+        expect(getTableName(smithersNodeDiffs)).toBe("_smithers_node_diffs");
+    });
+    test("smithersTimeTravelAudit table name is _smithers_time_travel_audit", () => {
+        expect(getTableName(smithersTimeTravelAudit)).toBe("_smithers_time_travel_audit");
     });
     test("smithersSandboxes table name is _smithers_sandboxes", () => {
         expect(getTableName(smithersSandboxes)).toBe("_smithers_sandboxes");
@@ -92,6 +98,27 @@ describe("internal schema table definitions", () => {
         expect(cols).toContain("timestampMs");
         expect(cols).toContain("type");
         expect(cols).toContain("payloadJson");
+    });
+    test("smithersNodeDiffs has composite cache columns", () => {
+        const cols = Object.keys(smithersNodeDiffs);
+        expect(cols).toContain("runId");
+        expect(cols).toContain("nodeId");
+        expect(cols).toContain("iteration");
+        expect(cols).toContain("baseRef");
+        expect(cols).toContain("diffJson");
+        expect(cols).toContain("computedAtMs");
+        expect(cols).toContain("sizeBytes");
+    });
+    test("smithersTimeTravelAudit has expected columns", () => {
+        const cols = Object.keys(smithersTimeTravelAudit);
+        expect(cols).toContain("id");
+        expect(cols).toContain("runId");
+        expect(cols).toContain("fromFrameNo");
+        expect(cols).toContain("toFrameNo");
+        expect(cols).toContain("caller");
+        expect(cols).toContain("timestampMs");
+        expect(cols).toContain("result");
+        expect(cols).toContain("durationMs");
     });
     test("smithersScorers has scorer columns", () => {
         const cols = Object.keys(smithersScorers);

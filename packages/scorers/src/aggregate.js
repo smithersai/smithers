@@ -1,5 +1,7 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./aggregate.ts").AggregateOptions} AggregateOptions */
+/** @typedef {import("./AggregateOptions.js").AggregateOptions} AggregateOptions */
+/** @typedef {import("./types.js").AggregateScore} AggregateScore */
+/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 // @smithers-type-exports-end
 
 /**
@@ -9,6 +11,10 @@
  * Uses a simple SQL aggregation query plus in-memory p50 calculation,
  * since SQLite does not support PERCENTILE_CONT or correlated subqueries
  * in GROUP BY reliably.
+ *
+ * @param {SmithersDb} adapter
+ * @param {AggregateOptions} [opts]
+ * @returns {Promise<AggregateScore[]>}
  */
 export async function aggregateScores(adapter, opts) {
     const conditions = [];

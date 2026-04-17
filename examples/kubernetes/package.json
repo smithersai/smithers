@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun run scripts/build.ts",
-    "deploy": "bun run scripts/deploy.ts",
-    "teardown": "bun run scripts/teardown.ts"
+    "build": "bun run scripts/build.js",
+    "deploy": "bun run scripts/deploy.js",
+    "teardown": "bun run scripts/teardown.js"
   },
   "dependencies": {
     "smithers-orchestrator": "file:../.."

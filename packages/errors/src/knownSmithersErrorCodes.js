@@ -1,2 +1,7 @@
 import { smithersErrorDefinitions } from "./smithersErrorDefinitions.js";
-export const knownSmithersErrorCodes = Object.keys(smithersErrorDefinitions);
+
+/** @typedef {import("./KnownSmithersErrorCode.ts").KnownSmithersErrorCode} KnownSmithersErrorCode */
+
+export const knownSmithersErrorCodes = /** @type {KnownSmithersErrorCode[]} */ (
+  Object.keys(smithersErrorDefinitions)
+);

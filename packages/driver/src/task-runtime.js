@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("./task-runtime.ts").SmithersTaskRuntime} SmithersTaskRuntime */
+/** @typedef {import("./SmithersTaskRuntime.ts").SmithersTaskRuntime} SmithersTaskRuntime */
 
 const storage = new AsyncLocalStorage();
 /**

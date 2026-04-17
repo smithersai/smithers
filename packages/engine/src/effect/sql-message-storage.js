@@ -6,7 +6,7 @@ import { Database } from "bun:sqlite";
 import { Context, Effect, Layer, ManagedRuntime, Scope } from "effect";
 import { camelToSnake } from "@smithers/db/utils/camelToSnake";
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} BunSQLiteDatabase */
-/** @typedef {import("./sql-message-storage.ts").SqlMessageStorageEventHistoryQuery} SqlMessageStorageEventHistoryQuery */
+/** @typedef {import("./SqlMessageStorageEventHistoryQuery.ts").SqlMessageStorageEventHistoryQuery} SqlMessageStorageEventHistoryQuery */
 /**
  * @typedef {string | number | bigint | boolean | Uint8Array | null | undefined} SqliteParam
  */

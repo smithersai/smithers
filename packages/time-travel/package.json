@@ -6,45 +6,46 @@
   "sideEffects": false,
   "exports": {
     ".": {
+      "types": "./src/index.d.ts",
       "import": "./src/index.js",
-      "default": "./src/index.js",
-      "types": "./src/index.ts"
+      "default": "./src/index.js"
     },
     "./snapshot": {
+      "types": "./src/index.d.ts",
       "import": "./src/snapshot/index.js",
-      "default": "./src/snapshot/index.js",
-      "types": "./src/snapshot/index.ts"
+      "default": "./src/snapshot/index.js"
     },
     "./fork": {
+      "types": "./src/index.d.ts",
       "import": "./src/fork/index.js",
-      "default": "./src/fork/index.js",
-      "types": "./src/fork/index.ts"
+      "default": "./src/fork/index.js"
     },
     "./timeline": {
+      "types": "./src/index.d.ts",
       "import": "./src/timeline/index.js",
-      "default": "./src/timeline/index.js",
-      "types": "./src/timeline/index.ts"
+      "default": "./src/timeline/index.js"
     },
     "./vcs-version": {
+      "types": "./src/index.d.ts",
       "import": "./src/vcs-version/index.js",
-      "default": "./src/vcs-version/index.js",
-      "types": "./src/vcs-version/index.ts"
+      "default": "./src/vcs-version/index.js"
     },
     "./metrics": {
+      "types": "./src/index.d.ts",
       "import": "./src/metrics.js",
-      "default": "./src/metrics.js",
-      "types": "./src/metrics.ts"
+      "default": "./src/metrics.js"
     },
     "./*": {
+      "types": "./src/index.d.ts",
       "import": "./src/*.js",
-      "default": "./src/*.js",
-      "types": "./src/*.ts"
+      "default": "./src/*.js"
     }
   },
   "files": [
     "src/"
   ],
   "scripts": {
+    "build": "tsup --dts-only",
     "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

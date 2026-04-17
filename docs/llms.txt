@@ -1,98 +1,18 @@
 # Smithers
 
-> Durable AI workflow orchestration with JSX, Zod, SQLite, and real agent tooling.
+Durable AI workflow orchestration as a JSX runtime.
 
-Smithers is a Bun/TypeScript framework for building resumable AI workflows as JSX trees.
+## Documentation
 
-## Quick Facts
+- [Core docs](/llms-core.txt) — runtime, JSX surface, CLI, components, recipes, types, errors
+- [Memory fragment](/llms-memory.txt) — cross-run memory: facts, history, recall
+- [OpenAPI tools fragment](/llms-openapi.txt) — generate AI SDK tools from OpenAPI specs
+- [Observability fragment](/llms-observability.txt) — HTTP server, gateway, MCP, OpenTelemetry
+- [Integrations fragment](/llms-integrations.txt) — agent runtimes, tools, ecosystem
+- [Events fragment](/llms-events.txt) — full SmithersEvent discriminated union
 
-- Package name: `smithers-orchestrator`
-- Runtime: Bun `>= 1.3`
-- Primary authoring API: `createSmithers(...)`
-- Persistence: SQLite
-- Validation: Zod schemas
-- Public docs: `https://smithers.sh`
-- Full LLM bundle: `https://smithers.sh/llms-full.txt`
+## Pointers
 
-## Preferred Authoring Pattern
-
-```tsx
-import { createSmithers } from "smithers-orchestrator";
-import { z } from "zod";
-
-const { Workflow, Task, smithers, outputs } = createSmithers({
-  analysis: z.object({ summary: z.string() }),
-  review: z.object({ approved: z.boolean(), feedback: z.string() }),
-});
-
-export default smithers((ctx) => (
-  <Workflow name="review-loop">
-    <Task id="analyze" output={outputs.analysis}>
-      {{ summary: `Analyze ${ctx.input.topic}` }}
-    </Task>
-    <Task id="review" output={outputs.review}>
-      {{ approved: true, feedback: "LGTM" }}
-    </Task>
-  </Workflow>
-));
-```
-
-## Mental Model
-
-- JSX renders the current workflow frame.
-- Smithers extracts mounted tasks and control-flow metadata from that frame.
-- Ready tasks execute and persist validated outputs to SQLite.
-- The workflow re-renders with updated `ctx.outputMaybe(...)`, `ctx.output(...)`, and `ctx.latest(...)` values.
-- Resume works because task outputs and runtime metadata are durable.
-
-## Core Components
-
-- `<Workflow>`: root container
-- `<Task>`: executable node
-- `<Sequence>`: ordered execution
-- `<Parallel>`: concurrent execution with optional cap
-- `<Branch>`: conditional path selection
-- `<Loop>`: iterative execution (`<Ralph>` remains as a deprecated alias)
-- `<Approval>`: explicit durable approval gate
-- `<MergeQueue>`: serialized or capped group execution
-- `<Worktree>`: execute a subtree in a dedicated workspace
-
-## Execution Entry Points
-
-- `runWorkflow(workflow, opts)`: execute a workflow programmatically
-- `renderFrame(workflow, frame)`: render/extract without executing
-- `smithers` CLI: `up`, `ps`, `logs`, `inspect`, `approve`, `deny`, `chat`, `hijack`, and `revert` workflows
-
-## Important API Notes
-
-- Use `outputs.someKey` from `createSmithers(...)` as the `output` prop whenever possible.
-- String output keys still work, but are an escape hatch.
-- Custom Drizzle tables are supported as advanced output targets; if you use them, you manage their schema and migrations.
-- `createSmithers(...)` automatically adds the bookkeeping columns needed for schema-driven tables.
-- The package name is `smithers-orchestrator`, not `smithers`.
-
-## Common Docs
-
-- [Introduction](https://smithers.sh/introduction)
-- [JSX API](https://smithers.sh/jsx/overview)
-- [JSX Quickstart](https://smithers.sh/jsx/quickstart)
-- [Execution Model](https://smithers.sh/concepts/execution-model)
-- [Data Model](https://smithers.sh/concepts/data-model)
-- [Workflow Component](https://smithers.sh/components/workflow)
-- [Task Component](https://smithers.sh/components/task)
-- [Loop Component](https://smithers.sh/components/loop)
-- [CLI Reference](https://smithers.sh/cli/overview)
-- [Tools Integration](https://smithers.sh/integrations/tools)
-- [CLI Agents](https://smithers.sh/integrations/cli-agents)
-- [SDK Agents](https://smithers.sh/integrations/sdk-agents)
-
-## Burns
-
-The repository also contains `burns/`, a workspace-first local control plane for Smithers. Burns is a separate subproject with:
-
-- `burns/apps/web`
-- `burns/apps/daemon`
-- `burns/apps/desktop`
-- `burns/apps/cli`
-
-Use the root docs for Smithers runtime/API questions and the `burns/README.md` plus `burns/docs/` for Burns-specific development.
+- npm: smithers-orchestrator
+- github: github.com/evmts/smithers
+- changelogs: docs/changelogs/ on the site (not duplicated in llms files)

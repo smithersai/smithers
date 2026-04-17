@@ -4,8 +4,15 @@
 import { deref } from "./ref-resolver.js";
 import { HTTP_METHODS, } from "./types.js";
 import { mergeParameters, generateOperationId } from "./_specHelpers.js";
+
+/** @typedef {import("./OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */
+/** @typedef {import("./ParsedOperation.ts").ParsedOperation} ParsedOperation */
+
 /**
  * Extract all operations from an OpenAPI spec.
+ *
+ * @param {OpenApiSpec} spec
+ * @returns {ParsedOperation[]}
  */
 export function extractOperations(spec) {
     const operations = [];

@@ -4,10 +4,19 @@ import { withAbort } from "./withAbort.js";
 /** @typedef {import("./CreateWorkflowSession.ts").CreateWorkflowSession} CreateWorkflowSession */
 /** @typedef {import("./OutputSnapshot.ts").OutputSnapshot} OutputSnapshot */
 /** @typedef {import("./WorkflowSession.ts").WorkflowSession} WorkflowSession */
+/** @typedef {import("./WorkflowRuntime.ts").WorkflowRuntime} WorkflowRuntime */
+/** @typedef {import("./WorkflowGraphRenderer.ts").WorkflowGraphRenderer} WorkflowGraphRenderer */
+/** @typedef {import("./TaskExecutor.ts").TaskExecutor} TaskExecutor */
+/** @typedef {import("./SchedulerWaitHandler.ts").SchedulerWaitHandler} SchedulerWaitHandler */
+/** @typedef {import("./WaitHandler.ts").WaitHandler} WaitHandler */
+/** @typedef {import("./ContinueAsNewHandler.ts").ContinueAsNewHandler} ContinueAsNewHandler */
 
 /** @typedef {import("./RunOptions.ts").RunOptions} RunOptions */
 /** @typedef {import("@smithers/scheduler").RunResult} RunResult */
-/** @typedef {import("./WorkflowDriverOptions.ts").WorkflowDriverOptions} WorkflowDriverOptions */
+/** @typedef {import("@smithers/scheduler").EngineDecision} EngineDecision */
+/** @typedef {import("@smithers/scheduler").RenderContext} RenderContext */
+/** @typedef {import("@smithers/scheduler").WaitReason} WaitReason */
+/** @typedef {import("@smithers/graph/types").TaskDescriptor} TaskDescriptor */
 
 const SCHEDULER_SPECIFIER = "@smithers/scheduler";
 const LOCAL_SCHEDULER_SPECIFIER = "../../scheduler/src/index.js";
@@ -180,28 +189,49 @@ async function sleepWithAbort(ms, signal) {
             clearTimeout(timeout);
     }
 }
+/**
+ * @template {unknown} [Schema=unknown]
+ */
 export class WorkflowDriver {
+    /** @type {import("./WorkflowDefinition.ts").WorkflowDefinition<Schema>} */
     workflow;
+    /** @type {WorkflowRuntime} */
     runtime;
+    /** @type {unknown} */
     db;
+    /** @type {string | undefined} */
     configuredRunId;
+    /** @type {string | undefined} */
     rootDir;
+    /** @type {string | null | undefined} */
     workflowPath;
+    /** @type {TaskExecutor} */
     executeTask;
+    /** @type {SchedulerWaitHandler | undefined} */
     onSchedulerWait;
+    /** @type {WaitHandler | undefined} */
     onWait;
+    /** @type {ContinueAsNewHandler | undefined} */
     continueAsNewHandler;
+    /** @type {CreateWorkflowSession | undefined} */
     createSession;
+    /** @type {WorkflowGraphRenderer} */
     renderer;
+    /** @type {WorkflowSession | undefined} */
     session;
+    /** @type {string} */
     activeRunId = "";
+    /** @type {RunOptions | undefined} */
     activeOptions;
+    /** @type {import("@smithers/graph").WorkflowGraph | undefined} */
     lastGraph;
+    /** @type {Map<string, string>} */
     outputTablesByNodeId = new Map();
+    /** @type {OutputSnapshot} */
     baseOutputs = {};
     /**
-   * @param {WorkflowDriverOptions<Schema>} options
-   */
+     * @param {import("./WorkflowDriverOptions.ts").WorkflowDriverOptions<Schema>} options
+     */
     constructor(options) {
         this.workflow = options.workflow;
         this.runtime = options.runtime;

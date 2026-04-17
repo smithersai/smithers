@@ -71,6 +71,7 @@
     "@types/react-reconciler": "^0.28.9",
     "@types/ws": "^8.5.12",
     "oxlint": "^1.59.0",
+    "tsup": "^8.5.1",
     "twitter-api-v2": "^1.29.0",
     "typescript": "~5.9.3"
   }

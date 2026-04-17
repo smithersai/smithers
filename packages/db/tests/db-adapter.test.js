@@ -166,7 +166,7 @@ describe("SmithersDb adapter", () => {
         expect(runs.length).toBe(1);
         expect(runs[0].runId).toBe("r2");
     });
-    test("listRuns reclassifies stale running runs as continued", async () => {
+    test("listRuns leaves stale running rows as running (deriveRunState classifies them)", async () => {
         const { adapter } = createTestDb();
         await adapter.insertRun(runRow("stale", "running", {
             createdAtMs: now,
@@ -174,16 +174,16 @@ describe("SmithersDb adapter", () => {
         }));
         const runs = await adapter.listRuns();
         expect(runs).toHaveLength(1);
-        expect(runs[0]?.status).toBe("continued");
+        expect(runs[0]?.status).toBe("running");
     });
-    test("getRun reclassifies stale running runs as continued", async () => {
+    test("getRun leaves stale running rows as running (deriveRunState classifies them)", async () => {
         const { adapter } = createTestDb();
         await adapter.insertRun(runRow("stale-one", "running", {
             createdAtMs: now,
             heartbeatAtMs: now - 60_000,
         }));
         const run = await adapter.getRun("stale-one");
-        expect(run?.status).toBe("continued");
+        expect(run?.status).toBe("running");
     });
     test("listRuns keeps fresh running runs as running", async () => {
         const { adapter } = createTestDb();

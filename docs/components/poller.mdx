@@ -1,57 +1,26 @@
 ---
 title: <Poller>
-description: Composite component that polls an external condition with configurable backoff until satisfied or timed out.
+description: Poll an external condition with configurable backoff until satisfied or timed out.
 ---
 
-```tsx
+```ts
+// Props
 import { Poller } from "smithers-orchestrator";
+
+type PollerProps = {
+  id?: string; // default "poll"
+  check: AgentLike | (() => Promise<unknown> | unknown);
+  checkOutput: OutputTarget; // must include `satisfied: boolean`
+  maxAttempts?: number; // default 30
+  backoff?: "fixed" | "linear" | "exponential"; // default "fixed"
+  intervalMs?: number; // default 5000
+  onTimeout?: "fail" | "return-last"; // default "fail"
+  skipIf?: boolean;
+  children?: ReactNode; // condition description
+};
 ```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | `"poll"` | ID prefix for generated task ids. |
-| `check` | `AgentLike \| Function` | **(required)** | Agent or compute function that checks the condition. |
-| `checkOutput` | `OutputTarget` | **(required)** | Output schema for the check result. Must include `satisfied: boolean`. |
-| `maxAttempts` | `number` | `30` | Maximum poll attempts before stopping. |
-| `backoff` | `"fixed" \| "linear" \| "exponential"` | `"fixed"` | Backoff strategy between polls. |
-| `intervalMs` | `number` | `5000` | Base interval in milliseconds between polls. |
-| `onTimeout` | `"fail" \| "return-last"` | `"fail"` | Behavior when `maxAttempts` is exhausted. `"fail"` fails the workflow; `"return-last"` keeps the final result and continues. |
-| `skipIf` | `boolean` | `false` | Skip the entire component. Returns `null`. |
-| `children` | `ReactNode` | `undefined` | Prompt/condition description for the check agent. |
-
-## What it builds
-
-`<Poller>` composes primitives into the following tree:
-
-```
-Loop (until satisfied, maxIterations = maxAttempts)
-  └─ Task (check condition, timeoutMs based on backoff)
-```
-
-Each iteration runs the check task. The loop exits when `satisfied` is `true` or `maxAttempts` is reached.
-
-## Backoff strategies
-
-| Strategy | Interval at attempt N | Example (base 5s) |
-| --- | --- | --- |
-| `"fixed"` | `intervalMs` | 5s, 5s, 5s, 5s |
-| `"linear"` | `intervalMs * (N + 1)` | 5s, 10s, 15s, 20s |
-| `"exponential"` | `intervalMs * 2^N` | 5s, 10s, 20s, 40s |
-
-## Basic usage
 
 ```tsx
-import { Poller, Workflow } from "smithers-orchestrator";
-import { z } from "zod";
-
-const checkSchema = z.object({
-  satisfied: z.boolean(),
-  status: z.string(),
-  details: z.string(),
-});
-
 <Workflow name="wait-for-deploy">
   <Poller
     check={statusChecker}
@@ -66,54 +35,7 @@ const checkSchema = z.object({
 </Workflow>
 ```
 
-## With a compute function
-
-Use a plain function instead of an agent for simple HTTP checks:
-
-```tsx
-<Poller
-  check={async () => {
-    const res = await fetch("https://api.example.com/health");
-    const data = await res.json();
-    return { satisfied: data.status === "healthy", status: data.status };
-  }}
-  checkOutput={outputs.healthCheck}
-  maxAttempts={10}
-  intervalMs={3000}
-  backoff="linear"
-  onTimeout="return-last"
->
-  Wait for the API health check to return healthy.
-</Poller>
-```
-
-## Timeout behavior
-
-| `onTimeout` | What happens at `maxAttempts` |
-| --- | --- |
-| `"fail"` | Workflow fails with a max-iteration error. |
-| `"return-last"` | Keeps the last check result and continues the workflow. |
-
-## Generated task ids
-
-With the default `id` prefix of `"poll"`:
-
-| Task | ID |
-| --- | --- |
-| Check | `poll-check` |
-| Loop | `poll-loop` |
-
-Override with the `id` prop:
-
-```tsx
-<Poller id="deploy-status" ... />
-// → deploy-status-check, deploy-status-loop
-```
-
 ## Notes
 
-- `<Poller>` is a composite component. It renders a `<Loop>` containing a single `<Task>`.
-- The `checkOutput` schema must include a `satisfied: boolean` field. The loop's `until` condition checks this field.
-- Use `<Poller>` as a pull-based fallback when webhooks or push notifications are not available.
-- The `timeoutMs` on the check task is derived from the backoff strategy, giving each poll attempt time proportional to the interval.
-- For simple cases, the `gate.tsx` example shows a similar pattern built manually with `<Loop>` and `<Task>`.
+- `satisfied` drives the loop's `until`.
+- Backoff: fixed = `intervalMs`; linear = `intervalMs * (N+1)`; exponential = `intervalMs * 2^N`.

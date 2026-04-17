@@ -1,14 +1,13 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./alert-runtime.ts").AlertHumanRequestOptions} AlertHumanRequestOptions */
+/** @typedef {import("./AlertHumanRequestOptions.ts").AlertHumanRequestOptions} AlertHumanRequestOptions */
+/** @typedef {import("./AlertRuntimeServices.ts").AlertRuntimeServices} AlertRuntimeServices */
 // @smithers-type-exports-end
 
-
-/** @typedef {import("./scheduler.ts").scheduler} scheduler */
-
-/** @typedef {import("./alert-runtime.ts").AlertRuntimeServices} AlertRuntimeServices */
 /** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicy} SmithersAlertPolicy */
 export class AlertRuntime {
+    /** @type {SmithersAlertPolicy} */
     policy;
+    /** @type {AlertRuntimeServices} */
     services;
     /**
    * @param {SmithersAlertPolicy} policy

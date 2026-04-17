@@ -1,3 +1,10 @@
 import { Context } from "effect";
-export class WorkflowSession extends Context.Tag("WorkflowSession")() {
+/** @typedef {import("./WorkflowSessionService.ts").WorkflowSessionService} WorkflowSessionService */
+
+const WorkflowSessionBase =
+  /** @type {Context.TagClass<WorkflowSession, "WorkflowSession", WorkflowSessionService>} */ (
+    /** @type {unknown} */ (Context.Tag("WorkflowSession")())
+  );
+
+export class WorkflowSession extends WorkflowSessionBase {
 }

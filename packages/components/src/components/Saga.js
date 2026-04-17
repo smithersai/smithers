@@ -1,11 +1,11 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Saga.ts").SagaProps} SagaProps */
-/** @typedef {import("./Saga.ts").SagaStepDef} SagaStepDef */
+/** @typedef {import("./SagaProps.ts").SagaProps} SagaProps */
+/** @typedef {import("./SagaStepDef.ts").SagaStepDef} SagaStepDef */
 // @smithers-type-exports-end
 
 import React from "react";
 import { forceContinueOnFail } from "./control-flow-utils.js";
-/** @typedef {import("./Saga.ts").SagaStepProps} SagaStepProps */
+/** @typedef {import("./SagaStepProps.ts").SagaStepProps} SagaStepProps */
 
 /**
  * @param {SagaStepProps} _props
@@ -23,6 +23,7 @@ function SagaStep(_props) {
  * for a declarative JSX style.
  *
  * Renders to `<smithers:saga>`.
+ * @param {SagaProps} props
  */
 export function Saga(props) {
     if (props.skipIf)

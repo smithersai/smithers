@@ -2,11 +2,9 @@ import { Effect } from "effect";
 import { nowMs } from "@smithers/scheduler/nowMs";
 import { revertToJjPointer } from "@smithers/vcs/jj";
 import * as BunContext from "@effect/platform-bun/BunContext";
-/** @typedef {import("./timetravel.ts").timetravel} timetravel */
-
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("./timetravel.ts").TimeTravelOptions} TimeTravelOptions */
-/** @typedef {import("./timetravel.ts").TimeTravelResult} TimeTravelResult */
+/** @typedef {import("./TimeTravelOptions.ts").TimeTravelOptions} TimeTravelOptions */
+/** @typedef {import("./TimeTravelResult.ts").TimeTravelResult} TimeTravelResult */
 
 /**
  * @param {string} nodeId

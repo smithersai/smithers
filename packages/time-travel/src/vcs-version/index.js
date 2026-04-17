@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").VcsTag} VcsTag */
+/** @typedef {import("./VcsTag.ts").VcsTag} VcsTag */
 // @smithers-type-exports-end
 
 import { Effect } from "effect";

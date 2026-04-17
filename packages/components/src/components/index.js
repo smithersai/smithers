@@ -1,82 +1,82 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").ApprovalAutoApprove} ApprovalAutoApprove */
-/** @typedef {import("./index.ts").ApprovalDecision} ApprovalDecision */
-/** @typedef {import("./index.ts").ApprovalGateProps} ApprovalGateProps */
-/** @typedef {import("./index.ts").ApprovalMode} ApprovalMode */
-/** @typedef {import("./index.ts").ApprovalOption} ApprovalOption */
+/** @typedef {import("./ApprovalAutoApprove.ts").ApprovalAutoApprove} ApprovalAutoApprove */
+/** @typedef {import("./ApprovalDecision.ts").ApprovalDecision} ApprovalDecision */
+/** @typedef {import("./ApprovalGateProps.ts").ApprovalGateProps} ApprovalGateProps */
+/** @typedef {import("./ApprovalMode.ts").ApprovalMode} ApprovalMode */
+/** @typedef {import("./ApprovalOption.ts").ApprovalOption} ApprovalOption */
 /**
  * @template Row
  * @template Output
- * @typedef {import("./index.ts").ApprovalProps<Row, Output>} ApprovalProps
+ * @typedef {import("./ApprovalProps.ts").ApprovalProps<Row, Output>} ApprovalProps
  */
-/** @typedef {import("./index.ts").ApprovalRanking} ApprovalRanking */
-/** @typedef {import("./index.ts").ApprovalRequest} ApprovalRequest */
-/** @typedef {import("./index.ts").ApprovalSelection} ApprovalSelection */
-/** @typedef {import("./index.ts").AspectsProps} AspectsProps */
-/** @typedef {import("./index.ts").BranchProps} BranchProps */
-/** @typedef {import("./index.ts").CategoryConfig} CategoryConfig */
-/** @typedef {import("./index.ts").CheckConfig} CheckConfig */
-/** @typedef {import("./index.ts").CheckSuiteProps} CheckSuiteProps */
-/** @typedef {import("./index.ts").ClassifyAndRouteProps} ClassifyAndRouteProps */
-/** @typedef {import("./index.ts").ColumnDef} ColumnDef */
-/** @typedef {import("./index.ts").ContentPipelineProps} ContentPipelineProps */
-/** @typedef {import("./index.ts").ContentPipelineStage} ContentPipelineStage */
-/** @typedef {import("./index.ts").ContinueAsNewProps} ContinueAsNewProps */
-/** @typedef {import("./index.ts").DebateProps} DebateProps */
-/** @typedef {import("./index.ts").DecisionRule} DecisionRule */
-/** @typedef {import("./index.ts").DecisionTableProps} DecisionTableProps */
-/** @typedef {import("./index.ts").DepsSpec} DepsSpec */
-/** @typedef {import("./index.ts").DriftDetectorProps} DriftDetectorProps */
-/** @typedef {import("./index.ts").EscalationChainProps} EscalationChainProps */
-/** @typedef {import("./index.ts").EscalationLevel} EscalationLevel */
-/** @typedef {import("./index.ts").GatherAndSynthesizeProps} GatherAndSynthesizeProps */
-/** @typedef {import("./index.ts").HumanTaskProps} HumanTaskProps */
+/** @typedef {import("./ApprovalRanking.ts").ApprovalRanking} ApprovalRanking */
+/** @typedef {import("./ApprovalRequest.ts").ApprovalRequest} ApprovalRequest */
+/** @typedef {import("./ApprovalSelection.ts").ApprovalSelection} ApprovalSelection */
+/** @typedef {import("./AspectsProps.ts").AspectsProps} AspectsProps */
+/** @typedef {import("./BranchProps.ts").BranchProps} BranchProps */
+/** @typedef {import("./CategoryConfig.ts").CategoryConfig} CategoryConfig */
+/** @typedef {import("./CheckConfig.ts").CheckConfig} CheckConfig */
+/** @typedef {import("./CheckSuiteProps.ts").CheckSuiteProps} CheckSuiteProps */
+/** @typedef {import("./ClassifyAndRouteProps.ts").ClassifyAndRouteProps} ClassifyAndRouteProps */
+/** @typedef {import("./ColumnDef.ts").ColumnDef} ColumnDef */
+/** @typedef {import("./ContentPipelineProps.ts").ContentPipelineProps} ContentPipelineProps */
+/** @typedef {import("./ContentPipelineStage.ts").ContentPipelineStage} ContentPipelineStage */
+/** @typedef {import("./ContinueAsNewProps.ts").ContinueAsNewProps} ContinueAsNewProps */
+/** @typedef {import("./DebateProps.ts").DebateProps} DebateProps */
+/** @typedef {import("./DecisionRule.ts").DecisionRule} DecisionRule */
+/** @typedef {import("./DecisionTableProps.ts").DecisionTableProps} DecisionTableProps */
+/** @typedef {import("./DepsSpec.ts").DepsSpec} DepsSpec */
+/** @typedef {import("./DriftDetectorProps.ts").DriftDetectorProps} DriftDetectorProps */
+/** @typedef {import("./EscalationChainProps.ts").EscalationChainProps} EscalationChainProps */
+/** @typedef {import("./EscalationLevel.ts").EscalationLevel} EscalationLevel */
+/** @typedef {import("./GatherAndSynthesizeProps.ts").GatherAndSynthesizeProps} GatherAndSynthesizeProps */
+/** @typedef {import("./HumanTaskProps.ts").HumanTaskProps} HumanTaskProps */
 /**
  * @template D
- * @typedef {import("./index.ts").InferDeps<D>} InferDeps
+ * @typedef {import("./InferDeps.ts").InferDeps<D>} InferDeps
  */
-/** @typedef {import("./index.ts").KanbanProps} KanbanProps */
-/** @typedef {import("./index.ts").LoopProps} LoopProps */
-/** @typedef {import("./index.ts").MergeQueueProps} MergeQueueProps */
-/** @typedef {import("./index.ts").OptimizerProps} OptimizerProps */
-/** @typedef {import("./index.ts").OutputTarget} OutputTarget */
-/** @typedef {import("./index.ts").PanelistConfig} PanelistConfig */
-/** @typedef {import("./index.ts").PanelProps} PanelProps */
-/** @typedef {import("./index.ts").ParallelProps} ParallelProps */
-/** @typedef {import("./index.ts").PollerProps} PollerProps */
-/** @typedef {import("./index.ts").RalphProps} RalphProps */
-/** @typedef {import("./index.ts").ReviewLoopProps} ReviewLoopProps */
-/** @typedef {import("./index.ts").RunbookProps} RunbookProps */
-/** @typedef {import("./index.ts").RunbookStep} RunbookStep */
-/** @typedef {import("./index.ts").SagaProps} SagaProps */
-/** @typedef {import("./index.ts").SagaStepDef} SagaStepDef */
-/** @typedef {import("./index.ts").SagaStepProps} SagaStepProps */
-/** @typedef {import("./index.ts").SandboxProps} SandboxProps */
-/** @typedef {import("./index.ts").SandboxRuntime} SandboxRuntime */
-/** @typedef {import("./index.ts").SandboxVolumeMount} SandboxVolumeMount */
-/** @typedef {import("./index.ts").SandboxWorkspaceSpec} SandboxWorkspaceSpec */
-/** @typedef {import("./index.ts").ScanFixVerifyProps} ScanFixVerifyProps */
-/** @typedef {import("./index.ts").ScorersMap} ScorersMap */
-/** @typedef {import("./index.ts").SequenceProps} SequenceProps */
+/** @typedef {import("./KanbanProps.ts").KanbanProps} KanbanProps */
+/** @typedef {import("./LoopProps.ts").LoopProps} LoopProps */
+/** @typedef {import("./MergeQueueProps.ts").MergeQueueProps} MergeQueueProps */
+/** @typedef {import("./OptimizerProps.ts").OptimizerProps} OptimizerProps */
+/** @typedef {import("./OutputTarget.ts").OutputTarget} OutputTarget */
+/** @typedef {import("./PanelistConfig.ts").PanelistConfig} PanelistConfig */
+/** @typedef {import("./PanelProps.ts").PanelProps} PanelProps */
+/** @typedef {import("./ParallelProps.ts").ParallelProps} ParallelProps */
+/** @typedef {import("./PollerProps.ts").PollerProps} PollerProps */
+/** @typedef {import("./RalphProps.ts").RalphProps} RalphProps */
+/** @typedef {import("./ReviewLoopProps.ts").ReviewLoopProps} ReviewLoopProps */
+/** @typedef {import("./RunbookProps.ts").RunbookProps} RunbookProps */
+/** @typedef {import("./RunbookStep.ts").RunbookStep} RunbookStep */
+/** @typedef {import("./SagaProps.ts").SagaProps} SagaProps */
+/** @typedef {import("./SagaStepDef.ts").SagaStepDef} SagaStepDef */
+/** @typedef {import("./SagaStepProps.ts").SagaStepProps} SagaStepProps */
+/** @typedef {import("./SandboxProps.ts").SandboxProps} SandboxProps */
+/** @typedef {import("./SandboxRuntime.ts").SandboxRuntime} SandboxRuntime */
+/** @typedef {import("./SandboxVolumeMount.ts").SandboxVolumeMount} SandboxVolumeMount */
+/** @typedef {import("./SandboxWorkspaceSpec.ts").SandboxWorkspaceSpec} SandboxWorkspaceSpec */
+/** @typedef {import("./ScanFixVerifyProps.ts").ScanFixVerifyProps} ScanFixVerifyProps */
+/** @typedef {import("@smithers/scorers/types").ScorersMap} ScorersMap */
+/** @typedef {import("./SequenceProps.ts").SequenceProps} SequenceProps */
 /**
  * @template Schema
- * @typedef {import("./index.ts").SignalProps<Schema>} SignalProps
+ * @typedef {import("./SignalProps.ts").SignalProps<Schema>} SignalProps
  */
-/** @typedef {import("./index.ts").SourceDef} SourceDef */
-/** @typedef {import("./index.ts").SubflowProps} SubflowProps */
-/** @typedef {import("./index.ts").SuperSmithersProps} SuperSmithersProps */
-/** @typedef {import("./index.ts").SupervisorProps} SupervisorProps */
+/** @typedef {import("./SourceDef.ts").SourceDef} SourceDef */
+/** @typedef {import("./SubflowProps.ts").SubflowProps} SubflowProps */
+/** @typedef {import("./SuperSmithersProps.ts").SuperSmithersProps} SuperSmithersProps */
+/** @typedef {import("./SupervisorProps.ts").SupervisorProps} SupervisorProps */
 /**
  * @template Row
  * @template Output
  * @template D
- * @typedef {import("./index.ts").TaskProps<Row, Output, D>} TaskProps
+ * @typedef {import("./TaskProps.ts").TaskProps<Row, Output, D>} TaskProps
  */
-/** @typedef {import("./index.ts").TimerProps} TimerProps */
-/** @typedef {import("./index.ts").TryCatchFinallyProps} TryCatchFinallyProps */
-/** @typedef {import("./index.ts").WaitForEventProps} WaitForEventProps */
-/** @typedef {import("./index.ts").WorkflowProps} WorkflowProps */
-/** @typedef {import("./index.ts").WorktreeProps} WorktreeProps */
+/** @typedef {import("./TimerProps.ts").TimerProps} TimerProps */
+/** @typedef {import("./TryCatchFinallyProps.ts").TryCatchFinallyProps} TryCatchFinallyProps */
+/** @typedef {import("./WaitForEventProps.ts").WaitForEventProps} WaitForEventProps */
+/** @typedef {import("./WorkflowProps.ts").WorkflowProps} WorkflowProps */
+/** @typedef {import("./WorktreeProps.ts").WorktreeProps} WorktreeProps */
 // @smithers-type-exports-end
 
 export { Workflow } from "./Workflow.js";

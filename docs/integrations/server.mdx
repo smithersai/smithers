@@ -1,432 +1,107 @@
 ---
 title: HTTP Server
-description: Expose Smithers workflows over HTTP with a built-in server supporting run management, SSE event streaming, and human-in-the-loop approvals.
+description: "Run Smithers as an HTTP server: REST routes for runs, approvals, tools."
 ---
 
-Multi-workflow HTTP server exposing workflows via REST. Supports run management, SSE event streaming, and [human-in-the-loop approvals](/concepts/human-in-the-loop).
+`startServer` boots a multi-workflow HTTP server with REST endpoints for run lifecycle, SSE event streams, and [human-in-the-loop approvals](/concepts/human-in-the-loop). For a single-workflow variant alongside `smithers up`, see [Serve Mode](/integrations/serve).
 
-For a lighter single-workflow server that runs alongside `smithers up`, see [Serve Mode](/integrations/serve).
-
-## Import
-
-```ts
-import { startServer } from "smithers-orchestrator";
-```
-
-## Quick Start
+## Quick start
 
 ```ts
 import { startServer } from "smithers-orchestrator";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 
-const db = drizzle("./smithers.db");
-
 const server = startServer({
   port: 7331,
-  db,
+  db: drizzle("./smithers.db"),
   authToken: process.env.SMITHERS_API_KEY,
   rootDir: process.cwd(),
-  allowNetwork: false,
 });
+```
+
+```bash
+curl -X POST http://localhost:7331/v1/runs \
+  -H "Authorization: Bearer $SMITHERS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"workflowPath": "./bugfix.tsx", "input": {"description": "fix auth"}}'
 ```
 
 ## ServerOptions
 
 ```ts
 type ServerOptions = {
-  port?: number;
-  db?: BunSQLiteDatabase<any>;
-  authToken?: string;
-  maxBodyBytes?: number;
-  rootDir?: string;
-  allowNetwork?: boolean;
+  port?: number;              // default 7331
+  db?: BunSQLiteDatabase<any>;// enables GET /v1/runs and approvals listing
+  authToken?: string;         // falls back to process.env.SMITHERS_API_KEY
+  maxBodyBytes?: number;      // default 1_048_576
+  rootDir?: string;           // sandbox root for workflow paths and tools
+  allowNetwork?: boolean;     // default false; allows network in `bash`
 };
 ```
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `port` | `number` | `7331` | TCP port |
-| `db` | `BunSQLiteDatabase` | `undefined` | SQLite database for mirroring run/event data; enables `GET /v1/runs` |
-| `authToken` | `string` | `process.env.SMITHERS_API_KEY` | Bearer token. Falls back to env var. Disabled if neither is set. |
-| `maxBodyBytes` | `number` | `1048576` (1MB) | Max request body size. Returns 413 if exceeded. |
-| `rootDir` | `string` | `undefined` | Root for workflow path resolution and tool sandboxing |
-| `allowNetwork` | `boolean` | `false` | Allow network access in [`bash`](/integrations/tools#bash) |
+`startServer` returns a listening `http.Server`.
 
-Returns an `http.Server` instance, already listening.
+## API Routes (TOON)
 
-### Effect API
-
-`startServerEffect` returns an `Effect` wrapping the server startup for use inside Effect-based applications.
-
-```ts
-import { startServerEffect } from "smithers-orchestrator";
-import { Effect } from "effect";
-
-const program = startServerEffect({ port: 7331, db, rootDir: process.cwd() }).pipe(
-  Effect.tap((server) => Effect.logInfo(`Server listening on port ${server.address()}`)),
-);
+```toon
+routes[15]{method,path,purpose,auth}:
+  GET,/health,Liveness probe,none
+  GET,/metrics,Prometheus exposition,bearer
+  POST,/v1/runs,Start or resume a run,bearer
+  GET,/v1/runs,List runs (requires db),bearer
+  GET,/v1/runs/:runId,Run status and node summary,bearer
+  POST,/v1/runs/:runId/resume,Resume paused or failed run,bearer
+  POST,/v1/runs/:runId/cancel,Abort an active run,bearer
+  GET,/v1/runs/:runId/events,SSE event stream (?afterSeq=N),bearer
+  GET,/v1/runs/:runId/frames,List render frames,bearer
+  POST,/v1/runs/:runId/nodes/:nodeId/approve,Approve a paused node,bearer
+  POST,/v1/runs/:runId/nodes/:nodeId/deny,Deny a paused node,bearer
+  POST,/v1/runs/:runId/signals/:signalName,Deliver a named signal,bearer
+  GET,/v1/approvals,List pending approvals (requires db),bearer
+  GET,/v1/approval/list,Legacy alias for /v1/approvals,bearer
+  POST,/signal/:runId/:signalName,Legacy alias for signals,bearer
 ```
 
----
+JSON requests/responses use `Content-Type: application/json`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`. SSE events are named `smithers` and carry [`SmithersEvent`](/runtime/events) JSON; the stream sends a keep-alive comment every 10 s and closes on terminal state.
+
+Errors use the envelope `{ "error": { "code", "message", "details" } }`. Common codes: `INVALID_REQUEST`, `RUN_NOT_FOUND`, `RUN_IN_PROGRESS`, `RUN_ALREADY_EXISTS`, `WORKFLOW_PATH_OUTSIDE_ROOT`, `DB_NOT_CONFIGURED`, `RUN_NOT_ACTIVE`, `SERVER_ERROR`.
+
+## Tool surface
+
+Tools resolve relative to `rootDir`. The example below exposes a workflow that uses the built-in `bash` tool through the server; clients call it via `POST /v1/runs`.
+
+```tsx
+/** @jsxImportSource smithers-orchestrator */
+import { Task, Workflow, createSmithers, bash } from "smithers-orchestrator";
+import { z } from "zod";
+
+const { smithers, outputs } = createSmithers({
+  result: z.object({ stdout: z.string() }),
+});
+
+export default smithers((ctx) => (
+  <Workflow name="echo">
+    <Task id="run" output={outputs.result}>
+      {async () => ({ stdout: await bash(`echo ${ctx.input.msg}`) })}
+    </Task>
+  </Workflow>
+));
+```
+
+`allowNetwork: false` (the default) keeps `bash` offline. Set `rootDir` to constrain the filesystem the workflow can touch.
 
 ## Authentication
 
-When `authToken` is configured, every request must include:
+When `authToken` is configured (directly or via `SMITHERS_API_KEY`), every request except `GET /health` must include either:
 
 - `Authorization: Bearer <token>`, or
-- `x-smithers-key: <token>`
+- `x-smithers-key: <token>`.
 
-Missing/invalid tokens receive `401`.
+Missing or invalid tokens return `401`. No scopes — for finer access control use the [Gateway](/integrations/gateway).
 
----
+## Notes
 
-## Observability
-
-The server participates in the standard observability pipeline:
-
-- `smithers.http.requests` counter
-- `smithers.http.request_duration_ms` histogram
-- Request handling, workflow loading, and body parsing wrapped in spans
-- Prometheus scrape endpoint at `/metrics`
-
-OTLP export:
-
-```bash
-export SMITHERS_OTEL_ENABLED=1
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-export OTEL_SERVICE_NAME=smithers-server
-```
-
-Local collector stack:
-
-```bash
-docker compose -f observability/docker-compose.otel.yml up
-```
-
-See [Observability](/guides/monitoring-logs) for the full metrics list.
-
----
-
-## API Routes
-
-All routes use JSON request/response bodies except `GET /v1/runs/:runId/events` (SSE) and `GET /metrics` (Prometheus text).
-
-JSON responses include `Content-Type: application/json`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`.
-
-### GET /metrics
-
-Prometheus text exposition of runtime metrics.
-
-```txt
-# TYPE smithers_http_requests counter
-smithers_http_requests 12
-```
-
-```yaml
-scrape_configs:
-  - job_name: smithers
-    static_configs:
-      - targets: ["localhost:7331"]
-```
-
-### POST /v1/runs
-
-Start a new workflow run or resume an existing one.
-
-```ts
-{
-  workflowPath: string;          // .tsx workflow file (required)
-  input?: Record<string, any>;   // Workflow input (default: {})
-  runId?: string;                // Custom run ID (default: auto-generated)
-  resume?: boolean;              // Resume existing run (default: false)
-  config?: {
-    maxConcurrency?: number;
-  };
-}
-```
-
-Response: `{ "runId": "smi_abc123" }`
-
-The workflow is dynamically imported, tables are auto-created, and the run starts asynchronously.
-
-| Status | Code | Condition |
-|---|---|---|
-| 400 | `INVALID_REQUEST` | Missing/invalid `workflowPath`, `input`, or `config` |
-| 400 | `RUN_ID_REQUIRED` | `resume: true` without `runId` |
-| 400 | `WORKFLOW_PATH_OUTSIDE_ROOT` | Path resolves outside `rootDir` |
-| 404 | `RUN_NOT_FOUND` | `resume: true` but run does not exist |
-| 409 | `RUN_IN_PROGRESS` | Run with this ID already active |
-| 409 | `RUN_ALREADY_EXISTS` | Run with this ID exists (no `resume`) |
-
-### POST /v1/runs/:runId/resume
-
-Resume a paused or failed run.
-
-```ts
-{
-  workflowPath: string;
-  input?: Record<string, any>;
-  config?: { maxConcurrency?: number };
-}
-```
-
-Response: `{ "runId": "smi_abc123" }`
-
-If currently active, returns `200` with current status. Otherwise reloads the workflow and resumes from last checkpoint.
-
-| Status | Code | Condition |
-|---|---|---|
-| 400 | `INVALID_REQUEST` | Missing/invalid `workflowPath` |
-| 404 | `RUN_NOT_FOUND` | Run does not exist |
-
-### POST /v1/runs/:runId/cancel
-
-Cancel a running workflow. Signals the run's `AbortController`.
-
-Response: `{ "runId": "smi_abc123" }`
-
-| Status | Code | Condition |
-|---|---|---|
-| 404 | `NOT_FOUND` | Run not in active runs |
-
-### GET /v1/runs/:runId
-
-Run status and summary.
-
-```json
-{
-  "runId": "smi_abc123",
-  "workflowName": "bugfix",
-  "status": "running",
-  "startedAtMs": 1707500000000,
-  "finishedAtMs": null,
-  "summary": { "finished": 3, "in-progress": 1, "pending": 2 }
-}
-```
-
-| Field | Type | Description |
-|---|---|---|
-| `status` | `string` | `running`, `waiting-approval`, `finished`, `failed`, `cancelled` |
-| `startedAtMs` | `number \| null` | Start timestamp (ms) |
-| `finishedAtMs` | `number \| null` | Finish timestamp (ms) |
-| `summary` | `object` | Node count by state |
-
-### GET /v1/runs/:runId/events
-
-SSE stream of lifecycle events.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `afterSeq` | `number` | `-1` | Only events after this sequence number |
-
-```
-retry: 1000
-
-event: smithers
-data: {"type":"RunStarted","runId":"smi_abc123","timestampMs":1707500000000}
-
-event: smithers
-data: {"type":"NodeStarted","runId":"smi_abc123","nodeId":"analyze","iteration":0,"attempt":0,"timestampMs":1707500001000}
-
-: keep-alive
-
-event: smithers
-data: {"type":"NodeFinished","runId":"smi_abc123","nodeId":"analyze","iteration":0,"attempt":0,"timestampMs":1707500010000}
-```
-
-- Events named `smithers` with JSON payloads matching [`SmithersEvent`](/runtime/events).
-- Polls database every 500ms.
-- Keep-alive comment every 10s.
-- Closes on terminal state (`finished`, `failed`, `cancelled`).
-- Reconnect with `afterSeq` to resume.
-
-### GET /v1/runs/:runId/frames
-
-List render frames.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `limit` | `number` | `50` | Max frames |
-| `afterFrameNo` | `number` | `undefined` | Frames after this number |
-
-### POST /v1/runs/:runId/nodes/:nodeId/approve
-
-Approve a node waiting for [human approval](/concepts/approvals).
-
-```ts
-{
-  iteration?: number;     // Default: 0
-  note?: string;
-  decidedBy?: string;
-}
-```
-
-### POST /v1/runs/:runId/nodes/:nodeId/deny
-
-Deny a node waiting for [human approval](/concepts/approvals).
-
-```ts
-{
-  iteration?: number;     // Default: 0
-  note?: string;
-  decidedBy?: string;
-}
-```
-
-### GET /v1/runs
-
-List all runs. Requires server-level `db`.
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `limit` | `number` | `50` | Max runs |
-| `status` | `string` | `undefined` | Filter by status |
-
-Returns 400 `DB_NOT_CONFIGURED` if no database was provided.
-
-### GET /v1/approvals
-
-List all pending [approvals](/concepts/approvals) across runs. Requires server-level `db`.
-
-```json
-{
-  "approvals": [
-    {
-      "runId": "smi_abc123",
-      "nodeId": "deploy",
-      "iteration": 0,
-      "workflowName": "bugfix",
-      "runStatus": "waiting-approval",
-      "label": "deploy",
-      "requestTitle": "deploy",
-      "requestSummary": null,
-      "requestedAtMs": 1707500100000,
-      "waitingMs": 45000,
-      "note": null,
-      "decidedBy": null
-    }
-  ]
-}
-```
-
-Results are sorted by `requestedAtMs` ascending (oldest first). Returns 400 `DB_NOT_CONFIGURED` if no database was provided.
-
-Also accessible at legacy paths: `GET /v1/approval/list`, `GET /approval/list`, `GET /approvals`.
-
-### POST /v1/runs/:runId/signals/:signalName
-
-Deliver a named signal to a running workflow.
-
-```ts
-{
-  data?: Record<string, any>;    // Signal payload (default: {})
-  correlationId?: string;        // Optional correlation ID
-  receivedBy?: string;           // Optional actor name
-}
-```
-
-Response: `{ "delivered": true }` (or `false` if the run has no listener for that signal name).
-
-| Status | Code | Condition |
-|---|---|---|
-| 404 | `NOT_FOUND` | Run not found |
-
-Also accessible at legacy path: `POST /signal/:runId/:signalName`.
-
-### GET /health
-
-Liveness probe. Returns `200 OK` with a JSON body when the server is up.
-
-```bash
-curl http://localhost:7331/health
-# {"ok":true}
-```
-
-No authentication is required for this endpoint — it is exempt from `authToken` checks.
-
----
-
-## Error Response Format
-
-```json
-{
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human-readable description",
-    "details": {}
-  }
-}
-```
-
-Unhandled errors return 500 with code `SERVER_ERROR`.
-
----
-
-## Hot Reload
-
-Each `POST /v1/runs` and `POST /v1/runs/:runId/resume` request performs a fresh load of the workflow file. The server hashes the source, writes a content-addressed shadow copy, and imports it via a unique URL. This means the running file on disk can be updated between requests without restarting the server — each new run picks up the latest version automatically.
-
-The shadow file is named `.${workflowName}.smithers-${sha1hash}.tsx` and lives next to the original. It is safe to delete these files after runs complete.
-
-## Run Heartbeat Tracking
-
-Active runs write a heartbeat timestamp to `_smithers_runs.heartbeat_at_ms` every 5 seconds. The server uses this to distinguish truly running workflows from stale rows left by a previous process crash.
-
-`isRunHeartbeatFresh` returns `false` if the heartbeat is more than 5 seconds old. In that case:
-
-- `POST /v1/runs` with `resume: true` will resume rather than reject the run as already active.
-- `POST /v1/runs/:runId/resume` will resume rather than return `200 { status: "running" }`.
-- `POST /v1/runs/:runId/cancel` returns `409 RUN_NOT_ACTIVE` for stale runs instead of aborting.
-
-On server shutdown, the `close` event fires the abort signal for all active run `AbortController`s, giving workflows a chance to checkpoint before exit.
-
----
-
-## Database Mirroring
-
-When a server-level `db` is provided and the workflow uses a different database, run metadata and events are mirrored asynchronously to the server database. This enables cross-workflow listing via `GET /v1/runs`.
-
----
-
-## Example
-
-```ts
-import { startServer } from "smithers-orchestrator";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-
-const db = drizzle("./server.db");
-
-const server = startServer({
-  port: 7331,
-  db,
-  authToken: "sk-my-secret-token",
-  rootDir: "/home/workflows",
-  maxBodyBytes: 2 * 1024 * 1024,
-  allowNetwork: false,
-});
-```
-
-```bash
-# Start a run
-curl -X POST http://localhost:7331/v1/runs \
-  -H "Authorization: Bearer sk-my-secret-token" \
-  -H "Content-Type: application/json" \
-  -d '{"workflowPath": "./bugfix.tsx", "input": {"description": "Fix the auth token expiry bug"}}'
-
-# Stream events
-curl -N http://localhost:7331/v1/runs/smi_abc123/events \
-  -H "Authorization: Bearer sk-my-secret-token"
-
-# Approve a node
-curl -X POST http://localhost:7331/v1/runs/smi_abc123/nodes/deploy/approve \
-  -H "Authorization: Bearer sk-my-secret-token" \
-  -H "Content-Type: application/json" \
-  -d '{"note": "Looks good", "decidedBy": "alice"}'
-```
-
-## Next Steps
-
-- [Serve Mode](/integrations/serve)
-- [Gateway](/integrations/gateway)
-- [Runtime Events](/runtime/events)
-- [Human in the Loop](/concepts/human-in-the-loop)
+- Each `POST /v1/runs` and `/resume` reloads the workflow source via a content-addressed shadow file (`.${name}.smithers-${sha1}.tsx`), so edits take effect on the next call without a restart.
+- Active runs heartbeat to `_smithers_runs.heartbeat_at_ms` every 5 s; stale rows are treated as crashed and may be resumed.
+- When a server-level `db` differs from a workflow's database, runs and events are mirrored asynchronously to the server db so they show up in `GET /v1/runs`.
+- Metrics are exported via `/metrics`; set `SMITHERS_OTEL_ENABLED=1` plus `OTEL_EXPORTER_OTLP_ENDPOINT` for OTLP. See [Observability](/guides/monitoring-logs).

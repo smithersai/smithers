@@ -1,97 +1,64 @@
 ---
 title: <Approval>
-description: A first-class JSX approval node that pauses durably and resolves to an approval decision, selection, or ranking value.
+description: Durable human approval; persists ApprovalDecision, selection, or ranking.
 ---
 
-Pauses the [workflow](/components/workflow) until a human approves or denies. `mode="approve"` writes an `ApprovalDecision` to the configured output:
-
 ```ts
-type ApprovalDecision = {
-  approved: boolean;
-  note: string | null;
-  decidedBy: string | null;
-  decidedAt: string | null;
+import { Approval, approvalDecisionSchema } from "smithers-orchestrator";
+
+type ApprovalProps = {
+  id: string;
+  mode?: "approve" | "select" | "rank"; // default "approve"
+  options?: ApprovalOption[]; // required for select/rank
+  output: z.ZodObject | Table | string;
+  outputSchema?: z.ZodObject; // default approvalDecisionSchema
+  request: { title: string; summary?: string; metadata?: Record<string, unknown> };
+  onDeny?: "fail" | "continue" | "skip"; // default "fail"
+  allowedScopes?: string[];
+  allowedUsers?: string[];
+  autoApprove?: {
+    after?: number; // auto-approve after N consecutive manual approvals
+    condition?: (ctx: WorkflowContext) => boolean;
+    audit?: boolean;
+    revertOn?: (ctx: WorkflowContext) => boolean;
+  };
+  async?: boolean; // unrelated downstream may continue while pending
+  dependsOn?: string[];
+  needs?: Record<string, string>;
+  skipIf?: boolean;
+  timeoutMs?: number;
+  retries?: number;
+  retryPolicy?: { backoff?: "fixed" | "linear" | "exponential"; initialDelayMs?: number };
+  continueOnFail?: boolean;
+  cache?: { by?: (ctx) => unknown; version?: string };
+  label?: string;
+  meta?: Record<string, unknown>;
 };
 ```
 
-`decidedAt` is reserved for compatibility, but Smithers keeps the actual approval timestamp in internal approval records and the event log instead of the durable task output.
-
-## Import
-
 ```tsx
-import { Approval, approvalDecisionSchema } from "smithers-orchestrator";
-```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | **(required)** | Unique node id within the workflow. |
-| `mode` | `"approve" \| "select" \| "rank"` | `"approve"` | Approval shape. `"approve"` returns a boolean decision, `"select"` returns one option, `"rank"` returns an ordered list. |
-| `options` | `ApprovalOption[]` | `undefined` | Required for `mode="select"` and `mode="rank"`. |
-| `output` | `z.ZodObject \| Table \| string` | **(required)** | Where to persist the decision. Zod schema from `outputs` (recommended), Drizzle table, or string key. |
-| `outputSchema` | `z.ZodObject` | `approvalDecisionSchema` | Override the decision schema (manual DB API). |
-| `request` | `{ title: string; summary?: string; metadata?: Record<string, unknown> }` | **(required)** | Human-facing request. `title` becomes the node label. |
-| `onDeny` | `"fail" \| "continue" \| "skip"` | `"fail"` | Behavior after denial. `"continue"` and `"skip"` still persist the denial. |
-| `allowedScopes` | `string[]` | `undefined` | Optional gateway scopes allowed to decide this approval. |
-| `allowedUsers` | `string[]` | `undefined` | Optional gateway user IDs allowed to decide this approval. |
-| `autoApprove` | `ApprovalAutoApprove` | `undefined` | Auto-approval policy. Supports immediate auto-approval, approval-after-history, and audited auto-approvals. |
-| `async` | `boolean` | `false` | When `true`, unrelated downstream flow can continue while this approval is pending. Explicit dependencies still wait for the resolved decision. |
-| `dependsOn` | `string[]` | `undefined` | Task IDs that must complete first. |
-| `needs` | `Record<string, string>` | `undefined` | Named deps. Keys become context keys, values are task IDs. |
-| `skipIf` | `boolean` | `false` | Skip this node entirely. |
-| `timeoutMs` | `number` | `undefined` | Max wait in ms. Node fails on timeout. |
-| `retries` | `number` | `0` | Retry attempts before failure. |
-| `retryPolicy` | `RetryPolicy` | `undefined` | `{ backoff?: "fixed" \| "linear" \| "exponential", initialDelayMs?: number }` |
-| `continueOnFail` | `boolean` | `false` | Workflow continues even if this node fails. |
-| `cache` | `CachePolicy` | `undefined` | `{ by?: (ctx) => unknown, version?: string }`. Skip re-execution on cache hit. |
-| `label` | `string` | `request.title` | Display label override. |
-| `meta` | `Record<string, unknown>` | `undefined` | Extra metadata merged with request fields. |
-
-## Schema-driven Example
-
-```tsx
-import {
-  Approval,
-  Sequence,
-  Task,
-  Workflow,
-  approvalDecisionSchema,
-  createSmithers,
-} from "smithers-orchestrator";
+import { Approval, Sequence, Task, Workflow, approvalDecisionSchema, createSmithers } from "smithers-orchestrator";
 import { z } from "zod";
 
 const { smithers, outputs } = createSmithers({
   publishApproval: approvalDecisionSchema,
-  publishResult: z.object({
-    status: z.enum(["published", "rejected"]),
-  }),
+  publishResult: z.object({ status: z.enum(["published", "rejected"]) }),
 });
 
 export default smithers((ctx) => {
-  const decision = ctx.outputMaybe(outputs.publishApproval, {
-    nodeId: "approve-publish",
-  });
-
+  const decision = ctx.outputMaybe(outputs.publishApproval, { nodeId: "approve-publish" });
   return (
     <Workflow name="publish-flow">
       <Sequence>
         <Approval
           id="approve-publish"
           output={outputs.publishApproval}
-          request={{
-            title: "Publish the draft?",
-            summary: "Human review is required before production publish.",
-            metadata: { channel: "blog" },
-          }}
+          request={{ title: "Publish the draft?", summary: "Human review required." }}
           onDeny="continue"
         />
-
         {decision ? (
-          <Task id="record-decision" output={outputs.publishResult}>
-            {{
-              status: decision.approved ? "published" : "rejected",
-            }}
+          <Task id="record" output={outputs.publishResult}>
+            {{ status: decision.approved ? "published" : "rejected" }}
           </Task>
         ) : null}
       </Sequence>
@@ -100,120 +67,8 @@ export default smithers((ctx) => {
 });
 ```
 
-## Manual API Example
+## Notes
 
-Pass `outputSchema={approvalDecisionSchema}` when `output` is a Drizzle table.
-
-```tsx
-<Approval
-  id="approve-deploy"
-  output={deployApprovalTable}
-  outputSchema={approvalDecisionSchema}
-  request={{
-    title: "Deploy to production?",
-    summary: "Build 2026.03.15 passed all checks.",
-  }}
-/>
-```
-
-## Selection and ranking modes
-
-`<Approval>` can also return typed non-boolean outputs.
-
-```tsx
-import {
-  Approval,
-  approvalRankingSchema,
-  approvalSelectionSchema,
-} from "smithers-orchestrator";
-
-<Approval
-  id="pick-plan"
-  mode="select"
-  output={outputs.selection}
-  request={{ title: "Pick a rollout plan" }}
-  options={[
-    { key: "canary", label: "Canary" },
-    { key: "regional", label: "Regional" },
-  ]}
-/>
-
-<Approval
-  id="rank-plans"
-  mode="rank"
-  output={outputs.ranking}
-  request={{ title: "Rank the rollout plans" }}
-  options={[
-    { key: "canary", label: "Canary" },
-    { key: "regional", label: "Regional" },
-    { key: "global", label: "Global" },
-  ]}
-/>
-```
-
-- `mode="select"` returns `{ selected: string, notes: string | null }`
-- `mode="rank"` returns `{ ranked: string[], notes: string | null }`
-
-## Scoped approvals and auto-approval
-
-```tsx
-<Approval
-  id="deploy-prod"
-  output={outputs.deployApproval}
-  request={{ title: "Deploy to production?" }}
-  allowedScopes={["approve"]}
-  allowedUsers={["user:oncall", "user:release-manager"]}
-  autoApprove={{ after: 2, audit: true }}
-/>
-```
-
-- `allowedScopes` and `allowedUsers` are enforced by [`Gateway`](/integrations/gateway).
-- `autoApprove={{ after: N }}` auto-approves after `N` consecutive manual approvals for the same workflow node.
-- `audit: true` preserves an approval record and emits `ApprovalAutoApproved`.
-
-The full `ApprovalAutoApprove` type:
-
-```ts
-type ApprovalAutoApprove = {
-  after?: number;
-  condition?: (ctx: WorkflowContext) => boolean;
-  audit?: boolean;
-  revertOn?: (ctx: WorkflowContext) => boolean;
-};
-```
-
-| Field | Description |
-| --- | --- |
-| `after` | Auto-approve after this many consecutive manual approvals for the same node. |
-| `condition` | Predicate evaluated at render time. When it returns `true`, the node is auto-approved immediately without waiting for human input. |
-| `audit` | When `true`, an approval record is written and `ApprovalAutoApproved` is emitted even for auto-approvals. Defaults to `true`. |
-| `revertOn` | Predicate evaluated at render time. When it returns `true`, a previously triggered auto-approval is reverted and the node goes back to waiting for human input. |
-
-`condition` and `revertOn` are re-evaluated each render, so they can react to upstream task output or workflow state.
-
-## Behavior
-
-- Workflow enters [`waiting-approval`](/concepts/approvals) when this node is reached.
-- With `async`, the run can keep traversing unrelated later nodes while this approval is pending.
-- `smithers approve` / `smithers deny` updates the record durably.
-- On [resume](/concepts/suspend-and-resume), the node resolves to a decision object; downstream JSX branches on the value.
-- `onDeny="fail"` -- hard gate.
-- `onDeny="continue"` -- branch on `decision.approved`.
-- Use `ctx.outputMaybe(...)` when branching on an async approval's output, since the decision may not exist yet during earlier renders.
-
-## Metrics
-
-Async approvals contribute to the Prometheus gauge `smithers_external_wait_async_pending{kind="approval"}` while waiting for human input.
-
-## Durable deferred resolution
-
-`<Approval>` uses a durable deferred mechanism to survive process restarts. When the node enters `waiting-approval` state, an `@effect/workflow DurableDeferred` is created and awaited by the executing task fiber. The deferred is keyed to the run, node, and iteration, so it survives process restarts: if the worker crashes while waiting, the next worker that picks up the task will re-await the same deferred and receive the resolution as soon as a human submits a decision.
-
-When `smithers approve` or `smithers deny` is called, `bridgeApprovalResolve` resolves the deferred, which unblocks the awaiting fiber and lets the compute function proceed to read the decision from the database. No polling is needed.
-
-## `<Approval>` vs `needsApproval`
-
-| Use | When |
-| --- | --- |
-| `<Approval>` | Decision must be persisted as data and consumed by downstream nodes. |
-| `needsApproval` on [`<Task>`](/components/task) | Simple pause before a task; no separate decision value needed. |
+- `mode="select"` returns `{ selected, notes }`; `mode="rank"` returns `{ ranked, notes }`.
+- Durable deferred keyed on (run, node, iteration) survives restarts; `smithers approve`/`deny` resolves it.
+- For a pre-task pause without persisted decision, use `<Task needsApproval>`.

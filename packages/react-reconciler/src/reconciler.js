@@ -1,11 +1,14 @@
 import Reconciler from "react-reconciler";
 import { installRDTHook } from "bippy";
 import { resolveExtractGraph } from "./core-peer.js";
+/** @typedef {import("@smithers/graph/types").ExtractGraph} ExtractGraph */
 /** @typedef {import("@smithers/graph/types").ExtractOptions} ExtractOptions */
-/** @typedef {import("./reconciler.ts").HostContainer} HostContainer */
+/** @typedef {import("./HostContainer.ts").HostContainer} HostContainer */
+/** @typedef {import("@smithers/graph/types").HostElement & { props: Record<string, string>; rawProps: Record<string, unknown>; children: HostNode[] }} MutableHostElement */
 /** @typedef {import("@smithers/graph/types").HostNode} HostNode */
+/** @typedef {import("@smithers/graph/types").HostText & { text: string }} MutableHostText */
 /** @typedef {import("react").default} React */
-/** @typedef {import("./reconciler.ts").SmithersRendererOptions} SmithersRendererOptions */
+/** @typedef {import("./SmithersRendererOptions.ts").SmithersRendererOptions} SmithersRendererOptions */
 /** @typedef {import("@smithers/graph/types").WorkflowGraph} WorkflowGraph */
 
 /**
@@ -244,6 +247,7 @@ const hostConfig = {
     },
     noTimeout: -1,
 };
+/** @type {any} */
 const reconciler = Reconciler(hostConfig);
 const hookHost = globalThis;
 if (!hookHost.__REACT_DEVTOOLS_GLOBAL_HOOK__) {
@@ -256,8 +260,11 @@ reconciler.injectIntoDevTools({
     findFiberByHostInstance: () => null,
 });
 export class SmithersRenderer {
+    /** @type {HostContainer} */
     container;
+    /** @type {any} */
     root;
+    /** @type {ExtractGraph | undefined} */
     extractGraph;
     /**
    * @param {SmithersRendererOptions} [options]

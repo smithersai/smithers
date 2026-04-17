@@ -1,12 +1,12 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").DevToolsEventBus} DevToolsEventBus */
-/** @typedef {import("./index.ts").DevToolsEventHandler} DevToolsEventHandler */
-/** @typedef {import("./index.ts").DevToolsNode} DevToolsNode */
-/** @typedef {import("./index.ts").DevToolsSnapshot} DevToolsSnapshot */
-/** @typedef {import("./index.ts").RunExecutionState} RunExecutionState */
-/** @typedef {import("./index.ts").SmithersDevToolsOptions} SmithersDevToolsOptions */
-/** @typedef {import("./index.ts").SmithersNodeType} SmithersNodeType */
-/** @typedef {import("./index.ts").TaskExecutionState} TaskExecutionState */
+/** @typedef {import("@smithers/devtools").DevToolsEventBus} DevToolsEventBus */
+/** @typedef {import("@smithers/devtools").DevToolsEventHandler} DevToolsEventHandler */
+/** @typedef {import("@smithers/devtools").DevToolsNode} DevToolsNode */
+/** @typedef {import("@smithers/devtools").DevToolsSnapshot} DevToolsSnapshot */
+/** @typedef {import("@smithers/devtools").RunExecutionState} RunExecutionState */
+/** @typedef {import("@smithers/devtools").SmithersDevToolsOptions} SmithersDevToolsOptions */
+/** @typedef {import("@smithers/devtools").SmithersNodeType} SmithersNodeType */
+/** @typedef {import("@smithers/devtools").TaskExecutionState} TaskExecutionState */
 // @smithers-type-exports-end
 
 export { SmithersDevTools } from "./SmithersDevTools.js";

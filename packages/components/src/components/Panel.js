@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./Panel.ts").PanelProps} PanelProps */
+/** @typedef {import("./PanelProps.ts").PanelProps} PanelProps */
 // @smithers-type-exports-end
 
 import React from "react";
@@ -7,7 +7,7 @@ import { Sequence } from "./Sequence.js";
 import { Parallel } from "./Parallel.js";
 import { Task } from "./Task.js";
 /** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
-/** @typedef {import("./Panel.ts").PanelistConfig} PanelistConfig */
+/** @typedef {import("./PanelistConfig.ts").PanelistConfig} PanelistConfig */
 
 /**
  * @param {PanelistConfig | AgentLike} entry
@@ -24,6 +24,7 @@ function normalizePanelist(entry, index) {
  * <Panel> — Parallel specialists review the same input, then a moderator synthesizes.
  *
  * Composes: Sequence > Parallel[Task per panelist] > Task(moderator)
+ * @param {PanelProps} props
  */
 export function Panel(props) {
     if (props.skipIf)

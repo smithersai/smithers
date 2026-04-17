@@ -1,27 +1,23 @@
 ---
 title: <Branch>
-description: Conditional branching that executes one of two paths based on a boolean condition.
+description: Conditional fork; mounts `then` when `if` is true, otherwise `else`.
 ---
 
-```tsx
+```ts
 import { Branch } from "smithers-orchestrator";
+
+type BranchProps = {
+  if: boolean;
+  then: ReactElement;
+  else?: ReactElement;
+  skipIf?: boolean;
+};
 ```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `if` | `boolean` | **(required)** | Condition. `true` executes `then`; `false` executes `else`. |
-| `then` | `ReactElement` | **(required)** | Element to render when `true`. |
-| `else` | `ReactElement` | `undefined` | Element to render when `false`. If omitted, nothing executes. |
-| `skipIf` | `boolean` | `false` | Skip the entire branch regardless of condition. Returns `null`. |
-
-## Basic usage
 
 ```tsx
 <Workflow name="deploy-pipeline">
   <Task id="test" output={outputs.test}>
-    {{ passed: true, error: null }}
+    {{ passed: true }}
   </Task>
 
   <Branch
@@ -40,83 +36,8 @@ import { Branch } from "smithers-orchestrator";
 </Workflow>
 ```
 
-## Without an else branch
-
-```tsx
-<Branch
-  if={ctx.input.needsReview}
-  then={
-    <Task id="review" output={outputs.review} agent={reviewAgent}>
-      Review the changes.
-    </Task>
-  }
-/>
-```
-
-## Complex sub-graphs
-
-Each branch accepts any workflow element. Wrap multiple elements in [`<Sequence>`](/components/sequence) or [`<Parallel>`](/components/parallel):
-
-```tsx
-<Branch
-  if={ctx.output(outputs.triage, { nodeId: "triage" }).severity === "critical"}
-  then={
-    <Sequence>
-      <Task id="hotfix" output={outputs.hotfix} agent={codeAgent}>
-        Write a hotfix for the critical issue.
-      </Task>
-      <Task id="emergency-deploy" output={outputs.emergencyDeploy}>
-        {{ deployed: true }}
-      </Task>
-    </Sequence>
-  }
-  else={
-    <Task id="add-to-backlog" output={outputs.backlog}>
-      {{ queued: true }}
-    </Task>
-  }
-/>
-```
-
-## Conditional skipping
-
-```tsx
-<Branch
-  skipIf={ctx.input.dryRun}
-  if={testsPass}
-  then={<Task id="deploy" output={outputs.deploy}>{{ ok: true }}</Task>}
-/>
-```
-
-## Condition evaluation
-
-The `if` prop is evaluated at render time. Smithers [re-renders the tree each frame](/concepts/reactivity), so conditions can depend on outputs of completed tasks:
-
-```tsx
-const check = ctx.outputMaybe(outputs.check, { nodeId: "check" });
-
-return (
-  <Workflow name="adaptive">
-    <Task id="check" output={outputs.check} agent={checkAgent}>
-      Check whether the system is healthy.
-    </Task>
-    <Branch
-      if={check?.healthy === true}
-      then={<Task id="proceed" output={outputs.proceed}>{{ ok: true }}</Task>}
-      else={<Task id="remediate" output={outputs.remediate} agent={fixAgent}>Fix it.</Task>}
-    />
-  </Workflow>
-);
-```
-
-Use `ctx.outputMaybe()` when the upstream task may not have completed yet.
-
-## Rendering
-
-`<Branch>` renders the selected child wrapped in a `<smithers:branch>` host element. Only the selected branch's tasks are mounted. The other branch is absent from the task graph.
-
 ## Notes
 
-- Only one branch executes per render frame.
-- `then` and `else` each accept a single `ReactElement`. Wrap multiple elements in [`<Sequence>`](/components/sequence) or [`<Parallel>`](/components/parallel).
-- Conditions are re-evaluated each render frame, enabling data-dependent [control flow](/concepts/control-flow).
+- `if` re-evaluates every render frame; read completed-task outputs via `ctx.outputMaybe()`.
+- Each branch takes one element; wrap multiples in `<Sequence>` or `<Parallel>`.
+- Unselected branch tasks are absent from the task graph.

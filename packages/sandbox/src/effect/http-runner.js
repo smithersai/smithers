@@ -6,6 +6,8 @@ import { SmithersError } from "@smithers/errors/SmithersError";
 import { spawnCaptureEffect } from "@smithers/driver/child-process";
 import { toSmithersError } from "@smithers/errors/toSmithersError";
 import { SandboxEntityExecutor } from "./sandbox-entity.js";
+/** @typedef {import("../SandboxTransportConfig.ts").SandboxTransportConfig} SandboxTransportConfig */
+/** @typedef {import("../SandboxHandle.ts").SandboxHandle} SandboxHandle */
 /**
  * @param {SandboxTransportConfig} config
  * @returns {SandboxHandle}
@@ -21,6 +23,7 @@ function baseHandle(config) {
         resultPath: join(sandboxRoot, "result"),
     };
 }
+/** @type {Layer.Layer<SandboxEntityExecutor, never, never>} */
 export const DockerSandboxExecutorLive = Layer.succeed(SandboxEntityExecutor, SandboxEntityExecutor.of({
     create: (config) => Effect.gen(function* () {
         const handle = baseHandle(config);
@@ -51,6 +54,7 @@ export const DockerSandboxExecutorLive = Layer.succeed(SandboxEntityExecutor, Sa
     collect: (handle) => Effect.succeed({ bundlePath: handle.resultPath }),
     cleanup: (_handle) => Effect.void,
 }));
+/** @type {Layer.Layer<SandboxEntityExecutor, never, never>} */
 export const CodeplaneSandboxExecutorLive = Layer.succeed(SandboxEntityExecutor, SandboxEntityExecutor.of({
     create: (config) => Effect.gen(function* () {
         const apiUrl = process.env.CODEPLANE_API_URL;

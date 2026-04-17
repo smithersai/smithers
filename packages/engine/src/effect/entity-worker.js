@@ -1,12 +1,12 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./entity-worker.ts").TaggedWorkerError} TaggedWorkerError */
-/** @typedef {import("./entity-worker.ts").TaskFailure} TaskFailure */
-/** @typedef {import("./entity-worker.ts").TaskResult} TaskResult */
-/** @typedef {import("./entity-worker.ts").UnknownWorkerError} UnknownWorkerError */
-/** @typedef {import("./entity-worker.ts").WorkerDispatchKind} WorkerDispatchKind */
-/** @typedef {import("./entity-worker.ts").WorkerTask} WorkerTask */
-/** @typedef {import("./entity-worker.ts").WorkerTaskError} WorkerTaskError */
-/** @typedef {import("./entity-worker.ts").WorkerTaskKind} WorkerTaskKind */
+/** @typedef {import("./TaggedWorkerError.ts").TaggedWorkerError} TaggedWorkerError */
+/** @typedef {import("./TaskFailure.ts").TaskFailure} TaskFailure */
+/** @typedef {import("./TaskResult.ts").TaskResult} TaskResult */
+/** @typedef {import("./UnknownWorkerError.ts").UnknownWorkerError} UnknownWorkerError */
+/** @typedef {import("./WorkerDispatchKind.ts").WorkerDispatchKind} WorkerDispatchKind */
+/** @typedef {import("./WorkerTask.ts").WorkerTask} WorkerTask */
+/** @typedef {import("./WorkerTaskError.ts").WorkerTaskError} WorkerTaskError */
+/** @typedef {import("./WorkerTaskKind.ts").WorkerTaskKind} WorkerTaskKind */
 // @smithers-type-exports-end
 
 import * as Entity from "@effect/cluster/Entity";

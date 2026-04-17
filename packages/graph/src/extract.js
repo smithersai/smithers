@@ -2,11 +2,9 @@ import { isAbsolute, resolve as resolvePath } from "node:path";
 import { SmithersError } from "@smithers/errors/SmithersError";
 /** @typedef {import("./TaskDescriptor.ts").TaskDescriptor} TaskDescriptor */
 /** @typedef {import("./XmlNode.ts").XmlNode} XmlNode */
-/** @typedef {import("./types.ts").types} types */
-
-/** @typedef {import("./types.ts").ExtractOptions} ExtractOptions */
-/** @typedef {import("./types.ts").HostNode} HostNode */
-/** @typedef {import("./types.ts").WorkflowGraph} WorkflowGraph */
+/** @typedef {import("./ExtractOptions.ts").ExtractOptions} ExtractOptions */
+/** @typedef {import("./HostNode.ts").HostNode} HostNode */
+/** @typedef {import("./WorkflowGraph.ts").WorkflowGraph} WorkflowGraph */
 
 const DEFAULT_MERGE_QUEUE_CONCURRENCY = 1;
 const WORKTREE_EMPTY_PATH_ERROR = "<Worktree> requires a non-empty path prop";

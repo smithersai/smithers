@@ -1,0 +1,160 @@
+# Smithers Events
+
+> Smithers event surface: how to subscribe, the event categories, and the full SmithersEvent discriminated union (~50 variants).
+
+---
+
+## Events
+
+> Subscribe to lifecycle events. Full event union lives in Types.
+
+`SmithersEvent` is a discriminated union of every lifecycle event the runtime emits. The full type definition lives in [Types](/reference/types) — that's the source of truth for field shapes.
+
+## Subscribe via `onProgress`
+
+```ts
+import { runWorkflow } from "smithers-orchestrator";
+import workflow from "./workflow";
+
+await runWorkflow(workflow, {
+  input: { task: "fix bug" },
+  onProgress: (event) => {
+    if (event.type === "NodeStarted")  console.log(`▶ ${event.nodeId} (attempt ${event.attempt})`);
+    if (event.type === "NodeFinished") console.log(`✓ ${event.nodeId}`);
+    if (event.type === "NodeFailed")   console.error(`✗ ${event.nodeId}`, event.error);
+  },
+});
+```
+
+## Read from the NDJSON log
+
+Events append to `.smithers/executions/<runId>/logs/stream.ndjson` (configure with `logDir` / `--log-dir`; disable with `--no-log`).
+
+```bash
+tail -f .smithers/executions/abc123/logs/stream.ndjson | jq .
+cat .smithers/executions/abc123/logs/stream.ndjson | jq 'select(.type == "NodeFailed")'
+cat .smithers/executions/abc123/logs/stream.ndjson | jq -r .type | sort | uniq -c | sort -rn
+```
+
+Or with the CLI:
+
+```bash
+bunx smithers-orchestrator events <run-id> --json
+bunx smithers-orchestrator events <run-id> --type tool-call --node analyze
+```
+
+## Common fields
+
+```ts
+type CommonFields    = { type: string; runId: string; timestampMs: number };
+type NodeScoped      = CommonFields & { nodeId: string; iteration: number };
+type AttemptScoped   = NodeScoped   & { attempt: number };
+```
+
+Every event includes `type`, `runId`, `timestampMs`. Node-scoped events add `nodeId` and `iteration`. Attempt-scoped add `attempt`.
+
+## Event categories
+
+Used by `bunx smithers-orchestrator events --type <category>` and the metrics layer.
+
+| Category | Events |
+|---|---|
+| `run` | RunStarted, RunStatusChanged, RunFinished, RunFailed, RunCancelled, RunContinuedAsNew, RunHijackRequested, RunHijacked |
+| `frame` | FrameCommitted |
+| `node` | NodePending, NodeStarted, NodeFinished, NodeFailed, NodeCancelled, NodeSkipped, NodeRetrying, NodeOutput |
+| `approval` | NodeWaitingApproval, ApprovalRequested, ApprovalGranted, ApprovalDenied |
+| `tool-call` | ToolCallStarted, ToolCallFinished |
+| `agent` | AgentEvent |
+| `revert` | RevertStarted, RevertFinished |
+| `workflow` | WorkflowReloadDetected, WorkflowReloaded, WorkflowReloadFailed, WorkflowReloadUnsafe |
+| `scorer` | ScorerStarted, ScorerFinished, ScorerFailed |
+| `token` | TokenUsageReported |
+| `timer` | TimerCreated, TimerFired, TimerCancelled |
+| `memory` | MemoryFactSet, MemoryRecalled, MemoryMessageSaved |
+| `openapi` | OpenApiToolCalled |
+| `sandbox` | SandboxCreated, SandboxShipped, SandboxCompleted |
+| `supervisor` | TaskHeartbeat |
+
+## Built-in metrics
+
+| Event | Metric |
+|---|---|
+| `RunStarted` | `smithers.runs.total` |
+| `NodeStarted` | `smithers.nodes.started` |
+| `NodeFinished` | `smithers.nodes.finished` |
+| `NodeFailed` | `smithers.nodes.failed` |
+| `ApprovalGranted` / `ApprovalDenied` | Approval counters |
+| `TokenUsageReported` | Token usage counters per model/agent |
+
+`trackSmithersEvent` from `smithers-orchestrator/observability` exposes this mapping for custom integrations. See the [observability fragment](/llms-observability.txt) for the full OTLP/Prometheus setup.
+
+---
+
+## Event Types
+
+> The full SmithersEvent discriminated union.
+
+`SmithersEvent` is the discriminated union of every lifecycle event the runtime emits. Every variant has `runId` and `timestampMs`. Most have `nodeId` and `iteration`. Attempt-scoped variants add `attempt`.
+
+For subscribing (`onProgress` callback, NDJSON log file, CLI), category filters (`agent`, `node`, `tool-call`, …), and built-in metrics, see [Events](/runtime/events).
+
+```ts
+type SmithersEvent =
+  | { type: "RunStarted"; runId: string; timestampMs: number }
+  | { type: "RunStatusChanged"; runId: string; status: RunStatus; timestampMs: number }
+  | { type: "RunFinished"; runId: string; timestampMs: number }
+  | { type: "RunFailed"; runId: string; error: unknown; timestampMs: number }
+  | { type: "RunCancelled"; runId: string; timestampMs: number }
+  | { type: "RunContinuedAsNew"; runId: string; newRunId: string; iteration: number; carriedStateSize: number; ancestryDepth?: number; timestampMs: number }
+  | { type: "RunHijackRequested"; runId: string; target?: string; timestampMs: number }
+  | { type: "RunHijacked"; runId: string; nodeId: string; iteration: number; attempt: number; engine: string; mode: "native-cli" | "conversation"; resume?: string | null; cwd: string; timestampMs: number }
+
+  | { type: "FrameCommitted"; runId: string; frameNo: number; xmlHash: string; timestampMs: number }
+
+  | { type: "NodePending"; runId: string; nodeId: string; iteration: number; timestampMs: number }
+  | { type: "NodeStarted"; runId: string; nodeId: string; iteration: number; attempt: number; timestampMs: number }
+  | { type: "NodeFinished"; runId: string; nodeId: string; iteration: number; attempt: number; timestampMs: number }
+  | { type: "NodeFailed"; runId: string; nodeId: string; iteration: number; attempt: number; error: unknown; timestampMs: number }
+  | { type: "NodeCancelled"; runId: string; nodeId: string; iteration: number; attempt?: number; reason?: string; timestampMs: number }
+  | { type: "NodeSkipped"; runId: string; nodeId: string; iteration: number; timestampMs: number }
+  | { type: "NodeRetrying"; runId: string; nodeId: string; iteration: number; attempt: number; timestampMs: number }
+  | { type: "NodeOutput"; runId: string; nodeId: string; iteration: number; attempt: number; text: string; stream: "stdout" | "stderr"; timestampMs: number }
+
+  | { type: "NodeWaitingApproval"; runId: string; nodeId: string; iteration: number; timestampMs: number }
+  | { type: "ApprovalRequested"; runId: string; nodeId: string; iteration: number; timestampMs: number }
+  | { type: "ApprovalGranted"; runId: string; nodeId: string; iteration: number; timestampMs: number }
+  | { type: "ApprovalDenied"; runId: string; nodeId: string; iteration: number; timestampMs: number }
+
+  | { type: "ToolCallStarted"; runId: string; nodeId: string; iteration: number; attempt: number; toolName: string; seq: number; timestampMs: number }
+  | { type: "ToolCallFinished"; runId: string; nodeId: string; iteration: number; attempt: number; toolName: string; seq: number; status: "success" | "error"; timestampMs: number }
+
+  | { type: "AgentEvent"; runId: string; nodeId: string; iteration: number; attempt: number; engine: string; event: any; timestampMs: number }
+
+  | { type: "RevertStarted"; runId: string; nodeId: string; iteration: number; attempt: number; jjPointer: string; timestampMs: number }
+  | { type: "RevertFinished"; runId: string; nodeId: string; iteration: number; attempt: number; jjPointer: string; success: boolean; error?: string; timestampMs: number }
+
+  | { type: "WorkflowReloadDetected"; runId: string; changedFiles: string[]; timestampMs: number }
+  | { type: "WorkflowReloaded"; runId: string; generation: number; changedFiles: string[]; timestampMs: number }
+  | { type: "WorkflowReloadFailed"; runId: string; error: unknown; changedFiles: string[]; timestampMs: number }
+  | { type: "WorkflowReloadUnsafe"; runId: string; reason: string; changedFiles: string[]; timestampMs: number }
+
+  | { type: "ScorerStarted"; runId: string; nodeId: string; scorerId: string; scorerName: string; timestampMs: number }
+  | { type: "ScorerFinished"; runId: string; nodeId: string; scorerId: string; scorerName: string; score: number; timestampMs: number }
+  | { type: "ScorerFailed"; runId: string; nodeId: string; scorerId: string; scorerName: string; error: unknown; timestampMs: number }
+
+  | { type: "TokenUsageReported"; runId: string; nodeId: string; iteration: number; attempt: number; model: string; agent: string; inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number; reasoningTokens?: number; timestampMs: number }
+
+  | { type: "TimerCreated"; runId: string; timerId: string; firesAtMs: number; timerType: "duration" | "absolute"; timestampMs: number }
+  | { type: "TimerFired"; runId: string; timerId: string; firesAtMs: number; firedAtMs: number; delayMs: number; timestampMs: number }
+  | { type: "TimerCancelled"; runId: string; timerId: string; timestampMs: number }
+
+  | { type: "MemoryFactSet"; runId: string; namespace: string; key: string; timestampMs: number }
+  | { type: "MemoryRecalled"; runId: string; namespace: string; query: string; resultCount: number; timestampMs: number }
+
+  | { type: "TaskHeartbeat"; runId: string; nodeId: string; iteration: number; attempt: number; hasData: boolean; dataSizeBytes: number; intervalMs?: number; timestampMs: number }
+
+  | { type: "SandboxCreated"; runId: string; sandboxId: string; runtime: SandboxRuntime; configJson: string; timestampMs: number }
+  | { type: "SandboxShipped"; runId: string; sandboxId: string; runtime: SandboxRuntime; bundleSizeBytes: number; timestampMs: number }
+  | { type: "SandboxCompleted"; runId: string; sandboxId: string; remoteRunId?: string; runtime: SandboxRuntime; status: "finished" | "failed" | "cancelled"; durationMs: number; timestampMs: number };
+```
+

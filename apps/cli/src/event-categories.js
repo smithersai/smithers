@@ -1,6 +1,6 @@
 
-/** @typedef {import("./event-categories.ts").EventCategory} EventCategory */
-/** @typedef {import("./event-categories.ts").SmithersEventType} SmithersEventType */
+/** @typedef {import("./EventCategory.ts").EventCategory} EventCategory */
+/** @typedef {import("./SmithersEventType.ts").SmithersEventType} SmithersEventType */
 const EVENT_CATEGORY_BY_TYPE = {
     SupervisorStarted: "supervisor",
     SupervisorPollCompleted: "supervisor",

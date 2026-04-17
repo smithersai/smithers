@@ -1,15 +1,30 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").HotReloadOptions} HotReloadOptions */
-/** @typedef {import("./index.ts").OutputAccessor} OutputAccessor */
-/** @typedef {import("./index.ts").OutputKey} OutputKey */
-/** @typedef {import("./index.ts").OutputSnapshot} OutputSnapshot */
-/** @typedef {import("./index.ts").RunAuthContext} RunAuthContext */
-/** @typedef {import("./index.ts").RunOptions} RunOptions */
-/** @typedef {import("./index.ts").RunResult} RunResult */
-/** @typedef {import("./index.ts").RunStatus} RunStatus */
-/** @typedef {import("./index.ts").SmithersCtxOptions} SmithersCtxOptions */
-/** @typedef {import("./index.ts").WorkflowDefinition} WorkflowDefinition */
-/** @typedef {import("./index.ts").WorkflowDriverOptions} WorkflowDriverOptions */
+/** @typedef {import("./RunOptions.ts").HotReloadOptions} HotReloadOptions */
+/**
+ * @template [Schema=any]
+ * @typedef {import("./OutputAccessor.ts").OutputAccessor<Schema>} OutputAccessor
+ */
+/**
+ * @template T
+ * @typedef {import("./OutputAccessor.ts").InferOutputEntry<T>} InferOutputEntry
+ */
+/** @typedef {import("./OutputKey.ts").OutputKey} OutputKey */
+/** @typedef {import("./OutputSnapshot.ts").OutputSnapshot} OutputSnapshot */
+/** @typedef {import("./RunAuthContext.ts").RunAuthContext} RunAuthContext */
+/** @typedef {import("./RunOptions.ts").RunOptions} RunOptions */
+/** @typedef {import("./RunResult.ts").RunResult} RunResult */
+/** @typedef {import("./RunStatus.ts").RunStatus} RunStatus */
+/** @typedef {import("./SmithersCtxOptions.ts").SmithersCtxOptions} SmithersCtxOptions */
+/**
+ * @template [Schema=unknown]
+ * @typedef {import("./WorkflowDefinition.ts").WorkflowDefinition<Schema>} WorkflowDefinition
+ */
+/**
+ * @template [Schema=unknown]
+ * @typedef {import("./WorkflowDriverOptions.ts").WorkflowDriverOptions<Schema>} WorkflowDriverOptions
+ */
+/** @typedef {import("./WorkflowRuntime.ts").WorkflowRuntime} WorkflowRuntime */
+/** @typedef {import("./WorkflowSession.ts").WorkflowSession} WorkflowSession */
 // @smithers-type-exports-end
 
 export { WorkflowDriver } from "./WorkflowDriver.js";

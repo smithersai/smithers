@@ -1,7 +1,11 @@
 import { createScorer } from "./createScorer.js";
+/** @typedef {import("./types.js").Scorer} Scorer */
+
 /**
  * Creates a schema adherence scorer that validates the output against
  * the task's Zod schema. Returns 1.0 if valid, 0.0 if invalid.
+ *
+ * @returns {Scorer}
  */
 export function schemaAdherenceScorer() {
     return createScorer({

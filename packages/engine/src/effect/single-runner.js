@@ -10,7 +10,10 @@ import { isUnknownWorkerError, isTaskResultFailure, TaskWorkerEntity, } from "./
 /**
  * @typedef {{ terminal: boolean; }} WorkerExecutionResult
  */
-/** @typedef {import("./entity-worker.ts").WorkerTask} WorkerTask */
+/** @typedef {import("./WorkerTask.ts").WorkerTask} WorkerTask */
+/** @typedef {import("./TaskResult.ts").TaskResult} TaskResult */
+/** @typedef {import("./TaskFailure.ts").TaskFailure} TaskFailure */
+/** @typedef {import("./WorkerTaskError.ts").WorkerTaskError} WorkerTaskError */
 
 const workerExecutions = new Map();
 const workerErrors = new Map();

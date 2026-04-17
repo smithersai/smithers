@@ -1,5 +1,5 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./HotWorkflowController.ts").HotReloadEvent} HotReloadEvent */
+/** @typedef {import("./HotReloadEvent.ts").HotReloadEvent} HotReloadEvent */
 // @smithers-type-exports-end
 
 import { resolve, dirname } from "node:path";
@@ -66,6 +66,9 @@ export class HotWorkflowController {
      * 4. Return the result (reloaded, failed, or unsafe)
      *
      * The caller is responsible for swapping workflow.build on success.
+     *
+     * @param {string[]} changedFiles
+     * @returns {Promise<HotReloadEvent>}
      */
     async reload(changedFiles) {
         return Effect.runPromise(this.reloadEffect(changedFiles));

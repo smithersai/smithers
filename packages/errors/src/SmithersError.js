@@ -13,11 +13,18 @@ function formatSmithersErrorMessage(message, docsUrl) {
     return `${message} See ${docsUrl}`;
 }
 export class SmithersError extends Error {
+    /** @type {SmithersErrorCode} */
     code;
+    /** @type {string} */
     summary;
+    /** @type {string} */
     docsUrl;
+    /** @type {Record<string, unknown> | undefined} */
     details;
+    /** @type {unknown} */
     cause;
+    /** @type {string} */
+    name;
     /**
    * @param {SmithersErrorCode} code
    * @param {string} summary
@@ -31,9 +38,9 @@ export class SmithersError extends Error {
             (Object.prototype.hasOwnProperty.call(causeOrOptions, "cause") ||
                 Object.prototype.hasOwnProperty.call(causeOrOptions, "includeDocsUrl") ||
                 Object.prototype.hasOwnProperty.call(causeOrOptions, "name"));
-        const options = isOptionsObject
+        const options = /** @type {SmithersErrorOptions} */ (isOptionsObject
             ? causeOrOptions
-            : { cause: causeOrOptions };
+            : { cause: causeOrOptions });
         super(options.includeDocsUrl === false
             ? summary
             : formatSmithersErrorMessage(summary, docsUrl), { cause: options.cause });

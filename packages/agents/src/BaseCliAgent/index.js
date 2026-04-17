@@ -1,18 +1,18 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").AgentCliActionEvent} AgentCliActionEvent */
-/** @typedef {import("./index.ts").AgentCliActionKind} AgentCliActionKind */
-/** @typedef {import("./index.ts").AgentCliActionPhase} AgentCliActionPhase */
-/** @typedef {import("./index.ts").AgentCliCompletedEvent} AgentCliCompletedEvent */
-/** @typedef {import("./index.ts").AgentCliEvent} AgentCliEvent */
-/** @typedef {import("./index.ts").AgentCliEventLevel} AgentCliEventLevel */
-/** @typedef {import("./index.ts").AgentCliStartedEvent} AgentCliStartedEvent */
-/** @typedef {import("./index.ts").BaseCliAgentOptions} BaseCliAgentOptions */
-/** @typedef {import("./index.ts").CliOutputInterpreter} CliOutputInterpreter */
-/** @typedef {import("./index.ts").CliUsageInfo} CliUsageInfo */
-/** @typedef {import("./index.ts").CodexConfigOverrides} CodexConfigOverrides */
-/** @typedef {import("./index.ts").PiExtensionUiRequest} PiExtensionUiRequest */
-/** @typedef {import("./index.ts").PiExtensionUiResponse} PiExtensionUiResponse */
-/** @typedef {import("./index.ts").RunCommandResult} RunCommandResult */
+/** @typedef {import("./AgentCliEvent.ts").AgentCliActionEvent} AgentCliActionEvent */
+/** @typedef {import("./AgentCliActionKind.ts").AgentCliActionKind} AgentCliActionKind */
+/** @typedef {import("./AgentCliEvent.ts").AgentCliActionPhase} AgentCliActionPhase */
+/** @typedef {import("./AgentCliEvent.ts").AgentCliCompletedEvent} AgentCliCompletedEvent */
+/** @typedef {import("./AgentCliEvent.ts").AgentCliEvent} AgentCliEvent */
+/** @typedef {import("./AgentCliEvent.ts").AgentCliEventLevel} AgentCliEventLevel */
+/** @typedef {import("./AgentCliEvent.ts").AgentCliStartedEvent} AgentCliStartedEvent */
+/** @typedef {import("./BaseCliAgentOptions.ts").BaseCliAgentOptions} BaseCliAgentOptions */
+/** @typedef {import("./CliOutputInterpreter.ts").CliOutputInterpreter} CliOutputInterpreter */
+/** @typedef {import("./CliUsageInfo.ts").CliUsageInfo} CliUsageInfo */
+/** @typedef {import("./CodexConfigOverrides.ts").CodexConfigOverrides} CodexConfigOverrides */
+/** @typedef {import("./PiExtensionUiRequest.ts").PiExtensionUiRequest} PiExtensionUiRequest */
+/** @typedef {import("./PiExtensionUiResponse.ts").PiExtensionUiResponse} PiExtensionUiResponse */
+/** @typedef {import("./RunCommandResult.ts").RunCommandResult} RunCommandResult */
 // @smithers-type-exports-end
 
 export { resolveTimeouts } from "./resolveTimeouts.js";

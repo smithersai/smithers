@@ -1,21 +1,20 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./jj.ts").JjRevertResult} JjRevertResult */
-/** @typedef {import("./jj.ts").RunJjOptions} RunJjOptions */
-/** @typedef {import("./jj.ts").WorkspaceAddOptions} WorkspaceAddOptions */
-/** @typedef {import("./jj.ts").WorkspaceInfo} WorkspaceInfo */
-/** @typedef {import("./jj.ts").WorkspaceResult} WorkspaceResult */
+/** @typedef {import("./JjRevertResult.js").JjRevertResult} JjRevertResult */
+/** @typedef {import("./RunJjOptions.js").RunJjOptions} RunJjOptions */
+/** @typedef {import("./RunJjResult.js").RunJjResult} RunJjResult */
+/** @typedef {import("./WorkspaceAddOptions.js").WorkspaceAddOptions} WorkspaceAddOptions */
+/** @typedef {import("./WorkspaceInfo.js").WorkspaceInfo} WorkspaceInfo */
+/** @typedef {import("./WorkspaceResult.js").WorkspaceResult} WorkspaceResult */
 // @smithers-type-exports-end
 
 import * as Command from "@effect/platform/Command";
 import { Duration, Effect, Fiber, Metric, Stream } from "effect";
 import { vcsDuration } from "@smithers/observability/metrics";
-/** @typedef {import("./jj.ts").jj} jj */
-
-/** @typedef {import("./jj.ts").RunJjResult} RunJjResult */
 
 const JJ_POINTER_TIMEOUT_MS = 1_500;
 /**
  * @param {Stream.Stream<Uint8Array, unknown, never>} stream
+ * @returns {Effect.Effect<string, unknown, never>}
  */
 function collectUtf8(stream) {
     const decoder = new TextDecoder("utf-8");
@@ -24,6 +23,10 @@ function collectUtf8(stream) {
 /**
  * Run a `jj` command and capture output.
  * Minimal helper used by vcs features and safe to call when jj is missing.
+ *
+ * @param {string[]} args
+ * @param {RunJjOptions} [opts]
+ * @returns {Effect.Effect<RunJjResult, never, import("@effect/platform/CommandExecutor").CommandExecutor>}
  */
 export function runJj(args, opts = {}) {
     let command = Command.make("jj", ...args);
@@ -65,6 +68,9 @@ function jjError(res) {
 /**
  * Returns the current workspace change id (jj `change_id`) or null on failure.
  * Accepts optional `cwd` to run inside a target repository.
+ *
+ * @param {string} [cwd]
+ * @returns {Effect.Effect<string | null, never, import("@effect/platform/CommandExecutor").CommandExecutor>}
  */
 export function getJjPointer(cwd) {
     return runJj(["log", "-r", "@", "--no-graph", "--template", "change_id"], { cwd }).pipe(Effect.timeoutTo({
@@ -85,6 +91,10 @@ export function getJjPointer(cwd) {
 /**
  * Restore the working copy to a previously recorded jujutsu `change_id`.
  * Used by the engine to revert attempts within the correct repo/worktree (via `cwd`).
+ *
+ * @param {string} pointer
+ * @param {string} [cwd]
+ * @returns {Effect.Effect<JjRevertResult, never, import("@effect/platform/CommandExecutor").CommandExecutor>}
  */
 export function revertToJjPointer(pointer, cwd) {
     return runJj(["restore", "--from", pointer], { cwd }).pipe(Effect.map((res) => res.code === 0
@@ -93,6 +103,9 @@ export function revertToJjPointer(pointer, cwd) {
 }
 /**
  * Quick repo detection by executing a read-only jj command.
+ *
+ * @param {string} [cwd]
+ * @returns {Effect.Effect<boolean, never, import("@effect/platform/CommandExecutor").CommandExecutor>}
  */
 export function isJjRepo(cwd) {
     return runJj(["log", "-r", "@", "-n", "1", "--no-graph"], {
@@ -102,6 +115,11 @@ export function isJjRepo(cwd) {
 /**
  * Create a new JJ workspace at `path` with a friendly `name`.
  * NOTE: Syntax may vary between JJ versions; this helper aims to be permissive.
+ *
+ * @param {string} name
+ * @param {string} path
+ * @param {WorkspaceAddOptions} [opts]
+ * @returns {Effect.Effect<WorkspaceResult, never, import("@effect/platform/CommandExecutor").CommandExecutor>}
  */
 export function workspaceAdd(name, path, opts = {}) {
     const attempts = [];
@@ -150,6 +168,9 @@ export function workspaceAdd(name, path, opts = {}) {
 /**
  * List existing workspaces using a JJ template for structured output.
  * Falls back to parsing human output if `-T` is unavailable.
+ *
+ * @param {string} [cwd]
+ * @returns {Effect.Effect<WorkspaceInfo[], never, import("@effect/platform/CommandExecutor").CommandExecutor>}
  */
 export function workspaceList(cwd) {
     return Effect.gen(function* () {
@@ -161,11 +182,12 @@ export function workspaceList(cwd) {
                 .split(/\r?\n/)
                 .map((line) => line.trim())
                 .filter(Boolean);
-            return lines.map((name) => ({ name, path: null, selected: false }));
+            return lines.map((name) => ({ name, path: /** @type {string | null} */ (null), selected: false }));
         }
         res = yield* runJj(["workspace", "list"], { cwd });
         if (res.code !== 0)
             return [];
+        /** @type {WorkspaceInfo[]} */
         const rows = [];
         for (const raw of res.stdout.split(/\r?\n/)) {
             const line = raw.trim();
@@ -183,6 +205,10 @@ export function workspaceList(cwd) {
 }
 /**
  * Close the given workspace by name.
+ *
+ * @param {string} name
+ * @param {{ cwd?: string }} [opts]
+ * @returns {Effect.Effect<WorkspaceResult, never, import("@effect/platform/CommandExecutor").CommandExecutor>}
  */
 export function workspaceClose(name, opts = {}) {
     return runJj(["workspace", "forget", name], { cwd: opts.cwd }).pipe(Effect.map((res) => res.code === 0

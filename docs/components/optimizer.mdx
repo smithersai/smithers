@@ -1,62 +1,27 @@
 ---
 title: <Optimizer>
-description: Generate, evaluate, and improve in a loop with score convergence. A composite component that wires Loop, Sequence, and Task into an iterative optimization pattern.
+description: Generate, evaluate, and improve in a loop until a target score is reached.
 ---
 
-```tsx
+```ts
+// Props
 import { Optimizer } from "smithers-orchestrator";
+
+type OptimizerProps = {
+  id?: string; // default "optimizer"; task ids {id}-generate, {id}-evaluate
+  generator: AgentLike;
+  evaluator: AgentLike | ((candidate: unknown) => unknown); // function = compute task
+  generateOutput: OutputTarget;
+  evaluateOutput: OutputTarget; // must include `score: number`
+  targetScore?: number; // omit to run all iterations
+  maxIterations?: number; // default 10
+  onMaxReached?: "return-last" | "fail"; // default "return-last"
+  skipIf?: boolean;
+  children: string | ReactNode; // initial generation prompt
+};
 ```
 
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | `string` | `"optimizer"` | ID prefix. Task ids are derived as `{id}-generate` and `{id}-evaluate`. |
-| `generator` | `AgentLike` | **(required)** | Agent that generates or improves candidates each iteration. |
-| `evaluator` | `AgentLike \| Function` | **(required)** | Agent or compute function that scores candidates. |
-| `generateOutput` | `OutputTarget` | **(required)** | Output schema for generated candidates. |
-| `evaluateOutput` | `OutputTarget` | **(required)** | Output schema for evaluation results. Must include a `score: number` field. |
-| `targetScore` | `number` | `undefined` | Score threshold to stop early. When omitted, runs all iterations. |
-| `maxIterations` | `number` | `10` | Maximum optimization rounds. |
-| `onMaxReached` | `"return-last" \| "fail"` | `"return-last"` | Behavior when max iterations is reached. |
-| `skipIf` | `boolean` | `false` | Skip the entire optimization loop. Returns `null`. |
-| `children` | `string \| ReactNode` | **(required)** | Initial generation prompt. |
-
-## Basic usage
-
 ```tsx
-import { createSmithers } from "smithers-orchestrator";
-import { ToolLoopAgent as Agent } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
-import { z } from "zod";
-
-const promptSchema = z.object({
-  promptText: z.string(),
-  reasoning: z.string(),
-});
-
-const evalSchema = z.object({
-  score: z.number().min(0).max(100),
-  feedback: z.string(),
-  strengths: z.array(z.string()),
-  weaknesses: z.array(z.string()),
-});
-
-const { Workflow, smithers, outputs } = createSmithers({
-  prompt: promptSchema,
-  evaluation: evalSchema,
-});
-
-const promptEngineer = new Agent({
-  model: anthropic("claude-sonnet-4-20250514"),
-  instructions: "You are a prompt engineer. Generate clear, effective prompts.",
-});
-
-const evaluator = new Agent({
-  model: anthropic("claude-sonnet-4-20250514"),
-  instructions: "Score prompts from 0-100 on clarity, specificity, and effectiveness.",
-});
-
 export default smithers(() => (
   <Workflow name="prompt-optimizer">
     <Optimizer
@@ -73,65 +38,7 @@ export default smithers(() => (
 ));
 ```
 
-## Compute evaluator
-
-When the evaluator is deterministic (no LLM needed), pass a function instead of an agent. The function receives the candidate and returns the evaluation:
-
-```tsx
-<Optimizer
-  generator={copywriter}
-  evaluator={(candidate) => ({
-    score: candidate.text.length > 100 ? 85 : 40,
-    feedback: candidate.text.length > 100
-      ? "Good length"
-      : "Too short, expand the copy",
-  })}
-  generateOutput={outputs.copy}
-  evaluateOutput={outputs.eval}
-  targetScore={80}
->
-  Write marketing copy for a developer tool.
-</Optimizer>
-```
-
-## Run all iterations
-
-Omit `targetScore` to run through all `maxIterations` and keep the best result:
-
-```tsx
-<Optimizer
-  generator={designer}
-  evaluator={critic}
-  generateOutput={outputs.design}
-  evaluateOutput={outputs.critique}
-  maxIterations={8}
->
-  Design a landing page layout for a SaaS product.
-</Optimizer>
-```
-
-## What it expands to
-
-`<Optimizer>` is a composite component. It renders this tree:
-
-```tsx
-<Loop id={id} until={false} maxIterations={maxIterations} onMaxReached={onMaxReached}>
-  <Sequence>
-    <Task id="{id}-generate" output={generateOutput} agent={generator}>
-      {children}
-    </Task>
-    <Task id="{id}-evaluate" output={evaluateOutput} agent={evaluator} needs={{ candidate: "{id}-generate" }}>
-      Evaluate the generated candidate and provide a score.
-    </Task>
-  </Sequence>
-</Loop>
-```
-
-The runtime reads `evaluateOutput` for the `score` field each frame and exits the loop when the score meets `targetScore`.
-
 ## Notes
 
-- The `evaluateOutput` schema must include a `score: number` field. The runtime uses this to check convergence against `targetScore`.
-- When `evaluator` is a function, the Task renders as a compute task rather than an agent task.
-- Each iteration receives the previous evaluation's feedback through the loop's re-render cycle.
-- Task ids are derived from the `id` prop: `{id}-generate` and `{id}-evaluate`.
+- `score` drives convergence against `targetScore`.
+- A function `evaluator` renders as a compute task rather than an agent task.

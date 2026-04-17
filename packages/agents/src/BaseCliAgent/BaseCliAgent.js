@@ -18,7 +18,7 @@ import { runCommandEffect } from "./runCommandEffect.js";
 
 /** @typedef {import("./BaseCliAgentOptions.ts").BaseCliAgentOptions} BaseCliAgentOptions */
 /** @typedef {import("./CliOutputInterpreter.ts").CliOutputInterpreter} CliOutputInterpreter */
-/** @typedef {import("./BaseCliAgent.ts").CliUsageInfo} CliUsageInfo */
+/** @typedef {import("./BaseCliAgent.js").CliUsageInfo} CliUsageInfo */
 /** @typedef {import("ai").GenerateTextResult} GenerateTextResult */
 /** @typedef {import("ai").StreamTextResult} StreamTextResult */
 

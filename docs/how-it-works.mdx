@@ -1,0 +1,272 @@
+---
+title: How It Works
+description: The render → execute → persist loop, in one page.
+---
+
+Smithers is a React reconciler whose host elements are tasks instead of DOM nodes. Each render produces a snapshot of the workflow plan; the runtime extracts ready tasks from that plan, executes them, persists their outputs, and re-renders. The plan evolves because each render reads the persisted state.
+
+```
++--------+        +-----------+        +---------+        +---------+
+| Render | -----> | Extract   | -----> | Execute | -----> | Persist |
+|  JSX   |        | task list |        |  ready  |        | outputs |
++--------+        +-----------+        +---------+        +---------+
+    ^                                                          |
+    |__________________________________________________________|
+                       (re-render with new state)
+```
+
+That loop is the entire model. Everything below — branching, loops, approvals, resume, time travel — is either a JSX construct that affects rendering or a CLI surface over the persisted state.
+
+## The render loop in detail
+
+1. **Render**. The runtime calls your `smithers((ctx) => ...)` builder. The returned JSX tree is reconciled by React; the reconciler emits a graph of host elements (`smithers:workflow`, `smithers:task`, `smithers:sequence`, `smithers:parallel`, `smithers:branch`, `smithers:loop`, `smithers:approval`, etc.).
+2. **Extract**. The runtime walks the tree to produce a `GraphSnapshot` — a flat list of `TaskDescriptor`s. Each descriptor captures: node id, ordinal, dependencies, output schema, agent, retries, timeouts.
+3. **Schedule**. The scheduler computes the ready set: tasks whose dependencies have completed, whose enclosing sequence has reached them, whose enclosing branch resolved them, and which fit within `maxConcurrency`.
+4. **Execute**. Each ready task runs. Three modes: agent (call the LLM, validate output against the Zod schema, retry on failure), compute (run the function), static (write the literal value).
+5. **Persist**. Validated outputs are written to per-schema SQLite tables. Internal `_smithers_*` tables capture node state, attempts, frame snapshots, events, and durable approval/signal state.
+6. **Re-render**. The next frame begins with `ctx` reading the updated outputs. Tasks that depended on now-completed outputs mount on this frame and become eligible to run.
+
+The frame is the unit of progress. Time travel, observability, hot reload, and resume all key off the frame number.
+
+## The `ctx` API
+
+`ctx` is the only way the workflow body talks to the runtime.
+
+| Method | Returns | Use for |
+|---|---|---|
+| `ctx.input` | `T` | The immutable input passed to `runWorkflow`. |
+| `ctx.outputMaybe(schema, { nodeId })` | `Row \| undefined` | Conditional rendering — returns `undefined` until the upstream task completes. |
+| `ctx.output(schema, { nodeId })` | `Row` | Same, but throws if missing. Use inside a Task body where the dep is guaranteed. |
+| `ctx.latest(schema, nodeId)` | `Row \| undefined` | Highest iteration of a node — used inside `<Loop>` to read the previous iteration's output. |
+| `ctx.iterationCount(schema, nodeId)` | `number` | Number of completed iterations for a loop node. |
+| `ctx.runId` / `ctx.iteration` | `string` / `number` | Identifiers for logging. |
+| `ctx.auth` | `RunAuthContext \| null` | Auth context passed via `RunOptions.auth`. |
+
+Outputs are keyed by `(runId, nodeId, iteration)`. `iteration` is `0` outside loops; inside `<Loop>` each pass writes a new row at the next iteration index.
+
+## Tasks: three modes
+
+```tsx
+// Agent — call an LLM. Children become the prompt; output validated against schema.
+<Task id="analyze" output={outputs.analysis} agent={analyst}>
+  {`Review ${ctx.input.repo}`}
+</Task>
+
+// Compute — children is a function. Runs at execution time.
+<Task id="count" output={outputs.count}>
+  {() => fs.readdirSync(ctx.input.dir).length}
+</Task>
+
+// Static — children is a plain value. Persisted directly.
+<Task id="config" output={outputs.config}>
+  {{ region: "us-east-1", retries: 3 }}
+</Task>
+```
+
+Agent output validation: the runtime injects a JSON-schema description of the output Zod schema into the prompt, parses the response, validates, and persists. Validation failure feeds the error back into a retry attempt — agents self-correct on schema drift.
+
+Agents can be a fallback chain: `agent={[primary, fallback]}` tries `primary` first and falls through on failure.
+
+## Control flow
+
+Four primitives. Compose freely.
+
+```tsx
+<Sequence>            // children execute top-to-bottom; default for <Workflow>
+<Parallel maxConcurrency={3}>  // children execute concurrently
+<Branch if={cond} then={<A/>} else={<B/>}>
+<Loop until={done} maxIterations={5} onMaxReached="return-last">
+```
+
+`<Workflow>` implicitly sequences its children. An explicit `<Sequence>` is only needed when nesting sequential groups inside `<Parallel>` or another control-flow primitive.
+
+Use `.map()` and ternaries when the *number* or *presence* of tasks depends on state. Use `<Parallel>` and `<Branch>` for fixed task sets whose execution shape depends on state.
+
+## Data flow is unidirectional
+
+Workflow state lives in SQLite. The render function is a pure function of `ctx` (which reads SQLite). Tasks emit outputs; the runtime persists them; the next render reads them. No mutation, no refs, no `useState` for durable values.
+
+This is the same shape as React rendering UI from props/state, except:
+- the "DOM" is the task graph
+- "events" are task completions
+- "state updates" are output writes that the runtime triggers
+
+Three consequences:
+- The plan is a **derived value**. Re-render after any state change automatically computes the new plan; you never manually mutate the plan.
+- **Time travel works** because every frame is a snapshot of (state → plan).
+- **Hot reload works** because reloading the workflow code with the same persisted state produces a new plan; the runtime diffs the two and continues from where you left off.
+
+## Reactivity & React patterns
+
+Smithers JSX is real React. Components, props, children, composition, context, hooks, custom hooks — all work.
+
+```tsx
+function useReviewState(ticketId: string) {
+  const ctx = useCtx();
+  const claudeReview = ctx.latest("review", `${ticketId}:review-claude`);
+  return { claudeReview, allApproved: !!claudeReview?.approved };
+}
+```
+
+`useState` and `useMemo` are process-local — they reset on every render frame. Use them for ephemeral render-time state. **Anything the workflow must remember across crashes goes through `ctx` and a Task output.**
+
+Conditional mounting matters: a Task that doesn't render is not in the plan. No "skipped" placeholder unless you use `<Branch>` or `skipIf`. That's what lets `{analysis ? <Task .../> : null}` work as a clean dependency check.
+
+## Approvals & human-in-the-loop
+
+Two surfaces.
+
+`needsApproval` on a Task is a **gate** — pause before execution, no decision data:
+
+```tsx
+<Task id="deploy" output={outputs.deployResult} agent={deployer} needsApproval>
+  Deploy to production.
+</Task>
+```
+
+`<Approval>` is a **decision node** — produces a typed `ApprovalDecision` row that downstream rendering can branch on:
+
+```tsx
+<Approval
+  id="ship-decision"
+  output={outputs.shipDecision}
+  request={{ title: "Ship release v1.4?", summary }}
+  onDeny="continue"
+/>
+
+{ctx.outputMaybe(outputs.shipDecision, { nodeId: "ship-decision" })?.approved
+  ? <Task id="release" .../>
+  : <Task id="rollback" .../>}
+```
+
+Three denial policies: `"fail"` (abort the run), `"continue"` (proceed without the gated branch), `"skip"` (skip the gated tasks but continue siblings).
+
+Operator side is identical for both:
+
+```bash
+bunx smithers-orchestrator ps --status waiting-approval
+bunx smithers-orchestrator approve <run-id> --node ship-decision --by alice
+bunx smithers-orchestrator up workflow.tsx --run-id <run-id> --resume true
+```
+
+`<HumanTask>` is for richer interaction — a human submits arbitrary structured JSON. `<EscalationChain>` and `<ApprovalGate>` are higher-level patterns built from these.
+
+## Durability & resume
+
+The contract: **a completed task is never re-executed.** Resume loads persisted state, validates the environment (workflow source hash + VCS revision must match the original run), cleans stale in-progress attempts (>15 min without a heartbeat are abandoned), re-renders, and continues.
+
+```bash
+bunx smithers-orchestrator up workflow.tsx --run-id <id> --resume true
+```
+
+For resume to work, **task IDs must be stable across renders.** Derive them from data, not from indices or timestamps:
+
+```tsx
+{tickets.map((t) => <TicketPipeline key={t.id} id={`${t.id}:work`} .../>)}
+// NOT id={`work-${i}`} or id={`work-${Date.now()}`}
+```
+
+Same rule as React keys. A changed task ID looks like a new task to the runtime, and an old task whose ID disappeared is dropped from the plan.
+
+The supervisor auto-resumes runs whose owner process died:
+
+```bash
+bunx smithers-orchestrator supervise --interval 30s --stale-threshold 1m
+```
+
+## Caching
+
+Per-Task caching with explicit invalidation:
+
+```tsx
+<Task
+  id="expensive-analysis"
+  output={outputs.analysis}
+  agent={analyst}
+  cache={{
+    by: (ctx) => ({ repo: ctx.input.repo, version: "v3" }),
+    version: "v3",
+  }}
+>
+  Analyze {ctx.input.repo}
+</Task>
+```
+
+Cache key = `cache.by(ctx)` + `cache.version` + the schema signature (SHA-256 of the table structure). A schema change invalidates the cache automatically.
+
+Don't cache side-effect tasks (deploys, emails, mutations). Caching is for pure work that's expensive to recompute.
+
+## Time travel
+
+Every frame commit produces a `GraphSnapshot`.
+
+```bash
+bunx smithers-orchestrator timeline <run-id>           # frames + forks
+bunx smithers-orchestrator diff <run-a>:5 <run-b>:7    # what changed
+bunx smithers-orchestrator fork workflow.tsx --run-id <id> --frame 5 --reset-node analyze
+bunx smithers-orchestrator replay workflow.tsx --run-id <id> --frame 5 --restore-vcs
+```
+
+Replay with `--restore-vcs` checks out the jj revision the snapshot was taken at — re-execution sees the same source code as the original run.
+
+## Scorers (evals)
+
+Attach evaluators to a Task. They run **after** completion and never block.
+
+```tsx
+import { schemaAdherenceScorer, latencyScorer } from "smithers-orchestrator/scorers";
+
+<Task
+  id="analyze"
+  output={outputs.analysis}
+  agent={analyst}
+  scorers={{
+    schema: { scorer: schemaAdherenceScorer() },
+    latency: { scorer: latencyScorer({ targetMs: 5000 }) },
+  }}
+>
+  Analyze...
+</Task>
+```
+
+Five built-ins: `schemaAdherenceScorer`, `latencyScorer`, `relevancyScorer`, `toxicityScorer`, `faithfulnessScorer`. Sampling: `all` / `ratio` / `none`. Custom scorers and LLM-judge scorers with `createScorer` and `llmJudge`.
+
+```bash
+bunx smithers-orchestrator scores <run-id>
+```
+
+## Memory (cross-run state)
+
+Memory is **state that survives across runs** — facts, message history, semantic recall. Not the same as task outputs (which are per-run).
+
+Three layers, four namespaces (`workflow`, `agent`, `user`, `global`). Three processors (`TtlGarbageCollector`, `TokenLimiter`, `Summarizer`). See [llms-memory.txt](/llms-memory.txt) for the full surface.
+
+## Tools & sandboxing
+
+Five built-in tools — `read`, `write`, `edit`, `grep`, `bash` — sandboxed to `rootDir`. Symlinks, network, and timeouts are denied by default; `--allow-network` opens bash to the network.
+
+Least-privilege per task:
+
+```tsx
+const analyst    = new Agent({ model, instructions: "..." }); // no tools
+const reviewer   = new Agent({ model, instructions: "...", tools: { read, grep } });
+const implementer = new Agent({ model, instructions: "...", tools: { read, write, edit, bash } });
+```
+
+`defineTool` builds custom tools. Mark side-effecting ones with `sideEffect: true` and use `ctx.idempotencyKey` so retries don't double-fire.
+
+## Common gotchas
+
+- **Stable task IDs.** `id="implement-${i}"` or `id={Math.random()}` breaks resume. Derive from data.
+- **`useState` is not durable.** Resets on every render. Persist via `ctx` and a Task.
+- **Input is immutable.** Resuming with different `--input` is an error — the input is persisted at first run.
+- **Code changes block resume.** A workflow source change = a different workflow. Start a new run, don't resume across edits.
+- **Cached output is re-validated.** Schema drift after caching is caught (the validator rejects the stale row), so the cache misses safely.
+- **Side-effect tasks should not be cached.** Pure work only.
+
+## Read next
+
+- [Components](/components/workflow) — JSX surface reference.
+- [CLI](/cli/overview) — every command.
+- [Recipes](/recipes) — patterns from production workflows.
+- [Types](/reference/types) — public TypeScript surface.

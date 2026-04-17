@@ -1,137 +1,66 @@
 ---
 title: CLI Agents
-description: Run external AI CLI tools (Claude Code, Codex, Gemini CLI, PI, Kimi, Forge, Amp) as drop-in Smithers agents that implement the AI SDK agent interface.
+description: Spawn external CLI tools (Claude Code, Codex, Pi, …) and pipe them through the workflow runtime.
 ---
 
-CLI-backed agent classes wrap external AI command-line tools. Each implements the [AI SDK](https://ai-sdk.dev) `Agent` interface and works anywhere Smithers accepts an agent, including [`<Task>`](/components/task).
-
-The agent spawns the CLI, passes the prompt, captures output, and returns a `GenerateTextResult`.
-
-For API-billed provider wrappers, see [SDK Agents](/integrations/sdk-agents).
-
-## Import
-
-```ts
-import {
-  ClaudeCodeAgent,
-  CodexAgent,
-  GeminiAgent,
-  PiAgent,
-  KimiAgent,
-  ForgeAgent,
-  AmpAgent,
-  type PiAgentOptions,
-  type PiExtensionUiRequest,
-  type PiExtensionUiResponse,
-} from "smithers-orchestrator";
-```
-
-## Prerequisites
-
-| Agent | CLI Required | Install |
-|---|---|---|
-| `ClaudeCodeAgent` | `claude` | [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) |
-| `CodexAgent` | `codex` | [OpenAI Codex CLI](https://github.com/openai/codex) |
-| `GeminiAgent` | `gemini` | [Gemini CLI](https://ai.google.dev) |
-| `PiAgent` | `pi` | [PI Coding Agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) |
-| `KimiAgent` | `kimi` | [Kimi CLI](https://moonshotai.github.io/kimi-cli/) |
-| `ForgeAgent` | `forge` | [Forge CLI](https://github.com/antinomyhq/forge) |
-| `AmpAgent` | `amp` | [Amp CLI](https://github.com/nichochar/amp-cli) |
+CLI-backed agent classes wrap external AI command-line tools and implement the [AI SDK](https://ai-sdk.dev) `Agent` interface. Use them anywhere Smithers accepts an agent, including [`<Task>`](/components/task). Reach for these for a vendor's full CLI surface (sessions, sandboxes, slash commands, MCP). For API-billed provider wrappers, see [SDK Agents](/integrations/sdk-agents).
 
 ## Quick Start
 
-```ts
-import { ClaudeCodeAgent, CodexAgent, GeminiAgent, PiAgent, KimiAgent, ForgeAgent, AmpAgent } from "smithers-orchestrator";
-
-const claude = new ClaudeCodeAgent({ model: "claude-sonnet-4-20250514" });
-const codex = new CodexAgent({ model: "gpt-4.1" });
-const gemini = new GeminiAgent({ model: "gemini-2.5-pro" });
-const pi = new PiAgent({ provider: "openai", model: "gpt-5.2-codex" });
-const kimi = new KimiAgent({ model: "kimi-latest" });
-const forge = new ForgeAgent({ model: "anthropic/claude-sonnet-4-20250514" });
-const amp = new AmpAgent({ model: "claude-sonnet-4-20250514" });
-```
-
 ```tsx
-{/* outputs comes from createSmithers() */}
-<Task id="analysis" output={outputs.analysis} agent={claude}>
-  {`Analyze the codebase and identify potential improvements.`}
-</Task>
+import { ClaudeCodeAgent } from "smithers-orchestrator";
+
+const claude = new ClaudeCodeAgent({
+  model: "claude-sonnet-4-20250514",
+  systemPrompt: "You are a careful code reviewer.",
+  timeoutMs: 30 * 60 * 1000,
+});
+
+export default smithers((ctx) => (
+  <Workflow name="review">
+    <Task id="analysis" output={outputs.analysis} agent={claude}>
+      {`Analyze the codebase and identify potential improvements.`}
+    </Task>
+  </Workflow>
+));
 ```
 
----
+## Available agents
 
-## Hijack Support
+```toon
+agents[7]{class,cli,defaultModel,hijack,notes}:
+  ClaudeCodeAgent,claude,claude-sonnet-4-20250514,native session id,Anthropic Claude Code CLI
+  CodexAgent,codex,gpt-4.1,native session id,OpenAI Codex CLI (codex exec via stdin)
+  GeminiAgent,gemini,gemini-2.5-pro,native session id,Google Gemini CLI (falls back to gcloud auth)
+  PiAgent,pi,gpt-5.2-codex,native session id,Pi CLI (text/json/rpc modes + extension UI hooks)
+  KimiAgent,kimi,kimi-latest,native session id,Moonshot Kimi CLI (auto-isolates KIMI_SHARE_DIR)
+  ForgeAgent,forge,anthropic/claude-sonnet-4-20250514,conversation id,Forge CLI (300+ models)
+  AmpAgent,amp,claude-sonnet-4-20250514,thread id,Amp CLI (--execute headless mode)
+```
 
-All built-in CLI agents support native-session hijack via `smithers hijack <runId>`.
+CLI binaries must be on `PATH`: `claude`, `codex`, `gemini`, `pi`, `kimi`, `forge`, `amp`.
 
-| Agent | Hijack Mode | Native Relaunch |
-|---|---|---|
-| `ClaudeCodeAgent` | Native CLI session | `claude --resume <session>` |
-| `CodexAgent` | Native CLI session | `codex resume <session> -C <cwd>` |
-| `GeminiAgent` | Native CLI session | `gemini --resume <session>` |
-| `PiAgent` | Native CLI session | `pi --session <session>` |
-| `KimiAgent` | Native CLI session | `kimi --session <session> --work-dir <cwd>` |
-| `ForgeAgent` | Native CLI session | `forge --conversation-id <id> -C <cwd>` |
-| `AmpAgent` | Native CLI session | `amp threads continue <thread>` |
+## Common options
 
-Behavior:
-
-- Live run: Smithers waits until the agent is between blocking tool calls before aborting.
-- Finished/cancelled run: Smithers reopens the latest persisted native session.
-- If the hijacked session exits successfully, the workflow resumes automatically in detached mode.
-- Cross-engine hijack is not supported.
-
-Use `smithers hijack <runId> --launch=false` to inspect the resumable candidate without opening the session.
-
-### Non-Idempotent Tool Resume Warning
-
-When a [`<Task>`](/components/task) retries after a failure, previous attempts may have already executed side-effect tools (e.g., sending messages, creating PRs). Smithers detects non-idempotent tool calls from prior attempts and prepends a warning to the agent's prompt:
-
-> Previous attempts in this task already called non-idempotent side-effect tools. Those side effects may already have happened before the interruption or retry. Do not blindly call them again. Verify external state first or continue from the prior result.
-
-The warning includes the specific tool names and attempt numbers. It is automatically injected — no configuration is required.
-
----
-
-## Base Options
+All CLI agents accept the same base option surface:
 
 ```ts
 type BaseCliAgentOptions = {
-  id?: string;               // Agent ID (default: random UUID)
-  model?: string;            // Model name to pass to the CLI
-  systemPrompt?: string;     // System prompt prepended to the user prompt
-  instructions?: string;     // Alias for systemPrompt
-  cwd?: string;              // Working directory for the CLI process
-  env?: Record<string, string>;  // Additional environment variables
-  yolo?: boolean;            // Skip permission prompts (default: true)
-  timeoutMs?: number;        // Hard wall-clock timeout in milliseconds
-  idleTimeoutMs?: number;    // Inactivity timeout (no stdout/stderr) in milliseconds
-  maxOutputBytes?: number;   // Max output capture size
-  extraArgs?: string[];      // Additional CLI arguments appended to the command
+  id?: string;                       // Agent instance id (default: random UUID)
+  model?: string;                    // Model name passed to --model
+  systemPrompt?: string;             // Prepended to the user prompt
+  instructions?: string;             // Alias for systemPrompt
+  cwd?: string;                      // Working directory (default: tool ctx rootDir or process.cwd())
+  env?: Record<string, string>;      // Extra env vars merged with process.env
+  yolo?: boolean;                    // Skip permission prompts (default: true)
+  timeoutMs?: number;                // Hard wall-clock cap
+  idleTimeoutMs?: number;            // Inactivity cap; resets on any stdout/stderr
+  maxOutputBytes?: number;           // Truncate captured output
+  extraArgs?: string[];              // Additional CLI flags appended to the command
 };
 ```
 
-| Option | Default | Description |
-|---|---|---|
-| `id` | Random UUID | Agent instance identifier |
-| `model` | `undefined` | Model name passed to `--model` |
-| `systemPrompt` | `undefined` | System instructions prepended to the prompt |
-| `instructions` | `undefined` | Alias for `systemPrompt` |
-| `cwd` | Tool context rootDir or `process.cwd()` | Working directory for the spawned process |
-| `env` | `{}` | Extra environment variables merged with `process.env` |
-| `yolo` | `true` | Skip all interactive permission prompts |
-| `timeoutMs` | `undefined` | Hard wall-clock timeout; kills process after this many ms |
-| `idleTimeoutMs` | `undefined` | Inactivity timeout; kills process after this many ms with no output |
-| `maxOutputBytes` | `undefined` | Truncate captured output to this size |
-| `extraArgs` | `[]` | Additional CLI flags |
-
-### Timeouts
-
-- `timeoutMs`: hard wall-clock cap.
-- `idleTimeoutMs`: inactivity cap, resets on any stdout/stderr output.
-
-Per-call override:
+Per-call timeout override:
 
 ```ts
 await agent.generate({
@@ -140,814 +69,93 @@ await agent.generate({
 });
 ```
 
----
-
-## ClaudeCodeAgent
-
-Wraps `claude` CLI with `--print` mode.
+## Per-agent extras
 
 ```ts
-const claude = new ClaudeCodeAgent({
-  model: "claude-sonnet-4-20250514",
-  systemPrompt: "You are a careful code reviewer.",
-  timeoutMs: 30 * 60 * 1000,
-  idleTimeoutMs: 2 * 60 * 1000,
-});
-```
-
-### Claude-Specific Options
-
-```ts
-type ClaudeCodeAgentOptions = BaseCliAgentOptions & {
-  addDir?: string[];
-  agent?: string;
-  agents?: Record<string, { description?: string; prompt?: string }> | string;
-  allowDangerouslySkipPermissions?: boolean;
-  allowedTools?: string[];
-  appendSystemPrompt?: string;
-  betas?: string[];
-  chrome?: boolean;
-  continue?: boolean;
-  dangerouslySkipPermissions?: boolean;
-  debug?: boolean | string;
-  debugFile?: string;
-  disableSlashCommands?: boolean;
-  disallowedTools?: string[];
-  fallbackModel?: string;
-  file?: string[];
-  forkSession?: boolean;
-  fromPr?: string;
-  ide?: boolean;
-  includePartialMessages?: boolean;
-  inputFormat?: "text" | "stream-json";
-  jsonSchema?: string;
-  maxBudgetUsd?: number;
-  mcpConfig?: string[];
-  mcpDebug?: boolean;
-  noChrome?: boolean;
-  noSessionPersistence?: boolean;
-  outputFormat?: "text" | "json" | "stream-json";
+import { ClaudeCodeAgent } from "smithers-orchestrator";
+new ClaudeCodeAgent({
   permissionMode?: "acceptEdits" | "bypassPermissions" | "default" | "delegate" | "dontAsk" | "plan";
-  pluginDir?: string[];
-  replayUserMessages?: boolean;
-  resume?: string;
-  sessionId?: string;
-  settingSources?: string;
-  settings?: string;
-  strictMcpConfig?: boolean;
-  tools?: string[] | "default" | "";
-  verbose?: boolean;
-};
-```
-
-| Option | Description |
-|---|---|
-| `permissionMode` | `"bypassPermissions"`, `"acceptEdits"`, `"default"`, `"delegate"`, `"dontAsk"`, `"plan"` |
-| `allowedTools` | Tool name whitelist |
-| `disallowedTools` | Tool name blacklist |
-| `disableSlashCommands` | Disable all slash commands |
-| `maxBudgetUsd` | Spending cap in USD |
-| `mcpConfig` | [Model Context Protocol](https://modelcontextprotocol.io) server configuration files |
-| `mcpDebug` | Enable MCP debug logging |
-| `addDir` | Additional context directories |
-| `file` | Files to inject into context |
-| `fromPr` | Pull request URL or number to use as additional context |
-| `fallbackModel` | Model to use if the primary model is unavailable |
-| `appendSystemPrompt` | Text appended to the system prompt |
-| `agents` | Multi-agent configuration as a map of agent definitions or JSON string |
-| `betas` | Beta feature flags to enable |
-| `pluginDir` | Plugin directories for Claude Code skills |
-| `resume` / `sessionId` | Resume a previous session by ID |
-| `settings` / `settingSources` | Override settings file or sources |
-| `jsonSchema` | JSON schema string for structured output |
-| `includePartialMessages` | Stream partial assistant messages |
-| `inputFormat` | `"text"` or `"stream-json"` for input |
-| `outputFormat` | `"text"`, `"json"`, or `"stream-json"` (default: `"stream-json"`) |
-
-When `yolo` is `true` (default), the agent passes `--allow-dangerously-skip-permissions`, `--dangerously-skip-permissions`, and `--permission-mode bypassPermissions` unless `permissionMode` is explicitly set.
-
-### PR Context
-
-The `fromPr` option passes `--from-pr <value>` to the Claude CLI, loading the diff and metadata of the specified pull request into the conversation context. Accepts a PR URL or number:
-
-```ts
-const claude = new ClaudeCodeAgent({
-  model: "claude-sonnet-4-20250514",
-  fromPr: "https://github.com/org/repo/pull/42",
+  allowedTools?: string[]; disallowedTools?: string[]; disableSlashCommands?: boolean;
+  addDir?: string[]; file?: string[]; fromPr?: string; fallbackModel?: string;
+  appendSystemPrompt?: string; agents?: Record<string, { description?: string; prompt?: string }> | string;
+  betas?: string[]; pluginDir?: string[]; resume?: string; sessionId?: string;
+  mcpConfig?: string[]; mcpDebug?: boolean; maxBudgetUsd?: number; jsonSchema?: string;
+  outputFormat?: "text" | "json" | "stream-json"; // default stream-json
 });
 ```
 
-Smithers does not fetch the PR itself; the Claude CLI resolves and loads it.
-
----
-
-## CodexAgent
-
-Wraps `codex` CLI using `codex exec` with stdin input.
-
 ```ts
-const codex = new CodexAgent({
-  model: "gpt-4.1",
-  sandbox: "workspace-write",
-  fullAuto: true,
-});
-```
-
-### Codex-Specific Options
-
-```ts
-type CodexAgentOptions = BaseCliAgentOptions & {
-  config?: Record<string, string | number | boolean | object | null> | string[];
-  enable?: string[];
-  disable?: string[];
-  image?: string[];
-  oss?: boolean;
-  localProvider?: string;
+import { CodexAgent } from "smithers-orchestrator";
+new CodexAgent({
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
-  profile?: string;
-  fullAuto?: boolean;
-  dangerouslyBypassApprovalsAndSandbox?: boolean;
-  cd?: string;
-  skipGitRepoCheck?: boolean;
-  addDir?: string[];
-  outputSchema?: string;
-  color?: "always" | "never" | "auto";
-  json?: boolean;
-  outputLastMessage?: string;
-};
-```
-
-| Option | Description |
-|---|---|
-| `sandbox` | `"read-only"`, `"workspace-write"`, or `"danger-full-access"` |
-| `fullAuto` | Full auto mode (no confirmations) |
-| `dangerouslyBypassApprovalsAndSandbox` | Skip all [approval](/concepts/approvals) prompts and [sandbox](/components/sandbox) restrictions |
-| `config` | Configuration overrides as key-value pairs or raw strings |
-| `oss` | Use open-source models |
-| `localProvider` | Local model provider URL |
-| `image` | Image file paths to include as visual inputs |
-| `outputSchema` | Path to JSON schema file for structured output |
-| `outputLastMessage` | File path to write the last message (auto-generated if not set) |
-
-When `yolo` is `true` and `fullAuto` is not set, passes `--dangerously-bypass-approvals-and-sandbox`. If `fullAuto` is `true`, uses `--full-auto` instead.
-
-Prompt is passed via stdin using the `-` argument.
-
----
-
-## GeminiAgent
-
-Wraps the `gemini` CLI.
-
-```ts
-const gemini = new GeminiAgent({
-  model: "gemini-2.5-pro",
-  sandbox: true,
-  allowedTools: ["read_file", "write_file"],
+  fullAuto?: boolean; dangerouslyBypassApprovalsAndSandbox?: boolean;
+  config?: Record<string, unknown> | string[]; oss?: boolean; localProvider?: string;
+  image?: string[]; outputSchema?: string; outputLastMessage?: string; profile?: string;
 });
 ```
 
-### Gemini-Specific Options
-
 ```ts
-type GeminiAgentOptions = BaseCliAgentOptions & {
-  debug?: boolean;
-  sandbox?: boolean;
-  approvalMode?: "default" | "auto_edit" | "yolo" | "plan";
-  experimentalAcp?: boolean;
-  allowedMcpServerNames?: string[];
-  allowedTools?: string[];
-  extensions?: string[];
-  listExtensions?: boolean;
-  resume?: string;
-  listSessions?: boolean;
-  deleteSession?: string;
-  includeDirectories?: string[];
-  screenReader?: boolean;
-  outputFormat?: "text" | "json" | "stream-json";
-};
-```
-
-| Option | Description |
-|---|---|
-| `sandbox` | Run in [sandbox](/components/sandbox) mode |
-| `approvalMode` | `"default"`, `"auto_edit"`, `"yolo"`, or `"plan"` |
-| `allowedTools` | Tool name whitelist |
-| `allowedMcpServerNames` | MCP server name whitelist |
-| `extensions` | Gemini CLI extensions to load |
-| `resume` | Resume a previous session by ID |
-| `listSessions` / `deleteSession` | Session management |
-| `includeDirectories` | Additional directories to include |
-| `outputFormat` | `"text"`, `"json"`, or `"stream-json"` (default: `"json"`) |
-
-When `yolo` is `true` and `approvalMode` is not set, passes `--yolo`.
-
-Prompt is passed via `--prompt`.
-
-### gcloud Authentication
-
-When neither `GOOGLE_API_KEY` nor `GEMINI_API_KEY` is set, Gemini CLI uses `gcloud` application-default credentials. The diagnostics `api_key_valid` check falls back to running `gcloud auth print-access-token` to confirm that gcloud auth is configured. No extra options are required — the Gemini CLI picks up the credentials automatically from the environment:
-
-```bash
-gcloud auth application-default login
-```
-
-```ts
-// No API key needed when gcloud auth is configured
-const gemini = new GeminiAgent({ model: "gemini-2.5-pro" });
-```
-
----
-
-## PiAgent
-
-Wraps the `pi` CLI.
-
-```ts
-const pi = new PiAgent({
-  provider: "openai",
-  model: "gpt-5.2-codex",
-  mode: "text",
-  noSession: true,
+import { GeminiAgent } from "smithers-orchestrator";
+new GeminiAgent({
+  sandbox?: boolean; approvalMode?: "default" | "auto_edit" | "yolo" | "plan";
+  allowedTools?: string[]; allowedMcpServerNames?: string[];
+  extensions?: string[]; resume?: string; includeDirectories?: string[];
+  outputFormat?: "text" | "json" | "stream-json"; // default json
 });
 ```
 
-### PI-Specific Options
-
 ```ts
-type PiAgentOptions = BaseCliAgentOptions & {
-  provider?: string;
-  model?: string;
-  apiKey?: string;
-  systemPrompt?: string;
-  appendSystemPrompt?: string;
-  mode?: "text" | "json" | "rpc";
-  print?: boolean;
-  continue?: boolean;
-  resume?: boolean;
-  session?: string;
-  sessionDir?: string;
-  noSession?: boolean;
-  models?: string | string[];
-  listModels?: boolean | string;
-  tools?: string[];
-  noTools?: boolean;
-  extension?: string[];
-  noExtensions?: boolean;
-  skill?: string[];
-  noSkills?: boolean;
-  promptTemplate?: string[];
-  noPromptTemplates?: boolean;
-  theme?: string[];
-  noThemes?: boolean;
+import { PiAgent, type PiExtensionUiRequest, type PiExtensionUiResponse } from "smithers-orchestrator";
+new PiAgent({
+  provider?: string; mode?: "text" | "json" | "rpc";
+  print?: boolean; continue?: boolean; resume?: boolean; session?: string;
+  sessionDir?: string; noSession?: boolean;
+  extension?: string[]; skill?: string[]; promptTemplate?: string[]; theme?: string[];
+  tools?: string[]; noTools?: boolean; files?: string[];
   thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-  export?: string;
-  files?: string[];
-  verbose?: boolean;
-  onExtensionUiRequest?: (request: PiExtensionUiRequest) =>
-    | Promise<PiExtensionUiResponse | null>
-    | PiExtensionUiResponse
-    | null;
-};
-```
-
-| Option | Description |
-|---|---|
-| `provider` | PI provider name (`--provider`) |
-| `model` | PI model (`--model`) |
-| `apiKey` | Passed to `--api-key` (prefer env/config for secrets) |
-| `mode` | `text`, `json`, or `rpc` |
-| `print` | Force `--print` in text mode |
-| `continue` / `resume` / `session` | Session continuation controls |
-| `sessionDir` | Custom session directory |
-| `models` / `listModels` | Scoped model patterns and listing |
-| `extension` | Extension path(s) |
-| `skill` | Skill path(s) |
-| `promptTemplate` | Prompt template path(s) |
-| `theme` | Theme path(s) |
-| `tools` / `noTools` | Enable specific tools or disable built-ins |
-| `export` | Export session HTML |
-| `files` | File args passed as `@path` (text/json modes) |
-| `onExtensionUiRequest` | RPC-only handler for extension UI requests |
-| `noSession` | Disable session persistence (default `true` unless session flags set) |
-
-In text/json modes, the prompt is a positional argument and `files` emit as `@path` arguments. In rpc mode, the prompt is sent as JSON over stdin. Text mode defaults to `--print` without `--mode`; json/rpc set `--mode` and omit `--print`.
-
-For workflow hijack, Smithers automatically uses PI's structured event stream and keeps session persistence enabled regardless of `noSession`.
-
----
-
-## KimiAgent
-
-Wraps `kimi` CLI using `--print` mode.
-
-```ts
-const kimi = new KimiAgent({
-  model: "kimi-latest",
-  thinking: true,
-  timeoutMs: 300_000,
+  onExtensionUiRequest?: (req: PiExtensionUiRequest) => Promise<PiExtensionUiResponse | null>;
 });
 ```
 
-### Kimi-Specific Options
-
 ```ts
-type KimiAgentOptions = BaseCliAgentOptions & {
-  workDir?: string;
-  session?: string;
-  continue?: boolean;
-  thinking?: boolean;
-  outputFormat?: "text" | "stream-json";
-  finalMessageOnly?: boolean;
-  quiet?: boolean;
-  agent?: "default" | "okabe";
-  agentFile?: string;
-  mcpConfigFile?: string[];
-  mcpConfig?: string[];
-  skillsDir?: string;
-  maxStepsPerTurn?: number;
-  maxRetriesPerStep?: number;
-  maxRalphIterations?: number;
-  verbose?: boolean;
-  debug?: boolean;
-};
-```
-
-| Option | Description |
-|---|---|
-| `thinking` | Enable/disable thinking mode |
-| `outputFormat` | `"text"` or `"stream-json"` (default: `"text"`) |
-| `finalMessageOnly` | Only print the final assistant message |
-| `quiet` | Alias for `--print --output-format text --final-message-only` |
-| `agent` | Built-in agent spec: `"default"` or `"okabe"` |
-| `agentFile` | Path to custom agent specification file |
-| `workDir` | Override the working directory for the kimi process |
-| `session` / `continue` | Session resumption and continuation |
-| `skillsDir` | Skills directory path |
-| `mcpConfigFile` / `mcpConfig` | MCP config file(s) or inline config |
-| `maxStepsPerTurn` | Max steps in one turn |
-| `maxRetriesPerStep` | Max retries in one step |
-| `maxRalphIterations` | Extra iterations after the first turn in Loop mode |
-
-When `yolo` is `true` (default), passes `--print` which implicitly adds `--yolo`.
-
-Prompt is passed via `--prompt`.
-
-### Isolated Share Directory
-
-Kimi stores per-session metadata in `~/.kimi/` (or `$KIMI_SHARE_DIR`). When running parallel tasks, concurrent writes to this directory can corrupt `kimi.json`. `KimiAgent` automatically creates an isolated temporary directory per invocation, copies `config.toml`, `credentials`, `device_id`, and `latest_version.txt` from the default share dir, and sets `KIMI_SHARE_DIR` to the temporary copy. The directory is removed via the cleanup hook when the run completes.
-
-To opt out of isolation and use a specific directory, set `KIMI_SHARE_DIR` in `env`:
-
-```ts
-const kimi = new KimiAgent({
-  model: "kimi-latest",
-  env: { KIMI_SHARE_DIR: "/path/to/shared-kimi" },
+import { KimiAgent } from "smithers-orchestrator";
+new KimiAgent({
+  thinking?: boolean; outputFormat?: "text" | "stream-json";
+  finalMessageOnly?: boolean; quiet?: boolean;
+  agent?: "default" | "okabe"; agentFile?: string;
+  workDir?: string; session?: string; continue?: boolean;
+  skillsDir?: string; mcpConfigFile?: string[]; mcpConfig?: string[];
+  maxStepsPerTurn?: number; maxRetriesPerStep?: number; maxRalphIterations?: number;
 });
 ```
 
----
-
-## ForgeAgent
-
-Wraps `forge` CLI. Supports 300+ models via `--prompt`.
-
 ```ts
-const forge = new ForgeAgent({
-  model: "anthropic/claude-sonnet-4-20250514",
-  provider: "anthropic",
-  directory: "/path/to/project",
+import { ForgeAgent } from "smithers-orchestrator";
+new ForgeAgent({
+  directory?: string; provider?: string; agent?: string;
+  conversationId?: string; sandbox?: string; restricted?: boolean;
+  workflow?: string; event?: string; conversation?: string;
 });
 ```
 
-### Forge-Specific Options
-
 ```ts
-type ForgeAgentOptions = BaseCliAgentOptions & {
-  directory?: string;       // -C, --directory <DIR>
-  provider?: string;        // --provider <PROVIDER>
-  agent?: string;           // --agent <AGENT>
-  conversationId?: string;  // --conversation-id <ID>
-  sandbox?: string;         // --sandbox <NAME>
-  restricted?: boolean;     // -r, --restricted
-  verbose?: boolean;        // --verbose
-  workflow?: string;        // -w, --workflow <FILE>
-  event?: string;           // -e, --event <JSON>
-  conversation?: string;    // --conversation <FILE>
-};
-```
-
-| Option | Description |
-|---|---|
-| `directory` | Working directory (`-C`); defaults to `cwd` |
-| `provider` | Model provider name |
-| `agent` | Agent type |
-| `conversationId` | Resume conversation by ID |
-| `sandbox` | Sandbox name |
-| `restricted` | Enable restricted mode |
-| `workflow` | Workflow file path |
-| `event` | Event JSON for workflow triggers |
-| `conversation` | Conversation file path |
-
-Forge `--prompt` mode auto-approves tool use; no separate yolo flag.
-
-Prompt is passed via `--prompt`.
-
----
-
-## AmpAgent
-
-Wraps `amp` CLI using `--execute` mode.
-
-```ts
-const amp = new AmpAgent({
-  model: "claude-sonnet-4-20250514",
-  visibility: "private",
-  logLevel: "info",
-});
-```
-
-### Amp-Specific Options
-
-```ts
-type AmpAgentOptions = BaseCliAgentOptions & {
+import { AmpAgent } from "smithers-orchestrator";
+new AmpAgent({
   visibility?: "private" | "public" | "workspace" | "group";
-  mcpConfig?: string;
-  settingsFile?: string;
-  logLevel?: "error" | "warn" | "info" | "debug" | "audit";
-  logFile?: string;
+  mcpConfig?: string; settingsFile?: string;
+  logLevel?: "error" | "warn" | "info" | "debug" | "audit"; logFile?: string;
   dangerouslyAllowAll?: boolean;
-  ide?: boolean;
-  jetbrains?: boolean;
-};
-```
-
-| Option | Description |
-|---|---|
-| `visibility` | Thread visibility: `"private"`, `"public"`, `"workspace"`, `"group"` |
-| `mcpConfig` | MCP configuration file path |
-| `settingsFile` | Custom settings file path |
-| `logLevel` | `"error"`, `"warn"`, `"info"`, `"debug"`, `"audit"` |
-| `logFile` | Log output file path |
-| `dangerouslyAllowAll` | Allow all tool calls without confirmation |
-
-When `yolo` is `true` (default) or `dangerouslyAllowAll` is `true`, passes `--dangerously-allow-all`.
-
-Prompt is passed via `--execute`. Automatically passes `--no-ide`, `--no-jetbrains`, `--no-color`, and `--archive` for headless execution.
-
----
-
-## Diagnostics
-
-Before each run, Smithers launches a diagnostic probe concurrently with the agent process. If the agent fails, the probe's findings are attached to the error and printed as a warning.
-
-```ts
-// Diagnostics run automatically — no configuration required.
-// On failure, err.details.diagnostics contains the full DiagnosticReport.
-try {
-  await claude.generate({ prompt: "..." });
-} catch (err) {
-  // err.details.diagnostics.checks contains the individual check results
-}
-```
-
-Each `DiagnosticReport` contains:
-
-```ts
-type DiagnosticReport = {
-  agentId: string;        // e.g. "claude-code"
-  command: string;        // e.g. "claude"
-  timestamp: string;      // ISO 8601
-  checks: DiagnosticCheck[];
-  durationMs: number;
-};
-
-type DiagnosticCheck = {
-  id: "cli_installed" | "api_key_valid" | "rate_limit_status";
-  status: "pass" | "fail" | "skip" | "error";
-  message: string;
-  detail?: Record<string, unknown>;
-  durationMs: number;
-};
-```
-
-### CLI Installed Check
-
-The `cli_installed` check runs `which <command>` to confirm the binary is on `PATH`.
-
-- **pass** — binary found; `detail.binaryPath` contains the resolved path.
-- **fail** — binary not found; install the CLI listed in Prerequisites.
-
-### API Key Check
-
-The `api_key_valid` check verifies the API credential for each provider.
-
-| Agent | Env var checked | Method |
-|---|---|---|
-| `ClaudeCodeAgent` | `ANTHROPIC_API_KEY` | Format check (`sk-ant-*`); absent = subscription mode (pass) |
-| `CodexAgent` | `OPENAI_API_KEY` | `GET /v1/models` |
-| `GeminiAgent` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | `GET /v1beta/models`; falls back to `gcloud auth` |
-| `AmpAgent` | — | Skipped (Amp manages its own auth) |
-
-### Rate Limit Check
-
-The `rate_limit_status` check probes the provider's API for current quota headroom.
-
-- Reads standard rate-limit headers (`anthropic-ratelimit-*`, `x-ratelimit-*`).
-- Status is `skip` when using gcloud auth or subscription mode.
-- If the check passed before the run but the error text contains rate-limit patterns (e.g. `429`, `too many requests`, `quota exceeded`), the check is upgraded to `fail` post-hoc and attached to the error.
-
----
-
-## Capability Registry
-
-Every CLI agent exposes a `capabilities` property that describes its tool surface. Smithers uses this at runtime to normalize tool names and verify that the agent configuration is self-consistent.
-
-```ts
-console.log(claude.capabilities);
-// {
-//   version: 1,
-//   engine: "claude-code",
-//   runtimeTools: {},
-//   mcp: { bootstrap: "project-config", supportsProjectScope: true, supportsUserScope: true },
-//   skills: { supportsSkills: true, installMode: "plugin", smithersSkillIds: [] },
-//   humanInteraction: { supportsUiRequests: false, methods: [] },
-//   builtIns: ["default", "slash-commands"]
-// }
-```
-
-### Normalization
-
-`normalizeCapabilityRegistry` canonicalizes a registry before comparison or hashing: string lists are deduplicated and sorted, tool descriptor fields are trimmed, and empty optional values are removed.
-
-```ts
-import { normalizeCapabilityRegistry } from "smithers-orchestrator";
-
-const canonical = normalizeCapabilityRegistry(agent.capabilities);
-```
-
-`normalizeCapabilityStringList` applies the same rules to any standalone string array:
-
-```ts
-import { normalizeCapabilityStringList } from "smithers-orchestrator";
-
-normalizeCapabilityStringList(["!bash", "default", "default", " web_search "])
-// ["!bash", "default", "web_search"]
-```
-
-### Hashing
-
-`hashCapabilityRegistry` produces a stable SHA-256 hex fingerprint of the normalized registry. Use it to detect configuration drift between agent invocations or CI runs.
-
-```ts
-import { hashCapabilityRegistry } from "smithers-orchestrator";
-
-const fingerprint = hashCapabilityRegistry(agent.capabilities);
-// "a3f1c9..."
-```
-
-The hash is also returned in `getCliAgentCapabilityReport()` as `entry.fingerprint`.
-
-### Capability Doctor
-
-`getCliAgentCapabilityDoctorReport()` validates every built-in CLI agent's registry against consistency rules and returns a report with per-agent issues:
-
-```ts
-import { getCliAgentCapabilityDoctorReport } from "smithers-orchestrator";
-
-const report = getCliAgentCapabilityDoctorReport();
-if (!report.ok) {
-  console.error(formatCliAgentCapabilityDoctorReport(report));
-}
-```
-
----
-
-## Agent Contract
-
-The agent contract describes the Smithers [MCP server](/integrations/mcp-server) tool surface that is injected into an agent's context. It is separate from the capability registry — the registry describes what the agent *can* do, while the contract describes what Smithers *exposes* to the agent.
-
-### Raw vs. Semantic Tool Surface
-
-`SmithersToolSurface` is `"raw"` or `"semantic"`. The semantic surface groups and renames tools to reduce noise for general-purpose agents. The raw surface exposes every tool name as-is.
-
-`smithers ask` builds the MCP launch configuration and probes the live tool surface internally. For direct package use, build a contract from the tools you expose to an agent:
-
-```ts
-import { createSmithersAgentContract } from "smithers-orchestrator";
-
-const contract = createSmithersAgentContract({
-  serverName: "smithers",
-  toolSurface: "semantic",
-  tools: [
-    {
-      name: "list_workflows",
-      description: "List discovered local Smithers workflows.",
-    },
-    {
-      name: "run_workflow",
-      description: "Start a discovered workflow directly through the engine.",
-    },
-  ],
 });
 ```
 
-### Prompt Guidance
+## Hijack handoff
 
-`contract.promptGuidance` is a compact, instruction-friendly string listing available tools grouped by category. Inject it into an agent's system prompt:
+Every built-in CLI agent supports `bunx smithers-orchestrator hijack <runId>`, which relaunches the agent in its native CLI session for interactive takeover. Smithers persists the native session id (or conversation id for Forge / thread id for Amp) on each task event; on hijack it waits for a safe boundary between blocking tool calls, then reopens the session via the vendor's resume flag (`claude --resume`, `codex resume`, `gemini --resume`, `pi --session`, `kimi --session`, `forge --conversation-id`, `amp threads continue`). On clean exit the workflow resumes in detached mode. See [How it works → Durability and resume](/how-it-works#durability--resume).
 
-```ts
-const claude = new ClaudeCodeAgent({
-  systemPrompt: contract.promptGuidance,
-});
-```
+## Notes
 
-Example output:
-
-```
-You have access to the live Smithers semantic MCP surface on server "smithers".
-Only rely on the tool names listed here.
-For workflow discovery and launch, use `list_workflows`, `run_workflow`.
-For run inspection and control, use `cancel`, `get_run`, `list_runs`.
-Potentially destructive tools: `cancel`, `run_workflow`. Confirm intent before using them.
-```
-
-### Docs Guidance
-
-`contract.docsGuidance` is a Markdown table listing every tool with its category, destructive flag, and description. Suitable for injecting into documentation or longer context windows:
-
-```ts
-console.log(contract.docsGuidance);
-// ## Smithers semantic Tool Surface
-// | Tool | Category | Destructive | Description |
-// | --- | --- | --- | --- |
-// | `list_workflows` | workflows | no | List available workflows. |
-// ...
-```
-
----
-
-## Token and Usage Tracking
-
-Smithers extracts token usage from raw CLI output and populates the `usage` field of the returned `GenerateTextResult`. This works across all built-in agents without additional configuration.
-
-```ts
-const result = await claude.generate({ prompt: "..." });
-console.log(result.usage);
-// {
-//   inputTokens: 1024,
-//   outputTokens: 512,
-//   inputTokenDetails: { cacheReadTokens: 128, cacheWriteTokens: 64 },
-//   outputTokenDetails: { reasoningTokens: 0 },
-//   totalTokens: 1536
-// }
-```
-
-### Usage Extraction
-
-`BaseCliAgent` parses raw CLI stdout to find token counts. The extraction strategy is format-specific:
-
-| Agent / Format | Source |
-|---|---|
-| `ClaudeCodeAgent` `stream-json` | `message_start.message.usage` (input) + `message_delta.usage` (output) |
-| `CodexAgent` `--json` | `turn.completed.usage` |
-| `GeminiAgent` `json` | `stats.models[*].tokens` |
-| Generic NDJSON | Any line with a `usage` object containing `input_tokens` / `output_tokens` |
-
-Cache read tokens (`cache_read_input_tokens`, `cached_input_tokens`), cache write tokens (`cache_creation_input_tokens`), and reasoning tokens (`reasoning_tokens`) are accumulated when present.
-
----
-
-## BaseCliAgent Internals
-
-### Cleanup Hook
-
-`CliCommandSpec.cleanup` is an optional `async () => void` returned by `buildCommand`. It runs after the agent process exits, whether the run succeeds or fails. Use it to remove temporary files:
-
-```ts
-// KimiAgent uses this pattern internally:
-return {
-  command: "kimi",
-  args,
-  env: { KIMI_SHARE_DIR: isolatedDir },
-  cleanup: async () => {
-    rmSync(isolatedDir, { recursive: true, force: true });
-  },
-};
-```
-
-The cleanup runs under `Effect.ensuring`, so it is guaranteed to execute even when the command throws.
-
-### Stdout Error Detection
-
-Some CLIs exit with code 0 but print an error message to stdout. The `stdoutErrorPatterns` field on `CliCommandSpec` accepts an array of `RegExp` patterns. If any pattern matches the cleaned stdout text (after banner stripping), the agent throws `AGENT_CLI_ERROR` with the matched content as the message:
-
-```ts
-return {
-  command: "mycli",
-  args,
-  stdoutErrorPatterns: [/^Error:/m, /authentication failed/i],
-};
-```
-
-Detection is skipped when stdout starts with `{` or `[` (i.e., JSON output).
-
-### Banner Stripping
-
-CLI tools occasionally print version banners, update notices, or telemetry lines to stdout before the model response. The `stdoutBannerPatterns` field on `CliCommandSpec` accepts an array of `RegExp` patterns that are stripped from stdout before text extraction:
-
-```ts
-return {
-  command: "mycli",
-  args,
-  stdoutBannerPatterns: [/^mycli v\d+\.\d+\.\d+.*\n/m],
-  errorOnBannerOnly: true, // throw if only a banner was printed (no model response)
-};
-```
-
----
-
-## Agent Interface
-
-All CLI agents implement two methods.
-
-### `generate(options)`
-
-Runs the CLI synchronously and returns a `GenerateTextResult`:
-
-```ts
-const result = await claude.generate({
-  prompt: "Explain the architecture of this codebase.",
-});
-console.log(result.text);
-```
-
-1. Extracts prompt from `options.prompt` (string) or `options.messages` (array).
-2. Builds the CLI command with all configured flags.
-3. Spawns the process and captures stdout/stderr.
-4. For `json`/`stream-json` output, extracts text from the JSON payload.
-5. Returns the result as a `GenerateTextResult`.
-
-### `stream(options)`
-
-Calls `generate()` internally and wraps the result as a `StreamTextResult`. Not truly streamed.
-
-```ts
-const stream = await claude.stream({ prompt: "Review this code." });
-for await (const chunk of stream.textStream) {
-  process.stdout.write(chunk);
-}
-```
-
----
-
-## Message Handling
-
-When called with messages, agents convert them to a text prompt:
-
-- System messages are extracted and prepended as a system prompt.
-- User/assistant messages are formatted as `ROLE: content`, joined with double newlines.
-- Message system prompt is combined with any `systemPrompt` on the agent instance.
-
----
-
-## Example: Multi-Agent Workflow
-
-```tsx
-import { ClaudeCodeAgent, CodexAgent } from "smithers-orchestrator";
-
-const reviewer = new ClaudeCodeAgent({
-  model: "claude-sonnet-4-20250514",
-  systemPrompt: "You are a thorough code reviewer.",
-  timeoutMs: 120_000,
-});
-
-const fixer = new CodexAgent({
-  model: "gpt-4.1",
-  fullAuto: true,
-  timeoutMs: 180_000,
-});
-
-const { Workflow, smithers, outputs } = createSmithers({
-  review: z.object({ summary: z.string() }),
-  fix: z.object({ result: z.string() }),
-});
-
-export default smithers((ctx) => (
-  <Workflow name="review-and-fix">
-    <Task id="review" output={outputs.review} agent={reviewer}>
-      {`Review the changes in this PR and identify issues.`}
-    </Task>
-    <Task id="fix" output={outputs.fix} agent={fixer}>
-      {`Fix these issues: ${ctx.output(outputs.review, { nodeId: "review" }).summary}`}
-    </Task>
-  </Workflow>
-));
-```
-
-## Next Steps
-
-- [SDK Agents](/integrations/sdk-agents)
-- [MCP Server](/integrations/mcp-server)
-- [Agents and Tools](/concepts/agents-and-tools)
-- [Multi-Agent Review Example](/examples/multi-agent-review)
+- **Yolo defaults.** `yolo: true` (default) maps to each CLI's "skip approvals" flag (`--dangerously-skip-permissions`, `--dangerously-bypass-approvals-and-sandbox`, `--yolo`, `--dangerously-allow-all`). Set `yolo: false` or use the agent-specific approval option for tighter control.
+- **PI rpc mode** sends prompts as JSON over stdin and is required for `onExtensionUiRequest` callbacks; text/json modes pass the prompt as a positional arg with `files` emitted as `@path`.
+- **Kimi share dir.** `KimiAgent` auto-creates an isolated `KIMI_SHARE_DIR` per invocation to prevent `kimi.json` corruption under concurrent runs. Set `env.KIMI_SHARE_DIR` to opt out.
+- **Gemini auth** falls back to `gcloud auth application-default login` when neither `GOOGLE_API_KEY` nor `GEMINI_API_KEY` is set.
+- **Non-idempotent retries.** When a `<Task>` retries, Smithers prepends a warning listing previously-called side-effect tools so the agent can verify external state before re-invoking them.

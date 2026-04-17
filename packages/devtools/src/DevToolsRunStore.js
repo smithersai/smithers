@@ -1,22 +1,30 @@
-
+/** @typedef {import("./DevToolsEventBus.ts").DevToolsEventBus} DevToolsEventBus */
 /** @typedef {import("./DevToolsRunStoreOptions.ts").DevToolsRunStoreOptions} DevToolsRunStoreOptions */
 /** @typedef {import("./RunExecutionState.ts").RunExecutionState} RunExecutionState */
 /** @typedef {import("./TaskExecutionState.ts").TaskExecutionState} TaskExecutionState */
+
 export class DevToolsRunStore {
+    /** @type {DevToolsRunStoreOptions} */
     options;
+    /** @type {Map<string, RunExecutionState>} */
     _runs = new Map();
+    /** @type {Array<{ bus: DevToolsEventBus; handler: (event: any) => void }>} */
     _eventBusListeners = [];
     /**
-   * @param {DevToolsRunStoreOptions} [options]
-   */
+     * @param {DevToolsRunStoreOptions} [options]
+     */
     constructor(options = {}) {
         this.options = options;
     }
-    /** Attach to a Smithers EventBus-like source. */
+    /**
+     * Attach to a Smithers EventBus-like source.
+     * @param {DevToolsEventBus} bus
+     * @returns {this}
+     */
     attachEventBus(bus) {
         /**
-     * @param {any} event
-     */
+         * @param {any} event
+         */
         const handler = (event) => this.processEngineEvent(event);
         bus.on("event", handler);
         this._eventBusListeners.push({ bus, handler });
@@ -29,15 +37,28 @@ export class DevToolsRunStore {
         }
         this._eventBusListeners = [];
     }
-    /** Get execution state for a specific run. */
+    /**
+     * Get execution state for a specific run.
+     * @param {string} runId
+     * @returns {RunExecutionState | undefined}
+     */
     getRun(runId) {
         return this._runs.get(runId);
     }
-    /** Get all tracked runs. */
+    /**
+     * Get all tracked runs.
+     * @returns {Map<string, RunExecutionState>}
+     */
     get runs() {
         return this._runs;
     }
-    /** Get task execution state by nodeId within a run. Searches all iterations. */
+    /**
+     * Get task execution state by nodeId within a run. Searches all iterations.
+     * @param {string} runId
+     * @param {string} nodeId
+     * @param {number} [iteration]
+     * @returns {TaskExecutionState | undefined}
+     */
     getTaskState(runId, nodeId, iteration) {
         const run = this._runs.get(runId);
         if (!run)
@@ -52,8 +73,8 @@ export class DevToolsRunStore {
         return undefined;
     }
     /**
-   * @param {any} event
-   */
+     * @param {any} event
+     */
     processEngineEvent(event) {
         if (!event || !event.type || !event.runId)
             return;
@@ -165,9 +186,9 @@ export class DevToolsRunStore {
         this.options.onEngineEvent?.(event);
     }
     /**
-   * @param {string} runId
-   * @returns {RunExecutionState}
-   */
+     * @param {string} runId
+     * @returns {RunExecutionState}
+     */
     ensureRun(runId) {
         let run = this._runs.get(runId);
         if (!run) {
@@ -183,11 +204,11 @@ export class DevToolsRunStore {
         return run;
     }
     /**
-   * @param {RunExecutionState} run
-   * @param {string} nodeId
-   * @param {number} iteration
-   * @returns {TaskExecutionState}
-   */
+     * @param {RunExecutionState} run
+     * @param {string} nodeId
+     * @param {number} iteration
+     * @returns {TaskExecutionState}
+     */
     ensureTask(run, nodeId, iteration) {
         const key = `${nodeId}::${iteration}`;
         let task = run.tasks.get(key);

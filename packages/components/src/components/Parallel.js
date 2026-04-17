@@ -1,5 +1,5 @@
 import React from "react";
-/** @typedef {import("./Parallel.ts").ParallelProps} ParallelProps */
+/** @typedef {import("./ParallelProps.ts").ParallelProps} ParallelProps */
 
 /**
  * @param {ParallelProps} props

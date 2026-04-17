@@ -23,7 +23,7 @@ import { toSmithersError } from "@smithers/errors/toSmithersError";
 /**
  * @typedef {{ cwd: () => string; openDb: typeof findAndOpenDb; }} SemanticToolContext
  */
-/** @typedef {import("./semantic-tools.ts").SemanticToolDefinition} SemanticToolDefinition */
+/** @typedef {import("./SemanticToolDefinition.ts").SemanticToolDefinition} SemanticToolDefinition */
 
 export const SEMANTIC_TOOL_NAMES = [
     "list_workflows",

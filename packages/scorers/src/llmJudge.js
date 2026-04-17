@@ -1,3 +1,8 @@
+/** @typedef {import("./LlmJudgeConfig.js").LlmJudgeConfig} LlmJudgeConfig */
+/** @typedef {import("./types.js").Scorer} Scorer */
+/** @typedef {import("./types.js").ScorerInput} ScorerInput */
+/** @typedef {import("./types.js").ScoreResult} ScoreResult */
+
 /**
  * Creates an LLM-as-judge scorer that delegates evaluation to an AI agent.
  *
@@ -15,6 +20,9 @@
  *     `Rate the professionalism of this text (0-1 JSON):\n\n${String(output)}`,
  * });
  * ```
+ *
+ * @param {LlmJudgeConfig} config
+ * @returns {Scorer}
  */
 export function llmJudge(config) {
     const { id, name, description, judge, instructions, promptTemplate } = config;

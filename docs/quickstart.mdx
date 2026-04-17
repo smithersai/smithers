@@ -1,61 +1,27 @@
 ---
 title: Quickstart
-description: "Get Smithers running end to end: scaffold the workflow pack, launch a workflow, inspect the run, and choose your next path."
+description: Scaffold and run a Smithers workflow in two commands.
 ---
-
-By the end of this page you will have done the four things that matter for a real first run:
-
-1. installed the [workflow pack](/installation)
-2. launched a workflow
-3. inspected the resulting run
-4. chosen whether to go deeper on [CLI operations](/cli/quickstart) or [JSX authoring](/jsx/quickstart)
-
-## 1. Scaffold the Workflow Pack
 
 ```bash
 bunx smithers-orchestrator init
+bunx smithers-orchestrator workflow run implement --prompt "Add rate limiting"
 ```
 
-That creates a local `.smithers/` directory with seeded workflows, shared prompts, reusable components, and agent configuration.
+`init` scaffolds `.smithers/` (workflows, prompts, components, agent config). The `workflow run` command launches one of the seeded workflows.
 
-## 2. Launch a Seeded Workflow
-
-```bash
-bunx smithers-orchestrator workflow run implement --prompt "Add rate limiting to the API"
-```
-
-This runs the seeded `implement` workflow that `init` installs into `.smithers/workflows/`.
-It is the fastest way to see Smithers behave like a [workflow runtime](/concepts/workflows-overview) instead of a library on a shelf.
-
-## 3. Inspect the Run
-
-Once the workflow starts, use the CLI to see what happened:
+Inspect the run:
 
 ```bash
 bunx smithers-orchestrator ps
 bunx smithers-orchestrator inspect <run-id>
-bunx smithers-orchestrator logs <run-id> --tail 20 --follow false
+bunx smithers-orchestrator logs <run-id> --tail 20
 ```
 
-Use `ps` to find the run ID if you do not already have it.
+Resume after a crash:
 
-## 4. Understand What You Just Used
+```bash
+bunx smithers-orchestrator up workflow.tsx --run-id <run-id> --resume true
+```
 
-Every workflow gets:
-
-- [SQLite](https://sqlite.org) persistence
-- [Resume after restarts](/concepts/suspend-and-resume)
-- Retries, [approvals](/concepts/approvals), [loops](/components/loop)
-- Observability and [CLI tooling](/cli/overview)
-
-You just used both Smithers surfaces together:
-
-- the [workflow pack](/installation) gave you runnable workflows
-- the [CLI](/cli/overview) launched, inspected, and reported on the run
-
-## Next Steps
-
-- [CLI Quickstart](/cli/quickstart) to learn the terminal workflow in a more systematic way.
-- [CLI Overview](/cli/overview) for the full command surface, including logs, approvals, and signals.
-- [JSX Quickstart](/jsx/quickstart) to build a workflow from scratch.
-- [Workflows Overview](/concepts/workflows-overview) to connect the run you just started to the runtime model.
+For a full worked example see the [Tour](/tour). For every CLI command see the [CLI catalog](/cli/overview).

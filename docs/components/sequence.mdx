@@ -1,45 +1,20 @@
 ---
 title: <Sequence>
-description: Execute child tasks one after another in the order they appear.
+description: Run children in source order.
 ---
 
-```tsx
+```ts
 import { Sequence } from "smithers-orchestrator";
+
+type SequenceProps = {
+  skipIf?: boolean;
+  children?: ReactNode;
+};
 ```
-
-## Props
-
-| Prop | Type | Default | Description |
-| --- | --- | --- | --- |
-| `skipIf` | `boolean` | `false` | Skip the entire sequence. Returns `null`; no children are mounted. |
-| `children` | `ReactNode` | `undefined` | [`<Task>`](/components/task) and [control-flow components](/concepts/control-flow) to execute sequentially. |
-
-## Usage
-
-```tsx
-<Workflow name="pipeline">
-  <Sequence>
-    <Task id="fetch" output={outputs.fetch}>
-      {{ url: "https://api.example.com/data" }}
-    </Task>
-    <Task id="transform" output={outputs.transform} agent={transformer}>
-      {`Transform the data: ${ctx.output(outputs.fetch, { nodeId: "fetch" }).url}`}
-    </Task>
-    <Task id="store" output={outputs.store}>
-      {{ stored: true }}
-    </Task>
-  </Sequence>
-</Workflow>
-```
-
-## When explicit Sequence is needed
-
-[`<Workflow>`](/components/workflow) sequences direct children implicitly. An explicit `<Sequence>` is needed inside other [control-flow components](/concepts/control-flow):
 
 ```tsx
 <Workflow name="build-and-deploy">
   <Parallel maxConcurrency={2}>
-    {/* Each branch runs its own steps in order */}
     <Sequence>
       <Task id="build-frontend" output={outputs.buildFrontend}>
         {{ status: "built" }}
@@ -60,29 +35,7 @@ import { Sequence } from "smithers-orchestrator";
 </Workflow>
 ```
 
-The two `<Sequence>` groups run in parallel; tasks within each group run sequentially.
-
-## Conditional skipping
-
-```tsx
-<Sequence skipIf={ctx.input.skipTests}>
-  <Task id="unit-tests" output={outputs.unitTests}>
-    {{ passed: true }}
-  </Task>
-  <Task id="integration-tests" output={outputs.integrationTests}>
-    {{ passed: true }}
-  </Task>
-</Sequence>
-```
-
-When `skipIf` is `true`, the component returns `null`. No children are mounted into the execution plan.
-
-## Rendering
-
-`<Sequence>` renders as a `<smithers:sequence>` host element (or `null` when skipped). The runtime assigns ordinals to tasks in source order.
-
 ## Notes
 
-- Child ordering matches JSX source order.
-- Nestable inside [`<Parallel>`](/components/parallel), [`<Branch>`](/components/branch), [`<Loop>`](/components/loop), or another `<Sequence>`.
-- An empty `<Sequence>` is valid and produces no tasks.
+- `<Workflow>` sequences direct children implicitly; `<Sequence>` is only needed inside other control-flow components.
+- Empty `<Sequence>` is valid and produces no tasks.

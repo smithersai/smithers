@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createSemanticToolDefinitions, } from "./semantic-tools.js";
-/** @typedef {import("./semantic-server.ts").SemanticMcpServerOptions} SemanticMcpServerOptions */
-/** @typedef {import("./semantic-tools.ts").SemanticToolDefinition} SemanticToolDefinition */
+/** @typedef {import("./SemanticMcpServerOptions.ts").SemanticMcpServerOptions} SemanticMcpServerOptions */
+/** @typedef {import("./SemanticToolDefinition.ts").SemanticToolDefinition} SemanticToolDefinition */
 
 /**
  * @param {McpServer} server

@@ -1,9 +1,7 @@
 import { Cli, z } from "incur";
 import { Effect } from "effect";
 import { createSmithersIdeService, } from "./SmithersIdeService.js";
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeService} SmithersIdeService */
-
-/** @typedef {import("./SmithersIdeService.ts").SmithersIdeServiceConfig} SmithersIdeServiceConfig */
+/** @typedef {import("./SmithersIdeServiceConfig.ts").SmithersIdeServiceConfig} SmithersIdeServiceConfig */
 
 export const SMITHERS_IDE_TOOL_NAMES = [
     "smithers_ide_open_file",

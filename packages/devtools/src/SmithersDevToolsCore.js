@@ -3,6 +3,7 @@ import { collectTasks } from "./collectTasks.js";
 import { DevToolsRunStore } from "./DevToolsRunStore.js";
 import { findNodeById } from "./findNodeById.js";
 import { printTree } from "./printTree.js";
+
 /** @typedef {import("./DevToolsEventBus.ts").DevToolsEventBus} DevToolsEventBus */
 /** @typedef {import("./DevToolsNode.ts").DevToolsNode} DevToolsNode */
 /** @typedef {import("./DevToolsSnapshot.ts").DevToolsSnapshot} DevToolsSnapshot */
@@ -11,54 +12,57 @@ import { printTree } from "./printTree.js";
 /** @typedef {import("./TaskExecutionState.ts").TaskExecutionState} TaskExecutionState */
 
 export class SmithersDevToolsCore {
+    /** @type {SmithersDevToolsOptions} */
     options;
+    /** @type {DevToolsSnapshot | null} */
     _lastSnapshot = null;
+    /** @type {DevToolsRunStore} */
     _runStore;
     /**
-   * @param {SmithersDevToolsOptions} [options]
-   */
+     * @param {SmithersDevToolsOptions} [options]
+     */
     constructor(options = {}) {
         this.options = options;
         this._runStore = new DevToolsRunStore(options);
     }
     /**
-   * @param {DevToolsNode | null} tree
-   * @returns {DevToolsSnapshot}
-   */
+     * @param {DevToolsNode | null} tree
+     * @returns {DevToolsSnapshot}
+     */
     captureSnapshot(tree) {
         const snapshot = buildSnapshot(tree);
         this._lastSnapshot = snapshot;
         return snapshot;
     }
     /**
-   * @param {DevToolsSnapshot} [snapshot]
-   * @returns {DevToolsSnapshot}
-   */
+     * @param {DevToolsSnapshot} [snapshot]
+     * @returns {DevToolsSnapshot}
+     */
     emitCommit(snapshot = this._lastSnapshot ?? buildSnapshot(null)) {
         this.options.onCommit?.("commit", snapshot);
         return snapshot;
     }
     /**
-   * @param {DevToolsNode | null} tree
-   * @returns {DevToolsSnapshot}
-   */
+     * @param {DevToolsNode | null} tree
+     * @returns {DevToolsSnapshot}
+     */
     captureCommit(tree) {
         const snapshot = this.captureSnapshot(tree);
         this.emitCommit(snapshot);
         return snapshot;
     }
     /**
-   * @param {DevToolsSnapshot} [snapshot]
-   * @returns {DevToolsSnapshot}
-   */
+     * @param {DevToolsSnapshot} [snapshot]
+     * @returns {DevToolsSnapshot}
+     */
     emitUnmount(snapshot = this._lastSnapshot ?? buildSnapshot(null)) {
         this.options.onCommit?.("unmount", snapshot);
         return snapshot;
     }
     /**
-   * @param {DevToolsEventBus} bus
-   * @returns {this}
-   */
+     * @param {DevToolsEventBus} bus
+     * @returns {this}
+     */
     attachEventBus(bus) {
         this._runStore.attachEventBus(bus);
         return this;
@@ -67,51 +71,70 @@ export class SmithersDevToolsCore {
         this._runStore.detachEventBuses();
     }
     /**
-   * @param {any} event
-   */
+     * @param {any} event
+     */
     processEngineEvent(event) {
         this._runStore.processEngineEvent(event);
     }
     /**
-   * @param {string} runId
-   * @returns {RunExecutionState | undefined}
-   */
+     * @param {string} runId
+     * @returns {RunExecutionState | undefined}
+     */
     getRun(runId) {
         return this._runStore.getRun(runId);
     }
+    /**
+     * @returns {Map<string, RunExecutionState>}
+     */
     get runs() {
         return this._runStore.runs;
     }
     /**
-   * @param {string} runId
-   * @param {string} nodeId
-   * @param {number} [iteration]
-   * @returns {TaskExecutionState | undefined}
-   */
+     * @param {string} runId
+     * @param {string} nodeId
+     * @param {number} [iteration]
+     * @returns {TaskExecutionState | undefined}
+     */
     getTaskState(runId, nodeId, iteration) {
         return this._runStore.getTaskState(runId, nodeId, iteration);
     }
-    /** Get the last captured snapshot. */
+    /**
+     * Get the last captured snapshot.
+     * @returns {DevToolsSnapshot | null}
+     */
     get snapshot() {
         return this._lastSnapshot;
     }
-    /** Get the current tree (shorthand). */
+    /**
+     * Get the current tree (shorthand).
+     * @returns {DevToolsNode | null}
+     */
     get tree() {
         return this._lastSnapshot?.tree ?? null;
     }
-    /** Pretty-print the current tree to a string. */
+    /**
+     * Pretty-print the current tree to a string.
+     * @returns {string}
+     */
     printTree() {
         if (!this._lastSnapshot?.tree)
             return "(no tree captured yet)";
         return printTree(this._lastSnapshot.tree);
     }
-    /** Find a node by task nodeId. */
+    /**
+     * Find a node by task nodeId.
+     * @param {string} nodeId
+     * @returns {DevToolsNode | null}
+     */
     findTask(nodeId) {
         if (!this._lastSnapshot?.tree)
             return null;
         return findNodeById(this._lastSnapshot.tree, nodeId);
     }
-    /** List all tasks in the current tree. */
+    /**
+     * List all tasks in the current tree.
+     * @returns {DevToolsNode[]}
+     */
     listTasks() {
         if (!this._lastSnapshot?.tree)
             return [];

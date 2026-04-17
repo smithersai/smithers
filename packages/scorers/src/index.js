@@ -1,17 +1,17 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./index.ts").AggregateOptions} AggregateOptions */
-/** @typedef {import("./index.ts").AggregateScore} AggregateScore */
-/** @typedef {import("./index.ts").CreateScorerConfig} CreateScorerConfig */
-/** @typedef {import("./index.ts").LlmJudgeConfig} LlmJudgeConfig */
-/** @typedef {import("./index.ts").SamplingConfig} SamplingConfig */
-/** @typedef {import("./index.ts").Scorer} Scorer */
-/** @typedef {import("./index.ts").ScorerBinding} ScorerBinding */
-/** @typedef {import("./index.ts").ScorerContext} ScorerContext */
-/** @typedef {import("./index.ts").ScoreResult} ScoreResult */
-/** @typedef {import("./index.ts").ScorerFn} ScorerFn */
-/** @typedef {import("./index.ts").ScorerInput} ScorerInput */
-/** @typedef {import("./index.ts").ScoreRow} ScoreRow */
-/** @typedef {import("./index.ts").ScorersMap} ScorersMap */
+/** @typedef {import("./AggregateOptions.js").AggregateOptions} AggregateOptions */
+/** @typedef {import("./types.js").AggregateScore} AggregateScore */
+/** @typedef {import("./CreateScorerConfig.js").CreateScorerConfig} CreateScorerConfig */
+/** @typedef {import("./LlmJudgeConfig.js").LlmJudgeConfig} LlmJudgeConfig */
+/** @typedef {import("./types.js").SamplingConfig} SamplingConfig */
+/** @typedef {import("./types.js").Scorer} Scorer */
+/** @typedef {import("./types.js").ScorerBinding} ScorerBinding */
+/** @typedef {import("./types.js").ScorerContext} ScorerContext */
+/** @typedef {import("./types.js").ScoreResult} ScoreResult */
+/** @typedef {import("./types.js").ScorerFn} ScorerFn */
+/** @typedef {import("./types.js").ScorerInput} ScorerInput */
+/** @typedef {import("./types.js").ScoreRow} ScoreRow */
+/** @typedef {import("./types.js").ScorersMap} ScorersMap */
 // @smithers-type-exports-end
 
 // Factories

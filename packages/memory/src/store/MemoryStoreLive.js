@@ -11,6 +11,11 @@ import { memoryMessageSaves } from "../memoryMessageSaves.js";
 import { MemoryStoreDb } from "./MemoryStoreDb.js";
 import { MemoryStoreService } from "./MemoryStoreService.js";
 /** @typedef {import("./MemoryStore.ts").MemoryStore} MemoryStore */
+/** @typedef {import("../MemoryNamespace.ts").MemoryNamespace} MemoryNamespace */
+/** @typedef {import("../MemoryFact.ts").MemoryFact} MemoryFact */
+/** @typedef {import("../MemoryMessage.ts").MemoryMessage} MemoryMessage */
+/** @typedef {import("../MemoryThread.ts").MemoryThread} MemoryThread */
+/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
 
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} BunSQLiteDatabase */
 
@@ -297,4 +302,5 @@ function makeMemoryStore(db) {
         deleteExpiredFactsEffect,
     };
 }
+/** @type {Layer.Layer<MemoryStoreService, never, BunSQLiteDatabase<any>>} */
 export const MemoryStoreLive = Layer.effect(MemoryStoreService, Effect.map(MemoryStoreDb, (db) => makeMemoryStore(db)));

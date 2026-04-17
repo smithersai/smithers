@@ -10,77 +10,34 @@
   "navigation": {
     "groups": [
       {
-        "group": "Getting Started",
+        "group": "Start",
         "pages": [
           "index",
           "introduction",
           "installation",
-          "quickstart"
+          "quickstart",
+          "tour"
+        ]
+      },
+      {
+        "group": "Learn",
+        "pages": [
+          "how-it-works",
+          "recipes"
         ]
       },
       {
         "group": "Build Workflows",
         "pages": [
-          "jsx/overview",
-          "jsx/installation",
-          "jsx/quickstart",
-          "guides/tutorial-workflow",
-          "guides/project-structure"
+          "jsx/overview"
         ]
       },
       {
         "group": "Run and Operate",
         "pages": [
           "cli/quickstart",
-          "cli/overview"
-        ]
-      },
-      {
-        "group": "Core Concepts",
-        "pages": [
-          "concepts/workflows-overview",
-          "concepts/execution-model",
-          "concepts/workflow-state",
-          "concepts/control-flow",
-          "concepts/agents-and-tools",
-          "concepts/human-in-the-loop",
-          "concepts/suspend-and-resume",
-          "concepts/approvals",
-          "concepts/caching",
-          "concepts/data-model",
-          "concepts/unidirectional-dataflow",
-          "concepts/reactivity",
-          "concepts/time-travel",
-          "concepts/evals",
-          "concepts/memory",
-          "concepts/openapi-tools",
-          "concepts/planner-internals"
-        ]
-      },
-      {
-        "group": "Guides",
-        "pages": [
-          "guides/best-practices",
-          "guides/review-loop",
-          "guides/patterns",
-          "guides/model-selection",
-          "guides/structured-output",
-          "guides/error-handling",
-          "guides/resumability",
-          "guides/hot-reload",
-          "guides/mdx-prompts",
-          "guides/third-party-hooks",
-          "guides/dynamic-tickets",
-          "guides/vcs",
-          "guides/tui",
-          "guides/debugging",
-          "guides/monitoring-logs",
-          "guides/time-travel-quickstart",
-          "guides/evals-quickstart",
-
-          "guides/memory-quickstart",
-          "guides/openapi-tools-quickstart",
-          "guides/troubleshooting"
+          "cli/overview",
+          "guides/tui"
         ]
       },
       {
@@ -95,9 +52,8 @@
           "components/approval",
           "components/merge-queue",
           "components/worktree",
-
           {
-            "group": "Composite Components",
+            "group": "Composite",
             "pages": [
               "components/kanban",
               "components/classify-and-route",
@@ -119,7 +75,7 @@
             ]
           },
           {
-            "group": "Engine Primitives",
+            "group": "Engine",
             "pages": [
               "components/subflow",
               "components/wait-for-event",
@@ -133,7 +89,7 @@
             ]
           },
           {
-            "group": "Core Enhancements",
+            "group": "Cross-cutting",
             "pages": [
               "components/aspects",
               "components/super-smithers"
@@ -142,32 +98,34 @@
         ]
       },
       {
+        "group": "Reference",
+        "pages": [
+          "reference/types",
+          "reference/event-types",
+          "reference/errors",
+          "reference/package-configuration",
+          "reference/vcs-helpers",
+          "runtime/run-workflow",
+          "runtime/render-frame",
+          "runtime/events",
+          "runtime/revert",
+          "runtime/run-state"
+        ]
+      },
+      {
         "group": "Integrations",
         "pages": [
-          "integrations/tools",
           "integrations/integrations",
+          "integrations/tools",
           "integrations/common-tools",
           "integrations/cli-agents",
           "integrations/sdk-agents",
           "integrations/server",
-          "integrations/mcp-server",
           "integrations/serve",
           "integrations/gateway",
-          "integrations/ide",
-          "integrations/github-bot",
-          "integrations/pi-plugin",
-          "integrations/pi-extension",
+          "integrations/mcp-server",
           "integrations/pi-integration",
           "integrations/ecosystem"
-        ]
-      },
-      {
-        "group": "Runtime API",
-        "pages": [
-          "runtime/run-workflow",
-          "runtime/render-frame",
-          "runtime/events",
-          "runtime/revert"
         ]
       },
       {
@@ -197,7 +155,7 @@
             ]
           },
           {
-            "group": "Automation and Tooling",
+            "group": "Automation",
             "pages": [
               "examples/generate-llms-txt",
               "examples/ci-workflow",
@@ -214,157 +172,78 @@
         ]
       },
       {
-        "group": "Changelogs",
+        "group": "Changelog",
         "pages": [
+          "changelogs/0.16.0",
           "changelogs/0.15.1",
           "changelogs/0.15.0",
           "changelogs/0.14.0"
-        ]
-      },
-      {
-        "group": "Reference",
-        "pages": [
-          "reference/types",
-          "reference/package-configuration",
-          "reference/vcs-helpers",
-          "reference/errors",
-          "api/effect"
         ]
       }
     ]
   },
   "redirects": [
-    {
-      "source": "/docs",
-      "destination": "/"
-    },
-    {
-      "source": "/docs/introduction",
-      "destination": "/introduction"
-    },
-    {
-      "source": "/docs/installation",
-      "destination": "/installation"
-    },
-    {
-      "source": "/docs/quickstart",
-      "destination": "/quickstart"
-    },
-    {
-      "source": "/api",
-      "destination": "/jsx/overview"
-    },
-    {
-      "source": "/api/overview",
-      "destination": "/jsx/overview"
-    },
-    {
-      "source": "/api/installation",
-      "destination": "/jsx/installation"
-    },
-    {
-      "source": "/api/quickstart",
-      "destination": "/jsx/quickstart"
-    },
-    {
-      "source": "/jsx",
-      "destination": "/jsx/overview"
-    },
-    {
-      "source": "/effect",
-      "destination": "/jsx/overview"
-    },
-    {
-      "source": "/integrations/linear",
-      "destination": "/integrations/integrations"
-    },
-    {
-      "source": "/docs/integrations/linear",
-      "destination": "/integrations/integrations"
-    },
-    {
-      "source": "/docs/api/:slug*",
-      "destination": "/jsx/:slug*"
-    },
-    {
-      "source": "/docs/jsx/:slug*",
-      "destination": "/jsx/:slug*"
-    },
-    {
-      "source": "/docs/concepts/:slug*",
-      "destination": "/concepts/:slug*"
-    },
-    {
-      "source": "/docs/components/:slug*",
-      "destination": "/components/:slug*"
-    },
-    {
-      "source": "/docs/guides/:slug*",
-      "destination": "/guides/:slug*"
-    },
-    {
-      "source": "/docs/runtime/:slug*",
-      "destination": "/runtime/:slug*"
-    },
-    {
-      "source": "/docs/cli/:slug*",
-      "destination": "/cli/:slug*"
-    },
-    {
-      "source": "/docs/integrations/:slug*",
-      "destination": "/integrations/:slug*"
-    },
-    {
-      "source": "/docs/examples/:slug*",
-      "destination": "/examples/:slug*"
-    },
-    {
-      "source": "/docs/reference/:slug*",
-      "destination": "/reference/:slug*"
-    },
-    {
-      "source": "/docs/ralph",
-      "destination": "/components/loop"
-    },
-    {
-      "source": "/docs/loop",
-      "destination": "/components/loop"
-    },
-    {
-      "source": "/components/ralph",
-      "destination": "/components/loop"
-    },
-    {
-      "source": "/docs/task",
-      "destination": "/components/task"
-    },
-    {
-      "source": "/docs/workflow",
-      "destination": "/components/workflow"
-    },
-    {
-      "source": "/docs/sequence",
-      "destination": "/components/sequence"
-    },
-    {
-      "source": "/docs/parallel",
-      "destination": "/components/parallel"
-    },
-    {
-      "source": "/docs/branch",
-      "destination": "/components/branch"
-    },
-    {
-      "source": "/docs/structured-output",
-      "destination": "/guides/structured-output"
-    },
-    {
-      "source": "/concepts/context",
-      "destination": "/concepts/execution-model"
-    },
-    {
-      "source": "/concepts/renderer-internals",
-      "destination": "/concepts/planner-internals"
-    }
+    { "source": "/docs", "destination": "/" },
+    { "source": "/docs/introduction", "destination": "/introduction" },
+    { "source": "/docs/installation", "destination": "/installation" },
+    { "source": "/docs/quickstart", "destination": "/quickstart" },
+    { "source": "/api", "destination": "/jsx/overview" },
+    { "source": "/api/overview", "destination": "/jsx/overview" },
+    { "source": "/api/installation", "destination": "/jsx/installation" },
+    { "source": "/api/quickstart", "destination": "/jsx/quickstart" },
+    { "source": "/jsx", "destination": "/jsx/overview" },
+    { "source": "/effect", "destination": "/jsx/overview" },
+    { "source": "/api/effect", "destination": "/jsx/overview" },
+    { "source": "/integrations/linear", "destination": "/integrations/integrations" },
+    { "source": "/docs/integrations/linear", "destination": "/integrations/integrations" },
+    { "source": "/docs/api/:slug*", "destination": "/jsx/:slug*" },
+    { "source": "/docs/jsx/:slug*", "destination": "/jsx/:slug*" },
+    { "source": "/docs/concepts/:slug*", "destination": "/concepts/:slug*" },
+    { "source": "/docs/components/:slug*", "destination": "/components/:slug*" },
+    { "source": "/docs/guides/:slug*", "destination": "/guides/:slug*" },
+    { "source": "/docs/runtime/:slug*", "destination": "/runtime/:slug*" },
+    { "source": "/docs/cli/:slug*", "destination": "/cli/:slug*" },
+    { "source": "/docs/integrations/:slug*", "destination": "/integrations/:slug*" },
+    { "source": "/docs/examples/:slug*", "destination": "/examples/:slug*" },
+    { "source": "/docs/reference/:slug*", "destination": "/reference/:slug*" },
+    { "source": "/docs/ralph", "destination": "/components/loop" },
+    { "source": "/docs/loop", "destination": "/components/loop" },
+    { "source": "/components/ralph", "destination": "/components/loop" },
+    { "source": "/docs/task", "destination": "/components/task" },
+    { "source": "/docs/workflow", "destination": "/components/workflow" },
+    { "source": "/docs/sequence", "destination": "/components/sequence" },
+    { "source": "/docs/parallel", "destination": "/components/parallel" },
+    { "source": "/docs/branch", "destination": "/components/branch" },
+    { "source": "/docs/structured-output", "destination": "/how-it-works" },
+    { "source": "/concepts/context", "destination": "/how-it-works" },
+    { "source": "/concepts/renderer-internals", "destination": "/how-it-works" },
+    { "source": "/concepts/:slug*", "destination": "/how-it-works" },
+    { "source": "/guides/best-practices", "destination": "/recipes" },
+    { "source": "/guides/review-loop", "destination": "/recipes" },
+    { "source": "/guides/patterns", "destination": "/recipes" },
+    { "source": "/guides/model-selection", "destination": "/recipes" },
+    { "source": "/guides/structured-output", "destination": "/how-it-works" },
+    { "source": "/guides/error-handling", "destination": "/recipes" },
+    { "source": "/guides/resumability", "destination": "/how-it-works" },
+    { "source": "/guides/hot-reload", "destination": "/recipes" },
+    { "source": "/guides/mdx-prompts", "destination": "/recipes" },
+    { "source": "/guides/third-party-hooks", "destination": "/recipes" },
+    { "source": "/guides/dynamic-tickets", "destination": "/recipes" },
+    { "source": "/guides/vcs", "destination": "/recipes" },
+    { "source": "/guides/debugging", "destination": "/cli/overview" },
+    { "source": "/guides/monitoring-logs", "destination": "/cli/overview" },
+    { "source": "/guides/troubleshooting", "destination": "/cli/overview" },
+    { "source": "/guides/tutorial-workflow", "destination": "/tour" },
+    { "source": "/guides/time-travel-quickstart", "destination": "/recipes" },
+    { "source": "/guides/evals-quickstart", "destination": "/recipes" },
+    { "source": "/guides/memory-quickstart", "destination": "/llms-memory.txt" },
+    { "source": "/guides/openapi-tools-quickstart", "destination": "/llms-openapi.txt" },
+    { "source": "/guides/project-structure", "destination": "/recipes" },
+    { "source": "/integrations/ide", "destination": "/integrations/integrations" },
+    { "source": "/integrations/github-bot", "destination": "/integrations/integrations" },
+    { "source": "/integrations/pi-extension", "destination": "/integrations/pi-integration" },
+    { "source": "/integrations/pi-plugin", "destination": "/integrations/pi-integration" },
+    { "source": "/jsx/installation", "destination": "/jsx/overview" },
+    { "source": "/jsx/quickstart", "destination": "/jsx/overview" }
   ]
 }

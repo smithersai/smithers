@@ -56,6 +56,8 @@ function validateNodeWaitingForApproval(runId, nodeId, iteration, state) {
  * @param {string} [note]
  * @param {string} [decidedBy]
  * @param {unknown} [decision]
+ * @param {boolean} [autoApproved]
+ * @returns {Effect.Effect<void, SmithersError, never>}
  */
 export function approveNode(adapter, runId, nodeId, iteration, note, decidedBy, decision, autoApproved = false) {
     const ts = nowMs();
@@ -140,6 +142,7 @@ export function approveNode(adapter, runId, nodeId, iteration, note, decidedBy, 
  * @param {string} [note]
  * @param {string} [decidedBy]
  * @param {unknown} [decision]
+ * @returns {Effect.Effect<void, SmithersError, never>}
  */
 export function denyNode(adapter, runId, nodeId, iteration, note, decidedBy, decision) {
     const ts = nowMs();

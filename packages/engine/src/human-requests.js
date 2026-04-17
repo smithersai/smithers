@@ -1,6 +1,6 @@
 // @smithers-type-exports-begin
-/** @typedef {import("./human-requests.ts").HumanRequestKind} HumanRequestKind */
-/** @typedef {import("./human-requests.ts").HumanRequestStatus} HumanRequestStatus */
+/** @typedef {import("./HumanRequestKind.ts").HumanRequestKind} HumanRequestKind */
+/** @typedef {import("./HumanRequestStatus.ts").HumanRequestStatus} HumanRequestStatus */
 // @smithers-type-exports-end
 
 import { jsonSchemaToZod } from "./external/json-schema-to-zod.js";
@@ -8,7 +8,9 @@ import { jsonSchemaToZod } from "./external/json-schema-to-zod.js";
  * @typedef {{ ok: true; } | { ok: false; code: "HUMAN_REQUEST_SCHEMA_INVALID" | "HUMAN_REQUEST_VALIDATION_FAILED"; message: string; }} HumanRequestSchemaValidation
  */
 
+/** @type {readonly ["ask", "confirm", "select", "json"]} */
 export const HUMAN_REQUEST_KINDS = ["ask", "confirm", "select", "json"];
+/** @type {readonly ["pending", "answered", "cancelled", "expired"]} */
 export const HUMAN_REQUEST_STATUSES = [
     "pending",
     "answered",

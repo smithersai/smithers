@@ -6,21 +6,22 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.ts"
+      "types": "./src/index.d.ts"
     },
     "./errors": {
-      "types": "./src/errors/index.ts"
+      "types": "./src/index.d.ts"
     },
     "./*": {
+      "types": "./src/index.d.ts",
       "import": "./src/*.js",
-      "default": "./src/*.js",
-      "types": "./src/*.ts"
+      "default": "./src/*.js"
     }
   },
   "files": [
     "src/"
   ],
   "scripts": {
+    "build": "tsup --dts-only",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

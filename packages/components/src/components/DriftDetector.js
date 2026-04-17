@@ -3,7 +3,7 @@ import { Task } from "./Task.js";
 import { Sequence } from "./Sequence.js";
 import { Branch } from "./Branch.js";
 import { Loop } from "./Ralph.js";
-/** @typedef {import("./DriftDetector.ts").DriftDetectorProps} DriftDetectorProps */
+/** @typedef {import("./DriftDetectorProps.ts").DriftDetectorProps} DriftDetectorProps */
 
 /**
  * @param {DriftDetectorProps} props
