@@ -37,5 +37,5 @@ export const edit = defineTool({
   schema: z.object({ path: z.string(), patch: z.string() }),
   sideEffect: true,
   idempotent: false,
-  execute: async ({ path, patch }) => editFileTool(path, patch),
+  execute: async ({ path, patch }, _ctx) => editFileTool(path, patch),
 });

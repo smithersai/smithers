@@ -31,5 +31,5 @@ export const write = defineTool({
   schema: z.object({ path: z.string(), content: z.string() }),
   sideEffect: true,
   idempotent: false,
-  execute: async ({ path, content }) => writeFileTool(path, content),
+  execute: async ({ path, content }, _ctx) => writeFileTool(path, content),
 });

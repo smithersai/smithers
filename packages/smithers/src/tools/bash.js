@@ -176,5 +176,5 @@ export const bash = defineTool({
   }),
   sideEffect: true,
   idempotent: false,
-  execute: async ({ cmd, args, opts }) => bashTool(cmd, args, opts),
+  execute: async ({ cmd, args, opts }, _ctx) => bashTool(cmd, args, opts),
 });
