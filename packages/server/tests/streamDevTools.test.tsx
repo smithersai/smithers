@@ -182,14 +182,11 @@ describe("streamDevTools RPC", () => {
   });
 
   afterEach(async () => {
-    if (server) {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      server = null;
-    }
     if (gateway) {
       await gateway.close();
       gateway = null;
     }
+    server = null;
     rmSync(dbPath, { force: true });
     rmSync(`${dbPath}-wal`, { force: true });
     rmSync(`${dbPath}-shm`, { force: true });
@@ -219,7 +216,7 @@ describe("streamDevTools RPC", () => {
       },
     });
     gateway.register("wf", workflow);
-    server = await gateway.listen({ port: 0 });
+    server = await gateway.listen({ port: 0, host: "127.0.0.1" });
     return (server.address() as any).port as number;
   }
 

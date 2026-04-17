@@ -101,9 +101,6 @@ describe("Gateway webhook ingestion", () => {
         dbPaths = [];
     });
     afterEach(async () => {
-        if (server) {
-            await new Promise((resolve) => server.close(() => resolve()));
-        }
         if (gateway) {
             await gateway.close();
         }
@@ -115,6 +112,9 @@ describe("Gateway webhook ingestion", () => {
             }
             catch { }
         }
+        gateway = undefined;
+        server = undefined;
+        dbPaths = [];
     });
     test("rejects invalid webhook signatures and records rejection metrics", async () => {
         const dbPath = makeDbPath("signature");
@@ -126,7 +126,7 @@ describe("Gateway webhook ingestion", () => {
                 secret: "correct-secret",
             },
         });
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const payload = JSON.stringify({
             issue: { id: 7 },
@@ -172,7 +172,7 @@ describe("Gateway webhook ingestion", () => {
                 },
             },
         });
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const adapter = new SmithersDb(db);
         const runId = "webhook-signal-run";
@@ -259,7 +259,7 @@ describe("Gateway webhook ingestion", () => {
                 },
             },
         });
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const response = await postWebhook(port, "github", {
             issue: { id: 99 },

@@ -1,14 +1,13 @@
 import * as _smithers_graph_types from '@smithers/graph/types';
-import { HostNode as HostNode$1, ExtractGraph } from '@smithers/graph/types';
-import * as React__default__default__default from 'react';
-import React__default__default__default__default from 'react';
-import * as _smithers_driver from '@smithers/driver';
+import { ExtractGraph as ExtractGraph$1, HostNode as HostNode$1 } from '@smithers/graph/types';
+import * as React$1 from 'react';
+import React__default from 'react';
 import { WorkflowDriver } from '@smithers/driver';
 import { SmithersCtx } from '@smithers/driver/SmithersCtx';
 export { SmithersCtx } from '@smithers/driver/SmithersCtx';
 
 type SmithersRendererOptions$1 = {
-    extractGraph?: ExtractGraph;
+    extractGraph?: ExtractGraph$1;
 };
 
 type HostContainer$1 = {
@@ -20,11 +19,12 @@ declare class SmithersRenderer {
    * @param {SmithersRendererOptions} [options]
    */
     constructor(options?: SmithersRendererOptions);
-    container: {
-        root: null;
-    };
+    /** @type {HostContainer} */
+    container: HostContainer;
+    /** @type {any} */
     root: any;
-    extractGraph: _smithers_graph_types.ExtractGraph | undefined;
+    /** @type {ExtractGraph | undefined} */
+    extractGraph: ExtractGraph | undefined;
     /**
    * @param {React.ReactElement} element
    * @param {ExtractOptions} [opts]
@@ -36,10 +36,19 @@ declare class SmithersRenderer {
    */
     getRoot(): HostNode | null;
 }
+type ExtractGraph = _smithers_graph_types.ExtractGraph;
 type ExtractOptions = _smithers_graph_types.ExtractOptions;
 type HostContainer = HostContainer$1;
+type MutableHostElement = _smithers_graph_types.HostElement & {
+    props: Record<string, string>;
+    rawProps: Record<string, unknown>;
+    children: HostNode[];
+};
 type HostNode = _smithers_graph_types.HostNode;
-type React = React__default__default__default.default;
+type MutableHostText = _smithers_graph_types.HostText & {
+    text: string;
+};
+type React = React$1.default;
 type SmithersRendererOptions = SmithersRendererOptions$1;
 type WorkflowGraph = _smithers_graph_types.WorkflowGraph;
 
@@ -48,10 +57,6 @@ type WorkflowGraph = _smithers_graph_types.WorkflowGraph;
  * @extends {WorkflowDriver<Schema>}
  */
 declare class ReactWorkflowDriver<Schema = unknown> extends WorkflowDriver<Schema> {
-    /**
-   * @param {import("@smithers/driver").WorkflowDriverOptions<Schema>} options
-   */
-    constructor(options: _smithers_driver.WorkflowDriverOptions<Schema>);
 }
 
 /**
@@ -59,11 +64,11 @@ declare class ReactWorkflowDriver<Schema = unknown> extends WorkflowDriver<Schem
  * @returns {{ SmithersContext: React.Context<SmithersCtx<Schema> | null>, useCtx: () => SmithersCtx<Schema> }}
  */
 declare function createSmithersContext<Schema>(): {
-    SmithersContext: React__default__default__default__default.Context<SmithersCtx<Schema> | null>;
+    SmithersContext: React__default.Context<SmithersCtx<Schema> | null>;
     useCtx: () => SmithersCtx<Schema>;
 };
 
 /** @type {React.Context<SmithersCtx<any> | null>} */
-declare const SmithersContext: React__default__default__default__default.Context<SmithersCtx<any> | null>;
+declare const SmithersContext: React__default.Context<SmithersCtx<any> | null>;
 
-export { type ExtractOptions, type HostContainer, type HostNode, type React, ReactWorkflowDriver, SmithersContext, SmithersRenderer, type SmithersRendererOptions, type WorkflowGraph, createSmithersContext };
+export { type ExtractGraph, type ExtractOptions, type HostContainer, type HostNode, type MutableHostElement, type MutableHostText, type React, ReactWorkflowDriver, SmithersContext, SmithersRenderer, type SmithersRendererOptions, type WorkflowGraph, createSmithersContext };

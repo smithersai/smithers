@@ -219,9 +219,6 @@ describe("Gateway", () => {
         dbPaths = [];
     });
     afterEach(async () => {
-        if (server) {
-            await new Promise((resolve) => server.close(() => resolve()));
-        }
         if (gateway) {
             await gateway.close();
         }
@@ -233,6 +230,9 @@ describe("Gateway", () => {
             }
             catch { }
         }
+        gateway = undefined;
+        server = undefined;
+        dbPaths = [];
     });
     test("performs the connect handshake, enforces scopes, and exposes health", async () => {
         const dbPath = makeDbPath("token");
@@ -258,7 +258,7 @@ describe("Gateway", () => {
             },
         });
         gateway.register("basic", createValueWorkflow(dbPath));
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const { client: operator, hello } = await connectGateway(port, "op-token");
         expect(hello.payload.protocol).toBe(1);
@@ -296,7 +296,7 @@ describe("Gateway", () => {
             },
         });
         gateway.register("basic", createValueWorkflow(dbPath));
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const validToken = createJwtToken({
             iss: "https://auth.example.com",
@@ -364,7 +364,7 @@ describe("Gateway", () => {
             },
         });
         gateway.register("basic", createValueWorkflow(dbPath));
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const createRes = await fetch(`http://127.0.0.1:${port}/rpc`, {
             method: "POST",
@@ -432,7 +432,7 @@ describe("Gateway", () => {
             },
         });
         gateway.register("basic", createValueWorkflow(dbPath));
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const { client } = await connectGateway(port, "op-token");
         const first = await client.request("runs.create", {
@@ -520,7 +520,7 @@ describe("Gateway", () => {
             },
         });
         gateway.register("approval", approval.workflow);
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const { client: operator } = await connectGateway(port, "operator-token");
         const create = await operator.request("runs.create", {
@@ -610,7 +610,7 @@ describe("Gateway", () => {
             },
         });
         gateway.register("approval", approval.workflow);
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const { client: operator } = await connectGateway(port, "operator-token");
         const create = await operator.request("runs.create", {
@@ -659,7 +659,7 @@ describe("Gateway", () => {
             },
         });
         gateway.register("basic", createValueWorkflow(dbPath));
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const { client } = await connectGateway(port, "operator-token");
         const added = await client.request("cron.add", {
@@ -714,7 +714,7 @@ describe("Gateway", () => {
             },
         });
         gateway.register("auth", authWorkflow.workflow);
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const port = getPort(server);
         const { client } = await connectGateway(port, "operator-token");
         const created = await client.request("runs.create", {

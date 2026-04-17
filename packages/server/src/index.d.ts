@@ -335,10 +335,11 @@ declare class Gateway {
         webhook?: GatewayWebhookConfig;
     }): this;
     /**
-   * @param {{ port?: number }} [options]
+   * @param {{ port?: number; host?: string }} [options]
    */
     listen(options?: {
         port?: number;
+        host?: string;
     }): Promise<node_http.Server<typeof node_http.IncomingMessage, typeof node_http.ServerResponse>>;
     close(): Promise<void>;
     startScheduler(): void;

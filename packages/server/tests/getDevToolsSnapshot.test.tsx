@@ -383,14 +383,11 @@ describe("Gateway getDevToolsSnapshot RPC", () => {
   });
 
   afterEach(async () => {
-    if (server) {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      server = null;
-    }
     if (gateway) {
       await gateway.close();
       gateway = null;
     }
+    server = null;
     rmSync(dbPath, { force: true });
     rmSync(`${dbPath}-wal`, { force: true });
     rmSync(`${dbPath}-shm`, { force: true });
@@ -420,7 +417,7 @@ describe("Gateway getDevToolsSnapshot RPC", () => {
       },
     });
     gateway.register("wf", workflow);
-    server = await gateway.listen({ port: 0 });
+    server = await gateway.listen({ port: 0, host: "127.0.0.1" });
     const port = (server.address() as any).port as number;
     const adapter = new SmithersDb(workflow.db);
     const runId = "run-rpc-devtools";

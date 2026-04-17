@@ -1631,7 +1631,7 @@ export class Gateway {
         return this;
     }
     /**
-   * @param {{ port?: number }} [options]
+   * @param {{ port?: number; host?: string }} [options]
    */
     async listen(options = {}) {
         if (this.server) {
@@ -1689,7 +1689,11 @@ export class Gateway {
             });
         });
         await new Promise((resolve) => {
-            server.listen(options.port ?? 7331, () => resolve());
+            if (options.host === undefined) {
+                server.listen(options.port ?? 7331, () => resolve());
+                return;
+            }
+            server.listen(options.port ?? 7331, options.host, () => resolve());
         });
         this.server = server;
         this.wsServer = wsServer;
@@ -1720,14 +1724,31 @@ export class Gateway {
             clearInterval(this.schedulerTimer);
             this.schedulerTimer = null;
         }
-        if (this.wsServer) {
-            this.wsServer.close();
-            this.wsServer = null;
-        }
         if (this.server) {
             const server = this.server;
             this.server = null;
-            await new Promise((resolve) => server.close(() => resolve()));
+            await new Promise((resolve) => {
+                let settled = false;
+                const done = () => {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    resolve();
+                };
+                const timeout = setTimeout(done, 250);
+                timeout.unref?.();
+                server.close(() => {
+                    clearTimeout(timeout);
+                    done();
+                });
+                server.closeIdleConnections?.();
+                server.closeAllConnections?.();
+            });
+        }
+        if (this.wsServer) {
+            this.wsServer.close();
+            this.wsServer = null;
         }
     }
     startScheduler() {

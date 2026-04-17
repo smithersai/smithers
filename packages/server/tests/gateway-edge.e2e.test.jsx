@@ -179,7 +179,7 @@ describe("Gateway edge cases", () => {
             heartbeatMs: 100,
         });
         gateway.register("basic", valueWorkflow.workflow, { schedule: "* * * * *" });
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         await adapter.updateCronRunTime("gateway:basic", Date.now() - 60_000, Date.now() - 1, null);
         await gateway.processDueCrons();
         let runId = null;
@@ -226,7 +226,7 @@ describe("Gateway edge cases", () => {
             heartbeatMs: 100,
         });
         gateway.register("basic", valueWorkflow.workflow);
-        server = await gateway.listen({ port: 0 });
+        server = await gateway.listen({ port: 0, host: "127.0.0.1" });
         const started = await gateway.startRun("basic", { value: 3 }, { triggeredBy: "tester", scopes: ["*"], role: "operator" });
         const runId = started.runId;
         let status = null;
