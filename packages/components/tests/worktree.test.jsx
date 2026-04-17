@@ -1,4 +1,4 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { WORKTREE_EMPTY_PATH_ERROR } from "@smithers/graph/constants";
 import { SmithersRenderer } from "@smithers/react-reconciler/dom/renderer";

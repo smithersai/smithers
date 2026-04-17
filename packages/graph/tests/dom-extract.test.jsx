@@ -1,4 +1,4 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { extractFromHost, } from "../src/dom/extract.js";
 import { z } from "zod";

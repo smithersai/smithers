@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { SmithersCtx } from "@smithers/driver";
 import { loadInput, loadOutputs } from "@smithers/db/snapshot";
 import { renderFrame, resolveSchema } from "@smithers/engine";
-import { mdxPlugin } from "smithers/mdx-plugin";
+import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
 import { SmithersError } from "@smithers/errors";
 import { Effect } from "effect";
 /** @typedef {import("./HijackCandidate.ts").HijackCandidate} HijackCandidate */

@@ -1,5 +1,5 @@
 {
-  "name": "smithers-orchestrator",
+  "name": "smithers-monorepo",
   "version": "0.15.1",
   "description": "AI workflow orchestration with JSX",
   "author": "William Cory",
@@ -18,6 +18,7 @@
   "exports": {
     ".": "./packages/smithers/src/index.js",
     "./gateway": "./packages/server/src/gateway.js",
+    "./tools": "./packages/smithers/src/tools.js",
     "./jsx-runtime": "./packages/smithers/src/jsx-runtime.js",
     "./jsx-dev-runtime": "./packages/smithers/src/jsx-runtime.js",
     "./server": "./packages/server/src/index.js",

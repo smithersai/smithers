@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createSmithersAgentContract, renderSmithersAgentPromptGuidance, } from "../src/agent-contract/index.js";
-import { buildSmithersPiSystemPrompt } from "smithers/pi-plugin/extension";
+import { buildSmithersPiSystemPrompt } from "smithers-orchestrator/pi-plugin/extension";
 /**
  * @param {string} text
  */

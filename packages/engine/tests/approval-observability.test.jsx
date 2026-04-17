@@ -1,6 +1,6 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
-import { Workflow, Task, runWorkflow } from "smithers";
+import { Workflow, Task, runWorkflow } from "smithers-orchestrator";
 import { approveNode, denyNode } from "../src/approvals.js";
 import { SmithersDb } from "@smithers/db/adapter";
 import { renderPrometheusMetrics } from "@smithers/observability";

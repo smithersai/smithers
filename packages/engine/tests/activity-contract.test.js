@@ -1,9 +1,9 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { SmithersDb, Task, Workflow, runWorkflow } from "smithers";
+import { SmithersDb, Task, Workflow, runWorkflow } from "smithers-orchestrator";
 import { smithersCache } from "@smithers/db/internal-schema";
-import { jsx } from "smithers/jsx-runtime";
+import { jsx } from "smithers-orchestrator/jsx-runtime";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";
 import { Effect } from "effect";
 const contractSchemas = {

@@ -1,4 +1,4 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import { runWorkflow } from "@smithers/engine";

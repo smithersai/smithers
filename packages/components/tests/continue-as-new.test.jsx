@@ -1,9 +1,9 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { Effect } from "effect";
 import { z } from "zod";
-import { SmithersDb, runWorkflow } from "smithers";
+import { SmithersDb, runWorkflow } from "smithers-orchestrator";
 import { createTestSmithers } from "./helpers.js";
 describe("continue-as-new", () => {
     test("splits long loop runs, carries state, and preserves ancestry", async () => {

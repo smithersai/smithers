@@ -1,11 +1,11 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { Task, Workflow, Worktree, createSmithers, runWorkflow, } from "smithers";
+import { Task, Workflow, Worktree, createSmithers, runWorkflow, } from "smithers-orchestrator";
 import { z } from "zod";
 import { Effect } from "effect";
 const tempRoots = [];

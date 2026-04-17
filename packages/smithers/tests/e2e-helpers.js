@@ -52,14 +52,10 @@ function symlinkIfMissing(target, path, type = "dir") {
  */
 function linkRepoRuntimeDeps(repoDir) {
     const nodeModulesDir = join(repoDir, "node_modules");
-    const scopedSmithersDir = join(nodeModulesDir, "@smithers");
     const binDir = join(nodeModulesDir, ".bin");
     ensureDir(nodeModulesDir);
-    ensureDir(scopedSmithersDir);
     ensureDir(binDir);
-    symlinkIfMissing(REPO_ROOT, join(nodeModulesDir, "smithers-orchestrator"));
-    symlinkIfMissing(resolve(REPO_ROOT, "packages/smithers"), join(nodeModulesDir, "smithers"));
-    symlinkIfMissing(resolve(REPO_ROOT, "packages/smithers"), join(scopedSmithersDir, "smithers"));
+    symlinkIfMissing(resolve(REPO_ROOT, "packages/smithers"), join(nodeModulesDir, "smithers-orchestrator"));
     symlinkIfMissing(resolve(ROOT_NODE_MODULES, "zod"), join(nodeModulesDir, "zod"));
     symlinkIfMissing(resolve(ROOT_NODE_MODULES, "react"), join(nodeModulesDir, "react"));
     symlinkIfMissing(resolve(ROOT_NODE_MODULES, "react-dom"), join(nodeModulesDir, "react-dom"));
@@ -169,8 +165,8 @@ export function prependPath(dir, env) {
  */
 export function writeTestWorkflow(repo, relativePath = "workflow.tsx") {
     return repo.write(relativePath, [
-        "/** @jsxImportSource smithers */",
-        'import { createSmithers, Workflow, Task } from "smithers";',
+        "/** @jsxImportSource smithers-orchestrator */",
+        'import { createSmithers, Workflow, Task } from "smithers-orchestrator";',
         'import { z } from "zod";',
         "",
         "const { smithers, outputs } = createSmithers({",

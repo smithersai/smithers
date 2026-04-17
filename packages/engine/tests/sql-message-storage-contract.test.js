@@ -1,10 +1,10 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { ensureSmithersTables } from "@smithers/db/ensure";
 import { getSqlMessageStorage } from "../src/effect/sql-message-storage.js";
-import { SmithersDb, Task, Workflow, runWorkflow } from "smithers";
-import { jsx } from "smithers/jsx-runtime";
+import { SmithersDb, Task, Workflow, runWorkflow } from "smithers-orchestrator";
+import { jsx } from "smithers-orchestrator/jsx-runtime";
 import { createTestDb, createTestSmithers } from "../../smithers/tests/helpers.js";
 import { ddl, schema } from "../../smithers/tests/schema.js";
 import { Effect } from "effect";

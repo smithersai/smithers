@@ -1,4 +1,4 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { SmithersRenderer } from "../src/dom/renderer.js";
 import { Task, Workflow } from "@smithers/components/components/index";

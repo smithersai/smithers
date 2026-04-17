@@ -1,7 +1,7 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { dirname } from "node:path";
-import { Approval, Workflow, Task, Sequence, runWorkflow, approvalDecisionSchema, approvalRankingSchema, approvalSelectionSchema, } from "smithers";
+import { Approval, Workflow, Task, Sequence, runWorkflow, approvalDecisionSchema, approvalRankingSchema, approvalSelectionSchema, } from "smithers-orchestrator";
 import { approveNode, denyNode } from "../src/approvals.js";
 import { SmithersDb } from "@smithers/db/adapter";
 import { renderPrometheusMetrics } from "@smithers/observability";

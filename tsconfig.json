@@ -9,7 +9,7 @@
     "module": "ESNext",
     "moduleDetection": "force",
     "jsx": "react-jsx",
-    "jsxImportSource": "smithers",
+    "jsxImportSource": "smithers-orchestrator",
     "allowJs": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -22,15 +22,6 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
     "paths": {
-      "smithers": [
-        "./packages/smithers/src/index.js"
-      ],
-      "smithers/jsx-runtime": [
-        "./packages/smithers/src/jsx-runtime.js"
-      ],
-      "smithers/jsx-dev-runtime": [
-        "./packages/smithers/src/jsx-runtime.js"
-      ],
       "smithers-orchestrator": [
         "./packages/smithers/src/index.js"
       ],
@@ -40,15 +31,15 @@
       "smithers-orchestrator/jsx-dev-runtime": [
         "./packages/smithers/src/jsx-runtime.js"
       ],
-      "smithers-orchestrator/scorers": [
-        "./packages/scorers/src/index.js"
+      "smithers-orchestrator/tools": [
+        "./packages/smithers/src/tools.js"
       ],
-      "@smithers/smithers": [
-        "./packages/smithers/src/index.js"
-      ],
-      "@smithers/smithers/*": [
+      "smithers-orchestrator/*": [
         "./packages/smithers/src/*.js",
         "./packages/smithers/src/*/index.js"
+      ],
+      "smithers-orchestrator/scorers": [
+        "./packages/scorers/src/index.js"
       ],
       "@smithers/agents": [
         "./packages/agents/src/index.js"

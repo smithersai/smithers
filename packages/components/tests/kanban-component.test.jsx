@@ -1,6 +1,6 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
-import { Kanban, runWorkflow } from "smithers";
+import { Kanban, runWorkflow } from "smithers-orchestrator";
 import { createTestSmithers } from "./helpers.js";
 import { z } from "zod";
 import { Effect } from "effect";

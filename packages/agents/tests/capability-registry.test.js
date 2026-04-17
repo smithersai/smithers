@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import React from "react";
 import { z } from "zod";
-import { Workflow, Task, runWorkflow } from "smithers";
+import { Workflow, Task, runWorkflow } from "smithers-orchestrator";
 import { ClaudeCodeAgent } from "../src/ClaudeCodeAgent.js";
 import { CodexAgent } from "../src/CodexAgent.js";
 import { GeminiAgent } from "../src/GeminiAgent.js";

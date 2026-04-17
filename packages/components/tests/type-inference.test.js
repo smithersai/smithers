@@ -6,7 +6,7 @@
  * verify the types resolve to expected shapes at the value level too.
  */
 import { describe, expect, test } from "bun:test";
-import { createSmithers } from "smithers";
+import { createSmithers } from "smithers-orchestrator";
 import { z } from "zod";
 // ─── Schema fixtures ───────────────────────────────────────────────
 const analysisSchema = z.object({

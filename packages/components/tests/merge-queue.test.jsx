@@ -1,7 +1,7 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { SmithersRenderer } from "@smithers/react-reconciler/dom/renderer";
-import { MergeQueue, Parallel, Task, Workflow, runWorkflow, } from "smithers";
+import { MergeQueue, Parallel, Task, Workflow, runWorkflow, } from "smithers-orchestrator";
 import { createTestSmithers, sleep } from "./helpers.js";
 import { outputSchemas } from "./schema.js";
 import { Effect } from "effect";

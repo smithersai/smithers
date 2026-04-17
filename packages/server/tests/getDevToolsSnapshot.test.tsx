@@ -1,4 +1,4 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
@@ -7,7 +7,7 @@ import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
 import { z } from "zod";
-import { createSmithers } from "smithers";
+import { createSmithers } from "smithers-orchestrator";
 import { canonicalizeXml } from "@smithers/graph/utils/xml";
 import { SmithersDb } from "@smithers/db/adapter";
 import { ensureSmithersTables } from "@smithers/db/ensure";

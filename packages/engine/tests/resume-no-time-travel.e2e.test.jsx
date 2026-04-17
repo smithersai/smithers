@@ -1,11 +1,11 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { SmithersDb } from "@smithers/db/adapter";
 import { Effect } from "effect";
-import { Sequence, Task, Workflow, runWorkflow } from "smithers";
+import { Sequence, Task, Workflow, runWorkflow } from "smithers-orchestrator";
 import { createTestSmithers, sleep } from "../../smithers/tests/helpers.js";
 import { outputSchemas } from "../../smithers/tests/schema.js";
 /**

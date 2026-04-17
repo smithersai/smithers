@@ -1,6 +1,6 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
-import { Workflow, Task, Sequence, Parallel, Branch, Ralph, renderFrame, runWorkflow, } from "smithers";
+import { Workflow, Task, Sequence, Parallel, Branch, Ralph, renderFrame, runWorkflow, } from "smithers-orchestrator";
 import { createTestSmithers, sleep } from "./helpers.js";
 import { z } from "zod";
 import { Effect } from "effect";

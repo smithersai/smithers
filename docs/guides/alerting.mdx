@@ -1,6 +1,6 @@
 ---
 title: Alerting
-description: Declare typed alert policy defaults in createSmithers() and override them per workflow.
+description: Declare typed alert policy metadata in createSmithers() and manage durable alert rows.
 ---
 
 Use `alertPolicy` when you want a workflow to carry operational alert metadata such as ownership, severity, runbooks, labels, and deterministic reactions.
@@ -9,7 +9,8 @@ The API is declarative:
 
 - `createSmithers(..., { alertPolicy })` defines module-level defaults.
 - `smithers(..., { alertPolicy })` overrides those defaults for one workflow.
-- `deliver` uses logical destination names such as `oncall` or `author`; Smithers does not ship a built-in Slack or PagerDuty client.
+- Smithers stores the merged policy on the workflow and exposes durable alert rows through the DB adapter and CLI.
+- `deliver` uses logical destination names such as `oncall` or `author`; transport clients live in your runtime integration.
 
 ## Module Defaults
 
@@ -81,7 +82,7 @@ export default smithers(
 );
 ```
 
-The merged policy is stored on `workflow.opts.alertPolicy`.
+The merged policy is stored on `workflow.opts.alertPolicy`. Rule names are policy keys for your integration; the core engine does not attach built-in behavior to those names in this release.
 
 ## Merge Semantics
 
@@ -102,75 +103,56 @@ The merged policy is stored on `workflow.opts.alertPolicy`.
 
 You can reference a named reaction from `rules` or inline a reaction object directly.
 
-## Built-In Rules
+## Runtime Surface
 
-The following rule names have built-in runtime evaluators. When configured in `alertPolicy.rules`, the engine automatically evaluates them against live events and persisted state.
+In 0.16, `alertPolicy` is workflow metadata plus a durable alert storage model. The core engine does not run built-in alert evaluators, poll approval age, execute delivery clients, or create pause/cancel/approval reactions automatically.
 
-| Rule Name | Fires When | Default Severity |
-| --- | --- | --- |
-| `runFailed` | Run status becomes `failed` | `critical` |
-| `approvalWaitExceeded` | An approval has been pending longer than `afterMs` | `warning` |
-| `retryStorm` | A node retries more than `threshold` times within `windowMs` | `warning` |
-| `taskHeartbeatTimeout` | A task heartbeat timeout event is emitted | `warning` |
-| `tokenBudgetExceeded` | A `BudgetExceeded` event fires for token, cost, or time | `critical` |
-| `workflowReloadFailed` | Hot reload fails to apply | `warning` |
-| `workflowReloadUnsafe` | Hot reload is skipped as unsafe | `info` |
-| `providerDisconnected` | An agent provider disconnects without reconnecting | `warning` |
+Runtime integrations can:
 
-### Extended Rule Fields
+- Read the merged policy from `workflow.opts.alertPolicy`.
+- Persist alert instances with `SmithersDb.insertAlert()`.
+- Query active alerts with `SmithersDb.listAlerts()`.
+- Acknowledge, resolve, or silence alert rows with the DB adapter or CLI.
 
-Rules accept optional fields for threshold and escalation control:
+## Durable Alert Instances
 
-```ts
-rules: {
-  retryStorm: {
-    threshold: 10,         // fire after this many retries
-    windowMs: 120_000,     // within this time window
-    escalateAfterMs: 600_000, // escalate severity after this age
-    escalateTo: "critical",   // target severity on escalation
-    silenceForMs: 300_000,    // suppress delivery for this duration after silencing
-  },
-}
+Alert rows live in `_smithers_alerts`. The row shape includes:
+
+| Field | Purpose |
+| --- | --- |
+| `alertId` | Stable alert identifier. |
+| `runId`, `nodeId`, `iteration` | Optional workflow location. |
+| `policyName` | Rule or policy key that produced the alert. |
+| `severity` | `info`, `warning`, or `critical`. |
+| `status` | `firing`, `acknowledged`, `silenced`, or `resolved`. |
+| `fingerprint` | Optional dedupe key supplied by your integration. |
+| `owner`, `runbook`, `labelsJson`, `reactionJson` | Materialized policy metadata. |
+| `sourceEventType` | Optional source event name. |
+| `firstFiredAtMs`, `lastFiredAtMs`, `occurrenceCount` | Recurrence tracking. |
+| `silencedUntilMs`, `acknowledgedBy`, `resolvedBy` | Operator state. |
+
+## CLI
+
+```bash
+smithers alerts list
+smithers alerts ack <alert-id>
+smithers alerts resolve <alert-id>
+smithers alerts silence <alert-id>
 ```
 
-## Runtime Behavior
+`list` returns active `firing`, `acknowledged`, and `silenced` alerts. Use `--format json` when another process needs to consume the rows.
 
-Alert policy rules are evaluated at runtime inside the workflow engine:
+## Reactions and Delivery
 
-1. The effective merged `alertPolicy` is persisted in the run's `configJson` at start and resume, making evaluation deterministic and inspectable.
-2. Built-in rules subscribe to the `EventBus` and poll time-based conditions (e.g., approval wait age) every 10 seconds.
-3. Alerts are persisted to `_smithers_alerts` with fingerprint-based dedupe. Recurring identical conditions reopen resolved alerts instead of creating duplicates.
-4. Reactions execute when an alert first fires: `pause` creates a linked human request, `cancel` aborts the run, `open-approval` creates an operator decision request.
-5. All reactions are idempotent across resume and replay.
+Reaction objects are stored as data:
 
-## Alert Lifecycle Events
+- `emit-only`
+- `pause`
+- `cancel`
+- `open-approval`
+- `deliver`
 
-The following events are emitted during the alert lifecycle and persisted like other `SmithersEvent` records:
-
-- `AlertFired` — A new alert fires or an existing one reopens.
-- `AlertAcknowledged` — An operator acknowledges an alert.
-- `AlertSilenced` — An alert is silenced with an optional TTL.
-- `AlertResolved` — An alert is resolved (manually or by system).
-- `AlertReopened` — A previously resolved alert recurs.
-- `AlertEscalated` — An alert's severity increases due to escalation rules.
-
-## Unified Attention Model
-
-Alerts, pending approvals, and alert-generated human requests are surfaced through a unified attention API:
-
-- **Gateway**: `attention.list` and `attention.act` RPCs, plus real-time websocket events.
-- **REST**: `GET /v1/attention` returns a combined list sorted by severity and age.
-- **Web**: `/inbox` shows all attention items with filters, actions, and deep links.
-- **CLI**: `smithers inbox` lists and acts on all attention items.
-- **TUI**: The `AttentionPane` component shows live attention items with hotkeys.
-- **PI**: Status bar shows total attention count; `ctx.ui.notify()` fires for critical alerts.
-
-## Delivery and Suppression
-
-- One active alert per fingerprint. Recurrence increments `occurrenceCount` and reopens.
-- Silence expires automatically after `silencedUntilMs`.
-- Focus suppression: toast, bell, and PI notifications are suppressed when the relevant run or inbox is already visible. Badge and inbox state always update.
-- Severity escalation is time-based and configurable per rule.
+Your runtime boundary decides how to interpret those reactions. For example, `deliver` can route to Slack, PagerDuty, email, or an internal incident feed, but Smithers does not bundle those transports.
 
 ## Recommended Usage
 

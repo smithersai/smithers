@@ -1,7 +1,7 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { SmithersDb, Workflow, runWorkflow, } from "smithers";
+import { SmithersDb, Workflow, runWorkflow, } from "smithers-orchestrator";
 import { HumanTask } from "@smithers/components/components/index";
 import { buildHumanRequestId } from "../src/human-requests.js";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";

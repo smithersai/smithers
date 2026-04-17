@@ -110,8 +110,8 @@ export function createWorkflowFile(name, root) {
     writeFileSync(entryFile, [
         "// smithers-source: generated",
         `// smithers-display-name: ${displayNameFromWorkflowName(name)}`,
-        "/** @jsxImportSource smithers */",
-        'import { createSmithers, Workflow } from "smithers";',
+        "/** @jsxImportSource smithers-orchestrator */",
+        'import { createSmithers, Workflow } from "smithers-orchestrator";',
         "",
         "const { smithers } = createSmithers({});",
         "",

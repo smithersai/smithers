@@ -1,7 +1,7 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { createSmithers } from "smithers";
+import { createSmithers } from "smithers-orchestrator";
 import { renderFrame } from "@smithers/engine";
 import { SmithersCtx } from "@smithers/react-reconciler/context";
 import { ClaudeCodeAgent } from "@smithers/agents/ClaudeCodeAgent";

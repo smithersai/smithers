@@ -1,6 +1,6 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
-import { Parallel, Task, Timer, Workflow, runWorkflow, } from "smithers";
+import { Parallel, Task, Timer, Workflow, runWorkflow, } from "smithers-orchestrator";
 import { SmithersDb } from "@smithers/db/adapter";
 import { approveNode } from "../src/approvals.js";
 import { createTestSmithers, sleep } from "../../smithers/tests/helpers.js";

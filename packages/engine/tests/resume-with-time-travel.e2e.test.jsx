@@ -1,8 +1,8 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { SmithersDb } from "@smithers/db/adapter";
-import { Task, Workflow, runWorkflow } from "smithers";
+import { Task, Workflow, runWorkflow } from "smithers-orchestrator";
 import { captureSnapshot, loadSnapshot, listSnapshots, parseSnapshot, } from "@smithers/time-travel/snapshot";
 import { replayFromCheckpoint } from "@smithers/time-travel/replay";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";

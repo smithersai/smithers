@@ -1,5 +1,5 @@
 {
-  "name": "smithers",
+  "name": "smithers-orchestrator",
   "version": "0.0.0",
   "description": "Public Smithers facade and workflow authoring convenience package",
   "type": "module",

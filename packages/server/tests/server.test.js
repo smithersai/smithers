@@ -1,4 +1,4 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test, afterEach, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { startServer } from "../src/index.js";
@@ -153,8 +153,8 @@ const fakeAgent = {
         const agentProp = options.slow ? " agent={fakeAgent}" : "";
         const approvalProp = options.needsApproval ? " needsApproval" : "";
         const outputValue = options.value ?? 42;
-        writeFileSync(workflowPath, `/** @jsxImportSource smithers */
-	import { createSmithers } from "smithers";
+        writeFileSync(workflowPath, `/** @jsxImportSource smithers-orchestrator */
+	import { createSmithers } from "smithers-orchestrator";
 	import { z } from "zod";
 	${slowAgent}
 	

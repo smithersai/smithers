@@ -1,4 +1,4 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { rmSync } from "node:fs";
@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
 import { z } from "zod";
-import { createSmithers } from "smithers";
+import { createSmithers } from "smithers-orchestrator";
 import { Gateway } from "../src/gateway.js";
 import { SmithersDb } from "@smithers/db/adapter";
 import { sleep } from "../../smithers/tests/helpers.js";

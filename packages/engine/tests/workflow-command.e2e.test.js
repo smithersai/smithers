@@ -189,8 +189,8 @@ test("workflow create scaffolds a workflow that runs immediately", () => {
 test("workflow path can pause on WaitForEvent, accept a signal, and resume", () => {
     const repo = createTempRepo();
     repo.write("workflow.tsx", [
-        "/** @jsxImportSource smithers */",
-        'import { createSmithers, WaitForEvent, Workflow } from "smithers";',
+        "/** @jsxImportSource smithers-orchestrator */",
+        'import { createSmithers, WaitForEvent, Workflow } from "smithers-orchestrator";',
         'import { z } from "zod";',
         "",
         "const { smithers, outputs } = createSmithers({",

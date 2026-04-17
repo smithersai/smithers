@@ -6,7 +6,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Effect, Fiber } from "effect";
 import { Cli, Mcp as IncurMcp, z } from "incur";
 import { isRunHeartbeatFresh, runWorkflow, renderFrame, resolveSchema } from "@smithers/engine";
-import { mdxPlugin } from "smithers/mdx-plugin";
+import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
 import { approveNode, denyNode } from "@smithers/engine/approvals";
 import { signalRun } from "@smithers/engine/signals";
 import { loadInput, loadOutputs } from "@smithers/db/snapshot";

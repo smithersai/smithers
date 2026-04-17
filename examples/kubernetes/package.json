@@ -8,6 +8,6 @@
     "teardown": "bun run scripts/teardown.js"
   },
   "dependencies": {
-    "smithers-orchestrator": "file:../.."
+    "smithers-orchestrator": "file:../../packages/smithers"
   }
 }

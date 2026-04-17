@@ -10,8 +10,8 @@ lands alongside a derived `RunState` model for richer run observability.
 ## Breaking changes
 
 - **Runtime is now JavaScript, types live in `.ts` stubs.** Every runtime
-  package (`smithers`, `engine`, `db`, `driver`, `server`, `cli`, `components`,
-  `react-reconciler`, `agents`, `observability`, `devtools`, `time-travel`,
+  package (`smithers-orchestrator`, `engine`, `db`, `driver`, `server`, `cli`,
+  `components`, `react-reconciler`, `agents`, `observability`, `time-travel`,
   `sandbox`, `scheduler`, `scorers`, `openapi`, `memory`, `vcs`, `graph`,
   `errors`, `protocol`, and `examples`) has been migrated to `.js` files with
   `.d.ts`-style type-only `.ts` stubs next to each module. Build, test, and
@@ -23,21 +23,23 @@ lands alongside a derived `RunState` model for richer run observability.
   - `packages/durables` — no longer used by the engine.
   - `packages/rag` and `packages/voice` — dropped from the product surface;
     matching metrics have been removed from observability.
-  - `packages/tools` — tool context moved into `driver`; sandbox path helpers
-    moved into `sandbox`.
+  - `packages/tools` — the separate workspace package is gone. Public built-in
+    helpers remain exported from `smithers-orchestrator` and
+    `smithers-orchestrator/tools`: `tools`, `read`, `write`, `edit`, `grep`,
+    `bash`, `defineTool`, and `getDefinedToolMetadata`.
   - Python SDK, examples, and integration code — smithers is TypeScript/JS only
     now.
   - `jjhub` workflows, the IDE / GitHub bot / Pi plugin integrations docs, and
     the Effect-ts integration doc page.
 
-- **`AsyncLocalStorage`-based `ToolContext` removed.** Tool context is now
-  passed explicitly through the driver. Any custom tools that relied on
-  `getToolContext()` returning ambient state must accept the context as an
-  argument.
+- **Tool context is no longer supplied by a standalone tools package.** Custom
+  tools should accept the `defineTool()` context argument for retry-safe
+  metadata such as `idempotencyKey`. The public `runWithToolContext()` helper
+  still exists for integrations that execute Smithers tool helpers manually.
 
-- **`observability` moved to `apps/observability`.** It is now an app, not a
-  package. Update imports that referenced `@smithers/observability` via the
-  package path.
+- **`observability` moved to `apps/observability`.** It remains the
+  `@smithers/observability` workspace package, but its source now lives under
+  `apps/` with the CLI and other app-owned surfaces.
 
 - **`runtime` package renamed to `driver`.** Imports from `@smithers/runtime`
   should move to `@smithers/driver`. Runtime-adjacent helpers have been
@@ -47,6 +49,15 @@ lands alongside a derived `RunState` model for richer run observability.
   `engine.resume`, `engine.pause`, and friends now return `Effect`s rather
   than plain promises. Callers that awaited the old promise API should run
   the returned effect through the engine's runtime.
+
+- **`smithers diff` now targets DevTools node diffs.** The old snapshot-pair
+  shape (`diff <run-a>:<frame> <run-b>:<frame>`) has been replaced by
+  `smithers diff <runId> <nodeId>` with optional `--iteration`, `--json`, and
+  `--stat`.
+
+- **Stale semantic memory exports removed.** `createSemanticMemory` and
+  `SemanticMemory` are no longer exported. Use `createMemoryStore`,
+  `createMemoryLayer`, and `MemoryService` from the memory package surface.
 
 ---
 
@@ -84,9 +95,29 @@ scrub backwards through history.
   clean DevTools stop events when a run ends so clients can flush their
   buffers.
 
-- **CLI: new `diff`, `output`, `rewind`, and `tree` commands.** The CLI ships
-  thin clients for the new DevTools routes so you can inspect and rewind a
-  run from the terminal without a GUI.
+- **CLI: new `tree`, `output`, and `rewind` commands plus repurposed `diff`.**
+  The CLI ships thin clients for the new DevTools routes so you can inspect
+  per-frame trees, per-node outputs, node DiffBundles, and rewinds from the
+  terminal without a GUI.
+
+---
+
+## New: CLI control plane
+
+The CLI is now a fuller local control plane rather than just a workflow
+launcher:
+
+- **Interactive TUI.** `smithers tui` opens an OpenTUI dashboard with runs,
+  logs, metrics, node detail, frames, SQL browsing, chat, and attention panes.
+- **Workflow workspace commands.** `smithers init` installs the local
+  `.smithers/` workflow pack, and `smithers workflow list|run|path|create|doctor`
+  discovers and manages workflows under `.smithers/workflows`.
+- **Run inspection commands.** `ps`, `logs`, `events`, `node`, `why`,
+  `watch`, `supervise`, `cancel`, and `down` now share the derived RunState
+  model and emit machine-readable JSON when requested.
+- **Agent and integration helpers.** `agents capabilities|doctor`,
+  `openapi list`, `memory list`, cron management, and the semantic MCP server
+  surface are now part of the CLI package.
 
 ---
 
@@ -107,6 +138,25 @@ See [the RunState runtime doc](/runtime/run-state) for the full shape.
 - **`WorkflowDefinition` gains `readableName` and `description`.** Used by the
   CLI, Gateway, and DevTools to render workflows with a human-friendly label
   instead of the programmatic ID.
+
+---
+
+## New: Durable alerts
+
+Alert policy support now has a concrete storage and operator surface:
+
+- **Typed `alertPolicy` metadata.** `createSmithers(..., { alertPolicy })`
+  and workflow-level overrides carry owners, severities, runbooks, labels,
+  and reaction metadata.
+- **Expanded `_smithers_alerts` schema.** Alert rows now include
+  fingerprint, node/iteration, owner, runbook, labels, reaction JSON, source
+  event type, first/last fired timestamps, occurrence count, silence state,
+  and acknowledged/resolved actor fields.
+- **CLI alert management.** `smithers alerts list|ack|resolve|silence`
+  manages durable alert instances.
+- **Important scope note.** Built-in runtime rule evaluators and delivery
+  transports are not bundled in 0.16. Runtime integrations should evaluate
+  policies and write alert rows through the DB adapter.
 
 ---
 
@@ -132,6 +182,13 @@ See [the RunState runtime doc](/runtime/run-state) for the full shape.
 - **Engine runtime split.** The engine's runtime implementation has been
   split into a dedicated module so Effect interop helpers and control APIs
   can be inlined without circular imports.
+
+- **Package naming corrected for publish.** The public package is
+  `smithers-orchestrator`; the private repository root is
+  `smithers-monorepo`.
+
+- **Generated workflow imports now use `smithers-orchestrator`.** The CLI
+  scaffold and E2E fixtures no longer generate stale `smithers` imports.
 
 ---
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import React from "react";
 import { Effect } from "effect";
 import { SmithersDb } from "@smithers/db/adapter";
-import { Task, Workflow, runWorkflow } from "smithers";
+import { Task, Workflow, runWorkflow } from "smithers-orchestrator";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";
 import { outputSchemas } from "../../smithers/tests/schema.js";
 import { jumpToFrame } from "../src/jumpToFrame.js";

@@ -202,7 +202,7 @@ Every frame commit produces a `GraphSnapshot`.
 
 ```bash
 bunx smithers-orchestrator timeline <run-id>           # frames + forks
-bunx smithers-orchestrator diff <run-a>:5 <run-b>:7    # what changed
+bunx smithers-orchestrator diff <run-id> <node-id>     # node DiffBundle
 bunx smithers-orchestrator fork workflow.tsx --run-id <id> --frame 5 --reset-node analyze
 bunx smithers-orchestrator replay workflow.tsx --run-id <id> --frame 5 --restore-vcs
 ```

@@ -1,10 +1,10 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { SmithersCtx } from "@smithers/react-reconciler/context";
-import { renderFrame, runWorkflow } from "smithers";
+import { renderFrame, runWorkflow } from "smithers-orchestrator";
 import { createTestSmithers } from "./helpers.js";
 import { z } from "zod";
-import { createSmithers } from "smithers";
+import { createSmithers } from "smithers-orchestrator";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

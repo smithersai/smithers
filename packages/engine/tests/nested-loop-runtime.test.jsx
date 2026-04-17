@@ -1,4 +1,4 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 /**
  * Regression tests for https://github.com/jjhub-ai/smithers/issues/117
  *
@@ -7,7 +7,7 @@
  * 2. Loop-owned task reuses cache across iterations
  */
 import { describe, expect, test } from "bun:test";
-import { Loop, Sequence, Task, Workflow, runWorkflow } from "smithers";
+import { Loop, Sequence, Task, Workflow, runWorkflow } from "smithers-orchestrator";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";
 import { z } from "zod";
 import { Effect } from "effect";

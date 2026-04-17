@@ -1,4 +1,4 @@
-/** @jsxImportSource smithers */
+/** @jsxImportSource smithers-orchestrator */
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 import { rmSync } from "node:fs";
@@ -90,7 +90,7 @@ describe("Gateway webhook ingestion", () => {
     let server;
     let dbPaths = [];
     beforeAll(async () => {
-        createSmithers = (await import("smithers/create")).createSmithers;
+        createSmithers = (await import("smithers-orchestrator/create")).createSmithers;
         Gateway = (await import("../src/gateway.js")).Gateway;
         SmithersDb = (await import("@smithers/db/adapter")).SmithersDb;
         WaitForEvent = (await import("@smithers/components/components/WaitForEvent")).WaitForEvent;
