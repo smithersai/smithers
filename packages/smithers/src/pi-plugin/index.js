@@ -1,11 +1,13 @@
 import { SmithersError } from "@smithers/errors/SmithersError";
 /** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+/** @typedef {{ baseUrl?: string; apiKey?: string }} RequestOptions */
 
 const DEFAULT_BASE = "http://127.0.0.1:7331";
 /**
  * @param {RequestOptions} [opts]
  */
 function buildHeaders(opts, withJson = false) {
+    /** @type {Record<string, string>} */
     const headers = {};
     if (withJson)
         headers["Content-Type"] = "application/json";
@@ -15,8 +17,9 @@ function buildHeaders(opts, withJson = false) {
 }
 /**
  * @param {string} path
- * @param {any} body
+ * @param {unknown} body
  * @param {RequestOptions} [opts]
+ * @returns {Promise<unknown>}
  */
 async function post(path, body, opts = {}) {
     const base = opts.baseUrl ?? DEFAULT_BASE;
@@ -36,24 +39,28 @@ async function post(path, body, opts = {}) {
 }
 /**
  * @param {{ workflowPath: string; input: unknown; runId?: string; baseUrl?: string; apiKey?: string; }} args
+ * @returns {Promise<unknown>}
  */
 export async function runWorkflow(args) {
     return post("/v1/runs", { workflowPath: args.workflowPath, input: args.input, runId: args.runId }, { baseUrl: args.baseUrl, apiKey: args.apiKey });
 }
 /**
  * @param {{ workflowPath: string; runId: string; baseUrl?: string; apiKey?: string; }} args
+ * @returns {Promise<unknown>}
  */
 export async function resume(args) {
     return post("/v1/runs", { workflowPath: args.workflowPath, runId: args.runId, resume: true }, { baseUrl: args.baseUrl, apiKey: args.apiKey });
 }
 /**
  * @param {{ runId: string; nodeId: string; iteration?: number; note?: string; baseUrl?: string; apiKey?: string; }} args
+ * @returns {Promise<unknown>}
  */
 export async function approve(args) {
     return post(`/v1/runs/${args.runId}/nodes/${args.nodeId}/approve`, { iteration: args.iteration ?? 0, note: args.note }, { baseUrl: args.baseUrl, apiKey: args.apiKey });
 }
 /**
  * @param {{ runId: string; nodeId: string; iteration?: number; note?: string; baseUrl?: string; apiKey?: string; }} args
+ * @returns {Promise<unknown>}
  */
 export async function deny(args) {
     return post(`/v1/runs/${args.runId}/nodes/${args.nodeId}/deny`, { iteration: args.iteration ?? 0, note: args.note }, { baseUrl: args.baseUrl, apiKey: args.apiKey });
@@ -90,6 +97,7 @@ export async function* streamEvents(args) {
 }
 /**
  * @param {{ runId: string; baseUrl?: string; apiKey?: string; }} args
+ * @returns {Promise<unknown>}
  */
 export async function getStatus(args) {
     const base = args.baseUrl ?? DEFAULT_BASE;
@@ -107,6 +115,7 @@ export async function getStatus(args) {
 }
 /**
  * @param {{ runId: string; tail?: number; baseUrl?: string; apiKey?: string; }} args
+ * @returns {Promise<unknown>}
  */
 export async function getFrames(args) {
     const base = args.baseUrl ?? DEFAULT_BASE;
@@ -124,12 +133,14 @@ export async function getFrames(args) {
 }
 /**
  * @param {{ runId: string; baseUrl?: string; apiKey?: string; }} args
+ * @returns {Promise<unknown>}
  */
 export async function cancel(args) {
     return post(`/v1/runs/${args.runId}/cancel`, {}, { baseUrl: args.baseUrl, apiKey: args.apiKey });
 }
 /**
  * @param {{ limit?: number; status?: string; baseUrl?: string; apiKey?: string; }} [args]
+ * @returns {Promise<unknown>}
  */
 export async function listRuns(args = {}) {
     const base = args.baseUrl ?? DEFAULT_BASE;

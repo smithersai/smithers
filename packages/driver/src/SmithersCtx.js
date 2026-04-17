@@ -8,26 +8,29 @@ import { withLogicalIterationShortcuts } from "./withLogicalIterationShortcuts.j
 /** @typedef {import("./SmithersCtxOptions.ts").SmithersCtxOptions} SmithersCtxOptions */
 /** @typedef {import("./RunAuthContext.ts").RunAuthContext} RunAuthContext */
 /** @typedef {import("./SmithersRuntimeConfig.ts").SmithersRuntimeConfig} SmithersRuntimeConfig */
+/** @typedef {unknown} TableRef */
+/** @typedef {Record<string, unknown> & { iteration?: number; nodeId?: string }} OutputRow */
 /**
  * @template Schema
  * @typedef {import("./OutputAccessor.ts").OutputAccessor<Schema>} OutputAccessor
  */
 
 /**
- * @param {any} table
+ * @param {TableRef} table
  * @returns {string | undefined}
  */
 function resolveDrizzleName(table) {
     if (!table || typeof table !== "object")
         return undefined;
-    const tableMeta = table._;
+    const tableObj = /** @type {Record<string, unknown>} */ (table);
+    const tableMeta = tableObj._;
     if (tableMeta &&
         typeof tableMeta === "object" &&
-        typeof tableMeta.name === "string") {
-        return tableMeta.name;
+        typeof (/** @type {Record<string, unknown>} */ (tableMeta)).name === "string") {
+        return /** @type {string} */ ((/** @type {Record<string, unknown>} */ (tableMeta)).name);
     }
-    if (typeof table.name === "string")
-        return table.name;
+    if (typeof tableObj.name === "string")
+        return /** @type {string} */ (tableObj.name);
     return undefined;
 }
 
@@ -41,7 +44,7 @@ export class SmithersCtx {
     iteration;
     /** @type {Record<string, number> | undefined} */
     iterations;
-    /** @type {Schema extends { input: infer T } ? T : any} */
+    /** @type {Schema extends { input: infer T } ? T : unknown} */
     input;
     /** @type {RunAuthContext | null} */
     auth;
@@ -51,7 +54,7 @@ export class SmithersCtx {
     outputs;
     /** @type {import("./OutputSnapshot.ts").OutputSnapshot} */
     _outputs;
-    /** @type {Map<any, string> | undefined} */
+    /** @type {Map<unknown, string> | undefined} */
     _zodToKeyName;
     /** @type {Set<string>} */
     _currentScopes;
@@ -62,7 +65,7 @@ export class SmithersCtx {
         this.runId = opts.runId;
         this.iteration = opts.iteration;
         this.iterations = withLogicalIterationShortcuts(opts.iterations);
-        this.input = /** @type {any} */ (normalizeInputRow(opts.input));
+        this.input = /** @type {Schema extends { input: infer T } ? T : unknown} */ (normalizeInputRow(opts.input));
         this.auth = opts.auth ?? null;
         this.__smithersRuntime = opts.runtimeConfig ?? null;
         this._outputs = opts.outputs;
@@ -78,9 +81,9 @@ export class SmithersCtx {
         this.outputs = /** @type {OutputAccessor<Schema>} */ (/** @type {unknown} */ (outputsFn));
     }
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {OutputKey} key
-     * @returns {any}
+     * @returns {OutputRow}
      */
     output(table, key) {
         const row = this.resolveRow(table, key);
@@ -90,22 +93,23 @@ export class SmithersCtx {
         return row;
     }
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {OutputKey} key
-     * @returns {any | undefined}
+     * @returns {OutputRow | undefined}
      */
     outputMaybe(table, key) {
         return this.resolveRow(table, key);
     }
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {string} nodeId
-     * @returns {any | undefined}
+     * @returns {OutputRow | undefined}
      */
     latest(table, nodeId) {
         const tableName = this.resolveTableName(table);
         const rows = this._outputs[tableName] ?? [];
         const matching = filterRowsByNodeId(rows, nodeId, this._currentScopes);
+        /** @type {OutputRow | undefined} */
         let best = undefined;
         let bestIteration = -Infinity;
         for (const row of matching) {
@@ -146,7 +150,7 @@ export class SmithersCtx {
         });
     }
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {string} nodeId
      * @returns {number}
      */
@@ -164,7 +168,7 @@ export class SmithersCtx {
         return seen.size;
     }
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @returns {string}
      */
     resolveTableName(table) {
@@ -176,9 +180,9 @@ export class SmithersCtx {
         return resolveDrizzleName(table) ?? String(table);
     }
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {OutputKey} key
-     * @returns {any | undefined}
+     * @returns {OutputRow | undefined}
      */
     resolveRow(table, key) {
         const tableName = this.resolveTableName(table);

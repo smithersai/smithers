@@ -1,10 +1,10 @@
 import * as _smithers_graph_XmlNode from '@smithers/graph/XmlNode';
 import * as _smithers_time_travel_timetravel from '@smithers/time-travel/timetravel';
-export { timeTravel } from '@smithers/time-travel/timetravel';
 import * as _smithers_graph_TaskDescriptor from '@smithers/graph/TaskDescriptor';
 import * as _smithers_components_SmithersWorkflow from '@smithers/components/SmithersWorkflow';
 import { SmithersWorkflow as SmithersWorkflow$1 } from '@smithers/components/SmithersWorkflow';
 import * as _smithers_observability_SmithersEvent from '@smithers/observability/SmithersEvent';
+import { SmithersEvent as SmithersEvent$1 } from '@smithers/observability/SmithersEvent';
 import * as _smithers_errors_SmithersErrorCode from '@smithers/errors/SmithersErrorCode';
 import * as _smithers_errors_SmithersError from '@smithers/errors/SmithersError';
 export { SmithersError as SmithersErrorInstance } from '@smithers/errors/SmithersError';
@@ -22,7 +22,6 @@ import * as _smithers_driver_RunStatus from '@smithers/driver/RunStatus';
 import * as _smithers_driver_RunResult from '@smithers/driver/RunResult';
 import * as _smithers_driver_RunOptions from '@smithers/driver/RunOptions';
 import * as _smithers_time_travel_revert from '@smithers/time-travel/revert';
-export { revertToAttempt } from '@smithers/time-travel/revert';
 import * as _smithers_observability from '@smithers/observability';
 export { SmithersObservability, activeNodes, activeRuns, approvalsDenied, approvalsGranted, approvalsRequested, attemptDuration, cacheHits, cacheMisses, createSmithersObservabilityLayer, createSmithersOtelLayer, createSmithersRuntimeLayer, dbQueryDuration, dbRetries, dbTransactionDuration, dbTransactionRetries, dbTransactionRollbacks, externalWaitAsyncPending, hotReloadDuration, hotReloadFailures, hotReloads, httpRequestDuration, httpRequests, nodeDuration, nodesFailed, nodesFinished, nodesStarted, prometheusContentType, renderPrometheusMetrics, resolveSmithersObservabilityOptions, runsTotal, sandboxActive, sandboxBundleSizeBytes, sandboxCompletedTotal, sandboxCreatedTotal, sandboxDurationMs, sandboxPatchCount, sandboxTransportDurationMs, schedulerQueueDepth, smithersMetrics, timerDelayDuration, timersCancelled, timersCreated, timersFired, timersPending, toolCallsTotal, toolDuration, trackSmithersEvent, vcsDuration } from '@smithers/observability';
 import * as _smithers_driver_OutputKey from '@smithers/driver/OutputKey';
@@ -69,9 +68,6 @@ export { isSmithersError } from '@smithers/errors/isSmithersError';
 export { knownSmithersErrorCodes } from '@smithers/errors/knownSmithersErrorCodes';
 export { signalRun } from '@smithers/engine/signals';
 export { usePatched } from '@smithers/engine/effect/versioning';
-export { bash, defineTool, edit, getDefinedToolMetadata, grep, read, tools, write } from './tools.js';
-export type { DefinedToolContext, DefineToolOptions, ToolContext } from './tools.js';
-export { SmithersDb } from '@smithers/db/adapter';
 export { ensureSmithersTables } from '@smithers/db/ensure';
 export { markdownComponents } from '@smithers/components/markdownComponents';
 export { renderMdx } from '@smithers/components/renderMdx';
@@ -81,12 +77,14 @@ export { camelToSnake } from '@smithers/db/utils/camelToSnake';
 export { unwrapZodType } from '@smithers/db/unwrapZodType';
 export { zodSchemaToJsonExample } from '@smithers/components/zod-to-example';
 export { renderFrame, runWorkflow } from '@smithers/engine';
+import { Tool } from 'ai';
+import { SmithersDb } from '@smithers/db/adapter';
 
 type SerializedCtx$1 = {
     runId: string;
     iteration: number;
     iterations: Record<string, number>;
-    input: any;
+    input: unknown;
     outputs: OutputSnapshot;
 };
 
@@ -101,7 +99,7 @@ type HostNodeJson$1 = {
     text: string;
 };
 
-type ExternalSmithersConfig$2<S extends Record<string, z.ZodObject<any>>> = {
+type ExternalSmithersConfig$2<S extends Record<string, z.ZodObject<z.ZodRawShape>>> = {
     schemas: S;
     agents: Record<string, AgentLike$1>;
     /** Synchronous build function that returns a HostNode JSON tree. */
@@ -110,13 +108,13 @@ type ExternalSmithersConfig$2<S extends Record<string, z.ZodObject<any>>> = {
 };
 
 /** Union of all Zod schema values registered in the schema, constrained to ZodObject. */
-type SchemaOutput<Schema> = Extract<Schema[keyof Schema], z.ZodObject<any>>;
+type SchemaOutput<Schema> = Extract<Schema[keyof Schema], z.ZodObject<z.ZodRawShape>>;
 type RuntimeSchema<Schema> = Schema extends {
     input: infer Input;
 } ? Omit<Schema, "input"> & {
     input: Input extends z.ZodTypeAny ? z.infer<Input> : Input;
 } : Schema;
-type CreateSmithersApi$1<Schema = any> = {
+type CreateSmithersApi$1<Schema = unknown> = {
     Workflow: (props: WorkflowProps) => React.ReactElement;
     Approval: <Row>(props: ApprovalProps$1<Row, SchemaOutput<Schema>>) => React.ReactElement;
     Task: <Row, D extends DepsSpec$1 = {}>(props: TaskProps$1<Row, SchemaOutput<Schema>, D>) => React.ReactElement;
@@ -130,13 +128,13 @@ type CreateSmithersApi$1<Schema = any> = {
     continueAsNew: typeof continueAsNew;
     Worktree: typeof Worktree;
     Sandbox: (props: SandboxProps$1) => React.ReactElement;
-    Signal: <Schema extends z.ZodObject<any>>(props: SignalProps$1<Schema>) => React.ReactElement;
+    Signal: <SignalSchema extends z.ZodObject<z.ZodRawShape>>(props: SignalProps$1<SignalSchema>) => React.ReactElement;
     Timer: typeof Timer;
     useCtx: () => SmithersCtx$1<RuntimeSchema<Schema>>;
     smithers: (build: (ctx: SmithersCtx$1<RuntimeSchema<Schema>>) => React.ReactElement, opts?: SmithersWorkflowOptions$1) => SmithersWorkflow$1<RuntimeSchema<Schema>>;
-    db: BunSQLiteDatabase<any>;
+    db: BunSQLiteDatabase<Record<string, unknown>>;
     tables: {
-        [K in keyof Schema]: any;
+        [K in keyof Schema]: unknown;
     };
     outputs: {
         [K in keyof Schema]: Schema[K];
@@ -193,6 +191,95 @@ declare function createExternalSmithers<S extends Record<string, zod.ZodObject<a
 type ExternalSmithersConfig$1<S> = ExternalSmithersConfig$2<S>;
 
 declare function mdxPlugin(): void;
+
+type ToolContext = {
+  db: SmithersDb;
+  runId: string;
+  nodeId: string;
+  iteration: number;
+  attempt: number;
+  idempotencyKey?: string | null;
+  rootDir: string;
+  allowNetwork: boolean;
+  maxOutputBytes: number;
+  timeoutMs: number;
+  seq: number;
+  emitEvent?: (event: SmithersEvent$1) => void | Promise<void>;
+};
+
+type DefinedToolContext = ToolContext & {
+  idempotencyKey: string | null;
+  toolName: string;
+  sideEffect: boolean;
+  idempotent: boolean;
+};
+
+type DefineToolOptions<Schema extends z.ZodTypeAny, Result> = {
+  name: string;
+  description?: string;
+  schema: Schema;
+  sideEffect?: boolean;
+  idempotent?: boolean;
+  execute: (
+    args: z.infer<Schema>,
+    ctx: DefinedToolContext,
+  ) => Promise<Result> | Result;
+};
+
+type DefinedToolMetadata = {
+  name: string;
+  sideEffect: boolean;
+  idempotent: boolean;
+};
+
+/**
+ * A tool produced by {@link defineTool} — an `ai` SDK {@link Tool} whose input
+ * type has been narrowed from its Zod schema and whose output type is the
+ * caller-declared `Result`.
+ */
+type DefinedTool<Schema extends z.ZodTypeAny, Result> = Tool<
+  z.infer<Schema>,
+  Result
+>;
+declare function getDefinedToolMetadata(
+  value: unknown,
+): DefinedToolMetadata | null;
+declare function defineTool<
+  Schema extends z.ZodTypeAny,
+  Result,
+>(options: DefineToolOptions<Schema, Result>): DefinedTool<Schema, Result>;
+
+declare const read: DefinedTool<
+  z.ZodObject<{ path: z.ZodString }>,
+  string
+>;
+declare const write: DefinedTool<
+  z.ZodObject<{ path: z.ZodString; content: z.ZodString }>,
+  "ok"
+>;
+declare const edit: DefinedTool<
+  z.ZodObject<{ path: z.ZodString; patch: z.ZodString }>,
+  "ok"
+>;
+declare const grep: DefinedTool<
+  z.ZodObject<{ pattern: z.ZodString; path: z.ZodOptional<z.ZodString> }>,
+  string
+>;
+declare const bash: DefinedTool<
+  z.ZodObject<{
+    cmd: z.ZodString;
+    args: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    opts: z.ZodOptional<z.ZodObject<{ cwd: z.ZodOptional<z.ZodString> }>>;
+  }>,
+  string
+>;
+declare const tools: {
+  read: typeof read;
+  write: typeof write;
+  edit: typeof edit;
+  grep: typeof grep;
+  bash: typeof bash;
+};
 
 type AgentCapabilityRegistry = _smithers_agents_capability_registry.AgentCapabilityRegistry;
 type AgentLike = _smithers_agents_AgentLike.AgentLike;
@@ -318,4 +405,4 @@ type XmlElement = _smithers_graph_XmlNode.XmlElement;
 type XmlNode = _smithers_graph_XmlNode.XmlNode;
 type XmlText = _smithers_graph_XmlNode.XmlText;
 
-export { type AgentCapabilityRegistry, type AgentLike, type AgentToolDescriptor, type AggregateOptions, type AggregateScore, type AnthropicAgentOptions, type ApprovalAutoApprove, type ApprovalDecision, type ApprovalMode, type ApprovalOption, type ApprovalProps, type ApprovalRanking, type ApprovalRequest, type ApprovalSelection, type ColumnDef, type ConnectRequest, type ContinueAsNewProps, type CreateScorerConfig, type CreateSmithersApi, type DepsSpec, type EventFrame, type ExternalSmithersConfig, type GatewayAuthConfig, type GatewayDefaults, type GatewayOptions, type GatewayTokenGrant, type GraphSnapshot, type HelloResponse, type HostContainer, type HostNodeJson, type InferDeps, type InferOutputEntry, type InferRow, type JjRevertResult, type KanbanProps, type KnownSmithersErrorCode, type LlmJudgeConfig, type MemoryFact, type MemoryLayerConfig, type MemoryMessage, type MemoryNamespace, type MemoryNamespaceKind, type MemoryProcessor, type MemoryProcessorConfig, type MemoryServiceApi, type MemoryStore, type MemoryThread, type MessageHistoryConfig, type OpenAIAgentOptions, type OpenApiAuth, type OpenApiSpec, type OpenApiToolsOptions, type OutputAccessor, type OutputKey, type OutputTarget, type PiAgentOptions, type PiExtensionUiRequest, type PiExtensionUiResponse, type PollerProps, type RequestFrame, type ResolvedSmithersObservabilityOptions, type ResponseFrame, type RevertOptions, type RevertResult, type RunJjOptions, type RunJjResult, type RunOptions, type RunResult, type RunStatus, type SagaProps, type SagaStepDef, type SagaStepProps, type SamplingConfig, type SandboxProps, type SandboxRuntime, type SandboxVolumeMount, type SandboxWorkspaceSpec, type SchemaRegistryEntry, type ScoreResult, type ScoreRow, type Scorer, type ScorerBinding, type ScorerContext, type ScorerFn, type ScorerInput, type ScorersMap, type SemanticRecallConfig, type SerializedCtx, type ServeOptions, type ServerOptions, type SignalProps, type SmithersAlertLabels, type SmithersAlertPolicy, type SmithersAlertPolicyDefaults, type SmithersAlertPolicyRule, type SmithersAlertReaction, type SmithersAlertReactionKind, type SmithersAlertReactionRef, type SmithersAlertSeverity, type SmithersCtx, type SmithersError, type SmithersErrorCode, type SmithersEvent, type SmithersLogFormat, type SmithersObservabilityOptions, type SmithersObservabilityService, type SmithersWorkflow, type SmithersWorkflowOptions, type TaskDescriptor, type TaskMemoryConfig, type TaskProps, type TimeTravelOptions, type TimeTravelResult, type TimerProps, type TryCatchFinallyProps, type WaitForEventProps, type WorkingMemoryConfig, type WorkspaceAddOptions, type WorkspaceInfo, type WorkspaceResult, type XmlElement, type XmlNode, type XmlText, createExternalSmithers, createSmithers, mdxPlugin };
+export { type AgentCapabilityRegistry, type AgentLike, type AgentToolDescriptor, type AggregateOptions, type AggregateScore, type AnthropicAgentOptions, type ApprovalAutoApprove, type ApprovalDecision, type ApprovalMode, type ApprovalOption, type ApprovalProps, type ApprovalRanking, type ApprovalRequest, type ApprovalSelection, type ColumnDef, type ConnectRequest, type ContinueAsNewProps, type CreateScorerConfig, type CreateSmithersApi, type DepsSpec, type EventFrame, type ExternalSmithersConfig, type GatewayAuthConfig, type GatewayDefaults, type GatewayOptions, type GatewayTokenGrant, type GraphSnapshot, type HelloResponse, type HostContainer, type HostNodeJson, type InferDeps, type InferOutputEntry, type InferRow, type JjRevertResult, type KanbanProps, type KnownSmithersErrorCode, type LlmJudgeConfig, type MemoryFact, type MemoryLayerConfig, type MemoryMessage, type MemoryNamespace, type MemoryNamespaceKind, type MemoryProcessor, type MemoryProcessorConfig, type MemoryServiceApi, type MemoryStore, type MemoryThread, type MessageHistoryConfig, type OpenAIAgentOptions, type OpenApiAuth, type OpenApiSpec, type OpenApiToolsOptions, type OutputAccessor, type OutputKey, type OutputTarget, type PiAgentOptions, type PiExtensionUiRequest, type PiExtensionUiResponse, type PollerProps, type RequestFrame, type ResolvedSmithersObservabilityOptions, type ResponseFrame, type RevertOptions, type RevertResult, type RunJjOptions, type RunJjResult, type RunOptions, type RunResult, type RunStatus, type SagaProps, type SagaStepDef, type SagaStepProps, type SamplingConfig, type SandboxProps, type SandboxRuntime, type SandboxVolumeMount, type SandboxWorkspaceSpec, type SchemaRegistryEntry, type ScoreResult, type ScoreRow, type Scorer, type ScorerBinding, type ScorerContext, type ScorerFn, type ScorerInput, type ScorersMap, type SemanticRecallConfig, type SerializedCtx, type ServeOptions, type ServerOptions, type SignalProps, type SmithersAlertLabels, type SmithersAlertPolicy, type SmithersAlertPolicyDefaults, type SmithersAlertPolicyRule, type SmithersAlertReaction, type SmithersAlertReactionKind, type SmithersAlertReactionRef, type SmithersAlertSeverity, type SmithersCtx, type SmithersError, type SmithersErrorCode, type SmithersEvent, type SmithersLogFormat, type SmithersObservabilityOptions, type SmithersObservabilityService, type SmithersWorkflow, type SmithersWorkflowOptions, type TaskDescriptor, type TaskMemoryConfig, type TaskProps, type TimeTravelOptions, type TimeTravelResult, type TimerProps, type TryCatchFinallyProps, type WaitForEventProps, type WorkingMemoryConfig, type WorkspaceAddOptions, type WorkspaceInfo, type WorkspaceResult, type XmlElement, type XmlNode, type XmlText, bash, createExternalSmithers, createSmithers, defineTool, edit, getDefinedToolMetadata, grep, mdxPlugin, read, tools, write };

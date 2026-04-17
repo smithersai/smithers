@@ -1,5 +1,6 @@
 import type { SmithersWorkflowOptions } from "@smithers/scheduler/SmithersWorkflowOptions";
 import type { SchemaRegistryEntry } from "@smithers/db/SchemaRegistryEntry";
+import type { z } from "zod";
 import type { WorkflowElement } from "./WorkflowElement.ts";
 
 type WorkflowSmithersCtx<Schema = unknown> = import("./SmithersCtx.js").SmithersCtx<Schema>;
@@ -11,5 +12,5 @@ export type WorkflowDefinition<Schema = unknown> = {
   build: (ctx: WorkflowSmithersCtx<Schema>) => WorkflowElement;
   opts: SmithersWorkflowOptions;
   schemaRegistry?: Map<string, SchemaRegistryEntry>;
-  zodToKeyName?: Map<import("zod").ZodObject<any>, string>;
+  zodToKeyName?: Map<z.ZodObject<z.ZodRawShape>, string>;
 };

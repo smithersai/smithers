@@ -4,6 +4,6 @@ export type SerializedCtx = {
 	runId: string;
 	iteration: number;
 	iterations: Record<string, number>;
-	input: any;
+	input: unknown;
 	outputs: OutputSnapshot;
 };

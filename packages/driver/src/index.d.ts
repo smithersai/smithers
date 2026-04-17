@@ -1,14 +1,37 @@
-import { SmithersEvent } from '@smithers/observability/SmithersEvent';
 import * as _smithers_graph_types from '@smithers/graph/types';
-import { WorkflowGraph as WorkflowGraph$1, TaskDescriptor as TaskDescriptor$1 } from '@smithers/graph/types';
+import { WorkflowGraph, TaskDescriptor as TaskDescriptor$1 } from '@smithers/graph/types';
+import { SmithersEvent } from '@smithers/observability/SmithersEvent';
 import * as _smithers_scheduler from '@smithers/scheduler';
 import { WaitReason as WaitReason$1, EngineDecision as EngineDecision$1 } from '@smithers/scheduler';
-import * as zod from 'zod';
 import { z } from 'zod';
 import { SmithersWorkflowOptions } from '@smithers/scheduler/SmithersWorkflowOptions';
 import { SchemaRegistryEntry } from '@smithers/db/SchemaRegistryEntry';
 import * as _smithers_graph from '@smithers/graph';
-import { ExtractOptions, WorkflowGraph } from '@smithers/graph';
+import { ExtractOptions, WorkflowGraph as WorkflowGraph$1 } from '@smithers/graph';
+
+type TaskCompletedEvent = {
+    nodeId: string;
+    iteration: number;
+    output: unknown;
+};
+
+type TaskFailedEvent = {
+    nodeId: string;
+    iteration: number;
+    error: unknown;
+};
+
+type WorkflowSession$2 = {
+    submitGraph(graph: WorkflowGraph): unknown;
+    taskCompleted(event: TaskCompletedEvent): unknown;
+    taskFailed(event: TaskFailedEvent): unknown;
+    getNextDecision?(): unknown;
+    cancelRequested?(): unknown;
+};
+
+type WorkflowRuntime$2 = {
+    runPromise<A>(effect: unknown): Promise<A>;
+};
 
 type RunAuthContext$2 = {
     triggeredBy: string;
@@ -99,50 +122,26 @@ type WaitHandler$1 = (reason: WaitReason$1, context: {
     options: RunOptions$2;
 }) => Promise<EngineDecision$1 | RunResult$2> | EngineDecision$1 | RunResult$2;
 
-type WorkflowRuntime$1 = {
-    runPromise<A>(effect: unknown): Promise<A>;
-};
-
-type TaskCompletedEvent = {
-    nodeId: string;
-    iteration: number;
-    output: unknown;
-};
-
-type TaskFailedEvent = {
-    nodeId: string;
-    iteration: number;
-    error: unknown;
-};
-
-type WorkflowSession$1 = {
-    submitGraph(graph: WorkflowGraph$1): unknown;
-    taskCompleted(event: TaskCompletedEvent): unknown;
-    taskFailed(event: TaskFailedEvent): unknown;
-    getNextDecision?(): unknown;
-    cancelRequested?(): unknown;
-};
-
 type InferRow<TTable> = TTable extends {
     $inferSelect: infer R;
 } ? R : never;
-type InferOutputEntry<T> = T extends z.ZodTypeAny ? z.infer<T> : T extends {
-    $inferSelect: any;
+type InferOutputEntry$1<T> = T extends z.ZodTypeAny ? z.infer<T> : T extends {
+    $inferSelect: unknown;
 } ? InferRow<T> : never;
 type FallbackTableName<Schema> = [keyof Schema & string] extends [never] ? string : never;
-type OutputAccessor$2<Schema> = {
-    (table: FallbackTableName<Schema>): Array<any>;
-    <K extends keyof Schema & string>(table: K): Array<InferOutputEntry<Schema[K]>>;
+type OutputAccessor$2<Schema, TRow = unknown> = {
+    (table: FallbackTableName<Schema>): Array<TRow>;
+    <K extends keyof Schema & string>(table: K): Array<InferOutputEntry$1<Schema[K]>>;
 } & {
-    [K in keyof Schema & string]: Array<InferOutputEntry<Schema[K]>>;
+    [K in keyof Schema & string]: Array<InferOutputEntry$1<Schema[K]>>;
 };
 
 type SmithersRuntimeConfig$1 = {
     cliAgentToolsDefault?: "all" | "explicit-only";
 };
 
-type OutputSnapshot$2 = {
-    [tableName: string]: Array<any>;
+type OutputSnapshot$2<TFallback = unknown> = {
+    [tableName: string]: Array<TFallback>;
 };
 
 type SmithersCtxOptions$2 = {
@@ -185,10 +184,10 @@ declare class SmithersCtx<Schema extends unknown = unknown> {
     iteration: number;
     /** @type {Record<string, number> | undefined} */
     iterations: Record<string, number> | undefined;
-    /** @type {Schema extends { input: infer T } ? T : any} */
+    /** @type {Schema extends { input: infer T } ? T : unknown} */
     input: Schema extends {
         input: infer T;
-    } ? T : any;
+    } ? T : unknown;
     /** @type {RunAuthContext | null} */
     auth: RunAuthContext$1 | null;
     /** @type {SmithersRuntimeConfig | null | undefined} */
@@ -197,28 +196,28 @@ declare class SmithersCtx<Schema extends unknown = unknown> {
     outputs: OutputAccessor$1<Schema>;
     /** @type {import("./OutputSnapshot.ts").OutputSnapshot} */
     _outputs: OutputSnapshot$2;
-    /** @type {Map<any, string> | undefined} */
-    _zodToKeyName: Map<any, string> | undefined;
+    /** @type {Map<unknown, string> | undefined} */
+    _zodToKeyName: Map<unknown, string> | undefined;
     /** @type {Set<string>} */
     _currentScopes: Set<string>;
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {OutputKey} key
-     * @returns {any}
+     * @returns {OutputRow}
      */
-    output(table: any, key: OutputKey$1): any;
+    output(table: TableRef, key: OutputKey$1): OutputRow;
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {OutputKey} key
-     * @returns {any | undefined}
+     * @returns {OutputRow | undefined}
      */
-    outputMaybe(table: any, key: OutputKey$1): any | undefined;
+    outputMaybe(table: TableRef, key: OutputKey$1): OutputRow | undefined;
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {string} nodeId
-     * @returns {any | undefined}
+     * @returns {OutputRow | undefined}
      */
-    latest(table: any, nodeId: string): any | undefined;
+    latest(table: TableRef, nodeId: string): OutputRow | undefined;
     /**
      * @param {unknown} value
      * @param {SafeParser} schema
@@ -226,28 +225,33 @@ declare class SmithersCtx<Schema extends unknown = unknown> {
      */
     latestArray(value: unknown, schema: SafeParser): unknown[];
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {string} nodeId
      * @returns {number}
      */
-    iterationCount(table: any, nodeId: string): number;
+    iterationCount(table: TableRef, nodeId: string): number;
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @returns {string}
      */
-    resolveTableName(table: any): string;
+    resolveTableName(table: TableRef): string;
     /**
-     * @param {any} table
+     * @param {TableRef} table
      * @param {OutputKey} key
-     * @returns {any | undefined}
+     * @returns {OutputRow | undefined}
      */
-    resolveRow(table: any, key: OutputKey$1): any | undefined;
+    resolveRow(table: TableRef, key: OutputKey$1): OutputRow | undefined;
 }
 type OutputKey$1 = OutputKey$2;
 type SafeParser = SafeParser$1;
 type SmithersCtxOptions$1 = SmithersCtxOptions$2;
 type RunAuthContext$1 = RunAuthContext$2;
 type SmithersRuntimeConfig = SmithersRuntimeConfig$1;
+type TableRef = unknown;
+type OutputRow = Record<string, unknown> & {
+    iteration?: number;
+    nodeId?: string;
+};
 type OutputAccessor$1<Schema> = OutputAccessor$2<Schema>;
 
 type WorkflowElement = {
@@ -264,18 +268,18 @@ type WorkflowDefinition$1<Schema = unknown> = {
     build: (ctx: WorkflowSmithersCtx<Schema>) => WorkflowElement;
     opts: SmithersWorkflowOptions;
     schemaRegistry?: Map<string, SchemaRegistryEntry>;
-    zodToKeyName?: Map<zod.ZodObject<any>, string>;
+    zodToKeyName?: Map<z.ZodObject<z.ZodRawShape>, string>;
 };
 
 type WorkflowGraphRenderer$1 = {
-    render(element: WorkflowElement, opts?: ExtractOptions): Promise<WorkflowGraph> | WorkflowGraph;
+    render(element: WorkflowElement, opts?: ExtractOptions): Promise<WorkflowGraph$1> | WorkflowGraph$1;
 };
 
 type WorkflowDriverOptions$1<Schema = unknown> = {
     workflow: WorkflowDefinition$1<Schema>;
-    runtime: WorkflowRuntime$1;
+    runtime: WorkflowRuntime$2;
     renderer: WorkflowGraphRenderer$1;
-    session?: WorkflowSession$1;
+    session?: WorkflowSession$2;
     createSession?: CreateWorkflowSession$1;
     db?: unknown;
     runId?: string;
@@ -298,7 +302,7 @@ declare class WorkflowDriver<Schema extends unknown = unknown> {
     /** @type {import("./WorkflowDefinition.ts").WorkflowDefinition<Schema>} */
     workflow: WorkflowDefinition$1<Schema>;
     /** @type {WorkflowRuntime} */
-    runtime: WorkflowRuntime;
+    runtime: WorkflowRuntime$1;
     /** @type {unknown} */
     db: unknown;
     /** @type {string | undefined} */
@@ -320,7 +324,7 @@ declare class WorkflowDriver<Schema extends unknown = unknown> {
     /** @type {WorkflowGraphRenderer} */
     renderer: WorkflowGraphRenderer;
     /** @type {WorkflowSession | undefined} */
-    session: WorkflowSession | undefined;
+    session: WorkflowSession$1 | undefined;
     /** @type {string} */
     activeRunId: string;
     /** @type {RunOptions | undefined} */
@@ -341,7 +345,7 @@ declare class WorkflowDriver<Schema extends unknown = unknown> {
    * @param {RunOptions} options
    * @returns {Promise<WorkflowSession>}
    */
-    initializeSession(runId: string, options: RunOptions$1): Promise<WorkflowSession>;
+    initializeSession(runId: string, options: RunOptions$1): Promise<WorkflowSession$1>;
     /**
    * @param {RenderContext} context
    * @returns {Promise<EngineDecision>}
@@ -375,8 +379,8 @@ declare class WorkflowDriver<Schema extends unknown = unknown> {
 }
 type CreateWorkflowSession = CreateWorkflowSession$1;
 type OutputSnapshot$1 = OutputSnapshot$2;
-type WorkflowSession = WorkflowSession$1;
-type WorkflowRuntime = WorkflowRuntime$1;
+type WorkflowSession$1 = WorkflowSession$2;
+type WorkflowRuntime$1 = WorkflowRuntime$2;
 type WorkflowGraphRenderer = WorkflowGraphRenderer$1;
 type TaskExecutor = TaskExecutor$1;
 type SchedulerWaitHandler = SchedulerWaitHandler$1;
@@ -391,6 +395,7 @@ type TaskDescriptor = _smithers_graph_types.TaskDescriptor;
 
 type HotReloadOptions = HotReloadOptions$1;
 type OutputAccessor<Schema = any> = OutputAccessor$2<Schema>;
+type InferOutputEntry<T> = InferOutputEntry$1<T>;
 type OutputKey = OutputKey$2;
 type OutputSnapshot = OutputSnapshot$2;
 type RunAuthContext = RunAuthContext$2;
@@ -400,5 +405,7 @@ type RunStatus = RunStatus$1;
 type SmithersCtxOptions = SmithersCtxOptions$2;
 type WorkflowDefinition<Schema = unknown> = WorkflowDefinition$1<Schema>;
 type WorkflowDriverOptions<Schema = unknown> = WorkflowDriverOptions$1<Schema>;
+type WorkflowRuntime = WorkflowRuntime$2;
+type WorkflowSession = WorkflowSession$2;
 
 export { type HotReloadOptions, type InferOutputEntry, type OutputAccessor, type OutputKey, type OutputSnapshot, type RunAuthContext, type RunOptions, type RunResult, type RunStatus, SmithersCtx, type SmithersCtxOptions, type WorkflowDefinition, WorkflowDriver, type WorkflowDriverOptions, type WorkflowRuntime, type WorkflowSession };

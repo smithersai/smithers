@@ -24,14 +24,14 @@ import type { SmithersCtx } from "@smithers/driver/SmithersCtx";
 import type { z } from "zod";
 
 /** Union of all Zod schema values registered in the schema, constrained to ZodObject. */
-type SchemaOutput<Schema> = Extract<Schema[keyof Schema], z.ZodObject<any>>;
+type SchemaOutput<Schema> = Extract<Schema[keyof Schema], z.ZodObject<z.ZodRawShape>>;
 type RuntimeSchema<Schema> = Schema extends { input: infer Input }
 	? Omit<Schema, "input"> & {
 			input: Input extends z.ZodTypeAny ? z.infer<Input> : Input;
 		}
 	: Schema;
 
-export type CreateSmithersApi<Schema = any> = {
+export type CreateSmithersApi<Schema = unknown> = {
 	Workflow: (props: WorkflowProps) => React.ReactElement;
 	Approval: <Row>(props: ApprovalProps<Row, SchemaOutput<Schema>>) => React.ReactElement;
 	Task: <Row, D extends DepsSpec = {}>(
@@ -47,8 +47,8 @@ export type CreateSmithersApi<Schema = any> = {
 	continueAsNew: typeof baseContinueAsNew;
 	Worktree: typeof BaseWorktree;
 	Sandbox: (props: SandboxProps) => React.ReactElement;
-	Signal: <Schema extends z.ZodObject<any>>(
-		props: SignalProps<Schema>,
+	Signal: <SignalSchema extends z.ZodObject<z.ZodRawShape>>(
+		props: SignalProps<SignalSchema>,
 	) => React.ReactElement;
 	Timer: typeof BaseTimer;
 	useCtx: () => SmithersCtx<RuntimeSchema<Schema>>;
@@ -56,7 +56,7 @@ export type CreateSmithersApi<Schema = any> = {
 		build: (ctx: SmithersCtx<RuntimeSchema<Schema>>) => React.ReactElement,
 		opts?: SmithersWorkflowOptions,
 	) => SmithersWorkflow<RuntimeSchema<Schema>>;
-	db: BunSQLiteDatabase<any>;
-	tables: { [K in keyof Schema]: any };
+	db: BunSQLiteDatabase<Record<string, unknown>>;
+	tables: { [K in keyof Schema]: unknown };
 	outputs: { [K in keyof Schema]: Schema[K] };
 };

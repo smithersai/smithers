@@ -1,3 +1,3 @@
-export type OutputSnapshot = {
-  [tableName: string]: Array<any>;
+export type OutputSnapshot<TFallback = unknown> = {
+  [tableName: string]: Array<TFallback>;
 };

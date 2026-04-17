@@ -1,3 +1,4 @@
+import type { Tool } from "ai";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
 import type { z } from "zod";
@@ -42,6 +43,16 @@ export type DefinedToolMetadata = {
   idempotent: boolean;
 };
 
+/**
+ * A tool produced by {@link defineTool} — an `ai` SDK {@link Tool} whose input
+ * type has been narrowed from its Zod schema and whose output type is the
+ * caller-declared `Result`.
+ */
+export type DefinedTool<Schema extends z.ZodTypeAny, Result> = Tool<
+  z.infer<Schema>,
+  Result
+>;
+
 export declare function runWithToolContext<T>(
   ctx: ToolContext,
   fn: () => Promise<T>,
@@ -57,13 +68,32 @@ export declare function getDefinedToolMetadata(
 export declare function defineTool<
   Schema extends z.ZodTypeAny,
   Result,
->(options: DefineToolOptions<Schema, Result>): any;
+>(options: DefineToolOptions<Schema, Result>): DefinedTool<Schema, Result>;
 
-export declare const read: any;
-export declare const write: any;
-export declare const edit: any;
-export declare const grep: any;
-export declare const bash: any;
+export declare const read: DefinedTool<
+  z.ZodObject<{ path: z.ZodString }>,
+  string
+>;
+export declare const write: DefinedTool<
+  z.ZodObject<{ path: z.ZodString; content: z.ZodString }>,
+  "ok"
+>;
+export declare const edit: DefinedTool<
+  z.ZodObject<{ path: z.ZodString; patch: z.ZodString }>,
+  "ok"
+>;
+export declare const grep: DefinedTool<
+  z.ZodObject<{ pattern: z.ZodString; path: z.ZodOptional<z.ZodString> }>,
+  string
+>;
+export declare const bash: DefinedTool<
+  z.ZodObject<{
+    cmd: z.ZodString;
+    args: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    opts: z.ZodOptional<z.ZodObject<{ cwd: z.ZodOptional<z.ZodString> }>>;
+  }>,
+  string
+>;
 export declare const tools: {
   read: typeof read;
   write: typeof write;
