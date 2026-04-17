@@ -1,9 +1,6 @@
 import * as _smithers_db_adapter from '@smithers/db/adapter';
-import { SmithersDb as SmithersDb$6 } from '@smithers/db/adapter';
+import { SmithersDb as SmithersDb$b } from '@smithers/db/adapter';
 import { SmithersEvent } from '@smithers/observability/SmithersEvent';
-import { Metric } from 'effect';
-import * as effect_MetricState from 'effect/MetricState';
-import * as effect_MetricKeyType from 'effect/MetricKeyType';
 import * as drizzle_orm_sqlite_core from 'drizzle-orm/sqlite-core';
 
 type RewindAuditResult$4 = "success" | "failed" | "partial" | "in_progress";
@@ -16,7 +13,7 @@ type RewindLockHandle$2 = {
 type JumpStepName$1 = "snapshot-pre-jump" | "pause-event-loop" | "revert-sandboxes" | "truncate-frames" | "truncate-attempts" | "truncate-outputs" | "invalidate-diffs" | "rebuild-reconciler" | "resume-event-loop";
 
 type JumpToFrameInput$2 = {
-    adapter: SmithersDb$6;
+    adapter: SmithersDb$b;
     runId: unknown;
     frameNo: unknown;
     confirm?: unknown;
@@ -54,7 +51,7 @@ type JumpResult$2 = {
     durationMs: number;
 };
 
-type VcsTag$1 = {
+type VcsTag$2 = {
     runId: string;
     frameNo: number;
     vcsType: string;
@@ -89,7 +86,7 @@ type TimelineFrame$1 = {
 /**
  * Timeline for a single run.
  */
-type RunTimeline$1 = {
+type RunTimeline$2 = {
     runId: string;
     frames: TimelineFrame$1[];
     branch: BranchInfo$2 | null;
@@ -98,9 +95,9 @@ type RunTimeline$1 = {
 /**
  * Recursive timeline tree including forks.
  */
-type TimelineTree$3 = {
-    timeline: RunTimeline$1;
-    children: TimelineTree$3[];
+type TimelineTree$4 = {
+    timeline: RunTimeline$2;
+    children: TimelineTree$4[];
 };
 
 type NodeSnapshot$1 = {
@@ -139,7 +136,7 @@ type RalphChange$1 = {
 /**
  * Structured diff between two snapshots.
  */
-type SnapshotDiff$1 = {
+type SnapshotDiff$2 = {
     nodesAdded: string[];
     nodesRemoved: string[];
     nodesChanged: NodeChange$1[];
@@ -151,7 +148,7 @@ type SnapshotDiff$1 = {
     vcsPointerChanged: boolean;
 };
 
-type SnapshotData$1 = {
+type SnapshotData$2 = {
     nodes: Array<{
         nodeId: string;
         iteration: number;
@@ -174,7 +171,7 @@ type SnapshotData$1 = {
 /**
  * Serialized snapshot of workflow state at a specific frame.
  */
-type Snapshot$3 = {
+type Snapshot$5 = {
     runId: string;
     frameNo: number;
     nodesJson: string;
@@ -187,10 +184,10 @@ type Snapshot$3 = {
     createdAtMs: number;
 };
 
-type ReplayResult$1 = {
+type ReplayResult$2 = {
     runId: string;
     branch: BranchInfo$2;
-    snapshot: Snapshot$3;
+    snapshot: Snapshot$5;
     vcsRestored: boolean;
     vcsPointer: string | null;
     vcsError?: string;
@@ -199,7 +196,7 @@ type ReplayResult$1 = {
 /**
  * Parameters for replaying from a checkpoint.
  */
-type ReplayParams$1 = {
+type ReplayParams$2 = {
     parentRunId: string;
     frameNo: number;
     inputOverrides?: Record<string, unknown>;
@@ -212,7 +209,7 @@ type ReplayParams$1 = {
 /**
  * Parsed snapshot data for diffing and display.
  */
-type ParsedSnapshot$2 = {
+type ParsedSnapshot$3 = {
     runId: string;
     frameNo: number;
     nodes: Record<string, NodeSnapshot$1>;
@@ -228,7 +225,7 @@ type ParsedSnapshot$2 = {
 /**
  * Parameters for forking a run.
  */
-type ForkParams$1 = {
+type ForkParams$2 = {
     parentRunId: string;
     frameNo: number;
     inputOverrides?: Record<string, unknown>;
@@ -237,25 +234,28 @@ type ForkParams$1 = {
     forkDescription?: string;
 };
 
+/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("./ReplayParams.ts").ReplayParams} ReplayParams */
 /**
- * @param {Parameters<typeof replayFromCheckpointEffect>} ...args
+ * Fork a run from a checkpoint and optionally restore the VCS working copy.
+ *
+ * @param {SmithersDb} adapter
+ * @param {ReplayParams} params
+ * @returns {Promise<ReplayResult>}
  */
-declare function replayFromCheckpoint(...args: any[]): Promise<{
-    runId: string;
-    branch: BranchInfo$2;
-    snapshot: Snapshot$3;
-    vcsRestored: boolean;
-    vcsPointer: string | null;
-    vcsError: string | undefined;
-}>;
+declare function replayFromCheckpoint(adapter: SmithersDb$a, params: ReplayParams$1): Promise<ReplayResult$1>;
 
-declare const snapshotsCaptured: Metric.Metric.Counter<number>;
+type SmithersDb$a = _smithers_db_adapter.SmithersDb;
+type ReplayParams$1 = ReplayParams$2;
+type ReplayResult$1 = ReplayResult$2;
 
-declare const runForksCreated: Metric.Metric.Counter<number>;
+declare const snapshotsCaptured: any;
 
-declare const replaysStarted: Metric.Metric.Counter<number>;
+declare const runForksCreated: any;
 
-declare const snapshotDuration: Metric.Metric<effect_MetricKeyType.MetricKeyType.Histogram, number, effect_MetricState.MetricState.Histogram>;
+declare const replaysStarted: any;
+
+declare const snapshotDuration: any;
 
 /** @typedef {import("../ParsedSnapshot.ts").ParsedSnapshot} ParsedSnapshot */
 /** @typedef {import("./Snapshot.ts").Snapshot} Snapshot */
@@ -263,153 +263,218 @@ declare const snapshotDuration: Metric.Metric<effect_MetricKeyType.MetricKeyType
  * @param {Snapshot} snapshot
  * @returns {ParsedSnapshot}
  */
-declare function parseSnapshot(snapshot: Snapshot$2): ParsedSnapshot$1;
-type ParsedSnapshot$1 = ParsedSnapshot$2;
-type Snapshot$2 = Snapshot$3;
+declare function parseSnapshot(snapshot: Snapshot$4): ParsedSnapshot$2;
+type ParsedSnapshot$2 = ParsedSnapshot$3;
+type Snapshot$4 = Snapshot$5;
 
+/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 /**
- * @param {Parameters<typeof captureSnapshotEffect>} ...args
+ * Capture a snapshot row for a run at a given frame.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @param {number} frameNo
+ * @param {SnapshotData} data
+ * @returns {Promise<Snapshot>}
  */
-declare function captureSnapshot(...args: any[]): Promise<Snapshot$3>;
+declare function captureSnapshot(adapter: SmithersDb$9, runId: string, frameNo: number, data: SnapshotData$1): Promise<Snapshot$3>;
 /**
- * @param {Parameters<typeof loadSnapshotEffect>} ...args
+ * Load a specific snapshot row for a run/frame.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @param {number} frameNo
+ * @returns {Promise<Snapshot | undefined>}
  */
-declare function loadSnapshot(...args: any[]): Promise<Snapshot$3 | undefined>;
+declare function loadSnapshot(adapter: SmithersDb$9, runId: string, frameNo: number): Promise<Snapshot$3 | undefined>;
 /**
- * @param {Parameters<typeof loadLatestSnapshotEffect>} ...args
+ * Load the most recent snapshot row for a run.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @returns {Promise<Snapshot | undefined>}
  */
-declare function loadLatestSnapshot(...args: any[]): Promise<Snapshot$3 | undefined>;
+declare function loadLatestSnapshot(adapter: SmithersDb$9, runId: string): Promise<Snapshot$3 | undefined>;
 /**
- * @param {Parameters<typeof listSnapshotsEffect>} ...args
+ * List lightweight snapshot index rows for a run.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @returns {Promise<Array<Pick<Snapshot, "runId" | "frameNo" | "contentHash" | "createdAtMs" | "vcsPointer">>>}
  */
-declare function listSnapshots(...args: any[]): Promise<Pick<Snapshot$3, "runId" | "frameNo" | "vcsPointer" | "contentHash" | "createdAtMs">[]>;
+declare function listSnapshots(adapter: SmithersDb$9, runId: string): Promise<Array<Pick<Snapshot$3, "runId" | "frameNo" | "contentHash" | "createdAtMs" | "vcsPointer">>>;
 
+type SmithersDb$9 = _smithers_db_adapter.SmithersDb;
+type Snapshot$3 = Snapshot$5;
+type SnapshotData$1 = SnapshotData$2;
+
+/** @typedef {import("./ParsedSnapshot.ts").ParsedSnapshot} ParsedSnapshot */
+/** @typedef {import("./snapshot/Snapshot.ts").Snapshot} Snapshot */
+/** @typedef {import("./SnapshotDiff.ts").SnapshotDiff} SnapshotDiff */
 /**
  * Compute a structured diff between two parsed snapshots.
+ *
+ * @param {ParsedSnapshot} a
+ * @param {ParsedSnapshot} b
+ * @returns {SnapshotDiff}
  */
-declare function diffSnapshots(a: any, b: any): {
-    nodesAdded: string[];
-    nodesRemoved: string[];
-    nodesChanged: {
-        nodeId: string;
-        from: any;
-        to: any;
-    }[];
-    outputsAdded: string[];
-    outputsRemoved: string[];
-    outputsChanged: {
-        key: string;
-        from: any;
-        to: any;
-    }[];
-    ralphChanged: {
-        ralphId: string;
-        from: any;
-        to: any;
-    }[];
-    inputChanged: boolean;
-    vcsPointerChanged: boolean;
-};
+declare function diffSnapshots(a: ParsedSnapshot$1, b: ParsedSnapshot$1): SnapshotDiff$1;
 /**
  * Convenience: diff two raw Snapshot rows.
+ *
+ * @param {Snapshot} a
+ * @param {Snapshot} b
+ * @returns {SnapshotDiff}
  */
-declare function diffRawSnapshots(a: any, b: any): {
-    nodesAdded: string[];
-    nodesRemoved: string[];
-    nodesChanged: {
-        nodeId: string;
-        from: any;
-        to: any;
-    }[];
-    outputsAdded: string[];
-    outputsRemoved: string[];
-    outputsChanged: {
-        key: string;
-        from: any;
-        to: any;
-    }[];
-    ralphChanged: {
-        ralphId: string;
-        from: any;
-        to: any;
-    }[];
-    inputChanged: boolean;
-    vcsPointerChanged: boolean;
-};
+declare function diffRawSnapshots(a: Snapshot$2, b: Snapshot$2): SnapshotDiff$1;
 /**
  * Colorized terminal output for a snapshot diff.
+ *
+ * @param {SnapshotDiff} diff
+ * @returns {string}
  */
-declare function formatDiffForTui(diff: any): string;
+declare function formatDiffForTui(diff: SnapshotDiff$1): string;
 /**
  * Structured JSON output for a snapshot diff.
+ *
+ * @param {SnapshotDiff} diff
+ * @returns {SnapshotDiff}
  */
-declare function formatDiffAsJson(diff: any): any;
+declare function formatDiffAsJson(diff: SnapshotDiff$1): SnapshotDiff$1;
+type ParsedSnapshot$1 = ParsedSnapshot$3;
+type Snapshot$2 = Snapshot$5;
+type SnapshotDiff$1 = SnapshotDiff$2;
 
+/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("../BranchInfo.ts").BranchInfo} BranchInfo */
+/** @typedef {import("../ForkParams.ts").ForkParams} ForkParams */
+/** @typedef {import("../snapshot/Snapshot.ts").Snapshot} Snapshot */
 /**
- * @param {Parameters<typeof forkRunEffect>} ...args
+ * Fork a run at the given frame, returning the child run metadata.
+ *
+ * @param {SmithersDb} adapter
+ * @param {ForkParams} params
+ * @returns {Promise<{ runId: string; branch: BranchInfo; snapshot: Snapshot }>}
  */
-declare function forkRun(...args: any[]): Promise<{
+declare function forkRun(adapter: SmithersDb$8, params: ForkParams$1): Promise<{
     runId: string;
-    branch: BranchInfo;
-    snapshot: Snapshot;
+    branch: BranchInfo$1;
+    snapshot: Snapshot$1;
 }>;
 /**
- * @param {Parameters<typeof listBranchesEffect>} ...args
+ * List branches that were forked from the given parent run.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} parentRunId
+ * @returns {Promise<BranchInfo[]>}
  */
-declare function listBranches(...args: any[]): Promise<BranchInfo$2[]>;
+declare function listBranches(adapter: SmithersDb$8, parentRunId: string): Promise<BranchInfo$1[]>;
 /**
- * @param {Parameters<typeof getBranchInfoEffect>} ...args
+ * Get the branch record for a run, if any.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @returns {Promise<BranchInfo | undefined>}
  */
-declare function getBranchInfo(...args: any[]): Promise<BranchInfo$2 | undefined>;
+declare function getBranchInfo(adapter: SmithersDb$8, runId: string): Promise<BranchInfo$1 | undefined>;
+type SmithersDb$8 = _smithers_db_adapter.SmithersDb;
+type BranchInfo$1 = BranchInfo$2;
+type ForkParams$1 = ForkParams$2;
+type Snapshot$1 = Snapshot$5;
 
+/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 /**
- * @param {Parameters<typeof tagSnapshotVcsEffect>} ...args
+ * Record the current VCS revision for a run/frame pair.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @param {number} frameNo
+ * @param {{ cwd?: string }} [opts]
+ * @returns {Promise<VcsTag | null>}
  */
-declare function tagSnapshotVcs(...args: any[]): Promise<VcsTag$1 | null>;
+declare function tagSnapshotVcs(adapter: SmithersDb$7, runId: string, frameNo: number, opts?: {
+    cwd?: string;
+}): Promise<VcsTag$1 | null>;
 /**
- * @param {Parameters<typeof loadVcsTagEffect>} ...args
+ * Load the VCS revision tag for a run/frame pair, if any.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @param {number} frameNo
+ * @returns {Promise<VcsTag | undefined>}
  */
-declare function loadVcsTag(...args: any[]): Promise<VcsTag$1 | undefined>;
+declare function loadVcsTag(adapter: SmithersDb$7, runId: string, frameNo: number): Promise<VcsTag$1 | undefined>;
 /**
- * @param {Parameters<typeof resolveWorkflowAtRevisionEffect>} ...args
+ * Create a jj workspace at the revision recorded for a run/frame pair.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @param {number} frameNo
+ * @param {string} workspacePath
+ * @returns {Promise<{ workspacePath: string; vcsPointer: string } | null>}
  */
-declare function resolveWorkflowAtRevision(...args: any[]): Promise<{
+declare function resolveWorkflowAtRevision(adapter: SmithersDb$7, runId: string, frameNo: number, workspacePath: string): Promise<{
     workspacePath: string;
     vcsPointer: string;
 } | null>;
 /**
- * @param {Parameters<typeof rerunAtRevisionEffect>} ...args
+ * Revert the working copy to the VCS revision for a run/frame pair.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @param {number} frameNo
+ * @param {{ cwd?: string }} [opts]
+ * @returns {Promise<{ restored: boolean; vcsPointer: string | null; error?: string }>}
  */
-declare function rerunAtRevision(...args: any[]): Promise<{
+declare function rerunAtRevision(adapter: SmithersDb$7, runId: string, frameNo: number, opts?: {
+    cwd?: string;
+}): Promise<{
     restored: boolean;
     vcsPointer: string | null;
     error?: string;
 }>;
+type SmithersDb$7 = _smithers_db_adapter.SmithersDb;
+type VcsTag$1 = VcsTag$2;
 
 /** @typedef {import("../TimelineTree.ts").TimelineTree} TimelineTree */
 /**
  * @param {TimelineTree} tree
  * @returns {string}
  */
-declare function formatTimelineForTui(tree: TimelineTree$2, indent?: number): string;
-type TimelineTree$2 = TimelineTree$3;
+declare function formatTimelineForTui(tree: TimelineTree$3, indent?: number): string;
+type TimelineTree$3 = TimelineTree$4;
 
 /** @typedef {import("../TimelineTree.ts").TimelineTree} TimelineTree */
 /**
  * @param {TimelineTree} tree
  * @returns {object}
  */
-declare function formatTimelineAsJson(tree: TimelineTree$1): object;
-type TimelineTree$1 = TimelineTree$3;
+declare function formatTimelineAsJson(tree: TimelineTree$2): object;
+type TimelineTree$2 = TimelineTree$4;
 
+/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("../RunTimeline.ts").RunTimeline} RunTimeline */
+/** @typedef {import("../TimelineTree.ts").TimelineTree} TimelineTree */
 /**
- * @param {Parameters<typeof buildTimelineEffect>} ...args
+ * Build the flat timeline (snapshots + branches) for a run.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @returns {Promise<RunTimeline>}
  */
-declare function buildTimeline(...args: any[]): Promise<RunTimeline$1>;
+declare function buildTimeline(adapter: SmithersDb$6, runId: string): Promise<RunTimeline$1>;
 /**
- * @param {Parameters<typeof buildTimelineTreeEffect>} ...args
+ * Build the recursive timeline tree (run + all descendants) for a run.
+ *
+ * @param {SmithersDb} adapter
+ * @param {string} runId
+ * @returns {Promise<TimelineTree>}
  */
-declare function buildTimelineTree(...args: any[]): Promise<TimelineTree$3>;
+declare function buildTimelineTree(adapter: SmithersDb$6, runId: string): Promise<TimelineTree$1>;
+
+type SmithersDb$6 = _smithers_db_adapter.SmithersDb;
+type RunTimeline$1 = RunTimeline$2;
+type TimelineTree$1 = TimelineTree$4;
 
 /**
  * Full state snapshot captured at each frame commit.
@@ -1036,19 +1101,20 @@ declare function countRecentRewindAuditRows(adapter: SmithersDb$2, input: {
 }): Promise<number>;
 type SmithersDb$2 = _smithers_db_adapter.SmithersDb;
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("./RewindAuditResult.ts").RewindAuditResult} RewindAuditResult */
 /**
  * Fetch audit rows for tests and diagnostics.
  *
  * @param {SmithersDb} adapter
  * @param {{ runId?: string; limit?: number; }} [input]
- * @returns {Promise<Array<{ id: number; runId: string; fromFrameNo: number; toFrameNo: number; caller: string; timestampMs: number; result: RewindAuditResult; durationMs: number | null }>>}
+ * @returns {Promise<Array<RewindAuditRow>>}
  */
 declare function listRewindAuditRows(adapter: SmithersDb$1, input?: {
     runId?: string;
     limit?: number;
-}): Promise<Array<{
+}): Promise<Array<RewindAuditRow>>;
+type SmithersDb$1 = _smithers_db_adapter.SmithersDb;
+type RewindAuditResult$1 = RewindAuditResult$4;
+type RewindAuditRow = {
     id: number;
     runId: string;
     fromFrameNo: number;
@@ -1057,9 +1123,7 @@ declare function listRewindAuditRows(adapter: SmithersDb$1, input?: {
     timestampMs: number;
     result: RewindAuditResult$1;
     durationMs: number | null;
-}>>;
-type SmithersDb$1 = _smithers_db_adapter.SmithersDb;
-type RewindAuditResult$1 = RewindAuditResult$4;
+};
 
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 /**
@@ -1080,27 +1144,27 @@ declare function recoverInProgressRewindAudits(adapter: SmithersDb, options?: {
 }>;
 type SmithersDb = _smithers_db_adapter.SmithersDb;
 
-type BranchInfo$1 = BranchInfo$2;
-type ForkParams = ForkParams$1;
+type BranchInfo = BranchInfo$2;
+type ForkParams = ForkParams$2;
 type NodeChange = NodeChange$1;
 type NodeSnapshot = NodeSnapshot$1;
 type OutputChange = OutputChange$1;
-type ParsedSnapshot = ParsedSnapshot$2;
+type ParsedSnapshot = ParsedSnapshot$3;
 type RalphChange = RalphChange$1;
 type RalphSnapshot = RalphSnapshot$1;
-type ReplayParams = ReplayParams$1;
-type ReplayResult = ReplayResult$1;
-type RunTimeline = RunTimeline$1;
-type Snapshot$1 = Snapshot$3;
-type SnapshotData = SnapshotData$1;
-type SnapshotDiff = SnapshotDiff$1;
+type ReplayParams = ReplayParams$2;
+type ReplayResult = ReplayResult$2;
+type RunTimeline = RunTimeline$2;
+type Snapshot = Snapshot$5;
+type SnapshotData = SnapshotData$2;
+type SnapshotDiff = SnapshotDiff$2;
 type TimelineFrame = TimelineFrame$1;
-type TimelineTree = TimelineTree$3;
-type VcsTag = VcsTag$1;
+type TimelineTree = TimelineTree$4;
+type VcsTag = VcsTag$2;
 type JumpResult = JumpResult$2;
 type JumpToFrameInput = JumpToFrameInput$2;
 type JumpStepName = JumpStepName$1;
 type RewindLockHandle = RewindLockHandle$2;
 type RewindAuditResult = RewindAuditResult$4;
 
-export { type BranchInfo$1 as BranchInfo, type ForkParams, type JumpResult, type JumpStepName, JumpToFrameError, type JumpToFrameInput, type NodeChange, type NodeSnapshot, type OutputChange, type ParsedSnapshot, REWIND_RATE_LIMIT_MAX, REWIND_RATE_LIMIT_WINDOW_MS, type RalphChange, type RalphSnapshot, type ReplayParams, type ReplayResult, type RewindAuditResult, type RewindLockHandle, type RunTimeline, type Snapshot$1 as Snapshot, type SnapshotData, type SnapshotDiff, type TimelineFrame, type TimelineTree, type VcsTag, acquireRewindLock, buildTimeline, buildTimelineTree, captureSnapshot, countRecentRewindAuditRows, diffRawSnapshots, diffSnapshots, evaluateRewindRateLimit, forkRun, formatDiffAsJson, formatDiffForTui, formatTimelineAsJson, formatTimelineForTui, getBranchInfo, hasRewindLock, jumpToFrame, listBranches, listRewindAuditRows, listSnapshots, loadLatestSnapshot, loadSnapshot, loadVcsTag, parseSnapshot, recoverInProgressRewindAudits, replayFromCheckpoint, replaysStarted, rerunAtRevision, resetRewindLocksForTests, resolveWorkflowAtRevision, runForksCreated, smithersBranches, smithersSnapshots, smithersVcsTags, snapshotDuration, snapshotsCaptured, tagSnapshotVcs, updateRewindAuditRow, validateJumpFrameNo, validateJumpRunId, writeRewindAuditRow };
+export { type BranchInfo, type ForkParams, type JumpResult, type JumpStepName, JumpToFrameError, type JumpToFrameInput, type NodeChange, type NodeSnapshot, type OutputChange, type ParsedSnapshot, REWIND_RATE_LIMIT_MAX, REWIND_RATE_LIMIT_WINDOW_MS, type RalphChange, type RalphSnapshot, type ReplayParams, type ReplayResult, type RewindAuditResult, type RewindLockHandle, type RunTimeline, type Snapshot, type SnapshotData, type SnapshotDiff, type TimelineFrame, type TimelineTree, type VcsTag, acquireRewindLock, buildTimeline, buildTimelineTree, captureSnapshot, countRecentRewindAuditRows, diffRawSnapshots, diffSnapshots, evaluateRewindRateLimit, forkRun, formatDiffAsJson, formatDiffForTui, formatTimelineAsJson, formatTimelineForTui, getBranchInfo, hasRewindLock, jumpToFrame, listBranches, listRewindAuditRows, listSnapshots, loadLatestSnapshot, loadSnapshot, loadVcsTag, parseSnapshot, recoverInProgressRewindAudits, replayFromCheckpoint, replaysStarted, rerunAtRevision, resetRewindLocksForTests, resolveWorkflowAtRevision, runForksCreated, smithersBranches, smithersSnapshots, smithersVcsTags, snapshotDuration, snapshotsCaptured, tagSnapshotVcs, updateRewindAuditRow, validateJumpFrameNo, validateJumpRunId, writeRewindAuditRow };
