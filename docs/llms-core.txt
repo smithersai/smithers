@@ -4308,19 +4308,13 @@ JSON response codes, not `SmithersErrorInstance` objects.
 
 ## Package Configuration
 
-> Reference for the smithers-orchestrator package exports, binary entry, TypeScript configuration, and Bun preload setup.
+> Reference for the smithers-orchestrator package exports, TypeScript configuration, and Bun preload setup.
 
 Build and package configuration shipped with `smithers-orchestrator`. Use it when setting up a new project, debugging import resolution, or understanding why your `tsconfig.json` needs specific options.
 
 ## Binary
 
-```json
-"bin": {
-  "smithers": "src/cli/index.ts"
-}
-```
-
-After installing `smithers-orchestrator`, the `smithers` command is invoked with `bunx smithers-orchestrator`. No global install needed. See [CLI Reference](/cli/overview) for all commands.
+Use `bunx smithers-orchestrator <command>` for CLI commands. The repository root keeps a private development bin that points at `apps/cli/src/index.js`; application code should import from the package exports below.
 
 ## Subpath Exports
 
@@ -4328,22 +4322,21 @@ Use the subpath form to import only the surface you need.
 
 | Import path | Entry file | Purpose |
 |---|---|---|
-| `smithers-orchestrator` | `./src/index.ts` | Core API: `createSmithers`, components, `runWorkflow`, `renderMdx`, errors |
-| `smithers-orchestrator/gateway` | `./src/gateway.ts` | Gateway client for remote workflow coordination |
-| `smithers-orchestrator/jsx-runtime` | `./src/jsx-runtime.ts` | JSX runtime (auto-resolved by `jsxImportSource`) |
-| `smithers-orchestrator/jsx-dev-runtime` | `./src/jsx-runtime.ts` | JSX dev runtime (auto-resolved in dev mode) |
-| `smithers-orchestrator/tools` | `./src/tools/index.ts` | Tool sandbox: `defineTool`, `read`, `grep`, `bash`, `edit`, `write` |
-| `smithers-orchestrator/server` | `./src/server/index.ts` | HTTP server for run management and event streaming |
-| `smithers-orchestrator/observability` | `./src/observability/index.ts` | OpenTelemetry traces, metrics, and Grafana stack integration |
-| `smithers-orchestrator/pi-plugin` | `./src/pi-plugin/index.ts` | PI CLI agent plugin |
-| `smithers-orchestrator/pi-extension` | `./src/pi-plugin/extension.ts` | PI extension UI bridge |
-| `smithers-orchestrator/mdx-plugin` | `./src/mdx-plugin.ts` | Bun preload plugin for `.mdx` imports |
-| `smithers-orchestrator/dom/renderer` | `./src/dom/renderer.ts` | Internal renderer (advanced use) |
-| `smithers-orchestrator/serve` | `./src/server/serve.ts` | Single-workflow HTTP server via `createServeApp` |
-| `smithers-orchestrator/scorers` | `./src/scorers/index.ts` | Eval scorers: `createScorer`, `llmJudge`, `aggregate` |
-
-| `smithers-orchestrator/memory` | `./src/memory/index.ts` | Cross-run memory storage and recall |
-| `smithers-orchestrator/openapi` | `./src/openapi/index.ts` | Generate AI SDK tools from OpenAPI specs |
+| `smithers-orchestrator` | `./src/index.js` | Core API: `createSmithers`, components, `runWorkflow`, `renderMdx`, errors |
+| `smithers-orchestrator/gateway` | `./src/gateway.js` | Gateway client for remote workflow coordination |
+| `smithers-orchestrator/jsx-runtime` | `./src/jsx-runtime.js` | JSX runtime (auto-resolved by `jsxImportSource`) |
+| `smithers-orchestrator/jsx-dev-runtime` | `./src/jsx-runtime.js` | JSX dev runtime (auto-resolved in dev mode) |
+| `smithers-orchestrator/tools` | `./src/tools.js` | Tool sandbox: `defineTool`, `read`, `grep`, `bash`, `edit`, `write` |
+| `smithers-orchestrator/server` | `./src/server.js` | HTTP server for run management and event streaming |
+| `smithers-orchestrator/observability` | `./src/observability.js` | OpenTelemetry traces, metrics, and Prometheus integration |
+| `smithers-orchestrator/pi-plugin` | `./src/pi-plugin.js` | PI CLI agent plugin |
+| `smithers-orchestrator/pi-extension` | `./src/pi-extension.js` | PI extension UI bridge |
+| `smithers-orchestrator/mdx-plugin` | `./src/mdx-plugin.js` | Bun preload plugin for `.mdx` imports |
+| `smithers-orchestrator/dom/renderer` | `./src/dom/renderer.js` | Internal renderer (advanced use) |
+| `smithers-orchestrator/serve` | `./src/serve.js` | Single-workflow HTTP server via `createServeApp` |
+| `smithers-orchestrator/scorers` | `./src/scorers.js` | Eval scorers: `createScorer`, `llmJudge`, `aggregate` |
+| `smithers-orchestrator/memory` | `./src/memory.js` | Cross-run memory storage and recall |
+| `smithers-orchestrator/openapi` | `./src/openapi.js` | Generate AI SDK tools from OpenAPI specs |
 
 ### Usage
 
@@ -4384,17 +4377,19 @@ When developing inside the `smithers-orchestrator` monorepo, the root `tsconfig.
 
 ```json
 "paths": {
-  "smithers": ["./src/index.ts"],
-  "smithers/jsx-runtime": ["./src/jsx-runtime.ts"],
-  "smithers/jsx-dev-runtime": ["./src/jsx-runtime.ts"],
-  "smithers/tools": ["./src/tools/index.ts"],
-  "smithers-orchestrator": ["./src/index.ts"],
-  "smithers-orchestrator/tools": ["./src/tools/index.ts"],
-  "smithers-orchestrator/scorers": ["./src/scorers/index.ts"]
+  "smithers-orchestrator": ["./packages/smithers/src/index.js"],
+  "smithers-orchestrator/jsx-runtime": ["./packages/smithers/src/jsx-runtime.js"],
+  "smithers-orchestrator/jsx-dev-runtime": ["./packages/smithers/src/jsx-runtime.js"],
+  "smithers-orchestrator/tools": ["./packages/smithers/src/tools.js"],
+  "smithers-orchestrator/*": [
+    "./packages/smithers/src/*.js",
+    "./packages/smithers/src/*/index.js"
+  ],
+  "smithers-orchestrator/scorers": ["./packages/scorers/src/index.js"]
 }
 ```
 
-The `smithers-orchestrator` entries are backward-compatibility aliases. The package was renamed from `smithers-orchestrator` to `smithers` internally; these aliases keep existing imports and example code resolving.
+The root package is a private `smithers-monorepo`; `smithers-orchestrator` resolves to `packages/smithers`.
 
 **End users do not need path aliases** — only framework developers do. Installing `smithers-orchestrator` as a dependency lets Node/Bun module resolution handle import paths automatically.
 
@@ -4443,7 +4438,7 @@ Defined in the root `package.json` for development:
 | Script | Command | Purpose |
 |---|---|---|
 | `typecheck` | `tsc --noEmit` | Type-check the `src/` and `tests/` trees against `tsconfig.json` |
-| `typecheck:examples` | `tsc -p tsconfig.examples.json --noEmit` | Type-check example files against a separate config that maps `smithers` to `examples-entry.ts` |
+| `typecheck:examples` | `tsc -p examples/tsconfig.json --noEmit` | Type-check example files against a separate config that maps `smithers-orchestrator` to `examples-entry.js` |
 | `lint` | `oxlint ...` | Lint source, test, and CLI code with oxlint |
 | `test` | `bash ./scripts/run-all-tests.sh` | Run the full test suite |
 | `e2e` | `playwright test` | Run Playwright end-to-end tests against the docs site and integration surfaces |
@@ -5154,4 +5149,3 @@ Other patterns:
 - [CLI Reference](/cli/overview) -- all CLI commands including `smithers tui`.
 - [Monitoring & Logs](/guides/monitoring-logs) -- observability with Grafana and Prometheus.
 - [Debugging](/guides/debugging) -- diagnosing workflow issues.
-
