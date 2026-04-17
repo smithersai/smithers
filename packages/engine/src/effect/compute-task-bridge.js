@@ -19,6 +19,7 @@ import * as BunContext from "@effect/platform-bun/BunContext";
  */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase<Record<string, unknown>>} BunSQLiteDatabase */
 
 const TASK_HEARTBEAT_THROTTLE_MS = 500;
 const TASK_HEARTBEAT_MAX_PAYLOAD_BYTES = 1_000_000;
@@ -191,7 +192,7 @@ export const canExecuteBridgeManagedComputeTask = (desc, cacheEnabled) => {
 };
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {EventBus} eventBus

@@ -11,6 +11,7 @@ import { correlationContextToLogAnnotations, getCurrentCorrelationContext, merge
  * @typedef {SmithersEvent & { correlation?: CorrelationContext; }} CorrelatedSmithersEvent
  */
 /** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+/** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase<Record<string, unknown>>} BunSQLiteDatabase */
 
 export class EventBus extends EventEmitter {
     seq = 0;
@@ -19,7 +20,7 @@ export class EventBus extends EventEmitter {
     persistTail = Promise.resolve();
     persistError = null;
     /**
-   * @param {{ db?: any; logDir?: string; startSeq?: number }} opts
+   * @param {{ db?: BunSQLiteDatabase; logDir?: string; startSeq?: number }} opts
    */
     constructor(opts) {
         super();
@@ -29,6 +30,7 @@ export class EventBus extends EventEmitter {
     }
     /**
    * @param {SmithersEvent} event
+   * @returns {Effect.Effect<void, unknown>}
    */
     emitEvent(event) {
         const correlatedEvent = this.attachCorrelation(event);
@@ -42,6 +44,7 @@ export class EventBus extends EventEmitter {
     }
     /**
    * @param {SmithersEvent} event
+   * @returns {Effect.Effect<void, unknown>}
    */
     emitEventWithPersist(event) {
         const correlatedEvent = this.attachCorrelation(event);
@@ -60,6 +63,9 @@ export class EventBus extends EventEmitter {
         this.emit("event", correlatedEvent);
         return Effect.runPromise(withCurrentCorrelationContext(trackEvent(correlatedEvent).pipe(Effect.andThen(this.enqueuePersist(correlatedEvent)))));
     }
+    /**
+   * @returns {Effect.Effect<void, unknown>}
+   */
     flush() {
         return withCurrentCorrelationContext(Effect.tryPromise({
             try: async () => {
@@ -75,6 +81,7 @@ export class EventBus extends EventEmitter {
     }
     /**
    * @param {CorrelatedSmithersEvent} event
+   * @returns {Effect.Effect<void, unknown>}
    */
     persist(event) {
         const self = this;
@@ -88,6 +95,7 @@ export class EventBus extends EventEmitter {
     }
     /**
    * @param {CorrelatedSmithersEvent} event
+   * @returns {Effect.Effect<void, unknown>}
    */
     emitAndTrack(event) {
         const self = this;
@@ -98,6 +106,7 @@ export class EventBus extends EventEmitter {
     }
     /**
    * @param {CorrelatedSmithersEvent} event
+   * @returns {Effect.Effect<void, unknown>}
    */
     enqueuePersist(event) {
         const task = this.persistTail.then(() => Effect.runPromise(this.persist(event)));
@@ -169,6 +178,7 @@ export class EventBus extends EventEmitter {
     }
     /**
    * @param {CorrelatedSmithersEvent} event
+   * @returns {Effect.Effect<void, unknown>}
    */
     persistLog(event) {
         if (!this.logDir)

@@ -21,7 +21,7 @@ type LoopNode = {
 type MatchNode = {
 	kind: "match";
 	source: BuilderStepHandle;
-	when: (value: any) => boolean;
+	when: (value: unknown) => boolean;
 	then: BuilderNode;
 	else?: BuilderNode;
 };

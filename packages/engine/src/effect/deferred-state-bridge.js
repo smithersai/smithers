@@ -21,7 +21,9 @@ import { nowMs } from "@smithers/scheduler/nowMs";
  * @typedef {(state: "pending" | "failed" | "skipped") => Promise<void>} DeferredBridgeStateEmitter
  */
 /** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers/db/adapter/ApprovalRow").ApprovalRow} ApprovalRow */
 /** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase<Record<string, unknown>>} BunSQLiteDatabase */
 
 const timerDurationMultipliers = {
     ms: 1,
@@ -894,7 +896,7 @@ async function syncWaitForEventDurableDeferredFromDb(adapter, runId, desc, snaps
  * @param {SmithersDb} adapter
  * @param {string} runId
  * @param {TaskDescriptor} desc
- * @param {any} approval
+ * @param {ApprovalRow | null | undefined} approval
  */
 async function syncApprovalDurableDeferredFromDb(adapter, runId, desc, approval) {
     if (approval?.status !== "approved" && approval?.status !== "denied") {
@@ -910,7 +912,7 @@ async function syncApprovalDurableDeferredFromDb(adapter, runId, desc, approval)
 }
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {EventBus} _eventBus
@@ -1089,7 +1091,7 @@ async function resolveWaitForEventTaskStateBridge(adapter, db, runId, desc, _eve
 }
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {EventBus} eventBus
@@ -1272,7 +1274,7 @@ async function resolveApprovalTaskStateBridge(adapter, db, runId, desc, eventBus
 }
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {EventBus} eventBus

@@ -5,7 +5,7 @@ export type HotReloadEvent =
 			type: "reloaded";
 			generation: number;
 			changedFiles: string[];
-			newBuild: SmithersWorkflow<any>["build"];
+			newBuild: SmithersWorkflow<unknown>["build"];
 	  }
 	| {
 			type: "failed";

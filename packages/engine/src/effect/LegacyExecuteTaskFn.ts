@@ -1,3 +1,5 @@
+import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
+import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
 import type { SmithersDb } from "@smithers/db/adapter";
 import type { EventBus } from "../events.js";
@@ -6,17 +8,17 @@ import type { TaskBridgeToolConfig } from "./TaskBridgeToolConfig.ts";
 
 export type LegacyExecuteTaskFn = (
 	adapter: SmithersDb,
-	db: any,
+	db: BunSQLiteDatabase<Record<string, unknown>>,
 	runId: string,
 	desc: TaskDescriptor,
 	descriptorMap: Map<string, TaskDescriptor>,
-	inputTable: any,
+	inputTable: SQLiteTable,
 	eventBus: EventBus,
 	toolConfig: TaskBridgeToolConfig,
 	workflowName: string,
 	cacheEnabled: boolean,
 	signal?: AbortSignal,
-	disabledAgents?: Set<any>,
+	disabledAgents?: Set<string>,
 	runAbortController?: AbortController,
 	hijackState?: HijackState,
 ) => Promise<void>;

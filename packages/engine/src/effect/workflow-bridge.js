@@ -13,6 +13,8 @@ import { dispatchWorkerTask } from "./single-runner.js";
 /** @typedef {import("./TaskBridgeToolConfig.ts").TaskBridgeToolConfig} TaskBridgeToolConfig */
 /** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
 /** @typedef {import("./TaskActivityContext.ts").TaskActivityContext} TaskActivityContext */
+/** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase<Record<string, unknown>>} BunSQLiteDatabase */
+/** @typedef {import("drizzle-orm/sqlite-core").SQLiteTable} SQLiteTable */
 /**
  * @typedef {"compute" | "static" | "legacy"} BridgeManagedTaskKind
  */
@@ -111,11 +113,11 @@ const getNextTaskActivityAttempt = async (adapter, runId, desc) => {
 };
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {Map<string, TaskDescriptor>} descriptorMap
- * @param {any} inputTable
+ * @param {SQLiteTable} inputTable
  * @param {EventBus} eventBus
  * @param {TaskBridgeToolConfig} toolConfig
  * @param {string} workflowName
@@ -123,7 +125,7 @@ const getNextTaskActivityAttempt = async (adapter, runId, desc) => {
  * @param {BridgeManagedTaskKind} bridgeManagedExecution
  * @param {TaskActivityContext} context
  * @param {AbortSignal} [signal]
- * @param {Set<any>} [disabledAgents]
+ * @param {Set<string>} [disabledAgents]
  * @param {AbortController} [runAbortController]
  * @param {HijackState} [hijackState]
  * @param {LegacyExecuteTaskFn} [legacyExecuteTaskFn]
@@ -142,11 +144,11 @@ const executeBridgeAttempt = async (adapter, db, runId, desc, descriptorMap, inp
 };
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {Map<string, TaskDescriptor>} descriptorMap
- * @param {any} inputTable
+ * @param {SQLiteTable} inputTable
  * @param {EventBus} eventBus
  * @param {TaskBridgeToolConfig} toolConfig
  * @param {string} workflowName
@@ -154,7 +156,7 @@ const executeBridgeAttempt = async (adapter, db, runId, desc, descriptorMap, inp
  * @param {BridgeManagedTaskKind} bridgeManagedExecution
  * @param {string} bridgeKey
  * @param {AbortSignal} [signal]
- * @param {Set<any>} [disabledAgents]
+ * @param {Set<string>} [disabledAgents]
  * @param {AbortController} [runAbortController]
  * @param {HijackState} [hijackState]
  * @param {LegacyExecuteTaskFn} [legacyExecuteTaskFn]
@@ -179,17 +181,17 @@ const runTaskBridgeExecution = async (adapter, db, runId, desc, descriptorMap, i
 };
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {Map<string, TaskDescriptor>} descriptorMap
- * @param {any} inputTable
+ * @param {SQLiteTable} inputTable
  * @param {EventBus} eventBus
  * @param {TaskBridgeToolConfig} toolConfig
  * @param {string} workflowName
  * @param {boolean} cacheEnabled
  * @param {AbortSignal} [signal]
- * @param {Set<any>} [disabledAgents]
+ * @param {Set<string>} [disabledAgents]
  * @param {AbortController} [runAbortController]
  * @param {HijackState} [hijackState]
  * @param {LegacyExecuteTaskFn} [legacyExecuteTaskFn]
@@ -236,17 +238,17 @@ export const executeTaskBridge = (adapter, db, runId, desc, descriptorMap, input
 };
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {Map<string, TaskDescriptor>} descriptorMap
- * @param {any} inputTable
+ * @param {SQLiteTable} inputTable
  * @param {EventBus} eventBus
  * @param {TaskBridgeToolConfig} toolConfig
  * @param {string} workflowName
  * @param {boolean} cacheEnabled
  * @param {AbortSignal} [signal]
- * @param {Set<any>} [disabledAgents]
+ * @param {Set<string>} [disabledAgents]
  * @param {AbortController} [runAbortController]
  * @param {HijackState} [hijackState]
  * @param {LegacyExecuteTaskFn} [legacyExecuteTaskFn]

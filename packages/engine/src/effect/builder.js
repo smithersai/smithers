@@ -12,7 +12,7 @@ import { Branch, Loop, Parallel, Sequence, Task, Worktree, Workflow, } from "@sm
 import { camelToSnake } from "@smithers/db/utils/camelToSnake";
 import { SmithersError } from "@smithers/errors/SmithersError";
 /**
- * @typedef {any} AnySchema
+ * @typedef {import("effect").Schema.Schema<unknown, unknown, never>} AnySchema
  */
 /**
  * @typedef {{ needs?: Record<string, BuilderStepHandle>; request: (ctx: Record<string, unknown>) => { title: string; summary?: string | null; }; onDeny?: "fail" | "continue" | "skip"; }} ApprovalOptions

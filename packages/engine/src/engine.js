@@ -55,6 +55,11 @@ import { runWithCorrelationContext, updateCurrentCorrelationContext, withCorrela
 /** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow} SmithersWorkflow */
 /** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
 /** @typedef {import("@smithers/scheduler").TaskStateMap} TaskStateMap */
+/** @typedef {import("@smithers/db/adapter/ApprovalRow").ApprovalRow} ApprovalRow */
+/** @typedef {import("@smithers/db/adapter/RunRow").RunRow} RunRow */
+/** @typedef {import("@smithers/graph/XmlNode").XmlNode} XmlNode */
+/** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase<Record<string, unknown>>} BunSQLiteDatabase */
+/** @typedef {import("drizzle-orm/sqlite-core").SQLiteTable} SQLiteTable */
 
 /**
  * @param {string} input
@@ -740,7 +745,7 @@ function coercePositiveInt(field, value, fallback) {
     return Math.floor(assertPositiveFiniteInteger(field, Number(value)));
 }
 /**
- * @param {any} inputTable
+ * @param {SQLiteTable} inputTable
  * @param {string} runId
  * @param {Record<string, unknown>} input
  */
@@ -792,9 +797,9 @@ function normalizeOutputRow(row) {
 }
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
- * @param {Record<string, any>} schema
- * @param {any} inputTable
+ * @param {BunSQLiteDatabase} db
+ * @param {Record<string, unknown>} schema
+ * @param {SQLiteTable} inputTable
  * @param {string} runId
  * @returns {Promise<boolean>}
  */
@@ -989,7 +994,7 @@ function cloneRalphStateMap(ralphState) {
     return next;
 }
 /**
- * @param {any} inputTable
+ * @param {SQLiteTable} inputTable
  * @param {string} newRunId
  * @param {Record<string, unknown>} sourceInputRow
  * @param {Record<string, unknown>} continuationEnvelope
@@ -1020,7 +1025,7 @@ function buildCarriedInputRow(inputTable, newRunId, sourceInputRow, continuation
     return row;
 }
 /**
- * @param {{ db: any; adapter: SmithersDb; schema: Record<string, any>; inputTable: any; runId: string; workflowPath: string | null; runMetadata: RunDurabilityMetadata; currentFrameNo: number; continuation: ContinueAsNewRequest; ralphState: RalphStateMap; }} params
+ * @param {{ db: BunSQLiteDatabase; adapter: SmithersDb; schema: Record<string, unknown>; inputTable: SQLiteTable; runId: string; workflowPath: string | null; runMetadata: RunDurabilityMetadata; currentFrameNo: number; continuation: ContinueAsNewRequest; ralphState: RalphStateMap; }} params
  * @returns {Promise<ContinueAsNewTransition>}
  */
 async function continueRunAsNew(params) {
@@ -1194,8 +1199,8 @@ async function continueRunAsNew(params) {
     };
 }
 /**
- * @param {any} db
- * @param {any} inputTable
+ * @param {BunSQLiteDatabase} db
+ * @param {SQLiteTable} inputTable
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {Map<string, TaskDescriptor>} descriptorMap
@@ -1482,7 +1487,7 @@ function compareNullableString(left, right, mismatchLabel, mismatches) {
     }
 }
 /**
- * @param {any} existingRun
+ * @param {RunRow | null | undefined} existingRun
  * @param {Record<string, unknown>} existingConfig
  * @param {RunDurabilityMetadata} current
  * @param {string | null} workflowPath
@@ -1889,7 +1894,7 @@ function attachSubflowComputeFns(tasks, workflow, opts = {}) {
     }
 }
 /**
- * @param {any} xml
+ * @param {XmlNode} xml
  * @returns {string}
  */
 function getWorkflowNameFromXml(xml) {
@@ -2031,7 +2036,7 @@ function isRetryableTaskFailure(attempt) {
 }
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor[]} tasks
  * @param {EventBus} eventBus
@@ -2313,11 +2318,11 @@ async function cancelStaleAttempts(adapter, runId) {
 }
 /**
  * @param {SmithersDb} adapter
- * @param {any} db
+ * @param {BunSQLiteDatabase} db
  * @param {string} runId
  * @param {TaskDescriptor} desc
  * @param {Map<string, TaskDescriptor>} descriptorMap
- * @param {any} inputTable
+ * @param {SQLiteTable} inputTable
  * @param {EventBus} eventBus
  * @param {{ rootDir: string; allowNetwork: boolean; maxOutputBytes: number; toolTimeoutMs: number; }} toolConfig
  * @param {string} workflowName
@@ -2948,7 +2953,7 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
                     maybeCompleteHijack();
                 };
                 /**
-         * @param {any} stepResult
+         * @param {unknown} stepResult
          */
                 const handleSdkStepFinish = (stepResult) => {
                     recordInternalHeartbeat();
@@ -3822,7 +3827,7 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
 /**
  * @template Schema
  * @param {SmithersWorkflow<Schema>} workflow
- * @param {any} ctx
+ * @param {SmithersCtx<unknown>} ctx
  * @param {{ baseRootDir?: string; workflowPath?: string | null }} [opts]
  * @returns {Promise<GraphSnapshot>}
  */
@@ -3846,7 +3851,7 @@ async function renderFrameAsync(workflow, ctx, opts) {
 /**
  * @template Schema
  * @param {SmithersWorkflow<Schema>} workflow
- * @param {any} ctx
+ * @param {SmithersCtx<unknown>} ctx
  * @param {{ baseRootDir?: string; workflowPath?: string | null }} [opts]
  * @returns {Effect.Effect<GraphSnapshot, SmithersError>}
  */
@@ -3883,7 +3888,7 @@ async function releaseResumeClaimQuietly(adapter, runId, cleanup) {
 }
 /**
  * @param {SmithersDb} adapter
- * @param {any} existingRun
+ * @param {RunRow | null | undefined} existingRun
  * @param {RunOptions} opts
  * @param {string} runtimeOwnerId
  * @param {string} runConfigJson

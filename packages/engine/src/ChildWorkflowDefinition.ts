@@ -1,5 +1,5 @@
 import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
 
 export type ChildWorkflowDefinition =
-	| SmithersWorkflow<any>
-	| (() => SmithersWorkflow<any> | unknown);
+	| SmithersWorkflow<unknown>
+	| (() => SmithersWorkflow<unknown> | unknown);

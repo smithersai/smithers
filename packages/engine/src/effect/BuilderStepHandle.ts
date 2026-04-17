@@ -1,8 +1,10 @@
+import type { Effect, Schema } from "effect";
+import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import type { CachePolicy } from "@smithers/scheduler/CachePolicy";
 import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
 
-type AnySchema = any;
-type AnyEffect = any;
+type AnySchema = Schema.Schema<unknown, unknown, never>;
+type AnyEffect = unknown | Promise<unknown> | Effect.Effect<unknown, unknown, unknown>;
 
 type BuilderStepContext = Record<string, unknown> & {
 	input: unknown;
@@ -30,7 +32,7 @@ export type BuilderStepHandle = {
 	localId: string;
 	tableKey: string;
 	tableName: string;
-	table: any;
+	table: SQLiteTable;
 	output: AnySchema;
 	needs: Record<string, BuilderStepHandle>;
 	run?: (ctx: BuilderStepContext) => AnyEffect;

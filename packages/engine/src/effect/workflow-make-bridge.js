@@ -16,15 +16,16 @@ import { SmithersDb } from "@smithers/db/adapter";
  * @typedef {{ notify(): void; wait(): Promise<void>; }} SchedulerWakeQueue
  */
 /** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow} SmithersWorkflow */
+/** @typedef {import("effect").Context.Context<WorkflowEngine.WorkflowEngine>} WorkflowEngineContext */
 /**
- * @typedef {{ readonly engineContext: any; readonly scope: Scope.CloseableScope; readonly parentInstance: WorkflowEngine.WorkflowInstance["Type"]; readonly executeBody: RunBodyExecutor; executeChildWorkflow: <Schema>(workflow: SmithersWorkflow<Schema>, opts: RunOptions & { runId: string; }) => Promise<RunResult>; }} WorkflowMakeBridgeRuntime
+ * @typedef {{ readonly engineContext: WorkflowEngineContext; readonly scope: Scope.CloseableScope; readonly parentInstance: WorkflowEngine.WorkflowInstance["Type"]; readonly executeBody: RunBodyExecutor; executeChildWorkflow: <Schema>(workflow: SmithersWorkflow<Schema>, opts: RunOptions & { runId: string; }) => Promise<RunResult>; }} WorkflowMakeBridgeRuntime
  */
 
 const runtimeStorage = new AsyncLocalStorage();
 const workflowNamespaces = new WeakMap();
 let nextWorkflowNamespace = 0;
 /**
- * @param {SmithersWorkflow<any>} workflow
+ * @param {SmithersWorkflow<unknown>} workflow
  * @returns {string}
  */
 function getWorkflowNamespace(workflow) {
@@ -37,7 +38,7 @@ function getWorkflowNamespace(workflow) {
     return created;
 }
 /**
- * @param {SmithersWorkflow<any>} workflow
+ * @param {SmithersWorkflow<unknown>} workflow
  * @param {string} runId
  */
 function makeBridgeWorkflow(workflow, runId) {
@@ -62,7 +63,7 @@ function isSuspendingStatus(status) {
 /**
  * @param {ReturnType<typeof makeBridgeWorkflow>} workflowBridge
  * @param {Scope.CloseableScope} scope
- * @param {any} engineContext
+ * @param {WorkflowEngineContext} engineContext
  * @param {Effect.Effect<RunResult, unknown, any>} execute
  */
 async function registerBridgeWorkflow(workflowBridge, scope, engineContext, execute) {
@@ -72,7 +73,7 @@ async function registerBridgeWorkflow(workflowBridge, scope, engineContext, exec
  * @param {ReturnType<typeof makeBridgeWorkflow>} workflowBridge
  * @param {string} runId
  * @param {Scope.CloseableScope} scope
- * @param {any} engineContext
+ * @param {WorkflowEngineContext} engineContext
  * @param {WorkflowMakeBridgeRuntime["parentInstance"]} parentInstance
  */
 async function executeRegisteredChildWorkflow(workflowBridge, runId, scope, engineContext, parentInstance) {
