@@ -16,7 +16,7 @@ export type DriftDetectorProps = {
 	/** Static baseline data, or a function/agent that fetches it. */
 	baseline: unknown;
 	/** Condition function that determines whether to fire the alert. If omitted, uses the `drifted` field from comparison output. */
-	alertIf?: (comparison: any) => boolean;
+	alertIf?: (comparison: unknown) => boolean;
 	/** Element to render when drift is detected (e.g. a Task that sends a notification). */
 	alert?: React.ReactElement;
 	/** If set, wraps the detector in a Loop for periodic polling. */

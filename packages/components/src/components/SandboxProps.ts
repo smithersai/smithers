@@ -1,6 +1,7 @@
 import type React from "react";
 import type { CachePolicy } from "@smithers/scheduler/CachePolicy";
 import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
+import type { SmithersWorkflow } from "../SmithersWorkflow.ts";
 import type { OutputTarget } from "./OutputTarget.ts";
 import type { SandboxRuntime } from "./SandboxRuntime.ts";
 import type { SandboxVolumeMount } from "./SandboxVolumeMount.ts";
@@ -9,7 +10,7 @@ import type { SandboxWorkspaceSpec } from "./SandboxWorkspaceSpec.ts";
 export type SandboxProps = {
 	id: string;
 	/** Child workflow definition. If omitted, createSmithers-bound Sandbox wrappers may provide one. */
-	workflow?: (...args: any[]) => any;
+	workflow?: SmithersWorkflow<unknown>;
 	/** Input passed to the child workflow. */
 	input?: unknown;
 	output: OutputTarget;

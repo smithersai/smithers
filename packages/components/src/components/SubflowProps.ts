@@ -7,7 +7,7 @@ import type { OutputTarget } from "./OutputTarget.ts";
 export type SubflowProps = {
 	id: string;
 	/** The child workflow definition. */
-	workflow: SmithersWorkflow<any>;
+	workflow: SmithersWorkflow<unknown>;
 	/** Input to pass to the child workflow. */
 	input?: unknown;
 	/** `"childRun"` gets its own DB row/run; `"inline"` embeds in parent. */

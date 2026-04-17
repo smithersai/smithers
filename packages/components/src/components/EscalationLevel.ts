@@ -9,5 +9,5 @@ export type EscalationLevel = {
 	/** Display label for this level. */
 	label?: string;
 	/** Predicate evaluated on the level's result. Return `true` to escalate. */
-	escalateIf?: (result: any) => boolean;
+	escalateIf?: (result: unknown) => boolean;
 };

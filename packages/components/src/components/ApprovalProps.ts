@@ -1,4 +1,6 @@
 import type React from "react";
+import type { z } from "zod";
+import type { SmithersCtx } from "@smithers/driver";
 import type { ApprovalMode } from "./ApprovalMode.ts";
 import type { ApprovalOption } from "./ApprovalOption.ts";
 import type { ApprovalRequest } from "./ApprovalRequest.ts";
@@ -12,7 +14,7 @@ export type ApprovalProps<Row = ApprovalDecision, Output extends OutputTarget = 
 	options?: ApprovalOption[];
 	/** Where to persist the approval decision. Pass a Zod schema from `outputs` (recommended), a Drizzle table, or a string key. */
 	output: Output;
-	outputSchema?: import("zod").ZodObject<any>;
+	outputSchema?: z.ZodObject<z.ZodRawShape>;
 	request: ApprovalRequest;
 	onDeny?: "fail" | "continue" | "skip";
 	allowedScopes?: string[];
@@ -36,5 +38,5 @@ export type ApprovalProps<Row = ApprovalDecision, Output extends OutputTarget = 
 	meta?: Record<string, unknown>;
 	key?: string;
 	children?: React.ReactNode;
-	smithersContext?: React.Context<any>;
+	smithersContext?: React.Context<SmithersCtx<unknown> | null>;
 };

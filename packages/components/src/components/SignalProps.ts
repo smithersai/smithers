@@ -1,7 +1,8 @@
 import type React from "react";
 import type { z } from "zod";
+import type { SmithersCtx } from "@smithers/driver";
 
-export type SignalProps<Schema extends z.ZodObject<any> = z.ZodObject<any>> = {
+export type SignalProps<Schema extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>> = {
 	id: string;
 	schema: Schema;
 	correlationId?: string;
@@ -16,5 +17,5 @@ export type SignalProps<Schema extends z.ZodObject<any> = z.ZodObject<any>> = {
 	meta?: Record<string, unknown>;
 	key?: string;
 	children?: (data: z.infer<Schema>) => React.ReactNode;
-	smithersContext?: React.Context<any>;
+	smithersContext?: React.Context<SmithersCtx<unknown> | null>;
 };

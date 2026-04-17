@@ -6,7 +6,7 @@ export type PollerProps = {
 	/** ID prefix for generated task/component ids. */
 	id?: string;
 	/** Agent or compute function that checks the condition. */
-	check: AgentLike | ((...args: any[]) => any);
+	check: AgentLike | (() => unknown | Promise<unknown>);
 	/** Output schema for the check result. Must include `satisfied: boolean`. */
 	checkOutput: OutputTarget;
 	/** Maximum poll attempts. Default 30. */

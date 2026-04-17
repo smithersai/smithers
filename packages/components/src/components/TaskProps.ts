@@ -1,5 +1,7 @@
 import type React from "react";
+import type { z } from "zod";
 import type { AgentLike } from "@smithers/agents/AgentLike";
+import type { SmithersCtx } from "@smithers/driver";
 import type { CachePolicy } from "@smithers/scheduler/CachePolicy";
 import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
 import type { ScorersMap } from "@smithers/scorers/types";
@@ -18,7 +20,7 @@ export type TaskProps<Row, Output extends OutputTarget = OutputTarget, D extends
 	 * When `output` is already a ZodObject this is inferred automatically.
 	 * Used for validation and to inject schema examples into MDX prompts.
 	 */
-	outputSchema?: import("zod").ZodObject<any>;
+	outputSchema?: z.ZodObject<z.ZodRawShape>;
 	/** Agent or array of agents [primary, fallback1, fallback2, ...]. Tries in order on retries. */
 	agent?: AgentLike | AgentLike[];
 	/** Convenience alias for a single retry fallback without exposing array syntax in JSX. */
@@ -50,6 +52,6 @@ export type TaskProps<Row, Output extends OutputTarget = OutputTarget, D extends
 	label?: string;
 	meta?: Record<string, unknown>;
 	/** @internal Used by createSmithers() to bind tasks to the correct workflow context. */
-	smithersContext?: React.Context<any>;
+	smithersContext?: React.Context<SmithersCtx<unknown> | null>;
 	children?: string | Row | (() => Row | Promise<Row>) | React.ReactNode | ((deps: InferDeps<D>) => Row | React.ReactNode);
 };

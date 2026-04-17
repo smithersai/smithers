@@ -1,6 +1,8 @@
+import type { SmithersCtx } from "@smithers/driver";
+
 export type ApprovalAutoApprove = {
 	after?: number;
-	condition?: ((ctx: any) => boolean) | (() => boolean);
+	condition?: ((ctx: SmithersCtx<unknown> | null) => boolean) | (() => boolean);
 	audit?: boolean;
-	revertOn?: ((ctx: any) => boolean) | (() => boolean);
+	revertOn?: ((ctx: SmithersCtx<unknown> | null) => boolean) | (() => boolean);
 };

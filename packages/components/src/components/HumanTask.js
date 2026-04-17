@@ -7,14 +7,15 @@ import { SmithersError } from "@smithers/errors/SmithersError";
 /** @typedef {import("./HumanTaskProps.ts").HumanTaskProps} HumanTaskProps */
 
 /**
- * @param {any} value
- * @returns {value is import("zod").ZodObject<any>}
+ * @param {unknown} value
+ * @returns {value is import("zod").ZodObject<import("zod").ZodRawShape>}
  */
 function isZodObject(value) {
     return Boolean(value && typeof value === "object" && "shape" in value);
 }
 /**
  * @param {HumanTaskProps} props
+ * @returns {React.ReactElement | null}
  */
 export function HumanTask(props) {
     if (props.skipIf)

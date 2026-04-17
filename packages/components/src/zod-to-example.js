@@ -1,23 +1,39 @@
 
-/** @typedef {import("zod").ZodObject<any>} ZodObject */
+/** @typedef {import("zod").ZodObject<import("zod").ZodRawShape>} ZodObject */
 /** @typedef {import("zod").ZodTypeAny} ZodTypeAny */
 /**
- * @param {import("zod").ZodObject<any>} schema
+ * @param {ZodObject} schema
  * @returns {string}
  */
 export function zodSchemaToJsonExample(schema) {
+    /** @type {Record<string, unknown>} */
     const example = {};
     for (const [key, field] of Object.entries(schema.shape)) {
-        example[key] = zodFieldToExample(field);
+        example[key] = zodFieldToExample(/** @type {ZodTypeAny} */ (field));
     }
     return JSON.stringify(example, null, 2);
 }
 /**
  * @param {ZodTypeAny} field
- * @returns {any}
+ * @returns {unknown}
  */
 function zodFieldToExample(field) {
-    const anyField = field;
+    const anyField = /** @type {{
+        description?: string;
+        _def?: { description?: string };
+        _zod?: {
+            bag?: { description?: string };
+            def?: {
+                type?: string;
+                description?: string;
+                element?: ZodTypeAny;
+                values?: unknown[];
+                entries?: Record<string, unknown>;
+                innerType?: ZodTypeAny;
+            };
+        };
+        shape?: Record<string, ZodTypeAny>;
+    }} */ (/** @type {unknown} */ (field));
     const zod = anyField._zod;
     const def = zod?.def;
     if (!def)
@@ -51,9 +67,10 @@ function zodFieldToExample(field) {
             return "enum";
         }
         case "object": {
-            const shape = field.shape;
+            const shape = anyField.shape;
             if (!shape)
                 return {};
+            /** @type {Record<string, unknown>} */
             const obj = {};
             for (const [key, value] of Object.entries(shape)) {
                 obj[key] = zodFieldToExample(value);
@@ -61,9 +78,9 @@ function zodFieldToExample(field) {
             return obj;
         }
         case "nullable":
-            return zodFieldToExample(def.innerType);
+            return def.innerType ? zodFieldToExample(def.innerType) : null;
         case "optional":
-            return zodFieldToExample(def.innerType);
+            return def.innerType ? zodFieldToExample(def.innerType) : undefined;
         default:
             return description || "value";
     }

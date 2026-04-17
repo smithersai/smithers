@@ -30,7 +30,7 @@ import { PiAgent } from "@smithers/agents/PiAgent";
  * `markdownComponents` via the standard MDX `components` prop so that
  * renderToStaticMarkup outputs clean markdown instead of HTML.
  * No HTML tag stripping or entity decoding needed.
- * @param {any} prompt
+ * @param {unknown} prompt
  * @returns {string}
  */
 export function renderPromptToText(prompt) {
@@ -71,8 +71,8 @@ export function renderPromptToText(prompt) {
     }
 }
 /**
- * @param {any} value
- * @returns {value is import("zod").ZodObject<any>}
+ * @param {unknown} value
+ * @returns {value is import("zod").ZodObject<import("zod").ZodRawShape>}
  */
 function isZodObject(value) {
     return Boolean(value && typeof value === "object" && "shape" in value);
@@ -133,6 +133,11 @@ function resolveDeps(ctx, deps, needs, taskId) {
 /**
  * Validate that all deps are satisfied. Throws a descriptive SmithersError
  * naming which dep is missing and which task needs it.
+ * @param {{ outputMaybe: (target: unknown, opts: { nodeId: string }) => unknown }} ctx
+ * @param {DepsSpec} deps
+ * @param {Record<string, string> | undefined} needs
+ * @param {string} [taskId]
+ * @returns {void}
  */
 function validateDeps(ctx, deps, needs, taskId) {
     for (const key of Object.keys(deps)) {
@@ -209,6 +214,7 @@ function resolveCliToolAllowlist(ctx, allowTools) {
 /**
  * @template Row, Output, D
  * @param {TaskProps<Row, Output, D>} props
+ * @returns {React.ReactElement | null}
  */
 export function Task(props) {
     const { children, agent, fallbackAgent, deps, ...rest } = props;
@@ -291,6 +297,14 @@ export function Task(props) {
  * Build the __aspects metadata object from the current AspectContext.
  * This is attached to the smithers:task element props so the engine
  * can read budgets and tracking config at execution time.
+ * @param {{
+ *     tokenBudget?: unknown;
+ *     latencySlo?: unknown;
+ *     costBudget?: unknown;
+ *     tracking?: unknown;
+ *     accumulator?: unknown;
+ * }} aspectCtx
+ * @returns {{ __aspects: Record<string, unknown> }}
  */
 function buildAspectMeta(aspectCtx) {
     return {

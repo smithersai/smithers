@@ -7,6 +7,7 @@ import { SmithersErrorCode as SmithersErrorCode$1 } from '@smithers/errors/Smith
 import * as _smithers_scheduler_SmithersWorkflowOptions from '@smithers/scheduler/SmithersWorkflowOptions';
 import * as _smithers_db_SchemaRegistryEntry from '@smithers/db/SchemaRegistryEntry';
 import * as _smithers_driver from '@smithers/driver';
+import { SmithersCtx as SmithersCtx$1 } from '@smithers/driver';
 import * as _smithers_driver_RunAuthContext from '@smithers/driver/RunAuthContext';
 import * as _smithers_scheduler_RetryPolicy from '@smithers/scheduler/RetryPolicy';
 import { RetryPolicy as RetryPolicy$1 } from '@smithers/scheduler/RetryPolicy';
@@ -20,15 +21,12 @@ import { CachePolicy as CachePolicy$1 } from '@smithers/scheduler/CachePolicy';
 import React from 'react';
 import * as zod from 'zod';
 import { z } from 'zod';
-import * as _smithers_errors_SmithersError from '@smithers/errors/SmithersError';
 import { SmithersError } from '@smithers/errors/SmithersError';
-import * as _smithers_agents_AgentLike from '@smithers/agents/AgentLike';
 import { AgentLike } from '@smithers/agents/AgentLike';
 import * as _smithers_scorers_types from '@smithers/scorers/types';
 import { ScorersMap as ScorersMap$1 } from '@smithers/scorers/types';
-import * as _smithers_memory_types from '@smithers/memory/types';
 import { TaskMemoryConfig } from '@smithers/memory/types';
-import * as mdx_types from 'mdx/types';
+import * as _smithers_errors from '@smithers/errors';
 import * as zod_v4_core from 'zod/v4/core';
 
 type WorktreeProps$2 = {
@@ -48,8 +46,8 @@ type WorkflowProps$2 = {
 };
 
 /** Valid output targets: a Zod schema (recommended), a Drizzle table object, or a string key (escape hatch). */
-type OutputTarget$1 = zod.ZodObject<any> | {
-    $inferSelect: any;
+type OutputTarget$1 = z.ZodObject<z.ZodRawShape> | {
+    $inferSelect: Record<string, unknown>;
 } | string;
 
 type WaitForEventProps$2 = {
@@ -61,7 +59,7 @@ type WaitForEventProps$2 = {
     /** Where to store the event payload. */
     output: OutputTarget$1;
     /** Zod schema for the event payload. */
-    outputSchema?: zod.ZodObject<any>;
+    outputSchema?: z.ZodObject<z.ZodRawShape>;
     /** Max wait time in ms before timing out. */
     timeoutMs?: number;
     /** Behavior on timeout: fail (default), skip the node, or continue with null. */
@@ -126,7 +124,7 @@ type TaskProps$2<Row, Output extends OutputTarget$1 = OutputTarget$1, D extends 
      * When `output` is already a ZodObject this is inferred automatically.
      * Used for validation and to inject schema examples into MDX prompts.
      */
-    outputSchema?: zod.ZodObject<any>;
+    outputSchema?: z.ZodObject<z.ZodRawShape>;
     /** Agent or array of agents [primary, fallback1, fallback2, ...]. Tries in order on retries. */
     agent?: AgentLike | AgentLike[];
     /** Convenience alias for a single retry fallback without exposing array syntax in JSX. */
@@ -158,7 +156,7 @@ type TaskProps$2<Row, Output extends OutputTarget$1 = OutputTarget$1, D extends 
     label?: string;
     meta?: Record<string, unknown>;
     /** @internal Used by createSmithers() to bind tasks to the correct workflow context. */
-    smithersContext?: React.Context<any>;
+    smithersContext?: React.Context<SmithersCtx$1<unknown> | null>;
     children?: string | Row | (() => Row | Promise<Row>) | React.ReactNode | ((deps: InferDeps$1<D>) => Row | React.ReactNode);
 };
 
@@ -207,7 +205,7 @@ type SuperSmithersProps$2 = {
 type SubflowProps$2 = {
     id: string;
     /** The child workflow definition. */
-    workflow: WorkflowDefinition<any>;
+    workflow: WorkflowDefinition<unknown>;
     /** Input to pass to the child workflow. */
     input?: unknown;
     /** `"childRun"` gets its own DB row/run; `"inline"` embeds in parent. */
@@ -241,7 +239,7 @@ type SourceDef$1 = {
     children?: React.ReactNode;
 };
 
-type SignalProps$2<Schema extends z.ZodObject<any> = z.ZodObject<any>> = {
+type SignalProps$2<Schema extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>> = {
     id: string;
     schema: Schema;
     correlationId?: string;
@@ -256,7 +254,7 @@ type SignalProps$2<Schema extends z.ZodObject<any> = z.ZodObject<any>> = {
     meta?: Record<string, unknown>;
     key?: string;
     children?: (data: z.infer<Schema>) => React.ReactNode;
-    smithersContext?: React.Context<any>;
+    smithersContext?: React.Context<SmithersCtx$1<unknown> | null>;
 };
 
 type SequenceProps$2 = {
@@ -309,7 +307,7 @@ type SandboxRuntime$1 = "bubblewrap" | "docker" | "codeplane";
 type SandboxProps$2 = {
     id: string;
     /** Child workflow definition. If omitted, createSmithers-bound Sandbox wrappers may provide one. */
-    workflow?: (...args: any[]) => any;
+    workflow?: WorkflowDefinition<unknown>;
     /** Input passed to the child workflow. */
     input?: unknown;
     output: OutputTarget$1;
@@ -438,7 +436,7 @@ type PollerProps$2 = {
     /** ID prefix for generated task/component ids. */
     id?: string;
     /** Agent or compute function that checks the condition. */
-    check: AgentLike | ((...args: any[]) => any);
+    check: AgentLike | (() => unknown | Promise<unknown>);
     /** Output schema for the check result. Must include `satisfied: boolean`. */
     checkOutput: OutputTarget$1;
     /** Maximum poll attempts. Default 30. */
@@ -557,7 +555,7 @@ type HumanTaskProps$2 = {
     /** Where to store the human's response. */
     output: OutputTarget$1;
     /** Zod schema the human must conform to. Used for validation. */
-    outputSchema?: zod.ZodObject<any>;
+    outputSchema?: z.ZodObject<z.ZodRawShape>;
     /** Instructions for the human (string or ReactNode). */
     prompt: string | React.ReactNode;
     /** Max validation retries before failure. */
@@ -604,7 +602,7 @@ type EscalationLevel$1 = {
     /** Display label for this level. */
     label?: string;
     /** Predicate evaluated on the level's result. Return `true` to escalate. */
-    escalateIf?: (result: any) => boolean;
+    escalateIf?: (result: unknown) => boolean;
 };
 
 type EscalationChainProps$2 = {
@@ -637,7 +635,7 @@ type DriftDetectorProps$2 = {
     /** Static baseline data, or a function/agent that fetches it. */
     baseline: unknown;
     /** Condition function that determines whether to fire the alert. If omitted, uses the `drifted` field from comparison output. */
-    alertIf?: (comparison: any) => boolean;
+    alertIf?: (comparison: unknown) => boolean;
     /** Element to render when drift is detected (e.g. a Task that sends a notification). */
     alert?: React.ReactElement;
     /** If set, wraps the detector in a Loop for periodic polling. */
@@ -838,9 +836,9 @@ type ApprovalOption$1 = {
 
 type ApprovalAutoApprove$1 = {
     after?: number;
-    condition?: ((ctx: any) => boolean) | (() => boolean);
+    condition?: ((ctx: SmithersCtx$1<unknown> | null) => boolean) | (() => boolean);
     audit?: boolean;
-    revertOn?: ((ctx: any) => boolean) | (() => boolean);
+    revertOn?: ((ctx: SmithersCtx$1<unknown> | null) => boolean) | (() => boolean);
 };
 
 type ApprovalDecision$1 = z.infer<typeof approvalDecisionSchema>;
@@ -851,7 +849,7 @@ type ApprovalProps$2<Row = ApprovalDecision$1, Output extends OutputTarget$1 = O
     options?: ApprovalOption$1[];
     /** Where to persist the approval decision. Pass a Zod schema from `outputs` (recommended), a Drizzle table, or a string key. */
     output: Output;
-    outputSchema?: zod.ZodObject<any>;
+    outputSchema?: z.ZodObject<z.ZodRawShape>;
     request: ApprovalRequest$1;
     onDeny?: "fail" | "continue" | "skip";
     allowedScopes?: string[];
@@ -875,7 +873,7 @@ type ApprovalProps$2<Row = ApprovalDecision$1, Output extends OutputTarget$1 = O
     meta?: Record<string, unknown>;
     key?: string;
     children?: React.ReactNode;
-    smithersContext?: React.Context<any>;
+    smithersContext?: React.Context<SmithersCtx$1<unknown> | null>;
 };
 
 type ApprovalRanking$1 = z.infer<typeof approvalRankingSchema>;
@@ -883,44 +881,9 @@ type ApprovalRanking$1 = z.infer<typeof approvalRankingSchema>;
 /**
  * @template Row
  * @param {ApprovalProps<Row>} props
+ * @returns {React.ReactElement | null}
  */
-declare function Approval<Row>(props: ApprovalProps$1<Row>): React.ReactElement<{
-    id: any;
-    key: any;
-    output: any;
-    outputSchema: any;
-    dependsOn: any;
-    needs: any;
-    needsApproval: boolean;
-    waitAsync: boolean;
-    approvalMode: string;
-    approvalOnDeny: any;
-    approvalOptions: {
-        metadata?: Record<string, unknown> | undefined;
-        summary?: string | undefined;
-        key: string;
-        label: string;
-    }[] | undefined;
-    approvalAllowedScopes: any;
-    approvalAllowedUsers: any;
-    approvalAutoApprove: {
-        revertOnMet?: boolean | undefined;
-        conditionMet?: boolean | undefined;
-        audit: boolean;
-        after?: any;
-    } | undefined;
-    timeoutMs: any;
-    heartbeatTimeoutMs: any;
-    heartbeatTimeout: any;
-    retries: any;
-    retryPolicy: any;
-    continueOnFail: any;
-    cache: any;
-    label: any;
-    meta: any;
-    __smithersKind: string;
-    __smithersComputeFn: () => Promise<Row>;
-}, string | React.JSXElementConstructor<any>> | null;
+declare function Approval<Row>(props: ApprovalProps$1<Row>): React.ReactElement | null;
 /** @typedef {import("./ApprovalAutoApprove.ts").ApprovalAutoApprove} ApprovalAutoApprove */
 /** @typedef {import("./ApprovalMode.ts").ApprovalMode} ApprovalMode */
 /** @typedef {import("./ApprovalOption.ts").ApprovalOption} ApprovalOption */
@@ -976,111 +939,9 @@ type WorkflowProps$1 = WorkflowProps$2;
 /**
  * @template Row, Output, D
  * @param {TaskProps<Row, Output, D>} props
+ * @returns {React.ReactElement | null}
  */
-declare function Task<Row, Output, D>(props: TaskProps$1<Row, Output, D>): React.ReactElement<{
-    __aspects?: {
-        tokenBudget: any;
-        latencySlo: any;
-        costBudget: any;
-        tracking: any;
-        accumulator: any;
-    } | undefined;
-    dependsOn: string[] | undefined;
-    waitAsync: boolean;
-    agent: _smithers_agents_AgentLike.AgentLike | _smithers_agents_AgentLike.AgentLike[] | undefined;
-    __smithersKind: string;
-    key?: string;
-    id: string;
-    output: Output;
-    outputSchema?: zod.ZodObject<any>;
-    needs?: Record<string, string>;
-    skipIf?: boolean;
-    needsApproval?: boolean;
-    async?: boolean;
-    timeoutMs?: number;
-    heartbeatTimeoutMs?: number;
-    heartbeatTimeout?: number;
-    noRetry?: boolean;
-    retries?: number;
-    retryPolicy?: _smithers_scheduler_RetryPolicy.RetryPolicy;
-    continueOnFail?: boolean;
-    cache?: _smithers_scheduler_CachePolicy.CachePolicy;
-    scorers?: _smithers_scorers_types.ScorersMap;
-    memory?: _smithers_memory_types.TaskMemoryConfig;
-    allowTools?: string[];
-    label?: string;
-    meta?: Record<string, unknown>;
-    smithersContext?: React.Context<any>;
-}, string | React.JSXElementConstructor<any>> | React.ReactElement<{
-    __aspects?: {
-        tokenBudget: any;
-        latencySlo: any;
-        costBudget: any;
-        tracking: any;
-        accumulator: any;
-    } | undefined;
-    dependsOn: string[] | undefined;
-    waitAsync: boolean;
-    __smithersKind: string;
-    __smithersComputeFn: (() => Row | Promise<Row>) | ((deps: InferDeps$1<D>) => React.ReactNode | Row) | (Row & Function);
-    key?: string;
-    id: string;
-    output: Output;
-    outputSchema?: zod.ZodObject<any>;
-    needs?: Record<string, string>;
-    skipIf?: boolean;
-    needsApproval?: boolean;
-    async?: boolean;
-    timeoutMs?: number;
-    heartbeatTimeoutMs?: number;
-    heartbeatTimeout?: number;
-    noRetry?: boolean;
-    retries?: number;
-    retryPolicy?: _smithers_scheduler_RetryPolicy.RetryPolicy;
-    continueOnFail?: boolean;
-    cache?: _smithers_scheduler_CachePolicy.CachePolicy;
-    scorers?: _smithers_scorers_types.ScorersMap;
-    memory?: _smithers_memory_types.TaskMemoryConfig;
-    allowTools?: string[];
-    label?: string;
-    meta?: Record<string, unknown>;
-    smithersContext?: React.Context<any>;
-}, string | React.JSXElementConstructor<any>> | React.ReactElement<{
-    __aspects?: {
-        tokenBudget: any;
-        latencySlo: any;
-        costBudget: any;
-        tracking: any;
-        accumulator: any;
-    } | undefined;
-    dependsOn: string[] | undefined;
-    waitAsync: boolean;
-    __smithersKind: string;
-    __smithersPayload: any;
-    __payload: any;
-    key?: string;
-    id: string;
-    output: Output;
-    outputSchema?: zod.ZodObject<any>;
-    needs?: Record<string, string>;
-    skipIf?: boolean;
-    needsApproval?: boolean;
-    async?: boolean;
-    timeoutMs?: number;
-    heartbeatTimeoutMs?: number;
-    heartbeatTimeout?: number;
-    noRetry?: boolean;
-    retries?: number;
-    retryPolicy?: _smithers_scheduler_RetryPolicy.RetryPolicy;
-    continueOnFail?: boolean;
-    cache?: _smithers_scheduler_CachePolicy.CachePolicy;
-    scorers?: _smithers_scorers_types.ScorersMap;
-    memory?: _smithers_memory_types.TaskMemoryConfig;
-    allowTools?: string[];
-    label?: string;
-    meta?: Record<string, unknown>;
-    smithersContext?: React.Context<any>;
-}, string | React.JSXElementConstructor<any>> | null;
+declare function Task<Row, Output, D>(props: TaskProps$1<Row, Output, D>): React.ReactElement | null;
 type TaskProps$1<Row, Output, D> = TaskProps$2<Row, Output, D>;
 
 /** @typedef {import("./SequenceProps.ts").SequenceProps} SequenceProps */
@@ -1105,7 +966,7 @@ type ParallelProps$1 = ParallelProps$2;
  * @param {MergeQueueProps} props
  */
 declare function MergeQueue(props: MergeQueueProps$1): React.ReactElement<{
-    maxConcurrency: number;
+    maxConcurrency: any;
     id: string | undefined;
 }, string | React.JSXElementConstructor<any>> | null;
 type MergeQueueProps$1 = MergeQueueProps$2;
@@ -1302,7 +1163,7 @@ type RunbookProps$1 = RunbookProps$2;
 declare function Subflow(props: SubflowProps$1): React.ReactElement<{
     id: string;
     key: string | undefined;
-    workflow: _smithers_driver_WorkflowDefinition.WorkflowDefinition<any>;
+    workflow: _smithers_driver.WorkflowDefinition<unknown>;
     input: unknown;
     mode: "childRun" | "inline";
     output: OutputTarget$1;
@@ -1310,14 +1171,17 @@ declare function Subflow(props: SubflowProps$1): React.ReactElement<{
     heartbeatTimeoutMs: number | undefined;
     heartbeatTimeout: number | undefined;
     retries: number | undefined;
-    retryPolicy: _smithers_scheduler_RetryPolicy.RetryPolicy | undefined;
+    retryPolicy: {
+        backoff?: "fixed" | "linear" | "exponential";
+        initialDelayMs?: number;
+    } | undefined;
     continueOnFail: boolean | undefined;
-    cache: _smithers_scheduler_CachePolicy.CachePolicy | undefined;
+    cache: _smithers_scheduler.CachePolicy | undefined;
     dependsOn: string[] | undefined;
     needs: Record<string, string> | undefined;
     label: string;
     meta: Record<string, unknown> | undefined;
-    __smithersSubflowWorkflow: _smithers_driver_WorkflowDefinition.WorkflowDefinition<any>;
+    __smithersSubflowWorkflow: _smithers_driver.WorkflowDefinition<unknown>;
     __smithersSubflowInput: unknown;
     __smithersSubflowMode: "childRun" | "inline";
 }, string | React.JSXElementConstructor<any>> | null;
@@ -1350,14 +1214,17 @@ declare function Sandbox(props: SandboxProps$1): React.ReactElement<{
     heartbeatTimeoutMs: number | undefined;
     heartbeatTimeout: number | undefined;
     retries: number | undefined;
-    retryPolicy: _smithers_scheduler_RetryPolicy.RetryPolicy | undefined;
+    retryPolicy: {
+        backoff?: "fixed" | "linear" | "exponential";
+        initialDelayMs?: number;
+    } | undefined;
     continueOnFail: boolean | undefined;
-    cache: _smithers_scheduler_CachePolicy.CachePolicy | undefined;
+    cache: _smithers_scheduler.CachePolicy | undefined;
     dependsOn: string[] | undefined;
     needs: Record<string, string> | undefined;
     label: string;
     meta: Record<string, unknown> | undefined;
-    __smithersSandboxWorkflow: ((...args: any[]) => any) | undefined;
+    __smithersSandboxWorkflow: _smithers_driver.WorkflowDefinition<unknown> | undefined;
     __smithersSandboxInput: unknown;
     __smithersSandboxRuntime: SandboxRuntime$1;
     __smithersSandboxChildren: React.ReactNode;
@@ -1374,7 +1241,9 @@ declare function WaitForEvent(props: WaitForEventProps$1): React.ReactElement<{
     event: string;
     correlationId: string | undefined;
     output: OutputTarget$1;
-    outputSchema: zod.ZodObject<any, zod_v4_core.$strip> | undefined;
+    outputSchema: zod.ZodObject<Readonly<{
+        [k: string]: zod_v4_core.$ZodType<unknown, unknown, zod_v4_core.$ZodTypeInternals<unknown, unknown>>;
+    }>, zod_v4_core.$strip> | undefined;
     timeoutMs: number | undefined;
     onTimeout: "fail" | "continue" | "skip";
     waitAsync: boolean;
@@ -1427,33 +1296,9 @@ type TimerProps$1 = TimerProps$2;
 
 /**
  * @param {HumanTaskProps} props
+ * @returns {React.ReactElement | null}
  */
-declare function HumanTask(props: HumanTaskProps$1): React.ReactElement<{
-    id: string;
-    key: string | undefined;
-    output: OutputTarget$1;
-    outputSchema: zod.ZodObject<any, zod_v4_core.$strip> | undefined;
-    dependsOn: string[] | undefined;
-    needs: Record<string, string> | undefined;
-    needsApproval: boolean;
-    waitAsync: boolean;
-    approvalMode: string;
-    timeoutMs: number | undefined;
-    retries: number;
-    retryPolicy: {
-        backoff: string;
-        initialDelayMs: number;
-    };
-    continueOnFail: boolean | undefined;
-    label: string;
-    meta: {
-        humanTask: boolean;
-        maxAttempts: number;
-        prompt: string;
-    };
-    __smithersKind: string;
-    __smithersComputeFn: () => Promise<unknown>;
-}, string | React.JSXElementConstructor<any>> | null;
+declare function HumanTask(props: HumanTaskProps$1): React.ReactElement | null;
 type HumanTaskProps$1 = HumanTaskProps$2;
 
 /**
@@ -1502,8 +1347,8 @@ declare namespace SagaStep {
  */
 declare function TryCatchFinally(props: TryCatchFinallyProps$1): React.ReactElement<{
     id: string | undefined;
-    __tcfCatchErrors: _smithers_errors_SmithersErrorCode.SmithersErrorCode[] | undefined;
-    __tcfCatchHandler: React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | ((error: _smithers_errors_SmithersError.SmithersError) => React.ReactElement) | undefined;
+    __tcfCatchErrors: ("INVALID_INPUT" | "MISSING_INPUT" | "MISSING_INPUT_TABLE" | "RESUME_METADATA_MISMATCH" | "UNKNOWN_OUTPUT_SCHEMA" | "INVALID_OUTPUT" | "WORKTREE_CREATE_FAILED" | "VCS_NOT_FOUND" | "SNAPSHOT_NOT_FOUND" | "VCS_WORKSPACE_CREATE_FAILED" | "TASK_TIMEOUT" | "RUN_NOT_FOUND" | "NODE_NOT_FOUND" | "INVALID_EVENTS_OPTIONS" | "SANDBOX_BUNDLE_INVALID" | "SANDBOX_BUNDLE_TOO_LARGE" | "WORKFLOW_EXECUTION_FAILED" | "SANDBOX_EXECUTION_FAILED" | "TASK_HEARTBEAT_TIMEOUT" | "HEARTBEAT_PAYLOAD_TOO_LARGE" | "HEARTBEAT_PAYLOAD_NOT_JSON_SERIALIZABLE" | "TASK_ABORTED" | "RUN_CANCELLED" | "RUN_NOT_RESUMABLE" | "RUN_OWNER_ALIVE" | "RUN_STILL_RUNNING" | "RUN_RESUME_CLAIM_LOST" | "RUN_RESUME_CLAIM_FAILED" | "RUN_RESUME_ACTIVATION_FAILED" | "RUN_HIJACKED" | "CONTINUATION_STATE_TOO_LARGE" | "INVALID_CONTINUATION_STATE" | "RALPH_MAX_REACHED" | "SCHEDULER_ERROR" | "SESSION_ERROR" | "TASK_ID_REQUIRED" | "TASK_MISSING_OUTPUT" | "DUPLICATE_ID" | "NESTED_LOOP" | "WORKTREE_EMPTY_PATH" | "MDX_PRELOAD_INACTIVE" | "CONTEXT_OUTSIDE_WORKFLOW" | "MISSING_OUTPUT" | "DEP_NOT_SATISFIED" | "ASPECT_BUDGET_EXCEEDED" | "APPROVAL_OUTSIDE_TASK" | "APPROVAL_OPTIONS_REQUIRED" | "WORKFLOW_MISSING_DEFAULT" | "TOOL_PATH_INVALID" | "TOOL_PATH_ESCAPE" | "TOOL_FILE_TOO_LARGE" | "TOOL_CONTENT_TOO_LARGE" | "TOOL_PATCH_TOO_LARGE" | "TOOL_PATCH_FAILED" | "TOOL_NETWORK_DISABLED" | "TOOL_GIT_REMOTE_DISABLED" | "TOOL_COMMAND_FAILED" | "TOOL_GREP_FAILED" | "AGENT_CLI_ERROR" | "AGENT_RPC_FILE_ARGS" | "AGENT_BUILD_COMMAND" | "AGENT_DIAGNOSTIC_TIMEOUT" | "DB_MISSING_COLUMNS" | "DB_REQUIRES_BUN_SQLITE" | "DB_QUERY_FAILED" | "DB_WRITE_FAILED" | "STORAGE_ERROR" | "INTERNAL_ERROR" | "PROCESS_ABORTED" | "PROCESS_TIMEOUT" | "PROCESS_IDLE_TIMEOUT" | "PROCESS_SPAWN_FAILED" | "TASK_RUNTIME_UNAVAILABLE" | "SCHEMA_CHANGE_HOT" | "HOT_OVERLAY_FAILED" | "HOT_RELOAD_INVALID_MODULE" | "SCORER_FAILED" | "WORKFLOW_EXISTS" | "CLI_DB_NOT_FOUND" | "CLI_AGENT_UNSUPPORTED" | "PI_HTTP_ERROR" | "EXTERNAL_BUILD_FAILED" | "SCHEMA_DISCOVERY_FAILED" | "OPENAPI_SPEC_LOAD_FAILED" | "OPENAPI_OPERATION_NOT_FOUND" | "OPENAPI_TOOL_EXECUTION_FAILED" | (string & {}))[] | undefined;
+    __tcfCatchHandler: React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | ((error: _smithers_errors.SmithersError) => React.ReactElement) | undefined;
     __tcfFinallyHandler: React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | undefined;
 }, string | React.JSXElementConstructor<any>> | null;
 type TryCatchFinallyProps$1 = TryCatchFinallyProps$2;
@@ -1682,15 +1527,16 @@ declare const markdownComponents: Record<string, React.FC<any>>;
  * @returns {string}
  */
 declare function renderMdx(Component: MDXContent, props?: Record<string, any>): string;
-type MDXContent = mdx_types.MDXContent;
+type MDXContent = any;
 
-/** @typedef {import("zod").ZodObject<any>} ZodObject */
+/** @typedef {import("zod").ZodObject<import("zod").ZodRawShape>} ZodObject */
 /** @typedef {import("zod").ZodTypeAny} ZodTypeAny */
 /**
- * @param {import("zod").ZodObject<any>} schema
+ * @param {ZodObject} schema
  * @returns {string}
  */
-declare function zodSchemaToJsonExample(schema: zod.ZodObject<any>): string;
+declare function zodSchemaToJsonExample(schema: ZodObject): string;
+type ZodObject = zod.ZodObject<zod.ZodRawShape>;
 
 type CachePolicy<Ctx> = _smithers_scheduler_CachePolicy.CachePolicy<Ctx>;
 type EngineDecision = _smithers_scheduler.EngineDecision;

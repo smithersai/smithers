@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import type { OutputTarget } from "./OutputTarget.ts";
 
 export type WaitForEventProps = {
@@ -9,7 +10,7 @@ export type WaitForEventProps = {
 	/** Where to store the event payload. */
 	output: OutputTarget;
 	/** Zod schema for the event payload. */
-	outputSchema?: import("zod").ZodObject<any>;
+	outputSchema?: z.ZodObject<z.ZodRawShape>;
 	/** Max wait time in ms before timing out. */
 	timeoutMs?: number;
 	/** Behavior on timeout: fail (default), skip the node, or continue with null. */

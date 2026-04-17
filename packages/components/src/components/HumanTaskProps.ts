@@ -1,4 +1,5 @@
 import type React from "react";
+import type { z } from "zod";
 import type { OutputTarget } from "./OutputTarget.ts";
 
 export type HumanTaskProps = {
@@ -6,7 +7,7 @@ export type HumanTaskProps = {
 	/** Where to store the human's response. */
 	output: OutputTarget;
 	/** Zod schema the human must conform to. Used for validation. */
-	outputSchema?: import("zod").ZodObject<any>;
+	outputSchema?: z.ZodObject<z.ZodRawShape>;
 	/** Instructions for the human (string or ReactNode). */
 	prompt: string | React.ReactNode;
 	/** Max validation retries before failure. */

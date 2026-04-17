@@ -34,8 +34,8 @@ export const approvalRankingSchema = z.object({
     notes: z.string().nullable(),
 });
 /**
- * @param {any} value
- * @returns {value is import("zod").ZodObject<any>}
+ * @param {unknown} value
+ * @returns {value is import("zod").ZodObject<import("zod").ZodRawShape>}
  */
 function isZodObject(value) {
     return Boolean(value && typeof value === "object" && "shape" in value);
@@ -58,6 +58,7 @@ function parseJson(value) {
 }
 /**
  * @param {ApprovalMode} mode
+ * @returns {import("zod").ZodObject<import("zod").ZodRawShape>}
  */
 function defaultSchemaForMode(mode) {
     switch (mode) {
@@ -71,6 +72,7 @@ function defaultSchemaForMode(mode) {
 }
 /**
  * @param {ApprovalMode | undefined} mode
+ * @returns {"select" | "rank" | "decision"}
  */
 function normalizeMode(mode) {
     switch (mode) {
@@ -84,6 +86,7 @@ function normalizeMode(mode) {
 }
 /**
  * @param {ApprovalOption[] | undefined} options
+ * @returns {ApprovalOption[] | undefined}
  */
 function normalizeOptions(options) {
     return options?.map((option) => ({
@@ -95,17 +98,19 @@ function normalizeOptions(options) {
 }
 /**
  * @param {ApprovalAutoApprove[keyof ApprovalAutoApprove]} callback
- * @param {any} ctx
+ * @param {import("@smithers/driver").SmithersCtx<unknown> | null} ctx
+ * @returns {boolean | undefined}
  */
 function evaluateBooleanCallback(callback, ctx) {
     if (typeof callback !== "function") {
         return undefined;
     }
-    return Boolean(callback(ctx));
+    return Boolean(/** @type {(ctx: import("@smithers/driver").SmithersCtx<unknown> | null) => boolean} */ (callback)(ctx));
 }
 /**
  * @template Row
  * @param {ApprovalProps<Row>} props
+ * @returns {React.ReactElement | null}
  */
 export function Approval(props) {
     if (props.skipIf)
