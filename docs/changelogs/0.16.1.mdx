@@ -17,11 +17,12 @@ and bump every workspace dependency to latest.
 ## Internal / chore
 
 - **All workspace dependencies bumped to latest via `pnpm -r up --latest`.**
-  Notable bumps: `ai` 6.0.69 → 6.0.168, `diff` 5.x → 9.x, `typescript`
-  5.9 → 6.0.3 across the 23-package workspace. One known peer-dep warning
-  remains: `@opentui/core` → `bun-ffi-structs` wants `typescript@^5` but
-  the workspace now resolves `typescript@6.0.3`. Typecheck, lint, and the
-  full test suite all pass.
+  Notable bumps: `ai` 6.0.69 → 6.0.168, `diff` 5.x → 9.x across the
+  23-package workspace. `typescript` stays pinned to `~5.9.3` — tsup 8.5.1
+  internally sets `baseUrl` unconditionally and TypeScript 6.0 rejects
+  that as TS5101 during dts generation, so the `typescript@6` bump was
+  reverted until tsup fixes the compat. Typecheck, lint, and the full
+  test suite all pass.
 
 - **`pnpm run release` auto-runs `npm login` when needed.** The release
   script now runs `npm whoami` before publishing and only prompts for
