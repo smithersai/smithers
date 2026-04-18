@@ -1,4 +1,4 @@
-import * as _smithers_graph_types from '@smithers-orchestrator/graph/types';
+import * as _smithers_orchestrator_graph_types from '@smithers-orchestrator/graph/types';
 import { ExtractGraph as ExtractGraph$1, HostNode as HostNode$1 } from '@smithers-orchestrator/graph/types';
 import * as React$1 from 'react';
 import React__default from 'react';
@@ -36,21 +36,21 @@ declare class SmithersRenderer {
    */
     getRoot(): HostNode | null;
 }
-type ExtractGraph = _smithers_graph_types.ExtractGraph;
-type ExtractOptions = _smithers_graph_types.ExtractOptions;
+type ExtractGraph = _smithers_orchestrator_graph_types.ExtractGraph;
+type ExtractOptions = _smithers_orchestrator_graph_types.ExtractOptions;
 type HostContainer = HostContainer$1;
-type MutableHostElement = _smithers_graph_types.HostElement & {
+type MutableHostElement = _smithers_orchestrator_graph_types.HostElement & {
     props: Record<string, string>;
     rawProps: Record<string, unknown>;
     children: HostNode[];
 };
-type HostNode = _smithers_graph_types.HostNode;
-type MutableHostText = _smithers_graph_types.HostText & {
+type HostNode = _smithers_orchestrator_graph_types.HostNode;
+type MutableHostText = _smithers_orchestrator_graph_types.HostText & {
     text: string;
 };
 type React = React$1.default;
 type SmithersRendererOptions = SmithersRendererOptions$1;
-type WorkflowGraph = _smithers_graph_types.WorkflowGraph;
+type WorkflowGraph = _smithers_orchestrator_graph_types.WorkflowGraph;
 /**
  * Minimal local shape for a react-reconciler instance. `@types/react-reconciler`
  * is not installed here, so we describe only the methods we call.
