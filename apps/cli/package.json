@@ -1,6 +1,6 @@
 {
   "name": "@smithers/cli",
-  "version": "0.0.0",
+  "version": "0.16.0",
   "description": "Smithers command-line interface, TUI, MCP server, and local workflow tools",
   "type": "module",
   "sideEffects": false,

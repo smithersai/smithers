@@ -1,6 +1,6 @@
 {
   "name": "@smithers/devtools",
-  "version": "0.0.0",
+  "version": "0.16.0",
   "description": "Devtools and debugging utilities for Smithers workflow inspection",
   "type": "module",
   "sideEffects": false,

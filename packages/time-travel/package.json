@@ -1,6 +1,6 @@
 {
   "name": "@smithers/time-travel",
-  "version": "0.0.0",
+  "version": "0.16.0",
   "description": "Smithers snapshots, diffs, forks, replay, timelines, and VCS-tagged run history",
   "type": "module",
   "sideEffects": false,

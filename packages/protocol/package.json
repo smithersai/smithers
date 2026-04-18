@@ -1,6 +1,6 @@
 {
   "name": "@smithers/protocol",
-  "version": "0.0.0",
+  "version": "0.16.0",
   "description": "Shared Smithers contracts, errors, and small value types",
   "type": "module",
   "sideEffects": false,

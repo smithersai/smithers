@@ -1,6 +1,6 @@
 {
   "name": "@smithers/components",
-  "version": "0.0.0",
+  "version": "0.16.0",
   "description": "React components for Smithers workflows",
   "type": "module",
   "sideEffects": false,

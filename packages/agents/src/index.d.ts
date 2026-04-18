@@ -1,6 +1,6 @@
 import { openai } from '@ai-sdk/openai';
 import * as ai from 'ai';
-import { ToolSet, ToolLoopAgentSettings, ToolLoopAgent } from 'ai';
+import { ToolLoopAgent, ToolSet, ToolLoopAgentSettings } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { Effect } from 'effect';
 import { SmithersError } from '@smithers/errors/SmithersError';

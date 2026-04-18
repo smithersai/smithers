@@ -1,6 +1,6 @@
 {
   "name": "smithers-monorepo",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "description": "AI workflow orchestration with JSX",
   "author": "William Cory",
   "license": "MIT",
@@ -72,6 +72,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/react-reconciler": "^0.28.9",
     "@types/ws": "^8.5.12",
+    "bun-types": "^1.3.12",
     "oxlint": "^1.59.0",
     "tsup": "^8.5.1",
     "twitter-api-v2": "^1.29.0",

@@ -1,6 +1,6 @@
 {
   "name": "@smithers/memory",
-  "version": "0.0.0",
+  "version": "0.16.0",
   "description": "Persistent and semantic memory services for Smithers",
   "type": "module",
   "sideEffects": false,

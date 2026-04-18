@@ -1,6 +1,6 @@
 {
   "name": "@smithers/sandbox",
-  "version": "0.0.0",
+  "version": "0.16.0",
   "description": "Sandbox bundle, execution, and transport integration for Smithers",
   "type": "module",
   "sideEffects": false,

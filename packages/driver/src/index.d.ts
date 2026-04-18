@@ -1,5 +1,5 @@
 import * as _smithers_graph_types from '@smithers/graph/types';
-import { WorkflowGraph, TaskDescriptor as TaskDescriptor$1 } from '@smithers/graph/types';
+import { WorkflowGraph as WorkflowGraph$1, TaskDescriptor as TaskDescriptor$1 } from '@smithers/graph/types';
 import { SmithersEvent } from '@smithers/observability/SmithersEvent';
 import * as _smithers_scheduler from '@smithers/scheduler';
 import { WaitReason as WaitReason$1, EngineDecision as EngineDecision$1 } from '@smithers/scheduler';
@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { SmithersWorkflowOptions } from '@smithers/scheduler/SmithersWorkflowOptions';
 import { SchemaRegistryEntry } from '@smithers/db/SchemaRegistryEntry';
 import * as _smithers_graph from '@smithers/graph';
-import { ExtractOptions, WorkflowGraph as WorkflowGraph$1 } from '@smithers/graph';
+import { ExtractOptions, WorkflowGraph } from '@smithers/graph';
 
 type TaskCompletedEvent = {
     nodeId: string;
@@ -22,7 +22,7 @@ type TaskFailedEvent = {
 };
 
 type WorkflowSession$2 = {
-    submitGraph(graph: WorkflowGraph): unknown;
+    submitGraph(graph: WorkflowGraph$1): unknown;
     taskCompleted(event: TaskCompletedEvent): unknown;
     taskFailed(event: TaskFailedEvent): unknown;
     getNextDecision?(): unknown;
@@ -272,7 +272,7 @@ type WorkflowDefinition$1<Schema = unknown> = {
 };
 
 type WorkflowGraphRenderer$1 = {
-    render(element: WorkflowElement, opts?: ExtractOptions): Promise<WorkflowGraph$1> | WorkflowGraph$1;
+    render(element: WorkflowElement, opts?: ExtractOptions): Promise<WorkflowGraph> | WorkflowGraph;
 };
 
 type WorkflowDriverOptions$1<Schema = unknown> = {

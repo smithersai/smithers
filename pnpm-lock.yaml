@@ -29,6 +29,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.12
         version: 8.18.1
+      bun-types:
+        specifier: ^1.3.12
+        version: 1.3.12
       oxlint:
         specifier: ^1.59.0
         version: 1.59.0

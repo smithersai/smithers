@@ -1,6 +1,6 @@
 {
   "name": "@smithers/driver",
-  "version": "0.0.0",
+  "version": "0.16.0",
   "description": "Workflow execution driver — runs tasks, acts on EngineDecisions, reports results",
   "type": "module",
   "sideEffects": false,
