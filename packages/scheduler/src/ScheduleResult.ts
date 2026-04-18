@@ -1,4 +1,4 @@
-import type { TaskDescriptor } from "@smithers/graph";
+import type { TaskDescriptor } from "@smithers-orchestrator/graph";
 import type { ContinuationRequest } from "./ContinuationRequest.ts";
 import type { RalphMeta } from "./RalphMeta.ts";
 

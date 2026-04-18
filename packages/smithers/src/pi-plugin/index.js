@@ -1,5 +1,5 @@
-import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+/** @typedef {import("@smithers-orchestrator/observability/SmithersEvent").SmithersEvent} SmithersEvent */
 /** @typedef {{ baseUrl?: string; apiKey?: string }} RequestOptions */
 
 const DEFAULT_BASE = "http://127.0.0.1:7331";

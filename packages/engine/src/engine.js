@@ -1,63 +1,63 @@
-import { makeWorkflowSession, } from "@smithers/scheduler";
-import { ReactWorkflowDriver } from "@smithers/react-reconciler/driver";
-import { SmithersRenderer } from "@smithers/react-reconciler/dom/renderer";
-import { SmithersCtx } from "@smithers/driver/SmithersCtx";
-import { loadInput, loadOutputs } from "@smithers/db/snapshot";
-import { ensureSmithersTables } from "@smithers/db/ensure";
-import { SmithersDb } from "@smithers/db/adapter";
-import { selectOutputRow, validateOutput, validateExistingOutput, getAgentOutputSchema, describeSchemaShape, buildOutputRow, stripAutoColumns, } from "@smithers/db/output";
-import { validateInput } from "@smithers/db/input";
-import { schemaSignature } from "@smithers/db/schema-signature";
-import { withSqliteWriteRetry } from "@smithers/db/write-retry";
-import { canonicalizeXml } from "@smithers/graph/utils/xml";
-import { nowMs } from "@smithers/scheduler/nowMs";
-import { errorToJson } from "@smithers/errors/errorToJson";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { assertJsonPayloadWithinBounds, assertOptionalStringMaxLength, assertPositiveFiniteInteger, } from "@smithers/db/input-bounds";
-import { retryPolicyToSchedule } from "@smithers/scheduler/retryPolicyToSchedule";
-import { retryScheduleDelayMs } from "@smithers/scheduler/retryScheduleDelayMs";
+import { makeWorkflowSession, } from "@smithers-orchestrator/scheduler";
+import { ReactWorkflowDriver } from "@smithers-orchestrator/react-reconciler/driver";
+import { SmithersRenderer } from "@smithers-orchestrator/react-reconciler/dom/renderer";
+import { SmithersCtx } from "@smithers-orchestrator/driver/SmithersCtx";
+import { loadInput, loadOutputs } from "@smithers-orchestrator/db/snapshot";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { selectOutputRow, validateOutput, validateExistingOutput, getAgentOutputSchema, describeSchemaShape, buildOutputRow, stripAutoColumns, } from "@smithers-orchestrator/db/output";
+import { validateInput } from "@smithers-orchestrator/db/input";
+import { schemaSignature } from "@smithers-orchestrator/db/schema-signature";
+import { withSqliteWriteRetry } from "@smithers-orchestrator/db/write-retry";
+import { canonicalizeXml } from "@smithers-orchestrator/graph/utils/xml";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
+import { errorToJson } from "@smithers-orchestrator/errors/errorToJson";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { assertJsonPayloadWithinBounds, assertOptionalStringMaxLength, assertPositiveFiniteInteger, } from "@smithers-orchestrator/db/input-bounds";
+import { retryPolicyToSchedule } from "@smithers-orchestrator/scheduler/retryPolicyToSchedule";
+import { retryScheduleDelayMs } from "@smithers-orchestrator/scheduler/retryScheduleDelayMs";
 import { buildPlanTree, scheduleTasks, buildStateKey, } from "./scheduler.js";
 import { getDefinedToolMetadata } from "./getDefinedToolMetadata.js";
-import { captureSnapshotEffect, loadLatestSnapshot, parseSnapshot, } from "@smithers/time-travel/snapshot";
+import { captureSnapshotEffect, loadLatestSnapshot, parseSnapshot, } from "@smithers-orchestrator/time-travel/snapshot";
 import { EventBus } from "./events.js";
-import { getJjPointer, runJj, workspaceAdd } from "@smithers/vcs/jj";
-import { findVcsRoot } from "@smithers/vcs/find-root";
+import { getJjPointer, runJj, workspaceAdd } from "@smithers-orchestrator/vcs/jj";
+import { findVcsRoot } from "@smithers-orchestrator/vcs/find-root";
 import * as BunContext from "@effect/platform-bun/BunContext";
 import { z } from "zod";
 import { eq, getTableName } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
 import { Chunk, Duration, Effect, Fiber, Metric, Queue, Schedule } from "effect";
-import { attemptDuration, cacheHits, cacheMisses, nodeDuration, promptSizeBytes, responseSizeBytes, runDuration, runsResumedTotal, schedulerConcurrencyUtilization, schedulerQueueDepth, schedulerWaitDuration, trackEvent, } from "@smithers/observability/metrics";
-import { runScorersAsync } from "@smithers/scorers/run-scorers";
+import { attemptDuration, cacheHits, cacheMisses, nodeDuration, promptSizeBytes, responseSizeBytes, runDuration, runsResumedTotal, schedulerConcurrencyUtilization, schedulerQueueDepth, schedulerWaitDuration, trackEvent, } from "@smithers-orchestrator/observability/metrics";
+import { runScorersAsync } from "@smithers-orchestrator/scorers/run-scorers";
 import { dirname, resolve } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
-import { logDebug, logError, logInfo, logWarning } from "@smithers/observability/logging";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
+import { logDebug, logError, logInfo, logWarning } from "@smithers-orchestrator/observability/logging";
 import { isPidAlive, parseRuntimeOwnerPid } from "./runtime-owner.js";
 import { HotWorkflowController } from "./hot/index.js";
 import { spawn as nodeSpawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { platform } from "node:os";
-import { annotateSmithersTrace, smithersSpanNames, withSmithersSpan, } from "@smithers/observability";
-import { withTaskRuntime } from "@smithers/driver/task-runtime";
-import { hashCapabilityRegistry } from "@smithers/agents/capability-registry";
+import { annotateSmithersTrace, smithersSpanNames, withSmithersSpan, } from "@smithers-orchestrator/observability";
+import { withTaskRuntime } from "@smithers-orchestrator/driver/task-runtime";
+import { hashCapabilityRegistry } from "@smithers-orchestrator/agents/capability-registry";
 import { cancelPendingTimersBridge, executeTaskBridgeEffect, isBridgeManagedTimerTask as isTimerTask, resolveDeferredTaskStateBridge, } from "./effect/workflow-bridge.js";
 import { AlertRuntime } from "./alert-runtime.js";
 import { executeChildWorkflow } from "./child-workflow.js";
 import { runWorkflowWithMakeBridge } from "./effect/workflow-make-bridge.js";
 import { createWorkflowVersioningRuntime, getWorkflowPatchDecisions, withWorkflowVersioningRuntime, } from "./effect/versioning.js";
-import { runWithCorrelationContext, updateCurrentCorrelationContext, withCorrelationContext, } from "@smithers/observability/correlation";
-/** @typedef {import("@smithers/graph/GraphSnapshot").GraphSnapshot} GraphSnapshot */
+import { runWithCorrelationContext, updateCurrentCorrelationContext, withCorrelationContext, } from "@smithers-orchestrator/observability/correlation";
+/** @typedef {import("@smithers-orchestrator/graph/GraphSnapshot").GraphSnapshot} GraphSnapshot */
 /** @typedef {import("./HijackState.ts").HijackState} HijackState */
-/** @typedef {import("@smithers/driver/RunOptions").RunOptions} RunOptions */
-/** @typedef {import("@smithers/driver/RunResult").RunResult} RunResult */
-/** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow} SmithersWorkflow */
-/** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
-/** @typedef {import("@smithers/scheduler").TaskStateMap} TaskStateMap */
-/** @typedef {import("@smithers/db/adapter/ApprovalRow").ApprovalRow} ApprovalRow */
-/** @typedef {import("@smithers/db/adapter/RunRow").RunRow} RunRow */
-/** @typedef {import("@smithers/graph/XmlNode").XmlNode} XmlNode */
+/** @typedef {import("@smithers-orchestrator/driver/RunOptions").RunOptions} RunOptions */
+/** @typedef {import("@smithers-orchestrator/driver/RunResult").RunResult} RunResult */
+/** @typedef {import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow} SmithersWorkflow */
+/** @typedef {import("@smithers-orchestrator/graph/TaskDescriptor").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/scheduler").TaskStateMap} TaskStateMap */
+/** @typedef {import("@smithers-orchestrator/db/adapter/ApprovalRow").ApprovalRow} ApprovalRow */
+/** @typedef {import("@smithers-orchestrator/db/adapter/RunRow").RunRow} RunRow */
+/** @typedef {import("@smithers-orchestrator/graph/XmlNode").XmlNode} XmlNode */
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase<Record<string, unknown>>} BunSQLiteDatabase */
 /** @typedef {import("drizzle-orm/sqlite-core").SQLiteTable} SQLiteTable */
 

@@ -1,16 +1,16 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Effect, Exit } from "effect";
-import { buildOutputRow, describeSchemaShape, selectOutputRow, stripAutoColumns, validateExistingOutput, validateOutput, } from "@smithers/db/output";
+import { buildOutputRow, describeSchemaShape, selectOutputRow, stripAutoColumns, validateExistingOutput, validateOutput, } from "@smithers-orchestrator/db/output";
 import { awaitApprovalDurableDeferred, awaitWaitForEventDurableDeferred, bridgeApprovalResolve, bridgeWaitForEventResolve, } from "./durable-deferred-bridge.js";
 import { EventBus } from "../events.js";
 import { buildHumanRequestId, getHumanTaskPrompt as getStoredHumanTaskPrompt, isHumanTaskMeta, } from "../human-requests.js";
 import { parseAttemptMetaJson } from "./bridge-utils.js";
-import { updateAsyncExternalWaitPending } from "@smithers/observability/metrics";
-import { markdownComponents } from "@smithers/components/markdownComponents";
-import { errorToJson } from "@smithers/errors/errorToJson";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { nowMs } from "@smithers/scheduler/nowMs";
+import { updateAsyncExternalWaitPending } from "@smithers-orchestrator/observability/metrics";
+import { markdownComponents } from "@smithers-orchestrator/components/markdownComponents";
+import { errorToJson } from "@smithers-orchestrator/errors/errorToJson";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
 /**
  * @typedef {"pending" | "waiting-approval" | "waiting-event" | "waiting-timer" | "finished" | "failed" | "skipped"} DeferredBridgeState
  */
@@ -20,9 +20,9 @@ import { nowMs } from "@smithers/scheduler/nowMs";
 /**
  * @typedef {(state: "pending" | "failed" | "skipped") => Promise<void>} DeferredBridgeStateEmitter
  */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} _SmithersDb */
-/** @typedef {import("@smithers/db/adapter/ApprovalRow").ApprovalRow} ApprovalRow */
-/** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} _SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter/ApprovalRow").ApprovalRow} ApprovalRow */
+/** @typedef {import("@smithers-orchestrator/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase<Record<string, unknown>>} BunSQLiteDatabase */
 
 const timerDurationMultipliers = {

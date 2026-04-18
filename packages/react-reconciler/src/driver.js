@@ -1,4 +1,4 @@
-import { WorkflowDriver, } from "@smithers/driver";
+import { WorkflowDriver, } from "@smithers-orchestrator/driver";
 import { SmithersRenderer } from "./reconciler.js";
 
 /**
@@ -7,7 +7,7 @@ import { SmithersRenderer } from "./reconciler.js";
  */
 export class ReactWorkflowDriver extends WorkflowDriver {
     /**
-   * @param {import("@smithers/driver").WorkflowDriverOptions<Schema>} options
+   * @param {import("@smithers-orchestrator/driver").WorkflowDriverOptions<Schema>} options
    */
     constructor(options) {
         const renderer = options.renderer ?? new SmithersRenderer();

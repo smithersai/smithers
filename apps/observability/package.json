@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/observability",
+  "name": "@smithers-orchestrator/observability",
   "version": "0.16.0",
   "description": "Concrete Smithers metrics, logging, tracing, and observability integrations",
   "type": "module",
@@ -30,8 +30,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@smithers/agents": "workspace:*",
-    "@smithers/driver": "workspace:*",
+    "@smithers-orchestrator/agents": "workspace:*",
+    "@smithers-orchestrator/driver": "workspace:*",
     "effect": "^3.21.0",
     "@effect/opentelemetry": "^0.61.0",
     "@effect/platform": "^0.96.0",

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 import { readFileSync } from "node:fs";
 import { Effect } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { parseSpecText } from "./_specHelpers.js";
 
 /** @typedef {import("./OpenApiSpec.ts").OpenApiSpec} OpenApiSpec */

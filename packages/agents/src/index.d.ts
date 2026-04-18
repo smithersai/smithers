@@ -3,7 +3,7 @@ import * as ai from 'ai';
 import { ToolLoopAgent, ToolSet, ToolLoopAgentSettings } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { Effect } from 'effect';
-import { SmithersError } from '@smithers/errors/SmithersError';
+import { SmithersError } from '@smithers-orchestrator/errors/SmithersError';
 import * as zod from 'zod';
 import * as zod_v4_core from 'zod/v4/core';
 

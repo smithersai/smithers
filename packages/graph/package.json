@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/graph",
+  "name": "@smithers-orchestrator/graph",
   "version": "0.16.0",
   "description": "Framework-neutral Smithers workflow graph model and extraction helpers",
   "type": "module",
@@ -25,8 +25,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@smithers/agents": "workspace:*",
-    "@smithers/errors": "workspace:*"
+    "@smithers-orchestrator/agents": "workspace:*",
+    "@smithers-orchestrator/errors": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

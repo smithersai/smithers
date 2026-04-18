@@ -1,7 +1,7 @@
 import { getTableName } from "drizzle-orm";
 import { Effect, Metric, MetricBoundaries } from "effect";
-import { getAgentOutputSchema, selectOutputRow, stripAutoColumns } from "@smithers/db/output";
-import { buildOutputSchemaDescriptor } from "@smithers/db/output-schema-descriptor";
+import { getAgentOutputSchema, selectOutputRow, stripAutoColumns } from "@smithers-orchestrator/db/output";
+import { buildOutputSchemaDescriptor } from "@smithers-orchestrator/db/output-schema-descriptor";
 import { runPromise } from "../smithersRuntime.js";
 import { NodeOutputRouteError } from "./NodeOutputRouteError.js";
 import { NODE_OUTPUT_WARN_BYTES } from "./NODE_OUTPUT_WARN_BYTES.js";
@@ -75,7 +75,7 @@ async function swallow(run) {
  *   runId: unknown;
  *   nodeId: unknown;
  *   iteration: unknown;
- *   resolveRun: (runId: string) => Promise<{ workflow: import("@smithers/components/SmithersWorkflow").SmithersWorkflow<unknown>; adapter: import("@smithers/db/adapter").SmithersDb } | null>;
+ *   resolveRun: (runId: string) => Promise<{ workflow: import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow<unknown>; adapter: import("@smithers-orchestrator/db/adapter").SmithersDb } | null>;
  *   selectOutputRowImpl?: typeof selectOutputRow;
  *   emitEffect?: (effect: Effect.Effect<void>) => Promise<unknown>;
  * }} params

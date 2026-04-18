@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useKeyboard } from "@opentui/react";
 import { formatAge } from "../../format.js";
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 
 /**
  * @param {{ adapter: SmithersDb; focused: boolean; onSelectRun?: (runId: string) => void; }} value

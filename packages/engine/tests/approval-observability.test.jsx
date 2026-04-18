@@ -2,8 +2,8 @@
 import { describe, expect, test } from "bun:test";
 import { Workflow, Task, runWorkflow } from "smithers-orchestrator";
 import { approveNode, denyNode } from "../src/approvals.js";
-import { SmithersDb } from "@smithers/db/adapter";
-import { renderPrometheusMetrics } from "@smithers/observability";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { renderPrometheusMetrics } from "@smithers-orchestrator/observability";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";
 import { z } from "zod";
 import { Effect } from "effect";

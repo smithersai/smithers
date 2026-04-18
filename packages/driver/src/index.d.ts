@@ -1,13 +1,13 @@
-import * as _smithers_graph_types from '@smithers/graph/types';
-import { WorkflowGraph as WorkflowGraph$1, TaskDescriptor as TaskDescriptor$1 } from '@smithers/graph/types';
-import { SmithersEvent } from '@smithers/observability/SmithersEvent';
-import * as _smithers_scheduler from '@smithers/scheduler';
-import { WaitReason as WaitReason$1, EngineDecision as EngineDecision$1 } from '@smithers/scheduler';
+import * as _smithers_graph_types from '@smithers-orchestrator/graph/types';
+import { WorkflowGraph as WorkflowGraph$1, TaskDescriptor as TaskDescriptor$1 } from '@smithers-orchestrator/graph/types';
+import { SmithersEvent } from '@smithers-orchestrator/observability/SmithersEvent';
+import * as _smithers_scheduler from '@smithers-orchestrator/scheduler';
+import { WaitReason as WaitReason$1, EngineDecision as EngineDecision$1 } from '@smithers-orchestrator/scheduler';
 import { z } from 'zod';
-import { SmithersWorkflowOptions } from '@smithers/scheduler/SmithersWorkflowOptions';
-import { SchemaRegistryEntry } from '@smithers/db/SchemaRegistryEntry';
-import * as _smithers_graph from '@smithers/graph';
-import { ExtractOptions, WorkflowGraph } from '@smithers/graph';
+import { SmithersWorkflowOptions } from '@smithers-orchestrator/scheduler/SmithersWorkflowOptions';
+import { SchemaRegistryEntry } from '@smithers-orchestrator/db/SchemaRegistryEntry';
+import * as _smithers_graph from '@smithers-orchestrator/graph';
+import { ExtractOptions, WorkflowGraph } from '@smithers-orchestrator/graph';
 
 type TaskCompletedEvent = {
     nodeId: string;
@@ -329,7 +329,7 @@ declare class WorkflowDriver<Schema extends unknown = unknown> {
     activeRunId: string;
     /** @type {RunOptions | undefined} */
     activeOptions: RunOptions$1 | undefined;
-    /** @type {import("@smithers/graph").WorkflowGraph | undefined} */
+    /** @type {import("@smithers-orchestrator/graph").WorkflowGraph | undefined} */
     lastGraph: _smithers_graph.WorkflowGraph | undefined;
     /** @type {Map<string, string>} */
     outputTablesByNodeId: Map<string, string>;

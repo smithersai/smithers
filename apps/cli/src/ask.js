@@ -4,13 +4,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ClaudeCodeAgent } from "@smithers/agents/ClaudeCodeAgent";
-import { CodexAgent } from "@smithers/agents/CodexAgent";
-import { GeminiAgent } from "@smithers/agents/GeminiAgent";
-import { KimiAgent } from "@smithers/agents/KimiAgent";
-import { PiAgent } from "@smithers/agents/PiAgent";
-import { SmithersError } from "@smithers/errors";
-import { createSmithersAgentContract, renderSmithersAgentPromptGuidance, } from "@smithers/agents/agent-contract";
+import { ClaudeCodeAgent } from "@smithers-orchestrator/agents/ClaudeCodeAgent";
+import { CodexAgent } from "@smithers-orchestrator/agents/CodexAgent";
+import { GeminiAgent } from "@smithers-orchestrator/agents/GeminiAgent";
+import { KimiAgent } from "@smithers-orchestrator/agents/KimiAgent";
+import { PiAgent } from "@smithers-orchestrator/agents/PiAgent";
+import { SmithersError } from "@smithers-orchestrator/errors";
+import { createSmithersAgentContract, renderSmithersAgentPromptGuidance, } from "@smithers-orchestrator/agents/agent-contract";
 import { detectAvailableAgents, } from "./agent-detection.js";
 /**
  * @typedef {typeof ASK_AGENT_IDS[number]} AskAgentId
@@ -18,7 +18,7 @@ import { detectAvailableAgents, } from "./agent-detection.js";
 /**
  * @typedef {{ agent?: AskAgentId; listAgents?: boolean; dumpPrompt?: boolean; toolSurface?: SmithersToolSurface; noMcp?: boolean; printBootstrap?: boolean; }} AskOptions
  */
-/** @typedef {import("@smithers/agents/agent-contract").SmithersToolSurface} SmithersToolSurface */
+/** @typedef {import("@smithers-orchestrator/agents/agent-contract").SmithersToolSurface} SmithersToolSurface */
 
 const ASK_AGENT_IDS = ["claude", "codex", "kimi", "gemini", "pi"];
 const DEFAULT_SERVER_NAME = "smithers";

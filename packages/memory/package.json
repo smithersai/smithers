@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/memory",
+  "name": "@smithers-orchestrator/memory",
   "version": "0.16.0",
   "description": "Persistent and semantic memory services for Smithers",
   "type": "module",
@@ -30,11 +30,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@smithers/db": "workspace:*",
-    "@smithers/driver": "workspace:*",
-    "@smithers/errors": "workspace:*",
-    "@smithers/observability": "workspace:*",
-    "@smithers/scheduler": "workspace:*",
+    "@smithers-orchestrator/db": "workspace:*",
+    "@smithers-orchestrator/driver": "workspace:*",
+    "@smithers-orchestrator/errors": "workspace:*",
+    "@smithers-orchestrator/observability": "workspace:*",
+    "@smithers-orchestrator/scheduler": "workspace:*",
     "drizzle-orm": "^0.45.1",
     "effect": "^3.21.0",
     "zod": "^4.3.6"

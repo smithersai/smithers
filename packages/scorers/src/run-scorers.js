@@ -1,15 +1,15 @@
 import { Effect, Metric } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { scorerDuration, scorersFinished, scorersFailed, scorersStarted } from "./metrics.js";
-import { nowMs } from "@smithers/scheduler/nowMs";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
 import crypto from "node:crypto";
-/** @typedef {import("@smithers/engine/events").EventBus} EventBus */
+/** @typedef {import("@smithers-orchestrator/engine/events").EventBus} EventBus */
 /** @typedef {import("./types.js").ScoreResult} ScoreResult */
 /** @typedef {import("./types.js").ScorerContext} ScorerContext */
 /** @typedef {import("./types.js").ScorerBinding} ScorerBinding */
 /** @typedef {import("./types.js").ScorersMap} ScorersMap */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 
 // ---------------------------------------------------------------------------
 // Sampling

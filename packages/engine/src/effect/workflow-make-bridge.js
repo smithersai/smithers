@@ -2,7 +2,7 @@ import * as Workflow from "@effect/workflow/Workflow";
 import * as WorkflowEngine from "@effect/workflow/WorkflowEngine";
 import { Effect, Exit, Layer, Schema, Scope } from "effect";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { SmithersDb } from "@smithers/db/adapter";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 /**
  * @typedef {RunResult | (RunResult & { status: "continued"; nextRunId: string; })} RunBodyResult
  */
@@ -10,12 +10,12 @@ import { SmithersDb } from "@smithers/db/adapter";
 /**
  * @typedef {<Schema>(workflow: SmithersWorkflow<Schema>, opts: RunOptions) => Promise<RunBodyResult>} RunBodyExecutor
  */
-/** @typedef {import("@smithers/driver/RunOptions").RunOptions} RunOptions */
-/** @typedef {import("@smithers/driver/RunResult").RunResult} RunResult */
+/** @typedef {import("@smithers-orchestrator/driver/RunOptions").RunOptions} RunOptions */
+/** @typedef {import("@smithers-orchestrator/driver/RunResult").RunResult} RunResult */
 /**
  * @typedef {{ notify(): void; wait(): Promise<void>; }} SchedulerWakeQueue
  */
-/** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow} SmithersWorkflow */
+/** @typedef {import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow} SmithersWorkflow */
 /** @typedef {import("effect").Context.Context<WorkflowEngine.WorkflowEngine>} WorkflowEngineContext */
 /**
  * @typedef {{ readonly engineContext: WorkflowEngineContext; readonly scope: Scope.CloseableScope; readonly parentInstance: WorkflowEngine.WorkflowInstance["Type"]; readonly executeBody: RunBodyExecutor; executeChildWorkflow: <Schema>(workflow: SmithersWorkflow<Schema>, opts: RunOptions & { runId: string; }) => Promise<RunResult>; }} WorkflowMakeBridgeRuntime

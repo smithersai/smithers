@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import React from "react";
-import { ReactWorkflowDriver } from "@smithers/react-reconciler/driver";
+import { ReactWorkflowDriver } from "@smithers-orchestrator/react-reconciler/driver";
 /**
  * @param {Partial<TaskDescriptor>} overrides
  * @returns {TaskDescriptor}

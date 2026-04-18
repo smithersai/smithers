@@ -1,4 +1,4 @@
-import type { SmithersToolSurface } from "@smithers/agents/agent-contract";
+import type { SmithersToolSurface } from "@smithers-orchestrator/agents/agent-contract";
 
 export type AskAgentId = "claude" | "codex" | "kimi" | "gemini" | "pi";
 

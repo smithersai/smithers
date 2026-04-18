@@ -1,1 +1,1 @@
-export type { TaskMemoryConfig } from "@smithers/graph/types";
+export type { TaskMemoryConfig } from "@smithers-orchestrator/graph/types";

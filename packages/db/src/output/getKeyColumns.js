@@ -1,5 +1,5 @@
 import { getTableColumns } from "drizzle-orm/utils";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 /** @typedef {import("drizzle-orm").AnyColumn} AnyColumn */
 /** @typedef {import("drizzle-orm").Table} Table */
 

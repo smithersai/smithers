@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import React from "react";
 import { Task, Workflow, Sequence, Parallel, Branch, Loop, Ralph, MergeQueue, Worktree, Approval, approvalDecisionSchema, } from "../src/components/index.js";
-import { SmithersRenderer } from "@smithers/react-reconciler/dom/renderer";
+import { SmithersRenderer } from "@smithers-orchestrator/react-reconciler/dom/renderer";
 import { z } from "zod";
 /**
  * @param {React.ReactElement} el

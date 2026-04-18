@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import { z } from "zod";
-import { zodToTable } from "@smithers/db/zodToTable";
-import { renderPrometheusMetrics } from "@smithers/observability";
+import { zodToTable } from "@smithers-orchestrator/db/zodToTable";
+import { renderPrometheusMetrics } from "@smithers-orchestrator/observability";
 import { getNodeOutputRoute } from "../src/gatewayRoutes/getNodeOutput.js";
 import { NodeOutputRouteError } from "../src/gatewayRoutes/NodeOutputRouteError.js";
 import { NODE_OUTPUT_MAX_BYTES } from "../src/gatewayRoutes/NODE_OUTPUT_MAX_BYTES.js";

@@ -1,7 +1,7 @@
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
-import type { TaskDescriptor } from "@smithers/graph/TaskDescriptor";
-import type { SmithersDb } from "@smithers/db/adapter";
+import type { TaskDescriptor } from "@smithers-orchestrator/graph/TaskDescriptor";
+import type { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import type { EventBus } from "../events.js";
 import type { HijackState } from "../HijackState.ts";
 import type { TaskBridgeToolConfig } from "./TaskBridgeToolConfig.ts";

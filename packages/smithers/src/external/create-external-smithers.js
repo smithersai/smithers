@@ -11,18 +11,18 @@ import React from "react";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { zodToTable } from "@smithers/db/zodToTable";
-import { zodToCreateTableSQL } from "@smithers/db/zodToCreateTableSQL";
-import { camelToSnake } from "@smithers/db/utils/camelToSnake";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { zodToTable } from "@smithers-orchestrator/db/zodToTable";
+import { zodToCreateTableSQL } from "@smithers-orchestrator/db/zodToCreateTableSQL";
+import { camelToSnake } from "@smithers-orchestrator/db/utils/camelToSnake";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
-/** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<any>} SmithersWorkflow */
+/** @typedef {import("@smithers-orchestrator/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow<any>} SmithersWorkflow */
 /**
  * Serialize a SmithersCtx into a plain JSON-safe object for external processes.
- * @param {import("@smithers/driver/SmithersCtx").SmithersCtx<any>} ctx
+ * @param {import("@smithers-orchestrator/driver/SmithersCtx").SmithersCtx<any>} ctx
  * @returns {SerializedCtx}
  */
 export function serializeCtx(ctx) {
@@ -72,7 +72,7 @@ export function hostNodeToReact(node, agents) {
  *
  * @template {Record<string, import("zod").ZodObject<any>>} S
  * @param {ExternalSmithersConfig<S>} config
- * @returns {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<S> & { tables: Record<string, any>; cleanup: () => void }}
+ * @returns {import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow<S> & { tables: Record<string, any>; cleanup: () => void }}
  */
 export function createExternalSmithers(config) {
     const { schemas, agents, buildFn } = config;

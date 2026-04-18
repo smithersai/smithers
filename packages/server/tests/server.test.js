@@ -2,10 +2,10 @@
 import { describe, expect, test, afterEach, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { startServer } from "../src/index.js";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { createTestDb, sleep } from "../../smithers/tests/helpers.js";
 import { ddl, schema } from "../../smithers/tests/schema.js";
-import { SmithersDb } from "@smithers/db/adapter";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { resolve } from "node:path";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 function buildDb() {

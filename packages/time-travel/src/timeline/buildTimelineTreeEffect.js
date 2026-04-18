@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { buildTimeline } from "./buildTimelineEffect.js";
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 /** @typedef {import("../TimelineTree.ts").TimelineTree} TimelineTree */
 
 /**

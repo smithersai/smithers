@@ -1,8 +1,8 @@
 import { Effect } from "effect";
-import { nowMs } from "@smithers/scheduler/nowMs";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
 /** @typedef {import("./RetryTaskOptions.ts").RetryTaskOptions} RetryTaskOptions */
 /** @typedef {import("./RetryTaskResult.ts").RetryTaskResult} RetryTaskResult */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 
 /**
  * @param {string} nodeId

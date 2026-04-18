@@ -1,5 +1,5 @@
 import type { Effect } from "effect";
-import type { SmithersError } from "@smithers/errors/SmithersError";
+import type { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 import type { SandboxTransportConfig } from "./SandboxTransportConfig.ts";
 import type { SandboxHandle } from "./SandboxHandle.ts";
 import type { SandboxBundleResult } from "./SandboxBundleResult.ts";

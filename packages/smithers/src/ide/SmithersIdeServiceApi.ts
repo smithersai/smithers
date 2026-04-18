@@ -1,5 +1,5 @@
 import type { Effect } from "effect";
-import type { SmithersError } from "@smithers/errors/SmithersError";
+import type { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 import type { SmithersIdeResolvedConfig } from "./SmithersIdeResolvedConfig.ts";
 import type { SmithersIdeAskUserResult } from "./SmithersIdeAskUserResult.ts";
 import type { SmithersIdeAvailability } from "./SmithersIdeAvailability.ts";

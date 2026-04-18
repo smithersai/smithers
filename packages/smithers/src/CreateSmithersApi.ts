@@ -11,16 +11,16 @@ import type {
 		continueAsNew as baseContinueAsNew,
 		Worktree as BaseWorktree,
 		Timer as BaseTimer,
-} from "@smithers/components";
-import type { ApprovalProps } from "@smithers/components/components/ApprovalProps";
-import type { DepsSpec } from "@smithers/components/components/DepsSpec";
-import type { SandboxProps } from "@smithers/components/components/SandboxProps";
-import type { SignalProps } from "@smithers/components/components/SignalProps";
-import type { TaskProps } from "@smithers/components/components/TaskProps";
-import type { WorkflowProps } from "@smithers/components/components/WorkflowProps";
-import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
-import type { SmithersWorkflowOptions } from "@smithers/scheduler/SmithersWorkflowOptions";
-import type { SmithersCtx } from "@smithers/driver/SmithersCtx";
+} from "@smithers-orchestrator/components";
+import type { ApprovalProps } from "@smithers-orchestrator/components/components/ApprovalProps";
+import type { DepsSpec } from "@smithers-orchestrator/components/components/DepsSpec";
+import type { SandboxProps } from "@smithers-orchestrator/components/components/SandboxProps";
+import type { SignalProps } from "@smithers-orchestrator/components/components/SignalProps";
+import type { TaskProps } from "@smithers-orchestrator/components/components/TaskProps";
+import type { WorkflowProps } from "@smithers-orchestrator/components/components/WorkflowProps";
+import type { SmithersWorkflow } from "@smithers-orchestrator/components/SmithersWorkflow";
+import type { SmithersWorkflowOptions } from "@smithers-orchestrator/scheduler/SmithersWorkflowOptions";
+import type { SmithersCtx } from "@smithers-orchestrator/driver/SmithersCtx";
 import type { z } from "zod";
 
 /** Union of all Zod schema values registered in the schema, constrained to ZodObject. */

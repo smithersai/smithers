@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SmithersCtx, createSmithersContext } from "@smithers/react-reconciler/context";
+import { SmithersCtx, createSmithersContext } from "@smithers-orchestrator/react-reconciler/context";
 import { z } from "zod";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";

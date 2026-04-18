@@ -10,30 +10,30 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 import { CronExpressionParser } from "cron-parser";
 import { Effect, Metric } from "effect";
 import { WebSocketServer } from "ws";
-import { runWorkflow } from "@smithers/engine";
-import { approveNode, denyNode } from "@smithers/engine/approvals";
-import { signalRun } from "@smithers/engine/signals";
-import { SmithersDb } from "@smithers/db/adapter";
-import { computeRunStateFromRow } from "@smithers/db/runState";
-import { ensureSmithersTables } from "@smithers/db/ensure";
-import { devtoolsActiveSubscribers, devtoolsBackpressureDisconnectTotal, devtoolsDeltaBuildMs, devtoolsEventBytes, devtoolsEventTotal, devtoolsSnapshotBuildMs, devtoolsSubscribeTotal, gatewayApprovalDecisionsTotal, gatewayAuthEventsTotal, gatewayConnectionsActive, gatewayConnectionsClosedTotal, gatewayConnectionsTotal, gatewayCronTriggersTotal, gatewayErrorsTotal, gatewayHeartbeatTicksTotal, gatewayMessagesReceivedTotal, gatewayMessagesSentTotal, gatewayRpcCallsTotal, gatewayRpcDuration, gatewayRunsCompletedTotal, gatewayRunsStartedTotal, gatewaySignalsTotal, gatewayWebhooksReceivedTotal, gatewayWebhooksRejectedTotal, gatewayWebhooksVerifiedTotal, } from "@smithers/observability/metrics";
+import { runWorkflow } from "@smithers-orchestrator/engine";
+import { approveNode, denyNode } from "@smithers-orchestrator/engine/approvals";
+import { signalRun } from "@smithers-orchestrator/engine/signals";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { computeRunStateFromRow } from "@smithers-orchestrator/db/runState";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
+import { devtoolsActiveSubscribers, devtoolsBackpressureDisconnectTotal, devtoolsDeltaBuildMs, devtoolsEventBytes, devtoolsEventTotal, devtoolsSnapshotBuildMs, devtoolsSubscribeTotal, gatewayApprovalDecisionsTotal, gatewayAuthEventsTotal, gatewayConnectionsActive, gatewayConnectionsClosedTotal, gatewayConnectionsTotal, gatewayCronTriggersTotal, gatewayErrorsTotal, gatewayHeartbeatTicksTotal, gatewayMessagesReceivedTotal, gatewayMessagesSentTotal, gatewayRpcCallsTotal, gatewayRpcDuration, gatewayRunsCompletedTotal, gatewayRunsStartedTotal, gatewaySignalsTotal, gatewayWebhooksReceivedTotal, gatewayWebhooksRejectedTotal, gatewayWebhooksVerifiedTotal, } from "@smithers-orchestrator/observability/metrics";
 import { runFork, runPromise } from "./smithersRuntime.js";
-import { prometheusContentType, renderPrometheusMetrics } from "@smithers/observability";
-import { nowMs } from "@smithers/scheduler/nowMs";
-import { errorToJson } from "@smithers/errors/errorToJson";
-import { isSmithersError } from "@smithers/errors/isSmithersError";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { assertJsonPayloadWithinBounds, assertOptionalStringMaxLength, assertPositiveFiniteInteger, } from "@smithers/db/input-bounds";
-import { loadLatestSnapshot, loadSnapshot } from "@smithers/time-travel/snapshot";
-import { diffRawSnapshots } from "@smithers/time-travel/diff";
+import { prometheusContentType, renderPrometheusMetrics } from "@smithers-orchestrator/observability";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
+import { errorToJson } from "@smithers-orchestrator/errors/errorToJson";
+import { isSmithersError } from "@smithers-orchestrator/errors/isSmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { assertJsonPayloadWithinBounds, assertOptionalStringMaxLength, assertPositiveFiniteInteger, } from "@smithers-orchestrator/db/input-bounds";
+import { loadLatestSnapshot, loadSnapshot } from "@smithers-orchestrator/time-travel/snapshot";
+import { diffRawSnapshots } from "@smithers-orchestrator/time-travel/diff";
 import { getNodeOutputRoute } from "./gatewayRoutes/getNodeOutput.js";
 import { NodeOutputRouteError } from "./gatewayRoutes/NodeOutputRouteError.js";
 import { getNodeDiffRoute } from "./gatewayRoutes/getNodeDiff.js";
 import { DevToolsRouteError, getDevToolsSnapshotRoute, validateFrameNoInput, validateFromSeqInput, validateRunId } from "./gatewayRoutes/getDevToolsSnapshot.js";
 import { streamDevToolsRoute } from "./gatewayRoutes/streamDevTools.js";
 import { jumpToFrameRoute, JumpToFrameError } from "./gatewayRoutes/jumpToFrame.js";
-import { writeRewindAuditRow } from "@smithers/time-travel/writeRewindAuditRow";
-import { recoverInProgressRewindAudits } from "@smithers/time-travel/recoverInProgressRewindAudits";
+import { writeRewindAuditRow } from "@smithers-orchestrator/time-travel/writeRewindAuditRow";
+import { recoverInProgressRewindAudits } from "@smithers-orchestrator/time-travel/recoverInProgressRewindAudits";
 /** @typedef {import("./GatewayWebhookRunConfig.js").GatewayWebhookRunConfig} GatewayWebhookRunConfig */
 /** @typedef {import("./GatewayWebhookSignalConfig.js").GatewayWebhookSignalConfig} GatewayWebhookSignalConfig */
 /** @typedef {import("./ConnectRequest.js").ConnectRequest} ConnectRequest */
@@ -44,8 +44,8 @@ import { recoverInProgressRewindAudits } from "@smithers/time-travel/recoverInPr
 /** @typedef {import("./RequestFrame.js").RequestFrame} RequestFrame */
 /** @typedef {import("./ResponseFrame.js").ResponseFrame} ResponseFrame */
 /** @typedef {import("node:http").ServerResponse} ServerResponse */
-/** @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<unknown>} SmithersWorkflow */
-/** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+/** @typedef {import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow<unknown>} SmithersWorkflow */
+/** @typedef {import("@smithers-orchestrator/observability/SmithersEvent").SmithersEvent} SmithersEvent */
 /** @typedef {Record<string, string | number | null | undefined>} GatewayMetricLabels */
 /** @typedef {"ws" | "http"} GatewayTransport */
 /**

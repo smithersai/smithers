@@ -2,7 +2,7 @@ import { applyPatch as applyUnifiedPatch } from "diff";
 import { spawn } from "node:child_process";
 import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 /** @typedef {import("./DiffBundle.ts").DiffBundle} DiffBundle */
 /** @typedef {import("./FilePatch.ts").FilePatch} FilePatch */
 

@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/agents",
+  "name": "@smithers-orchestrator/agents",
   "version": "0.16.0",
   "description": "AI SDK and CLI agent adapters for Smithers",
   "type": "module",
@@ -52,9 +52,9 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.36",
     "@ai-sdk/openai": "^3.0.41",
-    "@smithers/driver": "workspace:*",
-    "@smithers/errors": "workspace:*",
-    "@smithers/observability": "workspace:*",
+    "@smithers-orchestrator/driver": "workspace:*",
+    "@smithers-orchestrator/errors": "workspace:*",
+    "@smithers-orchestrator/observability": "workspace:*",
     "ai": "^6.0.69",
     "zod": "^4.3.6"
   },

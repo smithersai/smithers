@@ -1,4 +1,4 @@
-// Barrel re-export for backward compatibility with @smithers/time-travel/types imports
+// Barrel re-export for backward compatibility with @smithers-orchestrator/time-travel/types imports
 export type { Snapshot } from "./snapshot/Snapshot";
 export type { ParsedSnapshot } from "./ParsedSnapshot";
 export type { NodeSnapshot } from "./NodeSnapshot";

@@ -1,11 +1,11 @@
-import { SmithersDevToolsCore, snapshotSerialize } from "@smithers/devtools";
-import { computeRunStateFromRow } from "@smithers/db/runState";
+import { SmithersDevToolsCore, snapshotSerialize } from "@smithers-orchestrator/devtools";
+import { computeRunStateFromRow } from "@smithers-orchestrator/db/runState";
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("@smithers/protocol/devtools").DevToolsNode} DevToolsNode */
-/** @typedef {import("@smithers/protocol/devtools").DevToolsSnapshot} DevToolsSnapshot */
-/** @typedef {import("@smithers/protocol/devtools").DevToolsNodeType} DevToolsNodeType */
-/** @typedef {import("@smithers/devtools/snapshotSerializer").SnapshotSerializerWarning} SnapshotSerializerWarning */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/protocol/devtools").DevToolsNode} DevToolsNode */
+/** @typedef {import("@smithers-orchestrator/protocol/devtools").DevToolsSnapshot} DevToolsSnapshot */
+/** @typedef {import("@smithers-orchestrator/protocol/devtools").DevToolsNodeType} DevToolsNodeType */
+/** @typedef {import("@smithers-orchestrator/devtools/snapshotSerializer").SnapshotSerializerWarning} SnapshotSerializerWarning */
 
 export const DEVTOOLS_RUN_ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
 export const DEVTOOLS_MAX_FRAME_NO = 2_147_483_647;

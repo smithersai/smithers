@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { Effect } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { smithersBranches } from "../schema.js";
 /** @typedef {import("../BranchInfo.ts").BranchInfo} BranchInfo */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 
 /**
  * @param {SmithersDb} adapter

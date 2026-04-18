@@ -1,20 +1,20 @@
 import { Effect, Metric } from "effect";
 import { z } from "zod";
-import { buildOutputRow, stripAutoColumns, validateOutput } from "@smithers/db/output";
+import { buildOutputRow, stripAutoColumns, validateOutput } from "@smithers-orchestrator/db/output";
 import { EventBus } from "../events.js";
 import { makeAbortError, wireAbortSignal } from "./bridge-utils.js";
-import { logDebug, logError, logInfo } from "@smithers/observability/logging";
-import { attemptDuration, nodeDuration } from "@smithers/observability/metrics";
-import { errorToJson } from "@smithers/errors/errorToJson";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { nowMs } from "@smithers/scheduler/nowMs";
-import { getJjPointer } from "@smithers/vcs/jj";
+import { logDebug, logError, logInfo } from "@smithers-orchestrator/observability/logging";
+import { attemptDuration, nodeDuration } from "@smithers-orchestrator/observability/metrics";
+import { errorToJson } from "@smithers-orchestrator/errors/errorToJson";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
+import { getJjPointer } from "@smithers-orchestrator/vcs/jj";
 import * as BunContext from "@effect/platform-bun/BunContext";
-/** @typedef {import("@smithers/db/adapter").SmithersDb} _SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} _SmithersDb */
 /**
  * @typedef {{ rootDir: string; }} StaticTaskBridgeToolConfig
  */
-/** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
 
 /**
  * @param {unknown} err

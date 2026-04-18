@@ -5,7 +5,7 @@ import { buildStateKey } from "./buildStateKey.js";
 /** @typedef {import("./RalphStateMap.ts").RalphStateMap} RalphStateMap */
 /** @typedef {import("./RetryWaitMap.ts").RetryWaitMap} RetryWaitMap */
 /** @typedef {import("./ScheduleResult.ts").ScheduleResult} ScheduleResult */
-/** @typedef {import("@smithers/graph").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/graph").TaskDescriptor} TaskDescriptor */
 /** @typedef {import("./TaskStateMap.ts").TaskStateMap} TaskStateMap */
 
 /**

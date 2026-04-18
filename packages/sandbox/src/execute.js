@@ -1,20 +1,20 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Metric } from "effect";
-import { SmithersDb } from "@smithers/db/adapter";
-import { trackEvent, sandboxTransportDurationMs } from "@smithers/observability/metrics";
-import { nowMs } from "@smithers/scheduler/nowMs";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { errorToJson } from "@smithers/errors/errorToJson";
-import { requireTaskRuntime } from "@smithers/driver/task-runtime";
-import { executeChildWorkflow } from "@smithers/engine/child-workflow";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { trackEvent, sandboxTransportDurationMs } from "@smithers-orchestrator/observability/metrics";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { errorToJson } from "@smithers-orchestrator/errors/errorToJson";
+import { requireTaskRuntime } from "@smithers-orchestrator/driver/task-runtime";
+import { executeChildWorkflow } from "@smithers-orchestrator/engine/child-workflow";
 import { validateSandboxBundle, writeSandboxBundle } from "./bundle.js";
 import { SandboxTransport, layerForSandboxRuntime, resolveSandboxRuntime, } from "./transport.js";
 /** @typedef {import("./ExecuteSandboxOptions.ts").ExecuteSandboxOptions} ExecuteSandboxOptions */
 /** @typedef {import("./SandboxRuntime.ts").SandboxRuntime} SandboxRuntime */
 /** @typedef {import("./SandboxHandle.ts").SandboxHandle} SandboxHandle */
 /** @typedef {import("./SandboxTransportService.ts").SandboxTransportService} SandboxTransportService */
-/** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+/** @typedef {import("@smithers-orchestrator/observability/SmithersEvent").SmithersEvent} SmithersEvent */
 
 const DEFAULT_MAX_CONCURRENT_SANDBOXES = 10;
 /**

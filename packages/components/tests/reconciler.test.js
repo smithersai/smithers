@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import React from "react";
-import { SmithersRenderer } from "@smithers/react-reconciler";
+import { SmithersRenderer } from "@smithers-orchestrator/react-reconciler";
 /**
  * @param {HostNode | null} root
  * @returns {WorkflowGraph}
@@ -18,7 +18,7 @@ describe("SmithersRenderer", () => {
         expect(hook).toBeDefined();
         expect(typeof hook.inject).toBe("function");
     });
-    it("uses @smithers/graph extractGraph by default", async () => {
+    it("uses @smithers-orchestrator/graph extractGraph by default", async () => {
         const renderer = new SmithersRenderer();
         const graph = await renderer.render(React.createElement("smithers:task", {
             id: "task-a",

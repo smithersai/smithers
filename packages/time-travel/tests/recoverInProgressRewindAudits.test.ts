@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { ensureSmithersTables } from "@smithers/db/ensure";
-import { SmithersDb } from "@smithers/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { writeRewindAuditRow } from "../src/writeRewindAuditRow.js";
 import { listRewindAuditRows } from "../src/listRewindAuditRows.js";
 import { recoverInProgressRewindAudits } from "../src/recoverInProgressRewindAudits.js";

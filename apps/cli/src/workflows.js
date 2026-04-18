@@ -4,7 +4,7 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, } from "node:fs";
 import { join } from "node:path";
-import { SmithersError } from "@smithers/errors";
+import { SmithersError } from "@smithers-orchestrator/errors";
 
 /** @typedef {import("./DiscoveredWorkflow.ts").DiscoveredWorkflow} DiscoveredWorkflow */
 

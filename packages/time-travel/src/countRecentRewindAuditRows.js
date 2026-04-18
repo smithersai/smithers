@@ -1,6 +1,6 @@
 import { resolveRewindAuditClient } from "./resolveRewindAuditClient.js";
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 
 /**
  * Count audit rows for one caller and run in a time window.

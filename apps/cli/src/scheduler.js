@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { CronExpressionParser } from "cron-parser";
 import { Effect, Schedule } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { runPromise } from "./smithersRuntime.js";
 import { findAndOpenDb } from "./find-db.js";
 /**

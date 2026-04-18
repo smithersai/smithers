@@ -9,7 +9,7 @@ import { Context, Effect, Layer } from "effect";
 import { CodeplaneSandboxExecutorLive, DockerSandboxExecutorLive, } from "./effect/http-runner.js";
 import { SandboxEntityExecutor, makeSandboxTransportServiceEffect, } from "./effect/sandbox-entity.js";
 import { BubblewrapSandboxExecutorLive } from "./effect/socket-runner.js";
-import {} from "@smithers/errors/SmithersError";
+import {} from "@smithers-orchestrator/errors/SmithersError";
 /** @typedef {import("./SandboxRuntime.ts").SandboxRuntime} SandboxRuntime */
 
 const SandboxTransportTag = /** @type {Context.TagClass<SandboxTransport, "SandboxTransport", SandboxTransportService>} */ (

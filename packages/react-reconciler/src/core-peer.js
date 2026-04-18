@@ -1,6 +1,6 @@
 
-/** @typedef {import("@smithers/graph/types").ExtractGraph} ExtractGraph */
-const GRAPH_SPECIFIER = "@smithers/graph";
+/** @typedef {import("@smithers-orchestrator/graph/types").ExtractGraph} ExtractGraph */
+const GRAPH_SPECIFIER = "@smithers-orchestrator/graph";
 const LOCAL_GRAPH_SPECIFIER = "../../graph/src/index.js";
 /**
  * @param {string} specifier
@@ -28,6 +28,6 @@ export async function resolveExtractGraph() {
             return fn;
         }
     }
-    throw new Error("Unable to load extractGraph from @smithers/graph. " +
-        "Install @smithers/graph and ensure it exports extractGraph.");
+    throw new Error("Unable to load extractGraph from @smithers-orchestrator/graph. " +
+        "Install @smithers-orchestrator/graph and ensure it exports extractGraph.");
 }

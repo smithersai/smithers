@@ -1,4 +1,4 @@
-import type { WorkflowGraph } from "@smithers/graph/types";
+import type { WorkflowGraph } from "@smithers-orchestrator/graph/types";
 import type { TaskCompletedEvent } from "./TaskCompletedEvent.ts";
 import type { TaskFailedEvent } from "./TaskFailedEvent.ts";
 

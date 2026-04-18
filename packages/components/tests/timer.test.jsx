@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import { Parallel, Ralph, Sequence, Task, Timer, Workflow, runWorkflow } from "smithers-orchestrator";
-import { SmithersDb } from "@smithers/db/adapter";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { createTestSmithers, sleep } from "./helpers.js";
 import { z } from "zod";
 import { dirname } from "node:path";

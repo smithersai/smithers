@@ -4,13 +4,13 @@ import { and, desc, eq } from "drizzle-orm";
 import { Context, Duration, Effect, Exit, Layer, Schedule, Schema, } from "effect";
 import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import React from "react";
-import { SmithersDb } from "@smithers/db/adapter";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { runWorkflow } from "../engine.js";
-import { ignoreSyncError } from "@smithers/driver/interop";
-import { requireTaskRuntime } from "@smithers/driver/task-runtime";
-import { Branch, Loop, Parallel, Sequence, Task, Worktree, Workflow, } from "@smithers/components/components/index";
-import { camelToSnake } from "@smithers/db/utils/camelToSnake";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { ignoreSyncError } from "@smithers-orchestrator/driver/interop";
+import { requireTaskRuntime } from "@smithers-orchestrator/driver/task-runtime";
+import { Branch, Loop, Parallel, Sequence, Task, Worktree, Workflow, } from "@smithers-orchestrator/components/components/index";
+import { camelToSnake } from "@smithers-orchestrator/db/utils/camelToSnake";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 /**
  * @typedef {import("effect").Schema.Schema<unknown, unknown, never>} AnySchema
  */
@@ -22,7 +22,7 @@ import { SmithersError } from "@smithers/errors/SmithersError";
  * @typedef {Record<string, unknown> & { input: unknown; executionId: string; stepId: string; attempt: number; signal: AbortSignal; iteration: number; heartbeat: (data?: unknown) => void; lastHeartbeat: unknown | null; }} BuilderStepContext
  */
 /** @typedef {import("./BuilderStepHandle.ts").BuilderStepHandle} BuilderStepHandle */
-/** @typedef {import("@smithers/scheduler/RetryPolicy").RetryPolicy} RetryPolicy */
+/** @typedef {import("@smithers-orchestrator/scheduler/RetryPolicy").RetryPolicy} RetryPolicy */
 /** @typedef {import("./SmithersSqliteOptions.ts").SmithersSqliteOptions} SmithersSqliteOptions */
 
 const SmithersSqlite = Context.GenericTag("smithers/effect/sqlite");

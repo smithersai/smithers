@@ -3,8 +3,8 @@ import { listSnapshots } from "../snapshot/listSnapshotsEffect.js";
 import { listBranches } from "../fork/listBranchesEffect.js";
 import { getBranchInfo } from "../fork/getBranchInfoEffect.js";
 /** @typedef {import("../RunTimeline.ts").RunTimeline} RunTimeline */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 
 /**
  * @param {SmithersDb} adapter

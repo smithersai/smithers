@@ -220,8 +220,8 @@ export const smithersRalph = sqliteTable("_smithers_ralph", {
 }, (t) => ({
     pk: primaryKey({ columns: [t.runId, t.ralphId] }),
 }));
-export { smithersScorers } from "@smithers/scorers/schema";
-export { smithersMemoryFacts, smithersMemoryThreads, smithersMemoryMessages, } from "@smithers/memory/schema";
+export { smithersScorers } from "@smithers-orchestrator/scorers/schema";
+export { smithersMemoryFacts, smithersMemoryThreads, smithersMemoryMessages, } from "@smithers-orchestrator/memory/schema";
 export const smithersVectors = sqliteTable("_smithers_vectors", {
     id: text("id").primaryKey(),
     namespace: text("namespace").notNull(),

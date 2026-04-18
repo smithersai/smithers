@@ -1,8 +1,8 @@
 import { Effect } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { buildKeyWhere } from "./buildKeyWhere.js";
 /** @typedef {import("./OutputKey.ts").OutputKey} OutputKey */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 /** @typedef {import("drizzle-orm").Table} Table */
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} BunSQLiteDatabase */
 

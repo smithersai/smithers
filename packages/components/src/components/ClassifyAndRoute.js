@@ -6,7 +6,7 @@ import React from "react";
 import { Sequence } from "./Sequence.js";
 import { Parallel } from "./Parallel.js";
 import { Task } from "./Task.js";
-/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("@smithers-orchestrator/agents/AgentLike").AgentLike} AgentLike */
 /** @typedef {import("./CategoryConfig.ts").CategoryConfig} CategoryConfig */
 
 /**

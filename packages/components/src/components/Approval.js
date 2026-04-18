@@ -7,10 +7,10 @@
 
 import React from "react";
 import { z } from "zod";
-import { SmithersContext } from "@smithers/react-reconciler/context";
-import { getTaskRuntime } from "@smithers/driver/task-runtime";
-import { SmithersDb } from "@smithers/db/adapter";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { SmithersContext } from "@smithers-orchestrator/react-reconciler/context";
+import { getTaskRuntime } from "@smithers-orchestrator/driver/task-runtime";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 /** @typedef {import("./ApprovalAutoApprove.ts").ApprovalAutoApprove} ApprovalAutoApprove */
 /** @typedef {import("./ApprovalMode.ts").ApprovalMode} ApprovalMode */
 /** @typedef {import("./ApprovalOption.ts").ApprovalOption} ApprovalOption */
@@ -98,14 +98,14 @@ function normalizeOptions(options) {
 }
 /**
  * @param {ApprovalAutoApprove[keyof ApprovalAutoApprove]} callback
- * @param {import("@smithers/driver").SmithersCtx<unknown> | null} ctx
+ * @param {import("@smithers-orchestrator/driver").SmithersCtx<unknown> | null} ctx
  * @returns {boolean | undefined}
  */
 function evaluateBooleanCallback(callback, ctx) {
     if (typeof callback !== "function") {
         return undefined;
     }
-    return Boolean(/** @type {(ctx: import("@smithers/driver").SmithersCtx<unknown> | null) => boolean} */ (callback)(ctx));
+    return Boolean(/** @type {(ctx: import("@smithers-orchestrator/driver").SmithersCtx<unknown> | null) => boolean} */ (callback)(ctx));
 }
 /**
  * @template Row

@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/vcs",
+  "name": "@smithers-orchestrator/vcs",
   "version": "0.16.0",
   "description": "VCS discovery and jj workspace operations for Smithers",
   "type": "module",
@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@effect/platform": "^0.96.0",
-    "@smithers/observability": "workspace:*",
+    "@smithers-orchestrator/observability": "workspace:*",
     "effect": "^3.21.0"
   },
   "devDependencies": {

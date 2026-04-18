@@ -1,5 +1,5 @@
 import { Context } from "effect";
-/** @typedef {import("@smithers/graph").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/graph").TaskDescriptor} TaskDescriptor */
 /** @typedef {import("./TaskStateMap.ts").TaskStateMap} TaskStateMap */
 /** @typedef {import("./PlanNode.ts").PlanNode} PlanNode */
 /** @typedef {import("./RalphStateMap.ts").RalphStateMap} RalphStateMap */

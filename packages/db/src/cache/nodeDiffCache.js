@@ -1,4 +1,4 @@
-/** @typedef {import("@smithers/db/adapter").SmithersDb} _SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} _SmithersDb */
 /** @typedef {import("../adapter/NodeDiffCacheRow.ts").NodeDiffCacheRow} _NodeDiffCacheRow */
 /** @typedef {{ bundle: unknown; sizeBytes: number; cacheResult: "hit" | "miss" }} NodeDiffCacheResult */
 

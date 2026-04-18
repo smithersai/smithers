@@ -1,6 +1,6 @@
-import * as _smithers_db_adapter from '@smithers/db/adapter';
-import { SmithersDb as SmithersDb$b } from '@smithers/db/adapter';
-import { SmithersEvent } from '@smithers/observability/SmithersEvent';
+import * as _smithers_db_adapter from '@smithers-orchestrator/db/adapter';
+import { SmithersDb as SmithersDb$b } from '@smithers-orchestrator/db/adapter';
+import { SmithersEvent } from '@smithers-orchestrator/observability/SmithersEvent';
 import * as drizzle_orm_sqlite_core from 'drizzle-orm/sqlite-core';
 
 type RewindAuditResult$4 = "success" | "failed" | "partial" | "in_progress";
@@ -234,7 +234,7 @@ type ForkParams$2 = {
     forkDescription?: string;
 };
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("./ReplayParams.ts").ReplayParams} ReplayParams */
 /**
  * Fork a run from a checkpoint and optionally restore the VCS working copy.
@@ -267,7 +267,7 @@ declare function parseSnapshot(snapshot: Snapshot$4): ParsedSnapshot$2;
 type ParsedSnapshot$2 = ParsedSnapshot$3;
 type Snapshot$4 = Snapshot$5;
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /**
  * Capture a snapshot row for a run at a given frame.
  *
@@ -345,7 +345,7 @@ type ParsedSnapshot$1 = ParsedSnapshot$3;
 type Snapshot$2 = Snapshot$5;
 type SnapshotDiff$1 = SnapshotDiff$2;
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("../BranchInfo.ts").BranchInfo} BranchInfo */
 /** @typedef {import("../ForkParams.ts").ForkParams} ForkParams */
 /** @typedef {import("../snapshot/Snapshot.ts").Snapshot} Snapshot */
@@ -382,7 +382,7 @@ type BranchInfo$1 = BranchInfo$2;
 type ForkParams$1 = ForkParams$2;
 type Snapshot$1 = Snapshot$5;
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /**
  * Record the current VCS revision for a run/frame pair.
  *
@@ -452,7 +452,7 @@ type TimelineTree$3 = TimelineTree$4;
 declare function formatTimelineAsJson(tree: TimelineTree$2): object;
 type TimelineTree$2 = TimelineTree$4;
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("../RunTimeline.ts").RunTimeline} RunTimeline */
 /** @typedef {import("../TimelineTree.ts").TimelineTree} TimelineTree */
 /**
@@ -1007,7 +1007,7 @@ declare const REWIND_RATE_LIMIT_MAX: 10;
 
 declare const REWIND_RATE_LIMIT_WINDOW_MS: number;
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /**
  * Evaluate caller-scoped rewind quota for one run.
  *
@@ -1037,7 +1037,7 @@ declare function evaluateRewindRateLimit(input: {
 }>;
 type SmithersDb$5 = _smithers_db_adapter.SmithersDb;
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("./RewindAuditResult.ts").RewindAuditResult} RewindAuditResult */
 /**
  * Persist one audit row for a jump-to-frame attempt.
@@ -1066,7 +1066,7 @@ declare function writeRewindAuditRow(adapter: SmithersDb$4, row: {
 type SmithersDb$4 = _smithers_db_adapter.SmithersDb;
 type RewindAuditResult$3 = RewindAuditResult$4;
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("./RewindAuditResult.ts").RewindAuditResult} RewindAuditResult */
 /**
  * Update an existing rewind audit row's result and duration.
@@ -1084,7 +1084,7 @@ declare function updateRewindAuditRow(adapter: SmithersDb$3, row: {
 type SmithersDb$3 = _smithers_db_adapter.SmithersDb;
 type RewindAuditResult$2 = RewindAuditResult$4;
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /**
  * Count audit rows for one caller and run in a time window.
  * Only counts terminal (non-in_progress) rows so that a live attempt
@@ -1125,7 +1125,7 @@ type RewindAuditRow = {
     durationMs: number | null;
 };
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /**
  * On startup, find rewind audit rows left in `in_progress` by a prior crash,
  * mark them as `partial`, and flag the associated runs as `needs_attention`.

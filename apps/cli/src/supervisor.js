@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { Effect, Schedule } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
-import { trackEvent } from "@smithers/observability/metrics";
-import { isPidAlive, parseRuntimeOwnerPid } from "@smithers/engine/runtime-owner";
-import { SmithersError } from "@smithers/errors";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
+import { trackEvent } from "@smithers-orchestrator/observability/metrics";
+import { isPidAlive, parseRuntimeOwnerPid } from "@smithers-orchestrator/engine/runtime-owner";
+import { SmithersError } from "@smithers-orchestrator/errors";
 import { resumeRunDetached } from "./resume-detached.js";
 /** @typedef {import("./RunAutoResumeSkipReason.ts").RunAutoResumeSkipReason} RunAutoResumeSkipReason */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("./SupervisorOptions.ts").SupervisorOptions} SupervisorOptions */
 /** @typedef {import("./SupervisorPollSummary.ts").SupervisorPollSummary} SupervisorPollSummary */
 
@@ -43,7 +43,7 @@ export function parseDurationMs(raw, fieldName) {
     }
     return ms;
 }
-export { isPidAlive, parseRuntimeOwnerPid } from "@smithers/engine/runtime-owner";
+export { isPidAlive, parseRuntimeOwnerPid } from "@smithers-orchestrator/engine/runtime-owner";
 /**
  * @param {SupervisorOptions} options
  * @returns {NormalizedSupervisorOptions}

@@ -3,11 +3,11 @@
 // @smithers-type-exports-end
 
 import { Effect } from "effect";
-import { isRunHeartbeatFresh } from "@smithers/engine";
-import { computeRetryDelayMs } from "@smithers/scheduler/computeRetryDelayMs";
-import { SmithersError } from "@smithers/errors";
+import { isRunHeartbeatFresh } from "@smithers-orchestrator/engine";
+import { computeRetryDelayMs } from "@smithers-orchestrator/scheduler/computeRetryDelayMs";
+import { SmithersError } from "@smithers-orchestrator/errors";
 import { formatAge } from "./format.js";
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("./WhyBlocker.ts").WhyBlocker} WhyBlocker */
 /** @typedef {import("./WhyDiagnosis.ts").WhyDiagnosis} WhyDiagnosis */
 

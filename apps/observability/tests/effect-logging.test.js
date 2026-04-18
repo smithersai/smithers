@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { logDebug, logInfo, logWarning, logError } from "@smithers/observability/logging";
+import { logDebug, logInfo, logWarning, logError } from "@smithers-orchestrator/observability/logging";
 describe("effect/logging", () => {
     // These functions fire-and-forget via runFork, so we just verify they don't throw.
     test("logDebug does not throw", () => {

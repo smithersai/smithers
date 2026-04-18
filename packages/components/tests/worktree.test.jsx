@@ -1,7 +1,7 @@
 /** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
-import { WORKTREE_EMPTY_PATH_ERROR } from "@smithers/graph/constants";
-import { SmithersRenderer } from "@smithers/react-reconciler/dom/renderer";
+import { WORKTREE_EMPTY_PATH_ERROR } from "@smithers-orchestrator/graph/constants";
+import { SmithersRenderer } from "@smithers-orchestrator/react-reconciler/dom/renderer";
 import { Parallel, Sequence, Task, Worktree, Workflow, } from "../src/components/index.js";
 import { outputSchemas } from "./schema.js";
 describe("<Worktree>", () => {

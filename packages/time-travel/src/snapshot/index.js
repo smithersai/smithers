@@ -10,7 +10,7 @@ import { listSnapshots as listSnapshotsEffect } from "./listSnapshotsEffect.js";
 export { parseSnapshot } from "./parseSnapshot.js";
 export { captureSnapshotEffect, listSnapshotsEffect, loadLatestSnapshotEffect, loadSnapshotEffect, };
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 
 /**
  * Capture a snapshot row for a run at a given frame.

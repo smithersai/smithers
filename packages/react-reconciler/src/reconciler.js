@@ -1,15 +1,15 @@
 import Reconciler from "react-reconciler";
 import { installRDTHook } from "bippy";
 import { resolveExtractGraph } from "./core-peer.js";
-/** @typedef {import("@smithers/graph/types").ExtractGraph} ExtractGraph */
-/** @typedef {import("@smithers/graph/types").ExtractOptions} ExtractOptions */
+/** @typedef {import("@smithers-orchestrator/graph/types").ExtractGraph} ExtractGraph */
+/** @typedef {import("@smithers-orchestrator/graph/types").ExtractOptions} ExtractOptions */
 /** @typedef {import("./HostContainer.ts").HostContainer} HostContainer */
-/** @typedef {import("@smithers/graph/types").HostElement & { props: Record<string, string>; rawProps: Record<string, unknown>; children: HostNode[] }} MutableHostElement */
-/** @typedef {import("@smithers/graph/types").HostNode} HostNode */
-/** @typedef {import("@smithers/graph/types").HostText & { text: string }} MutableHostText */
+/** @typedef {import("@smithers-orchestrator/graph/types").HostElement & { props: Record<string, string>; rawProps: Record<string, unknown>; children: HostNode[] }} MutableHostElement */
+/** @typedef {import("@smithers-orchestrator/graph/types").HostNode} HostNode */
+/** @typedef {import("@smithers-orchestrator/graph/types").HostText & { text: string }} MutableHostText */
 /** @typedef {import("react").default} React */
 /** @typedef {import("./SmithersRendererOptions.ts").SmithersRendererOptions} SmithersRendererOptions */
-/** @typedef {import("@smithers/graph/types").WorkflowGraph} WorkflowGraph */
+/** @typedef {import("@smithers-orchestrator/graph/types").WorkflowGraph} WorkflowGraph */
 /**
  * Minimal local shape for a react-reconciler instance. `@types/react-reconciler`
  * is not installed here, so we describe only the methods we call.
@@ -349,7 +349,7 @@ if (!hookHost.__REACT_DEVTOOLS_GLOBAL_HOOK__) {
 reconciler.injectIntoDevTools({
     bundleType: typeof process !== "undefined" && process.env.NODE_ENV === "production" ? 0 : 1,
     version: "0.0.0",
-    rendererPackageName: "@smithers/core-react",
+    rendererPackageName: "@smithers-orchestrator/core-react",
     findFiberByHostInstance: () => null,
 });
 export class SmithersRenderer {

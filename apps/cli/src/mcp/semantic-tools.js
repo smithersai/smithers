@@ -2,8 +2,8 @@ import { basename, extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Effect } from "effect";
 import { z } from "zod";
-import { ensureSmithersTables } from "@smithers/db/ensure";
-import { SmithersDb } from "@smithers/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { findAndOpenDb } from "../find-db.js";
 import { aggregateNodeDetailEffect, } from "../node-detail.js";
 import { diagnoseRunEffect, } from "../why-diagnosis.js";
@@ -11,12 +11,12 @@ import { chatAttemptKey, parseChatAttemptMeta, parseNodeOutputEvent, selectChatA
 import { WATCH_MIN_INTERVAL_MS } from "../watch.js";
 import { discoverWorkflows, resolveWorkflow } from "../workflows.js";
 import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
-import { approveNode, denyNode } from "@smithers/engine/approvals";
-import { runWorkflow } from "@smithers/engine";
-import { revertToAttempt } from "@smithers/time-travel/revert";
+import { approveNode, denyNode } from "@smithers-orchestrator/engine/approvals";
+import { runWorkflow } from "@smithers-orchestrator/engine";
+import { revertToAttempt } from "@smithers-orchestrator/time-travel/revert";
 import { runPromise } from "../smithersRuntime.js";
-import { SmithersError } from "@smithers/errors";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 /**
  * @typedef {{ content: Array<{ type: "text"; text: string; }>; structuredContent: { ok: boolean; data?: unknown; error?: z.infer<typeof toolErrorSchema>; }; isError?: boolean; }} SemanticToolCallResult
  */

@@ -1,17 +1,17 @@
 // @smithers-type-exports-begin
-/** @typedef {import("@smithers/devtools").DevToolsEventBus} DevToolsEventBus */
-/** @typedef {import("@smithers/devtools").DevToolsEventHandler} DevToolsEventHandler */
-/** @typedef {import("@smithers/devtools").DevToolsSnapshot} DevToolsSnapshot */
-/** @typedef {import("@smithers/devtools").RunExecutionState} RunExecutionState */
-/** @typedef {import("@smithers/devtools").SmithersNodeType} SmithersNodeType */
-/** @typedef {import("@smithers/devtools").TaskExecutionState} TaskExecutionState */
+/** @typedef {import("@smithers-orchestrator/devtools").DevToolsEventBus} DevToolsEventBus */
+/** @typedef {import("@smithers-orchestrator/devtools").DevToolsEventHandler} DevToolsEventHandler */
+/** @typedef {import("@smithers-orchestrator/devtools").DevToolsSnapshot} DevToolsSnapshot */
+/** @typedef {import("@smithers-orchestrator/devtools").RunExecutionState} RunExecutionState */
+/** @typedef {import("@smithers-orchestrator/devtools").SmithersNodeType} SmithersNodeType */
+/** @typedef {import("@smithers-orchestrator/devtools").TaskExecutionState} TaskExecutionState */
 // @smithers-type-exports-end
 
 import { instrument, secure, installRDTHook, traverseFiber, getDisplayName, isHostFiber, getFiberId, setFiberId, } from "bippy";
-import { SmithersDevToolsCore, printTree, } from "@smithers/devtools";
-/** @typedef {import("@smithers/devtools").DevToolsNode} DevToolsNode */
-/** @typedef {import("@smithers/devtools").SmithersDevToolsCore} SmithersDevToolsCoreType */
-/** @typedef {import("@smithers/devtools").SmithersDevToolsOptions} SmithersDevToolsOptions */
+import { SmithersDevToolsCore, printTree, } from "@smithers-orchestrator/devtools";
+/** @typedef {import("@smithers-orchestrator/devtools").DevToolsNode} DevToolsNode */
+/** @typedef {import("@smithers-orchestrator/devtools").SmithersDevToolsCore} SmithersDevToolsCoreType */
+/** @typedef {import("@smithers-orchestrator/devtools").SmithersDevToolsOptions} SmithersDevToolsOptions */
 /** @typedef {import("bippy").Fiber} Fiber */
 /** @typedef {import("bippy").FiberRoot} FiberRoot */
 

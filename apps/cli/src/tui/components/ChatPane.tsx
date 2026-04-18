@@ -1,4 +1,4 @@
-import type { SmithersDb } from "@smithers/db/adapter";
+import type { SmithersDb } from "@smithers-orchestrator/db/adapter";
 export declare function ChatPane({ adapter, runId, focused, filterNodeId, }: {
     adapter: SmithersDb;
     runId: string;

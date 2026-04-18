@@ -7,7 +7,7 @@ import * as BunContext from "@effect/platform-bun/BunContext";
 import { replayFromCheckpoint as replayFromCheckpointEffect } from "./replayFromCheckpointEffect.js";
 export { replayFromCheckpointEffect };
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("./ReplayParams.ts").ReplayParams} ReplayParams */
 
 /**

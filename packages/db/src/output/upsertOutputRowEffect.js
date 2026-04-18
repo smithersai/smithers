@@ -1,9 +1,9 @@
 import { Effect } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { withSqliteWriteRetryEffect } from "../write-retry.js";
 import { getKeyColumns } from "./getKeyColumns.js";
 /** @typedef {import("./OutputKey.ts").OutputKey} OutputKey */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 /** @typedef {import("drizzle-orm").Table} Table */
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} BunSQLiteDatabase */
 

@@ -1,4 +1,4 @@
-import type { SmithersCtx } from "@smithers/driver";
+import type { SmithersCtx } from "@smithers-orchestrator/driver";
 
 export type ApprovalAutoApprove = {
 	after?: number;

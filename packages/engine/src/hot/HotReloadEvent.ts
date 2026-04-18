@@ -1,4 +1,4 @@
-import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
+import type { SmithersWorkflow } from "@smithers-orchestrator/components/SmithersWorkflow";
 
 export type HotReloadEvent =
 	| {

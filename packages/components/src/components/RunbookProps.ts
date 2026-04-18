@@ -1,4 +1,4 @@
-import type { AgentLike } from "@smithers/agents/AgentLike";
+import type { AgentLike } from "@smithers-orchestrator/agents/AgentLike";
 import type { ApprovalRequest } from "./ApprovalRequest.ts";
 import type { RunbookStep } from "./RunbookStep.ts";
 import type { OutputTarget } from "./OutputTarget.ts";

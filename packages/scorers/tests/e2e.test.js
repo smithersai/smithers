@@ -1,8 +1,8 @@
 import { describe, expect, it, beforeEach, mock } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { ensureSmithersTables } from "@smithers/db/ensure";
-import { SmithersDb } from "@smithers/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { createScorer } from "../src/create-scorer.js";
 import { schemaAdherenceScorer, latencyScorer } from "../src/builtins.js";
 import { runScorersBatch } from "../src/run-scorers.js";

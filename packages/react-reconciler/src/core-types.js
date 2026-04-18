@@ -1,1 +1,1 @@
-export * from "@smithers/graph";
+export * from "@smithers-orchestrator/graph";

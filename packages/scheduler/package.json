@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/scheduler",
+  "name": "@smithers-orchestrator/scheduler",
   "version": "0.16.0",
   "description": "Pure decision engine: session, scheduler, and task state management for Smithers workflows",
   "type": "module",
@@ -179,8 +179,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@smithers/errors": "workspace:*",
-    "@smithers/graph": "workspace:*",
+    "@smithers-orchestrator/errors": "workspace:*",
+    "@smithers-orchestrator/graph": "workspace:*",
     "effect": "^3.21.0"
   },
   "devDependencies": {

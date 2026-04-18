@@ -1,5 +1,5 @@
 
-/** @typedef {import("@smithers/graph").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/graph").TaskDescriptor} TaskDescriptor */
 /** @typedef {import("./TaskState.ts").TaskState} TaskState */
 /**
  * @param {TaskState} state

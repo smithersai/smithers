@@ -1,5 +1,5 @@
-import type { SmithersWorkflowOptions } from "@smithers/scheduler/SmithersWorkflowOptions";
-import type { SchemaRegistryEntry } from "@smithers/db/SchemaRegistryEntry";
+import type { SmithersWorkflowOptions } from "@smithers-orchestrator/scheduler/SmithersWorkflowOptions";
+import type { SchemaRegistryEntry } from "@smithers-orchestrator/db/SchemaRegistryEntry";
 import type { z } from "zod";
 import type { WorkflowElement } from "./WorkflowElement.ts";
 

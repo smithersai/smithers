@@ -12,9 +12,9 @@
 
 import { getTableName, sql } from "drizzle-orm";
 import { Effect, Exit, FiberId, Metric } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { getSqlMessageStorage } from "./sql-message-storage.js";
-import { alertsAcknowledgedTotal, alertsActive, alertsFiredTotal, dbQueryDuration, dbTransactionDuration, dbTransactionRetries, dbTransactionRollbacks, } from "@smithers/observability/metrics";
+import { alertsAcknowledgedTotal, alertsActive, alertsFiredTotal, dbQueryDuration, dbTransactionDuration, dbTransactionRetries, dbTransactionRollbacks, } from "@smithers-orchestrator/observability/metrics";
 import { assertOptionalStringMaxLength, assertPositiveFiniteNumber, } from "./input-bounds.js";
 import { FRAME_KEYFRAME_INTERVAL, applyFrameDeltaJson, encodeFrameDelta, normalizeFrameEncoding, serializeFrameDelta, } from "./frame-codec.js";
 import { getKeyColumns } from "./output.js";
@@ -32,7 +32,7 @@ import { camelToSnake } from "./utils/camelToSnake.js";
  * @typedef {Effect.Effect<A, E> & PromiseLike<A>} RunnableEffect
  */
 /** @typedef {import("./adapter/SignalQuery.ts").SignalQuery} SignalQuery */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 /**
  * @typedef {{ runId: string; frameNo: number; createdAtMs: number; xmlJson: string; xmlHash: string; encoding: string; mountedTaskIdsJson: string | null; taskIndexJson: string | null; note: string | null; }} FrameRow
  */

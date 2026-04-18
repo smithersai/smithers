@@ -1,5 +1,5 @@
 import type { Effect } from "effect";
-import type { WorkflowGraph } from "@smithers/graph";
+import type { WorkflowGraph } from "@smithers-orchestrator/graph";
 import type { TaskStateMap } from "./TaskStateMap.ts";
 import type { ApprovalResolution } from "./ApprovalResolution.ts";
 import type { ScheduleSnapshot } from "./ScheduleSnapshot.ts";

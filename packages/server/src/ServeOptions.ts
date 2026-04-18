@@ -1,5 +1,5 @@
-import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
-import type { SmithersDb } from "@smithers/db/adapter";
+import type { SmithersWorkflow } from "@smithers-orchestrator/components/SmithersWorkflow";
+import type { SmithersDb } from "@smithers-orchestrator/db/adapter";
 
 export type ServeOptions = {
   workflow: SmithersWorkflow<unknown>;

@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { ensureSmithersTables } from "@smithers/db/ensure";
-import { SmithersDb } from "@smithers/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { getNodeDiffRoute } from "../src/gatewayRoutes/getNodeDiff.js";
 function run(cwd, cmd, args) {
     const res = spawnSync(cmd, args, {

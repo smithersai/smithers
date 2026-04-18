@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import React from "react";
 import { z } from "zod";
 import { createSmithers } from "smithers-orchestrator";
-import { requireTaskRuntime } from "@smithers/driver/task-runtime";
+import { requireTaskRuntime } from "@smithers-orchestrator/driver/task-runtime";
 import { Gateway } from "../src/gateway.js";
 import { sleep } from "../../smithers/tests/helpers.js";
 

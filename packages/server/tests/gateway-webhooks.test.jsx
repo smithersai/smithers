@@ -92,8 +92,8 @@ describe("Gateway webhook ingestion", () => {
     beforeAll(async () => {
         createSmithers = (await import("smithers-orchestrator/create")).createSmithers;
         Gateway = (await import("../src/gateway.js")).Gateway;
-        SmithersDb = (await import("@smithers/db/adapter")).SmithersDb;
-        WaitForEvent = (await import("@smithers/components/components/WaitForEvent")).WaitForEvent;
+        SmithersDb = (await import("@smithers-orchestrator/db/adapter")).SmithersDb;
+        WaitForEvent = (await import("@smithers-orchestrator/components/components/WaitForEvent")).WaitForEvent;
     });
     beforeEach(() => {
         gateway = undefined;

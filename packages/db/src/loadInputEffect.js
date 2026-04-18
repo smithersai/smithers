@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getTableColumns } from "drizzle-orm/utils";
 import { Effect } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} BunSQLiteDatabase */
 /** @typedef {import("drizzle-orm").Table} Table */
 

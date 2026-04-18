@@ -90,7 +90,7 @@ Terminal states (`succeeded`, `failed`, `cancelled`) carry neither.
 ## computeRunState
 
 ```ts
-import { computeRunState } from "@smithers/db/runState";
+import { computeRunState } from "@smithers-orchestrator/db/runState";
 
 const view = await computeRunState(adapter, runId);
 view.state;       // "running" | ...
@@ -106,7 +106,7 @@ not run heuristics.
 when you already have the rows in memory:
 
 ```ts
-import { deriveRunState } from "@smithers/db/runState";
+import { deriveRunState } from "@smithers-orchestrator/db/runState";
 
 const view = deriveRunState({
   run,

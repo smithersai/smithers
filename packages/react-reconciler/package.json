@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/react-reconciler",
+  "name": "@smithers-orchestrator/react-reconciler",
   "version": "0.16.0",
   "description": "Custom React reconciler that renders Smithers host trees",
   "type": "module",
@@ -49,10 +49,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@smithers/devtools": "workspace:*",
-    "@smithers/driver": "workspace:*",
-    "@smithers/errors": "workspace:*",
-    "@smithers/graph": "workspace:*",
+    "@smithers-orchestrator/devtools": "workspace:*",
+    "@smithers-orchestrator/driver": "workspace:*",
+    "@smithers-orchestrator/errors": "workspace:*",
+    "@smithers-orchestrator/graph": "workspace:*",
     "react": "^18.3.0 || ^19.0.0",
     "react-reconciler": "^0.31.0",
     "bippy": "^0.5.32"

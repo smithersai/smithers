@@ -8,7 +8,7 @@ import { WebSocket } from "ws";
 import { z } from "zod";
 import { createSmithers } from "smithers-orchestrator";
 import { Gateway } from "../src/gateway.js";
-import { SmithersDb } from "@smithers/db/adapter";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { sleep } from "../../smithers/tests/helpers.js";
 /**
  * @param {Record<string, unknown>} value

@@ -1,13 +1,13 @@
 import { Effect, Metric } from "effect";
 import * as BunContext from "@effect/platform-bun/BunContext";
-import { getJjPointer, revertToJjPointer } from "@smithers/vcs/jj";
+import { getJjPointer, revertToJjPointer } from "@smithers-orchestrator/vcs/jj";
 import {
   rewindTotal,
   rewindRollbackTotal,
   rewindDurationMs,
   rewindFramesDeleted,
   rewindSandboxesReverted,
-} from "@smithers/observability/metrics";
+} from "@smithers-orchestrator/observability/metrics";
 import { JUMP_RUN_ID_PATTERN } from "./JUMP_RUN_ID_PATTERN.js";
 import { JUMP_MAX_FRAME_NO } from "./JUMP_MAX_FRAME_NO.js";
 import { JumpToFrameError } from "./JumpToFrameError.js";
@@ -24,8 +24,8 @@ export { JumpToFrameError };
 export { validateJumpRunId };
 export { validateJumpFrameNo };
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/observability/SmithersEvent").SmithersEvent} SmithersEvent */
 /** @typedef {import("./JumpResult.ts").JumpResult} JumpResult */
 /** @typedef {import("./JumpToFrameInput.ts").JumpToFrameInput} JumpToFrameInput */
 /** @typedef {import("./JumpStepName.ts").JumpStepName} JumpStepName */
@@ -417,7 +417,7 @@ async function rollbackSandboxPointers(revertedSandboxes, revertToPointerImpl) {
   return failures;
 }
 
-/** @typedef {import("@smithers/db").AttemptRow} AttemptRow */
+/** @typedef {import("@smithers-orchestrator/db").AttemptRow} AttemptRow */
 
 /**
  * @param {ReadonlyArray<AttemptRow>} attemptsForRun

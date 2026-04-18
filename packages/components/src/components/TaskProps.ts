@@ -1,11 +1,11 @@
 import type React from "react";
 import type { z } from "zod";
-import type { AgentLike } from "@smithers/agents/AgentLike";
-import type { SmithersCtx } from "@smithers/driver";
-import type { CachePolicy } from "@smithers/scheduler/CachePolicy";
-import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
-import type { ScorersMap } from "@smithers/scorers/types";
-import type { TaskMemoryConfig } from "@smithers/memory/types";
+import type { AgentLike } from "@smithers-orchestrator/agents/AgentLike";
+import type { SmithersCtx } from "@smithers-orchestrator/driver";
+import type { CachePolicy } from "@smithers-orchestrator/scheduler/CachePolicy";
+import type { RetryPolicy } from "@smithers-orchestrator/scheduler/RetryPolicy";
+import type { ScorersMap } from "@smithers-orchestrator/scorers/types";
+import type { TaskMemoryConfig } from "@smithers-orchestrator/memory/types";
 import type { OutputTarget } from "./OutputTarget.ts";
 import type { DepsSpec } from "./DepsSpec.ts";
 import type { InferDeps } from "./InferDeps.ts";

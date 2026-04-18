@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 import { Effect, Metric } from "effect";
 import { ignoreSyncError } from "./interop.js";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { toolOutputTruncatedTotal } from "@smithers/observability/metrics";
-import { logDebug, logWarning } from "@smithers/observability/logging";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { toolOutputTruncatedTotal } from "@smithers-orchestrator/observability/metrics";
+import { logDebug, logWarning } from "@smithers-orchestrator/observability/logging";
 /** @typedef {import("./SpawnCaptureOptions.ts").SpawnCaptureOptions} SpawnCaptureOptions */
 /** @typedef {import("./SpawnCaptureResult.ts").SpawnCaptureResult} SpawnCaptureResult */
 

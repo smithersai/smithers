@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { createMemoryStore } from "../src/store/index.js";
 function createTestDb() {
     const sqlite = new Database(":memory:");

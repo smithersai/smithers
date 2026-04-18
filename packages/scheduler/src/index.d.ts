@@ -1,7 +1,7 @@
 import * as effect from 'effect';
 import { Context, Layer, Effect, Schedule } from 'effect';
-import * as _smithers_graph from '@smithers/graph';
-import { TaskDescriptor as TaskDescriptor$3, WorkflowGraph } from '@smithers/graph';
+import * as _smithers_graph from '@smithers-orchestrator/graph';
+import { TaskDescriptor as TaskDescriptor$3, WorkflowGraph } from '@smithers-orchestrator/graph';
 
 type TaskState$2 = "pending" | "waiting-approval" | "waiting-event" | "waiting-timer" | "in-progress" | "finished" | "failed" | "cancelled" | "skipped";
 
@@ -305,7 +305,7 @@ declare function cloneTaskStateMap(states: ReadonlyTaskStateMap$1): TaskStateMap
 type ReadonlyTaskStateMap$1 = ReadonlyTaskStateMap$2;
 type TaskStateMap$3 = TaskStateMap$4;
 
-/** @typedef {import("@smithers/graph").TaskDescriptor} TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/graph").TaskDescriptor} TaskDescriptor */
 /** @typedef {import("./TaskState.ts").TaskState} TaskState */
 /**
  * @param {TaskState} state

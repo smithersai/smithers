@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { isRetryableSqliteWriteError, withSqliteWriteRetry, } from "../src/write-retry.js";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 describe("isRetryableSqliteWriteError", () => {
     test("SQLITE_BUSY code is retryable", () => {
         const err = Object.assign(new Error("busy"), { code: "SQLITE_BUSY" });

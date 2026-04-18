@@ -9,7 +9,7 @@
 
 import * as Command from "@effect/platform/Command";
 import { Duration, Effect, Fiber, Metric, Stream } from "effect";
-import { vcsDuration } from "@smithers/observability/metrics";
+import { vcsDuration } from "@smithers-orchestrator/observability/metrics";
 
 const JJ_POINTER_TIMEOUT_MS = 1_500;
 /**

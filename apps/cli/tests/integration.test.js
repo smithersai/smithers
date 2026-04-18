@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { SmithersDb } from "@smithers/db/adapter";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { runTreeOnce } from "../src/tree.js";
 import { runDiffOnce } from "../src/diff.js";
 import { runOutputOnce } from "../src/output.js";

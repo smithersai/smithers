@@ -1,1 +1,1 @@
-export type { WorkflowDefinition as SmithersWorkflow } from "@smithers/driver/WorkflowDefinition";
+export type { WorkflowDefinition as SmithersWorkflow } from "@smithers-orchestrator/driver/WorkflowDefinition";

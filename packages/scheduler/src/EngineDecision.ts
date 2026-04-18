@@ -1,4 +1,4 @@
-import type { TaskDescriptor } from "@smithers/graph";
+import type { TaskDescriptor } from "@smithers-orchestrator/graph";
 import type { ContinueAsNewTransition } from "./ContinueAsNewTransition.ts";
 import type { RenderContext } from "./RenderContext.ts";
 import type { RunResult } from "./RunResult.ts";

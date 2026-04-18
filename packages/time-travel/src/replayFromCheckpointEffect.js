@@ -3,7 +3,7 @@ import { forkRun as forkRunEffect } from "./fork/forkRunEffect.js";
 import { rerunAtRevision as rerunAtRevisionEffect } from "./vcs-version/rerunAtRevisionEffect.js";
 import { replaysStarted } from "./replaysStarted.js";
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("./ReplayParams.ts").ReplayParams} ReplayParams */
 /** @typedef {import("./ReplayResult.ts").ReplayResult} ReplayResult */
 

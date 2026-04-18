@@ -5,9 +5,9 @@
 // @smithers-type-exports-end
 
 import pc from "picocolors";
-import { getDevToolsSnapshotRoute, DevToolsRouteError } from "@smithers/server/gatewayRoutes/getDevToolsSnapshot";
-import { streamDevToolsRoute } from "@smithers/server/gatewayRoutes/streamDevTools";
-import { applyDelta } from "@smithers/devtools";
+import { getDevToolsSnapshotRoute, DevToolsRouteError } from "@smithers-orchestrator/server/gatewayRoutes/getDevToolsSnapshot";
+import { streamDevToolsRoute } from "@smithers-orchestrator/server/gatewayRoutes/streamDevTools";
+import { applyDelta } from "@smithers-orchestrator/devtools";
 import { EXIT_OK, EXIT_USER_ERROR, EXIT_SERVER_ERROR, EXIT_SIGINT } from "./util/exitCodes.js";
 import { formatCliErrorForStderr, getCliErrorMapping } from "./util/errorMessage.js";
 
@@ -34,7 +34,7 @@ function renderAttr(value) {
 }
 
 /**
- * @param {import("@smithers/protocol/devtools").DevToolsNode} node
+ * @param {import("@smithers-orchestrator/protocol/devtools").DevToolsNode} node
  * @param {boolean} useColor
  */
 function renderOpenTag(node, useColor) {
@@ -65,13 +65,13 @@ function renderOpenTag(node, useColor) {
     return parts.join("");
 }
 
-/** @param {import("@smithers/protocol/devtools").DevToolsNode} node @param {boolean} useColor */
+/** @param {import("@smithers-orchestrator/protocol/devtools").DevToolsNode} node @param {boolean} useColor */
 function renderCloseTag(node, useColor) {
     const c = colors(useColor);
     return c.cyan(`</${node.type}>`);
 }
 
-/** @param {import("@smithers/protocol/devtools").DevToolsNode} node @param {string} id */
+/** @param {import("@smithers-orchestrator/protocol/devtools").DevToolsNode} node @param {string} id */
 function findNode(node, id) {
     if (node.task?.nodeId === id) return node;
     if (typeof node.name === "string" && node.name === id) return node;
@@ -83,16 +83,16 @@ function findNode(node, id) {
 }
 
 /**
- * @param {import("@smithers/protocol/devtools").DevToolsNode} root
+ * @param {import("@smithers-orchestrator/protocol/devtools").DevToolsNode} root
  * @param {string} nodeId
- * @returns {import("@smithers/protocol/devtools").DevToolsNode | null}
+ * @returns {import("@smithers-orchestrator/protocol/devtools").DevToolsNode | null}
  */
 export function selectSubtree(root, nodeId) {
     return findNode(root, nodeId);
 }
 
 /**
- * @param {import("@smithers/protocol/devtools").DevToolsSnapshot} snapshot
+ * @param {import("@smithers-orchestrator/protocol/devtools").DevToolsSnapshot} snapshot
  * @param {TreeRenderOptions} [options]
  * @returns {string}
  */
@@ -106,7 +106,7 @@ export function renderDevToolsTree(snapshot, options) {
     /** @type {string[]} */
     const lines = [];
     /**
-     * @param {import("@smithers/protocol/devtools").DevToolsNode} node
+     * @param {import("@smithers-orchestrator/protocol/devtools").DevToolsNode} node
      * @param {number} indent
      */
     const walk = (node, indent) => {
@@ -195,11 +195,11 @@ export async function runTreeWatch(input) {
         nodeId: input.node,
         color: input.color,
     };
-    /** @type {import("@smithers/protocol/devtools").DevToolsSnapshot | null} */
+    /** @type {import("@smithers-orchestrator/protocol/devtools").DevToolsSnapshot | null} */
     let snapshot = null;
     /** @type {number | undefined} */
     let lastDeliveredSeq;
-    /** @param {import("@smithers/protocol/devtools").DevToolsSnapshot} snap */
+    /** @param {import("@smithers-orchestrator/protocol/devtools").DevToolsSnapshot} snap */
     const emit = (snap) => {
         lastDeliveredSeq = snap.seq;
         if (input.json) {

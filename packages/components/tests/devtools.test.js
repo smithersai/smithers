@@ -31,7 +31,7 @@ describe("devtools: bippy + custom reconciler", () => {
     const commits = [];
     beforeAll(async () => {
         // Import devtools FIRST so instrument() runs before renderer loads
-        const devtoolsMod = await import("@smithers/react-reconciler/devtools");
+        const devtoolsMod = await import("@smithers-orchestrator/react-reconciler/devtools");
         devtools = new devtoolsMod.SmithersDevTools({
             /**
        * @param {string} event
@@ -44,7 +44,7 @@ describe("devtools: bippy + custom reconciler", () => {
         devtools.start();
         // NOW import React/Smithers (reconciler will see the installed hook)
         const [rendererMod, componentsMod, schemaMod, reactMod] = await Promise.all([
-            import("@smithers/react-reconciler/dom/renderer"),
+            import("@smithers-orchestrator/react-reconciler/dom/renderer"),
             import("../src/components/index.js"),
             import("./schema.js"),
             import("react"),
@@ -218,7 +218,7 @@ describe("devtools: bippy + custom reconciler", () => {
     // CHALLENGE 8: Smithers event bus integration — task execution tracking
     // ---------------------------------------------------------------------------
     test("challenge 8: tracks task execution state via EventBus", async () => {
-        const { EventBus } = await import("@smithers/engine/events");
+        const { EventBus } = await import("@smithers-orchestrator/engine/events");
         const bus = new EventBus({});
         // Attach devtools to the event bus
         devtools.attachEventBus(bus);
@@ -254,7 +254,7 @@ describe("devtools: bippy + custom reconciler", () => {
     // CHALLENGE 9: Failure/retry tracking
     // ---------------------------------------------------------------------------
     test("challenge 9: tracks retries and failures", async () => {
-        const { EventBus } = await import("@smithers/engine/events");
+        const { EventBus } = await import("@smithers-orchestrator/engine/events");
         const bus = new EventBus({});
         devtools.attachEventBus(bus);
         const runId = "test-run-9";
@@ -274,7 +274,7 @@ describe("devtools: bippy + custom reconciler", () => {
     // CHALLENGE 10: Approval workflow tracking
     // ---------------------------------------------------------------------------
     test("challenge 10: tracks approval workflow state", async () => {
-        const { EventBus } = await import("@smithers/engine/events");
+        const { EventBus } = await import("@smithers-orchestrator/engine/events");
         const bus = new EventBus({});
         devtools.attachEventBus(bus);
         const runId = "test-run-10";
@@ -290,7 +290,7 @@ describe("devtools: bippy + custom reconciler", () => {
     // CHALLENGE 11: Frame tracking (re-renders after task completion)
     // ---------------------------------------------------------------------------
     test("challenge 11: tracks frame commits", async () => {
-        const { EventBus } = await import("@smithers/engine/events");
+        const { EventBus } = await import("@smithers-orchestrator/engine/events");
         const bus = new EventBus({});
         devtools.attachEventBus(bus);
         const runId = "test-run-11";

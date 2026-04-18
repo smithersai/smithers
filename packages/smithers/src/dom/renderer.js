@@ -1,1 +1,1 @@
-export * from "@smithers/react-reconciler/dom/renderer";
+export * from "@smithers-orchestrator/react-reconciler/dom/renderer";

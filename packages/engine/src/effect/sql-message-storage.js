@@ -4,7 +4,7 @@ import { SqlError } from "@effect/sql/SqlError";
 import * as Statement from "@effect/sql/Statement";
 import { Database } from "bun:sqlite";
 import { Context, Effect, Layer, ManagedRuntime, Scope } from "effect";
-import { camelToSnake } from "@smithers/db/utils/camelToSnake";
+import { camelToSnake } from "@smithers-orchestrator/db/utils/camelToSnake";
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} BunSQLiteDatabase */
 /** @typedef {import("./SqlMessageStorageEventHistoryQuery.ts").SqlMessageStorageEventHistoryQuery} SqlMessageStorageEventHistoryQuery */
 /**

@@ -6,8 +6,8 @@
 
 import * as Activity from "@effect/workflow/Activity";
 import { Effect, Schema } from "effect";
-/** @typedef {import("@smithers/db/adapter").SmithersDb} _SmithersDb */
-/** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} _SmithersDb */
+/** @typedef {import("@smithers-orchestrator/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
 
 const adapterNamespaces = new WeakMap();
 const completedActivityResults = new Map();

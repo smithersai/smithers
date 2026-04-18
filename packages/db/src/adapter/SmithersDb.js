@@ -1,8 +1,8 @@
 import { getTableName, sql } from "drizzle-orm";
 import { Effect, Exit, FiberId, Metric } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { getSqlMessageStorage } from "../sql-message-storage.js";
-import { alertsAcknowledgedTotal, alertsFiredTotal, dbQueryDuration, dbTransactionDuration, dbTransactionRetries, dbTransactionRollbacks, } from "@smithers/observability/metrics";
+import { alertsAcknowledgedTotal, alertsFiredTotal, dbQueryDuration, dbTransactionDuration, dbTransactionRetries, dbTransactionRollbacks, } from "@smithers-orchestrator/observability/metrics";
 import { assertOptionalStringMaxLength, assertPositiveFiniteNumber, } from "../input-bounds.js";
 import { FRAME_KEYFRAME_INTERVAL, applyFrameDeltaJson, encodeFrameDelta, normalizeFrameEncoding, serializeFrameDelta, } from "../frame-codec.js";
 import { getKeyColumns } from "../output.js";
@@ -16,7 +16,7 @@ import { DB_ALERT_ALLOWED_STATUSES } from "./DB_ALERT_ALLOWED_STATUSES.js";
 import { DB_RUN_ID_MAX_LENGTH } from "./DB_RUN_ID_MAX_LENGTH.js";
 import { DB_RUN_WORKFLOW_NAME_MAX_LENGTH } from "./DB_RUN_WORKFLOW_NAME_MAX_LENGTH.js";
 import { DB_RUN_ALLOWED_STATUSES } from "./DB_RUN_ALLOWED_STATUSES.js";
-import { alertsActive } from "@smithers/observability/metrics";
+import { alertsActive } from "@smithers-orchestrator/observability/metrics";
 /** @typedef {import("./AlertRow.ts").AlertRow} AlertRow */
 /** @typedef {import("./AlertStatus.ts").AlertStatus} AlertStatus */
 /** @typedef {import("./AttemptRow.ts").AttemptRow} AttemptRow */
@@ -29,7 +29,7 @@ import { alertsActive } from "@smithers/observability/metrics";
  * @typedef {Effect.Effect<A, E> & PromiseLike<A>} RunnableEffect
  */
 /** @typedef {import("./SignalQuery.ts").SignalQuery} SignalQuery */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 /**
  * @typedef {{ runId: string; frameNo: number; createdAtMs: number; xmlJson: string; xmlHash: string; encoding: string; mountedTaskIdsJson: string | null; taskIndexJson: string | null; note: string | null; }} FrameRow
  */

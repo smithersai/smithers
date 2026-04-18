@@ -4,21 +4,21 @@
 /** @typedef {import("./RalphMeta.ts").RalphMeta} RalphMeta */
 /** @typedef {import("./RalphState.ts").RalphState} RalphState */
 /** @typedef {import("./RalphStateMap.ts").RalphStateMap} RalphStateMap */
-/** @typedef {import("@smithers/scheduler").ReadonlyTaskStateMap} ReadonlyTaskStateMap */
-/** @typedef {import("@smithers/scheduler").RetryWaitMap} RetryWaitMap */
+/** @typedef {import("@smithers-orchestrator/scheduler").ReadonlyTaskStateMap} ReadonlyTaskStateMap */
+/** @typedef {import("@smithers-orchestrator/scheduler").RetryWaitMap} RetryWaitMap */
 /** @typedef {import("./ScheduleResult.ts").ScheduleResult} ScheduleResult */
-/** @typedef {import("@smithers/scheduler").ScheduleSnapshot} ScheduleSnapshot */
-/** @typedef {import("@smithers/scheduler").TaskRecord} TaskRecord */
-/** @typedef {import("@smithers/scheduler").TaskState} TaskState */
-/** @typedef {import("@smithers/scheduler").TaskStateMap} TaskStateMap */
-/** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
-/** @typedef {import("@smithers/graph/XmlNode").XmlNode} XmlNode */
+/** @typedef {import("@smithers-orchestrator/scheduler").ScheduleSnapshot} ScheduleSnapshot */
+/** @typedef {import("@smithers-orchestrator/scheduler").TaskRecord} TaskRecord */
+/** @typedef {import("@smithers-orchestrator/scheduler").TaskState} TaskState */
+/** @typedef {import("@smithers-orchestrator/scheduler").TaskStateMap} TaskStateMap */
+/** @typedef {import("@smithers-orchestrator/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/graph/XmlNode").XmlNode} XmlNode */
 // @smithers-type-exports-end
 
-import { buildPlanTree as coreBuildPlanTree, scheduleTasks as coreScheduleTasks, } from "@smithers/scheduler";
-export { buildStateKey } from "@smithers/scheduler";
-export { Scheduler, SchedulerLive } from "@smithers/scheduler";
-export { cloneTaskStateMap, isTerminalState, parseStateKey, } from "@smithers/scheduler";
+import { buildPlanTree as coreBuildPlanTree, scheduleTasks as coreScheduleTasks, } from "@smithers-orchestrator/scheduler";
+export { buildStateKey } from "@smithers-orchestrator/scheduler";
+export { Scheduler, SchedulerLive } from "@smithers-orchestrator/scheduler";
+export { cloneTaskStateMap, isTerminalState, parseStateKey, } from "@smithers-orchestrator/scheduler";
 
 /**
  * @type {(xml: XmlNode | null, ralphState?: RalphStateMap) => { plan: PlanNode | null; ralphs: RalphMeta[] }}

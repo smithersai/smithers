@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { diffSnapshots } from "@smithers/devtools";
+import { diffSnapshots } from "@smithers-orchestrator/devtools";
 import { runPromise } from "../smithersRuntime.js";
 import {
     DevToolsRouteError,
@@ -8,10 +8,10 @@ import {
     validateRunId,
 } from "./getDevToolsSnapshot.js";
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("@smithers/protocol/devtools").DevToolsEvent} DevToolsEvent */
-/** @typedef {import("@smithers/protocol/devtools").DevToolsSnapshot} DevToolsSnapshot */
-/** @typedef {import("@smithers/devtools/snapshotSerializer").SnapshotSerializerWarning} SnapshotSerializerWarning */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/protocol/devtools").DevToolsEvent} DevToolsEvent */
+/** @typedef {import("@smithers-orchestrator/protocol/devtools").DevToolsSnapshot} DevToolsSnapshot */
+/** @typedef {import("@smithers-orchestrator/devtools/snapshotSerializer").SnapshotSerializerWarning} SnapshotSerializerWarning */
 
 export const DEVTOOLS_REBASELINE_INTERVAL = 50;
 export const DEVTOOLS_BACKPRESSURE_LIMIT = 1_000;

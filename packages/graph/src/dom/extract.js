@@ -3,11 +3,11 @@
 /** @typedef {import("../HostText.ts").HostText} HostText */
 // @smithers-type-exports-end
 
-import { resolveStableId } from "@smithers/graph/utils/tree-ids";
+import { resolveStableId } from "@smithers-orchestrator/graph/utils/tree-ids";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { getTableName } from "drizzle-orm";
-import { DEFAULT_MERGE_QUEUE_CONCURRENCY, WORKTREE_EMPTY_PATH_ERROR, } from "@smithers/graph/constants";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { DEFAULT_MERGE_QUEUE_CONCURRENCY, WORKTREE_EMPTY_PATH_ERROR, } from "@smithers-orchestrator/graph/constants";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 
 /** @typedef {import("../ExtractOptions.ts").ExtractOptions} ExtractOptions */
 /** @typedef {import("../ExtractResult.ts").ExtractResult} ExtractResult */
@@ -15,7 +15,7 @@ import { SmithersError } from "@smithers/errors/SmithersError";
 /** @typedef {import("../XmlNode.ts").XmlNode} XmlNode */
 
 // TODO(migration): Delegate extractFromHost to
-// @smithers/graph.extractGraph once core extraction reaches full
+// @smithers-orchestrator/graph.extractGraph once core extraction reaches full
 // legacy parity. Current blockers:
 // - <Subflow> and <Sandbox> descriptors here attach runtime computeFn handlers
 //   that call executeChildWorkflow/executeSandbox; core extractGraph currently
@@ -310,7 +310,7 @@ export function extractFromHost(root, opts) {
                     prompt: undefined,
                     staticPayload: undefined,
                     computeFn: async () => {
-                        const { executeChildWorkflow } = await loadRuntimeModule("@smithers/engine/child-workflow");
+                        const { executeChildWorkflow } = await loadRuntimeModule("@smithers-orchestrator/engine/child-workflow");
                         const result = await executeChildWorkflow(undefined, {
                             workflow: raw.__smithersSubflowWorkflow,
                             input: raw.__smithersSubflowInput,
@@ -404,7 +404,7 @@ export function extractFromHost(root, opts) {
                 prompt: undefined,
                 staticPayload: undefined,
                 computeFn: async () => {
-                    const { executeSandbox } = await loadRuntimeModule("@smithers/sandbox/execute");
+                    const { executeSandbox } = await loadRuntimeModule("@smithers-orchestrator/sandbox/execute");
                     if (!workflowDef) {
                         throw new SmithersError("INVALID_INPUT", `Sandbox ${nodeId} is missing workflow definition.`, { nodeId });
                     }

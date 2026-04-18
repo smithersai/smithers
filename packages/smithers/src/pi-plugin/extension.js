@@ -36,13 +36,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Text, truncateToWidth, matchesKey } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { smithersMetricCatalog, toPrometheusMetricName, } from "@smithers/observability/metrics";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { createSmithersAgentContract, renderSmithersAgentPromptGuidance, } from "@smithers/agents/agent-contract";
+import { smithersMetricCatalog, toPrometheusMetricName, } from "@smithers-orchestrator/observability/metrics";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { createSmithersAgentContract, renderSmithersAgentPromptGuidance, } from "@smithers-orchestrator/agents/agent-contract";
 /** @typedef {import("./extension.js").extension} extension */
 
 /** @typedef {import("@mariozechner/pi-coding-agent").ExtensionAPI} ExtensionAPI */
-/** @typedef {import("@smithers/agents/agent-contract").SmithersAgentContract} SmithersAgentContract */
+/** @typedef {import("@smithers-orchestrator/agents/agent-contract").SmithersAgentContract} SmithersAgentContract */
 /** @typedef {import("./SmithersPiRunContext.ts").SmithersPiRunContext} SmithersPiRunContext */
 
 // ---------------------------------------------------------------------------

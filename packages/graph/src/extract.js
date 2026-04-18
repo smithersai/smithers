@@ -1,5 +1,5 @@
 import { isAbsolute, resolve as resolvePath } from "node:path";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 /** @typedef {import("./TaskDescriptor.ts").TaskDescriptor} TaskDescriptor */
 /** @typedef {import("./XmlNode.ts").XmlNode} XmlNode */
 /** @typedef {import("./ExtractOptions.ts").ExtractOptions} ExtractOptions */

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { Approval, Sequence, Task, Workflow, approvalDecisionSchema, approvalRankingSchema, approvalSelectionSchema, renderFrame, runWorkflow, } from "smithers-orchestrator";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";
-import { SmithersDb } from "@smithers/db/adapter";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { denyNode } from "../src/approvals.js";
 import { Effect } from "effect";
 const APPROVAL_TEST_TIMEOUT_MS = 15_000;

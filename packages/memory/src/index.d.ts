@@ -2,7 +2,7 @@ import * as zod from 'zod';
 import { z } from 'zod';
 import * as zod_v4_core from 'zod/v4/core';
 import { Effect, Context, Layer, Metric } from 'effect';
-import { SmithersError } from '@smithers/errors';
+import { SmithersError } from '@smithers-orchestrator/errors';
 import * as drizzle_orm_bun_sqlite from 'drizzle-orm/bun-sqlite';
 import { BunSQLiteDatabase as BunSQLiteDatabase$1 } from 'drizzle-orm/bun-sqlite';
 import * as effect_MetricState from 'effect/MetricState';

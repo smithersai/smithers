@@ -5,7 +5,7 @@ import { SmithersDb, runWorkflow } from "smithers-orchestrator";
 import { approveNode } from "../src/approvals.js";
 import { createTestDb, createTestSmithers } from "../../smithers/tests/helpers.js";
 import { ddl, schema } from "../../smithers/tests/schema.js";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { Effect } from "effect";
 describe("engine edge cases", () => {
     test("resume rejects runs that were never started", async () => {

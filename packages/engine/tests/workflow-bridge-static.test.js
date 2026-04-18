@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { SmithersDb } from "@smithers/db/adapter";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { EventBus } from "../src/events.js";
 import { executeTaskBridge } from "../src/effect/workflow-bridge.js";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";

@@ -1,6 +1,6 @@
 import { Effect, Metric } from "effect";
-import { memoryFactWrites, memoryRecallQueries, memoryMessageSaves, } from "@smithers/memory/metrics";
-import { openApiToolCallsTotal, openApiToolCallErrorsTotal, openApiToolDuration, } from "@smithers/openapi/metrics";
+import { memoryFactWrites, memoryRecallQueries, memoryMessageSaves, } from "@smithers-orchestrator/memory/metrics";
+import { openApiToolCallsTotal, openApiToolCallErrorsTotal, openApiToolDuration, } from "@smithers-orchestrator/openapi/metrics";
 import { runsTotal } from "./runsTotal.js";
 import { nodesStarted } from "./nodesStarted.js";
 import { nodesFinished } from "./nodesFinished.js";
@@ -61,7 +61,7 @@ import { agentActionsTotal } from "./agentActionsTotal.js";
 import { agentErrorsTotal } from "./agentErrorsTotal.js";
 import { agentRetriesTotal } from "./agentRetriesTotal.js";
 import { agentTokensTotal } from "./agentTokensTotal.js";
-/** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+/** @typedef {import("@smithers-orchestrator/observability/SmithersEvent").SmithersEvent} SmithersEvent */
 
 /**
  * @param {unknown} value

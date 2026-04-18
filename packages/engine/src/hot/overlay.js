@@ -2,9 +2,9 @@ import { readdir, mkdir, link, copyFile, rm } from "node:fs/promises";
 import { resolve, relative, join, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { Effect } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 /** @typedef {import("./OverlayOptions.ts").OverlayOptions} OverlayOptions */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 
 const DEFAULT_EXCLUDE = [
     "node_modules",

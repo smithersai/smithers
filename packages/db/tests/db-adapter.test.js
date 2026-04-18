@@ -3,7 +3,7 @@ import { SmithersDb } from "../src/adapter.js";
 import { ensureSmithersTables } from "../src/ensure.js";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { canonicalizeXml } from "@smithers/graph/utils/xml";
+import { canonicalizeXml } from "@smithers-orchestrator/graph/utils/xml";
 function createTestDb() {
     const sqlite = new Database(":memory:");
     const db = drizzle(sqlite);

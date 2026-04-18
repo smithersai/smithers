@@ -3,8 +3,8 @@ export type {
   RenderContext,
   TaskOutput,
   WaitReason,
-} from "@smithers/scheduler";
-export type { RunResult } from "@smithers/scheduler";
+} from "@smithers-orchestrator/scheduler";
+export type { RunResult } from "@smithers-orchestrator/scheduler";
 export type { ContinueAsNewHandler } from "./ContinueAsNewHandler.ts";
 export type { CreateWorkflowSession } from "./CreateWorkflowSession.ts";
 export type { CreateWorkflowSessionOptions } from "./CreateWorkflowSessionOptions.ts";

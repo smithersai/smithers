@@ -1,8 +1,8 @@
 import * as SingleRunner from "@effect/cluster/SingleRunner";
 import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
 import { Effect, Layer, Scope } from "effect";
-import { fromTaggedErrorPayload } from "@smithers/errors/fromTaggedErrorPayload";
-import { toTaggedErrorPayload } from "@smithers/errors/toTaggedErrorPayload";
+import { fromTaggedErrorPayload } from "@smithers-orchestrator/errors/fromTaggedErrorPayload";
+import { toTaggedErrorPayload } from "@smithers-orchestrator/errors/toTaggedErrorPayload";
 import { isUnknownWorkerError, isTaskResultFailure, TaskWorkerEntity, } from "./entity-worker.js";
 /**
  * @typedef {(task: WorkerTask) => void} TaskWorkerDispatchSubscriber

@@ -2,10 +2,10 @@ import { HttpRunner } from "@effect/cluster";
 import { mkdir, cp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Layer } from "effect";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { spawnCaptureEffect } from "@smithers/driver/child-process";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
-import { SandboxEntityExecutor } from "@smithers/sandbox/effect/sandbox-entity";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { spawnCaptureEffect } from "@smithers-orchestrator/driver/child-process";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
+import { SandboxEntityExecutor } from "@smithers-orchestrator/sandbox/effect/sandbox-entity";
 /**
  * @param {SandboxTransportConfig} config
  * @returns {SandboxHandle}

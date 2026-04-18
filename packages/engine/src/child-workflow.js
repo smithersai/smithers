@@ -1,15 +1,15 @@
 import { Effect } from "effect";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { SmithersDb } from "@smithers/db/adapter";
-import { requireTaskRuntime } from "@smithers/driver/task-runtime";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { requireTaskRuntime } from "@smithers-orchestrator/driver/task-runtime";
 import { getWorkflowMakeBridgeRuntime } from "./effect/workflow-make-bridge.js";
 /** @typedef {import("./ChildWorkflowDefinition.ts").ChildWorkflowDefinition} ChildWorkflowDefinition */
 /** @typedef {import("./ChildWorkflowExecuteOptions.ts").ChildWorkflowExecuteOptions} ChildWorkflowExecuteOptions */
-/** @typedef {import("@smithers/driver/RunResult").RunResult} RunResult */
+/** @typedef {import("@smithers-orchestrator/driver/RunResult").RunResult} RunResult */
 
 /**
  * @param {unknown} value
- * @returns {value is import("@smithers/components/SmithersWorkflow").SmithersWorkflow<any>}
+ * @returns {value is import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow<any>}
  */
 function isWorkflowLike(value) {
     return Boolean(value &&
@@ -79,8 +79,8 @@ function buildChildWorkflowRunId(parentRunId, stepId, iteration) {
 }
 /**
  * @param {ChildWorkflowDefinition} definition
- * @param {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<any>} [parentWorkflow]
- * @returns {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<any>}
+ * @param {import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow<any>} [parentWorkflow]
+ * @returns {import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow<any>}
  */
 function resolveChildWorkflow(definition, parentWorkflow) {
     const resolved = typeof definition === "function" ? definition() : definition;
@@ -109,7 +109,7 @@ function resolveChildWorkflow(definition, parentWorkflow) {
     throw new SmithersError("INVALID_INPUT", "Child workflow must be a Smithers workflow object or function.");
 }
 /**
- * @param {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<any> | undefined} parentWorkflow
+ * @param {import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow<any> | undefined} parentWorkflow
  * @param {ChildWorkflowExecuteOptions} options
  * @returns {Promise<{ runId: string; status: RunResult["status"]; output: unknown; }>}
  */

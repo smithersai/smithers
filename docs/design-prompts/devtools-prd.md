@@ -26,7 +26,7 @@ Both surfaces consume the same data from the same backend (HTTP API, SSE streams
 
 ## Package Architecture
 
-Smithers DevTools ships as a separate internal package (`@smithers/devtools`) that is a dependency of the main `smithers-orchestrator` package. From the user's perspective, devtools is included out of the box — no additional install step.
+Smithers DevTools ships as a separate internal package (`@smithers-orchestrator/devtools`) that is a dependency of the main `smithers-orchestrator` package. From the user's perspective, devtools is included out of the box — no additional install step.
 
 ## Core Experience
 
@@ -161,7 +161,7 @@ Each agent type stores conversation transcripts in its own format and location. 
 - **Gemini CLI**: reads from Gemini's conversation storage
 - **Custom agents**: extensible adapter interface so users can add support for their own agent types
 
-The adapter interface is part of the `@smithers/devtools` package API, allowing third-party agent integrations to provide their own chat log reader.
+The adapter interface is part of the `@smithers-orchestrator/devtools` package API, allowing third-party agent integrations to provide their own chat log reader.
 
 ## Connectivity
 

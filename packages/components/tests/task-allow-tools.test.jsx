@@ -2,11 +2,11 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createSmithers } from "smithers-orchestrator";
-import { renderFrame } from "@smithers/engine";
-import { SmithersCtx } from "@smithers/react-reconciler/context";
-import { ClaudeCodeAgent } from "@smithers/agents/ClaudeCodeAgent";
-import { GeminiAgent } from "@smithers/agents/GeminiAgent";
-import { PiAgent } from "@smithers/agents/PiAgent";
+import { renderFrame } from "@smithers-orchestrator/engine";
+import { SmithersCtx } from "@smithers-orchestrator/react-reconciler/context";
+import { ClaudeCodeAgent } from "@smithers-orchestrator/agents/ClaudeCodeAgent";
+import { GeminiAgent } from "@smithers-orchestrator/agents/GeminiAgent";
+import { PiAgent } from "@smithers-orchestrator/agents/PiAgent";
 import { Effect } from "effect";
 describe("Task allowTools", () => {
     test("passes an allowlist through to ClaudeCodeAgent tasks", async () => {

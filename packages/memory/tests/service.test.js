@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Effect, Layer } from "effect";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { MemoryService, createMemoryLayer } from "../src/service.js";
 const WF_NS = { kind: "workflow", id: "test-service" };
 function createTestDb() {

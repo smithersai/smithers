@@ -1,6 +1,6 @@
 import type React from "react";
 import type { z } from "zod";
-import type { SmithersCtx } from "@smithers/driver";
+import type { SmithersCtx } from "@smithers-orchestrator/driver";
 import type { ApprovalMode } from "./ApprovalMode.ts";
 import type { ApprovalOption } from "./ApprovalOption.ts";
 import type { ApprovalRequest } from "./ApprovalRequest.ts";
@@ -31,9 +31,9 @@ export type ApprovalProps<Row = ApprovalDecision, Output extends OutputTarget = 
 	heartbeatTimeoutMs?: number;
 	heartbeatTimeout?: number;
 	retries?: number;
-	retryPolicy?: import("@smithers/scheduler/RetryPolicy").RetryPolicy;
+	retryPolicy?: import("@smithers-orchestrator/scheduler/RetryPolicy").RetryPolicy;
 	continueOnFail?: boolean;
-	cache?: import("@smithers/scheduler/CachePolicy").CachePolicy;
+	cache?: import("@smithers-orchestrator/scheduler/CachePolicy").CachePolicy;
 	label?: string;
 	meta?: Record<string, unknown>;
 	key?: string;

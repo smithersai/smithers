@@ -1,5 +1,5 @@
 import type React from "react";
-import type { AgentLike } from "@smithers/agents/AgentLike";
+import type { AgentLike } from "@smithers-orchestrator/agents/AgentLike";
 import type { OutputTarget } from "./OutputTarget.ts";
 
 export type SourceDef = {

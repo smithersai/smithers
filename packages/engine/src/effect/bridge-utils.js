@@ -1,4 +1,4 @@
-import { TaskAborted } from "@smithers/errors/TaskAborted";
+import { TaskAborted } from "@smithers-orchestrator/errors/TaskAborted";
 /**
  * @returns {TaskAborted}
  */

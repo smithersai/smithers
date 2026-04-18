@@ -8,13 +8,13 @@ import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
 import { z } from "zod";
 import { createSmithers } from "smithers-orchestrator";
-import { canonicalizeXml } from "@smithers/graph/utils/xml";
-import { renderPrometheusMetrics } from "@smithers/observability";
-import { SmithersDb } from "@smithers/db/adapter";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { canonicalizeXml } from "@smithers-orchestrator/graph/utils/xml";
+import { renderPrometheusMetrics } from "@smithers-orchestrator/observability";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { Gateway } from "../src/gateway.js";
 import { streamDevToolsRoute } from "../src/gatewayRoutes/streamDevTools.js";
-import { diffSnapshots } from "@smithers/devtools";
+import { diffSnapshots } from "@smithers-orchestrator/devtools";
 import { sleep } from "../../smithers/tests/helpers.js";
 
 function now() {

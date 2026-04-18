@@ -9,7 +9,7 @@ import { AskModal } from "./components/AskModal.jsx";
 import { SqliteBrowser } from "./components/SqliteBrowser.jsx";
 import { CronList } from "./components/CronList.jsx";
 import { MetricsPane } from "./components/MetricsPane.jsx";
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 
 const TABS = [
     { id: "runs", label: "Runs", access: "r" },

@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/scorers",
+  "name": "@smithers-orchestrator/scorers",
   "version": "0.16.0",
   "description": "Smithers scorer definitions, execution, aggregation, and persistence helpers",
   "type": "module",
@@ -25,12 +25,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@smithers/agents": "workspace:*",
-    "@smithers/db": "workspace:*",
-    "@smithers/driver": "workspace:*",
-    "@smithers/errors": "workspace:*",
-    "@smithers/observability": "workspace:*",
-    "@smithers/scheduler": "workspace:*",
+    "@smithers-orchestrator/agents": "workspace:*",
+    "@smithers-orchestrator/db": "workspace:*",
+    "@smithers-orchestrator/driver": "workspace:*",
+    "@smithers-orchestrator/errors": "workspace:*",
+    "@smithers-orchestrator/observability": "workspace:*",
+    "@smithers-orchestrator/scheduler": "workspace:*",
     "zod": "^4.3.6"
   },
   "devDependencies": {

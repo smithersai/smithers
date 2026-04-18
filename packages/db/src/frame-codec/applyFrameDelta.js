@@ -1,4 +1,4 @@
-import { canonicalizeXml, parseXmlJson } from "@smithers/graph/utils/xml";
+import { canonicalizeXml, parseXmlJson } from "@smithers-orchestrator/graph/utils/xml";
 /** @typedef {import("./FrameDeltaOp.ts").FrameDeltaOp} FrameDeltaOp */
 /** @typedef {import("./JsonPath.ts").JsonPath} JsonPath */
 /** @typedef {import("./JsonPathSegment.ts").JsonPathSegment} JsonPathSegment */

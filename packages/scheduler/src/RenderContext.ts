@@ -1,4 +1,4 @@
-import type { WorkflowGraph } from "@smithers/graph";
+import type { WorkflowGraph } from "@smithers-orchestrator/graph";
 import type { TaskOutput } from "./TaskOutput.ts";
 
 export type RenderContext = {

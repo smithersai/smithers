@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
-import { SmithersDb } from "@smithers/db/adapter";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { buildHumanRequestId } from "../src/human-requests.js";
 import { createTempRepo, runSmithers } from "../../smithers/tests/e2e-helpers.js";
 function createAdapter() {

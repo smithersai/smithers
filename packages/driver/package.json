@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/driver",
+  "name": "@smithers-orchestrator/driver",
   "version": "0.16.0",
   "description": "Workflow execution driver — runs tasks, acts on EngineDecisions, reports results",
   "type": "module",
@@ -65,11 +65,11 @@
     "build": "tsup --dts-only"
   },
   "dependencies": {
-    "@smithers/db": "workspace:*",
-    "@smithers/errors": "workspace:*",
-    "@smithers/graph": "workspace:*",
-    "@smithers/observability": "workspace:*",
-    "@smithers/scheduler": "workspace:*",
+    "@smithers-orchestrator/db": "workspace:*",
+    "@smithers-orchestrator/errors": "workspace:*",
+    "@smithers-orchestrator/graph": "workspace:*",
+    "@smithers-orchestrator/observability": "workspace:*",
+    "@smithers-orchestrator/scheduler": "workspace:*",
     "effect": "^3.21.0",
     "zod": "^4.3.6"
   },

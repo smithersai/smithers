@@ -1,1 +1,1 @@
-export type { OutputSnapshot } from "@smithers/driver/OutputSnapshot";
+export type { OutputSnapshot } from "@smithers-orchestrator/driver/OutputSnapshot";

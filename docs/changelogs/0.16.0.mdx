@@ -38,11 +38,11 @@ lands alongside a derived `RunState` model for richer run observability.
   still exists for integrations that execute Smithers tool helpers manually.
 
 - **`observability` moved to `apps/observability`.** It remains the
-  `@smithers/observability` workspace package, but its source now lives under
+  `@smithers-orchestrator/observability` workspace package, but its source now lives under
   `apps/` with the CLI and other app-owned surfaces.
 
-- **`runtime` package renamed to `driver`.** Imports from `@smithers/runtime`
-  should move to `@smithers/driver`. Runtime-adjacent helpers have been
+- **`runtime` package renamed to `driver`.** Imports from `@smithers-orchestrator/runtime`
+  should move to `@smithers-orchestrator/driver`. Runtime-adjacent helpers have been
   consolidated into the driver package.
 
 - **Engine control APIs return `Effect`.** `engine.start`, `engine.stop`,

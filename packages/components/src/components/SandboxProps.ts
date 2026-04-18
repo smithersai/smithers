@@ -1,6 +1,6 @@
 import type React from "react";
-import type { CachePolicy } from "@smithers/scheduler/CachePolicy";
-import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
+import type { CachePolicy } from "@smithers-orchestrator/scheduler/CachePolicy";
+import type { RetryPolicy } from "@smithers-orchestrator/scheduler/RetryPolicy";
 import type { SmithersWorkflow } from "../SmithersWorkflow.ts";
 import type { OutputTarget } from "./OutputTarget.ts";
 import type { SandboxRuntime } from "./SandboxRuntime.ts";

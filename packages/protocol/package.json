@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/protocol",
+  "name": "@smithers-orchestrator/protocol",
   "version": "0.16.0",
   "description": "Shared Smithers contracts, errors, and small value types",
   "type": "module",

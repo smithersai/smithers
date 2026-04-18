@@ -1,6 +1,6 @@
 import type React from "react";
 import type { z } from "zod";
-import type { SmithersCtx } from "@smithers/driver";
+import type { SmithersCtx } from "@smithers-orchestrator/driver";
 
 export type SignalProps<Schema extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>> = {
 	id: string;

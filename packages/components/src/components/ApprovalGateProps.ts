@@ -1,5 +1,5 @@
 import type { ApprovalRequest } from "./ApprovalRequest.ts";
-import type { RetryPolicy } from "@smithers/scheduler/RetryPolicy";
+import type { RetryPolicy } from "@smithers-orchestrator/scheduler/RetryPolicy";
 import type { OutputTarget } from "./OutputTarget.ts";
 
 export type ApprovalGateProps = {

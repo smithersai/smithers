@@ -1,4 +1,4 @@
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 /**
  * @param {string} field
  * @param {unknown} value

@@ -1,5 +1,5 @@
 import React from "react";
-import { SmithersContext } from "@smithers/react-reconciler/context";
+import { SmithersContext } from "@smithers-orchestrator/react-reconciler/context";
 import { Task } from "./Task.js";
 import { Loop } from "./Ralph.js";
 /** @typedef {import("./PollerProps.ts").PollerProps} PollerProps */

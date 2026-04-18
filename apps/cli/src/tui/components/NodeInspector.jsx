@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useKeyboard } from "@opentui/react";
 import { ChatPane } from "./ChatPane.jsx";
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 
 /**
  * @param {{ adapter: SmithersDb; runId: string; node: any; onClose: () => void; }} value

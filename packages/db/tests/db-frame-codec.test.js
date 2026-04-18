@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { applyFrameDelta, encodeFrameDelta, parseFrameDelta, serializeFrameDelta, } from "../src/frame-codec.js";
-import { canonicalizeXml } from "@smithers/graph/utils/xml";
+import { canonicalizeXml } from "@smithers-orchestrator/graph/utils/xml";
 /**
  * @param {XmlNode[]} children
  * @returns {XmlNode}

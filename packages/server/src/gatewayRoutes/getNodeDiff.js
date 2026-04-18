@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
 import { Effect, Metric } from "effect";
-import { NodeDiffCache, NodeDiffTooLargeError } from "@smithers/db/cache/nodeDiffCache";
-import { computeDiffBundleBetweenRefs } from "@smithers/engine/effect/diff-bundle";
+import { NodeDiffCache, NodeDiffTooLargeError } from "@smithers-orchestrator/db/cache/nodeDiffCache";
+import { computeDiffBundleBetweenRefs } from "@smithers-orchestrator/engine/effect/diff-bundle";
 import { runPromise } from "../smithersRuntime.js";
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("@smithers/db/adapter").AttemptRow} AttemptRow */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").AttemptRow} AttemptRow */
 /** @typedef {import("./GetNodeDiffRouteResult.js").GetNodeDiffRouteResult} GetNodeDiffRouteResult */
 /** @typedef {import("./DiffSummary.js").DiffSummary} DiffSummary */
 const RUN_ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
@@ -255,8 +255,8 @@ function scheduleCacheRowGauge(cache, emitEffect, nowMs) {
  *   iteration: unknown;
  *   resolveRun: (runId: string) => Promise<{ adapter: SmithersDb } | null>;
  *   emitEffect?: (effect: Effect.Effect<void>) => Promise<unknown>;
- *   computeDiffBundleImpl?: (baseRef: string, cwd: string, seq?: number) => Promise<import("@smithers/engine/effect/DiffBundle").DiffBundle>;
- *   computeDiffBundleBetweenRefsImpl?: (baseRef: string, targetRef: string, cwd: string, seq?: number) => Promise<import("@smithers/engine/effect/DiffBundle").DiffBundle>;
+ *   computeDiffBundleImpl?: (baseRef: string, cwd: string, seq?: number) => Promise<import("@smithers-orchestrator/engine/effect/DiffBundle").DiffBundle>;
+ *   computeDiffBundleBetweenRefsImpl?: (baseRef: string, targetRef: string, cwd: string, seq?: number) => Promise<import("@smithers-orchestrator/engine/effect/DiffBundle").DiffBundle>;
  *   getCurrentPointerImpl?: (cwd: string) => Promise<string | null>;
  *   resolveCommitPointerImpl?: (pointer: string, cwd: string) => Promise<string | null>;
  *   restorePointerImpl?: (pointer: string, cwd: string) => Promise<{ success: boolean; error?: string }>;

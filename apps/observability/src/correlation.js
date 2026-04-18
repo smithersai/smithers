@@ -12,7 +12,7 @@ export function updateCurrentCorrelationContext(patch) {
     if (!current)
         return;
     // TODO: replace this compatibility shim once legacy callers adopt the
-    // Effect-returning updateCurrentCorrelationContext from @smithers/observability.
+    // Effect-returning updateCurrentCorrelationContext from @smithers-orchestrator/observability.
     const next = mergeCoreCorrelationContext(current, patch);
     if (!next)
         return;

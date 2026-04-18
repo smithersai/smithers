@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 import { tool, zodSchema } from "ai";
 import { Effect, Metric } from "effect";
-import { nowMs } from "@smithers/scheduler/nowMs";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
 import { openApiToolCallsTotal, openApiToolCallErrorsTotal, openApiToolDuration, } from "../metrics.js";
 import { buildOperationSchema } from "../schema-converter.js";
 import { extractOperations } from "../spec-parser.js";

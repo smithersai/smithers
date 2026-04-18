@@ -2,8 +2,8 @@ import { watch } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { resolve, relative } from "node:path";
 import { Effect } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
-import { logDebug, logInfo } from "@smithers/observability/logging";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
+import { logDebug, logInfo } from "@smithers-orchestrator/observability/logging";
 /** @typedef {import("./WatchTreeOptions.ts").WatchTreeOptions} WatchTreeOptions */
 
 const DEFAULT_IGNORE = [

@@ -1,7 +1,7 @@
 // @smithers-type-exports-begin
 /** @typedef {import("./AggregateOptions.js").AggregateOptions} AggregateOptions */
 /** @typedef {import("./types.js").AggregateScore} AggregateScore */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 // @smithers-type-exports-end
 
 /**

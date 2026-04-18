@@ -1,5 +1,5 @@
 {
-  "name": "@smithers/sandbox",
+  "name": "@smithers-orchestrator/sandbox",
   "version": "0.16.0",
   "description": "Sandbox bundle, execution, and transport integration for Smithers",
   "type": "module",
@@ -25,13 +25,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@smithers/components": "workspace:*",
-    "@smithers/db": "workspace:*",
-    "@smithers/driver": "workspace:*",
-    "@smithers/errors": "workspace:*",
-    "@smithers/graph": "workspace:*",
-    "@smithers/observability": "workspace:*",
-    "@smithers/scheduler": "workspace:*"
+    "@smithers-orchestrator/components": "workspace:*",
+    "@smithers-orchestrator/db": "workspace:*",
+    "@smithers-orchestrator/driver": "workspace:*",
+    "@smithers-orchestrator/errors": "workspace:*",
+    "@smithers-orchestrator/graph": "workspace:*",
+    "@smithers-orchestrator/observability": "workspace:*",
+    "@smithers-orchestrator/scheduler": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

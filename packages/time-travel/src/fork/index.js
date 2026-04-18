@@ -4,7 +4,7 @@ import { getBranchInfo as getBranchInfoEffect } from "./getBranchInfoEffect.js";
 import { listBranches as listBranchesEffect } from "./listBranchesEffect.js";
 export { forkRunEffect, getBranchInfoEffect, listBranchesEffect, };
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("../BranchInfo.ts").BranchInfo} BranchInfo */
 /** @typedef {import("../ForkParams.ts").ForkParams} ForkParams */
 /** @typedef {import("../snapshot/Snapshot.ts").Snapshot} Snapshot */

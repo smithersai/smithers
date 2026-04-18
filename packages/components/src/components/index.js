@@ -56,7 +56,7 @@
 /** @typedef {import("./SandboxVolumeMount.ts").SandboxVolumeMount} SandboxVolumeMount */
 /** @typedef {import("./SandboxWorkspaceSpec.ts").SandboxWorkspaceSpec} SandboxWorkspaceSpec */
 /** @typedef {import("./ScanFixVerifyProps.ts").ScanFixVerifyProps} ScanFixVerifyProps */
-/** @typedef {import("@smithers/scorers/types").ScorersMap} ScorersMap */
+/** @typedef {import("@smithers-orchestrator/scorers/types").ScorersMap} ScorersMap */
 /** @typedef {import("./SequenceProps.ts").SequenceProps} SequenceProps */
 /**
  * @template Schema

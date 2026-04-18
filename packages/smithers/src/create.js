@@ -9,29 +9,29 @@ import { Database } from "bun:sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import React from "react";
-import { createSmithersContext, SmithersContext as GlobalSmithersContext } from "@smithers/react-reconciler/context";
-import { Approval as BaseApproval, Workflow as BaseWorkflow, Task as BaseTask, Sequence as BaseSequence, Parallel as BaseParallel, MergeQueue as BaseMergeQueue, Branch as BaseBranch, Loop as BaseLoop, Ralph as BaseRalph, ContinueAsNew as BaseContinueAsNew, continueAsNew as baseContinueAsNew, Worktree as BaseWorktree, Sandbox as BaseSandbox, Signal as BaseSignal, Timer as BaseTimer, } from "@smithers/components";
-import { zodToTable } from "@smithers/db/zodToTable";
-import { zodToCreateTableSQL } from "@smithers/db/zodToCreateTableSQL";
-import { camelToSnake } from "@smithers/db/utils/camelToSnake";
+import { createSmithersContext, SmithersContext as GlobalSmithersContext } from "@smithers-orchestrator/react-reconciler/context";
+import { Approval as BaseApproval, Workflow as BaseWorkflow, Task as BaseTask, Sequence as BaseSequence, Parallel as BaseParallel, MergeQueue as BaseMergeQueue, Branch as BaseBranch, Loop as BaseLoop, Ralph as BaseRalph, ContinueAsNew as BaseContinueAsNew, continueAsNew as baseContinueAsNew, Worktree as BaseWorktree, Sandbox as BaseSandbox, Signal as BaseSignal, Timer as BaseTimer, } from "@smithers-orchestrator/components";
+import { zodToTable } from "@smithers-orchestrator/db/zodToTable";
+import { zodToCreateTableSQL } from "@smithers-orchestrator/db/zodToCreateTableSQL";
+import { camelToSnake } from "@smithers-orchestrator/db/utils/camelToSnake";
 import { resolve } from "node:path";
-import { SmithersError } from "@smithers/errors/SmithersError";
-/** @typedef {import("@smithers/components").ApprovalProps<any, any>} ApprovalProps */
-/** @typedef {import("@smithers/components").SandboxProps} SandboxProps */
-/** @typedef {import("@smithers/components").SignalProps<any>} SignalProps */
-/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicy} SmithersAlertPolicy */
-/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyDefaults} SmithersAlertPolicyDefaults */
-/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyRule} SmithersAlertPolicyRule */
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+/** @typedef {import("@smithers-orchestrator/components").ApprovalProps<any, any>} ApprovalProps */
+/** @typedef {import("@smithers-orchestrator/components").SandboxProps} SandboxProps */
+/** @typedef {import("@smithers-orchestrator/components").SignalProps<any>} SignalProps */
+/** @typedef {import("@smithers-orchestrator/scheduler/SmithersWorkflowOptions").SmithersAlertPolicy} SmithersAlertPolicy */
+/** @typedef {import("@smithers-orchestrator/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyDefaults} SmithersAlertPolicyDefaults */
+/** @typedef {import("@smithers-orchestrator/scheduler/SmithersWorkflowOptions").SmithersAlertPolicyRule} SmithersAlertPolicyRule */
 /**
  * @template Schema
- * @typedef {import("@smithers/driver/SmithersCtx").SmithersCtx<Schema>} SmithersCtx
+ * @typedef {import("@smithers-orchestrator/driver/SmithersCtx").SmithersCtx<Schema>} SmithersCtx
  */
 /**
  * @template Schema
- * @typedef {import("@smithers/components/SmithersWorkflow").SmithersWorkflow<Schema>} SmithersWorkflow
+ * @typedef {import("@smithers-orchestrator/components/SmithersWorkflow").SmithersWorkflow<Schema>} SmithersWorkflow
  */
-/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersWorkflowOptions} SmithersWorkflowOptions */
-/** @typedef {import("@smithers/components").WorkflowProps} WorkflowProps */
+/** @typedef {import("@smithers-orchestrator/scheduler/SmithersWorkflowOptions").SmithersWorkflowOptions} SmithersWorkflowOptions */
+/** @typedef {import("@smithers-orchestrator/components").WorkflowProps} WorkflowProps */
 /** @typedef {import("./CreateSmithersOptions.ts").CreateSmithersOptions} CreateSmithersOptions */
 
 const hotCache = new Map();

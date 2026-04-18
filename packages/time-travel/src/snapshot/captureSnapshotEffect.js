@@ -1,12 +1,12 @@
 import { Effect, Metric } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { createHash } from "node:crypto";
-import { nowMs } from "@smithers/scheduler/nowMs";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
 import { smithersSnapshots } from "../schema.js";
 import { snapshotsCaptured } from "../snapshotsCaptured.js";
 import { snapshotDuration } from "../snapshotDuration.js";
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 /** @typedef {import("./Snapshot.ts").Snapshot} Snapshot */
 /** @typedef {import("./SnapshotData.ts").SnapshotData} SnapshotData */
 

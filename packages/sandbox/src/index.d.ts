@@ -1,8 +1,8 @@
-import * as _smithers_observability_SmithersEvent from '@smithers/observability/SmithersEvent';
-import { SmithersWorkflow } from '@smithers/components/SmithersWorkflow';
-import { ChildWorkflowDefinition } from '@smithers/engine/child-workflow';
+import * as _smithers_observability_SmithersEvent from '@smithers-orchestrator/observability/SmithersEvent';
+import { SmithersWorkflow } from '@smithers-orchestrator/components/SmithersWorkflow';
+import { ChildWorkflowDefinition } from '@smithers-orchestrator/engine/child-workflow';
 import { Context, Effect, Layer } from 'effect';
-import { SmithersError } from '@smithers/errors/SmithersError';
+import { SmithersError } from '@smithers-orchestrator/errors/SmithersError';
 
 type SandboxBundleManifest$1 = {
     outputs: unknown;

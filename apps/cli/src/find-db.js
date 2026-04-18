@@ -1,8 +1,8 @@
 import { resolve, dirname } from "node:path";
 import { existsSync } from "node:fs";
-import { SmithersDb } from "@smithers/db/adapter";
-import { ensureSmithersTables } from "@smithers/db/ensure";
-import { SmithersError } from "@smithers/errors";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
+import { SmithersError } from "@smithers-orchestrator/errors";
 /** @typedef {import("./FindDbWaitOptions.ts").FindDbWaitOptions} FindDbWaitOptions */
 
 /**

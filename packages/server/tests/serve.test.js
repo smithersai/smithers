@@ -5,11 +5,11 @@ import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { sleep } from "../../smithers/tests/helpers.js";
 import { createServeApp } from "../src/serve.js";
-import { SmithersDb } from "@smithers/db/adapter";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { Effect } from "effect";
-import { runWorkflow } from "@smithers/engine";
-import { renderPrometheusMetrics } from "@smithers/observability";
+import { runWorkflow } from "@smithers-orchestrator/engine";
+import { renderPrometheusMetrics } from "@smithers-orchestrator/observability";
 // ---------------------------------------------------------------------------
 // Prometheus helpers
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
-import type { SmithersWorkflow } from "@smithers/components/SmithersWorkflow";
-import type { ChildWorkflowDefinition } from "@smithers/engine/child-workflow";
+import type { SmithersWorkflow } from "@smithers-orchestrator/components/SmithersWorkflow";
+import type { ChildWorkflowDefinition } from "@smithers-orchestrator/engine/child-workflow";
 import type { SandboxRuntime } from "./SandboxRuntime.ts";
 
 export type ExecuteSandboxOptions = {

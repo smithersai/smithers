@@ -3,8 +3,8 @@
 /** @typedef {import("./RunOutputCommandResult.ts").RunOutputCommandResult} RunOutputCommandResult */
 // @smithers-type-exports-end
 
-import { getNodeOutputRoute } from "@smithers/server/gatewayRoutes/getNodeOutput";
-import { NodeOutputRouteError } from "@smithers/server/gatewayRoutes/NodeOutputRouteError";
+import { getNodeOutputRoute } from "@smithers-orchestrator/server/gatewayRoutes/getNodeOutput";
+import { NodeOutputRouteError } from "@smithers-orchestrator/server/gatewayRoutes/NodeOutputRouteError";
 import { EXIT_OK } from "./util/exitCodes.js";
 import { formatCliErrorForStderr, getCliErrorMapping } from "./util/errorMessage.js";
 
@@ -51,7 +51,7 @@ function formatValue(value) {
 }
 
 /**
- * @param {import("@smithers/db/adapter").SmithersDb} adapter
+ * @param {import("@smithers-orchestrator/db/adapter").SmithersDb} adapter
  * @param {string} runId
  * @param {string} nodeId
  * @returns {Promise<number | null>}

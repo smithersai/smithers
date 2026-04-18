@@ -5,7 +5,7 @@ export { formatTimelineForTui } from "./formatTimelineForTui.js";
 export { formatTimelineAsJson } from "./formatTimelineAsJson.js";
 export { buildTimelineEffect, buildTimelineTreeEffect, };
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /** @typedef {import("../RunTimeline.ts").RunTimeline} RunTimeline */
 /** @typedef {import("../TimelineTree.ts").TimelineTree} TimelineTree */
 

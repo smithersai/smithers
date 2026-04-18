@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React, { useEffect, useState } from "react";
 import { formatEventLine } from "../../format.js";
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 
 /**
  * @param {{ adapter: SmithersDb; runId: string; focused: boolean; }} value

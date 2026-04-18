@@ -1,4 +1,4 @@
-import type { SmithersDb } from "@smithers/db/adapter";
+import type { SmithersDb } from "@smithers-orchestrator/db/adapter";
 export declare function RunsList({ adapter, focused, onChange, onSubmit, }: {
     adapter: SmithersDb;
     focused: boolean;

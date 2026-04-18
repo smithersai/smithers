@@ -7,11 +7,11 @@ import * as DurableDeferred from "@effect/workflow/DurableDeferred";
 import * as Workflow from "@effect/workflow/Workflow";
 import { resolve as resolvePath } from "node:path";
 import { Effect, Exit, Schema } from "effect";
-import { updateAsyncExternalWaitPending } from "@smithers/observability/metrics";
+import { updateAsyncExternalWaitPending } from "@smithers-orchestrator/observability/metrics";
 /**
  * @typedef {{ _tag: "Complete"; exit: Exit.Exit<any, any>; } | { _tag: "Pending"; }} BridgeDeferredResult
  */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} _SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} _SmithersDb */
 /**
  * @typedef {{ signalName: string; correlationId: string | null; payloadJson: string; seq: number; receivedAtMs: number; }} WaitForEventSignalInput
  */

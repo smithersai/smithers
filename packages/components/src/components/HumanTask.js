@@ -1,9 +1,9 @@
 import React from "react";
 import { renderPromptToText } from "./Task.js";
-import { getTaskRuntime } from "@smithers/driver/task-runtime";
-import { SmithersDb } from "@smithers/db/adapter";
-import { buildHumanRequestId } from "@smithers/db/buildHumanRequestId";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { getTaskRuntime } from "@smithers-orchestrator/driver/task-runtime";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { buildHumanRequestId } from "@smithers-orchestrator/db/buildHumanRequestId";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 /** @typedef {import("./HumanTaskProps.ts").HumanTaskProps} HumanTaskProps */
 
 /**

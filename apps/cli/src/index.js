@@ -5,26 +5,26 @@ import { readFileSync, existsSync, openSync } from "node:fs";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Effect, Fiber } from "effect";
 import { Cli, Mcp as IncurMcp, z } from "incur";
-import { isRunHeartbeatFresh, runWorkflow, renderFrame, resolveSchema } from "@smithers/engine";
+import { isRunHeartbeatFresh, runWorkflow, renderFrame, resolveSchema } from "@smithers-orchestrator/engine";
 import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
-import { approveNode, denyNode } from "@smithers/engine/approvals";
-import { signalRun } from "@smithers/engine/signals";
-import { loadInput, loadOutputs } from "@smithers/db/snapshot";
-import { ensureSmithersTables } from "@smithers/db/ensure";
-import { SmithersDb } from "@smithers/db/adapter";
-import { computeRunStateFromRow } from "@smithers/db/runState";
-import { SmithersCtx } from "@smithers/driver";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { approveNode, denyNode } from "@smithers-orchestrator/engine/approvals";
+import { signalRun } from "@smithers-orchestrator/engine/signals";
+import { loadInput, loadOutputs } from "@smithers-orchestrator/db/snapshot";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { computeRunStateFromRow } from "@smithers-orchestrator/db/runState";
+import { SmithersCtx } from "@smithers-orchestrator/driver";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { runFork, runPromise } from "./smithersRuntime.js";
-import { trackEvent } from "@smithers/observability/metrics";
-import { revertToAttempt } from "@smithers/time-travel/revert";
-import { retryTask } from "@smithers/time-travel/retry-task";
-import { timeTravel } from "@smithers/time-travel/timetravel";
+import { trackEvent } from "@smithers-orchestrator/observability/metrics";
+import { revertToAttempt } from "@smithers-orchestrator/time-travel/revert";
+import { retryTask } from "@smithers-orchestrator/time-travel/retry-task";
+import { timeTravel } from "@smithers-orchestrator/time-travel/timetravel";
 import { runSync } from "./smithersRuntime.js";
 import { spawn } from "node:child_process";
-import { isHumanRequestPastTimeout, validateHumanRequestValue } from "@smithers/engine/human-requests";
-import { SmithersError } from "@smithers/errors";
-import { assertMaxBytes, assertMaxStringLength } from "@smithers/db/input-bounds";
+import { isHumanRequestPastTimeout, validateHumanRequestValue } from "@smithers-orchestrator/engine/human-requests";
+import { SmithersError } from "@smithers-orchestrator/errors";
+import { assertMaxBytes, assertMaxStringLength } from "@smithers-orchestrator/db/input-bounds";
 import { findAndOpenDb } from "./find-db.js";
 import { chatAttemptKey, formatChatAttemptHeader, formatChatBlock, parseAgentEvent, parseChatAttemptMeta, parseNodeOutputEvent, selectChatAttempts, } from "./chat.js";
 import { buildHijackLaunchSpec, isNativeHijackCandidate, launchHijackSession, resolveHijackCandidate, waitForHijackCandidate, } from "./hijack.js";
@@ -39,7 +39,7 @@ import { discoverWorkflows, resolveWorkflow, createWorkflowFile } from "./workfl
 import { ask } from "./ask.js";
 import { runScheduler } from "./scheduler.js";
 import { resumeRunDetached } from "./resume-detached.js";
-import { formatCliAgentCapabilityDoctorReport, getCliAgentCapabilityDoctorReport, getCliAgentCapabilityReport, } from "@smithers/agents/cli-capabilities";
+import { formatCliAgentCapabilityDoctorReport, getCliAgentCapabilityDoctorReport, getCliAgentCapabilityReport, } from "@smithers-orchestrator/agents/cli-capabilities";
 import { parseDurationMs, supervisorLoopEffect, } from "./supervisor.js";
 import { WATCH_MIN_INTERVAL_MS, runWatchLoop, watchIntervalSecondsToMs, } from "./watch.js";
 import { createSemanticMcpServer } from "./mcp/semantic-server.js";
@@ -976,7 +976,7 @@ async function buildPsRows(adapter, limit, status) {
  * Older consumers (and the dashboard CTA logic) still key off `status`, so a row
  * whose owner is dead must surface as something other than "running".
  *
- * @param {import("@smithers/db/runState").RunStateView["state"]} state
+ * @param {import("@smithers-orchestrator/db/runState").RunStateView["state"]} state
  * @returns {string}
  */
 function derivedStateToStatus(state) {
@@ -1561,7 +1561,7 @@ async function executeUpCommand(c, workflowPath, options, fail) {
                     });
                 }
             }
-            const { createServeApp } = await import("@smithers/server/serve");
+            const { createServeApp } = await import("@smithers-orchestrator/server/serve");
             const effectiveRunId = runId ?? `run-${Date.now()}`;
             const serveApp = createServeApp({
                 workflow: workflow,
@@ -1802,8 +1802,8 @@ const memoryCli = Cli.create({
     alias: { workflow: "w" },
     async run(c) {
         try {
-            const { createMemoryStore } = await import("@smithers/memory/store");
-            const { parseNamespace } = await import("@smithers/memory/types");
+            const { createMemoryStore } = await import("@smithers-orchestrator/memory/store");
+            const { parseNamespace } = await import("@smithers-orchestrator/memory/types");
             const workflow = await loadWorkflowAsync(c.options.workflow);
             ensureSmithersTables(workflow.db);
             setupSqliteCleanup(workflow);
@@ -1934,7 +1934,7 @@ const openapiCli = Cli.create({
     args: openapiListArgs,
     async run(c) {
         try {
-            const { listOperations } = await import("@smithers/openapi/tool-factory");
+            const { listOperations } = await import("@smithers-orchestrator/openapi/tool-factory");
             const ops = listOperations(c.args.specPath);
             if (ops.length === 0) {
                 console.log("  No operations found in spec.");
@@ -4210,7 +4210,7 @@ const cli = Cli.create({
             return c.error(opts);
         };
         try {
-            const { replayFromCheckpoint } = await import("@smithers/time-travel/replay");
+            const { replayFromCheckpoint } = await import("@smithers-orchestrator/time-travel/replay");
             const { adapter, cleanup } = await loadWorkflowDb(c.args.workflow);
             try {
                 const inputOverrides = parseJsonInput(c.options.input, "input", fail);
@@ -4232,7 +4232,7 @@ const cli = Cli.create({
                 const workflow = await loadWorkflow(c.args.workflow);
                 const onProgress = buildProgressReporter();
                 const abort = setupAbortSignal();
-                const engine = await import("@smithers/engine");
+                const engine = await import("@smithers-orchestrator/engine");
                 const runResult = await Effect.runPromise(engine.runWorkflow(workflow, {
                     input: {},
                     runId: result.runId,
@@ -4466,7 +4466,7 @@ const cli = Cli.create({
             return c.error(opts);
         };
         try {
-            const { forkRun } = await import("@smithers/time-travel/fork");
+            const { forkRun } = await import("@smithers-orchestrator/time-travel/fork");
             const { adapter, cleanup } = await loadWorkflowDb(c.args.workflow);
             try {
                 const inputOverrides = parseJsonInput(c.options.input, "input", fail);
@@ -4484,7 +4484,7 @@ const cli = Cli.create({
                     const workflow = await loadWorkflow(c.args.workflow);
                     const onProgress = buildProgressReporter();
                     const abort = setupAbortSignal();
-                    const engine = await import("@smithers/engine");
+                    const engine = await import("@smithers-orchestrator/engine");
                     const runResult = await Effect.runPromise(engine.runWorkflow(workflow, {
                         input: {},
                         runId: result.runId,
@@ -4535,7 +4535,7 @@ const cli = Cli.create({
             return c.error(opts);
         };
         try {
-            const { buildTimeline, buildTimelineTree, formatTimelineForTui, formatTimelineAsJson } = await import("@smithers/time-travel/timeline");
+            const { buildTimeline, buildTimelineTree, formatTimelineForTui, formatTimelineAsJson } = await import("@smithers-orchestrator/time-travel/timeline");
             const { adapter, cleanup } = await findAndOpenDb();
             try {
                 if (c.options.tree) {

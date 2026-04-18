@@ -1,4 +1,4 @@
-import type { SmithersDb } from "@smithers/db/adapter";
+import type { SmithersDb } from "@smithers-orchestrator/db/adapter";
 export declare function FramesPane({ adapter, runId, focused, filterNodeId, nodeAttempt, }: {
     adapter: SmithersDb;
     runId: string;

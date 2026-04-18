@@ -1,4 +1,4 @@
-import type { SmithersDb } from "@smithers/db/adapter";
+import type { SmithersDb } from "@smithers-orchestrator/db/adapter";
 export declare function CronList({ adapter, onBack, }: {
     adapter: SmithersDb;
     onBack: () => void;

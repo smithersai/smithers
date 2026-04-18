@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
 import { buildPlanTree } from "./buildPlanTree.js";
 import { buildStateKey } from "./buildStateKey.js";
 import { cloneTaskStateMap } from "./cloneTaskStateMap.js";

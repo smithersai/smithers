@@ -1,7 +1,7 @@
-import * as _smithers_agents_AgentLike from '@smithers/agents/AgentLike';
-import { AgentLike as AgentLike$3 } from '@smithers/agents/AgentLike';
+import * as _smithers_agents_AgentLike from '@smithers-orchestrator/agents/AgentLike';
+import { AgentLike as AgentLike$3 } from '@smithers-orchestrator/agents/AgentLike';
 import { ZodObject } from 'zod';
-import * as _smithers_db_adapter from '@smithers/db/adapter';
+import * as _smithers_db_adapter from '@smithers-orchestrator/db/adapter';
 import * as effect_MetricState from 'effect/MetricState';
 import * as effect_MetricKeyType from 'effect/MetricKeyType';
 import { Metric } from 'effect';
@@ -134,7 +134,7 @@ type AggregateOptions$2 = {
 
 /** @typedef {import("./AggregateOptions.js").AggregateOptions} AggregateOptions */
 /** @typedef {import("./types.js").AggregateScore} AggregateScore */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 /**
  * Computes aggregate statistics for scorer results.
  *
@@ -210,7 +210,7 @@ declare function llmJudge(config: LlmJudgeConfig$1): Scorer$6;
 type LlmJudgeConfig$1 = LlmJudgeConfig$2;
 type Scorer$6 = Scorer$8;
 
-/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("@smithers-orchestrator/agents/AgentLike").AgentLike} AgentLike */
 /** @typedef {import("./types.js").Scorer} Scorer */
 /**
  * Creates a relevancy scorer that uses an LLM judge to evaluate whether
@@ -223,7 +223,7 @@ declare function relevancyScorer(judge: AgentLike$2): Scorer$5;
 type AgentLike$2 = _smithers_agents_AgentLike.AgentLike;
 type Scorer$5 = Scorer$8;
 
-/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("@smithers-orchestrator/agents/AgentLike").AgentLike} AgentLike */
 /** @typedef {import("./types.js").Scorer} Scorer */
 /**
  * Creates a toxicity scorer that uses an LLM judge to detect toxic,
@@ -236,7 +236,7 @@ declare function toxicityScorer(judge: AgentLike$1): Scorer$4;
 type AgentLike$1 = _smithers_agents_AgentLike.AgentLike;
 type Scorer$4 = Scorer$8;
 
-/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+/** @typedef {import("@smithers-orchestrator/agents/AgentLike").AgentLike} AgentLike */
 /** @typedef {import("./types.js").Scorer} Scorer */
 /**
  * Creates a faithfulness scorer that uses an LLM judge to check whether

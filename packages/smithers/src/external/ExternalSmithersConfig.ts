@@ -1,4 +1,4 @@
-import type { AgentLike } from "@smithers/agents/AgentLike";
+import type { AgentLike } from "@smithers-orchestrator/agents/AgentLike";
 import type { z } from "zod";
 import type { SerializedCtx } from "./SerializedCtx.ts";
 import type { HostNodeJson } from "./HostNodeJson.ts";

@@ -12,8 +12,8 @@
 import { accessSync, constants } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import { Context, Effect, Layer } from "effect";
-import { spawnCaptureEffect } from "@smithers/driver/child-process";
-import { SmithersError } from "@smithers/errors/SmithersError";
+import { spawnCaptureEffect } from "@smithers-orchestrator/driver/child-process";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
 /** @typedef {import("./SmithersIdeOverlayOptions.ts").SmithersIdeOverlayOptions} SmithersIdeOverlayOptions */
 /** @typedef {import("./SmithersIdeOverlayType.ts").SmithersIdeOverlayType} SmithersIdeOverlayType */
 /** @typedef {import("./SmithersIdeResolvedConfig.ts").SmithersIdeResolvedConfig} SmithersIdeResolvedConfig */

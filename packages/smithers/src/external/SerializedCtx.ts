@@ -1,4 +1,4 @@
-import type { OutputSnapshot } from "@smithers/driver/OutputSnapshot";
+import type { OutputSnapshot } from "@smithers-orchestrator/driver/OutputSnapshot";
 
 export type SerializedCtx = {
 	runId: string;

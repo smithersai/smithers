@@ -2,15 +2,15 @@ import { EventEmitter } from "node:events";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
-import { trackEvent } from "@smithers/observability/metrics";
-import { correlationContextToLogAnnotations, getCurrentCorrelationContext, mergeCorrelationContext, withCurrentCorrelationContext, } from "@smithers/observability/correlation";
-/** @typedef {import("@smithers/observability/correlation").CorrelationContext} CorrelationContext */
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
+import { trackEvent } from "@smithers-orchestrator/observability/metrics";
+import { correlationContextToLogAnnotations, getCurrentCorrelationContext, mergeCorrelationContext, withCurrentCorrelationContext, } from "@smithers-orchestrator/observability/correlation";
+/** @typedef {import("@smithers-orchestrator/observability/correlation").CorrelationContext} CorrelationContext */
 
 /**
  * @typedef {SmithersEvent & { correlation?: CorrelationContext; }} CorrelatedSmithersEvent
  */
-/** @typedef {import("@smithers/observability/SmithersEvent").SmithersEvent} SmithersEvent */
+/** @typedef {import("@smithers-orchestrator/observability/SmithersEvent").SmithersEvent} SmithersEvent */
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase<Record<string, unknown>>} _BunSQLiteDatabase */
 
 export class EventBus extends EventEmitter {

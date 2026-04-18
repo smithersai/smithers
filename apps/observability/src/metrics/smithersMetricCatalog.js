@@ -1,10 +1,10 @@
 import { toPrometheusMetricName } from "./toPrometheusMetricName.js";
 import { durationBuckets, fastBuckets, toolBuckets, tokenBuckets, contextWindowBuckets, sizeBuckets, carriedStateSizeBuckets, ancestryDepthBuckets, } from "./_buckets.js";
 // External package metrics
-import { memoryFactReads, memoryFactWrites, memoryRecallDuration, memoryRecallQueries, memoryMessageSaves, } from "@smithers/memory/metrics";
-import { openApiToolCallsTotal, openApiToolCallErrorsTotal, openApiToolDuration, } from "@smithers/openapi/metrics";
-import { scorerDuration, scorersFailed, scorersFinished, scorersStarted, } from "@smithers/scorers/metrics";
-import { replaysStarted, runForksCreated, snapshotDuration, snapshotsCaptured, } from "@smithers/time-travel/metrics";
+import { memoryFactReads, memoryFactWrites, memoryRecallDuration, memoryRecallQueries, memoryMessageSaves, } from "@smithers-orchestrator/memory/metrics";
+import { openApiToolCallsTotal, openApiToolCallErrorsTotal, openApiToolDuration, } from "@smithers-orchestrator/openapi/metrics";
+import { scorerDuration, scorersFailed, scorersFinished, scorersStarted, } from "@smithers-orchestrator/scorers/metrics";
+import { replaysStarted, runForksCreated, snapshotDuration, snapshotsCaptured, } from "@smithers-orchestrator/time-travel/metrics";
 // Local metric instances
 import { runsTotal } from "./runsTotal.js";
 import { nodesStarted } from "./nodesStarted.js";

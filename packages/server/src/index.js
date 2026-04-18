@@ -4,22 +4,22 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { resolve, dirname, sep, basename } from "node:path";
 import { Effect } from "effect";
-import { isRunHeartbeatFresh, runWorkflow } from "@smithers/engine";
-import { SmithersDb } from "@smithers/db/adapter";
-import { ensureSmithersTables } from "@smithers/db/ensure";
-import { computeRunStateFromRow } from "@smithers/db/runState";
+import { isRunHeartbeatFresh, runWorkflow } from "@smithers-orchestrator/engine";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
+import { computeRunStateFromRow } from "@smithers-orchestrator/db/runState";
 import { Metric } from "effect";
-import { toSmithersError } from "@smithers/errors/toSmithersError";
-import { logError, logInfo, logWarning } from "@smithers/observability/logging";
+import { toSmithersError } from "@smithers-orchestrator/errors/toSmithersError";
+import { logError, logInfo, logWarning } from "@smithers-orchestrator/observability/logging";
 import { runPromise, runSync } from "./smithersRuntime.js";
-import { httpRequests, httpRequestDuration, trackEvent } from "@smithers/observability/metrics";
-import { approveNode, denyNode } from "@smithers/engine/approvals";
-import { signalRun } from "@smithers/engine/signals";
-import { nowMs } from "@smithers/scheduler/nowMs";
-import { errorToJson } from "@smithers/errors/errorToJson";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { assertMaxBytes, assertMaxJsonDepth } from "@smithers/db/input-bounds";
-import { prometheusContentType, renderPrometheusMetrics, } from "@smithers/observability";
+import { httpRequests, httpRequestDuration, trackEvent } from "@smithers-orchestrator/observability/metrics";
+import { approveNode, denyNode } from "@smithers-orchestrator/engine/approvals";
+import { signalRun } from "@smithers-orchestrator/engine/signals";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
+import { errorToJson } from "@smithers-orchestrator/errors/errorToJson";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { assertMaxBytes, assertMaxJsonDepth } from "@smithers-orchestrator/db/input-bounds";
+import { prometheusContentType, renderPrometheusMetrics, } from "@smithers-orchestrator/observability";
 /** @typedef {import("./ServerOptions.js").ServerOptions} ServerOptions */
 
 // Re-export the full public surface so the tsup-bundled `src/index.d.ts`
@@ -229,12 +229,12 @@ function sendJson(res, status, payload) {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.end(JSON.stringify(payload));
 }
-/** @typedef {import("@smithers/db/adapter/RunRow").RunRow} RunRow */
+/** @typedef {import("@smithers-orchestrator/db/adapter/RunRow").RunRow} RunRow */
 
 /**
  * @param {SmithersDb} adapter
  * @param {RunRow} run
- * @returns {Promise<RunRow | (RunRow & { runState: import("@smithers/db/runState/RunStateView").RunStateView })>}
+ * @returns {Promise<RunRow | (RunRow & { runState: import("@smithers-orchestrator/db/runState/RunStateView").RunStateView })>}
  */
 async function withRunState(adapter, run) {
     const runState = await computeRunStateFromRow(adapter, run).catch(() => undefined);

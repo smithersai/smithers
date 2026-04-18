@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { SmithersDb } from "@smithers/db/adapter";
-import { ensureSmithersTables } from "@smithers/db/ensure";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { createTestDb } from "../../../packages/smithers/tests/helpers.js";
 import { ddl, schema } from "../../../packages/smithers/tests/schema.js";
 function buildDb() {

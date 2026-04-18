@@ -10,7 +10,7 @@ import { resolveWorkflowAtRevision as resolveWorkflowAtRevisionEffect } from "./
 import { tagSnapshotVcs as tagSnapshotVcsEffect } from "./tagSnapshotVcsEffect.js";
 export { loadVcsTagEffect, rerunAtRevisionEffect, resolveWorkflowAtRevisionEffect, tagSnapshotVcsEffect, };
 
-/** @typedef {import("@smithers/db/adapter").SmithersDb} SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} SmithersDb */
 
 /**
  * Record the current VCS revision for a run/frame pair.

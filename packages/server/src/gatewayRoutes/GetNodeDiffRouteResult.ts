@@ -1,4 +1,4 @@
-import type { DiffBundle } from "@smithers/engine/effect/DiffBundle";
+import type { DiffBundle } from "@smithers-orchestrator/engine/effect/DiffBundle";
 import type { DiffSummary } from "./DiffSummary";
 
 export type GetNodeDiffStatPayload = {

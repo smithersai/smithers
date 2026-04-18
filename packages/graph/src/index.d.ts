@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AgentCapabilityRegistry } from '@smithers/agents/capability-registry';
+import { AgentCapabilityRegistry } from '@smithers-orchestrator/agents/capability-registry';
 
 type XmlNode$1 = XmlElement$1 | XmlText$1;
 type XmlElement$1 = {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SmithersCtx } from "@smithers/react-reconciler/context";
+import { SmithersCtx } from "@smithers-orchestrator/react-reconciler/context";
 import { z } from "zod";
 describe("SmithersCtx", () => {
     test("output throws when row is missing", () => {

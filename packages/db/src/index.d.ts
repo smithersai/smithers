@@ -2,14 +2,14 @@ import * as zod from 'zod';
 import { z } from 'zod';
 import * as drizzle_orm from 'drizzle-orm';
 import { Table as Table$1, and } from 'drizzle-orm';
-import * as _smithers_errors_SmithersError from '@smithers/errors/SmithersError';
-import { SmithersError as SmithersError$2 } from '@smithers/errors/SmithersError';
+import * as _smithers_errors_SmithersError from '@smithers-orchestrator/errors/SmithersError';
+import { SmithersError as SmithersError$2 } from '@smithers-orchestrator/errors/SmithersError';
 import * as drizzle_orm_bun_sqlite from 'drizzle-orm/bun-sqlite';
 import { Database } from 'bun:sqlite';
 import * as SqlClient from '@effect/sql/SqlClient';
 import { SqlError } from '@effect/sql/SqlError';
 import * as drizzle_orm_sqlite_core from 'drizzle-orm/sqlite-core';
-import * as _smithers_driver_OutputSnapshot from '@smithers/driver/OutputSnapshot';
+import * as _smithers_driver_OutputSnapshot from '@smithers-orchestrator/driver/OutputSnapshot';
 
 type SchemaRegistryEntry$1 = {
     table: Table$1;
@@ -370,7 +370,7 @@ type SqliteParam = string | number | bigint | boolean | Uint8Array | null | unde
  * @typedef {Effect.Effect<A, E> & PromiseLike<A>} RunnableEffect
  */
 /** @typedef {import("./adapter/SignalQuery.ts").SignalQuery} SignalQuery */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} SmithersError */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} SmithersError */
 /**
  * @typedef {{ runId: string; frameNo: number; createdAtMs: number; xmlJson: string; xmlHash: string; encoding: string; mountedTaskIdsJson: string | null; taskIndexJson: string | null; note: string | null; }} FrameRow
  */
@@ -1264,7 +1264,7 @@ type CacheRowLike = {
 };
 
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} _BunSQLiteDatabase */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} _SmithersError */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} _SmithersError */
 /**
  * @param {_BunSQLiteDatabase<Record<string, unknown>>} db
  * @returns {Effect.Effect<void, _SmithersError>}
@@ -5106,7 +5106,7 @@ type NodeDiffCacheResult = {
     sizeBytes: number;
     cacheResult: "hit" | "miss";
 };
-/** @typedef {import("@smithers/db/adapter").SmithersDb} _SmithersDb */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} _SmithersDb */
 /** @typedef {import("../adapter/NodeDiffCacheRow.ts").NodeDiffCacheRow} _NodeDiffCacheRow */
 /** @typedef {{ bundle: unknown; sizeBytes: number; cacheResult: "hit" | "miss" }} NodeDiffCacheResult */
 declare const NODE_DIFF_MAX_BYTES: number;

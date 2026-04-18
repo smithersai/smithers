@@ -1,4 +1,4 @@
-import type { ExtractOptions, WorkflowGraph } from "@smithers/graph";
+import type { ExtractOptions, WorkflowGraph } from "@smithers-orchestrator/graph";
 import type { WorkflowElement } from "./WorkflowElement.ts";
 
 export type WorkflowGraphRenderer = {

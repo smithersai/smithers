@@ -1,4 +1,4 @@
-import type { AgentLike } from "@smithers/agents/AgentLike";
+import type { AgentLike } from "@smithers-orchestrator/agents/AgentLike";
 
 export type CheckConfig = {
 	id: string;

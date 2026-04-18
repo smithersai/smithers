@@ -12,7 +12,7 @@
 import * as Entity from "@effect/cluster/Entity";
 import * as Rpc from "@effect/rpc/Rpc";
 import { Schema } from "effect";
-/** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
 
 export const WorkerTaskKind = Schema.Literal("agent", "compute", "static");
 export const WorkerDispatchKind = Schema.Literal("compute", "static", "legacy");

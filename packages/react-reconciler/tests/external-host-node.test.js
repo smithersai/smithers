@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import React from "react";
-import { extractFromHost } from "@smithers/graph/dom/extract";
+import { extractFromHost } from "@smithers-orchestrator/graph/dom/extract";
 import { SmithersRenderer } from "../src/dom/renderer.js";
 import { Effect } from "effect";
-import { runWorkflow } from "@smithers/engine";
+import { runWorkflow } from "@smithers-orchestrator/engine";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";
 import { z } from "zod";
 const schemas = {

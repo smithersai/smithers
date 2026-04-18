@@ -10,13 +10,13 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { markdownComponents } from "../markdownComponents.js";
 import { zodSchemaToJsonExample } from "../zod-to-example.js";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { SmithersContext } from "@smithers/react-reconciler/context";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { SmithersContext } from "@smithers-orchestrator/react-reconciler/context";
 import { AspectContext } from "../aspects/AspectContext.js";
-import { ClaudeCodeAgent } from "@smithers/agents/ClaudeCodeAgent";
-import { GeminiAgent } from "@smithers/agents/GeminiAgent";
-import { PiAgent } from "@smithers/agents/PiAgent";
-/** @typedef {import("@smithers/agents/AgentLike").AgentLike} AgentLike */
+import { ClaudeCodeAgent } from "@smithers-orchestrator/agents/ClaudeCodeAgent";
+import { GeminiAgent } from "@smithers-orchestrator/agents/GeminiAgent";
+import { PiAgent } from "@smithers-orchestrator/agents/PiAgent";
+/** @typedef {import("@smithers-orchestrator/agents/AgentLike").AgentLike} AgentLike */
 /** @typedef {import("./DepsSpec.ts").DepsSpec} DepsSpec */
 /**
  * @template Row, Output, D

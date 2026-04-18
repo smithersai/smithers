@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import { EventBus } from "../src/events.js";
-import { renderPrometheusMetrics } from "@smithers/observability";
+import { renderPrometheusMetrics } from "@smithers-orchestrator/observability";
 /**
  * @param {string} type
  * @param {any} [overrides]

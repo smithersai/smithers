@@ -1,10 +1,10 @@
 /** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { SmithersDb } from "@smithers/db/adapter";
+import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { Task, Workflow, runWorkflow } from "smithers-orchestrator";
-import { captureSnapshot, loadSnapshot, listSnapshots, parseSnapshot, } from "@smithers/time-travel/snapshot";
-import { replayFromCheckpoint } from "@smithers/time-travel/replay";
+import { captureSnapshot, loadSnapshot, listSnapshots, parseSnapshot, } from "@smithers-orchestrator/time-travel/snapshot";
+import { replayFromCheckpoint } from "@smithers-orchestrator/time-travel/replay";
 import { createTestSmithers } from "../../smithers/tests/helpers.js";
 import { outputSchemas } from "../../smithers/tests/schema.js";
 import { Effect } from "effect";

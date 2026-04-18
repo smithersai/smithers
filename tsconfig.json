@@ -41,161 +41,161 @@
       "smithers-orchestrator/scorers": [
         "./packages/scorers/src/index.js"
       ],
-      "@smithers/agents": [
+      "@smithers-orchestrator/agents": [
         "./packages/agents/src/index.js"
       ],
-      "@smithers/agents/*": [
+      "@smithers-orchestrator/agents/*": [
         "./packages/agents/src/*.js",
         "./packages/agents/src/*/index.js"
       ],
-      "@smithers/cli": [
+      "@smithers-orchestrator/cli": [
         "./apps/cli/src/index.js"
       ],
-      "@smithers/cli/*": [
+      "@smithers-orchestrator/cli/*": [
         "./apps/cli/src/*.js",
         "./apps/cli/src/*/index.js"
       ],
-      "@smithers/core-react": [
+      "@smithers-orchestrator/core-react": [
         "./packages/react/src/index.js"
       ],
-      "@smithers/core-react/*": [
+      "@smithers-orchestrator/core-react/*": [
         "./packages/react/src/*.js",
         "./packages/react/src/*/index.js"
       ],
-      "@smithers/db": [
+      "@smithers-orchestrator/db": [
         "./packages/db/src/index.ts",
         "./packages/db/src/index.js"
       ],
-      "@smithers/db/runState": [
+      "@smithers-orchestrator/db/runState": [
         "./packages/db/src/runState-types.ts",
         "./packages/db/src/runState.js"
       ],
-      "@smithers/db/*": [
+      "@smithers-orchestrator/db/*": [
         "./packages/db/src/*.ts",
         "./packages/db/src/*.js",
         "./packages/db/src/*/index.js"
       ],
-      "@smithers/devtools": [
+      "@smithers-orchestrator/devtools": [
         "./packages/devtools/src/index.js"
       ],
-      "@smithers/devtools/*": [
+      "@smithers-orchestrator/devtools/*": [
         "./packages/devtools/src/*.ts",
         "./packages/devtools/src/*.js",
         "./packages/devtools/src/*/index.js"
       ],
-      "@smithers/driver": [
+      "@smithers-orchestrator/driver": [
         "./packages/driver/src/index.js"
       ],
-      "@smithers/driver/*": [
+      "@smithers-orchestrator/driver/*": [
         "./packages/driver/src/*.ts",
         "./packages/driver/src/*.js",
         "./packages/driver/src/*/index.js"
       ],
-      "@smithers/engine": [
+      "@smithers-orchestrator/engine": [
         "./packages/engine/src/index.js"
       ],
-      "@smithers/engine/*": [
+      "@smithers-orchestrator/engine/*": [
         "./packages/engine/src/*.js",
         "./packages/engine/src/*/index.js"
       ],
-      "@smithers/errors": [
+      "@smithers-orchestrator/errors": [
         "./packages/errors/src/index.js"
       ],
-      "@smithers/errors/*": [
+      "@smithers-orchestrator/errors/*": [
         "./packages/errors/src/*.ts",
         "./packages/errors/src/*.js",
         "./packages/errors/src/*/index.js"
       ],
-      "@smithers/graph": [
+      "@smithers-orchestrator/graph": [
         "./packages/graph/src/index.js"
       ],
-      "@smithers/graph/*": [
+      "@smithers-orchestrator/graph/*": [
         "./packages/graph/src/*.js",
         "./packages/graph/src/*/index.js"
       ],
-      "@smithers/memory": [
+      "@smithers-orchestrator/memory": [
         "./packages/memory/src/index.js"
       ],
-      "@smithers/memory/*": [
+      "@smithers-orchestrator/memory/*": [
         "./packages/memory/src/*.js",
         "./packages/memory/src/*/index.js"
       ],
-      "@smithers/observability": [
+      "@smithers-orchestrator/observability": [
         "./apps/observability/src/index.js"
       ],
-      "@smithers/observability/*": [
+      "@smithers-orchestrator/observability/*": [
         "./apps/observability/src/*.js",
         "./apps/observability/src/*/index.js"
       ],
-      "@smithers/openapi": [
+      "@smithers-orchestrator/openapi": [
         "./packages/openapi/src/index.js"
       ],
-      "@smithers/openapi/*": [
+      "@smithers-orchestrator/openapi/*": [
         "./packages/openapi/src/*.js",
         "./packages/openapi/src/*/index.js"
       ],
-      "@smithers/protocol": [
+      "@smithers-orchestrator/protocol": [
         "./packages/protocol/src/index.js"
       ],
-      "@smithers/protocol/*": [
+      "@smithers-orchestrator/protocol/*": [
         "./packages/protocol/src/*.ts",
         "./packages/protocol/src/*.js",
         "./packages/protocol/src/*/index.js"
       ],
-      "@smithers/components": [
+      "@smithers-orchestrator/components": [
         "./packages/components/src/index.js"
       ],
-      "@smithers/components/*": [
+      "@smithers-orchestrator/components/*": [
         "./packages/components/src/*.js",
         "./packages/components/src/*/index.js"
       ],
-      "@smithers/react-reconciler": [
+      "@smithers-orchestrator/react-reconciler": [
         "./packages/react-reconciler/src/index.js"
       ],
-      "@smithers/react-reconciler/*": [
+      "@smithers-orchestrator/react-reconciler/*": [
         "./packages/react-reconciler/src/*.js",
         "./packages/react-reconciler/src/*/index.js"
       ],
-      "@smithers/sandbox": [
+      "@smithers-orchestrator/sandbox": [
         "./packages/sandbox/src/index.js"
       ],
-      "@smithers/sandbox/*": [
+      "@smithers-orchestrator/sandbox/*": [
         "./packages/sandbox/src/*.js",
         "./packages/sandbox/src/*/index.js"
       ],
-      "@smithers/scorers": [
+      "@smithers-orchestrator/scorers": [
         "./packages/scorers/src/index.js"
       ],
-      "@smithers/scorers/*": [
+      "@smithers-orchestrator/scorers/*": [
         "./packages/scorers/src/*.js",
         "./packages/scorers/src/*/index.js"
       ],
-      "@smithers/scheduler": [
+      "@smithers-orchestrator/scheduler": [
         "./packages/scheduler/src/index.js"
       ],
-      "@smithers/scheduler/*": [
+      "@smithers-orchestrator/scheduler/*": [
         "./packages/scheduler/src/*.ts",
         "./packages/scheduler/src/*.js",
         "./packages/scheduler/src/*/index.js"
       ],
-      "@smithers/server": [
+      "@smithers-orchestrator/server": [
         "./packages/server/src/index.js"
       ],
-      "@smithers/server/*": [
+      "@smithers-orchestrator/server/*": [
         "./packages/server/src/*.js",
         "./packages/server/src/*/index.js"
       ],
-      "@smithers/time-travel": [
+      "@smithers-orchestrator/time-travel": [
         "./packages/time-travel/src/index.js"
       ],
-      "@smithers/time-travel/*": [
+      "@smithers-orchestrator/time-travel/*": [
         "./packages/time-travel/src/*.js",
         "./packages/time-travel/src/*/index.js"
       ],
-      "@smithers/vcs": [
+      "@smithers-orchestrator/vcs": [
         "./packages/vcs/src/index.js"
       ],
-      "@smithers/vcs/*": [
+      "@smithers-orchestrator/vcs/*": [
         "./packages/vcs/src/*.js",
         "./packages/vcs/src/*/index.js"
       ]

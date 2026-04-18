@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { ensureSqlMessageStorageEffect } from "./sql-message-storage.js";
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase} _BunSQLiteDatabase */
-/** @typedef {import("@smithers/errors/SmithersError").SmithersError} _SmithersError */
+/** @typedef {import("@smithers-orchestrator/errors/SmithersError").SmithersError} _SmithersError */
 
 /**
  * @param {_BunSQLiteDatabase<Record<string, unknown>>} db

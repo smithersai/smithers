@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SmithersCtx } from "@smithers/react-reconciler/context";
+import { SmithersCtx } from "@smithers-orchestrator/react-reconciler/context";
 describe("context loop scoping", () => {
     test("resolves scoped nodeId via current loop iteration", () => {
         // Simulate a workflow with an outer loop at iteration 2.

@@ -1,5 +1,5 @@
-import type { SmithersDb } from "@smithers/db/adapter";
-import type { SmithersEvent } from "@smithers/observability/SmithersEvent";
+import type { SmithersDb } from "@smithers-orchestrator/db/adapter";
+import type { SmithersEvent } from "@smithers-orchestrator/observability/SmithersEvent";
 import type { JumpStepName } from "./JumpStepName";
 
 export type JumpToFrameInput = {

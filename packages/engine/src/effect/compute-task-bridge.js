@@ -1,24 +1,24 @@
 import { Cause, Duration, Effect, Either, Exit, Metric, Schedule } from "effect";
 import { z } from "zod";
-import { buildOutputRow, stripAutoColumns, validateOutput } from "@smithers/db/output";
-import { TaskHeartbeatTimeout } from "@smithers/errors/TaskHeartbeatTimeout";
-import { TaskTimeout } from "@smithers/errors/TaskTimeout";
+import { buildOutputRow, stripAutoColumns, validateOutput } from "@smithers-orchestrator/db/output";
+import { TaskHeartbeatTimeout } from "@smithers-orchestrator/errors/TaskHeartbeatTimeout";
+import { TaskTimeout } from "@smithers-orchestrator/errors/TaskTimeout";
 import { EventBus } from "../events.js";
 import { makeAbortError, wireAbortSignal } from "./bridge-utils.js";
-import { withTaskRuntime } from "@smithers/driver/task-runtime";
-import { logDebug, logError, logInfo, logWarning } from "@smithers/observability/logging";
-import { attemptDuration, nodeDuration } from "@smithers/observability/metrics";
-import { errorToJson } from "@smithers/errors/errorToJson";
-import { fromTaggedError } from "@smithers/errors/fromTaggedError";
-import { SmithersError } from "@smithers/errors/SmithersError";
-import { nowMs } from "@smithers/scheduler/nowMs";
-import { getJjPointer } from "@smithers/vcs/jj";
+import { withTaskRuntime } from "@smithers-orchestrator/driver/task-runtime";
+import { logDebug, logError, logInfo, logWarning } from "@smithers-orchestrator/observability/logging";
+import { attemptDuration, nodeDuration } from "@smithers-orchestrator/observability/metrics";
+import { errorToJson } from "@smithers-orchestrator/errors/errorToJson";
+import { fromTaggedError } from "@smithers-orchestrator/errors/fromTaggedError";
+import { SmithersError } from "@smithers-orchestrator/errors/SmithersError";
+import { nowMs } from "@smithers-orchestrator/scheduler/nowMs";
+import { getJjPointer } from "@smithers-orchestrator/vcs/jj";
 import * as BunContext from "@effect/platform-bun/BunContext";
 /**
  * @typedef {{ rootDir: string; }} ComputeTaskBridgeToolConfig
  */
-/** @typedef {import("@smithers/db/adapter").SmithersDb} _SmithersDb */
-/** @typedef {import("@smithers/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
+/** @typedef {import("@smithers-orchestrator/db/adapter").SmithersDb} _SmithersDb */
+/** @typedef {import("@smithers-orchestrator/graph/TaskDescriptor").TaskDescriptor} _TaskDescriptor */
 /** @typedef {import("drizzle-orm/bun-sqlite").BunSQLiteDatabase<Record<string, unknown>>} _BunSQLiteDatabase */
 
 const TASK_HEARTBEAT_THROTTLE_MS = 500;

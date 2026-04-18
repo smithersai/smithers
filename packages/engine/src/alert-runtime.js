@@ -3,7 +3,7 @@
 /** @typedef {import("./AlertRuntimeServices.ts").AlertRuntimeServices} AlertRuntimeServices */
 // @smithers-type-exports-end
 
-/** @typedef {import("@smithers/scheduler/SmithersWorkflowOptions").SmithersAlertPolicy} SmithersAlertPolicy */
+/** @typedef {import("@smithers-orchestrator/scheduler/SmithersWorkflowOptions").SmithersAlertPolicy} SmithersAlertPolicy */
 export class AlertRuntime {
     /** @type {SmithersAlertPolicy} */
     policy;
