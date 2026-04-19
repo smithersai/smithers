@@ -103,6 +103,7 @@ function renderPackageJson(versions) {
             "workflow:implement": "smithers workflow implement",
         },
         dependencies: {
+            skills: "github:mattpocock/skills",
             "smithers-orchestrator": "latest",
             zod: versions.zodVersion,
         },
