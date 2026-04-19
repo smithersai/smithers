@@ -1,0 +1,24 @@
+# 0.16.8
+
+Patch release: the bin delegation added in 0.16.7 now actually runs.
+
+---
+
+## Fixes
+
+- **`@smithers-orchestrator/cli` no longer declares a `smithers` bin**.
+  Previously both `smithers-orchestrator` and
+  `@smithers-orchestrator/cli` declared the same `smithers` binary, and
+  bun registered the CLI's (pointing straight at `src/index.js`) in
+  `node_modules/.bin/` — which meant the delegation wrapper in
+  `smithers-orchestrator/src/bin/smithers.js` from 0.16.7 never ran,
+  `bunx` tmp-dir and `.smithers/node_modules/` still materialized two
+  React singletons, and `bunx smithers-orchestrator@latest workflow
+  grill-me` on a fresh init kept crashing with `Invalid hook call`.
+  Dropping the bin from `@smithers-orchestrator/cli` makes
+  `node_modules/.bin/smithers` unambiguously resolve to
+  `smithers-orchestrator/src/bin/smithers.js`, the delegation fires,
+  and the local `.smithers/` install takes over for the actual
+  workflow run — one React, one reconciler, one hook dispatcher. The
+  CLI package is now a pure library; consumers who want the binary
+  install `smithers-orchestrator`.
