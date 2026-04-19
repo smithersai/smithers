@@ -1,0 +1,23 @@
+# 0.16.5
+
+Patch release: `smithers init` now writes the real pinned dependency
+versions into the generated `.smithers/package.json`, instead of
+falling through to minimum-version defaults on every fresh install.
+
+---
+
+## Fixes
+
+- **`.smithers/package.json` version resolution**. The workflow pack
+  scaffold in `@smithers-orchestrator/cli` built version strings by
+  walking a hardcoded `../../../node_modules/` path relative to
+  `workflow-pack.js`. Inside the monorepo that landed at the workspace
+  root; once installed from npm the CLI sits under
+  `node_modules/@smithers-orchestrator/cli/src/` and the walk resolved
+  to `node_modules/node_modules/`, so every lookup silently fell back
+  to the minimum defaults (`zod: 4.0.0`, `typescript: 5.0.0`,
+  `@types/react: 19.0.0`, etc.). The CLI now resolves each spec via
+  `import.meta.resolve("<name>/package.json")` and falls back to
+  release-time pins (`BUNDLED_VERSION_PINS`) only when the package
+  isn't present in the consumer's `node_modules` (typical for devDep-
+  only specs like `typescript` and `@types/*`).
