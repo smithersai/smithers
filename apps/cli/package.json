@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/cli",
-  "version": "0.16.5",
+  "version": "0.16.6",
   "description": "Smithers command-line interface, TUI, MCP server, and local workflow tools",
   "type": "module",
   "sideEffects": false,
