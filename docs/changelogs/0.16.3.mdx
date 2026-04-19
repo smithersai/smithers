@@ -1,0 +1,23 @@
+# 0.16.3
+
+Patch release: declare the missing `@mdx-js/esbuild` runtime dependency
+in `smithers-orchestrator` so a fresh `bunx smithers-orchestrator init`
+can actually start the CLI.
+
+---
+
+## Fixes
+
+- **`smithers-orchestrator` now declares `@mdx-js/esbuild`** as a direct
+  dependency. `src/mdx-plugin.js` imports `@mdx-js/esbuild` but the
+  package wasn't listed in `packages/smithers/package.json`, so a clean
+  `bunx smithers-orchestrator@latest init` produced an unresolvable
+  `Cannot find module '@mdx-js/esbuild'` as soon as the CLI loaded
+  (`@smithers-orchestrator/cli` re-exports `mdxPlugin` at startup).
+
+## Features
+
+- **`smithers gui [path]`** opens a directory as a workspace in the
+  Smithers GUI macOS app (via `open -b com.smithers.SmithersGUI`). A
+  bare `smithers .` or `smithers <dir>` is rewritten to `smithers gui
+  <dir>`, matching the `code .` convention from VS Code / Cursor.
