@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/openapi",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "description": "OpenAPI parsing and AI SDK tool generation for Smithers",
   "type": "module",
   "sideEffects": false,

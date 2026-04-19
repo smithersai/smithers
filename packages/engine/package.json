@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/engine",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "description": "Concrete Smithers workflow execution engine",
   "type": "module",
   "sideEffects": false,

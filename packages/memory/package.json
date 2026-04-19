@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/memory",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "description": "Persistent and semantic memory services for Smithers",
   "type": "module",
   "sideEffects": false,

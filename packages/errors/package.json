@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/errors",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "description": "Error types, tagged errors, and error utilities for Smithers",
   "type": "module",
   "sideEffects": false,

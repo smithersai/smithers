@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/server",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "description": "HTTP, WebSocket, gateway, cron, webhook, and metrics servers for Smithers",
   "type": "module",
   "sideEffects": false,

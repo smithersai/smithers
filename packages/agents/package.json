@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/agents",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "description": "AI SDK and CLI agent adapters for Smithers",
   "type": "module",
   "sideEffects": false,

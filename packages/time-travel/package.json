@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/time-travel",
-  "version": "0.16.3",
+  "version": "0.16.4",
   "description": "Smithers snapshots, diffs, forks, replay, timelines, and VCS-tagged run history",
   "type": "module",
   "sideEffects": false,
