@@ -24,9 +24,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsup --dts-only"
   },
-  "bin": {
-    "smithers": "./src/index.js"
-  },
   "dependencies": {
     "@effect/workflow": "^0.18.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
