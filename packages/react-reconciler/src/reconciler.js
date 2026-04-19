@@ -317,6 +317,56 @@ const hostConfig = {
         return currentUpdatePriority;
     },
     /**
+   * The remaining methods below are required by react-reconciler >=0.33's
+   * host config — the compiled reconciler reads each directly off `$$$config`
+   * with no defaults, so missing methods surface as `TypeError: X is not a
+   * function` the first time `render` triggers `startUpdateTimerByLane`
+   * (which is every commit). Headless host → event timing is "no event"
+   * (-1.1 sentinel), event type is null, no suspense, no scheduler telemetry.
+   * @returns {number}
+   */
+    resolveEventTimeStamp() {
+        return -1.1;
+    },
+    /**
+   * @returns {string | null}
+   */
+    resolveEventType() {
+        return null;
+    },
+    /**
+   * @returns {void}
+   */
+    trackSchedulerEvent() { },
+    /**
+   * @returns {boolean}
+   */
+    maySuspendCommitOnUpdate() {
+        return false;
+    },
+    /**
+   * @returns {boolean}
+   */
+    maySuspendCommitInSyncRender() {
+        return false;
+    },
+    /**
+   * @returns {null}
+   */
+    getSuspendedCommitReason() {
+        return null;
+    },
+    /**
+   * @returns {void}
+   */
+    requestPostPaintCallback() { },
+    /**
+   * @returns {boolean}
+   */
+    suspendOnActiveViewTransition() {
+        return false;
+    },
+    /**
    * @param {(...args: unknown[]) => void} fn
    * @param {number} [delay]
    * @returns {ReturnType<typeof setTimeout>}
