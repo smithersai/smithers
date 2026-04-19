@@ -45,10 +45,9 @@ function readPackageVersion(path, fallback) {
  * @returns {DependencyVersions}
  */
 function readDependencyVersions() {
-    const rootPackage = readJson(new URL("../../../package.json", import.meta.url).pathname);
     const nodeModulesRoot = new URL("../../../node_modules/", import.meta.url).pathname;
     return {
-        smithersVersion: String(rootPackage.version ?? "0.0.0"),
+        smithersVersion: readPackageVersion(new URL("../../../package.json", import.meta.url).pathname, "0.0.0"),
         zodVersion: readPackageVersion(resolve(nodeModulesRoot, "zod", "package.json"), "4.0.0"),
         typescriptVersion: readPackageVersion(resolve(nodeModulesRoot, "typescript", "package.json"), "5.0.0"),
         reactTypesVersion: readPackageVersion(resolve(nodeModulesRoot, "@types", "react", "package.json"), "19.0.0"),
