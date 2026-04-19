@@ -1,0 +1,19 @@
+# 0.16.4
+
+Patch release: fix `bunx smithers-orchestrator init` bailing immediately
+with `INIT_FAILED / ENOENT` on a clean install.
+
+---
+
+## Fixes
+
+- **`smithers init` no longer throws on a missing root `package.json`**.
+  `@smithers-orchestrator/cli`'s `readDependencyVersions()` read a root
+  `package.json` via `readJson("../../../package.json")`. Inside the
+  monorepo that's the workspace root; installed from npm it resolves to
+  `node_modules/package.json`, which doesn't exist, and the sync read
+  threw before any fallback could fire. Every fresh `bunx
+  smithers-orchestrator@latest init` bailed with `INIT_FAILED` / ENOENT.
+  The read now goes through the existing `readPackageVersion(path,
+  fallback)` helper, matching every other version lookup in the
+  function.
