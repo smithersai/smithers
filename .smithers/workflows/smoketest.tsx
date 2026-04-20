@@ -60,7 +60,7 @@ const { Workflow, Task, smithers } = createSmithers({
 
 export default smithers((ctx) => (
   <Workflow name="smoketest">
-    <Task id="smoketest" output={smoketestOutputSchema} agent={agents.smartTool}>
+    <Task id="smoketest" output={smoketestOutputSchema} agent={agents.cheapFast}>
       <SmoketestPrompt
         prompt={ctx.input.prompt}
         version={ctx.input.version}
