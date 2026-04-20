@@ -91,10 +91,29 @@ describe("describeSchemaShape", () => {
         const parsed = JSON.parse(description);
         expect(parsed).toBeDefined();
     });
-    test("describes Drizzle table via agent schema", () => {
-        const zodSchema = z.object({ summary: z.string() });
-        const { table } = createTableAndDb("test", zodSchema);
-        const description = describeSchemaShape(table);
-        expect(typeof description).toBe("string");
+  test("describes Drizzle table via agent schema", () => {
+    const zodSchema = z.object({ summary: z.string() });
+    const { table } = createTableAndDb("test", zodSchema);
+    const description = describeSchemaShape(table);
+    expect(typeof description).toBe("string");
+  });
+
+  test("describes arrays and booleans with concrete types", () => {
+    const schema = z.object({
+      summary: z.string(),
+      filesChanged: z.array(z.string()),
+      testsWritten: z.array(z.string()),
+      testRunOutput: z.string(),
+      allTestsPassing: z.boolean(),
     });
+
+    const description = describeSchemaShape(schema);
+    const parsed = JSON.parse(description);
+
+    expect(parsed.properties.filesChanged.type).toBe("array");
+    expect(parsed.properties.filesChanged.items.type).toBe("string");
+    expect(parsed.properties.testsWritten.type).toBe("array");
+    expect(parsed.properties.testsWritten.items.type).toBe("string");
+    expect(parsed.properties.allTestsPassing.type).toBe("boolean");
+  });
 });

@@ -211,6 +211,31 @@ function isZodSchema(val) {
  * @returns {string}
  */
 function describeZodType(schema) {
+    if (schema instanceof z.ZodOptional) {
+        return `${describeZodType(schema.unwrap())} (optional)`;
+    }
+    if (schema instanceof z.ZodNullable) {
+        return `${describeZodType(schema.unwrap())} | null`;
+    }
+    if (schema instanceof z.ZodDefault) {
+        return describeZodType(schema.removeDefault());
+    }
+    if (schema instanceof z.ZodString)
+        return "string";
+    if (schema instanceof z.ZodNumber)
+        return "number";
+    if (schema instanceof z.ZodBoolean)
+        return "boolean";
+    if (schema instanceof z.ZodArray)
+        return `${describeZodType(schema.element)}[]`;
+    if (schema instanceof z.ZodObject)
+        return "object";
+    if (schema instanceof z.ZodEnum)
+        return `enum(${schema.options.join(" | ")})`;
+    if (schema instanceof z.ZodLiteral)
+        return `literal(${JSON.stringify(schema.value)})`;
+    if (schema instanceof z.ZodUnion)
+        return schema.options.map((option) => describeZodType(option)).join(" | ");
     const internal = /** @type {{ _zod?: { def?: Record<string, unknown> } }} */ (/** @type {unknown} */ (schema));
     if (internal._zod?.def) {
         const def = internal._zod.def;
