@@ -91,7 +91,7 @@ async function loadWorkflowDb(workflowPath) {
  */
 function readPackageVersion() {
     try {
-        const pkgUrl = new URL("../../package.json", import.meta.url);
+        const pkgUrl = new URL("../package.json", import.meta.url);
         const raw = readFileSync(pkgUrl, "utf8");
         const parsed = JSON.parse(raw);
         return typeof parsed.version === "string" ? parsed.version : "unknown";
