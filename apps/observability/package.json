@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/observability",
-  "version": "0.16.8",
+  "version": "0.16.9",
   "description": "Concrete Smithers metrics, logging, tracing, and observability integrations",
   "type": "module",
   "sideEffects": false,

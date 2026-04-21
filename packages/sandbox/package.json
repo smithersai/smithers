@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/sandbox",
-  "version": "0.16.8",
+  "version": "0.16.9",
   "description": "Sandbox bundle, execution, and transport integration for Smithers",
   "type": "module",
   "sideEffects": false,

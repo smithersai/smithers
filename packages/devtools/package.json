@@ -1,6 +1,6 @@
 {
   "name": "@smithers-orchestrator/devtools",
-  "version": "0.16.8",
+  "version": "0.16.9",
   "description": "Devtools and debugging utilities for Smithers workflow inspection",
   "type": "module",
   "sideEffects": false,
