@@ -2766,13 +2766,15 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
                     effectiveAgent.model ??
                         effectiveAgent.modelId ??
                         null;
-                const currentAgentEngine = typeof effectiveAgent.cliEngine === "string"
+                const hijackCapableEngine = typeof effectiveAgent.cliEngine === "string"
                     ? effectiveAgent.cliEngine
                     : typeof effectiveAgent.hijackEngine === "string"
                         ? effectiveAgent.hijackEngine
-                        : (typeof effectiveAgent.constructor?.name === "string"
-                            ? effectiveAgent.constructor.name
-                            : null);
+                        : null;
+                const currentAgentEngine = hijackCapableEngine ??
+                    (typeof effectiveAgent.constructor?.name === "string"
+                        ? effectiveAgent.constructor.name
+                        : null);
                 attemptMeta.agentEngine = currentAgentEngine;
                 const heartbeatCheckpoint = previousHeartbeat &&
                     typeof previousHeartbeat === "object" &&
@@ -2792,8 +2794,8 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
                 const checkpointResumeMessages = heartbeatCheckpointUsable
                     ? asConversationMessages(heartbeatCheckpoint?.agentConversation)
                     : undefined;
-                const priorContinuation = currentAgentEngine
-                    ? findHijackContinuation(attempts, currentAgentEngine)
+                const priorContinuation = hijackCapableEngine
+                    ? findHijackContinuation(attempts, hijackCapableEngine)
                     : undefined;
                 const resumeSession = priorContinuation?.mode === "native-cli"
                     ? priorContinuation.resume
@@ -2803,6 +2805,37 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
                     : (cloneJsonValue(checkpointResumeMessages) ??
                         checkpointResumeMessages);
                 const guidedResumeMessages = appendToolResumeWarningMessage(resumeMessages, toolResumeWarningMessage);
+                if (desc.hijack) {
+                    if (!hijackCapableEngine) {
+                        attemptMeta.failureRetryable = false;
+                        throw new SmithersError("TASK_HIJACK_UNSUPPORTED", `Task ${desc.nodeId} sets hijack, but its agent is not hijack-capable. Hijack requires an agent with cliEngine or hijackEngine.`, {
+                            nodeId: desc.nodeId,
+                            agentId: attemptMeta.agentId ?? undefined,
+                        });
+                    }
+                    const shouldAutoHijack = desc.onHijackExit === "reopen" || !priorContinuation;
+                    if (shouldAutoHijack && !hijackState) {
+                        attemptMeta.failureRetryable = false;
+                        throw new SmithersError("TASK_HIJACK_UNSUPPORTED", `Task ${desc.nodeId} cannot auto-hijack in this execution mode.`, {
+                            nodeId: desc.nodeId,
+                            agentId: attemptMeta.agentId ?? undefined,
+                        });
+                    }
+                    if (shouldAutoHijack && !hijackState.request && !hijackState.completion) {
+                        const requestedAtMs = nowMs();
+                        hijackState.request = {
+                            requestedAtMs,
+                            target: hijackCapableEngine,
+                        };
+                        await Effect.runPromise(adapter.requestRunHijack(runId, requestedAtMs, hijackCapableEngine));
+                        await Effect.runPromise(eventBus.emitEventWithPersist({
+                            type: "RunHijackRequested",
+                            runId,
+                            target: hijackCapableEngine,
+                            timestampMs: requestedAtMs,
+                        }));
+                    }
+                }
                 if (resumeSession) {
                     attemptMeta.resumedFromSession = resumeSession;
                 }

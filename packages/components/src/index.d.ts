@@ -152,6 +152,10 @@ type TaskProps$2<Row, Output extends OutputTarget$1 = OutputTarget$1, D extends 
     scorers?: ScorersMap$1;
     /** Optional cross-run memory configuration. */
     memory?: TaskMemoryConfig;
+    /** Request an immediate hijack handoff as soon as the task starts running. */
+    hijack?: boolean;
+    /** What Smithers should do after a hijacked session exits. */
+    onHijackExit?: "complete" | "reopen";
     allowTools?: string[];
     label?: string;
     meta?: Record<string, unknown>;

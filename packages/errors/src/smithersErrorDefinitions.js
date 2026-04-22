@@ -48,6 +48,11 @@ export const smithersErrorDefinitions = {
         when: "A task compute callback exceeds its configured timeout.",
         details: "{ nodeId, attempt, timeoutMs }",
     },
+    TASK_HIJACK_UNSUPPORTED: {
+        category: "engine",
+        when: "A task requests auto-hijack but its agent cannot provide a resumable session or conversation.",
+        details: "{ nodeId, agentId? }",
+    },
     RUN_NOT_FOUND: {
         category: "engine",
         when: "A CLI or engine command references a run ID that does not exist in the database.",

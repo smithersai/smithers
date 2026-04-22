@@ -138,6 +138,8 @@ type TaskDescriptor$1 = {
     heartbeatTimeoutMs: number | null;
     continueOnFail: boolean;
     cachePolicy?: CachePolicy$1;
+    hijack?: boolean;
+    onHijackExit?: "complete" | "reopen";
     agent?: AgentLike$1 | AgentLike$1[];
     prompt?: string;
     staticPayload?: unknown;

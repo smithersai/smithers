@@ -155,6 +155,8 @@ export type TaskDescriptor = {
   heartbeatTimeoutMs: number | null;
   continueOnFail: boolean;
   cachePolicy?: CachePolicy;
+  hijack?: boolean;
+  onHijackExit?: "complete" | "reopen";
   agent?: AgentLike | AgentLike[];
   prompt?: string;
   staticPayload?: unknown;

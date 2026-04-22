@@ -761,6 +761,8 @@ export function extractFromHost(root, opts) {
                 heartbeatTimeoutMs,
                 continueOnFail,
                 cachePolicy,
+                hijack: Boolean(raw.hijack),
+                onHijackExit: raw.onHijackExit === "reopen" ? "reopen" : "complete",
                 agent,
                 prompt,
                 staticPayload,

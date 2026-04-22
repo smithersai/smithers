@@ -569,6 +569,8 @@ export function extractGraph(root, opts) {
                 cachePolicy: raw.cache && typeof raw.cache === "object"
                     ? raw.cache
                     : undefined,
+                hijack: Boolean(raw.hijack),
+                onHijackExit: raw.onHijackExit === "reopen" ? "reopen" : "complete",
                 agent: raw.agent,
                 prompt,
                 staticPayload: isAgent || isCompute
