@@ -46,7 +46,9 @@ function writeWorkflowPackTypecheckHarness(repo) {
         "  export const Timer: any;",
         "  export const WaitForEvent: any;",
         "  export const Worktree: any;",
+        "  export const ClaudeCodeAgent: any;",
         "  export const CodexAgent: any;",
+        "  export const GeminiAgent: any;",
         "  export const tools: any;",
         "  export const read: any;",
         "  export const write: any;",
@@ -73,6 +75,7 @@ function writeWorkflowPackTypecheckHarness(repo) {
         compilerOptions: {
             strict: false,
             noImplicitAny: false,
+            types: ["node", "react", "react-dom", "mdx"],
             paths: {
                 "~/*": ["./*"],
                 "smithers-orchestrator": ["./types/smithers-orchestrator.d.ts"],
@@ -81,6 +84,7 @@ function writeWorkflowPackTypecheckHarness(repo) {
         },
         include: [
             "./agents.ts",
+            "./agents/**/*.ts",
             "./components/**/*.ts",
             "./components/**/*.tsx",
             "./preload.ts",
@@ -142,6 +146,11 @@ test("smithers init writes the expected workflow-pack layout and it typechecks",
     expect(repo.exists(".smithers/bunfig.toml")).toBe(true);
     expect(repo.exists(".smithers/preload.ts")).toBe(true);
     expect(repo.exists(".smithers/agents.ts")).toBe(true);
+    expect(repo.exists(".smithers/agents/claude-code.ts")).toBe(true);
+    expect(repo.exists(".smithers/agents/codex.ts")).toBe(true);
+    expect(repo.exists(".smithers/agents/gemini.ts")).toBe(true);
+    expect(repo.exists(".smithers/agents/index.ts")).toBe(true);
+    expect(repo.exists(".smithers/agents/README.md")).toBe(true);
     expect(repo.exists(".smithers/smithers.config.ts")).toBe(true);
     expect(repo.exists(".smithers/prompts/review.mdx")).toBe(true);
     expect(repo.exists(".smithers/prompts/plan.mdx")).toBe(true);
@@ -177,6 +186,53 @@ test("smithers init writes the expected workflow-pack layout and it typechecks",
     expect(repo.read(".smithers/workflows/audit.tsx")).toContain("features: z.record(z.string(), z.array(z.string())).default({})");
     runWorkflowPackTypecheck(repo);
 }, 20_000);
+test("smithers init --agents-only creates only the user-owned agent scaffold", () => {
+    const repo = createTempRepo();
+    const result = runSmithers(["init", "--agents-only"], {
+        cwd: repo.dir,
+        format: "json",
+    });
+    expect(result.exitCode).toBe(0);
+    expect(repo.exists(".smithers/agents/claude-code.ts")).toBe(true);
+    expect(repo.exists(".smithers/agents/codex.ts")).toBe(true);
+    expect(repo.exists(".smithers/agents/gemini.ts")).toBe(true);
+    expect(repo.exists(".smithers/agents/index.ts")).toBe(true);
+    expect(repo.exists(".smithers/agents/README.md")).toBe(true);
+    expect(repo.exists(".smithers/agents.ts")).toBe(false);
+    expect(repo.exists(".smithers/package.json")).toBe(false);
+    expect(repo.exists(".smithers/prompts")).toBe(false);
+    expect(repo.exists(".smithers/workflows")).toBe(false);
+    expect(result.json).toMatchObject({
+        install: {
+            reason: "agents-only",
+            status: "skipped",
+        },
+    });
+});
+test("smithers init --agents-only is idempotent and preserves user edits", () => {
+    const repo = createTempRepo();
+    const first = runSmithers(["init", "--agents-only"], {
+        cwd: repo.dir,
+        format: "json",
+    });
+    expect(first.exitCode).toBe(0);
+    const sentinel = `${repo.read(".smithers/agents/codex.ts").trimEnd()}\n// sentinel user edit\n`;
+    repo.write(".smithers/agents/codex.ts", sentinel);
+    const second = runSmithers(["init", "--agents-only"], {
+        cwd: repo.dir,
+        format: "json",
+    });
+    expect(second.exitCode).toBe(0);
+    expect(repo.read(".smithers/agents/codex.ts")).toContain("// sentinel user edit");
+    expect(second.json).toMatchObject({
+        install: {
+            reason: "agents-only",
+            status: "skipped",
+        },
+        writtenFiles: [],
+    });
+    expect(second.stderr).toContain("skipped: already exists");
+});
 test("smithers init preserves .smithers/executions on an existing repo", () => {
     const repo = createTempRepo();
     const env = buildInitEnv(repo.dir);

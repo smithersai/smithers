@@ -1320,6 +1320,7 @@ const revertOptions = z.object({
 });
 const initOptions = z.object({
     force: z.boolean().default(false).describe("Overwrite existing scaffold files"),
+    agentsOnly: z.boolean().default(false).describe("Only create .smithers/agents/ and leave the rest of the workflow pack untouched"),
     install: z.boolean().default(true).describe("Run `bun install` inside .smithers/ after scaffolding (--no-install to skip)"),
 });
 const workflowPathArgs = z.object({
@@ -2251,22 +2252,25 @@ const cli = Cli.create({
         try {
             const result = initWorkflowPack({
                 force: c.options.force,
-                skipInstall: !c.options.install,
+                agentsOnly: c.options.agentsOnly,
+                skipInstall: !c.options.agentsOnly || !c.options.install,
             });
-            return c.ok(result, {
-                cta: {
-                    description: "Next steps:",
-                    commands: c.agent
-                        ? [
-                            { command: "workflow list", description: "View all available workflows" },
-                            { command: "bun install -g smithers", description: "Install smithers globally" },
-                        ]
-                        : [
-                            { command: "tui", description: "Open the interactive dashboard" },
-                            { command: "bun install -g smithers", description: "Install smithers globally" },
-                        ],
-                },
-            });
+            return c.ok(result, c.options.agentsOnly
+                ? undefined
+                : {
+                    cta: {
+                        description: "Next steps:",
+                        commands: c.agent
+                            ? [
+                                { command: "workflow list", description: "View all available workflows" },
+                                { command: "bun install -g smithers", description: "Install smithers globally" },
+                            ]
+                            : [
+                                { command: "tui", description: "Open the interactive dashboard" },
+                                { command: "bun install -g smithers", description: "Install smithers globally" },
+                            ],
+                    },
+                });
         }
         catch (err) {
             if (err instanceof SmithersError) {

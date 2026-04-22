@@ -63,10 +63,15 @@ const AGENT_VARIANTS = [
         variantId: "claudeSonnet",
         constructor: {
             importName: "ClaudeCodeAgent",
-            expr: 'new ClaudeCodeAgent({ model: "claude-sonnet-4-6" })',
+            expr: 'new SmithersClaudeCodeAgent({ model: "claude-sonnet-4-6", cwd: process.cwd() })',
         },
     },
 ];
+const SCAFFOLDED_PROVIDERS = {
+    claude: "ClaudeCodeAgent",
+    codex: "CodexAgent",
+    gemini: "GeminiAgent",
+};
 const TIER_PREFERENCES = {
     cheapFast: { order: ["kimi", "claudeSonnet", "gemini", "pi"], maxSize: 2 },
     smart: { order: ["codex", "claude", "kimi", "gemini", "amp"], maxSize: 3 },
@@ -75,27 +80,27 @@ const TIER_PREFERENCES = {
 const CONSTRUCTORS = {
     claude: {
         importName: "ClaudeCodeAgent",
-        expr: 'new ClaudeCodeAgent({ model: "claude-opus-4-6" })',
+        expr: 'new SmithersClaudeCodeAgent({ model: "claude-opus-4-6", cwd: process.cwd() })',
     },
     codex: {
         importName: "CodexAgent",
-        expr: 'new CodexAgent({ model: "gpt-5.3-codex", skipGitRepoCheck: true })',
+        expr: 'new SmithersCodexAgent({ model: "gpt-5.3-codex", cwd: process.cwd(), skipGitRepoCheck: true })',
     },
     gemini: {
         importName: "GeminiAgent",
-        expr: 'new GeminiAgent({ model: "gemini-3.1-pro-preview" })',
+        expr: 'new SmithersGeminiAgent({ model: "gemini-3.1-pro-preview", cwd: process.cwd() })',
     },
     pi: {
         importName: "PiAgent",
-        expr: 'new PiAgent({ provider: "openai", model: "gpt-5.3-codex" })',
+        expr: 'new SmithersPiAgent({ provider: "openai", model: "gpt-5.3-codex" })',
     },
     kimi: {
         importName: "KimiAgent",
-        expr: 'new KimiAgent({ model: "kimi-latest" })',
+        expr: 'new SmithersKimiAgent({ model: "kimi-latest" })',
     },
     amp: {
         importName: "AmpAgent",
-        expr: "new AmpAgent()",
+        expr: "new SmithersAmpAgent()",
     },
 };
 /**
@@ -214,13 +219,20 @@ export function generateAgentsTs(env = process.env) {
     const activeVariants = AGENT_VARIANTS.filter((v) => availableIds.has(v.derivedFrom));
     // Collect all import names (dedup)
     const importNames = new Set();
-    for (const provider of orderedProviders)
-        importNames.add(CONSTRUCTORS[provider.id].importName);
+    for (const provider of orderedProviders) {
+        if (!(provider.id in SCAFFOLDED_PROVIDERS)) {
+            importNames.add(CONSTRUCTORS[provider.id].importName);
+        }
+    }
     for (const variant of activeVariants)
         importNames.add(variant.constructor.importName);
+    const smithersImportSpecifiers = [
+        "type AgentLike",
+        ...[...importNames].map((importName) => `${importName} as Smithers${importName}`),
+    ];
     // Provider lines: base + variants
     const providerLines = [
-        ...orderedProviders.map((provider) => `  ${provider.id}: ${CONSTRUCTORS[provider.id].expr},`),
+        ...orderedProviders.map((provider) => `  ${provider.id}: ${SCAFFOLDED_PROVIDERS[provider.id] ?? CONSTRUCTORS[provider.id].expr},`),
         ...activeVariants.map((variant) => `  ${variant.variantId}: ${variant.constructor.expr},`),
     ];
     // All known provider/variant IDs for tier resolution
@@ -243,7 +255,14 @@ export function generateAgentsTs(env = process.env) {
     });
     return [
         "// smithers-source: generated",
-        `import { ${[...importNames].join(", ")}, type AgentLike } from "smithers-orchestrator";`,
+        `import { ${smithersImportSpecifiers.join(", ")} } from "smithers-orchestrator";`,
+        'import { ClaudeCodeAgent } from "./agents/claude-code";',
+        'import { CodexAgent } from "./agents/codex";',
+        'import { GeminiAgent } from "./agents/gemini";',
+        "",
+        'export { ClaudeCodeAgent } from "./agents/claude-code";',
+        'export { CodexAgent } from "./agents/codex";',
+        'export { GeminiAgent } from "./agents/gemini";',
         "",
         "export const providers = {",
         ...providerLines,

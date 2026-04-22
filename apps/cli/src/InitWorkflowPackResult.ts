@@ -1,6 +1,12 @@
+type InitInstallResult = {
+    reason?: string;
+    status: "failed" | "ok" | "skipped";
+};
+
 export type InitWorkflowPackResult = {
-    rootDir: string;
-    writtenFiles: string[];
-    skippedFiles: string[];
+    install: InitInstallResult;
     preservedPaths: string[];
+    rootDir: string;
+    skippedFiles: string[];
+    writtenFiles: string[];
 };

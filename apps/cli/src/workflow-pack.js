@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateAgentsTs } from "./agent-detection.js";
 /**
- * @typedef {{ force?: boolean; rootDir?: string; skipInstall?: boolean; }} InitOptions
+ * @typedef {{ force?: boolean; rootDir?: string; skipInstall?: boolean; agentsOnly?: boolean; }} InitOptions
  */
 /**
  * @typedef {{ status: "ok" | "skipped" | "failed"; reason?: string; }} InitInstallResult
@@ -14,6 +14,9 @@ import { generateAgentsTs } from "./agent-detection.js";
  */
 /**
  * @typedef {{ command: string; description: string; }} WorkflowCta
+ */
+/**
+ * @typedef {{ path: string; contents: string; preserveExisting?: boolean; }} TemplateFile
  */
 
 /**
@@ -142,6 +145,104 @@ function renderTsconfig() {
         include: ["./**/*"],
         exclude: ["./executions/**/*"],
     }, null, 2) + "\n";
+}
+/**
+ * @returns {TemplateFile[]}
+ */
+function renderAgentScaffoldFiles() {
+    return [
+        {
+            path: ".smithers/agents/claude-code.ts",
+            preserveExisting: true,
+            contents: [
+                'import { ClaudeCodeAgent as SmithersClaudeCodeAgent } from "smithers-orchestrator";',
+                "",
+                '// Built-in Claude Code CLI agent (cliEngine: "claude-code").',
+                "// Tweak `model`, `cwd`, or uncomment extra options below to match your setup.",
+                "export const ClaudeCodeAgent = new SmithersClaudeCodeAgent({",
+                '  model: "claude-opus-4-6",',
+                "  cwd: process.cwd(),",
+                '  // systemPrompt: "Add shared instructions for every Claude run.",',
+                "  // timeoutMs: 10 * 60 * 1000,",
+                "  // dangerouslySkipPermissions: true,",
+                "});",
+                "",
+            ].join("\n"),
+        },
+        {
+            path: ".smithers/agents/codex.ts",
+            preserveExisting: true,
+            contents: [
+                'import { CodexAgent as SmithersCodexAgent } from "smithers-orchestrator";',
+                "",
+                '// Built-in Codex CLI agent (cliEngine: "codex").',
+                "// Tweak `model`, `cwd`, or uncomment extra options below to match your setup.",
+                "export const CodexAgent = new SmithersCodexAgent({",
+                '  model: "gpt-5.3-codex",',
+                "  cwd: process.cwd(),",
+                "  skipGitRepoCheck: true,",
+                '  // systemPrompt: "Add shared instructions for every Codex run.",',
+                '  // sandbox: "workspace-write",',
+                "  // fullAuto: true,",
+                "});",
+                "",
+            ].join("\n"),
+        },
+        {
+            path: ".smithers/agents/gemini.ts",
+            preserveExisting: true,
+            contents: [
+                'import { GeminiAgent as SmithersGeminiAgent } from "smithers-orchestrator";',
+                "",
+                '// Built-in Gemini CLI agent (cliEngine: "gemini").',
+                "// Tweak `model`, `cwd`, or uncomment extra options below to match your setup.",
+                "export const GeminiAgent = new SmithersGeminiAgent({",
+                '  model: "gemini-3.1-pro-preview",',
+                "  cwd: process.cwd(),",
+                '  // systemPrompt: "Add shared instructions for every Gemini run.",',
+                '  // approvalMode: "yolo",',
+                '  // allowedTools: ["read_file", "write_file"],',
+                "});",
+                "",
+            ].join("\n"),
+        },
+        {
+            path: ".smithers/agents/index.ts",
+            preserveExisting: true,
+            contents: [
+                'export { ClaudeCodeAgent } from "./claude-code";',
+                'export { CodexAgent } from "./codex";',
+                'export { GeminiAgent } from "./gemini";',
+                "",
+            ].join("\n"),
+        },
+        {
+            path: ".smithers/agents/README.md",
+            preserveExisting: true,
+            contents: [
+                "# Agent Config",
+                "",
+                "These files export the configured agent instances used by your Smithers workflows.",
+                "",
+                "- `claude-code.ts`, `codex.ts`, and `gemini.ts` are user-owned config.",
+                "- Edit them to pin models, set `cwd`, add a shared `systemPrompt`, or enable engine-specific flags.",
+                "- `index.ts` re-exports all three so root-level files can import from `./agents`.",
+                "",
+                "Examples:",
+                "",
+                "```ts",
+                'import { ClaudeCodeAgent } from "./agents";',
+                'import { CodexAgent } from "./agents/codex";',
+                "```",
+                "",
+                "Inside `.smithers/workflows/*`, use `../agents` or `../agents/<name>` instead.",
+                "",
+                "`smithers init` and `smithers init --agents-only` only create missing files in this directory.",
+                "Existing files here are left alone so your custom agent config is preserved.",
+                "",
+            ].join("\n"),
+        },
+    ];
 }
 /**
  * @returns {TemplateFile[]}
@@ -2054,6 +2155,7 @@ function renderTemplateFiles(versions, env) {
             path: ".smithers/preload.ts",
             contents: ['import { mdxPlugin } from "smithers-orchestrator";', "", "mdxPlugin();", ""].join("\n"),
         },
+        ...renderAgentScaffoldFiles(),
         {
             path: ".smithers/agents.ts",
             contents: generateAgentsTs(env),
@@ -2085,35 +2187,50 @@ function renderTemplateFiles(versions, env) {
  * @returns {InitResult}
  */
 export function initWorkflowPack(options = {}) {
-    const rootDir = resolve(options.rootDir ?? process.cwd(), ".smithers");
+    const projectRoot = options.rootDir ?? process.cwd();
+    const rootDir = resolve(projectRoot, ".smithers");
     const writtenFiles = [];
     const skippedFiles = [];
     const preservedPaths = [];
-    const versions = readDependencyVersions();
-    const env = process.env;
     ensureDir(rootDir);
-    ensureDir(resolve(rootDir, "prompts"));
-    ensureDir(resolve(rootDir, "components"));
-    ensureDir(resolve(rootDir, "workflows"));
-    ensureDir(resolve(rootDir, "tickets"));
-    const executionsDir = resolve(rootDir, "executions");
-    if (existsSync(executionsDir)) {
-        preservedPaths.push(executionsDir);
+    ensureDir(resolve(rootDir, "agents"));
+    /** @type {TemplateFile[]} */
+    let templateFiles;
+    if (options.agentsOnly) {
+        templateFiles = renderAgentScaffoldFiles();
     }
     else {
-        ensureDir(executionsDir);
+        const versions = readDependencyVersions();
+        const env = process.env;
+        ensureDir(resolve(rootDir, "prompts"));
+        ensureDir(resolve(rootDir, "components"));
+        ensureDir(resolve(rootDir, "workflows"));
+        ensureDir(resolve(rootDir, "tickets"));
+        const executionsDir = resolve(rootDir, "executions");
+        if (existsSync(executionsDir)) {
+            preservedPaths.push(executionsDir);
+        }
+        else {
+            ensureDir(executionsDir);
+        }
+        templateFiles = renderTemplateFiles(versions, env);
     }
-    for (const file of renderTemplateFiles(versions, env)) {
-        const absolutePath = resolve(options.rootDir ?? process.cwd(), file.path);
+    for (const file of templateFiles) {
+        const absolutePath = resolve(projectRoot, file.path);
         ensureParent(absolutePath);
-        if (existsSync(absolutePath) && !options.force) {
+        if (existsSync(absolutePath) && (file.preserveExisting || !options.force)) {
             skippedFiles.push(absolutePath);
+            if (file.preserveExisting) {
+                process.stderr.write(`[smithers:init] ${file.path} skipped: already exists\n`);
+            }
             continue;
         }
         writeFileSync(absolutePath, file.contents, "utf8");
         writtenFiles.push(absolutePath);
     }
-    const install = runBunInstall(rootDir, options.skipInstall ?? false);
+    const install = options.agentsOnly
+        ? { status: "skipped", reason: "agents-only" }
+        : runBunInstall(rootDir, options.skipInstall ?? false);
     return {
         rootDir,
         writtenFiles,

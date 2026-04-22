@@ -28,7 +28,8 @@ test("smithers init prefers Claude when only a Claude CLI signal is available", 
     });
     expect(result.exitCode).toBe(0);
     const agentsSource = repo.read(".smithers/agents.ts");
-    expect(agentsSource).toContain('claude: new ClaudeCodeAgent');
+    expect(agentsSource).toContain('export { ClaudeCodeAgent } from "./agents/claude-code";');
+    expect(agentsSource).toContain("claude: ClaudeCodeAgent");
     expect(agentsSource).toContain("cheapFast: [providers.claudeSonnet]");
     expect(agentsSource).toContain("smart: [providers.claude]");
     expect(agentsSource).toContain("smartTool: [providers.claude]");
@@ -47,7 +48,8 @@ test("smithers init includes Codex implementation roles when Codex plus OPENAI_A
     });
     expect(result.exitCode).toBe(0);
     const agentsSource = repo.read(".smithers/agents.ts");
-    expect(agentsSource).toContain('codex: new CodexAgent');
+    expect(agentsSource).toContain('export { CodexAgent } from "./agents/codex";');
+    expect(agentsSource).toContain("codex: CodexAgent");
     expect(agentsSource).toContain("cheapFast: [providers.codex]");
     expect(agentsSource).toContain("smart: [providers.codex]");
     expect(agentsSource).toContain("smartTool: [providers.codex]");
