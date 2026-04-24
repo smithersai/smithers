@@ -26,8 +26,8 @@ export declare class OpenCodeAgent extends BaseCliAgent {
   readonly capabilities: AgentCapabilityRegistry;
   readonly cliEngine: "opencode";
   constructor(opts?: OpenCodeAgentOptions);
-  protected createOutputInterpreter(): CliOutputInterpreter;
-  protected buildCommand(params: {
+  createOutputInterpreter(): CliOutputInterpreter;
+  buildCommand(params: {
     prompt: string;
     systemPrompt?: string;
     cwd: string;

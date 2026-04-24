@@ -16,14 +16,26 @@ import { OpenCodeAgent } from "../src/OpenCodeAgent.js";
  */
 
 let isOpenCodeInstalled = false;
+let supportsOpenCodeE2EFlags = false;
 try {
   execSync("which opencode", { stdio: "pipe" });
   isOpenCodeInstalled = true;
+  const helpText = execSync("opencode run --help", {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+  supportsOpenCodeE2EFlags =
+    helpText.includes("--dir") &&
+    helpText.includes("--format") &&
+    /\B-f\b/.test(helpText);
 } catch {
   isOpenCodeInstalled = false;
+  supportsOpenCodeE2EFlags = false;
 }
 
-describe.skipIf(!isOpenCodeInstalled)("OpenCodeAgent E2E (real CLI)", () => {
+describe.skipIf(!isOpenCodeInstalled || !supportsOpenCodeE2EFlags)(
+  "OpenCodeAgent E2E (real CLI)",
+  () => {
   /** @type {string} */
   let tmpDir;
 
@@ -142,4 +154,5 @@ describe.skipIf(!isOpenCodeInstalled)("OpenCodeAgent E2E (real CLI)", () => {
     expect(result).toBeDefined();
     expect(result.text).toContain("42");
   }, 120_000);
-});
+  }
+);

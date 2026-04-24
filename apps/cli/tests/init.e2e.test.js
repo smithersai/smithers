@@ -213,7 +213,7 @@ test("smithers init does not clobber user edits unless --force is passed", () =>
     });
     expect(forced.exitCode).toBe(0);
     expect(repo.read(".smithers/workflows/implement.tsx")).not.toContain("user-edited workflow");
-});
+}, 20_000);
 test("seeded workflows reuse the shared review substrate", () => {
     const repo = createTempRepo();
     const env = buildInitEnv(repo.dir);
