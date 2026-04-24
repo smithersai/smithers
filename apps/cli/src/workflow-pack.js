@@ -2047,6 +2047,21 @@ function renderTemplateFiles(versions, env) {
             contents: renderTsconfig(),
         },
         {
+            path: ".smithers/types/assets.d.ts",
+            contents: [
+                'declare module "*.md" {',
+                "  const Component: any;",
+                "  export default Component;",
+                "}",
+                "",
+                'declare module "*.mdx" {',
+                "  const Component: any;",
+                "  export default Component;",
+                "}",
+                "",
+            ].join("\n"),
+        },
+        {
             path: ".smithers/bunfig.toml",
             contents: ['preload = ["./preload.ts"]', ""].join("\n"),
         },

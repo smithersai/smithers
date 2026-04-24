@@ -26,7 +26,9 @@
   },
   "dependencies": {
     "@smithers-orchestrator/agents": "workspace:*",
-    "@smithers-orchestrator/errors": "workspace:*"
+    "@smithers-orchestrator/errors": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/bun": "latest",
