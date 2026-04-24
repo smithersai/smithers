@@ -51,6 +51,14 @@ function notifyDispatchSubscribers(task) {
     }
 }
 /**
+ * Preserve the dispatch observer contract even when worker execution falls
+ * back to the local in-process path.
+ * @param {WorkerTask} task
+ */
+export function notifyTaskWorkerDispatch(task) {
+    notifyDispatchSubscribers(task);
+}
+/**
  * @param {WorkerTask} task
  * @returns {Extract<TaskResult, { _tag: "Failure" }>}
  */
