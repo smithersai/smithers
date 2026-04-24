@@ -184,7 +184,7 @@ function renderManifest(name: string, pages: string[], header: string): string {
 const HEADERS = {
   core: [
     "> Smithers — durable AI workflow orchestration as a JSX runtime.",
-    "> Repo: github.com/evmts/smithers · Package: smithers-orchestrator (npm)",
+    "> Repo: github.com/smithersai/smithers · Package: smithers-orchestrator (npm)",
     "",
     "This file contains the core Smithers documentation. Read top to bottom for a complete picture of the runtime, JSX surface, CLI, and components.",
     "",
@@ -238,7 +238,7 @@ for (const b of builds) {
     "# Smithers — full documentation",
     "",
     "> Durable AI workflow orchestration as a JSX runtime.",
-    "> Repo: github.com/evmts/smithers · Package: smithers-orchestrator (npm)",
+    "> Repo: github.com/smithersai/smithers · Package: smithers-orchestrator (npm)",
     "",
     "This is the complete Smithers documentation in one file. It is the concatenation of every fragment listed in /llms.txt.",
     "",
@@ -284,7 +284,7 @@ Durable AI workflow orchestration as a JSX runtime.
 ## Pointers
 
 - npm: smithers-orchestrator
-- github: github.com/evmts/smithers
+- github: github.com/smithersai/smithers
 - changelogs: docs/changelogs/ on the site (not duplicated in llms files)
 `;
 

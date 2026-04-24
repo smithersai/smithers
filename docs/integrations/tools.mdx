@@ -338,13 +338,16 @@ const fullAgent = new Agent({
 | `toolTimeoutMs` | `60000` (60s) | Timeout for `bash` and `grep` |
 
 ```ts
-const result = await runWorkflow(workflow, {
+import { Effect } from "effect";
+import { runWorkflow } from "smithers-orchestrator";
+
+const result = await Effect.runPromise(runWorkflow(workflow, {
   input: { file: "src/auth.ts" },
   rootDir: "/home/project",
   allowNetwork: false,
   maxOutputBytes: 500_000,
   toolTimeoutMs: 120_000,
-});
+}));
 ```
 
 ## See Also

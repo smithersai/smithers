@@ -1797,6 +1797,7 @@ function resolveTaskOutputs(tasks, workflow) {
         if (isTimerTask(task)) {
             continue;
         }
+        const hasAmbiguousOutputRef = Boolean(task.outputRef && workflow.ambiguousZodSchemas?.has(task.outputRef));
         // Already resolved (has a table)
         if (task.outputTable) {
             if (!task.outputSchema && task.outputTableName && workflow.schemaRegistry) {
@@ -1820,10 +1821,14 @@ function resolveTaskOutputs(tasks, workflow) {
                 }
             }
             if (!task.outputTable) {
+                if (hasAmbiguousOutputRef) {
+                    throw new SmithersError("UNKNOWN_OUTPUT_SCHEMA", `Task "${task.nodeId}" uses an output schema that is registered under multiple keys. Use createSmithers(...).outputs.<key> or a string output key instead of the shared raw Zod object.`);
+                }
                 throw new SmithersError("UNKNOWN_OUTPUT_SCHEMA", `Task "${task.nodeId}" uses an output ZodObject that is not registered in createSmithers()`);
             }
         }
         const raw = task.outputSchema;
+        const hasAmbiguousOutputSchema = Boolean(raw && typeof raw === "object" && workflow.ambiguousZodSchemas?.has(raw));
         // Resolve ZodObject via outputSchema when no outputRef resolved.
         if (!task.outputTable && raw && typeof raw === "object" && workflow.zodToKeyName) {
             const keyName = workflow.zodToKeyName.get(raw);
@@ -1837,6 +1842,9 @@ function resolveTaskOutputs(tasks, workflow) {
                 }
             }
             if (!task.outputTable) {
+                if (hasAmbiguousOutputSchema) {
+                    throw new SmithersError("UNKNOWN_OUTPUT_SCHEMA", `Task "${task.nodeId}" uses an output schema that is registered under multiple keys. Use createSmithers(...).outputs.<key> or a string output key instead of the shared raw Zod object.`);
+                }
                 throw new SmithersError("UNKNOWN_OUTPUT_SCHEMA", `Task "${task.nodeId}" uses an output ZodObject that is not registered in createSmithers()`);
             }
         }
@@ -2837,7 +2845,8 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
                     maybeCompleteHijack();
                 };
                 let effectivePrompt = desc.prompt ?? "";
-                if (desc.outputTable) {
+                const supportsNativeStructuredOutput = effectiveAgent.supportsNativeStructuredOutput === true;
+                if (desc.outputTable && !supportsNativeStructuredOutput) {
                     const schemaDesc = describeSchemaShape(desc.outputTable, desc.outputSchema);
                     const jsonInstructions = [
                         "**REQUIRED OUTPUT** — You MUST end your response with a JSON object in a code fence matching this schema:",

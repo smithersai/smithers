@@ -160,7 +160,7 @@ And the engine receives the workflow object, using `workflow.build` on every loo
 ```ts
 // src/cli/index.ts
 const workflow = await loadWorkflow(workflowPath);  // loaded once
-const result = await runWorkflow(workflow, { ... }); // passed into engine
+const result = await Effect.runPromise(runWorkflow(workflow, { ... })); // passed into engine
 ```
 
 ### Where state lives

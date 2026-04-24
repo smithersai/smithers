@@ -100,7 +100,7 @@ text = text.replace(/^>\s*Source:\s*https?:\/\/[^\s]+\s*\n/gm, "");
 // reference line.
 text = text.replace(
   /^>\s*GitHub:\s*[^\n]+\n>\s*Package:\s*[^\n]+\n/m,
-  "> Repo: github.com/evmts/smithers · Package: smithers-orchestrator (npm)\n",
+  "> Repo: github.com/smithersai/smithers · Package: smithers-orchestrator (npm)\n",
 );
 
 // --- 4. Collapse adjacent / doubled separators ------------------------------
@@ -322,7 +322,7 @@ text = text.replace(
             "After `bunx smithers-orchestrator init`, browse `.smithers/` for live copies.",
           );
           out.push(
-            "For repo-level files (`AGENTS.md`, `.github/workflows/ci.yml`, `~/.claude/plugins/smithers-orchestrator/`, etc.) see the source repository at github.com/evmts/smithers.",
+            "For repo-level files (`AGENTS.md`, `.github/workflows/ci.yml`, `~/.claude/plugins/smithers-orchestrator/`, etc.) see the source repository at github.com/smithersai/smithers.",
           );
           replacedOnce = true;
         }

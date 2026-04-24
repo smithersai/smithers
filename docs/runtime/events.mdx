@@ -9,16 +9,17 @@ description: Subscribe to lifecycle events. Full event union lives in Types.
 
 ```ts
 import { runWorkflow } from "smithers-orchestrator";
+import { Effect } from "effect";
 import workflow from "./workflow";
 
-await runWorkflow(workflow, {
+await Effect.runPromise(runWorkflow(workflow, {
   input: { task: "fix bug" },
   onProgress: (event) => {
     if (event.type === "NodeStarted")  console.log(`▶ ${event.nodeId} (attempt ${event.attempt})`);
     if (event.type === "NodeFinished") console.log(`✓ ${event.nodeId}`);
     if (event.type === "NodeFailed")   console.error(`✗ ${event.nodeId}`, event.error);
   },
-});
+}));
 ```
 
 ## Read from the NDJSON log

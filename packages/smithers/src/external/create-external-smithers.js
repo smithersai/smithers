@@ -65,6 +65,33 @@ export function hostNodeToReact(node, agents) {
     return React.createElement(node.tag, rawProps, ...children);
 }
 /**
+ * @param {Record<string, any>} schemas
+ */
+function prepareOutputSchemas(schemas) {
+    const counts = new Map();
+    for (const [name, zodSchema] of Object.entries(schemas)) {
+        if (name === "input")
+            continue;
+        counts.set(zodSchema, (counts.get(zodSchema) ?? 0) + 1);
+    }
+    const zodToKeyName = new Map();
+    const ambiguousZodSchemas = new Set();
+    for (const [name, zodSchema] of Object.entries(schemas)) {
+        if (name === "input")
+            continue;
+        if ((counts.get(zodSchema) ?? 0) > 1) {
+            ambiguousZodSchemas.add(zodSchema);
+            zodToKeyName.set(zodSchema.clone(), name);
+            continue;
+        }
+        zodToKeyName.set(zodSchema, name);
+    }
+    return {
+        zodToKeyName,
+        ambiguousZodSchemas,
+    };
+}
+/**
  * Create a SmithersWorkflow from an external build function.
  *
  * Schemas and agents are defined in TS. The build function produces a HostNode JSON tree
@@ -126,12 +153,7 @@ export function createExternalSmithers(config) {
             continue;
         schemaRegistry.set(name, { table: tables[name], zodSchema });
     }
-    const zodToKeyName = new Map();
-    for (const [name, zodSchema] of Object.entries(schemas)) {
-        if (name === "input")
-            continue;
-        zodToKeyName.set(zodSchema, name);
-    }
+    const { zodToKeyName, ambiguousZodSchemas } = prepareOutputSchemas(schemas);
     return {
         db,
         build: (ctx) => {
@@ -142,6 +164,7 @@ export function createExternalSmithers(config) {
         opts: {},
         schemaRegistry,
         zodToKeyName,
+        ambiguousZodSchemas,
         tables,
         cleanup: closeDb,
     };

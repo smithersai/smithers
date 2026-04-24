@@ -5,10 +5,11 @@ description: Programmatic entry point. Equivalent to `bunx smithers-orchestrator
 
 ```ts
 import { runWorkflow } from "smithers-orchestrator";
+import { Effect } from "effect";
 
-const result = await runWorkflow(workflow, {
+const result = await Effect.runPromise(runWorkflow(workflow, {
   input: { task: "fix bug" },
-});
+}));
 
 result.runId;     // string
 result.status;    // "finished" | "failed" | "cancelled" | "continued" | "waiting-approval" | "waiting-event" | "waiting-timer"
@@ -22,7 +23,7 @@ Signature:
 function runWorkflow<Schema>(
   workflow: SmithersWorkflow<Schema>,
   opts: RunOptions,                 // see Types
-): Promise<RunResult>;
+): Effect.Effect<RunResult, SmithersError>;
 ```
 
 Both `RunOptions` and `RunResult` are defined in [Types](/reference/types).
@@ -32,7 +33,7 @@ Both `RunOptions` and `RunResult` are defined in [Types](/reference/types).
 Pass the original `runId` plus `resume: true`. State loads from SQLite, completed tasks are skipped, in-progress attempts older than 15 minutes are abandoned and retried.
 
 ```ts
-await runWorkflow(workflow, { input: {}, runId: "my-run-123", resume: true });
+await Effect.runPromise(runWorkflow(workflow, { input: {}, runId: "my-run-123", resume: true }));
 ```
 
 The original input row is loaded from the DB; pass `{}` for `input`. The workflow file hash and VCS revision must match the original run.
@@ -43,7 +44,7 @@ The original input row is loaded from the DB; pass `{}` for `input`. The workflo
 const controller = new AbortController();
 setTimeout(() => controller.abort(), 5 * 60 * 1000);
 
-const result = await runWorkflow(workflow, { input: {...}, signal: controller.signal });
+const result = await Effect.runPromise(runWorkflow(workflow, { input: {...}, signal: controller.signal }));
 // result.status === "cancelled"
 ```
 

@@ -14,5 +14,5 @@ Durable AI workflow orchestration as a JSX runtime.
 ## Pointers
 
 - npm: smithers-orchestrator
-- github: github.com/evmts/smithers
+- github: github.com/smithersai/smithers
 - changelogs: docs/changelogs/ on the site (not duplicated in llms files)

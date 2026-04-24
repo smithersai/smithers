@@ -37,11 +37,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/evmts/smithers.git"
+    "url": "git+https://github.com/smithersai/smithers.git"
   },
-  "homepage": "https://github.com/evmts/smithers#readme",
+  "homepage": "https://github.com/smithersai/smithers#readme",
   "bugs": {
-    "url": "https://github.com/evmts/smithers/issues"
+    "url": "https://github.com/smithersai/smithers/issues"
   },
   "keywords": [
     "ai",
@@ -66,17 +66,50 @@
     "release": "node scripts/publish.mjs"
   },
   "devDependencies": {
+    "@effect/cluster": "^0.58.0",
+    "@effect/experimental": "^0.60.0",
+    "@effect/rpc": "^0.75.0",
+    "@effect/sql": "^0.51.0",
+    "@effect/workflow": "^0.18.0",
+    "@mdx-js/esbuild": "^3.1.1",
+    "@smithers-orchestrator/agents": "workspace:*",
+    "@smithers-orchestrator/cli": "workspace:*",
+    "@smithers-orchestrator/components": "workspace:*",
+    "@smithers-orchestrator/db": "workspace:*",
+    "@smithers-orchestrator/devtools": "workspace:*",
+    "@smithers-orchestrator/driver": "workspace:*",
+    "@smithers-orchestrator/engine": "workspace:*",
+    "@smithers-orchestrator/errors": "workspace:*",
+    "@smithers-orchestrator/graph": "workspace:*",
+    "@smithers-orchestrator/memory": "workspace:*",
+    "@smithers-orchestrator/observability": "workspace:*",
+    "@smithers-orchestrator/openapi": "workspace:*",
+    "@smithers-orchestrator/protocol": "workspace:*",
+    "@smithers-orchestrator/react-reconciler": "workspace:*",
+    "@smithers-orchestrator/sandbox": "workspace:*",
+    "@smithers-orchestrator/scheduler": "workspace:*",
+    "@smithers-orchestrator/scorers": "workspace:*",
+    "@smithers-orchestrator/server": "workspace:*",
+    "@smithers-orchestrator/time-travel": "workspace:*",
+    "@smithers-orchestrator/vcs": "workspace:*",
     "@tanstack/react-query": "^5.99.1",
     "@types/bun": "latest",
-    "@types/diff": "^8.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/react-reconciler": "^0.33.0",
     "@types/ws": "^8.18.1",
     "bun-types": "^1.3.12",
+    "diff": "^9.0.0",
+    "drizzle-orm": "^0.45.2",
+    "effect": "^3.21.1",
     "oxlint": "^1.60.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "smithers-orchestrator": "workspace:*",
     "tsup": "^8.5.1",
     "twitter-api-v2": "^1.29.0",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "yaml": "^2.8.1",
+    "zod": "^4.3.6"
   }
 }

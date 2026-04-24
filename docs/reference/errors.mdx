@@ -46,8 +46,11 @@ Use `KnownSmithersErrorCode` for an exhaustive switch over built-in Smithers cod
 | `SmithersError` | type | Public typed shape for serialized Smithers errors. |
 
 ```ts
+import { Effect } from "effect";
+import { runWorkflow } from "smithers-orchestrator";
+
 try {
-  await runWorkflow(workflow, { input: {} });
+  await Effect.runPromise(runWorkflow(workflow, { input: {} }));
 } catch (err) {
   if (isSmithersError(err) && isKnownSmithersErrorCode(err.code)) {
     switch (err.code) {

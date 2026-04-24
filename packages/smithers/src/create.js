@@ -50,6 +50,41 @@ function computeSchemaSig(schemas, dbPath) {
     return parts.join("\n");
 }
 /**
+ * Duplicate schema objects need distinct output refs so Task `output={outputs.foo}`
+ * can still resolve the intended table by identity.
+ * @param {Record<string, any>} schemas
+ */
+function prepareOutputSchemas(schemas) {
+    const counts = new Map();
+    for (const [name, zodSchema] of Object.entries(schemas)) {
+        if (name === "input")
+            continue;
+        counts.set(zodSchema, (counts.get(zodSchema) ?? 0) + 1);
+    }
+    const outputs = {
+        ...schemas,
+    };
+    const zodToKeyName = new Map();
+    const ambiguousZodSchemas = new Set();
+    for (const [name, zodSchema] of Object.entries(schemas)) {
+        if (name === "input")
+            continue;
+        if ((counts.get(zodSchema) ?? 0) > 1) {
+            ambiguousZodSchemas.add(zodSchema);
+            const aliasSchema = zodSchema.clone();
+            outputs[name] = aliasSchema;
+            zodToKeyName.set(aliasSchema, name);
+            continue;
+        }
+        zodToKeyName.set(zodSchema, name);
+    }
+    return {
+        outputs,
+        zodToKeyName,
+        ambiguousZodSchemas,
+    };
+}
+/**
  * @param {Record<string, string>} [base]
  * @param {Record<string, string>} [override]
  * @returns {Record<string, string> | undefined}
@@ -254,13 +289,8 @@ export function createSmithers(schemas, opts) {
             continue;
         schemaRegistry.set(name, { table: tables[name], zodSchema });
     }
-    // 6. Build reverse lookup: ZodObject reference → schema key name
-    const zodToKeyName = new Map();
-    for (const [name, zodSchema] of Object.entries(schemas)) {
-        if (name === "input")
-            continue;
-        zodToKeyName.set(zodSchema, name);
-    }
+    // 6. Build output refs and reverse lookup: ZodObject reference → schema key name
+    const { outputs, zodToKeyName, ambiguousZodSchemas } = prepareOutputSchemas(schemas);
     // 7. Context + hooks
     const { SmithersContext: RuntimeSmithersContext, useCtx, } = createSmithersContext();
     const ctxRef = { current: null };
@@ -302,6 +332,7 @@ export function createSmithers(schemas, opts) {
                 opts: {},
                 schemaRegistry,
                 zodToKeyName,
+                ambiguousZodSchemas,
             };
         return React.createElement(BaseSandbox, {
             ...props,
@@ -342,6 +373,7 @@ export function createSmithers(schemas, opts) {
             opts: workflowOpts,
             schemaRegistry,
             zodToKeyName,
+            ambiguousZodSchemas,
         };
     }
     /**
@@ -370,7 +402,7 @@ export function createSmithers(schemas, opts) {
         smithers: boundSmithers,
         db,
         tables: tables,
-        outputs: schemas,
+        outputs,
     };
     if (process.env.SMITHERS_HOT === "1") {
         const sig = computeSchemaSig(schemas, absDbPath);

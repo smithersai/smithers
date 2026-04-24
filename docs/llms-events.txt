@@ -14,16 +14,17 @@
 
 ```ts
 import { runWorkflow } from "smithers-orchestrator";
+import { Effect } from "effect";
 import workflow from "./workflow";
 
-await runWorkflow(workflow, {
+await Effect.runPromise(runWorkflow(workflow, {
   input: { task: "fix bug" },
   onProgress: (event) => {
     if (event.type === "NodeStarted")  console.log(`▶ ${event.nodeId} (attempt ${event.attempt})`);
     if (event.type === "NodeFinished") console.log(`✓ ${event.nodeId}`);
     if (event.type === "NodeFailed")   console.error(`✗ ${event.nodeId}`, event.error);
   },
-});
+}));
 ```
 
 ## Read from the NDJSON log
@@ -157,4 +158,3 @@ type SmithersEvent =
   | { type: "SandboxShipped"; runId: string; sandboxId: string; runtime: SandboxRuntime; bundleSizeBytes: number; timestampMs: number }
   | { type: "SandboxCompleted"; runId: string; sandboxId: string; remoteRunId?: string; runtime: SandboxRuntime; status: "finished" | "failed" | "cancelled"; durationMs: number; timestampMs: number };
 ```
-

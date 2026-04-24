@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { AnthropicAgent, OpenAIAgent } from "../src/index.js";
+import { z } from "zod";
 function createFakeModel() {
     let lastCall;
     return {
@@ -17,6 +18,14 @@ function createFakeModel() {
        */
             async doGenerate(options) {
                 lastCall = options;
+                if (options.responseFormat?.type === "json") {
+                    return {
+                        content: [{ type: "text", text: JSON.stringify({ value: 7 }) }],
+                        finishReason: "stop",
+                        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                        warnings: [],
+                    };
+                }
                 return {
                     content: [{ type: "text", text: "hello from sdk agent" }],
                     finishReason: "stop",
@@ -57,6 +66,36 @@ describe("SDK agents", () => {
         expect(result.text).toBe("hello from sdk agent");
         expect(fake.getLastCall()?.prompt?.[0]?.role).toBe("system");
         expect(fake.getLastCall()?.prompt?.[0]?.content).toBe("You are an implementer.");
+    });
+    test("OpenAIAgent forwards outputSchema through the SDK structured output channel", async () => {
+        const fake = createFakeModel();
+        const agent = new OpenAIAgent({
+            id: "openai-sdk-structured",
+            model: fake.model,
+        });
+        const result = await agent.generate({
+            prompt: "return a value",
+            outputSchema: z.object({ value: z.number() }),
+        });
+        expect(result.text).toBe(JSON.stringify({ value: 7 }));
+        expect(fake.getLastCall()?.responseFormat).toMatchObject({
+            type: "json",
+        });
+    });
+    test("AnthropicAgent forwards outputSchema through the SDK structured output channel", async () => {
+        const fake = createFakeModel();
+        const agent = new AnthropicAgent({
+            id: "anthropic-sdk-structured",
+            model: fake.model,
+        });
+        const result = await agent.generate({
+            prompt: "return a value",
+            outputSchema: z.object({ value: z.number() }),
+        });
+        expect(result.text).toBe(JSON.stringify({ value: 7 }));
+        expect(fake.getLastCall()?.responseFormat).toMatchObject({
+            type: "json",
+        });
     });
     test("OpenAIAgent streams assistant deltas through onStdout", async () => {
         const model = new MockLanguageModelV3({

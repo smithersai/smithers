@@ -1,7 +1,7 @@
 # Smithers — full documentation
 
 > Durable AI workflow orchestration as a JSX runtime.
-> Repo: github.com/evmts/smithers · Package: smithers-orchestrator (npm)
+> Repo: github.com/smithersai/smithers · Package: smithers-orchestrator (npm)
 
 This is the complete Smithers documentation in one file. It is the concatenation of every fragment listed in /llms.txt.
 
@@ -21,7 +21,7 @@ Changelogs are not included; see /docs/changelogs/ on the docs site.
 # Smithers
 
 > Smithers — durable AI workflow orchestration as a JSX runtime.
-> Repo: github.com/evmts/smithers · Package: smithers-orchestrator (npm)
+> Repo: github.com/smithersai/smithers · Package: smithers-orchestrator (npm)
 
 This file contains the core Smithers documentation. Read top to bottom for a complete picture of the runtime, JSX surface, CLI, and components.
 
@@ -4138,8 +4138,11 @@ Use `KnownSmithersErrorCode` for an exhaustive switch over built-in Smithers cod
 | `SmithersError` | type | Public typed shape for serialized Smithers errors. |
 
 ```ts
+import { Effect } from "effect";
+import { runWorkflow } from "smithers-orchestrator";
+
 try {
-  await runWorkflow(workflow, { input: {} });
+  await Effect.runPromise(runWorkflow(workflow, { input: {} }));
 } catch (err) {
   if (isSmithersError(err) && isKnownSmithersErrorCode(err.code)) {
     switch (err.code) {
@@ -4663,10 +4666,11 @@ For workflow-level revert behavior, prefer the runtime and CLI docs:
 
 ```ts
 import { runWorkflow } from "smithers-orchestrator";
+import { Effect } from "effect";
 
-const result = await runWorkflow(workflow, {
+const result = await Effect.runPromise(runWorkflow(workflow, {
   input: { task: "fix bug" },
-});
+}));
 
 result.runId;     // string
 result.status;    // "finished" | "failed" | "cancelled" | "continued" | "waiting-approval" | "waiting-event" | "waiting-timer"
@@ -4680,7 +4684,7 @@ Signature:
 function runWorkflow<Schema>(
   workflow: SmithersWorkflow<Schema>,
   opts: RunOptions,                 // see Types
-): Promise<RunResult>;
+): Effect.Effect<RunResult, SmithersError>;
 ```
 
 Both `RunOptions` and `RunResult` are defined in [Types](/reference/types).
@@ -4690,7 +4694,7 @@ Both `RunOptions` and `RunResult` are defined in [Types](/reference/types).
 Pass the original `runId` plus `resume: true`. State loads from SQLite, completed tasks are skipped, in-progress attempts older than 15 minutes are abandoned and retried.
 
 ```ts
-await runWorkflow(workflow, { input: {}, runId: "my-run-123", resume: true });
+await Effect.runPromise(runWorkflow(workflow, { input: {}, runId: "my-run-123", resume: true }));
 ```
 
 The original input row is loaded from the DB; pass `{}` for `input`. The workflow file hash and VCS revision must match the original run.
@@ -4701,7 +4705,7 @@ The original input row is loaded from the DB; pass `{}` for `input`. The workflo
 const controller = new AbortController();
 setTimeout(() => controller.abort(), 5 * 60 * 1000);
 
-const result = await runWorkflow(workflow, { input: {...}, signal: controller.signal });
+const result = await Effect.runPromise(runWorkflow(workflow, { input: {...}, signal: controller.signal }));
 // result.status === "cancelled"
 ```
 
@@ -7327,13 +7331,16 @@ const fullAgent = new Agent({
 | `toolTimeoutMs` | `60000` (60s) | Timeout for `bash` and `grep` |
 
 ```ts
-const result = await runWorkflow(workflow, {
+import { Effect } from "effect";
+import { runWorkflow } from "smithers-orchestrator";
+
+const result = await Effect.runPromise(runWorkflow(workflow, {
   input: { file: "src/auth.ts" },
   rootDir: "/home/project",
   allowNetwork: false,
   maxOutputBytes: 500_000,
   toolTimeoutMs: 120_000,
-});
+}));
 ```
 
 ## See Also
@@ -7538,16 +7545,17 @@ Chat-provider integration lives in host applications, not this repo.
 
 ```ts
 import { runWorkflow } from "smithers-orchestrator";
+import { Effect } from "effect";
 import workflow from "./workflow";
 
-await runWorkflow(workflow, {
+await Effect.runPromise(runWorkflow(workflow, {
   input: { task: "fix bug" },
   onProgress: (event) => {
     if (event.type === "NodeStarted")  console.log(`▶ ${event.nodeId} (attempt ${event.attempt})`);
     if (event.type === "NodeFinished") console.log(`✓ ${event.nodeId}`);
     if (event.type === "NodeFailed")   console.error(`✗ ${event.nodeId}`, event.error);
   },
-});
+}));
 ```
 
 ## Read from the NDJSON log
