@@ -3,4 +3,5 @@ export type CliAgentCapabilityAdapterId =
   | "codex"
   | "gemini"
   | "kimi"
+  | "opencode"
   | "pi";

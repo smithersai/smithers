@@ -3,6 +3,7 @@ import { createClaudeCodeCapabilityRegistry } from "../ClaudeCodeAgent.js";
 import { createCodexCapabilityRegistry } from "../CodexAgent.js";
 import { createGeminiCapabilityRegistry } from "../GeminiAgent.js";
 import { createKimiCapabilityRegistry } from "../KimiAgent.js";
+import { createOpenCodeCapabilityRegistry } from "../OpenCodeAgent.js";
 import { createPiCapabilityRegistry } from "../PiAgent.js";
 /** @typedef {import("./CliAgentCapabilityReportEntry.ts").CliAgentCapabilityReportEntry} CliAgentCapabilityReportEntry */
 
@@ -26,6 +27,11 @@ const CLI_AGENT_CAPABILITY_ADAPTERS = [
         id: "kimi",
         binary: "kimi",
         buildRegistry: () => createKimiCapabilityRegistry(),
+    },
+    {
+        id: "opencode",
+        binary: "opencode",
+        buildRegistry: () => createOpenCodeCapabilityRegistry(),
     },
     {
         id: "pi",

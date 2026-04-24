@@ -1,5 +1,9 @@
 /** @jsxImportSource smithers-orchestrator */
 import { describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SmithersDb } from "@smithers-orchestrator/db/adapter";
 import { ensureSmithersTables } from "@smithers-orchestrator/db/ensure";
 import { Task, Workflow, runWorkflow } from "smithers-orchestrator";
@@ -7,6 +11,30 @@ import { createTestSmithers } from "../../smithers/tests/helpers.js";
 import { outputSchemas } from "../../smithers/tests/schema.js";
 import { Effect } from "effect";
 const END_TO_END_TIMEOUT_MS = 15_000;
+const jjTimeTravelTest = hasJjBinary() ? test : test.skip;
+function hasJjBinary() {
+    try {
+        execFileSync("jj", ["--version"], { stdio: "ignore" });
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+function createTempJjRepo() {
+    const repoDir = mkdtempSync(join(tmpdir(), "smithers-time-travel-jj-"));
+    try {
+        execFileSync("jj", ["git", "init", "--colocate"], {
+            cwd: repoDir,
+            stdio: "ignore",
+        });
+        return repoDir;
+    }
+    catch (error) {
+        rmSync(repoDir, { recursive: true, force: true });
+        throw error;
+    }
+}
 /**
  * @param {any} smithers
  * @param {any} outputs
@@ -61,13 +89,18 @@ describe("timeTravel e2e", () => {
             cleanup();
         }
     }, END_TO_END_TIMEOUT_MS);
-    test("timetravel with VCS restore uses jj pointer", async () => {
+    jjTimeTravelTest("timetravel with VCS restore uses jj pointer", async () => {
+        const rootDir = createTempJjRepo();
         const { smithers, outputs, db, cleanup } = createTestSmithers(outputSchemas);
         const adapter = new SmithersDb(db);
         const { timeTravel } = await import("../src/timetravel.js");
         try {
             const workflow = buildThreeTaskWorkflow(smithers, outputs);
-            const result = await Effect.runPromise(runWorkflow(workflow, { input: {}, runId: "timetravel-vcs" }));
+            const result = await Effect.runPromise(runWorkflow(workflow, {
+                input: {},
+                runId: "timetravel-vcs",
+                rootDir,
+            }));
             expect(result.status).toBe("finished");
             const implementAttempts = await adapter.listAttempts(result.runId, "implement", 0);
             expect(implementAttempts[0]?.jjPointer).toBeTruthy();
@@ -82,6 +115,7 @@ describe("timeTravel e2e", () => {
         }
         finally {
             cleanup();
+            rmSync(rootDir, { recursive: true, force: true });
         }
     }, END_TO_END_TIMEOUT_MS);
     test("timetravel + resume completes the workflow", async () => {

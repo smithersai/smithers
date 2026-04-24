@@ -303,14 +303,66 @@ function extractTextFromJsonPayload(raw) {
                     return text;
             }
         }
+        // OpenCode-style CLIs emit a final "finish" or "done" event with the
+        // complete response text directly on the payload. Prefer this over
+        // concatenating all text_delta chunks which would duplicate content.
+        if (type === "finish" || type === "done") {
+            const text = typeof parsed?.text === "string" ? parsed.text : undefined;
+            if (text)
+                return text;
+        }
+        // OpenCode nd-JSON format: "text" events carry part.text with finalized
+        // text chunks. Accumulate these as a fallback when the interpreter's
+        // completed event isn't surfaced properly.
+        if (type === "text" && parsed?.part?.text) {
+            // Don't return early — accumulate via the chunks path below
+        }
     }
     const chunks = [];
     for (const parsed of parsedLines) {
-        const text = extractTextFromJsonValue(parsed);
+        let text;
+        if (parsed?.type === "text" && typeof parsed?.part?.text === "string") {
+            text = parsed.part.text;
+        }
+        else {
+            text = extractTextFromJsonValue(parsed);
+        }
         if (text)
             chunks.push(text);
     }
     return chunks.length ? chunks.join("") : undefined;
+}
+/**
+ * @param {string} raw
+ * @returns {string}
+ */
+function stripOscSequences(raw) {
+    return raw.replace(/\x1b\]0;[^\x07]*\x07/g, "");
+}
+/**
+ * @param {string} raw
+ * @returns {string | undefined}
+ */
+function extractErrorFromJsonPayload(raw) {
+    const trimmed = stripOscSequences(raw).trim();
+    if (!trimmed)
+        return undefined;
+    const lines = trimmed.split(/\r?\n/).filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+            const parsed = JSON.parse(lines[i]);
+            if (parsed?.type !== "error")
+                continue;
+            const message = parsed?.error?.data?.message ?? parsed?.error?.message ?? parsed?.error?.name;
+            if (typeof message === "string" && message.trim()) {
+                return message.trim();
+            }
+        }
+        catch {
+            continue;
+        }
+    }
+    return undefined;
 }
 /**
  * @param {string[]} args
@@ -425,7 +477,7 @@ function buildStreamResult(result) {
  * @returns {CliUsageInfo | undefined}
  */
 export function extractUsageFromOutput(raw) {
-    const lines = raw.split(/\r?\n/).filter(Boolean);
+    const lines = stripOscSequences(raw).split(/\r?\n/).filter(Boolean);
     const usage = {};
     let found = false;
     for (const line of lines) {
@@ -474,6 +526,25 @@ export function extractUsageFromOutput(raw) {
             }
             found = true;
             continue;
+        }
+        if (parsed.type === "step_finish" && parsed.part?.tokens && typeof parsed.part.tokens === "object") {
+            const tokens = parsed.part.tokens;
+            const input = tokens.input ?? 0;
+            const output = tokens.output ?? 0;
+            const total = tokens.total ?? 0;
+            const reasoning = tokens.reasoning ?? 0;
+            const cacheRead = tokens.cache?.read ?? 0;
+            const cacheWrite = tokens.cache?.write ?? 0;
+            if (input > 0 || output > 0 || total > 0 || reasoning > 0 || cacheRead > 0 || cacheWrite > 0) {
+                usage.inputTokens = (usage.inputTokens ?? 0) + input;
+                usage.outputTokens = (usage.outputTokens ?? 0) + output;
+                usage.totalTokens = (usage.totalTokens ?? 0) + total;
+                usage.reasoningTokens = (usage.reasoningTokens ?? 0) + reasoning;
+                usage.cacheReadTokens = (usage.cacheReadTokens ?? 0) + cacheRead;
+                usage.cacheWriteTokens = (usage.cacheWriteTokens ?? 0) + cacheWrite;
+                found = true;
+                continue;
+            }
         }
         if (parsed.usage && typeof parsed.usage === "object") {
             const u = parsed.usage;
@@ -663,6 +734,7 @@ export class BaseCliAgent {
             const interpreter = this.createOutputInterpreter();
             let stdoutBuffer = "";
             let stderrBuffer = "";
+            let completedEvent = null;
             /**
      * @param {AgentCliEvent[] | AgentCliEvent | null | undefined} eventPayload
      */
@@ -671,6 +743,9 @@ export class BaseCliAgent {
                     return;
                 const events = Array.isArray(eventPayload) ? eventPayload : [eventPayload];
                 for (const event of events) {
+                    if (event?.type === "completed") {
+                        completedEvent = event;
+                    }
                     logAgentCliEvent(event, commandLogAnnotations, span);
                     if (!options?.onEvent)
                         continue;
@@ -752,11 +827,18 @@ export class BaseCliAgent {
                 if (result.exitCode && result.exitCode !== 0) {
                     const filteredStderr = filterBenignStderr(result.stderr);
                     if (!(commandSpec.command === "codex" && filteredStderr.length === 0)) {
-                        const errorText = filteredStderr ||
+                        const structuredError = (commandSpec.outputFormat === "json" || commandSpec.outputFormat === "stream-json")
+                            ? extractErrorFromJsonPayload(result.stdout)
+                            : undefined;
+                        const errorText = structuredError ||
+                            filteredStderr ||
                             result.stdout.trim() ||
                             `CLI exited with code ${result.exitCode}`;
                         return yield* Effect.fail(new SmithersError("AGENT_CLI_ERROR", errorText));
                     }
+                }
+                if (completedEvent?.ok === false) {
+                    return yield* Effect.fail(new SmithersError("AGENT_CLI_ERROR", completedEvent.error || "CLI agent reported an error"));
                 }
                 // Some CLIs may print extra banners to stdout. Allow individual agents
                 // to provide patterns so this logic stays opt-in and agent-specific.
@@ -801,7 +883,7 @@ export class BaseCliAgent {
                         textTokens: undefined,
                         reasoningTokens: cliUsage.reasoningTokens,
                     },
-                    totalTokens: (cliUsage.inputTokens ?? 0) + (cliUsage.outputTokens ?? 0) || undefined,
+                    totalTokens: cliUsage.totalTokens ?? ((cliUsage.inputTokens ?? 0) + (cliUsage.outputTokens ?? 0) || undefined),
                 } : undefined;
                 const tokenTotals = extractAgentTokenTotals(usage);
                 stdoutEmitter?.flush(extractedText);
