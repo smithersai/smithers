@@ -22,7 +22,7 @@
   "scripts": {
     "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsup --dts-only"
+    "build": "bun --bun tsup --dts-only"
   },
   "dependencies": {
     "@smithers-orchestrator/agents": "workspace:*",

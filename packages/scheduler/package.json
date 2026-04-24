@@ -175,7 +175,7 @@
     "src/"
   ],
   "scripts": {
-    "build": "tsup --dts-only",
+    "build": "bun --bun tsup --dts-only",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

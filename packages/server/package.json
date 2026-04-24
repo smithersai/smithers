@@ -22,12 +22,13 @@
   "scripts": {
     "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsup --dts-only"
+    "build": "bun --bun tsup --dts-only"
   },
   "dependencies": {
     "@effect/workflow": "^0.18.0",
     "@smithers-orchestrator/components": "workspace:*",
     "@smithers-orchestrator/db": "workspace:*",
+    "@smithers-orchestrator/devtools": "workspace:*",
     "@smithers-orchestrator/driver": "workspace:*",
     "@smithers-orchestrator/engine": "workspace:*",
     "@smithers-orchestrator/errors": "workspace:*",
@@ -35,6 +36,7 @@
     "@smithers-orchestrator/scheduler": "workspace:*",
     "@smithers-orchestrator/time-travel": "workspace:*",
     "cron-parser": "^5.5.0",
+    "drizzle-orm": "^0.45.2",
     "effect": "^3.21.1",
     "hono": "^4.12.14",
     "ws": "^8.20.0"

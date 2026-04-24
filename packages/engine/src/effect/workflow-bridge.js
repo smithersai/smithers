@@ -7,7 +7,7 @@ import { executeTaskActivity, makeTaskBridgeKey, RetriableTaskFailure, } from ".
 import { parseAttemptMetaJson } from "./bridge-utils.js";
 import { canExecuteBridgeManagedComputeTask, executeComputeTaskBridge, } from "./compute-task-bridge.js";
 import { canExecuteBridgeManagedStaticTask, executeStaticTaskBridge, } from "./static-task-bridge.js";
-import { dispatchWorkerTask } from "./single-runner.js";
+import { dispatchWorkerTask, notifyTaskWorkerDispatch } from "./single-runner.js";
 /** @typedef {import("../HijackState.ts").HijackState} HijackState */
 /** @typedef {import("./LegacyExecuteTaskFn.ts").LegacyExecuteTaskFn} LegacyExecuteTaskFn */
 /** @typedef {import("./TaskBridgeToolConfig.ts").TaskBridgeToolConfig} TaskBridgeToolConfig */
@@ -27,7 +27,7 @@ export { SandboxEntity, SandboxEntityExecutor, makeSandboxEntityId, makeSandboxT
 export { CodeplaneSandboxExecutorLive, DockerSandboxExecutorLive, SandboxHttpRunner, } from "./http-runner.js";
 export { BubblewrapSandboxExecutorLive, SandboxSocketRunner, } from "@smithers-orchestrator/sandbox/effect/socket-runner";
 export { isTaskResultFailure, makeWorkerTask, TaskResult, WorkerDispatchKind, WorkerTask, WorkerTaskKind, TaskWorkerEntity, } from "./entity-worker.js";
-export { dispatchWorkerTask, subscribeTaskWorkerDispatches, } from "./single-runner.js";
+export { dispatchWorkerTask, notifyTaskWorkerDispatch, subscribeTaskWorkerDispatches, } from "./single-runner.js";
 /**
  * Phase 0 Seam Adapter
  *
@@ -51,6 +51,20 @@ const runEffectOrPromise = async (value) => {
     }
     return await value;
 };
+
+/**
+ * The single-runner worker bridge is currently brittle under Bun source-tree
+ * execution. When its bootstrap fails, fall back to in-process execution so
+ * local CLI runs still make forward progress.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+function isSingleRunnerBootstrapError(error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return (message.includes("@effect/cluster/SingleRunner") ||
+        message.includes("@effect/sql-sqlite-bun/SqliteClient") ||
+        message.includes("Service not found: effect/Scope"));
+}
 /**
  * @param {string | null} [errorJson]
  * @returns {string | null}
@@ -163,7 +177,8 @@ const executeBridgeAttempt = async (adapter, db, runId, desc, descriptorMap, inp
  */
 const runTaskBridgeExecution = async (adapter, db, runId, desc, descriptorMap, inputTable, eventBus, toolConfig, workflowName, cacheEnabled, bridgeManagedExecution, bridgeKey, signal, disabledAgents, runAbortController, hijackState, legacyExecuteTaskFn) => {
     const initialAttempt = await getNextTaskActivityAttempt(adapter, runId, desc);
-    return dispatchWorkerTask(makeWorkerTask(bridgeKey, workflowName, runId, desc, bridgeManagedExecution), async () => {
+    const workerTask = makeWorkerTask(bridgeKey, workflowName, runId, desc, bridgeManagedExecution);
+    const executeInProcess = async () => {
         try {
             await executeTaskActivity(adapter, workflowName, runId, desc, (context) => executeBridgeAttempt(adapter, db, runId, desc, descriptorMap, inputTable, eventBus, toolConfig, workflowName, cacheEnabled, bridgeManagedExecution, context, signal, disabledAgents, runAbortController, hijackState, legacyExecuteTaskFn), {
                 initialAttempt,
@@ -177,7 +192,17 @@ const runTaskBridgeExecution = async (adapter, db, runId, desc, descriptorMap, i
             }
             throw error;
         }
-    });
+    };
+    try {
+        return await dispatchWorkerTask(workerTask, executeInProcess);
+    }
+    catch (error) {
+        if (!isSingleRunnerBootstrapError(error)) {
+            throw error;
+        }
+        notifyTaskWorkerDispatch(workerTask);
+        return executeInProcess();
+    }
 };
 /**
  * @param {SmithersDb} adapter

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +16,9 @@ import { generateAgentsTs } from "./agent-detection.js";
 /**
  * @typedef {{ command: string; description: string; }} WorkflowCta
  */
+
+const FALLBACK_SMITHERS_VERSION = "0.0.0";
+const require = createRequire(import.meta.url);
 
 /**
  * @param {string} path
@@ -47,24 +51,30 @@ function readPackageVersion(path, fallback) {
     }
 }
 /**
- * Resolve `<spec>/package.json` via Node's module resolution (from this file's
- * location) and return its `version`. Uses `import.meta.resolve` so it works
- * whether the CLI is running from the monorepo checkout (deps under
- * `apps/cli/node_modules/`) or installed flat under a user's project
- * `node_modules/`. Falls back to the pin bundled at release time when the
- * package isn't installed in the user's project (typical for devDep-only
- * specs like `typescript` and `@types/*`).
+ * Resolve an installed dependency version from the current package layout.
  *
- * @param {string} spec
+ * @param {string} specifier
  * @param {string} fallback
  */
-function resolveDependencyVersion(spec, fallback) {
+function resolveInstalledPackageVersion(specifier, fallback) {
     try {
-        const url = import.meta.resolve(`${spec}/package.json`);
-        return readPackageVersion(fileURLToPath(url), fallback);
+        const resolved = require.resolve(`${specifier}/package.json`);
+        return readPackageVersion(resolved, fallback);
     }
     catch {
         return fallback;
+    }
+}
+/**
+ * @returns {{ version?: string }}
+ */
+function readOwnPackageJson() {
+    try {
+        const ownPackagePath = fileURLToPath(new URL("../package.json", import.meta.url));
+        return readJson(ownPackagePath);
+    }
+    catch {
+        return {};
     }
 }
 /**
@@ -83,19 +93,23 @@ const BUNDLED_VERSION_PINS = {
  * @returns {DependencyVersions}
  */
 function readDependencyVersions() {
+    const ownPackage = readOwnPackageJson();
     return {
-        smithersVersion: readPackageVersion(fileURLToPath(new URL("../package.json", import.meta.url)), "0.0.0"),
-        zodVersion: resolveDependencyVersion("zod", BUNDLED_VERSION_PINS.zod),
-        typescriptVersion: resolveDependencyVersion("typescript", BUNDLED_VERSION_PINS.typescript),
-        reactTypesVersion: resolveDependencyVersion("@types/react", BUNDLED_VERSION_PINS.reactTypes),
-        reactDomTypesVersion: resolveDependencyVersion("@types/react-dom", BUNDLED_VERSION_PINS.reactDomTypes),
-        mdxTypesVersion: resolveDependencyVersion("@types/mdx", BUNDLED_VERSION_PINS.mdxTypes),
+        smithersVersion: String(ownPackage.version ?? FALLBACK_SMITHERS_VERSION),
+        zodVersion: resolveInstalledPackageVersion("zod", BUNDLED_VERSION_PINS.zod),
+        typescriptVersion: resolveInstalledPackageVersion("typescript", BUNDLED_VERSION_PINS.typescript),
+        reactTypesVersion: resolveInstalledPackageVersion("@types/react", BUNDLED_VERSION_PINS.reactTypes),
+        reactDomTypesVersion: resolveInstalledPackageVersion("@types/react-dom", BUNDLED_VERSION_PINS.reactDomTypes),
+        mdxTypesVersion: resolveInstalledPackageVersion("@types/mdx", BUNDLED_VERSION_PINS.mdxTypes),
     };
 }
 /**
  * @param {DependencyVersions} versions
  */
 function renderPackageJson(versions) {
+    const smithersSpec = versions.smithersVersion && versions.smithersVersion !== FALLBACK_SMITHERS_VERSION
+        ? `^${versions.smithersVersion}`
+        : "latest";
     return JSON.stringify({
         name: "smithers-workflows",
         private: true,
@@ -108,7 +122,7 @@ function renderPackageJson(versions) {
         },
         dependencies: {
             skills: "github:mattpocock/skills",
-            "smithers-orchestrator": "latest",
+            "smithers-orchestrator": smithersSpec,
             zod: versions.zodVersion,
         },
         devDependencies: {
@@ -2045,6 +2059,21 @@ function renderTemplateFiles(versions, env) {
         {
             path: ".smithers/tsconfig.json",
             contents: renderTsconfig(),
+        },
+        {
+            path: ".smithers/types/assets.d.ts",
+            contents: [
+                'declare module "*.md" {',
+                "  const Component: any;",
+                "  export default Component;",
+                "}",
+                "",
+                'declare module "*.mdx" {',
+                "  const Component: any;",
+                "  export default Component;",
+                "}",
+                "",
+            ].join("\n"),
         },
         {
             path: ".smithers/bunfig.toml",

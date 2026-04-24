@@ -1,5 +1,5 @@
-import * as SingleRunner from "@effect/cluster/SingleRunner";
-import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
+import { createRequire } from "node:module";
+import { resolve } from "node:path";
 import { Effect, Layer, Scope } from "effect";
 import { fromTaggedErrorPayload } from "@smithers-orchestrator/errors/fromTaggedErrorPayload";
 import { toTaggedErrorPayload } from "@smithers-orchestrator/errors/toTaggedErrorPayload";
@@ -19,6 +19,24 @@ const workerExecutions = new Map();
 const workerErrors = new Map();
 const dispatchSubscribers = new Set();
 let singleRunnerRuntimePromise;
+let singleRunnerDepsPromise;
+const requireFromWorkspaceRoot = createRequire(resolve(process.cwd(), "package.json"));
+/**
+ * Bun fails to resolve these subpath exports reliably from the package-local
+ * engine entry, but the workspace root can resolve them consistently.
+ */
+async function loadSingleRunnerDeps() {
+    if (!singleRunnerDepsPromise) {
+        singleRunnerDepsPromise = Promise.resolve().then(() => ({
+            SingleRunner: requireFromWorkspaceRoot("@effect/cluster/SingleRunner"),
+            SqliteClient: requireFromWorkspaceRoot("@effect/sql-sqlite-bun/SqliteClient"),
+        })).catch((error) => {
+            singleRunnerDepsPromise = undefined;
+            throw error;
+        });
+    }
+    return singleRunnerDepsPromise;
+}
 /**
  * @param {WorkerTask} task
  */
@@ -31,6 +49,14 @@ function notifyDispatchSubscribers(task) {
             // Dispatch observers are best-effort and should not affect execution.
         }
     }
+}
+/**
+ * Preserve the dispatch observer contract even when worker execution falls
+ * back to the local in-process path.
+ * @param {WorkerTask} task
+ */
+export function notifyTaskWorkerDispatch(task) {
+    notifyDispatchSubscribers(task);
 }
 /**
  * @param {WorkerTask} task
@@ -123,6 +149,7 @@ async function runRegisteredExecution(task) {
  * @returns {Promise<SingleRunnerRuntime>}
  */
 async function buildSingleRunnerRuntime() {
+    const { SingleRunner, SqliteClient } = await loadSingleRunnerDeps();
     const runnerLayer = SingleRunner.layer({ runnerStorage: "memory" }).pipe(Layer.provide(Layer.orDie(SqliteClient.layer({
         filename: ":memory:",
         disableWAL: true,
@@ -132,10 +159,11 @@ async function buildSingleRunnerRuntime() {
     }), { concurrency: "unbounded" }).pipe(Layer.provideMerge(runnerLayer));
     const scope = await Effect.runPromise(Scope.make());
     const context = await Effect.runPromise(Layer.buildWithScope(layer, scope));
-    const client = await Effect.runPromise(TaskWorkerEntity.client.pipe(Effect.provide(context)));
+    const client = await Effect.runPromise(TaskWorkerEntity.client.pipe(Effect.provideService(Scope.Scope, scope), Effect.provide(context)));
     return {
         client: client,
         context,
+        scope,
     };
 }
 /**
@@ -163,7 +191,7 @@ export async function dispatchWorkerTask(task, execute) {
     };
     workerExecutions.set(task.executionId, registered);
     try {
-        const result = await Effect.runPromise(runtime.client(task.bridgeKey).execute(task).pipe(Effect.provide(runtime.context)));
+        const result = await Effect.runPromise(runtime.client(task.bridgeKey).execute(task).pipe(Effect.provideService(Scope.Scope, runtime.scope), Effect.provide(runtime.context)));
         if (isTaskResultFailure(result)) {
             throw consumeWorkerError(result);
         }

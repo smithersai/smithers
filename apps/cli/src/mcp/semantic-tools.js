@@ -10,7 +10,6 @@ import { diagnoseRunEffect, } from "../why-diagnosis.js";
 import { chatAttemptKey, parseChatAttemptMeta, parseNodeOutputEvent, selectChatAttempts, } from "../chat.js";
 import { WATCH_MIN_INTERVAL_MS } from "../watch.js";
 import { discoverWorkflows, resolveWorkflow } from "../workflows.js";
-import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
 import { approveNode, denyNode } from "@smithers-orchestrator/engine/approvals";
 import { runWorkflow } from "@smithers-orchestrator/engine";
 import { revertToAttempt } from "@smithers-orchestrator/time-travel/revert";
@@ -610,9 +609,17 @@ async function listAllEvents(adapter, runId) {
  * @param {string} workflowId
  * @param {string} cwd
  */
+async function ensureMdxPlugin() {
+    const { mdxPlugin } = await import("smithers-orchestrator/mdx-plugin");
+    mdxPlugin();
+}
+/**
+ * @param {string} workflowId
+ * @param {string} cwd
+ */
 async function loadWorkflowById(workflowId, cwd) {
     const discovered = resolveWorkflow(workflowId, cwd);
-    mdxPlugin();
+    await ensureMdxPlugin();
     const moduleUrl = pathToFileURL(resolve(discovered.entryFile)).href;
     const mod = await import(moduleUrl);
     if (!mod.default) {

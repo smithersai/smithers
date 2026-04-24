@@ -20,13 +20,18 @@
     "src/"
   ],
   "scripts": {
-    "build": "tsup --dts-only",
+    "build": "bun --bun tsup --dts-only",
     "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@effect/cluster": "^0.58.0",
+    "@effect/experimental": "^0.60.0",
     "@effect/platform-bun": "^0.89.0",
+    "@effect/rpc": "^0.75.0",
+    "@effect/sql": "^0.51.0",
     "@effect/sql-sqlite-bun": "^0.52.0",
+    "@effect/workflow": "^0.18.0",
     "@smithers-orchestrator/agents": "workspace:*",
     "@smithers-orchestrator/components": "workspace:*",
     "@smithers-orchestrator/db": "workspace:*",
@@ -41,7 +46,12 @@
     "@smithers-orchestrator/scorers": "workspace:*",
     "@smithers-orchestrator/time-travel": "workspace:*",
     "@smithers-orchestrator/vcs": "workspace:*",
-    "effect": "^3.21.1"
+    "diff": "^9.0.0",
+    "drizzle-orm": "^0.45.2",
+    "effect": "^3.21.1",
+    "react-dom": "^19.2.5",
+    "zod": "^4.3.6",
+    "react": "^19.2.5"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -22,7 +22,7 @@
   "scripts": {
     "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "tsup --dts-only"
+    "build": "bun --bun tsup --dts-only"
   },
   "dependencies": {
     "@effect/workflow": "^0.18.0",
@@ -32,12 +32,15 @@
     "@smithers-orchestrator/agents": "workspace:*",
     "@smithers-orchestrator/components": "workspace:*",
     "@smithers-orchestrator/db": "workspace:*",
+    "@smithers-orchestrator/devtools": "workspace:*",
     "@smithers-orchestrator/driver": "workspace:*",
+    "@smithers-orchestrator/engine": "workspace:*",
     "@smithers-orchestrator/errors": "workspace:*",
     "@smithers-orchestrator/observability": "workspace:*",
     "@smithers-orchestrator/scheduler": "workspace:*",
     "@smithers-orchestrator/server": "workspace:*",
     "@smithers-orchestrator/time-travel": "workspace:*",
+    "cron-parser": "^5.5.0",
     "effect": "^3.21.1",
     "incur": "^0.4.1",
     "picocolors": "^1.1.1",

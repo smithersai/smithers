@@ -5,7 +5,6 @@ import { pathToFileURL } from "node:url";
 import { SmithersCtx } from "@smithers-orchestrator/driver";
 import { loadInput, loadOutputs } from "@smithers-orchestrator/db/snapshot";
 import { renderFrame, resolveSchema } from "@smithers-orchestrator/engine";
-import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
 import { SmithersError } from "@smithers-orchestrator/errors";
 import { Effect } from "effect";
 /** @typedef {import("./HijackCandidate.ts").HijackCandidate} HijackCandidate */
@@ -47,9 +46,17 @@ function parseAttemptMeta(metaJson) {
  * @param {string} workflowPath
  * @returns {Promise<SmithersWorkflow<any>>}
  */
+async function ensureMdxPlugin() {
+    const { mdxPlugin } = await import("smithers-orchestrator/mdx-plugin");
+    mdxPlugin();
+}
+/**
+ * @param {string} workflowPath
+ * @returns {Promise<SmithersWorkflow<any>>}
+ */
 async function loadWorkflow(workflowPath) {
     const abs = resolve(process.cwd(), workflowPath);
-    mdxPlugin();
+    await ensureMdxPlugin();
     const mod = await import(pathToFileURL(abs).href);
     if (!mod.default) {
         throw new SmithersError("WORKFLOW_MISSING_DEFAULT", `Workflow ${workflowPath} must export default`);

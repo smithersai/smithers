@@ -6,7 +6,6 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { Effect, Fiber } from "effect";
 import { Cli, Mcp as IncurMcp, z } from "incur";
 import { isRunHeartbeatFresh, runWorkflow, renderFrame, resolveSchema } from "@smithers-orchestrator/engine";
-import { mdxPlugin } from "smithers-orchestrator/mdx-plugin";
 import { approveNode, denyNode } from "@smithers-orchestrator/engine/approvals";
 import { signalRun } from "@smithers-orchestrator/engine/signals";
 import { loadInput, loadOutputs } from "@smithers-orchestrator/db/snapshot";
@@ -52,9 +51,17 @@ import crypto from "node:crypto";
  * @param {string} path
  * @returns {Promise<SmithersWorkflow<any>>}
  */
+async function ensureMdxPlugin() {
+    const { mdxPlugin } = await import("smithers-orchestrator/mdx-plugin");
+    mdxPlugin();
+}
+/**
+ * @param {string} path
+ * @returns {Promise<SmithersWorkflow<any>>}
+ */
 async function loadWorkflowAsync(path) {
     const abs = resolve(process.cwd(), path);
-    mdxPlugin();
+    await ensureMdxPlugin();
     const mod = await import(pathToFileURL(abs).href);
     if (!mod.default)
         throw new SmithersError("WORKFLOW_MISSING_DEFAULT", "Workflow must export default");

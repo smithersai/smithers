@@ -25,7 +25,7 @@
     "src/"
   ],
   "scripts": {
-    "build": "tsup --dts-only",
+    "build": "bun --bun tsup --dts-only",
     "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -35,6 +35,10 @@
     "@effect/platform-bun": "^0.89.0",
     "@smithers-orchestrator/agents": "workspace:*",
     "@smithers-orchestrator/driver": "workspace:*",
+    "@smithers-orchestrator/memory": "workspace:*",
+    "@smithers-orchestrator/openapi": "workspace:*",
+    "@smithers-orchestrator/scorers": "workspace:*",
+    "@smithers-orchestrator/time-travel": "workspace:*",
     "effect": "^3.21.1"
   },
   "devDependencies": {
