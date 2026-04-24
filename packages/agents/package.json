@@ -56,6 +56,7 @@
     "@smithers-orchestrator/errors": "workspace:*",
     "@smithers-orchestrator/observability": "workspace:*",
     "ai": "^6.0.168",
+    "effect": "^3.21.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
