@@ -654,6 +654,7 @@ process.stdout.write('${stepFinish()}' + "\\n");
 
       const agent = new OpenCodeAgent({
         model: "anthropic/claude-opus-4-20250514",
+        continueSession: true,
         env: { PATH: process.env.PATH },
       });
 
