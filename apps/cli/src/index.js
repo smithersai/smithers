@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { resolve, dirname, basename } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readFileSync, existsSync, openSync } from "node:fs";
+import { readFileSync, existsSync, openSync, statSync } from "node:fs";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Effect, Fiber } from "effect";
 import { Cli, Mcp as IncurMcp, z } from "incur";
@@ -45,6 +45,7 @@ import { WATCH_MIN_INTERVAL_MS, runWatchLoop, watchIntervalSecondsToMs, } from "
 import { createSemanticMcpServer } from "./mcp/semantic-server.js";
 import pc from "picocolors";
 import crypto from "node:crypto";
+import React from "react";
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -1242,6 +1243,10 @@ const chatOptions = z.object({
     tail: z.number().int().min(1).optional().describe("Show only the last N chat blocks"),
     stderr: z.boolean().default(true).describe("Include agent stderr output"),
 });
+const chatCreateOptions = z.object({
+    agent: z.enum(["claude-code", "codex", "gemini"]).describe("CLI agent engine to launch"),
+    cwd: z.string().optional().describe("Working directory for the chat session (default: current directory)"),
+});
 const inspectArgs = z.object({
     runId: z.string().describe("Run ID to inspect"),
 });
@@ -2253,7 +2258,7 @@ const cli = Cli.create({
             const result = initWorkflowPack({
                 force: c.options.force,
                 agentsOnly: c.options.agentsOnly,
-                skipInstall: !c.options.agentsOnly || !c.options.install,
+                skipInstall: c.options.agentsOnly || !c.options.install,
             });
             return c.ok(result, c.options.agentsOnly
                 ? undefined
@@ -2263,11 +2268,11 @@ const cli = Cli.create({
                         commands: c.agent
                             ? [
                                 { command: "workflow list", description: "View all available workflows" },
-                                { command: "bun install -g smithers", description: "Install smithers globally" },
+                                { command: "workflow run implement", description: "Run the implementation workflow" },
                             ]
                             : [
                                 { command: "tui", description: "Open the interactive dashboard" },
-                                { command: "bun install -g smithers", description: "Install smithers globally" },
+                                { command: "workflow list", description: "View all available workflows" },
                             ],
                     },
                 });
@@ -2924,6 +2929,80 @@ const cli = Cli.create({
         }
         finally {
             cleanup?.();
+        }
+    },
+})
+    // =========================================================================
+    // smithers chat create
+    // =========================================================================
+    .command("chat-create", {
+    description: "Create and start a one-task auto-hijacked chat run.",
+    options: chatCreateOptions,
+    async run(c) {
+        const fail = (opts) => {
+            commandExitOverride = opts.exitCode ?? 1;
+            return c.error(opts);
+        };
+        const chatCwd = resolve(process.cwd(), c.options.cwd ?? ".");
+        if (!existsSync(chatCwd)) {
+            return fail({
+                code: "PATH_NOT_FOUND",
+                message: `Path does not exist: ${chatCwd}`,
+                exitCode: 4,
+            });
+        }
+        if (!statSync(chatCwd).isDirectory()) {
+            return fail({
+                code: "PATH_NOT_DIRECTORY",
+                message: `Path is not a directory: ${chatCwd}`,
+                exitCode: 4,
+            });
+        }
+        try {
+            const workflow = await buildInlineChatWorkflow(c.options.agent, chatCwd);
+            setupSqliteCleanup(workflow);
+            const result = await Effect.runPromise(runWorkflow(workflow, {
+                input: {},
+                rootDir: chatCwd,
+            }));
+            const adapter = new SmithersDb(workflow.db);
+            const candidate = result.runId
+                ? await resolveHijackCandidate(adapter, result.runId, c.options.agent)
+                : null;
+            if (!candidate) {
+                if (result.status === "failed") {
+                    return fail({
+                        code: result.error?.code ?? "CHAT_CREATE_FAILED",
+                        message: result.error?.message ?? `Chat run ${result.runId} failed.`,
+                        exitCode: result.error?.code === "TASK_HIJACK_UNSUPPORTED" ? 4 : 1,
+                    });
+                }
+                return fail({
+                    code: "CHAT_CREATE_UNAVAILABLE",
+                    message: `Chat run ${result.runId} did not produce a hijackable ${c.options.agent} session.`,
+                    exitCode: 1,
+                });
+            }
+            return c.ok({
+                runId: result.runId,
+                workflowName: "chat",
+                agent: c.options.agent,
+            }, {
+                cta: {
+                    description: "Next steps:",
+                    commands: [
+                        { command: `hijack ${result.runId}`, description: "Open the chat session" },
+                        { command: `inspect ${result.runId}`, description: "Inspect run state" },
+                    ],
+                },
+            });
+        }
+        catch (err) {
+            return fail({
+                code: err instanceof SmithersError ? err.code : "CHAT_CREATE_FAILED",
+                message: err?.message ?? String(err),
+                exitCode: err instanceof SmithersError ? 4 : 1,
+            });
         }
     },
 })
@@ -4623,7 +4702,7 @@ wrapCliCommandHandlersWithInputBounds(cliCommands);
 // ---------------------------------------------------------------------------
 const KNOWN_COMMANDS = new Set([
     "init", "up", "supervise", "down", "ps", "logs", "events", "chat", "inspect", "node", "why", "approve", "deny",
-    "cancel", "graph", "revert", "scores", "observability", "workflow", "ask", "cron",
+    "cancel", "graph", "revert", "scores", "observability", "workflow", "ask", "cron", "chat-create",
     "replay", "diff", "fork", "timeline", "memory", "openapi", "agents", "alerts",
     "tree", "output", "rewind", "gui",
 ]);
@@ -4844,10 +4923,85 @@ function normalizeResumeOption(value) {
     }
     return { resume: true, resumeRunId: normalized };
 }
+const CHAT_CREATE_PROMPT = [
+    "Start an interactive chat session with the user and help them directly.",
+    "Stay in this conversation until the user is done.",
+    'When you are completely finished and want to hand control back to Smithers, end your final response with an empty JSON object in a ```json fence: {}.',
+].join("\n\n");
+/**
+ * @param {"claude-code" | "codex" | "gemini"} agentId
+ * @param {string} cwd
+ */
+async function createChatAgent(agentId, cwd) {
+    switch (agentId) {
+        case "claude-code": {
+            const { ClaudeCodeAgent } = await import("@smithers-orchestrator/agents/ClaudeCodeAgent");
+            return new ClaudeCodeAgent({
+                cwd,
+                model: "claude-opus-4-6",
+            });
+        }
+        case "codex": {
+            const { CodexAgent } = await import("@smithers-orchestrator/agents/CodexAgent");
+            return new CodexAgent({
+                cwd,
+                model: "gpt-5.3-codex",
+                skipGitRepoCheck: true,
+            });
+        }
+        case "gemini": {
+            const { GeminiAgent } = await import("@smithers-orchestrator/agents/GeminiAgent");
+            return new GeminiAgent({
+                cwd,
+                model: "gemini-3.1-pro-preview",
+            });
+        }
+    }
+}
+/**
+ * @param {"claude-code" | "codex" | "gemini"} agentId
+ * @param {string} cwd
+ * @returns {Promise<import("smithers-orchestrator").SmithersWorkflow<any>>}
+ */
+async function buildInlineChatWorkflow(agentId, cwd) {
+    const { createSmithers } = await import("smithers-orchestrator");
+    const { z: zod } = await import("zod");
+    const agent = await createChatAgent(agentId, cwd);
+    const { Workflow, Task, smithers, outputs } = createSmithers({
+        chat: zod.object({}),
+    }, {
+        dbPath: resolve(cwd, "smithers.db"),
+    });
+    return smithers(() => React.createElement(Workflow, { name: "chat" }, React.createElement(Task, {
+        id: "chat",
+        output: outputs.chat,
+        agent,
+        hijack: true,
+    }, CHAT_CREATE_PROMPT)));
+}
+/**
+ * @param {string[]} argv
+ */
+function rewriteChatCreateArgv(argv) {
+    const commandIndex = findFirstPositionalIndex(argv);
+    if (commandIndex < 0 || argv[commandIndex] !== "chat") {
+        return argv;
+    }
+    const subcommandIndex = findFirstPositionalIndex(argv, commandIndex + 1);
+    if (subcommandIndex < 0 || argv[subcommandIndex] !== "create") {
+        return argv;
+    }
+    return [
+        ...argv.slice(0, commandIndex),
+        "chat-create",
+        ...argv.slice(subcommandIndex + 1),
+    ];
+}
 async function main() {
     const rawArgv = process.argv.slice(2);
     let argv = rawArgv.map((arg) => (arg === "-v" ? "--version" : arg));
     argv = rewriteGuiShortcutArgv(argv);
+    argv = rewriteChatCreateArgv(argv);
     argv = rewriteWorkflowCommandArgv(argv);
     argv = rewriteEventsJsonFlagArgv(argv);
     // Finding #3: route `--json` to command-scoped `-j` for devtools commands.

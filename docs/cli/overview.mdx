@@ -29,11 +29,13 @@ Always invoke as `bunx smithers-orchestrator <command>` (see [Installation](/ins
 Commands listed by dotted name. Subcommands of `workflow`, `cron`, `human`, `alerts`, `memory`, `openapi`, `agents`, `mcp`, `skills` appear as `parent.sub`.
 
 ```toon
-commands[55]:
+commands[56]:
   - name: init
     purpose: Install the local workflow pack into .smithers/
-    flags[1]{name,short,type,default,desc}:
+    flags[3]{name,short,type,default,desc}:
       force,,boolean,false,Overwrite existing scaffold files
+      agents-only,,boolean,false,Only create .smithers/agents/
+      install,,boolean,true,Run bun install inside .smithers/ after scaffolding
   - name: up
     purpose: Start or resume a workflow execution
     args[1]{name,type,required,desc}:
@@ -103,6 +105,11 @@ commands[55]:
       follow,f,boolean,false,Watch for new output
       tail,n,number,,Last N chat blocks
       stderr,,boolean,true,Include agent stderr
+  - name: chat.create
+    purpose: Create and start a one-task auto-hijacked chat run
+    flags[2]{name,short,type,default,desc}:
+      agent,,string,,"claude-code|codex|gemini"
+      cwd,,string,.,Working directory for the chat session
   - name: inspect
     purpose: Print structured run state, steps, approvals, loop info
     args[1]{name,type,required,desc}:
