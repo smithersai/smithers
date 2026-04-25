@@ -2,7 +2,7 @@
 /** @jsxImportSource smithers-orchestrator */
 import { createSmithers, Sequence, Parallel, Worktree } from "smithers-orchestrator";
 import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, relative } from "node:path";
 import { z } from "zod/v4";
 import { agents } from "../agents";
 import { ValidationLoop, implementOutputSchema, validateOutputSchema } from "../components/ValidationLoop";
@@ -32,18 +32,34 @@ const { Workflow, Task, smithers, outputs } = createSmithers({
 
 function discoverTickets(): Array<{ id: string; slug: string; content: string }> {
   const ticketsDir = resolve(process.cwd(), ".smithers/tickets");
-  try {
-    return readdirSync(ticketsDir, { withFileTypes: true })
-      .filter((e) => e.isFile() && e.name.endsWith(".md") && e.name !== ".gitkeep")
-      .map((e) => {
-        const content = readFileSync(resolve(ticketsDir, e.name), "utf8");
-        const slug = e.name.replace(/\.md$/, "");
-        return { id: e.name, slug, content };
-      })
-      .sort((a, b) => a.id.localeCompare(b.id));
-  } catch {
-    return [];
+  const out: Array<{ id: string; slug: string; content: string }> = [];
+
+  function walk(dir: string, depth: number): void {
+    if (depth > 4) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name.startsWith(".")) continue;
+      const full = resolve(dir, e.name);
+      if (e.isDirectory()) {
+        walk(full, depth + 1);
+        continue;
+      }
+      if (!e.isFile() || !e.name.endsWith(".md")) continue;
+      if (e.name.toLowerCase() === "readme.md") continue;
+      const rel = relative(ticketsDir, full);
+      const id = rel;
+      const slug = rel.replace(/\.md$/, "").replace(/[/\\]/g, "__");
+      out.push({ id, slug, content: readFileSync(full, "utf8") });
+    }
   }
+
+  walk(ticketsDir, 0);
+  return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** Build feedback string from validation + review outputs for a ticket. */
@@ -54,9 +70,9 @@ function buildFeedback(
   const validate = ctx.outputMaybe("validate", { nodeId: `${slug}:validate` });
   const reviews = ctx.outputs.review ?? [];
 
-  // Filter reviews for this ticket's prefix
+  // Review outputs share the same table across every ticket; scope by node id.
   const ticketReviews = reviews.filter(
-    (r: any) => r.reviewer?.startsWith?.("reviewer-"),
+    (r: any) => typeof r.nodeId === "string" && r.nodeId.startsWith(`${slug}:review:`),
   );
 
   // done = false until validate has actually run AND passed, AND at least one reviewer approved
