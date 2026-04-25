@@ -17,6 +17,13 @@ Phase 0 — operator trust, recovery, CLI:
 - [0022](smithers/0022-fault-injection-e2e-matrix.md) — E2E fault-injection matrix
 - [0023](smithers/0023-gateway-reference-deployment.md) — Gateway stable RPC + reference deployment
 
+Phase 0.5 — 2026-04-25 hardening review (CI honesty + import contracts):
+
+- [0024](smithers/0024-cli-json-stdout-contamination.md) — CLI `--json` stdout contamination + duplicate Effect runtime
+- [0025](smithers/0025-pi-tui-undeclared-dependency.md) — `@mariozechner/pi-tui` is an undeclared dep of `smithers`
+- [0026](smithers/0026-smithers-workspace-typecheck-and-agentlike.md) — `.smithers` workspace fails `tsc`; `AgentLike` contract diverges
+- [0027](smithers/0027-root-validation-scope-gaps.md) — Root `typecheck`/`lint` scope too narrow — false-green CI
+
 ## `jjhub/` — `/Users/williamcory/jjhub`
 
 Make JJHub the blessed Smithers runtime:
