@@ -623,6 +623,14 @@ export const executeComputeTaskBridge = async (adapter, db, runId, desc, eventBu
         if (isHeartbeatPayloadValidationError(effectiveError)) {
             attemptMeta.failureRetryable = false;
         }
+        // Propagate non-retryable signal from any thrown SmithersError so the
+        // attempt is not retried (e.g. AGENT_CONFIG_INVALID from KimiAgent's
+        // expired-credentials check, or auth-failure patterns classified by
+        // BaseCliAgent.classifyNonRetryableAgentError).
+        if (effectiveError?.details?.failureRetryable === false ||
+            effectiveError?.code === "AGENT_CONFIG_INVALID") {
+            attemptMeta.failureRetryable = false;
+        }
         if (aborted) {
             await waitForHeartbeatWriteDrain();
             await flushHeartbeat(true);
