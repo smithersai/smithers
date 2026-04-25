@@ -598,9 +598,10 @@ export class BaseCliAgent {
         const recordDurationMetric = () => Effect.sync(() => performance.now() - invocationStart).pipe(Effect.flatMap((durationMs) => Metric.update(taggedMetric(agentDurationMs, metricTags), durationMs)));
         /**
      * @param {string} stderr
+     * @param {ReadonlyArray<RegExp>} [extraPatterns]
      * @returns {string}
      */
-        function filterBenignStderr(stderr) {
+        function filterBenignStderr(stderr, extraPatterns) {
             const benignPatterns = [
                 /^.*state db missing rollout path.*$/gm,
                 /^.*codex_core::rollout::list.*$/gm,
@@ -611,6 +612,12 @@ export class BaseCliAgent {
             let filtered = stderr;
             for (const pattern of benignPatterns) {
                 filtered = filtered.replace(pattern, "");
+            }
+            if (extraPatterns?.length) {
+                for (const pattern of extraPatterns) {
+                    const regex = new RegExp(pattern.source, pattern.flags);
+                    filtered = filtered.replace(regex, "");
+                }
             }
             // Clean up extra blank lines
             return filtered.replace(/\n{3,}/g, "\n\n").trim();
@@ -750,7 +757,7 @@ export class BaseCliAgent {
                     }).pipe(Effect.catchAll(() => Effect.succeed(result.stdout)))
                     : result.stdout;
                 if (result.exitCode && result.exitCode !== 0) {
-                    const filteredStderr = filterBenignStderr(result.stderr);
+                    const filteredStderr = filterBenignStderr(result.stderr, commandSpec.benignStderrPatterns);
                     if (!(commandSpec.command === "codex" && filteredStderr.length === 0)) {
                         const errorText = filteredStderr ||
                             result.stdout.trim() ||

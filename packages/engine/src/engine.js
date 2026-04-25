@@ -3133,10 +3133,12 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
                 // Fall back to parsing text/steps for JSON
                 if (output === undefined) {
                     const text = result.text ?? "";
-                    // Try to parse the whole text as JSON first
+                    // Try to parse the whole text as JSON first. Strip a leading
+                    // UTF-8 BOM and accept either object or array at the root,
+                    // since Zod schemas occasionally validate arrays.
                     try {
-                        const trimmed = text.trim();
-                        if (trimmed.startsWith("{")) {
+                        const trimmed = text.replace(/^\uFEFF/, "").trim();
+                        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                             output = JSON.parse(trimmed);
                         }
                     }
@@ -3313,13 +3315,27 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
                         const retryText = retryResult.text ?? "";
                         responseText = retryText || responseText;
                         try {
-                            const trimmed = retryText.trim();
-                            if (trimmed.startsWith("{")) {
+                            const trimmed = retryText.replace(/^\uFEFF/, "").trim();
+                            if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
                                 output = JSON.parse(trimmed);
                             }
                         }
                         catch {
                             // Still not valid JSON
+                        }
+                        if (output === undefined) {
+                            // Try extracting JSON from a markdown code fence
+                            // (```json ... ``` or just ``` ... ```).
+                            const fenceMatch = retryText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+                            if (fenceMatch) {
+                                const inner = fenceMatch[1].trim();
+                                try {
+                                    output = JSON.parse(inner);
+                                }
+                                catch {
+                                    // Fall through to balanced extraction
+                                }
+                            }
                         }
                         if (output === undefined) {
                             // Try extracting balanced JSON from retry text
@@ -3352,7 +3368,11 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
                             lastStepText: debugSteps[debugSteps.length - 1]?.text?.slice(0, 500) ??
                                 "none",
                         }, "engine:task-json");
-                        throw new SmithersError("INVALID_OUTPUT", "No valid JSON output found in agent response");
+                        const tail = (text ?? "").slice(-200).replace(/\s+/g, " ").trim();
+                        const tailHint = tail
+                            ? ` Last 200 chars of response: ${JSON.stringify(tail)}`
+                            : " Agent returned an empty response.";
+                        throw new SmithersError("INVALID_OUTPUT", `No valid JSON output found in agent response (finishReason=${finishReason}, textLength=${text.length}).${tailHint}`);
                     }
                 }
                 // Output should already be parsed, but handle string case

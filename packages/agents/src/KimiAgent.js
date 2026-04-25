@@ -254,6 +254,14 @@ export class KimiAgent extends BaseCliAgent {
                 /^Unknown error:/i,
                 /^Error:/i,
             ],
+            // The kimi CLI emits "To resume this session: kimi -r <id>" to stderr
+            // on every non-zero exit (it's a hint for interactive users, not the
+            // actual error). Strip it so the real underlying error surfaces — and
+            // when it's the only stderr content, our runner will fall back to a
+            // useful "exited with code N" message that the engine can retry.
+            benignStderrPatterns: [
+                /^\s*To resume this session: kimi -r [0-9a-f-]+\s*$/gim,
+            ],
             errorOnBannerOnly: true,
         };
     }
