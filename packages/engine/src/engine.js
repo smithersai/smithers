@@ -1526,13 +1526,11 @@ function assertResumeDurabilityMetadata(existingRun, existingConfig, current, wo
     else if (shouldCheckWorkflowHashes) {
         compareNullableString(existingRun.workflowHash, current.entryWorkflowHash, "workflow entry file changed", mismatches);
     }
-    compareNullableString(existingRun.vcsType, current.vcsType, "VCS type changed", mismatches);
     if ((existingRun.vcsRoot && current.vcsRoot
         ? resolve(existingRun.vcsRoot) !== resolve(current.vcsRoot)
         : (existingRun.vcsRoot ?? null) !== (current.vcsRoot ?? null))) {
         mismatches.push("VCS root changed");
     }
-    compareNullableString(existingRun.vcsRevision, current.vcsRevision, "VCS revision changed", mismatches);
     if (mismatches.length > 0) {
         throw new SmithersError("RESUME_METADATA_MISMATCH", `Cannot resume run because durable metadata changed: ${mismatches.join(", ")}`, {
             existing: {
