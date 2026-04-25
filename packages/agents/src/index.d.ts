@@ -238,11 +238,11 @@ declare class BaseCliAgent {
     maxOutputBytes: number | undefined;
     extraArgs: string[] | undefined;
     /**
-   * @param {AgentGenerateOptions} [options]
+   * @param {AgentGenerateOptions | undefined} options
    * @param {AgentInvocationOperation} operation
    * @returns {Effect.Effect<GenerateTextResult<Record<string, never>, unknown>, SmithersError>}
    */
-    runGenerateEffect(options?: AgentGenerateOptions, operation: AgentInvocationOperation): Effect.Effect<GenerateTextResult$3<Record<string, never>, unknown>, SmithersError>;
+    runGenerateEffect(options: AgentGenerateOptions | undefined, operation: AgentInvocationOperation): Effect.Effect<GenerateTextResult$3<Record<string, never>, unknown>, SmithersError>;
     /**
    * @param {AgentGenerateOptions} [options]
    * @returns {Promise<GenerateTextResult<Record<string, never>, unknown>>}
