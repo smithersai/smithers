@@ -79,7 +79,7 @@ Smithers is a durable workflow runtime. You write a workflow as a JSX tree, and 
         {`Fix: ${analysis.issues}`}
       </Task>
     ) : null}
-  </Workflow>
+  </Sequence>
 </Workflow>
 ```
 
@@ -155,6 +155,23 @@ See [JSX Installation](/jsx/installation) for the package list, TypeScript confi
 - [Bun](https://bun.sh) >= 1.3
 - TypeScript >= 5
 - Model or provider credentials (e.g. [Anthropic](https://docs.anthropic.com) `ANTHROPIC_API_KEY`)
+
+## Desktop App (macOS)
+
+The Smithers desktop GUI is a separate download. It's a native macOS app (Apple Silicon) that includes the orchestrator, an embedded terminal, and workflow tooling.
+
+<a href="https://get.smithers.sh/SmithersGUI.dmg">Download SmithersGUI.dmg</a>
+
+Or from the terminal:
+
+```bash
+curl -LO https://get.smithers.sh/SmithersGUI.dmg
+open SmithersGUI.dmg
+```
+
+<Tip>
+The current build is unsigned. The first time you open it, right-click the app and choose **Open**, then confirm the Gatekeeper dialog. This only needs to be done once.
+</Tip>
 
 ## After Installation
 
@@ -437,7 +454,7 @@ It auto-resumes runs whose owner process died.
 
 - [How It Works](/how-it-works) — the render → execute → persist loop.
 - [Components](/components/workflow) — JSX surface reference.
-- [CLI](/cli/overview) — every command in one TOON table.
+- [CLI](/cli/overview) — every command in one TOON catalog.
 - [Recipes](/recipes) — patterns from production workflows.
 
 ---
@@ -645,7 +662,7 @@ Every frame commit produces a `GraphSnapshot`.
 
 ```bash
 bunx smithers-orchestrator timeline <run-id>           # frames + forks
-bunx smithers-orchestrator diff <run-a>:5 <run-b>:7    # what changed
+bunx smithers-orchestrator diff <run-id> <node-id>     # node DiffBundle
 bunx smithers-orchestrator fork workflow.tsx --run-id <id> --frame 5 --reset-node analyze
 bunx smithers-orchestrator replay workflow.tsx --run-id <id> --frame 5 --restore-vcs
 ```
@@ -730,7 +747,7 @@ To embed into an existing codebase:
 
 ```bash
 bun add smithers-orchestrator ai @ai-sdk/anthropic zod
-bun add -d typescript @types/bun @types/ws @types/diff
+bun add -d typescript @types/bun @types/ws
 ```
 
 Minimal `tsconfig.json`:
@@ -829,11 +846,13 @@ Always invoke as `bunx smithers-orchestrator <command>` (see [Installation](/ins
 Commands listed by dotted name. Subcommands of `workflow`, `cron`, `human`, `alerts`, `memory`, `openapi`, `agents`, `mcp`, `skills` appear as `parent.sub`.
 
 ```toon
-commands[55]:
+commands[56]:
   - name: init
     purpose: Install the local workflow pack into .smithers/
-    flags[1]{name,short,type,default,desc}:
+    flags[3]{name,short,type,default,desc}:
       force,,boolean,false,Overwrite existing scaffold files
+      agents-only,,boolean,false,Only create .smithers/agents/
+      install,,boolean,true,Run bun install inside .smithers/ after scaffolding
   - name: up
     purpose: Start or resume a workflow execution
     args[1]{name,type,required,desc}:
@@ -903,6 +922,11 @@ commands[55]:
       follow,f,boolean,false,Watch for new output
       tail,n,number,,Last N chat blocks
       stderr,,boolean,true,Include agent stderr
+  - name: chat.create
+    purpose: Create and start a one-task auto-hijacked chat run
+    flags[2]{name,short,type,default,desc}:
+      agent,,string,,"claude-code|codex|gemini"
+      cwd,,string,.,Working directory for the chat session
   - name: inspect
     purpose: Print structured run state, steps, approvals, loop info
     args[1]{name,type,required,desc}:
@@ -3100,10 +3124,10 @@ Two models catch different bugs. Cost = the slower model's latency.
 
 ```tsx
 <Parallel>
-  <Task id={`${t.id}:review-claude`} output={outputs.review} agent={claude} continueOnFail>
+  <Task id={`${ticket.id}:review-claude`} output={outputs.review} agent={claude} continueOnFail>
     <ReviewPrompt reviewer="claude" />
   </Task>
-  <Task id={`${t.id}:review-codex`} output={outputs.review} agent={codex} continueOnFail>
+  <Task id={`${ticket.id}:review-codex`} output={outputs.review} agent={codex} continueOnFail>
     <ReviewPrompt reviewer="codex" />
   </Task>
 </Parallel>
@@ -3176,9 +3200,9 @@ Discover work, run each ticket, re-render to catch the next batch. Scales to lar
 
 ```tsx
 export default smithers((ctx) => {
-  const discover = ctx.latest(tables.discover, "discover");
+  const discover = ctx.latest(outputs.discover, "discover");
   const unfinished = (discover?.tickets ?? []).filter(
-    (t) => !ctx.latest(tables.report, `${t.id}:report`)
+    (t) => !ctx.latest(outputs.report, `${t.id}:report`)
   );
 
   return (
@@ -3316,7 +3340,7 @@ Useful when an experiment leaves the worktree in a bad state.
 
 ```bash
 bunx smithers-orchestrator timeline <run-id> --tree
-bunx smithers-orchestrator diff <run-id>:3 <run-id>:7
+bunx smithers-orchestrator diff <run-id> <node-id>
 bunx smithers-orchestrator fork workflow.tsx --run-id <id> --frame 5 --reset-node analyze --label exp1
 bunx smithers-orchestrator replay workflow.tsx --run-id <id> --frame 5 --restore-vcs
 ```

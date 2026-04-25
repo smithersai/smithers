@@ -372,7 +372,7 @@ ws.onopen = () => ws.send(JSON.stringify({
 ## RPC methods (TOON)
 
 ```toon
-rpc[21]{method,params,returns,scopes}:
+rpc[22]{method,params,returns,scopes}:
   health,-,protocol/features/uptimeMs,read
   runs.list,limit?/status?,Recent runs,read
   runs.get,runId,Run row + node summary,read
@@ -387,6 +387,7 @@ rpc[21]{method,params,returns,scopes}:
   getDevToolsSnapshot,runId/frameNo?,Versioned DevToolsSnapshot,read
   streamDevTools,runId/fromSeq?,{streamId/runId/fromSeq} + devtools.event frames,read
   getNodeOutput,runId/nodeId/iteration,NodeOutputResponse,read
+  jumpToFrame,runId/frameNo/confirm:true,JumpResult (destructive; owner or admin),execute
   approvals.list,-,Pending approvals + metadata,read
   approvals.decide,runId/nodeId/approved/iteration?/note?/decision?,{runId/nodeId/iteration/approved},approve
   signals.send,runId/signalName/data?/correlationId?,Delivery metadata,execute
@@ -395,6 +396,70 @@ rpc[21]{method,params,returns,scopes}:
   cron.remove,cronId,{cronId/removed:true},admin
   cron.trigger,cronId or workflow/input?,{runId/workflow},execute
 ```
+
+### `jumpToFrame` (destructive rewind)
+
+Rewinds a run to a prior frame and makes it resumable from that point.
+This is destructive: it truncates frames, attempts, output rows, and
+diff-cache entries beyond the target; reverts JJ sandboxes; marks the
+run `running` again; and emits a `TimeTravelJumped` event so
+`streamDevTools` subscribers rebaseline.
+
+Caller identity is authorized per-request: the connection must be the
+run owner (`userId` matches `ownerId`) **or** have `role: "admin"`. The
+scope requirement is `execute` only — scope alone never grants access.
+
+Request:
+
+```ts
+type JumpToFrameParams = {
+  runId: string;     // /^[a-z0-9_-]{1,64}$/
+  frameNo: number;   // 0 <= frameNo <= latestFrameNo
+  confirm: true;     // must be literal true
+};
+```
+
+Response (`JumpResult`):
+
+```ts
+type JumpResult = {
+  ok: true;
+  newFrameNo: number;
+  revertedSandboxes: number;
+  deletedFrames: number;
+  deletedAttempts: number;
+  invalidatedDiffs: number;
+  durationMs: number;
+};
+```
+
+Also published as a `devtools.event` (after the DB commit) with
+`{ type: "TimeTravelJumped", runId, fromFrameNo, toFrameNo, timestampMs, caller }`.
+
+Quota: 10 rewinds per run per caller per hour (default window). Exceeded
+→ `RateLimited`.
+
+Failure modes and HTTP status:
+
+| Code                   | Meaning                                                                   | HTTP  |
+| ---------------------- | ------------------------------------------------------------------------- | ----- |
+| `InvalidRunId`         | `runId` fails `/^[a-z0-9_-]{1,64}$/`.                                     | `400` |
+| `InvalidFrameNo`       | `frameNo` is not a non-negative i32 integer.                              | `400` |
+| `ConfirmationRequired` | Caller omitted `confirm: true`.                                           | `400` |
+| `FrameOutOfRange`      | `frameNo` > latest frame, or run has no frames.                           | `400` |
+| `Unauthorized`         | Caller is neither the run owner nor an admin (audit row still written).   | `401` |
+| `RunNotFound`          | `runId` does not exist.                                                   | `404` |
+| `Busy`                 | Another rewind is in flight for this run.                                 | `409` |
+| `RateLimited`          | Caller exceeded rewind quota (default 10/hour).                           | `429` |
+| `UnsupportedSandbox`   | A sandbox cannot be reverted (missing / untrackable `jjPointer`).         | `501` |
+| `VcsError`             | A JJ revert call failed; DB/reconciler rolled back.                       | `500` |
+| `RewindFailed`         | Rewind failed and rollback was partial; run marked `needs_attention`.     | `500` |
+
+Every call — success, failure, unauthorized — writes one row to
+`_smithers_time_travel_audit` with `result ∈ { success, failed, partial, in_progress }`.
+An in-progress row is inserted before any mutation and updated in place
+on completion; startup recovery flips any leftover `in_progress` rows to
+`partial`.
 
 `getNodeOutput` returns the DevTools Output-tab payload for a single task iteration:
 
@@ -430,6 +495,8 @@ Every DevTools RPC returns one of these typed error codes.
 | `InvalidNodeId`         | `nodeId` fails validator.                                          | `400` |
 | `InvalidIteration`      | `iteration` is not a non-negative integer.                         | `400` |
 | `InvalidDelta`          | `applyDelta` rejected a malformed or mismatched delta.             | `400` |
+| `InvalidFrameNo`        | `frameNo` is not a non-negative i32 integer.                       | `400` |
+| `ConfirmationRequired`  | `jumpToFrame` without `confirm: true`.                             | `400` |
 | `FrameOutOfRange`       | `frameNo` < 0 or > latest.                                         | `400` |
 | `SeqOutOfRange`         | `fromSeq` is in the future relative to current seq.                | `400` |
 | `Unauthorized`          | Auth failed or connection is not subscribed to the requested run.  | `401` |
@@ -437,10 +504,15 @@ Every DevTools RPC returns one of these typed error codes.
 | `NodeNotFound`          | `nodeId` does not exist on the run.                                | `404` |
 | `IterationNotFound`     | `iteration` does not exist for the node.                           | `404` |
 | `NodeHasNoOutput`       | The task ran but produced no output row.                           | `404` |
+| `Busy`                  | Another `jumpToFrame` is already running for this run.             | `409` |
 | `PayloadTooLarge`       | Response exceeds the gateway's outbound byte cap.                  | `413` |
 | `BackpressureDisconnect`| Subscriber's outbound queue exceeded 1000 events; stream torn down.| `429` |
+| `RateLimited`           | `jumpToFrame` quota exceeded (default 10/run/caller/hour).         | `429` |
 | `SchemaConversionError` | Internal: output row schema did not convert.                       | `500` |
 | `MalformedOutputRow`    | Internal: stored output row failed to deserialize.                 | `500` |
+| `VcsError`              | `jumpToFrame` failed to revert a sandbox; transaction rolled back. | `500` |
+| `RewindFailed`          | `jumpToFrame` rollback was partial; run marked `needs_attention`.  | `500` |
+| `UnsupportedSandbox`    | `jumpToFrame` could not resolve a rewind pointer for a sandbox.    | `501` |
 
 ### Versioned wire shapes
 

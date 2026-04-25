@@ -61,7 +61,6 @@ export default smithers((ctx) => (
   </Workflow>
 ));
 ```
-
 Run it:
 
 ```bash
@@ -99,7 +98,7 @@ Smithers is a durable workflow runtime. You write a workflow as a JSX tree, and 
         {`Fix: ${analysis.issues}`}
       </Task>
     ) : null}
-  </Workflow>
+  </Sequence>
 </Workflow>
 ```
 
@@ -175,6 +174,23 @@ See [JSX Installation](/jsx/installation) for the package list, TypeScript confi
 - [Bun](https://bun.sh) >= 1.3
 - TypeScript >= 5
 - Model or provider credentials (e.g. [Anthropic](https://docs.anthropic.com) `ANTHROPIC_API_KEY`)
+
+## Desktop App (macOS)
+
+The Smithers desktop GUI is a separate download. It's a native macOS app (Apple Silicon) that includes the orchestrator, an embedded terminal, and workflow tooling.
+
+<a href="https://get.smithers.sh/SmithersGUI.dmg">Download SmithersGUI.dmg</a>
+
+Or from the terminal:
+
+```bash
+curl -LO https://get.smithers.sh/SmithersGUI.dmg
+open SmithersGUI.dmg
+```
+
+<Tip>
+The current build is unsigned. The first time you open it, right-click the app and choose **Open**, then confirm the Gatekeeper dialog. This only needs to be done once.
+</Tip>
 
 ## After Installation
 
@@ -457,7 +473,7 @@ It auto-resumes runs whose owner process died.
 
 - [How It Works](/how-it-works) — the render → execute → persist loop.
 - [Components](/components/workflow) — JSX surface reference.
-- [CLI](/cli/overview) — every command in one TOON table.
+- [CLI](/cli/overview) — every command in one TOON catalog.
 - [Recipes](/recipes) — patterns from production workflows.
 
 ---
@@ -665,7 +681,7 @@ Every frame commit produces a `GraphSnapshot`.
 
 ```bash
 bunx smithers-orchestrator timeline <run-id>           # frames + forks
-bunx smithers-orchestrator diff <run-a>:5 <run-b>:7    # what changed
+bunx smithers-orchestrator diff <run-id> <node-id>     # node DiffBundle
 bunx smithers-orchestrator fork workflow.tsx --run-id <id> --frame 5 --reset-node analyze
 bunx smithers-orchestrator replay workflow.tsx --run-id <id> --frame 5 --restore-vcs
 ```
@@ -750,7 +766,7 @@ To embed into an existing codebase:
 
 ```bash
 bun add smithers-orchestrator ai @ai-sdk/anthropic zod
-bun add -d typescript @types/bun @types/ws @types/diff
+bun add -d typescript @types/bun @types/ws
 ```
 
 Minimal `tsconfig.json`:
@@ -849,11 +865,13 @@ Always invoke as `bunx smithers-orchestrator <command>` (see [Installation](/ins
 Commands listed by dotted name. Subcommands of `workflow`, `cron`, `human`, `alerts`, `memory`, `openapi`, `agents`, `mcp`, `skills` appear as `parent.sub`.
 
 ```toon
-commands[55]:
+commands[56]:
   - name: init
     purpose: Install the local workflow pack into .smithers/
-    flags[1]{name,short,type,default,desc}:
+    flags[3]{name,short,type,default,desc}:
       force,,boolean,false,Overwrite existing scaffold files
+      agents-only,,boolean,false,Only create .smithers/agents/
+      install,,boolean,true,Run bun install inside .smithers/ after scaffolding
   - name: up
     purpose: Start or resume a workflow execution
     args[1]{name,type,required,desc}:
@@ -923,6 +941,11 @@ commands[55]:
       follow,f,boolean,false,Watch for new output
       tail,n,number,,Last N chat blocks
       stderr,,boolean,true,Include agent stderr
+  - name: chat.create
+    purpose: Create and start a one-task auto-hijacked chat run
+    flags[2]{name,short,type,default,desc}:
+      agent,,string,,"claude-code|codex|gemini"
+      cwd,,string,.,Working directory for the chat session
   - name: inspect
     purpose: Print structured run state, steps, approvals, loop info
     args[1]{name,type,required,desc}:
@@ -3120,10 +3143,10 @@ Two models catch different bugs. Cost = the slower model's latency.
 
 ```tsx
 <Parallel>
-  <Task id={`${t.id}:review-claude`} output={outputs.review} agent={claude} continueOnFail>
+  <Task id={`${ticket.id}:review-claude`} output={outputs.review} agent={claude} continueOnFail>
     <ReviewPrompt reviewer="claude" />
   </Task>
-  <Task id={`${t.id}:review-codex`} output={outputs.review} agent={codex} continueOnFail>
+  <Task id={`${ticket.id}:review-codex`} output={outputs.review} agent={codex} continueOnFail>
     <ReviewPrompt reviewer="codex" />
   </Task>
 </Parallel>
@@ -3196,9 +3219,9 @@ Discover work, run each ticket, re-render to catch the next batch. Scales to lar
 
 ```tsx
 export default smithers((ctx) => {
-  const discover = ctx.latest(tables.discover, "discover");
+  const discover = ctx.latest(outputs.discover, "discover");
   const unfinished = (discover?.tickets ?? []).filter(
-    (t) => !ctx.latest(tables.report, `${t.id}:report`)
+    (t) => !ctx.latest(outputs.report, `${t.id}:report`)
   );
 
   return (
@@ -3336,7 +3359,7 @@ Useful when an experiment leaves the worktree in a bad state.
 
 ```bash
 bunx smithers-orchestrator timeline <run-id> --tree
-bunx smithers-orchestrator diff <run-id>:3 <run-id>:7
+bunx smithers-orchestrator diff <run-id> <node-id>
 bunx smithers-orchestrator fork workflow.tsx --run-id <id> --frame 5 --reset-node analyze --label exp1
 bunx smithers-orchestrator replay workflow.tsx --run-id <id> --frame 5 --restore-vcs
 ```
@@ -5733,7 +5756,7 @@ ws.onopen = () => ws.send(JSON.stringify({
 ## RPC methods (TOON)
 
 ```toon
-rpc[21]{method,params,returns,scopes}:
+rpc[22]{method,params,returns,scopes}:
   health,-,protocol/features/uptimeMs,read
   runs.list,limit?/status?,Recent runs,read
   runs.get,runId,Run row + node summary,read
@@ -5748,6 +5771,7 @@ rpc[21]{method,params,returns,scopes}:
   getDevToolsSnapshot,runId/frameNo?,Versioned DevToolsSnapshot,read
   streamDevTools,runId/fromSeq?,{streamId/runId/fromSeq} + devtools.event frames,read
   getNodeOutput,runId/nodeId/iteration,NodeOutputResponse,read
+  jumpToFrame,runId/frameNo/confirm:true,JumpResult (destructive; owner or admin),execute
   approvals.list,-,Pending approvals + metadata,read
   approvals.decide,runId/nodeId/approved/iteration?/note?/decision?,{runId/nodeId/iteration/approved},approve
   signals.send,runId/signalName/data?/correlationId?,Delivery metadata,execute
@@ -5756,6 +5780,70 @@ rpc[21]{method,params,returns,scopes}:
   cron.remove,cronId,{cronId/removed:true},admin
   cron.trigger,cronId or workflow/input?,{runId/workflow},execute
 ```
+
+### `jumpToFrame` (destructive rewind)
+
+Rewinds a run to a prior frame and makes it resumable from that point.
+This is destructive: it truncates frames, attempts, output rows, and
+diff-cache entries beyond the target; reverts JJ sandboxes; marks the
+run `running` again; and emits a `TimeTravelJumped` event so
+`streamDevTools` subscribers rebaseline.
+
+Caller identity is authorized per-request: the connection must be the
+run owner (`userId` matches `ownerId`) **or** have `role: "admin"`. The
+scope requirement is `execute` only — scope alone never grants access.
+
+Request:
+
+```ts
+type JumpToFrameParams = {
+  runId: string;     // /^[a-z0-9_-]{1,64}$/
+  frameNo: number;   // 0 <= frameNo <= latestFrameNo
+  confirm: true;     // must be literal true
+};
+```
+
+Response (`JumpResult`):
+
+```ts
+type JumpResult = {
+  ok: true;
+  newFrameNo: number;
+  revertedSandboxes: number;
+  deletedFrames: number;
+  deletedAttempts: number;
+  invalidatedDiffs: number;
+  durationMs: number;
+};
+```
+
+Also published as a `devtools.event` (after the DB commit) with
+`{ type: "TimeTravelJumped", runId, fromFrameNo, toFrameNo, timestampMs, caller }`.
+
+Quota: 10 rewinds per run per caller per hour (default window). Exceeded
+→ `RateLimited`.
+
+Failure modes and HTTP status:
+
+| Code                   | Meaning                                                                   | HTTP  |
+| ---------------------- | ------------------------------------------------------------------------- | ----- |
+| `InvalidRunId`         | `runId` fails `/^[a-z0-9_-]{1,64}$/`.                                     | `400` |
+| `InvalidFrameNo`       | `frameNo` is not a non-negative i32 integer.                              | `400` |
+| `ConfirmationRequired` | Caller omitted `confirm: true`.                                           | `400` |
+| `FrameOutOfRange`      | `frameNo` > latest frame, or run has no frames.                           | `400` |
+| `Unauthorized`         | Caller is neither the run owner nor an admin (audit row still written).   | `401` |
+| `RunNotFound`          | `runId` does not exist.                                                   | `404` |
+| `Busy`                 | Another rewind is in flight for this run.                                 | `409` |
+| `RateLimited`          | Caller exceeded rewind quota (default 10/hour).                           | `429` |
+| `UnsupportedSandbox`   | A sandbox cannot be reverted (missing / untrackable `jjPointer`).         | `501` |
+| `VcsError`             | A JJ revert call failed; DB/reconciler rolled back.                       | `500` |
+| `RewindFailed`         | Rewind failed and rollback was partial; run marked `needs_attention`.     | `500` |
+
+Every call — success, failure, unauthorized — writes one row to
+`_smithers_time_travel_audit` with `result ∈ { success, failed, partial, in_progress }`.
+An in-progress row is inserted before any mutation and updated in place
+on completion; startup recovery flips any leftover `in_progress` rows to
+`partial`.
 
 `getNodeOutput` returns the DevTools Output-tab payload for a single task iteration:
 
@@ -5791,6 +5879,8 @@ Every DevTools RPC returns one of these typed error codes.
 | `InvalidNodeId`         | `nodeId` fails validator.                                          | `400` |
 | `InvalidIteration`      | `iteration` is not a non-negative integer.                         | `400` |
 | `InvalidDelta`          | `applyDelta` rejected a malformed or mismatched delta.             | `400` |
+| `InvalidFrameNo`        | `frameNo` is not a non-negative i32 integer.                       | `400` |
+| `ConfirmationRequired`  | `jumpToFrame` without `confirm: true`.                             | `400` |
 | `FrameOutOfRange`       | `frameNo` < 0 or > latest.                                         | `400` |
 | `SeqOutOfRange`         | `fromSeq` is in the future relative to current seq.                | `400` |
 | `Unauthorized`          | Auth failed or connection is not subscribed to the requested run.  | `401` |
@@ -5798,10 +5888,15 @@ Every DevTools RPC returns one of these typed error codes.
 | `NodeNotFound`          | `nodeId` does not exist on the run.                                | `404` |
 | `IterationNotFound`     | `iteration` does not exist for the node.                           | `404` |
 | `NodeHasNoOutput`       | The task ran but produced no output row.                           | `404` |
+| `Busy`                  | Another `jumpToFrame` is already running for this run.             | `409` |
 | `PayloadTooLarge`       | Response exceeds the gateway's outbound byte cap.                  | `413` |
 | `BackpressureDisconnect`| Subscriber's outbound queue exceeded 1000 events; stream torn down.| `429` |
+| `RateLimited`           | `jumpToFrame` quota exceeded (default 10/run/caller/hour).         | `429` |
 | `SchemaConversionError` | Internal: output row schema did not convert.                       | `500` |
 | `MalformedOutputRow`    | Internal: stored output row failed to deserialize.                 | `500` |
+| `VcsError`              | `jumpToFrame` failed to revert a sandbox; transaction rolled back. | `500` |
+| `RewindFailed`          | `jumpToFrame` rollback was partial; run marked `needs_attention`.  | `500` |
+| `UnsupportedSandbox`    | `jumpToFrame` could not resolve a rewind pointer for a sandbox.    | `501` |
 
 ### Versioned wire shapes
 
