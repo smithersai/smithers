@@ -554,7 +554,7 @@ export class BaseCliAgent {
         this.extraArgs = opts.extraArgs;
     }
     /**
-   * @param {AgentGenerateOptions} [options]
+   * @param {AgentGenerateOptions | undefined} options
    * @param {AgentInvocationOperation} operation
    * @returns {Effect.Effect<GenerateTextResult<Record<string, never>, unknown>, SmithersError>}
    */
@@ -601,6 +601,44 @@ export class BaseCliAgent {
      * @param {ReadonlyArray<RegExp>} [extraPatterns]
      * @returns {string}
      */
+        const agentId = this.id;
+        const agentModel = this.model;
+        const agentEngine = resolveAgentEngineTag(this);
+        /**
+     * Detect well-known non-retryable CLI agent configuration errors so the
+     * engine surfaces them with a clear, actionable message and stops retrying
+     * (these errors are deterministic and will never recover by re-running).
+     *
+     * @param {string} message
+     * @param {string} command
+     * @returns {SmithersError | null}
+     */
+        function classifyNonRetryableAgentError(message, command) {
+            if (!message)
+                return null;
+            const nonRetryablePatterns = [
+                { re: /\bLLM not set\b/i, hint: "the agent's model name is not present in the CLI's configured providers" },
+                { re: /\bLLM not supported\b/i, hint: "the agent's model is not supported by this CLI build" },
+                { re: /\bmodel\s+['\"]?[^'\"\s]+['\"]?\s+not found\b/i, hint: "the requested model is not registered with the CLI" },
+                { re: /\bunknown model\b/i, hint: "the requested model is not registered with the CLI" },
+            ];
+            for (const { re, hint } of nonRetryablePatterns) {
+                if (re.test(message)) {
+                    const modelLabel = agentModel ?? "<unset>";
+                    const idLabel = agentId ?? "<anonymous>";
+                    const summary = `Agent "${idLabel}" (${command}, model=${modelLabel}) failed with non-retryable configuration error: ${message.slice(0, 300)}. Hint: ${hint}. Fix the agent's model in .smithers/agents.ts (or the CLI's config) — retrying will not help.`;
+                    return new SmithersError("AGENT_CONFIG_INVALID", summary, {
+                        failureRetryable: false,
+                        agentId: idLabel,
+                        agentEngine,
+                        agentModel: modelLabel,
+                        command,
+                        underlying: message.slice(0, 500),
+                    });
+                }
+            }
+            return null;
+        }
         function filterBenignStderr(stderr, extraPatterns) {
             const benignPatterns = [
                 /^.*state db missing rollout path.*$/gm,
@@ -762,7 +800,8 @@ export class BaseCliAgent {
                         const errorText = filteredStderr ||
                             result.stdout.trim() ||
                             `CLI exited with code ${result.exitCode}`;
-                        return yield* Effect.fail(new SmithersError("AGENT_CLI_ERROR", errorText));
+                        const nonRetryable = classifyNonRetryableAgentError(errorText, commandSpec.command);
+                        return yield* Effect.fail(nonRetryable ?? new SmithersError("AGENT_CLI_ERROR", errorText));
                     }
                 }
                 // Some CLIs may print extra banners to stdout. Allow individual agents
@@ -785,7 +824,9 @@ export class BaseCliAgent {
                     for (const pattern of stdoutErrorPatterns) {
                         const regex = new RegExp(pattern.source, pattern.flags);
                         if (regex.test(rawText)) {
-                            return yield* Effect.fail(new SmithersError("AGENT_CLI_ERROR", `CLI agent error (stdout): ${rawText.slice(0, 500)}`));
+                            const stdoutErrText = `CLI agent error (stdout): ${rawText.slice(0, 500)}`;
+                            const nonRetryable = classifyNonRetryableAgentError(rawText, commandSpec.command);
+                            return yield* Effect.fail(nonRetryable ?? new SmithersError("AGENT_CLI_ERROR", stdoutErrText));
                         }
                     }
                 }

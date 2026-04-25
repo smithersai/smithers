@@ -270,6 +270,10 @@ export const smithersErrorDefinitions = {
         category: "agents",
         when: "A CLI-backed agent exits unsuccessfully, streams an explicit error, or its RPC transport fails.",
     },
+    AGENT_CONFIG_INVALID: {
+        category: "agents",
+        when: "A CLI-backed agent fails with a non-retryable configuration error (e.g. unknown model, missing LLM, unsupported model). Includes agent id, engine and model in details so the offending entry in .smithers/agents.ts can be located.",
+    },
     AGENT_RPC_FILE_ARGS: {
         category: "agents",
         when: "Pi RPC mode is used with file arguments that the transport does not support.",

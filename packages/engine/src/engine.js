@@ -2031,8 +2031,15 @@ function isRetryableTaskFailure(attempt) {
     if (meta?.failureRetryable === false) {
         return false;
     }
+    const errorCode = parseAttemptErrorCode(attempt?.errorJson);
+    // AGENT_CONFIG_INVALID is a deterministic configuration failure (e.g.
+    // "LLM not set", unknown model). Retrying is guaranteed to fail again
+    // and just multiplies cost — short-circuit immediately.
+    if (errorCode === "AGENT_CONFIG_INVALID") {
+        return false;
+    }
     const kind = typeof meta?.kind === "string" ? meta.kind : null;
-    return !(kind !== "agent" && parseAttemptErrorCode(attempt?.errorJson) === "INVALID_OUTPUT");
+    return !(kind !== "agent" && errorCode === "INVALID_OUTPUT");
 }
 /**
  * @param {SmithersDb} adapter
@@ -3730,6 +3737,17 @@ async function legacyExecuteTask(adapter, db, runId, desc, descriptorMap, inputT
         const heartbeatTimeoutError = heartbeatTimeoutReasonFromAbort(taskSignal, err);
         const effectiveError = heartbeatTimeoutError ?? err;
         if (isHeartbeatPayloadValidationError(effectiveError)) {
+            attemptMeta.failureRetryable = false;
+        }
+        // Allow agents (e.g. BaseCliAgent on "LLM not set") to flag a failure as
+        // non-retryable via SmithersError details. Without this, the engine would
+        // retry deterministic configuration errors up to desc.retries times.
+        if (effectiveError &&
+            typeof effectiveError === "object" &&
+            // @ts-ignore — duck-type on SmithersError shape
+            effectiveError.details &&
+            // @ts-ignore
+            effectiveError.details.failureRetryable === false) {
             attemptMeta.failureRetryable = false;
         }
         if (!heartbeatTimeoutError && (taskSignal.aborted || isAbortError(err))) {

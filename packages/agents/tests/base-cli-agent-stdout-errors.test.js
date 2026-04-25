@@ -49,8 +49,6 @@ describe("BaseCliAgent stdout handling (opt-in)", () => {
         /^Error:/i,
     ];
     const errorCases = [
-        "LLM not set",
-        "LLM not supported",
         "Max steps reached: 50",
         "Interrupted by user",
         "Unknown error: connection refused",
@@ -63,6 +61,29 @@ describe("BaseCliAgent stdout handling (opt-in)", () => {
                 stdoutErrorPatterns: kimiErrorPatterns,
             });
             await expect(agent.generate({ prompt: "test" })).rejects.toThrow("CLI agent error (stdout):");
+        });
+    }
+    // "LLM not set" and "LLM not supported" are reclassified as
+    // non-retryable AGENT_CONFIG_INVALID errors with an actionable message
+    // that names the offending agent — they no longer use the generic
+    // "CLI agent error (stdout):" prefix.
+    const nonRetryableConfigCases = ["LLM not set", "LLM not supported"];
+    for (const errorText of nonRetryableConfigCases) {
+        test(`throws non-retryable config error for: "${errorText}"`, async () => {
+            const agent = new StdoutAgent(errorText, {
+                stdoutErrorPatterns: kimiErrorPatterns,
+            });
+            try {
+                await agent.generate({ prompt: "test" });
+                throw new Error("expected agent.generate to throw");
+            }
+            catch (err) {
+                expect(err).toBeInstanceOf(Error);
+                expect(err.code).toBe("AGENT_CONFIG_INVALID");
+                expect(err.message).toContain("non-retryable configuration error");
+                expect(err.message).toContain(errorText);
+                expect(err.details?.failureRetryable).toBe(false);
+            }
         });
     }
     test("does not throw for valid JSON output", async () => {
