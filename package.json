@@ -68,7 +68,6 @@
   "devDependencies": {
     "@tanstack/react-query": "^5.99.1",
     "@types/bun": "latest",
-    "@types/diff": "^8.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/react-reconciler": "^0.33.0",
