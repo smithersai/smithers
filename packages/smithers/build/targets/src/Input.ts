@@ -10,7 +10,7 @@
  */
 import * as Schema from "effect/Schema"
 import createIgnore from "ignore"
-import { minimatch } from "minimatch"
+import { Minimatch, minimatch } from "minimatch"
 import { createHash } from "node:crypto"
 import type { Dirent } from "node:fs"
 import * as NodePath from "node:path"
@@ -499,6 +499,91 @@ const insideEnteredRepository = (scan: Scan, relative: string): boolean => {
 const submoduleNoun = ".gitmodules"
 
 /**
+ * How many filesystem reads one walk keeps in flight at once.
+ *
+ * The walk fans out across siblings, so an unbounded descent holds one open
+ * directory handle per directory at every level of the tree at the same time.
+ * Every other stage of the pipeline caps its descriptor use at
+ * {@link defaultDigestConcurrency}; this is the walk's share of the same
+ * budget, so a wide workspace costs a fixed number of descriptors rather than
+ * its own width.
+ */
+const walkConcurrency = 32
+
+/** A fixed pool of permits handed out first come, first served. */
+interface Permits {
+  readonly acquire: () => Promise<void>
+  readonly release: () => void
+}
+
+const makePermits = (count: number): Permits => {
+  let available = count
+  const waiting: Array<() => void> = []
+  return {
+    acquire: () => {
+      if (available > 0) {
+        available -= 1
+        return Promise.resolve()
+      }
+      return new Promise<void>((resolve) => {
+        waiting.push(resolve)
+      })
+    },
+    release: () => {
+      const next = waiting.shift()
+      if (next === undefined) available += 1
+      else next()
+    }
+  }
+}
+
+/**
+ * Runs one of the walk's filesystem reads while holding a permit.
+ *
+ * The permit covers the read alone. A caller that descends into what it just
+ * opened releases first, so a permit measures work in flight rather than depth
+ * reached, and a deep tree cannot deadlock by holding a permit per level.
+ *
+ * A branch that starts after another has already failed re-reports that
+ * failure instead of opening anything: once an expansion is going to reject,
+ * more reads only add descriptor pressure to a result nobody will use.
+ */
+const permitted = async <A>(scan: Scan, read: () => Promise<A>): Promise<A> => {
+  if (scan.failure !== undefined) throw scan.failure
+  await scan.permits.acquire()
+  try {
+    return await read()
+  } finally {
+    scan.permits.release()
+  }
+}
+
+/**
+ * Runs one directory's sibling branches and waits for all of them.
+ *
+ * `Promise.all` hands the first rejection to its caller while the siblings are
+ * still reading, which is exactly when a failing expansion would otherwise
+ * keep opening directories nobody will look at. Settling every branch means a
+ * rejected walk leaves no traversal read in flight.
+ */
+const branches = async (
+  scan: Scan,
+  operations: ReadonlyArray<() => Promise<void>>
+): Promise<void> => {
+  const settled = await Promise.all(operations.map(async (operation) => {
+    try {
+      await operation()
+      return undefined
+    } catch (cause) {
+      scan.failure ??= cause
+      return { cause }
+    }
+  }))
+  const failed = settled.find((result) => result !== undefined)
+  if (failed !== undefined) throw failed.cause
+}
+
+/**
  * Everything one glob expansion reads the filesystem through.
  *
  * `root` is canonical. Every path the walk touches is built from it, and every
@@ -515,10 +600,14 @@ interface Scan {
   readonly found: Array<string>
   readonly limits: ScanLimits
   readonly signal: AbortSignal | undefined
+  /** The permits every filesystem read the walk fans out through must hold. */
+  readonly permits: Permits
   directories: number
   entries: number
   files: number
   ignoreBytes: number
+  /** The first failure any branch of the walk reported, once one has. */
+  failure: unknown
 }
 
 /** One directory the walk has opened, listed, and confined. */
@@ -780,13 +869,14 @@ const walk = async (
   const relative = opened.relative
   if (bounded && scan.packageScoped && await isPackage(scan, relative, opened.entries)) return
   if (bounded && isRepository(opened.entries)) return
-  const matcher = await readIgnore(scan, relative)
+  const matcher = await permitted(scan, () => readIgnore(scan, relative))
   const next = matcher === undefined ? scopes : [...scopes, { base: relative, matcher }]
   // Classify this listing without I/O first, then open the children that need
-  // it concurrently. The walk is latency-bound on per-directory opens and
-  // per-link stats rather than CPU-bound, so a serial descent costs seconds on
-  // a package with thousands of directories. Discovery order cannot escape:
-  // both callers sort `scan.found` before returning it.
+  // it through the scan's permits. The walk is latency-bound on per-directory
+  // opens and per-link stats rather than CPU-bound, so a serial descent costs
+  // seconds on a package with thousands of directories, while an unbounded one
+  // holds a descriptor per directory in the whole tree. Discovery order cannot
+  // escape: both callers sort `scan.found` before returning it.
   const directories: Array<string> = []
   const links: Array<string> = []
   for (const entry of opened.entries) {
@@ -807,12 +897,12 @@ const walk = async (
     else if (entry.isFile()) addFile(scan, child)
     else if (entry.isSymbolicLink()) links.push(child)
   }
-  await Promise.all([
-    ...links.map(async (child) => {
-      if (await admitsLink(scan, child)) addFile(scan, child)
+  await branches(scan, [
+    ...links.map((child) => async () => {
+      if (await permitted(scan, () => admitsLink(scan, child))) addFile(scan, child)
     }),
-    ...directories.map(async (child) => {
-      const below = await openDirectory(scan, child)
+    ...directories.map((child) => async () => {
+      const below = await permitted(scan, () => openDirectory(scan, child))
       if (below !== undefined) await walk(scan, below, next, true)
     })
   ])
@@ -915,10 +1005,12 @@ export const expandGlob = async (
     found: [],
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
+    permits: makePermits(walkConcurrency),
     directories: 0,
     entries: 0,
     files: 0,
-    ignoreBytes: 0
+    ignoreBytes: 0,
+    failure: undefined
   }
   const chain = await openChain(scan, start)
   if (chain === undefined) return []
@@ -934,11 +1026,13 @@ export const expandGlob = async (
   }
   if (isIgnored(scopes, start, true)) return []
   await walk(scan, chain[chain.length - 1]!, scopes, false)
+  // One matcher per pattern, not one per discovered path: these strings are
+  // constant across the expansion, so compiling them inside the filter repeats
+  // the same parse for every file a broad glob reached.
+  const included = new Minimatch(resolved, { dot: true })
+  const excluded = excludes.map((exclude) => new Minimatch(exclude, { dot: true }))
   return scan.found
-    .filter((path) =>
-      minimatch(path, resolved, { dot: true }) &&
-      !excludes.some((exclude) => minimatch(path, exclude, { dot: true }))
-    )
+    .filter((path) => included.match(path) && !excluded.some((exclude) => exclude.match(path)))
     .sort()
 }
 
@@ -987,10 +1081,12 @@ export const discoverFiles = async (
     found: [],
     limits: validatedScanLimits(options.limits),
     signal: options.signal,
+    permits: makePermits(walkConcurrency),
     directories: 0,
     entries: 0,
     files: 0,
-    ignoreBytes: 0
+    ignoreBytes: 0,
+    failure: undefined
   }
   const opened = await openDirectory(scan, "")
   if (opened === undefined) throw new Error(`workspace is not a directory: ${workspaceRoot}`)

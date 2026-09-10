@@ -373,6 +373,107 @@ describe("Input.expandGlob", () => {
   })
 })
 
+/**
+ * A tree the walk reads through a fake {@link SafeFs.Io}, so a test can watch
+ * how many listings the traversal holds open at the same time. Every listing
+ * defers to a macrotask, which is what makes concurrently requested reads
+ * overlap the way a real `opendir` handle does.
+ */
+const seamTree = (
+  siblings: number,
+  failing?: string
+): {
+  readonly io: SafeFs.Io
+  peak: () => number
+  active: () => number
+} => {
+  const names = Array.from({ length: siblings }, (_, index) => `d${String(index).padStart(4, "0")}`)
+  const directories = new Set(["/ws", "/ws/src", ...names.map((name) => `/ws/src/${name}`)])
+  const stats = (directory: boolean): SafeFs.Stats =>
+    ({
+      isDirectory: () => directory,
+      isFile: () => !directory,
+      isSymbolicLink: () => false,
+      dev: 1n,
+      ino: 1n,
+      size: 0n,
+      mtimeNs: 0n,
+      ctimeNs: 0n
+    }) as unknown as SafeFs.Stats
+  const dirent = (name: string, directory: boolean) =>
+    ({
+      name,
+      isDirectory: () => directory,
+      isFile: () => !directory,
+      isSymbolicLink: () => false
+    }) as unknown as Awaited<ReturnType<SafeFs.Io["readdir"]>>[number]
+  let inFlight = 0
+  let peak = 0
+  return {
+    peak: () => peak,
+    active: () => inFlight,
+    io: {
+      realpath: async (path) => path,
+      lstat: async (path) => {
+        if (directories.has(path)) return stats(true)
+        if (path.endsWith("/file.ts")) return stats(false)
+        throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" })
+      },
+      readdir: async (path) => {
+        inFlight += 1
+        peak = Math.max(peak, inFlight)
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 1))
+          if (failing !== undefined && path === `/ws/src/${failing}`) {
+            throw Object.assign(new Error(`EACCES: ${path}`), { code: "EACCES" })
+          }
+          if (path === "/ws") return [dirent("src", true)]
+          if (path === "/ws/src") return names.map((name) => dirent(name, true))
+          return [dirent("file.ts", false)]
+        } finally {
+          inFlight -= 1
+        }
+      },
+      open: async () => {
+        throw new Error("open should not be called")
+      }
+    }
+  }
+}
+
+/**
+ * A wide tree used to fan every sibling directory out at once, so the number
+ * of open directory handles was the width of the tree rather than a bound the
+ * rest of the input pipeline already respects. A failure returned to the
+ * caller while its siblings were still reading, too.
+ */
+describe("Input.expandGlob traversal fan-out", () => {
+  it("holds no more listings open than the digest concurrency", async () => {
+    const seam = seamTree(256)
+    const found = await Input.expandGlob("/ws", "", "src/**/*.ts", { io: seam.io })
+    expect(found).toHaveLength(256)
+    expect(seam.peak()).toBeLessThanOrEqual(Input.defaultDigestConcurrency)
+    // Still concurrent: a serial descent would never hold two listings at once.
+    expect(seam.peak()).toBeGreaterThan(1)
+    expect(seam.active()).toBe(0)
+  })
+
+  it("leaves no listing in flight when a directory fails", async () => {
+    const seam = seamTree(256, "d0100")
+    await expect(Input.expandGlob("/ws", "", "src/**/*.ts", { io: seam.io }))
+      .rejects.toMatchObject({ code: "EACCES" })
+    expect(seam.active()).toBe(0)
+    expect(seam.peak()).toBeLessThanOrEqual(Input.defaultDigestConcurrency)
+  })
+
+  it("bounds discoverFiles the same way", async () => {
+    const seam = seamTree(256)
+    expect(await Input.discoverFiles("/ws", { io: seam.io })).toHaveLength(256)
+    expect(seam.peak()).toBeLessThanOrEqual(Input.defaultDigestConcurrency)
+    expect(seam.active()).toBe(0)
+  })
+})
+
 describe("Input.expandPnpmWorkspace", () => {
   it("ignores comments and unrelated scalar, object, and array settings", async () => {
     await write("package.json", "{}\n")
@@ -400,6 +501,44 @@ describe("Input.expandPnpmWorkspace", () => {
         "packages/included/package.json",
         "pnpm-workspace.yaml"
       ])
+  })
+
+  it("resolves members relative to a workspace file below the root", async () => {
+    await write("package.json", "{}\n")
+    await write("sub/package.json", "{}\n")
+    await write("sub/member/package.json", "{}\n")
+    await write("sub/pnpm-workspace.yaml", "packages:\n  - '*'\n")
+
+    expect(await Input.expandPnpmWorkspace(root, "", Input.pnpmWorkspace("//sub/pnpm-workspace.yaml")))
+      .toEqual([
+        "sub/member/package.json",
+        "sub/package.json",
+        "sub/pnpm-workspace.yaml"
+      ])
+  })
+
+  /**
+   * A workspace declaration is the membership source for every package the
+   * lockfile resolves, so a file it cannot read as one is a refusal rather
+   * than an empty member set that silently drops packages from key material.
+   */
+  it.each([
+    ["a missing file", undefined, /pnpm workspace does not exist: pnpm-workspace\.yaml/],
+    ["YAML that does not parse", "packages: [unclosed\n", /could not parse pnpm workspace pnpm-workspace\.yaml/],
+    [
+      "a missing packages key",
+      "linkWorkspacePackages: true\n",
+      /could not validate pnpm workspace pnpm-workspace\.yaml/
+    ],
+    ["an empty packages list", "packages: []\n", /could not validate pnpm workspace pnpm-workspace\.yaml/],
+    ["packages that is not a list", "packages: everything\n", /could not validate pnpm workspace pnpm-workspace\.yaml/],
+    ["an empty exclusion", "packages:\n  - '!'\n", /contains an empty exclusion/],
+    ["no package inclusion", "packages:\n  - '!packages/excluded'\n", /contains no package inclusion/]
+  ])("refuses %s", async (_label, contents, message) => {
+    await write("package.json", "{}\n")
+    if (contents !== undefined) await write("pnpm-workspace.yaml", contents)
+    await expect(Input.expandPnpmWorkspace(root, "", Input.pnpmWorkspace("//pnpm-workspace.yaml")))
+      .rejects.toThrow(message)
   })
 })
 
