@@ -29,8 +29,8 @@ import { HomeBlockSchema } from "./HomePane.ts"
 import {
   HARNESS_IDS,
   LSP_DIAGNOSTICS_CAP,
-  LSP_HOVER_CAP_CHARS,
   LspDiagnosticSchema,
+  LspHoverSchema,
   RepoSchema,
   TargetSchema
 } from "./LocalApp.ts"
@@ -421,6 +421,54 @@ export const SandboxEgressRowSchema = z.object({
 export type SandboxEgressRow = z.infer<typeof SandboxEgressRowSchema>
 
 /**
+ * How a workspace session POST refused (the workspace card's desktop and
+ * terminal facets): plue's status beside its own words. The machine-readable
+ * `code` survives the 5xx message sanitizer (`writeRouteError` keeps `Code`
+ * and replaces the text with the status text); a code like
+ * `desktop_not_ready` or `guest_not_ready` is the one the facet retries on
+ * its own, because the server asked it to.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const SessionRefusalSchema = z.object({
+  status: z.number().int(),
+  message: z.string(),
+  /** plue's machine-readable code; null when the refusal carried none. */
+  code: z.string().nullable().optional(),
+  /** The `Retry-After` header's seconds, when the refusal carried one. */
+  retryAfterSeconds: z.number().int().nonnegative().nullable().optional()
+})
+/**
+ * The decoded value accepted by {@link SessionRefusalSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type SessionRefusal = z.infer<typeof SessionRefusalSchema>
+
+/**
+ * Lane piper (ADR 0001): the revision a file or file-list card was read at.
+ * `commitId` is what "head moved" compares — a change id survives a rebase,
+ * a commit id does not. Optional on the card so cards persisted before the
+ * fields parse.
+ * @since 1.0.0
+ * @category schemas
+ */
+export const ReadAtSchema = z.object({
+  changeId: z.string().nullable(),
+  commitId: z.string().nullable(),
+  /** `head` = read at the repository head (head-moved applies); `working-copy` = read at a checkout's `@` (drift is "N ahead", never "head moved"). */
+  source: z.enum(["head", "working-copy"]).optional()
+})
+/**
+ * The decoded value accepted by {@link ReadAtSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ReadAt = z.infer<typeof ReadAtSchema>
+
+/**
  * One note under refs/notes/mythical: the four sections the design names, null when the note lacks one.
  *
  * @since 1.0.0
@@ -737,13 +785,19 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * The run trace (factory spec 06, review/RULINGS.md #6): one card kind for
    * every run, whatever its kind (implement, prototype, review, ...). The
    * card tracks the run live (phase, `steps` as a short tail of progress
-   * words, `result` once it settles, `lastSeq` as the per-run cursor a reload
-   * resumes the pump from) and renders its journal as a trace: a call tree,
-   * a waterfall and a span pane, folded on the client from `events` (the
-   * `run-events` projection) until the gateway serves a run-trace projection.
-   * The reader's view state (selection, cursor, filter, live tail) lives
-   * here too, so the tree, the waterfall and the pane never disagree. The id
-   * scheme `flow-run-<runId>` stays so links resolve.
+   * words, `result` once it settles) and renders its journal as a trace: a
+   * call tree, a waterfall and a span pane, folded on the client from
+   * `events` (the `run-events` projection) until the gateway serves a
+   * run-trace projection. The pump POLLS the summary and run-events
+   * projections from the start on every load — there is no per-run event
+   * cursor and nothing reconnects mid-stream. `lastSeq` is a retained legacy
+   * field name: it carries the summary projection's `updatedAt`, when the
+   * card last heard from the run, never a replay position. Stopping a watch
+   * asks the gateway's durable Cancel; the card reads "cancelled" when the
+   * workspace accepts and "stopped" (this client stopped watching) when it
+   * refuses. The reader's view state (selection, cursor, filter, live tail)
+   * lives here too, so the tree, the waterfall and the pane never disagree.
+   * The id scheme `flow-run-<runId>` stays so links resolve.
    */
   z.object({
     ...cardBaseShape,
@@ -770,9 +824,10 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
          */
         "quiet",
         /*
-         * The human stopped WATCHING. This seam relays no cancelRun, so
-         * "cancelled" would be a claim about the workspace that nothing
-         * proves — the honest state is the one about this client.
+         * The human stopped WATCHING and the workspace refused the
+         * gateway's Cancel, so "cancelled" would be a claim about the
+         * workspace that nothing proves — the honest state is the one
+         * about this client.
          */
         "stopped",
         "completed",
@@ -785,6 +840,11 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       error: z.string().optional(),
       /** Failure to observe evidence; never replaces the run’s recorded diagnosis. */
       observationError: z.string().optional(),
+      /**
+       * Legacy field name, kept so persisted cards parse: the summary
+       * projection's `updatedAt` (when the card last heard from the run),
+       * not an event cursor — the pump re-reads the projections in full.
+       */
       lastSeq: z.number().int().nonnegative(),
       /** How long the run had gone without progress when it went quiet. */
       quietForMs: z.number().int().nonnegative().optional(),
@@ -1213,8 +1273,9 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
    * and what the identity seam knows about them. Every row is a seam fact:
    * the GitHub login, the scopes the identity worker states (GET
    * /api/auth/scopes), the allowlist answer, and the boxes the workspaces
-   * seam has listed across repositories. No billing, usage or seat rows
-   * exist because no seam holds them; a row with no seam is absent, never
+   * seam has listed across repositories. Billing and usage rows live on the
+   * balance card, which the billing seam answers; seat rows stay absent
+   * because no seam holds them — a row with no seam is absent, never
    * invented.
    */
   z.object({
@@ -1258,7 +1319,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       repository: z.object({ owner: z.string(), name: z.string() }).nullable().optional(),
       /** The workspace the import created, when it created one (the done state links its card). */
       workspaceId: z.string().nullable().optional(),
-      /** A refused GitHub call's rate-limit line (lane sync; GitHubRateLimitSchema below). */
+      /** A refused GitHub call's rate-limit line (lane sync; GitHubRateLimitSchema above). */
       rateLimit: GitHubRateLimitSchema.optional()
     })
   }),
@@ -1437,12 +1498,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       truncated: z.boolean().optional(),
       /** The global path (`/org/repo/path`); absent on cards written before lane piper. */
       address: z.string().optional(),
-      readAt: z.object({
-        changeId: z.string().nullable(),
-        commitId: z.string().nullable(),
-        /** `head` = read at the repository head (head-moved applies); `working-copy` = read at a checkout's `@` (drift is "N ahead", never "head moved"). */
-        source: z.enum(["head", "working-copy"]).optional()
-      }).optional()
+      readAt: ReadAtSchema.optional()
     })
   }),
   z.object({
@@ -1471,11 +1527,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        * a card read from a local working copy pins by commit id, never a
        * server seq. Optional so cards persisted before the lane parse.
        */
-      readAt: z.object({
-        changeId: z.string().nullable(),
-        commitId: z.string().nullable(),
-        seq: z.number().int().positive().nullable().optional(),
-        source: z.enum(["head", "working-copy"]).optional()
+      readAt: ReadAtSchema.extend({
+        seq: z.number().int().positive().nullable().optional()
       }).optional(),
       /*
        * Code intelligence (apps/ui/docs/code-intel/PLAN.md §5). Components
@@ -1500,7 +1553,8 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       hover: z.object({
         line: z.number().int().min(1),
         character: z.number().int().min(1),
-        contents: z.string().max(LSP_HOVER_CAP_CHARS),
+        /** The hover text, capped exactly as {@link LspHoverSchema} caps it. */
+        contents: LspHoverSchema.shape.contents,
         /** True when the host cut the server's text at its cap; the box says so. */
         truncated: z.boolean().optional()
       }).nullable().optional(),
@@ -1762,31 +1816,14 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
        * facet answers with a Resume; a 400 (this kind has no desktop) reads
        * the message alone.
        */
-      desktopRefusal: z.object({
-        status: z.number().int(),
-        message: z.string(),
-        /**
-         * plue's machine-readable code, which survives the 5xx message
-         * sanitizer (`writeRouteError` keeps `Code` and replaces the text
-         * with the status text). `desktop_not_ready` is the one the facet
-         * retries on its own, because the server asked it to.
-         */
-        code: z.string().nullable().optional(),
-        /** The `Retry-After` header's seconds, when the refusal carried one. */
-        retryAfterSeconds: z.number().int().nonnegative().nullable().optional()
-      }).nullable().optional(),
+      desktopRefusal: SessionRefusalSchema.nullable().optional(),
       /**
        * plue#504: how the terminal session POST refused, on the terminal
        * facet. The same four facts as `desktopRefusal` — a 503
        * `guest_not_ready` is the one the seam retries on its own, because the
        * server asked it to with a `Retry-After`.
        */
-      terminalRefusal: z.object({
-        status: z.number().int(),
-        message: z.string(),
-        code: z.string().nullable().optional(),
-        retryAfterSeconds: z.number().int().nonnegative().nullable().optional()
-      }).nullable().optional(),
+      terminalRefusal: SessionRefusalSchema.nullable().optional(),
       /** Which body tab the card shows; the terminal by default. */
       facet: z.enum(["terminal", "files", "services", "snapshots", "egress", "desktop"]).optional(),
       /** The plue session the card's Terminal facet (and its tab) is attached to. */
