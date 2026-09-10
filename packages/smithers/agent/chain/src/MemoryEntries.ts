@@ -23,7 +23,7 @@ import * as Recall from "@smthrs/memory/Recall"
 import { Effect, Layer, Schema } from "effect"
 import * as Catalog from "./Catalog.ts"
 import { failureCode } from "./internal/failureCode.ts"
-import * as ScriptRunner from "./ScriptRunner.ts"
+import * as JsonBoundary from "./JsonBoundary.ts"
 
 // A store failure discloses only the memory package's own shipped code; a
 // tag would leak an implementation name the flows never promised.
@@ -69,7 +69,7 @@ const entryOf = <A>(
         Effect.mapError((error) =>
           new Catalog.CallError({
             cause: "invalid_input",
-            message: `"${contract.name}" rejected its input: ${ScriptRunner.failureMessage(error)}`,
+            message: `"${contract.name}" rejected its input: ${JsonBoundary.failureMessage(error)}`,
             name: contract.name
           })
         )
@@ -78,7 +78,7 @@ const entryOf = <A>(
         Effect.mapError((error) =>
           new Catalog.CallError({
             cause: codeOf(error),
-            message: `"${contract.name}" failed [${codeOf(error)}]: ${ScriptRunner.failureMessage(error)}`,
+            message: `"${contract.name}" failed [${codeOf(error)}]: ${JsonBoundary.failureMessage(error)}`,
             name: contract.name
           })
         )
@@ -91,7 +91,7 @@ const entryOf = <A>(
         Effect.mapError((error) =>
           new Catalog.CallError({
             cause: "invalid_output",
-            message: `"${contract.name}" produced output outside its contract: ${ScriptRunner.failureMessage(error)}`,
+            message: `"${contract.name}" produced output outside its contract: ${JsonBoundary.failureMessage(error)}`,
             name: contract.name
           })
         )

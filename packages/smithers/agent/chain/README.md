@@ -107,7 +107,7 @@ The full documentation is at https://chain.smithers.sh:
 - [Quickstart](https://chain.smithers.sh/quickstart/): a two-link run, the
   journal it writes, and the replay that repeats nothing.
 - [API reference](https://chain.smithers.sh/reference/api/): every export of
-  the 19 namespaces.
+  the 20 namespaces.
 - [The chain contract](https://chain.smithers.sh/contract/): the gates, the
   failure taxonomy, the concurrency rule, the resource limits, and the JSON
   boundary.

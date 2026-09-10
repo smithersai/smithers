@@ -2,6 +2,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Author from "../src/Author.ts"
 import * as Catalog from "../src/Catalog.ts"
+import * as JsonBoundary from "../src/JsonBoundary.ts"
 import type * as Outcome from "../src/Outcome.ts"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as Script from "../src/Script.ts"
@@ -225,7 +226,7 @@ describe.each(runners)("runner conformance: %s", (_name, layer) => {
   ])("refuses an outcome carrying %s", async (_case, text) => {
     const error = await failWith(layer, text, echo) as ScriptRunner.ScriptFailure
     expect(error.code).toBe("invalid_outcome")
-    expect(error.message).toBe(ScriptRunner.unserializableOutcome)
+    expect(error.message).toBe(JsonBoundary.unserializableOutcome)
   })
 
   // Values whose realm-side and host-side treatments used to differ. The
@@ -247,7 +248,7 @@ describe.each(runners)("runner conformance: %s", (_name, layer) => {
   ])("refuses an outcome carrying %s", async (_case, text) => {
     const error = await failWith(layer, text, echo) as ScriptRunner.ScriptFailure
     expect(error.code).toBe("invalid_outcome")
-    expect(error.message).toBe(ScriptRunner.unserializableOutcome)
+    expect(error.message).toBe(JsonBoundary.unserializableOutcome)
   })
 
   it("never invokes a toJSON hook, however it is defined", async () => {
@@ -284,7 +285,7 @@ describe.each(runners)("runner conformance: %s", (_name, layer) => {
 
   it("separates a JSON value that is not an outcome from one that is not JSON", async () => {
     const notOutcome = await failWith(layer, `return { nope: true }`, echo) as ScriptRunner.ScriptFailure
-    expect(notOutcome.message).toBe(ScriptRunner.notAnOutcome)
+    expect(notOutcome.message).toBe(JsonBoundary.notAnOutcome)
   })
 
   it("crosses a call payload at exactly the boundary depth and refuses the next link", async () => {
@@ -302,11 +303,11 @@ describe.each(runners)("runner conformance: %s", (_name, layer) => {
       ].join("\n")
     const scalar = (): Effect.Effect<unknown> => Effect.succeed("crossed")
 
-    expect(await runWith(layer, nested(ScriptRunner.maxJsonDepth), scalar)).toEqual({
+    expect(await runWith(layer, nested(JsonBoundary.maxJsonDepth), scalar)).toEqual({
       _tag: "Done",
       value: "crossed"
     })
-    expect(await runWith(layer, nested(ScriptRunner.maxJsonDepth + 1), scalar)).toEqual({
+    expect(await runWith(layer, nested(JsonBoundary.maxJsonDepth + 1), scalar)).toEqual({
       _tag: "Done",
       value: "ctx.call input must be JSON-serializable"
     })
@@ -325,11 +326,11 @@ describe.each(runners)("runner conformance: %s", (_name, layer) => {
     const report =
       `const answer = await ctx.call("nest").then(function () { return "crossed" }, function (error) { return error.message })\nreturn done(answer)`
 
-    expect(await runWith(layer, report, () => Effect.succeed(nest(ScriptRunner.maxJsonDepth)))).toEqual({
+    expect(await runWith(layer, report, () => Effect.succeed(nest(JsonBoundary.maxJsonDepth)))).toEqual({
       _tag: "Done",
       value: "crossed"
     })
-    expect(await runWith(layer, report, () => Effect.succeed(nest(ScriptRunner.maxJsonDepth + 1)))).toEqual({
+    expect(await runWith(layer, report, () => Effect.succeed(nest(JsonBoundary.maxJsonDepth + 1)))).toEqual({
       _tag: "Done",
       value: `the "nest" call result is not JSON-serializable`
     })
@@ -626,7 +627,7 @@ describe("QuickJs sealed realm", () => {
       echo
     ) as ScriptRunner.ScriptFailure
     expect(error.code).toBe("invalid_outcome")
-    expect(error.message).toBe(ScriptRunner.unserializableOutcome)
+    expect(error.message).toBe(JsonBoundary.unserializableOutcome)
   })
 
   it("ignores a replaced realm JSON.stringify when encoding an outcome", async () => {
@@ -739,7 +740,7 @@ describe("QuickJs sealed realm", () => {
 
   // The bridge settles inside a synchronous QuickJS callback, where a throw
   // becomes an untyped defect rather than a script-visible failure.
-  // `jsonBoundary` bounds what reaches it, so this is the belt to that
+  // `JsonBoundary.jsonBoundary` bounds what reaches it, so this is the belt to that
   // braces: encoding is total, whatever it is handed.
   it("settles a refusal rather than throwing when a result cannot be encoded", () => {
     expect(JSON.parse(QuickJsRunner.encodeSettlement("x", { ok: true }))).toEqual({ ok: true })

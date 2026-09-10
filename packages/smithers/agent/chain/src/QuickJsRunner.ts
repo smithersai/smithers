@@ -17,6 +17,7 @@ import { Cause, Effect, Layer } from "effect"
 import type { QuickJSContext, QuickJSDeferredPromise, QuickJSRuntime, QuickJSWASMModule } from "quickjs-emscripten-core"
 import { newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core"
 import * as QuickJsJobs from "./internal/QuickJsJobs.ts"
+import * as JsonBoundary from "./JsonBoundary.ts"
 import type * as Outcome from "./Outcome.ts"
 import type * as Script from "./Script.ts"
 import * as ScriptRunner from "./ScriptRunner.ts"
@@ -130,8 +131,8 @@ const prelude = `(function () {
   var IntrinsicPromise = Promise
   var intrinsicPromiseReject = IntrinsicPromise.reject.bind(IntrinsicPromise)
   var bridge = globalThis.__call
-  var maxDepth = ${ScriptRunner.maxJsonDepth}
-  // The in-realm twin of ScriptRunner.jsonBoundary, and it must stay a
+  var maxDepth = ${JsonBoundary.maxJsonDepth}
+  // The in-realm twin of JsonBoundary.jsonBoundary, and it must stay a
   // twin: whatever the two bindings disagree about is a value that behaves
   // one way in production and another in every in-process test. It BUILDS a
   // copy rather than validating in place, for the reason the host does —
@@ -193,7 +194,7 @@ const prelude = `(function () {
     try {
       return intrinsicStringify(copyJson(input, 0, []))
     } catch (error) {
-      throw new IntrinsicTypeError("ctx.call input must be JSON-serializable")
+      throw new IntrinsicTypeError(${JSON.stringify(JsonBoundary.unserializableInput)})
     }
   }
   // The outcome crosses the same gate as a call payload, in the realm that
@@ -216,7 +217,7 @@ const prelude = `(function () {
   globalThis.ctx = Object.freeze({
     call: function (name, input) {
       if (typeof name !== "string") {
-        return intrinsicPromiseReject(new IntrinsicTypeError("ctx.call expects a call name as its first argument"))
+        return intrinsicPromiseReject(new IntrinsicTypeError(${JSON.stringify(JsonBoundary.missingCallName)}))
       }
       var encoded
       try {
@@ -256,7 +257,7 @@ globalThis.__script = (async () => {\n${text}\n})().then(function (value) {
   return __encodeOutcome(value === undefined ? null : value)
 })`
 
-interface Pending {
+interface BridgeCall {
   readonly name: string
   readonly payload: unknown
   readonly settle: (payload: unknown) => void
@@ -297,12 +298,12 @@ export const decodeCallInput = (
   encoded: string
 ): { readonly payload: unknown; readonly refusal?: string | undefined } => {
   try {
-    const payload = ScriptRunner.jsonBoundary(JSON.parse(encoded))
+    const payload = JsonBoundary.jsonBoundary(JSON.parse(encoded))
     return payload._tag === "Refused"
-      ? { payload: null, refusal: "ctx.call input must be JSON-serializable" }
+      ? { payload: null, refusal: JsonBoundary.unserializableInput }
       : { payload: payload.value }
   } catch {
-    return { payload: null, refusal: "ctx.call input must be JSON-serializable" }
+    return { payload: null, refusal: JsonBoundary.unserializableInput }
   }
 }
 
@@ -318,8 +319,8 @@ export const decodeCallInput = (
  * @slop
  */
 export const dispatchBridgeCall = <E>(
-  next: Pending,
-  pending: Array<Pending>,
+  next: BridgeCall,
+  pending: Array<BridgeCall>,
   handler: (request: ScriptRunner.Request) => Effect.Effect<unknown, E>
 ): Effect.Effect<void, E> => {
   if (next.refusal !== undefined) {
@@ -333,9 +334,9 @@ export const dispatchBridgeCall = <E>(
       Effect.sync(() => {
         // A failed handler aborts the run; queued calls settle as aborted so
         // the realm holds no dangling promises when the scope disposes it.
-        next.settle({ message: "the link was aborted", ok: false })
+        next.settle({ message: JsonBoundary.abortedLink, ok: false })
         for (const stale of pending.splice(0)) {
-          stale.settle({ message: "the link was aborted", ok: false })
+          stale.settle({ message: JsonBoundary.abortedLink, ok: false })
         }
       })
     ),
@@ -345,7 +346,7 @@ export const dispatchBridgeCall = <E>(
         // A handler result crosses the same JSON boundary as the in-process
         // binding; refusing here also keeps the host-side stringify in
         // settle() total.
-        const resultBoundary = ScriptRunner.jsonBoundary(result)
+        const resultBoundary = JsonBoundary.jsonBoundary(result)
         if (resultBoundary._tag === "Refused") {
           next.settle({ message: `the "${next.name}" call result is not JSON-serializable`, ok: false })
         } else {
@@ -359,7 +360,7 @@ export const dispatchBridgeCall = <E>(
 /**
  * Encodes one bridge settlement for the realm.
  *
- * `ScriptRunner.jsonBoundary` bounds the shape and size of what reaches
+ * `JsonBoundary.jsonBoundary` bounds the shape and size of what reaches
  * here, but encoding is the last host-side step before a synchronous
  * QuickJS callback, and a `JSON.stringify` that throws there escapes as an
  * untyped defect that kills the whole run. It degrades to a refusal the
@@ -447,7 +448,7 @@ const evaluate = <E>(
     )
     const { context, runtime } = acquired
 
-    const pending: Array<Pending> = []
+    const pending: Array<BridgeCall> = []
     const deferreds = new Set<QuickJSDeferredPromise>()
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -493,7 +494,7 @@ const evaluate = <E>(
       parsed.error.dispose()
       return yield* new ScriptRunner.ScriptFailure({
         code: "compile",
-        message: ScriptRunner.failureMessage(failure)
+        message: JsonBoundary.failureMessage(failure)
       })
     }
     parsed.value.dispose()
@@ -506,7 +507,7 @@ const evaluate = <E>(
       // budget, a memory-limit throw, a wrapper escape — is runtime.
       return yield* new ScriptRunner.ScriptFailure({
         code: "runtime",
-        message: ScriptRunner.failureMessage(failure)
+        message: JsonBoundary.failureMessage(failure)
       })
     }
     started.value.dispose()
@@ -538,24 +539,24 @@ const evaluate = <E>(
         // are not redundant: the in-realm copy is what stops the realm's own
         // stringify from rewriting the value, and the host walk is the one
         // that bounds size — the shared gate both bindings answer to.
-        let decoded: ReturnType<typeof ScriptRunner.jsonBoundary>
+        let decoded: ReturnType<typeof JsonBoundary.jsonBoundary>
         try {
-          if (typeof value !== "string") throw new TypeError(ScriptRunner.unserializableOutcome)
-          decoded = ScriptRunner.jsonBoundary(JSON.parse(value))
+          if (typeof value !== "string") throw new TypeError(JsonBoundary.unserializableOutcome)
+          decoded = JsonBoundary.jsonBoundary(JSON.parse(value))
         } catch {
           decoded = { _tag: "Refused" }
         }
         if (decoded._tag === "Refused") {
           return yield* new ScriptRunner.ScriptFailure({
             code: "invalid_outcome",
-            message: ScriptRunner.unserializableOutcome
+            message: JsonBoundary.unserializableOutcome
           })
         }
-        const outcome = ScriptRunner.decodeOutcome(decoded.value)
+        const outcome = JsonBoundary.decodeOutcome(decoded.value)
         if (outcome._tag === "None") {
           return yield* new ScriptRunner.ScriptFailure({
             code: "invalid_outcome",
-            message: ScriptRunner.notAnOutcome
+            message: JsonBoundary.notAnOutcome
           })
         }
         return outcome.value
@@ -565,14 +566,14 @@ const evaluate = <E>(
         state.error.dispose()
         return yield* new ScriptRunner.ScriptFailure({
           code: "runtime",
-          message: ScriptRunner.failureMessage(failure)
+          message: JsonBoundary.failureMessage(failure)
         })
       }
       // Nothing is queued and no VM job can advance the script: it
       // awaited something the sealed realm can never settle.
       return yield* new ScriptRunner.ScriptFailure({
         code: "runtime",
-        message: "the script awaited something that never settles — the only thing worth awaiting is ctx.call"
+        message: JsonBoundary.neverSettles
       })
     }
   }).pipe(
@@ -598,7 +599,7 @@ const evaluate = <E>(
           () =>
             new ScriptRunner.ScriptFailure({
               code: "runtime",
-              message: hostDefectMarker + ScriptRunner.failureMessage(defect)
+              message: hostDefectMarker + JsonBoundary.failureMessage(defect)
             })
         )
     )
@@ -623,7 +624,7 @@ export const make = (
       catch: (error) =>
         new ScriptRunner.ScriptFailure({
           code: "runner_unavailable",
-          message: ScriptRunner.failureMessage(error)
+          message: JsonBoundary.failureMessage(error)
         }),
       try: () => load()
     }),

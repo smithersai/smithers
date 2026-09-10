@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/chain: the 19 namespaces, their members, signatures, behavior, and errors."
+description: "Every public export of @smthrs/chain: the 20 namespaces, their members, signatures, behavior, and errors."
 ---
 
 `@smthrs/chain` exports one namespace per module. The barrel and the matching
@@ -27,7 +27,8 @@ no promise.
 | `AuthorDeclaration` | The author entry's name, description, digest, and capability claim, in one leaf both the trampoline and the prompt read.  |
 | `ModelAuthor`       | The production seat over `@smthrs/model`.                                                                                 |
 | `Script`            | Script text plus the digest that keys it, and `extract`, which is gate 1: exactly one fenced `flow` block.                |
-| `ScriptRunner`      | The interpreter port, its typed `ScriptFailure`, the shared `jsonBoundary`, and `layerInProcess`.                         |
+| `ScriptRunner`      | The interpreter port, its typed `ScriptFailure`, and `layerInProcess`.                                                    |
+| `JsonBoundary`      | The gate both bindings answer to: `jsonBoundary`, its limits, `decodeOutcome`, and the shared refusal messages.           |
 | `QuickJsRunner`     | The production sealed interpreter: a per-link QuickJS realm with memory, stack, and step limits.                          |
 | `Prompt`            | The byte-stable system prefix and the catalog block the model reads.                                                      |
 
@@ -447,6 +448,52 @@ The authored artifact of one link and the shape gate over raw output.
   blocks or more than one is a `Rejected` whose reason the next authoring
   reads.
 
+## `JsonBoundary`
+
+The gate both runner bindings answer to. `ScriptRunner` is the port and its
+in-process binding, `QuickJsRunner` is the sealed realm; whatever the two
+must agree about byte for byte lives here, so a limit or a refusal sentence
+has one home instead of a copy per binding.
+
+### Constants
+
+- `maxJsonDepth = 128`: the deepest nesting a value may carry across the
+  boundary.
+- `maxJsonSize = 8 * 1024 * 1024`: the boundary's size budget, in units: one
+  per node plus one per code unit of every string and key.
+- `unserializableOutcome`: the message every binding reports when a script's
+  returned value is not JSON.
+- `notAnOutcome`: the message every binding reports when a script's returned
+  value is JSON but not one of the three outcomes.
+- `unserializableInput`: the message every binding rejects a `ctx.call` with
+  when its input does not cross the boundary. The QuickJS prelude
+  interpolates it, so the in-realm refusal and the host-side one are the
+  same sentence by construction.
+- `missingCallName`: the message every binding rejects a `ctx.call` with
+  when its first argument is not a call name.
+- `abortedLink`: the message every queued call settles with once a failed
+  handler aborts the link.
+- `neverSettles`: the runtime failure every binding reports when the script
+  awaited something outside the one supported async door.
+
+### Gates
+
+- `jsonBoundary(value): { _tag: "Ok", value: unknown } | { _tag: "Refused" }`:
+  the strict JSON boundary every value crosses: call payloads, handler
+  results, and script outcomes. Only `null`, finite numbers, strings,
+  booleans, and acyclic plain objects and arrays cross, and what crosses is
+  a structural copy. `undefined` is refused everywhere except as the whole
+  value, where it becomes `null`; array holes are refused; non-finite
+  numbers are refused; `-0` crosses as `0`; a `toJSON` method is never
+  called; non-plain prototypes are refused; identity is not preserved.
+- `decodeOutcome(value): Option.Option<Outcome.Outcome>`: decodes a script's
+  returned value into an outcome. Shared by every runner binding so they
+  reject the same shapes and normalize identically. A `To` is rebuilt
+  through `Outcome.to`.
+- `failureMessage(error: unknown): string`: renders a script failure value
+  the way the QuickJS binding renders a dumped realm error, so runtime
+  failure messages match across runners.
+
 ## `ScriptRunner`
 
 The script interpreter port and its in-process implementation.
@@ -473,35 +520,6 @@ The script interpreter port and its in-process implementation.
   settling each call it issues through the given handler, one at a time.
 - `ScriptRunner extends Context.Service`: the script interpreter service
   tag, key `/chain/ScriptRunner`.
-
-### Constants
-
-- `maxJsonDepth = 128`: the deepest nesting a value may carry across the
-  boundary.
-- `maxJsonSize = 8 * 1024 * 1024`: the boundary's size budget, in units: one
-  per node plus one per code unit of every string and key.
-- `unserializableOutcome`: the message every binding reports when a script's
-  returned value is not JSON.
-- `notAnOutcome`: the message every binding reports when a script's returned
-  value is JSON but not one of the three outcomes.
-
-### Gates
-
-- `jsonBoundary(value): { _tag: "Ok", value: unknown } | { _tag: "Refused" }`:
-  the strict JSON boundary every value crosses: call payloads, handler
-  results, and script outcomes. Only `null`, finite numbers, strings,
-  booleans, and acyclic plain objects and arrays cross, and what crosses is
-  a structural copy. `undefined` is refused everywhere except as the whole
-  value, where it becomes `null`; array holes are refused; non-finite
-  numbers are refused; `-0` crosses as `0`; a `toJSON` method is never
-  called; non-plain prototypes are refused; identity is not preserved.
-- `decodeOutcome(value): Option.Option<Outcome.Outcome>`: decodes a script's
-  returned value into an outcome. Shared by every runner binding so they
-  reject the same shapes and normalize identically. A `To` is rebuilt
-  through `Outcome.to`.
-- `failureMessage(error: unknown): string`: renders a script failure value
-  the way the QuickJS binding renders a dumped realm error, so runtime
-  failure messages match across runners.
 
 ### Constructors and layers
 

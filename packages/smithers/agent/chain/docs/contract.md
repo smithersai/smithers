@@ -158,8 +158,8 @@ Every default a caller silently inherits:
 | QuickJS realm memory                    | 64 MiB, floored at 256 KiB            | `QuickJsRunner.defaultLimits.memoryBytes`, `memoryFloor` |
 | QuickJS in-realm stack                  | 256 KiB, capped at 256 KiB            | `QuickJsRunner.defaultLimits.stackBytes`, `stackCeiling` |
 | QuickJS interrupt polls                 | 10000                                 | `QuickJsRunner.defaultLimits.steps`                      |
-| JSON boundary depth                     | 128                                   | `ScriptRunner.maxJsonDepth`                              |
-| JSON boundary size budget               | 8 MiB in nodes plus string code units | `ScriptRunner.maxJsonSize`                               |
+| JSON boundary depth                     | 128                                   | `JsonBoundary.maxJsonDepth`                              |
+| JSON boundary size budget               | 8 MiB in nodes plus string code units | `JsonBoundary.maxJsonSize`                               |
 | Catalog entry name in the prompt        | 64 characters                         | `Prompt.maxEntryName`                                    |
 | Catalog entry description in the prompt | 200 characters                        | `Prompt.maxEntryDescription`                             |
 
@@ -182,7 +182,7 @@ so JSON refusal cannot bypass `maxCallsPerLink`.
 
 ## The JSON boundary
 
-`ScriptRunner.jsonBoundary` is the one gate every value crosses: call
+`JsonBoundary.jsonBoundary` is the one gate every value crosses: call
 payloads, handler results, and script outcomes. Only `null`, finite numbers,
 strings, booleans, and acyclic plain objects and arrays cross, and what
 crosses is a structural COPY.

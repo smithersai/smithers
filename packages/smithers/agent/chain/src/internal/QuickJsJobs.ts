@@ -5,6 +5,7 @@
  */
 import * as Effect from "effect/Effect"
 import type { ExecutePendingJobsResult } from "quickjs-emscripten-core"
+import * as JsonBoundary from "../JsonBoundary.ts"
 import * as ScriptRunner from "../ScriptRunner.ts"
 
 /**
@@ -24,7 +25,7 @@ export const check = (jobs: ExecutePendingJobsResult): Effect.Effect<void, Scrip
   return Effect.fail(
     new ScriptRunner.ScriptFailure({
       code: "runtime",
-      message: ScriptRunner.failureMessage(dumped)
+      message: JsonBoundary.failureMessage(dumped)
     })
   )
 }

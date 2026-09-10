@@ -12,6 +12,7 @@ describe("index", () => {
       "Chain",
       "Event",
       "Journal",
+      "JsonBoundary",
       "MemoryEntries",
       "ModelAuthor",
       "Observation",

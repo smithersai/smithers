@@ -127,7 +127,7 @@ and inspects agents from a terminal.
   [Steer a run](./guides/steering.md),
   [Project the registry and bind memory](./guides/registry-and-memory.md), and
   [Test a chain](./guides/testing.md).
-- [API reference](./api.md): every export of the 19 namespaces.
+- [API reference](./api.md): every export of the 20 namespaces.
 - [The chain contract](./contract.md): the gates, the failure taxonomy, the
   concurrency rule, the resource limits, and the JSON boundary.
 - [Troubleshooting](./troubleshooting.md): every typed failure a run can

@@ -20,6 +20,7 @@ import * as Event from "./Event.ts"
 import { childRun } from "./internal/childRun.ts"
 import { ChildRunError } from "./internal/ChildRunError.ts"
 import * as Journal from "./Journal.ts"
+import * as JsonBoundary from "./JsonBoundary.ts"
 import * as Observation from "./Observation.ts"
 import * as Outcome from "./Outcome.ts"
 import * as Script from "./Script.ts"
@@ -355,7 +356,7 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
                 Observation.make("fuel", `link ${link} exceeded its budget of ${maxCalls} calls`)
               )
             }
-            const payloadBoundary = ScriptRunner.jsonBoundary(payload)
+            const payloadBoundary = JsonBoundary.jsonBoundary(payload)
             if (payloadBoundary._tag === "Refused") {
               return yield* reject(
                 ordinal,
@@ -515,7 +516,7 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
                     return yield* reject(ordinal, Observation.make("call_failed", `"${name}" failed: ${error.message}`))
                   }))
               )
-              const resultBoundary = ScriptRunner.jsonBoundary(result)
+              const resultBoundary = JsonBoundary.jsonBoundary(result)
               if (resultBoundary._tag === "Refused") {
                 return yield* reject(
                   ordinal,

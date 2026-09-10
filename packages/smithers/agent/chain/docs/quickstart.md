@@ -157,4 +157,4 @@ guard them, see [Resume and replay](./guides/resume-and-replay.md).
   of gate 4.
 - [Test a chain](./guides/testing.md): the mock and noop layers this
   package tests itself with.
-- [API reference](./api.md): every export of the 19 namespaces.
+- [API reference](./api.md): every export of the 20 namespaces.

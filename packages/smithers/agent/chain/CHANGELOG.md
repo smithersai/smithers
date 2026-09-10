@@ -24,7 +24,24 @@
   digest value is unchanged, so one declaration is now one number on both
   sides of the boundary.
 
+- The shared JSON boundary moved out of `ScriptRunner` into its own
+  `JsonBoundary` namespace: `jsonBoundary`, `decodeOutcome`, `failureMessage`,
+  `maxJsonDepth`, `maxJsonSize`, `unserializableOutcome` and `notAnOutcome`
+  are now `JsonBoundary.*`. `ScriptRunner` keeps the port, its
+  `ScriptFailure`, and `layerInProcess`. Behavior, values and messages are
+  unchanged; only the namespace moved.
+
 ### Fixed
+
+- The four bridge messages both runner bindings answer with were spelled out
+  at every use site: `ctx.call input must be JSON-serializable` in four
+  places, `the link was aborted` in three, and the call-name and
+  never-settles sentences in two each. `RunnerConformance` could only catch a
+  divergence after it was written. They are now `JsonBoundary.unserializableInput`,
+  `JsonBoundary.abortedLink`, `JsonBoundary.missingCallName` and
+  `JsonBoundary.neverSettles`, and the QuickJS prelude interpolates the two
+  it needs the way it already interpolated `maxJsonDepth`. Message text is
+  unchanged.
 
 - `Authorize` derived its own resource-glob grammar: a private `literalPrefix`
   hard-coded that `*` and `?` are the only metacharacters, and a private

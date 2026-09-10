@@ -102,6 +102,16 @@ export * as ModelAuthor from "./ModelAuthor.ts"
 export * as Journal from "./Journal.ts"
 
 /**
+ * The gate both runner bindings answer to: the strict JSON boundary, its
+ * limits, the outcome decode, and the messages both bindings refuse with.
+ *
+ * @category namespace exports
+ * @since 0.1.0
+ * @slop
+ */
+export * as JsonBoundary from "./JsonBoundary.ts"
+
+/**
  * Typed, journaled gate observations.
  *
  * @category namespace exports

@@ -7,6 +7,7 @@ import * as Authorize from "../src/Authorize.ts"
 import * as Chain from "../src/Chain.ts"
 import * as chain from "../src/index.ts"
 import * as Journal from "../src/Journal.ts"
+import * as JsonBoundary from "../src/JsonBoundary.ts"
 import * as Prompt from "../src/Prompt.ts"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as ScriptRunner from "../src/ScriptRunner.ts"
@@ -79,9 +80,9 @@ describe("package documentation", () => {
       `${stackBytes / 1024} KiB, capped at ${QuickJsRunner.stackCeiling / 1024} KiB`
     )
     expect(defaultOf("QuickJS interrupt polls")).toBe(String(QuickJsRunner.defaultLimits.steps))
-    expect(defaultOf("JSON boundary depth")).toBe(String(ScriptRunner.maxJsonDepth))
+    expect(defaultOf("JSON boundary depth")).toBe(String(JsonBoundary.maxJsonDepth))
     expect(defaultOf("JSON boundary size budget")).toBe(
-      `${ScriptRunner.maxJsonSize / 1024 / 1024} MiB in nodes plus string code units`
+      `${JsonBoundary.maxJsonSize / 1024 / 1024} MiB in nodes plus string code units`
     )
     expect(defaultOf("Catalog entry name in the prompt")).toBe(`${Prompt.maxEntryName} characters`)
     expect(defaultOf("Catalog entry description in the prompt")).toBe(
@@ -109,8 +110,8 @@ describe("package documentation", () => {
       `${memoryBytes / 1024 / 1024} MiB QuickJS heap`,
       `${stackBytes / 1024} KiB stack`,
       `${QuickJsRunner.defaultLimits.steps}-poll step budget`,
-      `JSON boundary bounded at depth ${ScriptRunner.maxJsonDepth}`,
-      `${ScriptRunner.maxJsonSize / 1024 / 1024} MiB size budget`
+      `JSON boundary bounded at depth ${JsonBoundary.maxJsonDepth}`,
+      `${JsonBoundary.maxJsonSize / 1024 / 1024} MiB size budget`
     ]
     expect(fragments.filter((fragment) => !document.includes(fragment))).toEqual([])
   })
