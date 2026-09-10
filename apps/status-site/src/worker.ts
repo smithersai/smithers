@@ -1,3 +1,9 @@
+/**
+ * The bindings the Worker is deployed with. `ASSETS` is the static site in
+ * `site/` (wrangler.jsonc: assets.binding), served with
+ * `not_found_handling: single-page-application`, so it answers an unknown path
+ * with index.html and a 200 rather than a 404.
+ */
 export interface StatusSiteEnv {
   ASSETS: {
     fetch(request: Request): Promise<Response>;
@@ -123,36 +129,47 @@ async function fetchIndex(request: Request, env: StatusSiteEnv): Promise<Respons
   return withHeaders(response, headersFor(url.pathname, response));
 }
 
-export function createStatusSiteWorker() {
-  return {
-    async fetch(request: Request, env: StatusSiteEnv): Promise<Response> {
-      const url = new URL(request.url);
+/**
+ * The status site handler. Routes:
+ *
+ * - anything but GET or HEAD: 405 with `allow: GET, HEAD`, and the feed's CORS
+ *   headers when the path is /status.json so a browser reads the refusal.
+ * - /healthz: `{ ok: true, service: "status-site" }`, never cached.
+ * - /status.json: the feed, guarded against the SPA fallback so a missing file
+ *   reads as a JSON 404 instead of an HTML page (`fetchFeed`).
+ * - everything else: the asset, falling back to index.html.
+ *
+ * Every response carries `x-content-type-options: nosniff`; `headersFor`
+ * decides the cache and page policy from the response, not the path.
+ */
+const worker: { fetch(request: Request, env: StatusSiteEnv): Promise<Response> } = {
+  async fetch(request, env) {
+    const url = new URL(request.url);
 
-      if (request.method !== "GET" && request.method !== "HEAD") {
-        return new Response("method not allowed", {
-          status: 405,
-          headers: {
-            allow: "GET, HEAD",
-            "content-type": "text/plain; charset=utf-8",
-            ...NOSNIFF,
-            ...(url.pathname === "/status.json" ? { ...FEED_HEADERS, "cache-control": "no-store" } : {}),
-          },
-        });
-      }
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response("method not allowed", {
+        status: 405,
+        headers: {
+          allow: "GET, HEAD",
+          "content-type": "text/plain; charset=utf-8",
+          ...NOSNIFF,
+          ...(url.pathname === "/status.json" ? { ...FEED_HEADERS, "cache-control": "no-store" } : {}),
+        },
+      });
+    }
 
-      if (url.pathname === "/healthz") {
-        return Response.json({ ok: true, service: "status-site" }, { headers: UNCACHED_HEADERS });
-      }
+    if (url.pathname === "/healthz") {
+      return Response.json({ ok: true, service: "status-site" }, { headers: UNCACHED_HEADERS });
+    }
 
-      // A missing status feed must read as missing, not as an HTML page.
-      if (url.pathname === "/status.json") return fetchFeed(request, env);
+    // A missing status feed must read as missing, not as an HTML page.
+    if (url.pathname === "/status.json") return fetchFeed(request, env);
 
-      const direct = await fetchAsset(request, env);
-      if (direct.status !== 404) return direct;
+    const direct = await fetchAsset(request, env);
+    if (direct.status !== 404) return direct;
 
-      return fetchIndex(request, env);
-    },
-  };
-}
+    return fetchIndex(request, env);
+  },
+};
 
-export default createStatusSiteWorker();
+export default worker;

@@ -1,5 +1,5 @@
 {
-  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "status-site",
   "main": "src/worker.ts",
   "compatibility_date": "2026-07-02",
@@ -8,6 +8,12 @@
     "directory": "site",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
+    // The Worker runs for every request because the header policy depends on
+    // the response, not the path: under the SPA fallback a request below
+    // /assets/ can come back as the index page, and only a non-HTML 200 earns
+    // the immutable policy (src/worker.ts headersFor). A site/_headers file is
+    // matched against the request URL and is attached to error responses too,
+    // so it can express neither rule.
     "run_worker_first": true
   },
   "routes": [

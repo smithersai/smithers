@@ -95,6 +95,12 @@ your usual secret mechanism (a gitignored `.env`, or the runner's secret
 store). Never type the token on the command line: shell history keeps it in
 plaintext, and it can replace the public status page.
 
+Every request runs the Worker (`run_worker_first: true`) because the cache and
+page policy depends on the response, not on the path: under the
+single-page-application fallback a request below `/assets/` can come back as the
+index page, and a `site/_headers` file is matched against the request URL and is
+attached to error responses too, so it can express neither rule.
+
 `wrangler.jsonc` claims `status.smithers.sh` as a custom domain.
 `alchemy.run.ts` is the alternative deploy path; `apps/bug-worker/alchemy.run.ts`
 uses the same pattern for `bug.smithers.sh`.

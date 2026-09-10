@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { createStatusSiteWorker, type StatusSiteEnv } from "../src/worker.ts";
+import worker, { type StatusSiteEnv } from "../src/worker.ts";
 
 const homeHtml = readFileSync(new URL("../site/index.html", import.meta.url), "utf8");
 const statusRaw = readFileSync(new URL("../site/status.json", import.meta.url), "utf8");
@@ -193,7 +193,7 @@ describe("status page copy", () => {
 
 describe("status site worker", () => {
   test("serves the status page", async () => {
-    const response = await createStatusSiteWorker().fetch(new Request("https://status.smithers.sh/"), makeEnv());
+    const response = await worker.fetch(new Request("https://status.smithers.sh/"), makeEnv());
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(response.headers.get("cache-control")).toBe("public, max-age=300");
@@ -201,7 +201,7 @@ describe("status site worker", () => {
   });
 
   test("serves the status feed with a short TTL", async () => {
-    const response = await createStatusSiteWorker().fetch(
+    const response = await worker.fetch(
       new Request("https://status.smithers.sh/status.json"),
       makeEnv(),
     );
@@ -214,7 +214,6 @@ describe("status site worker", () => {
   });
 
   test("relays conditional feed revalidation with validators and feed headers", async () => {
-    const worker = createStatusSiteWorker();
     const env = makeEnv();
     const initial = await worker.fetch(new Request("https://status.smithers.sh/status.json"), env);
     const etag = initial.headers.get("etag");
@@ -261,7 +260,7 @@ describe("status site worker", () => {
     }
 
     test(`returns an uncached, cross-origin feed error for ${refusal.reason}`, async () => {
-      const response = await createStatusSiteWorker().fetch(
+      const response = await worker.fetch(
         new Request("https://status.smithers.sh/status.json", {
           headers: { origin: "https://consumer.example" },
         }),
@@ -278,7 +277,7 @@ describe("status site worker", () => {
     test(`logs the binding response for ${refusal.reason}`, async () => {
       const warn = spyOn(console, "warn").mockImplementation(() => {});
       try {
-        await createStatusSiteWorker().fetch(
+        await worker.fetch(
           new Request("https://status.smithers.sh/status.json?private=value"),
           refusedEnv(),
         );
@@ -295,7 +294,7 @@ describe("status site worker", () => {
   }
 
   test("keeps CORS on feed method rejections", async () => {
-    const response = await createStatusSiteWorker().fetch(
+    const response = await worker.fetch(
       new Request("https://status.smithers.sh/status.json", {
         method: "POST",
         headers: { origin: "https://consumer.example" },
@@ -317,7 +316,7 @@ describe("status site worker", () => {
         },
       },
     };
-    const response = await createStatusSiteWorker().fetch(new Request("https://status.smithers.sh/status.json"), env);
+    const response = await worker.fetch(new Request("https://status.smithers.sh/status.json"), env);
     expect(response.status).toBe(404);
   });
 
@@ -332,13 +331,13 @@ describe("status site worker", () => {
         },
       },
     };
-    const response = await createStatusSiteWorker().fetch(new Request("https://status.smithers.sh/status.json"), env);
+    const response = await worker.fetch(new Request("https://status.smithers.sh/status.json"), env);
     expect(response.status).toBe(404);
     expect(response.headers.get("content-type")).toContain("json");
   });
 
   test("falls back to the status page for unknown paths", async () => {
-    const response = await createStatusSiteWorker().fetch(
+    const response = await worker.fetch(
       new Request("https://status.smithers.sh/incidents"),
       makeEnv(),
     );
@@ -347,7 +346,7 @@ describe("status site worker", () => {
   });
 
   test("reports health without touching static assets", async () => {
-    const response = await createStatusSiteWorker().fetch(new Request("https://status.smithers.sh/healthz"), makeEnv());
+    const response = await worker.fetch(new Request("https://status.smithers.sh/healthz"), makeEnv());
     expect(response.status).toBe(200);
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -355,7 +354,7 @@ describe("status site worker", () => {
   });
 
   test("rejects non-GET/HEAD methods with 405", async () => {
-    const response = await createStatusSiteWorker().fetch(
+    const response = await worker.fetch(
       new Request("https://status.smithers.sh/", { method: "POST" }),
       makeEnv(),
     );
@@ -372,7 +371,7 @@ describe("status site worker", () => {
     const script = /<script>([\s\S]*?)<\/script>/.exec(homeHtml)?.[1] ?? "";
     expect(script).toBeTruthy();
     const hash = createHash("sha256").update(script, "utf8").digest("base64");
-    const response = await createStatusSiteWorker().fetch(new Request("https://status.smithers.sh/"), makeEnv());
+    const response = await worker.fetch(new Request("https://status.smithers.sh/"), makeEnv());
     expect(response.headers.get("content-security-policy")).toBe(
       [
         "default-src 'none'",
@@ -403,7 +402,7 @@ describe("status site worker", () => {
         },
       },
     };
-    const response = await createStatusSiteWorker().fetch(new Request("https://status.smithers.sh/assets/app.js"), env);
+    const response = await worker.fetch(new Request("https://status.smithers.sh/assets/app.js"), env);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("public, max-age=300");
     expect(response.headers.get("content-security-policy")).toContain("script-src");
@@ -418,7 +417,7 @@ describe("status site worker", () => {
         },
       },
     };
-    const response = await createStatusSiteWorker().fetch(new Request("https://status.smithers.sh/assets/app.js"), env);
+    const response = await worker.fetch(new Request("https://status.smithers.sh/assets/app.js"), env);
     expect(response.status).toBe(503);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
@@ -433,7 +432,7 @@ describe("status site worker", () => {
         },
       },
     };
-    const response = await createStatusSiteWorker().fetch(new Request("https://status.smithers.sh/"), env);
+    const response = await worker.fetch(new Request("https://status.smithers.sh/"), env);
     expect(response.status).toBe(404);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
@@ -452,7 +451,7 @@ describe("status site worker", () => {
         },
       },
     };
-    const response = await createStatusSiteWorker().fetch(new Request("https://status.smithers.sh/assets/app.js"), env);
+    const response = await worker.fetch(new Request("https://status.smithers.sh/assets/app.js"), env);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
