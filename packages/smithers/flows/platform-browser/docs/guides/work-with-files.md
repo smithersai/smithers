@@ -27,7 +27,8 @@ const roundTrip = Effect.gen(function*() {
 
 The served operations are `readFile`, `readFileString`, `writeFile`,
 `writeFileString`, `stream`, `makeDirectory`, `readDirectory`, `stat`,
-`realPath`, `remove`, `access`, and `exists`.
+`realPath`, `remove`, `access`, and `exists`, plus `rename` and `utimes` when
+the backend supplies them.
 
 ## Interruption waits for the backend
 
@@ -43,16 +44,12 @@ finishing.
 
 ## The options are honoured, not dropped
 
-| Option                                       | What it does here                                                                                                                                          |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `readDirectory({ recursive })`               | Walked by this adapter, since the slice has no recursive `readdir`. Entries come back as `parent/child`, the way Node reports them.                        |
-| `access({ readable, writable })`             | Answered from the reported `mode` bits, because a mounted volume has no user identity. A path that exists without the permission fails `PermissionDenied`. |
-| `access({ ok })`                             | The existence check a bare `access` already performs.                                                                                                      |
-| `makeDirectory({ mode })`                    | Forwarded, so a directory asked for as `0o700` is not created `0o755`.                                                                                     |
-| `writeFile({ flag, mode })`                  | Forwarded, so `{ flag: "a" }` appends instead of truncating and `{ flag: "wx" }` fails `AlreadyExists`.                                                    |
-| `realPath`                                   | Canonicalized through the backend's own `realpath` when it has one, so a `..` after a link names the parent of the link's target.                          |
-| `exists`                                     | `false` only for a path that is absent. Every other backend failure propagates, so a refusal to look is never reported as absence.                         |
-| `stream({ offset, bytesToRead, chunkSize })` | Honoured, and refused when they are not whole byte counts.                                                                                                 |
+The snippet above relies on two forwarded options: `makeDirectory` forwards
+`mode`, so the directory is created `0o700`, and `writeFile` forwards `flag`, so
+`{ flag: "a" }` appends instead of truncating. Every served operation treats its
+options the same way.
+[What the filesystem serves](../api.md#what-the-filesystem-serves) lists each
+option and what it does here.
 
 A recursive listing lists a symlinked directory without descending into it when
 the backend has `lstat`, matching Node. A backend with only `stat` follows the
@@ -86,20 +83,12 @@ watcher: `chmod`, `chown`, `copy`, `copyFile`, `glob`, `link`, `symlink`,
 four `makeTemp*` operations. `sink` is among them because the slice has no
 writable handle to append through, so its incremental contract cannot be
 honoured. Copy a file by reading it and writing it back, and append with
-`writeFile({ flag: "a" })` where you would have reached for `sink`.
+`writeFile({ flag: "a" })` where you would have reached for `sink`. `rename` and
+`utimes` refuse the same way on a backend that does not supply them.
 
 Errors the backend throws are mapped onto the `PlatformError` tag that carries
-their meaning, with the original kept as the `cause`:
-
-| Backend code                 | Tag                |
-| ---------------------------- | ------------------ |
-| `ENOENT`                     | `NotFound`         |
-| `EEXIST`                     | `AlreadyExists`    |
-| `EACCES`, `EPERM`            | `PermissionDenied` |
-| `EISDIR`, `ENOTDIR`, `ELOOP` | `BadResource`      |
-| `EBUSY`                      | `Busy`             |
-| anything else                | `Unknown`          |
-
+their meaning, with the original kept as the `cause`.
+[Backend errors](../api.md#backend-errors) lists each code and its tag.
 Collapsing them onto `Unknown` would throw away the one thing a caller can
 branch on: `exists` has to tell "not there" from "could not look".
 
@@ -108,6 +97,8 @@ branch on: `exists` has to tell "not there" from "could not look".
 A tab has no working directory, so a relative path handed to `realPath` resolves
 against the volume root rather than an ambient `process.cwd()` that does not
 exist. `..` above the root is dropped, the way a POSIX resolver drops it.
+`realPath` resolves through the backend's own `realpath`, and a backend without
+one fails it with `PermissionDenied` rather than normalizing the path lexically.
 
 Strings are UTF-8 through the standard `TextDecoder` and `TextEncoder`. An
 encoding `TextDecoder` does not know fails as `BadArgument`, invalid byte
@@ -120,8 +111,3 @@ normalization.
 An async-mirror ZenFS backend acknowledges a write before it reaches IndexedDB
 or OPFS. Call the mount's `sync()` after writes that must survive a reload. This
 adapter does not own the mount.
-
-Publication delegates `rename` and `utimes` to the mounted backend. If either
-method is absent, that operation fails with `PermissionDenied`. `realPath`
-requires backend `realpath`; it never silently normalizes lexically.
-The isolation layer requires workspace root `/` and fails typed otherwise.

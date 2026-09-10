@@ -149,20 +149,49 @@ would let a second interpreter run over a mount with a write still in flight.
 the interpreter or the stub standing in for it. The
 [testing page](./testing.md) shows the stub shape that makes this observable.
 
-## PermissionDenied for an unsupported operation
+## PermissionDenied: the browser backend does not support an operation
 
-Unsupported filesystem operations fail with a typed `PermissionDenied` naming
-the operation. `NotFound` is reserved for paths the backend reports absent.
-Publication needs backend `rename` and `utimes`; provide those methods to use
-best-effort/process artifact storage. Canonicalization requires `realpath`.
-An isolation-layer refusal means the workspace root is not the mount root `/`;
-mount a separate volume for each workspace.
+**Symptom.** A filesystem call fails without touching the volume, and the
+message names the method:
 
-## PermissionDenied from realPath
+```text
+PermissionDenied: FileSystem.symlink (symlink): the browser backend does not support symlink
+PermissionDenied: FileSystem.rename (rename): the browser backend does not support rename
+PermissionDenied: FileSystem.realPath (/workspace/notes.txt): the browser backend does not support realPath
+```
 
-The backend supplies no `realpath`. Canonicalization fails typed because lexical
-normalization cannot prove where symlinks resolve. Supply `realpath` before
-using guarded filesystem operations. Both ZenFS and node:fs/promises provide it.
+**Cause.** A promises-shaped volume has no symlink creation, writable handles, or
+watcher, so those operations are refused rather than faked. `rename`, `utimes`,
+and `realPath` are refused the same way when the backend omits `rename`,
+`utimes`, or `realpath`. `realPath` has no lexical fallback, because lexical
+normalization cannot prove where a symlink resolves. `NotFound` is reserved for
+a path the backend reports absent, so this failure never means the path is
+missing.
+
+**Fix.** Reach for the served operation
+[Read and write files on a mounted volume](./guides/work-with-files.md#what-fails-and-how)
+names for each refusal. Supply `rename` and `utimes` for artifact publication,
+and `realpath` for `realPath` and every guarded filesystem operation;
+`@zenfs/core` and `node:fs/promises` provide all three.
+[What the filesystem serves](./api.md#what-the-filesystem-serves) lists what is
+served and what each option does.
+
+## PermissionDenied: the workspace root is not the mount root
+
+**Symptom.** Composing the layer fails before the program runs:
+
+```text
+PermissionDenied: FileSystem.layer (/repo): isolation requires the workspace root to equal the mount root /
+```
+
+**Cause.** `BrowserFileSystem.layer` was given a `workspaceRoot` other than `/`.
+The isolation attestation holds only when the workspace occupies the whole
+mount, so the layer refuses a narrower root rather than attesting it. See
+[The isolation attestation](./concepts/isolation-attestation.md).
+
+**Fix.** Mount a separate volume for each workspace and leave `workspaceRoot` at
+`/`. To work in a repository directory inside the mount, set `jj.root`, which
+does not narrow the isolation root.
 
 ## BadResource: a directory link loops, or the tree is nested too deep
 

@@ -29,7 +29,15 @@ wants Effect's platform services and nothing else.
 
 `BrowserHost.layer({ bash, fs, jj })` provides all five. It is what the Smithers
 runtime needs, and it is the direct counterpart of
-[`NodeHost`](/api/platform-node) and [`BunHost`](/api/platform-bun).
+[`NodeHost`](/api/platform-node) and [`BunHost`](/api/platform-bun). In a tab
+that runtime is the memory engine and the capability kernel: durable execution
+also needs the Node-only `SqlClient` and `NodeRuntime`, which no Host tag
+supplies.
+
+`BrowserHost.layer` is the module's only factory. Every backend arrives as an
+argument, so there is no `layerAt` or contained-host variant. `Crypto` is not
+one of the five tags, so a page that hashes artifacts supplies
+`BrowserCrypto.layer` from `@effect/platform-browser` alongside the bundle.
 
 ## jj runs in the tab, or says it does not
 
@@ -38,6 +46,12 @@ jj is a native binary, and a tab cannot spawn one. jj-lib compiles to
 compiled reactor and the synchronous slice of the same mount `fs` exposes as
 promises. The page decides how the bytes arrive: a bundler asset, a `fetch` plus
 `WebAssembly.compileStreaming`, or a cache.
+
+`jj.root` defaults to `/` and may instead name an existing repository directory
+inside that mount, such as `/repo`. It does not narrow the `FileSystem`
+isolation root, which is always the mount root `/`, so use one workspace per
+isolated mount. [The isolation attestation](./isolation-attestation.md) explains
+why.
 
 The bundle never installs `BrowserJj.layerUnsupported` on its own. A page with
 no wasm to hand over composes that layer explicitly, so a jj-less host is a
@@ -57,8 +71,8 @@ than walk it.
 A tab is stricter about what that leaves visible than a server is. Under the
 Fetch standard, `redirect: "manual"` produces an **opaque-redirect** response:
 status `0`, no headers, no body. The kernel's redirect loop has no `location` to
-read, so it returns the response as it stands. The opaque response succeeds with status 0, which callers must handle;
-the browser does not follow it to another origin.
+read, so it returns the response as it stands: a success with status `0` that
+the caller must handle, never a hop to another origin.
 
 The same bundle running under Node or Bun sees the ordinary 3xx with its
 `location` header instead. Both forms hold the same invariant: the host client
@@ -70,9 +84,3 @@ never contacts the second origin on its own.
   covers.
 - [Injected backends](./injected-backends.md), for the one-mount rule the jj
   slice participates in.
-
-Only `BrowserHost.layer` is exposed. The memory engine, adapters, and kernel
-run in a tab; durable execution needs the Node-only SqlClient and NodeRuntime.
-Use one workspace per isolated mount. The FileSystem isolation root is always
-the mount root `/`. `jj.root` defaults to `/` and may instead select an existing
-repository directory such as `/repo` inside that mount.

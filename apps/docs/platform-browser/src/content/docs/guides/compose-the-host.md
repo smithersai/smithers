@@ -12,8 +12,8 @@ which a page assembles the three arguments.
 
 ## Mount the volume first
 
-Both filesystem shapes come from one mount, and the workspace root has to exist
-before jj opens it:
+Both filesystem shapes come from one isolated mount. The FileSystem isolation
+root is `/`; create the repository directory inside it before jj opens it:
 
 ```ts
 import { configureSingle, fs } from "@zenfs/core"
@@ -48,7 +48,7 @@ import * as BrowserHost from "@smthrs/platform-browser/BrowserHost"
 const layer = BrowserHost.layer({
   bash,
   fs: fs.promises,
-  jj: { wasm, fs, root: "/" }
+  jj: { wasm, fs, root: "/repo" }
 })
 ```
 
@@ -58,8 +58,9 @@ const layer = BrowserHost.layer({
 | `fs`     | The promises API of the mount.                                                                 |
 | `jj`     | `BrowserJj.BrowserJjOptions`: `wasm`, the synchronous `fs`, an optional `root` and stdio taps. |
 
-`jj.root` defaults to `"/"`. Prefer a dedicated directory that already exists,
-so the repository's `.jj` does not share the mount root with unrelated state.
+`jj.root` defaults to `"/"`. A dedicated directory such as `/repo` keeps the
+repository's `.jj` inside that directory. It must already exist in the mount.
+The FileSystem isolation root stays `/`, regardless of `jj.root`.
 The full option semantics, including which fields are read once and which is
 read at the first operation, are in
 [`@smthrs/jj`](https://jj.smithers.sh/guides/run-jj-in-a-browser/).
@@ -108,4 +109,5 @@ assert it once in a test: write a file through `FileSystem`, read it back
 through a spawned command, and snapshot it with jj. If all three agree, the
 three arguments are one mount. See [Testing](/testing/).
 
-Use one workspace per mount: the workspace root must be `/`.
+Use one workspace per isolated mount. The FileSystem isolation root is `/`;
+`jj.root` may name a dedicated repository directory inside that mount.

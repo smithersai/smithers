@@ -33278,8 +33278,11 @@ rather than a double. See [Testing](https://platform-browser.smithers.sh/testing
 marked, for [`@smthrs/kernel`](/docs/reference/api/kernel/), as a volume that cannot address any
 path outside itself, which is what lets the guarded surface resolve paths
 directly rather than through descriptor-relative operations. A mounted ZenFS
-volume satisfies that only when its workspace occupies the whole mount. A host-backed `node:fs/promises` does not, so passing one
-is a test-time convenience for a process that is itself the sandbox, never a
+volume satisfies that only when its workspace occupies the whole mount, so the
+layer's `workspaceRoot` option must be `/`, and any other root fails the layer
+with `PermissionDenied`. [The isolation attestation](https://platform-browser.smithers.sh/concepts/isolation-attestation/)
+explains why. A host-backed `node:fs/promises` does not satisfy it, so passing
+one is a test-time convenience for a process that is itself the sandbox, never a
 production composition. `BrowserFileSystem.make` builds the same service without
 the claim.
 
@@ -33287,14 +33290,16 @@ the claim.
 
 `BrowserFileSystem.make` wires up `readFile`, `readFileString`, `writeFile`,
 `writeFileString`, `stream`, `makeDirectory`, `readDirectory`, `stat`,
-`realPath`, `remove`, `access`, and `exists`. Everything else keeps
-a typed `PermissionDenied` failure naming the unsupported operation. That is the honest
+`realPath`, `remove`, `access`, and `exists`, and delegates `rename` and
+`utimes` to the backend when it supplies them. Everything else keeps a typed
+`PermissionDenied` failure naming the unsupported operation. That is the honest
 answer for a backend with no symlink creation, writable handles, or watchers:
 `chmod`, `chown`, `copy`, `copyFile`, `glob`, `link`, `symlink`, `readLink`,
-`open`, `sink`, `truncate`, `watch`, and the `makeTemp*`
-family fail rather than pretend to have succeeded. `sink` is in that list because
-the slice has no writable file handle to append through, so its incremental
-contract cannot be honoured.
+`open`, `sink`, `truncate`, `watch`, and the `makeTemp*` family fail rather than
+pretend to have succeeded. `sink` is in that list because the slice has no
+writable file handle to append through, so its incremental contract cannot be
+honoured. `rename` and `utimes` refuse the same way on a backend without them,
+and artifact publication needs both.
 [Read and write files on a mounted volume](https://platform-browser.smithers.sh/guides/work-with-files/#what-fails-and-how)
 gives the served operation to reach for in place of each one.
 
@@ -33306,7 +33311,7 @@ The operations that are served honour their options rather than dropping them.
 | `access({ readable, writable })`             | answered from the reported `mode` bits, since a mounted volume has no user identity to check against; a path that exists without the requested permission fails `PermissionDenied`                                                                                                                                                                                                                                                                  |
 | `access({ ok })`                             | the existence check a bare `access` already performs                                                                                                                                                                                                                                                                                                                                                                                                |
 | `makeDirectory({ mode })`                    | forwarded, so a directory asked for as `0o700` is not created `0o755`                                                                                                                                                                                                                                                                                                                                                                               |
-| `realPath`                                   | Uses backend `realpath`, preserving symlink resolution order. Fails with `PermissionDenied` when unavailable.                                                                                                                                                                                                                                                                                                                                       |
+| `realPath`                                   | canonicalized through the backend's own `realpath`, so a `..` after a link names the parent of the link's target; a backend without `realpath` fails `PermissionDenied` rather than falling back to lexical normalization                                                                                                                                                                                                                           |
 | `writeFile({ flag, mode })`                  | forwarded, so `{ flag: "a" }` appends instead of silently truncating and `{ flag: "wx" }` fails `AlreadyExists`                                                                                                                                                                                                                                                                                                                                     |
 | `exists`                                     | `false` only for a path that is absent; every other backend failure propagates, so a refusal to look is not reported as absence                                                                                                                                                                                                                                                                                                                     |
 | `stream({ offset, bytesToRead, chunkSize })` | honoured, and refused when they are not whole byte counts                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -33327,11 +33332,19 @@ against the volume root rather than against an ambient `process.cwd()` that does
 not exist. The same caveat applies to a relative `cwd` on a spawned command:
 pass an absolute virtual path.
 
-Thrown backend errors are mapped onto `PlatformError` with the tag that carries
-their meaning: `ENOENT` becomes `NotFound`, `EEXIST` becomes `AlreadyExists`,
-`EACCES` and `EPERM` become `PermissionDenied`, `EISDIR`, `ENOTDIR`, and `ELOOP`
-become `BadResource`, `EBUSY` becomes `Busy`, and anything else becomes
-`Unknown`. The original error is kept as the `cause`.
+## Backend errors
+
+A thrown backend error is mapped onto the `PlatformError` tag that carries its
+meaning, with the original error kept as the `cause`:
+
+| Backend code                 | Tag                |
+| ---------------------------- | ------------------ |
+| `ENOENT`                     | `NotFound`         |
+| `EEXIST`                     | `AlreadyExists`    |
+| `EACCES`, `EPERM`            | `PermissionDenied` |
+| `EISDIR`, `ENOTDIR`, `ELOOP` | `BadResource`      |
+| `EBUSY`                      | `Busy`             |
+| anything else                | `Unknown`          |
 
 ## Encoding and size policy
 
@@ -33369,7 +33382,8 @@ module and covered by a test:
 | Concurrency                    | one run at a time, behind a permit held until the interpreter promise settles, abort included, so two interpreters never mutate the mount at once                                                                     |
 | `pid`                          | a per-layer counter, not an OS pid; `unref` is a no-op                                                                                                                                                                |
 | Process pipelines              | a `PipedCommand` is rejected; express the pipeline as one command line                                                                                                                                                |
-| `additionalFds`                | `Sink.drain` and `Stream.empty`, the answer `NodeChildProcessSpawner` gives for an unconfigured descriptor                                                                                                            |
+| `additionalFds`                | a nonempty configuration is rejected at spawn time with `BadArgument`; just-bash cannot configure extra file descriptors                                                                                              |
+| `getInputFd` / `getOutputFd`   | `Sink.drain` / `Stream.empty` for an unconfigured descriptor, matching `NodeChildProcessSpawner`                                                                                                                      |
 | `extendEnv`                    | honoured as a request to the interpreter: just-bash merges `env` into its own environment unless asked for `replaceEnv`, so the adapter asks for replacement whenever `env` is supplied and `extendEnv` is not `true` |
 | `stdout`/`stderr` options      | kept at their Node meaning: `"inherit"` and `"ignore"` yield an empty stream, a `Sink` is transduced through, even though the interpreter captured the text either way                                                |
 
@@ -33391,22 +33405,17 @@ requires both.
 Every entry point bundles for a browser. No published module resolves a `node:`
 built-in, `BrowserHost` included, because its `HttpClient` is Effect's `fetch`
 client rather than a Node transport, so a browser-mode bundle of the root entry
-point needs no polyfill and no `node:` shim.
+point needs no polyfill and no `node:` shim. `BrowserHost.layer` is that
+module's only factory, and `Crypto` is not among the five tags it provides: a
+page that hashes artifacts adds `BrowserCrypto.layer` from
+`@effect/platform-browser`. [The closed Host surface](https://platform-browser.smithers.sh/concepts/host-bundle/)
+covers what each tag is backed by and how the fetch client answers a redirect.
 
-See [platform support](/docs/reference/api/#platform-support), the
+See [platform support](/docs/reference/api/#platform-support), which limits
+browser coverage to bundling rather than durable execution, the
 [`@smthrs/kernel` reference](/docs/reference/api/kernel/), whose closed service list this
 package's `BrowserHost` bundle fills, and
 [Capabilities and the host kernel](/docs/concepts/kernel/).
-
-Publication delegates `rename` and `utimes` to the mounted backend. If either
-method is absent, that operation fails with `PermissionDenied`. `realPath`
-requires backend `realpath`; it never silently normalizes lexically.
-The isolation layer requires workspace root `/` and fails typed otherwise.
-
-The memory engine, adapters, and kernel can run in a tab. The durable engine
-cannot: the shipped SqlClient uses `node:sqlite`, and NodeRuntime is Node-only.
-BrowserHost exposes only `layer`; supply browser Crypto separately for hashing.
-Opaque redirects are returned as successful HTTP responses with status 0.
 
 ---
 

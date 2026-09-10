@@ -93,14 +93,16 @@ decision at the one place a caller can still get it right.
 `BrowserFileSystem.layer` is an assertion about `fs`. It carries
 `@smthrs/kernel`'s whole-filesystem isolation attestation, which says the
 promises object cannot name a path outside its own volume, and which lets the
-guarded surface resolve paths directly. A mounted ZenFS volume satisfies that; a
-host-backed `node:fs/promises` does not. `BrowserFileSystem.make` builds the
-same service with no such claim.
+guarded surface resolve paths directly. A mounted ZenFS volume satisfies that
+when the workspace occupies the whole mount, so the layer refuses any
+`workspaceRoot` other than `/`; a host-backed `node:fs/promises` does not.
+`BrowserFileSystem.make` builds the same service with no such claim.
 
 `BrowserHost`'s HTTP slot is Effect's fetch client configured with
 `RequestInit { redirect: "manual" }`, so a redirect comes back to you and the
 second origin is never contacted on its own. There is no Smithers wrapper around
-`fetch`.
+`fetch`. `Crypto` is not one of the five Host tags, so a page that hashes
+artifacts adds `BrowserCrypto.layer` from `@effect/platform-browser`.
 
 ## What a tab cannot do
 
@@ -136,8 +138,9 @@ the reported mode bits, `stream` honours its bounds and refuses fractional ones,
 and `realPath` canonicalizes through the backend's own `realpath` when it has
 one. Without `realpath`, `realPath` fails with a `PermissionDenied` `PlatformError`;
 there is no fallback. The full statement is at https://platform-browser.smithers.sh/contract/,
-and every refusal with its fix is at
-https://platform-browser.smithers.sh/troubleshooting/.
+each option and backend error tag is tabled at
+https://platform-browser.smithers.sh/reference/api/, and every refusal with its
+fix is at https://platform-browser.smithers.sh/troubleshooting/.
 
 ## Runtimes
 
@@ -147,9 +150,11 @@ supply. The package ships as ESM and CommonJS with TypeScript declarations, and
 its `engines` field asks for Node.js 22.19.0 or later, which is the toolchain
 that installs and builds it rather than a runtime the code needs.
 
+A tab runs the memory engine and the capability kernel over these adapters. The
+durable engine does not run there: its `SqlClient` uses `node:sqlite`, and
+`NodeRuntime` is Node-only.
+
 Because both backend slices are structural, a test satisfies them without either
 vendor package: Node's own `node:fs/promises` satisfies `ZenFsPromisesLike`, and
 `JustBashLike` is one function. See
 https://platform-browser.smithers.sh/testing/.
-
-A tab can run the memory engine and capability kernel. Durable execution still needs the Node database and runtime. BrowserHost bundles the five host services but not Crypto; supply BrowserCrypto for artifact hashing. Isolation is valid only when every path is confined and the workspace occupies the entire mount. Missing realpath fails with PermissionDenied.

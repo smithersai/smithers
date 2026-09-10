@@ -26,20 +26,6 @@ those two objects into Effect's services. Neither backend is a dependency here.
 Each arrives as a function argument, so the page chooses which storage backend
 is mounted, and your bundle carries no vendor code this package picked for you.
 
-A tab can run the memory engine, the platform adapters, and the capability
-kernel. Compose `BrowserHost` for the five host services, `BrowserServices`
-for filesystem/path/commands, or either adapter individually.
-
-The durable engine does **not** run in a tab today. The shipped `SqlClient`
-uses `node:sqlite`, and `NodeRuntime` is Node-only. Providing the five Host
-services does not supply a browser database or make durable execution portable.
-
-`BrowserHost` exposes only `layer`, with injected backends; it has no `layerAt`
-or contained-host factories. Crypto is not bundled. Supply
-`@effect/platform-browser/BrowserCrypto.layer` alongside it when using artifact
-hashing. The artifact filesystem mode is `durability: "best-effort"` and
-`coordination: "process"`; the mount must implement `rename` and `utimes`.
-
 Both adapters state their limits rather than hiding them. A mounted volume has
 no symlink creation, no writable file handles, and no watcher, so those
 operations fail with a typed `PlatformError` instead of pretending to succeed,
@@ -118,6 +104,11 @@ pick for a tab: the same five tags, backed by a mount, an in-page interpreter,
 Effect's `fetch` client, and jj compiled to WebAssembly. See
 [The closed Host surface](/concepts/host-bundle/), and
 [Compose the browser host bundle](/guides/compose-the-host/) for the wiring.
+
+Those five tags carry the memory engine and the capability kernel into a tab,
+but not the durable engine: its shipped `SqlClient` uses `node:sqlite` and
+`NodeRuntime` is Node-only, so providing the Host supplies no browser database
+and does not make durable execution portable.
 
 You need none of that to use the two adapters on their own.
 `BrowserServices.layer` is an ordinary Effect platform layer, and a page that
