@@ -1686,9 +1686,6 @@ importers:
       '@smthrs/agent':
         specifier: workspace:*
         version: link:../packages/smithers/agent
-      '@smthrs/artifacts':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/artifacts
       '@smthrs/capability':
         specifier: workspace:*
         version: link:../packages/smithers/flows/capability
@@ -1707,9 +1704,6 @@ importers:
       '@smthrs/engine-store':
         specifier: workspace:*
         version: link:../packages/smithers/flows/engine-store
-      '@smthrs/evals':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/evals
       '@smthrs/flow':
         specifier: workspace:*
         version: link:../packages/smithers/flows/flow
@@ -1719,9 +1713,6 @@ importers:
       '@smthrs/harness':
         specifier: workspace:*
         version: link:../packages/smithers/agent/harness
-      '@smthrs/jj':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/jj
       '@smthrs/journal':
         specifier: workspace:*
         version: link:../packages/smithers/flows/journal
@@ -1752,9 +1743,6 @@ importers:
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../packages/smithers/flows/plan
-      '@smthrs/platform-browser':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/platform-browser
       '@smthrs/platform-node':
         specifier: workspace:*
         version: link:../packages/smithers/flows/platform-node
