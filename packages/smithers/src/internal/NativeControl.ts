@@ -97,6 +97,7 @@ export type ModuleRegistration = Layer.Layer<
   | KernelChildProcessSpawner.ChildProcessSpawner
   | Budget.Budget
   | QuotaPolicy.QuotaClassifier
+  | NotificationQueue.NotificationQueue
 >
 
 /** Existing service implementations selected by the executable boundary.
@@ -129,7 +130,8 @@ const secureSqliteFiles = (file: string) => Effect.gen(function*() {
  * @since 1.0.0
  * @private
  */
-export const make = (native: Platform, seats = layerSeatResolver) => {
+export const make = (native: Platform, seats = layerSeatResolver,
+  decorateNotifications?: LocalControl.NotificationDecorator) => {
 /**
  * The flow sources a local CLI discovers: the project `flows/` directory, whose
  * per-directory layout is the convention in
@@ -725,7 +727,7 @@ const layerExecutor = (
   ) => {
     const root = config.root ?? process.cwd()
     return LocalControl.layer(registry, engine, layerExecutor(registry, engine, root, process.env,
-      config.mcpServers ?? [], undefined, undefined, undefined, config.executionRoot ?? root, modules))
+      config.mcpServers ?? [], undefined, undefined, undefined, config.executionRoot ?? root, modules), decorateNotifications)
   }
   const layerControl = (config: Application.Config, suppliedRegistry?: Layer.Layer<Registry.Registry>, suppliedEngine?: EngineDurable, modules?: ModuleRegistration) => {
     const root = config.root ?? process.cwd()

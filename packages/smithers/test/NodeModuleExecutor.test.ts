@@ -8,13 +8,14 @@ import { Node } from "@smthrs/plan"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Layer, Option, Schema, Stream } from "effect"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as CoreFlow from "../flows/core/src/Flow.ts"
 import * as NodeControl from "../src/NodeControl.ts"
+import { ModuleOwner } from "../src/internal/ModuleOwner.ts"
 
 const definition = {
   description: "A native module with durable children.",
@@ -32,6 +33,8 @@ describe("NodeControl native modules", () => {
       const drift = mode === "drift"
       const root = await mkdtemp(join(tmpdir(), "smithers-module-host-"))
       const observed: Array<unknown> = []
+      const owners: Array<{ readonly rootId: string; readonly flowId: string }> = []
+      let admittedRoot: string | undefined
       try {
         await mkdir(join(root, "flows", "native"), { recursive: true })
         await writeFile(
@@ -73,6 +76,9 @@ export default Flow.make({
           Probe.toLayer(({ value }) =>
             Effect.gen(function*() {
               const authority = yield* CapabilitySet.current
+              const owner = yield* Effect.serviceOption(ModuleOwner)
+              if (Option.isNone(owner)) return yield* Effect.die("native handler has no proved owner")
+              owners.push(owner.value)
               const budget = yield* Budget.Budget
               yield* budget.record("same-step", { totalTokens: 3 })
               const usage = yield* budget.usage
@@ -125,6 +131,7 @@ export default Flow.make({
             if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
               return yield* Effect.die("expected admission")
             }
+            admittedRoot = receipt.runId
             // These are the existing control events read by the gateway. Native
             // completion must reach this journal, not just the engine database.
             return yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
@@ -156,6 +163,7 @@ export default Flow.make({
           }
         ]
         expect(observed).toEqual(drift ? expected.slice(0, 1) : expected)
+        expect(owners).toEqual(observed.map(() => ({ rootId: admittedRoot, flowId: "native" })))
       } finally {
         await rm(root, { recursive: true, force: true })
       }

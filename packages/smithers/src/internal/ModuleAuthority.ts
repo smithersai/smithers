@@ -22,6 +22,7 @@ import type * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { RunStore } from "@smthrs/run-store"
 import { Effect, Option, RcMap, Schema } from "effect"
+import { ModuleOwner } from "./ModuleOwner.ts"
 
 /**
  * Composes existing host authority services without another run ledger.
@@ -113,7 +114,7 @@ export const make = (catalog: Effect.Effect<Executable.Catalog>, actionHost: Age
         // Re-read the pinned body as well: a parked child can run before its
         // agent/run parent is entered again after a process restart.
         yield* registry.loadBody(card.flowId, card.executionDigest).pipe(Effect.orDie)
-        return { rootId, envelope: card.envelope }
+        return { rootId, flowId: card.flowId, envelope: card.envelope }
       })
 
     // Concurrent descendants share one existing Budget accumulator. RcMap
@@ -141,7 +142,7 @@ export const make = (catalog: Effect.Effect<Executable.Catalog>, actionHost: Age
       register: (flow, handler) =>
         engine.register(flow, (payload, executionId) =>
           Effect.scoped(Effect.gen(function*() {
-            const { rootId, envelope } = yield* owner(executionId)
+            const { rootId, flowId, envelope } = yield* owner(executionId)
             const notificationsForRoot = yield* Notifications.make({ runId: rootId, lineageId: rootId }).pipe(
               Effect.provideService(NotificationQueue.NotificationQueue, notifications)
             )
@@ -172,6 +173,8 @@ export const make = (catalog: Effect.Effect<Executable.Catalog>, actionHost: Age
               Effect.provideService(AgentAction.Host, { ...actionHost,
                 capabilityEnvelope: AgentSession.patterns(envelope.capabilities) }),
               Effect.provideService(Budget.Budget, shared),
+              Effect.provideService(ModuleOwner, { rootId, flowId }),
+              Effect.provideService(NotificationQueue.NotificationQueue, notifications),
               Effect.provideService(Steering.Source, handlerSteering),
               Effect.provideService(QuotaPolicy.QuotaClassifier, quota)
             )
