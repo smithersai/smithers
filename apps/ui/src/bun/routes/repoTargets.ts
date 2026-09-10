@@ -126,9 +126,12 @@ export const registerRepoTargetRoutes = (
     ...(options.log === undefined ? {} : { log: options.log })
   })
   /*
-   * A query mints a fresh opaque grant per target. Runs accept only one of
-   * these ids and resolve the label server-side; the browser never supplies
-   * an unchecked command label to the process boundary.
+   * A query mints an opaque grant per target. Runs accept only one of these
+   * ids and resolve the label server-side; the browser never supplies an
+   * unchecked command label to the process boundary. A grant's id stays
+   * stable while its target (workspace + label) survives re-queries, so a
+   * second client's query never invalidates the first client's cards; a grant
+   * is retired only when the target disappears or authority closes (revoke).
    */
   const targetGrants = new Map<string, Map<string, TargetGrant>>()
   const repoAccess = new Map<string, RepositoryAccess>()
@@ -292,11 +295,19 @@ export const registerRepoTargetRoutes = (
       node: await options.node,
       ...(options.cli === undefined ? {} : { cli: options.cli })
     })
+    const previous = targetGrants.get(repoId)
+    const surviving = new Map<string, TargetGrant>()
+    for (const grant of previous?.values() ?? []) {
+      surviving.set(`${grant.workspace}${grant.label}`, grant)
+    }
     const grants = new Map<string, TargetGrant>()
     const targets: Array<Target> = result.targets.map((target) => {
-      const id = crypto.randomUUID()
-      grants.set(id, { id, label: target.label, workspace: target.workspace, kinds: target.kinds })
-      return { ...target, id }
+      const kept = surviving.get(`${target.workspace}${target.label}`)
+      const grant: TargetGrant = kept === undefined
+        ? { id: crypto.randomUUID(), label: target.label, workspace: target.workspace, kinds: target.kinds }
+        : { ...kept, kinds: target.kinds }
+      grants.set(grant.id, grant)
+      return { ...target, id: grant.id }
     })
     targetGrants.set(repoId, grants)
     return json({ ...result, targets })

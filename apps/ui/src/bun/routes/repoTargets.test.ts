@@ -161,6 +161,39 @@ describe("/api/targets/*", () => {
     expect((await post("/api/targets/query", { repoId: "nope" })).status).toBe(404)
   })
 
+  test("a re-query of an unchanged repository keeps grant ids stable, so the first client's id still runs", async () => {
+    const opened = (await (await post("/api/repo/open", { path: repoDir })).json()) as { repo: { id: string } }
+    const first = TargetsQueryResponseSchema.parse(await (await post("/api/targets/query", { repoId: opened.repo.id })).json())
+    // A second tab queries the same unchanged repository.
+    const second = TargetsQueryResponseSchema.parse(await (await post("/api/targets/query", { repoId: opened.repo.id })).json())
+    const key = (target: { workspace: string; label: string }) => `${target.workspace} ${target.label}`
+    const ids = new Map(first.targets.map((target) => [key(target), target.id]))
+    for (const target of second.targets) expect(target.id).toBe(ids.get(key(target))!)
+
+    // The first client's card id still resolves after the second query.
+    const targetId = first.targets.find((target) => target.workspace === "." && target.label === "//src:lint")?.id
+    expect(targetId).toBeDefined()
+    const started = await post("/api/targets/run", { repoId: opened.repo.id, targetId })
+    expect(started.status).toBe(200)
+    const { runId } = (await started.json()) as { runId: string }
+    expect(typeof runId).toBe("string")
+    const socket = new WebSocket(`${server.origin.replace("http", "ws")}/ws`, server.websocketProtocol)
+    const finished = new Promise<number | null | undefined>((resolve) => {
+      socket.onmessage = (event) => {
+        const parsed = TargetRunMessageSchema.safeParse(JSON.parse(String(event.data)))
+        if (!parsed.success || parsed.data.runId !== runId) return
+        if (parsed.data.frame.type === "exit") resolve(parsed.data.frame.code)
+      }
+    })
+    await new Promise<void>((resolve) => {
+      socket.onopen = () => resolve()
+    })
+    socket.send(JSON.stringify({ type: "subscribe", topic: `target-run:${runId}` }))
+    socket.send(JSON.stringify({ type: "target-run.attach", runId }))
+    expect(await finished).toBe(0)
+    socket.close()
+  })
+
   test("an opaque grant preserves its server-owned child workspace", async () => {
     const opened = (await (await post("/api/repo/open", { path: repoDir })).json()) as { repo: { id: string } }
     const queried = TargetsQueryResponseSchema.parse(

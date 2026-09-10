@@ -237,7 +237,10 @@ Repository detection records the root and child Smithers workspaces (up to two
 levels deep) as paths relative to the opened repository. Target discovery runs
 the CLI once per detected workspace. Each opaque target grant binds its
 workspace and label on the server; extra renderer-supplied fields cannot move a
-process to another directory or change the command.
+process to another directory or change the command. A grant id stays stable
+across re-queries while its target (workspace and label) survives, so one
+client's query never invalidates another's cards. A grant is retired when the
+target disappears from the query snapshot or the repository's authority closes.
 
 A target's presentation is part of its declaration, never a separate
 manifest: a PACKAGE.ts target may carry `summary: "..."` (one line, shown
