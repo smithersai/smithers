@@ -14,11 +14,21 @@ const native = NativeControl.make(platform, resolveSeats, routeMessages)
 
 `NativeControl.make` has one new optional third argument. It forwards the same
 private `NotificationDecorator` to `LocalControl.layer`'s optional fourth
-argument: `(queue: NotificationQueue.Service, control: ControlRuntime.Service)
-=> NotificationQueue.Service`. The default composition is unchanged. One
-decorated queue instance is shared by ControlLive and the native executor, over
-their existing control journal. Admission returns the original queue Effect in
-the caller's fiber, retaining the enclosing control mutation's transaction.
+argument:
+
+```ts
+type NotificationDecorator = (
+  queue: NotificationQueue.Service,
+  control: ControlRuntime.Service,
+  journal: Journal.Service
+) => NotificationQueue.Service
+```
+
+The third decorator parameter is the already materialized **control journal**,
+which is separate from the native engine's execution journal. The default
+composition is unchanged. One decorated queue instance is shared by ControlLive
+and the native executor. Admission runs in the caller's fiber and joins the
+existing journal transaction; it opens no second database or transaction system.
 
 For a root-addressed Message, the decorator reads the existing control run and
 approved plan. Only an active `coding/request` run whose recorded digest and
@@ -67,15 +77,40 @@ must complete with an actual validated Plan before the UI can show a revised
 plan. Feedback during implementation waits for the coordinator's next safe
 linear mutation boundary; this helper does not preempt an executing atom or
 claim to pause on every prototype. The request recipe owns those transitions.
-There is no atomic closure spanning the final after-correction drain and control
-completion. A message arriving in that interval can remain pending after the
-request completes; its admission is not proof that a revised plan ran. A later
-request can explicitly carry that retained feedback. This helper does not claim
-to close that queue/engine race.
+An empty `after-correction` receipt closes this coordinator to new messages.
+Before admitting a Message, the decorator reads the existing promotion receipts
+for this control run inside the same writer transaction as admission. The native
+queue's final drain uses that writer too. The database therefore orders the two:
+a message committed first is delivered by that drain; a new message after the
+empty final receipt is refused, even while control completion is still being
+projected. A retry of an already accepted notification retains its original
+receipt. The caller starts a new request for a newly refused message.
+
+Closure uses the queue's existing `Promoted` event, not a new event or status.
+Only the exclusive coordinator lineage, a canonical
+`[executionId, "after-correction", revision]` boundary, the matching native drain
+source ID, source sequence zero, and an empty ID list prove closure. Non-final
+boundaries and nonempty final receipts stay open. Other lineages do not close
+this coordinator. Unreadable proof in its own lineage refuses admission.
+
+The read is scoped to the control run, not the native engine's full execution
+history. It reads at most 100 pages of 1,000 entries and rejects an oversized or
+non-advancing page. There is no additional index, projection cache or store.
+These limits bound work while holding the existing writer transaction; reaching
+them refuses feedback instead of accepting it without trustworthy closure
+state. Measurements using a 500-row synthetic control history required one page
+per admission. Those measurements are diagnostic only: host contention affected
+both query and total admission latency, so they are not a release latency
+promise.
 
 Validation covers real SQLite queue reopen, repeated and empty boundaries,
 mixed Message/Seat/Thinking/Tools delivery, unrelated roots and leaf lineages,
 lookup/digest/approval refusal, rollback inside the caller's transaction, an
-actual Action execution requiring invocation ownership, capacity refusal and attributed overflow.
-The native module host test also checks that each executed child receives its
-actual approved root identity, including the source-drift refusal case.
+actual Action execution requiring invocation ownership, capacity refusal and
+attributed overflow. Node and Bun both pass the seven focused cases, including
+independent SQLite connections racing final drains with new admissions,
+malformed closure evidence, and bounded pagination. The native module host test
+asserts each executed child's actual approved root identity; its latest bounded
+narrow-mode diagnostic passed with a temporary longer fixture timeout, which
+was then restored. That diagnostic does not claim the normal three-mode gate
+passed.
