@@ -4,7 +4,7 @@ Planning is a private composition of existing flows, actions, AgentAction and Hu
 
 ## Refresh documentation before using it
 
-Every new request records a `coding/RefreshWiki` child. A bounded lookup of completed compatible refreshes supplies an earlier wiki-run hint; it is not itself a review receipt. The existing incremental workflow reuses a page only when its source, prose, section boundaries, reviewer and policy match and current citation validation succeeds. Changed pages receive a model review. A lookup miss runs ordinary generation.
+Every new request records a `coding/RefreshWiki` child. A bounded lookup of completed compatible refreshes supplies an earlier wiki-run hint; it is not itself a review receipt. The existing incremental workflow reuses a page only when its source, prose, section boundaries, reviewer and policy match and current citation validation succeeds. Changed pages receive a model review. A lookup miss runs ordinary generation. The bounded lookup can miss an old refresh after enough unrelated native work; that causes a fresh review. The configured host supplies its actual deployed or source reviewer-policy identity, so target repositories need not vendor the Smithers reviewer implementation.
 
 Unsupported or uncertain prose blocks planning and retains the wiki's needs-changes artifact. Publication hashes establish captured identity, not semantic truth. Human intent remains labeled separately from current implementation. Only the configured public engineering catalog is read; private Smithers-Ops is outside the recipe's inputs.
 
@@ -16,7 +16,7 @@ Unsupported or uncertain prose blocks planning and retains the wiki's needs-chan
 
 ## Verify after the model or human wait
 
-`VerifyContext` observes current bytes again, checks native identities and ancestry, and rechecks wiki freshness. `FinalizePlan` binds the proposal to measured executable digests, memory revision, base and observed head. Unknown checks, omitted or reordered existing descendants, duplicate ownership and escaping paths are refused. Each Change needs a required fast and required slow check.
+`VerifyContext` observes current bytes again, checks native identities and ancestry, and rechecks wiki freshness. `FinalizePlan` binds the proposal to measured executable digests, memory revision, base and observed head. Unknown checks, omitted or reordered existing descendants, duplicate ownership and escaping paths are refused. Every configured required check is retained on every Change, even when the model selected another check in that tier. Optional available checks remain model choices. Each Change still needs a required fast and required slow check; delivery checks keep their later tier.
 
 The current planner supports append or a complete visible suffix amendment. It does not insert new atoms among retained descendants or reorder history. The model is taught small emoji conventional commits; final cleanup belongs to later lifecycle policy. Request source admission separately fences dependent stages after planning.
 

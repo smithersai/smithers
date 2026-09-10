@@ -10,15 +10,23 @@ The existing `Serve` protocol remains the network boundary. A configured host ad
 
 ## Keep operator choices outside the prompt
 
-The separate executable is `smithers-coding-host`. `SMITHERS_CODING_PROJECT` names one bounded JSON configuration file; the loader does not discover a file from repository contents or accept one from a model. It names public wiki inputs, output, reviewer policy, and registered implementation/check flows. The verified catalog supplies the executable digests. An absent option retains the manual plan route; an invalid explicit file refuses startup.
+The separate executable is `smithers-coding-host`. `SMITHERS_CODING_PROJECT` names one bounded JSON configuration file; the loader does not discover a file from repository contents or accept one from a model. It names public wiki inputs, output, reviewer policy, and registered implementation/check flows. The verified catalog supplies the executable digests. The wiki destination must be outside the canonical source workspace. Before publication, its path is resolved and checked again so an ancestor changed during review cannot redirect output into source. An absent option retains the manual plan route; an invalid explicit file refuses startup.
 
-`SMITHERS_CODING_IMPLEMENT_MODEL` explicitly selects a `provider:model`. Optional PLAN, POC and WIKI model variables map the existing logical seats and otherwise use that explicitly selected implementation model. Existing workspace/user provider setup supplies authentication. The owning gateway ID and API key remain deployment credentials, never plan fields. Restart the host to adopt a changed configuration or pinned catalog.
+`SMITHERS_CODING_IMPLEMENT_MODEL` explicitly selects a `provider:model`. Optional PLAN, POC and WIKI model variables map the existing logical seats and otherwise use that explicitly selected implementation model. Existing workspace/user provider setup supplies authentication. The owning gateway ID and API key remain deployment credentials, never plan fields. A configured host requires a credential or explicit operator approval authority even on loopback. Restart the host to adopt a changed configuration or pinned catalog.
 
 ## Preserve existing authority
 
 Every native module handler is bound to its recorded active approved root. Model tools use the existing guarded filesystem, contained spawner, capability envelope and shared budget. Evidence-only planning, prototype and review actions have an empty tool catalog and capability ceiling. A prompt saying “do not edit” is not the enforcement mechanism.
 
 Deterministic wiki publication, source capture and scratch cleanup retain the existing trusted host filesystem as a service value. That value is not installed over the model tools. Immutable check processes still use the contained, permission-checked spawner. Compensable file tools use immutable native preimages and final-target eligibility; arbitrary shell commands remain irreversible.
+
+## Bind the running reviewer to approval
+
+The private host hashes its actual source reviewer recipe or exact deployed artifact bytes. Reviewer identity includes that host policy, the operator's policy label, selected model and gateway. A target repository does not need to carry the Smithers reviewer implementation.
+
+Only declarations that delegate to `coding/WikiCheck` receive a derived policy identity covering the configured pages and reviewer. A model-written frontmatter value cannot override it. The same Registry layer supplies planning, approval, native module authority and executable loading. Its derived execution digest must match before the original registry verifies the exact original body bytes. Changing host policy invalidates old approval and review reuse; ordinary descriptors keep their identity.
+
+`factory/coding/project.ts` is the repository-specific configuration. It names the existing PACKAGE fast and slow test targets and a required semantic wiki check. Ordinary check declarations call those existing build targets instead of copying their test inventories. The operator supplies the installed build toolchain and explicit environment.
 
 ## Inspect the packaged boundary
 

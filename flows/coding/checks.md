@@ -85,3 +85,14 @@ New private structures are the JSON command declaration (`argv`, `cwd`,
 `timeoutMs`) and `CheckHostOptions` (`repositoryPath`, existing host `fs`, optional `exporterPath`
 and optional `environment`). The process result is converted into the existing
 `Receipt` schema. No public package API or persisted table is added.
+
+## Review wiki prose through the same check protocol
+
+The configured `coding/WikiCheck` delegate shares `immutable-source.ts` with
+command checks. It captures the exact implemented source before asynchronous
+review, then invokes existing wiki review and assessment actions in the native
+runtime. Unsupported or uncertain prose produces ordinary owner findings; an
+invalid reviewer receipt refuses the check. It never publishes the wiki current
+pointer. The host binds its actual reviewer policy and configured page catalog
+to the ordinary check declaration's execution identity. The owning
+[semantic-check guide](wiki-check.md) describes the capture and reuse contract.
