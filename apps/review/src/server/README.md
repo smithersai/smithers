@@ -10,7 +10,9 @@ Subdirectories:
 - `sessions/` — OIDC + api-key auth, quota slot claiming, session minting.
 - `proxy/` — Anthropic request forwarding and usage metering.
 - `admin/` — bearer-token operator endpoints (repos, keys, usage).
-- `metrics/` — Prometheus `/metrics`.
+- `metrics/` — Prometheus `/metrics`, read from the `usage_totals` rollup that
+  `proxy/recordUsage.ts` maintains per (repo, model) at settlement and
+  `migrations.ts` backfills once, never from the full `usage_events` log.
 - `walkthroughs/` — walkthrough upload to R2.
 
 Root helpers: `d1.ts` (narrow D1 interface tests implement over bun:sqlite),

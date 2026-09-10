@@ -40,6 +40,16 @@ const SCHEMA_STATEMENTS = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS usage_events_repo_idx ON usage_events(repo, created_at)`,
+  `CREATE TABLE IF NOT EXISTS usage_totals (
+    repo TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (repo, model)
+  )`,
   `CREATE TABLE IF NOT EXISTS usage_reservations (
     id TEXT PRIMARY KEY,
     repo TEXT NOT NULL,
@@ -95,6 +105,17 @@ export async function ensureSchema(db: D1Database): Promise<void> {
   await addColumnIfMissing(db, `ALTER TABLE usage_events ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0`);
   await addColumnIfMissing(db, `ALTER TABLE usage_events ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`);
   await addColumnIfMissing(db, `ALTER TABLE walkthroughs ADD COLUMN status TEXT NOT NULL DEFAULT 'complete' CHECK (status IN ('pending', 'complete'))`);
+  // Backfill the per-(repo, model) rollup from the event log exactly once: a
+  // database that already has totals (from a previous backfill or from
+  // settlements) must not be double counted. One statement, so a concurrent
+  // worker instance sees either an empty or a fully populated table.
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO usage_totals (repo, model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cost_usd)
+      SELECT repo, model, SUM(input_tokens), SUM(output_tokens), SUM(cache_creation_tokens), SUM(cache_read_tokens), SUM(cost_usd)
+      FROM usage_events WHERE NOT EXISTS (SELECT 1 FROM usage_totals) GROUP BY repo, model`,
+    )
+    .run();
   ensured.add(db);
 }
 

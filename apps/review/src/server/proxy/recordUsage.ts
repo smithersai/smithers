@@ -7,7 +7,11 @@ export interface RecordedUsage {
   recorded: boolean;
 }
 
-/** Commit the debit and idempotent ledger event together, retaining interrupted-call holds. */
+/**
+ * Commit the debit, the per-(repo, model) rollup bump, and the idempotent
+ * ledger event together, retaining interrupted-call holds. The rollup feeds
+ * /metrics so a scrape never re-aggregates the event log.
+ */
 export async function recordUsage(
   db: D1Database,
   options: {
@@ -52,6 +56,18 @@ export async function recordUsage(
       .bind(costUsd, options.sessionHash, options.requestId),
     db
       .prepare(
+        `INSERT INTO usage_totals (repo, model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cost_usd)
+      SELECT ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM usage_events WHERE id = ?)
+      ON CONFLICT(repo, model) DO UPDATE SET
+        input_tokens = input_tokens + excluded.input_tokens,
+        output_tokens = output_tokens + excluded.output_tokens,
+        cache_creation_tokens = cache_creation_tokens + excluded.cache_creation_tokens,
+        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+        cost_usd = cost_usd + excluded.cost_usd`,
+      )
+      .bind(options.repo, options.summary.model, ...counts, costUsd, options.requestId),
+    db
+      .prepare(
         `INSERT INTO usage_events (id, repo, pr, model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cost_usd, kind, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
       )
@@ -73,5 +89,5 @@ export async function recordUsage(
       )
       .bind(options.requestId),
   ]);
-  return { costUsd, recorded: results[1].meta.changes === 1 };
+  return { costUsd, recorded: results[2].meta.changes === 1 };
 }
