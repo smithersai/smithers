@@ -566,14 +566,20 @@ describe("Rewind", () => {
   it.effect("revalidates the tail under the claim from one page at the expected tail, never a rescan", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make({
-        records: [baseline(), { ...baseline(), seq: 1, eventId: "event-1" }, { ...baseline(), seq: 2, eventId: "event-2" }]
+        records: [baseline(), { ...baseline(), seq: 1, eventId: "event-1" }, {
+          ...baseline(),
+          seq: 2,
+          eventId: "event-2"
+        }]
       })
       const reads: Array<{ readonly after: number | undefined; readonly limit: number }> = []
       const journal = Journal.makeNoop({
         entries: ({ after, limit }) =>
           Effect.sync(() => {
             reads.push({ after, limit })
-            const entries = [journalEntry(0), journalEntry(1), journalEntry(2)].filter((entry) => entry.seq > (after ?? -1))
+            const entries = [journalEntry(0), journalEntry(1), journalEntry(2)].filter((entry) =>
+              entry.seq > (after ?? -1)
+            )
             return { entries: entries.slice(0, limit), hasMore: entries.length > limit }
           })
       })

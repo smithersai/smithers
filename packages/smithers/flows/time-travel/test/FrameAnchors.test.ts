@@ -248,7 +248,8 @@ describe("the snapshot projector", () => {
     let writes = 0
     const counting = TimeTravelStore.make({
       ...store,
-      recordSnapshot: (snapshot) => store.recordSnapshot(snapshot).pipe(Effect.tap(() => Effect.sync(() => void writes++))),
+      recordSnapshot: (snapshot) =>
+        store.recordSnapshot(snapshot).pipe(Effect.tap(() => Effect.sync(() => void writes++))),
       recordSnapshots: (batch) =>
         store.recordSnapshots(batch).pipe(Effect.tap(() => Effect.sync(() => void (writes += batch.length))))
     })
@@ -294,7 +295,11 @@ describe("the snapshot projector", () => {
       expect(third.anchors).toBe(1)
       expect(writes()).toBe(8)
       expect(journal.reads.filter((read) => !read.eventTypes)).toEqual([{ after: 6, eventTypes: false }])
-      expect(store.state().snapshots.at(-1)).toEqual({ runId: "run", frame: { lineageId, seq: 7 }, changeId: "change-0" })
+      expect(store.state().snapshots.at(-1)).toEqual({
+        runId: "run",
+        frame: { lineageId, seq: 7 },
+        changeId: "change-0"
+      })
     }))
 
   it.effect("writes each page's anchors as one batch", () =>
@@ -305,7 +310,8 @@ describe("the snapshot projector", () => {
       const counting = TimeTravelStore.make({
         ...store,
         recordSnapshot: () => Effect.die("the driver must batch, never write one anchor at a time"),
-        recordSnapshots: (batch) => store.recordSnapshots(batch).pipe(Effect.tap(() => Effect.sync(() => void batches.push(batch.length))))
+        recordSnapshots: (batch) =>
+          store.recordSnapshots(batch).pipe(Effect.tap(() => Effect.sync(() => void batches.push(batch.length))))
       })
       yield* (
         SnapshotProjector.project("run", { pageSize: 2 }).pipe(
@@ -336,7 +342,12 @@ describe("the snapshot projector", () => {
       yield* run()
       // Both plan records sit below the anchored high-water mark, one on a lineage with no anchor.
       fixtures.push(
-        { seq: 4, eventType: "flows.engine.snapshot-identified", payload: { snapshotId: "change-b" }, lineageId: "run/b" },
+        {
+          seq: 4,
+          eventType: "flows.engine.snapshot-identified",
+          payload: { snapshotId: "change-b" },
+          lineageId: "run/b"
+        },
         { seq: 5, eventType: "flows.engine.snapshot-identified", payload: { carried: true } }
       )
       const resumed = yield* run()

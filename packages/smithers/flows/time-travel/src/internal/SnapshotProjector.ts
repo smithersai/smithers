@@ -112,9 +112,7 @@ export const step = (
     // the lineage on every record it writes.
     const kind = isPlan ? "plan" : "snapshot"
     const { lineageId } = yield* Schema.decodeUnknownEffect(LineageMeta)(entry.meta).pipe(
-      Effect.mapError((cause) =>
-        error("invalid", `${kind} event ${entry.eventId} has corrupt lineage metadata`, cause)
-      )
+      Effect.mapError((cause) => error("invalid", `${kind} event ${entry.eventId} has corrupt lineage metadata`, cause))
     )
     const lineage = state.lineages[lineageId] ?? emptyLineage
     if (isPlan) {

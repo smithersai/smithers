@@ -412,7 +412,15 @@ describe("Rewind protocol fault matrix", () => {
       const failure = yield* (
         Effect.flip(
           provide(
-            Rewind.rewind({ runId: "run", frame, owner, auditId: "audit-tail-failure" }),
+            // The re-read only happens for a caller that carries the tail
+            // validation observed, which is every production rewind.
+            Rewind.rewind({
+              runId: "run",
+              frame,
+              owner,
+              auditId: "audit-tail-failure",
+              expectedTail: { tail: { seq: 0, lineageId: frame.lineageId } }
+            }),
             { store, runs, jj: makeJj().service, journal: Journal.makeNoop() }
           )
         )
@@ -466,7 +474,9 @@ describe("Rewind protocol fault matrix", () => {
         )
       )
 
-      expect(pages).toBe(2)
+      // One page: the suffix read. The post-claim revalidation reads only for a
+      // caller that carries an expected tail, and this one does not.
+      expect(pages).toBe(1)
       expect(failure).toMatchObject({
         code: "invalid",
         message: "journal suffix returned an empty continuation page for run"
