@@ -479,15 +479,23 @@ describe("remote-cache hardening", () => {
     expect(wrongType.log).toEqual(["get-reader", "reader-cancel", "release"])
   })
 
-  it("applies deletion fences strictly and rejects duplicates", async () => {
-    const handler = makeHandler()
+  it("applies deletion fences to legacy rows strictly and rejects duplicates", async () => {
+    const actionCache = new MemoryActionCache()
+    const handler = makeHandler({ actionCache })
     const body = {
       keyDigest,
       result: { exitOk: true },
       recordedRunId: "run-1",
       recordedEventSeq: 7
     }
-    expect((await handler(jsonRequest(`/ac/${keyDigest}`, body, { method: "PUT" }))).status).toBe(201)
+    // Seed a row retained from before the hosted protocol refused provenance.
+    await expect(actionCache.put(keyDigest, {
+      body: JSON.stringify(body),
+      resultJson: JSON.stringify(body.result),
+      createdAtMs: null,
+      recordedRunId: body.recordedRunId,
+      recordedEventSeq: body.recordedEventSeq
+    })).resolves.toBe("inserted")
     expect(
       (
         await handler(

@@ -167,12 +167,35 @@ keys are the CLI's sanitized, non-empty path segments.
 | `HEAD /cas/{digest}`     | `200`                  | Checks R2 without returning a body; missing objects return `404`.                                                   |
 | `POST /cas/findMissing`  | `200` JSON             | Accepts `{"digests":[...]}` and returns unique missing digests in request order.                                    |
 
-The `/ac` body can be the CLI's `CachedResult` JSON verbatim or the richer
-`CacheEntry` envelope. A document is an envelope only when it contains both
-`keyDigest` and `result`; its key must match the request path. Conflict
+### Hosted arbitration contract
+
+Every response, including `/healthz` and refusals, advertises
+`Smithers-Cache-Contract: result-only-v1`. This tier retains one head per key
+and arbitrates publications on their canonical result. It does not implement
+`RemoteCacheStore`'s immutable journal-identity ledger.
+
+The `/ac` body can be the CLI's `CachedResult` JSON verbatim or a
+`CacheEntry`-shaped envelope without journal provenance. A document is an
+envelope only when it contains both `keyDigest` and `result`; its key must
+match the request path. Conflict
 classification uses the envelope's `result`, and uses the whole document for
 every other shape. Object keys are canonicalized before comparison, while the
 first writer's original JSON text is preserved for reads.
+
+A valid envelope carrying `recordedRunId` and `recordedEventSeq` is refused
+with `422` and JSON code `UNSUPPORTED_PROVENANCE`, including first writes and
+identical retries. Malformed provenance still returns `400`. A `GET /ac` with
+either provenance query parameter also returns `422` without reading the
+head. The step-cache `RemoteCacheStore` client maps `422` to
+`CacheStoreError` with code `persistence_failed`, so these operations cannot
+silently become `ExistingSame` or a head fallback. Use a tier implementing
+`RemoteCacheStore`'s two-stage contract for provenance-bearing step entries.
+
+Head reads and unconditional deletion remain available for existing entries.
+Fenced `DELETE` remains supported for legacy rows: it compares the stored
+provenance and returns `404` on a mismatch. Deletion and replacement retain
+no historical journal row. Metadata and `createdAtMs` in an envelope without
+journal provenance are stored but do not participate in arbitration.
 
 The service stores an entry verbatim and does not index the artifacts its
 metadata declares. Nothing consumed that reference list, so entries are not

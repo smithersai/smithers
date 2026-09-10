@@ -1,5 +1,8 @@
 /**
- * The HTTP protocol shared by the hosted and self-hosted cache backends.
+ * The hosted result-only HTTP cache protocol.
+ *
+ * Routes and JSON shapes overlap the self-hosted tier, but journal identity
+ * publication and lookup are unsupported and explicitly refused.
  *
  * @since 0.1.0
  */
@@ -861,8 +864,8 @@ const readPublication = async (request: Request, keyDigest: string): Promise<Pub
   try {
     const documentJson = canonicalJson(parsed.value)
     resultJson = enveloped ? canonicalJson(record["result"]) : documentJson
-    // The two deployments serve one protocol. The self-hosted tier refcounts
-    // references that this tier only stores, so both tiers validate them.
+    // Both deployments validate references, even though the self-hosted tier
+    // refcounts them and the hosted tier only stores them.
     if (enveloped) assertDeclaredOutputsValid(record)
   } catch {
     return {
@@ -904,14 +907,19 @@ const readPublication = async (request: Request, keyDigest: string): Promise<Pub
     return { ok: false, response: json(400, { error: "publication provenance is invalid" }) }
   }
 
+  // A journal identity promises immutable result, meta and createdAtMs.
+  // This tier stores only a result-arbitrated head, so accepting the identity
+  // would let a changed retry masquerade as an identical publication.
+  if (hasRecordedRunId) return { ok: false, response: unsupportedProvenance() }
+
   return {
     ok: true,
     publication: {
       body: parsed.text,
       resultJson,
       createdAtMs: hasCreatedAtMs ? (createdAtMs as number) : null,
-      recordedRunId: hasRecordedRunId ? (recordedRunId as string) : null,
-      recordedEventSeq: hasRecordedEventSeq ? (recordedEventSeq as number) : null
+      recordedRunId: null,
+      recordedEventSeq: null
     }
   }
 }
@@ -971,6 +979,12 @@ const presentedCredential = async (
   return { kind: isRead ? "read" : "none", digest }
 }
 
+const unsupportedProvenance = (): Response =>
+  json(422, {
+    code: "UNSUPPORTED_PROVENANCE",
+    error: "the hosted cache supports result-only arbitration, not journal provenance"
+  })
+
 const handleActionCache = async (
   request: Request,
   keyDigest: string,
@@ -984,6 +998,9 @@ const handleActionCache = async (
   }
   if (request.method === "GET") {
     await discardBody(request.body)
+    if (url.searchParams.has("recordedRunId") || url.searchParams.has("recordedEventSeq")) {
+      return unsupportedProvenance()
+    }
     const body = await actionCache.get(keyDigest, request.signal)
     return body === null
       ? empty(404)
@@ -1557,7 +1574,7 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
     }
   }
 
-  return async (request: Request): Promise<Response> => {
+  const handle = async (request: Request): Promise<Response> => {
     let url: URL
     try {
       url = new URL(request.url)
@@ -1730,5 +1747,11 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
       console.error(describeFailure(cause))
       return json(503, { error: "the cache tier failed to answer" })
     }
+  }
+
+  return async (request: Request): Promise<Response> => {
+    const response = await handle(request)
+    response.headers.set("Smithers-Cache-Contract", "result-only-v1")
+    return response
   }
 }

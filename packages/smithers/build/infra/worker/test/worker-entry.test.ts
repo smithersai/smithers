@@ -61,6 +61,7 @@ describe("worker entry point", () => {
     )
 
     expect(response.status).toBe(503)
+    expect(response.headers.get("smithers-cache-contract")).toBe("result-only-v1")
     await expect(response.json()).resolves.toEqual({ error: "the cache tier failed to initialize" })
     expect(String(errors.mock.calls[0]?.[0])).toContain("name=TypeError")
   })

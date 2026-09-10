@@ -259,7 +259,11 @@ const touchStaleEntry = (database: D1Database, keyDigest: string): Promise<KeyRo
     .first<KeyRow>()
 
 /**
- * Adapts D1 to the first-writer-wins action-cache contract.
+ * Adapts D1 to result-only, first-writer-wins head arbitration.
+ *
+ * The HTTP protocol refuses new journal identities. Existing provenance
+ * columns remain available for fenced deletion of legacy rows; this adapter
+ * does not retain an immutable journal-identity ledger.
  *
  * @category constructors
  * @since 0.1.0
@@ -501,7 +505,7 @@ const worker = {
       console.error(describeFailure(cause))
       return new Response(JSON.stringify({ error: "the cache tier failed to initialize" }), {
         status: 503,
-        headers: { "content-type": "application/json" }
+        headers: { "content-type": "application/json", "Smithers-Cache-Contract": "result-only-v1" }
       })
     }
   },

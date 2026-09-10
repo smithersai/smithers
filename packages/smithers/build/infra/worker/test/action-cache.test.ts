@@ -1,6 +1,11 @@
+import { createHash } from "node:crypto"
+import * as Effect from "effect/Effect"
+import * as HttpClient from "effect/unstable/http/HttpClient"
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import type * as CacheStore from "../../../../flows/step-cache/src/CacheStore.ts"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeActionCache, pruneStaleEntries, readTouchDays, retentionDays } from "../index.ts"
-import type { ActionCache, ActionCachePublication } from "../protocol.ts"
+import { type ActionCache, type ActionCachePublication, type ContentStore, createHandler } from "../protocol.ts"
 import { makeTestDatabase, type TestDatabase } from "./d1.ts"
 
 const publication = (
@@ -436,5 +441,166 @@ describe("action-cache retention", () => {
     } finally {
       errors.mockRestore()
     }
+  })
+})
+
+// Ported from review-evidence/2026-09-05-grid-review/probes/build-infra/api-design-1.ts.
+// Keep the probe's identity and changed metadata/time against the real D1 adapter,
+// and drive the actual step-cache client to pin the HTTP outcome mapping.
+describe("hosted result-only contract (build-infra/api-design/1)", () => {
+  const first = {
+    keyDigest: "key",
+    result: { ok: true },
+    meta: { output: "first" },
+    createdAtMs: 1,
+    recordedRunId: "run-a",
+    recordedEventSeq: 7
+  }
+  const changed = { ...first, meta: { output: "changed" }, createdAtMs: 2 }
+  const replacement = { ...first, result: { ok: false }, meta: { output: "replacement" }, recordedRunId: "run-b" }
+  const contentStore: ContentStore = {
+    get: async () => null,
+    has: async () => false,
+    put: async () => "inserted",
+    presentDigests: async () => new Set()
+  }
+  let d1: TestDatabase
+  let cache: ActionCache
+  let handler: ReturnType<typeof createHandler>
+
+  beforeEach(async () => {
+    d1 = await makeTestDatabase()
+    cache = makeActionCache(d1.database)
+    handler = createHandler({
+      actionCache: cache,
+      contentStore,
+      readTokenHash: createHash("sha256").update("probe-reader").digest("hex"),
+      writeTokenHash: createHash("sha256").update("probe-writer").digest("hex")
+    })
+  })
+
+  afterEach(() => d1.close())
+
+  const send = (method: string, body?: unknown, query = "") =>
+    handler(new Request(`https://cache.test/ac/key${query}`, {
+      method,
+      headers: { authorization: "Bearer probe-writer", "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) })
+    }))
+
+  const remote = async () => {
+    // Load the Node client at runtime: importing its implementation into the
+    // Workers typecheck mixes incompatible TextDecoder ambient declarations.
+    // The shared CacheStore service still types every operation below.
+    const { make } = await import(new URL("../../../../flows/step-cache/src/RemoteCacheStore.ts", import.meta.url).href) as {
+      readonly make: (options: {
+        readonly endpoint: string
+        readonly headers: Readonly<Record<string, string>>
+      }) => Effect.Effect<CacheStore.Service, CacheStore.CacheStoreError, HttpClient.HttpClient>
+    }
+    const client = HttpClient.make((request, url, signal) =>
+      Effect.promise(async () => {
+        const response = await handler(new Request(url, {
+          method: request.method,
+          headers: request.headers,
+          signal,
+          ...(request.body._tag === "Uint8Array"
+            ? { body: new TextDecoder().decode(request.body.body) }
+            : {})
+        }))
+        return HttpClientResponse.fromWeb(request, response)
+      })
+    )
+    return Effect.runPromise(make({
+      endpoint: "https://cache.test",
+      headers: { authorization: "Bearer probe-writer" }
+    }).pipe(Effect.provideService(HttpClient.HttpClient, client)))
+  }
+
+  it("advertises its versioned arbitration contract on health, hits, misses and refusals", async () => {
+    const responses = [
+      await handler(new Request("https://cache.test/healthz")),
+      await send("GET"),
+      await send("PUT", { keyDigest: "key", result: first.result }),
+      await send("GET"),
+      await send("PUT", first),
+      await handler(new Request("https://cache.test/ac/key"))
+    ]
+    for (const response of responses) {
+      expect(response.headers.get("smithers-cache-contract")).toBe("result-only-v1")
+      await response.text()
+    }
+  })
+
+  it("refuses the probe's first publication, identity retry and replacement without storing them", async () => {
+    for (const entry of [first, changed, replacement]) {
+      const response = await send("PUT", entry)
+      expect(response.status).toBe(422)
+      expect(await response.json()).toMatchObject({ code: "UNSUPPORTED_PROVENANCE" })
+      expect(await cache.get("key")).toBeNull()
+    }
+  })
+
+  it("refuses identity retries against a legacy head without changing its bytes", async () => {
+    await cache.put("key", publication({
+      body: JSON.stringify(first),
+      resultJson: JSON.stringify(first.result),
+      createdAtMs: first.createdAtMs,
+      recordedRunId: first.recordedRunId,
+      recordedEventSeq: first.recordedEventSeq
+    }))
+    expect((await send("PUT", changed)).status).toBe(422)
+    expect(await (await send("GET")).json()).toEqual(first)
+    expect((await send("DELETE", undefined, "?recordedRunId=run-b&recordedEventSeq=7")).status).toBe(404)
+    expect((await send("DELETE", undefined, "?recordedRunId=run-a&recordedEventSeq=7")).status).toBe(200)
+    expect((await send("PUT", replacement)).status).toBe(422)
+    expect((await send("GET", undefined, "?recordedRunId=run-a&recordedEventSeq=7")).status).toBe(422)
+  })
+
+  it("refuses provenance-selected reads before consulting the head", async () => {
+    const get = vi.spyOn(cache, "get")
+    // Reconstruct the handler so it captures the spied method.
+    handler = createHandler({
+      actionCache: cache,
+      contentStore,
+      readTokenHash: createHash("sha256").update("probe-reader").digest("hex"),
+      writeTokenHash: createHash("sha256").update("probe-writer").digest("hex")
+    })
+    for (const query of ["?recordedRunId=run-a&recordedEventSeq=7", "?recordedRunId=", "?recordedEventSeq=7"]) {
+      const response = await send("GET", undefined, query)
+      expect(response.status).toBe(422)
+      expect(await response.json()).toMatchObject({ code: "UNSUPPORTED_PROVENANCE" })
+    }
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  it("preserves result-only head arbitration for publications without journal identity", async () => {
+    const head = { keyDigest: "key", result: first.result, meta: first.meta, createdAtMs: 1 }
+    expect((await send("PUT", head)).status).toBe(201)
+    expect((await send("PUT", { ...head, meta: changed.meta, createdAtMs: 2 })).status).toBe(200)
+    expect((await send("PUT", { ...head, result: replacement.result })).status).toBe(409)
+    expect(await (await send("GET")).json()).toEqual(head)
+    expect((await send("DELETE")).status).toBe(200)
+    expect((await send("PUT", { ...head, result: replacement.result })).status).toBe(201)
+    expect((await send("GET", undefined, "?recordedRunId=run-a&recordedEventSeq=7")).status).toBe(422)
+    expect(await (await send("GET")).json()).toEqual({ ...head, result: replacement.result })
+  })
+
+  it("maps provenance publications to RemoteCacheStore refusal, never ExistingSame or Conflict", async () => {
+    const store = await remote()
+    for (const entry of [first, changed, replacement]) {
+      const error = await Effect.runPromise(Effect.flip(store.put(entry)))
+      expect(error.code).toBe("persistence_failed")
+      expect(error.message).toContain("HTTP 422")
+    }
+  })
+
+  it("maps provenance lookups to RemoteCacheStore refusal", async () => {
+    const store = await remote()
+    const error = await Effect.runPromise(Effect.flip(store.get("key", {
+      recordedBy: { runId: "run-a", eventSeq: 7 }
+    })))
+    expect(error.code).toBe("persistence_failed")
+    expect(error.message).toContain("HTTP 422")
   })
 })
