@@ -3,6 +3,7 @@ import { Effect, FileSystem, Path, Schema, Stream } from "effect"
 import { PageSpec } from "../wiki/schema.ts"
 import type { MemoryOptions } from "./planning-memory.ts"
 import { Check } from "./schema.ts"
+import { separateWikiOutput } from "./wiki-output.ts"
 
 const { flowDigest: _flowDigest, ...checkFields } = Check.fields
 const text = Schema.NonEmptyString
@@ -61,5 +62,7 @@ export const loadProject = (repositoryPath: string, filename: string | undefined
   if (!project.wikiOutput.trim() || project.wikiOutput.includes("\0") || !project.reviewer.trim() || !project.implementation.trim()) {
     return yield* Effect.fail(invalid("output, reviewer and implementation must be nonempty"))
   }
-  return { ...project, wikiOutput: path.resolve(repositoryPath, project.wikiOutput) }
+  const wikiOutput = yield* separateWikiOutput(repositoryPath, project.wikiOutput).pipe(
+    Effect.mapError(() => invalid("wikiOutput must resolve outside the source workspace, including .flows")))
+  return { ...project, wikiOutput }
 })

@@ -64,7 +64,7 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
   for (const file of policySources) await cp(join(authoring, "..", file), join(root, file))
   const page: PageSpec = { id: "verifier", title: "File verifier", kind: "current", purpose: "Find the current verifier.",
     document: "guide.md", inputs: ["verify.mjs", ...policySources], related: [] }
-  const wikiOutput = join(root, ".flows", "wiki")
+  const wikiOutput = join(temporary, "wiki")
   const wiki = operations({ root, output: wikiOutput })
   const evidence = await Effect.runPromise(wiki.collect(page).pipe(Effect.provide(platform.host)))
   const wikiReview = { sections: evidence.sections.map(section => ({ id: section.id, verdict: "supported", explanation: "The fixture reads its file.",

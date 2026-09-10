@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -26,7 +26,7 @@ test("explicit operator JSON uses existing schemas and the injected Node/Bun fil
   await writeFile(join(directory, "smithers.json"), "not json")
   assert.equal(await load(undefined), undefined)
   await writeFile(join(directory, "project.json"), JSON.stringify(valid()))
-  const expected = { ...valid(), wikiOutput: join(directory, "../wiki") }
+  const expected = { ...valid(), wikiOutput: join(await realpath(directory), "../wiki") }
   assert.deepEqual(await load("project.json"), expected)
   assert.deepEqual(await load(join(directory, "project.json")), expected)
   const exact = JSON.stringify(valid())
@@ -41,7 +41,8 @@ test("explicit operator JSON uses existing schemas and the injected Node/Bun fil
     { ...valid(), checks: [...valid().checks, ...valid().checks] },
     { ...valid(), checks: [{ ...valid().checks[0], flowDigest: "model-supplied" }] },
     { ...valid(), checks: [{ ...valid().checks[0], argv: ["invented-command"] }] },
-    { ...valid(), historyLimit: 101 }, { ...valid(), maxMemoryBytes: 92161 }
+    { ...valid(), historyLimit: 101 }, { ...valid(), maxMemoryBytes: 92161 },
+    { ...valid(), wikiOutput: "docs/wiki" }, { ...valid(), wikiOutput: ".flows/wiki" }
   ]
   for (const value of bad) {
     await writeFile(join(directory, "project.json"), JSON.stringify(value))

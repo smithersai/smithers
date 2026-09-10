@@ -1,13 +1,14 @@
 /** Private deployment artifact; the existing Plue provisioner stages one executable. */
 import { build } from "esbuild"
-import { chmod } from "node:fs/promises"
-import { resolve } from "node:path"
+import { chmod, mkdir, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 /** Used to build the same runtime acceptance entry with the deployment bundler; not a package export. */
 export const bundle = async (entryPoint, outfile) => {
-  await build({
-    entryPoints: [entryPoint], outfile, bundle: true, platform: "node", format: "esm", target: "node22.19",
+  const result = await build({
+    entryPoints: [entryPoint], outfile, write: false, bundle: true, platform: "node", format: "esm", target: "node22.19",
     banner: { js: "#!/usr/bin/env node\nimport {createRequire as __smithersCreateRequire} from 'node:module'; const require=__smithersCreateRequire(import.meta.url);" },
     plugins: [{
       name: "lazy-bun-sqlite",
@@ -24,6 +25,17 @@ export const bundle = async (entryPoint, outfile) => {
       }
     }]
   })
+  if (result.outputFiles.length !== 1) throw new Error("Coding host must be one immutable executable")
+  const compiled = result.outputFiles[0].text
+  const digest = createHash("sha256").update(compiled).digest("hex")
+  // Hash the exact compiled artifact before inserting its own identity. This
+  // includes the reviewer implementation and its complete bundled dependency
+  // graph, with no dependency on files vendored in the target repository.
+  const output = compiled.replace(/^(#![^\n]*\n)/,
+    `$1const __SMITHERS_CODING_ARTIFACT_DIGEST__ = ${JSON.stringify(digest)};\n`)
+  if (output === compiled) throw new Error("Coding artifact has no executable banner")
+  await mkdir(dirname(resolve(outfile)), { recursive: true })
+  await writeFile(outfile, output)
   await chmod(outfile, 0o755)
 }
 

@@ -38,6 +38,21 @@ register. Planning, prototype and wiki review receive their configured
 implementation model, through the existing seat resolver. All these model roles
 use the evidence-only authority recipe. The required wiki `reviewer` policy,
 selected wiki model and gateway identity participate in review reuse identity.
+The same identity includes the running host's policy fingerprint. A deployed
+bundle embeds a digest of its exact compiled bytes before inserting the digest
+declaration. Source mode hashes its own module-relative reviewer, schema,
+evidence, assessor, reuse and authority inputs plus dependency pins. It does not
+read the target repository to identify the running host. Target source captures
+still independently invalidate affected pages, and reused reviews still pass
+the current assessor. Source hosts must restart after their recipe changes.
+
+The configured wiki output must resolve outside the canonical source workspace,
+including outside `.flows`. Relative operator paths are resolved from the source
+root; use a sibling or separate wiki directory. Existing parent symlinks are
+resolved before any write, dangling links are refused, and the resulting
+canonical path is bound to the host. This prevents generated publication from
+being included in a later JJ implementation snapshot. Project JSON and direct
+private host composition apply the same check.
 
 Catalog imports need the existing trusted host filesystem to load verified declaration bytes through a temporary sibling module. Deterministic wiki publication and memory verification also use that injected host filesystem for the operator's configured paths, with the owning wiki's canonical source/output and semantic checks. The model receives captured evidence only. Resulting agent registrations use the original guarded context. Immutable checks separately capture the trusted filesystem only for host-owned scratch creation and cleanup; their processes retain the contained, guarded spawner. Agent file tools retain their workspace guards.
 

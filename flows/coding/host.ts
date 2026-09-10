@@ -26,6 +26,8 @@ import { ReviewPage } from "../wiki/workflow.ts"
 import { pocModels, pocPolicy } from "./poc.ts"
 import { pocSource } from "./poc-source.ts"
 import { feedbackLayer, routeMessages } from "./steering.ts"
+import { runningWikiPolicy } from "./wiki-policy.ts"
+import { separateWikiOutput } from "./wiki-output.ts"
 
 /** Operator configuration, never accepted from a workflow or gateway request. */
 export interface Options extends NativeOptions {
@@ -88,11 +90,13 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     // Host-owned immutable wiki publication and scratch cleanup use the trusted
     // FS. Model actions and check processes retain the native host's guards.
     const fs = yield* FileSystem.FileSystem
+    const reviewerPolicy = options.planning === undefined ? undefined : yield* runningWikiPolicy
+    const wikiOutput = options.planning === undefined ? undefined : yield* separateWikiOutput(options.repositoryPath, options.planning.wikiOutput)
     const request = options.planning === undefined ? Layer.empty : Layer.mergeAll(
-      memoryLayer({ ...options.planning, repositoryPath: options.repositoryPath }, fs),
-      planningWikiLayers({ ...options.planning, repositoryPath: options.repositoryPath,
+      memoryLayer({ ...options.planning, wikiOutput: wikiOutput!, repositoryPath: options.repositoryPath }, fs),
+      planningWikiLayers({ ...options.planning, wikiOutput: wikiOutput!, repositoryPath: options.repositoryPath,
         reviewer: Digest.canonical({ policy: options.planning.reviewer, model: options.wikiModel ?? options.implementationModel,
-          gateway: options.gatewayId }) }, fs),
+          gateway: options.gatewayId, hostPolicy: reviewerPolicy }) }, fs),
       planningPolicy, Interpreter.layer(PreparePlan), HumanTask.layer, correctionLayers, sourceAdmission, requestRegistration, feedbackLayer,
       pocPolicy, pocModels, pocSource({ ...options, fs }),
       evidenceOnly(Layer.mergeAll(ReviewRequest.layer, DraftPlan.layer, SelectRepair.layer, ReviewPage.layer))
