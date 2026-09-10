@@ -11748,6 +11748,22 @@
         "path": "flows/test/coding-vibe-admission.test.ts"
       },
       {
+        "kind": "file",
+        "path": "flows/test/coding-landing.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-landing-config.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-vibe-landing.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-source-publication.test.ts"
+      },
+      {
         "kind": "glob",
         "pattern": "flows/**/*.ts",
         "exclude": []
@@ -11966,6 +11982,22 @@
       {
         "kind": "file",
         "path": "flows/test/coding-vibe-admission.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-landing.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-landing-config.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-vibe-landing.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-source-publication.test.ts"
       },
       {
         "kind": "glob",
@@ -27433,6 +27465,42 @@
       {
         "kind": "file",
         "path": "scripts/check-dependency-boundaries.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/fixtures/**/*.json",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//scripts:dependencyBoundariesUnit",
+    "package": "scripts",
+    "name": "dependencyBoundariesUnit",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/check-dependency-boundaries.test.mjs"
       },
       {
         "kind": "glob",
