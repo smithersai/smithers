@@ -77,6 +77,9 @@ export const workflowUiThemeCss = [
   ".button.danger,.danger { border-color:var(--danger-border); color:var(--danger); }",
   ".button.danger:hover,.danger:hover { background:var(--danger-soft); }",
   ".button.danger:active:not(:disabled),.danger:active:not(:disabled) { background:var(--danger-soft); border-color:var(--danger-border-strong); box-shadow:inset 0 1px 2px rgb(var(--shadow-rgb) / 0.20); }",
+  // Compose the keyboard ring with elevation so hover and press cannot erase it.
+  ".button.primary:hover:focus-visible,.primary:hover:focus-visible { box-shadow:0 0 0 3px var(--ring), var(--shadow-2); }",
+  ".button.primary:active:not(:disabled):focus-visible,.primary:active:not(:disabled):focus-visible,.button.danger:active:not(:disabled):focus-visible,.danger:active:not(:disabled):focus-visible { box-shadow:0 0 0 3px var(--ring), inset 0 1px 2px rgb(var(--shadow-rgb) / 0.20); }",
   ".input,.textarea,.prompt,textarea.prompt,input[type='text'],input[type='search'],input[type='number'],select { min-width:0; border:1px solid var(--line); border-radius:var(--r-1); background:var(--panel); color:var(--text); outline:none; }",
   ".input,.prompt,input[type='text'],input[type='search'],input[type='number'],select { min-height:var(--ctl-h); padding:0 10px; }",
   ".textarea,textarea.prompt,textarea.input,textarea { padding:10px var(--sp-3); min-height:88px; resize:vertical; line-height:1.45; }",

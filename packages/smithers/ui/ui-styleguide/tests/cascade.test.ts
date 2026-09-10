@@ -104,6 +104,20 @@ describe("the resolved fill on a tinted button", () => {
     );
   });
 
+  for (const [name, classes] of cases) {
+    for (const states of [["hover"], ["active"], ["hover", "active"]]) {
+      test(`${name} keeps its focus ring on :${states.join(":")}`, () => {
+        const focused = { classes, states: ["focus-visible", ...states] };
+        const ring = "0 0 0 3px var(--ring)";
+        const shadow = states.includes("active")
+          ? `${ring}, inset 0 1px 2px rgb(var(--shadow-rgb) / 0.20)`
+          : classes.some((name) => name === "primary") ? `${ring}, var(--shadow-2)` : ring;
+        expect(resolve("box-shadow", focused)).toBe(shadow);
+        expect(resolve("box-shadow", { classes, states })).not.toContain("var(--ring)");
+      });
+    }
+  }
+
   test("a plain button still gets the neutral hover and active fills", () => {
     expect(resolve("background", { classes: ["button"], states: ["hover"] })).toBe("var(--hover)");
     expect(resolve("background", { classes: ["button"], states: ["active"] })).toBe(
