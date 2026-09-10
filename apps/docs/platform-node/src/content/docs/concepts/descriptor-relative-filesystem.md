@@ -23,9 +23,13 @@ cannot redirect anything.
 
 Node's JavaScript filesystem API exposes none of that, and no root-handle
 equivalent. So `AtomicFileSystem` delegates each operation to a small CPython 3
-helper that does have it. The helper opens the workspace root once, walks every
-component with `O_NOFOLLOW`, and performs the operation relative to the pinned
-parent descriptor.
+helper that does have it. For ordinary operations and batches, the helper walks
+from the filesystem root to the canonical workspace root using descriptor-relative
+`O_NOFOLLOW | O_DIRECTORY` opens for every component. It verifies the opened
+root's device/inode against the identity captured when the kernel layer was
+composed, then performs the operation relative to a pinned parent descriptor.
+An ancestor symlink swap or replacement of the root by another directory fails
+ordinary operations with `PermissionDenied` before any content is read or changed.
 
 ## What the helper refuses
 

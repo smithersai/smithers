@@ -88,7 +88,11 @@ byte ceilings.
 
 Each ordinary call or bounded batch starts one CPython helper. Without a process ceiling,
 an `Effect.forEach(files, read, { concurrency: "unbounded" })` over fifty paths
-would start fifty interpreters at once.
+would start fifty interpreters at once. The same permit covers request JSON
+serialization and framing, so queued calls retain their input rather than an
+additional encoded request buffer. Invalid settings and batch counts are
+rejected before admission; serialized request sizes are checked after admission
+and before starting the helper.
 
 `timeoutMs` is a backstop, not a latency budget. A read at the content ceiling
 over a slow disk has to fit under it, so five minutes is generous; what it

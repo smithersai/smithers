@@ -118,7 +118,8 @@ const sweep = Effect.gen(function*() {
 ```
 
 Each entry carries the record, whether it was killed, and, when it was not, the
-`Refusal` that says why. Four refusals leave the record for a later
+`Refusal` that says why. `Reaped` is a union discriminated by `killed`, so the
+check in the branch above is what makes `entry.refusal` readable. Four refusals leave the record for a later
 incarnation to try again: `owner-alive`, `identity-unverified`,
 `own-group-unknown`, and `kill-failed`. The rest are final. See
 [Process containment](/concepts/process-containment/) for what each one

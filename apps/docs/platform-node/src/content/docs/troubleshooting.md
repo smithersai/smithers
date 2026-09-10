@@ -65,16 +65,23 @@ alive.
 owner record rather than weakening the probe. See
 [answer whether a run owner is alive](/guides/answer-run-ownership/).
 
-## `sameHostPidProbe` and the cross-host probe disagree on the same error
+## The liveness probes disagree on a foreign host
 
-**Cause.** They are asking different questions, and `EPERM` is where they
-split. `sameHostPidProbe` returns `code === "EPERM"`, so `EPERM` reads as
-dead. The cross-host probe returns `code !== "ESRCH"`, so the same error reads
-as alive.
+**Cause.** Both probes use the same `ESRCH`-only death rule.
+`EPERM`, `EINVAL`, and unknown signal errors preserve liveness.
+For a valid same-host pid, signal errors do not distinguish the probes.
 
-**Fix.** This is deliberate, not a bug. A pid on this host that this host may
-not signal is not this host's run. A pid the probe cannot reach across hosts
-might be. Pick the probe that matches the question you are asking.
+`HostLiveness.isAlive` compares the owner's host with its configured `hostId`
+and reports foreign owners as alive. `Ownership.sameHostPidProbe` compares
+with `context.claimant.hostId` and returns `false` for a foreign owner without
+probing its pid. The engine consults it after lease expiry, and the store
+verifies that expiry before allowing a steal.
+
+**Fix.** Choose the cross-host policy deliberately. `HostLiveness.isAlive`
+leaves foreign-host recovery to an operator or another liveness source;
+`sameHostPidProbe` lets the expired lease govern reclaiming foreign-host runs.
+`HostLiveness.isAlive` ignores the context argument the sibling reads. See
+[answer whether a run owner is alive](/guides/answer-run-ownership/).
 
 ## The reaper answers `failed` and keeps the record
 
