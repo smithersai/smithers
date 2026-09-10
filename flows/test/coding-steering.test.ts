@@ -202,7 +202,6 @@ test("independent SQLite writers serialize final feedback closure with new admis
         return [accepted, closed] as const
       })()
     assert.equal(drained.status, "fulfilled")
-    if (drained.status !== "fulfilled") throw drained.reason
     if (admitted.status === "fulfilled") {
       assert.deepEqual(drained.value.notifications.map(note => note.id), [note.id])
     } else {
