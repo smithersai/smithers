@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 export const nativeTests = [
   "coding-native.test.ts", "coding-snapshots.test.ts", "coding-filesystem-native.test.ts", "coding-checks.test.ts",
   "coding-atoms.test.ts", "coding-correction.test.ts", "coding-planning.test.ts", "coding-planning-wiki.test.ts",
-  "coding-poc.test.ts", "coding-steering.test.ts", "coding-request-coordinator.test.ts", "coding-host-native.test.ts", "coding-request-host.test.ts"
+  "coding-poc.test.ts", "coding-feedback.test.ts", "coding-host-native.test.ts", "coding-request-host.test.ts"
 ]
 // These two standalone fixtures hardwire NodeRuntime. The Bun request-host
 // fixture exercises the production atom/correction composition through Bun DI.
