@@ -544,6 +544,11 @@ randomness are the `sys/now` and `sys/random` catalog entries.
 - `stackCeiling = 256 * 1024`: the largest in-realm stack the runner grants.
   At this size QuickJS raises its own catchable `stack overflow` and
   disposal is clean.
+- `hostDefectMarker = "host: "`: the prefix on every `runtime` failure the
+  realm's defect boundary produced from a host-side defect (a native
+  WebAssembly abort, a host `RangeError`, a bridge bug) rather than from
+  the script. A script's own throw never carries it. The boundary also logs
+  the defect with its cause at `Warning` level.
 - `defaultLimits: Required<Limits>`: `{ memoryBytes: 64 * 1024 * 1024,
   stackBytes: stackCeiling, steps: 10000 }`. Passing an explicit `undefined`
   for any field opts out of that limit.

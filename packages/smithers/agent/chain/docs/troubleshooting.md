@@ -108,7 +108,9 @@ them; they never reach the run's error channel:
 - `script_failed`: the script failed to compile (`compile`), threw at
   runtime (`runtime`), returned a non-outcome or non-JSON value
   (`invalid_outcome`), or awaited a promise outside `ctx.call`, which never
-  settles.
+  settles. A `runtime` message starting with `host:` came from the
+  QuickJS runner itself, not the script; the runner logs the defect and its
+  cause at `Warning` level.
 
 For the taxonomy in full, see [The chain contract](./contract.md). For the
 classes and fields, see the [API reference](./api.md).

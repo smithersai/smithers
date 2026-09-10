@@ -13,7 +13,7 @@
  * @since 0.1.0
  */
 import variant from "@jitl/quickjs-singlefile-browser-release-sync"
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Layer } from "effect"
 import type { QuickJSContext, QuickJSDeferredPromise, QuickJSRuntime, QuickJSWASMModule } from "quickjs-emscripten-core"
 import { newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core"
 import * as QuickJsJobs from "./internal/QuickJsJobs.ts"
@@ -70,6 +70,22 @@ export const memoryFloor = 256 * 1024
  * @slop
  */
 export const stackCeiling = 256 * 1024
+
+/**
+ * The prefix on every `runtime` failure the realm's defect boundary
+ * produced from a HOST-side defect rather than from the script.
+ *
+ * A script's own throw, interrupt, or memory-limit failure never carries
+ * it. Anything that does — a native WebAssembly abort, a host `RangeError`
+ * from an exhausted WASM stack, a bug in this bridge — originated outside
+ * the realm, so the journaled observation and the model reading it can
+ * tell a script defect from a runner defect without consulting stderr.
+ *
+ * @category constants
+ * @since 0.1.0
+ * @slop
+ */
+export const hostDefectMarker = "host: "
 
 /**
  * Production-safe runner limits. Passing an explicit `undefined` for any
@@ -567,13 +583,24 @@ const evaluate = <E>(
     // entirely: nothing is journaled, so the resumed link replays the same
     // script and dies the same way forever. Degrading it to a `runtime`
     // ScriptFailure makes it a journaled observation the model can route
-    // around, which is the contract this module states. A defect the
-    // CALLER'S handler raised is re-raised unchanged: it is the host's
-    // failure, not the script's.
+    // around, which is the contract this module states. The catch is
+    // unconditional by design, so the message carries `hostDefectMarker`
+    // and the defect is logged with its cause here: a bridge bug or a
+    // disposed-handle use lands in the journal labelled as the host's, not
+    // the script's, and the log keeps the stack the observation cannot. A
+    // defect the CALLER'S handler raised is re-raised unchanged: it is the
+    // host's failure, not the script's, and must kill the run.
     Effect.catchDefect((defect) =>
       defect instanceof HandlerDefect
         ? Effect.die(defect.defect)
-        : new ScriptRunner.ScriptFailure({ code: "runtime", message: ScriptRunner.failureMessage(defect) })
+        : Effect.flatMap(
+          Effect.logWarning("QuickJsRunner degraded a host defect to a runtime script failure", Cause.die(defect)),
+          () =>
+            new ScriptRunner.ScriptFailure({
+              code: "runtime",
+              message: hostDefectMarker + ScriptRunner.failureMessage(defect)
+            })
+        )
     )
   )
 

@@ -1032,6 +1032,9 @@ describe("Chain recovery bounds", () => {
     expect(outcome).toMatchObject({ _tag: "Park", reason: { code: "quota" } })
     const rejected = events.find((event) => event._tag === "GateRejected") as Event.GateRejected
     expect(rejected.observation.kind).toBe("script_failed")
+    // The observation the model reads names the origin: a runner defect,
+    // not something the script did.
+    expect(rejected.observation.message.startsWith(`runtime: ${QuickJsRunner.hostDefectMarker}`)).toBe(true)
     expect(rejected.observation.message).toContain("native abort")
     expect(rejected.observation.message).toContain("[truncated]")
     expect(rejected.observation.message.length).toBeLessThanOrEqual(8192)
