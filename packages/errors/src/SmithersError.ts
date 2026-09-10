@@ -73,11 +73,13 @@ export class SmithersError extends Error {
   ) {
     const docsUrl = ERROR_REFERENCE_URL
     const suffix = ` See ${docsUrl}`
+    // Only whitespace after a suffix copy is dropped. Whitespace the summary
+    // itself ends with is kept, so rewrapping `message` restores it unchanged.
     let summaryWithoutDocsUrl = summary
     for (;;) {
       const candidate = summaryWithoutDocsUrl.trimEnd()
       if (!candidate.endsWith(suffix)) break
-      summaryWithoutDocsUrl = candidate.slice(0, -suffix.length).trimEnd()
+      summaryWithoutDocsUrl = candidate.slice(0, -suffix.length)
     }
     const message = options.includeDocsUrl === false || summaryWithoutDocsUrl.trim() === ""
       ? summaryWithoutDocsUrl

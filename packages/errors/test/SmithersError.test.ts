@@ -75,6 +75,29 @@ describe("SmithersError", () => {
     expect(error.message).toBe(`no token${suffix}`)
   })
 
+  it("keeps a summary's own trailing whitespace across a rewrap", () => {
+    for (const summary of ["x ", "no token  ", "no token\n", "no token\t "]) {
+      const first = new SmithersError("INVALID_INPUT", summary)
+      expect(first.summary).toBe(summary)
+      expect(first.message).toBe(`${summary} See ${ERROR_REFERENCE_URL}`)
+      const rewrapped = new SmithersError("INVALID_INPUT", first.message)
+      expect(rewrapped.message).toBe(first.message)
+      expect(rewrapped.summary).toBe(first.summary)
+      const twice = new SmithersError("INVALID_INPUT", rewrapped.message)
+      expect(twice.message).toBe(first.message)
+      expect(twice.summary).toBe(first.summary)
+    }
+  })
+
+  it("rewraps a blank summary to the same blank message", () => {
+    for (const summary of ["", "   "]) {
+      const first = new SmithersError("UNSUPPORTED", summary)
+      const rewrapped = new SmithersError("UNSUPPORTED", first.message)
+      expect(rewrapped.message).toBe(summary)
+      expect(rewrapped.summary).toBe(summary)
+    }
+  })
+
   it("appends the pointer when the URL is only embedded in the summary", () => {
     const summary = `see ${ERROR_REFERENCE_URL} for more; token bad`
     const error = new SmithersError("INVALID_INPUT", summary)

@@ -29,8 +29,9 @@ summary and stores the un-suffixed text as `summary`.
 
 The append is idempotent by construction. Before appending, the constructor
 strips every trailing copy of the suffix, tolerating trailing whitespace and
-whitespace between copies, so wrapping an error's `message` in a new
-`SmithersError` produces the same message rather than a growing tail:
+whitespace between copies. Whitespace the summary itself ends with is kept.
+Wrapping an error's `message` in a new `SmithersError` therefore produces the
+same `message` and `summary` rather than a growing tail:
 
 ```ts
 const first = new SmithersError("INVALID_INPUT", "no bot token")
