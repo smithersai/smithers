@@ -266,7 +266,7 @@ describe("Optimizer", () => {
         )
 
         expect(failure).toBeInstanceOf(PatternError)
-        expect(failure.code).toBe("invalid_decorator")
+        expect(failure.code).toBe("invalid_input")
         expect(failure.message).toBe(
           `Optimizer evaluation score at iteration 1 must be a finite number, received ${score}`
         )

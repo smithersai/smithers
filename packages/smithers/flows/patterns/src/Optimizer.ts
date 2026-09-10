@@ -255,7 +255,7 @@ export const run = <I, C, E, R, E2, R2>(
           if (!Number.isFinite(evaluation.score)) {
             return yield* Effect.fail(
               new PatternError({
-                code: "invalid_decorator",
+                code: "invalid_input",
                 message:
                   `Optimizer evaluation score at iteration ${iteration} must be a finite number, received ${evaluation.score}`
               })

@@ -123,16 +123,18 @@ const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
 // the scorer reads, and the run must actually read it.
 const field = (value: unknown, key: string): unknown => (value as Record<string, unknown>)[key]
 
+// Scores are data an evaluator returned, so a non-finite one is an input
+// fault rather than a declaration fault.
 const scoreRefusal = (primary: number, shadow: number): PatternError | undefined => {
   if (!Number.isFinite(primary)) {
     return new PatternError({
-      code: "invalid_decorator",
+      code: "invalid_input",
       message: `Sidecar primary score must be a finite number, received ${primary}`
     })
   }
   if (!Number.isFinite(shadow)) {
     return new PatternError({
-      code: "invalid_decorator",
+      code: "invalid_input",
       message: `Sidecar shadow score must be a finite number, received ${shadow}`
     })
   }
@@ -140,7 +142,7 @@ const scoreRefusal = (primary: number, shadow: number): PatternError | undefined
   return Number.isFinite(difference)
     ? undefined
     : new PatternError({
-      code: "invalid_decorator",
+      code: "invalid_input",
       message: `Sidecar score difference must be a finite number, received ${difference}`
     })
 }

@@ -159,7 +159,9 @@ const retriable = (value: unknown): ReadonlyArray<string> => {
 
 const bound = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
-const invalid = (message: string): PatternError => new PatternError({ code: "invalid_decorator", message })
+// Task lists come from the flow input or from the plan a boss returned, so a
+// malformed one is a data fault, not a declaration fault.
+const invalid = (message: string): PatternError => new PatternError({ code: "invalid_input", message })
 
 const validateTasks = (input: unknown): ReadonlyArray<Task> | PatternError => {
   if (typeof input !== "object" || input === null || !("tasks" in input) || !Array.isArray(input.tasks)) {
@@ -205,10 +207,11 @@ const retriableOf = (review: unknown): unknown =>
  * The plan is a superset of any single execution: {@link run} stops at the
  * first accepted review and re-delegates only the retriable tasks.
  *
- * Building the flow throws a `PatternError` when the input carries no `tasks`
- * array, when it is empty, when a task is missing a string `id` or
- * `workerType`, when two tasks share an id, or when a `workerType` names no
- * declared worker.
+ * Building the flow throws a `PatternError` with code `invalid_input` when
+ * the input carries no `tasks` array, when it is empty, when a task is missing
+ * a string `id` or `workerType`, when two tasks share an id, or when a
+ * `workerType` names no declared worker. A bound out of range or an empty
+ * worker record is refused with `invalid_decorator`.
  *
  * `make` snapshots the boss flows, the worker record, and both bounds at the
  * call, so a later edit to the caller's options does not change the
@@ -362,7 +365,7 @@ export const run = <I, P extends Plan, Out, Review, Final, E, R, E2, R2, E3, R3,
     const ids = tasks.map((task) => task.id)
     if (new Set(ids).size !== ids.length) {
       return yield* Effect.fail(
-        new PatternError({ code: "invalid_decorator", message: "Supervisor task ids must be unique" })
+        invalid("Supervisor task ids must be unique")
       )
     }
     const latest = new Map<string, Outcome<Out>>()

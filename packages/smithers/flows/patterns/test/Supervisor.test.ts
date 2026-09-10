@@ -194,19 +194,19 @@ describe("Supervisor", () => {
 
     expect(() => Graph.build(supervisor, "ship the feature")).toThrow(
       expect.objectContaining({
-        code: "invalid_decorator",
+        code: "invalid_input",
         message: "Supervisor input must contain a tasks array"
       })
     )
     expect(() => Graph.build(supervisor, { tasks: [] })).toThrow(
       expect.objectContaining({
-        code: "invalid_decorator",
+        code: "invalid_input",
         message: "Supervisor input must contain at least one task"
       })
     )
     expect(() => Graph.build(supervisor, { tasks: [{ id: "a" }] })).toThrow(
       expect.objectContaining({
-        code: "invalid_decorator",
+        code: "invalid_input",
         message: "Supervisor tasks must each carry a string id and a string workerType"
       })
     )
@@ -214,12 +214,12 @@ describe("Supervisor", () => {
       Graph.build(supervisor, { tasks: [{ id: "a", workerType: "coder" }, { id: "a", workerType: "coder" }] })
     )
       .toThrow(expect.objectContaining({
-        code: "invalid_decorator",
+        code: "invalid_input",
         message: "Supervisor task ids must be unique"
       }))
     expect(() => Graph.build(supervisor, { tasks: [{ id: "a", workerType: "painter" }] })).toThrow(
       expect.objectContaining({
-        code: "invalid_decorator",
+        code: "invalid_input",
         message: "Supervisor has no worker named \"painter\""
       })
     )
@@ -427,7 +427,7 @@ describe("Supervisor", () => {
       }).pipe(Effect.flip)
 
       expect(failure).toBeInstanceOf(PatternError)
-      expect((failure as PatternError).code).toBe("invalid_decorator")
+      expect((failure as PatternError).code).toBe("invalid_input")
       expect((failure as PatternError).message).toBe("Supervisor task ids must be unique")
       expect(ran).toBe(0)
     }))
@@ -445,7 +445,7 @@ describe("Supervisor", () => {
       }).pipe(Effect.flip)
 
       expect(failure).toBeInstanceOf(PatternError)
-      expect((failure as PatternError).code).toBe("invalid_decorator")
+      expect((failure as PatternError).code).toBe("invalid_input")
       expect((failure as PatternError).message).toBe("Supervisor input must contain at least one task")
       expect(callbacks).toBe(0)
     }))
@@ -465,7 +465,7 @@ describe("Supervisor", () => {
         }).pipe(Effect.flip)
 
         expect(failure).toBeInstanceOf(PatternError)
-        expect((failure as PatternError).code).toBe("invalid_decorator")
+        expect((failure as PatternError).code).toBe("invalid_input")
         expect((failure as PatternError).message).toBe("Supervisor input must contain a tasks array")
         expect(callbacks).toBe(0)
       }

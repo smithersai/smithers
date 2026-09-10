@@ -8,6 +8,13 @@ import * as Schema from "effect/Schema"
 /**
  * Stable pattern failure codes.
  *
+ * `invalid_decorator` names a fault in the declaration: a decorator broke a
+ * schema or authority contract, or an option was out of range. `invalid_input`
+ * names a fault in the data a pattern read while running: a flow input, a
+ * plan a boss returned, a score an evaluator returned, or a settlement
+ * envelope. A caller retries or escalates on the second and never on the
+ * first.
+ *
  * @category models
  * @since 0.1.0
  */
@@ -16,6 +23,7 @@ export const PatternErrorCode = Schema.Literals([
   "recursion_bound",
   "envelope_conflict",
   "invalid_decorator",
+  "invalid_input",
   "exhausted",
   "finalizer_failed",
   "quarantined",

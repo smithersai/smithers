@@ -256,7 +256,7 @@ describe("Quarantine", () => {
       } as never).pipe(Effect.flip)
 
       expect(failure).toMatchObject({
-        code: "invalid_decorator",
+        code: "invalid_input",
         message: "Invalid quarantine outcomes: a, b"
       })
     }))

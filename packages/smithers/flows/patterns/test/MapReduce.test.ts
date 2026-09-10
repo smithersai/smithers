@@ -58,7 +58,7 @@ describe("MapReduce", () => {
 
     expect(() => mapReduce.body?.({ shard: [] })).toThrow(
       expect.objectContaining({
-        code: "invalid_decorator",
+        code: "invalid_input",
         message: "MapReduce input must contain a shards array"
       })
     )

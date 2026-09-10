@@ -97,7 +97,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         !Array.isArray(input.shards)
       ) {
         throw new PatternError({
-          code: "invalid_decorator",
+          code: "invalid_input",
           message: "MapReduce input must contain a shards array"
         })
       }

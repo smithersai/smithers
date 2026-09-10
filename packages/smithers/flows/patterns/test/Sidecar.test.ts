@@ -255,7 +255,7 @@ describe("Sidecar", () => {
         }).pipe(Effect.flip)
 
         expect(failure).toBeInstanceOf(PatternError)
-        expect((failure as PatternError).code).toBe("invalid_decorator")
+        expect((failure as PatternError).code).toBe("invalid_input")
         expect((failure as PatternError).message).toBe(scores.message)
       }
     }))
@@ -292,7 +292,7 @@ describe("Sidecar", () => {
   it("refuses non-finite direct scores and an overflowing difference", () => {
     for (const scores of invalidScores) {
       expect(() => Sidecar.delta(scores.primary, scores.shadow)).toThrow(
-        expect.objectContaining({ code: "invalid_decorator", message: scores.message })
+        expect.objectContaining({ code: "invalid_input", message: scores.message })
       )
     }
   })

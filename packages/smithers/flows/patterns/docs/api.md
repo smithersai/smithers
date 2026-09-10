@@ -128,6 +128,7 @@ optional `cause` with the reported error or errors.
 | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `missing_slot`        | A required `Pattern.slot` was neither bound nor defaulted                                                           |
 | `invalid_decorator`   | A decorator broke a schema or authority contract, or an option was out of range                                     |
+| `invalid_input`       | A flow input, a `Supervisor` plan, an `Optimizer` or `Sidecar` score, or a `Quarantine.settle` entry was malformed  |
 | `envelope_conflict`   | A supplied flow declares authority its template excludes                                                            |
 | `recursion_bound`     | `Recursion.recurse` hit its declared depth                                                                          |
 | `exhausted`           | A runtime pattern reached its declared iteration or round limit, or `MapReduce` was configured to fail on no shards |

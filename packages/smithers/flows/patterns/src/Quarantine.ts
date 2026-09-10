@@ -270,7 +270,7 @@ export function run<A, E, R>(
  * envelope. A successful value is nested under `value`, so it can carry any
  * shape, including either complete wire shape, and settles unchanged. Callers
  * do not wrap their values. An entry that is neither envelope, such as a raw
- * success value, fails `PatternError` with code `invalid_decorator` naming the
+ * success value, fails `PatternError` with code `invalid_input` naming the
  * offending members, and a quarantined entry fails with code `quarantined`.
  *
  * @category combinators
@@ -284,7 +284,7 @@ export const settle = <A, E>(
   if (invalid.length > 0) {
     return Effect.fail(
       new PatternError({
-        code: "invalid_decorator",
+        code: "invalid_input",
         message: `Invalid quarantine outcomes: ${invalid.sort().join(", ")}`
       })
     )

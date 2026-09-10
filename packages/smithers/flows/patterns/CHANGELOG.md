@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- `PatternError` gains the code `invalid_input` for data a pattern read while
+  running: a `Supervisor` or `MapReduce` flow input, the plan a `Supervisor`
+  boss returned, a non-finite `Optimizer` or `Sidecar` score, and a malformed
+  `Quarantine.settle` entry. Those refusals used `invalid_decorator`, so a
+  caller catching by code could not tell a model returning bad data from an
+  option out of range. `invalid_decorator` keeps naming declaration faults.
 - Every `make`, every `run`, `Trellis.execute`, `WithRetry.retryEffect`, and
   the decorator factories `WithRetry.make`, `WithCache.make`, and
   `WithApproval.make` snapshot their options at the call. The arrays, member
