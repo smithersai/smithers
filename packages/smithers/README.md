@@ -127,6 +127,37 @@ const main = Cli.run(Command.cli, { version: Version.packageVersion }).pipe(
 
 `@smthrs/cli/package.json` is exported for package metadata. `internal/*` and nested `*/index` subpaths are not public.
 
+### Subpath-only modules
+
+These nested modules are exported as `@smthrs/cli/<dir>/<Module>` only. The root entry point carries no namespace for them, and the table above does not list them.
+
+- `@smthrs/cli/cli/Arguments`
+- `@smthrs/cli/cli/Compatibility`
+- `@smthrs/cli/cli/ControlBridge`
+- `@smthrs/cli/cli/ControlCommands`
+- `@smthrs/cli/cli/Entry`
+- `@smthrs/cli/cli/Generate`
+- `@smthrs/cli/cli/HistoryCommands`
+- `@smthrs/cli/cli/LegacyBin`
+- `@smthrs/cli/cli/Presentation`
+- `@smthrs/cli/cli/RunProgress`
+- `@smthrs/cli/evaluation/Cli`
+- `@smthrs/cli/evaluation/Evaluation`
+- `@smthrs/cli/history/History`
+- `@smthrs/cli/history/Legacy`
+- `@smthrs/cli/history/Workspace`
+- `@smthrs/cli/operator/Credentials`
+- `@smthrs/cli/operator/Integrations`
+- `@smthrs/cli/operator/Memory`
+- `@smthrs/cli/operator/Store`
+- `@smthrs/cli/operator/TriggerPlans`
+- `@smthrs/cli/operator/Triggers`
+- `@smthrs/cli/suggest/Brief`
+- `@smthrs/cli/suggest/Checklist`
+- `@smthrs/cli/suggest/SuggestFlow`
+
+`@smthrs/cli/cli/LegacyBin` runs the retained command line at import, like `@smthrs/cli/bin`; both are declared in `sideEffects`.
+
 Every export of every namespace is on the [API reference](https://cli.smithers.sh/reference/api/), and [Embed the command tree](https://cli.smithers.sh/guides/embed-the-command-tree/) is the guide.
 
 Control servers bind `127.0.0.1` by default. See the [control-plane guide](https://smithers.sh/docs/guides/control-plane/) before opting into a non-loopback bind.

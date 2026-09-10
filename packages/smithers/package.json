@@ -33,10 +33,13 @@
   },
   "sideEffects": [
     "./src/bin.ts",
+    "./src/cli/LegacyBin.ts",
     "./src/Version.ts",
     "./dist/esm/bin.js",
+    "./dist/esm/cli/LegacyBin.js",
     "./dist/esm/Version.js",
     "./dist/cjs/bin.js",
+    "./dist/cjs/cli/LegacyBin.js",
     "./dist/cjs/Version.js"
   ],
   "bin": {

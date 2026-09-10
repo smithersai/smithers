@@ -102,7 +102,61 @@ describe("the CLI documentation contracts", () => {
       `\`effect\` and \`@effect/platform-node\` as exact \`${manifest.dependencies.effect}\` direct dependencies`
     )
     expect(introduction).toContain(
-      `\`@effect/sql-sqlite-node\` is the sole peer dependency, required at \`${manifest.peerDependencies["@effect/sql-sqlite-node"]}\``
+      `\`@effect/sql-sqlite-node\` is the sole peer dependency, required at \`${
+        manifest.peerDependencies["@effect/sql-sqlite-node"]
+      }\``
     )
+  })
+})
+
+const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+  exports: Record<string, string | null>
+  sideEffects: ReadonlyArray<string>
+}
+
+/** Export-map subpaths with a literal target, minus the leading `./`. */
+const subpaths = Object.entries(manifest.exports)
+  .filter(([key, target]) => !key.includes("*") && target !== null && key !== "." && key !== "./package.json")
+  .map(([key]) => key.slice(2))
+
+/** The README's subpath-only list: `- \`@smthrs/cli/<dir>/<Module>\`` lines under its heading. */
+const subpathOnly = ((readme.split("### Subpath-only modules\n")[1] ?? "").split("\n## ")[0] ?? "")
+  .split("\n")
+  .flatMap((line) => {
+    const match = /^- `@smthrs\/cli\/([^`]+)`/.exec(line)
+    return match === null ? [] : [match[1]!]
+  })
+
+describe("the export map", () => {
+  it("makes every top-level subpath a barrel namespace, and every namespace a subpath", () => {
+    // `bin` and `index` are the executable and the barrel itself, never namespaces.
+    const topLevel = subpaths.filter((key) => !key.includes("/") && key !== "bin" && key !== "index")
+
+    expect(topLevel.sort()).toEqual(Object.keys(Cli).sort())
+  })
+
+  it("lists every nested subpath in the README's subpath-only section, and nothing else", () => {
+    // The barrel holds no namespace for these, so `Object.keys(Cli)` above
+    // cannot see one that is added or dropped; this row-for-row comparison can.
+    const nested = subpaths.filter((key) => key.includes("/"))
+
+    expect(subpathOnly.sort()).toEqual(nested.sort())
+  })
+
+  it("declares every module that runs the CLI at import as a side effect", () => {
+    // A bundler that honours `sideEffects` prunes an import whose bindings are
+    // unused. `bin.ts` loads `cli/LegacyBin.ts` for its `NodeRuntime.runMain`
+    // alone, so both must be listed as source and as each compiled output.
+    const entries = subpaths.filter((key) =>
+      /^NodeRuntime\.runMain\(/m.test(readFileSync(new URL(`../src/${key}.ts`, import.meta.url), "utf8"))
+    )
+    const missing = entries.flatMap((key) =>
+      [`./src/${key}.ts`, `./dist/esm/${key}.js`, `./dist/cjs/${key}.js`].filter((path) =>
+        !manifest.sideEffects.includes(path)
+      )
+    )
+
+    expect(entries).toContain("cli/LegacyBin")
+    expect(missing).toEqual([])
   })
 })

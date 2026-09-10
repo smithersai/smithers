@@ -8,6 +8,10 @@ The root entry point exports each public module as a namespace. Import a module 
 `@smthrs/cli/package.json` is exported. `@smthrs/cli/internal/*` and
 `@smthrs/cli/*/index` are blocked in the export map.
 
+The nested `cli/*`, `evaluation/*`, `history/*`, `operator/*`, and `suggest/*`
+entries in the export map are subpath-only: `@smthrs/cli/<dir>/<Module>`
+resolves and no root namespace does. The package README lists them.
+
 ## Trust boundaries
 
 Four rules hold across every module below, and each one is a property of the
@@ -455,6 +459,10 @@ Retention.
 SIGTERM handlers, decides between a document, a refusal, the MCP server, and
 the command tree, and maps the exit to a process status. The package installs
 it as `smthrs`, with `smithers` as an alias.
+
+`@smthrs/cli/cli/LegacyBin` is the retained Effect command tree's entry point.
+It runs at import, so `bin` loads it only for a legacy invocation, and the
+manifest declares both under `sideEffects` so a bundler keeps them.
 
 ## Command documentation
 

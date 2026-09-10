@@ -1,12 +1,14 @@
 /**
  * The public command-line projection for flows.
  *
- * Every module under `src/` is exported here and is also reachable as
- * `@smthrs/cli/<Module>`. The barrel is complete on purpose: a module that is
- * a subpath export but not a namespace here is public through one spelling and
- * invisible through the other. `test/Readme.test.ts` compares `README.md`'s
- * table against this list, so a module or a runtime export that reaches one
- * and not the other fails the suite.
+ * Every top-level module under `src/` is exported here and is also reachable
+ * as `@smthrs/cli/<Module>`. The modules under `src/cli/`, `src/evaluation/`,
+ * `src/history/`, `src/operator/`, and `src/suggest/` that `package.json`
+ * exports are subpath-only: `@smthrs/cli/<dir>/<Module>` resolves, and no
+ * namespace here does. `test/Readme.test.ts` compares `README.md` against
+ * both lists: its table against these namespaces and their runtime exports,
+ * and its subpath-only section against the nested export map, so a module
+ * that reaches one spelling and not the other fails the suite.
  *
  * @since 0.1.0
  */
