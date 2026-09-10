@@ -80,13 +80,6 @@ textarea {
 	}
 }
 
-.smithers-app {
-	display: flex;
-	min-height: 0;
-	flex: 1;
-	flex-direction: column;
-}
-
 /* No runtime, storage, or identity dependency owns the entrance animation. */
 .session-shell {
 	position: relative;

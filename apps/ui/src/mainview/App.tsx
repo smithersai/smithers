@@ -6,6 +6,7 @@ import {
   ChatTranscript,
   EmptyState,
   FileTree,
+  Markdown,
   Marker,
   Reasoning,
   SmithersUiStyles,
@@ -41,10 +42,8 @@ import { PluginsSurface } from "./plugins/PluginsSurface"
 import { useController } from "./ControllerContext"
 import { DevtoolsPanel } from "./DevtoolsPanel"
 import { stampFlows } from "./FlowStamp"
-import { tabOutOf } from "./FocusRing"
 import { INIT_GREETING, INIT_TITLE, initMessage, repoStep, repoSuggestion } from "./Onboarding"
 import type { InitMessage } from "./Onboarding"
-import { RichMarkdown } from "./RichMarkdown"
 import type { Card, Message, Suggestion as SuggestionBinding } from "./state/AppState"
 import { WIKI_DISPLAY_NAME, WIKI_GRAPH_ALL_SCOPE } from "./state/AppState"
 import { scrubToolEcho } from "./state/MessageScrub"
@@ -671,17 +670,17 @@ function App() {
                         <div className="message-init" data-testid="init-message">
                           <CheckCircle2 size={16} className="message-init-check" aria-label="Initialized" />
                           <div className="message-init-body">
-                            <RichMarkdown
+                            <Markdown
                               className="message-markdown message-init-greeting"
                               content={`**${INIT_GREETING}**`}
                             />
-                            <RichMarkdown
+                            <Markdown
                               className="message-markdown message-init-title"
                               content={`**${INIT_TITLE}**`}
                             />
                             <details className="message-init-details">
                               <summary>Details</summary>
-                              <RichMarkdown
+                              <Markdown
                                 className="message-markdown message-init-details-content"
                                 content={entry.message.details}
                               />
@@ -689,7 +688,7 @@ function App() {
                             {entry.message.prompt === undefined ?
                               null :
                               (
-                                <RichMarkdown
+                                <Markdown
                                   className="message-markdown message-init-prompt"
                                   content={entry.message.prompt}
                                 />
@@ -702,7 +701,7 @@ function App() {
                         // scrubToolEcho: a weak model's tool call written into prose
                         // is wire debris, never content — stripped at render only;
                         // the store and dev-tools keep the raw truth.
-                        <RichMarkdown
+                        <Markdown
                           className="message-markdown"
                           content={scrubToolEcho(entry.message.text)}
                         />
@@ -842,9 +841,9 @@ function App() {
                 <aside
                   className="world-sidebar"
                   aria-label={`${WIKI_DISPLAY_NAME} notes`}
-                  ref={stampFlows([["button", "wiki.select"]])}
                 >
                   <FileTree
+                    nodeProps={() => ({ "data-flow": "wiki.select" })}
                     nodes={worldDocuments.map((document) => ({
                       path: document.path,
                       label: document.title
@@ -909,21 +908,8 @@ function App() {
                             </Button>
                           </div>
                         </div>
-                        {
-                          /*
-                           * §21.2: ProseMirror binds Tab to "insert indentation",
-                           * so the editor swallowed every forward Tab and a
-                           * keyboard user could not get past it. The document's
-                           * own Tab order is restored around the region here,
-                           * at the mount site — the editor is library code.
-                           */
-                        }
-                        <div
-                          className="world-editor-region"
-                          onKeyDownCapture={(event) => {
-                            tabOutOf(event, event.currentTarget)
-                          }}
-                        >
+                        {/* Layout only: the editor releases Tab itself (§21.2, `escapeTabOrder`). */}
+                        <div className="world-editor-region">
                           <Suspense fallback={<p className="smithers-card-note">Loading editor…</p>}>
                             <MarkdownEditorSurface
                               value={selectedWorldDocument.body}

@@ -153,7 +153,7 @@ describe("disposing a controller releases what it opened", () => {
 
   test("the cross-tab identity listeners are released", async () => {
     // watchIdentityAcrossTabs only opens its host resources in a DOM, so
-    // this journey registers one (the pattern FocusRing.test.ts uses).
+    // this journey registers one.
     const { GlobalRegistrator } = await import("@happy-dom/global-registrator")
     GlobalRegistrator.register()
     try {

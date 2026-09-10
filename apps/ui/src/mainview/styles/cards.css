@@ -261,12 +261,6 @@
 
 /* Message chrome: Smithers avatar + per-row hover actions. */
 
-.app-shell .smithers-chat-message .message-author {
-	display: flex;
-	align-items: center;
-	gap: 5px;
-}
-
 .message-avatar {
 	display: inline-flex;
 	width: 14px;
@@ -712,24 +706,12 @@
 .targets-card-type {
 	color: var(--muted-foreground, #6b6457);
 }
-.targets-card-package-name {
-	margin: 0.5rem 0 0.25rem;
-	font-size: 0.75rem;
-	font-weight: 600;
-	color: var(--muted-foreground, #6b6457);
-}
-.targets-card-workspace-name {
-	margin: 0.5rem 0 0;
-	font-size: 0.8125rem;
-	font-weight: 600;
-}
 .targets-card-summary {
 	display: block;
 	font-size: 0.8125rem;
 	color: var(--muted-foreground, #6b6457);
 	word-break: break-word;
 }
-.targets-card-list,
 .targets-card-warnings {
 	list-style: none;
 	margin: 0;
@@ -738,19 +720,6 @@
 .targets-card-warnings li {
 	font-size: 0.8125rem;
 	color: var(--destructive, #b3261e);
-}
-.targets-card-row {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	padding: 0.25rem 0.25rem;
-	border-bottom: 1px solid var(--border, #e4ddcf);
-	font-size: 0.8125rem;
-}
-.targets-card-row[data-highlighted="true"] {
-	background: var(--accent, #f3ecdc);
-	outline: 1px solid var(--ring, #b8a98a);
-	border-radius: 6px;
 }
 .targets-card-label {
 	font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
@@ -1040,23 +1009,6 @@
 		width: auto;
 	}
 }
-.html-card-frame {
-	width: 100%;
-	height: 22rem;
-	border: 1px solid var(--border, #e4ddcf);
-	border-radius: 10px;
-	background: #fff;
-}
-.smithers-card[data-maximized="true"] .html-card-frame {
-	flex: 1;
-	height: auto;
-	min-height: 0;
-}
-.smithers-card[data-maximized="true"] .html-card {
-	height: calc(100% - 2.5rem);
-	display: flex;
-	flex-direction: column;
-}
 .target-run-meta {
 	display: flex;
 	align-items: center;
@@ -1279,17 +1231,6 @@
 	color: var(--muted-foreground, #6b6457);
 	font-size: 0.8125rem;
 	white-space: nowrap;
-}
-
-/* An empty state's next step is a flow, so it is a real affordance (§28.2). */
-.world-card-empty-action {
-	padding: 0;
-	border: none;
-	background: none;
-	font: inherit;
-	color: var(--primary, #7c6f52);
-	text-decoration: underline;
-	cursor: pointer;
 }
 
 /* The card header at narrow widths (§7.3). The status pill is the most
@@ -1992,7 +1933,6 @@
 	font-weight: 600;
 	color: var(--muted-foreground, #6b6457);
 }
-
 
 /* The run trace (Factory design session 2026-09-07 §6b): call tree, waterfall, span pane. */
 .run-trace {

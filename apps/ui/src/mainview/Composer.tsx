@@ -21,7 +21,6 @@ import { useRef, useState } from "react"
 import type { KeyboardEvent, ReactNode, RefObject } from "react"
 import { roleMenuEntries } from "./AgentRoleMenu"
 import { useController } from "./ControllerContext"
-import { composeRefs, stampFlows, stampTestIds } from "./FlowStamp"
 import { actionForKey } from "./flows/SearchQuery"
 import { SELECT_REPO_LABEL } from "./Onboarding"
 import { paletteKey, PaletteOverlay, paletteRows } from "./SearchPalette"
@@ -31,6 +30,20 @@ import { workingCopyLabel } from "./state/WorkspaceViews"
 
 /** Stable Playwright handle; spread past ChatComposer's excess-property check. */
 const COMPOSER_INPUT_TEST_ID: Record<string, string> = { "data-testid": "composer-input" }
+
+/* Send and Stop are `chat.send` and `chat.stop`'s doors, named through
+ * ChatComposer's own pass-through props. Typed as records for the same reason
+ * COMPOSER_INPUT_TEST_ID is: a bag of only `data-*` keys has no property in
+ * common with `ComponentProps<"button">`. */
+
+/** The Send button's flow marker, and Playwright's handle on it. */
+const COMPOSER_SEND_PROPS: Record<string, string> = {
+  "data-flow": "chat.send",
+  "data-testid": "composer-send"
+}
+
+/** The Stop button is `chat.stop`'s door. */
+const COMPOSER_STOP_PROPS: Record<string, string> = { "data-flow": "chat.stop" }
 
 type Surface = "chat" | "world" | "connectors" | "flows" | "plugins"
 
@@ -1127,49 +1140,31 @@ export function Composer({
         <ComposerConnect open={connectMenuOpen} triggerRef={connectTriggerRef} />
         <ComposerOrigin />
       </div>}
-      {
-        /*
-         * §6.1: Send and Stop are rendered by the composer component,
-         * which takes no pass-through attributes, so the law's own
-         * marker is stamped here. See LIBRARY-CHANGE-REQUESTS.md.
-         */
-      }
-      <div
-        className="composer-flow-stamp"
-        ref={composeRefs(
-          stampFlows([
-            [".sui-chat-composer-send", "chat.send"],
-            [".sui-chat-composer-stop", "chat.stop"]
-          ]),
-          stampTestIds([
-            [".sui-chat-composer-input", "composer-input"],
-            [".sui-chat-composer-send", "composer-send"]
-          ])
-        )}
-      >
-        <ChatComposer
-          className="smithers-composer"
-          value={draft}
-          onValueChange={controller.changeDraft}
-          onSubmit={(text) => {
-            controller.runCommandArgs("chat.send", text)
-          }}
-          onStop={() => controller.runCommand("chat.stop")}
-          placeholder={placeholder}
-          lifecycleStatus={typing ? "submitted" : "ready"}
-          textareaProps={{ autoFocus, onKeyDown: onComposerKeyDown, ...COMPOSER_INPUT_TEST_ID }}
-          actions={minimal ? undefined :
-            <div className="composer-actions">
-              <ComposerAdd open={addMenuOpen} triggerRef={addTriggerRef} />
-              <ComposerMenu
-                surface={surface}
-                open={surfacesMenuOpen}
-                triggerRef={surfacesTriggerRef}
-              />
-            </div>
-          }
-        />
-      </div>
+      {/* §6.1: Send and Stop run registered flows, so they carry the law's marker. */}
+      <ChatComposer
+        className="smithers-composer"
+        value={draft}
+        onValueChange={controller.changeDraft}
+        onSubmit={(text) => {
+          controller.runCommandArgs("chat.send", text)
+        }}
+        onStop={() => controller.runCommand("chat.stop")}
+        placeholder={placeholder}
+        lifecycleStatus={typing ? "submitted" : "ready"}
+        submitProps={COMPOSER_SEND_PROPS}
+        stopProps={COMPOSER_STOP_PROPS}
+        textareaProps={{ autoFocus, onKeyDown: onComposerKeyDown, ...COMPOSER_INPUT_TEST_ID }}
+        actions={minimal ? undefined :
+          <div className="composer-actions">
+            <ComposerAdd open={addMenuOpen} triggerRef={addTriggerRef} />
+            <ComposerMenu
+              surface={surface}
+              open={surfacesMenuOpen}
+              triggerRef={surfacesTriggerRef}
+            />
+          </div>
+        }
+      />
     </>
   )
 }

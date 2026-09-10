@@ -127,8 +127,11 @@ changes personally.
   `nodeProps` on `FileTreeProps`, pinned by
   `packages/smithers/ui/tests/host-pass-through.test.tsx`. Anything the host sets wins
   over the component's own attribute of the same name, so a host can also
-  correct one. `apps/ui/src/mainview/FlowStamp.ts` can drop its ref callback
-  for these three affordances.
+  correct one. `apps/ui/src/mainview/FlowStamp.ts` dropped its ref callback
+  for these three affordances on 2026-09-09: the composer passes
+  `submitProps`/`stopProps` and the Wiki tree passes `nodeProps`. What is left
+  in that file is the Wiki graph's node buttons and the Wiki rail's outline and
+  backlink rows, which have no pass-through yet.
 - **Landed (2026-09-02, sidebar tree lane)**: `FileTree` also takes
   `directoryProps?: (path) => …` for its directory toggles (the sidebar's
   `repo.tree` rows), `data-*` attributes are typed on both pass-throughs
@@ -156,8 +159,8 @@ changes personally.
   capture-phase handler above ProseMirror's keymap stops Tab before the editor
   sees it, so the document's own focus order applies; the host reports the
   setting as `data-escape-tab-order` on both the editor and the fallback
-  textarea. `apps/ui/src/mainview/FocusRing.ts` can drop its handler for this
-  region.
+  textarea. `apps/ui/src/mainview/FocusRing.ts` was deleted on 2026-09-09; the
+  Wiki editor's `.world-editor-region` wrapper is layout only now.
 
 ## 5. LANDED: `Markdown` has no table rule
 
@@ -183,4 +186,7 @@ changes personally.
   streaming block boundary agrees with the renderer. A header row with no
   delimiter row, a delimiter row of the wrong width, a sentence containing a
   pipe, and a pipe inside a fence all stay what they were.
-  `apps/ui/src/mainview/RichMarkdown.tsx` can drop its own table split.
+  `apps/ui/src/mainview/RichMarkdown.tsx` was deleted on 2026-09-09: the
+  transcript and the cards now share one renderer, so a table cell renders its
+  own inline markdown instead of reaching the screen with its asterisks
+  (`src/mainview/MessageMarkdown.test.tsx`).
