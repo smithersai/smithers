@@ -47,6 +47,19 @@
 - **Breaking.** `makeLiveWith`, `layerWith`, and `BranchPresence.layer` fail
   with `invalid_request` when an option is not a positive safe integer.
   `BranchPresence.Service` gained `leaseMs`.
+- A workspace subscription woken by an entry committed in this process reads
+  only the runs that entry named, rather than re-listing the catalog and
+  reading one page per covered run. The catalog-wide round still runs at open,
+  on an announcement, and once per `tailIntervalMs`, so removals, generation
+  changes, and other processes' writes are reconciled as before. The bounds
+  documentation now separates what a follower holds open, which the bounds
+  cap, from its per-run positions and per-round work, which scale with the
+  runs it covers.
+- A branch admitted after a workspace subscription opened ends the stream at
+  that branch's own expiry: the expiry interrupt re-arms when reconciliation
+  lowers the deadline, and a page checks the deadline before it emits, so a
+  journal read that spans the expiry serves nothing past it and a stalled read
+  cannot hold the subscription open.
 - An open subscription ends with `unauthorized` when the capability that
   authorized it expires. Authorization was one-shot at open, so a share-link
   holder could read past its own expiry by staying connected. That now covers a

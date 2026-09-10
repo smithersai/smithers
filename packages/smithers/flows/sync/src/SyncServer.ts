@@ -214,9 +214,10 @@ export interface Options {
    */
   readonly concurrency?: number | undefined
   /**
-   * How long a workspace subscription waits before re-reading the runs it
+   * How long a workspace subscription waits before re-reading every run it
    * covers, when nothing wakes it — no journal entry committed in this
-   * process, no catalog announcement — in milliseconds. Defaults to
+   * process, no catalog announcement — in milliseconds, and the longest a
+   * stream of local wakes may defer that catalog-wide round. Defaults to
    * {@link defaultTailIntervalMs}.
    */
   readonly tailIntervalMs?: number | undefined
@@ -260,11 +261,14 @@ const defaults: Resolved = {
  * holding its slot, so no run is starved by a run that stays busy. A round
  * repeats on a journal entry committed in this process, on a catalog
  * announcement, on a run that reported more, or after
- * `Options.tailIntervalMs`. The memory one follower costs is a function of
- * the bound, not of the workspace's size; the interval is the freshness
- * policy for the runs another process owns, not for the runs written beside
- * the follower. A run-scoped subscription follows that one run's journal
- * stream directly and keeps its in-process wake.
+ * `Options.tailIntervalMs`. A wake for an entry committed in this process
+ * reads only the runs that entry named; a round that re-lists the catalog
+ * reads every covered run, so the bound caps what is open at once while a
+ * round's work and the positions a follower keeps grow with the runs it
+ * covers. The interval is the freshness policy for the runs another process
+ * owns, not for the runs written beside the follower. A run-scoped
+ * subscription follows that one run's journal stream directly and keeps its
+ * in-process wake.
  *
  * Authorization is fail-closed along two boundaries, both consulted per
  * request:
@@ -695,12 +699,15 @@ const makeWith = (
      * never end fills its slots with the first `concurrency` runs and no run
      * behind them is ever attached. The workspace tail inverts that. It reads
      * each covered run's unserved entries as a finite page walk, so the bound
-     * limits how many reads are open at once and every round still visits
-     * every run, and it repeats the round on a wake — a journal entry
-     * committed in this process for a covered run, or a catalog announcement —
-     * or on {@link defaultTailIntervalMs}. Memory is a function of the bound;
-     * freshness of another process's writes is a function of the interval;
-     * neither is a function of how many runs the workspace holds.
+     * limits how many reads are open at once. A catalog-wide round visits
+     * every covered run; it runs at open, on a catalog announcement, and once
+     * {@link defaultTailIntervalMs} has passed since the last one. A wake for
+     * a journal entry committed in this process, or for a run whose page
+     * reported more, reads only the runs marked dirty, so a spaced append
+     * costs one read and not one per covered run. The bound is what is open
+     * at once; a full round's work and the served positions grow with the
+     * runs the subscription covers, and freshness of another process's writes
+     * is a function of the interval.
      *
      * A run-scoped subscription does not go through here: it follows one
      * journal stream directly (see {@link runStream}) and keeps that stream's
@@ -727,7 +734,7 @@ const makeWith = (
         const excluded = new Set<JournalEvent.RunId>()
         // The runs the NEXT round reads: the catalog's current list, minus
         // what this request may not read. `reconcile` is what moves it.
-        let visible: ReadonlyArray<JournalEvent.RunId> = covering
+        let visible: ReadonlySet<JournalEvent.RunId> = new Set(covering)
         // The soonest expiry of every credential this subscription now rests
         // on. It only ever moves EARLIER: `runIdsFor` seeds it from the
         // credentials the request opened with, and `reconcile` lowers it when
@@ -735,6 +742,25 @@ const makeWith = (
         // own deadline from this, so a capability discovered mid-subscription
         // bounds the frames it authorizes just as the opening ones do.
         let deadline = openedUntil
+        // Runs with something known to be waiting: an entry committed in this
+        // process, or a page that reported more. A wake for them reads THESE
+        // runs and nothing else; the catalog-wide round is what the opening,
+        // an announcement, and the interval pay for. A Set coalesces a burst
+        // on one run into one read, and it only ever names covered runs, so
+        // it is bounded by what `served` is bounded by.
+        let dirty = new Set<JournalEvent.RunId>()
+        // Set by an announcement: the next wake re-lists the catalog whatever
+        // `dirty` holds, since the announced run is not covered yet.
+        let announced = false
+        // When the last catalog-wide round began. A wake that arrives once
+        // the interval has elapsed since then runs a full round, so local
+        // appends faster than the interval cannot defer reconciliation of
+        // removals, generation changes, and other processes' writes forever.
+        let reconciledAtMs = -Infinity
+        // Published when `reconcile` lowers `deadline`, so the expiry
+        // interrupt below re-arms at the earlier moment.
+        const lowered = yield* PubSub.sliding<void>(1)
+        const loweredSignal = yield* PubSub.subscribe(lowered)
         // Every caller establishes that the run has no position yet:
         // `covering` is a deduplicated list, and `reconcile` skips what it
         // already holds.
@@ -783,21 +809,19 @@ const makeWith = (
                 excluded.add(runId)
                 continue
               }
-              deadline = Math.min(deadline, until)
+              if (until < deadline) {
+                deadline = until
+                yield* PubSub.publish(lowered, undefined)
+              }
               cover(runId)
             }
             next.push(runId)
           }
-          // Checked HERE, after this round's admissions have had their say
-          // and before it reads anything, so a round never begins under a
-          // lapsed credential. The deadline the subscription OPENED with is
-          // enforced exactly, by the interrupt `subscribe` arms; a deadline
-          // this reconciliation lowered is enforced at the next round, so a
-          // credential discovered mid-subscription bounds the stream within
-          // one `tailIntervalMs` of its expiry rather than not at all.
-          const nowMs = yield* Clock.currentTimeMillis
-          if (nowMs >= deadline) return yield* Effect.fail(expired)
-          visible = next
+          // The deadline is not checked here: the interrupt below enforces
+          // it, and re-arms whenever this round lowered it, so a round that
+          // begins under a lapsed credential is ended before it emits.
+          reconciledAtMs = yield* Clock.currentTimeMillis
+          visible = new Set(next)
         })
 
         /**
@@ -842,19 +866,51 @@ const makeWith = (
             if (last === undefined) return Stream.empty
             served.set(runId, last.seq)
             // A backlog costs another round, not another slot. The wake makes
-            // that round start at once rather than at the next interval.
-            if (page.hasMore) yield* PubSub.publish(wake, undefined)
+            // that round start at once rather than at the next interval, and
+            // it reads this run and the other dirty ones, not the workspace.
+            if (page.hasMore) {
+              dirty.add(runId)
+              yield* PubSub.publish(wake, undefined)
+            }
             return Stream.fromIterable(frames)
           }))
 
         /**
          * One pass over every covered run, `concurrency` reads open at most,
-         * against the run set the catalog names right now.
+         * against the run set the catalog names right now. Anything marked
+         * dirty is read by this pass, so the set starts over; a run marked
+         * while the pass runs is remembered for the next wake.
          */
-        const round = Stream.unwrap(Effect.map(
+        const fullRound = Stream.unwrap(Effect.map(
           reconcile,
-          () => Stream.flatMap(Stream.fromIterable(visible), tail, { concurrency })
+          () => {
+            dirty = new Set()
+            announced = false
+            return Stream.flatMap(Stream.fromIterable(visible), tail, { concurrency })
+          }
         ))
+
+        /**
+         * One pass over the dirty runs only, under the same bound. No catalog
+         * read: a dirty run is by construction one this subscription already
+         * covers, and a run the catalog has since dropped is skipped.
+         */
+        const dirtyRound = Stream.suspend(() => {
+          const runs = dirty
+          dirty = new Set()
+          return Stream.flatMap(
+            Stream.fromIterable(Array.from(runs).filter((runId) => visible.has(runId))),
+            tail,
+            { concurrency }
+          )
+        })
+
+        /** Which pass a tick pays for. */
+        const roundFor = (tick: "wake" | "interval"): Effect.Effect<Stream.Stream<SyncProtocol.Frame, SyncError>> =>
+          Effect.map(Clock.currentTimeMillis, (nowMs) =>
+            tick === "interval" || announced || nowMs - reconciledAtMs >= tailIntervalMs
+              ? fullRound
+              : dirtyRound)
 
         // An announcement is a WAKE and nothing else: the round that follows
         // reads the catalog itself and authorizes what it finds. Covering the
@@ -862,36 +918,77 @@ const makeWith = (
         // weaker source of truth — one that could never remove a run and that
         // lost a run permanently whenever its sliding feed overflowed.
         // Draining keeps this a control path that emits nothing.
-        const announcements = Stream.drain(Stream.tap(catalog.changes, () => PubSub.publish(wake, undefined)))
+        const announcements = Stream.drain(Stream.tap(
+          catalog.changes,
+          () =>
+            Effect.suspend(() => {
+              announced = true
+              return PubSub.publish(wake, undefined)
+            })
+        ))
 
-        // An entry committed in this process wakes the round it belongs to.
-        // The interval is the freshness policy for the runs another engine
-        // process owns, which reach this one only through the database; it
-        // must not also be what a follower waits for an entry written beside
-        // it. `Journal.changes` is one process-wide sliding feed of every
-        // committed entry, so this costs one subscription per workspace
-        // subscription — not one per run — and the fan-out bound is unchanged.
-        // A run this subscription does not cover is left to the announcement
-        // path, which covers it and wakes the round itself. A wake the feed
-        // slides away under a burst costs its entry at most one interval,
-        // which is what a write from another process already waits.
+        // An entry committed in this process marks its run dirty and wakes
+        // the pass that reads it. The interval is the freshness policy for
+        // the runs another engine process owns, which reach this one only
+        // through the database; it must not also be what a follower waits
+        // for an entry written beside it. `Journal.changes` is one
+        // process-wide sliding feed of every committed entry, so this costs
+        // one subscription per workspace subscription — not one per run — and
+        // the fan-out bound is unchanged. A run this subscription does not
+        // cover is left to the announcement path, which covers it and wakes
+        // the round itself. A wake the feed slides away under a burst costs
+        // its entry at most one interval, which is what a write from another
+        // process already waits.
         const commits = yield* journal.changes
         const appends = Stream.fromSubscription(commits).pipe(
           Stream.filter((entry) => served.has(entry.runId)),
-          Stream.tap(() => PubSub.publish(wake, undefined)),
+          Stream.tap((entry) =>
+            Effect.suspend(() => {
+              dirty.add(entry.runId)
+              return PubSub.publish(wake, undefined)
+            })
+          ),
           Stream.drain
         )
 
         const ticks = Stream.fromEffectRepeat(
-          Effect.raceFirst(PubSub.take(woken), Effect.sleep(tailIntervalMs))
+          Effect.raceFirst(
+            Effect.as(PubSub.take(woken), "wake" as const),
+            Effect.as(Effect.sleep(tailIntervalMs), "interval" as const)
+          )
         )
 
-        return Stream.merge(
+        // The deadline, enforced as it moves: sleeps until it and starts over
+        // whenever `reconcile` lowers it, so a branch admitted after the
+        // subscription opened ends the stream at ITS expiry — not one round
+        // later, and not never, should a round stall in a journal read. An
+        // in-process owner opens with no deadline and gains one only through
+        // such an admission.
+        const untilDeadline: Effect.Effect<never, SyncError> = Effect.gen(function*() {
+          while (true) {
+            const nowMs = yield* Clock.currentTimeMillis
+            if (nowMs >= deadline) {
+              return yield* Effect.fail(expired)
+            }
+            yield* Number.isFinite(deadline)
+              ? Effect.raceFirst(Effect.sleep(deadline - nowMs), PubSub.take(loweredSignal))
+              : PubSub.take(loweredSignal)
+          }
+        })
+
+        return Stream.interruptWhen(
           Stream.merge(
-            Stream.concat(round, Stream.flatMap(ticks, () => round)),
-            announcements
+            Stream.merge(
+              Stream.concat(
+                fullRound,
+                Stream.flatMap(ticks, (tick) =>
+                  Stream.unwrap(roundFor(tick)))
+              ),
+              announcements
+            ),
+            appends
           ),
-          appends
+          untilDeadline
         )
       }))
 
@@ -904,6 +1001,9 @@ const makeWith = (
      * for as long as it declined to disconnect. The refusal is typed and
      * carries the same `unauthorized` code a fresh request would be refused
      * with. An in-process owner has no credential and therefore no deadline.
+     * A workspace subscription's deadline moves as reconciliation admits
+     * branches, so it arms its own (see {@link workspaceStream}); this is
+     * the run-scoped subscription's.
      */
     const untilExpiry = (
       expiresAtMs: number,
@@ -941,9 +1041,9 @@ const makeWith = (
           )
           const { expiresAtMs, runIds } = yield* runIdsFor(request.scope, request.capability)
           const frames = request.scope._tag === "Run"
-            ? runStream(request.scope.runId, request.cursors)
+            ? untilExpiry(expiresAtMs, runStream(request.scope.runId, request.cursors))
             : workspaceStream(runIds, expiresAtMs, request)
-          return Stream.take(untilExpiry(expiresAtMs, frames), credit)
+          return Stream.take(frames, credit)
         })
       )
 

@@ -61,26 +61,34 @@ invalidating capabilities minted under a retired one.
 
 ## Bounds
 
-Every fan-out surface is bounded, so one follower's cost is a function of the
-configured bound rather than of the workspace's size or of how far behind that
-follower has fallen.
+The bounds cap what is in flight at once: entries per page, frames per
+subscription, journal reads open per workspace subscription, bytes per frame.
+What one follower holds open is therefore a function of the configured bound,
+not of how far behind it has fallen. Two things still scale with the workspace.
+A workspace subscription keeps a served position for every run it has ever
+covered, including a run the catalog later drops, so its bookkeeping is O(runs
+covered). A catalog-wide round, which runs at open, on an announcement, and
+once per `tailIntervalMs`, reads one page and two generations per covered run,
+so its work is O(runs listed) with `concurrency` reads open at a time. A wake
+for an entry committed in this process reads only the runs it named. Size
+`concurrency` and `tailIntervalMs` for the catalog, not only for the follower.
 
-| Bound                                            | Default                                         | What it caps                                                                                                                                                                    |
-| ------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SyncProtocol.maxReadLimit`                      | 1024                                            | Entries one `Sync.Read` may ask for. Over the limit is refused at the wire; an in-process caller is clamped.                                                                    |
-| `SyncProtocol.maxSubscribeCredit`                | 4096                                            | Frames one `Sync.Subscribe` may hold open. Zero is refused rather than served as an empty stream.                                                                               |
-| `SyncServer.Options.concurrency`                 | `SyncServer.defaultConcurrency` (64)            | Journal reads one workspace subscription holds open at once. Each round reads one bounded page per covered run, so a busy run wakes the next round instead of holding its slot. |
-| `SyncServer.Options.tailIntervalMs`              | `SyncServer.defaultTailIntervalMs` (1000)       | Milliseconds a workspace subscription waits before revisiting every covered run when nothing wakes it.                                                                          |
-| `SyncServer.Options.maxFrameBytes`               | `SyncProtocol.defaultMaxFrameBytes` (2 MiB)     | Summed encoded entries of one read page or subscription frame.                                                                                                                  |
-| `SyncClient.SubscribeOptions.credit`             | `SyncClient.defaultCredit` (256)                | Frames one subscription round carries before the follow replenishes the window by resubscribing from its acknowledged cursors.                                                  |
-| `SyncClient.make` `bootstrapLimit`               | `SyncClient.defaultBootstrapLimit` (256)        | Entries one catch-up page asks for.                                                                                                                                             |
-| `BranchCommands.Options.maxCommandBytes`         | `BranchCommands.defaultMaxCommandBytes` (1 MiB) | Encoded size of one command submission, refused before anything is appended.                                                                                                    |
-| `BranchCommands.Options.ledgerCapacity`          | `BranchCommands.defaultLedgerCapacity` (4096)   | Receipts one branch keeps in memory. The journal's producer identity is the durable dedupe, so an evicted receipt costs a round trip and never correctness.                     |
-| `BranchCommands.Options.hydrationLimit`          | `BranchCommands.defaultHydrationLimit` (4096)   | Entries one branch's first-touch hydration reads before it stops, so a long history is not charged to the next writer's latency. What the walk misses, the journal answers.     |
-| `BranchPresence.PresenceOptions.maxParticipants` | `BranchPresence.defaultMaxParticipants` (256)   | Participants one branch may hold at once; a further announce is refused with `backpressure`.                                                                                    |
-| `RunCatalog.MemoryOptions.changesCapacity`       | `RunCatalog.defaultChangesCapacity` (1024)      | Announcements a stalled `changes` subscriber may fall behind by; the oldest slide out.                                                                                          |
-| `RunCatalog.PollingOptions.intervalMs`           | `RunCatalog.defaultPollIntervalMs` (1000)       | Milliseconds between reads of the durable run set: one bounded query per interval per composition, not per subscriber.                                                          |
-| `BranchPresence.PresenceOptions.changesCapacity` | `BranchPresence.defaultChangesCapacity` (256)   | Roster notifications a stalled `changes` subscriber may fall behind by; the oldest slide out.                                                                                   |
+| Bound                                            | Default                                         | What it caps                                                                                                                                                                   |
+| ------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SyncProtocol.maxReadLimit`                      | 1024                                            | Entries one `Sync.Read` may ask for. Over the limit is refused at the wire; an in-process caller is clamped.                                                                   |
+| `SyncProtocol.maxSubscribeCredit`                | 4096                                            | Frames one `Sync.Subscribe` may hold open. Zero is refused rather than served as an empty stream.                                                                              |
+| `SyncServer.Options.concurrency`                 | `SyncServer.defaultConcurrency` (64)            | Journal reads one workspace subscription holds open at once. A round reads one bounded page per run it visits, so a busy run wakes the next round instead of holding its slot. |
+| `SyncServer.Options.tailIntervalMs`              | `SyncServer.defaultTailIntervalMs` (1000)       | Milliseconds a workspace subscription waits before revisiting every covered run when nothing wakes it, and the longest that local wakes may defer that catalog-wide round.     |
+| `SyncServer.Options.maxFrameBytes`               | `SyncProtocol.defaultMaxFrameBytes` (2 MiB)     | Summed encoded entries of one read page or subscription frame.                                                                                                                 |
+| `SyncClient.SubscribeOptions.credit`             | `SyncClient.defaultCredit` (256)                | Frames one subscription round carries before the follow replenishes the window by resubscribing from its acknowledged cursors.                                                 |
+| `SyncClient.make` `bootstrapLimit`               | `SyncClient.defaultBootstrapLimit` (256)        | Entries one catch-up page asks for.                                                                                                                                            |
+| `BranchCommands.Options.maxCommandBytes`         | `BranchCommands.defaultMaxCommandBytes` (1 MiB) | Encoded size of one command submission, refused before anything is appended.                                                                                                   |
+| `BranchCommands.Options.ledgerCapacity`          | `BranchCommands.defaultLedgerCapacity` (4096)   | Receipts one branch keeps in memory. The journal's producer identity is the durable dedupe, so an evicted receipt costs a round trip and never correctness.                    |
+| `BranchCommands.Options.hydrationLimit`          | `BranchCommands.defaultHydrationLimit` (4096)   | Entries one branch's first-touch hydration reads before it stops, so a long history is not charged to the next writer's latency. What the walk misses, the journal answers.    |
+| `BranchPresence.PresenceOptions.maxParticipants` | `BranchPresence.defaultMaxParticipants` (256)   | Participants one branch may hold at once; a further announce is refused with `backpressure`.                                                                                   |
+| `RunCatalog.MemoryOptions.changesCapacity`       | `RunCatalog.defaultChangesCapacity` (1024)      | Announcements a stalled `changes` subscriber may fall behind by; the oldest slide out.                                                                                         |
+| `RunCatalog.PollingOptions.intervalMs`           | `RunCatalog.defaultPollIntervalMs` (1000)       | Milliseconds between reads of the durable run set: one bounded query per interval per composition, not per subscriber.                                                         |
+| `BranchPresence.PresenceOptions.changesCapacity` | `BranchPresence.defaultChangesCapacity` (256)   | Roster notifications a stalled `changes` subscriber may fall behind by; the oldest slide out.                                                                                  |
 
 Every numeric option is validated where it enters: a value that is not a
 positive safe integer fails the constructor with `invalid_request` instead of

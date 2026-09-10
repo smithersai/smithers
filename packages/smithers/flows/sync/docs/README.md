@@ -44,10 +44,12 @@ any one of them wrong loses history quietly. This package solves them once:
   names what was delivered. Supply `apply` and the cursor advances only after
   your own write succeeds, so a consumer that fails halfway re-receives the
   entry instead of skipping it.
-- **Cost a bound, not a workspace.** Every fan-out surface has a configured
-  ceiling: page size, frame bytes, subscription credit, concurrent journal
-  reads. One follower's cost is a function of those numbers rather than of how
-  large the workspace is or how far behind the follower has fallen.
+- **Hold open a bound, not a workspace.** Every in-flight surface has a
+  configured ceiling: page size, frame bytes, subscription credit, concurrent
+  journal reads. What one follower holds open is a function of those numbers
+  rather than of how far behind it has fallen. Its per-run positions and its
+  periodic catalog-wide round still scale with the runs it covers; a local
+  append wakes a read of that run alone.
 - **Read nothing until you are authorized.** The default principal is
   anonymous and reads nothing. A connection becomes a reader by presenting a
   signed, expiring capability, and an open subscription ends when that

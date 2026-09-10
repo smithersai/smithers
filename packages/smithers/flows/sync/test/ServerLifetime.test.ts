@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { Deferred, Effect, Fiber, Layer, Redacted, Stream } from "effect"
+import { Clock, Deferred, Effect, Fiber, Layer, PubSub, Redacted, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
@@ -249,6 +249,87 @@ describe("subscription lifetime", () => {
       expect((failure as SyncError).code).toBe("unauthorized")
       expect((failure as SyncError).message).toContain("expired")
     }))
+
+  // Reconciliation lowers the deadline when it admits a branch, but the
+  // interrupt armed at open knew only the opening expiry, and the lowered
+  // deadline was checked at the START of the next round. A page read that
+  // spanned the branch's expiry therefore returned and was served after the
+  // capability had lapsed, by as much as the read took; a read that never
+  // returned kept the subscription open for good. The interrupt now re-arms
+  // whenever the deadline moves, so it ends the stream at the branch's expiry
+  // whatever the round is doing.
+  it.live("emits nothing from a late-admitted branch once its capability expires mid-read", () =>
+    Effect.gen(function*() {
+      const entered = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const served: Array<string> = []
+      let lists = 0
+      const outcome = yield* (
+        Effect.gen(function*() {
+          const share = yield* BranchShare.BranchShare
+          const capability = yield* share.mint({
+            access: "read",
+            branchId,
+            capabilityId: "mid-read-cap",
+            ttlMs: 400
+          })
+          const server = yield* SyncServer.makeLiveWith({ tailIntervalMs: 10 })
+          const following = yield* Effect.forkChild(
+            Effect.flip(
+              Stream.runDrain(
+                Stream.tap(
+                  server.subscribe({
+                    protocolVersion: 1,
+                    capability,
+                    credit: 4096,
+                    cursors: [],
+                    scope: { _tag: "Workspace" }
+                  }),
+                  (frame) => Effect.sync(() => served.push(frame._tag))
+                )
+              )
+            ),
+            { startImmediately: true }
+          )
+          // The branch's first page is being read when its capability
+          // expires; the read returns only afterwards.
+          yield* Deferred.await(entered)
+          yield* Effect.sleep(`${capability.claims.expiresAtMs - (yield* Clock.currentTimeMillis) + 100} millis`)
+          yield* Deferred.succeed(release, undefined)
+          return yield* Fiber.join(following)
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              Journal.layerNoop({
+                entries: ({ runId }) =>
+                  Effect.gen(function*() {
+                    yield* Deferred.succeed(entered, undefined)
+                    yield* Deferred.await(release)
+                    return { entries: [entry(runId, 0)], hasMore: false }
+                  })
+              }),
+              Layer.succeed(
+                RunCatalog.RunCatalog,
+                // Empty at open, so the branch is admitted by reconciliation
+                // and its expiry is one the opening interrupt never saw.
+                RunCatalog.make({ changes: Stream.empty, list: Effect.sync(() => ++lists === 1 ? [] : [branchRun]) })
+              ),
+              shareLayer,
+              SyncPrincipal.layerWorkspace("mid-read-owner")
+            )
+          ),
+          Effect.scoped,
+          Effect.timeoutOption("10 seconds")
+        )
+      )
+
+      expect(outcome._tag).toBe("Some")
+      const failure = outcome._tag === "Some" ? outcome.value : undefined
+      expect(lists).toBeGreaterThan(1)
+      expect(failure !== undefined && SyncError.is(failure)).toBe(true)
+      expect((failure as SyncError).code).toBe("unauthorized")
+      expect(served).toEqual([])
+    }))
 })
 
 describe("workspace tail catalog reconciliation", () => {
@@ -431,5 +512,85 @@ describe("workspace tail catalog reconciliation", () => {
           entries: [entry(cold, 0)]
         }])
       }
+    }))
+})
+
+describe("workspace tail local wakes", () => {
+  // A local append published a void wake, and a wake ran the same round the
+  // interval runs: re-list the catalog, then one page read and two
+  // generation reads for EVERY covered run. Ten spaced appends to one run in
+  // a thousand-run workspace cost ten thousand page reads per follower. The
+  // wake now names its run, and the round it starts reads the dirty runs
+  // only; the catalog-wide round is the interval's and an announcement's.
+  it.live("reads only the run a local append named", () =>
+    Effect.gen(function*() {
+      const ids = Array.from({ length: 50 }, (_, index) => `local-${index}` as JournalEvent.RunId)
+      const target = ids[0]!
+      const reads: Array<JournalEvent.RunId> = []
+      let generations = 0
+      let head = -1
+      const delivered: Array<string> = []
+      const outcome = yield* (
+        Effect.gen(function*() {
+          const commits = yield* PubSub.sliding<JournalEvent.Entry>(16)
+          const server = yield* SyncServer.makeLiveWith({ tailIntervalMs: 60_000 }).pipe(
+            Effect.provideService(
+              Journal.Journal,
+              Journal.makeNoop({
+                changes: PubSub.subscribe(commits),
+                generation: () =>
+                  Effect.sync(() => {
+                    generations++
+                    return { generation: 0, afterSeq: -1 as JournalEvent.Seq }
+                  }),
+                entries: ({ after, runId }) =>
+                  Effect.sync(() => {
+                    reads.push(runId)
+                    const unserved = runId === target && head > (after ?? -1)
+                    return { entries: unserved ? [entry(runId, head)] : [], hasMore: false }
+                  })
+              })
+            )
+          )
+          yield* Effect.forkChild(
+            Stream.runDrain(
+              Stream.tap(
+                server.subscribe({ protocolVersion: 1, credit: 4096, cursors: [], scope: { _tag: "Workspace" } }),
+                (frame) =>
+                  Effect.sync(() =>
+                    delivered.push(frame._tag === "Entries" ? `${frame.runId}:${frame.toSeq}` : frame._tag)
+                  )
+              )
+            ),
+            { startImmediately: true }
+          )
+          // The opening round reads every covered run once.
+          while (reads.length < ids.length) yield* Effect.sleep("10 millis")
+          yield* Effect.sleep("20 millis")
+          const opening = { reads: reads.length, generations }
+          for (let sequence = 0; sequence < 3; sequence++) {
+            head = sequence
+            yield* PubSub.publish(commits, entry(target, sequence))
+            while (delivered.length < sequence + 1) yield* Effect.sleep("10 millis")
+            yield* Effect.sleep("20 millis")
+          }
+          return { extraReads: reads.slice(opening.reads), extraGenerations: generations - opening.generations }
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(RunCatalog.layerStatic(ids), SyncPrincipal.layerWorkspace("local-wake-suite"))
+          ),
+          Effect.scoped,
+          Effect.timeoutOption("10 seconds")
+        )
+      )
+
+      expect(outcome._tag).toBe("Some")
+      const { extraGenerations, extraReads } = outcome._tag === "Some"
+        ? outcome.value
+        : { extraGenerations: -1, extraReads: [] }
+      expect(delivered).toEqual([`${target}:0`, `${target}:1`, `${target}:2`])
+      // One page read per append, for the appended run alone.
+      expect(extraReads).toEqual([target, target, target])
+      expect(extraGenerations).toBe(6)
     }))
 })

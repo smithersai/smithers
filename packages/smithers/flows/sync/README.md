@@ -115,11 +115,17 @@ Branch collaboration ships unserved at 1.0.0-rc.0: the gateway mounts
 
 ## Bounds
 
-Every fan-out surface is bounded, so one follower's cost is a function of the
-configured bound rather than of the workspace's size or of how far behind that
-follower has fallen. Every numeric option is validated where it enters: a value
-that is not a positive safe integer fails the constructor with
-`invalid_request` rather than quietly disabling the comparison it configures.
+Every in-flight surface is bounded: entries per page, frames per subscription,
+journal reads open per workspace subscription, bytes per frame. What one
+follower holds open is a function of the configured bound, not of how far
+behind it has fallen. Bookkeeping and periodic work still scale with the
+workspace: a workspace subscription keeps a position for every run it has
+covered, and its catalog-wide round, once per `tailIntervalMs` or on an
+announcement, reads one page per listed run under the concurrency bound. A
+wake for a local append reads only the run it named. Every numeric option is
+validated where it enters: a value that is not a positive safe integer fails
+the constructor with `invalid_request` rather than quietly disabling the
+comparison it configures.
 The table of bounds and defaults is in the
 [API reference](https://smithers-sync.smithers.sh/reference/api/#bounds).
 
