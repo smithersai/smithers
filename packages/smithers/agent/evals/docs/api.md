@@ -158,6 +158,12 @@ cases share a step key and scorer, without invoking scorer callbacks.
   (`[circular]`, `[depth exceeded]`, `[NaN]`, `[function]`), so the serializer is
   total. Nothing is redacted: a suite whose cases carry secrets must not print
   the report where the log is readable.
+- The encoder is bounded in total, not only per branch. A value referenced
+  twice is expanded twice, which a shared acyclic graph turns into exponential
+  work well below the depth ceiling, so traversal stops after 2000000 values or
+  33554432 output code units and every remaining value becomes
+  `[budget exceeded]`. The budget is spent in traversal order, which the key
+  sort fixes, so one value always truncates at the same place.
 - `Report.markdown` neutralizes inline GFM and raw HTML in every cell and the
   suite heading value. It caps each value at 240 escaped UTF-16 code units,
   plus an ellipsis when truncated, without splitting escapes or code points.
@@ -387,7 +393,9 @@ Step-key-aware comparison of a run against a baseline.
   record the run never reproduced, `"baseline"` for a score no baseline record
   accounts for.
 - `Report`: `{ suite, baseline, run, regressions, nondeterminism, missing,
-  samples, inconclusive }`, the complete comparison.
+  samples, inconclusive }`, the complete comparison. `samples` and
+  `inconclusive` are in-memory views filtered out of `run.observations` by
+  `kind`; `Report.json` recomputes rather than serializes them.
 
 ```ts
 const compare = (
@@ -410,17 +418,48 @@ other than the one the run reports.
 Canonical JSON and Markdown renderings of a comparison.
 
 ```ts
+const version: 1
+interface Data {
+  readonly reportVersion: 1
+  readonly suite: string
+  readonly baseline: Baseline.Baseline
+  readonly run: { runId, suite, cases: ReadonlyArray<Case>, observations: ReadonlyArray<Runner.Observation> }
+  readonly regressions: ReadonlyArray<Omit<Regression.Regression, "actual"> & { actual: number }>
+  readonly nondeterminism: ReadonlyArray<Omit<Regression.Nondeterminism, "actual"> & { actual: number }>
+  readonly missing: ReadonlyArray<Regression.MissingObservation>
+}
+const data = (report: Regression.Report): Data
 const json = (report: Regression.Report): string
 const markdown = (report: Regression.Report): string
 ```
 
-`json` serializes a regression report as stable, sorted-key JSON. The report
-embeds each case's raw `execution.output`, which comes from an arbitrary
-target flow, so the encoding is total rather than trusting: keys are sorted by
-code unit, embedded strings are capped, and anything JSON cannot express
-becomes a named marker instead of a `RangeError` or a silent `null`. Two
-identical runs therefore produce byte-identical JSON. Nothing redacts the
-embedded output.
+`Data` is the serialized wire shape and `version` is the format version
+stamped on it as `reportVersion`. It versions the comparison independently of
+the nested `Baseline.version`: the wire shape can change without the committed
+baseline artifact changing.
+
+`run.observations` is the observation table. Every observation the report
+mentions appears in it exactly once and everything else refers to one by
+index: `run.cases[i].observations` is a list of indexes, and a regression or
+nondeterminism entry's `actual` is a single index. `samples` and
+`inconclusive` are absent, because both are filters of `run.observations` by
+`kind` and a reader recomputes them. An in-memory `Regression.Report` holds
+the same observation in up to four of those places, so encoding it directly
+repeated every `reason` and every `meta` that many times.
+
+`data` projects a comparison into that shape. Observations are pooled by
+identity, not by value, so two distinct objects that happen to be equal stay
+two rows. The table starts as `run.observations` and grows to hold any
+observation reached only through a case or a comparison entry, so a hand-built
+report whose case lists are not flattened still serializes every reference.
+
+`json` serializes a regression report as stable, sorted-key `Data` JSON. The
+report embeds each case's raw `execution.output`, which comes from an
+arbitrary target flow, so the encoding is total rather than trusting: keys are
+sorted by code unit, embedded strings are capped, total traversal is bounded,
+and anything JSON cannot express becomes a named marker instead of a
+`RangeError` or a silent `null`. Two identical runs therefore produce
+byte-identical JSON. Nothing redacts the embedded output.
 
 `markdown` renders the report an operator reads in a CI log. Every count in
 the summary that is not zero has a section naming its rows: the regressions
@@ -516,6 +555,9 @@ over fewer observations than the suite declared.
 | `Regression.MissingObservation` | models        | An observation present on only one side of a comparison.                            |
 | `Regression.Report`             | models        | Complete regression comparison.                                                     |
 | `Regression.compare`            | constructors  | Compares a run to a baseline, preserving missing and inconclusive observations.     |
+| `Report.version`                | serialization | Current serialized report format version.                                           |
+| `Report.Data`                   | serialization | The serialized shape of a regression report.                                        |
+| `Report.data`                   | serialization | Projects a comparison into its serialized form.                                     |
 | `Report.json`                   | serialization | Serializes a regression report as stable, sorted-key JSON.                          |
 | `Report.markdown`               | rendering     | Renders a concise stable Markdown regression report.                                |
 | `Gate.Options`                  | models        | Thresholds accepted by a CI score gate.                                             |

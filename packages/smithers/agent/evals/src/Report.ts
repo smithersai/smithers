@@ -7,18 +7,110 @@
  *
  * @since 0.1.0
  */
+import type { Baseline } from "./Baseline.ts"
 import { maxStringLength, stringify } from "./internal/canonical.ts"
-import type { Report as RegressionReport } from "./Regression.ts"
+import type { MissingObservation, Nondeterminism, Regression, Report as RegressionReport } from "./Regression.ts"
+import type { CaseResult, Observation, RunResult } from "./Runner.ts"
+
+/**
+ * Current serialized report format version.
+ *
+ * It versions {@link Data}, the wire shape, independently of the nested
+ * `Baseline.version`: the comparison can change shape without the committed
+ * baseline artifact changing at all.
+ *
+ * @category serialization
+ * @since 0.1.0
+ */
+export const version = 1 as const
+
+/** An index into {@link Data.run}'s `observations` table. */
+type ObservationRef = number
+
+/**
+ * The serialized shape of a regression report.
+ *
+ * `run.observations` is the observation table: every observation the report
+ * mentions appears in it exactly once, and everything else refers to one by
+ * index. `run.cases[i].observations` is a list of indexes, and a regression or
+ * nondeterminism entry's `actual` is a single index. An in-memory
+ * `Regression.Report` carries the same observation object in up to four
+ * places, so encoding it directly repeated every reason and every `meta` that
+ * many times.
+ *
+ * `samples` and `inconclusive` are absent by construction: both are filters of
+ * `run.observations` by `kind`, so a reader recomputes them rather than
+ * downloading a third copy.
+ *
+ * @category serialization
+ * @since 0.1.0
+ */
+export interface Data {
+  readonly reportVersion: typeof version
+  readonly suite: string
+  readonly baseline: Baseline
+  readonly run:
+    & Omit<RunResult, "cases">
+    & {
+      readonly cases: ReadonlyArray<
+        & Omit<CaseResult, "observations">
+        & { readonly observations: ReadonlyArray<ObservationRef> }
+      >
+    }
+  readonly regressions: ReadonlyArray<Omit<Regression, "actual"> & { readonly actual: ObservationRef }>
+  readonly nondeterminism: ReadonlyArray<Omit<Nondeterminism, "actual"> & { readonly actual: ObservationRef }>
+  readonly missing: ReadonlyArray<MissingObservation>
+}
+
+/**
+ * Projects a comparison into its serialized form.
+ *
+ * The observation table starts as `run.observations` and grows to hold any
+ * observation reached only through a case or a comparison entry, so a
+ * hand-built report whose case lists are not flattened still serializes every
+ * reference. Observations are pooled by identity, not by value: two distinct
+ * objects that happen to be equal stay two rows, because collapsing them would
+ * claim one grading where there were two.
+ *
+ * @category serialization
+ * @since 0.1.0
+ */
+export const data = (report: RegressionReport): Data => {
+  const positions = new Map<Observation, ObservationRef>()
+  const observations: Array<Observation> = []
+  const refer = (observation: Observation): ObservationRef => {
+    const known = positions.get(observation)
+    if (known !== undefined) return known
+    const position = observations.length
+    observations.push(observation)
+    positions.set(observation, position)
+    return position
+  }
+  for (const observation of report.run.observations) refer(observation)
+  const cases = report.run.cases.map((result) => ({ ...result, observations: result.observations.map(refer) }))
+  return {
+    reportVersion: version,
+    suite: report.suite,
+    baseline: report.baseline,
+    run: { ...report.run, cases, observations },
+    regressions: report.regressions.map((entry) => ({ ...entry, actual: refer(entry.actual) })),
+    nondeterminism: report.nondeterminism.map((entry) => ({ ...entry, actual: refer(entry.actual) })),
+    missing: report.missing
+  }
+}
 
 /**
  * Serializes a regression report as stable, sorted-key JSON.
  *
- * The report embeds each case's raw `execution.output`, which comes from an
+ * The wire shape is {@link Data}, stamped with {@link version}: each
+ * observation is encoded once and referred to by index everywhere else. The
+ * report embeds each case's raw `execution.output`, which comes from an
  * arbitrary target flow, so the encoding is total rather than trusting: keys
- * are sorted by code unit, embedded strings are capped, and anything JSON
- * cannot express becomes a named marker (`[circular]`, `[NaN]`, `[function]`)
- * instead of a `RangeError` or a silent `null`. Two identical runs therefore
- * produce byte-identical JSON.
+ * are sorted by code unit, embedded strings are capped, total traversal is
+ * bounded, and anything JSON cannot express becomes a named marker
+ * (`[circular]`, `[NaN]`, `[function]`, `[budget exceeded]`) instead of a
+ * `RangeError` or a silent `null`. Two identical runs therefore produce
+ * byte-identical JSON.
  *
  * Nothing redacts the embedded output. A suite whose cases carry secrets must
  * not print this report where the log is readable.
@@ -26,7 +118,7 @@ import type { Report as RegressionReport } from "./Regression.ts"
  * @category serialization
  * @since 0.1.0
  */
-export const json = (report: RegressionReport): string => stringify(report, { maxStringLength })
+export const json = (report: RegressionReport): string => stringify(data(report), { maxStringLength })
 
 /** Maximum escaped UTF-16 code units per value, before a truncation ellipsis. */
 const maxCellLength = 240

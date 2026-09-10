@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compareText, encode, maxDepth, stringify } from "../src/internal/canonical.ts"
+import { budgetExceeded, compareText, encode, maxBytes, maxDepth, stringify } from "../src/internal/canonical.ts"
 
 describe("canonical", () => {
   it("orders text by code unit and reports equality", () => {
@@ -109,6 +109,34 @@ describe("canonical", () => {
     expect(encode({ error: new TypeError("abcdef") }, { maxStringLength: 3 })).toEqual({
       error: { message: "abc[truncated 3 chars]", name: "Typ[truncated 6 chars]" }
     })
+  })
+
+  it("stops at the declared node budget", () => {
+    // The array itself is the first node, so two entries survive a budget of 3.
+    expect(encode([1, 2, 3, 4], { maxNodes: 3 })).toEqual([1, 2, budgetExceeded, budgetExceeded])
+  })
+
+  it("stops at the declared output byte budget", () => {
+    expect(encode(["aaaa", "bbbb", "cccc"], { maxBytes: 12 })).toEqual(["aaaa", "bbbb", budgetExceeded])
+  })
+
+  it("bounds a shared acyclic graph instead of expanding it exponentially", () => {
+    // Twenty-four two-child wrappers over one shared leaf are 25 distinct
+    // objects at depth 24, far below maxDepth, that expand to 2^24 values.
+    let shared: unknown = { leaf: 1 }
+    for (let index = 0; index < 24; index++) shared = { left: shared, right: shared }
+    const started = performance.now()
+    const encoded = stringify(shared)
+    expect(performance.now() - started).toBeLessThan(30_000)
+    expect(encoded).toContain(budgetExceeded)
+    expect(encoded.length).toBeLessThan(maxBytes)
+    // The budget is spent in traversal order, so it truncates in one place.
+    expect(stringify(shared)).toBe(encoded)
+  })
+
+  it("bounds a wide collection of long keys", () => {
+    const wide = Object.fromEntries(Array.from({ length: 4096 }, (_, index) => [`${"k".repeat(64)}${index}`, index]))
+    expect(stringify(wide, { maxBytes: 4096 })).toContain(budgetExceeded)
   })
 
   it("passes null and booleans through untouched", () => {

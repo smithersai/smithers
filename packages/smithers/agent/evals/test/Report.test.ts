@@ -73,13 +73,86 @@ describe("Report", () => {
     )
   })
 
-  it("freezes the JSON wire format", async () => {
+  // The compatibility fixture for report format version 1. A change to these
+  // bytes is a wire-format change and has to move Report.version with it.
+  it("freezes the JSON wire format of report version 1", async () => {
     const result = await empty()
+    expect(Report.version).toBe(1)
     expect(Report.json(result)).toBe(
-      "{\"baseline\":{\"records\":[],\"suite\":\"s\",\"version\":1},\"inconclusive\":[],\"missing\":[],\"nondeterminism\":[]," +
-        "\"regressions\":[],\"run\":{\"cases\":[],\"observations\":[],\"runId\":\"run\",\"suite\":\"s\"}," +
-        "\"samples\":[],\"suite\":\"s\"}\n"
+      "{\"baseline\":{\"records\":[],\"suite\":\"s\",\"version\":1},\"missing\":[],\"nondeterminism\":[]," +
+        "\"regressions\":[],\"reportVersion\":1," +
+        "\"run\":{\"cases\":[],\"observations\":[],\"runId\":\"run\",\"suite\":\"s\"},\"suite\":\"s\"}\n"
     )
+  })
+
+  it("stamps a format version and keeps the derived views off the wire", async () => {
+    const result = await empty()
+    expect(Object.keys(Report.data(result)).sort()).toEqual([
+      "baseline",
+      "missing",
+      "nondeterminism",
+      "regressions",
+      "reportVersion",
+      "run",
+      "suite"
+    ])
+    expect(Report.data(result).reportVersion).toBe(Report.version)
+    // samples and inconclusive stay on the in-memory report; a gate reads them.
+    expect(result.samples).toEqual([])
+    expect(result.inconclusive).toEqual([])
+  })
+
+  it("encodes each observation once and refers to it by index", async () => {
+    const marker = "M".repeat(512)
+    const observations: Array<Runner.Observation> = []
+    const cases: Array<Runner.CaseResult> = []
+    for (let index = 0; index < 40; index++) {
+      // One object in run.observations, the case list, samples, and a regression.
+      const scored = observation("new", 0.2, { case: `c${index}`, reason: marker, meta: { marker } })
+      observations.push(scored)
+      cases.push({ case: `c${index}`, observations: [scored] })
+    }
+    const result = await Effect.runPromise(
+      Regression.compare(
+        {
+          version: 1,
+          suite: "s",
+          records: observations.map((entry) => ({
+            suite: "s",
+            case: entry.case,
+            scorer: entry.scorer,
+            stepKey: "old",
+            score: 0.9
+          }))
+        },
+        { runId: "run", suite: "s", cases, observations }
+      )
+    )
+    expect(result.regressions).toHaveLength(40)
+
+    const wire = Report.json(result)
+    // Two occurrences per observation, from reason and meta, and no more.
+    expect(wire.split(marker).length - 1).toBe(80)
+    // One copy plus the comparison around it. Encoding the graph directly was 4x.
+    expect(wire.length).toBeLessThan(JSON.stringify(observations).length * 1.5)
+
+    const projected = Report.data(result)
+    expect(projected.run.observations).toEqual(observations)
+    expect(projected.run.cases.map((entry) => entry.observations)).toEqual(observations.map((_, index) => [index]))
+    expect([...projected.regressions].map((entry) => entry.actual).sort((left, right) => left - right)).toEqual(
+      observations.map((_, index) => index)
+    )
+  })
+
+  it("pools an observation reached only through a case into the table", async () => {
+    const orphan = observation("only-in-a-case", 0.4)
+    const result = await empty()
+    const projected = Report.data({
+      ...result,
+      run: { runId: "run", suite: "s", cases: [{ case: "c", observations: [orphan] }], observations: [] }
+    })
+    expect(projected.run.observations).toEqual([orphan])
+    expect(projected.run.cases[0]!.observations).toEqual([0])
   })
 
   it("keeps a failed case's stable error code and path in the JSON wire format", async () => {
@@ -102,11 +175,11 @@ describe("Report", () => {
       }
     }
     expect(Report.json(failed)).toBe(
-      "{\"baseline\":{\"records\":[],\"suite\":\"s\",\"version\":1},\"inconclusive\":[],\"missing\":[],\"nondeterminism\":[]," +
-        "\"regressions\":[],\"run\":{\"cases\":[{\"case\":\"broken\",\"error\":{" +
+      "{\"baseline\":{\"records\":[],\"suite\":\"s\",\"version\":1},\"missing\":[],\"nondeterminism\":[]," +
+        "\"regressions\":[],\"reportVersion\":1,\"run\":{\"cases\":[{\"case\":\"broken\",\"error\":{" +
         "\"_tag\":\"flows/evals/EvalError\",\"code\":\"executor\",\"message\":\"Target failed for case 'broken': boom\"," +
         "\"name\":\"flows/evals/EvalError\",\"path\":\"cases[0].input\"},\"observations\":[]}]," +
-        "\"observations\":[],\"runId\":\"run\",\"suite\":\"s\"},\"samples\":[],\"suite\":\"s\"}\n"
+        "\"observations\":[],\"runId\":\"run\",\"suite\":\"s\"},\"suite\":\"s\"}\n"
     )
   })
 

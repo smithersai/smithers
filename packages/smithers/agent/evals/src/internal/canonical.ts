@@ -28,6 +28,37 @@ export const maxDepth = 64
 export const maxStringLength = 8192
 
 /**
+ * Total number of values one encode may visit.
+ *
+ * The cycle detector forgets a value once it leaves it, which is what keeps a
+ * value referenced twice from being reported as a cycle. The cost is that a
+ * shared acyclic graph is re-expanded at every reference, so `n` nested
+ * two-child wrappers over one shared child expand to `2^n` values while
+ * staying far below {@link maxDepth}. The ceiling is roughly three times what
+ * a suite at its declared case limit produces.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const maxNodes = 2_000_000
+
+/**
+ * Approximate cap on the encoded output, in UTF-16 code units.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const maxBytes = 33_554_432
+
+/**
+ * Marker left where a total budget ran out.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const budgetExceeded = "[budget exceeded]"
+
+/**
  * Options accepted by {@link encode}.
  *
  * @since 0.1.0
@@ -36,6 +67,16 @@ export const maxStringLength = 8192
 export interface Options {
   /** Cap on embedded strings; `undefined` keeps them whole. */
   readonly maxStringLength?: number | undefined
+  /** Cap on values visited; defaults to {@link maxNodes}. */
+  readonly maxNodes?: number | undefined
+  /** Cap on encoded output length; defaults to {@link maxBytes}. */
+  readonly maxBytes?: number | undefined
+}
+
+/** Remaining total work, decremented in traversal order so truncation is stable. */
+interface Budget {
+  nodes: number
+  bytes: number
 }
 
 /**
@@ -86,19 +127,32 @@ const objectOf = (
   entries: ReadonlyArray<readonly [string, unknown]>,
   depth: number,
   seen: Set<object>,
-  options: Options
+  options: Options,
+  budget: Budget
 ): object =>
   Object.fromEntries(
     entries
       .filter(([, entry]) => entry !== undefined)
       .sort(([left], [right]) => compareText(left, right))
-      .map(([key, entry]) => [key, walk(entry, depth + 1, seen, options)])
+      .map(([key, entry]) => {
+        // The key is rendered too, so a wide object of long keys spends the
+        // byte budget even when every value is a marker.
+        budget.bytes -= key.length + 3
+        return [key, walk(entry, depth + 1, seen, options, budget)]
+      })
   )
 
-const walk = (value: unknown, depth: number, seen: Set<object>, options: Options): unknown => {
-  if (value === null || typeof value !== "object") return primitive(value, options)
+const walk = (value: unknown, depth: number, seen: Set<object>, options: Options, budget: Budget): unknown => {
+  if (budget.nodes <= 0 || budget.bytes <= 0) return budgetExceeded
+  budget.nodes -= 1
+  if (value === null || typeof value !== "object") {
+    const encoded = primitive(value, options)
+    budget.bytes -= typeof encoded === "string" ? encoded.length + 2 : 8
+    return encoded
+  }
   if (seen.has(value)) return "[circular]"
   if (depth > maxDepth) return "[depth exceeded]"
+  budget.bytes -= 2
   try {
     if (value instanceof Date) return Number.isNaN(value.getTime()) ? "[invalid Date]" : value.toISOString()
     seen.add(value)
@@ -107,15 +161,17 @@ const walk = (value: unknown, depth: number, seen: Set<object>, options: Options
         const properties = new Map(entriesOf(value))
         properties.set("name", String(value.name))
         properties.set("message", String(value.message))
-        return objectOf([...properties], depth, seen, options)
+        return objectOf([...properties], depth, seen, options, budget)
       }
-      if (Array.isArray(value)) return value.map((entry) => walk(entry, depth + 1, seen, options))
-      if (value instanceof Set) return [...value].map((entry) => walk(entry, depth + 1, seen, options))
+      if (Array.isArray(value)) return value.map((entry) => walk(entry, depth + 1, seen, options, budget))
+      if (value instanceof Set) return [...value].map((entry) => walk(entry, depth + 1, seen, options, budget))
       if (value instanceof Map) {
         return [...value.entries()]
-          .map(([key, entry]) => [walk(key, depth + 1, seen, options), walk(entry, depth + 1, seen, options)])
+          .map((
+            [key, entry]
+          ) => [walk(key, depth + 1, seen, options, budget), walk(entry, depth + 1, seen, options, budget)])
       }
-      return objectOf(entriesOf(value), depth, seen, options)
+      return objectOf(entriesOf(value), depth, seen, options, budget)
     } finally {
       seen.delete(value)
     }
@@ -137,10 +193,20 @@ const walk = (value: unknown, depth: number, seen: Set<object>, options: Options
  * `Date` becomes its ISO string, a `Set` an array, and a `Map` an array of
  * key/value pairs.
  *
+ * Traversal is bounded in total, not only per branch: once {@link maxNodes}
+ * values or {@link maxBytes} output code units are spent, every remaining
+ * value becomes `[budget exceeded]`. The budget is spent in traversal order,
+ * and traversal order is fixed by the key sort, so one value always truncates
+ * at the same place.
+ *
  * @since 0.1.0
  * @private
  */
-export const encode = (value: unknown, options: Options = {}): unknown => walk(value, 0, new Set<object>(), options)
+export const encode = (value: unknown, options: Options = {}): unknown =>
+  walk(value, 0, new Set<object>(), options, {
+    nodes: options.maxNodes ?? maxNodes,
+    bytes: options.maxBytes ?? maxBytes
+  })
 
 /**
  * Serializes a value as canonical JSON with a trailing newline.

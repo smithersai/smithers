@@ -2,7 +2,36 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `Report.Data`, `Report.data`, and `Report.version`: the serialized
+  report shape, the projection that builds it, and the format version stamped
+  on it as `reportVersion`. It versions the wire independently of the nested
+  `Baseline.version`.
+
+### Changed
+
+- **Breaking:** `Report.json` serializes `Report.Data` rather than the
+  in-memory `Regression.Report` graph. `run.observations` is now the
+  observation table and everything else refers to a row by index:
+  `run.cases[i].observations` is a list of indexes and a regression or
+  nondeterminism entry's `actual` is a single index. `samples` and
+  `inconclusive` are gone from the wire because both are filters of
+  `run.observations` by `kind`. The graph carried each observation in up to
+  four places, so the artifact was about five times one copy of the
+  observations; a run at the declared case ceiling produced 49.2 MiB of JSON
+  for 9.9 MiB of observations. `Regression.Report` itself is unchanged, so a
+  gate still reads `samples` and `inconclusive` in memory.
+
 ### Fixed
+
+- Bound the canonical encoder's total traversal at 2000000 values and 33554432
+  output code units, leaving `[budget exceeded]` where a budget runs out. The
+  cycle detector tracks ancestors only, so a value referenced twice is expanded
+  twice: 24 nested two-child wrappers over one shared leaf are 25 objects at
+  depth 24, far below the depth ceiling of 64, and expanded to a multi-megabyte
+  artifact in 16 seconds. The budget is spent in traversal order, which the key
+  sort fixes, so one value always truncates at the same place.
 
 - Load version-1 baselines without a top-level `suite` when every record names
   the same suite. Reject empty or ambiguous legacy artifacts with an explicit
