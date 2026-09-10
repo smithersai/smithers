@@ -547,10 +547,16 @@ const Registry: Context.Service<Registry, Registry>
 | `refresh`   | Rescans every configured source and replaces the snapshot.                                                                                                                           |
 | `warnings`  | Every discovery and collision diagnostic.                                                                                                                                            |
 
-Reads observe one complete snapshot, so a `list` and the `get` after it never
-disagree. `refresh` replaces the snapshot only after every source succeeds, so
-a failed rescan leaves the previous complete snapshot serving reads rather than
-emptying the catalog.
+Reads are atomic per operation: each observes one complete snapshot. A
+successful `refresh` between calls can replace or remove a listed descriptor,
+so a later `get` may return a different descriptor or fail with `not_found`.
+Retain returned descriptors when you need the values from that read; they do
+not pin later registry calls or filesystem contents. Cross-call consistency
+would require adding an explicit snapshot handle to the API; none is currently
+exposed.
+
+`refresh` replaces the snapshot only after every source succeeds. A failed
+rescan leaves the previous complete snapshot serving reads.
 
 `loadBody` and `runPrompt` are the only two members that touch the filesystem.
 

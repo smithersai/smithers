@@ -55,10 +55,16 @@ it is refused with `root_level_entry`.
 
 `naming: "frontmatter"` reads the `name` key out of the file, which is how a
 foreign Agent Skills directory is scanned. The name must be 1 to 64 lowercase
-ASCII letters, numbers, or single hyphens with no edge hyphens. A missing name
-falls back to the directory name and reports `missing_name`; an invalid one
-does the same and reports `invalid_name`; a valid name that does not match its
-directory is used and reports `directory_name_mismatch`.
+ASCII letters, numbers, or single hyphens with no edge hyphens. An absent name
+falls back to the directory name and reports `missing_name`. A blank or
+non-string value falls back to the directory name and reports `invalid_name`.
+A nonempty string is trimmed and retained, even if it violates the grammar or
+64-character limit; those violations report `invalid_name`. Any retained name
+that differs from its directory also reports `directory_name_mismatch`.
+
+Look up the descriptor by its retained name. For example, `name: Review--PR` in
+`review/SKILL.md` registers `Review--PR`, not `review`, and reports both
+`invalid_name` and `directory_name_mismatch`.
 
 ## Ordered sources and the first-found rule
 
@@ -78,11 +84,17 @@ for a set of installed directories. See [Load workflow packs](../guides/load-pac
 
 ## The snapshot and refresh
 
-A registry holds one snapshot. Every read observes one complete snapshot, so a
-`list` and the `get` after it never disagree. `refresh` rescans every
-configured source and replaces the snapshot only after all of them succeed, so
-a failed rescan leaves the previous complete snapshot serving reads rather than
-emptying the catalog.
+A registry holds one snapshot. Reads are atomic per operation: each observes
+one complete snapshot. A successful `refresh` between calls can replace or
+remove a listed descriptor, so a later `get` may return a different descriptor
+or fail with `not_found`. Retain the descriptors returned by `list` when you
+need that catalog's values. Retaining them does not pin later registry calls
+or filesystem contents. Cross-call consistency would require adding an
+explicit snapshot handle to the API; none is currently exposed.
+
+`refresh` rescans every configured source and replaces the snapshot only after
+all of them succeed. A failed rescan leaves the previous complete snapshot
+serving reads.
 
 ## Walking a real tree safely
 

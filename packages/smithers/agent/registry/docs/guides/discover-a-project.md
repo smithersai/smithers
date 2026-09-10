@@ -106,8 +106,15 @@ const report = Effect.gen(function*() {
 })
 ```
 
-Every read observes one complete snapshot, so a `list` and the `get` after it
-never disagree.
+Reads are atomic per operation: each observes one complete snapshot. A
+successful `refresh` between calls can change the catalog. In the example,
+`entries` and `warnings` may therefore describe different scans. A `get` after
+`list` can return a different descriptor or fail with `not_found`.
+
+Retain the returned descriptors when you need the values from that catalog.
+They do not pin later registry calls or filesystem contents. Cross-call
+consistency would require adding an explicit snapshot handle to the API; none
+is currently exposed.
 
 ## Refresh after an edit
 

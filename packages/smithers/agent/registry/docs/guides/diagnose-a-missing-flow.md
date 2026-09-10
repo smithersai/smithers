@@ -54,15 +54,20 @@ Two more stop the walk rather than one entry:
 
 ## The flow appeared under the wrong name
 
-| Code                      | What happened                                                                                                                                            |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name_field_ignored`      | The source is path-named, so a `name` key in the file has no effect. The directory path below the root is the name.                                      |
-| `missing_name`            | A frontmatter-named source has no `name` key. The directory name was used.                                                                               |
-| `invalid_name`            | The `name` is not 1 to 64 lowercase ASCII letters, numbers, and single hyphens with no edge hyphens. The directory name was used.                        |
-| `directory_name_mismatch` | The `name` is valid but is not the directory's name. The declared name was used.                                                                         |
-| `duplicate_name`          | Two sources, or two directories, produced the same name. The message names the file that kept it. Order your sources so the winner is the one you meant. |
-| `shadowed`                | Two packs define the same name. The `local` pack wins whatever order the host listed them in. See [Load workflow packs](./load-packs.md).                |
-| `multiple_entry_files`    | One directory holds more than one of `flow.ts`, `flow.mdx`, and `SKILL.md`. The message names the one used.                                              |
+| Code                      | What happened                                                                                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name_field_ignored`      | The source is path-named, so a `name` key in the file has no effect. The directory path below the root is the name.                                              |
+| `missing_name`            | A frontmatter-named source has no `name` key. The directory name was used.                                                                                       |
+| `invalid_name`            | A blank or non-string `name` uses the directory name. A nonempty string is trimmed and retained, even when it violates the naming grammar or 64-character limit. |
+| `directory_name_mismatch` | The retained `name` differs from the directory's name, whether valid or invalid. The retained name was used.                                                     |
+| `duplicate_name`          | Two sources, or two directories, produced the same name. The message names the file that kept it. Order your sources so the winner is the one you meant.         |
+| `shadowed`                | Two packs define the same name. The `local` pack wins whatever order the host listed them in. See [Load workflow packs](./load-packs.md).                        |
+| `multiple_entry_files`    | One directory holds more than one of `flow.ts`, `flow.mdx`, and `SKILL.md`. The message names the one used.                                                      |
+
+See [Sources and naming](../concepts/sources.md#two-ways-a-flow-gets-its-name)
+for the grammar. Use the descriptor's `name` for lookup. For example, `name: Review--PR` in
+`review/SKILL.md` is retained as `Review--PR` with `invalid_name` and
+`directory_name_mismatch`; it does not register a fallback alias `review`.
 
 ## The flow appeared with authority it did not declare
 
