@@ -23,7 +23,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Effect, Fiber, FileSystem, Layer, Path, type PlatformError, Result } from "effect"
+import { Effect, Fiber, FileSystem, Layer, Option, Path, type PlatformError, Result } from "effect"
 import { execFile, spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises"
@@ -852,6 +852,9 @@ describe("atomic helper result validation", () => {
         hostedBy(executable)
       )
       expect(info.type).toBe("FIFO")
+      // The helper reports milliseconds; each survives as its own value.
+      expect(Option.map(info.mtime, (value) => value.getTime())).toEqual(Option.some(1000))
+      expect(Option.map(info.atime, (value) => value.getTime())).toEqual(Option.some(2000))
       expect(info.birthtime._tag).toBe("None")
       expect(info.blksize._tag).toBe("None")
       // `blocks` is absent from the payload entirely rather than null.
@@ -872,7 +875,11 @@ describe("atomic helper result validation", () => {
         Effect.flatMap(FileSystem.FileSystem, (fs) => fs.stat(root)),
         hostedBy(executable)
       )
-      expect(info.birthtime._tag).toBe("Some")
+      // Each timestamp is the millisecond the helper reported, unscaled and
+      // not swapped with its neighbours.
+      expect(Option.map(info.mtime, (value) => value.getTime())).toEqual(Option.some(1000))
+      expect(Option.map(info.atime, (value) => value.getTime())).toEqual(Option.some(2000))
+      expect(Option.map(info.birthtime, (value) => value.getTime())).toEqual(Option.some(3000))
     }))
 
   const readCases: ReadonlyArray<readonly [string, string]> = [

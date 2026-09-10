@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Effect, Fiber, FileSystem, Layer, Path } from "effect"
+import { Effect, Fiber, FileSystem, Layer, Option, Path } from "effect"
 import { execFile, spawnSync } from "node:child_process"
 import {
   chmod,
@@ -21,6 +21,7 @@ import {
   rename,
   rm,
   symlink,
+  utimes,
   writeFile
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -1304,6 +1305,40 @@ describe("Node atomic filesystem", () => {
       expect((atomic[0] as FileSystem.File.Info).mode & 0o170000).toBe(0o100000)
       expect((atomic[2] as FileSystem.File.Info).mode & 0o170000).toBe(0o040000)
       expect((atomic[1] as FileSystem.File.Info).mode & 0o777).toBe(0o755)
+    }))
+
+  /**
+   * The helper crosses the seconds-to-milliseconds boundary in Python before
+   * the adapter builds a `Date`; the mode parity above says nothing about
+   * whether it landed on the right instant, or in the right field. Distinct
+   * whole-second atime and mtime set through `utimes` make a swap or a
+   * mis-scaled value visible against the native adapter's answer.
+   */
+  it.live("reports the same atime, mtime and birthtime as the native adapter", () =>
+    Effect.gen(function*() {
+      const root = yield* Effect.promise(() => temporaryDirectory())
+      const target = join(root, "stamped.txt")
+      yield* Effect.promise(() => writeFile(target, "seed"))
+      const accessed = new Date("2021-03-04T05:06:07Z")
+      const modified = new Date("2020-01-02T03:04:05Z")
+      yield* Effect.promise(() => utimes(target, accessed, modified))
+
+      const read = Effect.flatMap(FileSystem.FileSystem, (fs) => fs.stat(target))
+      const mine = yield* run(root, read)
+      const theirs = yield* read.pipe(Effect.provide(NodeFileSystem.layer))
+
+      const millis = (value: Option.Option<Date>) => Option.map(value, (date) => date.getTime())
+      expect(millis(mine.atime)).toEqual(Option.some(accessed.getTime()))
+      expect(millis(mine.mtime)).toEqual(Option.some(modified.getTime()))
+      expect(millis(mine.atime)).toEqual(millis(theirs.atime))
+      expect(millis(mine.mtime)).toEqual(millis(theirs.mtime))
+      // Birth time is host-optional; where the native adapter has one the
+      // helper must have the same instant, give or take float rounding of
+      // the nanosecond field on either side of the boundary.
+      expect(mine.birthtime._tag).toBe(theirs.birthtime._tag)
+      if (Option.isSome(mine.birthtime) && Option.isSome(theirs.birthtime)) {
+        expect(Math.abs(mine.birthtime.value.getTime() - theirs.birthtime.value.getTime())).toBeLessThanOrEqual(1)
+      }
     }))
 
   /**
