@@ -6,6 +6,7 @@ import * as NodePath from "node:path"
 import * as Vm from "node:vm"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
+import * as ModelEngine from "../src/ModelEngine.ts"
 import {
   assertPackageName,
   diffFields,
@@ -207,6 +208,23 @@ describe("PackageJson typing and defaults", () => {
     expect(Object.isFrozen(declaration.fields)).toBe(true)
     expect(PackageJson({ name: "widget", version: "0.1.0", description: "A small widget." }).fields)
       .toMatchObject({ description: "A small widget." })
+  })
+
+  it("refuses an engine with the accepted engines its own schema admits", () => {
+    let message = ""
+    try {
+      PackageJson({ name: "widget", version: "0.1.0", engine: "gemini" as never })
+    } catch (error) {
+      message = (error as TypeError).message
+    }
+    expect(message).toMatch(/^PackageJson engine must be /)
+    for (const engine of ModelEngine.Engine.literals) {
+      expect(message).toContain(engine)
+      expect(PackageJson({ name: "widget", version: "0.1.0", engine }).engine).toBe(engine)
+    }
+    for (const word of message.slice("PackageJson engine must be ".length).split(/\W+/).filter(Boolean)) {
+      if (word !== "or") expect(ModelEngine.Engine.literals).toContain(word)
+    }
   })
 
   it("validates the model and ignores explicitly undefined optional values", () => {

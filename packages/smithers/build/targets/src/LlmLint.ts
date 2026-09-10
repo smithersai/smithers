@@ -19,6 +19,7 @@ import { minimatch } from "minimatch"
 import * as NodePath from "node:path"
 import { failureMessage } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
+import { Engine } from "./ModelEngine.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Target from "./Target.ts"
 
@@ -137,27 +138,9 @@ export const Severity = Schema.Literals(["info", "warning", "error"])
  */
 export type Severity = typeof Severity.Type
 
-/**
- * The model CLI a review runs through.
- *
- * `claude` spawns a non-persistent, tool-free safe-mode print session and
- * reads its JSON envelope. `codex` spawns an ephemeral read-only exec session
- * with user configuration and targets disabled and reads the last
- * `agent_message` item of its JSONL event stream. Both prompts travel over
- * stdin, never argv.
- *
- * @category schemas
- * @since 0.1.0
- */
-export const Engine = Schema.Literals(["claude", "codex"])
-
-/**
- * The model CLI a review runs through.
- *
- * @category models
- * @since 0.1.0
- */
-export type Engine = typeof Engine.Type
+// The engine vocabulary is declared in `ModelEngine.ts`, which the manifest
+// rule reads too; a review runs through the same list it validates against.
+export { Engine }
 
 /**
  * One model finding against a reviewed file.

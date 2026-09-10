@@ -45,8 +45,9 @@ import {
   writeGeneratedFile
 } from "./GeneratedFile.ts"
 import * as Input from "./Input.ts"
-import { Engine, promptEngine } from "./LlmLint.ts"
+import { promptEngine } from "./LlmLint.ts"
 import * as ManifestJson from "./ManifestJson.ts"
+import { Engine } from "./ModelEngine.ts"
 import { assertNotManagerOwned, isTemplate, managerOwnedFields, type Template } from "./PackageJsonTemplate.ts"
 import * as SafeFs from "./SafeFs.ts"
 import * as Target from "./Target.ts"
@@ -224,6 +225,8 @@ const invalidManifestText = /[\u0000-\u001f\u007f]/
 
 const isLicense = Schema.is(License)
 const isEngine = Schema.is(Engine)
+/** The accepted engines, spelled the way the refusal reads them back. */
+const acceptedEngines = Engine.literals.join(" or ")
 
 const assertVersion = (name: string, version: unknown): string => {
   if (version === "") throw new Error(`PackageJson: ${name} declares an empty version`)
@@ -1399,7 +1402,7 @@ export const PackageJson = (options: Options): Declaration => {
   const output = safe["output"] ?? "package.json"
   if (typeof output !== "string") throw new TypeError("PackageJson output must be a string")
   const engine = safe["engine"] ?? "claude"
-  if (!isEngine(engine)) throw new TypeError("PackageJson engine must be claude, codex, or gemini")
+  if (!isEngine(engine)) throw new TypeError(`PackageJson engine must be ${acceptedEngines}`)
   const model = assertModel(safe["model"] ?? "sonnet")
   const readme = safe["readme"]
   if (readme !== undefined && (NodeUtil.isProxy(readme) || !Schema.is(Input.File)(readme))) {
