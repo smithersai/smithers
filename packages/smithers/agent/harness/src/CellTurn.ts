@@ -33,7 +33,9 @@ import { HarnessError } from "./HarnessError.ts"
 import * as cellPrompt from "./internal/cellPrompt.ts"
 import * as DemandText from "./internal/demandText.ts"
 import * as elide from "./internal/elide.ts"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 import { printsObservation } from "./internal/printsObservation.ts"
+import { refusal } from "./internal/refusal.ts"
 import { untrustedData } from "./internal/untrustedData.ts"
 import * as NarrowedCheck from "./NarrowedCheck.ts"
 import * as Sandbox from "./Sandbox.ts"
@@ -44,11 +46,6 @@ import * as TruncatedOutput from "./TruncatedOutput.ts"
 import * as UnmovedTree from "./UnmovedTree.ts"
 import * as UnresolvedFailure from "./UnresolvedFailure.ts"
 import * as VariablesPanel from "./VariablesPanel.ts"
-
-const NonNegativeSafeInt = Schema.Int.check(
-  Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-)
 
 /**
  * Default number of frames one admitted task may spend. Zero disarms this limit.
@@ -1524,24 +1521,20 @@ const minter = (
   Effect.gen(function*() {
     const held = state.checkpointIds.length + minted.length
     if (held >= state.checkpointCap) {
-      return new Cell.CallResult({
-        outcome: "failure",
-        value: null,
-        code: "checkpoint_exhausted",
-        message: `This run has pinned its ${state.checkpointCap} checkpoints and nothing was pinned here. ${
+      return refusal(
+        "checkpoint_exhausted",
+        `This run has pinned its ${state.checkpointCap} checkpoints and nothing was pinned here. ${
           held === 0 ? "" : `The ones you hold are ${[...state.checkpointIds, ...minted].join(", ")}, and `
         }ctx.base is always the tree this run opened on.`
-      })
+      )
     }
     const id = `cp-${state.frame}-${mint.ordinal}`
     const snapshot = yield* pin(engine, state, cell.digest, mint.ordinal, id, callMs)
     if (Option.isNone(snapshot)) {
-      return new Cell.CallResult({
-        outcome: "failure",
-        value: null,
-        code: "checkpoint_unavailable",
-        message: "This host pins no trees, so nothing was checkpointed. Take your readings on the live tree instead."
-      })
+      return refusal(
+        "checkpoint_unavailable",
+        "This host pins no trees, so nothing was checkpointed. Take your readings on the live tree instead."
+      )
     }
     minted.push(id)
     yield* emit(
@@ -1654,12 +1647,7 @@ const callHandler = (
   Effect.gen(function*() {
     const descriptor = descriptors.get(invocation.flow)
     if (descriptor === undefined) {
-      return new Cell.CallResult({
-        outcome: "failure",
-        value: null,
-        code: "unknown_flow",
-        message: `Unknown flow ${invocation.flow}. Only the flows in ctx.flows are callable.`
-      })
+      return refusal("unknown_flow", `Unknown flow ${invocation.flow}. Only the flows in ctx.flows are callable.`)
     }
     const envelope = CapabilitySet.fromPatterns(state.capabilityEnvelope)
     const refused = descriptor.capabilities.filter((declared) =>
@@ -1669,12 +1657,10 @@ const callHandler = (
       })
     )
     if (refused.length > 0) {
-      return new Cell.CallResult({
-        outcome: "failure",
-        value: null,
-        code: "capability_refused",
-        message: `Flow ${invocation.flow} needs ${refused.join(", ")}, which is outside this run's capability envelope.`
-      })
+      return refusal(
+        "capability_refused",
+        `Flow ${invocation.flow} needs ${refused.join(", ")}, which is outside this run's capability envelope.`
+      )
     }
     // Only a call that changes something is checked. Passing a fragment to a
     // search, a diff, or a summary is ordinary use of what the flow returned;
@@ -1683,12 +1669,7 @@ const callHandler = (
     if (changes) {
       const found = TruncatedOutput.reuse(invocation.input, ledger)
       if (found !== undefined) {
-        return new Cell.CallResult({
-          outcome: "failure",
-          value: null,
-          code: "truncated_write",
-          message: TruncatedOutput.refusal(invocation.flow, found)
-        })
+        return refusal("truncated_write", TruncatedOutput.refusal(invocation.flow, found))
       }
     }
     // Where this call runs. A checkpoint is a tree the run has already been
@@ -1701,24 +1682,18 @@ const callHandler = (
     if (invocation.at !== undefined) {
       at = Cell.checkpointOf(invocation.at)
       if (at === undefined) {
-        return new Cell.CallResult({
-          outcome: "failure",
-          value: null,
-          code: "invalid_input",
-          message:
-            `The at option takes a checkpoint, which is what ctx.checkpoint() resolves with and what ctx.base is. It was given ${
-              elide.head(CanonicalJson.stringify(invocation.at), 120, "the rest is the same shape")
-            }.`
-        })
+        return refusal(
+          "invalid_input",
+          `The at option takes a checkpoint, which is what ctx.checkpoint() resolves with and what ctx.base is. It was given ${
+            elide.head(CanonicalJson.stringify(invocation.at), 120, "the rest is the same shape")
+          }.`
+        )
       }
       if (changes) {
-        return new Cell.CallResult({
-          outcome: "failure",
-          value: null,
-          code: "checkpoint_readonly",
-          message:
-            `Flow ${invocation.flow} declares a write, and a checkpoint is a read-only view of a tree that has already been. Nothing was run. Make the change on the live tree, and keep at for the readings you take against ${at}.`
-        })
+        return refusal(
+          "checkpoint_readonly",
+          `Flow ${invocation.flow} declares a write, and a checkpoint is a read-only view of a tree that has already been. Nothing was run. Make the change on the live tree, and keep at for the readings you take against ${at}.`
+        )
       }
     }
     const call = new Cell.Call({

@@ -38,6 +38,16 @@ export const HarnessErrorCode = Schema.Literals([
  */
 export type HarnessErrorCode = typeof HarnessErrorCode.Type
 
+/*
+ * Every schema and error identifier in this package — this one, and the
+ * `flows/harness/...` ids on the classes in `Cell`, `ContextWindow`,
+ * `CellTurn` and the rest — is a durable name, not a label. It is written into
+ * a journal, into a sealed step key, and into an encoded exit, so renaming one
+ * makes an existing run undecodable rather than tidier. They keep the names
+ * they were journaled under. Context service tags carry no such history: they
+ * are runtime keys, resolved and discarded within a process, so those all read
+ * `@smthrs/harness/...` after the package.
+ */
 /**
  * A failure while translating a recorded agent turn.
  *

@@ -51,6 +51,7 @@ import type * as Cell from "./Cell.ts"
 import { CallResult } from "./Cell.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as elide from "./internal/elide.ts"
+import { refusal } from "./internal/refusal.ts"
 
 /**
  * The declaration half of a binding.
@@ -213,12 +214,6 @@ export interface Binding<R = never> {
   readonly run: (call: Cell.Call) => Effect.Effect<CallResult, HarnessError, R>
 }
 
-/**
- * A refusal the cell observes as a resolved `{ ok: false, error }` envelope.
- */
-const refused = (code: Cell.CallFailureCode, message: string): CallResult =>
-  new CallResult({ outcome: "failure", value: null, code, message })
-
 /** Bounds a schema rejection before it enters the journal and later frames. */
 const describeFailure = (error: Schema.SchemaError): string =>
   elide.head(error.message, callLedgerWidth * 4, "reissue the call to see the whole failure")
@@ -335,7 +330,7 @@ export const make = <
       Effect.gen(function*() {
         const decoded = decodeCall(call.input)
         if (decoded._tag === "Failure") {
-          return refused(
+          return refusal(
             "invalid_input",
             `Flow ${descriptor.name} rejected its input: ${
               describeFailure(decoded.failure)
@@ -347,7 +342,7 @@ export const make = <
           const escalate = escalated(produced.failure)
           if (escalate !== undefined) return yield* Effect.fail(escalate)
           const message = publicMessage(produced.failure, options.publicError)
-          return refused(
+          return refusal(
             "flow_failed",
             message === undefined
               ? `Flow ${descriptor.name} failed.`
@@ -356,11 +351,11 @@ export const make = <
         }
         const encoded = encodeOutput(produced.success)
         if (encoded._tag === "Failure") {
-          return refused("flow_failed", `Flow ${descriptor.name} produced output its own schema rejects.`)
+          return refusal("flow_failed", `Flow ${descriptor.name} produced output its own schema rejects.`)
         }
         const json = asJson(encoded.success)
         if (json._tag === "Failure") {
-          return refused("flow_failed", `Flow ${descriptor.name} produced output that is not serializable.`)
+          return refusal("flow_failed", `Flow ${descriptor.name} produced output that is not serializable.`)
         }
         return new CallResult({ outcome: "success", value: json.success })
       })

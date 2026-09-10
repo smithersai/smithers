@@ -26,11 +26,7 @@ import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Cause, Effect, Option, Result, Schema } from "effect"
 import { HarnessError } from "./HarnessError.ts"
-
-const NonNegativeSafeInt = Schema.Int.check(
-  Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-)
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 
 /**
  * The source language a cell is written in.
@@ -558,7 +554,7 @@ export class CallResult extends Schema.Class<CallResult>("flows/harness/Cell/Cal
  * the same as current CallResult records.
  *
  * @category schemas
- * @since 1.0.0
+ * @since 1.0.0-rc.0
  */
 export const CallSuccess = Schema.Struct({
   outcome: Schema.Literal("success"),
@@ -571,7 +567,7 @@ export const CallSuccess = Schema.Struct({
  * A failed call, with the existing absent-code meaning of flow_failed.
  *
  * @category schemas
- * @since 1.0.0
+ * @since 1.0.0-rc.0
  */
 export const CallFailure = Schema.Struct({
   outcome: Schema.Literal("failure"),
@@ -584,7 +580,7 @@ export const CallFailure = Schema.Struct({
  * Discriminated result at a decoded persistence or host boundary.
  *
  * @category schemas
- * @since 1.0.0
+ * @since 1.0.0-rc.0
  */
 export const CallResultVariant = Schema.Union([CallSuccess, CallFailure])
 
@@ -592,7 +588,7 @@ export const CallResultVariant = Schema.Union([CallSuccess, CallFailure])
  * Discriminated result at a decoded persistence or host boundary.
  *
  * @category models
- * @since 1.0.0
+ * @since 1.0.0-rc.0
  */
 export type CallResultVariant = typeof CallResultVariant.Type
 
@@ -618,7 +614,7 @@ const decodeBoundary = <S extends Schema.Constraint>(schema: S, name: string) =>
  * Decode a host or persisted result before the cell can observe it.
  *
  * @category decoders
- * @since 1.0.0
+ * @since 1.0.0-rc.0
  */
 export const decodeCallResult = decodeBoundary(CallResultVariant, "call result")
 
@@ -626,7 +622,7 @@ export const decodeCallResult = decodeBoundary(CallResultVariant, "call result")
  * Refuse contradictory or incomplete recorded evaluation outcomes.
  *
  * @category decoders
- * @since 1.0.0
+ * @since 1.0.0-rc.0
  */
 export const decodeOutcome = decodeBoundary(Outcome, "outcome")
 
@@ -634,7 +630,7 @@ export const decodeOutcome = decodeBoundary(Outcome, "outcome")
  * Refuse contradictory or incomplete recorded transitions.
  *
  * @category decoders
- * @since 1.0.0
+ * @since 1.0.0-rc.0
  */
 export const decodeTransition = decodeBoundary(Transition, "transition")
 

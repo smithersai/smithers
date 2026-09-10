@@ -21,11 +21,7 @@
 import { Effect, Schema } from "effect"
 import * as CallLedger from "./CallLedger.ts"
 import * as elide from "./internal/elide.ts"
-
-const NonNegativeSafeInt = Schema.Int.check(
-  Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-)
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 
 /**
  * How many names the panel prints before it starts counting instead.

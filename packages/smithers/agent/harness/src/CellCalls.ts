@@ -36,6 +36,7 @@ import { Effect, Option, Schema } from "effect"
 import * as Cell from "./Cell.ts"
 import type * as FlowBinding from "./FlowBinding.ts"
 import { HarnessError } from "./HarnessError.ts"
+import { refusal } from "./internal/refusal.ts"
 
 /**
  * One module-backed flow, implemented by the host that discovered it.
@@ -115,12 +116,6 @@ export interface Resolver {
 }
 
 /**
- * A refusal the cell observes as a resolved `{ ok: false, error }` envelope.
- */
-const refused = (code: Cell.CallFailureCode, message: string): Cell.CallResult =>
-  new Cell.CallResult({ outcome: "failure", value: null, code, message })
-
-/**
  * Constructs registry-backed call resolution.
  *
  * @category constructors
@@ -132,21 +127,21 @@ export const make = (options: Options): Resolver => ({
     Effect.gen(function*() {
       const found = yield* options.registry.getOption(call.flowName)
       if (Option.isNone(found)) {
-        return refused(
+        return refusal(
           "unknown_flow",
           `Flow ${call.flowName} is not in the registry. Only the flows in ctx.flows are callable.`
         )
       }
       const descriptor = found.value
       if (!descriptor.modelInvocable) {
-        return refused("capability_refused", `Flow ${call.flowName} is not model-invocable.`)
+        return refusal("capability_refused", `Flow ${call.flowName} is not model-invocable.`)
       }
       // The registry is refreshable, so the entry could have moved between the
       // frame that showed the model this catalog and the boundary that runs the
       // call. Re-deriving the digest here is what keeps a call bound to the
       // declaration the agent actually chose.
       if (Cell.declarationDigest(descriptor) !== call.identity.declaration) {
-        return refused(
+        return refusal(
           "declaration_changed",
           `The registry entry for ${call.flowName} changed after this cell was written. Read ctx.flows again and reissue the call.`
         )
@@ -160,7 +155,7 @@ export const make = (options: Options): Resolver => ({
       const binding = options.catalog?.bindings.get(call.flowName)
       if (binding !== undefined) {
         if (Cell.declarationDigest(binding.descriptor) !== Cell.declarationDigest(descriptor)) {
-          return refused(
+          return refusal(
             "declaration_changed",
             `Flow ${call.flowName} is disclosed by a declaration that does not match the bound implementation. The host must not bind two different declarations to one name.`
           )
@@ -171,11 +166,11 @@ export const make = (options: Options): Resolver => ({
       if (descriptor.body._tag === "Markdown") {
         const prompt = options.prompt
         if (prompt === undefined) {
-          return refused("unimplemented", `Flow ${call.flowName} is a markdown flow and this host runs none.`)
+          return refusal("unimplemented", `Flow ${call.flowName} is a markdown flow and this host runs none.`)
         }
         const decoded = Schema.decodeUnknownResult(MarkdownFlow.Input)(call.input)
         if (decoded._tag === "Failure") {
-          return refused("invalid_input", `Flow ${call.flowName} takes { args: string }.`)
+          return refusal("invalid_input", `Flow ${call.flowName} takes { args: string }.`)
         }
         const text = yield* options.registry.runPrompt(call.flowName, decoded.success).pipe(
           Effect.mapError((cause) =>
@@ -191,7 +186,7 @@ export const make = (options: Options): Resolver => ({
 
       const implementation = options.implementations?.get(call.flowName)
       if (implementation === undefined) {
-        return refused(
+        return refusal(
           "unimplemented",
           `Flow ${call.flowName} is discovered but this host has no implementation bound for it.`
         )

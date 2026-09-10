@@ -15,6 +15,7 @@ import { dual } from "effect/Function"
 import { type Pipeable, pipeArguments } from "effect/Pipeable"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
+import { compactable } from "./internal/compactable.ts"
 import * as Tokens from "./Tokens.ts"
 
 /**
@@ -463,11 +464,6 @@ const summaryMessages = (summary: ModelRequest.Message | ReadonlyArray<ModelRequ
   )
 }
 
-const compactableSegments = (self: ContextWindow): ReadonlyArray<Segment> =>
-  self.segments.filter((segment) =>
-    segment.kind === "transcript" || segment.kind === "summary" || segment.kind === "steering"
-  )
-
 const selectedPrefix = (
   self: ContextWindow,
   prefixLength: number
@@ -480,8 +476,8 @@ const selectedPrefix = (
       })
     )
   }
-  const compactable = compactableSegments(self)
-  if (prefixLength > compactable.length) {
+  const segments = compactable(self.segments)
+  if (prefixLength > segments.length) {
     return Result.fail(
       new ContextWindowError({
         code: "invalid_compaction_prefix",
@@ -489,7 +485,7 @@ const selectedPrefix = (
       })
     )
   }
-  return Result.succeed(compactable.slice(0, prefixLength))
+  return Result.succeed(segments.slice(0, prefixLength))
 }
 
 /**
@@ -549,8 +545,8 @@ export const compact: {
     summary: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>
   ): Result.Result<ContextWindow, ContextWindowError>
 } = dual(2, (self: ContextWindow, summary: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>) => {
-  const compactable = compactableSegments(self)
-  const prefixLength = compactable.length > 1 ? compactable.length - 1 : compactable.length
+  const segments = compactable(self.segments)
+  const prefixLength = segments.length > 1 ? segments.length - 1 : segments.length
   return compactPrefix(self, prefixLength, summary)
 })
 

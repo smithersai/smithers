@@ -22,6 +22,7 @@ import { Context, Effect, Exit, Layer, Schema, type Scope } from "effect"
 import * as Cell from "./Cell.ts"
 import * as CellValidation from "./CellValidation.ts"
 import type { HarnessError } from "./HarnessError.ts"
+import { refusal } from "./internal/refusal.ts"
 import type * as VariablesPanel from "./VariablesPanel.ts"
 
 /**
@@ -135,12 +136,7 @@ export type Minter = (mint: Mint) => Effect.Effect<Cell.CallResult, HarnessError
  */
 export const mintUnavailable: Minter = () =>
   Effect.succeed(
-    new Cell.CallResult({
-      outcome: "failure",
-      value: null,
-      code: "checkpoint_unavailable",
-      message: "This run pins no checkpoints."
-    })
+    refusal("checkpoint_unavailable", "This run pins no checkpoints.")
   )
 
 /**
@@ -606,7 +602,7 @@ export interface Sandbox {
  * @since 0.1.0
  * @slop
  */
-export const Sandbox: Context.Service<Sandbox, Sandbox> = Context.Service("/harness/Sandbox")
+export const Sandbox: Context.Service<Sandbox, Sandbox> = Context.Service("@smthrs/harness/Sandbox")
 
 /**
  * Constructs a sandbox from an implementation.
@@ -702,12 +698,7 @@ const seconds = (milliseconds: number): string => {
  * @since 0.1.0
  */
 export const callTimedOut = (flow: string, callMs: number): Cell.CallResult =>
-  new Cell.CallResult({
-    outcome: "failure",
-    value: null,
-    code: "timeout",
-    message: `Flow ${flow} timed out after ${seconds(callMs)} seconds.`
-  })
+  refusal("timeout", `Flow ${flow} timed out after ${seconds(callMs)} seconds.`)
 
 /**
  * Erases type-only syntax from a cell without evaluating or resolving modules.

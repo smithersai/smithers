@@ -6,9 +6,10 @@
 import { ModelRequest } from "@smthrs/model"
 import { Effect, Schema } from "effect"
 import * as ContextWindow from "./ContextWindow.ts"
+import { compactable } from "./internal/compactable.ts"
 
-const DEFAULT_RESERVE = 16_000
-const DEFAULT_KEEP_RECENT = 20_000
+const defaultReserve = 16_000
+const defaultKeepRecent = 20_000
 
 /**
  * Stable instruction for sealed summary steps.
@@ -90,18 +91,13 @@ export const shouldCompact = (
   cw: TokenAccounting,
   options: { readonly reserve?: number; readonly keepRecent?: number } = {}
 ): boolean => {
-  const reserve = options.reserve ?? DEFAULT_RESERVE
-  const keepRecent = options.keepRecent ?? DEFAULT_KEEP_RECENT
+  const reserve = options.reserve ?? defaultReserve
+  const keepRecent = options.keepRecent ?? defaultKeepRecent
   if (!Number.isFinite(cw.contextWindow) || !Number.isFinite(cw.total.value)) return false
   if (cw.contextWindow <= 0) return false
   if (!Number.isFinite(reserve) || !Number.isFinite(keepRecent)) return false
   return cw.total.value > cw.contextWindow - reserve
 }
-
-const compactable = (window: ContextWindow.ContextWindow): ReadonlyArray<ContextWindow.Segment> =>
-  window.segments.filter((segment) =>
-    segment.kind === "transcript" || segment.kind === "summary" || segment.kind === "steering"
-  )
 
 const pairBoundaries = (segments: ReadonlyArray<ContextWindow.Segment>): ReadonlySet<number> => {
   const calls = new Map<string, number>()
@@ -140,9 +136,9 @@ export const selectPrefix = (
   window: ContextWindow.ContextWindow,
   options: { readonly keepRecent?: number } = {}
 ): number => {
-  const keepRecent = options.keepRecent ?? DEFAULT_KEEP_RECENT
+  const keepRecent = options.keepRecent ?? defaultKeepRecent
   if (!Number.isFinite(keepRecent) || keepRecent < 0) return 0
-  const segments = compactable(window)
+  const segments = compactable(window.segments)
   let retained = 0
   let boundary = segments.length
   while (boundary > 0 && retained < keepRecent) {
@@ -161,7 +157,7 @@ const prefix = (
   if (!Number.isSafeInteger(prefixLength) || prefixLength <= 0) {
     return Effect.fail(new InvalidStep({ message: "A compaction must replace a non-empty context prefix" }))
   }
-  const segments = compactable(window)
+  const segments = compactable(window.segments)
   if (prefixLength > segments.length) {
     return Effect.fail(
       new InvalidStep({
@@ -200,6 +196,37 @@ export const declare = Effect.fn("flows/harness/Compaction.declare")(function*(
 })
 
 /**
+ * Confirms the window still carries the exact prefix a step was declared
+ * against. `noun` is the only difference between the two callers: a step being
+ * built reports what was *declared*, a step being replayed reports what was
+ * *recorded*.
+ */
+const verifyPrefix = (
+  window: ContextWindow.ContextWindow,
+  step: CompactionStep,
+  noun: "declared" | "recorded"
+): Effect.Effect<void, InvalidStep> =>
+  Effect.gen(function*() {
+    const actual = yield* Effect.fromResult(
+      ContextWindow.prefixDigest(window, step.prefixLength)
+    ).pipe(
+      Effect.mapError((cause) =>
+        new InvalidStep({
+          message: `The ${noun} compaction prefix is not present in the context window`,
+          cause
+        })
+      )
+    )
+    if (actual !== step.replacedPrefixDigest) {
+      return yield* Effect.fail(
+        new InvalidStep({
+          message: "The recorded compaction summary does not match the current context prefix"
+        })
+      )
+    }
+  })
+
+/**
  * Builds the model request input for a compaction step. Existing summary
  * segments are retained in the input so a later compaction extends, rather
  * than discards, the established summary.
@@ -213,23 +240,7 @@ export const summaryRequest = Effect.fn("flows/harness/Compaction.summaryRequest
   step: CompactionStep
 ) {
   const segments = yield* prefix(window, step.prefixLength)
-  const actual = yield* Effect.fromResult(
-    ContextWindow.prefixDigest(window, step.prefixLength)
-  ).pipe(
-    Effect.mapError((cause) =>
-      new InvalidStep({
-        message: "The declared compaction prefix is not present in the context window",
-        cause
-      })
-    )
-  )
-  if (actual !== step.replacedPrefixDigest) {
-    return yield* Effect.fail(
-      new InvalidStep({
-        message: "The recorded compaction summary does not match the current context prefix"
-      })
-    )
-  }
+  yield* verifyPrefix(window, step, "declared")
   const messages: Array<ModelRequest.Message> = []
   for (const segment of segments) {
     for (const item of segment.content) if ("role" in item) messages.push(item)
@@ -264,23 +275,7 @@ export const apply = Effect.fn("flows/harness/Compaction.apply")(function*(
   recordedSummary: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>
 ) {
   yield* prefix(window, step.prefixLength)
-  const actual = yield* Effect.fromResult(
-    ContextWindow.prefixDigest(window, step.prefixLength)
-  ).pipe(
-    Effect.mapError((cause) =>
-      new InvalidStep({
-        message: "The recorded compaction prefix is not present in the context window",
-        cause
-      })
-    )
-  )
-  if (actual !== step.replacedPrefixDigest) {
-    return yield* Effect.fail(
-      new InvalidStep({
-        message: "The recorded compaction summary does not match the current context prefix"
-      })
-    )
-  }
+  yield* verifyPrefix(window, step, "recorded")
   return yield* Effect.fromResult(
     ContextWindow.compactPrefix(window, step.prefixLength, recordedSummary)
   ).pipe(

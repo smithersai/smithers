@@ -40,12 +40,8 @@ import * as Digest from "@smthrs/core/Digest"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import { Effect, Schema } from "effect"
 import * as elide from "./internal/elide.ts"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 import * as NarrowedCheck from "./NarrowedCheck.ts"
-
-const NonNegativeSafeInt = Schema.Int.check(
-  Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-)
 
 /**
  * How many settled calls the rendered ledger carries, newest last.

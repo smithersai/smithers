@@ -341,7 +341,7 @@ export interface EngineLike {
  * @slop
  */
 export const EngineLike: Context.Service<EngineLike, EngineLike> = Context.Service(
-  "/harness/EngineLike"
+  "@smthrs/harness/EngineLike"
 )
 
 /**

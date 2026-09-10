@@ -335,7 +335,7 @@ export interface SourceInput {
  * @since 0.1.0
  * @slop
  */
-export const Source: Context.Service<Source, Source> = Context.Service("/harness/Steering/Source")
+export const Source: Context.Service<Source, Source> = Context.Service("@smthrs/harness/Steering/Source")
 
 /**
  * Constructs a steering source service.

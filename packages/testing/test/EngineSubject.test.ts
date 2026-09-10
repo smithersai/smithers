@@ -16,7 +16,7 @@ describe("EngineSubject", () => {
     expect("sealStep" in subject).toBe(false)
     expect("splice" in subject).toBe(false)
     expect("suspend" in subject).toBe(false)
-    expect(EngineSubject.EngineSubject.key).not.toBe("/harness/EngineLike")
+    expect(EngineSubject.EngineSubject.key).not.toBe("@smthrs/harness/EngineLike")
     expect(EngineSubject.EngineSubject.key).toBe("flows/testing/EngineSubject")
   })
 

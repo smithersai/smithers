@@ -42,12 +42,8 @@
  * @since 0.1.0
  */
 import { Effect, Schema } from "effect"
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 import * as NarrowedCheck from "./NarrowedCheck.ts"
-
-const NonNegativeSafeInt = Schema.Int.check(
-  Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-)
 
 /**
  * How many distinct failing checks one run carries forward.

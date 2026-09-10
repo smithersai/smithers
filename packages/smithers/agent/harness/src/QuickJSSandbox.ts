@@ -42,6 +42,7 @@ import type { HarnessError } from "./HarnessError.ts"
 import * as bytes from "./internal/bytes.ts"
 import * as elide from "./internal/elide.ts"
 import * as printChannel from "./internal/printChannel.ts"
+import { refusal } from "./internal/refusal.ts"
 import * as Sandbox from "./Sandbox.ts"
 import * as VariablesPanel from "./VariablesPanel.ts"
 
@@ -190,13 +191,10 @@ ${guard}      return pin().then(settleEnvelope)
  * finished the run.
  */
 const sealedCall = Cell.callFailure(
-  new Cell.CallResult({
-    outcome: "failure",
-    value: null,
-    code: "run_completed",
-    message:
-      "This run was already completed: an earlier line of this cell called ctx.done or ctx.park, which takes effect where it is called, so no further flow call is dispatched."
-  })
+  refusal(
+    "run_completed",
+    "This run was already completed: an earlier line of this cell called ctx.done or ctx.park, which takes effect where it is called, so no further flow call is dispatched."
+  )
 )
 
 /**
@@ -437,7 +435,7 @@ export interface VariantService {
  * @since 0.1.0
  */
 export class Variant extends Context.Service<Variant, VariantService>()(
-  "flows/harness/QuickJSSandbox/Variant"
+  "@smthrs/harness/QuickJSSandbox/Variant"
 ) {}
 
 /**
@@ -493,7 +491,7 @@ export interface ComputeClockService {
  * @since 0.1.0
  */
 export class ComputeClock extends Context.Service<ComputeClock, ComputeClockService>()(
-  "flows/harness/QuickJSSandbox/ComputeClock"
+  "@smthrs/harness/QuickJSSandbox/ComputeClock"
 ) {}
 
 /**
@@ -1123,7 +1121,7 @@ const openRealm = (
           reply({
             ok: false,
             aborted: true,
-            failure: Cell.callFailure(new Cell.CallResult({ outcome: "failure", value: null, message }))
+            failure: Cell.callFailure(refusal(undefined, message))
           })
       })
       return deferred.handle

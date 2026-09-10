@@ -27,11 +27,7 @@
  */
 import * as Digest from "@smthrs/core/Digest"
 import { Effect, Schema } from "effect"
-
-const NonNegativeSafeInt = Schema.Int.check(
-  Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
-)
+import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 
 /**
  * The suffix a flow flags one named payload's truncation with.
