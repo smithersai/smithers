@@ -46,7 +46,7 @@ export const pages: readonly PageSpec[] = [
   page({ id: "build-graph", title: "Dependency-bound build targets", purpose: "Declare the exact code and documentation inputs that invalidate an output.", kind: "current", document: "factory/wiki/pages/build-graph.md", related: ["wiki-generation", "flows", "runtime"] }, [
     "packages/smithers/build/targets/docs/reference/filegroup.md", ["packages/smithers/build/targets/src/Filegroup.ts", [25, 91], [185, 283]],
     ["packages/smithers/build/targets/src/Shell.ts", [25, 115], [265, 350]], ".smithers/WORKSPACE.ts", "flows/wiki/PACKAGE.ts",
-    ["factory/wiki/catalog.ts", [1, 15], [134, 134]], "flows/wiki/workflow.ts", operations, "flows/wiki/main.ts",
+    ["factory/wiki/catalog.ts", [1, 15], [138, 138]], "flows/wiki/workflow.ts", operations, "flows/wiki/main.ts",
     "flows/coding/testing.md", "packages/smithers/build/build-cli/src/internal/InputPackage.ts", "flows/PACKAGE.ts", "flows/test/coding-native-gate.mjs",
     ["packages/smithers/build/build-cli/src/internal/PackagePlanner.ts", [1334, 1343]],
     ["packages/smithers/build/build-cli/src/TargetIndex.ts", [150, 164]],
@@ -60,11 +60,11 @@ export const pages: readonly PageSpec[] = [
     ui, ["apps/ui/docs/ONBOARDING.md", [1, 20], [82, 96]], ["apps/ui/src/mainview/cards/RunTrace.ts", [21, 108], [154, 177], [521, 595]],
     ["apps/ui/src/mainview/cards/RunTraceCard.tsx", [1, 19], [69, 98], [101, 140], [197, 242], [250, 285], [329, 345]],
     "apps/ui/src/mainview/runtime/FrameHistory.ts", "apps/ui/docs/workbench-lanes/runs.md",
-    "apps/ui/docs/workbench-lanes/coding-plans.md", "apps/ui/docs/workbench-lanes/native-engine-evidence.md",
+    ["apps/ui/docs/workbench-lanes/coding-plans.md", [1, 137]], "apps/ui/docs/workbench-lanes/native-engine-evidence.md",
     ["flows/wiki/operations.ts", [93, 144]]
   ]),
   page({ id: "wiki-generation", title: "How this wiki stays accountable", purpose: "Separate source freshness, semantic review and human intent.", kind: "current", document: "factory/wiki/pages/wiki-generation.md", related: ["build-graph", "runtime", "coding-direction"] }, [
-    "flows/wiki/schema.ts", "flows/wiki/workflow.ts", "flows/wiki/evidence.ts", "flows/wiki/operations.ts", "flows/wiki/runtime.ts", "flows/wiki/PACKAGE.ts", ["factory/wiki/catalog.ts", [1, 15], [134, 134]], "flows/wiki/reuse.ts", "flows/coding/request.ts", "flows/coding/wiki-check.ts", "flows/coding/immutable-source.ts", ["flows/coding/planning.ts", [123, 143]], "factory/coding/project.ts"
+    "flows/wiki/schema.ts", "flows/wiki/workflow.ts", "flows/wiki/evidence.ts", "flows/wiki/operations.ts", "flows/wiki/runtime.ts", "flows/wiki/PACKAGE.ts", ["factory/wiki/catalog.ts", [1, 15], [138, 138]], "flows/wiki/reuse.ts", ["flows/coding/request.ts", [30, 75]], "flows/coding/wiki-check.ts", ["flows/coding/immutable-source.ts", [49, 90]], ["flows/coding/planning.ts", [123, 143]], "factory/coding/project.ts"
   ]),
   page({ id: "coding-direction", title: "Mythical coding product contract", purpose: "Read the intended lifecycle without confusing it with shipped behavior.", kind: "intent", document: "factory/wiki/pages/coding-direction.md", related: ["product-ui", "wiki-generation", "runtime", "coding-request", "coding-experience"] }, [
     "packages/smithers/flows/docs/concepts/runtime-portability.md", ui
@@ -114,7 +114,7 @@ export const pages: readonly PageSpec[] = [
     ["packages/smithers/agent/registry/src/MarkdownFlow.ts", [160, 205]], ["packages/smithers/flows/flow/src/Action/make.ts", [142, 184], [203, 241]]
   ]),
   page({ id: "coding-ui", title: "Coding evidence in recursive run cards", purpose: "Keep predicted work, retained prototypes, native outcomes and historical source selection distinct.", kind: "current", document: "factory/wiki/pages/coding-ui.md", related: ["product-ui", "native-engine-evidence", "coding-request", "coding-experience"] }, [
-    "apps/ui/docs/workbench-lanes/coding-plans.md", "apps/ui/docs/workbench-lanes/native-engine-evidence.md",
+    ["apps/ui/docs/workbench-lanes/coding-plans.md", [1, 137]], "apps/ui/docs/workbench-lanes/native-engine-evidence.md",
     "apps/ui/src/mainview/cards/CodingPlan.ts", "apps/ui/src/mainview/cards/CodingPlanCard.tsx", ["apps/ui/src/mainview/cards/EngineTrace.ts", [1, 75], [108, 180], [232, 268], [299, 371]],
     "apps/ui/src/mainview/cards/CodingPocCard.tsx", "apps/ui/src/mainview/state/RunReference.ts", "flows/coding/schema.ts", "flows/coding/poc-schema.ts", "apps/ui/src/mainview/cards/CodingPoc.ts",
     "apps/ui/src/mainview/cards/CodingPoc.test.ts", ["apps/ui/src/mainview/cards/CodingPlan.test.ts", [1, 80], [100, 196]]
@@ -127,8 +127,12 @@ export const pages: readonly PageSpec[] = [
     ["apps/ui/src/mainview/state/controller/runs.ts", [412, 445]], ["apps/ui/src/mainview/flows/entries/runs.ts", [185, 202]],
     ["apps/ui/package.json", [30, 40]], ["apps/ui/AGENTS.md", [27, 42]], ["apps/ui/docs/ONBOARDING.md", [82, 96]]
   ]),
+  page({ id: "coding-finalization", title: "Admission and native history cleanup", purpose: "Inspect retained request authority, preserve native atom trees and rerun checks before later landing.", kind: "current", document: "factory/wiki/pages/coding-finalization.md", related: ["coding-request", "coding-progression", "coding-checks", "coding-ui"] }, [
+    "flows/coding/vibe-schema.ts", "flows/coding/vibe-evidence.ts", "flows/coding/vibe-admission.ts", "flows/coding/vibe-cleanup.ts", "flows/coding/workflow.ts", "flows/coding/request.ts",
+    "apps/ui/src/mainview/cards/CodingVibe.ts", "apps/ui/src/mainview/cards/CodingVibeCard.tsx", "apps/ui/src/mainview/cards/CodingPlanCard.tsx", ["flows/coding/finalization.md", [1, 80]]
+  ]),
   page({ id: "coding-experience", title: "Stack and debugger interaction study", purpose: "Apply concrete prior-art interactions while labeling recommendations separately from current UI behavior.", kind: "intent", document: "factory/wiki/pages/coding-experience.md", related: ["coding-direction", "coding-ui", "product-ui", "native-engine-evidence"] }, [
-    "apps/ui/docs/workbench-lanes/coding-plans.md", "apps/ui/docs/workbench-lanes/native-engine-evidence.md", "factory/wiki/pages/coding-direction.md"
+    ["apps/ui/docs/workbench-lanes/coding-plans.md", [1, 137]], "apps/ui/docs/workbench-lanes/native-engine-evidence.md", "factory/wiki/pages/coding-direction.md"
   ])
 ]
 export const sourceFiles = [...new Set(pages.flatMap((page) => [page.document, ...page.inputs]))].sort()
