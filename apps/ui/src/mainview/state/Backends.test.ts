@@ -19,6 +19,20 @@ const memoryStorage = (): StorageApi => {
 }
 
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
+/*
+ * The card a test names, or a failure. `if (card?.kind === "x")` around a
+ * block of assertions turns a missing card into a silent pass: the block
+ * simply never runs.
+ */
+type CardRow = NonNullable<ReturnType<AppStore["collections"]["cards"]["get"]>>
+const cardOf = <K extends Card["kind"]>(store: AppStore, id: string, kind: K): Extract<CardRow, { kind: K }> => {
+  const card = store.collections.cards.get(id)
+  if (card === undefined || card.kind !== kind) {
+    throw new Error(`no ${kind} card at ${id} (saw ${card?.kind ?? "nothing"})`)
+  }
+  return card as Extract<CardRow, { kind: K }>
+}
+
 
 const unavailableRepositories: NativeRepositories = {
   available: false,
@@ -292,12 +306,9 @@ describe("billing record", () => {
       ...backend({ "/api/billing/balance": json(200, balanceBody("500")) })
     })
     await controller.showBalance()
-    const card = store.collections.cards.get("billing-balance")
-    expect(card?.kind).toBe("balance")
-    if (card?.kind === "balance") {
-      expect(card.payload.totalUsd).toBe("500")
-      expect(card.payload.introUsd).toBe("500")
-    }
+    const card = cardOf(store, "billing-balance", "balance")
+    expect(card.payload.totalUsd).toBe("500")
+    expect(card.payload.introUsd).toBe("500")
   })
 
   test("the intro line is gone once anything has been charged", async () => {
@@ -306,8 +317,7 @@ describe("billing record", () => {
       ...backend({ "/api/billing/balance": json(200, balanceBody("499.94625", 1)) })
     })
     await controller.showBalance()
-    const card = store.collections.cards.get("billing-balance")
-    if (card?.kind === "balance") expect(card.payload.introUsd).toBeNull()
+    expect(cardOf(store, "billing-balance", "balance").payload.introUsd).toBeNull()
   })
 
   test("a definitive $0 NEVER pauses chat — the turn runs (chat is on us during the alpha)", async () => {
@@ -388,8 +398,7 @@ describe("approval round trip", () => {
     })
     approvalCard(store)
     controller.decideApproval("approval-1", "approved")
-    const pending = store.collections.cards.get("approval-1")
-    if (pending?.kind === "approval") expect(pending.payload.pending).toBe(true)
+    expect(cardOf(store, "approval-1", "approval").payload.pending).toBe(true)
     await settled()
     // The exact envelope the gateway published goes back, plus the decision:
     // the client never reconstructs the authority it is exercising.
@@ -403,13 +412,11 @@ describe("approval round trip", () => {
         decision: "approve"
       }
     })
-    const card = store.collections.cards.get("approval-1")
-    expect(card?.status).toBe("acted")
-    if (card?.kind === "approval") {
-      expect(card.payload.decision).toBe("approved")
-      expect(card.payload.pending).toBe(false)
-      expect(card.payload.decidedAt).toBeDefined()
-    }
+    const card = cardOf(store, "approval-1", "approval")
+    expect(card.status).toBe("acted")
+    expect(card.payload.decision).toBe("approved")
+    expect(card.payload.pending).toBe(false)
+    expect(card.payload.decidedAt).toBeDefined()
   })
 
   test("the deny path round-trips and freezes denied from the gateway's answer", async () => {
@@ -422,9 +429,9 @@ describe("approval round trip", () => {
     approvalCard(store)
     controller.decideApproval("approval-1", "denied")
     await settled()
-    const card = store.collections.cards.get("approval-1")
-    expect(card?.status).toBe("acted")
-    if (card?.kind === "approval") expect(card.payload.decision).toBe("denied")
+    const card = cardOf(store, "approval-1", "approval")
+    expect(card.status).toBe("acted")
+    expect(card.payload.decision).toBe("denied")
   })
 
   test("a failed round trip is a retryable honest error, never a silent freeze", async () => {
@@ -442,19 +449,17 @@ describe("approval round trip", () => {
     approvalCard(store)
     controller.decideApproval("approval-1", "approved")
     await settled()
-    let card = store.collections.cards.get("approval-1")
-    expect(card?.status).toBe("error")
-    if (card?.kind === "approval") {
-      expect(card.payload.error).toBe("gateway unreachable")
-      expect(card.payload.pending).toBe(false)
-      expect(card.payload.decision).toBeUndefined()
-    }
+    let card = cardOf(store, "approval-1", "approval")
+    expect(card.status).toBe("error")
+    expect(card.payload.error).toBe("gateway unreachable")
+    expect(card.payload.pending).toBe(false)
+    expect(card.payload.decision).toBeUndefined()
     // Retry from the error state succeeds.
     controller.decideApproval("approval-1", "approved")
     await settled()
-    card = store.collections.cards.get("approval-1")
-    expect(card?.status).toBe("acted")
-    if (card?.kind === "approval") expect(card.payload.decision).toBe("approved")
+    card = cardOf(store, "approval-1", "approval")
+    expect(card.status).toBe("acted")
+    expect(card.payload.decision).toBe("approved")
   })
 
   test("a card with no run identity cannot be fake-decided", async () => {
@@ -474,12 +479,10 @@ describe("approval round trip", () => {
       }
     })
     controller.decideApproval("approval-local", "approved")
-    const card = store.collections.cards.get("approval-local")
-    expect(card?.status).toBe("error")
-    if (card?.kind === "approval") {
-      expect(card.payload.error).toContain("not linked to a run")
-      expect(card.payload.decision).toBeUndefined()
-    }
+    const card = cardOf(store, "approval-local", "approval")
+    expect(card.status).toBe("error")
+    expect(card.payload.error).toContain("not linked to a run")
+    expect(card.payload.decision).toBeUndefined()
   })
 })
 

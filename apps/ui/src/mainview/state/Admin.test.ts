@@ -4,6 +4,7 @@ import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "./AppController"
 import type { AppServices } from "./AppController"
+import type { Card } from "./AppState"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
 
@@ -17,6 +18,20 @@ const memoryStorage = (): StorageApi => {
 }
 
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
+/*
+ * The card a test names, or a failure. `if (card?.kind === "x")` around a
+ * block of assertions turns a missing card into a silent pass: the block
+ * simply never runs.
+ */
+type CardRow = NonNullable<ReturnType<AppStore["collections"]["cards"]["get"]>>
+const cardOf = <K extends Card["kind"]>(store: AppStore, id: string, kind: K): Extract<CardRow, { kind: K }> => {
+  const card = store.collections.cards.get(id)
+  if (card === undefined || card.kind !== kind) {
+    throw new Error(`no ${kind} card at ${id} (saw ${card?.kind ?? "nothing"})`)
+  }
+  return card as Extract<CardRow, { kind: K }>
+}
+
 
 const unavailableRepositories: NativeRepositories = {
   available: false,
@@ -143,23 +158,20 @@ describe("the admin plugin (admin session)", () => {
     expect((await controller.commands.run("admin.grant", "25 octocat")).status).toBe("executed")
     // Nothing posted yet — the card asks first.
     expect(recorded.some((r) => r.path === "/api/admin/grant")).toBe(false)
-    const card = [...store.collections.cards.values()].find((c) => c.kind === "grant-confirm")
-    expect(card?.title).toBe("Grant $25 to octocat?")
-    if (card?.kind === "grant-confirm") {
-      expect(card.payload.phase).toBe("confirm")
-      expect(card.payload.amountUsd).toBe(25)
-      expect(card.payload.login).toBe("octocat")
-    }
+    const found = [...store.collections.cards.values()].find((c) => c.kind === "grant-confirm")
+    const card = cardOf(store, found?.id ?? "", "grant-confirm")
+    expect(card.title).toBe("Grant $25 to octocat?")
+    expect(card.payload.phase).toBe("confirm")
+    expect(card.payload.amountUsd).toBe(25)
+    expect(card.payload.login).toBe("octocat")
 
-    expect((await controller.commands.run("admin.grant.confirm", card?.id ?? "")).status).toBe("executed")
+    expect((await controller.commands.run("admin.grant.confirm", card.id)).status).toBe("executed")
     const posted = recorded.find((r) => r.path === "/api/admin/grant")
-    expect(posted?.body).toEqual({ login: "octocat", amountUsd: 25, operationKey: card?.id })
-    const granted = store.collections.cards.get(card?.id ?? "")
-    expect(granted?.status).toBe("acted")
-    if (granted?.kind === "grant-confirm") {
-      expect(granted.payload.phase).toBe("granted")
-      expect(granted.payload.grantId).toBe("admin:product-x")
-    }
+    expect(posted?.body).toEqual({ login: "octocat", amountUsd: 25, operationKey: card.id })
+    const granted = cardOf(store, card.id, "grant-confirm")
+    expect(granted.status).toBe("acted")
+    expect(granted.payload.phase).toBe("granted")
+    expect(granted.payload.grantId).toBe("admin:product-x")
   })
 
   test("a failed grant retried from its card sends the same operation key", async () => {
@@ -224,11 +236,8 @@ describe("the admin plugin (admin session)", () => {
       )
     })
     expect((await controller.commands.run("admin.requests")).status).toBe("executed")
-    const card = store.collections.cards.get("admin-requests")
-    expect(card?.kind).toBe("request-queue")
-    if (card?.kind === "request-queue") {
-      expect(card.payload.requests.map((r) => r.login)).toEqual(["octocat", "hubot"])
-    }
+    const card = cardOf(store, "admin-requests", "request-queue")
+    expect(card.payload.requests.map((r) => r.login)).toEqual(["octocat", "hubot"])
 
     expect((await controller.commands.run("admin.queue.approve", "octocat")).status).toBe("executed")
     const posted = recorded.find((r) => r.path === "/api/admin/allowlist")
@@ -236,11 +245,9 @@ describe("the admin plugin (admin session)", () => {
     // The card re-read from the server after the approve — never local optimism.
     const queueReads = recorded.filter((r) => r.path === "/api/admin/requests")
     expect(queueReads.length).toBeGreaterThanOrEqual(2)
-    const refreshed = store.collections.cards.get("admin-requests")
-    if (refreshed?.kind === "request-queue") {
-      expect(refreshed.payload.approving).toBeNull()
-      expect(refreshed.payload.requests.map((r) => r.login)).toEqual(["octocat", "hubot"])
-    }
+    const refreshed = cardOf(store, "admin-requests", "request-queue")
+    expect(refreshed.payload.approving).toBeNull()
+    expect(refreshed.payload.requests.map((r) => r.login)).toEqual(["octocat", "hubot"])
   })
 
   test("health composes the per-service card from the real read", async () => {
@@ -259,16 +266,13 @@ describe("the admin plugin (admin session)", () => {
       })
     })
     expect((await controller.commands.run("admin.health")).status).toBe("executed")
-    const card = store.collections.cards.get("admin-health")
-    expect(card?.kind).toBe("admin-health")
-    if (card?.kind === "admin-health") {
-      expect(card.payload.services.map((s) => `${s.name}:${s.status}`)).toEqual([
-        "billing:ok",
-        "identity:ok"
-      ])
-      expect(card.payload.queueDepth).toBe(2)
-      expect(card.payload.charges?.lifetimeChargedUsd).toBe("0.16125")
-    }
+    const card = cardOf(store, "admin-health", "admin-health")
+    expect(card.payload.services.map((s) => `${s.name}:${s.status}`)).toEqual([
+      "billing:ok",
+      "identity:ok"
+    ])
+    expect(card.payload.queueDepth).toBe(2)
+    expect(card.payload.charges?.lifetimeChargedUsd).toBe("0.16125")
   })
 
   test("an admin route failure is an honest line, never a dead end", async () => {

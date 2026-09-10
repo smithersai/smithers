@@ -142,6 +142,36 @@ describe("the instructions budget", () => {
     expect(native).not.toContain("code intelligence (hover, definitions, diagnostics) and connecting Linear need the native app")
   })
 
+  /*
+   * Stage 1 — the argument grammars leave, every summary stays. Only stages
+   * 0, 2 and 3 were pinned, so widening the stage-0 predicate to `stage <= 1`
+   * kept every grammar in stage 1 and the suite stayed green: the oversized
+   * fixture simply fell through to stage 2.
+   */
+  test("a catalog that fits only once the argument grammars go lands in stage 1, keeping every summary", () => {
+    const honesty = { github: { connected: false, login: null, repositories: null }, localRepositories: [], localRepositoriesAvailable: true } as never
+    const catalog = Array.from({ length: 40 }, (_entry, index) => ({
+      name: `ns${index % 4}.command-${index}`,
+      summary: `Does the ${index}th thing, in a sentence long enough to be worth keeping`,
+      args: "<one> [two] [three]"
+    }))
+    // The two renderings the budget chooses between, measured through the public seam.
+    const atStage0 = bytes(smithersInstructions(catalog, honesty, [], { lastStage: 0, budgetBytes: 0 }))
+    const atStage1 = bytes(smithersInstructions(catalog, honesty, [], { lastStage: 1, budgetBytes: 0 }))
+    // Dropping the grammars is what buys the room; without that, stage 1 is stage 0.
+    expect(atStage0).toBeGreaterThan(atStage1)
+
+    const text = smithersInstructions(catalog, honesty, [], { budgetBytes: atStage1 })
+    expect(instructionStageOf(text)).toBe(1)
+    expect(bytes(text)).toBeLessThanOrEqual(atStage1)
+    // Every command keeps its name AND its summary — only the grammar left.
+    for (const command of catalog) {
+      expect(text).toContain(`- /${command.name} — ${command.summary}`)
+    }
+    expect(text).not.toContain("<one>")
+    expect(text).not.toContain("[three]")
+  })
+
   test("a catalog too large for the budget degrades in stages and never drops a command's name", () => {
     const honesty = { github: { connected: false, login: null, repositories: null }, localRepositories: [], localRepositoriesAvailable: true } as never
     const many = Array.from({ length: 400 }, (_entry, index) => ({

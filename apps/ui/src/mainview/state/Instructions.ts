@@ -305,9 +305,10 @@ export const smithersInstructions = (
   const lastStage = options.lastStage ?? 3
   const codeIntel = catalog.some((command) => command.name === "code.hover")
   const render = (stage: InstructionStage): string => assembleInstructions(catalogLinesFor(catalog, stage), honesty, roles, codeIntel)
-  for (const stage of [0, 1, 2, 3] as const) {
+  for (const stage of [0, 1, 2] as const) {
+    if (stage >= lastStage) break
     const text = render(stage)
-    if (bytesOf(text) <= budget || stage >= lastStage) return text
+    if (bytesOf(text) <= budget) return text
   }
   return render(lastStage)
 }
