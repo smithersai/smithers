@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto"
 import { readWorkspaceManifests } from "../../scripts/pack-release.mjs"
 import { readVersionedManifests, retarget, retargetSource, versionedSources } from "../../scripts/set-release-version.mjs"
 import { candidateIntegrity, preflight, publishCandidate, verifyLocalCandidate } from "../../scripts/publish-release.mjs"
+import { releaseGateArgs, releaseGates } from "../../scripts/release-gates.mjs"
 import * as Content from "../release-content/workflow.ts"
 import * as Release from "../release/workflow.ts"
 import { changelogNarrative, checkContent, digest, renderCard } from "./content.ts"
@@ -340,11 +341,10 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
   const checks = async (evidence: Evidence, signal?: AbortSignal): Promise<Evidence> => {
     await assertHead(evidence.sourceSha, signal)
     // Smithers targets are the gate. No GitHub YAML is parsed or dispatched.
-    for (const target of ["//packages/...", "//examples/...", "//flows:check", "//flows:suite", "//apps/site/...", "//apps/docs/..."]) {
-      await run("pnpm", ["exec", "smthrs", "ci", target, "--verbose"], signal ? { signal } : {})
-    }
-    for (const target of ["//scripts:packManifest", "//scripts:releaseVersion", "//scripts:releaseRehearsal", "//scripts:releaseCut"]) {
-      await run("pnpm", ["exec", "smthrs", "test", target, "--verbose"], signal ? { signal } : {})
+    // The inventory is shared with release.yml by drift test, so this path runs
+    // the serial fault matrix and the WASM byte-compare the workflow requires.
+    for (const gate of releaseGates) {
+      await run("pnpm", ["exec", "smthrs", ...releaseGateArgs(gate)], signal ? { signal } : {})
     }
     await assertCleanMain(signal)
     return evidence

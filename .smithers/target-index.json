@@ -27992,6 +27992,10 @@
         "path": "scripts/release-graph.test.mjs"
       },
       {
+        "kind": "file",
+        "path": "scripts/release-gates.test.mjs"
+      },
+      {
         "kind": "glob",
         "pattern": "scripts/**/*.mjs",
         "exclude": []

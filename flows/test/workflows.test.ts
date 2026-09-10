@@ -12,10 +12,11 @@ import * as Content from "../release-content/workflow.ts"
 import * as Release from "../release/workflow.ts"
 import { contentInput, releaseInput } from "../release-support/input.ts"
 import { commandRunner } from "../release-support/io.ts"
-import { actionLayers } from "../release-support/operations.ts"
+import { actionLayers, operations } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"
 import { ReleaseError, type Candidate } from "../release-support/schema.ts"
 import { evidence, repository, scriptedSeats } from "./fixtures.ts"
+import { releaseGateArgs, releaseGates } from "../../scripts/release-gates.mjs"
 
 test("content approval survives exit and restart in a different Node process", { timeout: 60_000 }, async (test) => {
   const fixture = await repository(test)
@@ -210,3 +211,38 @@ test("a failed release gate prevents packing and publication", { timeout: 60_000
   if (Exit.isFailure(result)) assert.match(JSON.stringify(result.cause), /tests failed/)
   assert.equal(packed, false)
 })
+
+test("the checks gate runs the shared release inventory, including the serial fault matrix and the WASM byte-compare", { timeout: 60_000 }, async (test) => {
+  // The flow used to keep its own partial gate list and skipped both targets;
+  // this pins the inventory as the single source and the two gates by name.
+  const fixture = await repository(test)
+  const gates: string[] = []
+  const ops = operations({ root: fixture.root, run: async (command, args, options) => {
+    if (command !== "pnpm") return commandRunner(fixture.root)(command, args, options)
+    assert.deepEqual(args.slice(0, 2), ["exec", "smthrs"])
+    gates.push(args.slice(2).join(" "))
+    return ""
+  } })
+  assert.deepEqual(await ops.checks(fixture.evidence), fixture.evidence)
+  assert.deepEqual(gates, releaseGates.map((gate) => releaseGateArgs(gate).join(" ")))
+  assert.ok(gates.includes("test //packages/...:faults --jobs 1 --verbose"))
+  assert.ok(gates.includes("test //crates/flows-jj:wasmReproducibility --verbose"))
+  assert.ok(gates.indexOf("ci //packages/... --jobs 2 --verbose") < gates.indexOf("test //packages/...:faults --jobs 1 --verbose"))
+})
+
+for (const target of ["//packages/...:faults", "//crates/flows-jj:wasmReproducibility"]) {
+  test(`a failing ${target} gate fails checks before any later gate runs`, { timeout: 60_000 }, async (test) => {
+    const fixture = await repository(test)
+    const after: string[] = []
+    let failed = false
+    const ops = operations({ root: fixture.root, run: async (command, args, options) => {
+      if (command !== "pnpm") return commandRunner(fixture.root)(command, args, options)
+      if (failed) after.push(args.join(" "))
+      if (args[3] === target) { failed = true; throw new Error(`${target} failed`) }
+      return ""
+    } })
+    await assert.rejects(ops.checks(fixture.evidence), new RegExp(`${target.replace(/[.]/g, "\\.")} failed`))
+    assert.equal(failed, true, "the gate was invoked")
+    assert.deepEqual(after, [], "no gate runs after the failure, so build and pack never start")
+  })
+}
