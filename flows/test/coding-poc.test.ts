@@ -90,7 +90,7 @@ test("real native source, QuickJS drafting and SQLite replay retain a discarded 
   const platform = process.versions.bun
     ? (await import("../../packages/smithers/flows/platform-bun/node_modules/@effect/platform-bun/dist/BunServices.js")).layer : NodeServices.layer
   const runtime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
-  const binding = nativeLayer({ repositoryPath: root, adapterPath })
+  const binding = nativeLayer({ sourcePublication: "local-only", repositoryPath: root, adapterPath })
   const original = await Effect.runPromise(Effect.flatMap(NativeCoding, native => native.read()).pipe(Effect.provide(binding), Effect.provide(platform), Effect.scoped))
   assert.equal(original.head.kind, "resolved")
   const plan: Plan = { prompt: "Prototype a new title", memoryRevision: "memory", base: original.head, observedHead: original.head, changes: [{

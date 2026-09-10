@@ -39,8 +39,17 @@ export type Operation = typeof Operation.Type
 export const ReadResult = Schema.Struct({
   status: Schema.Literal("read"), operationId: OperationId, head: NativeRevision,
   revisions: Schema.Array(NativeRevision),
-  history: Schema.optionalKey(Schema.Array(NativeRevision))
+  history: Schema.optionalKey(Schema.Array(NativeRevision)),
+  historyComplete: Schema.optionalKey(Schema.Boolean)
 })
+const sourceIdentity = Schema.Struct({ changeId: ChangeId, commitId: CommitId, treeId: CommitId, parentCommitIds: Schema.Array(CommitId) })
+export const SourcePublication = Schema.Struct({
+  status: Schema.Literal("retained"), requestId: RequestId, workspaceId: RequestId,
+  repositoryId: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+  ref: Schema.String, source: sourceIdentity
+})
+export type SourcePublication = typeof SourcePublication.Type
+export const PublishSource = Schema.Struct({ requestId: RequestId, source: Resolved })
 export const OperationResult = Schema.Union([
   Schema.Struct({
     status: Schema.Literal("accepted"), replayed: Schema.optionalKey(Schema.Boolean),
@@ -66,8 +75,10 @@ export const requestIdFor = (executionId: string, actionKey: string): string => 
 }
 
 export class NativeCoding extends Context.Service<NativeCoding, {
+  readonly sourcePublication: "cloud" | "local-only"
   readonly read: (changeIds?: ReadonlyArray<string>, historyLimit?: number) => Effect.Effect<typeof ReadResult.Type, NativeCodingError>
   readonly apply: (operation: Operation) => Effect.Effect<OperationResult, NativeCodingError>
+  readonly publishOriginalSource: (request: typeof PublishSource.Type) => Effect.Effect<SourcePublication, NativeCodingError>
 }>()("coding/NativeCoding") {}
 
 export interface NativeOptions {
@@ -76,6 +87,9 @@ export interface NativeOptions {
   /** Host-selected executable location; never part of a flow input. */
   readonly adapterPath?: string
   readonly python?: string
+  /** Explicit development capability. Local requests may run but cannot
+   * produce cloud retention or become eligible for Vibe publication. */
+  readonly sourcePublication?: "cloud" | "local-only"
 }
 
 const failure = (code: string, message: string) => new NativeCodingError({ code, message })
@@ -120,12 +134,29 @@ export const nativeLayer = (options: NativeOptions) => Layer.effect(NativeCoding
     })
   )
   return {
+    sourcePublication: options.sourcePublication ?? "cloud",
     read: (changeIds: ReadonlyArray<string> = [], historyLimit?: number) => invoke({
       operation: "read", changeIds, ...(historyLimit === undefined ? {} : { historyLimit })
     }).pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(ReadResult)),
       Effect.mapError(error => error instanceof NativeCodingError ? error : failure("invalid_receipt", "Native read returned an invalid revision"))
     ),
+    publishOriginalSource: (request: typeof PublishSource.Type) => Effect.gen(function*() {
+      if (options.sourcePublication === "local-only") return yield* failure("source_publication_unavailable", "This host has explicit local-only native capability; it cannot acknowledge cloud retention")
+      const input = yield* Schema.decodeUnknownEffect(PublishSource)(request).pipe(
+        Effect.mapError(() => failure("invalid_request", "Publication requires an exact resolved native source")))
+      const result = yield* invoke({ operation: "publish_source", ...input }).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(SourcePublication)),
+        Effect.mapError(error => error instanceof NativeCodingError ? error : failure("source_publication_invalid_ack", "Cloud source publication returned an incomplete acknowledgement")))
+      if (result.requestId !== input.requestId || result.source.changeId !== input.source.changeId ||
+          result.source.commitId !== input.source.commitId || result.source.treeId !== input.source.treeId ||
+          result.source.parentCommitIds.length !== input.source.parentCommitIds.length ||
+          result.source.parentCommitIds.some((id, index) => id !== input.source.parentCommitIds[index]) ||
+          result.ref !== `refs/smithers/workspaces/${result.workspaceId}/sources/${input.source.commitId}`) {
+        return yield* failure("source_publication_invalid_ack", "Cloud acknowledgement did not match the exact native source")
+      }
+      return result
+    }),
     apply: (operation: Operation) => Schema.decodeUnknownEffect(Operation)(operation).pipe(
       Effect.mapError(() => failure("invalid_request", "Native operation requires exact resolved JJ revision identities")),
       Effect.flatMap(invoke),

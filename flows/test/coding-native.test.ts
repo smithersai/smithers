@@ -35,7 +35,7 @@ test("Effect spawner runs the real Plue adapter: native lost-ack replay, conflic
   // Import Plue's exact implementation. Only provisioned paths vary in this
   // portable harness; production invokes the installed --local entrypoint.
   await writeFile(wrapper, `import importlib.util,json,sys\nspec=importlib.util.spec_from_file_location("coding",${JSON.stringify(source)})\ncoding=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(coding)\ncoding.REPORTER_SCRIPT=${JSON.stringify(reporter)}\ntry:\n print(json.dumps(coding.run_local(${JSON.stringify(config)})))\nexcept coding.CodingError as error:\n print(json.dumps({"error":{"code":error.code,"message":error.message}}))\n sys.exit(1)\n`)
-  const host = (repositoryPath = repo) => nativeLayer({ repositoryPath, adapterPath: wrapper }).pipe(
+  const host = (repositoryPath = repo) => nativeLayer({ sourcePublication: "local-only", repositoryPath, adapterPath: wrapper }).pipe(
     Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))))
   )
   let original!: Operation

@@ -61,7 +61,7 @@ test("configured coding host runs the real AgentAction, guarded file tool and na
   const adapterSource = join(temporary, "native-adapter.py")
   await writeFile(adapterSource, (await readFile(source!, "utf8")).replace('"/usr/local/bin/smithers-jj-export"', JSON.stringify(exporter)))
   await writeFile(wrapper, `import importlib.util,json,sys\nspec=importlib.util.spec_from_file_location("coding",${JSON.stringify(adapterSource)})\ncoding=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(coding)\ncoding.REPORTER_SCRIPT=${JSON.stringify(reporter)}\ntry:\n print(json.dumps(coding.run_local(${JSON.stringify(config)}, engine="--engine" in sys.argv)))\nexcept coding.CodingError as error:\n print(json.dumps({"error":{"code":error.code,"message":error.message}}))\n sys.exit(1)\n`)
-  const options = { repositoryPath: root, adapterPath: wrapper, credential: "fixture-key",
+  const options = { sourcePublication: "local-only" as const, repositoryPath: root, adapterPath: wrapper, credential: "fixture-key",
     gatewayId: "11111111-1111-4111-8111-111111111111", implementationModel: "test:scripted", exporterPath: exporter }
   const initial = await Effect.runPromise(Effect.flatMap(NativeCoding, native => native.read()).pipe(
     Effect.provide(nativeLayer(options)), Effect.provide(platform.host), Effect.scoped))

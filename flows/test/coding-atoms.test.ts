@@ -47,7 +47,7 @@ test("native atom implementation persists real files, replays, and edits old JJ 
   await writeFile(reporter, 'exec 9>"$op_repo/smithers-coding.lock"')
   await writeFile(wrapper, `import importlib.util,json,sys\nspec=importlib.util.spec_from_file_location("coding",${JSON.stringify(source)})\ncoding=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(coding)\ncoding.REPORTER_SCRIPT=${JSON.stringify(reporter)}\ntry:\n print(json.dumps(coding.run_local(${JSON.stringify(config)})))\nexcept coding.CodingError as error:\n print(json.dumps({"error":{"code":error.code,"message":error.message}}))\n sys.exit(1)\nexcept (OSError, coding.subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:\n print(json.dumps({"error":{"code":"guest_failure","message":str(error)[-1000:]}}))\n sys.exit(1)\n`)
   const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-  const native = nativeLayer({ repositoryPath: root, adapterPath: wrapper }).pipe(
+  const native = nativeLayer({ sourcePublication: "local-only", repositoryPath: root, adapterPath: wrapper }).pipe(
     Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(platform)))
   )
   const read = (ids: ReadonlyArray<string> = []) => Effect.runPromise(Effect.flatMap(NativeCoding, native => native.read(ids)).pipe(Effect.provide(native)))
@@ -60,7 +60,7 @@ test("native atom implementation persists real files, replays, and edits old JJ 
   let failWith: string | undefined
   const recoveringNative = Layer.effect(NativeCoding)(Effect.gen(function*() {
     const service = yield* NativeCoding
-    return { read: (ids: ReadonlyArray<string> = []) => Effect.gen(function*() {
+    return { ...service, read: (ids: ReadonlyArray<string> = []) => Effect.gen(function*() {
       readAttempts.push(ids)
       if (readAttempts.length === 1) return yield* new NativeCodingError({ code: "workspace_busy", message: "injected read lock contention" })
       if (readAttempts.length === 2) return yield* new NativeCodingError({ code: "guest_failure", message: "injected read subprocess failure" })

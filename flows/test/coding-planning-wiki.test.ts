@@ -96,7 +96,7 @@ test("wiki generation precedes planning, reuses exact reviews, rechecks changed 
           atoms: [{ changeId: null, message: "✨ feat: add feature", intent: "Add the next feature", reads: ["src/answer.ts"], writes: ["src/next.ts"] }] }] }
     }))
   ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(Layer.succeed(Executable.Catalog, { executables, refused: [] })),
-    Layer.provideMerge(nativeLayer({ repositoryPath: root, adapterPath })))
+    Layer.provideMerge(nativeLayer({ sourcePublication: "local-only", repositoryPath: root, adapterPath })))
   const make = () => ManagedRuntime.make(runtime.layer({ filename: join(root, ".flows", "engine.db"), workspaceRoot: root,
     owner: { hostId: "planning-wiki-acceptance" }, isAlive: Ownership.sameHostPidProbe }, StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), registration).pipe(
       Layer.provideMerge(layerAt({ repositoryPath: root, adapterPath })), Layer.provideMerge(platform),

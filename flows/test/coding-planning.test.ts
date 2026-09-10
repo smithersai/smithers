@@ -142,7 +142,7 @@ test("native memory and a real SQLite clarification resume across hosts and reje
       return draft(context.head.changeId, [null])
     }))
   ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(Layer.succeed(Executable.Catalog, { executables, refused: [] })),
-    Layer.provideMerge(nativeLayer({ repositoryPath: root, adapterPath })))
+    Layer.provideMerge(nativeLayer({ sourcePublication: "local-only", repositoryPath: root, adapterPath })))
   const make = () => ManagedRuntime.make(runtime.layer({ filename: join(root, ".flows", "engine.db"), workspaceRoot: root,
     owner: { hostId: "planning-acceptance" }, isAlive: Ownership.sameHostPidProbe }, StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), registrations).pipe(
       Layer.provideMerge(layerAt({ repositoryPath: root, adapterPath })), Layer.provideMerge(platform),

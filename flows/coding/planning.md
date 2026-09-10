@@ -69,12 +69,34 @@ source revision inspected during planning. An amendment's base can precede
 that observed head. Downstream implementation and checks
 retain their own existing revision and executable fences.
 
-`AdmitSource` is a private action for a composed request. It captures current
-bytes through the injected `Jj` service, then compares the observed head and
-base with the prepared plan. A changed source refuses admission. This is an
+`AdmitSource` is a private action for a composed request. It first compares the
+observed native head and base with the prepared plan, then retains that exact
+source through the existing cloud workspace infrastructure. Only after its
+exact cloud ACK does it capture current bytes through the injected `Jj` service
+and recheck head/base. Even an admission snapshot can rewrite a dirty working
+copy, so retention comes first. A changed source refuses admission. This is an
 initial check, not a lock covering the entire run. Legacy manually supplied
 plans remain decodable without `observedHead`, but cannot pass this admission
-check; they must be prepared again.
+check; they must be prepared again. The gate now uses the private durable action
+identity `coding/admit-retained-source`; an older prepared-source action receipt
+cannot stand in for this stronger admission.
+
+The private `NativeCoding.publishOriginalSource({requestId, source})` primitive
+uses the Plue-installed adapter and native helper, the head reporter's existing
+credential cache, JJ's transport and an immutable reserved source ref. Its
+receipt contains workspace/repository, ref and exact commit/change/tree/parent
+identity; no credentials, new atomic IDs or fabricated cloud operation IDs.
+The request UUID comes from the existing FlowInstance execution ID and action
+key. Retrying identical source publication recovers its cloud ACK after later
+rewrites. A generic 404, old helper, incomplete ACK or network failure refuses
+admission. This does not mark asynchronous operation provenance as published.
+
+The host defaults to `sourcePublication:"cloud"`. An explicitly configured
+`"local-only"` development adapter may admit local coding requests without a
+cloud side effect, but publication itself fails and it cannot satisfy Vibe's
+cloud-retention requirement. Local tests declare that capability explicitly;
+they never manufacture a cloud acknowledgement. Both Node and Bun invoke the
+same adapter through Effect's injected process service.
 
 ## Internal data and native adapter contract
 
@@ -88,8 +110,10 @@ The new `PlanningContext` is durable action input/output, not a database table:
   catalog definitions. The model cannot supply replacement digests.
 - `memoryRevision` is a canonical digest of this measured evidence.
 
-The existing private Plue read request accepts optional `historyLimit: 1..100`.
-Only requests supplying it receive `history`; legacy read payloads and results
+The existing private Plue read request accepts optional `historyLimit: 1..1024`.
+Only requests supplying it receive `history` and `historyComplete`; one extra
+ancestor detects whether the window is truncated. Complete-history landing
+must require `historyComplete:true`. Legacy read payloads and results
 retain their shape. No atomic ID is minted: a planned existing atom uses its
 full native JJ change ID, and a new atom uses `null` until JJ creates it.
 

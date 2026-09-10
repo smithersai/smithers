@@ -74,7 +74,7 @@ process.exit(tier==='fast'&&existsSync(log+'.fastfail')?9:tier==='slow'&&stage==
   await writeFile(reporter, 'exec 9>"$op_repo/smithers-coding.lock"')
   await writeFile(wrapper, `import importlib.util,json,sys\nspec=importlib.util.spec_from_file_location("coding",${JSON.stringify(source)})\ncoding=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(coding)\ncoding.REPORTER_SCRIPT=${JSON.stringify(reporter)}\ntry:\n print(json.dumps(coding.run_local(${JSON.stringify(config)})))\nexcept coding.CodingError as error:\n print(json.dumps({"error":{"code":error.code,"message":error.message}}))\n sys.exit(1)\n`)
   const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-  const native = nativeLayer({ repositoryPath: root, adapterPath: wrapper }).pipe(
+  const native = nativeLayer({ sourcePublication: "local-only", repositoryPath: root, adapterPath: wrapper }).pipe(
     Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(platform))))
   const initial = await Effect.runPromise(Effect.flatMap(NativeCoding, native => native.read()).pipe(Effect.provide(native)))
   assert.equal(initial.head.kind, "resolved")
