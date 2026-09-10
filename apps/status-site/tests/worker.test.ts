@@ -9,9 +9,10 @@ const status = JSON.parse(statusRaw) as {
   updatedAt: string;
   monitoringSince: string;
   overall: string;
+  overallNote: string;
   components: Array<{ name: string; description?: string; status: string }>;
   history: Record<string, { status: string; note?: string }>;
-  incidents: unknown[];
+  incidents: Array<{ title?: string; updates?: Array<{ body?: string }> }>;
 };
 
 const BANNERS: Record<string, string> = {
@@ -25,6 +26,39 @@ const LABELS: Record<string, string> = {
   degraded: "Degraded",
   outage: "Outage",
   maintenance: "Maintenance",
+};
+
+/**
+ * The static state a reader without JavaScript sees, read straight out of the
+ * markup without running the inline script. Every field is visible text or a
+ * class, never the script's own lookup tables, so a wrong label cannot be
+ * satisfied by the BANNERS/LABELS literals further down the page.
+ */
+function staticState(html: string) {
+  const bannerClass = /<div class="banner (\w+)" id="banner"/.exec(html)?.[1] ?? null;
+  const bannerText = /<h1 id="banner-text">([^<]*)<\/h1>/.exec(html)?.[1] ?? null;
+  const stamp = /<p class="stamp" id="stamp">Last updated ([^<]*)<\/p>/.exec(html)?.[1] ?? null;
+  const note = /<p class="note" id="note">\s*([^<]*?)\s*<\/p>/.exec(html)?.[1] ?? null;
+  const rows = [
+    ...html.matchAll(
+      /<span class="name">([^<]+)<\/span>\s*<span class="desc">([^<]*)<\/span>\s*<span class="state (\w+)"><span class="dot"><\/span>([^<]*)<\/span>/g,
+    ),
+  ].map(([, name, desc, state, label]) => ({ name, desc, state, label }));
+  return { bannerClass, bannerText, stamp, note, rows };
+}
+
+/** The same state derived from the feed, the way the inline script renders it. */
+const feedState = {
+  bannerClass: status.overall,
+  bannerText: BANNERS[status.overall] as string,
+  stamp: status.updatedAt.slice(0, 10),
+  note: status.overallNote,
+  rows: status.components.map((component) => ({
+    name: component.name,
+    desc: component.description ?? "",
+    state: component.status,
+    label: LABELS[component.status] as string,
+  })),
 };
 
 function makeEnv(): StatusSiteEnv {
@@ -74,33 +108,52 @@ describe("status feed", () => {
 
 describe("status page copy", () => {
   test("renders the committed overall state as the static banner", () => {
-    expect(homeHtml).toContain(BANNERS[status.overall] as string);
-    expect(homeHtml).toContain(`<div class="banner ${status.overall}" id="banner"`);
+    const { bannerClass, bannerText } = staticState(homeHtml);
+    expect(bannerClass).toBe(feedState.bannerClass);
+    expect(bannerText).toBe(feedState.bannerText);
+  });
+
+  test("static stamp and note agree with the feed", () => {
+    const { stamp, note } = staticState(homeHtml);
+    expect(stamp).toBe(feedState.stamp);
+    expect(note).toBe(feedState.note);
   });
 
   test("static component rows agree with the feed", () => {
-    const rows = [
-      ...homeHtml.matchAll(
-        /<span class="name">([^<]+)<\/span>\s*<span class="desc">([^<]*)<\/span>\s*<span class="state (\w+)"/g,
-      ),
-    ].map(([, name, desc, state]) => ({ name, desc, state }));
-    expect(rows).toEqual(
-      status.components.map((component) => ({
-        name: component.name,
-        desc: component.description ?? "",
-        state: component.status,
-      })),
-    );
+    expect(staticState(homeHtml).rows).toEqual(feedState.rows);
+  });
+
+  test("static parity rejects a page whose visible labels lag the feed", () => {
+    // Every no-JavaScript field must be read from visible markup, not from the
+    // script's BANNERS/LABELS literals, which contain every heading regardless of
+    // state. Each mutation below leaves those literals intact and must still fail.
+    const mutations: Array<[string, (html: string) => string]> = [
+      ["banner heading", (html) => html.replace('<h1 id="banner-text">All systems operational</h1>', '<h1 id="banner-text">Outage</h1>')],
+      ["badge labels", (html) => html.replaceAll("<span class=\"dot\"></span>Operational</span>", "<span class=\"dot\"></span>Outage</span>")],
+      ["banner class", (html) => html.replace('<div class="banner operational" id="banner"', '<div class="banner outage" id="banner"')],
+      ["stamp", (html) => html.replace("Last updated 2026-08-08", "Last updated 2026-01-01")],
+      ["note", (html) => html.replace("Components are checked by hand", "Components are checked hourly")],
+    ];
+    for (const [name, mutate] of mutations) {
+      const mutated = mutate(homeHtml);
+      expect(mutated, name).not.toBe(homeHtml);
+      expect(staticState(mutated), name).not.toEqual(feedState);
+    }
+    expect(staticState(homeHtml)).toEqual(feedState);
   });
 
   test("promises no SLA, uptime percentage, or round-the-clock support", () => {
     expect(homeHtml).toContain("Best-effort incident response during the alpha. No SLA is implied.");
-    const text = homeHtml.toLowerCase();
-    expect(text).not.toContain("99.9");
-    expect(text).not.toContain("uptime guarantee");
-    expect(text).not.toContain("guaranteed uptime");
-    expect(text).not.toContain("24/7");
-    expect(text).not.toMatch(/\d+(\.\d+)?\s*% uptime/);
+    // The feed's own copy (overallNote, descriptions, history notes, incident
+    // bodies) is rendered onto the page verbatim, so it is scanned too.
+    for (const text of [homeHtml.toLowerCase(), statusRaw.toLowerCase()]) {
+      expect(text).not.toContain("99.9");
+      expect(text).not.toContain("uptime guarantee");
+      expect(text).not.toContain("guaranteed uptime");
+      expect(text).not.toContain("24/7");
+      expect(text).not.toMatch(/\d+(\.\d+)?\s*% uptime/);
+      expect(text).not.toMatch(/\bsla\b(?! is implied)/);
+    }
   });
 
   test("offers no subscribe affordance, because none is wired up", () => {
