@@ -72,6 +72,19 @@ values, so
 the metadata surface loads every command module once and reuses the result;
 dispatching one command still loads only that command.
 
+Each route has a five-second metadata load and projection deadline. A timeout
+keeps that route advertised with a `load_failed` projection, and discovery
+continues with its siblings. Concurrent discovery requests share one build.
+A rejected build is discarded so the next request retries; successful builds,
+including per-route failures, are reused for the lifetime of the CLI.
+
+HTTP discovery and unknown-route fallback waits honor `request.signal`.
+Aborting one request rejects its wait without cancelling the shared build or
+other callers. An already aborted request starts no work. Hosts must call
+`await cli.close()` when shutting down. Closing interrupts an active metadata
+build, releases its cached surface, and rejects new `fetch` and `serve` calls.
+Closing is idempotent.
+
 The projection is enforced, not decorative. Input that contradicts the
 advertised type is refused by Incur before the flow is loaded, with a
 field-level error naming the failing path and no copy of the offending value.

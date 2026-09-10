@@ -223,6 +223,18 @@ const project = (route: Route.Route): Effect.Effect<Projection> =>
     const schema = yield* SchemaBridge.toCommandSchema(route.input, flow.input)
     return { route, flow, schema }
   }).pipe(
+    Effect.timeoutOrElse({
+      duration: "5 seconds",
+      orElse: () =>
+        Effect.fail(
+          new FsError({
+            code: "load_failed",
+            method: "Incur.project",
+            description: "The route metadata load timed out",
+            path: route.name
+          })
+        )
+    }),
     Effect.match({
       onFailure: (error: FsError): Projection => ({ _tag: "Failed", error }),
       onSuccess: (selected: SelectedRoute): Projection => ({ _tag: "Ready", selected })
@@ -369,7 +381,8 @@ const hydrate = (
  * input schema is then projected into Incur flags and remains the
  * authoritative decoder. A discovery surface must publish those flags, so the
  * first discovery request loads every command module once and reuses the
- * result.
+ * result. Each route has a five-second metadata deadline. Hosts must call
+ * `close()` at shutdown to interrupt an active build and release its cache.
  *
  * @category constructors
  * @since 0.1.0
@@ -377,7 +390,7 @@ const hydrate = (
 export const createCli = (
   name: string,
   routes: ReadonlyArray<Route.Route>
-): Effect.Effect<IncurCli.Cli, FsError, FlowInvoker.FlowInvoker> =>
+): Effect.Effect<IncurCli.Cli & { readonly close: () => Promise<void> }, FsError, FlowInvoker.FlowInvoker> =>
   Effect.gen(function*() {
     const validated = yield* CommandTree.make(routes)
     const executable = CommandTree.traverse(validated).filter(Route.isCommandRoute)
@@ -402,13 +415,39 @@ export const createCli = (
       return surface
     }
 
-    // Built once, on the first request that needs it, so a caller that only
-    // ever dispatches keeps loading exactly one module.
+    // The host owns the shared build. Request cancellation only releases that
+    // request's waiter; closing the host interrupts projection itself.
+    const lifetime = new AbortController()
     let metadata: Promise<IncurCli.Cli> | undefined
-    const metadataSurface = (): Promise<IncurCli.Cli> =>
-      metadata ??= runEffect(projectAll(tree)).then((projections) =>
-        metadataInstance = guarded(metadataCli(name, tree, projections, runEffect))
-      )
+    const metadataSurface = (signal?: AbortSignal): Promise<IncurCli.Cli> => {
+      lifetime.signal.throwIfAborted()
+      signal?.throwIfAborted()
+      // Only successful builds are cached. A rejected build must not poison
+      // later discovery requests, including failures while mounting Incur.
+      const build = metadata ??= runEffect(projectAll(tree), { signal: lifetime.signal }).then((projections) => {
+        lifetime.signal.throwIfAborted()
+        return metadataInstance = guarded(metadataCli(name, tree, projections, runEffect))
+      }).catch((error: unknown) => {
+        metadata = undefined
+        throw error
+      })
+      if (signal === undefined) return build
+      return new Promise((resolve, reject) => {
+        const abort = () => {
+          signal.removeEventListener("abort", abort)
+          reject(signal.reason)
+        }
+        signal.addEventListener("abort", abort, { once: true })
+        if (signal.aborted) abort()
+        build.then((surface) => {
+          signal.removeEventListener("abort", abort)
+          resolve(surface)
+        }, (error: unknown) => {
+          signal.removeEventListener("abort", abort)
+          reject(error)
+        })
+      })
+    }
 
     const select = (
       tokens: ReadonlyArray<string>,
@@ -431,6 +470,7 @@ export const createCli = (
       )
 
     cli.serve = async (argv = process.argv.slice(2), options = {}) => {
+      lifetime.signal.throwIfAborted()
       if (isDiscovery(argv)) return (await metadataSurface()).serve(argv, options)
       const normalized = normalizeArgv(argv)
       const tokens = commandTokens(normalized)
@@ -442,16 +482,27 @@ export const createCli = (
     }
 
     cli.fetch = async (request) => {
+      lifetime.signal.throwIfAborted()
+      request.signal.throwIfAborted()
       const url = new URL(request.url)
-      if (isFetchDiscovery(url.pathname)) return (await metadataSurface()).fetch(request)
+      if (isFetchDiscovery(url.pathname)) return (await metadataSurface(request.signal)).fetch(request)
       const path = requestPath(url.pathname)
       if (path === undefined) return reportFetch(malformedPath())
       const outcome = await select(path.decoded, path.raw, { signal: request.signal })
       if (outcome._tag === "Error") return reportFetch(outcome.error)
       return Option.isNone(outcome.selection)
-        ? (await metadataSurface()).fetch(request)
+        ? (await metadataSurface(request.signal)).fetch(request)
         : guarded(dispatchCli(name, outcome.selection.value, runEffect)).fetch(request)
     }
 
-    return cli
+    return Object.assign(cli, {
+      async close(): Promise<void> {
+        lifetime.abort(new DOMException("The CLI is closed", "AbortError"))
+        // Interruption settles the Effect fiber even when a native import is
+        // still evaluating. Never await the native import itself at shutdown.
+        await metadata?.catch(() => undefined)
+        metadata = undefined
+        metadataInstance = undefined
+      }
+    })
   })

@@ -115,6 +115,18 @@ The selected module could not be imported, or its default export is not a
 flow. Confirm the file parses, its dependencies resolve, and the default
 export satisfies `isFlow` from [@smthrs/core](/api/core).
 
+Incur also reports this code for a route whose metadata load or projection
+exceeds five seconds. Sibling routes remain discoverable. Keep module
+initialization bounded and move long-running work into the flow invocation.
+Successful metadata builds retain per-route failures; create a new CLI to
+rebuild that surface. A rejected shared build is retried on the next request.
+
+Aborting an HTTP discovery request stops only that caller's wait. Call
+`await cli.close()` at host shutdown to interrupt shared metadata projection.
+A native `import()` itself cannot be aborted: its module evaluation may
+continue after a deadline or shutdown. Use a separate worker or process if
+module evaluation requires hard termination.
+
 ### `unsupported_schema`
 
 A schema locator cannot describe command input: the route declares an output

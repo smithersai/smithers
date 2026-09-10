@@ -1,6 +1,9 @@
 import { Flow } from "@smthrs/core"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Cause, Effect, Layer, Logger, Option, References, Schema } from "effect"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import * as FlowInvoker from "../src/FlowInvoker.ts"
 import { FsError } from "../src/FsError.ts"
@@ -83,6 +86,148 @@ const call = async (cli: Awaited<ReturnType<typeof makeCli>>["cli"], transport: 
 }
 
 describe("Incur projection", () => {
+  const within = async <A>(promise: Promise<A>, milliseconds: number): Promise<A> => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Metadata wait exceeded test deadline")), milliseconds)
+        })
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  it("bounds a native import stuck in top-level await and discovers sibling routes", async () => {
+    let release!: () => void
+    const globals = globalThis as { fsMetadataGate?: Promise<void> }
+    globals.fsMetadataGate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const directory = await mkdtemp(join(tmpdir(), "fs-metadata-"))
+    const source = join(directory, "stuck.mjs")
+    await writeFile(source, "await globalThis.fsMetadataGate; export default null\n")
+    const { cli } = await makeCli([makeRoute("a-stuck", source), makeRoute("review")])
+    const discovery = paths(cli)
+    try {
+      expect(await within(discovery, 8_000)).toEqual(["/a-stuck", "/review"])
+      const called = await tool(cli, "call_write_tool", { name: "a-stuck", arguments: {} })
+      expect(called.result.isError).toBe(true)
+      expect(called.result.content[0]!.text).toContain("The route metadata load timed out")
+      expect((await call(cli, "MCP")).failed).toBe(false)
+    } finally {
+      // Release this otherwise unbounded module only after the deadline
+      // assertions so teardown leaves no outstanding module evaluation.
+      release()
+      await discovery.catch(() => undefined)
+      delete globals.fsMetadataGate
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it.each(["/openapi.json", "/missing"])("cancels only the waiter for %s", async (path) => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const load = vi.spyOn(Route, "load").mockReturnValue(Effect.promise(() => gate).pipe(Effect.as(visible)))
+    const { cli } = await makeCli()
+    const controller = new AbortController()
+    const reason = new Error("request cancelled")
+    const request = cli.fetch(new Request(`http://localhost${path}`, { signal: controller.signal }))
+    const other = paths(cli)
+    try {
+      await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+      controller.abort(reason)
+      await expect(within(request, 500)).rejects.toBe(reason)
+      expect(load).toHaveBeenCalledTimes(1)
+      release()
+      expect(await other).toEqual(["/review"])
+    } finally {
+      release()
+      await Promise.allSettled([request, other])
+      load.mockRestore()
+    }
+  })
+
+  it("does not start a metadata build for an already aborted request", async () => {
+    const load = vi.spyOn(Route, "load")
+    const { cli } = await makeCli()
+    const controller = new AbortController()
+    const reason = new Error("already cancelled")
+    controller.abort(reason)
+    try {
+      await expect(cli.fetch(new Request("http://localhost/openapi.json", { signal: controller.signal })))
+        .rejects.toBe(reason)
+      expect(load).not.toHaveBeenCalled()
+    } finally {
+      load.mockRestore()
+    }
+  })
+
+  it("retries a rejected shared metadata build on the next request", async () => {
+    const load = vi.spyOn(Route, "load").mockReturnValueOnce(Effect.die(new Error("build failed once")))
+    const { cli } = await makeCli()
+    try {
+      await expect(paths(cli)).rejects.toThrow("build failed once")
+      expect(await paths(cli)).toEqual(["/review"])
+      expect(await paths(cli)).toEqual(["/review"])
+      expect(load).toHaveBeenCalledTimes(2)
+    } finally {
+      load.mockRestore()
+    }
+  })
+
+  it("cancels a request aborted synchronously while its shared build starts", async () => {
+    const controller = new AbortController()
+    const reason = new Error("cancelled during startup")
+    const load = vi.spyOn(Route, "load").mockImplementationOnce(() => {
+      controller.abort(reason)
+      return Effect.succeed(visible)
+    })
+    const { cli } = await makeCli()
+    try {
+      await expect(cli.fetch(new Request("http://localhost/openapi.json", { signal: controller.signal })))
+        .rejects.toBe(reason)
+      expect(await paths(cli)).toEqual(["/review"])
+      expect(load).toHaveBeenCalledTimes(1)
+    } finally {
+      load.mockRestore()
+    }
+  })
+
+  it("closes the host by interrupting the build before projecting more routes", async () => {
+    const interrupted = vi.fn()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const load = vi.spyOn(Route, "load").mockReturnValue(
+      Effect.promise(() => gate).pipe(Effect.as(visible), Effect.onInterrupt(() => Effect.sync(interrupted)))
+    )
+    const { cli } = await makeCli([makeRoute("first"), makeRoute("second")])
+    const pending = paths(cli)
+    // Install a rejection handler before closing the host.
+    const settled = Promise.allSettled([pending])
+    try {
+      await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+      await within(cli.close(), 500)
+      expect(interrupted).toHaveBeenCalledTimes(1)
+      expect((await settled)[0]!.status).toBe("rejected")
+      await expect(paths(cli)).rejects.toThrow("The CLI is closed")
+      await expect(cli.fetch(new Request("http://localhost/first"))).rejects.toThrow("The CLI is closed")
+      await expect(cli.serve(["--llms"], capture().options)).rejects.toThrow("The CLI is closed")
+      await cli.close()
+      expect(load).toHaveBeenCalledTimes(1)
+    } finally {
+      release()
+      await settled
+      load.mockRestore()
+    }
+  })
+
   it("carries typed inputs consistently over GET and JSON POST", async () => {
     const { cli, seen } = await makeCli()
     const get = await cli.fetch(new Request("http://localhost/review?number=42&enabled=true"))
