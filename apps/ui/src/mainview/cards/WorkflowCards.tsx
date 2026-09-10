@@ -40,13 +40,15 @@ export const WorkflowRunCardBody = ({
   onStopRun,
   onRetryRun,
   onRunCommand: sendRunCommand,
-  debugVerbose = false
+  debugVerbose = false,
+  workflowCatalogs
 }: {
   readonly card: Extract<Card, { kind: "run-trace" }>
   readonly onStopRun: (cardId: string) => void
   readonly onRetryRun: (cardId: string) => void
   readonly onRunCommand: RunCommand
   readonly debugVerbose?: boolean
+  readonly workflowCatalogs?: ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   const { phase, steps, result, error, observationError, runId, kind } = card.payload
@@ -69,7 +71,7 @@ export const WorkflowRunCardBody = ({
         <p className="smithers-card-note">steering pending · delivered at the next turn</p> :
         null}
       {/* The run as a trace (spec 06): the card's body for every run kind. Its chips and rows dispatch runs.trace.*. */}
-      <RunTraceBody card={card} onRunCommand={onRunCommand} />
+      <RunTraceBody card={card} onRunCommand={onRunCommand} workflowCatalogs={workflowCatalogs} />
       {/*
        * The secondary tabs (lane runs): the steps tail by default, the
        * transcript on demand (runs.logs), the raw journal only where verbose
@@ -414,11 +416,12 @@ const WorkflowRepoCardBody = ({
  */
 export const WorkflowListCardBody = ({
   card,
-  onRunWorkflow
+  onRunCommand: sendRunCommand
 }: {
   readonly card: Extract<Card, { kind: "workflow-list" }>
-  readonly onRunWorkflow: (name: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
+  const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   const { workflows } = card.payload
   if (workflows.length === 0) {
     return <p className="smithers-card-note">No flows on this workspace yet. Ask for one and I'll create it.</p>
@@ -435,7 +438,7 @@ export const WorkflowListCardBody = ({
             size="sm"
             variant="outline"
             data-flow="flow.run"
-            onClick={() => onRunWorkflow(workflow.key)}
+            onClick={() => onRunCommand("flow.run", flowArgs("flow.run", { name: workflow.key }))}
           >
             Run
           </Button>
@@ -454,6 +457,7 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
         onRetryRun={actions.onRetryRun}
         onRunCommand={actions.onRunCommand}
         debugVerbose={actions.debugVerbose}
+        workflowCatalogs={actions.workflowCatalogs}
       />
     ),
     pill: (card) => {
@@ -480,7 +484,7 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
     pill: defaultPill
   },
   "workflow-list": {
-    render: (card, actions) => <WorkflowListCardBody card={card} onRunWorkflow={actions.onRunWorkflow} />,
+    render: (card, actions) => <WorkflowListCardBody card={card} onRunCommand={actions.onRunCommand} />,
     pill: settledPill
   }
 }

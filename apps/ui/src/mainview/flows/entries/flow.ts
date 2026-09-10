@@ -112,29 +112,31 @@ export const flowFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     summary: "List the flows on your workspace",
     runtime: ["cloud"],
     requires: ["signed-in"],
-    args: "[owner/repo]",
-    input: RepoTarget,
-    handler: ({ repo }) => actions.listWorkspaceWorkflows(repo)
+    args: "[sourceCard=id] [owner/repo]",
+    input: Schema.Struct({ repo: Schema.optional(Schema.String), sourceCard: Schema.optional(Schema.String) }),
+    handler: ({ repo, sourceCard }) => actions.listWorkspaceWorkflows(repo, sourceCard)
   }),
   flow({
     name: "flow.run",
     form: {
       fields: { name: { label: "Flow" }, repo: { optionsFrom: "cloud-repos", kind: "text" }, input: { label: "Input JSON" } },
       partial: flowRunParts,
-      args: (payload) => line(text(payload, "name"), text(payload, "repo"),
+      args: (payload) => line(text(payload, "sourceCard") === undefined ? undefined : `sourceCard=${text(payload, "sourceCard")}`,
+        text(payload, "name"), text(payload, "repo"),
         payload.input === undefined ? undefined : typeof payload.input === "string" ? text(payload, "input") : JSON.stringify(payload.input))
     },
     summary: "Run a flow on your workspace",
     runtime: ["cloud"],
-    args: "<name> [owner/repo] [JSON object]",
+    args: "[sourceCard=id] <name> [owner/repo] [JSON object]",
     requires: ["signed-in"],
     capabilities: ["outbound:launch"],
     input: Schema.Struct({
       name: Schema.String,
       repo: Schema.optional(Schema.String),
+      sourceCard: Schema.optional(Schema.String),
       input: Schema.optional(Schema.Record(Schema.String, Schema.Json))
     }),
-    handler: ({ name, repo, input }) => actions.runWorkflow(name, repo, input)
+    handler: ({ name, repo, input, sourceCard }) => actions.runWorkflow(name, repo, input, sourceCard)
   })
 ]
 

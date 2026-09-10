@@ -29,7 +29,7 @@ selection rules. Nested values and whitespace inside JSON strings are preserved;
 arrays, scalar inputs, malformed JSON, and text after the object are refused.
 
 The app flow's input is now
-`{name: string, repo?: string, input?: Record<string, Json>}`. The existing form
+`{name: string, repo?: string, input?: Record<string, Json>, sourceCard?: string}`. The existing form
 derives an Input JSON field from that schema. A malformed object remains on the
 form with its parse error and cannot launch until corrected. This also fixes the
 form's existing text conversion for an object value: it displays JSON instead of
@@ -136,3 +136,60 @@ Browser rendering is optimistic. The reload checks wait for the existing verbose
 command-settlement trace before reloading OPFS; reloading an in-flight write can
 restore the preceding selection. This slice does not add a global saved-state
 indicator or change the app's persistence scheduling.
+
+## Vibe invitation and recorded finalization
+
+The completed request's existing outcome card offers **Vibe this change** only
+when its current native `coding/Request` result validates, its plan matches the
+visible outcome, and its completed descriptor bridge and approved wrapper have
+coherent recorded ancestry. A completed `coding/CorrectPlan` alone does not
+supply a request identity. Historical cursors, foreign ownership, missing
+bridges, ambiguous generations and model prose cannot create the invitation.
+The backend re-reads and validates the retained approval, POC and source before
+admitting any finalization; the browser is a projection of that evidence.
+
+The invitation also requires the exact source gateway's recorded executable
+catalog to include the full `coding/vibe` flow. Repository FACTORY metadata or
+an `AdmitVibe` child alone does not prove that capability. Without a matching
+catalog, **Check available flows** uses the existing `flow.list` action to
+refresh it. Both the listing and launch retain the originating workspace even
+if the active repository changes. The server remains authoritative if the
+catalog becomes stale.
+
+**New app API parameters:** `flow.list` and `flow.run` now accept optional
+`sourceCard`, through the same slash, button and agent doors:
+
+```text
+/flow.list sourceCard=completed-request-card
+/flow.run sourceCard=completed-request-card coding/vibe {"requestExecutionId":"native-request-id"}
+```
+
+```ts
+await controller.listWorkspaceWorkflows(undefined, "completed-request-card")
+await controller.runWorkflow("coding/vibe", undefined,
+  { requestExecutionId: "native-request-id" }, "completed-request-card")
+```
+
+The source must be an existing run card or a gateway-qualified workflow catalog.
+An explicitly different repository, missing source, or old catalog without
+binding provenance is refused. Omitting `sourceCard` keeps the existing active
+repository rules. The existing gateway Plan, Approval.Submit and Run path is
+unchanged. The caller supplies no successful result, source revision or plan.
+The button's structured input uses `flowArgs`, and a partially specified launch
+keeps its source through the existing form.
+
+The existing `workflow-list` payload gains optional `workspaceId` and
+`gatewayBindingVersion: 1`, matching run-card provenance. Bound catalog identities
+include the workspace so two gateway databases for one repository cannot
+overwrite each other's availability. Old catalogs still decode; their absent
+provenance cannot prove Vibe availability. These are fields in the existing
+cards collection, with no new store or synchronization mechanism.
+
+`CodingVibeProgress` is a new render-only structure derived from completed native
+`coding/AdmitVibe` and `coding/CleanVibeHistory` receipts using the recipe's pure
+Effect schemas. It records stage, original request/control IDs, the existing
+trace span and an optional short cleanup summary. Admission means the request
+was admitted for cleanup; cleanup means descriptions and checks completed.
+Neither receipt claims append, publication or shipment, and green parent output
+cannot stand in for a child receipt. Its Inspect button opens the exact native
+child in the existing debugger; full receipt text remains available there.

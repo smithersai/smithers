@@ -56,6 +56,8 @@ export interface CardActions {
    * raw journal, a debug surface) exists only where verbose does.
    */
   readonly debugVerbose?: boolean
+  /** Existing source-qualified catalog cards; never a second availability store. */
+  readonly workflowCatalogs?: ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
   /*
    * The identity seam's definitive signed-out answer. A card that is a public
    * read (the mythical history) renders its write doors only for a session

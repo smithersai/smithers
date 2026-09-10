@@ -55,7 +55,7 @@ import { ChromeBar } from "./tabs/ChromeBar"
 import { TabBodies } from "./tabs/TabBodies"
 import { timeLabel } from "./Timestamps"
 import { ToastStack } from "./ToastStack"
-import { useCardRows } from "./state/useCardRows"
+import { useCardRows, useWorkflowCatalogRows } from "./state/useCardRows"
 import { linkGraphOf, linksOf, neighbourhoodOf } from "./wiki/VaultAdapter"
 import { StorageRecoveryButton } from "./StorageRecoveryButton"
 import { STORAGE_RECOVERY_EXPORT } from "./state/StorageRecoveryContract"
@@ -163,6 +163,7 @@ function App() {
   )
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
   const cardRows = useCardRows(collections.cards)
+  const workflowCatalogs = useWorkflowCatalogRows(collections.cards)
   const { data: tabRows } = useLiveQuery(collections.tabs)
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
   const { data: toastRows } = useLiveQuery((q) =>
@@ -627,6 +628,7 @@ function App() {
                     debugVerbose={session.verbose === true}
                     signedOut={identity?.state === "signed-out"}
                     worldDocuments={worldDocuments}
+                    workflowCatalogs={workflowCatalogs}
                     {...actions}
                   />
                 ) :
@@ -1010,7 +1012,7 @@ function App() {
                   (
                     <WorkflowListCardBody
                       card={flowsCard}
-                      onRunWorkflow={(name) => controller.runCommandArgs("flow.run", name)}
+                      onRunCommand={actions.onRunCommand}
                     />
                   )}
                 {triggersCard === undefined ?

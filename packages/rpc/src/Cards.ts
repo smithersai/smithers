@@ -4,7 +4,6 @@
  * @since 1.0.0
  */
 import { z } from "zod"
-import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { AgentRoleIdSchema, AgentRoleModelSchema } from "./AgentRoles.ts"
 import {
   ChangeAnalyzerRunSchema,
@@ -25,6 +24,7 @@ import {
   RevisionPinSchema
 } from "./Changes.ts"
 import { FactoryRuleSchema } from "./FactoryProjection.ts"
+import { GatewayWorkspaceIdSchema } from "./GatewayWorkspace.ts"
 import { HomeBlockSchema } from "./HomePane.ts"
 import {
   HARNESS_IDS,
@@ -848,6 +848,10 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     kind: z.literal("workflow-list"),
     payload: z.object({
       repo: z.string(),
+      /** The gateway that actually answered this executable catalog. */
+      workspaceId: GatewayWorkspaceIdSchema.optional(),
+      /** Version 1 distinguishes a recorded legacy gateway from missing provenance. */
+      gatewayBindingVersion: z.literal(1).optional(),
       workflows: z.array(
         z.object({ key: z.string(), description: z.string().nullable() })
       )

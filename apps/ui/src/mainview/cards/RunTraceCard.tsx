@@ -19,6 +19,7 @@ import { runSourceCommand } from "../flows/RunCommand"
 import { EmptyState, StatusPill } from "@smthrs/ui"
 import { CodingPlanBody } from "./CodingPlanCard"
 import { CodingPocBody } from "./CodingPocCard"
+import { CodingVibeBody } from "./CodingVibeCard"
 import type { Card } from "../state/AppState"
 import { timeLabel } from "../Timestamps"
 import type { RunCommand } from "./CardFamily"
@@ -101,9 +102,11 @@ export const selectedSpan = (card: RunTraceCard, model: TraceModel): TraceSpan =
 
 export const RunTraceBody = ({
   card,
-  onRunCommand: sendRunCommand
+  onRunCommand: sendRunCommand,
+  workflowCatalogs
 }: {
   readonly card: RunTraceCard
+  readonly workflowCatalogs?: ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
   readonly onRunCommand: RunCommand
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
@@ -139,8 +142,9 @@ export const RunTraceBody = ({
           </p>
         ) :
         null}
-      <CodingPlanBody card={card} onRunCommand={onRunCommand} />
+      <CodingPlanBody card={card} onRunCommand={onRunCommand} workflowCatalogs={workflowCatalogs} />
       <CodingPocBody card={card} onRunCommand={onRunCommand} />
+      <CodingVibeBody card={card} onRunCommand={onRunCommand} />
       <div className="run-trace-bar" role="group" aria-label="Trace filters">
         <div className="run-trace-views" role="group" aria-label="Trace presentation">
           {(["turns", "timeline"] as const).map((mode) => (

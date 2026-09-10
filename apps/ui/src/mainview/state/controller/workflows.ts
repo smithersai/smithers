@@ -19,10 +19,10 @@ export interface LaunchRefusal {
 
 export interface WorkflowController {
   readonly createWorkflow: (description: string, repo?: string) => Promise<string | void | { readonly value: string }>
-  readonly listWorkspaceWorkflows: (repo?: string) => Promise<string | void | { readonly value: string }>
+  readonly listWorkspaceWorkflows: (repo?: string, sourceCard?: string) => Promise<string | void | { readonly value: string }>
   /** The Flows pane: the surface switch, and the same listing that fills it. */
   readonly showFlows: () => Promise<string | void | { readonly value: string }>
-  readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>) => Promise<string | void | { readonly value: string }>
+  readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string) => Promise<string | void | { readonly value: string }>
   readonly chooseWorkflowRepo: (fullName: string) => Promise<string | void | { readonly value: string }>
   readonly forwardApprovalDecision: (
     card: Extract<Card, { kind: "approval" }>,
@@ -404,28 +404,47 @@ export const createWorkflowController = (
     return { value: `run-started workflow=create-workflow run=${launched.runId} repo=${repo}` }
   }
 
-  const listWorkspaceWorkflows = async (repoArg?: string): Promise<string | void | { readonly value: string }> => {
+  /** A source card binds both catalog reads and launches to the retained host. */
+  const workflowScope = (repoArg?: string, sourceCard?: string):
+    { readonly repo: string; readonly binding: GatewayWorkspaceBinding } | { readonly error: string } => {
+    if (sourceCard !== undefined) {
+      const card = store.collections.cards.get(sourceCard)
+      if (card?.kind !== "run-trace" && card?.kind !== "workflow-list") return { error: "The source run or catalog card is unavailable." }
+      if (repoArg !== undefined && repoArg !== card.payload.repo) return { error: "The source card belongs to another repository." }
+      if (card.kind === "workflow-list" && card.payload.gatewayBindingVersion !== 1) {
+        return { error: "This catalog has no recorded gateway. Refresh the flows from a source run first." }
+      }
+      return { repo: card.payload.repo, binding: card.payload.workspaceId === undefined ? {} : { workspaceId: card.payload.workspaceId } }
+    }
+    const target = workflowTargetRepo(repoArg)
+    if ("error" in target) return target
+    const binding = gatewayBindingFor(store, target.repo)
+    return "error" in binding ? binding : { repo: target.repo, binding }
+  }
+
+  const listWorkspaceWorkflows = async (repoArg?: string, sourceCard?: string): Promise<string | void | { readonly value: string }> => {
     const guard = workflowIdentityGuard()
     if (guard !== undefined) return guard
-    const target = workflowTargetRepo(repoArg)
+    const target = workflowScope(repoArg, sourceCard)
     if ("error" in target) return target.error
-    const repo = target.repo
-    const binding = gatewayBindingFor(store, repo)
-    if ("error" in binding) return binding.error
+    const { repo, binding } = target
     const provisioned = await provisionWorkspace(repo, binding)
     if (provisioned !== true) return provisioned
     const list = await gateway.listFlows(repo, binding)
     if (list.status !== "ok") return list.message
     const workflows = list.value.map((flow) => ({ key: flow.flowId, description: flow.description }))
-    const existing = store.collections.cards.get(`workflow-list-${repo}`)
+    const id = binding.workspaceId === undefined ? `workflow-list-${repo}`
+      : `workflow-list@${encodeURIComponent(repo)}@${encodeURIComponent(binding.workspaceId)}`
+    const existing = store.collections.cards.get(id)
     const card: Card = {
-      id: `workflow-list-${repo}`,
+      id,
       kind: "workflow-list",
       title: `Flows: ${repo}`,
       status: "active",
       createdAt: existing?.createdAt ?? Date.now(),
       ordinal: nextTranscriptOrdinal(),
-      payload: { repo, workflows }
+      payload: { repo, workflows, gatewayBindingVersion: 1,
+        ...(binding.workspaceId === undefined ? {} : { workspaceId: binding.workspaceId }) }
     }
     store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })
     return {
@@ -454,16 +473,14 @@ export const createWorkflowController = (
     return listWorkspaceWorkflows()
   }
 
-  const runWorkflow = async (name: string, repoArg?: string, input: Record<string, unknown> = {}): Promise<string | void | { readonly value: string }> => {
+  const runWorkflow = async (name: string, repoArg?: string, input: Record<string, unknown> = {}, sourceCard?: string): Promise<string | void | { readonly value: string }> => {
     const guard = workflowIdentityGuard()
     if (guard !== undefined) return guard
     const balanceGuard = zeroBalanceGuard()
     if (balanceGuard !== undefined) return balanceGuard
-    const target = workflowTargetRepo(repoArg)
+    const target = workflowScope(repoArg, sourceCard)
     if ("error" in target) return target.error
-    const repo = target.repo
-    const binding = gatewayBindingFor(store, repo)
-    if ("error" in binding) return binding.error
+    const { repo, binding } = target
     const provisioned = await provisionWorkspace(repo, binding)
     if (provisioned !== true) return provisioned
     // Launch first (the gateway's registry is lazy — see createWorkflow); a

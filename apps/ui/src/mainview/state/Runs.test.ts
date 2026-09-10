@@ -844,6 +844,42 @@ describe("workspace-bound run cards", () => {
     expect(store.session().activeRepoKey).toBe(`${REPO}#workspace:${id}`)
   }
 
+  test("source-qualified flow catalogs and launches retain the original host through selection and reload", async () => {
+    const storage = memoryStorage()
+    let store = await createAppStore({ kind: "localStorage", storage })
+    const double = relay({ runs: [{ runId: "run-1", flowId: "coding/request", status: "completed" }] })
+    let controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    await signIn(store, [REPO, "other/repo"])
+    await selectWorkspace(store)
+    expect((await controller.commands.run("flow.run", "coding/request")).status).toBe("executed")
+    const source = runCardInScope(store, { repo: REPO, workspaceId, runId: "run-1" })!
+    await waitFor(() => runCardInScope(store, source.payload)?.payload.phase === "completed")
+    await selectWorkspace(store, "ffffffff-ffff-ffff-ffff-ffffffffffff")
+    const before = double.calls.length
+    expect((await controller.commands.run("flow.list", `sourceCard=${source.id}`)).status).toBe("executed")
+    const catalog = [...store.collections.cards.values()].find(card => card.kind === "workflow-list" && card.payload.workspaceId === workspaceId)!
+    expect(catalog).toMatchObject({ payload: { repo: REPO, workspaceId, gatewayBindingVersion: 1 } })
+    expect(catalog.id).not.toBe(`workflow-list-${REPO}`)
+    const missing = await controller.commands.runForAgent("flow.run", `sourceCard=${source.id}`)
+    expect(missing).toMatchObject({ status: "form", fields: ["name"] })
+    expect(store.collections.cards.get("form-flow.run")).toMatchObject({ payload: { draft: { sourceCard: source.id } } })
+    expect((await controller.commands.run("flow.run", `sourceCard=${source.id} coding/vibe {"requestExecutionId":"native-request"}`)).status).toBe("executed")
+    expect(double.state.launched.at(-1)).toMatchObject({ workflow: "coding/vibe", input: { requestExecutionId: "native-request" } })
+    for (const call of double.calls.slice(before).filter(call => call.path.startsWith("/api/workflow/"))) expect(call.body).toMatchObject({ workspaceId })
+    const refused = double.calls.length
+    expect(said(await controller.commands.run("flow.run", `sourceCard=${source.id} coding/vibe other/repo`))).toContain("another repository")
+    expect(said(await controller.commands.run("flow.list", "sourceCard=missing"))).toContain("unavailable")
+    expect(double.calls.length).toBe(refused)
+    await settle()
+    await controller.dispose()
+    store = await createAppStore({ kind: "localStorage", storage })
+    controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
+    expect(store.collections.cards.get(catalog.id)).toMatchObject({ payload: { workspaceId, gatewayBindingVersion: 1 } })
+    const afterReload = double.calls.length
+    expect((await controller.commands.run("flow.run", `sourceCard=${catalog.id} review-pr`)).status).toBe("executed")
+    for (const call of double.calls.slice(afterReload).filter(call => call.path.startsWith("/api/workflow/"))) expect(call.body).toMatchObject({ workspaceId })
+  })
+
   test("list and inbox cards retain their gateway across provision, reload, filters and uncarded row actions", async () => {
     const storage = memoryStorage()
     let store = await createAppStore({ kind: "localStorage", storage })

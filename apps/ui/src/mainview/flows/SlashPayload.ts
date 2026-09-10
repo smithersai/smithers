@@ -68,7 +68,12 @@ const numbered = (args: string | undefined, reason: string, known?: KnownReposit
 }
 
 /** Preserve JSON string whitespace when extracting the optional flow input. */
-export const flowRunParts = (args: string | undefined): { name?: string; repo?: string; input?: string } => {
+export const flowRunParts = (args: string | undefined): { name?: string; repo?: string; input?: string; sourceCard?: string } => {
+  const source = splitRunSource(args)
+  const parts = flowRunBody(source.args)
+  return source.sourceCard === undefined ? parts : { ...parts, sourceCard: source.sourceCard }
+}
+const flowRunBody = (args: string | undefined): { name?: string; repo?: string; input?: string } => {
   const match = /^(\S+)(?:\s+([\s\S]*))?$/.exec(trimmed(args))
   if (match === null) return {}
   const name = match[1]!

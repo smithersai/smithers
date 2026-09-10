@@ -14,7 +14,7 @@
  * `CardSchema` — so this states it in ONE place instead of at every reader.
  */
 import type { Collection, NonSingleResult } from "@tanstack/db"
-import { useLiveQuery } from "@tanstack/react-db"
+import { eq, useLiveQuery } from "@tanstack/react-db"
 import type { AppCollections } from "./AppStore"
 import type { Card } from "./AppState"
 
@@ -24,4 +24,13 @@ export const useCardRows = (cards: AppCollections["cards"]): ReadonlyArray<Card>
     cards as unknown as Collection<Card, string, Record<string, never>> & NonSingleResult
   )
   return data
+}
+
+
+/** Filter at the collection query so unrelated streamed cards do not repaint every catalog consumer. */
+export const useWorkflowCatalogRows = (cards: AppCollections["cards"]): ReadonlyArray<Extract<Card, { kind: "workflow-list" }>> => {
+  const { data } = useLiveQuery(q => q.from({ card: cards as unknown as Collection<Card, string, Record<string, never>> })
+    .where(({ card }) => eq(card.kind, "workflow-list")), [cards])
+  // The collection owns CardSchema; the exact predicate above narrows its union.
+  return data as ReadonlyArray<Extract<Card, { kind: "workflow-list" }>>
 }

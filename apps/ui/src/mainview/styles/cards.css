@@ -392,6 +392,8 @@
 	z-index: 70;
 	overflow: auto;
 	margin: 0;
+	/* A completed card remains readable while it is the active review surface. */
+	opacity: 1;
 	background: var(--card, #fffefa);
 }
 /*

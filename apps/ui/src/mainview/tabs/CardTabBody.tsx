@@ -3,7 +3,7 @@ import { useMemo } from "react"
 import { cardActions } from "../cards/CardActions"
 import { CardView } from "../ChatCards"
 import { useController } from "../ControllerContext"
-import { useCardRows } from "../state/useCardRows"
+import { useCardRows, useWorkflowCatalogRows } from "../state/useCardRows"
 
 /*
  * A card tab's body (docs/LOCAL-APP.md "Cards"): the SAME card component
@@ -18,6 +18,7 @@ export function CardTabBody({ cardId }: { readonly cardId: string }) {
   const controller = useController()
   const { collections } = controller.store
   const cardRows = useCardRows(collections.cards)
+  const workflowCatalogs = useWorkflowCatalogRows(collections.cards)
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
   const { data: sessionRows } = useLiveQuery((q) =>
     q.from({ session: collections.sessions }).select(({ session }) => ({
@@ -42,6 +43,7 @@ export function CardTabBody({ cardId }: { readonly cardId: string }) {
         maximized={sessionRows[0]?.maximizedCardId === card.id}
         debugVerbose={sessionRows[0]?.verbose === true}
         worldDocuments={worldDocuments}
+        workflowCatalogs={workflowCatalogs}
         {...cardActions(controller)}
       />
     </div>

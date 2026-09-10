@@ -19,7 +19,7 @@ import type { CardViewProps } from "../ChatCards"
 import type { AppController } from "../state/AppController"
 
 /** The CardView props a controller alone decides: the flow bindings. */
-type CardBindings = Omit<CardViewProps, "card" | "maximized" | "worldDocuments" | "debugVerbose" | "signedOut">
+type CardBindings = Omit<CardViewProps, "card" | "maximized" | "worldDocuments" | "debugVerbose" | "signedOut" | "workflowCatalogs">
 
 const bound = new WeakMap<AppController, CardBindings>()
 

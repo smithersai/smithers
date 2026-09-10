@@ -205,14 +205,14 @@ export interface AppController {
     description: string,
     repo?: string
   ) => Promise<string | void | { readonly value: string }>
-  readonly listWorkspaceWorkflows: (repo?: string) => Promise<string | void | { readonly value: string }>
+  readonly listWorkspaceWorkflows: (repo?: string, sourceCard?: string) => Promise<string | void | { readonly value: string }>
   /** The dispatchers waiting on the repository (triggers.list): declared rules for every visitor, live rows when a box answered. */
   readonly listTriggers: TriggersSeam["listTriggers"]
   /** The register door (triggers.register): signed-in by requirement. */
   readonly registerTrigger: TriggersSeam["registerTrigger"]
   /** Ask 5: the Flows pane — the surface switch and the listing that fills it. */
   readonly showFlows: () => Promise<string | void | { readonly value: string }>
-  readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>) => Promise<string | void | { readonly value: string }>
+  readonly runWorkflow: (name: string, repo?: string, input?: Record<string, unknown>, sourceCard?: string) => Promise<string | void | { readonly value: string }>
   /* Wave 12 §2 — the answer to "which loaded repository?" (one act). */
   readonly chooseWorkflowRepo: (fullName: string) => Promise<string | void | { readonly value: string }>
   /* Wave 12 §3 — the two acts a run that has gone quiet offers. */

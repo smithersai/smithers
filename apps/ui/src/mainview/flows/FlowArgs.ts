@@ -17,6 +17,13 @@
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  /** Source-qualified launch uses the existing plan/approval/run path. */
+  readonly "flow.run": {
+    readonly name: string
+    readonly repo?: string
+    readonly sourceCard?: string
+    readonly input?: Readonly<Record<string, unknown>>
+  }
   /** `<changeId> [from] [to] [path]` — the path is the rest of the line, so it may hold a space. */
   readonly "change.diff": {
     readonly changeId: string
@@ -85,6 +92,8 @@ const line = (...parts: ReadonlyArray<string | undefined>): string =>
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
+  "flow.run": (payload) => line(keyed(payload, "sourceCard"), token(payload, "name"), token(payload, "repo"),
+    payload.input === undefined ? undefined : JSON.stringify(payload.input)),
   "change.diff": (payload) => line(token(payload, "changeId"), token(payload, "from"), token(payload, "to"), token(payload, "path")),
   "change.pins": (payload) => line(token(payload, "changeId"), token(payload, "from"), token(payload, "to")),
   "change.resolve": (payload) => line(token(payload, "changeId"), token(payload, "path")),

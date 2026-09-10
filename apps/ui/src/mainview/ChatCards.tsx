@@ -57,6 +57,7 @@ export const CardView = memo(function CardView({
   onAttachWorldEditor,
   onRunCommand,
   debugVerbose,
+  workflowCatalogs,
   signedOut
 }: CardViewProps) {
   /*
@@ -209,6 +210,7 @@ export const CardView = memo(function CardView({
   onAttachWorldEditor,
             onRunCommand,
             debugVerbose,
+            workflowCatalogs,
             signedOut
           })}
         </div>

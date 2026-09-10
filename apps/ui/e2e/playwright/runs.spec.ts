@@ -48,7 +48,9 @@ const json = (body: unknown, status = 200) => ({
 })
 
 /** Install the server double: signed in as the scoped-down user, one loaded repo, one gateway that accepts everything. */
-const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>> = []): Promise<{ rpc: Array<RpcCall> }> => {
+const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>> = [], options: {
+  readonly completedRequest?: boolean
+} = {}): Promise<{ rpc: Array<RpcCall> }> => {
   const rpc: Array<RpcCall> = []
   let planned: { flowId: string; input: unknown } | undefined
   /** The engine's own accounting: a steer the gateway took is pending until the next turn. */
@@ -65,7 +67,8 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
       case "List":
         return route.fulfill(json({
           ok: true,
-          payload: { _tag: "flows", items: [{ flowId: "review-pr", description: "Review a PR" }] }
+          payload: { _tag: "flows", items: options.completedRequest ? [{ flowId: "coding/vibe", description: "Finalize validated changes" }]
+            : [{ flowId: "review-pr", description: "Review a PR" }] }
         }))
       case "Plan":
         planned = { flowId: String(call.payload.flowId), input: call.payload.input }
@@ -82,7 +85,8 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
           }
         }))
       case "Run":
-        return route.fulfill(json({ ok: true, payload: { _tag: "Accepted", receiptId: "r", runId: RUN_ID } }))
+        return route.fulfill(json({ ok: true, payload: { _tag: "Accepted", receiptId: "r",
+          runId: options.completedRequest && planned?.flowId === "coding/vibe" ? "vibe-e2e" : RUN_ID } }))
       case "Approval.Submit":
         // The launch path auto-approves the plan it just made.
         return route.fulfill(json({ ok: true, payload: { decision: { _tag: "Accepted", receiptId: "a" } } }))
@@ -94,17 +98,19 @@ const serve = async (page: Page, journal: ReadonlyArray<Record<string, unknown>>
       case "Cancel":
         return route.fulfill(json({ ok: true, payload: { _tag: "Accepted", receiptId: "ok" } }))
       case "Projection.Snapshot": {
-        const selector = (call.payload.selector ?? {}) as { _tag?: string }
+        const selector = (call.payload.selector ?? {}) as { _tag?: string; runId?: string }
         switch (selector._tag) {
           case "workspace-runs":
             return rows("workspace-runs", [{ ...summaryRow("running"), steeringPending }])
           case "run-summary":
-            return rows("run-summary", [{ ...summaryRow("running"), steeringPending }])
+            return rows("run-summary", [{ ...summaryRow(options.completedRequest && selector.runId !== "vibe-e2e" ? "completed" : "running"),
+              ...(options.completedRequest ? { runId: selector.runId ?? RUN_ID, flowId: selector.runId === "vibe-e2e" ? "coding/vibe" : "coding/request" } : {}), steeringPending }])
           case "approvals":
             return rows("approvals", [])
           case "transcript":
             return rows("transcript", [])
           case "run-events": {
+            if (options.completedRequest && selector.runId === "vibe-e2e") return rows("run-events", [])
             const after = call.payload.after as { value: number; offset: number } | undefined
             let offset = 0
             return rows("run-events", journal.filter((event, index) => {
@@ -471,4 +477,56 @@ test("T1: bounded long prototype values keep the summary compact and source keyb
   await page.keyboard.press("PageDown")
   await expect.poll(() => source.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
   await page.screenshot({ path: "/tmp/smithers-coding-poc-long-source-ui.png", fullPage: true })
+})
+
+
+test("T1: a validated Request offers Vibe through its retained host after keyboard catalog refresh and reload", async ({ page }) => {
+  test.setTimeout(120_000)
+  const recorded = readFileSync(join(process.cwd(), "src/mainview/cards/fixtures/CodingHostDecisions.ndjson"), "utf8")
+  const events = recorded.trim().split("\n").map(line => JSON.parse(line.replaceAll("run-1", RUN_ID)))
+  const request = events.find(row => row.payload.payload.status === "completed" && row.payload.payload.state?.flowName === "coding/Request")
+  const requestExecutionId = request.payload.executionId as string
+  const requestInput = request.payload.payload.state.payload
+  const { rpc } = await serve(page, events, { completedRequest: true })
+  await page.goto("/")
+  await finishGuide(page)
+  await page.keyboard.press("Control+k")
+  await expect(page.getByTestId("composer-input")).toBeFocused()
+  await page.keyboard.insertText(`/flow.run coding/request ${REPO} ${JSON.stringify(requestInput)}`)
+  await page.keyboard.press("Enter")
+  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
+  await expect(card).toContainText("Validated after 1 round.")
+  await expect(card.getByRole("button", { name: "Vibe this change", exact: true })).toHaveCount(0)
+  const refresh = card.getByRole("button", { name: "Check available flows", exact: true })
+  await tabTo(page, refresh)
+  await page.keyboard.press("Enter")
+  const vibe = card.getByRole("button", { name: "Vibe this change", exact: true })
+  await expect(vibe).toBeVisible()
+  await tabTo(page, page.getByTestId("composer-input"))
+  await page.keyboard.insertText("/debug.verbose")
+  await page.keyboard.press("Enter")
+  await expect(page.getByText("Verbose on — showing every flow, including hidden and background ones", { exact: true })).toBeVisible()
+  const change = card.getByRole("list", { name: "Predicted Changes", exact: true }).getByRole("button").first()
+  await tabTo(page, change)
+  await page.keyboard.press("Enter")
+  await expect(change).toHaveAttribute("aria-expanded", "true")
+  await expect(page.getByText(/You ran \/runs\.coding\.select sourceCard=flow-run-run-e2e run-e2e hello .*→ executed/)).toBeVisible()
+  await page.reload()
+  await expect(vibe).toBeVisible()
+  await expect(change).toHaveAttribute("aria-expanded", "true")
+  await tabTo(page, card.getByTestId(`card-maximize-flow-run-${RUN_ID}`))
+  await page.keyboard.press("Enter")
+  await expect(card).toHaveAttribute("data-maximized", "true")
+  await expect(card).toHaveCSS("opacity", "1")
+  await expect(card).toHaveCSS("transform", "none")
+  await expect(page.locator(".session-shell > .guide-wordmark")).toHaveCSS("top", "33px")
+  await expect(vibe).toBeVisible()
+  await page.screenshot({ path: "/tmp/smithers-coding-vibe-invitation-ui.png", fullPage: true })
+  await tabTo(page, vibe)
+  await page.keyboard.press("Enter")
+  await expect(page.getByTestId("card-flow-run-vibe-e2e")).toBeAttached()
+  const plan = rpc.find(call => call.procedure === "Plan" && call.payload.flowId === "coding/vibe")
+  expect(plan?.payload).toEqual({ flowId: "coding/vibe", input: { requestExecutionId } })
+  expect(rpc.filter(call => call.procedure === "List")).toHaveLength(1)
+  expect(rpc.filter(call => call.procedure === "Run")).toHaveLength(2)
 })

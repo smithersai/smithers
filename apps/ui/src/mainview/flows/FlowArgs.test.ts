@@ -127,3 +127,10 @@ describe("FlowName — the seam's names are the registry's names", () => {
     expect(pins.changeId).toBe("ch-1")
   })
 })
+
+test("source-qualified flow input preserves arbitrary JSON", () => {
+  const input = { requestExecutionId: "native  id", message: "sourceCard=literal  spaces" }
+  roundTrip("flow.run", { name: "coding/vibe", sourceCard: "source-card", input },
+    `sourceCard=source-card coding/vibe ${JSON.stringify(input)}`, { name: "coding/vibe", sourceCard: "source-card", input })
+  expect(payloadFor("flow.list", "sourceCard=source-card")).toEqual({ payload: { sourceCard: "source-card" } })
+})
