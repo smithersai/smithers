@@ -7,10 +7,11 @@
  * the host owns the binary, its argv and its cwd, so nothing here knows what
  * a TypeScript server is.
  *
- * The socket follows PtyClient.ts / TargetRunClient.ts: it opens on the first
- * subscription, re-subscribes every live topic after a reconnect, and closes
- * with the controller. Frames are validated against the shared schema; an
- * over-cap or malformed frame is dropped, never rendered.
+ * The socket is TopicSocket.ts, the same lifecycle PtyClient.ts and
+ * TargetRunClient.ts run on: it opens on the first subscription, re-subscribes
+ * every live topic after a reconnect, and closes with the controller. Frames
+ * are validated against the shared schema; an over-cap or malformed frame is
+ * dropped, never rendered.
  */
 import {
   LSP_DEFINITION_PATH,
@@ -32,6 +33,7 @@ import type {
   LspPositionRequest
 } from "@smthrs/rpc/LocalApp"
 import type { z } from "zod"
+import { createTopicSocket } from "./TopicSocket"
 
 /**
  * A refusal as the host typed it (`{ error: { code, message, install? } }`),
@@ -101,92 +103,25 @@ export const createLspClient = (options: LspClientOptions): LspClient => {
       : { refusal: { code: "unreadable", message: "The local app answered the language server request with an unreadable payload." } }
   }
 
-  const listeners = new Map<string, Set<(message: LspDiagnosticsMessage) => void>>()
-  let socket: WebSocket | undefined
-  let disposed = false
-  let reconnect: ReturnType<typeof setTimeout> | undefined
-
-  const scheduleReconnect = (): void => {
-    if (disposed || listeners.size === 0 || reconnect !== undefined) return
-    reconnect = setTimeout(() => {
-      reconnect = undefined
-      ensureSocket()
-    }, options.reconnectMs ?? 1000)
-    ;(reconnect as { unref?: () => void }).unref?.()
-  }
-
-  const ensureSocket = (): void => {
-    if (disposed || socket !== undefined) return
-    const url = options.socketUrl()
-    if (url === undefined) return
-    const protocols = options.socketProtocols?.() ?? []
-    const opened = protocols.length === 0 ? new WebSocket(url) : new WebSocket(url, [...protocols])
-    socket = opened
-    opened.onopen = () => {
-      if (socket !== opened) return
-      for (const repoId of listeners.keys()) opened.send(JSON.stringify({ type: "subscribe", topic: lspTopic(repoId) }))
-    }
-    opened.onmessage = (event: MessageEvent) => {
-      if (typeof event.data !== "string") return
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(event.data)
-      } catch {
-        return
-      }
-      const message = LspDiagnosticsMessageSchema.safeParse(parsed)
-      if (!message.success) return
-      const set = listeners.get(message.data.repoId)
+  const topics = createTopicSocket<(message: LspDiagnosticsMessage) => void>({
+    socketUrl: options.socketUrl,
+    socketProtocols: options.socketProtocols,
+    reconnectMs: options.reconnectMs,
+    topicOf: lspTopic,
+    onMessage: (message, listeners) => {
+      const parsed = LspDiagnosticsMessageSchema.safeParse(message)
+      if (!parsed.success) return
+      const set = listeners(parsed.data.repoId)
       if (set === undefined) return
-      for (const listener of set) listener(message.data)
+      for (const listener of set) listener(parsed.data)
     }
-    opened.onclose = () => {
-      if (socket === opened) socket = undefined
-      scheduleReconnect()
-    }
-    opened.onerror = () => {
-      // onclose follows and schedules the reconnect.
-    }
-  }
-
-  const subscribe: LspClient["subscribe"] = (repoId, onDiagnostics) => {
-    const set = listeners.get(repoId) ?? new Set<(message: LspDiagnosticsMessage) => void>()
-    const first = set.size === 0
-    set.add(onDiagnostics)
-    listeners.set(repoId, set)
-    if (first) {
-      if (socket !== undefined && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "subscribe", topic: lspTopic(repoId) }))
-      } else {
-        ensureSocket()
-      }
-    }
-    return () => {
-      const current = listeners.get(repoId)
-      if (current === undefined) return
-      current.delete(onDiagnostics)
-      if (current.size > 0) return
-      listeners.delete(repoId)
-      if (socket !== undefined && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "unsubscribe", topic: lspTopic(repoId) }))
-      }
-    }
-  }
-
-  const dispose = (): void => {
-    disposed = true
-    if (reconnect !== undefined) clearTimeout(reconnect)
-    listeners.clear()
-    const closing = socket
-    socket = undefined
-    closing?.close()
-  }
+  })
 
   return {
     hover: (request) => post(LSP_HOVER_PATH, request, LspHoverResponseSchema),
     definition: (request) => post(LSP_DEFINITION_PATH, request, LspDefinitionResponseSchema),
     diagnostics: (request) => post(LSP_DIAGNOSTICS_PATH, request, LspDiagnosticsResponseSchema),
-    subscribe,
-    dispose
+    subscribe: topics.attach,
+    dispose: topics.dispose
   }
 }

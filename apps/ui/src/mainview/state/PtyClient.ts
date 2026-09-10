@@ -1,4 +1,5 @@
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
+import { createTopicSocket } from "./TopicSocket"
 
 /*
  * The PTY transport (docs/LOCAL-APP.md "HTTP and WebSocket API"): one
@@ -6,9 +7,10 @@ import type { FetchLike } from "@smthrs/rpc/NativeAgent"
  * resize POST. A tab attaches to its `pty:<sessionId>` topic and receives
  * that session's output and exit; keystrokes go back as `pty.input` frames.
  *
- * The socket opens on the first attachment and reconnects while attachments
- * exist. Frames sent before the server acknowledges the topic subscription
- * are queued, and every live topic is re-subscribed after a reconnect, so a
+ * TopicSocket.ts owns the socket: it opens on the first attachment and
+ * reconnects while attachments exist, re-subscribing every live topic. What
+ * is the terminal's own is the acknowledgement queue below. Frames sent
+ * before the server acknowledges the topic subscription wait for it, so a
  * fast shell cannot publish output before the renderer is listening.
  */
 
@@ -43,29 +45,24 @@ type ServerFrame =
   | { readonly type: "pty.exit"; readonly sessionId: string; readonly code: number | null }
   | { readonly type: "subscribed"; readonly topic: string }
 
+/** One server frame, out of the JSON TopicSocket.ts already parsed. */
 const parseFrame = (raw: unknown): ServerFrame | undefined => {
-  if (typeof raw !== "string") return undefined
-  try {
-    const frame: unknown = JSON.parse(raw)
-    if (typeof frame !== "object" || frame === null) return undefined
-    const { type, sessionId } = frame as { type?: unknown; sessionId?: unknown }
-    if (type === "subscribed") {
-      const { topic } = frame as { topic?: unknown }
-      return typeof topic === "string" ? { type, topic } : undefined
-    }
-    if (typeof sessionId !== "string") return undefined
-    if (type === "pty.output") {
-      const { data } = frame as { data?: unknown }
-      return typeof data === "string" ? { type, sessionId, data } : undefined
-    }
-    if (type === "pty.exit") {
-      const { code } = frame as { code?: unknown }
-      return { type, sessionId, code: typeof code === "number" ? code : null }
-    }
-    return undefined
-  } catch {
-    return undefined
+  if (typeof raw !== "object" || raw === null) return undefined
+  const { type, sessionId } = raw as { type?: unknown; sessionId?: unknown }
+  if (type === "subscribed") {
+    const { topic } = raw as { topic?: unknown }
+    return typeof topic === "string" ? { type, topic } : undefined
   }
+  if (typeof sessionId !== "string") return undefined
+  if (type === "pty.output") {
+    const { data } = raw as { data?: unknown }
+    return typeof data === "string" ? { type, sessionId, data } : undefined
+  }
+  if (type === "pty.exit") {
+    const { code } = raw as { code?: unknown }
+    return { type, sessionId, code: typeof code === "number" ? code : null }
+  }
+  return undefined
 }
 
 /** The same-origin `/ws` URL of the page, or undefined outside a browser. */
@@ -76,120 +73,66 @@ export const pageSocketUrl = (): string | undefined => {
 }
 
 export const createPtyClient = (options: PtyClientOptions): PtyClient => {
-  const attachments = new Map<string, Set<PtyAttachment>>()
   const queue: Array<{ readonly sessionId: string; readonly text: string }> = []
+  /*
+   * The backend acknowledges each subscription. Queued input waits for that
+   * acknowledgement so a fast shell cannot publish output before this socket
+   * is actually listening to its topic.
+   */
   const subscribed = new Set<string>()
-  let socket: WebSocket | undefined
-  let disposed = false
-  let reconnect: ReturnType<typeof setTimeout> | undefined
 
-  const flush = (sessionId: string): void => {
-    if (socket === undefined || socket.readyState !== WebSocket.OPEN || !subscribed.has(sessionId)) return
-    for (let index = 0; index < queue.length;) {
-      const queued = queue[index]!
-      if (queued.sessionId !== sessionId) {
-        index += 1
-        continue
+  const topics = createTopicSocket<PtyAttachment>({
+    socketUrl: options.socketUrl,
+    socketProtocols: options.socketProtocols,
+    reconnectMs: options.reconnectMs,
+    topicOf: (sessionId) => `pty:${sessionId}`,
+    /* A fresh subscription is unacknowledged again, on the first attach and after every reconnect. */
+    onSubscribe: (sessionId) => void subscribed.delete(sessionId),
+    onDetach: (sessionId) => {
+      subscribed.delete(sessionId)
+      for (let index = queue.length - 1; index >= 0; index -= 1) {
+        if (queue[index]?.sessionId === sessionId) queue.splice(index, 1)
       }
-      socket.send(queued.text)
-      queue.splice(index, 1)
-    }
-  }
-
-  const send = (frame: Record<string, unknown> & { readonly sessionId: string }): void => {
-    const text = JSON.stringify(frame)
-    if (socket !== undefined && socket.readyState === WebSocket.OPEN && subscribed.has(frame.sessionId)) {
-      socket.send(text)
-      return
-    }
-    queue.push({ sessionId: frame.sessionId, text })
-    ensureSocket()
-  }
-
-  const scheduleReconnect = (): void => {
-    if (disposed || attachments.size === 0 || reconnect !== undefined) return
-    reconnect = setTimeout(() => {
-      reconnect = undefined
-      ensureSocket()
-    }, options.reconnectMs ?? 1000)
-    ;(reconnect as { unref?: () => void }).unref?.()
-  }
-
-  const ensureSocket = (): void => {
-    if (disposed || socket !== undefined) return
-    const url = options.socketUrl()
-    if (url === undefined) return
-    const protocols = options.socketProtocols?.() ?? []
-    const opened = protocols.length === 0 ? new WebSocket(url) : new WebSocket(url, [...protocols])
-    socket = opened
-    opened.onopen = () => {
-      if (socket !== opened) return
-      subscribed.clear()
-      // The backend acknowledges each subscription. Queued input waits for
-      // that acknowledgement so a fast shell cannot publish output before
-      // this socket is actually listening to its topic.
-      for (const sessionId of attachments.keys()) {
-        opened.send(JSON.stringify({ type: "subscribe", topic: `pty:${sessionId}` }))
-      }
-    }
-    opened.onmessage = (event: MessageEvent) => {
-      const frame = parseFrame(event.data)
+    },
+    onClose: () => subscribed.clear(),
+    onMessage: (message, attachments) => {
+      const frame = parseFrame(message)
       if (frame === undefined) return
       if (frame.type === "subscribed") {
         if (!frame.topic.startsWith("pty:")) return
         const sessionId = frame.topic.slice("pty:".length)
-        if (!attachments.has(sessionId)) return
+        if (attachments(sessionId) === undefined) return
         subscribed.add(sessionId)
         flush(sessionId)
         return
       }
-      const listeners = attachments.get(frame.sessionId)
+      const listeners = attachments(frame.sessionId)
       if (listeners === undefined) return
       for (const listener of listeners) {
         if (frame.type === "pty.output") listener.onOutput(frame.data)
         else listener.onExit(frame.code)
       }
     }
-    opened.onclose = () => {
-      if (socket === opened) {
-        socket = undefined
-        subscribed.clear()
+  })
+
+  const flush = (sessionId: string): void => {
+    if (!topics.isOpen() || !subscribed.has(sessionId)) return
+    for (let index = 0; index < queue.length;) {
+      const queued = queue[index]!
+      if (queued.sessionId !== sessionId) {
+        index += 1
+        continue
       }
-      scheduleReconnect()
-    }
-    opened.onerror = () => {
-      // onclose follows; nothing to do here beyond letting it reconnect.
+      topics.send(queued.text)
+      queue.splice(index, 1)
     }
   }
 
-  const attach: PtyClient["attach"] = (sessionId, attachment) => {
-    const listeners = attachments.get(sessionId) ?? new Set<PtyAttachment>()
-    const first = listeners.size === 0
-    listeners.add(attachment)
-    attachments.set(sessionId, listeners)
-    if (first) {
-      if (socket !== undefined && socket.readyState === WebSocket.OPEN) {
-        subscribed.delete(sessionId)
-        socket.send(JSON.stringify({ type: "subscribe", topic: `pty:${sessionId}` }))
-      } else {
-        // onopen subscribes every attached topic; only make sure a socket is coming.
-        ensureSocket()
-      }
-    }
-    return () => {
-      const current = attachments.get(sessionId)
-      if (current === undefined) return
-      current.delete(attachment)
-      if (current.size > 0) return
-      attachments.delete(sessionId)
-      subscribed.delete(sessionId)
-      for (let index = queue.length - 1; index >= 0; index -= 1) {
-        if (queue[index]?.sessionId === sessionId) queue.splice(index, 1)
-      }
-      if (socket !== undefined && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "unsubscribe", topic: `pty:${sessionId}` }))
-      }
-    }
+  const send = (frame: Record<string, unknown> & { readonly sessionId: string }): void => {
+    const text = JSON.stringify(frame)
+    if (subscribed.has(frame.sessionId) && topics.send(text)) return
+    queue.push({ sessionId: frame.sessionId, text })
+    topics.ensure()
   }
 
   const input: PtyClient["input"] = (sessionId, data) => {
@@ -209,15 +152,10 @@ export const createPtyClient = (options: PtyClientOptions): PtyClient => {
   }
 
   const dispose = (): void => {
-    disposed = true
-    if (reconnect !== undefined) clearTimeout(reconnect)
-    attachments.clear()
     queue.length = 0
     subscribed.clear()
-    const closing = socket
-    socket = undefined
-    closing?.close()
+    topics.dispose()
   }
 
-  return { attach, input, resize, dispose }
+  return { attach: topics.attach, input, resize, dispose }
 }
