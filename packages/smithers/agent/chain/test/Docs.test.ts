@@ -23,6 +23,11 @@ const read = (...parts: ReadonlyArray<string>): string => readFileSync(join(pack
 const api = read("docs", "api.md")
 const contract = read("docs", "contract.md")
 const readme = read("README.md")
+const installation = read("docs", "installation.md")
+const manifest = JSON.parse(read("package.json")) as {
+  readonly dependencies: { readonly effect: string }
+  readonly engines: { readonly node: string }
+}
 
 describe("package documentation", () => {
   // dprint pads markdown table cells, so rows are read cell by cell rather
@@ -85,11 +90,72 @@ describe("package documentation", () => {
     expect(defaultOf("Links per chain")).toBe(String(Chain.defaultMaxLinks))
     expect(defaultOf("Calls per link")).toBe(String(Chain.defaultMaxCallsPerLink))
     expect(defaultOf("Sub-chain nesting depth")).toBe(String(SubChains.defaultMaxDepth))
-    // The README repeats the headline numbers; keep it from drifting too.
-    expect(readme).toContain(
-      `${Chain.defaultMaxLinks} links per chain, ${Chain.defaultMaxCallsPerLink} calls per link`
+  })
+
+  // `README.md` and `docs/README.md` each repeat the whole limits paragraph
+  // in prose. Neither is generated, so every number in both copies is read
+  // out of the constant that carries it.
+  it.each([
+    ["README.md"],
+    ["docs", "README.md"]
+  ])("pins every number in the limits paragraph of %s", (...parts) => {
+    const document = read(...parts).replace(/\s+/g, " ")
+    const memoryBytes = QuickJsRunner.defaultLimits.memoryBytes ?? 0
+    const stackBytes = QuickJsRunner.defaultLimits.stackBytes ?? 0
+    const fragments = [
+      `${Chain.defaultMaxLinks} links per chain`,
+      `${Chain.defaultMaxCallsPerLink} calls per link`,
+      `${SubChains.defaultMaxDepth} levels of sub-chain nesting`,
+      `${memoryBytes / 1024 / 1024} MiB QuickJS heap`,
+      `${stackBytes / 1024} KiB stack`,
+      `${QuickJsRunner.defaultLimits.steps}-poll step budget`,
+      `JSON boundary bounded at depth ${ScriptRunner.maxJsonDepth}`,
+      `${ScriptRunner.maxJsonSize / 1024 / 1024} MiB size budget`
+    ]
+    expect(fragments.filter((fragment) => !document.includes(fragment))).toEqual([])
+  })
+
+  // Four documents quote the size of the barrel. The count is a mirror of
+  // `index.ts` with nothing generating it, so it is read out of the barrel.
+  it("pins the namespace count every document repeats", () => {
+    const count = Object.keys(chain).length
+    const stale = ([
+      ["README.md"],
+      ["docs", "README.md"],
+      ["docs", "api.md"],
+      ["docs", "quickstart.md"]
+    ] as ReadonlyArray<ReadonlyArray<string>>)
+      .filter((parts) => !read(...parts).includes(`${count} namespaces`))
+      .map((parts) => parts.join("/"))
+    expect(stale).toEqual([])
+  })
+
+  // `docs/installation.md` quotes the runtime and the one direct dependency
+  // a reader has to have. Both are pinned in `package.json`.
+  it("pins the versions docs/installation.md quotes to package.json", () => {
+    expect(installation).toContain(`Node.js ${manifest.engines.node.replace(/^>=/, "")} or later`)
+    expect(installation).toContain(`Effect](https://effect.website) ${manifest.dependencies.effect}.`)
+  })
+
+  // `docs/api.md` gives every namespace one `## \`Name\`` section and opens a
+  // bullet per member. Nothing generates those sections, so a member added
+  // to a module has to be answered here. Type-only exports carry no runtime
+  // key and are out of this gate's reach.
+  it("documents every runtime member under its namespace heading", () => {
+    const sections = new Map(
+      api.split(/^## /m).slice(1)
+        .map((block) => [block.slice(0, block.indexOf("\n")).trim(), block] as const)
+        .filter(([heading]) => heading.startsWith("`"))
+        .map(([heading, block]) => [heading.slice(1, -1), block] as const)
     )
-    expect(readme).toContain(`${stackBytes / 1024} KiB stack`)
+    const undocumented = Object.entries(chain).flatMap(([namespace, members]) => {
+      const section = sections.get(namespace)
+      if (section === undefined) return [`${namespace} (no section)`]
+      return Object.keys(members as object)
+        .filter((member) => !new RegExp(`^- \`${member}\\b`, "m").test(section))
+        .map((member) => `${namespace}.${member}`)
+    })
+    expect(undocumented).toEqual([])
   })
 
   // Read out of the schemas, not transcribed: a code added to or removed

@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/chain: the nineteen namespaces, their members, signatures, behavior, and errors."
+description: "Every public export of @smthrs/chain: the 19 namespaces, their members, signatures, behavior, and errors."
 ---
 
 `@smthrs/chain` exports one namespace per module. The barrel and the matching

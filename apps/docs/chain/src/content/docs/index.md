@@ -7,9 +7,15 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/age
 `@smthrs/chain` runs a model-driven agent loop that survives a crash. The
 model writes a small JavaScript program, the program's only way to reach the
 outside world is `ctx.call(name, payload)`, and every call is recorded in an
-append-only journal before the loop moves on. Run the same program again over
-the same journal and it picks up where it stopped, without repeating a single
-side effect.
+append-only journal before the loop moves on.
+
+Chain provides exactly-once replay of journaled settled calls and
+at-least-once handler execution. A matching settled call replays its recorded
+result without running its handler. If a handler succeeds but a crash or
+append failure prevents `CallSettled` from being recorded, resume can execute
+the handler again. Handlers must be idempotent or, for non-repeatable effects,
+use an external durable idempotency key derived from the stable call identity
+(`chain`, `link`, `ordinal` in `Catalog.CallSlot`).
 
 ## Why you would reach for it
 
@@ -19,7 +25,7 @@ re-sends the emails and re-applies the patches; restarting from a hand-rolled
 cache serves stale results after you rename a tool. Four properties of this
 package address that:
 
-- **Resume with zero repeated effects.** Every settled call carries a key
+- **Replay settled calls without running their handlers.** Every settled call carries a key
   built from the link, the digest of the script that issued it, its ordinal,
   and the digest of the called entry's declaration. A resumed run serves a
   recorded result only when all four still match, and fails loudly with
@@ -122,7 +128,7 @@ and inspects agents from a terminal.
   [Steer a run](/guides/steering/),
   [Project the registry and bind memory](/guides/registry-and-memory/), and
   [Test a chain](/guides/testing/).
-- [API reference](/reference/api/): every export of the nineteen namespaces.
+- [API reference](/reference/api/): every export of the 19 namespaces.
 - [The chain contract](/contract/): the gates, the failure taxonomy, the
   concurrency rule, the resource limits, and the JSON boundary.
 - [Troubleshooting](/troubleshooting/): every typed failure a run can

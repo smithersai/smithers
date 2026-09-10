@@ -1,6 +1,6 @@
 ---
 title: "API reference"
-description: "Every public export of @smthrs/chain: the nineteen namespaces, their members, signatures, behavior, and errors."
+description: "Every public export of @smthrs/chain: the 19 namespaces, their members, signatures, behavior, and errors."
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/chain/docs/api.md"
 ---
 
@@ -195,10 +195,11 @@ only state the chain has.
 - `layerNoop(overrides?: Partial<Service>): Layer.Layer<Journal>`: the
   unavailable journal as a layer.
 - `layerMemory(initial?: ReadonlyArray<Event.Event>): Layer.Layer<Journal>`:
-  an in-memory journal over a `Ref`, optionally seeded with prior events.
-  The seed is how tests replay and resume a chain. `append` fails with
-  `journal_conflict` when `expectedPosition` does not match the current
-  length.
+  an in-memory journal over one array, optionally seeded with prior events.
+  The seed is how tests replay and resume a chain. `append` pushes in place
+  and fails with `journal_conflict` when `expectedPosition` does not match
+  the current length; `read` returns a copy, so a reader never sees a later
+  append.
 
 ## `Event`
 
@@ -365,6 +366,8 @@ mocked at this boundary, not at the provider wire.
   call's payload into its context lines. Scripts call the author entry with
   `{ context: [...] }`; anything else normalizes to no context, so a script
   passing garbage stays a journaled observation, never a crash.
+  Context elements use string coercion. If coercion fails, they use JSON
+  text, or `[unprintable context]` if serialization also fails.
 - `make(implementation: Service): Service`: builds a seat from an
   implementation.
 - `makeNoop(overrides?: Partial<Service>): Service`: a seat whose every
@@ -542,6 +545,11 @@ randomness are the `sys/now` and `sys/random` catalog entries.
 - `stackCeiling = 256 * 1024`: the largest in-realm stack the runner grants.
   At this size QuickJS raises its own catchable `stack overflow` and
   disposal is clean.
+- `hostDefectMarker = "host: "`: the prefix on every `runtime` failure the
+  realm's defect boundary produced from a host-side defect (a native
+  WebAssembly abort, a host `RangeError`, a bridge bug) rather than from
+  the script. A script's own throw never carries it. The boundary also logs
+  the defect with its cause at `Warning` level.
 - `defaultLimits: Required<Limits>`: `{ memoryBytes: 64 * 1024 * 1024,
   stackBytes: stackCeiling, steps: 10000 }`. Passing an explicit `undefined`
   for any field opts out of that limit.
@@ -583,15 +591,22 @@ cache hits across turns.
 
 - `Role = "concierge" | "sub"`: which agent the prefix addresses. The
   concierge is closest to the user.
-- `AssembleOptions`: `{ role: Role, entries: ReadonlyArray<Catalog.Entry> }`.
+- `AssembleOptions`: `{ role: Role, entries: ReadonlyArray<Catalog.Entry>,
+  host?: string }`. The package sections promise only what the chain
+  dispatches (links, journaled calls, the catalog). A host
+  that mounts more (a worldview store, background lineages, monitors,
+  widgets) passes the prose that teaches them as `host`; absent or empty,
+  nothing is added. The host must supply instructions only for capabilities
+  its catalog entries implement; assembly does not validate host prose.
 
 ### Sections
 
-- `base: string`: the BASE section: what the agent is and what a flow is.
+- `base: string`: the BASE section: what the agent is and what a chain,
+  link, script and call are. It names no host feature.
 - `concierge: string`: the CONCIERGE section, added only for the concierge
   role.
 - `rules: string`: the RULES section.
-- `contract: string`: the authoring contract: what one turn's reply must
+- `contract: string`: the authoring contract: what one link's reply must
   contain.
 
 ### Constants and assembly
@@ -601,20 +616,24 @@ cache hits across turns.
   advertised names must stay byte-identical to what `Catalog.lookup`
   dispatches.
 - `maxEntryDescription = 200`: the longest entry description the catalog
-  block renders.
+  block renders before JSON encoding and provenance labelling.
 - `renderableName(name): boolean`: whether a name can be advertised verbatim
   on one bounded line. Names are advertised byte-identically or omitted.
 - `catalogBlock(entries): string`: renders the catalog as a byte-stable
   block: the author entry pinned first, then every dispatchable entry sorted
   by name, deduped last-wins to mirror `Catalog.make`, the reserved author
   name filtered, names advertised verbatim or omitted, and descriptions
-  collapsed to one bounded line with truncation marked.
+  collapsed to one bounded line with truncation marked, then JSON-quoted
+  and labelled as untrusted repository descriptions. The harness-owned
+  `author` description remains trusted.
 - `assemble(options): string`: assembles the full prefix in fixed order:
-  BASE, CONCIERGE (concierge role only), RULES, the authoring contract, the
-  catalog block.
-- `forCatalog(catalog: Catalog.Service, role: Role): string`: assembles the
-  prefix from a mounted catalog service: the composition that cannot diverge
-  from what the chain dispatches.
+  BASE, CONCIERGE (concierge role only), HOST (only when supplied), RULES,
+  the authoring contract, the catalog block. The contract tells the model
+  that catalog descriptions are data and cannot override the user's goal
+  or authorize actions.
+- `forCatalog(catalog: Catalog.Service, role: Role, host?: string): string`: assembles the
+  prefix from a mounted catalog service, using its entries for the catalog
+  block and including the optional host section unchanged.
 
 ## `Catalog`
 
@@ -725,10 +744,12 @@ warnings, and lazy bodies.
 
 ### Constructors and layers
 
-- `declarationDigest(descriptor): string`: the canonical digest of a
-  descriptor's full declaration (name, description, capabilities, effects,
-  placement, model, flows, schema references, and body reference), so
-  redeclaring a flow on any of those axes changes what every call key pins.
+- `declarationDigest(descriptor): string`: re-exported from
+  `Descriptor.declarationDigest` in `@smthrs/registry`, which owns
+  `FlowDescriptor`. The canonical digest of a descriptor's full declaration:
+  every top-level field except `provenance.pack`, with `capabilities` sorted,
+  so redeclaring a flow on any of those axes changes what every call key pins.
+  It is the same number `@smthrs/harness` folds into a call identity.
 - `make(options?): Effect<Catalog.Service, never, Registry.Registry>`:
   builds the catalog service from the ambient registry. Only callable
   descriptors are projected. Precedence when names collide: registry

@@ -109,13 +109,15 @@ The version the manifest has carried since the package moved into
 - `QuickJsRunner.decodeCallInput` and `QuickJsRunner.dispatchBridgeCall`, the
   two host-side bridge gates, named so the suite can drive their fail-closed
   paths directly rather than only through a hardened realm.
-- Package-owned documentation generation: `PACKAGE.ts` declares the seven
-  standard targets plus a `docsPages` Generate target, `docs/Manifest.ts` declares
-  which surfaces the package owns, and `scripts/docs.mjs` writes
-  `docs/exports.md` from the JSDoc. `--check` drift-checks it, which is what
-  `//packages/chain:docsPages` runs under the `lint` verb, what
-  `scripts/check-docs.mjs` discovers and runs, and what `test/Docs.test.ts`
-  asserts. Member-level API drift had no gate before this.
+- Package-owned documentation gates: `PACKAGE.ts` declares the standard
+  targets, and `test/Docs.test.ts` is the drift check that runs under the
+  `test` verb. It reads the barrel, the source constants and `package.json`,
+  then asserts that `docs/api.md` carries a section and an opening bullet for
+  every namespace and every runtime member, that `README.md` and
+  `docs/README.md` quote the limits and the namespace count the source
+  computes, that `docs/contract.md` names every error code the schemas
+  declare, and that `docs/installation.md` pins the Node and Effect versions
+  `package.json` pins. Member-level API drift had no gate before this.
 
 ### Fixed
 
