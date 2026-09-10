@@ -33,9 +33,11 @@ only that first JSON declaration line, so appended input cannot replace it.
 
 The action asks Plue's `smithers-jj-export` to materialize the full commit ID in
 a new temporary directory. It verifies the returned commit, tree and JJ change
-IDs before running the command. Neither exporter nor checker changes the owning
-JJ workspace or operation head. Slow checks can therefore read their original
-source while a later atom is being edited. A new descendant revision gets a
+IDs before running the command. The native exporter is the configured read-only
+port; the command runs from its copied source, while the acceptance fixture asserts
+that the owning JJ operation remains unchanged. Arbitrary command confinement
+still belongs to the host. Slow checks can read their original source while a
+later atom is being edited. A new descendant revision gets a
 different check input; an earlier receipt cannot validate it.
 The recipe permits links that resolve inside the export, and refuses dangling
 links or links into the live checkout or anywhere else outside it before a
@@ -70,7 +72,7 @@ untrusted project commands. FileSystem, Path and ChildProcessSpawner are Effect
 dependencies; the recipe does not select Node or Bun.
 
 The private composition supplies its existing trusted `fs` as a service value,
-captured before action workspace guards. Only export and cleanup use it; the
+captured before action workspace guards. Export lifecycle and validation of the exported tree use it; the
 check process still runs through the action's permission-checked, contained
 spawner. POSIX guarded filesystems deliberately cannot create arbitrary system
 temporary directories. The recipe does not weaken that guard or write scratch

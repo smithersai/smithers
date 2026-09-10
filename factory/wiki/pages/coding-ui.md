@@ -6,7 +6,7 @@ The coding UI extends the existing card, frame history, actor-tagged dispatcher 
 
 A compact ordered Change list exposes planned atomic messages, existing native JJ IDs, intent, predicted reads/writes and fast/slow/delivery checks. Planned null IDs remain unassigned. Selection is persisted through `runs.coding.select`; selecting the current Change again collapses it. Slash commands, buttons and agent calls use the same flow and schema-derived form path.
 
-Manual runs retain their input Plan. Prompt requests derive the latest Plan from a successfully completed owned PreparePlan or PrepareWithWiki child. Native ancestry, generation and the selected historical cursor fence that projection. An earlier historical selection cannot show a later prepared plan; ambiguous or malformed evidence creates no substitute plan.
+Manual runs retain their input Plan. Prompt requests derive the latest Plan from a successfully completed owned PreparePlan or PrepareWithWiki child, or from a completed owned Request result. Native ancestry, generation and the selected historical cursor fence that projection. An earlier historical selection cannot show a later prepared plan; ambiguous or malformed evidence creates no substitute plan.
 
 ## Separate product outcomes from execution status
 
@@ -22,4 +22,4 @@ Keyboard-accessible source panels, actor-tagged selection, historical cursor and
 
 ## Keep proof provenance visible
 
-Controller and projection tests exercise schemas, actual retained native host records, ancestry, cursor and generation boundaries. Browser fixtures cover keyboard behavior, selection, source scrolling, feedback and reload using retained producer evidence plus explicitly synthetic layout data. Such a browser fixture is not a deployed coding canary. Reload waits for existing command settlement; this slice does not add a global saved indicator or change persistence scheduling.
+The projection tests define regressions for schema, source identity, ancestry, cursor and generation boundaries. Their fixtures are evidence of the cases the tests exercise; a test file is not a receipt that the tests ran. The owning workbench guide records broader browser checks and their retained-versus-synthetic fixture limits. A browser fixture is not a deployed coding canary.
