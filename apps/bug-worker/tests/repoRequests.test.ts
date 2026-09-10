@@ -33,6 +33,12 @@ function fixture() {
   return { env, worker, calls, call, complete, mails, confirm, confirmTokenFor, setNow: (value: number) => { now = value; }, recipientStatus: (value: (email: string) => number) => { recipientStatus = value; }, emailStatus: (value: number) => { emailStatus = value; }, github: (value: unknown, status = 200) => { github = value; githubStatus = status; } };
 }
 
+/** Completed repositories with nothing left to send, sorted before `owner/zz-target`. */
+async function idleCompletedRepositories(f: { env: BugWorkerEnv }) {
+  const ready = JSON.stringify({ appUrl: "https://app.smithers.sh/repo", completedAt: "2026-01-01T00:00:00.000Z" });
+  for (let i = 0; i < 99; i++) await f.env.BUGS.put(`repo-ready:owner/r${String(i).padStart(3, "0")}`, ready);
+}
+
 describe("public repository requests", () => {
   test("normalizes roots and rejects foreign hosts, paths, credentials, and invalid names", () => {
     expect(repoName(" https://github.com/Owner/Repo.git/ ")).toBe("owner/repo");
@@ -223,6 +229,70 @@ describe("public repository requests", () => {
     await f.worker.scheduled({}, f.env);
     expect(f.calls.filter((call) => call.url.includes("resend"))).toHaveLength(2);
     expect(await f.env.BUGS.get("repo-notified:repo-subscriber:owner/repo:one")).toBe("2026-01-01T00:00:00.000Z");
+  });
+  test("drains every subscriber page and every repository page exactly once", async () => {
+    const f = fixture();
+    const ready = { appUrl: "https://app.smithers.sh/repo", completedAt: "2026-01-01T00:00:00.000Z" };
+    const expected: string[] = [];
+    for (const name of ["a/first", "m/middle", "z/last"]) {
+      await f.env.BUGS.put(`repo-ready:${name}`, JSON.stringify(ready));
+      // The middle repository spans two subscriber pages; three repositories span two scan pages.
+      for (let i = 0; i < (name === "m/middle" ? 51 : 1); i++) {
+        const email = `${name.replace("/", "-")}-${String(i).padStart(3, "0")}@example.com`;
+        await f.env.BUGS.put(`repo-subscriber:${name}:${String(i).padStart(3, "0")}`, email);
+        expected.push(email);
+      }
+    }
+    for (let i = 0; i < 8; i++) await f.worker.scheduled({}, f.env);
+    expect(f.mails("is ready in Smithers").map((mail) => mail.to[0]!).sort()).toEqual(expected.sort());
+    expect(await f.env.BUGS.get("repo-notification-sweep")).toBe("");
+    for (const name of ["a/first", "m/middle", "z/last"]) expect(await f.env.BUGS.get(`repo-notification-cursor:${name}`)).toBe("");
+    expect((await f.env.BUGS.list!({ prefix: "repo-pending:" })).keys).toHaveLength(0);
+  });
+  test("a failure on a nonterminal page never skips the next page or a recipient", async () => {
+    const f = fixture();
+    const ready = { appUrl: "https://app.smithers.sh/repo", completedAt: "2026-01-01T00:00:00.000Z" };
+    await f.env.BUGS.put("repo-ready:owner/repo", JSON.stringify(ready));
+    const all = [...Array(51)].map((_, i) => `user${String(i).padStart(3, "0")}@example.com`);
+    for (const [i, email] of all.entries()) await f.env.BUGS.put(`repo-subscriber:owner/repo:${String(i).padStart(3, "0")}`, email);
+    let refuse = true;
+    f.recipientStatus((email) => refuse && email === "user007@example.com" ? 500 : 200);
+    await f.worker.scheduled({}, f.env);
+    // The send failed while the subscriber cursor was nonterminal, so the second
+    // page is owed as well as the retry, and the repository stays queued.
+    expect(await f.env.BUGS.get("repo-notification-cursor:owner/repo")).toBe("50");
+    expect(await f.env.BUGS.get("repo-pending:owner/repo")).not.toBeNull();
+    await f.worker.scheduled({}, f.env);
+    expect(await f.env.BUGS.get("repo-notified:repo-subscriber:owner/repo:050")).toBe(ready.completedAt);
+    refuse = false;
+    for (let i = 0; i < 4; i++) await f.worker.scheduled({}, f.env);
+    const recipients = f.mails("is ready in Smithers").map((mail) => mail.to[0]!);
+    expect(recipients.filter((to) => to === "user007@example.com")).toHaveLength(2);
+    expect([...new Set(recipients)].sort()).toEqual([...all].sort());
+    expect((await f.env.BUGS.list!({ prefix: "repo-notified:" })).keys).toHaveLength(51);
+    expect(await f.env.BUGS.get("repo-pending:owner/repo")).toBeNull();
+  });
+  test("a signup confirmed after completion is delivered on the next cron, not behind idle history", async () => {
+    const f = fixture();
+    await idleCompletedRepositories(f);
+    await f.call({ repo: "owner/zz-target", email: "late@example.com" });
+    expect((await f.call({ repo: "owner/zz-target", appUrl: "https://app.smithers.sh/repos/owner/zz-target" }, "/complete", true)).status).toBe(200);
+    expect(f.mails("is ready in Smithers")).toHaveLength(0);
+    await f.confirm("late@example.com");
+    await f.worker.scheduled({}, f.env);
+    expect(f.mails("is ready in Smithers").map((mail) => mail.to[0])).toEqual(["late@example.com"]);
+  });
+  test("a failed completion send is retried on the next cron, not behind idle history", async () => {
+    const f = fixture();
+    await idleCompletedRepositories(f);
+    await f.call({ repo: "owner/zz-target", email: "late@example.com" });
+    await f.confirm("late@example.com");
+    f.emailStatus(500);
+    expect((await f.call({ repo: "owner/zz-target", appUrl: "https://app.smithers.sh/repos/owner/zz-target" }, "/complete", true)).status).toBe(200);
+    f.emailStatus(200);
+    await f.worker.scheduled({}, f.env);
+    expect(f.mails("is ready in Smithers").map((mail) => mail.to[0])).toEqual(["late@example.com", "late@example.com"]);
+    expect((await f.env.BUGS.list!({ prefix: "repo-notified:repo-subscriber:owner/zz-target:" })).keys).toHaveLength(1);
   });
   test.each(["{", "null", "[]", "{}", '{"appUrl":7,"completedAt":true}', '{"appUrl":"https://evil.com","completedAt":"2026-01-01"}', '{"appUrl":"https://app.smithers.sh/repo","completedAt":"invalid"}'])("skips and logs corrupt readiness %s while advancing the sweep", async (corrupt) => {
     const f = fixture();

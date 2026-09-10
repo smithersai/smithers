@@ -109,6 +109,15 @@ async function list(env: BugWorkerEnv, keyPrefix: string, cursor?: string, limit
 }
 
 const maxNotificationAttempts = 3;
+/**
+ * Repositories that still owe subscriber work: a further page, a retryable
+ * failure, or a signup that arrived after completion. The cron spends its
+ * budget here first so a pending delivery never waits behind completed
+ * repositories with nothing left to send.
+ */
+const pendingPrefix = "repo-pending:";
+/** Repositories visited per scheduled invocation, per pass. */
+const sweepBatch = 2;
 /** Pending confirmations live for a day; the KV TTL and the stored expiry agree. */
 const confirmationTtlMs = 24 * 3_600_000;
 /** Confirmation sends per recipient per hour, across all repositories. */
@@ -169,6 +178,9 @@ async function confirmSubscription(env: BugWorkerEnv, deps: BugWorkerDeps, token
   const subscriberKey = `repo-subscriber:${pending.name}:${await hash(pending.email)}`;
   await env.BUGS.put(subscriberKey, JSON.stringify({ email: pending.email, cancel: cancelToken }));
   await env.BUGS.put(`repo-cancel:${cancelToken}`, JSON.stringify({ key: subscriberKey }));
+  // A signup that confirms after completion has nothing else to wake it, so the
+  // repository joins the queue instead of waiting for the scan to reach it.
+  if (await env.BUGS.get(`repo-ready:${pending.name}`) !== null) await env.BUGS.put(`${pendingPrefix}${pending.name}`, "");
   return json(200, { repo: pending.name, subscribed: true, cancel: `${baseUrl(env)}/api/repo-requests/cancel?token=${cancelToken}` });
 }
 /** Remove a pending confirmation or a confirmed subscription. */
@@ -298,7 +310,10 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
       }
       if (!ready) return json(409, { error: "Repository is still smithering." });
       // Publishing and delivery are separate: notification failure cannot undo readiness.
-      return json(200, { repo: { ...repo, status: "ready", appUrl: ready.appUrl }, notifications: await notify(env, deps, name, ready, typeof body.cursor === "string" ? body.cursor : undefined) });
+      const notifications = await notify(env, deps, name, ready, typeof body.cursor === "string" ? body.cursor : undefined);
+      // Anything left owing goes on the queue, so the next cron retries it first.
+      if (notifications.pending) await env.BUGS.put(`${pendingPrefix}${name}`, "");
+      return json(200, { repo: { ...repo, status: "ready", appUrl: ready.appUrl }, notifications });
     }
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     if ((body.email !== undefined && typeof body.email !== "string") || (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))) {
@@ -354,24 +369,46 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
   }
 }
 
-/** Re-scan completed repositories so late signups and failed sends are retried. */
+/** One bounded delivery step for a repository; reports whether work remains. */
+async function sweepRepo(env: BugWorkerEnv, deps: BugWorkerDeps, name: string, ready: Ready) {
+  const cursorKey = `repo-notification-cursor:${name}`;
+  const result = await notify(env, deps, name, ready, await env.BUGS.get(cursorKey) || undefined);
+  // Failed recipients are revisited after the scan wraps, never by pinning a page.
+  if ("cursor" in result) await env.BUGS.put(cursorKey, result.cursor || "");
+  return result.pending === true;
+}
+
+/**
+ * Drain outstanding deliveries first, then reconcile.
+ *
+ * The queue holds only repositories that still owe subscriber work, so a bounded
+ * invocation spends its budget on pending recipients rather than on idle
+ * completed history. The full scan stays as a slower reconciliation pass: it
+ * finds subscribers written outside the confirmation flow, and enqueues work
+ * whose enqueue was lost to a KV failure. Both passes leave the queue accurate,
+ * so an entry survives a failed or unfinished page and is removed once the
+ * repository's subscribers are drained.
+ */
 export async function retryRepoNotifications(env: BugWorkerEnv, deps: BugWorkerDeps): Promise<void> {
   if (!env.RESEND_API_KEY || !env.NOTIFICATION_FROM) return;
+  const queued = await list(env, pendingPrefix, undefined, sweepBatch);
   // A cursor bounds each invocation; repeated scheduled runs visit every repo.
   const cursor = await env.BUGS.get("repo-notification-sweep") || undefined;
-  const page = await list(env, "repo-ready:", cursor, 2);
-  for (const key of page.keys) {
+  const page = await list(env, "repo-ready:", cursor, sweepBatch);
+  const names = new Set([
+    ...queued.keys.map((key) => key.name.slice(pendingPrefix.length)),
+    ...page.keys.map((key) => key.name.slice("repo-ready:".length)),
+  ]);
+  for (const name of names) {
     try {
-      const value = await env.BUGS.get(key.name);
+      const value = await env.BUGS.get(`repo-ready:${name}`);
+      // Only completed repositories are queued, so a missing record is a stale
+      // read: keep the entry rather than dropping a pending delivery.
       if (value === null) continue;
-      const ready = parseReady(value);
-      const name = key.name.slice("repo-ready:".length);
-      const cursorKey = `repo-notification-cursor:${name}`;
-      const result = await notify(env, deps, name, ready, await env.BUGS.get(cursorKey) || undefined);
-      // Failed recipients are revisited after the scan wraps, never by pinning a page.
-      if ("cursor" in result) await env.BUGS.put(cursorKey, result.cursor || "");
+      if (await sweepRepo(env, deps, name, parseReady(value))) await env.BUGS.put(`${pendingPrefix}${name}`, "");
+      else await env.BUGS.delete(`${pendingPrefix}${name}`);
     } catch (error) {
-      console.error(`repo-notification ${key.name} failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`repo-notification repo-ready:${name} failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   await env.BUGS.put("repo-notification-sweep", page.list_complete ? "" : page.cursor || "");

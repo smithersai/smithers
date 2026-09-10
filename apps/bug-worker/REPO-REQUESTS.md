@@ -164,8 +164,24 @@ three per recipient per hour across all repositories (excess submissions report
 
 Confirmed subscribers receive one transactional email upon completion.
 Receipts skip already-sent messages; a cron runs every ten minutes to retry
-failed sends and catch signups concurrent with completion. Each invocation
-visits at most two repositories and one page of 50 subscribers per repository.
+failed sends and catch signups concurrent with completion.
+
+A repository joins the pending queue under `repo-pending:<owner/repo>` when
+completion or manual delivery leaves work owing, when a subscriber confirms
+after the repository has completed, and when a scan finds an unfinished page or
+a failed send. Each invocation drains up to two queued repositories, then
+reconciles up to two more from the full scan, sending at most one page of 50
+subscribers per repository. An entry is removed only once the repository owes
+nothing, so a pending delivery is never spent behind completed repositories
+with nothing left to send. The full scan remains as the slower reconciliation
+pass: it finds subscriber records written outside the confirmation flow and
+re-queues work whose enqueue was lost to a KV failure. A queued repository
+whose readiness record reads as missing or corrupt keeps its entry, because
+only completed repositories are queued and a stale read must not drop a pending
+delivery; a record that stays corrupt holds one of the two queue slots until an
+operator repairs or removes it, and delivery for other repositories continues
+through the full scan.
+
 Subscriber cursors advance after every page regardless of delivery failures.
 Full scans repeat, retrying unreceipted recipients on their next visit until
 three failed delivery attempts have been recorded. The third failure records
@@ -188,7 +204,8 @@ and `{ "repo": "owner/repo" }`. A batch handles up to 50 subscriptions and
 returns `sent`, `failed`, `pending`, and a next `cursor`. Pass that cursor in
 the next call even when some sends fail. Restart from the first page after
 the cursor is null to revisit retryable failures. Completion remains visible
-if sending fails. The cron keeps separate sweep and subscriber cursors.
+if sending fails, and anything still owing is queued for the next cron. The
+cron keeps separate sweep and subscriber cursors.
 
 KV is eventually consistent. New requests, readiness, and counts may take up
 to a minute to reach other locations; the page loads the most nominated list
@@ -207,7 +224,8 @@ from public metadata
 under `repo-request:`, counts under `repo-nominations:`, the leaderboard under
 `repo-nominations-top`, and completion under
 `repo-ready:`. Notification receipts use `repo-notified:`, failure records use
-`repo-notification-failure:`, forks use `repo-fork:`, and claims use `repo-claim:`.
+`repo-notification-failure:`, the pending-delivery queue uses `repo-pending:`,
+forks use `repo-fork:`, and claims use `repo-claim:`.
 
 Completion uses the `REPO_COMPLETIONS` Durable Object binding, keyed by the
 normalized repository name. A storage transaction commits the first URL;
