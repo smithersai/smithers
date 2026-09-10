@@ -662,9 +662,6 @@ const invalidRunError = (
     typeof causeOrField === "string" ? { field: causeOrField, detail } : causeOrField
   )
 
-const requestCancelDecodeError = (cause: unknown): RunStoreError =>
-  runStoreError("requestCancel", "decode_failed", "could not decode flows_runs status", cause)
-
 const stateAdmission = (value: unknown) => Boundary.admitJsonText(value, runJsonLimits)
 
 const isJsonString = (value: unknown): value is string =>
@@ -985,6 +982,69 @@ const decodeRunRow = (method: string, runId: string, input: unknown): Effect.Eff
     })
   )
 
+/**
+ * Rows that belong to the logical run containing `runId`: every round that
+ * names the resolved lineage, plus the root itself when its own lineage
+ * columns are null or name that lineage. A same-named run in an independent
+ * lineage is excluded. Shared by every lineage read and write so membership
+ * cannot drift between them.
+ */
+const lineageMembership = (sql: SqlClient.SqlClient, runId: string) =>
+  sql`(
+    lineage_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
+    OR (
+      run_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
+      AND (
+        lineage_id IS NULL
+        OR lineage_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
+      )
+    )
+  )`
+
+/** The status and request columns a cancellation miss is classified from. */
+interface CancellationRow {
+  readonly requestedAtMs: number | null
+  readonly status: string
+}
+
+/**
+ * Names the outcome of a guarded cancellation UPDATE that matched nothing.
+ *
+ * `rows` are the lineage members in round order; an absent set is `NotFound`.
+ * Status is read before the request column, so a settled run reports how it
+ * ended even when its own closing request is still on the row. A live
+ * unrequested row cannot survive the UPDATE inside one serialized writer
+ * transaction, so it is a persistence invariant failure rather than a retry.
+ */
+const classifyCancellationMiss = (
+  method: string,
+  runId: string,
+  rows: ReadonlyArray<CancellationRow>
+): Effect.Effect<RequestCancelOutcome, RunStoreError> =>
+  Effect.gen(function*() {
+    let outcome: RequestCancelOutcome = notFound
+    for (const row of rows) {
+      const status = yield* Schema.decodeUnknownEffect(RunStatus)(row.status).pipe(
+        Effect.mapError((cause) => runStoreError(method, "decode_failed", "could not decode flows_runs status", cause))
+      )
+      if (isTerminalRunStatus(status)) {
+        // A terminal predecessor never hides a live round's request.
+        if (outcome._tag !== "AlreadyRequested") outcome = { _tag: "Terminal", status }
+        continue
+      }
+      if (row.requestedAtMs === null) {
+        return yield* Effect.fail(
+          runStoreError(method, "persistence_failed", "guarded cancellation update missed a live unrequested row", {
+            runId,
+            stage: "write-invariant"
+          })
+        )
+      }
+      outcome = { _tag: "AlreadyRequested", requestedAtMs: Number(row.requestedAtMs) }
+    }
+    return outcome
+  })
+
 const selectRun = (sql: SqlClient.SqlClient, runId: string, mode: "single" | "lineage" | "latest" = "single") =>
   sql<DatabaseRunRow>`
     SELECT
@@ -1016,16 +1076,7 @@ const selectRun = (sql: SqlClient.SqlClient, runId: string, mode: "single" | "li
         (SELECT run_id FROM flows_runs WHERE run_id = ${runId})
       )`
       : mode === "lineage"
-      ? sql`(
-        lineage_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
-        OR (
-          run_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
-          AND (
-            lineage_id IS NULL
-            OR lineage_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
-          )
-        )
-      )`
+      ? lineageMembership(sql, runId)
       : sql`run_id = ${runId}`
   }
     ORDER BY COALESCE(round_ordinal, 0), run_id
@@ -1225,9 +1276,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         Effect.gen(function*() {
           // The status predicate is part of the compare-and-swap rather than
           // a read-then-write check: a run that settles between a caller's
-          // read and this UPDATE must lose the write, not race it.
-          const record = () =>
-            sql<{ readonly requestedAtMs: number }>`
+          // read and this UPDATE must lose the write, not race it. The writer
+          // serializes the whole transaction, so a miss is classified by one
+          // read of the same columns and never retried.
+          const rows = yield* sql<{ readonly requestedAtMs: number }>`
           UPDATE flows_runs
           SET cancel_requested_at_ms = ${nowMs}
           WHERE run_id = ${runId}
@@ -1235,80 +1287,14 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             AND status NOT IN ('completed', 'failed', 'cancelled')
           RETURNING cancel_requested_at_ms AS "requestedAtMs"
         `
-          const rows = yield* record()
           if (rows[0] !== undefined) {
             return { _tag: "CancelRequested", requestedAtMs: Number(rows[0].requestedAtMs) } as const
           }
-          const current = yield* sql<{ readonly requestedAtMs: number | null; readonly status: string }>`
+          const current = yield* sql<CancellationRow>`
           SELECT cancel_requested_at_ms AS "requestedAtMs", status AS "status"
           FROM flows_runs WHERE run_id = ${runId}
         `
-          const row = current[0]
-          if (row === undefined) {
-            return notFound
-          }
-          const status = yield* Schema.decodeUnknownEffect(RunStatus)(row.status).pipe(
-            Effect.mapError(requestCancelDecodeError)
-          )
-          // Read before the request column, so the answer does not depend on
-          // whether the run's own closing request is still on the row: a
-          // settled run reports how it ended either way.
-          if (isTerminalRunStatus(status)) {
-            return { _tag: "Terminal", status } as const
-          }
-          if (row.requestedAtMs !== null) {
-            return { _tag: "AlreadyRequested", requestedAtMs: Number(row.requestedAtMs) } as const
-          }
-          // The row is present and the column is NULL. `row === undefined` and
-          // `requestedAtMs === null` used to collapse into one `== null` test, so
-          // a writer on another connection clearing the column between the UPDATE
-          // and this read made a live run report `NotFound` — and the caller
-          // skipped the retry it performs for a genuine race. The UPDATE's own
-          // precondition holds again, so re-run it.
-          const retried = yield* record()
-          const recorded = retried[0]
-          if (recorded !== undefined) {
-            return { _tag: "CancelRequested", requestedAtMs: Number(recorded.requestedAtMs) } as const
-          }
-          // Three races can refuse the retry: the row disappeared, it
-          // settled, or another writer recorded the request first. Read both
-          // columns so each live row receives its truthful domain outcome.
-          const closing = yield* sql<{
-            readonly requestedAtMs: number | null
-            readonly status: string
-          }>`
-          SELECT status AS "status", cancel_requested_at_ms AS "requestedAtMs"
-          FROM flows_runs WHERE run_id = ${runId}
-        `
-          const ending = closing[0]
-          if (ending === undefined) {
-            return notFound
-          }
-          const endingStatus = yield* Schema.decodeUnknownEffect(RunStatus)(ending.status).pipe(
-            Effect.mapError(requestCancelDecodeError)
-          )
-          if (isTerminalRunStatus(endingStatus)) {
-            return {
-              _tag: "Terminal",
-              status: yield* Schema.decodeUnknownEffect(TerminalRunStatus)(endingStatus).pipe(
-                Effect.mapError(requestCancelDecodeError)
-              )
-            } as const
-          }
-          /* v8 ignore else -- DurableWriter serialization makes the null alternative an invariant violation. */
-          if (ending.requestedAtMs !== null) {
-            return { _tag: "AlreadyRequested", requestedAtMs: Number(ending.requestedAtMs) } as const
-          }
-          /* v8 ignore next 7 -- DurableWriter serializes this transaction: a live non-terminal row whose
-           * request is still null satisfies `record`, so that retry cannot have returned zero rows. */
-          return yield* Effect.fail(
-            runStoreError(
-              "requestCancel",
-              "persistence_failed",
-              "serialized cancellation retry reached an impossible live row",
-              { runId, stage: "retry-invariant" }
-            )
-          )
+          return yield* classifyCancellationMiss("requestCancel", runId, current)
         })
       )
     }).pipe(observeOutcome<RequestCancelOutcome>())
@@ -1322,21 +1308,29 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       return yield* write(
         "requestCancelLineage",
         Effect.gen(function*() {
-          const rounds = yield* lineage(runId)
-          let outcome: RequestCancelOutcome = notFound
-          for (const round of rounds) {
-            const result = yield* requestCancel(round.runId, nowMs)
-            // A new request dominates an existing request, which dominates a
-            // terminal predecessor. Otherwise keep the last round's ending.
-            if (
-              result._tag === "CancelRequested" ||
-              (outcome._tag !== "CancelRequested" &&
-                (result._tag === "AlreadyRequested" || outcome._tag !== "AlreadyRequested"))
-            ) {
-              outcome = result
-            }
+          // One set-based guarded UPDATE over the lineage: cost follows the
+          // members' metadata, never their state payloads, and a settled
+          // history of any length adds no statements.
+          const rows = yield* sql<{ readonly requestedAtMs: number }>`
+          UPDATE flows_runs
+          SET cancel_requested_at_ms = ${nowMs}
+          WHERE ${lineageMembership(sql, runId)}
+            AND cancel_requested_at_ms IS NULL
+            AND status NOT IN ('completed', 'failed', 'cancelled')
+          RETURNING cancel_requested_at_ms AS "requestedAtMs"
+        `
+          if (rows[0] !== undefined) {
+            return { _tag: "CancelRequested", requestedAtMs: Number(rows[0].requestedAtMs) } as const
           }
-          return outcome
+          // A previous request on any live round dominates a terminal
+          // predecessor; otherwise the latest round's ending is reported.
+          const members = yield* sql<CancellationRow>`
+          SELECT cancel_requested_at_ms AS "requestedAtMs", status AS "status"
+          FROM flows_runs
+          WHERE ${lineageMembership(sql, runId)}
+          ORDER BY COALESCE(round_ordinal, 0), run_id
+        `
+          return yield* classifyCancellationMiss("requestCancelLineage", runId, members)
         })
       )
     }).pipe(observeOutcome<RequestCancelOutcome>())

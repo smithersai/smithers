@@ -97,11 +97,17 @@ const requestCancelLineage: (runId: string, nowMs: number) => Effect<RequestCanc
 ```
 
 Records cancellation for every nonterminal round of the named logical run in
-one write transaction. A completed predecessor does not hide its live handoff
-successor. Existing request times and completed-round history are unchanged.
-`CancelRequested` takes precedence if any round gets a new request;
-otherwise a previous request yields `AlreadyRequested`. With every round
-settled, `Terminal` describes the latest round. An unknown ID yields `NotFound`.
+one write transaction: one guarded UPDATE over the lineage members, and on a
+miss one read of their status and request columns. Cost follows the number of
+rounds and never their state payloads, so a long settled history adds nothing.
+A completed predecessor does not hide its live handoff successor. Existing
+request times and completed-round history are unchanged.
+Outcome precedence: `CancelRequested` if any round gets a new request;
+otherwise `AlreadyRequested` with the latest live round's earlier request;
+otherwise, with every round settled, `Terminal` with the latest round's status;
+`NotFound` when no round exists. A live round without a request that the
+UPDATE did not reach fails with `persistence_failed`, since the writer
+serializes the transaction and no peer can clear the column mid-call.
 This method does not traverse child ownership edges or interrupt local fibers;
 the engine coordinates those operations.
 
@@ -113,7 +119,9 @@ const requestCancel: (runId: string, nowMs: number) => Effect<RequestCancelOutco
 
 Records unfenced cancellation intent for exactly one round that a later guarded transition observes.
 Any observer may call it, and it is first-writer-wins, so a repeat reports the
-original time. A settled run records nothing. `nowMs` is request data rather than
+original time. A settled run records nothing. The call is one guarded UPDATE
+and, on a miss, one read of the status and request columns; it never retries,
+because the durable writer serializes the whole call. `nowMs` is request data rather than
 a lease predicate, so it is checked as a non-negative safe integer and not bound
 by the skew allowance.
 

@@ -4,7 +4,6 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Duration, Effect, Exit, Layer } from "effect"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
-import type * as Statement from "effect/unstable/sql/Statement"
 import * as Migrations from "../src/Migrations.ts"
 import type { OwnerId } from "../src/Ownership.ts"
 import * as RunStore from "../src/RunStore.ts"
@@ -23,30 +22,6 @@ const effect = <E>(
 
 const own = (store: RunStore.Service, runId: string) =>
   store.claimAndOwn(runId, { status: "pending", owner: null, heartbeatAtMs: null }, owner, 1_000)
-
-/** Runs `interfere` immediately before the `nth` statement matching `match`. */
-const interleaving = (
-  match: string,
-  nth: number,
-  interfere: (base: SqlClient.SqlClient) => Effect.Effect<unknown, unknown>
-) =>
-  Layer.effect(
-    SqlClient.SqlClient,
-    Effect.gen(function*() {
-      const base = yield* Effect.service(SqlClient.SqlClient)
-      let seen = 0
-      return new Proxy(base, {
-        apply(target, thisArgument, argumentsList) {
-          const statement = Reflect.apply(target, thisArgument, argumentsList) as Statement.Statement<unknown>
-          if (typeof statement.compile !== "function" || !statement.compile()[0].includes(match)) {
-            return statement
-          }
-          seen += 1
-          return seen === nth ? Effect.andThen(interfere(base), statement) : statement
-        }
-      }) as SqlClient.SqlClient
-    })
-  )
 
 const expectRunStoreFailure = <A>(
   exit: Exit.Exit<A, RunStore.RunStoreError>,
@@ -280,131 +255,50 @@ describe("run metadata", () => {
 })
 
 /**
- * B10: the `requestCancel` fallback read collapsed "the row does not exist"
- * and "the row exists with a NULL column" into one `== null` test, so a writer
- * on another connection clearing `cancel_requested_at_ms` between the fenced
- * UPDATE and the fallback SELECT made a live run report `NotFound`. The caller
- * then skipped the retry it performs for a genuine race.
- *
- * Both interleavings are driven here by running the interfering statement from
- * inside the client, at the exact point a second connection would have.
+ * B10: the `requestCancel` fallback read once collapsed "the row does not
+ * exist" and "the row exists with a NULL column" into one `== null` test. The
+ * writer serializes the whole call, so no peer can clear the column between
+ * the guarded UPDATE and the classifier read; a live unrequested row there is
+ * a persistence invariant failure, and a missing row is `NotFound`.
  */
-describe("requestCancel distinguishes an absent row from a cleared column (B10)", () => {
-  const withInterleaving = (
-    match: string,
-    nth: number,
-    interfere: (base: SqlClient.SqlClient) => Effect.Effect<unknown, unknown>
-  ) =>
-    Layer.provideMerge(
-      RunStore.layer,
-      Layer.provideMerge(
-        interleaving(match, nth, interfere),
-        Layer.provideMerge(Migrations.layer, TestDatabase.layer)
+describe("requestCancel classifies a miss inside one serialized write", () => {
+  effect("concurrent requesters on one live run agree on the first request", () =>
+    Effect.gen(function*() {
+      const store = yield* RunStore.RunStore
+      yield* store.create("run", "{}")
+      const outcomes = yield* Effect.all(
+        [store.requestCancel("run", 500), store.requestCancel("run", 900), store.requestCancel("run", 700)],
+        { concurrency: "unbounded" }
       )
-    )
+      const requested = outcomes.filter((outcome) => outcome._tag === "CancelRequested")
+      expect(requested).toHaveLength(1)
+      const winner = requested[0]!.requestedAtMs
+      for (const outcome of outcomes) {
+        if (outcome._tag !== "CancelRequested") {
+          expect(outcome).toEqual({ _tag: "AlreadyRequested", requestedAtMs: winner })
+        }
+      }
+      expect((yield* store.get("run")).cancelRequestedAtMs).toBe(winner)
+    }))
 
-  it.effect("re-records the cancellation when the column is cleared under it", () =>
-    Effect.gen(function*() {
-      const store = yield* RunStore.RunStore
-      yield* store.create("run", "{}")
-      expect(yield* store.requestCancel("run", 500)).toEqual({ _tag: "CancelRequested", requestedAtMs: 500 })
-      // The fenced UPDATE now matches nothing, and the fallback SELECT runs
-      // against a row whose column another writer just cleared.
-      expect(yield* store.requestCancel("run", 900)).toEqual({ _tag: "CancelRequested", requestedAtMs: 900 })
-    }).pipe(
-      Effect.provide(withInterleaving(
-        "SELECT cancel_requested_at_ms",
-        1,
-        (base) => base`UPDATE flows_runs SET cancel_requested_at_ms = NULL WHERE run_id = 'run'`
-      )),
-      Effect.scoped
-    ))
-
-  it.effect("reports NotFound only when the row is really gone", () =>
-    Effect.gen(function*() {
-      const store = yield* RunStore.RunStore
-      yield* store.create("run", "{}")
-      expect(yield* store.requestCancel("run", 500)).toEqual({ _tag: "CancelRequested", requestedAtMs: 500 })
-      // Cleared before the SELECT by the first interleaving, then deleted
-      // before the re-record: the run is genuinely absent by then.
-      expect(yield* store.requestCancel("run", 900)).toEqual({ _tag: "NotFound" })
-    }).pipe(
-      Effect.provide(
-        Layer.provideMerge(
-          RunStore.layer,
-          Layer.provideMerge(
-            Layer.effect(
-              SqlClient.SqlClient,
-              Effect.gen(function*() {
-                const base = yield* Effect.service(SqlClient.SqlClient)
-                let updates = 0
-                return new Proxy(base, {
-                  apply(target, thisArgument, argumentsList) {
-                    const statement = Reflect.apply(
-                      target,
-                      thisArgument,
-                      argumentsList
-                    ) as Statement.Statement<unknown>
-                    if (typeof statement.compile !== "function") return statement
-                    const [query] = statement.compile()
-                    if (query.includes("SELECT cancel_requested_at_ms")) {
-                      return Effect.andThen(
-                        base`UPDATE flows_runs SET cancel_requested_at_ms = NULL WHERE run_id = 'run'`,
-                        statement
-                      )
-                    }
-                    if (query.includes("SET cancel_requested_at_ms")) {
-                      updates += 1
-                      // The third UPDATE is the re-record after the SELECT.
-                      if (updates === 3) {
-                        return Effect.andThen(base`DELETE FROM flows_runs WHERE run_id = 'run'`, statement)
-                      }
-                    }
-                    return statement
-                  }
-                }) as SqlClient.SqlClient
-              })
-            ),
-            Layer.provideMerge(Migrations.layer, TestDatabase.layer)
-          )
-        )
-      ),
-      Effect.scoped
-    ))
-
-  it.effect("reports the cancellation another writer recorded before the retry", () =>
-    Effect.gen(function*() {
-      const store = yield* RunStore.RunStore
-      yield* store.create("run", "{}")
-      expect(yield* store.requestCancel("run", 500)).toEqual({ _tag: "CancelRequested", requestedAtMs: 500 })
-      expect(yield* store.requestCancel("run", 900)).toEqual({ _tag: "AlreadyRequested", requestedAtMs: 777 })
-      expect(yield* store.get("run")).toMatchObject({
-        status: "pending",
-        cancelRequestedAtMs: 777
+  effect(
+    "fails persistence_failed when the guarded update silently misses a live unrequested row",
+    () =>
+      Effect.gen(function*() {
+        const store = yield* RunStore.RunStore
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        yield* store.create("run", "{}")
+        // RAISE(IGNORE) drops the row change without an error, which is the only
+        // way a live unrequested row can survive the UPDATE inside one writer.
+        yield* sql`CREATE TRIGGER ignore_cancel BEFORE UPDATE OF cancel_requested_at_ms ON flows_runs
+        BEGIN SELECT RAISE(IGNORE); END`
+        const exit = yield* Effect.exit(store.requestCancel("run", 500))
+        expectRunStoreFailure(exit, "requestCancel", "persistence_failed")
+        expect(Exit.isFailure(exit) ? exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error : undefined)
+          .toMatchObject({ cause: { runId: "run", stage: "write-invariant" } })
+        expect((yield* store.get("run")).cancelRequestedAtMs).toBeNull()
       })
-    }).pipe(
-      Effect.provide(
-        Layer.provideMerge(
-          RunStore.layer,
-          Layer.provideMerge(
-            interleaving(
-              "SET cancel_requested_at_ms",
-              3,
-              (base) => base`UPDATE flows_runs SET cancel_requested_at_ms = 777 WHERE run_id = 'run'`
-            ),
-            Layer.provideMerge(
-              interleaving(
-                "SELECT cancel_requested_at_ms",
-                1,
-                (base) => base`UPDATE flows_runs SET cancel_requested_at_ms = NULL WHERE run_id = 'run'`
-              ),
-              Layer.provideMerge(Migrations.layer, TestDatabase.layer)
-            )
-          )
-        )
-      ),
-      Effect.scoped
-    ))
+  )
 })
 
 describe("requestCancel status decode failures", () => {
@@ -423,46 +317,6 @@ describe("requestCancel status decode failures", () => {
       const exit = yield* Effect.exit(store.requestCancel("bad-fallback-status", 2))
       expectRunStoreFailure(exit, "requestCancel", "decode_failed")
     }))
-
-  it.effect("fails decode_failed at the closing status read", () =>
-    Effect.gen(function*() {
-      const store = yield* RunStore.RunStore
-      yield* store.create("run", "{}")
-      expect(yield* store.requestCancel("run", 500)).toEqual({ _tag: "CancelRequested", requestedAtMs: 500 })
-      const exit = yield* Effect.exit(store.requestCancel("run", 900))
-      expectRunStoreFailure(exit, "requestCancel", "decode_failed")
-    }).pipe(
-      Effect.provide(
-        Layer.provideMerge(
-          RunStore.layer,
-          Layer.provideMerge(
-            interleaving(
-              "SET cancel_requested_at_ms",
-              3,
-              (base) =>
-                Effect.gen(function*() {
-                  yield* base`PRAGMA ignore_check_constraints = ON`
-                  yield* base`
-                    UPDATE flows_runs
-                    SET status = 'not-a-status', cancel_requested_at_ms = 777
-                    WHERE run_id = 'run'
-                  `
-                  yield* base`PRAGMA ignore_check_constraints = OFF`
-                })
-            ),
-            Layer.provideMerge(
-              interleaving(
-                "SELECT cancel_requested_at_ms",
-                1,
-                (base) => base`UPDATE flows_runs SET cancel_requested_at_ms = NULL WHERE run_id = 'run'`
-              ),
-              Layer.provideMerge(Migrations.layer, TestDatabase.layer)
-            )
-          )
-        )
-      ),
-      Effect.scoped
-    ))
 })
 
 /**
@@ -517,114 +371,6 @@ describe("requestCancel refuses a run that already settled (B-02)", () => {
       expect(yield* store.requestCancel("run", 900)).toEqual({ _tag: "Terminal", status: "cancelled" })
       expect((yield* store.get("run")).cancelRequestedAtMs).toBe(500)
     }))
-
-  it.effect("reports the ending a run reached while the request was being retried", () =>
-    Effect.gen(function*() {
-      const store = yield* RunStore.RunStore
-      yield* store.create("run", "{}")
-      expect(yield* store.requestCancel("run", 500)).toEqual({ _tag: "CancelRequested", requestedAtMs: 500 })
-      // The narrow window the retry path opens: the fallback SELECT reads a
-      // live run with a cleared column, so the call retries — and the run
-      // settles before that retry lands. The retried UPDATE loses to the
-      // status predicate, which is indistinguishable from a missing row unless
-      // the miss is read back. `NotFound` about a run that just completed is
-      // the wrong answer twice over: the row is there, and the caller is told
-      // to look for a run rather than that its request lost to an ending.
-      expect(yield* store.requestCancel("run", 900)).toEqual({ _tag: "Terminal", status: "completed" })
-      expect((yield* store.get("run")).status).toBe("completed")
-    }).pipe(
-      Effect.provide(
-        Layer.provideMerge(
-          RunStore.layer,
-          Layer.provideMerge(
-            Layer.effect(
-              SqlClient.SqlClient,
-              Effect.gen(function*() {
-                const base = yield* Effect.service(SqlClient.SqlClient)
-                let updates = 0
-                return new Proxy(base, {
-                  apply(target, thisArgument, argumentsList) {
-                    const statement = Reflect.apply(
-                      target,
-                      thisArgument,
-                      argumentsList
-                    ) as Statement.Statement<unknown>
-                    if (typeof statement.compile !== "function") return statement
-                    const [query] = statement.compile()
-                    // Clear the column ahead of the fallback SELECT, so the
-                    // call sees a live run with nothing recorded and retries.
-                    if (query.includes("SELECT cancel_requested_at_ms")) {
-                      return Effect.andThen(
-                        base`UPDATE flows_runs SET cancel_requested_at_ms = NULL WHERE run_id = 'run'`,
-                        statement
-                      )
-                    }
-                    if (query.includes("SET cancel_requested_at_ms")) {
-                      updates += 1
-                      // The third UPDATE is the re-record after the SELECT.
-                      if (updates === 3) {
-                        return Effect.andThen(
-                          base`
-                            UPDATE flows_runs
-                            SET
-                              status = 'completed',
-                              started_at_ms = COALESCE(started_at_ms, created_at_ms),
-                              finished_at_ms = COALESCE(started_at_ms, created_at_ms),
-                              owner_host_id = NULL,
-                              owner_pid = NULL,
-                              owner_nonce = NULL,
-                              heartbeat_at_ms = NULL,
-                              claim_host_id = NULL,
-                              claim_pid = NULL,
-                              claim_nonce = NULL,
-                              claimed_at_ms = NULL
-                            WHERE run_id = 'run'
-                          `,
-                          statement
-                        )
-                      }
-                    }
-                    return statement
-                  }
-                }) as SqlClient.SqlClient
-              })
-            ),
-            Layer.provideMerge(Migrations.layer, TestDatabase.layer)
-          )
-        )
-      ),
-      Effect.scoped
-    ))
-
-  it.effect("reports NotFound when the run is deleted during the retry window", () =>
-    Effect.gen(function*() {
-      const store = yield* RunStore.RunStore
-      yield* store.create("run", "{}")
-      expect(yield* store.requestCancel("run", 500)).toEqual({ _tag: "CancelRequested", requestedAtMs: 500 })
-      expect(yield* store.requestCancel("run", 900)).toEqual({ _tag: "NotFound" })
-    }).pipe(
-      Effect.provide(
-        Layer.provideMerge(
-          RunStore.layer,
-          Layer.provideMerge(
-            interleaving(
-              "SET cancel_requested_at_ms",
-              3,
-              (base) => base`DELETE FROM flows_runs WHERE run_id = 'run'`
-            ),
-            Layer.provideMerge(
-              interleaving(
-                "SELECT cancel_requested_at_ms",
-                1,
-                (base) => base`UPDATE flows_runs SET cancel_requested_at_ms = NULL WHERE run_id = 'run'`
-              ),
-              Layer.provideMerge(Migrations.layer, TestDatabase.layer)
-            )
-          )
-        )
-      ),
-      Effect.scoped
-    ))
 
   effect("a pending, running, or suspended run still records the request", () =>
     Effect.gen(function*() {
