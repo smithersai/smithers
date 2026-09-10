@@ -6,7 +6,7 @@ import type { Schema } from "effect"
 import { roleMenuEntries } from "../../AgentRoleMenu"
 import type { AgentInvocation } from "../../flows/AgentInvocation"
 import type { CommandOutcome } from "../../flows/Commands"
-import { assembleArgs, draftFrom, formFieldsFor, missingFields, partialPayload } from "../../flows/FlowForms"
+import { assembleArgs, draftFrom, formFieldsFor, missingFields, partialPayload, submissionPayload } from "../../flows/FlowForms"
 import type { FieldOption, FieldValue, FormDraft, FormField, FormHints, OptionProvider } from "../../flows/FlowForms"
 import { payloadFor } from "../../flows/SlashPayload"
 import { manifests } from "../../plugins/catalog"
@@ -339,8 +339,8 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       case "unknown-command":
         return "no flow has that name any more"
       case "form":
-        // The assembled line failed the flow's own grammar: the form and the grammar disagree, which is a defect to state, not hide.
-        return `the filled form did not parse as one /${outcome.flow} line — it still needs ${outcome.fields.join(", ")}`
+        // A submission carries its payload by name, so the run path asking for a form again means the flow still lacks input: a defect to state, not hide.
+        return `the filled form did not give /${outcome.flow} what it needs — it still needs ${outcome.fields.join(", ")}`
       case "executed":
         return outcome.value ?? ""
     }
@@ -361,15 +361,21 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const { flow, via } = card.payload
     const entry = ctx.commands.find(flow)
     if (entry === undefined) return `/${flow} is not available here.`
-    // Represented fields belong to the draft, including an explicit clear.
+    /*
+     * The submission is the form's NAMED payload (FlowForms.submissionPayload):
+     * every field arrives under its own name and the flow's input schema
+     * validates it, so a blank optional cannot shift the next field's value
+     * into it. The assembled line is display copy — the card's echo, the
+     * trace, and the confirmation message — and nothing parses it back.
+     */
+    const submission = submissionPayload(entry.input, card.payload.fields, card.payload.given, card.payload.draft)
+    if ("error" in submission) {
+      patch(card, { ...card.payload, error: submission.error }, "error")
+      return submission.error
+    }
     const represented = new Set(card.payload.fields.map((field) => field.name))
     const unrepresented = Object.fromEntries(Object.entries(card.payload.given).filter(([name]) => !represented.has(name)))
     const args = assembleArgs(card.payload.fields, entry.metadata.form, { ...unrepresented, ...card.payload.draft })
-    const parsed = payloadFor(flow, args, entry.metadata.grammar, knownRepositories(ctx.store))
-    if ("error" in parsed) {
-      patch(card, { ...card.payload, error: parsed.error }, "error")
-      return parsed.error
-    }
     const actor = ctx.commandActor
     /*
      * The continuation keeps the asker's actor: an agent-rendered form runs
@@ -382,9 +388,13 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     patch(card, { ...card.payload, submitting: true }, "active")
     let outcome: CommandOutcome
     try {
-      outcome = asAgent
-        ? await ctx.commands.runForAgent(flow, args === "" ? undefined : args, continuation)
-        : await ctx.commands.run(flow, args === "" ? undefined : args)
+      outcome = await ctx.commands.submit({
+        name: flow,
+        payload: submission.payload,
+        actor: asAgent ? "agent" : "user",
+        ...(args === "" ? {} : { display: args }),
+        ...(asAgent && continuation !== undefined ? { invocation: continuation } : {})
+      })
     } catch (cause) {
       outcome = { status: "failed", error: cause instanceof Error ? cause.message : String(cause) }
     }

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { payloadFor } from "./SlashPayload"
+import type { CommandActions } from "./Flows"
+import { adminFlows, baseFlows } from "./Flows"
+import { nameOf } from "./registry"
+import { hasGrammar, payloadFor } from "./SlashPayload"
 
 /*
  * The composer boundary refuses what it cannot parse exactly. `files.list`
@@ -281,5 +284,36 @@ test("run source parsing preserves repository context for slash-shaped run IDs",
   })
   expect(payloadFor("runs.open", "sourceCard=list-a jobs/run-1 will/flows", undefined, known)).toEqual({
     payload: { runId: "jobs/run-1", repo: "will/flows", sourceCard: "list-a" }
+  })
+})
+
+
+/*
+ * The declaration/grammar gate. Argument grammar lives in one table, keyed by
+ * name, beside declarations that carry their own `args` hint and input schema;
+ * a declaration the table forgets decodes to the EMPTY payload, so what the
+ * human typed is discarded in silence. `triggers.register` shipped exactly
+ * that: it declares `[owner/repo]`, forwards `repo` to registerTrigger, and
+ * had no decoder, so a named repository never reached it.
+ */
+describe("every declaration that takes arguments names a decoder", () => {
+  /** Registration never invokes a handler, so every controller call answers with nothing. */
+  const inertActions = new Proxy({}, { get: () => () => undefined }) as CommandActions
+
+  test("a flow declaring an args hint carries a decoder, in the table or on the declaration", () => {
+    const undecoded = [...baseFlows(inertActions), ...adminFlows(inertActions)]
+      .filter((entry) => entry.metadata.args !== undefined)
+      .map(nameOf)
+      .filter((name) => !hasGrammar(name))
+    expect(undecoded).toEqual([])
+  })
+
+  test("triggers.register preserves the repository it was given, as triggers.list does", () => {
+    expect(payloadFor("triggers.register", "other/repo")).toEqual({ payload: { repo: "other/repo" } })
+    expect(payloadFor("triggers.list", "other/repo")).toEqual({ payload: { repo: "other/repo" } })
+    expect(payloadFor("triggers.register", "")).toEqual({ payload: {} })
+    expect(payloadFor("triggers.register", "other/repo extra")).toEqual({
+      error: "triggers.register takes just an owner/repo name"
+    })
   })
 })

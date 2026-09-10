@@ -41,6 +41,7 @@ import {
   unmetRequirements,
   visible
 } from "./registry"
+import type { Parsed } from "./SlashPayload"
 import { payloadFor } from "./SlashPayload"
 
 export type { CommandActions, CommandResult } from "./Flows"
@@ -104,6 +105,27 @@ export const absentReason = (name: string, door: AbsentDoor): string => {
 /** The flow the registry renders for a native-only miss on the web. */
 const DOWNLOAD_PROMPT = "app.download.prompt"
 
+/**
+ * One flow invoked with its input ALREADY NAMED — the door a form submits
+ * through.
+ *
+ * `payload` is the record the declaration's input schema validates, so no
+ * field can shift onto its neighbour on the way in; `display` is the
+ * equivalent slash line, kept for the trace, the confirmation message and the
+ * card's echo, and never parsed back into the payload. Availability, the
+ * requirement axis, the confirmation axis and the agent authorization are the
+ * ones every other trigger meets: this is the same `runAs` path with the
+ * text-shaped step already done.
+ */
+export interface FlowSubmission {
+  readonly name: string
+  readonly payload: Record<string, unknown>
+  readonly actor: "user" | "agent"
+  /** The equivalent slash line, for display and the trace only. */
+  readonly display?: string
+  readonly invocation?: AgentInvocation
+}
+
 export interface CommandRegistry {
   /** Every registered flow as UI-catalog records, admin entries included only for admin sessions. */
   readonly all: () => ReadonlyArray<CatalogItem>
@@ -144,6 +166,11 @@ export interface CommandRegistry {
    * strings.
    */
   readonly runForAgent: (name: string, args?: string, invocation?: AgentInvocation, signal?: AbortSignal) => Promise<CommandOutcome>
+  /**
+   * One flow run from a payload the caller already named (the form door):
+   * the same path, entered past the composer boundary rather than through it.
+   */
+  readonly submit: (submission: FlowSubmission) => Promise<CommandOutcome>
   /** The flows the agent may call: the registry narrowed to model-invocable entries. */
   readonly callable: () => ReadonlyArray<FlowEntry>
   /** What the prompt's catalog block teaches: callable flows that are not hidden. */
@@ -364,11 +391,12 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     name: string,
     args?: string,
     seen: ReadonlySet<string> = new Set(),
-    invocation?: AgentInvocation
+    invocation?: AgentInvocation,
+    named?: Record<string, unknown>
   ): Promise<CommandOutcome> => {
     invocation?.signal?.throwIfAborted()
     const startedAt = Date.now()
-    const outcome = await settle(invoker, name, args, seen, startedAt, invocation)
+    const outcome = await settle(invoker, name, args, seen, startedAt, invocation, named)
     trace(
       invoker,
       name,
@@ -395,7 +423,9 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     args: string | undefined,
     seen: ReadonlySet<string>,
     startedAt: number,
-    invocation?: AgentInvocation
+    invocation?: AgentInvocation,
+    /** The payload a named submission already carries; absent for a text invocation. */
+    named?: Record<string, unknown>
   ): Promise<CommandOutcome> => {
     const entry = find(name)
     if (entry === undefined) {
@@ -452,7 +482,14 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
      * exactly once, here, and a text that cannot be parsed is refused before
      * the binding runs.
      */
-    const parsed = payloadFor(nameOf(target), args, target.metadata.grammar, actions.knownRepositories())
+    /*
+     * A named submission is already past this boundary: its payload keeps the
+     * field identity the form collected, and the declaration's input schema
+     * validates it inside the binding. Only text is parsed here, once.
+     */
+    const parsed: Parsed = named === undefined
+      ? payloadFor(nameOf(target), args, target.metadata.grammar, actions.knownRepositories())
+      : { payload: named }
     if ("error" in parsed) {
       /*
        * THE FORM LAW: a line without the flow's required input renders the
@@ -561,6 +598,15 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
         ...(invocation ?? unscopedInvocation),
         signal: signal ?? invocation?.signal
       })
+    },
+    submit: async ({ name, payload, actor, display, invocation }) => {
+      const clean = name.trim().replace(/^\/+/, "")
+      if (actor === "user") return runAs("user", clean, display, new Set(), invocation, payload)
+      const target = find(clean)
+      if (target !== undefined && !modelInvocable(target)) {
+        return { status: "failed", error: userOnlyError(clean, target.metadata.userOnlyReason) }
+      }
+      return runAs("agent", clean, display, new Set(), { ...(invocation ?? unscopedInvocation) }, payload)
     },
     callable,
     /*

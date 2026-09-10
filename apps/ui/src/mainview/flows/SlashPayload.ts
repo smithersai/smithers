@@ -320,6 +320,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "approvals.open": (args) => required("runId", args, "approvals.open needs a run id"),
   "flow.list": (args) => repoOnly("flow.list", args),
   "triggers.list": (args) => repoOnly("triggers.list", args),
+  "triggers.register": (args) => repoOnly("triggers.register", args),
   "factory.show": (args) => repoOnly("factory.show", args),
   "flow.run": (args) => {
     const { name, repo, input } = flowRunParts(args)
@@ -1097,6 +1098,18 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok({ repoId, file })
   }
 }
+
+/**
+ * Whether a decoder for this flow exists in the table above.
+ *
+ * The gate in SlashPayload.test.ts reads it: a declaration that takes
+ * arguments and names no decoder here (and carries none as
+ * `metadata.grammar`) would silently decode to the EMPTY payload, discarding
+ * what the human typed — the drift `triggers.register` shipped with.
+ *
+ * @category conversions
+ */
+export const hasGrammar = (name: string): boolean => GRAMMAR[name] !== undefined
 
 /**
  * Turns one flow's slash argument text into its typed payload.

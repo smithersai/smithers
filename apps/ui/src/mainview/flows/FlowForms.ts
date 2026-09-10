@@ -217,6 +217,90 @@ export const partialPayload = (
   return payload
 }
 
+/** What the input schema says about one property, past `Schema.optional`. */
+interface PropertyShape {
+  readonly optional: boolean
+  readonly tag: SchemaAST.AST["_tag"]
+}
+
+/** The flow's input struct as the submission reads it: one shape per property, in schema order. */
+const inputShape = (input: Schema.Top): ReadonlyMap<string, PropertyShape> => {
+  const ast = input.ast
+  const shape = new Map<string, PropertyShape>()
+  if (ast._tag !== "Objects") return shape
+  for (const signature of ast.propertySignatures) {
+    const { ast: inner, optional } = unwrapOptional(signature.type)
+    shape.set(String(signature.name), { optional, tag: inner._tag })
+  }
+  return shape
+}
+
+/**
+ * One field's draft value as its property's schema takes it. A structure's
+ * control is one line of text, so the inverse of the control is a parse: an
+ * object field holds JSON, and a list field holds the space-separated items
+ * `assembleArgs` writes and every list grammar reads. Text that is not the
+ * JSON an object field needs is the form's refusal, not the flow's problem.
+ */
+const asProperty = (shape: PropertyShape | undefined, value: FieldValue): { readonly value: unknown } | { readonly invalid: true } => {
+  if (typeof value !== "string" || shape === undefined) return { value }
+  if (shape.tag === "Arrays") return { value: value.trim() === "" ? [] : value.trim().split(/\s+/) }
+  if (shape.tag !== "Objects") return { value }
+  try {
+    return { value: JSON.parse(value) }
+  } catch {
+    return { invalid: true }
+  }
+}
+
+/** A filled form as the flow's named payload, or the honest refusal one of its controls earned. */
+export type Submission =
+  | { readonly payload: Record<string, unknown> }
+  | { readonly error: string }
+
+/**
+ * The filled form as the flow's OWN named payload — the record a submission
+ * runs with, validated by the declaration's input schema.
+ *
+ * Field identity survives here, which the positional line cannot promise: a
+ * value the human left blank is ABSENT rather than shifting the next field's
+ * value into it, a prefilled free-text field the human cleared submits as the
+ * clear it shows, a field the schema requires and a `required: false` hint
+ * lets stand blank submits as the empty string that hint means, and a
+ * structured field parses back out of the text its control holds.
+ * `assembleArgs` still writes the slash line, but only as display copy —
+ * nothing reparses it into the payload.
+ *
+ * @category derivation
+ */
+export const submissionPayload = (
+  input: Schema.Top,
+  fields: ReadonlyArray<FormField>,
+  given: Readonly<Record<string, unknown>>,
+  draft: FormDraft
+): Submission => {
+  const shape = inputShape(input)
+  const represented = new Set(fields.map((field) => field.name))
+  // What the form could not represent stays exactly as the invocation gave it.
+  const payload: Record<string, unknown> = Object.fromEntries(
+    Object.entries(given).filter(([name]) => !represented.has(name))
+  )
+  for (const field of fields) {
+    const property = shape.get(field.name)
+    const value = draft[field.name]
+    if (value !== undefined) {
+      const converted = asProperty(property, value)
+      if ("invalid" in converted) return { error: `${field.label} is not valid JSON. Fix it before submitting the form.` }
+      payload[field.name] = converted.value
+      continue
+    }
+    const blankStands = property !== undefined && !property.optional && property.tag === "String"
+    // A field the invocation filled and the human then cleared submits as the clear it shows.
+    if (blankStands || (field.kind === "text" && typeof given[field.name] === "string")) payload[field.name] = ""
+  }
+  return { payload }
+}
+
 const coerce = (field: FormField, value: unknown): FieldValue | undefined => {
   if (value === undefined || value === null) return undefined
   if (Array.isArray(value)) return value.map(String).join(" ")

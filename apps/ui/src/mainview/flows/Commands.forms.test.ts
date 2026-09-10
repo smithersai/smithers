@@ -8,7 +8,7 @@
  * confirms, and the other doors (W0 unavailable, user-only) stay intact.
  */
 import type { StorageApi } from "@tanstack/db"
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { AGENT_ROLES, AgentRoleSchema } from "@smthrs/rpc/AgentRoles"
 import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
@@ -20,7 +20,11 @@ import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
 import type { AppStore } from "../state/AppStore"
 import type { Card } from "../state/AppState"
-import { assembleArgs, draftFrom, formFieldsFor, missingFields } from "./FlowForms"
+import { Option, Schema } from "effect"
+import { createCommandRegistry } from "./Commands"
+import type { CommandActions } from "./Flows"
+import { assembleArgs, draftFrom, formFieldsFor, missingFields, submissionPayload } from "./FlowForms"
+import type { FormField } from "./FlowForms"
 import { nameOf } from "./registry"
 import { payloadFor } from "./SlashPayload"
 
@@ -354,5 +358,181 @@ describe("THE FORM LAW — every flow's form round-trips through its own grammar
       if ("error" in parsed) failures.push(`${name}: "${args}" → ${parsed.error}`)
     }
     expect(failures).toEqual([])
+  })
+})
+
+
+/*
+ * THE FORM LAW at the submission (ui-flows-chain/api-design/1): a form runs
+ * its flow with the NAMED payload it collected. The gate below fills every
+ * field of every flow with a DISTINCT value and compares the payload the
+ * declaration's own schema decodes with the payload the form intended — a
+ * value that landed on the neighbouring field is a failure, which the old
+ * "the line parsed" acceptance could not see.
+ */
+
+/** A flow's declaration schema as a decoder: the registry types `input` as `Schema.Top`, which carries no service bound. */
+const decodeInput = (input: Schema.Top) => Schema.decodeUnknownOption(input as unknown as Schema.Codec<unknown>)
+
+/** Each input property past `Schema.optional`: the shape a sample must take, and whether the schema lets it go. */
+const propertyShapes = (input: Schema.Top): ReadonlyMap<string, { readonly tag: string; readonly optional: boolean }> => {
+  const ast = input.ast as { _tag: string; propertySignatures?: ReadonlyArray<{ name: PropertyKey; type: any }> }
+  const shapes = new Map<string, { readonly tag: string; readonly optional: boolean }>()
+  for (const signature of ast.propertySignatures ?? []) {
+    const type = signature.type
+    const inner = type._tag === "Union" ? type.types.find((member: any) => member._tag !== "Undefined") ?? type : type
+    shapes.set(String(signature.name), { tag: String(inner._tag), optional: type._tag === "Union" && type !== inner })
+  }
+  return shapes
+}
+
+/** A distinct value per field, so a value that shifts onto another field is visible in the comparison. */
+const sampleFor = (tag: string | undefined, field: FormField, index: number): unknown => {
+  if (field.kind === "number") return index + 1
+  if (field.kind === "boolean") return true
+  if (field.kind === "select") return field.options?.[0]?.value ?? `${field.name}-${index}`
+  // A list control is one line of space-separated items, so its items carry no space.
+  if (tag === "Arrays") return [`src/oné-${index}.ts`, `docs/two-${index}.md`]
+  if (tag === "Objects") return { message: `Keep  spaces ${index}` }
+  // A repository target is only ever read in its owner/repo shape (RepoContext.splitTrailingRepo).
+  if (field.name === "repo") return `owner${index}/repo${index}`
+  // Unicode and a path with spaces: a positional line cannot carry either honestly.
+  return `${field.name}/a path ${index} ✓`
+}
+
+/** The payload a filled form submits: the draft the card holds, named. */
+const submissionOf = (
+  entry: ReturnType<ReturnType<typeof createCommandRegistry>["entries"]>[number],
+  given: Readonly<Record<string, unknown>>
+): Record<string, unknown> | string => {
+  const fields = formFieldsFor(entry.input, entry.metadata.form)
+  const submission = submissionPayload(entry.input, fields, given, draftFrom(fields, given))
+  return "error" in submission ? submission.error : submission.payload
+}
+
+describe("THE FORM LAW — every flow's form submits its own named payload", () => {
+  test("every filled field arrives under its own name, through the flow's input schema", async () => {
+    const { controller } = await boot()
+    const failures: Array<string> = []
+    for (const entry of controller.commands.entries()) {
+      if (entry.metadata.args === undefined) continue
+      const name = nameOf(entry)
+      const fields = formFieldsFor(entry.input, entry.metadata.form)
+      const shapes = propertyShapes(entry.input)
+      const given: Record<string, unknown> = {}
+      fields.forEach((field, index) => {
+        given[field.name] = sampleFor(shapes.get(field.name)?.tag, field, index)
+      })
+      const payload = submissionOf(entry, given)
+      const decoded = typeof payload === "string" ? Option.none() : decodeInput(entry.input)(payload)
+      if (Option.isNone(decoded)) {
+        failures.push(`${name}: ${JSON.stringify(payload)} is not valid input`)
+        continue
+      }
+      const kept = decoded.value as Record<string, unknown>
+      for (const field of fields) {
+        if (JSON.stringify(kept[field.name]) !== JSON.stringify(given[field.name])) {
+          failures.push(`${name}.${field.name}: submitted ${JSON.stringify(given[field.name])}, ran with ${JSON.stringify(kept[field.name])}`)
+        }
+      }
+    }
+    expect(failures).toEqual([])
+  })
+
+  test("an omitted optional stays omitted instead of shifting the next field's value onto it", async () => {
+    const { controller } = await boot()
+    const failures: Array<string> = []
+    for (const entry of controller.commands.entries()) {
+      if (entry.metadata.args === undefined) continue
+      const name = nameOf(entry)
+      const fields = formFieldsFor(entry.input, entry.metadata.form)
+      const optional = fields.filter((field) => !field.required && field.kind !== "boolean")
+      // The last optional field alone: everything before it is the gap a positional line closes up.
+      const last = optional[optional.length - 1]
+      if (last === undefined) continue
+      const shapes = propertyShapes(entry.input)
+      const given: Record<string, unknown> = {}
+      fields.forEach((field, index) => {
+        if (field.required || field.name === last.name) given[field.name] = sampleFor(shapes.get(field.name)?.tag, field, index)
+      })
+      const payload = submissionOf(entry, given)
+      const decoded = typeof payload === "string" ? Option.none() : decodeInput(entry.input)(payload)
+      if (Option.isNone(decoded)) {
+        failures.push(`${name}: ${JSON.stringify(payload)} is not valid input`)
+        continue
+      }
+      const kept = decoded.value as Record<string, unknown>
+      for (const field of fields) {
+        /* A field the schema requires and a `required: false` hint lets stand blank submits as the blank it shows. */
+        const expected = field.name in given
+          ? given[field.name]
+          : shapes.get(field.name)?.optional === false
+          ? ""
+          : undefined
+        if (JSON.stringify(kept[field.name]) !== JSON.stringify(expected)) {
+          failures.push(`${name}.${field.name}: expected ${JSON.stringify(expected)}, ran with ${JSON.stringify(kept[field.name])}`)
+        }
+      }
+    }
+    expect(failures).toEqual([])
+  })
+
+  test("a prefilled free-text field the human cleared submits as the clear, not as the value it held", async () => {
+    const { controller } = await boot()
+    const entry = controller.commands.find("agent.edit")!
+    const fields = formFieldsFor(entry.input, entry.metadata.form)
+    const given = { id: "explainer", purpose: "Explains code" }
+    // form.set with a blank value drops the key: the human emptied the control.
+    const cleared = submissionPayload(entry.input, fields, given, { id: "explainer" })
+    expect(cleared).toEqual({ payload: { id: "explainer", purpose: "" } })
+    expect(submissionPayload(entry.input, fields, given, draftFrom(fields, given))).toEqual({ payload: given })
+  })
+
+  test("a structured control holding text that is not JSON is the form's own refusal, and nothing runs", async () => {
+    const { controller } = await boot()
+    const entry = controller.commands.find("flow.run")!
+    const fields = formFieldsFor(entry.input, entry.metadata.form)
+    expect(submissionPayload(entry.input, fields, {}, { name: "coding", input: "{invalid" })).toEqual({
+      error: "Input JSON is not valid JSON. Fix it before submitting the form."
+    })
+    expect(submissionPayload(entry.input, fields, {}, { name: "coding", input: JSON.stringify({ plan: { title: "One" } }) })).toEqual({
+      payload: { name: "coding", input: { plan: { title: "One" } } }
+    })
+  })
+
+  test("change.diff runs with the pins the form filled, never with the line's positions", async () => {
+    const calls: Array<{ readonly action: string; readonly args: ReadonlyArray<unknown> }> = []
+    const recording = new Proxy({}, {
+      get: (_target, property: string) => {
+        if (property === "bootstrap") return EVERYTHING
+        if (property === "snapshot") return () => ({ surface: "chat", typing: false, hasConnectors: false, admin: false, signedOut: false })
+        if (property === "repositoryFlows") return () => undefined
+        if (property === "knownRepositories") return () => new Set<string>()
+        return (...args: ReadonlyArray<unknown>) => {
+          calls.push({ action: property, args })
+          return undefined
+        }
+      }
+    }) as CommandActions
+    const registry = createCommandRegistry(recording)
+    await registry.submit({ name: "change.diff", payload: { changeId: "c1", to: "1" }, actor: "user", display: "c1 1" })
+    expect(calls.filter((call) => call.action === "diffChange")).toEqual([
+      { action: "diffChange", args: ["c1", undefined, "1", undefined] }
+    ])
+  })
+
+  test("the form door submits the draft by name and keeps the assembled line for display only", async () => {
+    const { store, controller } = await boot()
+    const submitted = spyOn(controller.commands, "submit")
+    expect(await execute(controller, "change.diff")).toContain("rendered a form")
+    const card = formOf(store, "change.diff")!
+    await controller.commands.run("form.set", `${card.id} changeId c1`)
+    await controller.commands.run("form.set", `${card.id} to 1`)
+    await controller.commands.run("form.submit", card.id)
+    const submission = submitted.mock.calls[0]?.[0]
+    expect(submission?.payload).toEqual({ changeId: "c1", to: "1" })
+    // The line the card echoes is the lossy one the run path no longer reads.
+    expect(submission?.display).toBe("c1 1")
+    expect(payloadFor("change.diff", submission?.display)).toEqual({ payload: { changeId: "c1", from: "1" } })
   })
 })

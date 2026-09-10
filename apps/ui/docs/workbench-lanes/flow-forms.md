@@ -103,6 +103,36 @@ a small `state/controller/forms.ts` for `form.set`, `state/AppController.ts`,
 
 `cd apps/shared && bun test`; `cd apps/ui && bun x tsc --noEmit -p . && bun test src/mainview/flows src/mainview/cards src/mainview/state/InstructionsBudget.test.ts`, then `bun test src/mainview` once. Write `flow-forms.REPORT.md`.
 
+## Named submission
+
+Submit runs the flow with the form's own payload, not with the line it
+prints. `flows/FlowForms.ts` `submissionPayload(input, fields, given, draft)`
+builds that payload: every filled field under its own name, a blank optional
+absent instead of shifting the next field's value onto it, a prefilled free
+text field the human cleared as the empty string it now shows, a field the
+schema requires and a `required: false` hint lets stand blank as that same
+empty string, a structured field parsed back out of the JSON its text control
+holds, and a list field split on the spaces `assembleArgs` joined it with.
+Whatever the form could not represent stays as the invocation gave it.
+
+`state/controller/forms.ts` `submitForm` hands that payload to
+`flows/Commands.ts` `submit({ name, payload, actor, display, invocation })`,
+which is the ordinary run path entered past the composer boundary:
+availability, the requirement axis, the confirmation axis and the agent
+authorization are the ones every other trigger meets, and the declaration's
+input schema validates the payload inside the binding. `assembleArgs` still
+writes the slash line, now as display copy only: the card's echo, the
+`/verbose` trace, and the confirmation message. Nothing parses it back into a
+payload.
+
+The durable park and the confirmation action are still text shaped
+(`deferCommand`, `requestFlowConfirmation` carry `args`), so a submission that
+defers on a requirement or waits for a confirmation resumes from the display
+line and is only as faithful as the flow's grammar. Grammar coverage is
+gated: `flows/SlashPayload.test.ts` fails when a declaration carries an `args`
+hint and no decoder, which is how `triggers.register` discarded a named
+repository.
+
 ## Authorization on submission
 
 Every agent form continuation resolves its target in the command registry and
