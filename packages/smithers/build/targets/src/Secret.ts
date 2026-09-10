@@ -208,14 +208,15 @@ export const normalizeAudience = (input: string): string => {
   try {
     url = new URL(input)
   } catch {
-    throw new TypeError(`secret audience must be an exact HTTP origin: ${JSON.stringify(input)}`)
+    // Never echo the input: a mistyped audience may carry userinfo or a token.
+    throw new TypeError("secret audience must be an exact HTTP origin")
   }
   if (
     (url.protocol !== "https:" && url.protocol !== "http:") || url.username !== "" || url.password !== "" ||
     url.pathname !== "/" || url.search !== "" || url.hash !== "" ||
     (url.protocol === "http:" && !loopbackHost(url.hostname))
   ) {
-    throw new TypeError(`secret audience must be an exact HTTPS or loopback HTTP origin: ${JSON.stringify(input)}`)
+    throw new TypeError("secret audience must be an exact HTTPS or loopback HTTP origin")
   }
   return url.origin
 }

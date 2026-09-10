@@ -38,6 +38,26 @@ describe("RemoteCache.make", () => {
     expect(() => RemoteCache.make({ endpoint: "https://cache.example.test?token=secret" })).toThrow(/query/)
   })
 
+  it("never echoes a rejected endpoint, so embedded credentials stay out of the message", () => {
+    const cases = [
+      "http://user:SYNTHETIC_PASSWORD@cache.example.test",
+      "http://cache.example.test/?token=SYNTHETIC_TOKEN",
+      "not a url SYNTHETIC_TOKEN",
+      "ftp://user:SYNTHETIC_PASSWORD@cache.example.test/?k=SYNTHETIC_TOKEN"
+    ]
+    for (const endpoint of cases) {
+      let message = ""
+      try {
+        RemoteCache.normalizeEndpoint(endpoint)
+      } catch (error) {
+        message = String((error as Error).message)
+      }
+      expect(message).not.toBe("")
+      expect(message).not.toContain("SYNTHETIC_")
+      expect(message).not.toContain("cache.example.test")
+    }
+  })
+
   it("bounds endpoint text before URL parsing", () => {
     expect(() => RemoteCache.make({ endpoint: "https://cache.example.test\n" })).toThrow(/control characters/)
     expect(() => RemoteCache.make({ endpoint: "https://cache.example.test/\ud800" })).toThrow(/well-formed/)

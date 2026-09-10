@@ -152,6 +152,28 @@ describe("Secret declarations", () => {
   })
 })
 
+describe("Secret.normalizeAudience", () => {
+  it("never echoes a rejected audience, so embedded credentials stay out of the message", () => {
+    const cases = [
+      "https://api.example.test/?token=SYNTHETIC_TOKEN",
+      "https://user:SYNTHETIC_PASSWORD@api.example.test",
+      "http://user:SYNTHETIC_PASSWORD@api.example.test/#SYNTHETIC_FRAGMENT",
+      "not a url SYNTHETIC_TOKEN"
+    ]
+    for (const audience of cases) {
+      let message = ""
+      try {
+        Secret.normalizeAudience(audience)
+      } catch (error) {
+        message = String((error as Error).message)
+      }
+      expect(message).not.toBe("")
+      expect(message).not.toContain("SYNTHETIC_")
+      expect(message).not.toContain("api.example.test")
+    }
+  })
+})
+
 describe("SecretProxy vault", () => {
   const audience = "https://api.example.test"
   const token = Secret.HttpSecret(Secret.Secret("VAULT_TEST_TOKEN"), [audience])

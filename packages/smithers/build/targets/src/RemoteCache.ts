@@ -184,13 +184,16 @@ export const normalizeEndpoint = (value: string): string => {
   try {
     endpoint = new URL(trimmed)
   } catch {
-    throw new Error(`remote cache endpoint must be an absolute HTTPS URL: ${value}`)
+    // Never echo the input: a mistyped endpoint may carry userinfo or a token.
+    throw new Error("remote cache endpoint must be an absolute HTTPS URL")
   }
-  if (endpoint.protocol !== "https:") {
-    throw new Error(`remote cache endpoint must use HTTPS: ${value}`)
-  }
+  // Credentials are rejected before the protocol so an http:// mistake with
+  // userinfo names the credential problem first.
   if (endpoint.username !== "" || endpoint.password !== "") {
     throw new Error("remote cache endpoint must not contain credentials")
+  }
+  if (endpoint.protocol !== "https:") {
+    throw new Error("remote cache endpoint must use HTTPS")
   }
   if (endpoint.search !== "" || endpoint.hash !== "") {
     throw new Error("remote cache endpoint must not contain a query or fragment")
