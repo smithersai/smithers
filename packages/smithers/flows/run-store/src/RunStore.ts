@@ -992,7 +992,13 @@ const selectRun = (sql: SqlClient.SqlClient, runId: string, mode: "single" | "li
       : mode === "lineage"
       ? sql`(
         lineage_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
-        OR run_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
+        OR (
+          run_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
+          AND (
+            lineage_id IS NULL
+            OR lineage_id = (SELECT COALESCE(lineage_id, run_id) FROM flows_runs WHERE run_id = ${runId})
+          )
+        )
       )`
       : sql`run_id = ${runId}`
   }

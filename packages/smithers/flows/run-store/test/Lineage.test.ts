@@ -90,4 +90,16 @@ describe("logical run rounds", () => {
       expect((yield* store.latestRound("other")).runId).toBe("other")
       expect((yield* Effect.flip(store.latestRound("missing"))).code).toBe("not_found_row")
     }).pipe(Effect.provide(layer)))
+
+  it.effect("excludes a same-named run that belongs to an independent lineage", () =>
+    Effect.gen(function*() {
+      const store = yield* RunStore.RunStore
+      yield* store.create("shared-name", "{}", { lineageId: "independent-lineage", roundOrdinal: 0 })
+      yield* store.create("target", "{}", { lineageId: "shared-name", roundOrdinal: 0 })
+      expect((yield* store.lineage("target")).map((row) => row.runId)).toEqual(["target"])
+      expect((yield* store.lineage("shared-name")).map((row) => row.runId)).toEqual(["shared-name"])
+      expect(yield* store.requestCancelLineage("target", 100)).toEqual({ _tag: "CancelRequested", requestedAtMs: 100 })
+      expect((yield* store.get("target")).cancelRequestedAtMs).toBe(100)
+      expect((yield* store.get("shared-name")).cancelRequestedAtMs).toBeNull()
+    }).pipe(Effect.provide(layer)))
 })

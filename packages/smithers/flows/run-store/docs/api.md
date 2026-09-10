@@ -82,7 +82,10 @@ const latestRound: (runId: string) => Effect<RunRow, RunStoreError>
 Resolve trampoline membership from any existing round. `lineage` returns all
 rounds in ordinal order, or an empty array for an unknown ID. `latestRound`
 returns the highest ordinal using the lineage index, or `not_found_row`.
-Pre-lineage roots with null lineage columns are included as round zero.
+Pre-lineage roots with null lineage columns are included as round zero. A run
+whose own ID equals the lineage ID joins only when its lineage columns are
+null or it explicitly names that lineage, so a same-named run in an
+independent lineage is excluded.
 Fork ancestry in `parentRunId` does not join otherwise independent lineages.
 These are individual snapshot reads; compose several reads with the owning
 database transaction when they must describe one coherent state.
