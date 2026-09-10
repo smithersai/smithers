@@ -3,9 +3,11 @@
 Internals, architecture, and development workflow for `apps/review`. For
 what the tool does and how to set it up, read the [README](README.md).
 
-Specs: `.smithers/specs/smithers-review-walkthrough.md` (review + walkthrough
-pipeline) and `.smithers/specs/smithers-review-cloud.md` (hosted service:
-OIDC repo auth, metered inference proxy, quota, metrics).
+Design notes live beside the code. [src/README.md](src/README.md) maps the
+review and walkthrough pipeline, [src/server/README.md](src/server/README.md)
+maps the hosted service, and [docs/](docs/) holds the service contracts:
+[OIDC sessions](docs/oidc.md), [proxy budgets](docs/proxy-budget.md), and
+[hosted walkthroughs](docs/walkthroughs.md).
 
 ## How it works
 
@@ -35,8 +37,8 @@ file list round 1 discovers:
    and writes it to `--out`. Diffs are rendered with `@pierre/diffs` (syntax
    highlighting, word-level diffs, line numbers, unified or `--split` view);
    diagrams render via an inlined Mermaid runtime (only included when the
-   story has diagrams); the header shows a deterministic change-overview SVG
-   chart of additions/deletions by area.
+   story has diagrams); the header shows a deterministic change-overview
+   chart of additions/deletions by area, drawn as plain HTML bars.
 
 Review findings never change the exit code; smithers review reports, humans
 decide.
@@ -54,19 +56,41 @@ branch or fetch it first).
 
 ## CI
 
-`.github/workflows/pr-review.yml` runs `--pr <number> --publish` on every
-non-draft PR from a branch in this repo and posts the review onto it. The job
-is scoped to `contents: read` + `pull-requests: write` and stays on the
-`pull_request` event (never `pull_request_target`), so fork PRs run without
-secrets and are skipped. Repo secrets: `ANTHROPIC_API_KEY` for the review
-seats, and `SMITHERS_REVIEW_PUBLISH_TOKEN` for the hosted walkthrough link.
-Missing seat credentials skip the job; a missing publish token posts the review
-without the link. The walkthrough HTML is also uploaded as a run artifact.
+`.github/workflows/pr-review.yml` dogfoods the action in `action/` on this
+repo. It is the README's workflow with the action pinned to a commit and one
+job variable, the repository's `ANTHROPIC_API_KEY` secret. It stays on
+`pull_request` and `issue_comment` (never `pull_request_target`) with
+`id-token: write`, `contents: read`, and `pull-requests: write`.
+
+`action/src/runAction.ts` runs these steps:
+
+1. `action/src/gateEvent.ts` skips drafts, fork PRs, and comments other than
+   `@smithers review` from an owner, member, or collaborator.
+2. The job's GitHub OIDC token is exchanged for a review session at
+   `/api/sessions` (`action/src/createSession.ts`). An unregistered repo, a
+   spent monthly quota, or a `pull_request` event on a `comment`-mode
+   registration ends the run with a notice, and the job passes.
+3. `action/src/resolveInferenceEnv.ts` picks inference: the caller's
+   `ANTHROPIC_API_KEY`, then `OPENAI_API_KEY`, then the service's metered
+   proxy under the session token. Without the secret the review runs on the
+   proxy; it does not skip.
+4. `action/src/runReview.ts` runs the CLI with `--pr <number> --publish` and
+   publishes to the session's `publishUrl` under the session token, so no
+   publish secret exists.
+5. The CLI posts the review onto the PR, and
+   `action/src/upsertStatusComment.ts` keeps one status comment current with
+   the outcome, the walkthrough link, and the remaining quota.
+
+The action declares no outputs and uploads no run artifact: the PR review, the
+status comment, and the hosted walkthrough are the whole result. A session
+error or a failed review fails the job.
 
 ## Self-hosted CI (your own credentials)
 
 To run reviews in another repo's CI without the hosted service, bring your own
-provider key and check out smithers next to the repo:
+provider key and check out smithers next to the repo. This path runs the CLI
+directly and never calls the action or the service: there is no OIDC session,
+no quota, and no hosted walkthrough.
 
 ```yaml
 name: PR review
@@ -138,7 +162,8 @@ The Pierre reference clone lives at `reference/pierre/` (gitignored).
 deployed with Alchemy from `alchemy.run.ts`) and prints an unlisted share
 URL. The live endpoint is `https://review.jjhub.tech`; set
 `SMITHERS_REVIEW_PUBLISH_URL` to the publish service endpoint before using
-`--publish` (see the spec's "Publishing" section). Credentials come from
+`--publish` ([hosted walkthroughs](docs/walkthroughs.md) covers the upload
+contract). Credentials come from
 `SMITHERS_REVIEW_PUBLISH_URL` / `SMITHERS_REVIEW_PUBLISH_TOKEN` or
 `~/.smithers-review.json`.
 
@@ -220,9 +245,3 @@ Suites that need a real backend go through `tests/support/liveSuite.ts`, which
 prints one line naming what a skip did not prove. `tests/workflow/` covers the
 flow on scripted seats; `tests/workflow/reviewLayerNode.test.ts` spawns Node
 because the durable composition does not build under Bun.
-
-## smithers review
-
-This repo dogfoods `apps/review` on every PR via
-`.github/workflows/pr-review.yml`, which runs the action with the repository's
-`ANTHROPIC_API_KEY`. See `apps/review/README.md`.

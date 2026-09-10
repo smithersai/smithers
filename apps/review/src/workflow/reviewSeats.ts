@@ -3,9 +3,9 @@
  *
  * A seat is an opaque `provider:model` string the host's `SeatResolver` turns
  * into a live model, so this module decides policy and nothing else: no
- * credential is read here and no provider client is built. `@smthrs/cli`'s
- * `NodeControl.layerSeatResolver` owns the credential half, which is why the
- * 0.x agent-pool construction (Claude Code and Codex subprocesses, per-account
+ * credential is read here and no provider client is built.
+ * `reviewSeatResolver.ts` owns the credential half, which is why the 0.x
+ * agent-pool construction (Claude Code and Codex subprocesses, per-account
  * config directories, `--output-schema` files) is gone rather than ported.
  *
  * @since 1.0.0

@@ -3,8 +3,8 @@
 Source for `smithers-review`: a CLI (the package `bin` is `../bin/smithers-review.mjs`)
 that reviews a change set with model-backed steps and renders a self-contained
 HTML walkthrough, optionally posting the result as a GitHub PR review, plus the
-Cloudflare Worker behind review.smithers.sh (sharing, session minting, metered
-Anthropic proxy; deployed via `../alchemy.run.ts`).
+review service's Cloudflare Worker (sharing, session minting, metered Anthropic
+proxy). `../alchemy.run.ts` deploys the Worker and names the domain it serves.
 
 Directory map:
 
@@ -12,8 +12,9 @@ Directory map:
 - `workflow/` — the four-round review flow, its seats, and finding verification.
 - `quiz/` — change-impact assessment and the reviewer comprehension quiz.
 - `walkthrough/` — story normalization and the walkthrough HTML renderer.
-- `diffs/` — Pierre + fallback diff-to-HTML rendering; the package's only
-  export map entry (`smithers-review/diffs`).
+- `diffs/` — Pierre + fallback diff-to-HTML rendering, imported as
+  `@smthrs/review/diffs`. `../package.json`'s `exports` map lists every public
+  entry point.
 - `github/` — PR integration via the `gh` CLI.
 - `text/` — small shared text helpers (fences, pluralize, diff trimming).
 - `server/` — the Cloudflare Worker (never runs in the CLI process).

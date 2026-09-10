@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative as relativePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gateEvent } from "../action/src/gateEvent.ts";
 import { parseReviewArgs } from "../src/cli/parseReviewArgs.ts";
+import { renderOverviewChart } from "../src/walkthrough/renderOverviewChart.ts";
 
 /**
  * The package overview and contributor guide must describe rc.0.
@@ -101,4 +103,98 @@ describe("documented review commands", () => {
       }
     });
   }
+});
+
+const appRoot = fileURLToPath(new URL("../", import.meta.url));
+const repoRoot = join(appRoot, "..", "..");
+
+/** Every README under `src/`, as app-relative paths. */
+const directoryReadmes = readdirSync(join(appRoot, "src"), { recursive: true, encoding: "utf8" })
+  .filter((path) => path === "README.md" || path.endsWith("/README.md"))
+  .map((path) => join("src", path));
+
+/**
+ * Repository files a document cites: relative Markdown link targets, plus
+ * backticked paths into this repository. `.smithers/`, `.github/` and `apps/`
+ * paths start at the repository root; `src/`, `action/`, `tests/` and `docs/`
+ * start at this app. The README tells readers to create a workflow file in
+ * their own repository, so `.github/` is checked in CONTRIBUTING.md only.
+ */
+function citedPaths(document: string): string[] {
+  const text = readFileSync(join(appRoot, document), "utf8");
+  const links = [...text.matchAll(/\]\(((?!https?:|mailto:|#)[^)\s#]+)\)/g)].map((match) =>
+    join(appRoot, dirname(document), match[1]!)
+  );
+  const rootPrefixes = document === "CONTRIBUTING.md" ? "\\.smithers|\\.github|apps" : "\\.smithers|apps";
+  const backticked = [...text.matchAll(new RegExp(`\`((?:${rootPrefixes}|src|action|tests|docs)/[\\w./-]*)\``, "g"))]
+    .map((match) => match[1]!)
+    .map((path) => /^(?:\.smithers|\.github|apps)\//.test(path) ? join(repoRoot, path) : join(appRoot, path));
+  return [...links, ...backticked];
+}
+
+describe("the app's documentation points at things that exist", () => {
+  for (const document of ["README.md", "CONTRIBUTING.md"]) {
+    test(`${document} cites only files that exist`, () => {
+      const cited = citedPaths(document);
+      expect(cited.length).toBeGreaterThan(0);
+      const missing = cited.filter((path) => !existsSync(path)).map((path) => relativePath(repoRoot, path));
+      expect({ document, missing }).toEqual({ document, missing: [] });
+    });
+  }
+
+  test("every documented import of this package is an entry in its exports map", () => {
+    const manifest = JSON.parse(read("../package.json")) as { name: string; exports: Record<string, string> };
+    const documented = ["CONTRIBUTING.md", "README.md", ...directoryReadmes].flatMap((document) =>
+      [...readFileSync(join(appRoot, document), "utf8").matchAll(/[`"]((?:@smthrs\/review|smithers-review)\/[\w/-]+)[`"]/g)]
+        .map((match) => ({ document, specifier: match[1]! }))
+    );
+    expect(documented.length).toBeGreaterThan(0);
+    const unresolved = documented.filter(({ specifier }) =>
+      !specifier.startsWith(`${manifest.name}/`) ||
+      !(`./${specifier.slice(manifest.name.length + 1)}` in manifest.exports)
+    );
+    expect(unresolved).toEqual([]);
+  });
+
+  test("the docs name only the domain alchemy.run.ts deploys", () => {
+    const deployed = read("../alchemy.run.ts").match(/domain: \{ name: "([^"]+)"/)?.[1];
+    if (!deployed) throw new Error("alchemy.run.ts declares no custom domain");
+    const named = ["CONTRIBUTING.md", ...directoryReadmes].flatMap((document) =>
+      [...readFileSync(join(appRoot, document), "utf8").matchAll(/\breview\.[a-z0-9-]+\.[a-z]+\b/g)]
+        .map((match) => ({ document, host: match[0] }))
+    );
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.filter(({ host }) => host !== deployed)).toEqual([]);
+  });
+});
+
+/**
+ * Prose about what the code does, checked against the code that does it.
+ * Each case pins one claim a review found contradicting the implementation.
+ */
+describe("the app's comments describe the code beside them", () => {
+  const overview = renderOverviewChart([
+    { path: "src/a.ts", status: "modified", insertions: 3, deletions: 1, diff: "", reviewed: true, excludeReason: "" },
+  ]);
+
+  for (const document of ["../CONTRIBUTING.md", "../src/walkthrough/renderWalkthroughHtml.ts"]) {
+    test(`${document.replace("../", "")} calls the overview chart SVG only if it draws SVG`, () => {
+      const saysSvg = /\bSVG\s+(?:\*\s+)?chart\b/.test(read(document));
+      expect({ document, saysSvg }).toEqual({ document, saysSvg: overview.includes("<svg") });
+    });
+  }
+
+  test("the seat policy names the module in this app that reads the credential", () => {
+    const owner = read("../src/workflow/reviewSeats.ts").match(/`([\w.]+\.ts)`\s+(?:\*\s+)?owns the credential half/)?.[1];
+    expect(owner).toBeDefined();
+    expect(read(`../src/workflow/${owner}`)).toContain("ANTHROPIC_API_KEY");
+  });
+
+  test("the exclude-reason labels cite the module that produces the reasons", () => {
+    const source = read("../src/walkthrough/humanizeExcludeReason.ts");
+    const cited = source.match(/Values produced by (\w+)[\s\S]*?\bin\s+(?:\/\/\s*)?(\.\.?\/[\w./-]+\.ts)/);
+    expect(cited).not.toBeNull();
+    const [, producer, module] = cited!;
+    expect(read(`../src/walkthrough/${module}`)).toContain(`function ${producer}(`);
+  });
 });

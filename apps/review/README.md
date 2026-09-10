@@ -179,7 +179,7 @@ also be set in `~/.smithers-review.json`.
 The hosted side is a Cloudflare Worker at `https://review.jjhub.tech`:
 session minting from GitHub OIDC tokens, an Anthropic-compatible metered
 inference proxy, walkthrough hosting on R2, and usage accounting in D1.
-Design: `.smithers/specs/smithers-review-cloud.md`.
+Design: [src/server/README.md](src/server/README.md).
 
 Not built yet, tracked as issues: Stripe subscriptions, self-serve signup
 and key management, the `review.smithers.sh` domain.

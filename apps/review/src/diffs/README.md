@@ -1,7 +1,8 @@
 # diffs/
 
-Diff-to-HTML rendering, and the package's only public export
-(`smithers-review/diffs` maps to `index.ts` — keep the barrel).
+Diff-to-HTML rendering, exported as `@smthrs/review/diffs`, which maps to
+`index.ts` (keep the barrel). `../../package.json`'s `exports` map lists the
+package's other entry points.
 
 - `renderPierreFileDiff.ts` — server-side rendering via `@pierre/diffs`
   (syntax highlighting, light/dark tokens).

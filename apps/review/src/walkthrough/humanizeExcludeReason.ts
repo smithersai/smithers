@@ -1,5 +1,5 @@
 // Values produced by whyExcluded/previewOpenCodeReview in
-// smithers-workflows/lib/open-code-review.
+// ../workflow/openCodeReview.ts.
 const reasonLabels: Record<string, string> = {
   binary: "binary file",
   user_exclude: "excluded by review rules",

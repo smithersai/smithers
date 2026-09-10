@@ -1,8 +1,9 @@
 # server/
 
-Cloudflare Worker for review.smithers.sh: walkthrough sharing (R2), session
+Cloudflare Worker for the review service: walkthrough sharing (R2), session
 minting with quota and spend caps (D1), a metered Anthropic proxy, plus admin
-and Prometheus endpoints. `worker.ts` is the router; `createReviewWorker(overrides)`
+and Prometheus endpoints. `../../alchemy.run.ts` deploys it and names the
+domain it serves. `worker.ts` is the router; `createReviewWorker(overrides)`
 lets tests inject `jwksUrl`, `anthropicBaseUrl`, `fetchUpstream`, and a clock.
 
 Subdirectories:

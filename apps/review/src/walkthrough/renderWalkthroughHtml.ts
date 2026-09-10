@@ -309,10 +309,10 @@ function sidebarToc(args: {
  * prose, diagrams, and diffs, so the explanation IS the document and each
  * diff appears at the point in the story where the reader needs it. Pierre
  * renders the diffs; Mermaid renders narrator diagrams (gzipped runtime
- * inlined only when diagrams exist); a deterministic SVG chart shows the
- * change shape; an optional reviewer quiz checks comprehension. Light and
- * dark via the shared data-theme-wins contract with a persisted theme toggle.
- * No external assets; opens from file://.
+ * inlined only when diagrams exist); a deterministic chart of plain HTML bars
+ * shows the change shape; an optional reviewer quiz checks comprehension.
+ * Light and dark via the shared data-theme-wins contract with a persisted
+ * theme toggle. No external assets; opens from file://.
  */
 export async function renderWalkthroughHtml(opts: {
   title: string;
