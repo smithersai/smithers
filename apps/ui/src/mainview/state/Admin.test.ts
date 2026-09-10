@@ -153,13 +153,45 @@ describe("the admin plugin (admin session)", () => {
 
     expect((await controller.commands.run("admin.grant.confirm", card?.id ?? "")).status).toBe("executed")
     const posted = recorded.find((r) => r.path === "/api/admin/grant")
-    expect(posted?.body).toEqual({ login: "octocat", amountUsd: 25 })
+    expect(posted?.body).toEqual({ login: "octocat", amountUsd: 25, operationKey: card?.id })
     const granted = store.collections.cards.get(card?.id ?? "")
     expect(granted?.status).toBe("acted")
     if (granted?.kind === "grant-confirm") {
       expect(granted.payload.phase).toBe("granted")
       expect(granted.payload.grantId).toBe("admin:product-x")
     }
+  })
+
+  test("a failed grant retried from its card sends the same operation key", async () => {
+    const store = await adminStore()
+    const recorded: RecordedRequest[] = []
+    let attempts = 0
+    const controller = createAppController(store, unavailableRepositories, silentAgent(), {
+      ...backend(
+        {
+          "/api/admin/grant": () => {
+            attempts += 1
+            return attempts === 1
+              ? json(502, { status: "error", message: "The billing service is unreachable right now." })
+              : json(200, { granted: true, duplicate: true, grantId: "admin:product-x", userId: "octocat" })
+          }
+        },
+        recorded
+      )
+    })
+    await controller.commands.run("admin.grant", "25 octocat")
+    const card = [...store.collections.cards.values()].find((c) => c.kind === "grant-confirm")
+    await controller.commands.run("admin.grant.confirm", card?.id ?? "")
+    const failed = store.collections.cards.get(card?.id ?? "")
+    expect(failed?.kind === "grant-confirm" ? failed.payload.phase : undefined).toBe("failed")
+    await controller.commands.run("admin.grant.confirm", card?.id ?? "")
+    const bodies = recorded.filter((r) => r.path === "/api/admin/grant").map((r) => r.body)
+    expect(bodies).toEqual([
+      { login: "octocat", amountUsd: 25, operationKey: card?.id },
+      { login: "octocat", amountUsd: 25, operationKey: card?.id }
+    ])
+    const granted = store.collections.cards.get(card?.id ?? "")
+    expect(granted?.kind === "grant-confirm" ? granted.payload.phase : undefined).toBe("granted")
   })
 
   test("grant cancel removes the card without posting", async () => {

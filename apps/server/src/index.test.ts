@@ -1839,7 +1839,193 @@ describe("the admin surface (non-enumerable)", () => {
     expect(Number.isFinite(Date.parse(body.timestamp))).toBe(true)
   })
 
-  test("admin grants forward to billing with attribution and a fresh admin: grant id", async () => {
+  const grantKey = "grant-2f4c9e1a-7b3d-4c2e-9a1f-0d5e6c7b8a90"
+  const grantId = `admin:product-${grantKey}`
+  /** The recipient's ledger as billing renders it: id, requestedBy and grantedUsd are what E-3 pins. */
+  const ledger = (credits: ReadonlyArray<Record<string, unknown>>): Response =>
+    Response.json({ user: "octocat", balance: { totalNanos: 0 }, credits })
+  const grantEnv = (): WorkerEnv => ({ ...adminEnv(), BILLING_PRODUCT_SERVICE_TOKEN: "billing-product-123" })
+
+  test("a grant retried with its operation key after a lost response credits once", async () => {
+    // Billing commits the first grant but its response never arrives; the UI retries the same confirmation.
+    const posted: Array<{ grantId: string; amountUsd: number }> = []
+    const credits: Array<Record<string, unknown>> = []
+    const reads: string[] = []
+    await withMockedFetch(
+      (request) => {
+        const url = new URL(request.url)
+        if (url.hostname === "identity.test") return adminValidate.clone()
+        if (url.hostname !== "billing.test") return undefined
+        if (url.pathname === "/api/billing/balance") {
+          reads.push(request.headers.get("x-user-login") ?? "")
+          expect(request.headers.get("x-smithers-service-token")).toBe("billing-product-123")
+          return ledger(credits)
+        }
+        return undefined
+      },
+      async () => {
+        const originalFetch = globalThis.fetch
+        globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+          const request = typeof input === "string" ? new Request(input, init) : (input as Request)
+          const url = new URL(request.url)
+          if (url.hostname === "billing.test" && url.pathname === "/api/billing/admin/grants") {
+            const body = (await request.json()) as { grantId: string; amountUsd: number; requester: string }
+            posted.push({ grantId: body.grantId, amountUsd: body.amountUsd })
+            credits.push({ id: body.grantId, requestedBy: body.requester, grantedUsd: "25.00", kind: "promotional" })
+            throw new Error("response lost after the durable grant")
+          }
+          return originalFetch(request)
+        }) as typeof fetch
+        try {
+          const first = await worker.fetch(
+            post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }),
+            grantEnv()
+          )
+          expect(first.status).toBe(502)
+          const retry = await worker.fetch(
+            post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }),
+            grantEnv()
+          )
+          expect(retry.status).toBe(200)
+          expect(await retry.json()).toEqual({
+            granted: true,
+            duplicate: true,
+            grantId,
+            userId: "octocat",
+            grant: credits[0]
+          })
+        } finally {
+          globalThis.fetch = originalFetch
+        }
+      }
+    )
+    expect(posted).toEqual([{ grantId, amountUsd: 25 }])
+    expect(reads).toEqual(["octocat", "octocat"])
+  })
+
+  test("an operation key reused for a different amount or by another admin is refused with 409", async () => {
+    let posts = 0
+    await withMockedFetch(
+      (request) => {
+        const url = new URL(request.url)
+        if (url.hostname === "identity.test") return adminValidate.clone()
+        if (url.hostname !== "billing.test") return undefined
+        if (url.pathname === "/api/billing/balance") {
+          return ledger([{ id: grantId, requestedBy: "will", grantedUsd: "25.00", kind: "promotional" }])
+        }
+        if (url.pathname === "/api/billing/admin/grants") {
+          posts += 1
+          return new Response("{}", { status: 201 })
+        }
+        return undefined
+      },
+      async () => {
+        const conflict = await worker.fetch(
+          post("/api/admin/grant", { login: "octocat", amountUsd: 50, operationKey: grantKey }),
+          grantEnv()
+        )
+        expect(conflict.status).toBe(409)
+        expect(await conflict.json()).toEqual({
+          status: "error",
+          message: expect.stringContaining("already granted $25.00")
+        })
+      }
+    )
+    const otherAdmin = new Response(
+      JSON.stringify({ login: "hubot", allowlisted: true, admin: true, scopes: [] }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    )
+    await withMockedFetch(
+      (request) => {
+        const url = new URL(request.url)
+        if (url.hostname === "identity.test") return otherAdmin.clone()
+        if (url.hostname !== "billing.test") return undefined
+        if (url.pathname === "/api/billing/balance") {
+          return ledger([{ id: grantId, requestedBy: "will", grantedUsd: "25.00", kind: "promotional" }])
+        }
+        if (url.pathname === "/api/billing/admin/grants") {
+          posts += 1
+          return new Response("{}", { status: 201 })
+        }
+        return undefined
+      },
+      async () => {
+        const conflict = await worker.fetch(
+          post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }),
+          grantEnv()
+        )
+        expect(conflict.status).toBe(409)
+      }
+    )
+    expect(posts).toBe(0)
+  })
+
+  test.each([
+    [{ login: "octocat", amountUsd: 25 }],
+    [{ login: "octocat", amountUsd: 25, operationKey: "short" }],
+    [{ login: "octocat", amountUsd: 25, operationKey: "has spaces and punctuation!" }]
+  ])("a grant without a well-formed operation key is refused before billing sees it: %j", async (body) => {
+    let posts = 0
+    await withMockedFetch(
+      (request) => {
+        const url = new URL(request.url)
+        if (url.hostname === "identity.test") return adminValidate.clone()
+        if (url.hostname === "billing.test") {
+          posts += 1
+          return new Response("{}", { status: 201 })
+        }
+        return undefined
+      },
+      async () => {
+        const response = await worker.fetch(post("/api/admin/grant", body), grantEnv())
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({
+          status: "error",
+          message: expect.stringContaining("operationKey")
+        })
+      }
+    )
+    expect(posts).toBe(0)
+  })
+
+  test("GET /api/admin/grant resolves an ambiguous grant by its operation key without re-posting", async () => {
+    const credit = { id: grantId, requestedBy: "will", grantedUsd: "25.00", kind: "promotional" }
+    let posts = 0
+    await withMockedFetch(
+      (request) => {
+        const url = new URL(request.url)
+        if (url.hostname === "identity.test") return adminValidate.clone()
+        if (url.hostname !== "billing.test") return undefined
+        if (url.pathname === "/api/billing/balance") {
+          return ledger(request.headers.get("x-user-login") === "octocat" ? [credit] : [])
+        }
+        posts += 1
+        return new Response("{}", { status: 201 })
+      },
+      async () => {
+        const found = await worker.fetch(
+          new Request(`https://mvp.test/api/admin/grant?login=octocat&operationKey=${grantKey}`),
+          grantEnv()
+        )
+        expect(found.status).toBe(200)
+        expect(await found.json()).toEqual({ found: true, grantId, userId: "octocat", grant: credit })
+        const missing = await worker.fetch(
+          new Request(`https://mvp.test/api/admin/grant?login=hubot&operationKey=${grantKey}`),
+          grantEnv()
+        )
+        expect(missing.status).toBe(200)
+        expect(await missing.json()).toEqual({ found: false, grantId, userId: "hubot" })
+        const malformed = await worker.fetch(
+          new Request("https://mvp.test/api/admin/grant?login=hubot&operationKey=nope"),
+          grantEnv()
+        )
+        expect(malformed.status).toBe(400)
+      }
+    )
+    expect(posts).toBe(0)
+  })
+
+  test("admin grants forward to billing with attribution and the grant id derived from the operation key", async () => {
     let seen: { headers: Headers; body: unknown } | undefined
     await withMockedFetch(
       (request) => {
@@ -1867,7 +2053,7 @@ describe("the admin surface (non-enumerable)", () => {
         }) as typeof fetch
         try {
           const response = await worker.fetch(
-            post("/api/admin/grant", { login: "octocat", amountUsd: 25 }),
+            post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }),
             adminEnv()
           )
           expect(response.status).toBe(201)
@@ -1889,6 +2075,7 @@ describe("the admin surface (non-enumerable)", () => {
     expect(body.amountUsd).toBe(25)
     expect(body.requester).toBe("will")
     expect(body.grantId).toMatch(/^admin:[A-Za-z0-9._:-]{3,190}$/)
+    expect(body.grantId).toBe(grantId)
     expect(Number.isFinite(Date.parse(body.timestamp))).toBe(true)
   })
 
@@ -3491,7 +3678,7 @@ describe("configured upstream headers deadlines", () => {
     ["/api/agent/turn", turnBody],
     ["/api/model/stream", { messages: turnBody.messages, instructions: turnBody.instructions }],
     ["/api/admin/allowlist", { login: "octocat", action: "add" }],
-    ["/api/admin/grant", { login: "octocat", amountUsd: 1 }],
+    ["/api/admin/grant", { login: "octocat", amountUsd: 1, operationKey: "grant-deadline-0001" }],
     ["/api/admin/requests", undefined]
   ] as const)("%s returns 504 naming its configured 20 ms deadline", async (path, body) => {
     const aborted: string[] = []

@@ -724,10 +724,13 @@ export const createAuthBillingController = (
       `Granted $${amountUsd} to ${login}`,
       async () => {
         try {
+          // The card id is the grant's operation key: a retry after a lost
+          // answer carries the same key, so the Worker forwards the same
+          // billing grant id and the credit lands once.
           const response = await http(`${baseUrl}${ADMIN_GRANT_PATH}`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ login, amountUsd })
+            body: JSON.stringify({ login, amountUsd, operationKey: card.id })
           })
           if (!response.ok) {
             const message = await errorMessageOf(response, "The grant didn't go through.")

@@ -1988,6 +1988,59 @@ const handleAdminHealth = async (env: WorkerEnv, proxyOrigin: string): Promise<R
   })
 }
 
+/** The caller-owned idempotency key of one confirmed grant: the UI sends its confirmation card id. */
+const GRANT_OPERATION_KEY = /^[A-Za-z0-9_-]{8,64}$/
+const GRANT_OPERATION_KEY_GRAMMAR = "of 8 to 64 letters, digits, '_' or '-'"
+const grantIdOf = (operationKey: string): string => `admin:product-${operationKey}`
+
+/**
+ * Read one grant from the recipient's ledger, keyed by the grant id billing
+ * dedups on. This is the trusted-caller balance read (service token +
+ * x-user-login, see proxyToBilling), so it needs BILLING_PRODUCT_SERVICE_TOKEN.
+ * Returns the credit row, undefined when absent, or the refusal to send.
+ */
+const readAdminGrant = async (
+  env: WorkerEnv,
+  upstream: string,
+  proxyOrigin: string,
+  login: string,
+  grantId: string
+): Promise<Record<string, unknown> | undefined | Response> => {
+  const serviceToken = env.BILLING_PRODUCT_SERVICE_TOKEN?.trim()
+  if (serviceToken === undefined || serviceToken === "") {
+    return notConfigured(
+      "The billing seam",
+      "BILLING_PRODUCT_SERVICE_TOKEN is unset. A grant is checked against the recipient's ledger before it posts, and that read needs the trusted-caller token"
+    )
+  }
+  let response: Response
+  try {
+    response = await withDeadline("The billing service", (signal) =>
+      fetch(new URL("/api/billing/balance", upstream).toString(), {
+        headers: {
+          "x-smithers-service-token": serviceToken,
+          "x-user-login": login,
+          "x-user-id": login,
+          "x-user-role": "member",
+          origin: proxyOrigin
+        },
+        signal
+      }), upstreamTimeoutMs(env))
+  } catch (error) {
+    return upstreamUnreachable("The billing service", error)
+  }
+  if (!response.ok) {
+    return json(502, {
+      status: "error",
+      message: `The billing service refused the ledger read for ${login} (HTTP ${response.status}), so the grant was not posted.`
+    })
+  }
+  const ledger = (await response.json().catch(() => undefined)) as { credits?: unknown } | undefined
+  const credits = Array.isArray(ledger?.credits) ? ledger.credits : []
+  return credits.find((credit): credit is Record<string, unknown> =>
+    typeof credit === "object" && credit !== null && (credit as { id?: unknown }).id === grantId)
+}
+
 const parseAdminBody = async (request: Request): Promise<Record<string, unknown> | Response> => {
   let body: unknown
   try {
@@ -2066,6 +2119,24 @@ const handleAdmin = async (request: Request, env: WorkerEnv, url: URL): Promise<
     }, upstreamTimeoutMs(env))
   }
 
+  if (url.pathname === ADMIN_GRANT_PATH && request.method === "GET") {
+    const upstream = env.BILLING_UPSTREAM_URL?.trim()
+    if (upstream === undefined || upstream === "") {
+      return notConfigured("The billing seam", "BILLING_UPSTREAM_URL is unset. Grants are unavailable")
+    }
+    const login = url.searchParams.get("login")?.trim() ?? ""
+    const operationKey = url.searchParams.get("operationKey") ?? ""
+    if (login === "" || !GRANT_OPERATION_KEY.test(operationKey)) {
+      return json(400, { status: "error", message: `Query must carry login and operationKey ${GRANT_OPERATION_KEY_GRAMMAR}.` })
+    }
+    const grantId = grantIdOf(operationKey)
+    const existing = await readAdminGrant(env, upstream, url.origin, login, grantId)
+    if (existing instanceof Response) return existing
+    return json(200, existing === undefined
+      ? { found: false, grantId, userId: login }
+      : { found: true, grantId, userId: login, grant: existing })
+  }
+
   if (url.pathname === ADMIN_GRANT_PATH && request.method === "POST") {
     const upstream = env.BILLING_UPSTREAM_URL?.trim()
     if (upstream === undefined || upstream === "") {
@@ -2079,11 +2150,44 @@ const handleAdmin = async (request: Request, env: WorkerEnv, url: URL): Promise<
     if (body instanceof Response) return body
     const login = typeof body.login === "string" ? body.login.trim() : ""
     const amountUsd = typeof body.amountUsd === "number" ? body.amountUsd : Number.NaN
-    if (login === "" || !Number.isFinite(amountUsd) || amountUsd <= 0) {
-      return json(400, { status: "error", message: "Body must be { login, amountUsd } with a positive dollar amount." })
+    const operationKey = typeof body.operationKey === "string" ? body.operationKey : ""
+    if (login === "" || !Number.isFinite(amountUsd) || amountUsd <= 0 || !GRANT_OPERATION_KEY.test(operationKey)) {
+      return json(400, {
+        status: "error",
+        message:
+          `Body must be { login, amountUsd, operationKey } with a positive dollar amount and an operationKey ${GRANT_OPERATION_KEY_GRAMMAR}.`
+      })
     }
-    // A fresh grant id per confirmed request; the sibling is idempotent by it.
-    const grantId = `admin:product-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`
+    /*
+     * The grant id is derived from the caller's operation key, never minted
+     * here: a confirmation retried after a lost billing response carries the
+     * same key, so billing deduplicates it by grantId instead of crediting a
+     * second time (review app-server/api-design/1). The recipient's ledger is
+     * read first so a key reused for a different amount, or by a different
+     * admin, is refused instead of silently answering with the old credit.
+     * Without the trusted-caller token that read cannot happen; the stable
+     * grant id alone still keeps a retry from crediting twice, so the grant
+     * posts and only the conflict check is skipped.
+     */
+    const grantId = grantIdOf(operationKey)
+    const canReadLedger = (env.BILLING_PRODUCT_SERVICE_TOKEN?.trim() ?? "") !== ""
+    const existing = canReadLedger ? await readAdminGrant(env, upstream, url.origin, login, grantId) : undefined
+    if (existing instanceof Response) return existing
+    if (existing !== undefined) {
+      const grantedUsd = typeof existing.grantedUsd === "string" ? Number(existing.grantedUsd) : Number.NaN
+      const sameAmount = Number.isFinite(grantedUsd) && Math.abs(grantedUsd - amountUsd) < 0.005
+      const sameRequester = existing.requestedBy === session.login
+      if (!sameAmount || !sameRequester) {
+        return json(409, {
+          status: "error",
+          message:
+            `Operation ${operationKey} already granted $${Number.isFinite(grantedUsd) ? grantedUsd.toFixed(2) : "?"} to ${login}` +
+            ` (requested by ${typeof existing.requestedBy === "string" ? existing.requestedBy : "unknown"}).` +
+            " Start a new grant for a different amount instead of reusing this confirmation."
+        })
+      }
+      return json(200, { granted: true, duplicate: true, grantId, userId: login, grant: existing })
+    }
     return forwardAdminCall(upstream, "/api/billing/admin/grants", token, {
       method: "POST",
       body: {
