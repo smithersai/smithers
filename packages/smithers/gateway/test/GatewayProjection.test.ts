@@ -312,6 +312,40 @@ describe("GatewayProjection.nodeOutput", () => {
     const known = new Set(tree.map((row) => row.nodeId))
     expect(outputs.every((row) => known.has(row.nodeId))).toBe(true)
   })
+
+  it("gives a tree row the output of the exact call it names, across interleaved calls", () => {
+    // Two calls share a flow name and one settles before the next opens, so
+    // agreeing on the set of node ids is not enough: a client reads
+    // `node-output` by the id a `run-tree` row carries, and each id has to
+    // carry that call's own payload.
+    const events = [
+      event("control.agent.turn-opened", { seat: "opus" }, 1),
+      event("control.agent.cell-call-started", { flowName: "read" }, 2),
+      event("control.agent.cell-call-started", { flowName: "write" }, 3),
+      event("control.agent.cell-call-settled", { flowName: "write", outcome: "success", value: "wrote" }, 4),
+      event("control.agent.cell-call-started", { flowName: "read" }, 5),
+      event("control.agent.cell-call-settled", { flowName: "read", outcome: "success", value: "first read" }, 6),
+      event("control.agent.cell-call-started", { flowName: "grep" }, 7),
+      event("control.agent.cell-call-settled", { flowName: "read", outcome: "failure", message: "second read" }, 8)
+    ]
+    const tree = GatewayProjection.runTree(run, events)
+    const outputs = GatewayProjection.nodeOutput(events)
+    const byNode = new Map(outputs.map((row) => [row.nodeId, row]))
+
+    // Tree rows read in the order the calls opened.
+    expect(tree).toMatchObject([
+      { nodeId: "call-1", label: "read", status: "completed", seat: "opus", startedAt: 2, endedAt: 6 },
+      { nodeId: "call-2", label: "write", status: "completed", seat: "opus", startedAt: 3, endedAt: 4 },
+      { nodeId: "call-3", label: "read", status: "failed", seat: "opus", startedAt: 5, endedAt: 8 },
+      { nodeId: "call-4", label: "grep", status: "running", seat: "opus", startedAt: 7 }
+    ])
+    // Outputs read in the order the calls settled, and the still-open call has none.
+    expect(outputs.map((row) => row.nodeId)).toEqual(["call-2", "call-1", "call-3"])
+    // The oldest open `read` took the first `read` settlement, not the newest.
+    expect(byNode.get("call-1")).toMatchObject({ outcome: "success", output: "first read", settledAt: 6 })
+    expect(byNode.get("call-2")).toMatchObject({ outcome: "success", output: "wrote", settledAt: 4 })
+    expect(byNode.get("call-3")).toMatchObject({ outcome: "failure", output: "second read", settledAt: 8 })
+  })
 })
 
 /**
@@ -386,6 +420,10 @@ describe("GatewayProjection fold invariants", () => {
         // A settled output belongs to a node the tree also reports as settled.
         const settled = new Set(tree.filter((row) => row.status !== "running").map((row) => row.nodeId))
         expect(outputs.every((row) => settled.has(row.nodeId))).toBe(true)
+        // And it is that node's own output: every generated settlement carries
+        // its flow name as its value, which is the label of the call it closed.
+        const labels = new Map(tree.map((row) => [row.nodeId, row.label]))
+        expect(outputs.every((row) => labels.get(row.nodeId) === row.output)).toBe(true)
       }),
       { numRuns: 200 }
     )

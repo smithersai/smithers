@@ -239,6 +239,94 @@ const takeOpenCall = <A extends { readonly flowName: string }>(
 }
 
 /**
+ * One agent call, as every node projection sees it: the ordinal it opened on,
+ * the seat that ran it, and the settlement that closed it, if one did.
+ */
+interface CallRecord {
+  readonly nodeId: string
+  readonly flowName: string
+  readonly seat: string | undefined
+  readonly startedAt: number
+  readonly settlement: CallSettlement | undefined
+}
+
+/** What closed a call, and where among the run's settlements it closed. */
+interface CallSettlement {
+  /** The rank of this settlement among the run's, counting from one. */
+  readonly order: number
+  /** The run the settlement named, which a malformed journal can omit. */
+  readonly runId: string | undefined
+  readonly at: number
+  readonly outcome: "success" | "failure"
+  readonly output: string
+}
+
+/**
+ * Folds one run's events into the agent calls it made, in the order they
+ * opened.
+ *
+ * This is the only fold that assigns a call its `call-N` identity, records the
+ * seat and time it opened on, and pairs a settlement with the call it closed.
+ * A client asks for a node's output by the id a tree row carries, so the two
+ * projections have to agree on that id; when they counted separately they
+ * could disagree, and once did, because skipping an event before the ordinal
+ * advanced shifted one fold's keys against the other's. The ordinal therefore
+ * advances on every start, whatever else that event is missing.
+ */
+const callHistory = (
+  events: ReadonlyArray<ControlSchema.ControlEvent>
+): ReadonlyArray<CallRecord> => {
+  const calls = new Map<string, CallRecord>()
+  const open: Array<{ readonly flowName: string; readonly call: CallRecord }> = []
+  let seat: string | undefined
+  let ordinal = 0
+  let settlements = 0
+
+  for (const event of events) {
+    const payload = Diagnosis.asRecord(event.payload)
+    if (event.kind === "control.agent.turn-opened") {
+      seat = Diagnosis.asString(payload.seat) ?? seat
+      continue
+    }
+    if (event.kind === "control.agent.cell-call-started") {
+      ordinal += 1
+      const nodeId = `call-${ordinal}`
+      const flowName = Diagnosis.asString(payload.flowName) ?? nodeId
+      const call: CallRecord = { nodeId, flowName, seat, startedAt: Diagnosis.timeOf(event), settlement: undefined }
+      open.push({ flowName, call })
+      calls.set(nodeId, call)
+      continue
+    }
+    if (event.kind !== "control.agent.cell-call-settled") continue
+    const claimed = takeOpenCall(open, Diagnosis.asString(payload.flowName))
+    if (claimed === undefined) continue
+    const failed = Diagnosis.asString(payload.outcome) === "failure"
+    settlements += 1
+    // Rewriting the entry keeps the call in the position it opened on, which
+    // is the order a tree renders.
+    calls.set(claimed.call.nodeId, {
+      ...claimed.call,
+      settlement: {
+        order: settlements,
+        runId: Diagnosis.asString(payload.runId) ?? event.runId,
+        at: Diagnosis.timeOf(event),
+        outcome: failed ? "failure" : "success",
+        output: failed
+          ? Diagnosis.asString(payload.message) ?? ""
+          : Diagnosis.asString(payload.value) ?? JSON.stringify(payload.value ?? null)
+      }
+    })
+  }
+  return [...calls.values()]
+}
+
+/** How a tree row reports a call: settled the way it settled, or still running. */
+const treeStatus = (settlement: CallSettlement | undefined): RunTreeRow["status"] => {
+  if (settlement === undefined) return "running"
+  return settlement.outcome === "failure" ? "failed" : "completed"
+}
+
+/**
  * Folds one run's events into its node rows.
  *
  * A node opens on `control.agent.cell-call-started` and settles on the
@@ -269,47 +357,17 @@ const takeOpenCall = <A extends { readonly flowName: string }>(
 export const runTree = (
   run: ControlSchema.RunSummary,
   events: ReadonlyArray<ControlSchema.ControlEvent>
-): ReadonlyArray<RunTreeRow> => {
-  const rows = new Map<string, RunTreeRow>()
-  const openCalls: Array<{ readonly flowName: string; readonly row: RunTreeRow }> = []
-  let seat: string | undefined
-  let ordinal = 0
-
-  for (const event of events) {
-    const payload = Diagnosis.asRecord(event.payload)
-    const at = Diagnosis.timeOf(event)
-    if (event.kind === "control.agent.turn-opened") {
-      seat = Diagnosis.asString(payload.seat) ?? seat
-      continue
-    }
-    if (event.kind === "control.agent.cell-call-started") {
-      ordinal += 1
-      const nodeId = `call-${ordinal}`
-      const flowName = Diagnosis.asString(payload.flowName) ?? nodeId
-      const row: RunTreeRow = {
-        runId: run.runId,
-        nodeId,
-        label: flowName,
-        status: "running",
-        ...optional("seat", seat),
-        startedAt: at,
-        ...optional("parentRunId", run.parentRunId)
-      }
-      openCalls.push({ flowName, row })
-      rows.set(nodeId, row)
-      continue
-    }
-    if (event.kind !== "control.agent.cell-call-settled") continue
-    const settled = takeOpenCall(openCalls, Diagnosis.asString(payload.flowName))
-    if (settled === undefined) continue
-    rows.set(settled.row.nodeId, {
-      ...settled.row,
-      status: Diagnosis.asString(payload.outcome) === "failure" ? "failed" : "completed",
-      endedAt: at
-    })
-  }
-  return [...rows.values()]
-}
+): ReadonlyArray<RunTreeRow> =>
+  callHistory(events).map((call): RunTreeRow => ({
+    runId: run.runId,
+    nodeId: call.nodeId,
+    label: call.flowName,
+    status: treeStatus(call.settlement),
+    ...optional("seat", call.seat),
+    startedAt: call.startedAt,
+    ...optional("endedAt", call.settlement?.at),
+    ...optional("parentRunId", run.parentRunId)
+  }))
 
 /**
  * Folds one run's events into its approval rows.
@@ -383,41 +441,27 @@ export const approvals = (
 export const nodeOutput = (
   events: ReadonlyArray<ControlSchema.ControlEvent>
 ): ReadonlyArray<NodeOutputRow> => {
-  const rows = new Map<string, NodeOutputRow>()
-  const openCalls: Array<{ readonly nodeId: string; readonly flowName: string }> = []
-  let ordinal = 0
-
-  for (const event of events) {
-    const payload = Diagnosis.asRecord(event.payload)
-    const runId = Diagnosis.asString(payload.runId) ?? event.runId
-    // The ordinal and the open-call list are kept unconditionally, exactly as
-    // `runTree` keeps them. Skipping an event before the ordinal advanced
-    // shifted this fold's `call-N` keys relative to that one, so the two folds
-    // disagreed about which node produced which output.
-    if (event.kind === "control.agent.cell-call-started") {
-      ordinal += 1
-      const nodeId = `call-${ordinal}`
-      openCalls.push({ nodeId, flowName: Diagnosis.asString(payload.flowName) ?? nodeId })
-      continue
-    }
-    if (event.kind !== "control.agent.cell-call-settled") continue
-    const settled = takeOpenCall(openCalls, Diagnosis.asString(payload.flowName))
-    if (settled === undefined) continue
+  const settled: Array<{ readonly order: number; readonly row: NodeOutputRow }> = []
+  for (const call of callHistory(events)) {
+    const settlement = call.settlement
+    if (settlement === undefined) continue
     // A row names the run it belongs to. A settlement that names none closes
     // its call without producing one.
-    if (runId === undefined) continue
-    const failed = Diagnosis.asString(payload.outcome) === "failure"
-    rows.set(settled.nodeId, {
-      runId,
-      nodeId: settled.nodeId,
-      outcome: failed ? "failure" : "success",
-      output: failed
-        ? Diagnosis.asString(payload.message) ?? ""
-        : Diagnosis.asString(payload.value) ?? JSON.stringify(payload.value ?? null),
-      settledAt: Diagnosis.timeOf(event)
+    if (settlement.runId === undefined) continue
+    settled.push({
+      order: settlement.order,
+      row: {
+        runId: settlement.runId,
+        nodeId: call.nodeId,
+        outcome: settlement.outcome,
+        output: settlement.output,
+        settledAt: settlement.at
+      }
     })
   }
-  return [...rows.values()]
+  // A tree reads in the order calls opened; outputs read in the order they
+  // settled, which is the order a client watched them arrive.
+  return settled.sort((left, right) => left.order - right.order).map((entry) => entry.row)
 }
 
 /** Events the transcript reports verbatim rather than as agent activity. */
