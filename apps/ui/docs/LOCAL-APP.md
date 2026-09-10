@@ -296,7 +296,9 @@ inputs when a target has no plan input list. An empty plan list is authoritative
 The fallback recognizes exported or indented const bindings, the imported
 `Smithers` alias, and literal `file("path")`, `glob("pattern")`, and
 `glob(["pattern"])` calls. Package declaration edits remain inputs for their
-targets. Globstar matches zero or more path segments; each unique pattern compiles
+targets. The declaration files are rescanned per request, by the same walk the
+graph digest does, so a PACKAGE.ts written after the repository was opened
+counts; `/api/targets/ci` renders its preview from that same fresh list. Globstar matches zero or more path segments; each unique pattern compiles
 once per request. The response names the available input sources in `signal` and
 propagates matches through reverse graph reachability.
 

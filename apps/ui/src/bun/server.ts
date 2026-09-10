@@ -1268,12 +1268,11 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       if (errors.length > 0) throw new AggregateError(errors, "Local server shutdown failed.")
     }
   }
-  const targetGraph = registerTargetGraphRoutes(local, { repos: repoTargets.repos, history: repoTargets.history, node: nodeProbe, ...(options.buildCli === undefined ? {} : { cli: options.buildCli }) })
+  registerTargetGraphRoutes(local, { repos: repoTargets.repos, history: repoTargets.history, node: nodeProbe, ...(options.buildCli === undefined ? {} : { cli: options.buildCli }) })
   let stopPromise: Promise<void> | undefined
   return {
     ...local,
     stop: () => stopPromise ??= (async () => {
-      targetGraph.stop()
       // Close run admission synchronously; local.stop awaits the reaping.
       void repoTargets.stop()
       await local.stop()

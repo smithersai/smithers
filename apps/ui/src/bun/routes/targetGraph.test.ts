@@ -109,6 +109,19 @@ describe("POST /api/targets/graph", () => {
     expect(ci.workflows.every((workflow) => workflow.source === "scratch-render")).toBe(true)
   })
 
+  /*
+   * The declaration list is scanned per request, not captured at repo open.
+   * `/api/targets/affected` read the list inspectRepo computed once, so a
+   * PACKAGE.ts written after the open was invisible to it while the graph
+   * digest re-walked the tree on every call.
+   */
+  test("a declaration written after the repository was opened is affected", async () => {
+    await mkdir(join(repo, ".github"), { recursive: true })
+    await writeFile(join(repo, ".github", "PACKAGE.ts"), 'import { Smithers as S } from "@smthrs/targets"\nexport const github = S.Github.CiGen({})\n')
+    const affected = AffectedResponseSchema.parse(await (await post("/api/targets/affected", { repoId })).json())
+    expect(affected.affected.find((entry) => entry.label === "//.github:github")?.reason).toBe("declared input: .github/PACKAGE.ts")
+  })
+
   test("history lists a completed run and replay returns ordered events", async () => {
     const targets = TargetsQueryResponseSchema.parse(await (await post("/api/targets/query", { repoId })).json())
     const targetId = targets.targets.find((target) => target.label === "//:lint")?.id

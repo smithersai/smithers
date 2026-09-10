@@ -5,7 +5,7 @@ import type { NodeSidecar } from "../Node"
 import type { RepoStore } from "../Repos"
 import { json, jsonError, readJson } from "../routes"
 import type { LocalServer } from "../server"
-import { queryTargetGraph } from "../TargetGraph"
+import { declarationFilesOf, queryTargetGraph } from "../TargetGraph"
 import type { TargetRunHistory } from "../TargetRunHistory"
 import { changedFiles, computeAffected, declarationInputs } from "../Affected"
 import { renderCiMatrix } from "../CiMatrix"
@@ -28,7 +28,7 @@ const stringField = (body: unknown, name: string): string | undefined => {
 export const registerTargetGraphRoutes = (
   server: Pick<LocalServer, "router">,
   options: TargetGraphRoutesOptions
-): { readonly stop: () => void } => {
+): void => {
   server.router.add("POST", TARGET_GRAPH_ROUTES.graph, async ({ request }) => {
     const parsed = await readJson(request)
     if ("error" in parsed) return parsed.error
@@ -78,11 +78,18 @@ export const registerTargetGraphRoutes = (
     if (repoId === undefined) return jsonError(400, "invalid_request", "Body must be { repoId }.")
     const repo = options.repos.get(repoId)
     if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
-    const [graph, changes] = await Promise.all([
+    /*
+     * The declarations are rescanned here, not read off the Repo record: that
+     * list is what inspectRepo saw at `/api/repo/open`, so a PACKAGE.ts
+     * written afterwards matched nothing while the graph beside it already
+     * described the live tree.
+     */
+    const [graph, changes, declarationFiles] = await Promise.all([
       queryTargetGraph({ repoId, repo: repo.path, node: await options.node, plan: true, ...(options.cli === undefined ? {} : { cli: options.cli }) }),
-      changedFiles(repo.path)
+      changedFiles(repo.path),
+      declarationFilesOf(repo.path)
     ])
-    const declarations = await declarationInputs(repo.path, repo.smithers.declarationFiles)
+    const declarations = await declarationInputs(repo.path, declarationFiles)
     return json(computeAffected({
       repoId, base: changes.base, changedFiles: changes.files, nodes: graph.nodes, edges: graph.edges,
       declarations, durationMs: Date.now() - started
@@ -97,11 +104,14 @@ export const registerTargetGraphRoutes = (
     const repo = options.repos.get(repoId)
     if (repo === undefined) return jsonError(404, "repo_not_found", `No open repository with id ${repoId}.`)
     const node = await options.node
-    const graph = await queryTargetGraph({ repoId, repo: repo.path, node, ...(options.cli === undefined ? {} : { cli: options.cli }) })
+    const [graph, declarationFiles] = await Promise.all([
+      queryTargetGraph({ repoId, repo: repo.path, node, ...(options.cli === undefined ? {} : { cli: options.cli }) }),
+      declarationFilesOf(repo.path)
+    ])
     return json(await renderCiMatrix({
       repoId, repo: repo.path, node,
       labels: graph.nodes.filter((entry) => entry.rule === "Github.CiGen").map((entry) => entry.label),
-      declarationFiles: repo.smithers.declarationFiles,
+      declarationFiles,
       ...(options.cli === undefined ? {} : { cli: options.cli })
     }))
   })
@@ -128,6 +138,4 @@ export const registerTargetGraphRoutes = (
     }
     return json({ path: canonical, ...(rawLine === undefined ? {} : { line: rawLine as number }) })
   })
-
-  return { stop: () => {} }
 }

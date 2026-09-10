@@ -126,9 +126,10 @@ export const foldPlan = (nodes: ReadonlyArray<GraphNode>, envelopes: ReadonlyArr
 const SKIPPED_DIRS = [".git", ".flows", "node_modules", "dist", "build"]
 const DECLARATION_FILES = ["PACKAGE.ts", "WORKSPACE.ts"]
 
-/** The declaration set of a workspace: a content digest plus each labeled const's declaration site. */
+/** The declaration set of a workspace: a content digest, the files read, plus each labeled const's declaration site. */
 export interface DeclarationSet {
   readonly digest: string
+  readonly files: ReadonlyArray<string>
   readonly sources: ReadonlyMap<string, GraphNode["source"]>
 }
 
@@ -170,11 +171,13 @@ const declarationSet = async (repo: string): Promise<DeclarationSet> => {
     }))
   }
   const hash = createHash("sha256")
+  const files: Array<string> = []
   const sources = new Map<string, GraphNode["source"]>()
   for (const path of found) {
     const text = contents.get(path)
     if (text === undefined) continue
     const file = relative(repo, path).split(sep).join("/")
+    files.push(file)
     hash.update(file).update("\0").update(text).update("\0")
     if (path.endsWith("PACKAGE.ts")) {
       const packageDir = dirname(file) === "." ? "" : dirname(file)
@@ -184,8 +187,20 @@ const declarationSet = async (repo: string): Promise<DeclarationSet> => {
       }
     }
   }
-  return { digest: hash.digest("hex"), sources }
+  return { digest: hash.digest("hex"), files, sources }
 }
+
+/*
+ * The repository's declaration files as they are NOW, repo-relative.
+ *
+ * The affected and CI routes read the list inspectRepo computed once, at
+ * `/api/repo/open`, so a PACKAGE.ts written after that open matched nothing -
+ * neither its own inputs nor its own edit - while the graph digest beside it
+ * re-walked the tree on every request. This is the walk the digest already
+ * does, so both answers describe the same checkout.
+ */
+export const declarationFilesOf = async (repo: string): Promise<ReadonlyArray<string>> =>
+  (await declarationSet(repo)).files
 
 interface CachedGraph { readonly digest: string; readonly response: TargetGraphResponse }
 const graphCache = new Map<string, CachedGraph>()
@@ -197,9 +212,32 @@ const graphCache = new Map<string, CachedGraph>()
  * again.
  */
 const wholeGraphFailures = new Map<string, { readonly digest: string; readonly error: Error }>()
+type TargetsResult = Awaited<ReturnType<typeof queryTargets>>
+
+/*
+ * One repository's cold load, shared by everyone who wants it.
+ *
+ * A cold read spawns `query` and `graph //...` and takes SECONDS on a
+ * monorepo. `/api/targets/affected`, `/api/targets/ci` and the run route's
+ * revalidation all reach queryTargetGraph, so overlapping callers each
+ * spawned their own pair of loader children and each rewrote the same cache
+ * entry. Keyed by declaration digest as well as repository, the way
+ * TargetRunHistory keys `loading`: a declaration edit re-keys the digest, so
+ * a caller after the edit starts a fresh load instead of joining a stale one.
+ * Only the WHOLE graph is shared - a label-scoped fallback answers one
+ * caller's labels and is never cached, so it is never handed to another.
+ */
+interface GraphLoad {
+  readonly digest: string
+  readonly targets: Promise<TargetsResult>
+  readonly whole: Promise<CachedGraph>
+}
+const loading = new Map<string, GraphLoad>()
+
 export const clearTargetGraphCache = (): void => {
   graphCache.clear()
   wholeGraphFailures.clear()
+  loading.clear()
 }
 
 export interface TargetGraphOptions {
@@ -293,70 +331,100 @@ export const revalidateTarget = async (
   return parseTextGraph(body.graph, rows)
 }
 
-export const queryTargetGraph = async (options: TargetGraphOptions): Promise<TargetGraphResponse> => {
-  const started = Date.now()
-  const declarations = await declarationSet(options.repo)
+const assemble = (
+  options: TargetGraphOptions,
+  declarations: DeclarationSet,
+  targetResult: TargetsResult,
+  envelopes: ReadonlyArray<JsonObject>,
+  started: number
+): CachedGraph => {
+  const nodesByLabel = new Map<string, GraphNode>()
+  const edges: Array<GraphEdge> = []
+  const seenEdges = new Set<string>()
+  for (const body of envelopes) {
+    const rows = Array.isArray(body.targets)
+      ? body.targets.map(object).filter((row): row is JsonObject => row !== undefined).filter((row) => typeof row.label === "string").map((row) => ({ label: row.label as string, target: typeof row.target === "string" ? row.target : "", kinds: strings(row.kinds) ?? [] }))
+      : []
+    const merged = new Map(rows.map((row) => [row.label, row]))
+    for (const target of targetResult.targets) merged.set(target.label, { label: target.label, target: target.target, kinds: target.kinds })
+    const parsed = parseTextGraph(body.graph as string, [...merged.values()])
+    for (const node of parsed.nodes) {
+      const source = declarations.sources.get(node.label)
+      nodesByLabel.set(node.label, source === undefined ? node : { ...node, source })
+    }
+    for (const edge of parsed.edges) {
+      const key = `${edge.from} ${edge.to} ${edge.kind}`
+      if (seenEdges.has(key)) continue
+      seenEdges.add(key)
+      edges.push(edge)
+    }
+  }
+  const nodes = [...nodesByLabel.values()]
+  const generatedAt = new Date().toISOString()
+  /*
+   * `digest` is the field a card compares to decide whether its cached
+   * graph went stale after a declaration edit; it has to reach the UI, not
+   * just this cache, or the documented staleness check can never fire.
+   */
   const digest = declarations.digest
-  let base = graphCache.get(options.repo)
-  if (base === undefined || base.digest !== digest) {
-    const targetsPending = queryTargets({ repo: options.repo, node: options.node, ...(options.cli === undefined ? {} : { cli: options.cli }), ...(options.sandboxHost === undefined ? {} : { sandboxHost: options.sandboxHost }), ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) })
-    /*
-     * The whole graph first. When it cannot load and the caller named
-     * labels, each label's own subgraph (`graph <label>`, the same scoped
-     * read the run route revalidates with) answers instead: a targets-card
-     * drawer asking about one target must not die because a declaration
-     * elsewhere in the checkout (this repository's `vendor/jj` input) is
-     * broken. A scoped answer is never cached as the repository's graph.
-     */
-    let envelopes: Array<JsonObject>
-    let scoped = false
+  return { digest, response: { repoId: options.repoId, nodes, edges, warnings: targetResult.warnings, generatedAt, digest, durationMs: Date.now() - started } }
+}
+
+const loadWholeGraph = (options: TargetGraphOptions, declarations: DeclarationSet): GraphLoad => {
+  const digest = declarations.digest
+  const shared = loading.get(options.repo)
+  if (shared !== undefined && shared.digest === digest) return shared
+  const started = Date.now()
+  const targets = queryTargets({ repo: options.repo, node: options.node, ...(options.cli === undefined ? {} : { cli: options.cli }), ...(options.sandboxHost === undefined ? {} : { sandboxHost: options.sandboxHost }), ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) })
+  /* A whole-graph refusal without labels leaves nobody to await the targets: an unobserved rejection must not fell the host. */
+  void targets.catch(() => {})
+  const whole = (async (): Promise<CachedGraph> => {
+    let body: JsonObject | undefined
     try {
       const remembered = wholeGraphFailures.get(options.repo)
       if (remembered !== undefined && remembered.digest === digest) throw remembered.error
-      const whole = object(await runJson(options, ["graph", "//...", "--format", "json"]))
-      if (typeof whole?.graph !== "string") throw new Error("The graph envelope has no text graph field.")
-      envelopes = [whole]
+      body = object(await runJson(options, ["graph", "//...", "--format", "json"]))
+      if (typeof body?.graph !== "string") throw new Error("The graph envelope has no text graph field.")
     } catch (error) {
       wholeGraphFailures.set(options.repo, { digest, error: error instanceof Error ? error : new Error(String(error)) })
+      throw error
+    }
+    const base = assemble(options, declarations, await targets, [body], started)
+    graphCache.set(options.repo, base)
+    return base
+  })()
+  const load: GraphLoad = { digest, targets, whole }
+  const forget = (): void => { if (loading.get(options.repo) === load) loading.delete(options.repo) }
+  void whole.then(forget, forget)
+  loading.set(options.repo, load)
+  return load
+}
+
+export const queryTargetGraph = async (options: TargetGraphOptions): Promise<TargetGraphResponse> => {
+  const started = Date.now()
+  const declarations = await declarationSet(options.repo)
+  let base = graphCache.get(options.repo)
+  if (base === undefined || base.digest !== declarations.digest) {
+    const load = loadWholeGraph(options, declarations)
+    try {
+      base = await load.whole
+    } catch (error) {
+      /*
+       * The whole graph could not load. When the caller named labels, each
+       * label's own subgraph (`graph <label>`, the same scoped read the run
+       * route revalidates with) answers instead: a targets-card drawer asking
+       * about one target must not die because a declaration elsewhere in the
+       * checkout (this repository's `vendor/jj` input) is broken. A scoped
+       * answer is never cached as the repository's graph.
+       */
       if (!options.labels?.length) throw error
-      scoped = true
-      envelopes = await Promise.all(options.labels.map(async (label) => {
+      const envelopes = await Promise.all(options.labels.map(async (label) => {
         const body = object(await runJson(options, ["graph", label, "--format", "json"]))
         if (typeof body?.graph !== "string") throw new Error("The graph envelope has no text graph field.")
         return body
       }))
+      base = assemble(options, declarations, await load.targets, envelopes, started)
     }
-    const targetResult = await targetsPending
-    const nodesByLabel = new Map<string, GraphNode>()
-    const edges: Array<GraphEdge> = []
-    const seenEdges = new Set<string>()
-    for (const body of envelopes) {
-      const rows = Array.isArray(body.targets)
-        ? body.targets.map(object).filter((row): row is JsonObject => row !== undefined).filter((row) => typeof row.label === "string").map((row) => ({ label: row.label as string, target: typeof row.target === "string" ? row.target : "", kinds: strings(row.kinds) ?? [] }))
-        : []
-      const merged = new Map(rows.map((row) => [row.label, row]))
-      for (const target of targetResult.targets) merged.set(target.label, { label: target.label, target: target.target, kinds: target.kinds })
-      const parsed = parseTextGraph(body.graph as string, [...merged.values()])
-      for (const node of parsed.nodes) {
-        const source = declarations.sources.get(node.label)
-        nodesByLabel.set(node.label, source === undefined ? node : { ...node, source })
-      }
-      for (const edge of parsed.edges) {
-        const key = `${edge.from} ${edge.to} ${edge.kind}`
-        if (seenEdges.has(key)) continue
-        seenEdges.add(key)
-        edges.push(edge)
-      }
-    }
-    const nodes = [...nodesByLabel.values()]
-    const generatedAt = new Date().toISOString()
-    /*
-     * `digest` is the field a card compares to decide whether its cached
-     * graph went stale after a declaration edit; it has to reach the UI, not
-     * just this cache, or the documented staleness check can never fire.
-     */
-    base = { digest, response: { repoId: options.repoId, nodes, edges, warnings: targetResult.warnings, generatedAt, digest, durationMs: Date.now() - started } }
-    if (!scoped) graphCache.set(options.repo, base)
   }
   let nodes = base.response.nodes.map((node) => ({ ...node, kinds: [...node.kinds], ...(node.plan === undefined ? {} : { plan: { ...node.plan } }) }))
   if (options.plan === true) {
