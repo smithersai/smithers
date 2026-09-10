@@ -284,7 +284,9 @@ excludes everything below it, and nothing under an excluded directory is listed,
 counted against the entry ceiling, or charged against the response ceiling. An
 exclusion that names the root stops before the walk begins. An absolute exclude
 is rewritten against the glob root so it applies to the same names the selecting
-pattern does. A trailing `**` spans zero segments, so it also names its own
+pattern does. The selecting pattern prunes the walk too: a directory is entered
+only when a remaining segment or an open `**` can still name something below it,
+and only selected names are charged against the response ceiling. A trailing `**` spans zero segments, so it also names its own
 anchor: a directory always, and a non-directory only when every segment before it
 is literal, which is the shortcut the native globber takes when it can address
 the path directly rather than read a directory. `top.txt/**` names the file;

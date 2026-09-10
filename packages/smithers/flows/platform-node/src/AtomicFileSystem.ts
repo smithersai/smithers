@@ -222,7 +222,18 @@ def unchanged(before, after, path):
     if fingerprint(before) != fingerprint(after):
         raise OSError(errno.EBUSY, "entry changed during measurement", path)
 
-def list_dir(root, path, recursive, budget, with_kind=False, prune=None, stable=False):
+def list_dir(root, path, recursive, budget, with_kind=False, prune=None, stable=False,
+             select=None, descend=None):
+    """The names below a directory, walked descriptor-relative.
+
+    "prune" is the exclusion boundary: a pruned entry is never counted, never
+    charged, and never entered. "select" and "descend" are the selector's view
+    of the same walk. A name "select" rejects is still counted against
+    ENTRY_CAP, because reading it was work, but it is neither retained nor
+    charged against the response budget, and a real subdirectory is entered
+    only when "descend" says the selector can still name something below it.
+    Without them every name below the root is retained, which is the listing
+    contract."""
     if not parts(path):
         fd = os.dup(root)
     else:
@@ -269,17 +280,27 @@ def list_dir(root, path, recursive, budget, with_kind=False, prune=None, stable=
                 entries[0] += 1
                 if entries[0] > ENTRY_CAP:
                     raise OSError(errno.EFBIG, "directory listing has too many entries", path)
+                retained = select is None or select(relative, directory)
+                # A directory the selector cannot name may still hold names it
+                # can, so the descent question is asked separately from the
+                # retention one, and only of a real subdirectory.
+                entered = (recursive and directory
+                           and (descend is None or descend(relative)))
+                if not retained and not entered:
+                    continue
                 # Charged before the name is retained, so a tree large enough
                 # to exhaust the response budget is refused instead of
                 # accumulated.
-                total[0] += len(json.dumps(relative, ensure_ascii=False).encode("utf-8")) + 1
-                if total[0] > budget:
-                    raise OSError(errno.EFBIG, "directory listing exceeds the response limit", path)
-                names.append((entry, relative, directory))
+                if retained:
+                    total[0] += len(json.dumps(relative, ensure_ascii=False).encode("utf-8")) + 1
+                    if total[0] > budget:
+                        raise OSError(errno.EFBIG, "directory listing exceeds the response limit", path)
+                names.append((entry, relative, directory, retained, entered))
         names.sort(key=lambda item: item[0])
-        for entry, relative, directory in names:
-            result.append((relative, directory))
-            if recursive and directory:
+        for entry, relative, directory, retained, entered in names:
+            if retained:
+                result.append((relative, directory))
+            if entered:
                 child = os.open(entry, os.O_RDONLY | DIRECTORY | NOFOLLOW, dir_fd=current)
                 try:
                     result.extend(walk(child, relative))
@@ -554,15 +575,6 @@ def match_segments(segments, directory_only, literal_core, dot_anchor, names, is
     trailing = not dot_anchor and bool(segments) and segments[-1] is GLOBSTAR
     core = segments[:-1] if trailing else segments
     globstar_last = bool(core) and core[-1] is GLOBSTAR
-    def advance(index, out):
-        while True:
-            if index in out:
-                return
-            out.add(index)
-            if index < len(core) and core[index] is GLOBSTAR:
-                index += 1
-                continue
-            return
     def accepts(consumed):
         if consumed == len(names):
             if dot_anchor:
@@ -582,27 +594,67 @@ def match_segments(segments, directory_only, literal_core, dot_anchor, names, is
         # Only a trailing "**" may span what is left, and it never crosses a
         # dotted segment.
         return trailing and all(not part.startswith(".") for part in names[consumed:])
-    states = set()
-    advance(0, states)
+    states = start_states(core)
     if len(core) in states and accepts(0):
         return True
     for position, part in enumerate(names):
-        following = set()
-        for index in states:
-            if index >= len(core):
-                continue
-            if core[index] is GLOBSTAR:
-                # "**" spans whole segments but never crosses into a dotted one.
-                if not part.startswith("."):
-                    advance(index, following)
-            elif match_segment(core[index], part):
-                advance(index + 1, following)
-        states = following
+        states = step_states(core, states, part)
         if not states:
             return False
         if len(core) in states and accepts(position + 1):
             return True
     return False
+
+def advance(core, index, out):
+    """Every state reachable from "index" without consuming a segment: a "**"
+    may span zero segments, so standing on one also means standing after it."""
+    while True:
+        if index in out:
+            return
+        out.add(index)
+        if index < len(core) and core[index] is GLOBSTAR:
+            index += 1
+            continue
+        return
+
+def start_states(core):
+    states = set()
+    advance(core, 0, states)
+    return states
+
+def step_states(core, states, part):
+    """The states reachable after one more path segment."""
+    following = set()
+    for index in states:
+        if index >= len(core):
+            continue
+        if core[index] is GLOBSTAR:
+            # "**" spans whole segments but never crosses into a dotted one.
+            if not part.startswith("."):
+                advance(core, index, following)
+        elif match_segment(core[index], part):
+            advance(core, index + 1, following)
+    return following
+
+def reaches_below(segments, dot_anchor, names):
+    """Whether one parsed pattern can still name an entry BELOW the directory
+    "names". A pattern with a segment left to consume can, and so can one
+    whose trailing "**" is open; a pattern that has run out of segments, or
+    that never matched the directory's own path, cannot. The answer errs
+    toward descending: it is a pruning question, and the walk still asks
+    match_segments of every name it retains."""
+    trailing = not dot_anchor and bool(segments) and segments[-1] is GLOBSTAR
+    core = segments[:-1] if trailing else segments
+    states = start_states(core)
+    for part in names:
+        # An open trailing "**" spans every segment from here down, so nothing
+        # below is out of reach; it still never crosses a dotted one.
+        if trailing and len(core) in states and not part.startswith("."):
+            return True
+        states = step_states(core, states, part)
+        if not states:
+            return False
+    return trailing or any(index < len(core) for index in states)
 
 EXTGLOB_OPERATORS = ("?", "*", "+", "@", "!")
 
@@ -657,6 +709,12 @@ class GlobMatcher:
     def matches(self, names, is_dir):
         for segments, directory_only, literal_core, dot_anchor in self.alternatives:
             if match_segments(segments, directory_only, literal_core, dot_anchor, names, is_dir, self.anchor):
+                return True
+        return False
+    def below(self, names):
+        """Whether the walk has any reason to enter the directory "names"."""
+        for segments, _directory_only, _literal_core, dot_anchor in self.alternatives:
+            if reaches_below(segments, dot_anchor, names):
                 return True
         return False
 
@@ -1095,15 +1153,28 @@ def main(request, content_limit, response_limit, pinned_root=None):
             def prunes(name, is_dir):
                 segments = name.split("/")
                 return any(pattern.matches(segments, is_dir) for pattern in excluded)
-            entries = list_dir(root, confined(root_path), True, response_limit, True, prunes,
-                               stable=pinned_root is not None)
+            # The selector drives the walk as well as the answer. Applying it
+            # only to a finished recursive listing made a literal path or a
+            # shallow "*.ts" enumerate every unrelated subtree beside its match
+            # and charge those names against the listing bounds, so a one-path
+            # answer that fit was refused. Literal segments are still found by
+            # scanning their parent rather than by a direct lookup: the grammar
+            # is case-sensitive on every host, and a lookup on a
+            # case-insensitive filesystem would answer for a name the pattern
+            # did not spell.
+            def selects(name, is_dir):
+                return selected.matches(name.split("/"), is_dir)
+            def descends(name):
+                return selected.below(name.split("/"))
+            entries = (list_dir(root, confined(root_path), True, response_limit, True, prunes,
+                                stable=pinned_root is not None, select=selects, descend=descends)
+                       if selected.below([]) else [])
             matches = []
             total = 32
             # The pinned root is a candidate in its own right: "**" and "**/"
             # both name it, exactly as the native globber returns "." for it.
             for name, is_dir in [("", True)] + entries:
-                segments = name.split("/") if name else []
-                if not selected.matches(segments, is_dir):
+                if not name and not selected.matches([], True):
                     continue
                 match = os.path.join(root_path, name) if name else root_path
                 total += len(json.dumps(match, ensure_ascii=False).encode("utf-8")) + 1

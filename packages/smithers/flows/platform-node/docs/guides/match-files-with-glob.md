@@ -65,6 +65,16 @@ begins.
 An absolute exclude is rewritten against the glob root, so it applies to the
 same names the selecting pattern does.
 
+The selecting pattern prunes the same walk. A directory is entered only when a
+remaining pattern segment, or an open `**`, can still name something below it,
+so `src/index.ts` or `*.ts` never reads the subtrees beside its match, and a
+name the pattern does not select is never charged against the response
+ceiling. Names in a directory the walk does read still count against the
+100000-entry ceiling, because reading them was work. Literal segments are found
+by reading their parent rather than by a direct lookup: matching is
+case-sensitive on every host, and a lookup on a case-insensitive filesystem
+would answer for a name the pattern did not spell.
+
 ## Patterns the adapter refuses
 
 Five inputs fail as a typed `BadArgument`, checked before any expansion or
@@ -126,4 +136,5 @@ One `glob` is one fork, so prefer a single pattern with an `exclude` list to
 several calls you merge yourself. Prune with exclusions rather than filtering
 results: an excluded subtree is never walked at all, which is the difference
 between a cheap call and one that reads a `node_modules` tree before discarding
-it.
+it. A narrow selector is cheap on its own: `src/**/*.ts` enters `src` and
+nothing beside it.

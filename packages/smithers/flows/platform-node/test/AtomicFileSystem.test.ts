@@ -943,6 +943,62 @@ describe("Node atomic filesystem", () => {
     }))
 
   /**
+   * The selector is a traversal boundary too. Applying it only after a full
+   * recursive listing made a literal or shallow selector enumerate every
+   * unrelated subtree beside its match and charge those names against the
+   * listing bounds, so a one-path answer that fit was refused. The decoy is a
+   * directory the helper cannot read: entering it is an error, so a silent
+   * success proves the walk never went below "unrelated".
+   */
+  it.live("descends only where the selector can still match", () =>
+    Effect.gen(function*() {
+      const root = yield* Effect.promise(() => temporaryDirectory())
+      const unrelated = join(root, "unrelated")
+      const decoy = join(unrelated, "zz-decoy")
+      yield* Effect.promise(() => mkdir(join(unrelated, "nested", "deep"), { recursive: true }))
+      yield* Effect.promise(() => mkdir(decoy))
+      yield* Effect.promise(() => writeFile(join(root, "wanted.ts"), ""))
+      yield* Effect.promise(() => writeFile(join(root, "other.txt"), ""))
+      yield* Effect.promise(() => writeFile(join(unrelated, "nested", "wanted.ts"), ""))
+      // Forty names with 32-byte suffixes exhaust a 1024-byte listing many
+      // times over, while every selected answer below fits with room to spare.
+      yield* Effect.promise(() =>
+        Promise.all(
+          Array.from(
+            { length: 40 },
+            (_, index) => writeFile(join(unrelated, "nested", "deep", `entry-${index}-${"x".repeat(32)}.txt`), "")
+          )
+        )
+      )
+      yield* Effect.promise(() => chmod(decoy, 0o000))
+
+      const outcome = yield* run(
+        root,
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          const glob = (pattern: string) =>
+            Effect.map(fs.glob(join(root, pattern), { root }), (rows) => rows.map((v) => relative(root, v)).sort())
+          return {
+            literal: yield* glob("wanted.ts"),
+            shallow: yield* glob("*.ts"),
+            literalPrefix: yield* glob("unrelated/nested/*.ts"),
+            wildcardDirectory: yield* glob("*/nested/wanted.ts"),
+            missing: yield* glob("absent/**/*.ts"),
+            everywhere: yield* Effect.flip(fs.glob(join(root, "**/*.txt"), { root }))
+          }
+        }),
+        AtomicFileSystem.layerWith({ limits: { response: 1024 } })
+      ).pipe(Effect.ensuring(Effect.promise(() => chmod(decoy, 0o700))))
+
+      expect(outcome.literal).toEqual(["wanted.ts"])
+      expect(outcome.shallow).toEqual(["wanted.ts"])
+      expect(outcome.literalPrefix).toEqual([join("unrelated", "nested", "wanted.ts")])
+      expect(outcome.wildcardDirectory).toEqual([join("unrelated", "nested", "wanted.ts")])
+      expect(outcome.missing).toEqual([])
+      expect(outcome.everywhere).toMatchObject({ reason: { _tag: "BadResource" } })
+    }))
+
+  /**
    * Native answers vary with the host, the selecting pattern's shape, and the
    * supported Node release. Those are not a stable oracle, so these rows pin
    * the adapter's host-independent case rule, one exclusion answer for every

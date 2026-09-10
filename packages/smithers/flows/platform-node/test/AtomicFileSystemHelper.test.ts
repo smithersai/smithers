@@ -485,6 +485,48 @@ describe("atomic helper limits", () => {
       expect(outcome.glob).toMatchObject({ reason: { _tag: "BadResource" } })
     }))
 
+  /**
+   * The response bound is charged for what the selector names, not for what
+   * the walk could have read. A literal selector beside a wide unrelated tree
+   * used to exhaust the bound on names the answer never held, so a one-path
+   * answer that fit was refused; the same tree still exhausts it for a
+   * selector that names every file in it.
+   */
+  it.live("charges a glob only for the subtrees its selector can reach", () =>
+    Effect.gen(function*() {
+      const root = yield* Effect.promise(() => temporaryDirectory())
+      yield* Effect.promise(() => writeFile(join(root, "wanted.ts"), ""))
+      // Twenty directories of fifty 30-byte names: far past an 8 KiB response,
+      // while the one selected path fits many times over.
+      for (let directory = 0; directory < 20; directory++) {
+        const folder = join(root, "unrelated", String(directory))
+        yield* Effect.promise(() => mkdir(folder, { recursive: true }))
+        yield* Effect.promise(() =>
+          Promise.all(
+            Array.from(
+              { length: 50 },
+              (_, index) => writeFile(join(folder, `entry-${index}-${"x".repeat(16)}.txt`), "")
+            )
+          )
+        )
+      }
+      const outcome = yield* run(
+        root,
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          return {
+            literal: yield* fs.glob(join(root, "wanted.ts"), { root }),
+            shallow: yield* fs.glob(join(root, "*.ts"), { root }),
+            everything: yield* Effect.flip(fs.glob(join(root, "**/*.txt"), { root }))
+          }
+        }),
+        AtomicFileSystem.layerWith({ limits: { response: 8192 } })
+      )
+      expect(outcome.literal).toEqual([join(root, "wanted.ts")])
+      expect(outcome.shallow).toEqual([join(root, "wanted.ts")])
+      expect(outcome.everything).toMatchObject({ reason: { _tag: "BadResource" } })
+    }))
+
   it.live("stops accumulating a helper that writes more than the response limit", () =>
     Effect.gen(function*() {
       const root = yield* Effect.promise(() => temporaryDirectory())
