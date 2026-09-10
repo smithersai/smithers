@@ -631,3 +631,179 @@ describe("FlowEngine.layerMemory normal interrupt of a live action", () => {
     })
   })
 })
+
+describe("FlowEngine.layerMemory resume and wake contract", () => {
+  const ParkedActionDeclaration = Action.make("Memory/Wake/action", {
+    payload: { id: Schema.String },
+    success: Schema.String
+  })
+  const Parked = Flow.make("Memory/Wake", {
+    payload: { id: Schema.String },
+    success: Schema.String,
+    idempotencyKey: ({ id }) => id,
+    body: (payload) => ParkedActionDeclaration.call(payload)
+  })
+  const gate = DurableDeferred.make("Memory/Wake/gate", { success: Schema.String })
+  const ParkedLayer = Layer.mergeAll(
+    ParkedActionDeclaration.toLayer(() => DurableDeferred.await(gate)),
+    Interpreter.layer(Parked)
+  ).pipe(
+    Layer.provideMerge(Action.layerImplementations)
+  ).pipe(
+    Layer.provideMerge(FlowEngine.layerMemory)
+  )
+
+  /** A handful of scheduler turns with the clock untouched. */
+  const settle = Effect.gen(function*() {
+    for (let i = 0; i < 8; i++) yield* Effect.yieldNow
+  })
+
+  effect("keeps a round that died with an escaped defect terminal across resumes", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        const Dying = Flow.make("Memory/Dying", {
+          payload: {},
+          success: Schema.String,
+          body: () => {
+            throw new Error("registered directly")
+          }
+        }).annotate(Flow.CaptureDefects, false)
+        let runs = 0
+        yield* engine.register(Dying, () =>
+          Effect.suspend(() => {
+            runs += 1
+            return Effect.die("boom")
+          }))
+        yield* engine.execute(Dying, { executionId: "dies", payload: {}, discard: true })
+        yield* settle
+        expect(runs).toBe(1)
+        const before = yield* Effect.exit(engine.poll(Dying, "dies"))
+        expect(Exit.isFailure(before) && Cause.hasDies(before.cause)).toBe(true)
+
+        // A Failure exit is a settlement, not a suspension: neither a bare
+        // resume nor a deferred completion addressed to the run re-runs the
+        // body's effects.
+        yield* engine.resume(Dying, "dies")
+        yield* settle
+        yield* engine.deferredDone(gate, {
+          flowName: Dying._tag,
+          executionId: "dies",
+          deferredName: gate.name,
+          exit: Exit.succeed("late")
+        })
+        yield* settle
+        expect(runs).toBe(1)
+        const after = yield* Effect.exit(engine.poll(Dying, "dies"))
+        expect(Exit.isFailure(after) && Cause.hasDies(after.cause)).toBe(true)
+      }).pipe(Effect.provide(FlowEngine.layerMemory))
+    ))
+
+  effect("answers NotWaiting for an annotation on a running, completed, or cancelled execution", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        const Annotated = Flow.make("Memory/Annotated", {
+          payload: { mode: Schema.Literals(["running", "completed", "cancelled"]) },
+          success: Schema.String,
+          body: () => {
+            throw new Error("registered directly")
+          }
+        })
+        const hold = yield* Deferred.make<void>()
+        yield* engine.register(Annotated, (payload) =>
+          Effect.gen(function*() {
+            yield* FlowRuntime.annotateWaiting({ reason: "approval", token: "attempt-1" })
+            const { mode } = payload as { mode: "running" | "completed" | "cancelled" }
+            if (mode === "completed") return "done"
+            if (mode === "running") {
+              yield* Deferred.await(hold)
+              return "released"
+            }
+            const instance = yield* FlowRuntime.FlowInstance
+            return yield* Flow.suspend(instance)
+          }))
+        const complete = (executionId: string) =>
+          engine.deferredDoneIfWaiting(gate, {
+            flowName: Annotated._tag,
+            executionId,
+            deferredName: gate.name,
+            reason: "approval",
+            token: "attempt-1",
+            exit: Exit.succeed("answer")
+          })
+        const recorded = (executionId: string) =>
+          engine.deferredResult(gate).pipe(
+            Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(Annotated, executionId))
+          )
+
+        // Running: the body annotated but has not parked, so there is no
+        // wait to complete yet. The durable store answers the same way
+        // because its waiting row is written when the round parks.
+        yield* engine.execute(Annotated, { executionId: "running", payload: { mode: "running" }, discard: true })
+        yield* settle
+        expect(yield* engine.poll(Annotated, "running")).toEqual(Option.none())
+        expect(yield* complete("running")).toBe("NotWaiting")
+        expect(Option.isNone(yield* recorded("running"))).toBe(true)
+        yield* Deferred.succeed(hold, undefined)
+        yield* settle
+
+        // Completed: the annotation outlived the round that made it.
+        yield* engine.execute(Annotated, { executionId: "completed", payload: { mode: "completed" }, discard: true })
+        const completed = yield* pollComplete(engine.poll(Annotated, "completed"))
+        expect(Option.isSome(completed) && completed.value._tag).toBe("Complete")
+        expect(yield* complete("completed")).toBe("NotWaiting")
+        expect(Option.isNone(yield* recorded("completed"))).toBe(true)
+
+        // Cancelled: the parked wait was overtaken by an interrupt.
+        yield* engine.execute(Annotated, { executionId: "cancelled", payload: { mode: "cancelled" }, discard: true })
+        expect(Option.isSome(yield* pollSuspended(engine.poll(Annotated, "cancelled")))).toBe(true)
+        yield* engine.interrupt(Annotated, "cancelled")
+        const cancelled = yield* pollComplete(engine.poll(Annotated, "cancelled"))
+        expect(Option.isSome(cancelled) && cancelled.value._tag).toBe("Complete")
+        expect(yield* complete("cancelled")).toBe("NotWaiting")
+        expect(Option.isNone(yield* recorded("cancelled"))).toBe(true)
+      }).pipe(Effect.provide(FlowEngine.layerMemory))
+    ))
+
+  effect("wakes a waiting caller within a scheduler turn of the deferred completing", () =>
+    Effect.gen(function*() {
+      const executionId = "wake-caller"
+      const caller = yield* Parked.execute({ id: executionId }, { executionId }).pipe(Effect.forkChild)
+      yield* settle
+      expect(Option.isSome(yield* pollSuspended(Parked.poll(executionId)))).toBe(true)
+      // The caller climbs the default suspended backoff ladder to its 30 s
+      // rung while the run stays parked.
+      for (let second = 0; second < 60; second++) {
+        yield* TestClock.adjust("1 second")
+        yield* settle
+      }
+      expect(caller.pollUnsafe()).toBeUndefined()
+
+      const token = DurableDeferred.tokenFromExecutionId(gate, { flow: Parked, executionId })
+      yield* DurableDeferred.succeed(gate, { token, value: "approved" })
+      yield* settle
+      const polled = yield* Parked.poll(executionId)
+      expect(Option.isSome(polled) && polled.value._tag).toBe("Complete")
+      // No clock movement since the completion: the caller returned on the
+      // wake, not at the end of its backoff sleep.
+      expect(caller.pollUnsafe()).toEqual(Exit.succeed("approved"))
+    }).pipe(Effect.provide(ParkedLayer)))
+
+  effect("re-arming a scheduled clock keeps the running timer's deadline", () =>
+    Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const clock = DurableClock.make({ name: "rearmed", duration: "10 minutes" })
+      const read = engine.deferredResult(clock.deferred).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(Parked, "rearm-run"))
+      )
+      yield* engine.scheduleClock(Parked, { executionId: "rearm-run", clock })
+      yield* TestClock.adjust("6 minutes")
+      // `DurableClock.sleep` schedules again on every drive of the body, so
+      // a re-driven parked run re-arms the same key: the first deadline
+      // must stand, or a run polled more often than its sleep never wakes.
+      yield* engine.scheduleClock(Parked, { executionId: "rearm-run", clock })
+      yield* TestClock.adjust("4 minutes")
+      expect(Option.isSome(yield* read)).toBe(true)
+    }).pipe(Effect.provide(FlowEngine.layerMemory)))
+})

@@ -68,6 +68,28 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       bodyFiber: Fiber.Fiber<unknown, unknown> | undefined
     }
     const executions = new Map<string, ExecutionState>()
+    // A round fiber that settled `Suspended` is the only state a re-drive or
+    // a conditional completion continues from. A live round is still
+    // running, and every other settlement — an answer, a hand-off to the
+    // next round, or a Failure exit from a defect that escaped capture — is
+    // terminal, so acting on it would re-run the body's effects.
+    const settledSuspended = (state: ExecutionState): boolean => {
+      const exit = state.fiber?.pollUnsafe()
+      return exit !== undefined && Exit.isSuccess(exit) && exit.value._tag === "Suspended"
+    }
+
+    // In-process wake for a caller parked on the suspension backoff sleep.
+    // Edge-triggered and miss-tolerant like engine-store's WakeBus: a wake
+    // completes the deferred the current subscribers await and drops it, so
+    // the next subscription starts a fresh one and polling stays the
+    // fallback for a wake that landed before the subscription.
+    const wakes = new Map<string, Deferred.Deferred<void>>()
+    const wake = (executionId: string): void => {
+      const pending = wakes.get(executionId)
+      if (pending === undefined) return
+      wakes.delete(executionId)
+      Deferred.doneUnsafe(pending, Exit.void)
+    }
     // This is trampoline membership, not the journal frame lineage on an
     // instance. A cancellation survives the gap before the next round exists.
     const rounds = new Map<string, Set<string>>()
@@ -253,15 +275,10 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
     const resume = Effect.fnUntraced(function*(executionId: string): Effect.fn.Return<void> {
       const state = executions.get(executionId)
       if (!state) return
-      const exit = state.fiber?.pollUnsafe()
-      // Suspension is the only settlement a re-drive continues from: a round
-      // that completed has its answer, and one that handed off has already
-      // opened the next round, so re-running either would re-run its effects.
-      if (exit && exit._tag === "Success" && exit.value._tag !== "Suspended") {
-        return
-      } else if (state.fiber && !exit) {
-        return
-      }
+      wake(executionId)
+      // Only the first drive and a suspended round are driven: a live round
+      // keeps running, and every other settlement is terminal.
+      if (state.fiber !== undefined && !settledSuspended(state)) return
 
       // The latest still-open registration serves every drive, so a re-drive
       // after an inner scoped registration of the tag closed follows the
@@ -304,6 +321,7 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
           }
           return Effect.forkIn(resume(state.parent), scope)
         }),
+        Effect.onExit(() => Effect.sync(() => wake(state.instance.executionId))),
         Effect.forkIn(entry.scope)
       )
     })
@@ -463,6 +481,15 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
       resume(_flow, executionId) {
         return resume(executionId)
       },
+      resumeSignal: (_flow, executionId) =>
+        Effect.suspend(() => {
+          let pending = wakes.get(executionId)
+          if (pending === undefined) {
+            pending = Deferred.makeUnsafe<void>()
+            wakes.set(executionId, pending)
+          }
+          return Deferred.await(pending)
+        }),
       // Untraced because action execution is a retry-loop hot path.
       actionExecute: Effect.fnUntraced(function*(options) {
         const action = options.action
@@ -571,9 +598,15 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
         Effect.suspend(() => {
           const execution = executions.get(options.executionId)
           const waiting = execution?.instance.waiting
+          // The annotation counts only while the round that made it is
+          // parked: a running body has no wait to complete yet, and an
+          // annotation left behind by a completed or cancelled round names
+          // a wait that no longer exists. The durable store answers the
+          // same way because its waiting row is written when a round parks.
           if (
             execution === undefined ||
             execution.instance.flow._tag !== options.flowName ||
+            !settledSuspended(execution) ||
             waiting?.reason !== options.reason ||
             waiting.token !== options.token
           ) {
