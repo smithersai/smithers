@@ -5,6 +5,8 @@ import { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } fro
 const cwd = "packages/smithers/build/targets"
 const sources = Smithers.glob("src/**/*.ts")
 const tests = Smithers.glob("test/**/*.test.ts")
+const testSupportSources = Smithers.glob("test-support/**/*.ts")
+const testSupport = Smithers.Filegroup({ srcs: [testSupportSources], cwd })
 
 const lib = Smithers.TsBuild({
   srcs: [sources],
@@ -18,7 +20,7 @@ const lib = Smithers.TsBuild({
 })
 
 const check = Smithers.Typecheck({
-  srcs: [sources, Smithers.glob("test/**/*.ts")],
+  srcs: [sources, Smithers.glob("test/**/*.ts"), testSupportSources],
   deps: [lib],
   tsconfig: Smithers.file("tsconfig.test.json"),
   buildMode: false,
@@ -29,7 +31,7 @@ const check = Smithers.Typecheck({
 const test = Smithers.Vitest({
   tests: [tests],
   sources: [sources],
-  deps: [lib],
+  deps: [lib, testSupport],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
   passWithNoTests: false,
@@ -46,7 +48,7 @@ const lint = Smithers.EsLint({
 })
 
 const fmt = Smithers.Dprint({
-  sources: [sources, Smithers.glob("test/**/*.ts")],
+  sources: [sources, Smithers.glob("test/**/*.ts"), testSupportSources],
   deps: [],
   config: Smithers.file("dprint.json"),
   fix: false,
@@ -151,6 +153,7 @@ export const Package = Smithers.Package({
     lib,
     lint,
     test,
+    testSupport,
     docsSources,
     referenceAgentDiffCodeBlocks,
     referenceAgentDiffDocs,

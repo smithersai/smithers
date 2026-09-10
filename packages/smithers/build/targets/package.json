@@ -127,7 +127,8 @@
     "./Vitest": "./src/Vitest.ts",
     "./VitestCoverage": "./src/VitestCoverage.ts",
     "./VitestWatch": "./src/VitestWatch.ts",
-    "./WorkspaceDeclaration": "./src/WorkspaceDeclaration.ts"
+    "./WorkspaceDeclaration": "./src/WorkspaceDeclaration.ts",
+    "./test-support/plan": "./test-support/plan.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -600,7 +601,8 @@
         "types": "./dist/esm/WorkspaceDeclaration.d.ts",
         "import": "./dist/esm/WorkspaceDeclaration.js",
         "require": "./dist/cjs/WorkspaceDeclaration.js"
-      }
+      },
+      "./test-support/plan": null
     }
   },
   "scripts": {
