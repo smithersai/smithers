@@ -93,10 +93,11 @@ an absent exact record from an expired one. That read contributes its own
 lookup counter even when the combined result remains a miss.
 
 The composition adds one count of its own: when a shared `put` answers
-`Conflict`, it records a `conflict`. That answer means the shared tier holds a
-different result under this digest, which is cross-host determinism divergence,
-and counting it is the only way an operator sees it, because nothing else on
-that path returns, fails, or records it.
+`Conflict`, it records a `conflict`. That answer means the shared tier refused
+to overwrite bytes it already holds under this digest, which on the head stage
+is cross-host determinism divergence, and counting it is the only way an
+operator sees it, because nothing else on that path returns, fails, or records
+it.
 
 ## Related
 

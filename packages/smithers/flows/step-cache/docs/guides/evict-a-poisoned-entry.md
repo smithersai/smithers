@@ -87,9 +87,11 @@ Two consequences follow for the digest you just evicted.
   and answers `Inserted`. The ledger row that survived the eviction is the
   authority, and it agrees.
 - A later `put` under the same provenance and different bytes answers
-  `Conflict`, and no head row is created. The immutable record cannot be
-  rewritten, so an eviction can never be used to launder a divergent result
-  into the cache.
+  `Conflict`, and no head row is created. Different bytes means any of
+  `result`, `meta`, or `createdAtMs`, so re-recording with a fresh clock
+  reading conflicts inside one run. The immutable record cannot be rewritten,
+  so an eviction can never be used to launder a divergent result into the
+  cache.
 
 ## A malformed fence is a caller mistake
 

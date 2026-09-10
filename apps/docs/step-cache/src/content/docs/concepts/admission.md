@@ -62,10 +62,22 @@ being over it.
 
 `snapshotEntry` applies the same discipline to the entry shell itself. It reads
 the six expected fields through their descriptors, refuses any other enumerable
-own property, and freezes the decoded result. `CombinedCacheStore` takes that
-snapshot once, before either tier is called: forwarding the caller's object let
-a mutation between the two writes persist one value locally and publish a
-different one under the same digest, with `Inserted` answered for both.
+own property, and freezes the decoded result. The shell's prototype is not
+inspected, so a class instance holding the six fields as own values is accepted
+and none of its methods run, while the nested `result` and `meta` trees still
+have to be plain. `CombinedCacheStore` takes that snapshot once, before either
+tier is called: forwarding the caller's object let a mutation between the two
+writes persist one value locally and publish a different one under the same
+digest, with `Inserted` answered for both.
+
+## Selectors are decoded, not copied
+
+`recordedBy`, `ifRecordedBy`, and the age bounds take the other path. Each
+operation schema-decodes its selector once and then reads only the value that
+decoding returned, so a caller-owned accessor runs at most one time and cannot
+change what the statement is issued with. The guarantee there is one read, not
+no read. Provenance schemas are decoded the same way, which is why
+`validateRecordedBy` returns the detached copy rather than a `void`.
 
 ## Cached results are never redacted
 

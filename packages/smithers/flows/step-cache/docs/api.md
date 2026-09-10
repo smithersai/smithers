@@ -170,8 +170,10 @@ type PutResult =
 ```
 
 `Inserted` created the head row. `ExistingSame` found a row that does not
-disagree. `Conflict` found one that does: two runs recorded different results
-under one digest. How the two stages arbitrate is in
+disagree. `Conflict` found bytes the store will not overwrite: the same
+provenance re-recorded with a different `result`, `meta`, or `createdAtMs`, or
+a different `result` another run already recorded under this digest. How the
+two stages arbitrate is in
 [the head and the ledger](./concepts/head-and-ledger.md).
 
 ### RecordedBy
@@ -396,9 +398,12 @@ const snapshotEntry: (input: CacheEntry) => Effect.Effect<CacheEntry, CacheStore
 ```
 
 Takes an inert, detached, frozen snapshot of a candidate entry at effect start,
-then decodes it against `CacheEntry`. Accessors, symbol keys, extra enumerable
-members, and non-plain shells are refused with `invalid_cache` without running
-caller code.
+then decodes it against `CacheEntry`. The shell is read through its own
+descriptors, so any object carrying exactly the six fields as enumerable own
+data properties is accepted, including a class instance whose prototype methods
+are never called. Accessors, symbol keys, and extra enumerable own members on
+the shell are refused with `invalid_cache` without running caller code, and the
+nested `result` and `meta` trees must be plain.
 
 ## CacheStoreMetrics
 

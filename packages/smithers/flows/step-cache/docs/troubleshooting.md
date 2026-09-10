@@ -69,7 +69,7 @@ cannot copy faithfully:
 | `exceeds the JSON byte limit`                            | Past 4 MiB encoded, counted the way the canonical encoder emits     |
 | `exceeds the maximum JSON depth of 128`                  | Too deeply nested                                                   |
 | `contains more than 100000 JSON values`                  | Too many nodes                                                      |
-| `contains more than 100000 members`                      | One array or object with too many members                           |
+| `exceeds the JSON members limit`                         | One array or object with more than 100000 members                   |
 | `contains unbounded or ill-formed text`                  | A lone surrogate, or a string past the byte budget                  |
 | `contains an unbounded or ill-formed object key`         | The same, in a key, whose own budget is 16 KiB                      |
 | `contains a sparse or accessor array member`             | A hole in an array, or an array index backed by a getter            |
@@ -103,10 +103,12 @@ schema: a bad `keyDigest`, an empty or oversized `recordedRunId`, or a
 `createdAtMs` or `recordedEventSeq` that is not a non-negative safe integer.
 
 **What to change.** Build the entry as a plain object literal with exactly the
-six fields. Do not pass a class instance or an object with a `toJSON` hook. The
-store reads each field through its property descriptor precisely so a hostile
-or merely mutable argument cannot change value between validation and the
-write.
+six fields. The shell may be any object carrying those six as enumerable own
+data properties, so a class instance is accepted and its prototype methods,
+including a `toJSON` hook, are never called; an extra enumerable own property
+is not. The nested `result` and `meta` trees still have to be plain. The store
+reads each field through its property descriptor precisely so a hostile or
+merely mutable argument cannot change value between validation and the write.
 
 ## invalid_cache: the shared tier's configuration
 
@@ -234,8 +236,8 @@ purpose: a silent miss would make the test pass for the wrong reason. See
 
 ## A recording answers Conflict and you expected ExistingSame
 
-`Conflict` means one thing: two runs disagree about what a step produced. It
-arrives from either of two stages.
+`Conflict` means the store is refusing to overwrite bytes it already holds. It
+arrives from either of two stages, and only the second one involves two runs.
 
 - **The provenance stage.** You re-recorded the same
   `(keyDigest, recordedRunId, recordedEventSeq)` triple with a different
@@ -244,6 +246,14 @@ arrives from either of two stages.
   `createdAtMs` once and reusing it rather than calling the clock again.
 - **The head stage.** Another run already recorded a different canonical
   `result` under this digest.
+
+Read `flows_step_cache_recorded` at the exact
+`(keyDigest, recordedRunId, recordedEventSeq)` you recorded to tell the two
+apart. A row already there is the provenance stage, and comparing its
+`result_json`, `meta_json`, and `created_at_ms` against what you passed names
+the field that moved. No row there is the head stage, and the
+`recorded_run_id` and `recorded_event_seq` on the `flows_step_cache` row for
+that digest name the run that got there first.
 
 If neither describes what you did, the digest is under-specified: two genuinely
 different computations are deriving the same key. Fix the key derivation, not

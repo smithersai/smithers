@@ -60,3 +60,15 @@ describe("shared-tier guide eviction fence", () => {
     expect(error.code).toBe("invalid_cache")
   })
 })
+
+describe("shared-tier guide error vocabulary", () => {
+  it("maps byte, UTF-8, and parse failures to persistence_failed", () => {
+    // `RemoteCacheStore.get` wraps the bounded read and `JSON.parse` in
+    // `transportFailure`, which raises `persistence_failed`. Only a body that
+    // parsed and then failed `snapshotEntry` carries `decode_failed`, as
+    // RemoteCacheStore.test.ts pins for both shapes.
+    expect(guide).toContain("parsing it as JSON fail with `persistence_failed`")
+    expect(guide).toContain("is not a bounded `CacheEntry` fails with `decode_failed`")
+    expect(guide).not.toMatch(/text that is not JSON[\s\S]*?fail with `decode_failed`/)
+  })
+})

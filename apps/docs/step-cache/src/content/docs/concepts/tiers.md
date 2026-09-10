@@ -17,7 +17,10 @@ back into the local store so the next lookup is local.
 A lookup tries the local tier first and returns its answer if it has one. On a
 miss it asks the shared tier, and a shared hit is written back locally before
 the caller sees it. The caller's `GetOptions` travel to both tiers, so a
-provenance fence or an age bound means the same thing at each.
+provenance fence or an age bound means the same thing at each. If an exact
+local `recordedBy` ledger row exists but `maxAgeMs` refuses it, the lookup
+returns a miss without consulting the shared tier. An absent exact record
+still permits fallback.
 
 The write-back can lose: a sibling run on this machine may record its own row
 under the digest while the lookup was inside the shared tier. The composition
@@ -25,7 +28,8 @@ then re-reads the local tier and serves the durable local row, because that is
 the row this machine replays from and the row a fenced eviction must name.
 Handing out the shared entry over a local `Conflict` would be a cache collision
 the caller could not detect. If the local winner is already gone again, the
-shared entry is the only row anyone holds and it stands.
+shared entry is the only row anyone holds and it stands. An expired exact
+local record still stops this fallback with a miss.
 
 ## Writes: the local outcome is the answer
 
@@ -85,12 +89,16 @@ argument, issues no request, and answers `0`.
 the shared tier therefore registers one `miss`, for the local tier that did not
 hold it, plus the write-back's `Inserted`. A two-tier hit rate measures how
 often this machine already held the entry, not how often a result was reused.
+A bounded provenance miss also performs an unbounded local read to distinguish
+an absent exact record from an expired one. That read contributes its own
+lookup counter even when the combined result remains a miss.
 
 The composition adds one count of its own: when a shared `put` answers
-`Conflict`, it records a `conflict`. That answer means the shared tier holds a
-different result under this digest, which is cross-host determinism divergence,
-and counting it is the only way an operator sees it, because nothing else on
-that path returns, fails, or records it.
+`Conflict`, it records a `conflict`. That answer means the shared tier refused
+to overwrite bytes it already holds under this digest, which on the head stage
+is cross-host determinism divergence, and counting it is the only way an
+operator sees it, because nothing else on that path returns, fails, or records
+it.
 
 ## Related
 

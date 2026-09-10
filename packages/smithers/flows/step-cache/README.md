@@ -94,15 +94,20 @@ compute: this store receives one and never inspects what it names.
 
 - **Recording is first-writer-wins.** `put` answers `Inserted`,
   `ExistingSame`, or `Conflict`, and never silently replaces a result two
-  callers disagree about. `Conflict` means one thing only: two runs disagree
-  about what a step produced.
+  callers disagree about. `Conflict` means the store refuses to overwrite bytes
+  it already holds: one provenance re-recorded with a different `result`,
+  `meta`, or `createdAtMs`, or another run recording a different `result` under
+  the same digest.
 - **Reuse is revocable and replay is not.** `evict` takes the head under a
   fenced compare-and-swap, and leaves the immutable ledger row a past run
   replays from.
-- **Every argument crosses a strict admission boundary.** Inputs are detached
-  and frozen without invoking a getter or a `toJSON` hook. Accessors, cycles,
-  non-JSON values, ill-formed Unicode, and trees past the 4 MiB budget are
-  refused before a statement is issued.
+- **Every argument crosses a strict admission boundary.** Entry fields and
+  remote construction options are detached and frozen without invoking a getter
+  or a `toJSON` hook. Accessors, cycles, non-JSON values, ill-formed Unicode,
+  and trees past the 4 MiB budget are refused before a statement is issued.
+  Lookup and eviction selectors are schema-decoded once instead, so a
+  caller-owned accessor runs at most one time and the operation reads only the
+  decoded copy.
 - **Results are stored verbatim.** A hit is handed back to a step as its own
   value, so nothing here redacts or coerces what it stores.
 - **Another machine's work is reusable.** `RemoteCacheStore` speaks the

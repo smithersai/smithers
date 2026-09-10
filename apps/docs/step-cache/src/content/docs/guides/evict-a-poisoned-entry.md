@@ -88,9 +88,11 @@ Two consequences follow for the digest you just evicted.
   and answers `Inserted`. The ledger row that survived the eviction is the
   authority, and it agrees.
 - A later `put` under the same provenance and different bytes answers
-  `Conflict`, and no head row is created. The immutable record cannot be
-  rewritten, so an eviction can never be used to launder a divergent result
-  into the cache.
+  `Conflict`, and no head row is created. Different bytes means any of
+  `result`, `meta`, or `createdAtMs`, so re-recording with a fresh clock
+  reading conflicts inside one run. The immutable record cannot be rewritten,
+  so an eviction can never be used to launder a divergent result into the
+  cache.
 
 ## A malformed fence is a caller mistake
 
@@ -123,5 +125,5 @@ The client cannot detect it. Fenced evictions need a conforming server: see
 
 - [Expire cached results](/guides/expire-cached-results/): reclaiming a whole age
   band rather than one named row.
-- [The head and the ledger](/concepts/head-and-ledger/): why no verb here
-  deletes a ledger row, and what does.
+- [The head and the ledger](/concepts/head-and-ledger/): how reference-aware
+  retention collects ledger rows.

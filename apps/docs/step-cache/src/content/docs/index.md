@@ -30,14 +30,16 @@ transaction:
   when it ages out, or overwrite what it points at. It is a cache, and it is
   allowed to disappear.
 - The **ledger** row is keyed by the run and journal event that recorded the
-  result, and no verb in this package deletes one. A replay reading through
-  that fence sees the bytes its own event recorded, even after the head has
-  moved on.
+  result. A replay reading through that fence sees the bytes its own event
+  recorded, even after the head has moved on. Optional reference-aware
+  retention collects old evidence only after local references are released.
 
 Recording is first-writer-wins: `put` answers `Inserted`, `ExistingSame`, or
-`Conflict`, and never silently replaces a result two callers disagree about.
-Every argument crosses a strict admission boundary first, because a hit is
-handed back to a caller as real executable state.
+`Conflict`, and never silently replaces bytes it already holds. `Conflict`
+covers both refusals: one provenance re-recorded with different bytes, and a
+different `result` recorded under one digest by another run. Every argument
+crosses a strict admission boundary first, because a hit is handed back to a
+caller as real executable state.
 
 ## Get the package
 

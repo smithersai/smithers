@@ -48,10 +48,10 @@ tier holds the same two things the SQL tier holds: an immutable record per
    different `meta`, `createdAtMs`, and run identity without being a conflict,
    so answer a non-`201` 2xx. Answer `201` only when you created the head.
 
-`409` therefore means one thing: two runs disagree about what a step produced.
-Answering it anywhere else reports cross-host determinism divergence that has
-not happened, and the composition counts every one of them as an operator
-alarm.
+`409` therefore means one thing: your tier refuses to overwrite bytes it
+already holds, under one provenance or under the head. Answering it anywhere
+else reports a divergence that has not happened, and the composition counts
+every one of them as an operator alarm.
 
 Compare canonical text, not parsed objects. The client encodes the body as
 RFC 8785 canonical JSON, so two structurally equal results built in different
@@ -102,8 +102,9 @@ const admit = (keyDigest: string, body: unknown) =>
   })
 ```
 
-`snapshotEntry` takes an inert, frozen copy without invoking a getter or a
-`toJSON` hook, and `encodeCanonical` produces the text you store and compare.
+`snapshotEntry` copies the six fields through their own descriptors and freezes
+the result, without invoking a getter or a `toJSON` hook, and `encodeCanonical`
+produces the text you store and compare.
 Together they enforce the key grammar, the 4 MiB byte budget, the depth, node,
 and member limits, and the provenance contract. The full list is
 [what the cache admits](../concepts/admission.md).
@@ -166,8 +167,9 @@ from assuming defenses it does not have.
   digits naming a safe integer fails the read. A declared length past
   `maxResponseBytes`, 4 MiB by default, is refused before a body byte is read,
   and a chunked body is cut off the moment it crosses.
-- **Bodies are decoded strictly.** Invalid UTF-8, text that is not JSON, and
-  JSON that is not a bounded `CacheEntry` all fail with `decode_failed`.
+- **Bodies are decoded strictly.** Reading the byte stream, decoding it as
+  UTF-8, and parsing it as JSON fail with `persistence_failed`. A body that
+  parses and is not a bounded `CacheEntry` fails with `decode_failed`.
 - **A misrouted entry is caught.** An answer whose `keyDigest` is not the one
   requested fails with `decode_failed` rather than being returned. Your service
   cannot substitute content under the wrong address.

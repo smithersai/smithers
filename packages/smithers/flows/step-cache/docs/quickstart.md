@@ -46,7 +46,9 @@ const record = Effect.gen(function*() {
 
 `put` answers `Inserted` for a first write, `ExistingSame` when the store
 already holds a result it does not disagree with, and `Conflict` when it holds
-a different one. Nothing overwrites: the first writer wins.
+bytes it will not replace: the same provenance re-recorded with a different
+`result`, `meta`, or `createdAtMs`, or a different `result` already under this
+digest. Nothing overwrites: the first writer wins.
 
 ## Read it back, and watch the head move
 

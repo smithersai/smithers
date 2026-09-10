@@ -100,8 +100,9 @@ are two tiers.
 
 The local outcome is the caller's answer in both modes, because
 first-writer-wins conflict detection has to be decided against the durable row
-this machine will replay from. A local `Conflict` is never published upward: it
-would spread a divergence the caller is about to fail the run over.
+this machine will replay from. A local `Conflict`, from either stage, is never
+published upward: it would spread bytes the caller is about to fail the run
+over.
 
 :::danger
 A write transaction must never span a host call. A caller that records the

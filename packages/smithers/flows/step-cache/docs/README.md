@@ -34,9 +34,11 @@ transaction:
   retention collects old evidence only after local references are released.
 
 Recording is first-writer-wins: `put` answers `Inserted`, `ExistingSame`, or
-`Conflict`, and never silently replaces a result two callers disagree about.
-Every argument crosses a strict admission boundary first, because a hit is
-handed back to a caller as real executable state.
+`Conflict`, and never silently replaces bytes it already holds. `Conflict`
+covers both refusals: one provenance re-recorded with different bytes, and a
+different `result` recorded under one digest by another run. Every argument
+crosses a strict admission boundary first, because a hit is handed back to a
+caller as real executable state.
 
 ## Get the package
 

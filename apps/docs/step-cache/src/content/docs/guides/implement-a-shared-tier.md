@@ -49,10 +49,10 @@ tier holds the same two things the SQL tier holds: an immutable record per
    different `meta`, `createdAtMs`, and run identity without being a conflict,
    so answer a non-`201` 2xx. Answer `201` only when you created the head.
 
-`409` therefore means one thing: two runs disagree about what a step produced.
-Answering it anywhere else reports cross-host determinism divergence that has
-not happened, and the composition counts every one of them as an operator
-alarm.
+`409` therefore means one thing: your tier refuses to overwrite bytes it
+already holds, under one provenance or under the head. Answering it anywhere
+else reports a divergence that has not happened, and the composition counts
+every one of them as an operator alarm.
 
 Compare canonical text, not parsed objects. The client encodes the body as
 RFC 8785 canonical JSON, so two structurally equal results built in different
@@ -103,24 +103,52 @@ const admit = (keyDigest: string, body: unknown) =>
   })
 ```
 
-`snapshotEntry` takes an inert, frozen copy without invoking a getter or a
-`toJSON` hook, and `encodeCanonical` produces the text you store and compare.
+`snapshotEntry` copies the six fields through their own descriptors and freezes
+the result, without invoking a getter or a `toJSON` hook, and `encodeCanonical`
+produces the text you store and compare.
 Together they enforce the key grammar, the 4 MiB byte budget, the depth, node,
 and member limits, and the provenance contract. The full list is
 [what the cache admits](/concepts/admission/).
 
-Parse a fence the same way, so a malformed one is a `400` rather than an
-accidental unconditional delete:
+Only an absent pair means an unconditional delete. Require exactly one value
+for each parameter when either is present. The sequence must be nonempty ASCII
+decimal digits with no leading zeros except `0`; validate its safe-integer
+range after conversion. Map `invalid_cache` to HTTP `400` before deleting:
 
 ```ts
 const fenceOf = (params: URLSearchParams) => {
   const runId = params.get("recordedRunId")
   const eventSeq = params.get("recordedEventSeq")
-  return runId === null || eventSeq === null
-    ? Effect.succeed(undefined)
-    : CacheStore.validateRecordedBy({ runId, eventSeq: Number(eventSeq) }, "eviction fence")
+  if (runId === null && eventSeq === null) return Effect.succeed(undefined)
+  if (
+    runId === null || eventSeq === null ||
+    params.getAll("recordedRunId").length !== 1 ||
+    params.getAll("recordedEventSeq").length !== 1 ||
+    eventSeq === "" || /[^0-9]/.test(eventSeq) ||
+    (eventSeq.length > 1 && eventSeq.startsWith("0"))
+  ) {
+    return Effect.fail(
+      new CacheStore.CacheStoreError({
+        code: "invalid_cache",
+        message: "eviction fence requires one run ID and one canonical decimal sequence"
+      })
+    )
+  }
+  return CacheStore.validateRecordedBy({ runId, eventSeq: Number(eventSeq) }, "eviction fence")
 }
 ```
+
+Validate the server with these `DELETE` cases:
+
+- Neither parameter: allow an unconditional delete.
+- Only `recordedRunId` or only `recordedEventSeq`: `400`, with no deletion.
+- An empty value for either parameter, or duplicate values for either (even
+  identical values): `400`, with no deletion.
+- A sequence with whitespace, a sign, leading zeros, a fraction, exponent or
+  hexadecimal notation, or a value above `Number.MAX_SAFE_INTEGER`: `400`, with
+  no deletion.
+- A valid pair, including sequence `0`: delete only matching provenance and
+  answer `404` on a mismatch.
 
 `CacheStore.validateKey`, `validateRecordedBy`, `validateFence`, `validateAge`,
 `snapshotEntry`, and `encodeCanonical` are all exported, alongside the
@@ -140,8 +168,9 @@ from assuming defenses it does not have.
   digits naming a safe integer fails the read. A declared length past
   `maxResponseBytes`, 4 MiB by default, is refused before a body byte is read,
   and a chunked body is cut off the moment it crosses.
-- **Bodies are decoded strictly.** Invalid UTF-8, text that is not JSON, and
-  JSON that is not a bounded `CacheEntry` all fail with `decode_failed`.
+- **Bodies are decoded strictly.** Reading the byte stream, decoding it as
+  UTF-8, and parsing it as JSON fail with `persistence_failed`. A body that
+  parses and is not a bounded `CacheEntry` fails with `decode_failed`.
 - **A misrouted entry is caught.** An answer whose `keyDigest` is not the one
   requested fails with `decode_failed` rather than being returned. Your service
   cannot substitute content under the wrong address.

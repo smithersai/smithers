@@ -70,7 +70,7 @@ cannot copy faithfully:
 | `exceeds the JSON byte limit`                            | Past 4 MiB encoded, counted the way the canonical encoder emits     |
 | `exceeds the maximum JSON depth of 128`                  | Too deeply nested                                                   |
 | `contains more than 100000 JSON values`                  | Too many nodes                                                      |
-| `contains more than 100000 members`                      | One array or object with too many members                           |
+| `exceeds the JSON members limit`                         | One array or object with more than 100000 members                   |
 | `contains unbounded or ill-formed text`                  | A lone surrogate, or a string past the byte budget                  |
 | `contains an unbounded or ill-formed object key`         | The same, in a key, whose own budget is 16 KiB                      |
 | `contains a sparse or accessor array member`             | A hole in an array, or an array index backed by a getter            |
@@ -104,10 +104,12 @@ schema: a bad `keyDigest`, an empty or oversized `recordedRunId`, or a
 `createdAtMs` or `recordedEventSeq` that is not a non-negative safe integer.
 
 **What to change.** Build the entry as a plain object literal with exactly the
-six fields. Do not pass a class instance or an object with a `toJSON` hook. The
-store reads each field through its property descriptor precisely so a hostile
-or merely mutable argument cannot change value between validation and the
-write.
+six fields. The shell may be any object carrying those six as enumerable own
+data properties, so a class instance is accepted and its prototype methods,
+including a `toJSON` hook, are never called; an extra enumerable own property
+is not. The nested `result` and `meta` trees still have to be plain. The store
+reads each field through its property descriptor precisely so a hostile or
+merely mutable argument cannot change value between validation and the write.
 
 ## invalid_cache: the shared tier's configuration
 
@@ -156,10 +158,20 @@ appears in the same messages.
 **What happened.** A row in the database did not decode back into a
 `CacheEntry`. Something other than this store wrote it, or the file is damaged.
 
-**What to change.** Evict the digest, which removes the head row and lets the
-next execution record a fresh one. A whole file that fails this way is faster
-to delete than to repair: it is a cache, and losing it costs recomputation
-rather than correctness.
+**What to change.** Back up the shared database before recovery. Evict or
+repair only the affected reusable head rows in `flows_step_cache`. Evicting a
+digest lets the next execution record a fresh head. Only reusable head rows
+are disposable.
+
+Do not delete the database file. Preserve or restore the immutable
+`flows_step_cache_recorded` provenance ledger and any colocated durable state
+from a backup. The file may hold other services, including the journal and run
+store in the [engine composition](/guides/compose-a-store/#prefer-the-engines-composition).
+Recomputation cannot reconstruct the exact result a past event recorded. If
+the ledger or other durable state is damaged, restore it from a backup rather
+than replacing it with recomputed results. See
+[ledger retention](#flows_step_cache_recorded-grows-and-nothing-reclaims-it)
+for coordinated ledger cleanup.
 
 ## persistence_failed: the shared tier
 
@@ -225,8 +237,8 @@ purpose: a silent miss would make the test pass for the wrong reason. See
 
 ## A recording answers Conflict and you expected ExistingSame
 
-`Conflict` means one thing: two runs disagree about what a step produced. It
-arrives from either of two stages.
+`Conflict` means the store is refusing to overwrite bytes it already holds. It
+arrives from either of two stages, and only the second one involves two runs.
 
 - **The provenance stage.** You re-recorded the same
   `(keyDigest, recordedRunId, recordedEventSeq)` triple with a different
@@ -235,6 +247,14 @@ arrives from either of two stages.
   `createdAtMs` once and reusing it rather than calling the clock again.
 - **The head stage.** Another run already recorded a different canonical
   `result` under this digest.
+
+Read `flows_step_cache_recorded` at the exact
+`(keyDigest, recordedRunId, recordedEventSeq)` you recorded to tell the two
+apart. A row already there is the provenance stage, and comparing its
+`result_json`, `meta_json`, and `created_at_ms` against what you passed names
+the field that moved. No row there is the head stage, and the
+`recorded_run_id` and `recorded_event_seq` on the `flows_step_cache` row for
+that digest name the run that got there first.
 
 If neither describes what you did, the digest is under-specified: two genuinely
 different computations are deriving the same key. Fix the key derivation, not
@@ -289,14 +309,33 @@ not how often a result was reused. See
 
 ## flows_step_cache_recorded grows and nothing reclaims it
 
-No verb in this package deletes a ledger row. Whole-run reclamation belongs to
-[`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/), whose retention pass erases a
-terminal run's ledger rows by `recorded_run_id` together with the journal that
-could have replayed them.
+By default, `sweepExpired` preserves the ledger. Whole-run reclamation belongs
+to [`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/), whose retention pass erases a
+terminal run's ledger rows by `recorded_run_id` together with its journal.
+That pass cannot match a write-back recorded by a run on another host.
 
-Rows whose `recorded_run_id` names no run on this host match no run-scoped
-delete and are never reclaimed. That is every row `CombinedCacheStore`'s
-write-back lands from a shared tier, because the recording run lives on another
-machine. A host composing a shared tier accepts ledger growth proportional to
-the remote entries it has read. See
+Configure `sweepExpired(olderThanMs, { canReclaimRecorded })` on the local or
+combined store to collect old, unreferenced imports. The callback receives
+`{ keyDigest, recordedRunId, recordedEventSeq }` and returns an Effect of
+`true` only when no retained local journal, fork, or run needs that exact
+provenance. Keep locally owned run evidence until its journal is retired.
+Unknown reference state must return `false` or fail. Absence of the recording
+run on this host alone is not proof: local frames can reference remote runs.
+
+Pause execution and replay on every process sharing the database from before
+reading references until the sweep commits. A writer transaction protects the
+check and deletion, but cannot protect a reader that has obtained a cache row
+and has not yet journalled its reference. Run the policy as a local read, with
+no network calls or writes, inside that transaction.
+
+The same age floor applies to heads and ledger candidates. Ledger candidates
+are visited in pages of 100 identities; retained candidates do not prevent
+later candidates from being checked. A callback failure rolls back the entire
+sweep. The return value remains the number of heads deleted. The combined
+store forwards the policy only to its local tier.
+
+Schedule this sweep with the host's retention pass. Releasing the last local
+reference lets the next sweep collect an old import, including imports made
+before this policy existed. Without the callback, ledger retention remains
+conservative and foreign rows continue to accumulate. See
 [the head and the ledger](/concepts/head-and-ledger/).

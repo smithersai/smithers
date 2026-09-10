@@ -7,18 +7,18 @@ sidebar:
 
 The SQL store updates two counters as lookups and recordings resolve, and opens
 one span per operation. Both are enough to answer the operational questions:
-how often work is being reused, and whether two runs have ever disagreed about
-what a step produced.
+how often work is being reused, and whether a recording has ever been refused
+because the store already held different bytes.
 
 ## The counters
 
-| Metric                     | Attribute                  | Counts                                               |
-| -------------------------- | -------------------------- | ---------------------------------------------------- |
-| `flows_step_cache_lookups` | `outcome: "hit"`           | A row existed and the caller's bounds accepted it    |
-| `flows_step_cache_lookups` | `outcome: "miss"`          | No row, or a row a `maxAgeMs` bound refused          |
-| `flows_step_cache_puts`    | `outcome: "inserted"`      | A recording created the head row                     |
-| `flows_step_cache_puts`    | `outcome: "existing_same"` | A recording found a row that does not disagree       |
-| `flows_step_cache_puts`    | `outcome: "conflict"`      | Two runs recorded different results under one digest |
+| Metric                     | Attribute                  | Counts                                             |
+| -------------------------- | -------------------------- | -------------------------------------------------- |
+| `flows_step_cache_lookups` | `outcome: "hit"`           | A row existed and the caller's bounds accepted it  |
+| `flows_step_cache_lookups` | `outcome: "miss"`          | No row, or a row a `maxAgeMs` bound refused        |
+| `flows_step_cache_puts`    | `outcome: "inserted"`      | A recording created the head row                   |
+| `flows_step_cache_puts`    | `outcome: "existing_same"` | A recording found a row that does not disagree     |
+| `flows_step_cache_puts`    | `outcome: "conflict"`      | A recording was refused against bytes already held |
 
 `CacheStoreMetrics` exports the attributed views to read: `hit`, `miss`, and
 `put.Inserted`, `put.ExistingSame`, `put.Conflict`.
@@ -90,10 +90,11 @@ machine already held the entry, not how often a result was reused. If you want
 the second number, count it on the tier.
 
 The composition adds one count of its own: when a shared `put` answers
-`Conflict`, it records a `conflict`. That answer means the shared tier holds a
-different result under this digest, which is cross-host determinism divergence,
-and counting it is the only way an operator sees it, because nothing else on
-that path returns, fails, or records it.
+`Conflict`, it records a `conflict`. That answer means the shared tier refused
+to overwrite bytes it already holds under this digest, which on the head stage
+is cross-host determinism divergence, and counting it is the only way an
+operator sees it, because nothing else on that path returns, fails, or records
+it.
 
 :::note
 That extra count assumes the shared tier keeps no counters, which is true of
@@ -104,11 +105,16 @@ the composition.
 
 ## Treat conflict as an alarm
 
-`inserted` and `existing_same` are ordinary. A `conflict` is not: it says two
-runs computed different results for the same content digest, which is a
-determinism defect in a step or in the key derivation feeding it. In a durable
-engine it also routes to an inconsistency receiver whose default verdict fails
-the run. Alert on the counter moving at all, not on a rate.
+`inserted` and `existing_same` are ordinary. A `conflict` is not: the store
+refused to overwrite bytes it already held, either because one provenance was
+re-recorded with a different `result`, `meta`, or `createdAtMs`, or because
+another run recorded a different result for the same content digest. The first
+is a defect in how a retry rebuilds its entry, the second a determinism defect
+in a step or in the key derivation feeding it.
+[Troubleshooting](../troubleshooting.md#a-recording-answers-conflict-and-you-expected-existingsame)
+tells them apart. In a durable engine a `conflict` also routes to an
+inconsistency receiver whose default verdict fails the run. Alert on the
+counter moving at all, not on a rate.
 
 ## Where to go next
 

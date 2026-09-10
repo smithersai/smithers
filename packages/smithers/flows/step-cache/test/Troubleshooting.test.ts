@@ -1,5 +1,7 @@
+import { Effect } from "effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
+import * as CacheStore from "../src/CacheStore.ts"
 
 const troubleshooting = readFileSync(new URL("../docs/troubleshooting.md", import.meta.url), "utf8")
 const recovery = troubleshooting.split("## decode_failed: a stored row\n")[1]!
@@ -34,5 +36,18 @@ describe("imported ledger retention documentation", () => {
     expect(retention).toMatch(/Pause execution and replay on every process/i)
     expect(retention).toMatch(/Unknown reference state must return `false` or fail/i)
     expect(retention).toMatch(/including imports made before this policy existed/i)
+  })
+})
+
+describe("admission complaint vocabulary", () => {
+  it("names the complaint the shared boundary emits for an oversized container", () => {
+    // The adapter forwards `@smthrs/canonical`'s complaint verbatim, and that
+    // wording moved when admission became the shared boundary. A stale row
+    // sends an operator searching their logs for text nothing emits.
+    const failure = Effect.runSync(
+      Effect.flip(CacheStore.encodeCanonical(new Array(CacheStore.maximumJsonMembers + 1).fill(0), "result"))
+    )
+    expect(troubleshooting).toContain(failure.message.replace(/^result /, ""))
+    expect(troubleshooting).not.toContain("contains more than 100000 members")
   })
 })

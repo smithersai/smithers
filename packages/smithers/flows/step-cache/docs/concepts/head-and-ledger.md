@@ -50,9 +50,12 @@ sharing its parent's keys, or a shared-tier write-back.
    own provenance carries a different `meta`, `createdAtMs`, and run identity
    without being a conflict, so that is `ExistingSame`.
 
-`Conflict` therefore means one thing only: two runs disagree about what a step
-produced. That is the signal an inconsistency receiver acts on, and reporting
-it where it has not happened fails a run over a divergence that does not exist.
+`Conflict` therefore names either refusal: an immutable provenance record asked
+to hold different bytes, or a head asked to hold a different `result`. Only the
+head stage needs two runs, so a retry that changes `meta` or `createdAtMs`
+alone conflicts inside one run. That is the signal an inconsistency receiver
+acts on, and reporting it where it has not happened fails a run over a
+divergence that does not exist.
 
 Whether an insert conflicted, and whether a fenced delete hit, are read through
 `affectedRows` from [`@smthrs/database`](/api/database) rather than a

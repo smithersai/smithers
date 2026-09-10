@@ -58,22 +58,43 @@ interface Service {
     keyDigest: string,
     options?: EvictOptions
   ) => Effect.Effect<boolean, CacheStoreError>
-  readonly sweepExpired: (olderThanMs: number) => Effect.Effect<number, CacheStoreError>
+  readonly sweepExpired: (olderThanMs: number, options?: SweepOptions) => Effect.Effect<number, CacheStoreError>
 }
 ```
 
-| Method         | Answers                                                                                                                                                         |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `get`          | The entry under `keyDigest`: the mutable head by default, the version a named provenance recorded when `options.recordedBy` is set, `Option.none()` for a miss. |
-| `put`          | `Inserted`, `ExistingSame`, or `Conflict`. One call writes the head row and the provenance row in a single transaction.                                         |
-| `evict`        | `true` when a row was deleted, `false` when none matched. With `options.ifRecordedBy` the delete is one fenced compare-and-swap.                                |
-| `sweepExpired` | How many head rows were deleted. Rows recorded strictly before the floor go; a row recorded exactly at it stays. The ledger is never swept.                     |
+| Method         | Answers                                                                                                                                                           |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `get`          | The entry under `keyDigest`: the mutable head by default, the version a named provenance recorded when `options.recordedBy` is set, `Option.none()` for a miss.   |
+| `put`          | `Inserted`, `ExistingSame`, or `Conflict`. One call writes the head row and the provenance row in a single transaction.                                           |
+| `evict`        | `true` when a row was deleted, `false` when none matched. With `options.ifRecordedBy` the delete is one fenced compare-and-swap.                                  |
+| `sweepExpired` | How many head rows were deleted. Rows recorded strictly before the floor go; a row recorded exactly at it stays. Ledger collection requires `canReclaimRecorded`. |
 
 `get` and `evict` validate their arguments before any statement is issued, so a
 malformed key, provenance, or age bound fails with `invalid_cache` rather than
 reading as an ordinary miss. See
 [read the result one event recorded](/guides/read-a-recorded-result/) and
 [evict a poisoned entry](/guides/evict-a-poisoned-entry/).
+
+### SweepOptions
+
+```ts
+interface SweepOptions {
+  readonly canReclaimRecorded?: (
+    reference: Pick<CacheEntry, "keyDigest" | "recordedRunId" | "recordedEventSeq">
+  ) => Effect.Effect<boolean, CacheStoreError>
+}
+```
+
+Optional host policy for old ledger rows. Return `true` only after all local
+references to that exact provenance have been released. No callback means no
+ledger collection. It runs inside the sweep's writer transaction and a failure
+rolls back the sweep. The head deletion count remains the return value.
+`CombinedCacheStore` forwards these options to the local tier only.
+
+Quiesce all execution and replay while checking references and sweeping. See
+[ledger retention](/troubleshooting/#flows_step_cache_recorded-grows-and-nothing-reclaims-it)
+for coordination requirements. The callback must use local reads and preserve
+rows when reference state is unknown.
 
 ### CacheEntry
 
@@ -150,8 +171,10 @@ type PutResult =
 ```
 
 `Inserted` created the head row. `ExistingSame` found a row that does not
-disagree. `Conflict` found one that does: two runs recorded different results
-under one digest. How the two stages arbitrate is in
+disagree. `Conflict` found bytes the store will not overwrite: the same
+provenance re-recorded with a different `result`, `meta`, or `createdAtMs`, or
+a different `result` another run already recorded under this digest. How the
+two stages arbitrate is in
 [the head and the ledger](/concepts/head-and-ledger/).
 
 ### RecordedBy
@@ -376,9 +399,12 @@ const snapshotEntry: (input: CacheEntry) => Effect.Effect<CacheEntry, CacheStore
 ```
 
 Takes an inert, detached, frozen snapshot of a candidate entry at effect start,
-then decodes it against `CacheEntry`. Accessors, symbol keys, extra enumerable
-members, and non-plain shells are refused with `invalid_cache` without running
-caller code.
+then decodes it against `CacheEntry`. The shell is read through its own
+descriptors, so any object carrying exactly the six fields as enumerable own
+data properties is accepted, including a class instance whose prototype methods
+are never called. Accessors, symbol keys, and extra enumerable own members on
+the shell are refused with `invalid_cache` without running caller code, and the
+nested `result` and `meta` trees must be plain.
 
 ## CacheStoreMetrics
 
@@ -537,6 +563,18 @@ The endpoint must be HTTPS unless its host is loopback, and it may carry no
 userinfo, query, or fragment. Anything else fails `make` with `invalid_cache`.
 The endpoint and its credentials are a capability, never an input: they are not
 hashed into a step key and never journaled.
+
+All names configured in `headers` are redacted case-insensitively in Effect
+HTTP tracing spans. Each request extends the caller's existing header
+redaction policy locally, preserving its defaults and custom matchers.
+
+Each operation closes its HTTP response scope before returning, including
+misses, errors, publications, evictions, deadlines, and caller interruption.
+Unread responses are aborted when that scope closes.
+
+`maxResponseBytes` counts encoded UTF-8 bytes, inclusively. Declared lengths
+above the bound are rejected before reading; streamed bodies stop at the first
+chunk that crosses the bound, with a size-specific `persistence_failed` error.
 
 ### defaultRequestTimeout
 
