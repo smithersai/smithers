@@ -686,8 +686,9 @@ flows. Precedence is the pack's `origin`, and a shadowed definition is reported
 as a `shadowed` warning naming both packs. See
 [Load workflow packs](./guides/load-packs.md).
 
-The host that calls `Pack.read` must surface its manifest warnings before
-projecting that result to `Installed`, whose public shape retains none.
+A pack's manifest warnings travel with it: spread `Pack.read`'s result into an
+`Installed` and add `origin`, and `registry.warnings()` reports them beside the
+pack's scan warnings.
 
 ### Registry.makeNoop, Registry.layerNoop
 
@@ -1101,6 +1102,7 @@ interface Installed {
   readonly manifest: Manifest
   readonly dir: string
   readonly origin: Origin
+  readonly warnings?: ReadonlyArray<DiscoveryWarning> | undefined
 }
 
 interface Scan {
@@ -1138,8 +1140,9 @@ pack in every descriptor's provenance, so there is nothing useful to do without
 it. An unsafe `flows` or `skills` entry fails the same way, naming the entry.
 
 `warnings` holds one `unknown_pack_key` per manifest key outside `name`,
-`version`, `flows`, `skills`, and `requires`. Surface them: a misspelled
-`requires` would otherwise disable the compatibility gate in silence.
+`version`, `flows`, `skills`, and `requires`. Spread this result into an
+`Installed` and add `origin` to carry them: a misspelled `requires` would
+otherwise disable the compatibility gate in silence.
 
 ### Pack.sources
 
@@ -1303,9 +1306,13 @@ class RegistryError {
 A failure while constructing, looking up, loading, or rendering a registry
 entry.
 
-Both errors carry the offending `path` as a field rather than only inside the
-prose message, so a caller can act on it without parsing text. Each code, with
-its cause and its fix, is in [Troubleshooting](./troubleshooting.md).
+Both errors carry `module` and `method`, the operation that raised them, and
+carry the offending `path` as a field rather than only inside the prose message
+whenever the failure is about a file. A `DiscoveryError` always names its source
+root; a `RegistryError` names no path for `not_found`, `system_collision`, and
+`not_prompt_flow`, which are about a name rather than a file. Each code, with
+its fields, its cause, and its fix, is in
+[Troubleshooting](./troubleshooting.md).
 
 ### RegistryError.RegistryFailure
 

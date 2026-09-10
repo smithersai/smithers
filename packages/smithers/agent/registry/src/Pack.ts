@@ -128,6 +128,13 @@ export interface Installed {
   /** The pack root. Every manifest path is resolved against it. */
   readonly dir: string
   readonly origin: Origin
+  /**
+   * The manifest diagnostics {@link read} produced, carried so a registry
+   * built from this pack reports them from `registry.warnings()`. A host that
+   * constructs an `Installed` by hand has none, so it is optional: spreading
+   * `read`'s result and adding `origin` is what carries them across.
+   */
+  readonly warnings?: ReadonlyArray<DiscoveryWarning> | undefined
 }
 
 /**

@@ -36,7 +36,9 @@ and any `unknown_pack_key` warnings. A manifest that is missing, unparseable,
 or incomplete fails `RegistryError { code: "invalid_pack" }` rather than
 half-loading, because the manifest is what names the pack in every descriptor's
 provenance. The unknown-key warnings matter: a misspelled `requires` would
-otherwise disable the compatibility gate in silence.
+otherwise disable the compatibility gate in silence. Spread that result into an
+`Installed` and add `origin`, and the registry reports them from
+`warnings()` beside every scan warning the pack produced.
 
 ## Scan a set of packs
 

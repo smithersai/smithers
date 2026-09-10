@@ -134,9 +134,13 @@ const same = Effect.gen(function*() {
 })
 ```
 
-Both fail with `ExecutableError` rather than reporting it, which is what a
-single named launch wants: an operator asking for one flow should be told why
-it will not run.
+Both fail rather than report, which is what a single named launch wants: an
+operator asking for one flow should be told why it will not run. The two halves
+fail differently. Looking the name up fails with
+`RegistryError { code: "not_found" }`, naming the method that asked, so
+`fromRegistry` on an unknown name never reaches the bridge. Lowering and
+loading a descriptor the registry did hold fails with `ExecutableError`. See
+[Troubleshooting](../troubleshooting.md).
 
 ## Supply your own module loader
 

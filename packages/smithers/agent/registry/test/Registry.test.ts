@@ -593,6 +593,37 @@ describe("Registry", () => {
     expect(error.code).toBe("not_found")
   })
 
+  it("names the method the caller invoked on every not_found", async () => {
+    const failures = await Effect.runPromise(
+      provideRegistry(
+        Effect.gen(function*() {
+          const registry = yield* Registry.Registry
+          return {
+            get: yield* Effect.flip(registry.get("does-not-exist")),
+            loadBody: yield* Effect.flip(registry.loadBody("does-not-exist")),
+            runPrompt: yield* Effect.flip(registry.runPrompt("does-not-exist", { args: "" }))
+          }
+        })
+      )
+    )
+
+    expect(failures.get).toMatchObject({
+      code: "not_found",
+      method: "get",
+      message: `not_found: Registry.get: flow "does-not-exist" was not found`
+    })
+    expect(failures.loadBody).toMatchObject({
+      code: "not_found",
+      method: "loadBody",
+      message: `not_found: Registry.loadBody: flow "does-not-exist" was not found`
+    })
+    expect(failures.runPrompt).toMatchObject({
+      code: "not_found",
+      method: "runPrompt",
+      message: `not_found: Registry.runPrompt: flow "does-not-exist" was not found`
+    })
+  })
+
   it("fails construction when either colliding source is system", async () => {
     const error = await Effect.runPromise(
       Effect.gen(function*() {
@@ -601,6 +632,36 @@ describe("Registry", () => {
       }).pipe(
         Effect.provide(Registry.layer({ sources: [{ ...project, system: true }, foreign] })),
         Effect.provide(Discovery.layer),
+        Effect.provide(platformLayer),
+        Effect.flip
+      )
+    )
+
+    expect(error.code).toBe("system_collision")
+  })
+
+  it("fails construction when a pack redefines a system flow name", async () => {
+    const discovery = Discovery.makeNoop({
+      scan: () => Effect.succeed(new SourceScan({ entries: [descriptor("review")], warnings: [] }))
+    })
+    const error = await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* Registry.Registry
+      }).pipe(
+        Effect.provide(Registry.layer({
+          sources: [{ ...project, system: true }],
+          packs: {
+            runtimeVersion: "1.0.0-rc.0",
+            installed: [
+              {
+                dir: fixtures,
+                origin: "installed",
+                manifest: { name: "first", version: "1.0.0", flows: ["project/flows"] } as never
+              }
+            ]
+          }
+        })),
+        Effect.provide(Layer.succeed(Discovery.Discovery)(discovery)),
         Effect.provide(platformLayer),
         Effect.flip
       )
@@ -916,8 +977,14 @@ describe("Registry stubs", () => {
       code: "not_found",
       message: `not_found: Registry.get: flow "missing" was not found`
     })
-    expect(result.body.code).toBe("not_found")
-    expect(result.prompt.code).toBe("not_found")
+    expect(result.body).toMatchObject({
+      code: "not_found",
+      message: `not_found: Registry.loadBody: flow "missing" was not found`
+    })
+    expect(result.prompt).toMatchObject({
+      code: "not_found",
+      message: `not_found: Registry.runPrompt: flow "missing" was not found`
+    })
   })
 
   it("keeps stub methods that are not overridden", async () => {

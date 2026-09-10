@@ -233,6 +233,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
             discoveryError({
               code: "root_missing",
               method: "scan",
+              path: source.root,
               description: `source root "${source.root}" does not exist`
             })
           )
@@ -243,6 +244,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
             discoveryError({
               code: "read_failed",
               method: "scan",
+              path: source.root,
               description: `could not inspect source root "${source.root}"`,
               cause
             })
@@ -253,6 +255,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
             discoveryError({
               code: "invalid_root",
               method: "scan",
+              path: source.root,
               description: `source root "${source.root}" is not a directory`
             })
           )
@@ -267,6 +270,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
             discoveryError({
               code: "read_failed",
               method: "scan",
+              path: source.root,
               description: `could not read source root "${source.root}"`,
               cause
             })

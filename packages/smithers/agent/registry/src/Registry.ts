@@ -119,10 +119,17 @@ interface Snapshot {
   readonly warnings: ReadonlyArray<DiscoveryWarning>
 }
 
-const notFound = (name: string): RegistryError =>
+/**
+ * The one `not_found`, named for the method the caller invoked.
+ *
+ * `method` is a field rather than a constant because a caller reading a
+ * failure needs to know which of `get`, `loadBody`, and `runPrompt` refused
+ * the name it passed, which is what `docs/troubleshooting.md` promises.
+ */
+const notFound = (name: string, method: "get" | "loadBody" | "runPrompt"): RegistryError =>
   registryError({
     code: "not_found",
-    method: "get",
+    method,
     description: `flow "${name}" was not found`
   })
 
@@ -172,36 +179,79 @@ const ownedConfig = (config: Config): Config =>
       })
   })
 
+/**
+ * Projects already-folded entries into the snapshot the service reads.
+ *
+ * First-found precedence is {@link firstFound}'s, so this is a projection and
+ * not a second dedupe: every entry it receives has a distinct name.
+ */
 const snapshotFrom = (
   entries: ReadonlyArray<FlowDescriptor>,
   registryWarnings: ReadonlyArray<DiscoveryWarning>
 ): Snapshot => {
   const byName = new Map<string, FlowDescriptor>()
-  const snapshotEntries: Array<FlowDescriptor> = []
-  const snapshotWarnings = registryWarnings.map((warning) => ownedValue(warning))
-  for (const supplied of entries) {
-    const entry = ownedDescriptor(supplied)
-    const existing = byName.get(entry.name)
-    if (existing !== undefined) {
-      snapshotWarnings.push(
-        new DiscoveryWarning({
-          code: "duplicate_name",
-          path: entry.path,
-          name: entry.name,
-          message: `Duplicate flow name "${entry.name}"; keeping first entry from "${existing.path}"`
-        })
-      )
-      continue
-    }
+  const snapshotEntries = entries.map(ownedDescriptor)
+  for (const entry of snapshotEntries) {
     byName.set(entry.name, entry)
-    snapshotEntries.push(entry)
   }
   const frozenEntries = Object.freeze(snapshotEntries)
   return {
     entries: frozenEntries,
     visible: Object.freeze(frozenEntries.filter((entry) => entry.modelInvocable)),
     byName,
-    warnings: Object.freeze(snapshotWarnings)
+    warnings: Object.freeze(registryWarnings.map((warning) => ownedValue(warning)))
+  }
+}
+
+/**
+ * The one first-found fold both registry constructors use.
+ *
+ * A collision between two ordinary sources keeps the first entry and reports
+ * one `duplicate_name` warning; a collision involving a system source is a
+ * refusal the caller owns. `fold` returns that refusal rather than failing, so
+ * {@link layerFromDescriptors} shares this dedupe and its wording without
+ * acquiring a failure channel it can never use: its batch is never a system
+ * source, so it cannot collide that way.
+ */
+const firstFound = (): {
+  readonly entries: ReadonlyArray<FlowDescriptor>
+  readonly warnings: Array<DiscoveryWarning>
+  readonly fold: (batch: ReadonlyArray<FlowDescriptor>, system: boolean) => RegistryError | undefined
+} => {
+  const retained = new Map<string, RetainedDescriptor>()
+  const entries: Array<FlowDescriptor> = []
+  const warnings: Array<DiscoveryWarning> = []
+  return {
+    entries,
+    warnings,
+    fold: (batch, system) => {
+      for (const entry of batch) {
+        const existing = retained.get(entry.name)
+        if (existing === undefined) {
+          retained.set(entry.name, { descriptor: entry, system })
+          entries.push(entry)
+          continue
+        }
+
+        if (existing.system || system) {
+          return registryError({
+            code: "system_collision",
+            method: "make",
+            description: `flow "${entry.name}" collides with the system namespace`
+          })
+        }
+
+        warnings.push(
+          new DiscoveryWarning({
+            code: "duplicate_name",
+            path: entry.path,
+            name: entry.name,
+            message: `Duplicate flow name "${entry.name}"; keeping first entry from "${existing.descriptor.path}"`
+          })
+        )
+      }
+      return undefined
+    }
   }
 }
 
@@ -242,7 +292,10 @@ const scanPacks = (
     }
     for (const pack of installed) {
       const entries: Array<FlowDescriptor> = []
-      const warnings: Array<DiscoveryWarning> = []
+      // A manifest warning `Pack.read` produced is the pack's own diagnostic,
+      // so it is merged with the pack's scan warnings rather than left at the
+      // boundary: `registry.warnings()` is where an operator reads both.
+      const warnings: Array<DiscoveryWarning> = [...pack.warnings ?? []]
       const sourceScans = yield* Effect.forEach(
         yield* Pack.sources(pack, path),
         (source) => Effect.map(Effect.result(discovery.scan(source)), (scan) => ({ source, scan })),
@@ -274,44 +327,7 @@ const scanSources = (
   discovery: Discovery
 ): Effect.Effect<Snapshot, RegistryError | DiscoveryError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
-    const retained = new Map<string, RetainedDescriptor>()
-    const entries: Array<FlowDescriptor> = []
-    const registryWarnings: Array<DiscoveryWarning> = []
-
-    /** Folds one scanned batch into the first-found snapshot under construction. */
-    const fold = (
-      batch: ReadonlyArray<FlowDescriptor>,
-      system: boolean
-    ): Effect.Effect<void, RegistryError> =>
-      Effect.gen(function*() {
-        for (const entry of batch) {
-          const existing = retained.get(entry.name)
-          if (existing === undefined) {
-            retained.set(entry.name, { descriptor: entry, system })
-            entries.push(entry)
-            continue
-          }
-
-          if (existing.system || system) {
-            return yield* Effect.fail(
-              registryError({
-                code: "system_collision",
-                method: "make",
-                description: `flow "${entry.name}" collides with the system namespace`
-              })
-            )
-          }
-
-          registryWarnings.push(
-            new DiscoveryWarning({
-              code: "duplicate_name",
-              path: entry.path,
-              name: entry.name,
-              message: `Duplicate flow name "${entry.name}"; keeping first entry from "${existing.descriptor.path}"`
-            })
-          )
-        }
-      })
+    const folded = firstFound()
 
     const sourceScans = yield* Effect.forEach(
       config.sources,
@@ -320,8 +336,9 @@ const scanSources = (
     )
     for (const { scan, source } of sourceScans) {
       if (Result.isFailure(scan)) return yield* Effect.fail(scan.failure)
-      registryWarnings.push(...scan.success.warnings)
-      yield* fold(scan.success.entries, source.system === true)
+      folded.warnings.push(...scan.success.warnings)
+      const collision = folded.fold(scan.success.entries, source.system === true)
+      if (collision !== undefined) return yield* Effect.fail(collision)
     }
 
     // A pack's flows are scanned AFTER the caller's own sources and folded in
@@ -331,11 +348,12 @@ const scanSources = (
     // naming both packs; a pack is never a system source.
     if (config.packs !== undefined) {
       const packed = yield* scanPacks(config.packs, discovery)
-      registryWarnings.push(...packed.warnings)
-      yield* fold(packed.entries, false)
+      folded.warnings.push(...packed.warnings)
+      const collision = folded.fold(packed.entries, false)
+      if (collision !== undefined) return yield* Effect.fail(collision)
     }
 
-    return snapshotFrom(entries, registryWarnings)
+    return snapshotFrom(folded.entries, folded.warnings)
   })
 
 const fromRef = (
@@ -350,11 +368,18 @@ const fromRef = (
     }
   )
 
-  const get = Effect.fn("Registry.get")(function*(name: string): Effect.fn.Return<FlowDescriptor, RegistryError> {
-    return yield* Effect.flatMap(Ref.get(state), (snapshot) => {
+  /** One snapshot lookup, reported as the public method that asked for it. */
+  const lookup = (
+    name: string,
+    method: "get" | "loadBody" | "runPrompt"
+  ): Effect.Effect<FlowDescriptor, RegistryError> =>
+    Effect.flatMap(Ref.get(state), (snapshot) => {
       const entry = snapshot.byName.get(name)
-      return entry === undefined ? Effect.fail(notFound(name)) : Effect.succeed(entry)
+      return entry === undefined ? Effect.fail(notFound(name, method)) : Effect.succeed(entry)
     })
+
+  const get = Effect.fn("Registry.get")(function*(name: string): Effect.fn.Return<FlowDescriptor, RegistryError> {
+    return yield* lookup(name, "get")
   })
 
   const loadBody = Effect.fn("Registry.loadBody")(
@@ -362,7 +387,7 @@ const fromRef = (
       name: string,
       expectedExecutionDigest?: string
     ): Effect.fn.Return<FlowBody, RegistryError | DiscoveryError> {
-      const descriptor = yield* get(name)
+      const descriptor = yield* lookup(name, "loadBody")
       if (expectedExecutionDigest !== undefined && executionDigest(descriptor) !== expectedExecutionDigest) {
         return yield* registryError({
           code: "execution_changed",
@@ -400,6 +425,9 @@ const fromRef = (
     name: string,
     input: MarkdownFlow.Input
   ): Effect.fn.Return<MarkdownFlow.Output, RegistryError | DiscoveryError> {
+    // Looked up here so an unknown flow names the method the caller invoked
+    // rather than the `loadBody` this delegates the body read to.
+    yield* lookup(name, "runPrompt")
     return yield* Effect.flatMap(loadBody(name), (body) =>
       body._tag === "Prompt"
         ? Effect.succeed(MarkdownFlow.renderPrompt(body, input))
@@ -520,7 +548,11 @@ export const layerFromDescriptors = (
   entries: ReadonlyArray<FlowDescriptor>,
   warnings: ReadonlyArray<DiscoveryWarning> = []
 ): Layer.Layer<Registry, never, FileSystem.FileSystem | Path.Path> => {
-  const snapshot = snapshotFrom(entries, warnings)
+  const folded = firstFound()
+  // Descriptors handed to an in-memory registry are never a system source, so
+  // `fold` cannot report a collision here.
+  folded.fold(entries, false)
+  const snapshot = snapshotFrom(folded.entries, [...warnings, ...folded.warnings])
   return Layer.effect(
     Registry,
     Effect.gen(function*() {
@@ -561,11 +593,7 @@ export const layerFromPacks = (
   Registry,
   RegistryError | DiscoveryError,
   Discovery | FileSystem.FileSystem | Path.Path
-> => {
-  // The host that calls Pack.read must surface its manifest warnings before
-  // projecting that result to Installed, whose public shape retains none.
-  return layer({ sources: [], packs: { installed: packs, runtimeVersion: options.runtimeVersion } })
-}
+> => layer({ sources: [], packs: { installed: packs, runtimeVersion: options.runtimeVersion } })
 
 /**
  * Creates an empty registry stub with optional method overrides.
@@ -574,14 +602,14 @@ export const layerFromPacks = (
  * @since 0.1.0
  */
 export const makeNoop = (overrides: Partial<Registry> = {}): Registry => {
-  const get = (name: string): Effect.Effect<FlowDescriptor, RegistryError> => Effect.fail(notFound(name))
+  const get = (name: string): Effect.Effect<FlowDescriptor, RegistryError> => Effect.fail(notFound(name, "get"))
   return Registry.of({
     list: Effect.fn("Registry.list")(() => Effect.succeed([])),
     visible: Effect.fn("Registry.visible")(() => Effect.succeed([])),
     get,
     getOption: Effect.fn("Registry.getOption")(() => Effect.succeed(Option.none())),
-    loadBody: Effect.fn("Registry.loadBody")((name) => Effect.fail(notFound(name))),
-    runPrompt: Effect.fn("Registry.runPrompt")((name) => Effect.fail(notFound(name))),
+    loadBody: Effect.fn("Registry.loadBody")((name) => Effect.fail(notFound(name, "loadBody"))),
+    runPrompt: Effect.fn("Registry.runPrompt")((name) => Effect.fail(notFound(name, "runPrompt"))),
     refresh: Effect.fn("Registry.refresh")(() => Effect.void),
     warnings: Effect.fn("Registry.warnings")(() => Effect.succeed([])),
     ...overrides

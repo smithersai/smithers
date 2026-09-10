@@ -24,6 +24,9 @@
   to does not move.
 - `DiscoveryError`, `RegistryError`, and `ExecutableError` carry the offending
   `path` as a field rather than only inside their prose message.
+- `Pack.Installed` carries the manifest warnings `Pack.read` produced, so
+  spreading that result into an installed pack reports `unknown_pack_key`
+  through `registry.warnings()`.
 - Added the `unreadable_pack_range` registry error code and the
   `unknown_pack_key`, `symlink_cycle`, `max_depth_exceeded`, and
   `entry_too_large` discovery warning codes.
@@ -32,6 +35,12 @@
   generated from package-owned sources instead of hand-maintained.
 
 ### Fixed
+
+- A source-root failure now carries the root as `path`, so `root_missing`,
+  `invalid_root`, and `read_failed` name the offending directory as a field
+  rather than only inside their message.
+- `not_found` names the method the caller invoked, so a missing flow reported
+  by `loadBody` or `runPrompt` no longer says `get`.
 
 - Carried `Source.confinementRoot` from packs into discovery. When real paths
   are available, every descended directory and selected entry file is checked

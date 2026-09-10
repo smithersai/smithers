@@ -706,6 +706,30 @@ describe("Pack.checkCompatible", () => {
 })
 
 describe("Registry.layerFromPacks", () => {
+  it("reads a manifest warning back through registry.warnings()", async () => {
+    const nodes = tree([
+      ...packTree({
+        dir: "/typo",
+        manifest: { ...localManifest, require: { smithers: ">=9.0.0" } },
+        flows: { review: "Review it locally." }
+      })
+    ])
+    const read = await readPack(nodes, "/typo")
+
+    const warnings = await withRegistry(
+      nodes,
+      [{ ...read, origin: "local" }],
+      "1.0.0",
+      (registry) => registry.warnings()
+    )
+
+    expect(warnings).toContainEqual(expect.objectContaining({
+      code: "unknown_pack_key",
+      path: "/typo/pack.json",
+      message: expect.stringContaining("require")
+    }))
+  })
+
   it("names the pack and version in every descriptor's provenance", async () => {
     const entries = await withRegistry(
       both,

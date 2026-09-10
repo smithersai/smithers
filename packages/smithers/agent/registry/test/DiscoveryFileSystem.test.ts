@@ -66,6 +66,7 @@ describe("Discovery host failures", () => {
 
     expect(error).toMatchObject({
       code: "invalid_root",
+      path: root,
       message: `invalid_root: Discovery.scan: source root "${root}" is not a directory`
     })
   })
@@ -75,6 +76,7 @@ describe("Discovery host failures", () => {
 
     expect(error).toMatchObject({
       code: "read_failed",
+      path: root,
       message: `read_failed: Discovery.scan: could not inspect source root "${root}"`,
       cause: { _tag: "PlatformError" }
     })
@@ -85,6 +87,7 @@ describe("Discovery host failures", () => {
 
     expect(error).toMatchObject({
       code: "read_failed",
+      path: root,
       message: `read_failed: Discovery.scan: could not read source root "${root}"`
     })
   })

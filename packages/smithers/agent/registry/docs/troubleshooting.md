@@ -3,10 +3,10 @@ title: "Troubleshooting"
 description: "The typed failures @smthrs/registry reports: every DiscoveryError, RegistryError, and ExecutableError code, what causes it, and what to change."
 ---
 
-Every failure this package reports is typed and carries a stable `code`, the
-`module` and `method` that raised it, and the offending `path` as a field
-rather than only inside the prose message. Find the code and read the matching
-section.
+Every failure this package reports is typed and carries a stable `code` and a
+`message`. The fields around them differ by family, so each section below opens
+with what its failures always carry and what they carry only when the failure
+is about a file. Find the code and read the matching section.
 
 The three failure types are `DiscoveryError`, `RegistryError`, and
 `ExecutableError`. Each carries a `_tag` prefixed `flows/registry/`, which is
@@ -23,6 +23,10 @@ Non-fatal diagnostics are not here. A scan that survives a bad entry reports a
 Raised by `Discovery.scan`, and therefore by any registry layer built over it.
 A scan either produces a complete `SourceScan` or fails; there is no partial
 scan.
+
+Every `DiscoveryError` carries `module` and `method`, the operation that raised
+it, and `path`, the source root the scan was refused at. `cause` carries the
+host error when one was raised.
 
 ### root_missing
 
@@ -54,6 +58,13 @@ about the root itself: an unreadable directory found during the walk is a
 
 Raised while constructing a registry, looking one up, loading a body, or
 rendering a prompt.
+
+Every `RegistryError` carries `module` and `method`, the operation that raised
+it: a `not_found` from `runPrompt` says `runPrompt`, not the `loadBody` it
+delegates the body read to. `path` is present when the failure is about a file,
+which is every code below except `not_found`, `system_collision`, and
+`not_prompt_flow`; those are about a name the snapshot does not hold, and there
+is no file to name.
 
 ### not_found
 
@@ -147,7 +158,10 @@ declaration from a pack that genuinely needs a newer runtime.
 
 Raised while making one descriptor runnable, before the flow exists. It carries
 `flow`, the descriptor's name, and `available`, the delegates the host has
-registered.
+registered. `delegate` is present when the refusal is about one named delegate,
+and `path` when it is about the descriptor's file. This family has no `module`
+or `method`: `flow` is what identifies the refusal, and every one of them is
+raised by the same bridge.
 
 ### missing_delegate
 

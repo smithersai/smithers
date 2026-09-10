@@ -137,6 +137,7 @@ describe("Discovery", () => {
     )
 
     expect(error.code).toBe("root_missing")
+    expect(error.path).toBe(missingRoot)
   })
 
   it("reads only metadata during discovery and never calls readFileString", async () => {
