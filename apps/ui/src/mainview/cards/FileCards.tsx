@@ -15,7 +15,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import type { Card } from "../state/AppState"
 import type { AppController } from "../state/AppController"
 import { ControllerContext } from "../ControllerContext"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 /*
@@ -131,7 +131,7 @@ export const contentKey = (content: string): string => {
 }
 
 export interface FileCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 /** The entry's full path under the card's path — the argument the row's command takes. */
@@ -156,7 +156,7 @@ const FileCardHeader = (props: {
   readonly address?: string | undefined
   readonly readAt?: { readonly changeId: string | null; readonly commitId: string | null; readonly source?: "head" | "working-copy" | undefined } | undefined
   readonly refreshCommand: "files.read" | "files.list"
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
   readonly trailing?: ReactNode
 }) => {
   const controller = useContext(ControllerContext)
@@ -182,7 +182,7 @@ export const FileCardAddressLine = ({
   readonly readAt?: { readonly changeId: string | null; readonly commitId: string | null; readonly source?: "head" | "working-copy" | undefined } | undefined
   readonly head: { readonly changeId: string | null; readonly commitId: string | null } | null
   readonly refreshCommand: "files.read" | "files.list"
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
   /** Rendered at the end of the address line: the file card's language word. */
   readonly trailing?: ReactNode
 }) => {
@@ -228,7 +228,7 @@ const FileCardHeaderLive = ({
   readonly address?: string | undefined
   readonly readAt?: { readonly changeId: string | null; readonly commitId: string | null; readonly source?: "head" | "working-copy" | undefined } | undefined
   readonly refreshCommand: "files.read" | "files.list"
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
   readonly trailing?: ReactNode
 }) => {
   const { data: repositoryRows } = useLiveQuery((q) =>

@@ -35,11 +35,12 @@ import { readDesktopStream, subscribeDesktopStream } from "../state/seams/Deskto
 import { DESKTOP_NOT_READY, GUEST_NOT_READY } from "../state/seams/WorkspaceSeam"
 import { timeLabel } from "../Timestamps"
 import { FileListCardBody } from "./FileCards"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
+import { flowArgs } from "../flows/FlowArgs"
 
 export interface WorkspaceCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 type WorkspaceCard = Extract<Card, { kind: "workspace" }>
@@ -397,7 +398,10 @@ const WorkspaceFacetBody = ({
                 data-flow="workspace.template"
                 aria-label={`Create a template from ${snapshot.name}`}
                 onClick={() =>
-                  onRunCommand("workspace.template", `${snapshot.id} ${payload.workspaceId} --name ${snapshot.name}`)}
+                  onRunCommand(
+                    "workspace.template",
+                    flowArgs("workspace.template", { snapshotId: snapshot.id, workspaceId: payload.workspaceId, name: snapshot.name })
+                  )}
               >
                 Make template
               </Button>

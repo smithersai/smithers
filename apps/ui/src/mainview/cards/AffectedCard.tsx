@@ -6,14 +6,14 @@
  */
 import { Button, EmptyState } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 
 export const AffectedCardBody = ({
   card,
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "affected" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { repoId, status, result, error } = card.payload
   if (status === "pending") return <p className="smithers-card-note">Computing the affected set…</p>

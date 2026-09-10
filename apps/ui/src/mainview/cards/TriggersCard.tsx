@@ -20,13 +20,13 @@ import type { Card } from "../state/AppState"
 import { NO_RULES_SENTENCE } from "../state/seams/TriggersSeam"
 import { timeLabel as clockLabel } from "../Timestamps"
 import { describeEvent, describeSchedule } from "./TriggerEvents"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 type TriggerListCard = Extract<Card, { kind: "trigger-list" }>
 
 export interface TriggerListCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 /** The live state of one registered trigger, in words: only what the box stated. */

@@ -2,7 +2,7 @@
 import { Badge, Button } from "@smthrs/ui"
 import { Bell, BellDot } from "lucide-react"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 export const NotificationsCardBody = ({
@@ -10,7 +10,7 @@ export const NotificationsCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "notifications" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => (
   <div className="world-card-list">
     <ul className="world-card-list">

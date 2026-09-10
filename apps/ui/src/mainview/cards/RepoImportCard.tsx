@@ -11,7 +11,7 @@ import { Badge, Button } from "@smthrs/ui"
 import { CloudDownload, RefreshCw } from "lucide-react"
 import type { Card } from "../state/AppState"
 import { RateLimitLine, useRetryHold } from "./SyncCards"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 
 const PHASE_VARIANT = {
   starting: "outline",
@@ -25,7 +25,7 @@ export const RepoImportCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "repo-import" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { repo, jobId, phase, detail, stage, counts, repository, workspaceId, rateLimit } = card.payload
   /* A refused GitHub call holds Try again until the reset, with the time on it (ADR 0005 "Rate limits"). */

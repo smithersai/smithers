@@ -16,7 +16,7 @@
 import type { CSSProperties } from "react"
 import type { Card, Palette } from "../state/AppState"
 import { PALETTE_METADATA } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 type SwatchVariant = {
@@ -110,7 +110,7 @@ export const ThemePickerCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "theme-picker" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => (
   <div style={gridStyle} role="listbox" aria-label="Color themes">
     {SWATCHES.map((swatch) => {

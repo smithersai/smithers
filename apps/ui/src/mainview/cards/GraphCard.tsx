@@ -30,6 +30,7 @@ import { memo, useMemo, useState } from "react"
 import { reachable } from "@smthrs/rpc/TargetGraph"
 import type { GraphEdge, GraphNode, NodeRunStatus, NodeTiming, TargetGraphResponse } from "@smthrs/rpc/TargetGraph"
 import type { Card } from "../state/AppState"
+import type { RunCommand } from "./CardFamily"
 
 /** The rule's family: the segment before the first dot (`Shell.Test` → `Shell`). */
 export const ruleFamily = (rule: string): string => {
@@ -214,7 +215,7 @@ export const GraphNodeDrawer = ({
   readonly node: GraphNode
   readonly repoId: string
   readonly timing: NodeTiming | undefined
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
   readonly onDismissDrawer: () => void
 }) => {
   const [copied, setCopied] = useState(false)
@@ -333,7 +334,7 @@ export const GraphCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "graph" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { status, graph, error, focus, runId, run, view } = card.payload
   /*

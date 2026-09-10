@@ -12,14 +12,14 @@ import { Button } from "@smthrs/ui"
 import { lazy, Suspense } from "react"
 import type { Card } from "../state/AppState"
 import { WIKI_DISPLAY_NAME, WIKI_GRAPH_ALL_SCOPE } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 type WikiLinksCard = Extract<Card, { kind: "wiki-links" }>
 type WikiGraphCard = Extract<Card, { kind: "wiki-graph" }>
 
 export interface WikiCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 const KnowledgeGraphSurface = lazy(() =>

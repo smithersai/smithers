@@ -1,11 +1,12 @@
 import { runSourceCommand } from "../flows/RunCommand"
 import type { Card } from "../state/AppState"
 import { codingPocOf } from "./CodingPoc"
+import type { RunCommand } from "./CardFamily"
 
 /** The retained measured files are text. Generated HTML is never executed in the app. */
 export const CodingPocBody = ({ card, onRunCommand: sendRunCommand }: {
   readonly card: Extract<Card, { kind: "run-trace" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const poc = codingPocOf(card)
   if (poc === undefined) return null

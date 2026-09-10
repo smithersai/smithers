@@ -12,7 +12,7 @@
 import { Button, Confirmation, ConfirmationAccepted, ConfirmationAction, ConfirmationActions, ConfirmationRejected, ConfirmationRequest } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
 import { timeLabel as clockLabel } from "../Timestamps"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 /** Why a run is not moving, in words: the control plane's reason, translated. */
@@ -27,7 +27,7 @@ export const RunListCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "run-list" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { repo, runs } = card.payload
   /*

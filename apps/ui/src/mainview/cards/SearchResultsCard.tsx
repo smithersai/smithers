@@ -11,13 +11,14 @@ import type { SearchAction, SearchItem, SearchItemKind } from "@smthrs/rpc/Cards
 import { Button } from "@smthrs/ui"
 import { GROUP_LABELS, KIND_ORDER } from "../flows/SearchQuery"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
+import { runtimeFlowName } from "../flows/FlowName"
 
 type SearchResultsCard = Extract<Card, { kind: "search-results" }>
 
 export interface SearchResultsCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 /** The items grouped by kind, in the ranking's kind order, each group in the answer's order. */
@@ -40,7 +41,7 @@ const ActionButton = ({ action, onRunCommand }: { readonly action: SearchAction 
     data-flow={action.flow}
     data-role={action.role}
     data-testid={`search-action-${action.flow}`}
-    onClick={() => onRunCommand(action.flow, action.args)}
+    onClick={() => onRunCommand(runtimeFlowName(action.flow), action.args)}
   >
     {action.label}
   </Button>
@@ -61,7 +62,7 @@ export const SearchResultsCardBody = ({ card, onRunCommand }: { readonly card: S
           size="sm"
           data-flow={payload.flow}
           data-testid="search-results-rerun"
-          onClick={() => onRunCommand(payload.flow, payload.args)}
+          onClick={() => onRunCommand(runtimeFlowName(payload.flow), payload.args)}
         >
           Search again
         </Button>

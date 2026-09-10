@@ -1,11 +1,12 @@
 import { runSourceCommand } from "../flows/RunCommand"
 import type { Card } from "../state/AppState"
 import { codingEvidenceOf } from "./CodingPlan"
+import type { RunCommand } from "./CardFamily"
 
 /** Predicted ownership is visible before execution. Recorded receipts arrive through the run journal. */
 export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand }: {
   readonly card: Extract<Card, { kind: "run-trace" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   const { plan, outcome, blockedSpanId } = codingEvidenceOf(card)

@@ -11,11 +11,11 @@ import { Badge, Button, Markdown } from "@smthrs/ui"
 import { MessageSquare } from "lucide-react"
 import type { Card } from "../state/AppState"
 import { trustedHttpsUrl } from "../state/seams/SeamContext"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 export interface IssueCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 /** Only an https linear.app URL off the DTO is followed; anything else renders the identifier as text. */

@@ -21,6 +21,7 @@ import { CodingPlanBody } from "./CodingPlanCard"
 import { CodingPocBody } from "./CodingPocCard"
 import type { Card } from "../state/AppState"
 import { timeLabel } from "../Timestamps"
+import type { RunCommand } from "./CardFamily"
 import {
   durationWords,
   spanMatches,
@@ -103,7 +104,7 @@ export const RunTraceBody = ({
   onRunCommand: sendRunCommand
 }: {
   readonly card: RunTraceCard
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   const { runId, phase, kind } = card.payload

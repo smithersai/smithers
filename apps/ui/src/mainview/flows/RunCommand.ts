@@ -1,3 +1,5 @@
+import type { FlowName } from "./FlowName"
+
 /** The run reference is separate from backend IDs and from freeform message/JSON arguments. */
 export const splitRunSource = (args: string | undefined): { readonly args: string | undefined; readonly sourceCard?: string } => {
   const match = /^\s*sourceCard=(\S+)(?:\s+([\s\S]*))?$/.exec(args ?? "")
@@ -24,7 +26,7 @@ export const runSearchPayload = (ref: string): { readonly runId: string; readonl
 
 export const runSourceCommand = (
   cardId: string,
-  send: (name: string, args?: string) => void
+  send: (name: FlowName, args?: string) => void
 ): typeof send => (name, args) => {
   send(name, takesRunSource(name) && splitRunSource(args).sourceCard === undefined ? `sourceCard=${cardId}${args === undefined ? "" : ` ${args}`}` : args)
 }

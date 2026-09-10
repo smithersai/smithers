@@ -8,7 +8,7 @@
  */
 import { Button } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 /** The allowlist answer in words: allowed, requested and waiting, or not yet allowed. */
@@ -20,7 +20,7 @@ export const AccountCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "account" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => (
   <div className="world-card-list">
     <table className="secrets-table" aria-label="Account">

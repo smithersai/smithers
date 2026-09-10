@@ -8,7 +8,7 @@
 import { Button, EmptyState, StatusPill } from "@smthrs/ui"
 import { timeLabel } from "../Timestamps"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 
 const durationLabel = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
 
@@ -17,7 +17,7 @@ export const RunHistoryCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "run-history" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { repoId, status, runs, selected, error } = card.payload
   if (status === "pending") return <p className="smithers-card-note">Loading run history…</p>

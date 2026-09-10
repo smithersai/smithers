@@ -20,10 +20,10 @@ import { useCallback, useState, useSyncExternalStore } from "react"
 import { useController } from "../ControllerContext"
 import { ageLabel, timeLabel, untilLabel } from "../Timestamps"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 
 export interface SyncCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 type ConnectorSetupCard = Extract<Card, { kind: "connector-setup" }>

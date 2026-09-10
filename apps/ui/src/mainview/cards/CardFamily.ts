@@ -11,7 +11,16 @@
  */
 import type { ReactNode } from "react"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
+import type { FlowName } from "../flows/FlowName"
 import type { Card, WorldDocument } from "../state/AppState"
+
+/**
+ * A card's act: the flow it names, and the slash line the flow's grammar
+ * parses. The name is a FlowName rather than a string, so a card that asks for
+ * `targets.select` no longer compiles; a structured act builds its line with
+ * `flowArgs` (flows/FlowArgs.ts) rather than interpolating one of its own.
+ */
+export type RunCommand = (name: FlowName, args?: string) => void
 
 /** The card of one kind. */
 export type CardOf<K extends Card["kind"]> = Extract<Card, { kind: K }>
@@ -41,7 +50,7 @@ export interface CardActions {
    * notifications, env, import): every in-card act names its command and
    * routes through the registry at the App.tsx binding site.
    */
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
   /*
    * Lane runs — the session's verbose flag, so the run card's Events tab (the
    * raw journal, a debug surface) exists only where verbose does.

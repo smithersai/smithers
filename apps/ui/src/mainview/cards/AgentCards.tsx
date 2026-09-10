@@ -1,7 +1,7 @@
 import { Button, Markdown } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
 import { findAgentRole } from "@smthrs/rpc/AgentRoles"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 /*
@@ -23,7 +23,7 @@ export const AgentsCardBody = ({
   onRunCommand
 }: {
   readonly card: AgentsCard
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { native, agents, error } = card.payload
   if (!native) return <p className="smithers-card-note">Agents run on the native app's harnesses.</p>
@@ -125,7 +125,7 @@ const AgentCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "agent" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { displayName, cwd, phase, exitCode, tabId, roleId, task } = card.payload
   // The purpose rode the card at launch (a custom agent's is in no table); older cards fall back to the built-in row.

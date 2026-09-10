@@ -11,9 +11,10 @@ import { useState } from "react"
 import type { KeyboardEvent } from "react"
 import type { Card } from "../state/AppState"
 import { timeLabel as clockLabel } from "../Timestamps"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { defaultPill, settledPill } from "./CardFamily"
 import { RunTraceBody } from "./RunTraceCard"
+import { flowArgs } from "../flows/FlowArgs"
 
 /*
  * Wave 11 — the embedded run card: live status from the relay event stream,
@@ -44,7 +45,7 @@ export const WorkflowRunCardBody = ({
   readonly card: Extract<Card, { kind: "run-trace" }>
   readonly onStopRun: (cardId: string) => void
   readonly onRetryRun: (cardId: string) => void
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
   readonly debugVerbose?: boolean
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
@@ -245,7 +246,7 @@ const RunSteerRow = ({
   onRunCommand
 }: {
   readonly runId: string
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const [message, setMessage] = useState("")
   const [seat, setSeat] = useState("")
@@ -253,7 +254,7 @@ const RunSteerRow = ({
   const sendMessage = (): void => {
     const body = message.trim()
     if (body === "") return
-    onRunCommand("runs.steer", `${runId} ${body}`)
+    onRunCommand("runs.steer", flowArgs("runs.steer", { runId, body }))
     setMessage("")
   }
   const sendSeat = (): void => {
@@ -293,7 +294,7 @@ const RunSteerRow = ({
           disabled={message.trim() === ""}
           onClick={() => {
             if (message.trim() === "") return
-            onRunCommand("runs.steer", `${runId} ${message.trim()}`)
+            onRunCommand("runs.steer", flowArgs("runs.steer", { runId, body: message.trim() }))
             setMessage("")
           }}
         >

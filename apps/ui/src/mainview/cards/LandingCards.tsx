@@ -7,11 +7,11 @@
 import { Badge, Button, Markdown, RowButton, StatusPill } from "@smthrs/ui"
 import { GitPullRequest, ListChecks, MessageSquare } from "lucide-react"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 export interface LandingCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 export const LandingListCardBody = ({

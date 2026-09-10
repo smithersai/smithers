@@ -11,13 +11,15 @@
 import { Button } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
 import { ACTIVITY_UNAVAILABLE, NO_CONTRIBUTING_GUIDE, welcomeSentence } from "../state/controller/onboarding"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
+import { runtimeFlowName } from "../flows/FlowName"
+import type { FlowName } from "../flows/FlowName"
 
 type OnboardingCard = Extract<Card, { kind: "repo-onboarding" }>
 
 export interface OnboardingCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 /** The maintainer's reads by flow name: the label the button wears and the args it carries. */
@@ -33,7 +35,7 @@ const Door = ({
   args,
   label,
   onRunCommand
-}: { readonly flow: string; readonly args?: string; readonly label: string } & OnboardingCardActions) => (
+}: { readonly flow: FlowName; readonly args?: string; readonly label: string } & OnboardingCardActions) => (
   <Button variant="ghost" size="sm" data-flow={flow} data-testid={`onboarding-${flow}`} onClick={() => onRunCommand(flow, args)}>
     {label}
   </Button>
@@ -62,7 +64,9 @@ export const RepoOnboardingCardBody = ({ card, onRunCommand }: { readonly card: 
         <div className="flow-run-actions">
           {payload.flows.flatMap((flow) => {
             const door = MAINTAINER_DOORS[flow]
-            return door === undefined ? [] : [<Door key={flow} flow={flow} args={door.args(repo)} label={door.label} onRunCommand={onRunCommand} />]
+            return door === undefined
+              ? []
+              : [<Door key={flow} flow={runtimeFlowName(flow)} args={door.args(repo)} label={door.label} onRunCommand={onRunCommand} />]
           })}
         </div>
       </div>

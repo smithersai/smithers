@@ -19,8 +19,9 @@ import {
   workspacesOf
 } from "./TargetsTable"
 import type { TargetRow } from "./TargetsTable"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
+import { flowArgs } from "../flows/FlowArgs"
 
 export const RepoCardBody = ({ card }: { readonly card: Extract<Card, { kind: "repo" }> }) => {
   const { repo } = card.payload
@@ -97,7 +98,7 @@ const TargetDrawer = ({
 }: {
   readonly card: Extract<Card, { kind: "targets" }>
   readonly row: TargetRow
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { repoId } = card.payload
   const { target } = row
@@ -128,7 +129,7 @@ const TargetDrawer = ({
           data-flow="target.select"
           aria-label="Close details"
           title="Close details"
-          onClick={() => onRunCommand("target.select", repoId)}
+          onClick={() => onRunCommand("target.select", flowArgs("target.select", { repoId }))}
         >
           ×
         </Button>
@@ -283,7 +284,7 @@ export const TargetsCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "targets" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { repoId, repoName, status, targets, warnings, highlighted, view, runs, starred } = card.payload
   /* Copy rule (apps/DESIGN.md §9): the root workspace is the repository, never the "." path token. */
@@ -307,7 +308,7 @@ export const TargetsCardBody = ({
   const onRowKeyDown = (event: KeyboardEvent<HTMLTableRowElement>, label: string): void => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
-      onRunCommand("target.select", `${repoId} ${label}`)
+      onRunCommand("target.select", flowArgs("target.select", { repoId, label }))
       return
     }
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Home" && event.key !== "End") return
@@ -378,7 +379,7 @@ export const TargetsCardBody = ({
           value={view?.query ?? ""}
           data-flow="target.filter"
           data-testid="targets-filter-query"
-          onChange={(event) => onRunCommand("target.filter", `${repoId} query=${event.currentTarget.value}`)}
+          onChange={(event) => onRunCommand("target.filter", flowArgs("target.filter", { repoId, query: event.currentTarget.value }))}
         />
         {workspaces.length > 1
           ? (
@@ -388,7 +389,7 @@ export const TargetsCardBody = ({
               data-flow="target.filter"
               data-testid="targets-filter-workspace"
               value={view?.workspace ?? "*"}
-              onChange={(event) => onRunCommand("target.filter", `${repoId} workspace=${event.currentTarget.value}`)}
+              onChange={(event) => onRunCommand("target.filter", flowArgs("target.filter", { repoId, workspace: event.currentTarget.value }))}
             >
               <option value="*">All workspaces</option>
               {workspaces.map((workspace) => <option key={workspace} value={workspace}>{workspaceLabel(workspace)}</option>)}
@@ -445,7 +446,7 @@ export const TargetsCardBody = ({
             data-chip="mode"
             data-testid={`targets-mode-${candidate}`}
             aria-pressed={mode === candidate}
-            onClick={() => onRunCommand("target.filter", `${repoId} mode=${candidate}`)}
+            onClick={() => onRunCommand("target.filter", flowArgs("target.filter", { repoId, mode: candidate }))}
           >
             {MODE_WORDS[candidate]}
           </button>
@@ -461,7 +462,7 @@ export const TargetsCardBody = ({
             data-chip="kind"
             data-testid={`targets-chip-kind-${kind}`}
             aria-pressed={view?.kinds?.includes(kind) === true}
-            onClick={() => onRunCommand("target.filter", `${repoId} kind=${kind}`)}
+            onClick={() => onRunCommand("target.filter", flowArgs("target.filter", { repoId, kind }))}
           >
             {kind}
           </button>
@@ -476,7 +477,7 @@ export const TargetsCardBody = ({
             data-chip="state"
             data-testid={`targets-chip-state-${state}`}
             aria-pressed={view?.states?.includes(state) === true}
-            onClick={() => onRunCommand("target.filter", `${repoId} state=${state}`)}
+            onClick={() => onRunCommand("target.filter", flowArgs("target.filter", { repoId, state }))}
           >
             {STATE_WORDS[state]}
           </button>
@@ -560,7 +561,7 @@ export const TargetsCardBody = ({
                               data-flow="target.select"
                               data-testid={`targets-select-${target.label}`}
                               aria-expanded={selected}
-                              onClick={() => onRunCommand("target.select", selected ? repoId : `${repoId} ${target.label}`)}
+                              onClick={() => onRunCommand("target.select", flowArgs("target.select", selected ? { repoId } : { repoId, label: target.label }))}
                             >
                               <span className="targets-card-label">
                                 {target.label}
@@ -727,7 +728,7 @@ export const TargetsCardBody = ({
                             data-testid={`targets-select-${member.target.label}`}
                             aria-expanded={memberSelected}
                             onClick={() =>
-                              onRunCommand("target.select", memberSelected ? repoId : `${repoId} ${member.target.label}`)}
+                              onRunCommand("target.select", flowArgs("target.select", memberSelected ? { repoId } : { repoId, label: member.target.label }))}
                           >
                             <span className="targets-card-label">
                               {member.target.label}
@@ -831,7 +832,7 @@ export const TargetRunCardBody = ({
 }: {
   readonly card: Extract<Card, { kind: "target-run" }>
   /** Absent where the explain flow is not registered (the card then offers no Explain). */
-  readonly onRunCommand?: (name: string, args?: string) => void
+  readonly onRunCommand?: RunCommand
 }) => {
   const { label, status, exitCode, output, runId, repoId, verb, pattern, nodes = [], summary, nodeOutput = {}, startedAt, endedAt } =
     card.payload

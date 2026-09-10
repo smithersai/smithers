@@ -18,7 +18,7 @@ import type { HistoryNote } from "@smthrs/rpc/Cards"
 import { Button } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
 import { emptyHistorySentence, treeEqualLabel } from "../state/seams/HistorySeam"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 type HistoryCard = Extract<Card, { kind: "history" }>
@@ -32,7 +32,7 @@ export const notesStateLabel = (notes: NotesState): string => {
 }
 
 export interface HistoryCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
   /** The identity seam's definitive signed-out answer; undefined (unknown, unavailable) hides nothing. */
   readonly signedOut?: boolean
 }

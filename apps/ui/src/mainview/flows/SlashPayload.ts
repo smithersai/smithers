@@ -82,6 +82,21 @@ export const flowRunParts = (args: string | undefined): { name?: string; repo?: 
 /** The three sandbox kinds `workspace.open --kind` accepts (ADR 0002). */
 const KINDS: ReadonlyArray<string> = ["container", "vm", "desktop"]
 
+/**
+ * The rest of the trimmed line after its first `count` tokens, with the
+ * spacing inside it intact — how a grammar takes a tail that may hold
+ * whitespace (a path, a message, a name).
+ */
+const restAfter = (args: string | undefined, count: number): string => {
+  let rest = trimmed(args)
+  for (let index = 0; index < count; index += 1) {
+    const match = /^\S+\s*/.exec(rest)
+    if (match === null) return ""
+    rest = rest.slice(match[0].length)
+  }
+  return rest.trim()
+}
+
 const tokensOf = (args: string | undefined): Array<string> =>
   trimmed(args)
     .split(/\s+/)
@@ -667,14 +682,15 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok({ changeId, rev: seq })
   },
   "change.diff": (args) => {
-    const [changeId, from, to, path, ...rest] = tokensOf(args)
+    const [changeId, from, to] = tokensOf(args)
     if (changeId === undefined) return no("change.diff needs a change id")
-    if (rest.length > 0) return no("change.diff takes a change id, two pins, and optionally a path")
+    /* The path is the REST of the line: a file's path may hold a space, and neither pin ever does. */
+    const path = restAfter(args, 3)
     return ok({
       changeId,
       ...(from === undefined ? {} : { from }),
       ...(to === undefined ? {} : { to }),
-      ...(path === undefined ? {} : { path })
+      ...(path === "" ? {} : { path })
     })
   },
   "change.land": (args) => required("changeId", args, "change.land needs a change id"),
@@ -688,8 +704,10 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok({ changeId, paths })
   },
   "change.resolve": (args) => {
-    const [changeId, path, ...rest] = tokensOf(args)
-    if (changeId === undefined || path === undefined || rest.length > 0) {
+    const [changeId] = tokensOf(args)
+    /* The conflicted file's path is the rest of the line, so a path with a space resolves too. */
+    const path = restAfter(args, 1)
+    if (changeId === undefined || path === "") {
       return no("change.resolve takes a change id and the conflicted file's path")
     }
     return ok({ changeId, path })

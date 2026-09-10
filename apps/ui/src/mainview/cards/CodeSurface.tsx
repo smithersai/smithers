@@ -25,6 +25,7 @@ import { CodeFileView, languageForFile } from "@smthrs/ui/adapters/code-view"
 import type { CodeLineAnnotation, CodeTokenPosition } from "@smthrs/ui/adapters/code-view"
 import { useMemo, useRef } from "react"
 import type { Card } from "../state/AppState"
+import type { RunCommand } from "./CardFamily"
 
 type FilePayload = Extract<Card, { kind: "file" }>["payload"]
 type Diagnostic = NonNullable<FilePayload["diagnostics"]>[number]
@@ -65,7 +66,7 @@ export const CodeSurface = ({
   readonly payload: FilePayload
   /** Whether this host registers the code.* flows (FileCards reads the catalog); false binds no gesture. */
   readonly codeIntel: boolean
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { path, content, line, repo, hover, diagnostics, intel } = payload
 

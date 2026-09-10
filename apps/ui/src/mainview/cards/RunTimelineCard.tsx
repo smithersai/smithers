@@ -12,7 +12,7 @@ import { useMemo, useRef, useState } from "react"
 import type { NodeTiming } from "@smthrs/rpc/TargetGraph"
 import { timeLabel } from "../Timestamps"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 
 /** The shared axis: the earliest start to the latest end the payload knows. */
 export const timelineExtent = (nodes: ReadonlyArray<NodeTiming>): { readonly start: number; readonly end: number } => {
@@ -47,7 +47,7 @@ export const RunTimelineCardBody = ({
   onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "run-timeline" }>
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { runId, label, status, nodes, summary, cursor, logs, extent, error } = card.payload
   const [openLog, setOpenLog] = useState<string | undefined>(undefined)

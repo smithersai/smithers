@@ -5,7 +5,7 @@ import { parseOutline } from "@smthrs/ui/vault"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
 import type { Card, WorldDocument } from "../state/AppState"
 import { WIKI_DISPLAY_NAME } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 const MarkdownEditorSurface = lazy(() =>
@@ -27,7 +27,7 @@ export const ConnectCardBody = ({
   readonly card: Extract<Card, { kind: "connect" }>
   readonly onConnectGitHub: () => void
   readonly onConnectLocal: () => void
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => (
   <ul className="connect-store-list">
     <li className="connect-store-row">
@@ -96,7 +96,7 @@ export const WorldCardBody = ({
   readonly worldDocuments: ReadonlyArray<WorldDocument>
   readonly onChangeWorldDocument: (id: string, body: string) => void
   readonly onAttachWorldEditor?: (id: string, slot: string, editor: MarkdownEditorHandle | null) => void
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const editorSlot = useId()
   if (card.payload.documents.length === 0) {

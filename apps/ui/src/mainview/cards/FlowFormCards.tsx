@@ -1,7 +1,8 @@
 import { Button } from "@smthrs/ui"
 import type { KeyboardEvent } from "react"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
+import { flowArgs } from "../flows/FlowArgs"
 
 /*
  * THE FORM LAW (apps/ui/AGENTS.md; docs/workbench-lanes/flow-forms.md): the
@@ -38,12 +39,12 @@ export const FlowFormCardBody = ({
   onRunCommand
 }: {
   readonly card: FlowFormCard
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }) => {
   const { flow, fields, draft, error } = card.payload
   const settled = card.status === "acted"
   const busy = card.payload.submitting === true
-  const commit = (field: string, value: string): void => onRunCommand("form.set", value === "" ? `${card.id} ${field}` : `${card.id} ${field} ${value}`)
+  const commit = (field: string, value: string): void => onRunCommand("form.set", flowArgs("form.set", { cardId: card.id, field, value }))
   const complete = unfilled(card.payload).length === 0
   return (
     <div className="flow-form" data-flow-name={flow} data-via={card.payload.via}>

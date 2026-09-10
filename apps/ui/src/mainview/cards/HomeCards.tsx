@@ -13,13 +13,14 @@ import { Button } from "@smthrs/ui"
 import { HOME_MEASURE_LABELS, NOT_MEASURED_YET } from "@smthrs/rpc/HomePane"
 import type { HomeBlock } from "@smthrs/rpc/HomePane"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
+import type { FlowName } from "../flows/FlowName"
 
 type HomeCard = Extract<Card, { kind: "repo-home" }>
 
 export interface HomeCardActions {
-  readonly onRunCommand: (name: string, args?: string) => void
+  readonly onRunCommand: RunCommand
 }
 
 const Door = ({
@@ -27,7 +28,7 @@ const Door = ({
   args,
   label,
   onRunCommand
-}: { readonly flow: string; readonly args: string; readonly label: string } & HomeCardActions) => (
+}: { readonly flow: FlowName; readonly args: string; readonly label: string } & HomeCardActions) => (
   <Button variant="ghost" size="sm" data-flow={flow} data-testid={`home-${flow}`} onClick={() => onRunCommand(flow, args)}>
     {label}
   </Button>
