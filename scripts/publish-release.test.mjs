@@ -62,6 +62,53 @@ test("a publication with unverified resulting integrity stops the remainder", ()
   assert.deepEqual(calls, ["a"])
 }))
 
+test("a publication the registry has not served yet is re-read through the retry ladder", () => fixture(async (directory, candidate, options) => {
+  const registry = new Map()
+  const lag = new Map()
+  const pauses = []
+  const result = await publishCandidate(directory, candidate, { ...options,
+    pause: async (seconds) => { pauses.push(seconds) },
+    readRegistry: async (spec) => {
+      const missing = lag.get(spec) ?? 0
+      if (missing === 0) return registry.get(spec)
+      lag.set(spec, missing - 1)
+      return undefined
+    },
+    publish: async (_path, entry) => {
+      registry.set(`${entry.name}@${entry.version}`, entry.integrity)
+      lag.set(`${entry.name}@${entry.version}`, entry.name === "a" ? 1 : 3)
+    }
+  })
+  assert.deepEqual(result, ["a", "b"])
+  assert.deepEqual(pauses, [10, 2, 10, 30, 60])
+}))
+
+test("a publication still absent after the retry ladder stops the remainder", () => fixture(async (directory, candidate, options) => {
+  const calls = []
+  const pauses = []
+  const reads = []
+  await assert.rejects(publishCandidate(directory, candidate, { ...options,
+    pause: async (seconds) => { pauses.push(seconds) },
+    readRegistry: async (spec) => { reads.push(spec) },
+    publish: async (_path, entry) => calls.push(entry.name)
+  }), /Published integrity could not be verified: a/)
+  assert.deepEqual(calls, ["a"])
+  assert.deepEqual(pauses, [10, 30, 60])
+  // Preflight reads both packages once; verification reads a once per rung.
+  assert.deepEqual(reads, ["a@1.0.0-rc.0", "b@1.0.0-rc.0", ...Array(4).fill("a@1.0.0-rc.0")])
+}))
+
+test("a publication with different registry integrity fails closed without waiting", () => fixture(async (directory, candidate, options) => {
+  const registry = new Map()
+  const pauses = []
+  await assert.rejects(publishCandidate(directory, candidate, { ...options,
+    pause: async (seconds) => { pauses.push(seconds) },
+    readRegistry: async (spec) => registry.get(spec),
+    publish: async (_path, entry) => { registry.set(`${entry.name}@${entry.version}`, integrity(Buffer.from("different candidate"))) }
+  }), /Published integrity could not be verified: a/)
+  assert.deepEqual(pauses, [])
+}))
+
 test("a partial publication resumes only the missing packages from the tested train", () => fixture(async (directory, candidate, options) => {
   const registry = new Map()
   const calls = []

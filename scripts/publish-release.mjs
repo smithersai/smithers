@@ -9,6 +9,9 @@ export const integrity = (bytes) => `sha512-${createHash("sha512").update(bytes)
 
 export const candidateIntegrity = (candidate) => integrity(Buffer.from(JSON.stringify(candidate)))
 
+/** Seconds between registry attempts, shared by transient failures and post-publish reads. */
+const retryDelays = [10, 30, 60]
+
 /** The manifest, legacy pack roster and every local artifact must describe the same train. */
 export const verifyLocalCandidate = async (directory, candidate) => {
   if (candidate?.schemaVersion !== 1 || !Array.isArray(candidate.packages) || candidate.packages.length === 0 || !candidate.source) throw new Error("Invalid release manifest")
@@ -65,7 +68,15 @@ export const publishCandidate = async (directory, candidate, options) => {
     // instead of relying on the earlier train preflight across that interval.
     if (integrity(await readFile(join(directory, entry.filename))) !== entry.integrity) throw new Error(`Local tarball integrity mismatch: ${entry.name}`)
     await options.publish(join(directory, entry.filename), entry)
-    if (await options.readRegistry(`${entry.name}@${entry.version}`) !== entry.integrity) throw new Error(`Published integrity could not be verified: ${entry.name}`)
+    // The registry can accept a tarball before it serves the version. Only an
+    // absent version waits; different bytes fail at once.
+    let observed = await options.readRegistry(`${entry.name}@${entry.version}`)
+    for (const delay of retryDelays) {
+      if (observed !== undefined) break
+      await options.pause?.(delay)
+      observed = await options.readRegistry(`${entry.name}@${entry.version}`)
+    }
+    if (observed !== entry.integrity) throw new Error(`Published integrity could not be verified: ${entry.name}`)
     published.push(entry.name)
     await writeFile(join(directory, "publish-receipt.json"), JSON.stringify({ schemaVersion: 1, source: candidate.source, published }, null, 2) + "\n")
     if (published.length < pending.length) await options.pause?.(2)
@@ -75,7 +86,6 @@ export const publishCandidate = async (directory, candidate, options) => {
 
 /** Keep registry throttling and detached-tag publication behind the verified candidate boundary. */
 export const registryPublisher = ({ run = execFileSync, pause = (seconds) => execFileSync("sleep", [String(seconds)]) } = {}) => {
-  const retryDelays = [10, 30, 60]
   const invoke = (args, allowMissing, recovered) => {
     for (let attempt = 0;; attempt++) {
       try {
