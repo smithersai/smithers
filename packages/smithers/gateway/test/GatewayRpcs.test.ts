@@ -16,8 +16,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
 import { Control } from "@smthrs/control/Control"
-import { TransportError } from "@smthrs/control/ControlError"
-import { layerNoopAuth } from "@smthrs/control/ControlRpcs"
+import type { Service as ControlService } from "@smthrs/control/Control"
+import * as ControlError from "@smthrs/control/ControlError"
+import { PersistenceError, TransportError, Unavailable } from "@smthrs/control/ControlError"
+import { ControlRpcs, layerNoopAuth } from "@smthrs/control/ControlRpcs"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { ApprovalPayload, ApprovalTarget, PlanCard } from "@smthrs/control/ControlSchema"
 import { RunStore } from "@smthrs/run-store"
@@ -27,6 +29,7 @@ import type * as GatewayProjection from "../src/GatewayProjection.ts"
 import { GatewayRpcs, SubmitApprovalOutput } from "../src/GatewayRpcs.ts"
 import * as GatewayServer from "../src/GatewayServer.ts"
 import { Projections } from "../src/Projections.ts"
+import type { Service as ProjectionsService } from "../src/Projections.ts"
 import { driverFence, emit, stack } from "./GatewayStack.ts"
 
 const principal = { id: "gateway-test", kind: "test", stampedAt: 1 }
@@ -72,6 +75,48 @@ const served = Layer.merge(GatewayServer.layerHandlers, layerNoopAuth(principal)
 
 const test = <E>(title: string, body: () => Effect.Effect<void, E, Scope.Scope>) =>
   it(title, () => Effect.runPromise(Effect.scoped(body())))
+
+/**
+ * The names of the `ControlError` members a procedure declares, read from its
+ * error union by schema identity. Each member is the very class schema
+ * `@smthrs/control` exports, so identity, not a decoded sample, names it.
+ */
+const declaredFailures = (name: "Approve" | "Deny" | "Approval.Submit"): ReadonlyArray<string> => {
+  const byAst = new Map<unknown, string>(
+    Object.entries(ControlError).flatMap(([exported, value]) =>
+      typeof value === "function" && "ast" in value ? [[value.ast, exported] as const] : []
+    )
+  )
+  const rpc = name === "Approval.Submit" ? GatewayRpcs.requests.get(name)! : ControlRpcs.requests.get(name)!
+  const union = rpc.errorSchema.ast as { readonly _tag: string; readonly types?: ReadonlyArray<object> }
+  expect(union._tag).toBe("Union")
+  return (union.types ?? []).map((member) => byAst.get(member) ?? "<not a ControlError>")
+}
+
+/**
+ * The gateway handlers over a `Control` whose decision commands answer with
+ * one chosen failure: the way to reach the failures a healthy SQLite control
+ * plane never raises from `approve` or `deny`.
+ */
+const servedOver = (control: Partial<ControlService>) =>
+  Layer.merge(GatewayServer.layerHandlers, layerNoopAuth(principal)).pipe(
+    Layer.provideMerge(Layer.mergeAll(
+      Layer.succeed(Control)(control as ControlService),
+      Layer.succeed(Projections)({} as ProjectionsService)
+    ))
+  )
+
+const submitNothing = {
+  target: {
+    _tag: "Plan" as const,
+    planId: "stubbed-plan",
+    digest: "stubbed-digest",
+    envelope: { capabilities: [], flows: [], budget: {} }
+  },
+  scope: "run" as const,
+  idempotencyKey: "stubbed",
+  decision: "approve" as const
+}
 
 describe("Approval.Submit", () => {
   it("round-trips the transport failure raised by a remote approval adapter", () => {
@@ -300,6 +345,87 @@ describe("Approval.Submit", () => {
       }))
       expect(failure._tag).toBe("/control/PlanNotFound")
     }).pipe(Effect.provide(served)))
+
+  test("answers a gate submitted under a different envelope with EnvelopeMismatch", () =>
+    Effect.gen(function*() {
+      const rpc = yield* RpcTest.makeClient(GatewayRpcs)
+      const runtime = yield* ControlRuntime
+      const runId = yield* launch
+      const registered: ApprovalTarget = {
+        _tag: "Node",
+        runId,
+        requestId: "envelope-gate",
+        digest: "envelope-digest",
+        envelope: { capabilities: ["model:call"], flows: ["ask"], budget: {} }
+      }
+      yield* runtime.registerApproval(registered)
+
+      // A client that widens the envelope it was shown is approving something
+      // the run never asked for, so the stored envelope, not the submitted
+      // one, is the one that counts.
+      const failure = yield* Effect.flip(rpc["Approval.Submit"]({
+        target: { ...registered, envelope: { capabilities: ["model:call", "fs:write"], flows: ["ask"], budget: {} } },
+        scope: "run",
+        idempotencyKey: "approve:envelope-gate",
+        decision: "approve"
+      }))
+      expect(failure._tag).toBe("/control/EnvelopeMismatch")
+    }).pipe(Effect.provide(served)))
+
+  test("answers a payload the control plane refuses with InvalidInput", () =>
+    Effect.gen(function*() {
+      const rpc = yield* RpcTest.makeClient(GatewayRpcs)
+      const control = yield* Control
+      const card = yield* control.plan({ flowId: "system/test", input: {} })
+
+      // The wire schema types the key as a string; the 1024-character bound is
+      // Control's mutation boundary, so the refusal arrives as its typed error.
+      const failure = yield* Effect.flip(rpc["Approval.Submit"]({
+        target: { _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope },
+        scope: "run",
+        idempotencyKey: "k".repeat(1025),
+        decision: "approve"
+      }))
+      expect(failure._tag).toBe("/control/InvalidInput")
+      expect((failure as { readonly issue?: string }).issue).toContain("idempotencyKey")
+    }).pipe(Effect.provide(served)))
+
+  test("answers a decision the control plane could not record with PersistenceError", () =>
+    Effect.gen(function*() {
+      const rpc = yield* RpcTest.makeClient(GatewayRpcs)
+      const failure = yield* Effect.flip(rpc["Approval.Submit"](submitNothing))
+      expect(failure).toMatchObject({
+        _tag: "/control/PersistenceError",
+        code: "persistence_failed",
+        operation: "record an approval"
+      })
+    }).pipe(Effect.provide(servedOver({
+      approve: () =>
+        Effect.fail(new PersistenceError({ operation: "record an approval", message: "journal is read-only" }))
+    }))))
+
+  test("answers a decision the control plane does not serve with Unavailable", () =>
+    Effect.gen(function*() {
+      const rpc = yield* RpcTest.makeClient(GatewayRpcs)
+      const failure = yield* Effect.flip(rpc["Approval.Submit"]({ ...submitNothing, decision: "deny" }))
+      expect(failure).toMatchObject({ _tag: "/control/Unavailable", code: "unavailable", feature: "deny" })
+    }).pipe(Effect.provide(servedOver({
+      deny: () => Effect.fail(new Unavailable({ feature: "deny", ticket: "T-approvals" }))
+    }))))
+
+  /**
+   * The handler adds no failure of its own, so the mount's union has to be the
+   * one `Approve` and `Deny` declare, member for member and without repeats:
+   * a member listed twice reads as two recovery branches to a client that
+   * generates its handlers from the schema.
+   */
+  it("declares exactly the failures ControlRpcs declares for Approve and Deny, once each", () => {
+    const submit = declaredFailures("Approval.Submit")
+    expect(new Set(submit).size).toBe(submit.length)
+    expect([...submit].sort()).toEqual([...declaredFailures("Approve")].sort())
+    expect([...submit].sort()).toEqual([...declaredFailures("Deny")].sort())
+    expect(submit).toContain("Unauthorized")
+  })
 })
 
 describe("Projection.Snapshot and Projection.Subscribe", () => {
