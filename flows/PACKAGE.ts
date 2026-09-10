@@ -113,7 +113,7 @@ const coding = Smithers.NodeTest({
 })
 const codingPolicy = Smithers.NodeTest({
   runtime: node,
-  runner: Smithers.testRunner([Smithers.file("//flows/test/coding-host.test.ts"), Smithers.file("//flows/test/coding-gates.test.ts")]),
+  runner: Smithers.testRunner([Smithers.file("//flows/test/coding-host.test.ts"), Smithers.file("//flows/test/coding-gates.test.ts"), Smithers.file("//flows/test/coding-planning-wiki-prior.test.ts")]),
   srcs: codingSources, deps: codingDependencies, cwd
 })
 const codingRuntime = Smithers.NodeTest({

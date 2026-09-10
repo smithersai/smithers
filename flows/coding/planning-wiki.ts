@@ -47,12 +47,45 @@ export const PrepareWithWiki = Flow.make("coding/PrepareWithWiki", {
 const maximumCatalogBytes = 128 * 1024
 const maximumSources = 256
 const maximumCandidates = 20
+const maximumLookupRuns = 256
 const maximumCandidateBytes = 256 * 1024
 const maximumLookupBytes = 1024 * 1024
 const bytes = (value: string) => new TextEncoder().encode(value).length
 const fail = (message: string, code: WikiError["code"] = "invalid-input") => new WikiError({ code, message })
 const guarded = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.mapError(error =>
   error instanceof WikiError ? error : fail(String(error).slice(0, 8192), "review-failed")))
+
+/** Private recipe lookup over the existing latest insertion window. A large
+ * intervening workload can exhaust the bound; that is a normal cold-review miss. */
+export const findPlanningWikiReview = (config: typeof Config.Type) => guarded(Effect.gen(function*() {
+  const catalog = yield* RunCatalogRead.RunCatalogRead, store = yield* RunStore.RunStore
+  // listRuns is ascending by creation time. listRunIds already supplies an
+  // indexed latest window, returned oldest first. Reverse that bounded window.
+  const ids = yield* catalog.listRunIds({ limit: maximumLookupRuns })
+  let inspectedBytes = 0, candidates = 0
+  for (const id of ids.toReversed()) {
+    const row = yield* store.get(id).pipe(Effect.catch(error =>
+      error.code === "not_found_row" ? Effect.succeed(null) : Effect.fail(error)))
+    if (row === null) continue
+    inspectedBytes += bytes(row.stateJson)
+    if (inspectedBytes > maximumLookupBytes) break
+    if (bytes(row.stateJson) > maximumCandidateBytes || row.status !== "completed") continue
+    const state = Schema.decodeUnknownOption(Schema.fromJsonString(RunState))(row.stateJson)
+    if (Option.isNone(state) || state.value.flowName !== RefreshWiki._tag) continue
+    if (++candidates > maximumCandidates) break
+    const result = Schema.decodeUnknownOption(Schema.toCodecJson(Flow.Result({ success: Refreshed, error: WikiError })))(state.value.result)
+    if (Option.isNone(result) || result.value._tag !== "Complete" || Exit.isFailure(result.value.exit)) continue
+    const previous = result.value.exit.value
+    if (previous.scopeDigest !== config.scopeDigest || previous.receipt.verification !== "verified" ||
+        previous.receipt.pages !== config.pages.length) continue
+    const child = yield* store.get(previous.wikiRunId).pipe(Effect.catch(error =>
+      error.code === "not_found_row" ? Effect.succeed(null) : Effect.fail(error)))
+    // A retained parent does not prove its child survived retention. Continue
+    // looking; it must not hide another compatible complete child in the window.
+    if (child?.status === "completed") return previous.wikiRunId
+  }
+  return null
+}))
 
 /** Reuse existing actions, journal, catalog and platform; the caller supplies the
  * authority-narrowed ReviewPage layer and existing planning/agent services. */
@@ -72,36 +105,10 @@ export const planningWikiLayers = (options: PlanningWikiOptions, hostFilesystem?
     // Configuration identity excludes changing source bytes: existing Collect
     // and Load/Select independently measure those and invalidate affected pages.
     const scopeDigest = Digest.digest(Digest.canonical({ policy: "coding/wiki-refresh/v1", root, output, input,
-      policySources, maximumCatalogBytes, maximumSources, maximumCandidates, maximumCandidateBytes, maximumLookupBytes }))
+      policySources, maximumCatalogBytes, maximumSources, maximumCandidates, maximumLookupRuns, maximumCandidateBytes, maximumLookupBytes }))
     return { ...input, mode: "verified" as const, scopeDigest, output }
   }))),
-  Prior.toLayer(({ config }) => guarded(Effect.gen(function*() {
-    const catalog = yield* RunCatalogRead.RunCatalogRead, store = yield* RunStore.RunStore
-    const page = yield* catalog.listRuns({ filters: { flowName: RefreshWiki._tag, status: "completed" }, limit: maximumCandidates })
-    let inspectedBytes = 0
-    // One indexed newest-first page only. A miss triggers normal generation;
-    // this lookup never authorizes reuse by itself or scans all history.
-    for (const candidate of page.runs) {
-      const row = yield* store.get(candidate.runId)
-      inspectedBytes += bytes(row.stateJson)
-      if (inspectedBytes > maximumLookupBytes) break
-      if (bytes(row.stateJson) > maximumCandidateBytes || row.status !== "completed") continue
-      const state = Schema.decodeUnknownOption(Schema.fromJsonString(RunState))(row.stateJson)
-      if (Option.isNone(state) || state.value.flowName !== RefreshWiki._tag) continue
-      const result = Schema.decodeUnknownOption(Schema.toCodecJson(Flow.Result({ success: Refreshed, error: WikiError })))(state.value.result)
-      if (Option.isNone(result) || result.value._tag !== "Complete" || Exit.isFailure(result.value.exit)) continue
-      const previous = result.value.exit.value
-      if (previous.scopeDigest === config.scopeDigest && previous.receipt.verification === "verified" &&
-          previous.receipt.pages === config.pages.length) {
-        const child = yield* store.get(previous.wikiRunId).pipe(Effect.catch(error =>
-          error.code === "not_found_row" ? Effect.succeed(null) : Effect.fail(error)))
-        // Retention may remove the referenced child. Missing evidence is a
-        // normal first-generation miss, never an invented reusable receipt.
-        return child?.status === "completed" ? previous.wikiRunId : null
-      }
-    }
-    return null
-  }))),
+  Prior.toLayer(({ config }) => findPlanningWikiReview(config)),
   Generate.toLayer(({ config, priorRunId }) => guarded(Effect.gen(function*() {
     const instance = yield* FlowRuntime.FlowInstance, runtime = yield* FlowRuntime.FlowRuntime
     const wikiRunId = Digest.digest(Digest.canonical(["coding/wiki-child/v1", instance.executionId, config, priorRunId]))

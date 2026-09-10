@@ -150,12 +150,20 @@ export const operations = (options: { readonly root: string; readonly output: st
         yield* fs.makeDirectory(path.dirname(target), { recursive: true })
         yield* fs.writeFileString(target, text)
       }
-      if (yield* fs.exists(version)) {
+      const verifyExisting = Effect.gen(function*() {
         for (const [name, text] of Object.entries(files)) {
           const target = path.join(version, name)
           if ((yield* fs.realPath(target)) !== target || (yield* fs.readFileString(target)) !== text) return yield* Effect.fail(fail("output-conflict", `Immutable snapshot was edited: ${name}`))
         }
-      } else yield* fs.rename(stage, version)
+      })
+      if (yield* fs.exists(version)) yield* verifyExisting
+      else yield* fs.rename(stage, version).pipe(Effect.catch(error => Effect.gen(function*() {
+        // Another writer may install this exact content-addressed artifact
+        // after our existence check. Accept only its complete expected bytes;
+        // unrelated rename errors and edited snapshots remain failures.
+        if (!(yield* fs.exists(version))) return yield* Effect.fail(error)
+        yield* verifyExisting
+      })))
       const pointer = path.join(root, `.current-${yield* crypto.randomUUIDv4}.json`)
       yield* fs.writeFileString(pointer, JSON.stringify({ smithersWikiProjection: true, artifactDigest, directory: `snapshots/${artifactDigest}`, ...snapshot }, null, 2) + "\n")
       yield* fs.rename(pointer, currentPath)

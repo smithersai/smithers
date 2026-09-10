@@ -59,3 +59,8 @@ The recipe tests invalidate pages after either code or prose edits, reject chang
 ## Required coding backpressure integration
 
 Pre-planning wiki refresh is implemented. Automatic semantic review after every coding change or rebase is still a gap. The intended integration is an ordinary registered slow check that captures the exact immutable implemented revision, runs existing ReviewPage and assessment actions in the current native runtime, and returns the existing coding Receipt with owner findings. It must not start another runtime/database or read the moving edit checkout while later stages work. Verified wiki publication remains a separate source-fenced step. See the accountable-wiki page for this explicit current-versus-required boundary.
+
+Concurrent writers may propose the same immutable artifact. If its installation
+races, the losing writer accepts the existing version only after checking every
+expected file's canonical path and exact bytes. An unrelated rename failure or
+an edited artifact still fails; the final pointer remains an atomic replacement.

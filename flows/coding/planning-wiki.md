@@ -84,3 +84,12 @@ It checks child ordering, restart replay, unchanged-page model reuse, targeted
 source invalidation, reviewer-configuration invalidation, and refusal before
 planning on unsupported prose. Semantic and planning decisions are scripted in
 that fixture; it does not claim a live provider evaluation or deployed host.
+
+The prior-review hint reads the latest 256 run IDs through the existing indexed
+catalog, newest insertion first, and inspects at most 20 completed wiki-refresh
+candidates within the existing 1 MiB state budget. The catalog's filtered
+`listRuns` page is ascending and must not be mistaken for a recent page.
+Collected parents or children are skipped. The window contains all flow kinds;
+a large intervening workload can cause a normal cold-review miss. This is a
+bounded optimization, never a guarantee that the newest refresh in all history
+was found and never permission to reuse missing evidence.

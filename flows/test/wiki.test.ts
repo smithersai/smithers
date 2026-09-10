@@ -256,3 +256,31 @@ test("freshness and verified checks detect stale inputs and altered verification
   await writeFile(join(f.root, "src/answer.ts"), "export const answer = 43\n")
   await assert.rejects(run(f.ops.check([f.spec])), /Stale wiki page/)
 })
+
+test("concurrent writers accept the same complete immutable wiki artifact", { timeout: 30_000 }, async t => {
+  const f = await fixture(t), fs = await run(FileSystem.FileSystem)
+  const evidence = await run(f.ops.collect(f.spec)), page = { evidence, review: supported(evidence), reviewer: "same-reviewer" }
+  let arrivals = 0, release = () => {}
+  const together = new Promise<void>(resolve => { release = resolve })
+  const racingFs: FileSystem.FileSystem = { ...fs, rename: (from, to) => Effect.gen(function*() {
+    if (/\/snapshots\/[0-9a-f]{64}$/.test(to)) {
+      if (++arrivals === 2) release()
+      yield* Effect.promise(() => together)
+    }
+    yield* fs.rename(from, to)
+  }) }
+  const ops = operations({ root: f.root, output: f.output, fs: racingFs })
+  const results = await Promise.all([run(ops.write([page], "verified")), run(ops.write([page], "verified"))])
+  assert.equal(arrivals, 2, "both writers must reach rename after observing no existing version")
+  assert.deepEqual(results[0], results[1])
+  assert.equal((await run(f.ops.check([f.spec], true))).verification, "verified")
+})
+
+test("artifact installation failure without a winning version remains a failure", async t => {
+  const f = await fixture(t), fs = await run(FileSystem.FileSystem), evidence = await run(f.ops.collect(f.spec))
+  const failingFs: FileSystem.FileSystem = { ...fs, rename: (from, to) =>
+    fs.rename(/\/snapshots\/[0-9a-f]{64}$/.test(to) ? `${from}-missing` : from, to) }
+  const ops = operations({ root: f.root, output: f.output, fs: failingFs })
+  await assert.rejects(run(ops.write([{ evidence, review: supported(evidence), reviewer: "test" }], "verified")), /rename|NotFound/)
+  assert.equal(await run(fs.exists(join(f.output, "current.json"))), false)
+})
