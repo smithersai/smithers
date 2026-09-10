@@ -241,10 +241,10 @@ redundant.
 
 The sealed realm deletes `Date` and `Math.random`. Time and randomness are
 ordinary journaled calls: `sys/now` and `sys/random`, the two entries in
-`Catalog.system`. `Catalog.withSystem`, `RegistryCatalog.make`, and
-`SubChains.make` all place the system entries LAST, and `Catalog.make`
-indexes last-wins, so nothing a host passes can shadow them with an
-unjournaled clock or generator. Replay determinism rests on that ordering.
+`Catalog.system`. Every catalog composition appends them through
+`Catalog.withSystem`, which places them LAST, and `Catalog.make` indexes
+last-wins, so nothing a host passes can shadow them with an unjournaled
+clock or generator. Replay determinism rests on that ordering.
 
 ## Isolation
 

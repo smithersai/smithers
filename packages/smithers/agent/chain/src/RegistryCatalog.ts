@@ -149,7 +149,7 @@ export const make = (options: Options = {}): Effect.Effect<Catalog.Service, neve
         name: descriptor.name
       }]
     })
-    return Catalog.make([...projected, ...(options.entries ?? []), ...Catalog.system])
+    return Catalog.make(Catalog.withSystem([...projected, ...(options.entries ?? [])]))
   })
 
 /**

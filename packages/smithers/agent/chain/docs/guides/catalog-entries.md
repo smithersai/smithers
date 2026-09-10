@@ -90,11 +90,11 @@ QuickJS prelude deletes `Date` and `Math.random`:
 Both declare an empty capability list: they are the harness's own journaled
 reads, claiming no external authority, so every ruleset admits them.
 
-Append them with `Catalog.withSystem(entries)`. The system entries come LAST
-because `Catalog.make` indexes last-wins: nothing a host passes can shadow
-`sys/now` or `sys/random` with an unjournaled clock or generator, and replay
-determinism rests on that ordering. `RegistryCatalog.make` and
-`SubChains.make` order them the same way.
+Append them with `Catalog.withSystem(entries)`, the one place the ordering
+lives. The system entries come LAST because `Catalog.make` indexes
+last-wins: nothing a host passes can shadow `sys/now` or `sys/random` with
+an unjournaled clock or generator, and replay determinism rests on that
+ordering.
 
 For authorization of the claims you declare, see
 [Authorize calls](./authorization.md). For the prompt block the model

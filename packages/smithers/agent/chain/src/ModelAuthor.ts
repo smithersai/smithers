@@ -15,6 +15,7 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Effect, Layer, Stream } from "effect"
 import * as Author from "./Author.ts"
+import { failureCode } from "./internal/failureCode.ts"
 
 /**
  * Joins an assistant message's visible text parts — the one fold every
@@ -75,14 +76,9 @@ export const requestFor = (config: Config) => (input: Author.Input): ModelReques
 const unavailable = (message: string, cause: string): Author.AuthorError =>
   new Author.AuthorError({ cause, code: "author_unavailable", message })
 
-const causeOf = (error: unknown): string => {
-  if (typeof error === "object" && error !== null) {
-    const record = error as { readonly _tag?: unknown; readonly code?: unknown }
-    if (typeof record.code === "string") return record.code
-    if (typeof record._tag === "string") return record._tag
-  }
-  return "unknown"
-}
+// A route stack fails with tagged errors that often carry no code of their
+// own, so the tag is the seat's last stable answer before "unknown".
+const causeOf = (error: unknown): string => failureCode(error, ["code", "_tag"])
 
 const describeFailure = (error: unknown): string => {
   if (typeof error === "object" && error !== null) {

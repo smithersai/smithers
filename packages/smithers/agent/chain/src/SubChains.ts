@@ -218,7 +218,7 @@ export const make = (
       name: agentName
     }
 
-    const catalog = Catalog.make([...options.entries, agent, ...Catalog.system])
+    const catalog = Catalog.make(Catalog.withSystem([...options.entries, agent]))
     self.current = catalog
     return catalog
   })

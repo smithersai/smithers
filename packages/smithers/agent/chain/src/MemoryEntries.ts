@@ -22,19 +22,12 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import { Effect, Layer, Schema } from "effect"
 import * as Catalog from "./Catalog.ts"
+import { failureCode } from "./internal/failureCode.ts"
+import * as ScriptRunner from "./ScriptRunner.ts"
 
-const codeOf = (error: unknown): string => {
-  if (typeof error === "object" && error !== null && "code" in error) {
-    const code = (error as { readonly code: unknown }).code
-    if (typeof code === "string") return code
-  }
-  return "unknown"
-}
-
-const messageOf = (error: unknown): string =>
-  typeof error === "object" && error !== null && "message" in error
-    ? String((error as { readonly message: unknown }).message)
-    : String(error)
+// A store failure discloses only the memory package's own shipped code; a
+// tag would leak an implementation name the flows never promised.
+const codeOf = (error: unknown): string => failureCode(error, ["code"])
 
 interface Contract {
   readonly name: string
@@ -76,7 +69,7 @@ const entryOf = <A>(
         Effect.mapError((error) =>
           new Catalog.CallError({
             cause: "invalid_input",
-            message: `"${contract.name}" rejected its input: ${messageOf(error)}`,
+            message: `"${contract.name}" rejected its input: ${ScriptRunner.failureMessage(error)}`,
             name: contract.name
           })
         )
@@ -85,7 +78,7 @@ const entryOf = <A>(
         Effect.mapError((error) =>
           new Catalog.CallError({
             cause: codeOf(error),
-            message: `"${contract.name}" failed [${codeOf(error)}]: ${messageOf(error)}`,
+            message: `"${contract.name}" failed [${codeOf(error)}]: ${ScriptRunner.failureMessage(error)}`,
             name: contract.name
           })
         )
@@ -98,7 +91,7 @@ const entryOf = <A>(
         Effect.mapError((error) =>
           new Catalog.CallError({
             cause: "invalid_output",
-            message: `"${contract.name}" produced output outside its contract: ${messageOf(error)}`,
+            message: `"${contract.name}" produced output outside its contract: ${ScriptRunner.failureMessage(error)}`,
             name: contract.name
           })
         )

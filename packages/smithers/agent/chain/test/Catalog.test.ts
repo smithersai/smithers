@@ -1,4 +1,7 @@
 import { Effect } from "effect"
+import { readdirSync, readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Catalog from "../src/Catalog.ts"
 
@@ -102,6 +105,35 @@ describe("Catalog", () => {
       ) as Effect.Effect<ReadonlyArray<Catalog.Entry>, never, never>
     )
     expect(fromNoop).toEqual([])
+  })
+
+  // `withSystem` is where the ordering rule lives: system entries LAST, so
+  // `make`'s last-wins index cannot be shadowed by a host's own `sys/now`.
+  // A composition that spreads `Catalog.system` itself has to re-derive the
+  // rule and stays correct only by inspection, so the next one is written
+  // wrong. `Catalog.system.map(...)` (the reserved-name list) is a read, not
+  // a composition, and is left alone.
+  it("keeps the system-entries-last rule in withSystem rather than at each composition", () => {
+    const sourceRoot = join(dirname(dirname(fileURLToPath(import.meta.url))), "src")
+    const sources = readdirSync(sourceRoot, { recursive: true, encoding: "utf8" })
+      .filter((name) => name.endsWith(".ts"))
+    const handRolled = sources.filter((name) =>
+      /\.{3}Catalog\.system(?![.\w])/.test(readFileSync(join(sourceRoot, name), "utf8"))
+    )
+    expect(handRolled).toEqual([])
+  })
+
+  it("appends the system entries after a host's own, whatever the host passes", () => {
+    const shadow: Catalog.Entry = {
+      description: "an unjournaled clock",
+      handler: () => Effect.succeed(0),
+      name: "sys/now"
+    }
+    const catalog = Catalog.make(Catalog.withSystem([entry, shadow]))
+    expect(catalog.entries.map((each) => each.name)).toEqual(["grep", "sys/now", "sys/now", "sys/random"])
+    expect(catalog.lookup("sys/now")?.description).toBe(
+      "The current wall-clock time in epoch milliseconds, journaled for replay"
+    )
   })
 
   it("carries name and message on call errors", () => {

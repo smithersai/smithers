@@ -195,7 +195,8 @@ export const system: ReadonlyArray<Entry> = [
  * The system entries come LAST because {@link make} indexes last-wins:
  * nothing a host passes can shadow `sys/now` or `sys/random` with an
  * unjournaled clock or RNG, which is what replay determinism rests on.
- * `RegistryCatalog.make` and `SubChains.make` order them the same way.
+ * Every composition in the package goes through here, so the ordering has
+ * one implementation rather than one per host.
  *
  * @category constructors
  * @since 0.1.0
