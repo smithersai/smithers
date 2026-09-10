@@ -1,3 +1,6 @@
+import * as Result from "effect/Result"
+import * as Schema from "effect/Schema"
+import * as SchemaParser from "effect/SchemaParser"
 import { describe, expect, it } from "vitest"
 import * as Diagnostic from "../src/Diagnostic.ts"
 import { describeFailure } from "../src/Executor.ts"
@@ -111,6 +114,20 @@ describe("describeFailure", () => {
     expect(describeFailure(new Error("the tool was terminated by SIGKILL"))).toBe(
       "the tool was terminated by SIGKILL"
     )
+  })
+
+  /**
+   * A schema refusal reaches the renderer as the bare issue tree: it carries no
+   * `message`, and the JSON walk would render its internals rather than the
+   * reason. Effect's own formatter is what names the refused path.
+   */
+  it("renders a schema issue as the sentence naming the refused path", () => {
+    const result = SchemaParser.decodeUnknownResult(Schema.Struct({ port: Schema.Number }))({ port: "8080" })
+    if (!Result.isFailure(result)) throw new Error("the schema accepted a string port")
+    const rendered = describeFailure(result.failure)
+    expect(rendered).not.toBe("target failed")
+    expect(rendered).toContain("Expected number")
+    expect(rendered).toContain("[\"port\"]")
   })
 
   it("falls back for a value that carries nothing", () => {

@@ -156,6 +156,28 @@ describe("install engine boundary", () => {
       .toThrow("at most 64")
   })
 
+  /**
+   * The copy is bounded before it is carried into a spawn: at most 4096
+   * entries, counted over the source's own keys, so a corrupt source cannot
+   * make the sanitizer walk an unbounded one.
+   */
+  it("carries the largest entry count it admits and refuses the next one", () => {
+    const source = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`V${index}`, ""]))
+    expect(Object.keys(packageManagerEnvironment(source(4_096), [], false))).toHaveLength(4_096)
+    expect(() => packageManagerEnvironment(source(4_097), [], false))
+      .toThrow(/more than 4096 entries/)
+  })
+
+  /** Names and values together are bounded at 262144 bytes, counted as UTF-8. */
+  it("carries an environment at the byte ceiling and refuses one byte more", () => {
+    const ceiling = 256 * 1024
+    const value = (bytes: number) => "x".repeat(bytes - "BIG".length)
+    expect(packageManagerEnvironment({ BIG: value(ceiling) }, [], false))
+      .toEqual({ BIG: value(ceiling) })
+    expect(() => packageManagerEnvironment({ BIG: value(ceiling + 1) }, [], false))
+      .toThrow(/exceeds 262144 bytes/)
+  })
+
   it("rejects hostile environment shapes without invoking accessors", () => {
     let reads = 0
     const source = Object.defineProperty({ PATH: "/bin" }, "SECRET", {

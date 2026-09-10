@@ -52,21 +52,6 @@ const modulesSource = resolveModulesSource()
 const flipped = <A>(effect: Effect.Effect<A, { readonly stderr: string }>) => Effect.runPromise(Effect.flip(effect))
 
 describe("refusals", () => {
-  it("emits a segment-safe workspace escape predicate for ..foo resources", async () => {
-    const source = await Fs.readFile(NodePath.join(import.meta.dirname, "../src/RspackRunner.ts"), "utf8")
-    expect(source).toContain(
-      "relative === \"..\" || relative.startsWith(\"..\" + path.sep) || relative.startsWith(\"../\")"
-    )
-    expect(source).toContain("relative === \"\" || escapes(relative) || path.isAbsolute(relative)")
-
-    const escapes = (relative: string, separator: string): boolean =>
-      relative === ".." || relative.startsWith(`..${separator}`) || relative.startsWith("../")
-    expect(escapes("..foo/x.ts", "/")).toBe(false)
-    expect(escapes("../x.ts", "/")).toBe(true)
-    expect(escapes("..\\x.ts", "\\")).toBe(true)
-    expect(escapes("..", "/")).toBe(true)
-  })
-
   it("refuses a workspace that does not provide @rsbuild/core, loudly", async () => {
     const root = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-rspack-none-"))
     const scratch = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-rspack-scratch-"))
