@@ -30,10 +30,20 @@ test("a capability gate is not a pin", () => {
     `describe.skipIf(process.platform === "win32")("windows", () => {})`,
     `describe.skipIf(!jjInstalled)("needs jj", () => {})`,
     `describe.skipIf(wasmBytes === undefined)("needs wasm", () => {})`,
-    `describe.runIf(Boolean(process.env.CI))("ci only", () => {})`
+    `describe.runIf(Boolean(process.env.CI))("ci only", () => {})`,
+    `describe.runIf(Boolean(process.env["CI"]))("ci only, bracketed", () => {})`
   ].join("\n")
 
   assert.deepEqual(findPins(source), [])
+
+  // A same-file const that reads no environment variable stays a capability
+  // gate even when the condition compares it: the binding decides, not the
+  // fact that the condition holds an identifier.
+  const bound = [
+    `const wasmBytes = existsSync(artifact) ? readFileSync(artifact) : undefined`,
+    `describe.skipIf(wasmBytes === undefined)("needs wasm", () => {})`
+  ].join("\n")
+  assert.deepEqual(findPins(bound), [])
 })
 
 test("an environment-variable gate is a pin, inline or through a const", () => {
@@ -49,6 +59,25 @@ test("an environment-variable gate is a pin, inline or through a const", () => {
     `it.effect.skipIf(!slowTests)("slow three", () => {})`
   ].join("\n")
   assert.deepEqual(findPins(aliased).map((pin) => pin.title), ["slow two", "slow three"])
+
+  // An alias gates the suite wherever it appears, not only as the whole
+  // condition: `skipIf(seat === undefined)` is the shape the live suites use.
+  const compared = [
+    `const seat = process.env.SMITHERS_MIGRATE_SEAT`,
+    `describe.skipIf(seat === undefined)("live seat", () => {})`
+  ].join("\n")
+  assert.deepEqual(findPins(compared).map((pin) => pin.title), ["live seat"])
+
+  // The bracket spelling reads the same variable, and it is the one the
+  // integrations live suites and the build-cli codex smoke use.
+  const bracketed = `describe.skipIf(process.env["GITHUB_TOKEN"] === undefined)("live", () => {})`
+  assert.deepEqual(findPins(bracketed).map((pin) => pin.title), ["live"])
+
+  const bracketedAlias = [
+    `const token = process.env['GITHUB_TOKEN']`,
+    `describe.skipIf(token === undefined)("live aliased", () => {})`
+  ].join("\n")
+  assert.deepEqual(findPins(bracketedAlias).map((pin) => pin.title), ["live aliased"])
 })
 
 /**

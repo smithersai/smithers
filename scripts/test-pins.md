@@ -147,9 +147,13 @@ only.
 | `smithers/agent/integrations` | `GitHub live contract (GITHUB_TOKEN)` | `describe.skipIf(GITHUB_TOKEN === undefined)` |
 | `smithers/agent/integrations` | `Linear live contract (LINEAR_API_KEY)` | `describe.skipIf(LINEAR_API_KEY === undefined)` |
 | `smithers/agent/integrations` | `Telegram live contract (TELEGRAM_BOT_TOKEN)` | `describe.skipIf(TELEGRAM_BOT_TOKEN === undefined)` |
+| `smithers/agent/integrations` | `long-polls without confirming any update (TELEGRAM_CHAT_ID)` | `it.skipIf(TELEGRAM_CHAT_ID === undefined)` |
+| `smithers/agent/model` | `OpenAIChatCompletions over Gemini` | `describe.skipIf(SMITHERS_LIVE_MODEL_TESTS !== "1" || GEMINI_API_KEY absent)` |
 | `smithers/migrate` | `migrates a single-file JSX project through the bin (${reason})` | `it.skip` when `SMITHERS_MIGRATE_SEAT` names no funded seat |
 | `smithers/migrate` | `records what a single-file project could not settle (${reason})` | `it.skip` when `SMITHERS_MIGRATE_SEAT` names no funded seat |
 | `smithers/migrate` | `refuses what it cannot translate in a multi-workflow pack (${reason})` | `it.skip` when `SMITHERS_MIGRATE_SEAT` names no funded seat |
+| `smithers` | `the smthrs init scaffold on a funded seat` | `describe.skipIf(SMITHERS_OPENAI_AUTH !== "chatgpt")` |
+| `smithers/build/build-cli` | `answers the envelope contract through a real codex session` | `it.skipIf(SMTHRS_CODEX_SMOKE !== "1")` |
 | `smithers/agent/std` | `streams a file larger than available memory (skipped: a hermetic test cannot exhaust its runner)` | `it.skip` |
 | `testing` | `registers a skipped layered Effect body` | `test.skip` |
 
@@ -181,11 +185,9 @@ an error code, and nothing notices until an application does. Run them with
 `GITHUB_TOKEN=…`, `LINEAR_API_KEY=…`, or `TELEGRAM_BOT_TOKEN=…`; all three are
 read-only, and the Telegram poll confirms no offset so a running bot keeps its
 backlog. GitHub and Linear are `1.0.0-rc.0`'s release-smoke integrations, so
-both are run by hand at release time.
-Note for whoever tightens the register: `scripts/check-test-pins.mjs` does not
-currently see these, because `readsOptInEnv` matches `process.env.NAME` and
-these read `process.env["NAME"]`. They are listed here on their merits, not
-because the guard demanded it.
+both are run by hand at release time. Inside the Telegram suite one case is
+gated again on `TELEGRAM_CHAT_ID`: the long poll needs a chat the bot can
+see, and a token alone does not name one.
 
 **`harness` — workerd smoke.** The suite boots a real `workerd` process to
 prove the QuickJS cell runtime runs unchanged on the Cloudflare runtime.
@@ -223,6 +225,44 @@ skipped test it can enable with its own endpoint. It is listed because the pin
 register scans package directories, not vitest include globs, and a pin the
 scanner can see is a pin the register documents.
 
+**`smithers`: the funded-seat init scaffold.** `Bin.test.ts` gates one suite
+on a signed-in ChatGPT seat. It runs `smthrs init hello` and then
+`smthrs up hello` against a real provider, which is the only way to hold the
+claim `smthrs init` makes about the directory it writes. A real agent run
+costs three to four minutes and real tokens, so the suite requires
+`SMITHERS_OPENAI_AUTH=chatgpt` and the Codex auth file the CLI suite already
+stages, and skips when either is absent. Every other `init` case asserts the
+scaffold's contents against a scripted seat. What breaks if it regresses:
+`smthrs init` writes a project `smthrs up` cannot run, and only a funded run
+notices. Run it with `codex login`, then
+`SMITHERS_OPENAI_AUTH=chatgpt pnpm --filter @smthrs/cli test`. Closing it for
+the default gate means paying for a model seat in CI, which the RC does not do.
+
+**`build-cli`: the real codex session.** `AgentSession.test.ts` gates one case
+on `SMTHRS_CODEX_SMOKE=1`: it opens a session through the installed `codex`
+binary and asserts the envelope contract on what comes back. Every other case
+in that file drives the same factory against a stub binary, so the stubs prove
+the argv and the parse, and only a real session proves the CLI still answers
+the shape those stubs encode. What breaks if it regresses: a `codex` release
+changes its output and the build agent's envelope parse fails for a user
+first. Run it with
+`SMTHRS_CODEX_SMOKE=1 pnpm --filter @smthrs/build-cli test` on a machine with
+`codex` signed in. Closing it for the default gate means spending model tokens
+on every run, which the RC does not do.
+
+**`model`: the Gemini chat-completions contract.** `GeminiChatCompletions.integration.test.ts`
+runs the OpenAI-compatible Chat Completions protocol against Google's endpoint,
+which is billable provider traffic. Two conditions gate it, and both are
+deliberate: `GEMINI_API_KEY` supplies the credential, and
+`SMITHERS_LIVE_MODEL_TESTS=1` states the intent, so a developer who merely has
+a key exported does not turn an ordinary suite run into provider spend. The
+fixture suites next to it prove the request shaping and the event decoding;
+only a live call proves the endpoint still serves the protocol the route
+assumes. What breaks if it regresses: Google changes the compatible endpoint
+and a user's Gemini seat stops streaming. Run it with
+`SMITHERS_LIVE_MODEL_TESTS=1 GEMINI_API_KEY=... pnpm --filter @smthrs/model test`.
+Closing it for the default gate means paying for provider traffic on every
+run, which the RC does not do.
 
 **`std`: the larger-than-memory stream.** `SearchConformance.test.ts` pins one
 `it.skip` whose title says why: the conformance suite proves `Grep` streams a

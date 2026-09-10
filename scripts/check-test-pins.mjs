@@ -80,23 +80,27 @@ const conditionalTitlePattern = /\s*\(\s*(["'`])((?:[^\\]|\\.)*?)\1/y
  * capability gate — it runs on the supported configuration. `CI` is excluded
  * because CI is a configuration the repo actually runs.
  *
- * The check is textual, so a condition that reaches an environment variable
- * through a helper defined elsewhere reads as a capability gate. That is a
- * deliberate floor, not a claim of completeness.
+ * Both spellings of the read count: `process.env.NAME` and
+ * `process.env["NAME"]`. The check is textual, so a condition that reaches an
+ * environment variable through a helper defined elsewhere reads as a
+ * capability gate. That is a deliberate floor, not a claim of completeness.
  */
-const readsOptInEnv = (text) => /process\.env\.(?!CI\b)[A-Za-z_]/.test(text)
+const readsOptInEnv = (text) => /process\.env(?:\.(?!CI\b)[A-Za-z_]|\[["'](?!CI["'])[A-Za-z_])/.test(text)
 
 /**
- * Resolves a bare-identifier condition against a `const` in the same file, so
- * the readable idiom — naming the flag once, using it on several suites —
- * is not a way around the guard.
+ * Resolves every identifier in a condition against a `const` in the same file,
+ * so the readable idiom — naming the flag once, using it on several suites —
+ * is not a way around the guard. The identifier does not have to be the whole
+ * condition: `skipIf(token === undefined)` gates on `token` just as
+ * `skipIf(!slowTests)` gates on `slowTests`.
  */
 const isOptIn = (condition, source) => {
   if (readsOptInEnv(condition)) return true
-  const identifier = condition.trim().match(/^!?([A-Za-z_$][\w$]*)$/)
-  if (identifier === null) return false
-  const binding = source.match(new RegExp(`\\bconst\\s+${identifier[1]}\\s*=([^\\n]*)`))
-  return binding !== null && readsOptInEnv(binding[1])
+  for (const identifier of condition.matchAll(/[A-Za-z_$][\w$]*/g)) {
+    const binding = source.match(new RegExp(`\\bconst\\s+${identifier[0]}\\s*=([^\\n]*)`))
+    if (binding !== null && readsOptInEnv(binding[1])) return true
+  }
+  return false
 }
 
 /** Directory names never worth walking for tests. */
