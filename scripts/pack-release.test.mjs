@@ -280,13 +280,16 @@ test("every gate in ci.yml also runs in release.yml", () => {
 
   // The roster is pinned so a new CI job forces a decision here instead of
   // silently landing outside the release's proof. The jobs release.yml
-  // does not mirror: `browser` runs `//scripts:browserContract`, which
+  // does not mirror: `cache-publish` re-runs `ci '//packages/...'` on main
+  // pushes only to publish its results to the remote cache, and `test`
+  // already carries that gate; `browser` runs `//scripts:browserContract`, which
   // `//scripts/...` already covers; `packages` runs `test '//packages/...'`,
   // which `ci '//packages/...'` already covers; `apps-e2e` needs the runner's
   // Chrome; native Rust tests stay in `rust`. Release mirrors `wasm-repro`
   // so the committed artifact is rebuilt and byte-compared before packing.
   const jobs = [...ci.slice(ci.indexOf("\njobs:\n")).matchAll(/^ {2}([a-z][\w-]*):$/gm)].map((match) => match[1])
   assert.deepEqual(jobs, [
+    "cache-publish",
     "test",
     "apps-e2e",
     "rust",
@@ -298,11 +301,45 @@ test("every gate in ci.yml also runs in release.yml", () => {
   ])
 
   const mirrored = ["test", "e2e-faults", "wasm-repro"]
-  const expected = mirrored.flatMap((job) => graphCommands(jobSteps(ci, job)))
-  const actual = new Set(graphCommands(jobSteps(workflow("release.yml"), "publish")))
+  const isGate = (step) => graphCommands([step]).length > 0
+  const expected = mirrored.flatMap((job) => jobSteps(ci, job)).filter(isGate)
+  const actual = jobSteps(workflow("release.yml"), "publish").filter(isGate)
+
+  // The gates the release adds on top of the mirrored jobs, pinned so an
+  // extra step is a decision here rather than a silent addition. The apps/ui
+  // pair mirrors the `apps-e2e` job without its browser suite; the other two
+  // are release-only targets the roster comment in release.yml explains. The
+  // 2026-09-05 rename added `smthrs` copies of two gates beside their older
+  // `smithers-build` twins, and the subset check this case used to be could
+  // not see the duplicates, the dropped cache env on two gates, or a step
+  // ci.yml gained that the release never mirrored.
+  const releaseOnly = [
+    "pnpm exec smthrs build '//apps/ui:check' --verbose",
+    "pnpm exec smthrs test '//apps/ui:unitTests' --verbose",
+    "pnpm exec smthrs test '//packages/smithers/flows/engine-store:disasterRecovery' --verbose",
+    "pnpm exec smthrs test '//scripts:releaseVersion' --verbose"
+  ]
+  const command = (step) => graphCommands([step])[0]
+  const copied = actual.filter((step) => !releaseOnly.includes(command(step)))
 
   assert.ok(expected.length > 15, `${expected.length} gates is too few to be the required CI roster`)
-  assert.deepEqual(expected.filter((gate) => !actual.has(gate)), [])
+  assert.deepEqual(actual.filter((step) => releaseOnly.includes(command(step))).map(command), releaseOnly)
+  // Whole blocks, in order: the same command with a different env, a gate
+  // ci.yml dropped, or one it gained all fail here, not only a missing one.
+  assert.deepEqual(copied.map(command), expected.map(command))
+  assert.deepEqual(copied, expected)
+})
+
+test("release.yml's publish job names every step once", () => {
+  // release-rehearsal.test.mjs looks steps up by name and the rehearsal
+  // driver selects them by `--only` and `--skip` fragments, so a duplicated
+  // name is an ambiguous step, not a second gate.
+  const names = jobSteps(workflow("release.yml"), "publish")
+    .map((step) => /^ {6}- name: (.+)$/m.exec(step)?.[1])
+    .filter((name) => name !== undefined)
+  const duplicated = names.filter((name, index) => names.indexOf(name) !== index)
+  assert.ok(names.length > 30, `${names.length} named steps is too few to be the publish job`)
+  assert.deepEqual(duplicated, [])
 })
 
 test("every toolchain step in ci.yml's required test job also runs in release.yml", () => {

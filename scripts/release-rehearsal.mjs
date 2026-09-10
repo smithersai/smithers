@@ -493,6 +493,20 @@ const parseArguments = (argv) => {
   return options
 }
 
+/**
+ * The contexts a rehearsal evaluates the workflow's expressions against.
+ *
+ * A rehearsal is a dispatched dry run of one tag and is always a first
+ * attempt: the workflow's re-run guard reads `github.run_attempt` and must
+ * stay silent here.
+ */
+export const rehearsalContexts = ({ tag, publish = false, runnerTemp = "/tmp/runner", workflowName = "Release" }) => ({
+  github: { event_name: "workflow_dispatch", ref_name: tag, run_attempt: "1", workflow: workflowName },
+  inputs: { releaseTag: tag, dryRun: !publish },
+  runner: { temp: runnerTemp },
+  env: {}
+})
+
 export const main = async (argv) => {
   const options = parseArguments(argv)
   if (options.publish && process.env.SMTHRS_ALLOW_PUBLISH !== "1") {
@@ -511,12 +525,7 @@ export const main = async (argv) => {
   const logPath = resolve(options.log ?? join(runnerTemp, "rehearsal.log"))
   const log = createWriteStream(logPath, { flags: "a" })
 
-  const contexts = {
-    github: { event_name: "workflow_dispatch", ref_name: options.tag, workflow: workflow.name },
-    inputs: { releaseTag: options.tag, dryRun: !options.publish },
-    runner: { temp: runnerTemp },
-    env: {}
-  }
+  const contexts = rehearsalContexts({ tag: options.tag, publish: options.publish, runnerTemp, workflowName: workflow.name })
   for (const [key, value] of Object.entries(job.env ?? {})) {
     contexts.env[key] = interpolate(value, contexts)
   }

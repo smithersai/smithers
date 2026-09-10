@@ -10,6 +10,7 @@ import {
   interpolate,
   localEquivalents,
   parseWorkflow,
+  rehearsalContexts,
   stripComment
 } from "./release-rehearsal.mjs"
 
@@ -19,16 +20,16 @@ const release = parseWorkflow(
 )
 
 /** The contexts the runner would build for a tag push. */
-const pushContexts = (tag) => ({
-  github: { event_name: "push", ref_name: tag },
+const pushContexts = (tag, runAttempt = "1") => ({
+  github: { event_name: "push", ref_name: tag, run_attempt: runAttempt },
   inputs: {},
   runner: { temp: "/tmp/runner" },
   env: {}
 })
 
 /** The contexts the runner would build for a dispatched run. */
-const dispatchContexts = (tag, dryRun) => ({
-  github: { event_name: "workflow_dispatch", ref_name: "main" },
+const dispatchContexts = (tag, dryRun, runAttempt = "1") => ({
+  github: { event_name: "workflow_dispatch", ref_name: "main", run_attempt: runAttempt },
   inputs: { releaseTag: tag, dryRun },
   runner: { temp: "/tmp/runner" },
   env: {}
@@ -107,6 +108,39 @@ test("evaluateExpression implements the GitHub operator subset", () => {
   assert.throws(() => evaluateExpression("env.DRY_RUN =~ 'x'", contexts), /unsupported expression/)
 })
 
+test("a re-run attempt is refused before the first gate and only then", () => {
+  // GitHub's "Re-run failed jobs" replays the whole job with no candidate
+  // inputs: it rebuilds and repacks for an hour, then the archive step refuses
+  // the second `release-candidate-<run-id>` upload. The guard is the first
+  // step so that hour is never spent, and it fires on nothing else.
+  const guard = step("Refuse a re-run attempt")
+  assert.equal(release.jobs.publish.steps[0], guard)
+  assert.match(guard.run, /candidateRunId=\$GITHUB_RUN_ID/)
+  assert.match(guard.run, /release-resume\.md/)
+  assert.match(guard.run, /exit 1/)
+  assert.equal(condition(guard.if, pushContexts("v0.1.0", "1")), false)
+  assert.equal(condition(guard.if, pushContexts("v0.1.0", "2")), true)
+  assert.equal(condition(guard.if, dispatchContexts("v0.1.0", true, "1")), false)
+  assert.equal(condition(guard.if, dispatchContexts("v0.1.0", true, "3")), true)
+  // The rehearsal driver is always a first attempt.
+  assert.equal(condition(guard.if, rehearsalContexts({ tag: "v0.1.0" })), false)
+})
+
+test("the publish receipt is archived after publication, even a partial one", () => {
+  // publish-release.mjs rewrites publish-receipt.json after every package it
+  // publishes, and the candidate archive is uploaded before publication, so
+  // the receipt of a train that stopped halfway must be uploaded afterwards.
+  const steps = release.jobs.publish.steps
+  const upload = step("Upload the publish receipt")
+  assert.ok(steps.indexOf(upload) > steps.indexOf(step("Publish packages in dependency order")))
+  assert.ok(steps.indexOf(upload) > steps.indexOf(step("Archive tested release artifacts")))
+  assert.equal(upload.if, "always()")
+  assert.equal(upload.with.path, "${{ runner.temp }}/release-packs/publish-receipt.json")
+  assert.equal(upload.with.name, "release-publish-receipt-${{ github.run_id }}")
+  assert.equal(upload.with["if-no-files-found"], "ignore")
+  assert.equal(upload.uses, step("Archive tested release artifacts").uses)
+})
+
 test("a tag push resolves the pushed tag and never enters the dry-run path", () => {
   const contexts = pushContexts("v0.1.0-next.0")
   const env = jobEnv(contexts)
@@ -166,12 +200,13 @@ test("publication tolerates tag checkouts and bounded registry throttling", () =
 
 })
 
-test("only candidate preparation and publication select a path; diagnostics survive failure", () => {
+test("only the re-run guard, candidate preparation and publication select a path; diagnostics survive failure", () => {
   const conditional = release.jobs.publish.steps
     .filter((candidate) => candidate.if !== undefined)
     .map((candidate) => candidate.name)
 
   assert.deepEqual(conditional, [
+    "Refuse a re-run attempt",
     "Build all workspaces from clean artifacts",
     "Pack and smoke-test release artifacts",
     "Install the supported Node 24 floor",
@@ -182,9 +217,11 @@ test("only candidate preparation and publication select a path; diagnostics surv
     "Upload ci-test-tier-evidence",
     "Upload release runtime smoke evidence",
     "Publish packages in dependency order",
+    "Upload the publish receipt",
     "Report the skipped publication"
   ])
   assert.equal(step("Collect ci-test-tier-evidence").if, "always()")
+  assert.equal(step("Upload the publish receipt").if, "always()")
   assert.equal(step("Upload ci-test-tier-evidence").if, "always()")
   assert.equal(step("Upload release runtime smoke evidence").if, "always()")
   assert.equal(step("Archive tested release artifacts").if, undefined)

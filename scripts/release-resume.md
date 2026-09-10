@@ -1,6 +1,6 @@
 # Resume an archived release candidate
 
-Start a new `workflow_dispatch` of the existing **Release** workflow with the same `releaseTag` as the original candidate. Supply both `candidateRunId` (the completed Release run) and `candidateArtifactId` (its immutable `release-candidate-<run-id>` artifact ID). Leave `dryRun` enabled to verify the resume without publishing. Re-running the original run does not supply these new inputs and reuses its artifact name; use a new dispatch for an archive resume. Empty archive inputs keep the normal new-candidate build, pack, and smoke path.
+Start a new `workflow_dispatch` of the existing **Release** workflow with the same `releaseTag` as the original candidate. Supply both `candidateRunId` (the completed Release run) and `candidateArtifactId` (its immutable `release-candidate-<run-id>` artifact ID). Leave `dryRun` enabled to verify the resume without publishing. Re-running the original run does not supply these new inputs and reuses its artifact name, so the workflow refuses any attempt after the first before its first gate; use a new dispatch for an archive resume. Empty archive inputs keep the normal new-candidate build, pack, and smoke path.
 
 The original run may have failed during publication. Its candidate artifact was uploaded only after the source gates and installed-consumer smoke completed. The resume runs the current source gates again, then restores the original artifact instead of rebuilding or replacing its smoke receipt. The selected run must belong to this repository's Release workflow; fork/PR runs, expired or differently named artifacts, mismatched IDs, and missing integrity are refused.
 
@@ -9,6 +9,8 @@ The downloader selects the immutable artifact ID, caps the download at 512 MiB b
 The workflow-run source SHA can differ from the candidate's SHA when a workflow dispatch checks out a separate `releaseTag`. The restoration receipt records both. The candidate manifest and checked-out git tag establish the candidate's source identity; run/artifact metadata establish which workflow produced its archive.
 
 `restore-evidence.json` records the original run/artifact IDs, archive digest, workflow source, candidate source, and packages still missing from the registry. The resumed workflow also archives the verified directory under its own run ID. Each retry can therefore use an immutable archive without repacking.
+
+Publication rewrites `publish-receipt.json` after every package it publishes, and the run uploads that file as `release-publish-receipt-<run-id>` after the publish step, on failure as well. A train that stopped halfway therefore leaves a record of which names landed, next to the registry preflight the resume runs anyway.
 
 A missing or expired archive is a failed resume, not permission to rebuild different bytes under an already published version. For a changed candidate, use a new version and repeat the complete release validation. Publication remains controlled by the workflow's existing `dryRun` input and npm-publish environment.
 
