@@ -273,13 +273,27 @@ describe("QuickJSSandbox limits", () => {
   })
 
   it("stops a cell that never returns at the compute clock when no other ceiling can", async () => {
-    // The budget is a whole second because the clock starts before the realm
-    // does: a ceiling tight enough to expire during the binding's own setup is
-    // the separate case two tests below.
-    const outcome = await outcomeOf(
-      `let total = 0
-       while (true) total = total + 1`,
-      { limits: { timeMs: 1000, steps: Number.MAX_SAFE_INTEGER, totalMs: 30_000 } }
+    // A counter clock, so the ceiling is a count of interrupt polls rather
+    // than however long the host takes to spin through a real second.
+    let now = 0
+    const outcome = await Effect.gen(function*() {
+      const sandbox = yield* QuickJSSandbox.makeWithClock
+      const limits = { timeMs: 1000, steps: Number.MAX_SAFE_INTEGER, totalMs: 30_000 }
+      const realm = yield* sandbox.openRealm!({ flows, limits })
+      const frame = yield* realm.evaluate({
+        cell: Cell.source(
+          `let total = 0
+           while (true) total = total + 1`
+        ),
+        frame: 0,
+        call: succeeds,
+        limits
+      })
+      return frame.outcome
+    }).pipe(
+      Effect.provideService(QuickJSSandbox.ComputeClock, { now: () => now++ }),
+      Effect.scoped,
+      Effect.runPromise
     )
 
     expect(outcome).toStrictEqual(
@@ -288,7 +302,7 @@ describe("QuickJSSandbox limits", () => {
         message: "This cell exceeded its wall-clock limit of 1000 milliseconds"
       })
     )
-  }, 60_000)
+  })
 
   it("does not charge checkpoint suspension to the cell compute clock", async () => {
     let now = 0

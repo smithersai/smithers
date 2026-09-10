@@ -6,7 +6,8 @@
  * the channel to the next turn, and the transition is a call rather than a
  * return.
  */
-import { Effect, Option, Schema } from "effect"
+import { Deferred, Effect, Fiber, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import * as CellValidation from "../src/CellValidation.ts"
@@ -588,12 +589,30 @@ describe("QuickJSSandbox.openRealm", () => {
   })
 
   it("gives up the frame at the whole-evaluation ceiling", async () => {
-    const frames = await session(["await ctx.call('echo', { slow: true })"], {
-      limits: { totalMs: 10, callMs: 5000 },
-      call: () => Effect.never
-    })
-    const outcome = frames[0]!.outcome
-    expect(outcome._tag === "rejected" && outcome.code).toBe("limit_exceeded")
+    // The handler reports that the frame is already running before the clock
+    // moves at all; the test clock then holds the frame 1 ms short of its
+    // ceiling and crosses it, so the reading is the ceiling, not host speed.
+    const outcome = await Effect.gen(function*() {
+      const dispatched = yield* Deferred.make<void>()
+      const sandbox = yield* QuickJSSandbox.make
+      const realm = yield* sandbox.openRealm!({ flows, limits: { totalMs: 10, callMs: 5000 } })
+      const fiber = yield* realm.evaluate({
+        cell: Cell.source("await ctx.call('echo', { slow: true })"),
+        frame: 0,
+        call: () => Deferred.succeed(dispatched, undefined).pipe(Effect.andThen(Effect.never))
+      }).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(dispatched)
+      yield* TestClock.adjust(9)
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust(1)
+      return (yield* Fiber.join(fiber)).outcome
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer()), Effect.runPromise)
+    expect(outcome).toStrictEqual(
+      new Cell.Rejected({
+        code: "limit_exceeded",
+        message: "This cell exceeded its wall-clock limit of 10 milliseconds"
+      })
+    )
   })
 
   it("hands a failed call back as a value the cell can branch on", async () => {

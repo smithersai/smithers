@@ -9,6 +9,7 @@
  */
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
+import * as Digest from "@smthrs/core/Digest"
 import * as Flow from "@smthrs/core/Flow"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
@@ -66,8 +67,35 @@ describe("FlowBinding.descriptorOf", () => {
     expect(descriptor.input).toMatchObject({ _tag: "Module", field: "input" })
     expect(descriptor.provenance.source).toBe("binding")
     // A descriptor projected from a declaration is an ordinary descriptor, so
-    // the same digest the boundary checks can be derived from it.
-    expect(Cell.declarationDigest(descriptor)).toBe(Cell.declarationDigest(descriptor))
+    // the digest the boundary checks is the one the same descriptor written
+    // out by hand carries, including every field left unasserted above.
+    const path = "binding://echo"
+    const effects = { reads: ["/**"], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" } as const
+    const written = new Descriptor.FlowDescriptor({
+      name: "echo",
+      description: "Echo one string back.",
+      body: new Descriptor.BodyRefModule({
+        path,
+        contentDigest: Digest.digest(Digest.canonical({
+          capabilities: ["fs:read:/**"],
+          description: "Echo one string back.",
+          effects,
+          name: "echo"
+        }))
+      }),
+      input: new Descriptor.SchemaRefModule({ path, field: "input" }),
+      output: new Descriptor.SchemaRefModule({ path, field: "output" }),
+      model: Option.none(),
+      flows: [],
+      capabilities: ["fs:read:/**"],
+      effects,
+      placement: Option.none(),
+      modelInvocable: true,
+      path,
+      frontmatter: {},
+      provenance: new Descriptor.Provenance({ source: "binding", root: "binding://" })
+    })
+    expect(Cell.declarationDigest(descriptor)).toBe(Cell.declarationDigest(written))
   })
 
   it("defaults an undeclared effect envelope to the unshareable tier", () => {

@@ -7,6 +7,7 @@
  * cannot — so the contract is proved where it is actually honoured, on QuickJS.
  */
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import { HarnessError } from "../src/HarnessError.ts"
@@ -436,20 +437,36 @@ describe("Sandbox", () => {
   })
 
   it("does not charge a settled call against the next call's budget", async () => {
-    const outcome = await evaluate(
-      `await ctx.call("fs/list", { path: "one" })
-         await ctx.call("fs/list", { path: "two" })
-         ctx.done("both")`,
-      {
-        call: () =>
-          Effect.sleep(120).pipe(
-            Effect.as(new Cell.CallResult({ outcome: "success", value: null }))
+    // Two 200 ms calls under a 300 ms per-call budget: a budget the calls
+    // shared would expire 100 ms into the second one. The test clock steps
+    // each call to its end, so the reading never depends on host scheduling.
+    const outcome = await Effect.gen(function*() {
+      const entered = [yield* Deferred.make<void>(), yield* Deferred.make<void>()]
+      const fiber = yield* withRealm((realm) =>
+        realm.evaluate({
+          cell: Cell.source(
+            `const one = await ctx.call("fs/list", { path: "one" })
+             const two = await ctx.call("fs/list", { path: "two" })
+             ctx.done(JSON.stringify([one, two]))`
           ),
-        limits: { callMs: 300, timeMs: undefined }
+          frame: 0,
+          call: (invocation) =>
+            Deferred.succeed(entered[invocation.ordinal]!, undefined).pipe(
+              Effect.andThen(Effect.sleep(200)),
+              Effect.as(new Cell.CallResult({ outcome: "success", value: invocation.input }))
+            )
+        }), { callMs: 300 }).pipe(Effect.forkChild({ startImmediately: true }))
+      for (const call of entered) {
+        yield* Deferred.await(call)
+        yield* TestClock.adjust(200)
       }
-    )
+      return (yield* Fiber.join(fiber)).outcome
+    }).pipe(Effect.provide(TestClock.layer()), Effect.runPromise)
 
-    expect((outcome as Cell.Settled).transition).toMatchObject({ _tag: "complete", output: "both" })
+    expect((outcome as Cell.Settled).transition).toMatchObject({
+      _tag: "complete",
+      output: JSON.stringify([{ path: "one" }, { path: "two" }])
+    })
   })
 
   it("exposes the catalog, the checkpoint pair, the settling calls, and nothing else", async () => {
@@ -1221,7 +1238,7 @@ describe("QuickJSSandbox", () => {
        ctx.done(String(held.length))`,
       { limits: { memoryBytes: Sandbox.minimumMemoryBytes } }
     )
-    expect(outcome._tag).not.toBe("settled")
+    expect(outcome).toStrictEqual(new Cell.Raised({ name: "InternalError", message: "out of memory" }))
   })
 
   it("stops a cell that awaits something the realm can never settle", async () => {
@@ -1279,18 +1296,36 @@ describe("QuickJSSandbox", () => {
     // The call takes longer than the whole compute budget. Charging its
     // duration to the cell rejected every frame that awaited a real test run;
     // the settled call must instead resume the cell with its budget intact.
-    const outcome = await evaluate(
-      `const listed = await ctx.call("fs/list", {})
-       ctx.done(String(listed.ok))`,
-      {
+    // The compute clock is a counter the call advances past the budget, and
+    // the loop after the call is what makes the realm read it again.
+    let now = 0
+    const outcome = await Effect.gen(function*() {
+      const sandbox = yield* QuickJSSandbox.makeWithClock
+      const realm = yield* sandbox.openRealm!({
+        flows,
+        limits: { timeMs: 1_000, totalMs: 60_000, steps: Number.MAX_SAFE_INTEGER }
+      })
+      const frame = yield* realm.evaluate({
+        cell: Cell.source(
+          `const listed = await ctx.call("fs/list", {})
+           let sum = 0
+           for (let index = 0; index < 100000; index++) sum += index
+           ctx.done(String(listed.ok))`
+        ),
+        frame: 0,
         call: () =>
-          Effect.sleep(400).pipe(
-            Effect.as({ outcome: "success", value: { ok: true } } as const)
-          ),
-        limits: { timeMs: 250, totalMs: 60_000, steps: Number.MAX_SAFE_INTEGER }
-      }
+          Effect.sync(() => {
+            now += 5_000
+            return new Cell.CallResult({ outcome: "success", value: { ok: true } })
+          })
+      })
+      return frame.outcome
+    }).pipe(
+      Effect.provideService(QuickJSSandbox.ComputeClock, { now: () => now++ }),
+      Effect.scoped,
+      Effect.runPromise
     )
 
-    expect(outcome).toMatchObject({ _tag: "settled" })
+    expect(outcome).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "true" } })
   })
 })
