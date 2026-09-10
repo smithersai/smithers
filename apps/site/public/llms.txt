@@ -145,7 +145,7 @@
 - [@smthrs/run-store](https://smithers.sh/docs/reference/api/run-store/): Effect services for flows run state, attempts, and ownership arbitration
 - [@smthrs/sandbox](https://smithers.sh/docs/reference/api/sandbox/): Provisioned machines, provider-neutral remote process execution, conformance, and sandbox liveness for flows
 - [@smthrs/scorers](https://smithers.sh/docs/reference/api/scorers/): Flow-native scoring, durable observations, and asynchronous score runners for flows
-- [@smthrs/std](https://smithers.sh/docs/reference/api/std/): The flows standard tool library: filesystem, search, and shell flows
+- [@smthrs/std](https://smithers.sh/docs/reference/api/std/): The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows
 - [@smthrs/step-cache](https://smithers.sh/docs/reference/api/step-cache/): Effect service for the flows content-addressed step result cache
 - [@smthrs/sync](https://smithers.sh/docs/reference/api/sync/): Workspace read-path sync protocol, server, and client for flows
 - [@smthrs/testing](https://smithers.sh/docs/reference/api/testing/): Testing and conformance library for flows

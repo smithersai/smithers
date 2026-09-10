@@ -33,7 +33,7 @@ The root entry point exports these namespaces; each is also importable from `@sm
 | `HttpPost`           | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`                                                                                                        | Declares and runs HTTP POST requests.                                          |
 | `LanguageServer`     | `Position`, `LanguageServer`, `make`, `makeNoop`, `layerNoop`                                                                                                                                           | Defines the language-server query service.                                     |
 | `Ls`                 | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`                                                                                                        | Declares and runs directory listings.                                          |
-| `Lsp`                | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`                                                                                                        | Declares and runs language-server definition queries.                          |
+| `Lsp`                | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`                                                                                                        | Declares and runs ten language-server queries, from hover to diagnostics.      |
 | `Manifest`           | `flows`, `handlers`, `effectsFor`, `names`, `readOnly`                                                                                                                                                  | Exposes frozen flow, handler, and narrowing registries plus the read-only set. |
 | `NativeSearch`       | `MAX_CAPTURE_BYTES`, `make`, `layer`                                                                                                                                                                    | Implements Search through the ripgrep binary.                                  |
 | `NodeLanguageServer` | `Config`, `MAX_QUEUED_FRAMES`, `MAX_PENDING_REQUESTS`, `make`, `layer`                                                                                                                                  | Implements LanguageServer with Node child processes.                           |
@@ -81,28 +81,28 @@ when its name looks sensitive.
 
 ## Limits
 
-Every limit is a display budget disclosed to the caller, never a silent cut. A capped result says so in its own output: `truncated`, `<stream>Truncated`, or a `notice` line naming what was shown and what there was.
+Every limit is a display budget disclosed to the caller, never a silent cut. A capped result says so in its own output: `truncated`, `<stream>Truncated`, or a `notice` line naming what was shown and what there was. Rows named by prose are fixed in the package and not exported; the rest are the constants named.
 
-| Limit                             | Value       | Applies to                                                   |
-| --------------------------------- | ----------- | ------------------------------------------------------------ |
-| `DEFAULT_READ_LIMIT`              | 2,000 lines | one `read` page                                              |
-| `MAX_LINE_CHARS`                  | 2,000       | one displayed line; a clipped line is not an edit anchor     |
-| `MAX_ENTRIES`                     | 1,000       | one `ls` or `glob` page                                      |
-| `MAX_GREP_MATCHES`                | 200         | one `grep` call                                              |
-| `MAX_OUTPUT_BYTES`                | 60,000      | one rendered text payload (`fetch`, `http-post`, `webfetch`) |
-| `MAX_SHELL_OUTPUT_BYTES`          | 30,000      | each captured shell stream                                   |
-| `Bash.DEFAULT_TIMEOUT_MS`         | 600,000     | one `bash` call with no `timeoutMs`                          |
-| `TestRun.DEFAULT_TIMEOUT_MS`      | 600,000     | one `test` call with no `timeoutMs`                          |
-| `TestRun.MAX_CAPTURE_BYTES`       | 8,000,000   | the runner output one `test` call holds in memory            |
-| `ShellCommand.DEFAULT_TIMEOUT_MS` | 10,000      | one `shell_command` call with no `timeout`                   |
-| `ShellCommand.MAX_CAPTURE_BYTES`  | 8,000,000   | the command output one `shell_command` call holds in memory  |
-| `NativeSearch.MAX_CAPTURE_BYTES`  | 64 MiB      | one `rg` invocation's captured output, refused past the cap  |
-| HTTP response bytes               | 5 MiB       | `fetch`, `http-post` and `webfetch`, refused past the cap    |
-| `fetch` / `http-post` timeout     | 30 s        | total request and body budget; `timeout` seconds, capped at 120 |
-| `webfetch` request timeout        | 120 s cap   | the request and the body read                                |
-| Language-server frame             | 8 MiB       | one JSON-RPC frame, with an 8 KiB header bound               |
-| `MAX_QUEUED_FRAMES`               | 256         | frames buffered for one language server's stdin              |
-| `MAX_PENDING_REQUESTS`            | 512         | concurrent in-flight JSON-RPC requests to one server         |
+| Limit                                     | Value       | Applies to                                                      |
+| ----------------------------------------- | ----------- | --------------------------------------------------------------- |
+| Default `read` page                       | 2,000 lines | one `read` call with no `limit`                                 |
+| Displayed line                            | 2,000       | one displayed line; a clipped line is not an edit anchor        |
+| Entries per page                          | 1,000       | one `ls` or `glob` page                                         |
+| Matches per call                          | 200         | one `grep` call                                                 |
+| Rendered text payload                     | 60,000      | one rendered text payload (`fetch`, `http-post`, `webfetch`)    |
+| Shell stream capture                      | 30,000      | each captured shell stream                                      |
+| `Bash.DEFAULT_TIMEOUT_MS`                 | 600,000     | one `bash` call with no `timeoutMs`                             |
+| `TestRun.DEFAULT_TIMEOUT_MS`              | 600,000     | one `test` call with no `timeoutMs`                             |
+| `TestRun.MAX_CAPTURE_BYTES`               | 8,000,000   | the runner output one `test` call holds in memory               |
+| `ShellCommand.DEFAULT_TIMEOUT_MS`         | 10,000      | one `shell_command` call with no `timeout_ms`                   |
+| `ShellCommand.MAX_CAPTURE_BYTES`          | 8,000,000   | the command output one `shell_command` call holds in memory     |
+| `NativeSearch.MAX_CAPTURE_BYTES`          | 64 MiB      | one `rg` invocation's captured output, refused past the cap     |
+| HTTP response bytes                       | 5 MiB       | `fetch`, `http-post` and `webfetch`, refused past the cap       |
+| `fetch` / `http-post` timeout             | 30 s        | total request and body budget; `timeout` seconds, capped at 120 |
+| `webfetch` request timeout                | 120 s cap   | the request and the body read                                   |
+| Language-server frame                     | 8 MiB       | one JSON-RPC frame, with an 8 KiB header bound                  |
+| `NodeLanguageServer.MAX_QUEUED_FRAMES`    | 256         | frames buffered for one language server's stdin                 |
+| `NodeLanguageServer.MAX_PENDING_REQUESTS` | 512         | concurrent in-flight JSON-RPC requests to one server            |
 
 Shell capture is bounded where it is read rather than after: a command that prints gigabytes costs the bound, not the whole of what it printed, and the `<stream>DroppedBytes` fields count what the process actually produced. Every caller-supplied command (`bash`, `test`, `shell_command`) passes a bound. The internal `git` plumbing calls behind `Checkpoints` and `TestRun`'s baseline do not, because a listing read for its content is useless with its head missing. Those fields and the `<stream>Truncated` flags beside them are a wire convention: [`@smthrs/harness`](https://harness.smithers.sh) reads them to refuse a later write of those exact bytes, so check the flag before writing captured output anywhere.
 
@@ -127,7 +127,7 @@ Handlers keep ordinary outcomes in the success channel: a non-zero exit code, an
 | `command_failed`           | The process could not start, or a host operation failed.      |
 | `request_failed`           | The HTTP or language-server request failed.                   |
 | `timeout`                  | The call exceeded its wall-clock budget.                      |
-| `rate_limited`             | Provider rate limit reached; back off before retrying.      |
+| `rate_limited`             | Provider rate limit reached; back off before retrying.        |
 | `provider_unavailable`     | No host bound the service this flow needs, or it refused.     |
 | `unsupported`              | The service does not implement this query.                    |
 | `unsupported_content_type` | The response is not a type this flow renders.                 |

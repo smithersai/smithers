@@ -6,7 +6,7 @@
   "smthrs": {
     "group": "agent"
   },
-  "description": "The flows standard tool library: filesystem, search, and shell flows",
+  "description": "The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",
@@ -16,17 +16,13 @@
   "bugs": {
     "url": "https://github.com/smithersai/smithers/issues"
   },
-  "tags": [
-    "typescript",
-    "effect",
-    "journal",
-    "durability"
-  ],
   "keywords": [
     "typescript",
     "effect",
-    "journal",
-    "durability"
+    "agent-tools",
+    "ripgrep",
+    "lsp",
+    "shell"
   ],
   "engines": {
     "node": ">=22.19.0"

@@ -2,11 +2,11 @@ import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 /**
  * Standard package targets.
  *
- * `cwd` anchors every emitted tool run in this package directory. Until this
- * file existed the package declared no targets at all, so `smithers-build ci
- * '//packages/...'` planned nothing for `@smthrs/std`: neither its typecheck,
- * nor its suite, nor its lint reached CI, and `.github/workflows/ci.yml` held
- * no occurrence of the name.
+ * `cwd` anchors every emitted tool run in this package directory. The targets
+ * declared here are what `smthrs ci '//packages/...'` plans for this package;
+ * the generated `.github/workflows/ci.yml` runs that label and names no
+ * package, so a package with no `PACKAGE.ts` has no typecheck, suite, or lint
+ * in CI.
  */
 import { Smithers } from "@smthrs/targets"
 
