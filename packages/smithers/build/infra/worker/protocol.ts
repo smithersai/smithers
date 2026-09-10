@@ -677,16 +677,30 @@ const readJson = async (request: Request, limit: number): Promise<JsonRead> => {
 /**
  * Renders an inert JSON value with deterministic member order and hard bounds.
  *
- * The argument must be a value a JSON parser owns. Rendering reads the value's
- * prototype, own keys, and property descriptors, all of which a `Proxy` can
- * trap, so a caller-supplied object could run code during canonicalization.
- * Both callers in this service pass `JSON.parse` output, which is inert.
+ * The argument must be a value a JSON parser owns. Rendering reads own keys
+ * and member values, both of which a `Proxy` can trap, so a caller-supplied
+ * object could run code during canonicalization. Every caller in this service
+ * passes `JSON.parse` output, which is inert.
+ *
+ * The bounds enforced here are the rules parsed JSON can still break: nesting
+ * depth, aggregate member count, encoded output bytes, and the numbers
+ * `JSON.parse` accepts but a conflict discriminator cannot round-trip. Shapes
+ * a parser cannot produce, such as cycles, sparse arrays, accessors, foreign
+ * prototypes and symbol keys, are the precondition's business and are not
+ * inspected.
+ *
+ * `BoundedJson.admit` from `@smthrs/canonical` carries the same traversal and
+ * a stricter admission, but not the same policy: it accepts `-0`, which this
+ * discriminator must refuse because rendering erases the sign and two
+ * different published results would then compare equal, and it refuses
+ * unpaired surrogates, which this service accepts because `JSON.stringify`
+ * re-encodes them faithfully. Reconciling those two rules is what a shared
+ * renderer would need before this one could be retired.
  *
  * @category utilities
  * @since 0.1.0
  */
 export const canonicalJson = (value: unknown): string => {
-  const ancestors = new Set<object>()
   const chunks: Array<string> = []
   let bytes = 0
   let members = 0
@@ -698,6 +712,10 @@ export const canonicalJson = (value: unknown): string => {
   const appendString = (text: string): void => {
     if (text.length > maxCanonicalJsonBytes) throw new Error("canonical JSON exceeds its byte bound")
     append(JSON.stringify(text))
+  }
+  const spend = (count: number): void => {
+    if (count > maxJsonMembers - members) throw new Error("JSON has too many members")
+    members += count
   }
   const render = (current: unknown, depth: number): void => {
     if (depth > maxJsonDepth) throw new Error("JSON is nested too deeply")
@@ -720,60 +738,31 @@ export const canonicalJson = (value: unknown): string => {
       append(JSON.stringify(current))
       return
     }
-    if (!Array.isArray(current) && !isRecord(current)) throw new Error("unsupported JSON value")
-    if (ancestors.has(current)) throw new Error("JSON contains a cycle")
-    ancestors.add(current)
-    try {
-      if (Array.isArray(current)) {
-        const lengthDescriptor = Object.getOwnPropertyDescriptor(current, "length")
-        if (
-          lengthDescriptor === undefined ||
-          !("value" in lengthDescriptor) ||
-          !Number.isSafeInteger(lengthDescriptor.value) ||
-          lengthDescriptor.value < 0
-        ) throw new Error("array is not an inert JSON array")
-        const length = lengthDescriptor.value as number
-        const keys = Reflect.ownKeys(current).filter((key) => key !== "length")
-        if (keys.length !== length) throw new Error("array is not a JSON array")
-        if (length > maxJsonMembers - members) throw new Error("JSON has too many members")
-        members += length
-        append("[")
-        for (let index = 0; index < length; index += 1) {
-          if (index > 0) append(",")
-          const descriptor = Object.getOwnPropertyDescriptor(current, String(index))
-          if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-            throw new Error("array is not an inert JSON array")
-          }
-          render(descriptor.value, depth + 1)
-        }
-        append("]")
-        return
-      }
-
-      const prototype = Object.getPrototypeOf(current)
-      if (prototype !== Object.prototype && prototype !== null) {
-        throw new Error("object is not a JSON object")
-      }
-      const keys = Reflect.ownKeys(current)
-      if (!keys.every((key) => typeof key === "string")) throw new Error("object has symbol keys")
-      if (keys.length > maxJsonMembers - members) throw new Error("JSON has too many members")
-      members += keys.length
-      const stringKeys = keys.sort()
-      append("{")
-      for (const [index, key] of stringKeys.entries()) {
+    if (Array.isArray(current)) {
+      spend(current.length)
+      append("[")
+      for (let index = 0; index < current.length; index += 1) {
         if (index > 0) append(",")
-        const descriptor = Object.getOwnPropertyDescriptor(current, key)
-        if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-          throw new Error("object is not an inert JSON object")
-        }
-        appendString(key)
-        append(":")
-        render(descriptor.value, depth + 1)
+        render(current[index], depth + 1)
       }
-      append("}")
-    } finally {
-      ancestors.delete(current)
+      append("]")
+      return
     }
+    if (!isRecord(current)) throw new Error("unsupported JSON value")
+    // RFC 8785 orders members by their UTF-16 code units, which is what the
+    // default comparator does. The depth bound above is also what stops a
+    // cyclic value: it recurses until the bound refuses it rather than
+    // forever.
+    const keys = Object.keys(current).sort()
+    spend(keys.length)
+    append("{")
+    for (const [index, key] of keys.entries()) {
+      if (index > 0) append(",")
+      appendString(key)
+      append(":")
+      render(current[key], depth + 1)
+    }
+    append("}")
   }
 
   render(value, 0)

@@ -3,6 +3,7 @@
  *
  * @since 0.1.0
  */
+import * as BoundedJson from "@smthrs/canonical/BoundedJson"
 import { isRecord } from "@smthrs/canonical/Record"
 import { errorCode, syncDirectory } from "@smthrs/targets/SafeFs"
 import { createHash, randomUUID } from "node:crypto"
@@ -209,27 +210,35 @@ const sameIdentity = (left: FileIdentity, right: NodeFs.BigIntStats): boolean =>
   left.mtimeNs === right.mtimeNs &&
   left.ctimeNs === right.ctimeNs
 
+/**
+ * The budget one parsed Alchemy state tree must fit.
+ *
+ * `BoundedJson.admit` is the traversal this script shares with the rest of the
+ * repository instead of keeping a third copy of a depth-and-member walk. Its
+ * admission is wider than a budget: it also refuses unpaired surrogates and
+ * shapes `JSON.parse` cannot produce. Both suit a script whose input is a
+ * machine-written file it must understand completely or refuse, alongside the
+ * fatal UTF-8 decode and the duplicate-member audit it already applies. The
+ * detached copy `admit` returns is discarded, because redaction rewrites the
+ * parsed tree the caller already holds.
+ */
+const stateJsonLimits: BoundedJson.Limits = {
+  maxDepth: maximumJsonDepth,
+  maxMembers: maximumJsonMembers,
+  maxTotalMembers: maximumJsonMembers,
+  maxNodes: maximumJsonMembers
+}
+
 const validateJsonBudget = (root: unknown): void => {
-  const pending: Array<{ readonly depth: number; readonly value: unknown }> = [{ depth: 0, value: root }]
-  let members = 0
-  // Each container is charged for its children before they are queued, so
-  // the running count can never pass the budget between checks.
-  for (let current = pending.pop(); current !== undefined; current = pending.pop()) {
-    members += 1
-    if (current.depth > maximumJsonDepth) throw new RangeError("Alchemy state is nested too deeply")
-    if (Array.isArray(current.value)) {
-      if (members + pending.length + current.value.length > maximumJsonMembers) {
-        throw new RangeError("Alchemy state has too many JSON members")
-      }
-      for (const value of current.value) pending.push({ depth: current.depth + 1, value })
-    } else if (isRecord(current.value)) {
-      const keys = Object.keys(current.value)
-      if (members + pending.length + keys.length > maximumJsonMembers) {
-        throw new RangeError("Alchemy state has too many JSON members")
-      }
-      for (const key of keys) pending.push({ depth: current.depth + 1, value: current.value[key] })
-    }
+  const admitted = BoundedJson.admit(root, stateJsonLimits)
+  if (admitted.ok) return
+  if (admitted.code === "depth") throw new RangeError("Alchemy state is nested too deeply")
+  if (admitted.code === "members" || admitted.code === "nodes") {
+    throw new RangeError("Alchemy state has too many JSON members")
   }
+  // The complaint names the rule, never the value, so a refusal cannot echo a
+  // credential the file still holds.
+  throw new TypeError(`Alchemy state ${admitted.complaint}`)
 }
 
 /**

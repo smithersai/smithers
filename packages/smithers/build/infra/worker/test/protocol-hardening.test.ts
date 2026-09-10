@@ -329,31 +329,12 @@ describe("remote-cache hardening", () => {
   it("rejects lossy or structurally hostile canonical JSON", () => {
     expect(() => canonicalJson(-0)).toThrow()
     expect(() => canonicalJson(Number.POSITIVE_INFINITY)).toThrow()
+    // A cycle cannot reach this function from a parser, and the depth bound is
+    // what stops one anyway: rendering recurses until a bound refuses it,
+    // never forever.
     const cycle: Array<unknown> = []
     cycle.push(cycle)
-    expect(() => canonicalJson(cycle)).toThrow("cycle")
-    const sparse = new Array(1)
-    expect(() => canonicalJson(sparse)).toThrow()
-    const accessor = {}
-    let accessorReads = 0
-    Object.defineProperty(accessor, "secret", {
-      enumerable: true,
-      get: () => {
-        accessorReads += 1
-        return "value"
-      }
-    })
-    expect(() => canonicalJson(accessor)).toThrow("inert")
-    expect(accessorReads).toBe(0)
-    let proxyReads = 0
-    const proxy = new Proxy({ value: "safe" }, {
-      get(target, property, receiver) {
-        proxyReads += 1
-        return Reflect.get(target, property, receiver)
-      }
-    })
-    expect(canonicalJson(proxy)).toBe("{\"value\":\"safe\"}")
-    expect(proxyReads).toBe(0)
+    expect(() => canonicalJson(cycle)).toThrow("JSON is nested too deeply")
     expect(() => canonicalJson("x".repeat(maxCanonicalJsonBytes + 1))).toThrow("byte bound")
     let deep: unknown = null
     for (let index = 0; index <= maxJsonDepth; index += 1) deep = [deep]
@@ -1114,17 +1095,21 @@ describe("remote-cache hardening", () => {
     expect(() => createHandler([] as never)).toThrow("must be a plain object")
   })
 
-  it("refuses hostile object and array shapes during canonicalization", () => {
-    expect(() => canonicalJson(Object.create({ inherited: 1 }))).toThrow("not a JSON object")
-    expect(() => canonicalJson({ [Symbol("hidden")]: 1 })).toThrow("symbol keys")
+  it("renders object and array shapes a parser cannot produce instead of inspecting them", () => {
+    // The JSDoc precondition, not the renderer, excludes shapes `JSON.parse`
+    // cannot build. Rendering reads own enumerable keys and member values and
+    // nothing else, so these render rather than refuse.
+    expect(canonicalJson(Object.create({ inherited: 1 }))).toBe("{}")
+    expect(canonicalJson({ [Symbol("hidden")]: 1 })).toBe("{}")
     const extended: Array<number> & { extra?: number } = [1]
     extended.extra = 2
-    expect(() => canonicalJson(extended)).toThrow("not a JSON array")
+    expect(canonicalJson(extended)).toBe("[1]")
     const hiddenElement = [1]
     Object.defineProperty(hiddenElement, "0", { enumerable: false })
-    expect(() => canonicalJson(hiddenElement)).toThrow("inert JSON array")
+    expect(canonicalJson(hiddenElement)).toBe("[1]")
     const hiddenMember = Object.defineProperty({}, "key", { enumerable: false, value: 1 })
-    expect(() => canonicalJson(hiddenMember)).toThrow("inert JSON object")
+    expect(canonicalJson(hiddenMember)).toBe("{}")
+    // The bounds parsed JSON can still break stay enforced.
     expect(() => canonicalJson(new Array(maxJsonMembers + 1).fill(0))).toThrow("too many members")
     expect(() => canonicalJson(undefined)).toThrow("unsupported JSON value")
   })
@@ -1143,13 +1128,19 @@ describe("remote-cache hardening", () => {
       getOwnPropertyDescriptor(target, property) {
         traps.push("getOwnPropertyDescriptor")
         return Reflect.getOwnPropertyDescriptor(target, property)
+      },
+      get(target, property, receiver) {
+        traps.push("get")
+        return Reflect.get(target, property, receiver)
       }
     })
 
     expect(canonicalJson(proxy)).toBe("{\"value\":\"safe\"}")
     // The JSDoc precondition is the guarantee, not inertness: a proxy that
-    // reaches this function does run code, so no caller may pass one.
-    expect(traps).toEqual(["getPrototypeOf", "ownKeys", "getOwnPropertyDescriptor"])
+    // reaches this function does run code, so no caller may pass one. It runs
+    // only the reads an own-key enumeration and a member read need; the
+    // prototype is no longer walked.
+    expect(traps).toEqual(["ownKeys", "getOwnPropertyDescriptor", "get"])
 
     const revocable = Proxy.revocable({ value: 1 }, {})
     revocable.revoke()
@@ -1476,18 +1467,10 @@ describe("remote-cache hardening", () => {
     expect((await handler(request(`/cas/${digestOf("absent")}`, { method: "HEAD" }))).status).toBe(404)
   })
 
-  it("refuses canonicalization inputs a parser cannot produce", () => {
-    const hostileLength = new Proxy([], {
-      getOwnPropertyDescriptor(target, property) {
-        return property === "length"
-          ? { value: 1.5, writable: true, enumerable: false, configurable: false }
-          : Reflect.getOwnPropertyDescriptor(target, property)
-      }
-    })
+  it("refuses canonicalization inputs past the member and byte bounds", () => {
     const wide = Object.fromEntries(Array.from({ length: maxJsonMembers + 1 }, (_, index) => [String(index), 0]))
     const chunk = "x".repeat(maxCanonicalJsonBytes / 2)
 
-    expect(() => canonicalJson(hostileLength)).toThrow("array is not an inert JSON array")
     expect(() => canonicalJson(wide)).toThrow("JSON has too many members")
     expect(() => canonicalJson([chunk, chunk, chunk])).toThrow("canonical JSON exceeds its byte bound")
   })
@@ -1817,6 +1800,31 @@ describe("exact protocol boundaries", () => {
     const response = await makeHandler({ actionCache })(jsonRequest(`/ac/${keyDigest}`, body, { method: "PUT" }))
     expect(response.status).toBe(offset > 0 ? 400 : 201)
     expect(await actionCache.get(keyDigest)).toBe(offset > 0 ? null : body)
+  })
+
+  it("pins the canonical rendering of parser-owned documents", () => {
+    // The discriminator these strings become is what decides 200 against 409,
+    // so a renderer change that moves any of them has to move this table
+    // first. Every input is JSON text, because a parser is the only source
+    // this function accepts.
+    const corpus: ReadonlyArray<readonly [string, string]> = [
+    ["{\"b\":1,\"a\":[1,2,{\"z\":null,\"y\":\"\u00e9 \ud83d\ude00 \\\"quote\\\" \\u0001\"}],\"c\":true,\"d\":1e21,\"e\":0.1,\"f\":-1.5,\"g\":9007199254740992}", "{\"a\":[1,2,{\"y\":\"\u00e9 \ud83d\ude00 \\\"quote\\\" \\u0001\",\"z\":null}],\"b\":1,\"c\":true,\"d\":1e+21,\"e\":0.1,\"f\":-1.5,\"g\":9007199254740992}"],
+    ["[]", "[]"],
+    ["{}", "{}"],
+    ["\"plain\"", "\"plain\""],
+    ["[[[[{\"k\":[]}]]]]", "[[[[{\"k\":[]}]]]]"],
+    ["{\"key\\u0000\":\"v\",\"10\":1,\"2\":2,\"a\":3,\"B\":4}", "{\"10\":1,\"2\":2,\"B\":4,\"a\":3,\"key\\u0000\":\"v\"}"],
+    ["{\"\\ud800\":\"\\udfff lone\",\"ok\":\"\\ud83d\\ude00\"}", "{\"ok\":\"\ud83d\ude00\",\"\\ud800\":\"\\udfff lone\"}"],
+    ["[true,false,null,0,-1.5,1e-7,1e21,9007199254740992]", "[true,false,null,0,-1.5,1e-7,1e+21,9007199254740992]"],
+    ["{\"nested\":{\"a\":{\"b\":{\"c\":[1,{\"d\":2}]}}},\"\":\"empty key\"}", "{\"\":\"empty key\",\"nested\":{\"a\":{\"b\":{\"c\":[1,{\"d\":2}]}}}}"],
+    ["{\"tab\":\"a\\tb\",\"nl\":\"a\\nb\",\"quote\":\"\\\"\",\"backslash\":\"\\\\\",\"del\":\"\\u007f\"}", "{\"backslash\":\"\\\\\",\"del\":\"\u007f\",\"nl\":\"a\\nb\",\"quote\":\"\\\"\",\"tab\":\"a\\tb\"}"],
+    ]
+
+    for (const [text, expected] of corpus) {
+      expect(canonicalJson(JSON.parse(text) as unknown)).toBe(expected)
+      // Canonical text is parser-owned too, and renders to itself.
+      expect(canonicalJson(JSON.parse(expected) as unknown)).toBe(expected)
+    }
   })
 
   describe.each(["array", "object"] as const)("canonical %s bounds", (shape) => {

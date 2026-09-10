@@ -600,6 +600,20 @@ describe("redactAlchemyState", () => {
     })
   })
 
+  it("refuses state text it cannot re-encode as well-formed Unicode", async () => {
+    await withFixture(async (root) => {
+      // An unpaired surrogate escape survives JSON.parse, so the parsed tree
+      // carries text no encoder can round-trip. The shared admission refuses
+      // it and the redactor fails closed rather than rewriting a file it
+      // cannot audit, which is the same posture as the fatal UTF-8 decode.
+      await Fs.writeFile(NodePath.join(root, "CacheWorker.json"), String.raw`{"props":{"env":{"A":"\ud800"}}}`)
+
+      await expect(redactAlchemyState({ directory: root, bearerToken: "token" })).rejects.toThrow(
+        /ill-formed text/
+      )
+    })
+  })
+
   it("bounds the rendered replacement before publication", async () => {
     await withFixture(async (root) => {
       const leafCount = 99_860
