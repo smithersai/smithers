@@ -9,6 +9,7 @@ import * as FileSet from "@smthrs/plan/FileSet"
 import * as Context from "effect/Context"
 import { constFalse, constTrue } from "effect/Function"
 import * as Schema from "effect/Schema"
+import { BoundaryMode } from "../Action/BoundaryMode.ts"
 
 /**
  * Declared filesystem effects copied from the plan node effect contract.
@@ -22,10 +23,11 @@ export const Effects = Schema.Struct({
   /**
    * Paths the flow declares it will DELETE. Optional with an empty default:
    * an absent declared write is a defect, and a declared removal is what makes
-   * an absent path legitimate instead.
+   * an absent path legitimate instead. Workspace-relative like every other
+   * declared path, because replay acts on a removal by deleting it.
    */
-  removes: Schema.optional(Schema.Array(Schema.String)),
-  boundaryMode: Schema.Literals(["hard", "expected"])
+  removes: Schema.optional(Schema.Array(FileSet.Pattern)),
+  boundaryMode: BoundaryMode
 })
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
-import { Flow } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
 import { Context, Effect, Schema } from "effect"
 
@@ -139,5 +139,26 @@ describe("Flow authoring annotations", () => {
     expect(Context.get(annotated.annotations, Flow.Capabilities)).toEqual(["fs:read"])
     expect(Context.getUnsafe(annotated.annotations, Flow.EffectsDeclaration)).toEqual(effects)
     expect(Context.getUnsafe(annotated.annotations, Flow.Placement)).toEqual(placement)
+  })
+
+  it("declares one spelling of the vocabulary it shares with actions and the runtime", () => {
+    // Re-spelling either concept lets the annotation accept what the action
+    // boundary or the durable park refuses, so both names resolve to the one
+    // definition rather than a copy of it.
+    expect(Flow.Effects.fields.boundaryMode).toBe(Action.BoundaryMode)
+    expect(Flow.Park.fields.reason).toBe(FlowRuntime.WaitingAnnotation)
+    expectTypeOf<typeof FlowRuntime.WaitingAnnotation.Type>().toEqualTypeOf<FlowRuntime.WaitingAnnotation>()
+  })
+
+  it("refuses a declared removal the workspace cannot contain", () => {
+    const decode = Schema.decodeUnknownResult(Flow.Effects)
+
+    // A replay acts on a removal by deleting the path, so an absolute or
+    // upward spelling hands it an eraser aimed outside the workspace.
+    for (const path of ["/etc/passwd", "C:\\Windows\\system32", "../outside.js", "dist/./stale.js", ""]) {
+      expect(decode({ reads: [], writes: [], removes: [path], boundaryMode: "hard" })._tag).toBe("Failure")
+    }
+
+    expect(decode({ reads: [], writes: [], removes: ["dist/stale.js"], boundaryMode: "hard" })._tag).toBe("Success")
   })
 })

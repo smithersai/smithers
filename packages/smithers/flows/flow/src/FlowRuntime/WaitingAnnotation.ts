@@ -6,6 +6,7 @@
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import { FlowInstance } from "./FlowInstance.ts"
 
 /**
@@ -24,6 +25,20 @@ export interface WaitingAnnotation {
   readonly wakeAt?: number | undefined
   readonly token?: string | undefined
 }
+
+/**
+ * Schema for {@link WaitingAnnotation}, the one encodable spelling of the
+ * waiting vocabulary. `Flow.Park` carries it so a parking request and the
+ * annotation that precedes a suspension cannot describe different waits.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const WaitingAnnotation = Schema.Struct({
+  reason: Schema.String,
+  wakeAt: Schema.optional(Schema.Number),
+  token: Schema.optional(Schema.String)
+})
 
 /**
  * Declares how the flow is about to wait, so a durable driver parks the run

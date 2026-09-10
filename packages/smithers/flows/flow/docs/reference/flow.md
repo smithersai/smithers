@@ -480,7 +480,7 @@ The layer form of `DurableQueue.makeWorker`, forking the worker into the layer's
 
 | Name                  | Kind                 | Summary                                                                                                                                                                                                                                                                                                                       |
 | --------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Effects`             | Schema and type      | The declared filesystem effects of a flow: `reads`, `writes`, optional `removes`, and `boundaryMode`.                                                                                                                                                                                                                         |
+| `Effects`             | Schema and type      | The declared filesystem effects of a flow: `reads`, `writes`, optional `removes` (workspace-relative patterns, as on an action boundary), and `boundaryMode`.                                                                                                                                                                 |
 | `PlacementDirective`  | Schema and type      | A schema-encodable placement directive, held as `Schema.Unknown` until planning reads it.                                                                                                                                                                                                                                     |
 | `ExecutionIdSource`   | Interface            | Mints the execution id of an invocation that named none, through `mint(flow, payload)`.                                                                                                                                                                                                                                       |
 | `BodySuccess`         | Type                 | The values a flow body may settle one round with: a decoded success, a planned reference, or an `Outcome`.                                                                                                                                                                                                                    |
@@ -760,9 +760,12 @@ The port the authoring APIs are written against. It exposes `register`, `execute
 ### `FlowRuntime.WaitingAnnotation`
 
 - **Type:** `interface WaitingAnnotation { readonly reason: string; readonly wakeAt?: number | undefined; readonly token?: string | undefined }`
+- **Schema:** `Schema.Struct({ reason: Schema.String, wakeAt: Schema.optional(Schema.Number), token: Schema.optional(Schema.String) })`
 - **Since:** `0.1.0`
 
-The waiting classification a flow declares before suspending.
+The waiting classification a flow declares before suspending. `Flow.Park`
+carries this schema as its `reason`, so a parking request and the annotation
+that precedes a suspension cannot describe different waits.
 
 ### `FlowRuntime.annotateWaiting`
 

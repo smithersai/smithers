@@ -9,7 +9,7 @@
  */
 import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
-import type { WaitingAnnotation } from "../FlowRuntime/WaitingAnnotation.ts"
+import { WaitingAnnotation } from "../FlowRuntime/WaitingAnnotation.ts"
 
 const OutcomeNodeTypeId = Symbol.for("@smthrs/flow/Flow/OutcomeNode")
 const OutcomeValueTypeId = Symbol.for("@smthrs/flow/Flow/OutcomeValue")
@@ -108,11 +108,7 @@ export const To = Schema.Struct({
  */
 export const Park = Schema.Struct({
   _tag: Schema.tag("Park"),
-  reason: Schema.Struct({
-    reason: Schema.String,
-    wakeAt: Schema.optional(Schema.Number),
-    token: Schema.optional(Schema.String)
-  })
+  reason: WaitingAnnotation
 })
 
 /**
