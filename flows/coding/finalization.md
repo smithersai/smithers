@@ -1,7 +1,8 @@
 # Vibing and appending to main
 
-Finalization admission is implemented as the private `coding/AdmitVibe` flow.
-The public `coding/vibe` descriptor, complete cleanup/publication/append
+Finalization admission and native description cleanup are implemented as private
+`coding/AdmitVibe` and `coding/CleanVibeHistory` flows.
+The public `coding/vibe` descriptor, complete publication/append
 composition and shipment are still being integrated. The existing request
 outcome stops at validated, changes-requested or blocked.
 
@@ -43,14 +44,34 @@ a second provenance ledger or duplicating the POC in RequestResult.
 
 ## Clean the existing native history
 
-Use an evidence-only review of the validated native atom sequence and existing
-plans to propose final descriptions and context. Native JJ remains the identity
-owner. Apply approved description/organization changes through the existing
-fenced operations and record their native receipts. A rewrite invalidates the
-receipts that depend on changed commits or parents; rerun their real checks
-through the existing graph before accepting the final history. The final source
-tree must retain the validated implementation behavior. Cleanup is not a reason
-to silently replace the original source base with a newer main.
+`CleanVibeHistory` uses an evidence-only ReviewHistory action through the existing
+`coding/implement` model role. Its private proposal contains one final summary
+and `{ changeId, description }` for each of the request's validated atoms, in
+order, up to 128. Every description and the summary require an emoji conventional
+commit subject. The model cannot insert, remove or reorder atoms or edit source.
+
+For each atom, PrepareDescription captures the exact native operation fence and
+the existing flow-derived request ID. ApplyNative executes that recorded payload;
+a lost acknowledgment retries the identical payload to recover the native JJ
+receipt. ConfirmDescription checks the requested text and preserved source tree.
+JJ adds a terminal newline, so confirmation uses the adapter's existing trailing
+newline comparison. Neither rewritten commit IDs nor unchanged descriptions
+produce replacement atomic identities.
+
+RefreshHistory reads the native atoms in batches of at most 100 under one observed
+head/operation, verifies every original atom tree and linear parent relationship,
+and reconstructs the existing Implementation values. RecheckFinalHistory runs the
+actual required fast and slow checks through RunCheck, FastGate and Assess. It
+rechecks the full request even when all descriptions were already clean. A final
+source fence must still equal the validated implementation tree. Failed checks
+refuse finalization while retaining the completed rewrites and action receipts;
+there is no rollback or claim of append success.
+
+The private `VibeCleanup` receipt contains its admission, summary, refreshed Result
+and native head. It proves description cleanup and revalidation only. The complete
+Vibe composition must require original-source publication before rewriting, retain
+the cleaned source, and continue through Plue's existing landing policy. Cleanup
+never substitutes a newer main for the original source base.
 
 Portable prompt, plan and implementation context in history still needs its
 Plue-owned notes/provenance integration. Current local operation receipts report
