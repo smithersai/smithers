@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, Fiber, Layer, Redacted, Stream } from "effect"
+import { Deferred, Duration, Effect, Fiber, Layer, Redacted, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { vi } from "vitest"
 import * as BranchPresence from "../src/BranchPresence.ts"
@@ -355,5 +355,116 @@ describe("BranchPresence", () => {
         )).message
       ).toBe("overridden")
       expect(BranchPresence.make(noop).list).toBe(noop.list)
+    }))
+})
+
+describe("BranchPresence request detachment", () => {
+  /**
+   * A share whose `verify` parks after the signature check until released, so
+   * a test can mutate the caller's request object while the operation awaits.
+   */
+  const pausedShare = Effect.gen(function*() {
+    const share = yield* BranchShare.makeHmac({ secret: Redacted.make("presence-secret") })
+    const entered = yield* Deferred.make<void>()
+    const release = yield* Deferred.make<void>()
+    let pause = false
+    const paused: BranchShare.Service = {
+      ...share,
+      verify: (capability, requirement) =>
+        share.verify(capability, requirement).pipe(
+          Effect.tap(() =>
+            pause
+              ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release)))
+              : Effect.void
+          )
+        )
+    }
+    return { share: paused, entered, release, start: () => (pause = true) }
+  })
+
+  const arm = Effect.gen(function*() {
+    const { entered, release, share, start } = yield* pausedShare
+    const presence = yield* BranchPresence.makeMemory({ leaseMs }).pipe(
+      Effect.provideService(BranchShare.BranchShare, share)
+    )
+    const allowed = yield* share.mint({ branchId, capabilityId: "cap-allowed", access: "write", ttlMs: 600_000 })
+    const forbidden = yield* share.mint({
+      branchId: otherBranchId,
+      capabilityId: "cap-forbidden",
+      access: "write",
+      ttlMs: 600_000
+    })
+    yield* presence.announce({
+      capability: forbidden,
+      branchId: otherBranchId,
+      participantId: participant("victim"),
+      displayName: "Private participant",
+      cursor: null
+    })
+    start()
+    return { presence, allowed, entered, release }
+  })
+
+  it.effect("list reads the branch it authorized, not the one written during verification", () =>
+    Effect.gen(function*() {
+      const { allowed, entered, presence, release } = yield* arm
+      const request = { capability: allowed, branchId }
+      const read = yield* presence.list(request).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      request.branchId = otherBranchId
+      yield* Deferred.succeed(release, undefined)
+      expect(yield* Fiber.join(read)).toEqual([])
+    }))
+
+  it.effect("announce joins the branch it authorized, not the one written during verification", () =>
+    Effect.gen(function*() {
+      const { allowed, entered, presence, release } = yield* arm
+      const request = {
+        capability: allowed,
+        branchId,
+        participantId: participant("intruder"),
+        displayName: "Intruder",
+        cursor: { cardId: "card-1", offset: 0 }
+      }
+      const join = yield* presence.announce(request).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      request.branchId = otherBranchId
+      request.participantId = participant("victim")
+      request.cursor.cardId = "card-2"
+      yield* Deferred.succeed(release, undefined)
+      const joined = yield* Fiber.join(join)
+      expect(joined.branchId).toBe(branchId)
+      expect(joined.participantId).toBe("intruder")
+      expect(joined.cursor?.cardId).toBe("card-1")
+      const readOnly = yield* BranchShare.makeHmac({ secret: Redacted.make("presence-secret") })
+      const capability = yield* readOnly.mint({
+        branchId: otherBranchId,
+        capabilityId: "cap-read",
+        access: "read",
+        ttlMs: 600_000
+      })
+      const forbidden = yield* presence.list({ capability, branchId: otherBranchId })
+      expect(forbidden.map((entry) => entry.displayName)).toEqual(["Private participant"])
+    }))
+
+  it.effect("leave drops from the branch it authorized, not the one written during verification", () =>
+    Effect.gen(function*() {
+      const { allowed, entered, presence, release } = yield* arm
+      const request = { capability: allowed, branchId, participantId: participant("nobody") }
+      const gone = yield* presence.leave(request).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(entered)
+      request.branchId = otherBranchId
+      request.participantId = participant("victim")
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(gone)
+      const readOnly = yield* BranchShare.makeHmac({ secret: Redacted.make("presence-secret") })
+      const capability = yield* readOnly.mint({
+        branchId: otherBranchId,
+        capabilityId: "cap-read",
+        access: "read",
+        ttlMs: 600_000
+      })
+      expect((yield* presence.list({ capability, branchId: otherBranchId })).map((entry) => entry.participantId))
+        .toEqual(["victim"])
     }))
 })

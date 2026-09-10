@@ -307,7 +307,33 @@ export const makeMemory = (
       )
     }
 
-    const announce = Effect.fn("BranchPresence.announce")(function*(announcement: Announcement) {
+    /**
+     * Copy a request out of the caller's object before the first await.
+     *
+     * `share.verify` awaits Web Crypto between authorizing `branchId` and the
+     * roster access that follows. The request objects are plain structs the
+     * in-process caller still holds, so reading them again after the await let
+     * a caller move `branchId` (or the participant identity) onto a branch the
+     * capability never authorized. Matches the claim snapshot in `BranchShare`.
+     */
+    const detachRoster = (request: RosterRequest): RosterRequest => ({
+      capability: request.capability,
+      branchId: request.branchId
+    })
+    const detachLeave = (request: LeaveRequest): LeaveRequest => ({
+      ...detachRoster(request),
+      participantId: request.participantId
+    })
+    const detachAnnouncement = (request: Announcement): Announcement => ({
+      ...detachLeave(request),
+      displayName: request.displayName,
+      cursor: request.cursor === null
+        ? null
+        : new Cursor({ cardId: request.cursor.cardId, offset: request.cursor.offset })
+    })
+
+    const announce = Effect.fn("BranchPresence.announce")(function*(supplied: Announcement) {
+      const announcement = detachAnnouncement(supplied)
       yield* Effect.annotateCurrentSpan({
         branchId: announcement.branchId,
         participantId: announcement.participantId
@@ -339,9 +365,7 @@ export const makeMemory = (
         branchId: announcement.branchId,
         participantId: announcement.participantId,
         displayName: announcement.displayName,
-        cursor: announcement.cursor === null
-          ? null
-          : new Cursor({ cardId: announcement.cursor.cardId, offset: announcement.cursor.offset }),
+        cursor: announcement.cursor,
         leaseExpiresAtMs: nowMs + leaseMs
       })
       branch.set(announcement.participantId, participant)
@@ -350,7 +374,8 @@ export const makeMemory = (
       return detach(participant)
     })
 
-    const leave = Effect.fn("BranchPresence.leave")(function*(request: LeaveRequest) {
+    const leave = Effect.fn("BranchPresence.leave")(function*(supplied: LeaveRequest) {
+      const request = detachLeave(supplied)
       yield* Effect.annotateCurrentSpan({ branchId: request.branchId, participantId: request.participantId })
       yield* share.verify(request.capability, { branchId: request.branchId, access: "write" })
       const branch = roster.get(request.branchId)
@@ -361,7 +386,8 @@ export const makeMemory = (
       yield* PubSub.publish(changes, request.branchId)
     })
 
-    const list = Effect.fn("BranchPresence.list")(function*(request: RosterRequest) {
+    const list = Effect.fn("BranchPresence.list")(function*(supplied: RosterRequest) {
+      const request = detachRoster(supplied)
       yield* Effect.annotateCurrentSpan({ branchId: request.branchId })
       yield* share.verify(request.capability, { branchId: request.branchId, access: "read" })
       return live(request.branchId, yield* Clock.currentTimeMillis)
