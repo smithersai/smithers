@@ -524,8 +524,10 @@ export const carriesRpcRequest = (
  * wrong half of the contract twice over: it tells an operator the gateway
  * broke, and it tells a client to retry a request that can never succeed.
  *
- * `HttpServerRequest.text` is cached per request, so reading the body here
- * does not consume the body the mount reads.
+ * The body reader is cached per request, so reading the body here does not
+ * consume the body the mount reads. It is read through the reader the mount
+ * uses, `text` under a JSON serialization and `arrayBuffer` under a binary
+ * one, so the bytes the mount decodes are the bytes the client sent.
  *
  * @since 1.0.0
  * @category layers
@@ -538,6 +540,7 @@ export const layerIngress = (options: IngressOptions = {}) => {
   return HttpRouter.middleware(
     Effect.gen(function*() {
       const serialization = yield* RpcSerialization.RpcSerialization
+      const binary = !serialization.contentType.includes("json")
       return (httpEffect: Effect.Effect<HttpServerResponse.HttpServerResponse, Types.unhandled>) =>
         Effect.gen(function*() {
           const request = yield* HttpServerRequest.HttpServerRequest
@@ -557,7 +560,12 @@ export const layerIngress = (options: IngressOptions = {}) => {
           if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
             return refuse(requestTooLarge(path, maxBytes), 413)
           }
-          const read = yield* request.text.pipe(
+          // The body is read through the reader the mount will use. The Node
+          // adapter caches whichever reader ran first and derives the other
+          // from it, so a text read here would hand a binary mount a UTF-8
+          // re-encoding of its MessagePack bytes, with every invalid sequence
+          // replaced. A binary body is bounded here and framed by the mount.
+          const read = yield* (binary ? Effect.as(request.arrayBuffer, undefined) : request.text).pipe(
             Effect.provideService(HttpServerRequest.MaxBodySize, FileSystem.Size(maxBytes)),
             Effect.match({
               onFailure: (error): { readonly body: string | undefined; readonly error: unknown } => ({
@@ -567,10 +575,11 @@ export const layerIngress = (options: IngressOptions = {}) => {
               onSuccess: (body) => ({ body, error: undefined })
             })
           )
-          if (read.body === undefined) {
+          if (read.error !== undefined) {
             const answer = bodyRefusal(path, maxBytes, read.error)
             return refuse(answer.error, answer.status)
           }
+          if (read.body === undefined) return yield* httpEffect
           return carriesRpcRequest(serialization, read.body) ? yield* httpEffect : refuse(malformedRequest(path), 400)
         })
     }),

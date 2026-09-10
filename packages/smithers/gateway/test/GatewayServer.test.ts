@@ -21,6 +21,7 @@
  * the run it watches is silent.
  */
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeSocket from "@effect/platform-node/NodeSocket"
 import { describe, expect, it } from "@effect/vitest"
 import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
@@ -33,7 +34,7 @@ import { type ApprovalPayload, type PlanCard, RunStatus } from "@smthrs/control/
 import { SyncAuth as SyncAuthTag } from "@smthrs/sync/SyncRpcs"
 import * as SyncServer from "@smthrs/sync/SyncServer"
 import { Effect, Fiber, Layer, type Scope, Stream } from "effect"
-import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
+import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { RpcSerialization } from "effect/unstable/rpc"
 import { createServer } from "node:http"
 import { connect } from "node:net"
@@ -480,6 +481,68 @@ it.effect("leaves an invalid percent escape as an unknown route", () =>
       }),
     ({ dispose }) => Effect.promise(dispose)
   ))
+
+describe("a binary serialization through ingress on the Node adapter", () => {
+  /** One framed MessagePack request. Its bytes are not valid UTF-8. */
+  const framed = RpcSerialization.msgPack.makeUnsafe().encode({
+    _tag: "Request",
+    id: 1,
+    tag: "List",
+    payload: { _tag: "runs" },
+    headers: []
+  }) as Uint8Array
+  const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex")
+
+  /**
+   * A mount that reads the body the way `RpcServer` does under a binary
+   * serialization, `request.arrayBuffer`, after ingress has already read the
+   * request, and echoes the bytes it got. The Node adapter caches whichever
+   * reader ran first, so this is the only way to see what the mount sees.
+   */
+  const echo = Effect.map(
+    Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) => Effect.orDie(request.arrayBuffer)),
+    (body) => HttpServerResponse.text(hex(new Uint8Array(body)))
+  )
+  const bound = (maxRequestBodyBytes: number) =>
+    HttpRouter.serve(
+      Layer.mergeAll(HttpRouter.add("POST", "/rpc", echo), GatewayServer.layerIngress({ maxRequestBodyBytes })).pipe(
+        Layer.provide(RpcSerialization.layerMsgPack)
+      ),
+      { disableListenLog: true, disableLogger: true }
+    ).pipe(Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })))
+
+  const post = (url: string, body: Uint8Array) =>
+    Effect.promise(() =>
+      fetch(`${url}/rpc`, {
+        method: "POST",
+        headers: { "content-type": "application/msgpack" },
+        body: new Blob([body as Uint8Array<ArrayBuffer>])
+      })
+    )
+
+  test("hands the mount the bytes the client sent", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      // A UTF-8 decode of these bytes is lossy, so a text read at ingress
+      // that rebinds the binary reader would hand the mount different bytes.
+      expect(new TextEncoder().encode(new TextDecoder().decode(framed))).not.toEqual(framed)
+      const response = yield* post(url, framed)
+      expect(response.status).toBe(200)
+      expect(yield* Effect.promise(() => response.text())).toBe(hex(framed))
+    }).pipe(Effect.provide(bound(4096))))
+
+  test("still measures a binary body against the limit", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      const response = yield* post(url, framed)
+      expect(response.status).toBe(413)
+      expect(yield* Effect.promise(() => response.json() as Promise<unknown>)).toEqual({
+        _tag: "flows/gateway/GatewayError",
+        code: "request_too_large",
+        message: `POST /rpc exceeds the ${framed.byteLength - 1}-byte request limit`
+      })
+    }).pipe(Effect.provide(bound(framed.byteLength - 1))))
+})
 
 describe("the assembled gateway over a real loopback bind", () => {
   test("blocks browser HTTP and WebSocket attacks before any RPC dispatch", () =>
@@ -1343,6 +1406,38 @@ describe("the Watch keepalive", () => {
       )
       expect(beats[0]?.runId).toBeUndefined()
       expect(beats[0]?.payload).toBeNull()
+    }).pipe(Effect.provide(kept)))
+
+  test("repeats the sequence of the last event it delivered, not the resume seed", () =>
+    Effect.gen(function*() {
+      const control = yield* Control
+      const card = yield* control.plan({ flowId: "system/test", input: {} })
+      yield* control.approve(approvalOf(card))
+      const receipt = yield* control.run({
+        _tag: "Plan",
+        planId: card.planId,
+        digest: card.digest,
+        envelope: card.envelope,
+        idempotencyKey: `run:${card.planId}`
+      })
+      if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected a run")
+      const runId = receipt.runId
+
+      // Resume from before the run's history, so the follow delivers every
+      // recorded event and then goes idle. The keepalive that follows must
+      // carry the last delivered sequence, which the seed of 0 is not.
+      const frames = yield* Stream.runCollect(
+        Stream.takeUntil(
+          control.watch({ runId, afterSequence: 0, follow: true }),
+          (event) => event.kind === GatewayServer.watchHeartbeatKind
+        )
+      )
+      const delivered = frames.filter((event) => event.kind !== GatewayServer.watchHeartbeatKind)
+      const beat = frames.at(-1)
+      expect(delivered.length).toBeGreaterThan(0)
+      expect(beat?.kind).toBe(GatewayServer.watchHeartbeatKind)
+      expect(beat?.sequence).toBe(delivered.at(-1)?.sequence)
+      expect(beat?.sequence).not.toBe(0)
     }).pipe(Effect.provide(kept)))
 
   test("passes source events through a followed watch", () =>
