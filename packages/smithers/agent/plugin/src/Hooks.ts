@@ -98,6 +98,20 @@ export type WaterfallHook<F> = HookEntry<"waterfall", F>
 export type KindOf<T> = T extends HookMeta<infer K, any> ? K : never
 
 /**
+ * The runtime catalog a host supplies for a hook interface: each hook name
+ * mapped to its kind. A name declared in `H` must carry the kind its type
+ * declares. Names outside `H` are admitted with any kind, because the type
+ * system cannot enumerate an augmentable interface; resolution checks them
+ * at runtime and dispatch refuses a kind that disagrees with the catalog.
+ *
+ * @category type-level
+ * @since 1.0.0-rc.0
+ */
+export type HookCatalog<H> =
+  & { readonly [K in keyof H & string]?: KindOf<H[K]> }
+  & { readonly [name: string]: HookKind | undefined }
+
+/**
  * Extracts the handler type of a hook entry type.
  *
  * @category type-level

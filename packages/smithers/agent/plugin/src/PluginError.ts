@@ -18,6 +18,7 @@ import * as Schema from "effect/Schema"
 export const PluginErrorCode = Schema.Literals([
   "duplicate_name",
   "unknown_hook",
+  "hook_kind_mismatch",
   "invalid_plugin",
   "apply_failed",
   "config_invalid",

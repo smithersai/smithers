@@ -37,6 +37,20 @@ does not select it.
 
 Passing no catalog means the shared one: `config` and `configResolved` only.
 
+## hook_kind_mismatch
+
+**What happened.** The runtime catalog and the kind actually run disagree.
+At startup, `Options.hooks` labelled `config` with a kind other than
+`waterfall`, or `configResolved` with a kind other than `parallel`; the path
+names the entry, such as `$options.hooks.config`. At dispatch, a method was
+called for a hook the catalog declares with a different kind, which only a cast
+around the typed dispatcher can reach. In both cases no handler ran.
+
+**What to change.** Make the catalog agree with the hook interface: spread
+`engineHooks` for the shared hooks and write each of your own hooks with the
+kind its type declares. `HookCatalog<H>` refuses a wrong kind for a declared
+name at compile time.
+
 ## invalid_plugin
 
 **What happened.** A plugin, preset, option, or hook entry has a shape the

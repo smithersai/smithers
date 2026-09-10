@@ -44,10 +44,34 @@ it("contributes its tools", async () => {
 ```
 
 Use `Kernel.make` instead when the test is about the whole startup path: the
-waterfall, the freeze, the observers, and the merged layer together. It is also
-the way to test the kernel's own `config` and `configResolved` hooks: their
-shared declarations are deliberately open, so dispatching them directly types
-the Effect's requirement as `any`, which `Effect.runPromise` will not accept.
+waterfall, the freeze, the observers, and the merged layer together.
+
+## Startup hooks see no services
+
+The shared `config` and `configResolved` hooks are context-free: `Kernel.make`
+runs them before any plugin layer exists and supplies nothing itself, so a
+handler that reads a service does not compile against `FlowsHooks`, and one
+cast past the type fails at runtime with `hook_failed` on that hook. Provide
+the service inside the hook, or, when a host's startup hooks genuinely require
+services, declare a separate hook interface and provide them to the startup
+Effect. `Kernel.make<H>` carries the requirement as `Kernel.StartupContext<H>`:
+
+```ts
+interface HostHooks {
+  readonly config: WaterfallHook<
+    (config: FlowsConfig) => Effect.Effect<Partial<FlowsConfig> | void, never, Settings>
+  >
+  readonly configResolved: ParallelHook<(config: ResolvedConfig) => Effect.Effect<void, never, Settings>>
+}
+
+const kernel = await Effect.runPromise(
+  Kernel.make<HostHooks>([reader], {}, { hooks: { config: "waterfall", configResolved: "parallel" } }).pipe(
+    Effect.provideService(Settings, { enabled: true })
+  )
+)
+```
+
+Without the `provideService`, the program does not compile.
 
 ## Assert the order, not just the membership
 

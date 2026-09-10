@@ -21,6 +21,7 @@ import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import type { FlowsConfig, ResolvedConfig } from "./Config.ts"
 import * as Config from "./Config.ts"
+import type { ContextOf } from "./Hooks.ts"
 import type { FlowsHooks } from "./index.ts"
 import type { PluginInput } from "./Plugin.ts"
 import type { PluginError } from "./PluginError.ts"
@@ -43,6 +44,27 @@ export interface Kernel<H = FlowsHooks> {
   readonly observerErrors: ReadonlyArray<PluginError>
 }
 
+type HookAt<H, K extends string> = K extends keyof H ? H[K] : never
+
+/**
+ * The services a hook interface's `config` hook requires at startup. `never`
+ * for the shared `FlowsHooks`, whose startup hooks are context-free.
+ *
+ * @category type-level
+ * @since 1.0.0-rc.0
+ */
+export type ConfigContext<H> = ContextOf<HookAt<H, "config">>
+
+/**
+ * The services a hook interface's startup hooks require: the union of the
+ * `config` and `configResolved` requirements. `Kernel.make` cannot supply
+ * them itself, so they surface in its Effect and the caller provides them.
+ *
+ * @category type-level
+ * @since 1.0.0-rc.0
+ */
+export type StartupContext<H> = ConfigContext<H> | ContextOf<HookAt<H, "configResolved">>
+
 /**
  * Snapshots the config before dispatching the `config` waterfall, then
  * admits the result as a frozen `ResolvedConfig`.
@@ -53,14 +75,14 @@ export interface Kernel<H = FlowsHooks> {
 export const runConfig = <H = FlowsHooks>(
   plugins: Plugins.Service<H>,
   config: FlowsConfig
-): Effect.Effect<ResolvedConfig, PluginError> =>
+): Effect.Effect<ResolvedConfig, PluginError, ConfigContext<H>> =>
   Effect.gen(function*() {
     const initial = yield* Config.snapshot(config)
     const merged = yield* (plugins.waterfall as unknown as (
       hook: string,
       initial: FlowsConfig,
       merge: (previous: FlowsConfig, patch: unknown) => FlowsConfig
-    ) => Effect.Effect<FlowsConfig, PluginError>)("config", initial, Config.merge)
+    ) => Effect.Effect<FlowsConfig, PluginError, ConfigContext<H>>)("config", initial, Config.merge)
     return yield* Config.resolve(merged)
   })
 
@@ -76,8 +98,8 @@ export const runConfig = <H = FlowsHooks>(
 export const make = <H = FlowsHooks>(
   input: PluginInput<NoInfer<H>>,
   config: FlowsConfig = {},
-  options: Omit<Resolve.Options, "config"> = {}
-): Effect.Effect<Kernel<H>, PluginError> =>
+  options: Omit<Resolve.Options<NoInfer<H>>, "config"> = {}
+): Effect.Effect<Kernel<H>, PluginError, StartupContext<H>> =>
   Effect.gen(function*() {
     const initial = yield* Config.snapshot(config)
     const resolved = yield* Resolve.resolve<H>(input, options, initial)
@@ -86,7 +108,7 @@ export const make = <H = FlowsHooks>(
     const observerErrors = yield* (dispatcher.parallel as unknown as (
       hook: string,
       value: ResolvedConfig
-    ) => Effect.Effect<ReadonlyArray<PluginError>>)("configResolved", frozen)
+    ) => Effect.Effect<ReadonlyArray<PluginError>, never, StartupContext<H>>)("configResolved", frozen)
     return Object.freeze({
       plugins: dispatcher,
       config: frozen,

@@ -89,9 +89,14 @@ Calling `dispatcher.parallel("toolCall", ctx)` does not compile, because
 
 The type system cannot enumerate an augmentable interface, so the kernel also
 needs the same information at runtime. That is the hook catalog a host passes as
-`Resolve.Options.hooks`: a record from hook name to kind. It is what the
-`unknown_hook` guard checks a plugin against, and it is what
+`Resolve.Options.hooks`: a record from hook name to kind, typed as
+`HookCatalog<H>` so a name the interface declares cannot carry another kind.
+It is what the `unknown_hook` guard checks a plugin against, and it is what
 [Declare hooks for your host](../guides/host-your-own-hooks.md) walks through.
+Resolution keeps the admitted catalog as `Resolved.kinds`, refuses a catalog
+that labels `config` or `configResolved` with another kind, and every dispatch
+method refuses a hook whose catalog kind differs from its own with
+`hook_kind_mismatch` before running a handler.
 
 ## Cancellation is fiber interruption
 

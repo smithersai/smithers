@@ -4,6 +4,7 @@ import * as Config from "../src/Config.ts"
 import type { FirstHook, ParallelHook, SequentialHook } from "../src/Hooks.ts"
 import * as Hooks from "../src/Hooks.ts"
 import type { FlowsHooks, FlowsPlugin } from "../src/index.ts"
+import type { PluginError } from "../src/PluginError.ts"
 import * as Plugins from "../src/Plugins.ts"
 import * as Resolve from "../src/Resolve.ts"
 
@@ -330,5 +331,64 @@ describe("waterfall dispatch", () => {
       }).pipe(Effect.flip)
     )
     expect(error).toMatchObject({ code: "config_invalid", plugin: "merge-throw", hook: "config" })
+  })
+})
+
+describe("Plugins runtime catalog kinds", () => {
+  // Bypasses `KeysOfKind` the way a host casting around its catalog would.
+  const loose = (dispatcher: Plugins.Service<StandaloneHooks>) =>
+    dispatcher as unknown as {
+      readonly sequential: (hook: string, ...args: Array<unknown>) => Effect.Effect<ReadonlyArray<unknown>, PluginError>
+      readonly parallel: (hook: string, ...args: Array<unknown>) => Effect.Effect<ReadonlyArray<PluginError>>
+      readonly first: (hook: string, ...args: Array<unknown>) => Effect.Effect<unknown, PluginError>
+      readonly waterfall: (
+        hook: string,
+        initial: unknown,
+        merge: (previous: unknown, patch: unknown) => unknown
+      ) => Effect.Effect<unknown, PluginError>
+    }
+
+  it("types the catalog against the hook interface", () => {
+    // @ts-expect-error `isolated` is a sequential hook; the catalog cannot label it first.
+    const wrong: Resolve.Options<StandaloneHooks> = { hooks: { isolated: "first" } }
+    // @ts-expect-error the shared config hook is fixed to waterfall.
+    const shared: Resolve.Options = { hooks: { config: "parallel" } }
+    const extra: Resolve.Options = { hooks: { ...Hooks.engineHooks, harnessOnly: "sequential" } }
+    expect([wrong, shared, extra]).toHaveLength(3)
+  })
+
+  it("carries the admitted catalog as frozen kinds", async () => {
+    const shared = await run(Resolve.resolve([]))
+    expect(shared.kinds).toEqual({ config: "waterfall", configResolved: "parallel" })
+    expect(Object.isFrozen(shared.kinds)).toBe(true)
+    const custom = await run(Resolve.resolve<StandaloneHooks>([], { hooks: { isolated: "sequential" } }))
+    expect(custom.kinds).toEqual({ isolated: "sequential" })
+    expect(Plugins.makeNoop().resolved.kinds).toEqual(Hooks.engineHooks)
+  })
+
+  it("refuses a dispatch whose kind differs from the catalog before running a handler", async () => {
+    let ran = 0
+    const plugin: FlowsPlugin<StandaloneHooks> = {
+      name: "standalone",
+      hooks: { isolated: (value) => Effect.sync(() => (ran += 1, value)) }
+    }
+    const asSequential = loose(Plugins.make<StandaloneHooks>(
+      await run(Resolve.resolve<StandaloneHooks>(plugin, { hooks: { isolated: "sequential" } }))
+    ))
+    const refused = { code: "hook_kind_mismatch", hook: "isolated" }
+    expect(await run(asSequential.first("isolated", 1).pipe(Effect.flip))).toMatchObject(refused)
+    expect(await run(asSequential.waterfall("isolated", 1, (_previous, patch) => patch).pipe(Effect.flip)))
+      .toMatchObject(refused)
+    expect(await run(asSequential.parallel("isolated", 1))).toMatchObject([refused])
+    expect(ran).toBe(0)
+    expect(await run(asSequential.sequential("isolated", 21))).toEqual([21])
+    expect(ran).toBe(1)
+
+    const catalog = { isolated: "first" } as unknown as Hooks.HookCatalog<StandaloneHooks>
+    const asFirst = loose(Plugins.make<StandaloneHooks>(
+      await run(Resolve.resolve<StandaloneHooks>(plugin, { hooks: catalog }))
+    ))
+    expect(await run(asFirst.sequential("isolated", 21).pipe(Effect.flip))).toMatchObject(refused)
+    expect(ran).toBe(1)
   })
 })

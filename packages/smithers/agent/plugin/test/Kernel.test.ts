@@ -1,9 +1,11 @@
-import { Effect } from "effect"
+import { Context, Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Config from "../src/Config.ts"
 import type { ResolvedConfig } from "../src/Config.ts"
-import type { FlowsPlugin } from "../src/index.ts"
+import type { HookCatalog, ParallelHook, WaterfallHook } from "../src/Hooks.ts"
+import type { FlowsHooks, FlowsPlugin } from "../src/index.ts"
 import * as Kernel from "../src/Kernel.ts"
+import type { PluginError } from "../src/PluginError.ts"
 import * as Plugins from "../src/Plugins.ts"
 import * as Resolve from "../src/Resolve.ts"
 
@@ -298,5 +300,71 @@ describe("Config.deepFreeze", () => {
     expect(Config.deepFreeze(null)).toBe(null)
     const value = Config.deepFreeze({ a: { b: 1 } })
     expect(Object.isFrozen(value.a)).toBe(true)
+  })
+})
+
+describe("Kernel startup context", () => {
+  class Settings extends Context.Service<Settings, { readonly enabled: boolean }>()("test/Settings") {}
+
+  it("refuses a shared config hook that requires a service at the type level", () => {
+    const plugin: FlowsPlugin = {
+      name: "needs-settings",
+      hooks: {
+        // @ts-expect-error the shared startup hooks are context-free; a service requirement does not compile.
+        config: () => Settings.pipe(Effect.map((settings) => ({ feature: settings.enabled })))
+      }
+    }
+    expect(plugin.name).toBe("needs-settings")
+  })
+
+  it("still refuses an untyped service-reading startup hook at runtime, attributed to the hook", async () => {
+    const plugin = {
+      name: "needs-settings",
+      hooks: { config: () => Settings.pipe(Effect.map((settings) => ({ feature: settings.enabled }))) }
+    } as unknown as FlowsPlugin
+    const error = await run(Kernel.make([plugin]).pipe(Effect.flip))
+    expect(error).toMatchObject({ code: "hook_failed", plugin: "needs-settings", hook: "config" })
+  })
+
+  it("surfaces a custom catalog's startup requirements in the startup Effect", async () => {
+    interface ServiceHooks {
+      readonly config: WaterfallHook<
+        (config: Config.FlowsConfig) => Effect.Effect<Partial<Config.FlowsConfig> | void, never, Settings>
+      >
+      readonly configResolved: ParallelHook<(config: ResolvedConfig) => Effect.Effect<void, never, Settings>>
+    }
+    const seen: Array<unknown> = []
+    const startup = Kernel.make<ServiceHooks>(
+      {
+        name: "reads-settings",
+        hooks: {
+          config: () => Settings.pipe(Effect.map((settings) => ({ feature: { enabled: settings.enabled } }))),
+          configResolved: (config) =>
+            Settings.pipe(Effect.map((settings) => void seen.push(config.feature, settings.enabled)))
+        }
+      },
+      {},
+      { hooks: { config: "waterfall", configResolved: "parallel" } }
+    )
+    // @ts-expect-error the startup Effect requires Settings, so it is not context-free.
+    const contextFree: Effect.Effect<Kernel.Kernel<ServiceHooks>, PluginError, never> = startup
+    expect(contextFree).toBe(startup)
+    const kernel = await Effect.runPromise(startup.pipe(Effect.provideService(Settings, { enabled: true })))
+    expect(kernel.config.feature).toEqual({ enabled: true })
+    expect(seen).toEqual([{ enabled: true }, true])
+  })
+
+  it("refuses a catalog that labels a shared startup hook with another kind before any hook runs", async () => {
+    let ran = false
+    const catalog = { config: "parallel", configResolved: "parallel" } as unknown as HookCatalog<FlowsHooks>
+    const error = await run(
+      Kernel.make(
+        { name: "catalog-mismatch", hooks: { config: () => Effect.sync(() => void (ran = true)) } },
+        {},
+        { hooks: catalog }
+      ).pipe(Effect.flip)
+    )
+    expect(error).toMatchObject({ code: "hook_kind_mismatch", hook: "config", path: "$options.hooks.config" })
+    expect(ran).toBe(false)
   })
 })

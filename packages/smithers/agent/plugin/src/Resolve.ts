@@ -12,7 +12,7 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import type { FlowsConfig } from "./Config.ts"
 import * as Config from "./Config.ts"
-import type { HookKind, HookObject } from "./Hooks.ts"
+import type { HookCatalog, HookKind, HookObject } from "./Hooks.ts"
 import { engineHooks, handlerOf, orderOf } from "./Hooks.ts"
 import type { FlowsHooks } from "./index.ts"
 import * as Boundary from "./internal/Boundary.ts"
@@ -97,6 +97,8 @@ export interface HandlerRecord {
 export interface Resolved<H = FlowsHooks> {
   readonly plugins: ReadonlyArray<FlowsPlugin<H>>
   readonly handlers: ReadonlyMap<string, ReadonlyArray<HandlerRecord>>
+  /** The frozen runtime catalog this resolution admitted. Dispatch refuses a method whose kind differs from it. */
+  readonly kinds: Readonly<Record<string, HookKind>>
   readonly parallelConcurrency: number
   readonly cacheEnvironment?: Action.CacheEnvironment | undefined
 }
@@ -107,13 +109,17 @@ export interface Resolved<H = FlowsHooks> {
  * @category models
  * @since 1.0.0-rc.0
  */
-export interface Options {
+export interface Options<H = FlowsHooks> {
   /** Pre-resolution config tested by `apply` predicates. */
   readonly config?: FlowsConfig | undefined
   /** Host whose literal `apply` selectors are active. Defaults to `"engine"`. */
   readonly target?: "engine" | "harness" | undefined
-  /** Hook names recognized by this host. */
-  readonly hooks?: Readonly<Record<string, HookKind>> | undefined
+  /**
+   * Hook names recognized by this host, each with the kind `H` declares for
+   * it. The shared `config` and `configResolved` hooks are fixed to
+   * `waterfall` and `parallel`; another kind fails with `hook_kind_mismatch`.
+   */
+  readonly hooks?: HookCatalog<H> | undefined
   /** Complete composition identity for sealed activity keys. Requires every selected plugin to have a version. */
   readonly cacheEnvironment?: Action.CacheEnvironment | undefined
   /** Maximum observers run at once. Defaults to 16 and cannot exceed 256. */
@@ -215,6 +221,18 @@ const snapshotCatalog = (input: unknown): Readonly<Record<string, HookKind>> => 
       throw invalidPlugin(childPath("$options.hooks", key), "contains an invalid hook kind")
     }
     Object.defineProperty(output, key, { value: descriptor.value, enumerable: true })
+  }
+  for (const hook of Object.keys(engineHooks) as ReadonlyArray<keyof typeof engineHooks>) {
+    if (Object.hasOwn(output, hook) && output[hook] !== engineHooks[hook]) {
+      throw failure(
+        "hook_kind_mismatch",
+        `hook catalog declares shared hook ${JSON.stringify(hook)} as ${
+          JSON.stringify(output[hook])
+        }, the kernel dispatches it as ${JSON.stringify(engineHooks[hook])}`,
+        childPath("$options.hooks", hook),
+        { hook }
+      )
+    }
   }
   return Object.freeze(output)
 }
@@ -425,7 +443,7 @@ const snapshotCacheEnvironment = <H>(
  */
 export const resolve = <H = FlowsHooks>(
   input: PluginInput<NoInfer<H>>,
-  options: Options = {},
+  options: Options<NoInfer<H>> = {},
   configOverride?: FlowsConfig
 ): Effect.Effect<Resolved<H>, PluginError> =>
   Effect.gen(function*() {
@@ -551,6 +569,7 @@ export const resolve = <H = FlowsHooks>(
     return Object.freeze({
       plugins,
       handlers: ImmutableMap.make(entries),
+      kinds: known,
       parallelConcurrency,
       ...(cacheEnvironment === undefined ? {} : { cacheEnvironment })
     })

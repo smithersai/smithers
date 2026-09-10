@@ -19,13 +19,30 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
-import type { ArgsOf, ContextOf, KeysOfKind, SuccessOf } from "./Hooks.ts"
+import type { ArgsOf, ContextOf, HookKind, KeysOfKind, SuccessOf } from "./Hooks.ts"
+import { engineHooks } from "./Hooks.ts"
 import type { FlowsHooks } from "./index.ts"
 import * as ImmutableMap from "./internal/ReadonlyMap.ts"
 import { PluginError } from "./PluginError.ts"
 import { defaultParallelConcurrency, type HandlerRecord, type Resolved } from "./Resolve.ts"
 
 const empty: ReadonlyArray<HandlerRecord> = Object.freeze([])
+
+// The typed catalog and the runtime catalog can only drift when a host casts
+// around `KeysOfKind`; refuse before any handler runs rather than execute a
+// hook under semantics its declaration never promised.
+const kindMismatch = (resolved: Resolved<unknown>, hook: string, kind: HookKind): PluginError | undefined => {
+  if (!Object.hasOwn(resolved.kinds, hook)) return undefined
+  const declared = resolved.kinds[hook]
+  if (declared === kind) return undefined
+  return new PluginError({
+    code: "hook_kind_mismatch",
+    message: `hook "${hook}" is declared ${JSON.stringify(declared)} in the runtime catalog but was dispatched as ${
+      JSON.stringify(kind)
+    }`,
+    hook
+  })
+}
 
 const runHandler = (
   record: HandlerRecord,
@@ -107,6 +124,8 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
 
   const sequential = ((hook: string, ...args: Array<unknown>) =>
     Effect.gen(function*() {
+      const mismatch = kindMismatch(resolved, hook, "sequential")
+      if (mismatch !== undefined) return yield* Effect.fail(mismatch)
       const results: Array<unknown> = []
       for (const record of handlers(hook)) {
         results.push(yield* runHandler(record, args))
@@ -114,18 +133,23 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
       return results
     })) as Service<H>["sequential"]
 
-  const parallel = ((hook: string, ...args: Array<unknown>) =>
-    Effect.forEach(
+  const parallel = ((hook: string, ...args: Array<unknown>) => {
+    const mismatch = kindMismatch(resolved, hook, "parallel")
+    if (mismatch !== undefined) return Effect.succeed([mismatch])
+    return Effect.forEach(
       handlers(hook),
       (record) =>
         runHandler(record, args).pipe(
           Effect.match({ onFailure: (error) => [error], onSuccess: () => [] as Array<PluginError> })
         ),
       { concurrency: resolved.parallelConcurrency }
-    ).pipe(Effect.map((chunks) => chunks.flat()))) as Service<H>["parallel"]
+    ).pipe(Effect.map((chunks) => chunks.flat()))
+  }) as Service<H>["parallel"]
 
   const first = ((hook: string, ...args: Array<unknown>) =>
     Effect.gen(function*() {
+      const mismatch = kindMismatch(resolved, hook, "first")
+      if (mismatch !== undefined) return yield* Effect.fail(mismatch)
       for (const record of handlers(hook)) {
         const result = yield* runHandler(record, args)
         if (!Option.isOption(result)) {
@@ -146,6 +170,8 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
   const waterfall =
     ((hook: string, initial: unknown, merge: (previous: unknown, patch: unknown) => unknown) =>
       Effect.gen(function*() {
+        const mismatch = kindMismatch(resolved, hook, "waterfall")
+        if (mismatch !== undefined) return yield* Effect.fail(mismatch)
         let value = initial
         for (const record of handlers(hook)) {
           const patch = yield* runHandler(record, [value])
@@ -186,6 +212,7 @@ export const makeNoop = <H = FlowsHooks>(): Service<H> =>
   make<H>(Object.freeze({
     plugins: Object.freeze([]),
     handlers: ImmutableMap.make<string, ReadonlyArray<HandlerRecord>>(),
+    kinds: engineHooks,
     parallelConcurrency: defaultParallelConcurrency
   }))
 

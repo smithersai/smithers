@@ -33,6 +33,7 @@ describe("PluginError wire identity", () => {
     expect(PluginErrorCode.literals).toEqual([
       "duplicate_name",
       "unknown_hook",
+      "hook_kind_mismatch",
       "invalid_plugin",
       "apply_failed",
       "config_invalid",

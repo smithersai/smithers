@@ -33,8 +33,8 @@ Every function that can refuse returns `Effect<A, PluginError>`, except
 
 ```ts
 interface FlowsHooks {
-  readonly config: WaterfallHook<(config: FlowsConfig) => Effect.Effect<Partial<FlowsConfig> | void, any, any>>
-  readonly configResolved: ParallelHook<(config: ResolvedConfig) => Effect.Effect<void, any, any>>
+  readonly config: WaterfallHook<(config: FlowsConfig) => Effect.Effect<Partial<FlowsConfig> | void, any, never>>
+  readonly configResolved: ParallelHook<(config: ResolvedConfig) => Effect.Effect<void, any, never>>
 }
 ```
 
@@ -42,6 +42,14 @@ Declared in the entry point so that `declare module "@smthrs/plugin"` can
 augment it. Open for augmentation, closed for dispatch: the kernel dispatches
 only the config lifecycle, and a host supplies and dispatches its own catalog
 over the same augmented interface.
+
+Both startup hooks are context-free. `Kernel.make` runs them before any plugin
+layer is built and supplies no services of its own, so no externally supplied
+service is available during startup. A handler that needs one provides it
+inside the hook with `Effect.provide`. A plugin literal whose `config` hook
+requires a service fails to compile against `FlowsHooks`; a host whose startup
+hooks do require services declares a separate hook interface, and
+`Kernel.make<H>` then carries the requirement as `Kernel.StartupContext<H>`.
 
 ## Plugin
 
@@ -105,15 +113,16 @@ handler or the `{ order, handler }` object; `undefined` and `null` are refused.
 
 Type-level helpers, used by the dispatcher's signatures and available to hosts:
 
-| Helper             | Extracts                                           |
-| ------------------ | -------------------------------------------------- |
-| `KindOf<T>`        | The declared kind of a hook entry type.            |
-| `HandlerOf<T>`     | The handler function type.                         |
-| `KeysOfKind<H, K>` | The hook names of kind `K` in interface `H`.       |
-| `ArgsOf<T>`        | The positional argument tuple the handler accepts. |
-| `ReturnOf<T>`      | The Effect the handler returns.                    |
-| `SuccessOf<T>`     | That Effect's success value.                       |
-| `ContextOf<T>`     | That Effect's required context.                    |
+| Helper             | Extracts                                                                                                               |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `KindOf<T>`        | The declared kind of a hook entry type.                                                                                |
+| `HandlerOf<T>`     | The handler function type.                                                                                             |
+| `KeysOfKind<H, K>` | The hook names of kind `K` in interface `H`.                                                                           |
+| `ArgsOf<T>`        | The positional argument tuple the handler accepts.                                                                     |
+| `ReturnOf<T>`      | The Effect the handler returns.                                                                                        |
+| `SuccessOf<T>`     | That Effect's success value.                                                                                           |
+| `ContextOf<T>`     | That Effect's required context.                                                                                        |
+| `HookCatalog<H>`   | The runtime catalog for `H`: a name declared in `H` must carry the kind its type declares; other names admit any kind. |
 
 Values:
 
@@ -138,17 +147,26 @@ interface Kernel<H = FlowsHooks> {
   readonly observerErrors: ReadonlyArray<PluginError>
 }
 
+type ConfigContext<H> = ContextOf<H["config"]>
+type StartupContext<H> = ConfigContext<H> | ContextOf<H["configResolved"]>
+
 const make: <H = FlowsHooks>(
   input: PluginInput<NoInfer<H>>,
   config?: FlowsConfig,
-  options?: Omit<Resolve.Options, "config">
-) => Effect.Effect<Kernel<H>, PluginError>
+  options?: Omit<Resolve.Options<NoInfer<H>>, "config">
+) => Effect.Effect<Kernel<H>, PluginError, StartupContext<H>>
 
 const runConfig: <H = FlowsHooks>(
   plugins: Plugins.Service<H>,
   config: FlowsConfig
-) => Effect.Effect<ResolvedConfig, PluginError>
+) => Effect.Effect<ResolvedConfig, PluginError, ConfigContext<H>>
 ```
+
+`StartupContext<H>` is `never` for `FlowsHooks`, whose startup hooks are
+context-free, so `Kernel.make([...])` runs with `Effect.runPromise` as is. For a
+separate hook interface whose `config` or `configResolved` handlers require
+services, the requirement is the startup Effect's context and the caller
+provides it before running; the kernel never supplies startup services itself.
 
 `make` performs startup in this order:
 
@@ -162,8 +180,14 @@ const runConfig: <H = FlowsHooks>(
 
 The positional `config` is the kernel's only pre-resolution configuration
 source. `Options.config` is excluded from the options type so a caller cannot
-declare a second one. `runConfig` exposes step 3 and step 4 on their own, for a
-host that resolved its plugin list separately.
+declare a second one, and a `config` key smuggled past the type fails at
+runtime with `invalid_plugin` at `$options.config`, the same refusal an
+unknown option key gets. `runConfig` exposes step 3 and step 4 on their own, for a
+host that resolved its plugin list separately. Before dispatching the first
+hook, it validates and copies the supplied config into a detached, recursively
+frozen snapshot. Invalid or accessor-bearing input fails with `config_invalid`
+before any hook runs, without executing accessors. The final waterfall result
+is admitted again through `Config.resolve`.
 
 `observerErrors` is a return value, not a log: a `configResolved` failure never
 fails startup, so a host that ignores the array cannot tell a working observer
@@ -215,8 +239,23 @@ Dispatch semantics, one row per kind:
 | `first`      | Handlers in order until one returns `Option.some`.        | That `Option`, or `Option.none()`.                                     | Fails with `hook_failed`; a non-`Option` value fails with `invalid_hook_result`. |
 | `waterfall`  | Every handler, threading the merged value.                | The final value.                                                       | Fails with `hook_failed` and stops.                                              |
 
-A waterfall handler that returns `undefined` leaves the value unchanged: the
-merge function is not called. A merge that throws a `PluginError` keeps that
+Every method first compares its kind with the runtime catalog the resolution
+admitted (`Resolved.kinds`). A hook the catalog declares with a different kind
+is refused before any handler runs: `sequential`, `first`, and `waterfall` fail
+with `hook_kind_mismatch`, and `parallel` returns that one error. A hook name
+absent from the catalog dispatches nothing. The typed signatures make the
+mismatch unreachable without a cast; the runtime check covers the cast.
+
+Handlers must return an Effect. Synchronous throws, Effect failures and defects,
+and non-Effect results (including `undefined`, scalars, and Promises) become
+`hook_failed` with the plugin and hook names. Non-Effect error messages include
+the result's JavaScript `typeof`. Parallel dispatch collects these errors and
+continues running sibling observers, including with `parallelConcurrency: 1`.
+`Kernel.make` succeeds and reports them in `observerErrors`. Sequential dispatch
+fails with the attributed error and skips later handlers.
+
+A waterfall handler whose Effect succeeds with `undefined` leaves the value
+unchanged: the merge function is not called. A merge that throws a `PluginError` keeps that
 error's code and path and gains the handler's attribution; a merge that throws
 anything else becomes `config_invalid` attributed to the handler.
 
@@ -240,34 +279,35 @@ interface HandlerRecord {
 interface Resolved<H = FlowsHooks> {
   readonly plugins: ReadonlyArray<FlowsPlugin<H>>
   readonly handlers: ReadonlyMap<string, ReadonlyArray<HandlerRecord>>
+  readonly kinds: Readonly<Record<string, HookKind>>
   readonly parallelConcurrency: number
   readonly cacheEnvironment?: Action.CacheEnvironment | undefined
 }
 
-interface Options {
+interface Options<H = FlowsHooks> {
   readonly config?: FlowsConfig | undefined
   readonly target?: "engine" | "harness" | undefined
-  readonly hooks?: Readonly<Record<string, HookKind>> | undefined
+  readonly hooks?: HookCatalog<H> | undefined
   readonly cacheEnvironment?: Action.CacheEnvironment | undefined
   readonly parallelConcurrency?: number | undefined
 }
 
 const resolve: <H = FlowsHooks>(
   input: PluginInput<NoInfer<H>>,
-  options?: Options,
+  options?: Options<NoInfer<H>>,
   configOverride?: FlowsConfig
 ) => Effect.Effect<Resolved<H>, PluginError>
 
 const layer: <H>(resolved: Resolved<H>) => Layer.Layer<any, PluginError, any>
 ```
 
-| Option                | Default       | Meaning                                                                                                                 |
-| --------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `config`              | `{}`          | Pre-resolution configuration tested by `apply` predicates. `Kernel.make` supplies it positionally and omits this field. |
-| `target`              | `"engine"`    | The host whose literal `apply` selectors are active.                                                                    |
-| `hooks`               | `engineHooks` | The hook names and kinds this host recognizes. The `unknown_hook` guard checks against it.                              |
-| `cacheEnvironment`    | absent        | Complete composition identity for sealed activity keys. Requires a `version` on every selected plugin.                  |
-| `parallelConcurrency` | `16`          | Maximum observers run at once. A positive safe integer through 256.                                                     |
+| Option                | Default       | Meaning                                                                                                                                                                                                                                                                                                      |
+| --------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `config`              | `{}`          | Pre-resolution configuration tested by `apply` predicates. `Kernel.make` supplies it positionally and omits this field. Supplying both `config` and `configOverride` fails with `invalid_plugin` at `$options.config`.                                                                                       |
+| `target`              | `"engine"`    | The host whose literal `apply` selectors are active.                                                                                                                                                                                                                                                         |
+| `hooks`               | `engineHooks` | The hook names and kinds this host recognizes, typed as `HookCatalog<H>`. The `unknown_hook` guard checks against it, the frozen copy is `Resolved.kinds`, and `config` or `configResolved` labelled with any kind but `waterfall` or `parallel` fails with `hook_kind_mismatch` at `$options.hooks.<name>`. |
+| `cacheEnvironment`    | absent        | Complete composition identity for sealed activity keys. Requires a `version` on every selected plugin.                                                                                                                                                                                                       |
+| `parallelConcurrency` | `16`          | Maximum observers run at once. A positive safe integer through 256.                                                                                                                                                                                                                                          |
 
 `resolve` is once-only and everything it returns is a copy the kernel owns.
 Plugin records and hook objects are snapshotted, handler records and ordered
@@ -319,10 +359,10 @@ and hook names are control-free, well-formed strings within
 const ConfigValue: Schema.Json
 type ConfigValue = typeof ConfigValue.Type
 
-const FlowsConfig: Schema.Record$<Schema.String, typeof ConfigValue>
+const FlowsConfig: Schema.Codec<Readonly<Record<string, ConfigValue>>, unknown>
 type FlowsConfig = typeof FlowsConfig.Type
 
-const ResolvedConfig: Schema.Record$<Schema.String, typeof ConfigValue>
+const ResolvedConfig: typeof FlowsConfig
 type ResolvedConfig = typeof ResolvedConfig.Type
 
 const defaults: ResolvedConfig
@@ -333,13 +373,27 @@ const snapshot: (config: unknown) => Effect.Effect<FlowsConfig, PluginError>
 const resolve: (config: unknown) => Effect.Effect<ResolvedConfig, PluginError>
 ```
 
-| Export       | Behavior                                                                                                                                                                                                                                                           |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `defaults`   | The frozen empty configuration. Engine policy is deliberately not defaulted here.                                                                                                                                                                                  |
-| `merge`      | Copies and deep-merges a patch over a base. Records merge key by key; every other JSON value replaces wholesale. Both operands and the result are admitted, so a chain of small patches cannot exceed the bounds. Throws `PluginError` with code `config_invalid`. |
-| `deepFreeze` | Copies and recursively freezes one JSON value without retaining caller-owned objects. Throws `PluginError`.                                                                                                                                                        |
-| `snapshot`   | Admits a raw pre-resolution configuration as an immutable snapshot.                                                                                                                                                                                                |
-| `resolve`    | Decodes the post-waterfall configuration into its final immutable form.                                                                                                                                                                                            |
+| Export       | Behavior                                                                                                                                                                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defaults`   | The frozen empty configuration. Engine policy is deliberately not defaulted here.                                                                                                                                                                                         |
+| `merge`      | Copies and deep-merges a patch over a base. Records merge key by key; every other JSON value replaces wholesale. Raw operands are admitted; unchanged snapshot subtrees are reused. Cached totals enforce result bounds. Throws `PluginError` with code `config_invalid`. |
+| `deepFreeze` | Copies and recursively freezes one JSON value without retaining caller-owned objects. Throws `PluginError`.                                                                                                                                                               |
+| `snapshot`   | Admits a raw pre-resolution configuration as an immutable snapshot.                                                                                                                                                                                                       |
+| `resolve`    | Decodes the post-waterfall configuration into its final immutable form.                                                                                                                                                                                                   |
+
+`FlowsConfig` and `ResolvedConfig` decode through the same admission contract as
+`snapshot` and `resolve`. Decoding raw input detaches and recursively freezes it;
+invalid input produces a schema error. `Schema.is` recognizes admitted snapshots,
+not mutable JSON shapes. Encoding accepts admitted snapshots and returns their
+JSON value. The TypeScript types remain read-only namespace maps.
+
+Known snapshots can be reused by `snapshot`, `resolve`, and `merge`. Freezing an
+object yourself does not establish admission. A merge copies each changed record
+and retains unchanged frozen subtrees. It fully admits and detaches patch data,
+including references to previous snapshots, so patches cannot introduce shared
+references. Cached byte, member, node, and depth totals enforce result bounds.
+Admission work scales with the initial tree plus patch data; copying changed
+records also scales with their immediate key counts.
 
 Configuration is a plugin-owned JSON namespace map. The root keys `engine`,
 `retry`, `store`, and `plugins` are refused, because the kernel does not apply
@@ -387,6 +441,7 @@ identity. Invalid or mutable caller data never reaches
 const PluginErrorCode: Schema.Literals<[
   "duplicate_name",
   "unknown_hook",
+  "hook_kind_mismatch",
   "invalid_plugin",
   "apply_failed",
   "config_invalid",
@@ -418,6 +473,7 @@ Match on `code`; the messages are prose.
 | --------------------------- | ------------------------------------------------------------------------------ |
 | `duplicate_name`            | Two selected plugins have the same exact name.                                 |
 | `unknown_hook`              | A plugin declares a hook absent from the host catalog.                         |
+| `hook_kind_mismatch`        | A catalog kind disagrees with the kind the kernel or a dispatch method runs.   |
 | `invalid_plugin`            | A plugin, preset, option, or hook entry has an invalid runtime shape.          |
 | `apply_failed`              | An `apply` predicate threw. Its raw failure is not retained.                   |
 | `config_invalid`            | Config is not bounded strict JSON or uses a reserved policy key.               |

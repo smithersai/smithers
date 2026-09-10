@@ -34,12 +34,18 @@ import type { ParallelHook, WaterfallHook } from "./Hooks.ts"
  * config lifecycle below; a host supplies and dispatches its own catalog over
  * the same augmented interface.
  *
+ * Both startup hooks are context-free: `Kernel.make` runs them before any
+ * plugin layer exists and supplies no services of its own, so a handler that
+ * needs a service provides it inside the hook. A host whose startup hooks do
+ * require services declares a separate hook interface, and `Kernel.make` then
+ * surfaces those requirements as `Kernel.StartupContext<H>`.
+ *
  * @category models
  * @since 1.0.0-rc.0
  */
 export interface FlowsHooks {
-  readonly config: WaterfallHook<(config: FlowsConfig) => Effect.Effect<Partial<FlowsConfig> | void, any, any>>
-  readonly configResolved: ParallelHook<(config: ResolvedConfig) => Effect.Effect<void, any, any>>
+  readonly config: WaterfallHook<(config: FlowsConfig) => Effect.Effect<Partial<FlowsConfig> | void, any, never>>
+  readonly configResolved: ParallelHook<(config: ResolvedConfig) => Effect.Effect<void, any, never>>
 }
 
 /**
