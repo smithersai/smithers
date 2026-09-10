@@ -16,7 +16,7 @@ that acts on one.
 ```ts
 import { SandboxHealth } from "@smthrs/sandbox"
 
-const health = SandboxHealth.fromProvider(provider, { deadline: "10 seconds" })
+const health = SandboxHealth.make(provider, { deadline: "10 seconds" })
 const state = yield* health.check
 ```
 
@@ -31,19 +31,17 @@ within the deadline either way.
 dead" is an explicit diagnosis rather than something inferred from a generic
 provider error.
 
-Four constructors cover the cases:
+Two constructors cover the cases, each with a layer form:
 
-| Constructor                                             | Use when                                     |
-| ------------------------------------------------------- | -------------------------------------------- |
-| `SandboxHealth.make(pingProvider, options)`             | you hold a ping directly                     |
-| `SandboxHealth.fromProvider(provider, options)`         | you hold a provider whose `ping` is optional |
-| `SandboxHealth.makeNoop()`                              | there is no sandbox to watch                 |
-| `SandboxHealth.layer`, `layerFromProvider`, `layerNoop` | you want the same as a layer                 |
+| Constructor                                           | Use when                     |
+| ----------------------------------------------------- | ---------------------------- |
+| `make(provider, options)`, `layer(provider, options)` | you hold a provider to probe |
+| `makeNoop()`, `layerNoop`                             | there is no sandbox to watch |
 
-`fromProvider` answers with the noop service for a provider that has no `ping`.
-Read a `Healthy` verdict from it narrowly: it says nothing is watching the
-machine, not that the machine is alive. A provider that wants to be supervised
-implements `ping`.
+`ping` is optional on a provider, so `make` answers with the noop service for a
+provider that has none. Read a `Healthy` verdict from it narrowly: it says
+nothing is watching the machine, not that the machine is alive. A provider that
+wants to be supervised implements `ping`.
 
 ## What the probe will not log
 
@@ -59,10 +57,25 @@ ping it hands in with `Effect.tapError` and applies its own redaction.
 
 ## Supervise a transport
 
-```ts
-import { SandboxSupervision } from "@smthrs/sandbox"
+`SandboxSupervision.layer` accepts a `RemoteChildProcessSpawner.Provider`.
+For a lifecycle provider, use `Sandbox.commandProvider` to acquire the session
+and expose its command, ping, and kill operations. Declare only capabilities
+that the acquired session supports; container sessions support both below.
 
-const spawner = SandboxSupervision.layer(provider, {
+```ts
+import { ContainerSandbox, Sandbox, SandboxSupervision } from "@smthrs/sandbox"
+import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+
+// Supply the host spawner that runs the container CLI.
+declare const hostSpawner: ChildProcessSpawner["Service"]
+
+const provider = ContainerSandbox.make({ spawner: hostSpawner, image: "node:22" })
+const session = "run:01J..."
+const commandProvider = Sandbox.commandProvider(provider, {
+  session,
+  provides: { ping: true, kill: true }
+})
+const spawner = SandboxSupervision.layer(commandProvider, {
   interval: "10 seconds",
   tolerance: 2
 })
@@ -93,7 +106,7 @@ Two properties are worth relying on:
 ## Report a retirement somewhere useful
 
 ```ts
-const supervised = SandboxSupervision.layer(provider, {
+const supervised = SandboxSupervision.layer(commandProvider, {
   interval: "10 seconds",
   reporter: {
     unhealthy: (event) => recordSandboxDeath(event)
@@ -108,12 +121,14 @@ failed because its sandbox died reads very differently from a run that failed
 on its own, and only this event tells them apart. The default reporter logs a
 warning.
 
-Retirement is ordered around what is mandatory. Failing the in-flight commands
-and closing the provider scope run first and uninterruptibly; only then is the
-verdict reported. A reporter is caller supplied and observational, so it may
-fail, be interrupted, or never return, and none of that may strand a waiter,
-leak the machine, or hold the permit every later command needs. A reporter that
-outlives 30 seconds is abandoned and its failure is logged.
+Retirement fails pending operations and output consumers, including output
+still pending after process exit, then closes the provider scope. These steps
+run uninterruptibly under the spawn permit. The permit is released before the
+reporter is forked in the supervisor's scope, so reporting delays neither new
+commands nor the heartbeat. Reporter failures are logged at Warn. An
+interruptible reporter still pending after 30 seconds is interrupted on the
+platform timer. A provider release failure is logged at Warn with the session
+key; the retirement is still reported and later sessions are still probed.
 
 ## Do not supervise a placed body
 

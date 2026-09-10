@@ -19,7 +19,7 @@ export interface Options extends ProbeOptions {
   /** How long supervision waits between probes. */
   readonly interval: Duration.Input
   /**
-   * The liveness probe. Defaults to `SandboxHealth.fromProvider` over the
+   * The liveness probe. Defaults to `SandboxHealth.make` over the
    * supervised provider, which means a provider without `ping` is never
    * probed.
    */

@@ -124,7 +124,7 @@ message.
 ## Health is always `Healthy` and never notices a dead machine
 
 **What happened.** The session declares no `ping`, so
-`SandboxHealth.fromProvider` returned the noop service, which always answers
+`SandboxHealth.make` returned the noop service, which always answers
 `Healthy`.
 
 **What to change.** Understand the verdict as "nothing is watching this

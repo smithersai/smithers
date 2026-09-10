@@ -199,6 +199,18 @@ describe("SandboxHealth.probe logging", () => {
     for (const line of lines) expect(line.length).toBeLessThan(2048)
   })
 
+  it("cuts above the bound and not at it: 512 characters pass through, 513 are truncated", async () => {
+    const reported = async (length: number) => {
+      const { state } = await Effect.runPromise(renderProbeLogs({
+        ping: Effect.fail(new ProviderError({ code: "unknown", message: "x".repeat(length) }))
+      }))
+      return state._tag === "Unhealthy" ? state.message : undefined
+    }
+
+    expect(await reported(512)).toBe("x".repeat(512))
+    expect(await reported(513)).toBe(`${"x".repeat(512)}...`)
+  })
+
   it("collapses control characters so a provider message cannot forge a log line", async () => {
     const error = new ProviderError({
       code: "unknown",

@@ -293,7 +293,7 @@ describe("SandboxHealth from a provider", () => {
     Effect.gen(function*() {
       const provider = RemoteChildProcessSpawner.TestRemote.make({ ping: Effect.void })
 
-      const state = yield* SandboxHealth.fromProvider(provider).check
+      const state = yield* SandboxHealth.make(provider).check
 
       expect(state._tag).toBe("Healthy")
     }))
@@ -304,7 +304,7 @@ describe("SandboxHealth from a provider", () => {
         ping: Effect.fail(new ProviderError({ code: "unavailable", message: "no session" }))
       })
 
-      const state = yield* SandboxHealth.fromProvider(provider).check
+      const state = yield* SandboxHealth.make(provider).check
 
       expect(state).toMatchObject({ _tag: "Unhealthy", reason: "ping_failed", message: "no session" })
     }))
@@ -313,7 +313,7 @@ describe("SandboxHealth from a provider", () => {
     Effect.gen(function*() {
       const provider = RemoteChildProcessSpawner.TestRemote.make({})
 
-      const state = yield* SandboxHealth.fromProvider(provider).check
+      const state = yield* SandboxHealth.make(provider).check
 
       expect(state._tag).toBe("Healthy")
     }))
@@ -324,7 +324,7 @@ describe("SandboxHealth from a provider", () => {
       const provider = RemoteChildProcessSpawner.TestRemote.make({ ping: Ref.update(pings, (n) => n + 1) })
 
       const state = yield* Effect.flatMap(SandboxHealth.SandboxHealth, (health) => health.check).pipe(
-        Effect.provide(SandboxHealth.layerFromProvider(provider))
+        Effect.provide(SandboxHealth.layer(provider))
       )
 
       expect(state._tag).toBe("Healthy")

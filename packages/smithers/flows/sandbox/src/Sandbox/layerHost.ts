@@ -91,10 +91,10 @@ export const layerHost = (
         Context.add(FileSystem.FileSystem, fileSystem(session)),
         // A session with no `ping` yields the noop probe, which always answers
         // healthy. That is not a claim the machine is alive; it says nothing is
-        // watching it, and `fromProvider` documents the distinction.
+        // watching it, and `SandboxHealth.make` documents the distinction.
         Context.add(
           SandboxHealth.SandboxHealth,
-          SandboxHealth.fromProvider(view, options.health)
+          SandboxHealth.make(view, options.health)
         )
       )
     })

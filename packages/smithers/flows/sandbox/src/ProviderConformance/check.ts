@@ -14,7 +14,7 @@ import { boundedCheck } from "../internal/boundedCheck.ts"
 import { defaultCheckTimeout, elapsed } from "../internal/deadline.ts"
 import { layer } from "../RemoteChildProcessSpawner/layer.ts"
 import type { Provider } from "../RemoteChildProcessSpawner/Provider.ts"
-import { fromProvider } from "../SandboxHealth/fromProvider.ts"
+import { make as makeHealth } from "../SandboxHealth/make.ts"
 import { type Commands, defaultCopiesStdin, defaultStopsWithin } from "./Commands.ts"
 import type { Violation } from "./Violation.ts"
 
@@ -85,7 +85,7 @@ const answersAPing = (
   deadline: Duration.Input
 ): Effect.Effect<Violation | undefined> =>
   Effect.map(
-    inSession(provider, deadline, fromProvider(provider).check),
+    inSession(provider, deadline, makeHealth(provider).check),
     (exit) =>
       Exit.isSuccess(exit) && exit.value._tag === "Healthy" ? undefined : {
         check: "answers-a-ping",

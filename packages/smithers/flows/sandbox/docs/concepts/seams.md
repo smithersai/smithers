@@ -75,7 +75,7 @@ one of the two contracts.
 | Surface                           | Built from               | What it gives you                                                                   |
 | --------------------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
 | `RemoteChildProcessSpawner.layer` | the narrow seam          | Effect's `ChildProcessSpawner`.                                                     |
-| `SandboxHealth.fromProvider`      | the narrow seam's `ping` | a deadline-bounded liveness verdict.                                                |
+| `SandboxHealth.make`              | the narrow seam's `ping` | a deadline-bounded liveness verdict.                                                |
 | `SandboxSupervision.layer`        | the narrow seam's `ping` | a spawner that retires a dead session.                                              |
 | `ProviderConformance.check`       | the narrow seam          | the narrow contract as behavior.                                                    |
 | `Sandbox.fileSystem`              | a `Session`              | Effect's `FileSystem`, natively where `files` says so and by POSIX probe elsewhere. |

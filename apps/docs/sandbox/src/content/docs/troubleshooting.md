@@ -125,7 +125,7 @@ message.
 ## Health is always `Healthy` and never notices a dead machine
 
 **What happened.** The session declares no `ping`, so
-`SandboxHealth.fromProvider` returned the noop service, which always answers
+`SandboxHealth.make` returned the noop service, which always answers
 `Healthy`.
 
 **What to change.** Understand the verdict as "nothing is watching this
@@ -135,8 +135,8 @@ provider never fires. A provider that wants to be supervised implements `ping`.
 ## A command's output came back changed
 
 **What happened.** The provider is one whose vendor API reports output as a
-string. `VercelSandbox`, `DaytonaSandbox`, and `CloudflareSandbox` re-encode
-that string as UTF-8, so a tarball or a compiled binary written to stdout comes
+string. `JustBashSandbox`, `VercelSandbox`, `DaytonaSandbox`, and
+`CloudflareSandbox` re-encode that string as UTF-8, so a tarball or a compiled binary written to stdout comes
 back altered. `AwsSandbox` reframes output through a pseudo-terminal, which
 normalizes line endings and interleaves standard error.
 
@@ -169,16 +169,44 @@ directory) answer with the platform's own refusal.
 ## `isRunning` turned false too early, or `extendEnv` did nothing
 
 **What happened.** Both are divergences the error channel cannot report.
-`isRunning` answers from what this side has observed, so it turns `false` when
-a caller observes `exitCode` rather than when the remote process ends. The
-remote session's ambient environment never crosses the seam, so only `env`
-overrides travel and `extendEnv: false` cannot clear an environment this side
-never held.
+`isRunning` answers from what this side has observed: the adapter observes
+the provider's exit in a scoped fiber forked at spawn and memoizes the
+result, so liveness turns `false` when that observation lands, which can lag
+the remote process by a scheduler tick. Await `exitCode` when the code
+itself matters. The remote session's ambient environment never crosses the
+seam, so only `env` overrides travel and `extendEnv: false` cannot clear an
+environment this side never held.
 
 **What to change.** Do not treat `isRunning` as a liveness question about the
 guest; use `SandboxHealth` for that. Pass the environment you want explicitly,
-and delete an inherited variable by setting it to `undefined`, which every
-provider implements with `env -u`.
+and request deletion of an inherited variable by setting it to `undefined`.
+`DirectorySandbox` removes it before spawning. Container, Kubernetes, AWS,
+Cloudflare, Vercel, and Daytona apply guest `env -u`; AWS requires its streaming
+transport. Cloudflare (both execution modes), Vercel, and Daytona require
+`/usr/bin/env` and `/bin/sh` in the guest and apply removals before assignments.
+Microsandbox applies the same guest removal before its configured shell, inside
+`nix develop` when configured. Deletion requires an absolute configured shell path, otherwise `spawn_error`.
+JustBash refuses deletion with `spawn_error` before executing the command.
+See [Remote commands](/concepts/remote-commands/#environment-names-are-checked-before-the-command-runs).
+
+## "just-bash: environment deletion is unsupported"
+
+**What happened.** An `env` entry was `undefined`. The injected interpreter
+interface merges string values and cannot remove an inherited value, so the
+provider refused with `ProviderError` code `spawn_error` before `exec`.
+
+**What to change.** Use a provider that supports deletion. Omit the entry only
+when retaining the inherited value is intended.
+
+## "deletes-inherited-environment-or-refuses"
+
+**What happened.** Conformance could not observe guest `HOME` before deletion,
+or the deletion request neither removed it nor failed with a typed spawn refusal.
+
+**What to change.** Provision the test guest with `HOME` set, preserve
+`undefined` overrides, and apply deletion inside the guest before running the
+command. A test that only removes a command default does not prove deletion of
+an inherited guest value.
 
 ## Two runs fought over one machine
 
@@ -197,7 +225,11 @@ still provisions and tears down tasks, but the ECS API alone carries no command
 output, so `spawn`, `readFile`, and `writeFile` refuse with `unavailable`.
 
 **What to change.** Pass `exec: { spawner }`, and install the `aws` CLI and
-`session-manager-plugin` on the machine running the provider.
+`session-manager-plugin` on the machine running the provider. File writes and
+spawns with stdin or environment overrides also require `exec.streamingSpawner`.
+That adapter must deliver stdin byte-exactly without echo or argv encoding;
+a normal CLI spawner is insufficient. Without it, these operations fail with
+`unavailable` before transfer. See [AwsSandbox](/reference/api/#awssandbox).
 
 ## "microsandbox: image and snapshot are exclusive; name one"
 
@@ -210,7 +242,7 @@ boots `nixos/nix`.
 ## "the check did not finish within N milliseconds"
 
 **What happened.** A conformance check outlived `CheckOptions.checkTimeout`
-(240 seconds by default), measured on the platform timer rather than the
+(10 seconds by default), measured on the platform timer rather than the
 ambient `Clock`.
 
 **What to change.** Find what does not answer. A common cause is a provider

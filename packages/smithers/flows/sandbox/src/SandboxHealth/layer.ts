@@ -11,10 +11,15 @@ import { SandboxHealth } from "./SandboxHealth.ts"
 import type { Service } from "./Service.ts"
 
 /**
- * Provides `SandboxHealth` backed by the given provider ping.
+ * Provides `SandboxHealth` backed by the given provider's ping.
+ *
+ * Layer form of {@link make}, so a provider without `ping` provides the noop
+ * service that always answers `Healthy`.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layer = (provider: PingProvider, options?: ProbeOptions): Layer.Layer<Service> =>
-  Layer.succeed(SandboxHealth, make(provider, options))
+export const layer = (
+  provider: { readonly ping?: PingProvider["ping"] | undefined },
+  options?: ProbeOptions
+): Layer.Layer<Service> => Layer.sync(SandboxHealth, () => make(provider, options))

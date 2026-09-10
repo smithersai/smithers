@@ -51,7 +51,7 @@ const undeclared = (operation: string): ProviderError =>
  * reattach, teardown as a finalizer of the opening scope — and `spawn`
  * reaches whichever session is currently held. Everything already built on
  * the spawner-level contract (`RemoteChildProcessSpawner.layer`,
- * `SandboxHealth.fromProvider`, `SandboxSupervision`, `ProviderConformance`)
+ * `SandboxHealth.make`, `SandboxSupervision`, `ProviderConformance`)
  * therefore composes with a lifecycle provider unchanged, and supervision's
  * retire-and-reopen cycle provisions a fresh machine each generation.
  *

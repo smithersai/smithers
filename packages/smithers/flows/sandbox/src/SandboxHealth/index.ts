@@ -3,11 +3,9 @@
  *
  * @since 0.1.0
  */
-export * from "./fromProvider.ts"
 export * from "./HealthState.ts"
 export * from "./Healthy.ts"
 export * from "./layer.ts"
-export * from "./layerFromProvider.ts"
 export * from "./layerNoop.ts"
 export * from "./make.ts"
 export * from "./makeNoop.ts"

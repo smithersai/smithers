@@ -24,8 +24,8 @@ import { elapsed } from "../internal/deadline.ts"
 import { platformFailure } from "../internal/platformReason.ts"
 import { makeOpened } from "../RemoteChildProcessSpawner/layer.ts"
 import type { Provider } from "../RemoteChildProcessSpawner/Provider.ts"
-import { fromProvider } from "../SandboxHealth/fromProvider.ts"
 import type { HealthState } from "../SandboxHealth/HealthState.ts"
+import { make as makeHealth } from "../SandboxHealth/make.ts"
 import type { Options } from "./Options.ts"
 import { loggingReporter } from "./Reporter.ts"
 import { SandboxUnhealthy } from "./SandboxUnhealthy.ts"
@@ -109,7 +109,7 @@ export const make = (
     const reporter = options.reporter ?? loggingReporter
     const tolerance = options.tolerance ?? 1
     const probe: Effect.Effect<HealthState> = options.probe ??
-      fromProvider(provider, options.deadline === undefined ? undefined : { deadline: options.deadline }).check
+      makeHealth(provider, options.deadline === undefined ? undefined : { deadline: options.deadline }).check
     const held = yield* Ref.make<Session | undefined>(undefined)
     // Reporting runs outside the spawn permit and heartbeat. Bound each
     // observer on the platform timer so a hung reporter does not accumulate

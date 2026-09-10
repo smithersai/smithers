@@ -15,7 +15,7 @@ that acts on one.
 ```ts
 import { SandboxHealth } from "@smthrs/sandbox"
 
-const health = SandboxHealth.fromProvider(provider, { deadline: "10 seconds" })
+const health = SandboxHealth.make(provider, { deadline: "10 seconds" })
 const state = yield* health.check
 ```
 
@@ -30,19 +30,17 @@ within the deadline either way.
 dead" is an explicit diagnosis rather than something inferred from a generic
 provider error.
 
-Four constructors cover the cases:
+Two constructors cover the cases, each with a layer form:
 
-| Constructor                                             | Use when                                     |
-| ------------------------------------------------------- | -------------------------------------------- |
-| `SandboxHealth.make(pingProvider, options)`             | you hold a ping directly                     |
-| `SandboxHealth.fromProvider(provider, options)`         | you hold a provider whose `ping` is optional |
-| `SandboxHealth.makeNoop()`                              | there is no sandbox to watch                 |
-| `SandboxHealth.layer`, `layerFromProvider`, `layerNoop` | you want the same as a layer                 |
+| Constructor                                           | Use when                     |
+| ----------------------------------------------------- | ---------------------------- |
+| `make(provider, options)`, `layer(provider, options)` | you hold a provider to probe |
+| `makeNoop()`, `layerNoop`                             | there is no sandbox to watch |
 
-`fromProvider` answers with the noop service for a provider that has no `ping`.
-Read a `Healthy` verdict from it narrowly: it says nothing is watching the
-machine, not that the machine is alive. A provider that wants to be supervised
-implements `ping`.
+`ping` is optional on a provider, so `make` answers with the noop service for a
+provider that has none. Read a `Healthy` verdict from it narrowly: it says
+nothing is watching the machine, not that the machine is alive. A provider that
+wants to be supervised implements `ping`.
 
 ## What the probe will not log
 
