@@ -67,30 +67,17 @@ describe("Steering", () => {
     ])
   })
 
-  it("only activates tools additively", () => {
-    const queue = Steering.enqueue(
-      Steering.enqueue(Steering.empty(), {
-        _tag: "ActivateTools",
-        delivery: "steer",
-        admittedAt: 1,
-        toolNames: ["alpha", "beta"]
-      }),
-      { _tag: "ActivateTools", delivery: "steer", admittedAt: 1, toolNames: ["beta", "gamma"] }
-    )
-    expect(Steering.drainAtClose(queue, 1).activatedToolNames).toEqual(["alpha", "beta", "gamma"])
-  })
-
   it("returns immutable serializable values", () => {
     const queue = Steering.enqueue(Steering.empty(), {
-      _tag: "ActivateTools",
+      _tag: "SeatChange",
       delivery: "steer",
       admittedAt: 1,
-      toolNames: ["alpha"]
+      seat: "sdk:fast"
     })
     expect(Object.isFrozen(queue)).toBe(true)
     expect(Object.isFrozen(queue.items)).toBe(true)
     expect(JSON.parse(JSON.stringify(queue))).toEqual({
-      items: [{ _tag: "ActivateTools", delivery: "steer", admittedAt: 1, toolNames: ["alpha"] }]
+      items: [{ _tag: "SeatChange", delivery: "steer", admittedAt: 1, seat: "sdk:fast" }]
     })
     expect(Steering.empty().items).toEqual([])
   })
@@ -173,14 +160,12 @@ describe("Steering", () => {
     expect(drained).toEqual({
       inserts: [],
       seatChanges: [],
-      activatedToolNames: [],
       remaining: Steering.empty(),
       queued: false,
       duplicate: false
     })
     expect(Object.isFrozen(drained.inserts)).toBe(true)
     expect(Object.isFrozen(drained.seatChanges)).toBe(true)
-    expect(Object.isFrozen(drained.activatedToolNames)).toBe(true)
   })
 
   it("admits an item at exactly the cutoff and holds the one after it", () => {
@@ -210,7 +195,6 @@ describe("Steering", () => {
       { _tag: "Insert", delivery: "steer", admittedAt: 5, message: ModelRequest.Message.user("now") },
       { _tag: "SeatChange", delivery: "steer", admittedAt: 5, seat: "sdk:fast" },
       { _tag: "ThinkingChange", delivery: "steer", admittedAt: 5, thinking: "low" },
-      { _tag: "ActivateTools", delivery: "steer", admittedAt: 5, toolNames: ["alpha"] },
       { _tag: "Insert", delivery: "queue", admittedAt: 5, message: ModelRequest.Message.user("later") },
       { _tag: "SeatChange", delivery: "steer", admittedAt: 6, seat: "sdk:slow" }
     ].reduce<Steering.Queue>(
@@ -222,26 +206,17 @@ describe("Steering", () => {
 
     expect(drained.inserts).toEqual([ModelRequest.Message.user("now")])
     expect(drained.seatChanges.map((change) => change._tag)).toEqual(["SeatChange", "ThinkingChange"])
-    expect(drained.activatedToolNames).toEqual(["alpha"])
     expect(drained.queued).toBe(false)
     // Everything held back keeps its FIFO order for the next close.
     expect(drained.remaining.items.map((item) => item._tag)).toEqual(["Insert", "SeatChange"])
   })
 
-  it("freezes the tool names an activation carries without touching the caller's array", () => {
-    const toolNames = ["alpha"]
-    const queue = Steering.enqueue(Steering.empty(), {
-      _tag: "ActivateTools",
-      delivery: "steer",
-      admittedAt: 1,
-      toolNames
-    })
-    toolNames.push("beta")
+  it("freezes every enqueued item without touching the caller's object", () => {
+    const item = { _tag: "SeatChange", delivery: "steer", admittedAt: 1, seat: "sdk:fast" } as const
+    const queue = Steering.enqueue(Steering.empty(), item)
 
-    const item = queue.items[0]!
-    expect(Object.isFrozen(item)).toBe(true)
-    expect(item._tag === "ActivateTools" && Object.isFrozen(item.toolNames)).toBe(true)
-    expect(Steering.drainAtClose(queue, 1).activatedToolNames).toEqual(["alpha"])
+    expect(Object.isFrozen(queue.items[0])).toBe(true)
+    expect(Object.isFrozen(item)).toBe(false)
   })
 
   it("holds a queued follow-up back in all three non-idle combinations", () => {
@@ -284,7 +259,6 @@ describe("Steering", () => {
         { _tag: "SeatChange", delivery: "steer", admittedAt: 1, seat: "sdk:fast" },
         { _tag: "ThinkingChange", delivery: "steer", admittedAt: 1, thinking: "high" }
       ],
-      activatedToolNames: ["alpha"],
       remaining: Steering.enqueue(Steering.empty(), {
         _tag: "Insert",
         delivery: "queue",
@@ -297,7 +271,16 @@ describe("Steering", () => {
 
     const record = Steering.drainRecord(drain)
 
-    expect(Object.keys(record).sort()).toEqual(["activatedToolNames", "inserts", "queued", "seatChanges"])
+    // The retired provider-tool loop's `activatedToolNames` is gone from the
+    // record. A journal written before it was retired always carried it empty,
+    // and still decodes: the extra key is dropped, not refused.
+    expect(Object.keys(record).sort()).toEqual(["inserts", "queued", "seatChanges"])
+    expect(
+      Schema.decodeUnknownSync(Steering.DrainRecord)({
+        ...Schema.encodeSync(Steering.DrainRecord)(record),
+        activatedToolNames: []
+      })
+    ).toEqual(record)
     expect(
       Schema.decodeUnknownSync(Steering.DrainRecord)(Schema.encodeSync(Steering.DrainRecord)(record))
     ).toEqual(record)
@@ -316,7 +299,6 @@ describe("Steering.Source", () => {
     expect(drained).toEqual({
       inserts: [],
       seatChanges: [],
-      activatedToolNames: [],
       remaining: Steering.empty(),
       queued: false,
       duplicate: false
@@ -350,7 +332,6 @@ describe("Steering.Source", () => {
           return {
             inserts: [ModelRequest.Message.user("from the host")],
             seatChanges: [],
-            activatedToolNames: [],
             remaining: Steering.empty(),
             queued: false,
             duplicate: false
@@ -374,7 +355,6 @@ describe("Steering.Source", () => {
                 Effect.succeed({
                   inserts: [],
                   seatChanges: [],
-                  activatedToolNames: [],
                   remaining: Steering.empty(),
                   queued: true,
                   duplicate: false

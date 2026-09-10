@@ -1010,7 +1010,6 @@ describe("CellTurn steering boundaries", () => {
   const nothing: Steering.Drain = {
     inserts: [],
     seatChanges: [],
-    activatedToolNames: [],
     remaining: Steering.empty(),
     queued: false,
     duplicate: false
@@ -1081,8 +1080,7 @@ describe("CellTurn steering boundaries", () => {
       drained = true
       return {
         ...nothing,
-        seatChanges: [{ _tag: "ThinkingChange", delivery: "steer", admittedAt: 1, thinking: "xhigh" }],
-        activatedToolNames: ["alpha"]
+        seatChanges: [{ _tag: "ThinkingChange", delivery: "steer", admittedAt: 1, thinking: "xhigh" }]
       }
     })
     const { events } = await collect({ state: state(), flows: [] }, { engine: engine.layer, steering })
@@ -1646,7 +1644,6 @@ const steeringQueue = () => {
           return {
             inserts,
             seatChanges: [],
-            activatedToolNames: [],
             remaining: Steering.empty(),
             queued: false,
             duplicate: prior !== undefined

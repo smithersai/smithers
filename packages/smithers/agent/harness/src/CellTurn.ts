@@ -18,7 +18,7 @@
 import { Effects, type KeyMaterial, Placement } from "@smthrs/core"
 import * as Digest from "@smthrs/core/Digest"
 import { Capability, CapabilitySet, Permission } from "@smthrs/kernel"
-import { CanonicalJson, type Model, ModelEvent, ModelRequest } from "@smthrs/model"
+import { CanonicalJson, type Model, ModelCatalog, ModelEvent, ModelRequest } from "@smthrs/model"
 import { Descriptor } from "@smthrs/registry"
 import { Clock, Effect, Option, Queue, Result, Schema, Stream } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
@@ -1025,8 +1025,7 @@ const observedOn = (
 ): ContextWindow.ContextWindow => appended(contextWindow, assistant, [ModelRequest.Message.user(observation)], echo)
 
 /** Whether one drain carried anything the next frame runs differently for. */
-const carries = (drained: Steering.DrainRecord): boolean =>
-  drained.inserts.length > 0 || drained.seatChanges.length > 0 || drained.activatedToolNames.length > 0
+const carries = (drained: Steering.DrainRecord): boolean => drained.inserts.length > 0 || drained.seatChanges.length > 0
 
 /**
  * The seat and generation parameters one drain leaves the next frame on.
@@ -1065,7 +1064,7 @@ const steered = (
       contextWindowTokens: seat === state.seat
         ? state.contextWindowTokens
         : resolve === undefined
-        ? ContextWindow.contextWindowTokensFor(modelIdFromSeat(seat))
+        ? ModelCatalog.contextWindowTokensFor(modelIdFromSeat(seat))
         : yield* resolve(seat)
     }
   })
@@ -1997,7 +1996,7 @@ const frame = (
             ? steering.drain({ boundary: `${state.frame}:${boundary}`, wouldIdle }).pipe(
               Effect.map(Steering.drainRecord)
             )
-            : Effect.succeed({ inserts: [], seatChanges: [], activatedToolNames: [], queued: false })
+            : Effect.succeed({ inserts: [], seatChanges: [], queued: false })
         })
         yield* emit(new AgentEvent.SteeringDrained({ eventType: eventType.steeringDrained, messages: drained.inserts }))
         return drained

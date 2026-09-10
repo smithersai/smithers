@@ -4,6 +4,14 @@
 
 ### Changed
 
+- `SeatResolver.contextWindowTokensFor` now re-exports
+  `ModelCatalog.contextWindowTokensFor` from `@smthrs/model`, where the provider
+  window table now lives. The resolved numbers are unchanged.
+- `AgentSession.trace` types every event type it journals as
+  `Transcript.ControlEventType`, so the `control.agent.` namespace this package
+  writes and the one `Transcript.validateJournal` reads back cannot drift apart
+  without a compile error.
+
 - Preserve the sealed cell-call key and encoded result schema from before A2
   admission hardening. Success/failure validation remains at construction and
   decoding, and the port validates host results before persistence with typed

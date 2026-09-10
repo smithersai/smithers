@@ -47,10 +47,10 @@ behavior and signatures.
 | `Plan`                       | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Local structural plan nodes used at the harness-to-engine boundary.                                      |
 | `EngineLike`                 | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `makeNoop`, `layerNoop`                                                                                                                                                                                                                                                                                                                                                                                     | Narrow engine port consumed by the built-in harness.                                                     |
 | `Tokens`                     | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Deterministic token accounting for context windows.                                                      |
-| `ContextWindow`              | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `activateTools`, `prefixDigest`, `compactPrefix`, `compact`, `render`, `contextWindowTokensFor`                                                                                                                                                                                                                                                                                             | The immutable, provider-neutral context assembled for one model request.                                 |
+| `ContextWindow`              | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactPrefix`, `compact`, `render`                                                                                                                                                                                                                                                                                                                                        | The immutable, provider-neutral context assembled for one model request.                                 |
 | `Transcript`                 | `journalVersion`, `validateJournal`, `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult`                                                                                                                                                                                                                                                                                                                                                                                                                              | Transcript projection from durable journal entries.                                                      |
 | `Compaction`                 | `summaryInstruction`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `selectPrefix`, `declare`, `summaryRequest`, `apply`                                                                                                                                                                                                                                                                                                                                                                                                                                           | Declarations for sealed transcript-summary steps.                                                        |
-| `Steering`                   | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `ActivateTools`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `PromotionState`, `empty`, `enqueue`, `drainAtClose`, `promoteAtIdle`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop`                                                                                                                                                                                                                                                                                  | Turn-boundary steering values and their source contract.                                                 |
+| `Steering`                   | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `PromotionState`, `empty`, `enqueue`, `drainAtClose`, `promoteAtIdle`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop`                                                                                                                                                                                                                                                                                                   | Turn-boundary steering values and their source contract.                                                 |
 | `Notifications`              | `Options`, `make`, `layer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Adapter from the durable notification queue to harness turn boundaries.                                  |
 | `Cell`                       | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `CallIdentity`, `declarationDigest`, `Call`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract`                                                                          | The cell contract.                                                                                       |
 | `Sandbox`                    | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `Intent`, `replTransition`, `RealmEvaluation`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome`                                                             | The deterministic script sandbox port.                                                                   |
@@ -164,9 +164,10 @@ frame boundary.
 ## What this package does not do
 
 - It declares no provider tools. The cell-first loop seals every model request
-  with `tools: []` and `toolChoice: "none"`. The tool-shaped members that remain
-  on `Steering`, `ContextWindow`, `Compaction` and `AgentEvent.TurnOpened` are
-  reserved for a future foreign-adapter loop and carry no compatibility promise.
+  with `tools: []` and `toolChoice: "none"`. A window still carries the active
+  tool set it was constructed with, and `AgentEvent.TurnOpened.activeToolNames`
+  still journals it, so a foreign-adapter loop has somewhere to put one; nothing
+  in this package produces a non-empty set.
 - It runs no scheduler and owns no storage. `Plan` describes child batches;
   `EngineLike` splices them.
 
@@ -563,8 +564,8 @@ they are never acknowledged without a frame available to consume them.
 
 `Steering.Queue` is an immutable FIFO of `Steering.Item`s: transcript inserts
 (`SteerInsert` for the next boundary, `QueueInsert` for when the run would
-otherwise go idle), `SeatChange` and `ThinkingChange` (applied only after the
-current turn closes), and `ActivateTools` (an additive tool update).
+otherwise go idle), and `SeatChange` and `ThinkingChange` (applied only after
+the current turn closes).
 `Steering.empty`, `enqueue`, `drainAtClose(queue, cutoff)`, and
 `promoteAtIdle(state)` operate on it without mutation. `Steering.Drain` is
 what one boundary promoted; `Steering.DrainRecord` and `drainRecord` project
@@ -868,16 +869,16 @@ export const render: (self: ContextWindow) => ModelRequest.ModelRequest
 `Segment` is a stable, typed slice with a `SegmentKind`, a `SegmentZone`
 (prefix or tail of the cache breakpoint), its content parts, a digest, and an
 estimated token count computed once at construction. `appendTurn` appends one
-settled assistant message and its ordered tool results; `activateTools` adds
-tools permanently for the window lineage; `prefixDigest`, `compactPrefix`, and
+settled assistant message; `prefixDigest`, `compactPrefix`, and
 `compact` replace an exact compactable prefix while retaining every suffix
 segment, failing with a `ContextWindowError` when the declared prefix does not
 match. `render` projects the window into the `ModelRequest` of
 [`@smthrs/model`](https://model.smithers.sh/reference/api/).
 
-`ContextWindow.contextWindowTokensFor(modelId)` supplies the shared context-limit
-catalog used by seat resolution and seat steering (128,000 tokens for unknown
-models). A thinking-only steer preserves the current budget.
+`ModelCatalog.contextWindowTokensFor(modelId)` of
+[`@smthrs/model`](https://model.smithers.sh/reference/api/) supplies the shared context-limit catalog used by
+seat resolution and seat steering (128,000 tokens for unknown models). A
+thinking-only steer preserves the current budget.
 
 ## Tokens
 
@@ -903,7 +904,11 @@ journal sequence order; `Transcript.projectStateResult` projects the same
 events into typed state (`ProjectedState`, with the compaction replacement
 identity when one was recorded), preserving malformed-payload failures as
 typed `TranscriptError`s instead of throwing. `CellEvidence` is the
-schema-decoded cell evidence the rebuild consumes.
+schema-decoded cell evidence the rebuild consumes. `CompactionSettled.retainedMessageCount`
+records the number of messages in the live retained suffix, across all retained
+segments. Projection applies these boundaries in journal order, replacing only
+the preceding prefix with the summary. Older events without the field replace
+all messages preceding the event.
 
 ## Compaction
 
@@ -919,7 +924,10 @@ invoking a model; `summaryRequest` builds the model request input for the
 step, with `summaryInstruction` as its stable instruction; and `apply`
 splices a recorded summary into a projected window, failing with
 `InvalidStep` when the declaration does not match the window it is applied
-to.
+to. `Summarizer.params` is an optional `ModelRequest.GenerationParams`.
+`summaryRequest` schema-decodes supplied parameters, including JSON-round-tripped
+values, and returns `InvalidStep` for invalid values or unknown parameter keys.
+Defaults apply only when `params` is absent.
 
 ## Plan
 

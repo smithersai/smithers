@@ -29,6 +29,28 @@ import { printsObservation } from "./internal/printsObservation.ts"
 export const journalVersion = 2
 
 /**
+ * The event-type namespace a session journals its controller events under.
+ *
+ * Resume validation reads only the entries under this prefix, and the writer
+ * that produces them lives in another package, so the prefix is exported here
+ * rather than spelled twice: a writer types its event types as
+ * {@link ControlEventType} and a rename fails to compile instead of silently
+ * emptying the set {@link validateJournal} inspects.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const controlEventPrefix = "control.agent."
+
+/**
+ * An event type {@link validateJournal} validates.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ControlEventType = `${typeof controlEventPrefix}${string}`
+
+/**
  * Refuses history whose replay could address different sealed model steps.
  * Historical display projection is separate from permission to resume.
  *
@@ -39,7 +61,7 @@ export const validateJournal = (
   entries: ReadonlyArray<JournalEvent.Entry>
 ): Result.Result<void, HarnessError> => {
   for (const entry of entries) {
-    if (!entry.eventType.startsWith("control.agent.")) continue
+    if (!entry.eventType.startsWith(controlEventPrefix)) continue
     const payload = entry.payload as Record<string, unknown> | null
     if (payload === null || typeof payload !== "object" || payload["journalVersion"] !== journalVersion) {
       return Result.fail(

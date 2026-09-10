@@ -44,6 +44,7 @@
     "./Endpoint": "./src/Endpoint.ts",
     "./Framing": "./src/Framing.ts",
     "./Model": "./src/Model.ts",
+    "./ModelCatalog": "./src/ModelCatalog.ts",
     "./ModelError": "./src/ModelError.ts",
     "./ModelEvent": "./src/ModelEvent.ts",
     "./ModelRequest": "./src/ModelRequest.ts",

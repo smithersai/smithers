@@ -12,6 +12,7 @@ const expectedExports = [
   "Endpoint",
   "Framing",
   "Model",
+  "ModelCatalog",
   "ModelError",
   "ModelEvent",
   "ModelRequest",

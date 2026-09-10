@@ -120,10 +120,10 @@ export class TurnOpened extends Schema.TaggedClass<TurnOpened>(
   seat: Schema.String,
   modelParams: ModelRequest.GenerationParams,
   /**
-   * Reserved surface, always empty. The cell-first controller declares no
-   * provider tools, so every turn opens with none active. The field is kept for
-   * a future foreign-adapter loop and carries no compatibility promise at
-   * 1.0.0-rc.0.
+   * The tool set the turn opened with, which the cell-first controller always
+   * opens empty: it declares no provider tools. The field stays on the event
+   * so journals written before the provider-tool loop was retired keep
+   * decoding, and so a foreign-adapter loop has somewhere to put one.
    */
   activeToolNames: Schema.Array(Schema.String),
   contextDigest: Schema.String

@@ -27,6 +27,22 @@ it("validates current session journals while leaving unrelated control history a
   ]))).toBe(true)
 })
 
+it("selects the entries it validates through the prefix the writer is typed against", () => {
+  // `@smthrs/agent` writes these entries and types every event type it emits
+  // as `Transcript.ControlEventType`, so the two sides cannot drift: renaming
+  // the constant fails that package's typecheck instead of silently emptying
+  // the set this filter selects.
+  expect(Transcript.controlEventPrefix).toBe("control.agent.")
+
+  const stale = { journalVersion: Transcript.journalVersion - 1 }
+  expect(Result.isFailure(
+    Transcript.validateJournal([entry(1, `${Transcript.controlEventPrefix}turn-opened`, stale)])
+  )).toBe(true)
+  expect(Result.isSuccess(
+    Transcript.validateJournal([entry(1, "control.run.turn-opened", stale)])
+  )).toBe(true)
+})
+
 it.each([null, "invalid", {}, { journalVersion: 1 }, { journalVersion: 999 }])(
   "refuses incompatible session payload %j",
   (payload) => {

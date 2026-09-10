@@ -581,7 +581,6 @@ console.log(kept)`
             return {
               inserts: [],
               seatChanges: [],
-              activatedToolNames: [],
               remaining: Steering.empty(),
               queued: false,
               duplicate: false
@@ -594,7 +593,6 @@ console.log(kept)`
               { _tag: "SeatChange", delivery: "steer", admittedAt: 1, seat: "openai:other-model" },
               { _tag: "ThinkingChange", delivery: "steer", admittedAt: 2, thinking: "high" }
             ],
-            activatedToolNames: [],
             remaining: Steering.empty(),
             queued: false,
             duplicate: false

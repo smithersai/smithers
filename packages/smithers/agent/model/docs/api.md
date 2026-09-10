@@ -498,6 +498,18 @@ Use `Chunk.toReadonlyArray(call.fragments)` when an array is needed.
 | `end(state, callId)`             | operation   | Completes a call. Empty fragments complete as `"{}"`. An unknown id fails with `invalid_provider_output` (`Received completion for unknown tool call <id>`), and reassembled text that is not a JSON object fails the same way (`Invalid JSON input for streamed tool call <name>`), because a live stream must not hand a guess to a tool. |
 | `flushAborted(state)`            | operation   | Settles every open call after a stream halt, preserving partial text verbatim for the journal. This is the non-executing half of the split: built-in lowerings omit aborted turns from continuations, while a live completion still passes the strict validator.                                                                            |
 
+## `ModelCatalog`
+
+Static facts about known provider models, read from a model id alone.
+
+| Export                            | Kind     | Behavior                                                                                                                                                                                                                                   |
+| --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `contextWindowTokensFor(modelId)` | resolver | The context window in tokens, matched case-insensitively against the id. A million-token row is anchored to the bare id, so a cloud-prefixed or suffixed id falls through to the conservative row. Unknown ids answer 128,000, never zero. |
+
+`@smthrs/agent` re-exports this as `SeatResolver.contextWindowTokensFor`, and
+the built-in harness calls it for the compaction budget of a seat whose host
+supplies no `contextWindowTokensFor` callback of its own.
+
 ## `CanonicalJson`
 
 Deterministic JSON encoding for model-step inputs.

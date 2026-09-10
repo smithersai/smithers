@@ -83,6 +83,8 @@ The root entry point exports these namespaces. Each is also importable from
   `Framing`, `sse`, `ndjson`
 - **`Model`**: The one provider seam: a request in, a stream of typed events out.
   `ModelFailure`, `Model`, `make`, `layer`, `makeNoop`, `layerNoop`
+- **`ModelCatalog`**: Static facts about known provider models, read from a model id alone.
+  `contextWindowTokensFor`
 - **`ModelError`**: The provider-neutral failure vocabulary, and the refinements that recognize a context overflow and an exhausted account in a provider's own wording.
   `ModelErrorCode`, `isContextOverflow`, `isQuotaExhausted`, `ModelError`
 - **`ModelEvent`**: The normalized events one model call emits, and the fold that turns them back into a single durable assistant message.

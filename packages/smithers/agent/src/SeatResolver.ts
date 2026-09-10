@@ -18,8 +18,8 @@
  *
  * @since 1.0.0-rc.0
  */
-import * as ContextWindow from "@smthrs/harness/ContextWindow"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as ModelCatalog from "@smthrs/model/ModelCatalog"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -96,7 +96,7 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<SeatRes
  * @category resolvers
  * @since 1.0.0-rc.0
  */
-export const contextWindowTokensFor = ContextWindow.contextWindowTokensFor
+export const contextWindowTokensFor = ModelCatalog.contextWindowTokensFor
 
 /**
  * Resolves steered context budgets through the host's seat vocabulary.

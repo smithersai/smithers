@@ -397,7 +397,6 @@ describe("the cell loop on the durable engine", () => {
         Effect.succeed({
           inserts: drains.length === 0 ? [ModelRequest.Message.user("steer: keep it short")] : [],
           seatChanges: [],
-          activatedToolNames: [],
           remaining: Steering.empty(),
           queued: false,
           duplicate: false

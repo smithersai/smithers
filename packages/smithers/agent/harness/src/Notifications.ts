@@ -55,7 +55,7 @@ const render = (notification: Notification): ModelRequest.Message => {
  * recognize stays an insert, because a system event or a webhook body is still
  * something the run should be told about.
  */
-const steerItem = (notification: Notification): Exclude<Steering.Item, Steering.ActivateTools> => {
+const steerItem = (notification: Notification): Steering.Item => {
   const item = notification._tag === "system-event" ? undefined : SteerPayload.decode(notification.payload)
   // Zero, and not a timestamp: `admittedAt` orders items inside a queue this
   // adapter does not keep. The durable queue already decided which
@@ -119,10 +119,6 @@ const drainOf = (receipt: NotificationQueue.DrainReceipt): Steering.Drain => {
   return {
     inserts,
     seatChanges,
-    // Always empty: `steerItem` answers a `Tools` steer with a message saying
-    // this run has no provider tools, rather than producing an activation
-    // nothing reads. See `Steering.ActivateTools`.
-    activatedToolNames: [],
     remaining: Steering.empty(),
     queued: notifications.some((notification) => notification.delivery === "queue"),
     // The queue's own answer to "has this boundary drained before". A parked

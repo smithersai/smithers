@@ -84,33 +84,13 @@ export interface ThinkingChange {
 }
 
 /**
- * An additive active-tool update for a future turn.
- *
- * Reserved surface. The cell-first controller declares no provider tools and
- * reads no activated set: `Notifications` refuses a `Tools` steer out loud
- * instead of producing this item, and nothing else in this release constructs
- * one. It is kept for a future foreign-adapter loop and carries no
- * compatibility promise at 1.0.0-rc.0.
- *
- * @category models
- * @since 0.1.0
- * @slop
- */
-export interface ActivateTools {
-  readonly _tag: "ActivateTools"
-  readonly delivery: "steer"
-  readonly admittedAt: number
-  readonly toolNames: ReadonlyArray<string>
-}
-
-/**
  * A serializable steering event.
  *
  * @category models
  * @since 0.1.0
  * @slop
  */
-export type Item = Insert | SeatChange | ThinkingChange | ActivateTools
+export type Item = Insert | SeatChange | ThinkingChange
 
 /**
  * An immutable, FIFO queue of steering events.
@@ -133,11 +113,6 @@ export interface Queue {
 export interface Drain {
   readonly inserts: ReadonlyArray<ModelRequest.Message>
   readonly seatChanges: ReadonlyArray<SeatChange | ThinkingChange>
-  /**
-   * Reserved surface: the cell-first controller reads no activated tool set.
-   * See `ActivateTools`.
-   */
-  readonly activatedToolNames: ReadonlyArray<string>
   readonly remaining: Queue
   readonly queued: boolean
   /**
@@ -203,8 +178,6 @@ const ThinkingChangeRecord = Schema.Struct({
 export const DrainRecord = Schema.Struct({
   inserts: Schema.Array(ModelRequest.Message),
   seatChanges: Schema.Array(Schema.Union([SeatChangeRecord, ThinkingChangeRecord])),
-  /** Reserved surface, always empty. See `ActivateTools`. */
-  activatedToolNames: Schema.Array(Schema.String),
   queued: Schema.Boolean
 })
 
@@ -227,7 +200,6 @@ export type DrainRecord = typeof DrainRecord.Type
 export const drainRecord = (drain: Drain): DrainRecord => ({
   inserts: drain.inserts,
   seatChanges: drain.seatChanges,
-  activatedToolNames: drain.activatedToolNames,
   queued: drain.queued
 })
 
@@ -249,10 +221,7 @@ export interface PromotionState {
 
 const immutable = (items: ReadonlyArray<Item>): Queue => Object.freeze({ items: Object.freeze([...items]) })
 
-const immutableItem = (item: Item): Item =>
-  item._tag === "ActivateTools"
-    ? Object.freeze({ ...item, toolNames: Object.freeze([...item.toolNames]) })
-    : Object.freeze({ ...item })
+const immutableItem = (item: Item): Item => Object.freeze({ ...item })
 
 /**
  * Creates an empty immutable steering queue.
@@ -282,7 +251,6 @@ export const enqueue = (queue: Queue, item: Item): Queue => immutable([...queue.
 export const drainAtClose = (queue: Queue, cutoff: number): Drain => {
   const inserts: Array<ModelRequest.Message> = []
   const seatChanges: Array<SeatChange | ThinkingChange> = []
-  const activatedToolNames = new Set<string>()
   const remaining: Array<Item> = []
   for (const item of queue.items) {
     if (item.delivery === "queue" || item.admittedAt > cutoff) {
@@ -297,17 +265,11 @@ export const drainAtClose = (queue: Queue, cutoff: number): Drain => {
       case "ThinkingChange":
         seatChanges.push(item)
         break
-      case "ActivateTools":
-        for (const name of item.toolNames) {
-          activatedToolNames.add(name)
-        }
-        break
     }
   }
   return {
     inserts: Object.freeze(inserts),
     seatChanges: Object.freeze(seatChanges),
-    activatedToolNames: Object.freeze([...activatedToolNames]),
     remaining: immutable(remaining),
     queued: false,
     // An in-memory cutoff drain keeps no boundary ledger, so it can never say
@@ -398,7 +360,6 @@ export const makeNoop = (overrides: Partial<Source> = {}): Source =>
       Effect.succeed({
         inserts: [],
         seatChanges: [],
-        activatedToolNames: [],
         remaining: empty(),
         queued: false,
         duplicate: false

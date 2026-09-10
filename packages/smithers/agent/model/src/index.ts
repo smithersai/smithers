@@ -52,6 +52,11 @@ export * as Framing from "./Framing.ts"
 export * as Model from "./Model.ts"
 
 /**
+ * @since 1.0.0-rc.0
+ */
+export * as ModelCatalog from "./ModelCatalog.ts"
+
+/**
  * @since 0.1.0
  * @slop
  */

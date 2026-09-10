@@ -182,17 +182,8 @@ export class ContextWindow extends Schema.Class<ContextWindow>("flows/harness/Co
   }
 
   /** @category combinators @since 0.1.0 */
-  static appendTurn(
-    self: ContextWindow,
-    assistantMessage: ModelRequest.AssistantMessage,
-    orderedToolResults: ReadonlyArray<ModelRequest.ToolResultPart>
-  ): ContextWindow {
-    return appendTurn(self, assistantMessage, orderedToolResults)
-  }
-
-  /** @category combinators @since 0.1.0 */
-  static activateTools(self: ContextWindow, names: ReadonlyArray<string>): ContextWindow {
-    return activateTools(self, names)
+  static appendTurn(self: ContextWindow, assistantMessage: ModelRequest.AssistantMessage): ContextWindow {
+    return appendTurn(self, assistantMessage)
   }
 
   /** @category combinators @since 0.1.0 */
@@ -377,64 +368,25 @@ export const make = (options: MakeOptions): ContextWindow => construct(options)
  */
 export const empty = (modelId: string): ContextWindow => make({ modelId })
 
-/** Appends one settled assistant message and its ordered tool results.
- *
- * The tool-result arm is reserved surface: the cell-first controller settles no
- * tool results, because it declares no tools. It is kept for a future
- * foreign-adapter loop and carries no compatibility promise at 1.0.0-rc.0.
+/** Appends one settled assistant message.
  *
  * @category combinators
  * @since 0.1.0
  * @slop
  */
 export const appendTurn: {
-  (
-    assistantMessage: ModelRequest.AssistantMessage,
-    orderedToolResults: ReadonlyArray<ModelRequest.ToolResultPart>
-  ): (self: ContextWindow) => ContextWindow
-  (
-    self: ContextWindow,
-    assistantMessage: ModelRequest.AssistantMessage,
-    orderedToolResults: ReadonlyArray<ModelRequest.ToolResultPart>
-  ): ContextWindow
-} = dual(3, (
-  self: ContextWindow,
-  assistantMessage: ModelRequest.AssistantMessage,
-  orderedToolResults: ReadonlyArray<ModelRequest.ToolResultPart>
-) => {
-  const messages: Content = orderedToolResults.length === 0
-    ? [assistantMessage]
-    : [assistantMessage, ModelRequest.Message.tool(orderedToolResults)]
-  return construct({
+  (assistantMessage: ModelRequest.AssistantMessage): (self: ContextWindow) => ContextWindow
+  (self: ContextWindow, assistantMessage: ModelRequest.AssistantMessage): ContextWindow
+} = dual(2, (self: ContextWindow, assistantMessage: ModelRequest.AssistantMessage) =>
+  construct({
     modelId: self.modelId,
-    segments: [...self.segments, makeSegment({ kind: "transcript", zone: "tail", content: messages })],
+    segments: [
+      ...self.segments,
+      makeSegment({ kind: "transcript", zone: "tail", content: [assistantMessage] })
+    ],
     activeTools: self.activeTools,
     replaced: self.replaced
-  })
-})
-
-/** Adds tools permanently for the lifetime of this window lineage.
- *
- * A redundant activation returns the original object, deliberately preserving
- * its digest and reference identity.
- *
- * Reserved surface. The cell-first controller declares no provider tools: every
- * sealed request carries `tools: []` and `toolChoice: "none"`, so nothing in
- * this release calls this. It is kept for a future foreign-adapter loop and
- * carries no compatibility promise at 1.0.0-rc.0.
- *
- * @category combinators
- * @since 0.1.0
- * @slop
- */
-export const activateTools: {
-  (names: ReadonlyArray<string>): (self: ContextWindow) => ContextWindow
-  (self: ContextWindow, names: ReadonlyArray<string>): ContextWindow
-} = dual(2, (self: ContextWindow, names: ReadonlyArray<string>) => {
-  const activeTools = unique([...self.activeTools, ...names])
-  if (activeTools.length === self.activeTools.length) return self
-  return construct({ modelId: self.modelId, segments: self.segments, activeTools, replaced: self.replaced })
-})
+  }))
 
 const summaryMessages = (summary: ModelRequest.Message | ReadonlyArray<ModelRequest.Message>): Content => {
   const messages: ReadonlyArray<ModelRequest.Message> = Array.isArray(summary)
@@ -568,33 +520,4 @@ export const render = (self: ContextWindow): ModelRequest.ModelRequest => {
     tools,
     params: ModelRequest.GenerationParams.make()
   })
-}
-
-const contextWindows: ReadonlyArray<readonly [RegExp, number]> = [
-  [/claude.*haiku/i, 200_000],
-  // Native 1M windows; older Claude and cloud-prefixed ids stay conservative.
-  // https://platform.claude.com/docs/en/build-with-claude/context-windows
-  [/^claude-(?:opus-5|sonnet-5|opus-4-[678]|sonnet-4-6)$/i, 1_000_000],
-  [/^claude-(?:fable|mythos)-5(?:-[0-9]+)*$/i, 1_000_000],
-  [/claude/i, 200_000],
-  [/gpt-5/i, 400_000],
-  [/gpt-4\.1/i, 1_000_000],
-  [/gpt-4o/i, 128_000],
-  [/^o[134]/i, 200_000]
-]
-
-/**
- * The context window, in tokens, of a known model id, with a conservative
- * floor for models the catalog has not met. Never zero: zero is `CellTurn`'s
- * "compaction disabled", and a resolver that resolves a window must not
- * silently disable it.
- *
- * @category resolvers
- * @since 1.0.0-rc.0
- */
-export const contextWindowTokensFor = (modelId: string): number => {
-  for (const [pattern, tokens] of contextWindows) {
-    if (pattern.test(modelId)) return tokens
-  }
-  return 128_000
 }

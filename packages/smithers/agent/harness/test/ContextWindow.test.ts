@@ -27,6 +27,18 @@ const lazy = () =>
     activeTools: []
   })
 
+/** The same window with the lazily loaded tool active. */
+const lazyActivated = () =>
+  ContextWindow.make({
+    modelId: "test-model",
+    segments: [
+      { kind: "system", zone: "prefix", content: [system] },
+      { kind: "tools", zone: "prefix", content: [tool, lazyTool] },
+      { kind: "transcript", zone: "tail", content: [Request.Message.user("load a tool")] }
+    ],
+    activeTools: ["write"]
+  })
+
 /** The identity a provider caches: the digests of the prefix-zone segments. */
 const sealedPrefix = (value: ContextWindow.ContextWindow) =>
   value.segments.filter((segment) => segment.zone === "prefix").map((segment) => segment.digest)
@@ -72,7 +84,7 @@ describe("ContextWindow", () => {
   it("has a deterministic digest and never mutates its input", () => {
     const first = base()
     const second = base()
-    const next = ContextWindow.appendTurn(first, Request.Message.assistant("working"), [])
+    const next = ContextWindow.appendTurn(first, Request.Message.assistant("working"))
     expect(first.digest).toBe(second.digest)
     expect(next.digest).not.toBe(first.digest)
     expect(first.segments).toHaveLength(5)
@@ -206,30 +218,31 @@ describe("ContextWindow", () => {
     )
   })
 
-  it("activates tools additively without changing the stable prefix", () => {
-    const value = lazy()
-    const first = ContextWindow.activateTools(value, ["read", "read"])
-    const second = ContextWindow.activateTools(first, ["write"])
-
-    // Each activation adds, and adds only what the window did not already hold.
-    expect(value.activeTools).toEqual([])
-    expect(first.activeTools).toEqual(["read"])
-    expect(second.activeTools).toEqual(["read", "write"])
-    expect(first).not.toBe(value)
-    expect(first.digest).not.toBe(value.digest)
-
-    // Activation never rewrites a sealed segment, so the cached prefix survives.
-    expect(sealedPrefix(second)).toEqual(sealedPrefix(value))
-    expect(second.tokens.prefix).toEqual(value.tokens.prefix)
-
-    // A redundant activation keeps the object, and with it the window digest.
-    expect(ContextWindow.activateTools(second, ["read"])).toBe(second)
-    expect(ContextWindow.activateTools(second, [" WRITE "])).toBe(second)
+  it("normalizes the declared active tool set", () => {
+    // One entry per distinct tool, blanks dropped, first spelling kept: the
+    // window's digest covers this array, so two windows that declare the same
+    // set in different words must not disagree about their identity.
+    const value = ContextWindow.make({ modelId: "test-model", activeTools: ["read", "READ", "", "  ", " write "] })
+    expect(value.activeTools).toEqual(["read", " write "])
+    expect(ContextWindow.make({ modelId: "test-model", activeTools: ["read", " write "] }).digest).toBe(value.digest)
   })
 
-  it("renders the same prefix when a lazily loaded tool activates", () => {
+  it("declares an active tool set without changing the stable prefix", () => {
     const value = lazy()
-    const activated = ContextWindow.activateTools(value, ["write"])
+    const activated = lazyActivated()
+
+    expect(value.activeTools).toEqual([])
+    expect(activated.activeTools).toEqual(["write"])
+    expect(activated.digest).not.toBe(value.digest)
+
+    // The active set never rewrites a sealed segment, so the cached prefix survives.
+    expect(sealedPrefix(activated)).toEqual(sealedPrefix(value))
+    expect(activated.tokens.prefix).toEqual(value.tokens.prefix)
+  })
+
+  it("renders the same prefix when a lazily loaded tool is active", () => {
+    const value = lazy()
+    const activated = lazyActivated()
     const before = ContextWindow.render(value)
     const after = ContextWindow.render(activated)
 
@@ -242,22 +255,17 @@ describe("ContextWindow", () => {
     expect(after.tools).toEqual(before.tools)
   })
 
-  it("appends a tool message carrying the ordered results after the assistant turn", () => {
-    const assistant = Request.Message.assistant(
-      Request.ToolCallPart.make({ id: "call-1", name: "read", arguments: "{\"path\":\"a\"}" }),
-      { stopReason: "tool-calls" }
-    )
-    const result = Request.ToolResultPart.make({ toolCallId: "call-1", content: "file contents" })
-    const next = ContextWindow.appendTurn(base(), assistant, [result])
+  it("appends the settled assistant turn to the tail", () => {
+    const assistant = Request.Message.assistant("working", { stopReason: "stop" })
+    const next = ContextWindow.appendTurn(base(), assistant)
 
     const appended = next.segments[next.segments.length - 1]
     expect(appended?.kind).toBe("transcript")
     expect(appended?.zone).toBe("tail")
-    expect(appended?.content).toEqual([assistant, Request.Message.tool([result])])
+    expect(appended?.content).toEqual([assistant])
 
     const request = ContextWindow.render(next)
-    expect(request.messages.slice(-2).map((message) => message.role)).toEqual(["assistant", "tool"])
-    expect(request.messages[request.messages.length - 1]?.content).toEqual([result])
+    expect(request.messages[request.messages.length - 1]).toEqual(assistant)
   })
 
   it("keeps token accounting aligned with segments", () => {
@@ -449,10 +457,9 @@ describe("ContextWindow", () => {
       expect(ContextWindow.ContextWindow.empty("test-model").digest).toBe(ContextWindow.empty("test-model").digest)
 
       const assistant = Request.Message.assistant("working", { stopReason: "stop" })
-      expect(ContextWindow.ContextWindow.appendTurn(value, assistant, []).digest).toBe(
-        ContextWindow.appendTurn(value, assistant, []).digest
+      expect(ContextWindow.ContextWindow.appendTurn(value, assistant).digest).toBe(
+        ContextWindow.appendTurn(value, assistant).digest
       )
-      expect(ContextWindow.ContextWindow.activateTools(value, ["read"]).activeTools).toEqual(["read"])
       expect(ContextWindow.ContextWindow.render(value)).toEqual(ContextWindow.render(value))
 
       const summary = Request.Message.user("summary")
@@ -471,11 +478,9 @@ describe("ContextWindow", () => {
     it("reaches the same window through the data-last form of every combinator", () => {
       const value = base()
       const assistant = Request.Message.assistant("working", { stopReason: "stop" })
-      const result = Request.ToolResultPart.make({ toolCallId: "call-1", content: "ok" })
-      expect(ContextWindow.appendTurn(assistant, [result])(value).digest).toBe(
-        ContextWindow.appendTurn(value, assistant, [result]).digest
+      expect(ContextWindow.appendTurn(assistant)(value).digest).toBe(
+        ContextWindow.appendTurn(value, assistant).digest
       )
-      expect(ContextWindow.activateTools(["write"])(value).activeTools).toEqual(["read", "write"])
 
       const summary = Request.Message.user("summary")
       expect(Result.getOrThrow(ContextWindow.compact(summary)(value)).digest).toBe(
@@ -485,74 +490,25 @@ describe("ContextWindow", () => {
   })
 
   describe("appendTurn", () => {
-    it("appends only the assistant message when the turn called no tools", () => {
+    it("appends one segment holding only the assistant message", () => {
       const assistant = Request.Message.assistant("done", { stopReason: "stop" })
-      const next = ContextWindow.appendTurn(base(), assistant, [])
+      const next = ContextWindow.appendTurn(base(), assistant)
       expect(next.segments.at(-1)?.content).toEqual([assistant])
-    })
-
-    it("appends one tool message holding every result in the order supplied", () => {
-      const assistant = Request.Message.assistant(
-        [
-          Request.ToolCallPart.make({ id: "a", name: "read", arguments: "{}" }),
-          Request.ToolCallPart.make({ id: "b", name: "read", arguments: "{}" })
-        ],
-        { stopReason: "tool-calls" }
-      )
-      const results = [
-        Request.ToolResultPart.make({ toolCallId: "b", content: "second" }),
-        Request.ToolResultPart.make({ toolCallId: "a", content: "first" })
-      ]
-      const next = ContextWindow.appendTurn(base(), assistant, results)
-      expect(next.segments.at(-1)?.content).toEqual([assistant, Request.Message.tool(results)])
       expect(next.segments).toHaveLength(base().segments.length + 1)
     })
 
     it("carries the active tools and the replacement digest onto the new window", () => {
       const compacted = Result.getOrThrow(ContextWindow.compact(base(), Request.Message.user("summary")))
-      const next = ContextWindow.appendTurn(compacted, Request.Message.assistant("more"), [])
+      const next = ContextWindow.appendTurn(compacted, Request.Message.assistant("more"))
       expect(next.replaced).toBe(compacted.replaced)
       expect(next.activeTools).toEqual(compacted.activeTools)
     })
 
     it("appends onto an empty window", () => {
       const assistant = Request.Message.assistant("first words")
-      const next = ContextWindow.appendTurn(ContextWindow.empty("test-model"), assistant, [])
+      const next = ContextWindow.appendTurn(ContextWindow.empty("test-model"), assistant)
       expect(next.segments).toHaveLength(1)
       expect(ContextWindow.render(next).messages).toEqual([assistant])
-    })
-  })
-
-  describe("activateTools", () => {
-    it("returns the same window for an empty activation list", () => {
-      const value = base()
-      expect(ContextWindow.activateTools(value, [])).toBe(value)
-    })
-
-    it("returns the same window when every name is blank", () => {
-      const value = base()
-      expect(ContextWindow.activateTools(value, ["", "  "])).toBe(value)
-    })
-
-    it("activates a tool the window never declared", () => {
-      const value = ContextWindow.activateTools(base(), ["never-declared"])
-      expect(value.activeTools).toEqual(["read", "never-declared"])
-      // An activation without a declaration adds nothing to the request.
-      expect(ContextWindow.render(value).tools.map((definition) => definition.name)).toEqual(["read"])
-    })
-
-    it("keeps every segment digest when activating", () => {
-      const value = lazy()
-      const activated = ContextWindow.activateTools(value, ["write"])
-      expect(activated.segments.map((segment) => segment.digest)).toEqual(
-        value.segments.map((segment) => segment.digest)
-      )
-      expect(activated.digest).not.toBe(value.digest)
-    })
-
-    it("carries the replacement digest through an activation", () => {
-      const compacted = Result.getOrThrow(ContextWindow.compact(lazy(), Request.Message.user("summary")))
-      expect(ContextWindow.activateTools(compacted, ["write"]).replaced).toBe(compacted.replaced)
     })
   })
 
@@ -594,7 +550,7 @@ describe("ContextWindow", () => {
 
     it("changes when the prefix content changes and not when the suffix does", () => {
       const value = base()
-      const appended = ContextWindow.appendTurn(value, Request.Message.assistant("later"), [])
+      const appended = ContextWindow.appendTurn(value, Request.Message.assistant("later"))
       expect(Result.getOrThrow(ContextWindow.prefixDigest(appended, 1))).toBe(
         Result.getOrThrow(ContextWindow.prefixDigest(value, 1))
       )
@@ -782,64 +738,17 @@ describe("ContextWindow", () => {
     })
   })
 
-  describe("activation and compaction together", () => {
-    it("holds the sealed prefix steady across a compaction followed by an activation", () => {
+  describe("an active tool set and compaction together", () => {
+    it("holds the sealed prefix steady across a compaction", () => {
       const value = lazy()
-      const compacted = Result.getOrThrow(ContextWindow.compact(value, Request.Message.user("summary")))
-      const activated = ContextWindow.activateTools(compacted, ["write"])
+      const compacted = Result.getOrThrow(ContextWindow.compact(lazyActivated(), Request.Message.user("summary")))
 
       // Compaction only ever rewrites tail segments, so the cached prefix and
       // the deferred declaration both survive the round trip.
-      expect(sealedPrefix(activated)).toEqual(sealedPrefix(value))
-      expect(activated.tokens.prefix).toEqual(value.tokens.prefix)
-      expect(activated.replaced).toBe(compacted.replaced)
-      expect(ContextWindow.render(activated).tools.map((definition) => definition.name)).toEqual(["write"])
+      expect(sealedPrefix(compacted)).toEqual(sealedPrefix(value))
+      expect(compacted.tokens.prefix).toEqual(value.tokens.prefix)
+      expect(compacted.activeTools).toEqual(["write"])
+      expect(ContextWindow.render(compacted).tools.map((definition) => definition.name)).toEqual(["write"])
     })
-
-    it("reaches the same window whichever of activation and compaction runs first", () => {
-      const value = lazy()
-      const compactFirst = ContextWindow.activateTools(
-        Result.getOrThrow(ContextWindow.compact(value, Request.Message.user("summary"))),
-        ["write"]
-      )
-      const activateFirst = Result.getOrThrow(
-        ContextWindow.compact(ContextWindow.activateTools(value, ["write"]), Request.Message.user("summary"))
-      )
-      expect(compactFirst.digest).toBe(activateFirst.digest)
-    })
-  })
-})
-
-describe("ContextWindow.contextWindowTokensFor", () => {
-  it.each([
-    ["claude-haiku-4-5", 200_000],
-    ["CLAUDE-OPUS-5", 1_000_000],
-    ["gpt-5", 400_000],
-    ["gpt-4.1-mini", 1_000_000],
-    ["gpt-4o", 128_000],
-    ["o3-mini", 200_000],
-    ["unknown", 128_000]
-  ])("budgets %s at %i tokens", (model, tokens) => {
-    expect(ContextWindow.contextWindowTokensFor(model)).toBe(tokens)
-  })
-
-  // The native million-token rows and the invariant they were added under: a
-  // row is anchored to the bare id, so a cloud-prefixed or suffixed id falls
-  // through to the conservative Claude row. This catalogue is re-exported by
-  // `@smthrs/agent`, and pinning it only there let a dropped anchor pass this
-  // package's own suite.
-  it.each([
-    ["claude-opus-5", 1_000_000],
-    ["claude-sonnet-5", 1_000_000],
-    ["claude-opus-4-6", 1_000_000],
-    ["claude-sonnet-4-6", 1_000_000],
-    ["claude-fable-5-1", 1_000_000],
-    ["claude-mythos-5", 1_000_000],
-    ["us.anthropic.claude-opus-4-6-v1", 200_000],
-    ["publishers/anthropic/models/claude-opus-5@20260101", 200_000],
-    ["claude-opus-5-1", 200_000],
-    ["claude-sonnet-4-5", 200_000]
-  ])("budgets %s at %i tokens", (model, tokens) => {
-    expect(ContextWindow.contextWindowTokensFor(model)).toBe(tokens)
   })
 })

@@ -347,7 +347,7 @@ const assistantText = (message: ModelRequest.AssistantMessage): string =>
  */
 export const trace = (
   event: AgentEvent.AgentEvent
-): { readonly eventType: string; readonly payload: unknown } | undefined => {
+): { readonly eventType: Transcript.ControlEventType; readonly payload: unknown } | undefined => {
   switch (event._tag) {
     case "model-delta":
       return undefined

@@ -10,10 +10,11 @@ import * as Digest from "@smthrs/core/Digest"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import * as EngineLike from "@smthrs/harness/EngineLike"
+import * as Transcript from "@smthrs/harness/Transcript"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Option } from "effect"
+import { Option, Result } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
 
@@ -547,5 +548,49 @@ describe("trace", () => {
         value: null
       }
     })
+  })
+
+  // The writer of these entries and the resume validator that reads them back
+  // live in different packages. `trace` is typed against
+  // `Transcript.ControlEventType`, so the namespace cannot be renamed on one
+  // side alone: this pins the runtime half of that agreement.
+  it("writes every journaled event under the namespace resume validation reads", () => {
+    const events = [
+      new AgentEvent.ModelRetried({
+        eventType: "flows.harness.model-retried.v1",
+        attempt: 1,
+        code: "transport",
+        delayMillis: 1
+      }),
+      new AgentEvent.TurnOpened({
+        eventType: "flows.harness.turn-opened.v1",
+        seat: "sdk:default",
+        modelParams: ModelRequest.GenerationParams.make(),
+        activeToolNames: [],
+        contextDigest: "sha256:context"
+      }),
+      new AgentEvent.TransitionApplied({
+        eventType: "flows.harness.transition-applied.v1",
+        transition: new Cell.Continue({ context: [], state: null })
+      })
+    ]
+
+    const projected = events.map((event) => AgentSession.trace(event)).filter((entry) => entry !== undefined)
+    expect(projected).toHaveLength(events.length)
+    for (const entry of projected) {
+      expect(entry.eventType.startsWith(Transcript.controlEventPrefix)).toBe(true)
+    }
+
+    const entries = projected.map((entry, index) => ({
+      seq: index + 1,
+      eventType: entry.eventType,
+      payload: { ...(entry.payload as Record<string, unknown>), journalVersion: Transcript.journalVersion }
+    }))
+    expect(Result.isSuccess(Transcript.validateJournal(entries as never))).toBe(true)
+    // The same entries without the version stamp are exactly what resume must
+    // refuse, which proves the filter selected them rather than skipping them.
+    expect(Result.isFailure(
+      Transcript.validateJournal(entries.map(({ payload: _payload, ...rest }) => ({ ...rest, payload: {} })) as never)
+    )).toBe(true)
   })
 })

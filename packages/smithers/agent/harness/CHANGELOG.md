@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the reserved provider-tool loop. `Steering.ActivateTools` and the
+  `activatedToolNames` member of `Steering.Drain` and `Steering.DrainRecord`,
+  `ContextWindow.activateTools`, and `appendTurn`'s tool-result parameter are
+  gone: nothing in this package produced or read them, and every implementer of
+  `Steering.Source` had to write an empty array to satisfy the type. A journal
+  written before this still decodes, because a `DrainRecord` that carries the
+  key drops it. `ContextWindow.activeTools` and
+  `AgentEvent.TurnOpened.activeToolNames` stay for a foreign-adapter loop to
+  fill, and stay empty until one does. `appendTurn(self, message)` now takes
+  two arguments.
+- Removed `ContextWindow.contextWindowTokensFor`. The provider window table
+  belongs beside the catalog it describes and now lives in `@smthrs/model` as
+  `ModelCatalog.contextWindowTokensFor`. `CellTurn` still resolves a seat with
+  no host callback through it, and `@smthrs/agent` still re-exports it as
+  `SeatResolver.contextWindowTokensFor`.
+
+### Added
+
+- Added `Transcript.controlEventPrefix` and `Transcript.ControlEventType`.
+  `Transcript.validateJournal` selects the entries it validates by that prefix,
+  and the session that writes them lives in `@smthrs/agent`; typing the writer
+  against `ControlEventType` makes a rename on either side a compile error
+  instead of silently validating nothing.
+
 ### Changed
 
 - **Breaking journal format 2.** Summary text is user context. Controller state,

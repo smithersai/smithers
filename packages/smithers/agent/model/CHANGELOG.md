@@ -1,5 +1,14 @@
 # @smthrs/model
 
+## [Unreleased]
+
+### Added
+
+- Added `ModelCatalog.contextWindowTokensFor`, the context window in tokens of a
+  known model id with a conservative floor for one the catalog has not met. The
+  table moved here from `@smthrs/harness`, whose `ContextWindow` is otherwise
+  provider-neutral. `@smthrs/agent` re-exports it from its own seat resolver.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added

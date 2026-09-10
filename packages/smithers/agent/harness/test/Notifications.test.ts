@@ -134,7 +134,6 @@ describe("harness notification adapter", () => {
     expect(drained).toEqual({
       inserts: [],
       seatChanges: [],
-      activatedToolNames: [],
       remaining: Steering.empty(),
       queued: false,
       duplicate: false
@@ -342,7 +341,6 @@ describe("harness notification adapter", () => {
       { _tag: "SeatChange", delivery: "steer", admittedAt: 0, seat: "reviewer" },
       { _tag: "ThinkingChange", delivery: "steer", admittedAt: 0, thinking: "high" }
     ])
-    expect(drained.activatedToolNames).toEqual([])
   })
 
   it("keeps a payload that is not a steering item out of the seat and tool changes", async () => {
@@ -358,7 +356,6 @@ describe("harness notification adapter", () => {
     )
 
     expect(drained.seatChanges).toEqual([])
-    expect(drained.activatedToolNames).toEqual([])
     expect(drained.inserts).toEqual([
       rendered("deploy", "{\"kind\":\"Seat\",\"seat\":12}", "machine:ci", "ci/root", 0)
     ])
