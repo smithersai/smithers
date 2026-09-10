@@ -3,7 +3,7 @@ import type { Locator, Page } from "@playwright/test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { CODING_PLAN } from "../../src/mainview/cards/fixtures/CodingPlan"
-import { blockedCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"
+import { blockedCodingJournal, earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"
 import { installCloudFixture } from "./cloudFixture.ts"
 
 /*
@@ -291,6 +291,54 @@ test("T1: a prompt-only run reveals its recorded plan and blocked execution thro
   await page.keyboard.press("Enter")
   await expect(card.locator("[data-span='engine:failed-round:0']")).toContainText("The required fast check failed.")
   await page.screenshot({ path: "/tmp/smithers-coding-overlay-after.png", fullPage: true })
+})
+
+test("T1: early review feedback opens durable debugger detail through the keyboard", async ({ page }) => {
+  test.setTimeout(120_000)
+  // Synthetic producer-shaped evidence; the browser exercises the actual
+  // controller, persisted selection and existing frame presentation.
+  await serve(page, JSON.parse(JSON.stringify(earlyCodingJournal()).replaceAll("run-1", RUN_ID)))
+  await page.goto("/")
+  await finishGuide(page)
+  await page.keyboard.press("Control+k")
+  await page.keyboard.insertText(`/flow.run coding ${REPO} ${JSON.stringify({ prompt: CODING_PLAN.prompt })}`)
+  await page.keyboard.press("Enter")
+  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
+  const feedback = card.getByLabel("Coding review feedback", { exact: true })
+  await expect(feedback).toContainText("Review requested changes. Waiting for the correction result.")
+  await expect(feedback).toContainText("Keep the causal revision when merging wiki edits.")
+  await expect(card.getByLabel("Coding outcome", { exact: true })).toHaveCount(0)
+  await tabTo(page, page.getByTestId("composer-input"))
+  await page.keyboard.insertText("/debug.verbose")
+  await page.keyboard.press("Enter")
+  await expect(page.getByText("Verbose on — showing every flow, including hidden and background ones", { exact: true })).toBeVisible()
+  const inspect = feedback.getByRole("button", { name: "Inspect review feedback" })
+  await tabTo(page, inspect)
+  expect(await inspect.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe("none")
+  await page.keyboard.press("Enter")
+  const pane = card.locator("[data-span='engine:observe:0']")
+  await expect(pane).toContainText("coding/EarlyFeedback")
+  const failure = pane.locator("pre[aria-label='Failure']")
+  await tabTo(page, failure)
+  expect(await failure.evaluate(element => getComputedStyle(element).outlineStyle)).not.toBe("none")
+  const initialScroll = await failure.evaluate(element => element.scrollTop)
+  await page.keyboard.press("PageDown")
+  await expect.poll(() => failure.evaluate(element => element.scrollTop)).toBeGreaterThan(initialScroll)
+  await expect(page.getByText(/You ran \/runs\.trace\.select sourceCard=flow-run-run-e2e run-e2e engine:observe:0 .*→ executed/)).toBeVisible()
+  await page.reload()
+  await expect(pane).toContainText("coding/EarlyFeedback")
+  await expect(feedback).toContainText("Waiting for the correction result.")
+  await page.keyboard.press("Control+k")
+  await expect(page.getByTestId("composer-input")).toBeFocused()
+  const node = await card.getByRole("region", { name: "Coding plan" }).elementHandle()
+  await tabTo(page, card.getByTestId(`card-maximize-flow-run-${RUN_ID}`))
+  await page.keyboard.press("Enter")
+  await expect(card).toHaveAttribute("data-maximized", "true")
+  expect(await card.getByRole("region", { name: "Coding plan" }).evaluate((element, original) => element === original, node)).toBe(true)
+  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(card).toHaveCSS("opacity", "1")
+  await expect(card).toHaveCSS("transform", "none")
+  await page.screenshot({ path: "/tmp/smithers-coding-early-feedback-ui.png", fullPage: true })
 })
 
 test("T1: coding plan launch, inspection and restoration work with only the keyboard in the Command-K shell", async ({ page }) => {

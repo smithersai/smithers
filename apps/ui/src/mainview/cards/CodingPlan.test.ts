@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { Card } from "../state/AppState"
 import { codingEvidenceOf, codingPlanOf } from "./CodingPlan"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
-import { blockedCodingJournal, blockedCorrection, codingDecision, preparedCodingJournal } from "./fixtures/CodingJournal"
+import { blockedCodingJournal, blockedCorrection, codingDecision, earlyCodingJournal, preparedCodingJournal } from "./fixtures/CodingJournal"
 
 const card = (events: Array<Record<string, unknown>>, cursorSeq?: number): Extract<Card, { kind: "run-trace" }> => ({
   id: "workspace-run-card", kind: "run-trace", title: "Coding", status: "active", ordinal: 1, createdAt: 0,
@@ -142,5 +142,55 @@ describe("coding product facts from recorded native executions", () => {
       parent: "request", status: "completed", input: { plan: CODING_PLAN, maxRounds: 2 }, value: outcome
     })]
     expect(codingEvidenceOf(card(repaired))).toEqual({ plan: CODING_PLAN, outcome })
+  })
+
+  test("actionable native early feedback stays separate from validation and is superseded by correction", () => {
+    const events = earlyCodingJournal()
+    const visible = codingEvidenceOf(card(events))
+    expect(visible.reviewFeedback?.result.findings[0]?.message).toBe("Keep the causal revision when merging wiki edits.")
+    expect(visible.reviewFeedback?.spanId).toBe("engine:observe:0")
+    expect(visible.outcome).toBeUndefined()
+    expect(codingEvidenceOf(card(events, 5)).reviewFeedback).toBeUndefined()
+    const outcome = { status: "validated", rounds: 2, result: { status: "validated", changes: [], findings: [] }, blocked: null } as const
+    expect(codingEvidenceOf(card([...events, codingDecision(7, "correct", "coding/CorrectPlan", {
+      parent: "request", status: "completed", input: { plan: CODING_PLAN, maxRounds: 2 }, value: outcome
+    })]))).toEqual({ plan: CODING_PLAN, outcome })
+  })
+
+  test("early feedback needs the exact plan, active correction owner and unambiguous typed failure", () => {
+    const original = earlyCodingJournal()
+    for (const fault of ["foreign-owner", "different-plan", "generic-error", "mixed-defect", "no-findings", "partial-implementation"] as const) {
+      const events = JSON.parse(JSON.stringify(original))
+      const state = events.at(-1).payload.payload.state
+      const error = state.result.exit.cause[0].error
+      if (fault === "foreign-owner") state.parentExecutionId = "run-1"
+      if (fault === "different-plan") state.payload.plan = next
+      if (fault === "generic-error") error._tag = "coding/Error"
+      if (fault === "mixed-defect") state.result.exit.cause.push({ _tag: "Die", defect: "real bug" })
+      if (fault === "no-findings") error.result.findings = []
+      if (fault === "partial-implementation") error.result.changes.pop()
+      expect(codingEvidenceOf(card(events)).reviewFeedback).toBeUndefined()
+    }
+    expect(codingEvidenceOf(card([...original, codingDecision(7, "correct", "coding/CorrectPlan", {
+      parent: "request", status: "failed", input: { plan: CODING_PLAN }
+    })])).reviewFeedback).toBeUndefined()
+    expect(codingEvidenceOf(card([...original, codingDecision(7, "observe", "coding/ObservePlan", {
+      parent: "correct", status: "running", input: { plan: CODING_PLAN }, generation: 1
+    })])).reviewFeedback).toBeUndefined()
+    expect(codingEvidenceOf(card([...original, codingDecision(7, "new-plan", "coding/PreparePlan", {
+      parent: "request", status: "completed", value: CODING_PLAN
+    })])).reviewFeedback).toBeUndefined()
+  })
+
+  test("classified v2 failures use their typed payload and keep recorded native ancestry", () => {
+    const events = earlyCodingJournal()
+    const last = JSON.parse(JSON.stringify(events.at(-1)))
+    const error = last.payload.payload.state.result.exit.cause[0].error
+    const v2 = { ...last, sequence: 7, payload: { ...last.payload, sequence: 7, eventId: "v2-failure", eventType: "flows.engine.v2.state-event",
+      payload: { version: 2, executionId: "observe", lineage: { kind: "root", runId: "observe", rootRunId: "observe", lineageId: "observe", round: 0, parentRunId: null },
+        event: { _tag: "Execution", lifecycle: { state: "completed", result: { _tag: "Failure", reason: "error", detail: error } } } } } }
+    expect(codingEvidenceOf(card([...events, v2])).reviewFeedback?.spanId).toBe("engine:observe:0")
+    v2.payload.payload.event.lifecycle.result.reason = "defect"
+    expect(codingEvidenceOf(card([...events, v2])).reviewFeedback).toBeUndefined()
   })
 })

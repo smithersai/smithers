@@ -428,6 +428,6 @@ const Block = (
 ) => (
   <div className="run-trace-block">
     <h5>{title}</h5>
-    <pre className="run-trace-code" {...(alert ? { role: "alert" } : {})}>{text}</pre>
+    <pre className="run-trace-code" tabIndex={0} aria-label={title} {...(alert ? { role: "alert" } : {})}>{text}</pre>
   </div>
 )

@@ -1,8 +1,9 @@
-import { Option, Schema } from "effect"
+import { Cause, Option, Schema } from "effect"
 import * as Digest from "@smthrs/core/Digest"
 import { CorrectionResult, Plan, RequestResult, validatePlan } from "../../../../../flows/coding/schema.ts"
+import { EarlyFeedback } from "../../../../../flows/coding/feedback-schema.ts"
 import type { Card } from "../state/AppState"
-import { engineRunEvidence } from "./EngineTrace"
+import { engineRunEvidence, type EngineExecutionEvidence } from "./EngineTrace"
 
 /** The repository recipe owns this contract; the UI does not maintain a second plan schema. */
 const planOf = (value: unknown): Plan | undefined => {
@@ -18,6 +19,23 @@ const planOf = (value: unknown): Plan | undefined => {
 
 const decodeCorrection = Schema.decodeUnknownOption(CorrectionResult)
 const decodeRequest = Schema.decodeUnknownOption(RequestResult)
+const decodeFeedback = Schema.decodeUnknownOption(EarlyFeedback)
+const decodeCause = Schema.decodeUnknownOption(Schema.toCodecJson(Schema.Cause(Schema.Unknown, Schema.Defect())))
+const feedbackOf = (failure: EngineExecutionEvidence["failure"]): EarlyFeedback | undefined => {
+  if (failure === undefined) return undefined
+  let value: unknown
+  if (failure.kind === "error") value = failure.value
+  else if (failure.kind === "cause") {
+    const cause = decodeCause(failure.value)
+    if (Option.isNone(cause) || cause.value.reasons.length !== 1) return undefined
+    const reason = cause.value.reasons[0]!
+    if (!Cause.isFailReason(reason)) return undefined
+    value = reason.error
+  } else return undefined
+  const decoded = decodeFeedback(value)
+  return Option.isSome(decoded) && decoded.value.result.status === "changes-requested" && decoded.value.result.findings.length > 0
+    ? decoded.value : undefined
+}
 const correctionOf = (value: unknown): typeof CorrectionResult.Type | undefined => {
   const decoded = decodeCorrection(value)
   if (Option.isNone(decoded)) return undefined
@@ -32,6 +50,7 @@ export interface CodingEvidence {
   readonly plan?: Plan
   readonly outcome?: typeof CorrectionResult.Type
   readonly blockedSpanId?: string
+  readonly reviewFeedback?: { readonly result: EarlyFeedback["result"]; readonly spanId: string }
 }
 
 export const codingEvidenceOf = (card: Extract<Card, { kind: "run-trace" }>): CodingEvidence => {
@@ -60,7 +79,30 @@ export const codingEvidenceOf = (card: Extract<Card, { kind: "run-trace" }>): Co
       ? [] : [{ execution, outcome, sequence: execution.result!.sequence }]
   }).sort((left, right) => right.sequence - left.sequence)
   const latest = outcomes[0]
-  if (latest === undefined || outcomes[1]?.sequence === latest.sequence) return { plan }
+  if (latest === undefined) {
+    const matchesPlan = (execution: EngineExecutionEvidence) => {
+      const input = execution.input
+      const source = typeof input === "object" && input !== null ? planOf((input as { readonly plan?: unknown }).plan) : undefined
+      return source !== undefined && Digest.canonical(source) === planKey
+    }
+    const active = executions.filter(execution => execution.flowName === "coding/CorrectPlan" &&
+      ["pending", "running", "waiting"].includes(execution.status) && matchesPlan(execution))
+    const feedback = executions.flatMap(execution => {
+      if (execution.status !== "failed" || (execution.flowName !== "coding/ObservePlan" && execution.flowName !== "coding/RepairPass") ||
+          execution.failure === undefined || execution.failure.sequence < (newest?.sequence ?? 0) ||
+          !matchesPlan(execution) ||
+          active.filter(owner => belongs(execution, owner.executionId)).length !== 1) return []
+      const early = feedbackOf(execution.failure)
+      return early === undefined || early.result.changes.length !== plan.changes.length ||
+        early.result.changes.some((group, index) => group.implementation.change !== plan.changes[index]!.id) ||
+        early.result.findings.some(finding => !plan.changes.some(change => change.id === finding.owner))
+        ? [] : [{ result: early.result, spanId: execution.spanId, sequence: execution.failure.sequence }]
+    }).sort((left, right) => right.sequence - left.sequence)
+    const newestFeedback = feedback[0]
+    return newestFeedback === undefined || feedback[1]?.sequence === newestFeedback.sequence ? { plan }
+      : { plan, reviewFeedback: { result: newestFeedback.result, spanId: newestFeedback.spanId } }
+  }
+  if (outcomes[1]?.sequence === latest.sequence) return { plan }
   const failed = latest.outcome.blocked === null ? [] : executions.filter((execution) =>
     execution.executionId === latest.outcome.blocked!.executionId &&
     execution.status === "failed" && belongs(execution, latest.execution.executionId))

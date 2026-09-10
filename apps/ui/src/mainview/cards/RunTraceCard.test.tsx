@@ -7,7 +7,7 @@ import type { Card } from "../state/AppState"
 import { PROTOTYPE_BANNER, RunTraceBody } from "./RunTraceCard"
 import { WorkflowRunCardBody } from "./WorkflowCards"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
-import { blockedCodingJournal, preparedCodingJournal } from "./fixtures/CodingJournal"
+import { blockedCodingJournal, earlyCodingJournal, preparedCodingJournal } from "./fixtures/CodingJournal"
 
 /*
  * The run trace (factory spec 06, mocks #s5 and #s6): one card shows every
@@ -342,6 +342,26 @@ describe("the run card as a trace", () => {
 
 
 describe("predicted coding Changes in the same run card", () => {
+  test("review feedback explains an intentional failed child and opens its existing debugger span", () => {
+    const shown = renderTrace({ workflow: "coding", events: earlyCodingJournal(), traceView: "turns" })
+    const feedback = shown.host.querySelector("[aria-label='Coding review feedback']")!
+    expect(feedback.textContent).toContain("Review requested changes. Waiting for the correction result.")
+    expect(feedback.textContent).toContain("Keep the causal revision when merging wiki edits.")
+    expect(shown.host.querySelector("[aria-label='Coding outcome']")).toBeNull()
+    const inspect = feedback.querySelector<HTMLButtonElement>("[data-flow='runs.trace.select']")!
+    inspect.focus()
+    expect(document.activeElement).toBe(inspect)
+    click(inspect)
+    expect(shown.dispatched).toEqual([{ name: "runs.trace.select", args: "sourceCard=flow-run-run-1 run-1 engine:observe:0" }])
+    expect(renderTrace({ workflow: "coding", events: earlyCodingJournal(), cursorSeq: 5 }).host.querySelector("[aria-label='Coding review feedback']")).toBeNull()
+    const long = JSON.parse(JSON.stringify(earlyCodingJournal()))
+    const full = "Preserve every recorded edit. ".repeat(100)
+    long.at(-1).payload.payload.state.result.exit.cause[0].error.result.findings[0].message = full
+    const compact = renderTrace({ workflow: "coding", events: long, traceView: "turns" })
+    expect(compact.host.querySelector("[aria-label='Coding review feedback']")?.textContent).not.toContain(full)
+    const detailed = renderTrace({ workflow: "coding", events: long, traceView: "turns", selection: "engine:observe:0" })
+    expect(detailed.host.querySelector("[data-testid='run-trace-pane-run-1']")?.textContent).toContain(full)
+  })
   test("a prepared native child exposes the plan while its implementation runs, through the same selection command", () => {
     const shown = renderTrace({ workflow: "coding", input: { prompt: CODING_PLAN.prompt }, events: preparedCodingJournal(), traceView: undefined })
     expect(shown.host.querySelector("[aria-label='Predicted Changes']")?.textContent).toContain("Store repository memory")

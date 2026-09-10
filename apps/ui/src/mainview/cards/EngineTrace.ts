@@ -58,6 +58,7 @@ interface Execution {
   flowName?: string
   coherent: boolean
   result?: { readonly value: unknown; readonly sequence: number }
+  failure?: EngineExecutionEvidence["failure"]
 }
 
 /** A render-only view of the same decoded execution facts; never persisted. */
@@ -72,6 +73,12 @@ export interface EngineExecutionEvidence {
   readonly coherent: boolean
   readonly status: string
   readonly result?: { readonly value: unknown; readonly sequence: number }
+  /** Original classified failure bytes, never parsed from rendered detail. */
+  readonly failure?: {
+    readonly kind: "cause" | "error" | "defect" | "interrupted" | "encoding"
+    readonly value: unknown
+    readonly sequence: number
+  }
 }
 const decodeProjection = Schema.decodeUnknownOption(Schema.Struct({
   version: Schema.Literal(1), executionId: JournalEvent.RunId, generation: JournalEvent.NonNegativeQuantity
@@ -163,6 +170,11 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
         execution.result = { value, sequence: row.sequence! }
       }
     }
+    const failure = (kind: NonNullable<EngineExecutionEvidence["failure"]>["kind"], value: unknown) => {
+      if (Number.isSafeInteger(row.sequence) && row.sequence! >= 0) {
+        execution.failure = { kind, value, sequence: row.sequence! }
+      }
+    }
     const generic = () => {
       const event = span(`engine-event:${eventKey}`, "event", envelope.eventType, envelope.emittedAtMs, detail(row, envelope))
       event.endedAt = event.startedAt
@@ -217,6 +229,7 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
       if (recorded.value.event._tag !== "Execution") { generic(); continue }
       const { lifecycle } = recorded.value.event
       execution.result = undefined
+      execution.failure = undefined
       execution.span.detail = { ...detail(row, envelope), sequence: execution.span.detail.sequence, input: execution.span.detail.input }
       if (lifecycle.state === "completed") {
         execution.span.status = lifecycle.result._tag === "Success" ? "completed" : "failed"
@@ -226,6 +239,7 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
           ...(lifecycle.result._tag === "Success" ? { output: json(lifecycle.result.value) } : { message: json(lifecycle.result.detail) })
         }
         if (lifecycle.result._tag === "Success") result(lifecycle.result.value)
+        else failure(lifecycle.result.reason, lifecycle.result.detail)
       } else execution.span.status = lifecycle.state === "suspended" ? "waiting" : "running"
       continue
     }
@@ -233,6 +247,7 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
       const cancelled = decodeCancellation(envelope.payload)
       if (Option.isNone(cancelled)) { generic(); continue }
       execution.result = undefined
+      execution.failure = undefined
       execution.span.status = "cancelled"
       execution.span.endedAt = cancelled.value.interruptedAtMs
       execution.span.detail = { ...detail(row, envelope), sequence: execution.span.detail.sequence, input: execution.span.detail.input }
@@ -258,6 +273,7 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
       execution.span.label = state.flowName
       parent(state.parentExecutionId)
       execution.result = undefined
+      execution.failure = undefined
       execution.span.detail = { ...detail(row, envelope), sequence: execution.span.detail.sequence, input: state.payload }
       if (decision.value.decision === "created") execution.span.status = "pending"
       // RunDriver commits this decision with suspended even when its payload
@@ -287,6 +303,7 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
           ...(decodedResult.value.exit._tag === "Success" ? { output: json(decodedResult.value.exit.value) } : { message: json(decodedResult.value.exit.cause) })
         }
         if (decodedResult.value.exit._tag === "Success") result(decodedResult.value.exit.value)
+        else failure("cause", decodedResult.value.exit.cause)
       }
       continue
     }
@@ -324,7 +341,8 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
     input: current.span.detail.input,
     coherent: current.coherent,
     status: current.span.status,
-    result: current.result
+    result: current.result,
+    failure: current.failure
   }))
   return { trace: [...roots, ...notices], evidence }
 }

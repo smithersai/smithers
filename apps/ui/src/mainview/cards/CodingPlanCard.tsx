@@ -9,12 +9,27 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand }: {
   readonly onRunCommand: RunCommand
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
-  const { plan, outcome, blockedSpanId } = codingEvidenceOf(card)
+  const { plan, outcome, blockedSpanId, reviewFeedback } = codingEvidenceOf(card)
   if (plan === undefined) return null
   const selected = plan.changes.find((change) => change.id === card.payload.codingChangeId)
+  const reviewSummary = reviewFeedback?.result.findings[0]?.message ?? ""
   const detailsId = `${card.id}-coding-details`
   return (
     <section className="coding-plan" aria-label="Coding plan">
+      {reviewFeedback === undefined ? null : (
+        <div aria-label="Coding review feedback">
+          <p>Review requested changes. Waiting for the correction result.</p>
+          <p>{reviewSummary.length <= 240 ? reviewSummary : `${reviewSummary.slice(0, 240)}…`}</p>
+          <button
+            type="button"
+            className="run-trace-filter"
+            data-flow="runs.trace.select"
+            onClick={() => onRunCommand("runs.trace.select", `${card.payload.runId} ${reviewFeedback.spanId}`)}
+          >
+            Inspect review feedback
+          </button>
+        </div>
+      )}
       {outcome === undefined ? null : (
         <div aria-label="Coding outcome">
           <p>

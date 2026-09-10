@@ -88,6 +88,25 @@ Recorded blocked child IDs link through the existing recursive trace and retain
 their source card's workspace binding. Raw native results and receipts stay
 available in debugger detail; none of these states imply vibed or shipped.
 
+While correction remains active, an owned `coding/ObservePlan` or
+`coding/RepairPass` failure can supply the separate compact review explanation.
+The UI decodes the recipe's pure `EarlyFeedback` contract, checks the exact plan,
+all planned implementation groups and finding owners, and requires a coherent
+active `coding/CorrectPlan` ancestor. A short excerpt of the first recorded finding is visible;
+**Inspect review feedback** selects that same execution through the existing
+`runs.trace.select` flow. It does not open another card or claim that cancellation
+has finished, repair has started, or validation has passed. The final correction
+outcome supersedes this explanation. Historical cursors and newer execution
+generations do not borrow it from another point in the run.
+
+The internal render-only `EngineExecutionEvidence.failure` contains the original
+classified failure kind, value and control sequence. It is derived from the
+native result codecs; rendered error text is never reparsed into product facts.
+`CodingEvidence.reviewFeedback` contains the decoded partial result and existing
+span ID. These are projection structures, with no new stored field, flow, public
+package API or state owner. Defects, mixed causes, unknown owners and malformed
+feedback remain ordinary debugger evidence rather than review outcomes.
+
 A completed owned `coding/Poc` child supplies the retained disposable prototype.
 Its decoded result must name the exact source in its recorded input. The card
 shows a short finding and disclosable complete before/after source as escaped
