@@ -180,11 +180,45 @@ identify the evicted record, so it cannot attribute that loss to telemetry.
 
 Interruption stays fatal: closing the layer's scope ends the worker and can
 drop records queued behind an in-flight write without advancing this counter.
-Flushing the journal waits for journal admissions to settle; it does not drain
-the forwarder's separate queue. Wait for the expected records before asserting
-on a short-lived run.
+See [Assert on a short-lived run](#assert-on-a-short-lived-run) for the shape a
+test needs because of that.
 
 A nonzero `droppedLogRecords` with a healthy journal usually means the capacity
 is too small for the run's log volume. See
 [Read the runtime metrics](./read-runtime-metrics.md) for how to read the
 counter.
+
+## Assert on a short-lived run
+
+The forwarder exposes no drain barrier. `journal.flush` settles the entries the
+journal has already admitted, so it returns while a record is still waiting in
+the forwarder's queue or inside an admission the worker has not finished.
+Closing the layer's scope then interrupts that worker and discards what is
+left, so flushing before an assertion proves nothing about a record the journal
+never saw.
+
+Poll the journal for the records you expect while the layer's scope is still
+open, and let the scope close after the assertion:
+
+```ts
+const forwarded = Effect.gen(function*() {
+  const journal = yield* Journal.Journal
+  yield* Effect.logInfo("first")
+  yield* Effect.logInfo("second")
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const page = yield* journal.entries({ runId, limit: 100 })
+    const records = page.entries.filter((entry) => entry.eventType === "telemetry.log")
+    if (records.length >= 2) return records
+    yield* Effect.sleep("5 millis")
+  }
+  return []
+}).pipe(
+  Effect.provide(Layer.provideMerge(JournalLogger.layerJournalForwarding({ runId }), TestJournal.layer())),
+  Effect.scoped
+)
+```
+
+A bounded poll fails the assertion when a record never arrives, where a fixed
+sleep only makes that failure intermittent. The same pattern is in
+[Test telemetry without a collector](./testing.md), and the loss it guards
+against is cataloged in [Troubleshooting](../troubleshooting.md).

@@ -126,7 +126,12 @@ last two also emit a warning annotated with the run id:
   keeps draining, so the run continues with gaps.
 
 Records queued behind an in-flight write can also be dropped when the layer's
-scope closes. Flush the journal before asserting on a short run.
+scope closes, and the forwarder exposes no drain barrier. `journal.flush`
+settles only the entries the journal has already admitted, so it returns while
+a record is still waiting in the forwarder's queue. Poll the journal for the
+records you expect while the layer's scope is open, as
+[Forward logs to the run journal](./guides/forward-logs-to-the-journal.md#assert-on-a-short-lived-run)
+shows.
 
 ## Reading a refusal's path
 

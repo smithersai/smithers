@@ -652,6 +652,51 @@ describe("JournalLogger", () => {
     )
   })
 
+  it("returns from a journal flush with a record still queued, and only a poll with the scope open sees it", async () => {
+    const id = runId("flush-run")
+    const entered = Deferred.makeUnsafe<void>()
+    const attempted: Array<unknown> = []
+    let flushes = 0
+    // The shape the shutdown guidance has to survive: one admission is in
+    // flight, a second record waits in the forwarder's own queue, and the
+    // journal has nothing pending of its own to settle.
+    const stalled = Journal.layerNoop({
+      emitLossy: (input) =>
+        Effect.sync(() => attempted.push(input.payload)).pipe(
+          Effect.andThen(Deferred.succeed(entered, undefined)),
+          Effect.andThen(Effect.never)
+        ),
+      flush: Effect.sync(() => {
+        flushes += 1
+      })
+    })
+    await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logInfo("in flight")
+        yield* Deferred.await(entered)
+        yield* Effect.logInfo("queued")
+        yield* journal.flush
+      }).pipe(Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id, capacity: 1 }), stalled)))
+    )
+
+    expect(flushes).toBe(1)
+    // Flushing the journal admitted nothing new, and closing the scope
+    // discarded the queued record rather than draining it.
+    expect(attempted.map((payload) => (payload as TelemetryLog).message)).toEqual([["in flight"]])
+
+    const polled = await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logInfo("first")
+        yield* Effect.logInfo("second")
+        return yield* entriesEventually(journal, id, 2)
+      }).pipe(Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id }), TestJournal.layer())))
+    )
+
+    expect(polled.map((entry) => (entry.payload as TelemetryLog).message)).toEqual([["first"], ["second"]])
+  })
+
   it("keeps the ambient loggers when asked to merge with them", async () => {
     const seen: Array<unknown> = []
     const ambient = Logger.make<unknown, void>((options) => seen.push(options.message))
