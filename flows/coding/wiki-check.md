@@ -30,8 +30,11 @@ failed ordinary check receipt. Findings name the checked Change, exact source
 commit, page, section and owning Markdown path. The existing correction policy
 can repair that owner while preserving the old review evidence. A completed
 check procedure must still have a passed domain receipt to validate the Change.
-Malformed review structure or citations refuse the check until the reviewer
-provides valid evidence; those errors do not become source-owner findings.
+Malformed review structure or citations receive one bounded semantic repair:
+the same reviewer sees its prior review, validator feedback and the same captured
+source. Exact validation runs again; a second failure refuses the check. The
+existing AgentAction schema-correction budget still applies inside each call.
+These errors do not become source-owner findings or automatic line-number edits.
 
 ## Reuse the native evidence store
 
@@ -62,7 +65,8 @@ Unrelated descriptors remain unchanged.
 `NativeControl.layerHost` accepts an optional private supplied Registry, matching
 its existing lower-level composition. No public registry extension or gateway
 payload was added. New internal action data consists of captured Evidence plus
-the existing review Pool, and a compact JSON evidence value naming the policy,
+the existing review Pool, optional prior-review and validation-message fields,
+and a compact JSON evidence value naming the policy,
 review-child execution and each page's result. Native JJ IDs and ordinary coding
 receipt fields remain authoritative.
 

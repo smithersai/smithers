@@ -22,6 +22,7 @@ import { RunCheck } from "../coding/workflow.ts"
 import { receiptMatches, Receipt, CodingError, type Check, type Implementation, type Revision } from "../coding/schema.ts"
 import { ReviewPage } from "../wiki/workflow.ts"
 import { reuseLayers } from "../wiki/reuse.ts"
+import { actionLayers } from "../wiki/runtime.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 
 const CheckRun = Flow.make("acceptance/WikiCheck", { payload: RunCheck.payloadSchema, success: Receipt, error: CodingError,
@@ -71,16 +72,21 @@ test("native wiki check captures immutable pages, returns owner findings, reuses
   const make = () => ManagedRuntime.make(runtime.layerHost({ filename: join(root, ".flows", "engine.db"), workspaceRoot: root,
     owner: { hostId: "wiki-check-fixture" }, signals: [],
     rules: [[new Rule({ effect: "allow", pattern: new CapabilityPattern({ action: "proc:spawn", resource: "**" }) })]] },
-    Layer.mergeAll(wikiCheckLayers(options()), reuseLayers({ root, output, fs: trackedFs, hostPolicy }), catalogLayers, Interpreter.layer(CheckRun), ...catalog.executables.map(entry => entry.layer),
-      ReviewPage.toLayer(({ evidence }) => Effect.gen(function*() {
+    Layer.mergeAll(wikiCheckLayers(options()), actionLayers({ root, output, fs: trackedFs }), reuseLayers({ root, output, fs: trackedFs, hostPolicy }), catalogLayers, Interpreter.layer(CheckRun), ...catalog.executables.map(entry => entry.layer),
+      ReviewPage.toLayer(({ evidence, correction, priorReview }) => Effect.gen(function*() {
         reviews++
         if (reviews === 1) { started(); yield* Effect.promise(() => resume) }
         const source = evidence.sources.find(source => source.path === "answer.ts")!
+        if (reviews === 2) {
+          assert.match(correction!, /exact source evidence/)
+          assert.equal(priorReview?.sections[0]?.citations[0]?.line, 999)
+          assert.equal(source.text, "export const answer = 42\n", "repair keeps the immutable source after the live edit")
+        }
         const correct = evidence.markdown.includes(`is ${source.text.match(/= (\d+)/)![1]}.`)
         return { sections: evidence.sections.map(section => ({ id: section.id,
           verdict: correct ? "supported" as const : "unsupported" as const,
           explanation: correct ? "The exported value supports the page." : "Update the owning guide to match the new value.",
-          citations: correct ? [{ path: "answer.ts", line: 1, quote: source.text.trim() }] : [] })) }
+          citations: correct ? [{ path: "answer.ts", line: reviews === 1 ? 999 : 1, quote: source.text.trim() }] : [] })) }
       }))).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(Layer.succeed(Executable.Catalog, catalog))))
     .pipe(Layer.provide(Layer.succeed(NodeJj.StartupTimeoutMs, 30_000))))
   const revision = async (): Promise<Revision> => {
@@ -108,11 +114,11 @@ test("native wiki check captures immutable pages, returns owner findings, reuses
   await assert.rejects(access(output), "a slow check never publishes a racing wiki pointer")
   await host.dispose(); host = make()
   assert.deepEqual(await run("wiki-check-first"), passed)
-  assert.equal(reviews, 1, "cold replay does not repeat the model or export")
+  assert.equal(reviews, 2, "cold replay does not repeat the model or export")
   await run("wiki-check-same-source")
-  assert.equal(reviews, 1, "another check reuses the native reviewed-page receipts")
+  assert.equal(reviews, 2, "another check reuses the native reviewed-page receipts")
   const failed = await run("wiki-check-stale-prose", changed)
-  assert.equal(failed.status, "failed"); assert.equal(reviews, 2)
+  assert.equal(failed.status, "failed"); assert.equal(reviews, 3, "valid unsupported prose is a finding, not a citation retry")
   assert.equal(failed.findings[0]?.owner, "answer")
   assert.equal(failed.findings[0]?.sourceCommitId, changed.commitId)
   await host.dispose()
@@ -124,7 +130,7 @@ test("native wiki check captures immutable pages, returns owner findings, reuses
   host = make()
   await assert.rejects(run("wiki-check-old-policy", source, old), /changed since this plan/)
   await run("wiki-check-new-policy", source)
-  assert.equal(reviews, 3, "running host policy change requires new review despite unchanged target sources")
+  assert.equal(reviews, 4, "running host policy change requires new review despite unchanged target sources")
   for (const directory of scratch) await assert.rejects(access(directory))
   assert.equal(await readFile(join(root, "answer.ts"), "utf8"), "export const answer = 43\n")
 })

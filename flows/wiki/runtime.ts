@@ -8,7 +8,8 @@ import { Action, Interpreter } from "@smthrs/flow"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, FileSystem, Layer } from "effect"
 import { operations } from "./operations.ts"
-import { Assess, Collect, ReviewPage, Wiki, Write } from "./workflow.ts"
+import { WikiError } from "./schema.ts"
+import { Assess, Collect, ReviewPage, ValidateReview, Wiki, Write } from "./workflow.ts"
 
 export const agentLayers = (seats: Layer.Layer<SeatResolver.SeatResolver>, maxReviewMillis: number) => {
   const host = Layer.effect(AgentAction.Host, Effect.gen(function*() {
@@ -26,5 +27,9 @@ export const registration = (options: { readonly root: string; readonly output: 
 
 export const actionLayers = (options: Parameters<typeof operations>[0]) => {
   const ops = operations(options)
-  return Layer.mergeAll(Collect.toLayer(({ spec }) => ops.collect(spec)), Assess.toLayer(ops.assess), Write.toLayer(({ pages, mode }) => ops.write(Object.keys(pages).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).map((key) => pages[key]!), mode)))
+  return Layer.mergeAll(Collect.toLayer(({ spec }) => ops.collect(spec)), Assess.toLayer(ops.assess),
+    ValidateReview.toLayer(({ evidence, review }) => review === null
+      ? Effect.fail(new WikiError({ code: "review-failed", message: "Semantic validation requires a review" }))
+      : ops.assess({ evidence, review, reviewer: null }).pipe(Effect.map(page => page.review!))),
+    Write.toLayer(({ pages, mode }) => ops.write(Object.keys(pages).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).map((key) => pages[key]!), mode)))
 }

@@ -242,7 +242,41 @@ test("independent page reviews finish before exact citation assessment can fail"
   ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer))
   await assert.rejects(Effect.runPromise(Effect.scoped(Wiki.execute({ pages: [{ ...f.spec, id: "first" }, { ...f.spec, id: "second" }],
     mode: "verified", reviewer: "scripted-test" }, { executionId: "wiki-assessment-barrier" }).pipe(Effect.provide(layer)))), /exact source evidence/)
-  assert.deepEqual(completed.sort(), ["first", "second"])
+  assert.deepEqual(completed.slice(0, 2).sort(), ["first", "second"])
+  assert.deepEqual(completed.toSorted(), ["first", "first", "second"], "one repair is bounded and does not rerun the independent page")
+})
+
+test("one citation repair receives the same evidence and prior review, then replays without another model call", async t => {
+  const { Action, Interpreter } = await import("@smthrs/flow")
+  const { FlowEngine } = await import("@smthrs/engine")
+  const { Layer } = await import("effect")
+  const { ReviewPage, Wiki } = await import("../wiki/workflow.ts")
+  const { actionLayers } = await import("../wiki/runtime.ts")
+  const f = await fixture(t), calls: string[] = []
+  let initial: ReviewedPage["evidence"] | undefined
+  const layer = Layer.mergeAll(actionLayers({ root: f.root, output: f.output }), Interpreter.layer(Wiki),
+    ReviewPage.toLayer(({ evidence, priorReview, correction }) => Effect.sync(() => {
+      calls.push(evidence.spec.id)
+      if (evidence.spec.id === "second") { assert.equal(correction, undefined); return supported(evidence) }
+      if (correction === undefined) {
+        initial = evidence
+        return { sections: supported(evidence).sections.map(section => ({ ...section,
+          citations: [{ path: "src/answer.ts", line: 999, quote: "export const answer = 42" }] })) }
+      }
+      assert.deepEqual(evidence, initial, "repair cannot recapture moving source")
+      assert.match(correction, /exact source evidence.*first\/section-1/)
+      assert.match(correction, /"line":999/)
+      assert.equal(priorReview?.sections[0]?.citations[0]?.line, 999)
+      return supported(evidence)
+    }))
+  ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeServices.layer))
+  await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+    const input = { pages: [{ ...f.spec, id: "first" }, { ...f.spec, id: "second" }], mode: "verified" as const, reviewer: "scripted-test" }
+    const first = yield* Wiki.execute(input, { executionId: "wiki-citation-repair" })
+    assert.equal(first.verification, "verified")
+    assert.deepEqual(yield* Wiki.execute(input, { executionId: "wiki-citation-repair" }), first)
+  }).pipe(Effect.provide(layer))))
+  assert.deepEqual(calls.toSorted(), ["first", "first", "second"])
 })
 
 test("freshness and verified checks detect stale inputs and altered verification metadata", async (t) => {

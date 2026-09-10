@@ -12,7 +12,7 @@ import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { operations } from "../wiki/operations.ts"
 import { Bind, Pool, reuseOperations, Select } from "../wiki/reuse.ts"
 import { Evidence, ReviewedPage, WikiError } from "../wiki/schema.ts"
-import { ReviewPage } from "../wiki/workflow.ts"
+import { ReviewPage, validateOrRepairReview } from "../wiki/workflow.ts"
 import { withImmutableSource, type ImmutableSourceOptions } from "./immutable-source.ts"
 import { findPlanningWikiReview, planningWikiConfiguration, type PlanningWikiOptions } from "./planning-wiki.ts"
 import { Check, CodingError, Implementation, Receipt, checkInputDigest } from "./schema.ts"
@@ -41,7 +41,8 @@ const reviewOne = (evidence: Evidence, captured: typeof Captured.Type) => Node.b
       if: value => value.review !== null,
       then: value => Node.succeed(value.review!),
       else: () => ReviewPage.call({ evidence })
-    }), review => Bind.call({ evidence, review, reviewer: captured.reviewer, provenance: selection.provenance })
+    }), review => validateOrRepairReview(evidence, review).pipe(Node.bindPlanned(review =>
+      Bind.call({ evidence, review, reviewer: captured.reviewer, provenance: selection.provenance })))
   )
 )
 const ReviewCaptured = Flow.make("coding/ReviewCapturedWiki", {

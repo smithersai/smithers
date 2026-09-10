@@ -9,7 +9,7 @@ import { Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
 import { canonical } from "@smthrs/core/Digest"
 import { digest, operations } from "./operations.ts"
 import { Evidence, Input, Receipt, Review, ReviewedPage, WikiError } from "./schema.ts"
-import { Collect, ReviewPage } from "./workflow.ts"
+import { Collect, ReviewPage, validateOrRepairReview } from "./workflow.ts"
 const { EngineEvent, Journal, JournalEvent } = JournalModules
 
 // These exact captured files define the model's task, output, evidence view and
@@ -56,7 +56,8 @@ export const IncrementalWiki = Flow.make("smithers/IncrementalWiki", {
             if: (selected) => selected.review !== null,
             then: (selected) => Node.succeed(selected.review!),
             else: () => ReviewPage.call({ evidence: evidence[`page-${index}`]! })
-          }).pipe(Node.bindPlanned((review) => Bind.call({ evidence: evidence[`page-${index}`]!, review,
+          }).pipe(Node.bindPlanned(review => validateOrRepairReview(evidence[`page-${index}`]!, review)),
+            Node.bindPlanned((review) => Bind.call({ evidence: evidence[`page-${index}`]!, review,
             reviewer: input.reviewer, provenance: selection.provenance }))))
       ]))), (pages) => Publish.call({ pages }))))
 })

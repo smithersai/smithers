@@ -52,7 +52,7 @@ test("incremental wiki reuses exact terminal receipts after restart and reviews 
     const page = ["first", "second", "independent"].find((id) => text.includes(`"document":"${id}.md"`))
     assert.ok(page, "scripted provider must receive one of the fixture's exact evidence snapshots")
     counts[page] = (counts[page] ?? 0) + 1
-    const review = { sections: [{ id: "section-1", verdict: "supported", explanation: "The exported constant supports this explanation.", citations: [{ path: "answer.ts", line: 1, quote: "export const answer = 42" }] }] }
+    const review = { sections: [{ id: "section-1", verdict: "supported", explanation: "The exported constant supports this explanation.", citations: [{ path: "answer.ts", line: page === "first" && counts[page] === 2 ? 999 : 1, quote: "export const answer = 42" }] }] }
     return Stream.fromIterable([
       ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "review" }),
       ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "review", text: `\`\`\`cell\nctx.done(${JSON.stringify(review)})\n\`\`\`` }),
@@ -65,7 +65,8 @@ test("incremental wiki reuses exact terminal receipts after restart and reviews 
   })) })
   const output = join(root, ".flows/wiki")
   const rule = (action: "fs:read" | "fs:write", resource: string) => new Capability.Permission.Rule({ effect: "allow", pattern: new Capability.Capability.CapabilityPattern({ action, resource }) })
-  const host = () => NodeRuntime.layerHost({ filename: join(root, ".flows/engine.db"), workspaceRoot: root, owner: { hostId: "wiki-reuse-test" }, signals: [],
+  const runtime = process.versions.bun ? await import("@smthrs/flows/BunRuntime") : NodeRuntime
+  const host = () => runtime.layerHost({ filename: join(root, ".flows/engine.db"), workspaceRoot: root, owner: { hostId: "wiki-reuse-test" }, signals: [],
     rules: [[rule("fs:read", root), rule("fs:read", `${root}/**`), rule("fs:write", `${root}/.flows/**`)]]
   }, Layer.mergeAll(actionLayers({ root, output }), reuseLayers({ root, output }), agentLayers(seats, 60_000), Interpreter.layer(Wiki), Interpreter.layer(SectionsProbe)).pipe(Layer.provideMerge(Action.layerImplementations)))
   const input: Input = { pages, mode: "verified", reviewer: "scripted-wiki-reuse" }
@@ -91,18 +92,18 @@ test("incremental wiki reuses exact terminal receipts after restart and reviews 
   await writeFile(join(root, "first.md"), "# first\n\nThe answer remains 42.\n")
   await incremental("wiki-one-changed", "wiki-reused")
   t.diagnostic("One changed page reviewed; its neighbor reused")
-  assert.deepEqual(counts, { first: 2, second: 1, independent: 1 }, "changing one page cannot rerun the unaffected model call")
+  assert.deepEqual(counts, { first: 3, second: 1, independent: 1 }, "the changed page repairs its citation once without rerunning either unaffected page")
   snapshot = JSON.parse(await readFile(join(output, "current.json"), "utf8"))
   assert.equal(snapshot.pages[0].verification.provenance.reusedFrom, null)
   assert.equal(snapshot.pages[1].verification.provenance.originRunId, "wiki-original")
   await incremental("wiki-model-changed", "wiki-one-changed", "another-model")
   t.diagnostic("Changed reviewer invoked for all pages")
-  assert.deepEqual(counts, { first: 3, second: 2, independent: 2 }, "changing the reviewer cannot borrow a prior model's result")
+  assert.deepEqual(counts, { first: 4, second: 2, independent: 2 }, "changing the reviewer cannot borrow a prior model's result")
   snapshot = JSON.parse(await readFile(join(output, "current.json"), "utf8"))
   const independentDigest = snapshot.pages.find((page: { id: string }) => page.id === "independent").inputDigest
   await writeFile(join(root, policySources[0]), (await readFile(join(root, policySources[0]), "utf8")) + "\n// changed review policy\n")
   await incremental("wiki-policy-changed", "wiki-model-changed", "another-model")
-  assert.deepEqual(counts, { first: 4, second: 3, independent: 3 }, "policy changes invalidate even the page with unchanged source inputs")
+  assert.deepEqual(counts, { first: 5, second: 3, independent: 3 }, "policy changes invalidate even the page with unchanged source inputs")
   snapshot = JSON.parse(await readFile(join(output, "current.json"), "utf8"))
   assert.equal(snapshot.pages.find((page: { id: string }) => page.id === "independent").inputDigest, independentDigest)
 })

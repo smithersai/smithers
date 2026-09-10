@@ -87,7 +87,7 @@ export const operations = (options: { readonly root: string; readonly output: st
         // fragment; interior bytes, the source line and excerpt must stay exact.
         const fragment = citation.quote.replace(/^[ \t]+|[ \t]+$/g, "")
         if (!source || !Number.isSafeInteger(citation.line) || citation.line < 1 || citation.line > lines.length || !fragment || /[\r\n]/.test(fragment) || !lines[citation.line - 1]!.includes(fragment) || !visibleLine(page.evidence, citation.path, citation.line)) {
-          return yield* Effect.fail(fail("review-failed", `Review citation is not exact source evidence: ${page.evidence.spec.id}/${section.id}`))
+          return yield* Effect.fail(fail("review-failed", `Review citation is not exact source evidence: ${page.evidence.spec.id}/${section.id}; ${JSON.stringify({ path: citation.path, line: citation.line, quote: citation.quote.slice(0, 320) })}`))
         }
       }
     }
