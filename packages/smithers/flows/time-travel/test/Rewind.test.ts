@@ -563,6 +563,83 @@ describe("Rewind", () => {
       expect(store.state().archived).toEqual([])
     }))
 
+  it.effect("revalidates the tail under the claim from one page at the expected tail, never a rescan", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make({
+        records: [baseline(), { ...baseline(), seq: 1, eventId: "event-1" }, { ...baseline(), seq: 2, eventId: "event-2" }]
+      })
+      const reads: Array<{ readonly after: number | undefined; readonly limit: number }> = []
+      const journal = Journal.makeNoop({
+        entries: ({ after, limit }) =>
+          Effect.sync(() => {
+            reads.push({ after, limit })
+            const entries = [journalEntry(0), journalEntry(1), journalEntry(2)].filter((entry) => entry.seq > (after ?? -1))
+            return { entries: entries.slice(0, limit), hasMore: entries.length > limit }
+          })
+      })
+      const tailFrame = { lineageId: "run/root", seq: 2 } as const
+
+      const result = yield* provide(
+        Rewind.validate({ runId: "run", frame: tailFrame }).pipe(
+          Effect.tap(() => Effect.sync(() => void (reads.length = 0))),
+          Effect.flatMap((expectedTail) =>
+            Rewind.rewind({
+              runId: "run",
+              frame: tailFrame,
+              owner,
+              auditId: "audit-tail-revalidated",
+              expectedTail: { tail: expectedTail }
+            })
+          )
+        ),
+        { store, runs: makeRuns([row("run")]), jj: makeJj("current").service, journal }
+      )
+
+      expect(result.frame).toEqual(tailFrame)
+      // The revalidation is the first read under the claim: one page at the
+      // expected tail. Nothing under the claim reads the journal from its start.
+      expect(reads[0]).toEqual({ after: 1, limit: 2 })
+      expect(reads.filter((read) => read.after === undefined)).toEqual([])
+    }))
+
+  it.effect("refuses a rewritten tail whose seq validation already observed", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make({
+        records: [baseline(), { ...baseline(), seq: 1, eventId: "event-1" }]
+      })
+      let validated = false
+      const journal = Journal.makeNoop({
+        entries: ({ after }) =>
+          Effect.sync(() => {
+            // After validation, seq 1 belongs to another lineage: a peer
+            // rewound below it and the run re-appended up to the same seq.
+            const entries = validated
+              ? [journalEntry(0), { ...journalEntry(1), meta: { lineageId: "run/other" } }]
+              : [journalEntry(0), journalEntry(1)]
+            return { entries: entries.filter((entry) => entry.seq > (after ?? -1)), hasMore: false }
+          })
+      })
+
+      const failure = yield* Effect.flip(provide(
+        Rewind.validate({ runId: "run", frame }).pipe(
+          Effect.tap(() => Effect.sync(() => void (validated = true))),
+          Effect.flatMap((expectedTail) =>
+            Rewind.rewind({
+              runId: "run",
+              frame,
+              owner,
+              auditId: "audit-tail-rewritten",
+              expectedTail: { tail: expectedTail }
+            })
+          )
+        ),
+        { store, runs: makeRuns([row("run")]), jj: makeJj("current").service, journal }
+      ))
+
+      expect(failure).toMatchObject({ code: "busy", message: "journal tail moved for run" })
+      expect(store.state().archived).toEqual([])
+    }))
+
   it.effect("refuses a record appended after validating an empty frame-zero journal", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make()

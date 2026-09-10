@@ -10,6 +10,8 @@ describe("TimeTravelStore.makeNoop", () => {
       const store = TimeTravelStore.makeNoop()
       const calls = [
         ["snapshotAt", store.snapshotAt("run", frame)],
+        ["recordSnapshots", store.recordSnapshots([])],
+        ["latestSnapshots", store.latestSnapshots("run")],
         ["descendants", store.descendants("run", frame)],
         ["writeAudit", store.writeAudit({ id: "a", runId: "run", frame, status: "in_progress" })],
         ["updateAudit", store.updateAudit("a", { status: "completed" })],

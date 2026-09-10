@@ -311,6 +311,19 @@ export interface Service {
    */
   readonly recordSnapshot: (snapshot: Snapshot) => Effect.Effect<void, TimeTravelError>
   /**
+   * Records a batch of tier-2 anchors in one write. The snapshot projector
+   * hands it one journal page's anchors at a time, so a page costs one
+   * transaction on the SQL store rather than one per anchor.
+   */
+  readonly recordSnapshots: (snapshots: ReadonlyArray<Snapshot>) => Effect.Effect<void, TimeTravelError>
+  /**
+   * The last anchor recorded on each lineage of a run: the projector's resume
+   * point. The highest `seq` among them is the run's anchored high-water mark,
+   * and each anchor's `changeId` is the pointer a `carried` record on that
+   * lineage resolves to. Empty for a run with no anchors.
+   */
+  readonly latestSnapshots: (runId: string) => Effect.Effect<ReadonlyArray<Snapshot>, TimeTravelError>
+  /**
    * The run state AT a frame, derived by replaying the run-decision records up
    * to it — not read off the run row, whose `state_json` is the run's *latest*
    * state (`docs/specs/Concepts/Time Travel.md`; Temporal's
@@ -460,6 +473,8 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
   TimeTravelStore.of({
     snapshotAt: () => unavailable("snapshotAt"),
     recordSnapshot: () => unavailable("recordSnapshot"),
+    recordSnapshots: () => unavailable("recordSnapshots"),
+    latestSnapshots: () => unavailable("latestSnapshots"),
     stateAt: () => unavailable("stateAt"),
     attemptsAt: () => unavailable("attemptsAt"),
     descendants: () => unavailable("descendants"),

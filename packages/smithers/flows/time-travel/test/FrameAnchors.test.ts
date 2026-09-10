@@ -59,7 +59,7 @@ const projectInto = (
   options: { readonly pageSize?: number } = {}
 ) => {
   const store = MemoryTimeTravelStore.make()
-  return SnapshotProjector.project("run", 2).pipe(
+  return SnapshotProjector.project("run", { pageSize: 2 }).pipe(
     Effect.provide(pagingJournal(fixtures, options.pageSize ?? 2)),
     Effect.provideService(TimeTravelStore.TimeTravelStore, store),
     Effect.map((state) => ({ state, snapshots: store.state().snapshots }))
@@ -206,6 +206,188 @@ describe("the snapshot projector", () => {
       )
 
       expect(store.state().snapshots).toHaveLength(1)
+    }))
+
+  /** A journal double that pages like the SQL one and records what was asked of it. */
+  const countingJournal = (fixtures: ReadonlyArray<Fixture>, pageSize: number) => {
+    const reads: Array<{ readonly after: number | undefined; readonly eventTypes: boolean }> = []
+    const layer = Layer.succeed(
+      Journal.Journal,
+      Journal.makeNoop({
+        entries: (options) => {
+          reads.push({ after: options.after, eventTypes: options.eventTypes !== undefined })
+          const after = options.after
+          const remaining = fixtures.filter((fixture) =>
+            (after === undefined || fixture.seq > after) &&
+            (options.eventTypes === undefined || options.eventTypes.includes(fixture.eventType))
+          )
+          const page = remaining.slice(0, Math.min(options.limit, pageSize))
+          return Effect.succeed({
+            entries: page.map((fixture) => ({
+              runId: "run" as JournalEvent.RunId,
+              seq: fixture.seq as JournalEvent.Seq,
+              eventId: `e${fixture.seq}`,
+              sourceId: "test" as JournalEvent.SourceId,
+              sourceSeq: fixture.seq as JournalEvent.SourceSeq,
+              emittedAtMs: 0,
+              eventType: fixture.eventType,
+              payload: fixture.payload,
+              meta: { lineageId: fixture.lineageId ?? lineageId }
+            })) as unknown as ReadonlyArray<JournalEvent.Entry>,
+            hasMore: remaining.length > page.length
+          })
+        }
+      })
+    )
+    return { layer, reads }
+  }
+
+  /** Counts the anchors a store is asked to write, by either write. */
+  const countingStore = () => {
+    const store = MemoryTimeTravelStore.make()
+    let writes = 0
+    const counting = TimeTravelStore.make({
+      ...store,
+      recordSnapshot: (snapshot) => store.recordSnapshot(snapshot).pipe(Effect.tap(() => Effect.sync(() => void writes++))),
+      recordSnapshots: (batch) =>
+        store.recordSnapshots(batch).pipe(Effect.tap(() => Effect.sync(() => void (writes += batch.length))))
+    })
+    return { store, counting, writes: () => writes }
+  }
+
+  const snapshotAt = (seq: number, lineage?: string): Fixture => ({
+    seq,
+    eventType: "flows.engine.snapshot-identified",
+    payload: seq === 0 ? { snapshotId: "change-0" } : { carried: true },
+    ...(lineage === undefined ? {} : { lineageId: lineage })
+  })
+
+  it.effect("resumes from the recorded anchors: a second fold of an unchanged run writes nothing and re-reads nothing", () =>
+    Effect.gen(function*() {
+      const fixtures = Array.from({ length: 7 }, (_, seq) => snapshotAt(seq))
+      const journal = countingJournal(fixtures, 3)
+      const { counting, store, writes } = countingStore()
+      const run = (options: SnapshotProjector.ProjectOptions = {}) =>
+        SnapshotProjector.project("run", { pageSize: 3, ...options }).pipe(
+          Effect.provide(journal.layer),
+          Effect.provideService(TimeTravelStore.TimeTravelStore, counting)
+        ) as Effect.Effect<SnapshotProjector.State, unknown>
+
+      const first = yield* run()
+      expect(first.anchors).toBe(7)
+      expect(writes()).toBe(7)
+      expect(store.state().snapshots).toHaveLength(7)
+
+      journal.reads.length = 0
+      const second = yield* run()
+      expect(second.anchors).toBe(0)
+      expect(second.lineages).toEqual({ [lineageId]: { changeId: "change-0", planDigest: undefined } })
+      expect(writes()).toBe(7)
+      // One page for the plan records at or below the mark, one page after it.
+      expect(journal.reads).toEqual([{ after: undefined, eventTypes: true }, { after: 6, eventTypes: false }])
+      expect(store.state().snapshots).toHaveLength(7)
+
+      // A third fold sees the appended entry and only that entry.
+      fixtures.push(snapshotAt(7))
+      journal.reads.length = 0
+      const third = yield* run()
+      expect(third.anchors).toBe(1)
+      expect(writes()).toBe(8)
+      expect(journal.reads.filter((read) => !read.eventTypes)).toEqual([{ after: 6, eventTypes: false }])
+      expect(store.state().snapshots.at(-1)).toEqual({ runId: "run", frame: { lineageId, seq: 7 }, changeId: "change-0" })
+    }))
+
+  it.effect("writes each page's anchors as one batch", () =>
+    Effect.gen(function*() {
+      const fixtures = Array.from({ length: 5 }, (_, seq) => snapshotAt(seq))
+      const store = MemoryTimeTravelStore.make()
+      const batches: Array<number> = []
+      const counting = TimeTravelStore.make({
+        ...store,
+        recordSnapshot: () => Effect.die("the driver must batch, never write one anchor at a time"),
+        recordSnapshots: (batch) => store.recordSnapshots(batch).pipe(Effect.tap(() => Effect.sync(() => void batches.push(batch.length))))
+      })
+      yield* (
+        SnapshotProjector.project("run", { pageSize: 2 }).pipe(
+          Effect.provide(countingJournal(fixtures, 2).layer),
+          Effect.provideService(TimeTravelStore.TimeTravelStore, counting)
+        ) as Effect.Effect<unknown, unknown>
+      )
+      expect(batches).toEqual([2, 2, 1])
+      expect(store.state().snapshots).toHaveLength(5)
+    }))
+
+  it.effect("resuming keeps a plan recorded below the mark on a lineage that had not anchored yet", () =>
+    Effect.gen(function*() {
+      const fixtures: Array<Fixture> = [
+        { seq: 0, eventType: "flows.engine.plan-recorded", payload: { digest: "plan-a" } },
+        { seq: 1, eventType: "flows.engine.plan-recorded", payload: { digest: "plan-b" }, lineageId: "run/b" },
+        { seq: 2, eventType: "flows.engine.snapshot-identified", payload: { snapshotId: "change-a" } },
+        // The root lineage's plan changes after its last anchor: no anchor holds plan-a2.
+        { seq: 3, eventType: "flows.engine.subgraph-appended", payload: { digest: "plan-a2" } }
+      ]
+      const journal = countingJournal(fixtures, 10)
+      const store = MemoryTimeTravelStore.make()
+      const run = () =>
+        SnapshotProjector.project("run").pipe(
+          Effect.provide(journal.layer),
+          Effect.provideService(TimeTravelStore.TimeTravelStore, store)
+        ) as Effect.Effect<SnapshotProjector.State, unknown>
+      yield* run()
+      // Both plan records sit below the anchored high-water mark, one on a lineage with no anchor.
+      fixtures.push(
+        { seq: 4, eventType: "flows.engine.snapshot-identified", payload: { snapshotId: "change-b" }, lineageId: "run/b" },
+        { seq: 5, eventType: "flows.engine.snapshot-identified", payload: { carried: true } }
+      )
+      const resumed = yield* run()
+
+      expect(resumed.lineages).toEqual({
+        [lineageId]: { changeId: "change-a", planDigest: "plan-a2" },
+        "run/b": { changeId: "change-b", planDigest: "plan-b" }
+      })
+      expect(store.state().snapshots).toEqual([
+        { runId: "run", frame: { lineageId, seq: 2 }, changeId: "change-a", planDigest: "plan-a" },
+        { runId: "run", frame: { lineageId: "run/b", seq: 4 }, changeId: "change-b", planDigest: "plan-b" },
+        { runId: "run", frame: { lineageId, seq: 5 }, changeId: "change-a", planDigest: "plan-a2" }
+      ])
+    }))
+
+  it.effect("stops at the verb's frame and honours the history cap on what it has left to read", () =>
+    Effect.gen(function*() {
+      const fixtures = Array.from({ length: 10 }, (_, seq) => snapshotAt(seq))
+      const journal = countingJournal(fixtures, 4)
+      const store = MemoryTimeTravelStore.make()
+      const run = (options: SnapshotProjector.ProjectOptions) =>
+        SnapshotProjector.project("run", { pageSize: 4, ...options }).pipe(
+          Effect.provide(journal.layer),
+          Effect.provideService(TimeTravelStore.TimeTravelStore, store)
+        )
+
+      const bounded = yield* run({ upTo: 5 })
+      expect(bounded.anchors).toBe(6)
+      expect(store.state().snapshots.map((snapshot) => snapshot.frame.seq)).toEqual([0, 1, 2, 3, 4, 5])
+      // Two pages reach seq 5; the third page is never asked for.
+      expect(journal.reads.filter((read) => !read.eventTypes)).toEqual([{ after: undefined, eventTypes: false }, {
+        after: 3,
+        eventTypes: false
+      }])
+
+      // Anchored through the frame already: nothing to read past the plan records.
+      journal.reads.length = 0
+      const current = yield* run({ upTo: 3 })
+      expect(current.anchors).toBe(0)
+      expect(journal.reads.filter((read) => !read.eventTypes)).toEqual([])
+
+      // The cap counts only the entries above the mark.
+      const capped = yield* Effect.flip(run({ maxEntries: 3 }))
+      expect(capped).toMatchObject({
+        code: "limit_exceeded",
+        message: "anchor refresh of run would read more than 3 journal entries; raise maxHistoryEntries to allow it"
+      })
+      expect(store.state().snapshots).toHaveLength(6)
+      const rest = yield* run({ maxEntries: 4 })
+      expect(rest.anchors).toBe(4)
+      expect(store.state().snapshots).toHaveLength(10)
     }))
 })
 

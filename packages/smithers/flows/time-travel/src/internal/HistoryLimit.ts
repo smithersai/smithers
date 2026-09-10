@@ -7,7 +7,9 @@
  * run decided how much memory a verb took and how long a rewind owned the run.
  * `maxHistoryEntries` caps the entries any one operation reads, and an
  * operation that would cross the cap stops with `limit_exceeded` before it
- * materializes anything past it.
+ * materializes anything past it. The anchor refresh a fork or rewind runs
+ * first is under the same cap: it resumes from the run's anchored high-water
+ * mark and stops at the frame, so it reads only the entries between the two.
  *
  * @since 0.1.0
  */

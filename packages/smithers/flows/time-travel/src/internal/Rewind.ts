@@ -279,6 +279,37 @@ export interface Tail {
 }
 
 /**
+ * Whether the run's tail is still the one validation observed, from one read.
+ *
+ * The journal appends monotonically and truncation is fenced on ownership,
+ * so the question "did anything land past the tail" is answered by the page
+ * starting AT the expected tail: it must hold exactly that record, on the
+ * expected lineage, and nothing after it. Reading the expected record itself
+ * rather than only what follows it is what catches a rewind by another
+ * executor that truncated below the tail and re-appended up to the same seq.
+ * The whole-journal scan stays in {@link validate}, where the frame and the
+ * suffix count are needed; under the claim they are not.
+ */
+const tailUnmoved = (
+  journal: Journal.Service,
+  runId: string,
+  expected: Tail | undefined
+): Effect.Effect<boolean, TimeTravelFailure> =>
+  journal.entries({
+    runId: runId as JournalEvent.RunId,
+    ...(expected === undefined || expected.seq === 0 ? {} : { after: (expected.seq - 1) as JournalEvent.Seq }),
+    limit: 2
+  }).pipe(
+    Effect.mapError((cause) => error("unknown", `could not read journal for ${runId}`, cause)),
+    Effect.map((page) => {
+      if (expected === undefined) return page.entries.length === 0 && !page.hasMore
+      const observed = page.entries[0]
+      return page.entries.length === 1 && !page.hasMore && observed !== undefined &&
+        observed.seq === expected.seq && lineageOf(observed) === expected.lineageId
+    })
+  )
+
+/**
  * Reads a run's whole journal once, returning its tail, whether the frame
  * addresses a record, and how many records lie above the frame.
  *
@@ -294,7 +325,7 @@ export interface Tail {
 const scan = (
   journal: Journal.Service,
   options: { readonly runId: string; readonly frame: Frame; readonly pageSize?: number | undefined },
-  label: "validation" | "revalidation"
+  label: "validation"
 ): Effect.Effect<
   { readonly tail: Tail | undefined; readonly atFrame: boolean; readonly suffixCount: number },
   TimeTravelFailure
@@ -816,16 +847,9 @@ export const rewind = (
                   // it in that window. Re-reading the tail under the claim is what
                   // binds the two together; a moved tail is `busy`, not a silent
                   // truncation of records validation would have refused.
-                  const observed = yield* scan(journal, options, "revalidation")
                   if (options.expectedTail !== undefined) {
-                    const expected = options.expectedTail.tail
-                    if (
-                      expected === undefined
-                        ? observed.tail !== undefined
-                        : observed.tail === undefined ||
-                          observed.tail.seq !== expected.seq ||
-                          observed.tail.lineageId !== expected.lineageId
-                    ) {
+                    const unmoved = yield* tailUnmoved(journal, options.runId, options.expectedTail.tail)
+                    if (!unmoved) {
                       return yield* Effect.fail(error("busy", `journal tail moved for ${options.runId}`))
                     }
                   }

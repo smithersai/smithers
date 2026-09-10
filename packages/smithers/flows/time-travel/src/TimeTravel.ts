@@ -507,6 +507,10 @@ export const makeWith = (
     /**
      * Folds the run's journal into its frame anchors before a verb reads them.
      *
+     * The projector resumes from the anchors already recorded and stops at the
+     * verb's frame, so the read is the unanchored entries at or below the frame
+     * and nothing else; `maxEntries` caps it like every other read.
+     *
      * BEST EFFORT on purpose. The anchor table is a cache of facts the journal
      * already holds, so a journal that cannot project — a composition wired
      * without the projection channel, a partial test double — must not turn a
@@ -515,8 +519,8 @@ export const makeWith = (
      * anchor at the frame reports a warning naming the workspace it could not
      * restore, and a rewind restores no pointer rather than a wrong one.
      */
-    const refreshAnchors = (runId: string) =>
-      SnapshotProjector.project(runId).pipe(
+    const refreshAnchors = (runId: string, upTo: number, maxEntries: number) =>
+      SnapshotProjector.project(runId, { upTo, maxEntries }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("time-travel: could not refresh frame anchors", cause).pipe(
             Effect.annotateLogs({ runId })
@@ -546,13 +550,14 @@ export const makeWith = (
             // The anchors a fork restores from are a projection of the engine's
             // own records, folded on demand: an ordinary engine run writes
             // journal rows, never this package's tables.
-            refreshAnchors(decoded.runId).pipe(Effect.andThen(ForkOperation.fork({
+            ForkOperation.fork({
               parentRunId: decoded.runId,
               frame: decoded.frame,
               workspaceRoot: options?.workspaceRoot ?? workspaceRoot,
               retainWorkspace: options?.retainWorkspace,
-              maxEntries
-            })))
+              maxEntries,
+              refreshAnchors: refreshAnchors(decoded.runId, decoded.frame.seq, maxEntries)
+            })
           )
         })(),
       rewind: (position, options) =>
@@ -590,7 +595,7 @@ export const makeWith = (
                   ...(options?.pageSize === undefined ? {} : { pageSize: options.pageSize })
                 }).pipe(
                   Effect.flatMap((expectedTail) =>
-                    refreshAnchors(decoded.runId).pipe(
+                    refreshAnchors(decoded.runId, decoded.frame.seq, maxEntries).pipe(
                       Effect.andThen(Rewind.rewind({
                         runId: decoded.runId,
                         frame: decoded.frame,

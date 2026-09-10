@@ -351,6 +351,8 @@ from either.
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `snapshotAt(runId, frame)`                                        | The anchor recorded at a frame, or `undefined`.                                                                                                                                                                                                                                                |
 | `recordSnapshot(snapshot)`                                        | Records one anchor. Written by the snapshot projector, never by a caller.                                                                                                                                                                                                                      |
+| `recordSnapshots(snapshots)`                                      | Records a batch of anchors in one write. The projector hands it one journal page's anchors at a time, so a page costs one transaction on the SQL store.                                                                                                                                       |
+| `latestSnapshots(runId)`                                          | The last anchor recorded on each lineage of a run, the projector's resume point. Empty for a run with no anchors.                                                                                                                                                                              |
 | `stateAt(runId, frame)`                                           | The run state **at** a frame as encoded JSON, derived by replaying the run-decision records, not read off the run row's latest state.                                                                                                                                                          |
 | `attemptsAt(runId, frame)`                                        | The attempts that had been admitted at a frame, derived the same way.                                                                                                                                                                                                                          |
 | `descendants(runId, frame)`                                       | The lineage edges hanging off this run at or after a frame, split into attached and detached.                                                                                                                                                                                                  |
@@ -504,7 +506,7 @@ so a caller's branch stays exhaustive.
 | `compensation_failed` | `rewind`, recovery     | A rollback handler or the workspace restore failed, so the rewind stopped rather than leave the world half reverted.                                                                          |
 | `irreversible`        | `rewind`               | An effect in the truncated range cannot be undone at all: no handler, or a sealed result whose cache entry is gone.                                                                           |
 | `fence_lost`          | `rewind`               | The caller's ownership of the run was superseded before a mutation committed, so the mutation was refused rather than written behind the live owner.                                          |
-| `limit_exceeded`      | all verbs              | The operation would read more journal entries than `maxHistoryEntries` allows: the prefix a replay folds, or the suffix a fork or rewind assesses. A rewind refuses before it claims the run. |
+| `limit_exceeded`      | all verbs              | The operation would read more journal entries than `maxHistoryEntries` allows: the prefix a replay folds, the unanchored entries a fork or rewind refreshes, or the suffix it assesses. A rewind refuses before it claims the run. |
 | `unknown`             | all verbs              | The store, the journal, or an unmapped host failure. The original cause is attached.                                                                                                          |
 
 An error's `cause` is encoded with the error, so the package never attaches a
@@ -530,6 +532,14 @@ as its identity, classification, and reason, never as the effect's `input`,
   frame, so it retains nothing below it; a fork or rewind retains only the
   effect-boundary records of the suffix it assesses. Validation still scans a
   run's journal to its tail to find the frame, without retaining it.
+- The anchor refresh a fork or rewind runs before it reads anchors resumes from
+  the last anchor per lineage in `flows_time_travel_snapshots` and stops at the
+  frame, so it reads only the entries above the run's anchored high-water mark
+  and at or below the frame, counted against the same `maxHistoryEntries`. It
+  writes each page's anchors in one store write, so a run whose anchors are
+  current reads one page and writes nothing. A fork of a live parent is refused
+  before the refresh runs. A rewind revalidates the tail under its claim from
+  one page at the expected tail, never a second scan of the journal.
 - `Projection.reduce` receives store entries by reference. Treat them as
   read-only: mutating one rewrites the evidence the fold is reading.
 - The memory store is a behavioural peer of the SQL store for the answers both

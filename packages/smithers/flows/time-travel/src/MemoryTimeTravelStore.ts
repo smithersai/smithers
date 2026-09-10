@@ -285,6 +285,21 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
           ? cause
           : error("unknown", "memory transaction failed", cause)
     })
+  /** Replaces the anchors at each batch member's frame, later members winning. */
+  const upsertSnapshots = (batch: ReadonlyArray<TimeTravelStore.Snapshot>): void => {
+    for (const recorded of batch) {
+      snapshots = [
+        ...snapshots.filter((existing) =>
+          !(
+            existing.runId === recorded.runId &&
+            existing.frame.lineageId === recorded.frame.lineageId &&
+            existing.frame.seq === recorded.frame.seq
+          )
+        ),
+        recorded
+      ]
+    }
+  }
   const service = TimeTravelStore.make({
     snapshotAt: Effect.fn("TimeTravelStore.snapshotAt")((runId, frame) =>
       Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
@@ -302,18 +317,29 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
         seq: snapshot.frame.seq
       }).pipe(Effect.andThen(atomic(() => {
         fail("recordSnapshot")
-        const recorded = snapshot
-        snapshots = [
-          ...snapshots.filter((existing) =>
-            !(
-              existing.runId === recorded.runId &&
-              existing.frame.lineageId === recorded.frame.lineageId &&
-              existing.frame.seq === recorded.frame.seq
-            )
-          ),
-          recorded
-        ]
+        upsertSnapshots([snapshot])
       })))
+    ),
+    recordSnapshots: Effect.fn("TimeTravelStore.recordSnapshots")((batch) =>
+      Effect.annotateCurrentSpan({ anchors: batch.length }).pipe(Effect.andThen(atomic(() => {
+        fail("recordSnapshots")
+        upsertSnapshots(batch)
+      })))
+    ),
+    latestSnapshots: Effect.fn("TimeTravelStore.latestSnapshots")((runId) =>
+      Effect.annotateCurrentSpan({ runId }).pipe(Effect.andThen(
+        Effect.sync(() => {
+          const latest = new Map<string, TimeTravelStore.Snapshot>()
+          for (const snapshot of snapshots) {
+            if (snapshot.runId !== runId) continue
+            const current = latest.get(snapshot.frame.lineageId)
+            if (current === undefined || snapshot.frame.seq > current.frame.seq) {
+              latest.set(snapshot.frame.lineageId, snapshot)
+            }
+          }
+          return [...latest.values()].sort((a, b) => a.frame.seq - b.frame.seq)
+        })
+      ))
     ),
     stateAt: Effect.fn("TimeTravelStore.stateAt")((runId, frame) =>
       Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(

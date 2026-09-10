@@ -533,6 +533,21 @@ export const make: Effect.Effect<
         }
       })
 
+    const upsertSnapshot = (snapshot: TimeTravelStore.Snapshot) =>
+      sql`
+        INSERT INTO flows_time_travel_snapshots (run_id, lineage_id, seq, change_id, plan_digest)
+        VALUES (
+          ${snapshot.runId},
+          ${snapshot.frame.lineageId},
+          ${snapshot.frame.seq},
+          ${snapshot.changeId},
+          ${snapshot.planDigest ?? null}
+        )
+        ON CONFLICT (run_id, lineage_id, seq) DO UPDATE SET
+          change_id = excluded.change_id,
+          plan_digest = excluded.plan_digest
+      `
+
     return TimeTravelStore.make({
       snapshotAt: Effect.fn("TimeTravelStore.snapshotAt")((runId, frame) =>
         Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
@@ -558,21 +573,45 @@ export const make: Effect.Effect<
           lineageId: snapshot.frame.lineageId,
           seq: snapshot.frame.seq
         }).pipe(Effect.andThen(
-          writer.write(
-            sql`
-            INSERT INTO flows_time_travel_snapshots (run_id, lineage_id, seq, change_id, plan_digest)
-            VALUES (
-              ${snapshot.runId},
-              ${snapshot.frame.lineageId},
-              ${snapshot.frame.seq},
-              ${snapshot.changeId},
-              ${snapshot.planDigest ?? null}
+          writer.write(upsertSnapshot(snapshot)).pipe(Effect.asVoid, Effect.mapError(mapError))
+        ))
+      ),
+      // One transaction per batch: the projector hands over a journal page's
+      // anchors at a time, so a page costs one write rather than one per anchor.
+      recordSnapshots: Effect.fn("TimeTravelStore.recordSnapshots")((batch) =>
+        Effect.annotateCurrentSpan({ anchors: batch.length }).pipe(Effect.andThen(
+          batch.length === 0
+            ? Effect.void
+            : writer.write(Effect.forEach(batch, upsertSnapshot, { discard: true })).pipe(
+              Effect.asVoid,
+              Effect.mapError(mapError)
             )
-            ON CONFLICT (run_id, lineage_id, seq) DO UPDATE SET
-              change_id = excluded.change_id,
-              plan_digest = excluded.plan_digest
-          `
-          ).pipe(Effect.asVoid, Effect.mapError(mapError))
+        ))
+      ),
+      latestSnapshots: Effect.fn("TimeTravelStore.latestSnapshots")((runId) =>
+        Effect.annotateCurrentSpan({ runId }).pipe(Effect.andThen(
+          sql<
+            {
+              readonly lineage_id: string
+              readonly seq: number
+              readonly change_id: string
+              readonly plan_digest: string | null
+            }
+          >`SELECT lineage_id, seq, change_id, plan_digest FROM flows_time_travel_snapshots
+            WHERE run_id = ${runId} AND (lineage_id, seq) IN (
+              SELECT lineage_id, MAX(seq) FROM flows_time_travel_snapshots WHERE run_id = ${runId} GROUP BY lineage_id
+            )
+            ORDER BY seq ASC, lineage_id ASC`.pipe(
+            Effect.map((rows) =>
+              rows.map((row) => ({
+                runId,
+                frame: { lineageId: row.lineage_id, seq: row.seq },
+                changeId: row.change_id,
+                ...(row.plan_digest === null ? {} : { planDigest: row.plan_digest })
+              }))
+            ),
+            Effect.mapError(mapError)
+          )
         ))
       ),
       stateAt: Effect.fn("TimeTravelStore.stateAt")((runId, frame) =>

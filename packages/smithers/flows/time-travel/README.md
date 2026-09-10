@@ -120,6 +120,11 @@ discarded future cannot answer them.
   An operation past the cap fails `limit_exceeded`, a rewind before it claims
   the run. A replay streams the fold and stops at the frame; a fork or rewind
   keeps only the effect-boundary records of the suffix it assesses.
+- The anchor refresh a fork or rewind runs first reads only the entries above
+  the run's anchored high-water mark and at or below the frame, under the same
+  cap, and writes each page's anchors in one store write. A run whose anchors
+  are current reads one page and writes nothing. A rewind revalidates the tail
+  under its claim from one page at the expected tail, never a second scan.
 - A fork that reserved its id and died before committing leaves its jj lane
   registered until the next build of `TimeTravel.layer`, which forgets lanes
   whose reservation is older than five minutes. The reserved ordinal is never

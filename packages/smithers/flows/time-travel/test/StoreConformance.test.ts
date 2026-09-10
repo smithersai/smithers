@@ -342,6 +342,43 @@ describe("TimeTravelStore conformance", () => {
       }))
   }
 
+  for (const backend of ["memory", "sqlite"] as const) {
+    it.effect(`${backend} records a batch in one write and reports the last anchor per lineage`, () =>
+      Effect.gen(function*() {
+        const exercise = (store: TimeTravelStore.Service) =>
+          Effect.gen(function*() {
+            const empty = yield* store.latestSnapshots("nobody")
+            yield* store.recordSnapshots([])
+            yield* store.recordSnapshots([
+              { runId: "run", frame: { ...frame, seq: 0 }, changeId: "first" },
+              { runId: "run", frame: { ...frame, seq: 4 }, changeId: "root-4", planDigest: "plan-4" },
+              { runId: "run", frame: { lineageId: "other", seq: 2 }, changeId: "other-2" },
+              { runId: "run", frame: { lineageId: "other", seq: 3 }, changeId: "other-3" },
+              { runId: "peer", frame: { ...frame, seq: 9 }, changeId: "peer" },
+              // A later batch member at the same frame replaces the earlier one.
+              { runId: "run", frame: { ...frame, seq: 0 }, changeId: "replaced" }
+            ])
+            return {
+              empty,
+              latest: yield* store.latestSnapshots("run"),
+              replaced: yield* store.snapshotAt("run", { ...frame, seq: 0 })
+            }
+          })
+        const expected = {
+          empty: [],
+          latest: [
+            { runId: "run", frame: { lineageId: "other", seq: 3 }, changeId: "other-3" },
+            { runId: "run", frame: { ...frame, seq: 4 }, changeId: "root-4", planDigest: "plan-4" }
+          ],
+          replaced: { runId: "run", frame: { ...frame, seq: 0 }, changeId: "replaced" }
+        }
+        const actual = backend === "memory"
+          ? yield* exercise(MemoryTimeTravelStore.make())
+          : yield* withSql((store) => exercise(store))
+        expect(actual).toEqual(expected)
+      }))
+  }
+
   it.effect("refuses a foreign-owned attached child without changing either journal", () =>
     Effect.gen(function*() {
       const childOwner = { ...owner, nonce: "rewind-child" }
