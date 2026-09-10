@@ -14,7 +14,9 @@
  *   has into what the host serialized — then returns `(64 << 32) | len`
  *   pointing at the canned response the data segments placed at offset 64;
  * - with `trap: true`, `flows_jj_call` instead calls the imported `proc_exit`,
- *   exercising the host's trap handling;
+ *   exercising the host's trap handling; with `openBeforeTrap` it first opens
+ *   `/f` for reading through the imported `path_open` and never closes it, so
+ *   a test can check the host releases what a trapped guest left open;
  * - with `packedResult`, `flows_jj_call` returns exactly `(ptr << 32) | len`
  *   without writing any response — for driving the host's handling of a
  *   corrupt answer whose buffer lies outside wasm memory.
@@ -22,8 +24,8 @@
  * Memory map: `0..4` response length, `32..40` scratch iovec, `64..` canned
  * response, `1024..1028` the `INIT` marker, `1032..1036`/`1040..1044` the
  * `ALOC`/`FREE` markers (written to fd 2 when `logAllocs` is set, so a test
- * can assert the host's alloc/free pairing discipline), `4096` the fixed
- * allocation `flows_jj_alloc` returns.
+ * can assert the host's alloc/free pairing discipline), `1048..1049` the
+ * path `/f`, `4096` the fixed allocation `flows_jj_alloc` returns.
  */
 
 const encoder = new TextEncoder()
@@ -97,6 +99,12 @@ export interface FakeFlowsJjWasmOptions {
   /** When set, `flows_jj_call` calls `proc_exit(7)` instead of answering. */
   readonly trap?: boolean
   /**
+   * With `trap`, `flows_jj_call` first opens `/f` for reading through
+   * `path_open` (fd 3, the preopen) and leaves it open, so the trap abandons a
+   * live host descriptor the way a panicking guest does.
+   */
+  readonly openBeforeTrap?: boolean
+  /**
    * When set, `flows_jj_call` returns exactly `(ptr << 32) | len` — a corrupt
    * packed answer the host must survive when it points outside wasm memory.
    * Both values must fit in an i32 (< 2^31).
@@ -124,8 +132,22 @@ export const fakeFlowsJjWasm = (options: FakeFlowsJjWasmOptions = {}): Uint8Arra
   const response = Array.from(encoder.encode(options.response ?? "{\"ok\":{}}"))
   if (response.length > 900) throw new Error("canned response too large for the fake module's memory map")
 
+  const openF = [
+    ...i32c(3), // dirfd: the preopen
+    ...i32c(0), // dirflags
+    ...i32c(1048), // path ptr
+    ...i32c(2), // path len
+    ...i32c(0), // oflags
+    ...i64c(2), // rights_base: fd_read
+    ...i64c(0), // rights_inheriting
+    ...i32c(0), // fdflags
+    ...i32c(48), // fd out
+    0x10,
+    ...uleb(2), // call path_open (import 2)
+    0x1a // drop the errno
+  ]
   const callBody = options.trap === true
-    ? [...i32c(7), 0x10, ...uleb(1), 0x00] // proc_exit(7); unreachable
+    ? [...(options.openBeforeTrap === true ? openF : []), ...i32c(7), 0x10, ...uleb(1), 0x00] // proc_exit(7); unreachable
     : options.packedResult !== undefined
     ? [
       ...i64c(options.packedResult.ptr),
@@ -154,7 +176,7 @@ export const fakeFlowsJjWasm = (options: FakeFlowsJjWasmOptions = {}): Uint8Arra
     0x00,
     0x00,
     0x00,
-    // types: 0 fd_write, 1 (), 2 alloc, 3 free, 4 call, 5 proc_exit
+    // types: 0 fd_write, 1 (), 2 alloc, 3 free, 4 call, 5 proc_exit, 6 path_open
     ...section(
       1,
       vec([
@@ -163,27 +185,29 @@ export const fakeFlowsJjWasm = (options: FakeFlowsJjWasmOptions = {}): Uint8Arra
         [0x60, ...vec([[0x7f]]), ...vec([[0x7f]])],
         [0x60, ...vec([[0x7f], [0x7f]]), ...vec([])],
         [0x60, ...vec([[0x7f], [0x7f]]), ...vec([[0x7e]])],
-        [0x60, ...vec([[0x7f]]), ...vec([])]
+        [0x60, ...vec([[0x7f]]), ...vec([])],
+        [0x60, ...vec([[0x7f], [0x7f], [0x7f], [0x7f], [0x7f], [0x7e], [0x7e], [0x7f], [0x7f]]), ...vec([[0x7f]])]
       ])
     ),
     ...section(
       2,
       vec([
         [...str("wasi_snapshot_preview1"), ...str("fd_write"), 0x00, ...uleb(0)],
-        [...str("wasi_snapshot_preview1"), ...str("proc_exit"), 0x00, ...uleb(5)]
+        [...str("wasi_snapshot_preview1"), ...str("proc_exit"), 0x00, ...uleb(5)],
+        [...str("wasi_snapshot_preview1"), ...str("path_open"), 0x00, ...uleb(6)]
       ])
     ),
-    // defined functions (indices 2..5): _initialize, alloc, free, call
+    // defined functions (indices 3..6): _initialize, alloc, free, call
     ...section(3, vec([uleb(1), uleb(2), uleb(3), uleb(4)])),
     ...section(5, vec([[0x00, ...uleb(1)]])),
     ...section(
       7,
       vec([
         [...str("memory"), 0x02, ...uleb(0)],
-        [...str("_initialize"), 0x00, ...uleb(2)],
-        [...str("flows_jj_alloc"), 0x00, ...uleb(3)],
-        [...str("flows_jj_free"), 0x00, ...uleb(4)],
-        [...str("flows_jj_call"), 0x00, ...uleb(5)]
+        [...str("_initialize"), 0x00, ...uleb(3)],
+        [...str("flows_jj_alloc"), 0x00, ...uleb(4)],
+        [...str("flows_jj_free"), 0x00, ...uleb(5)],
+        [...str("flows_jj_call"), 0x00, ...uleb(6)]
       ])
     ),
     ...section(
@@ -215,7 +239,8 @@ export const fakeFlowsJjWasm = (options: FakeFlowsJjWasmOptions = {}): Uint8Arra
         [0x00, ...i32c(64), 0x0b, ...uleb(response.length), ...response],
         [0x00, ...i32c(1024), 0x0b, ...str("INIT")],
         [0x00, ...i32c(1032), 0x0b, ...str("ALOC")],
-        [0x00, ...i32c(1040), 0x0b, ...str("FREE")]
+        [0x00, ...i32c(1040), 0x0b, ...str("FREE")],
+        [0x00, ...i32c(1048), 0x0b, ...str("/f")]
       ])
     )
   ]

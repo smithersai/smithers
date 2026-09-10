@@ -60,6 +60,29 @@ executable authority cannot be swapped between a failed operation and a retry.
 
 `fs` itself stays a live service the page continues to own.
 
+### Traps discard the reactor
+
+A guest that panics or calls `proc_exit` never runs its own cleanup, so the
+host does it: the operation fails with `unknown`, the shim closes every host
+descriptor the guest still held, and the next operation instantiates a fresh
+reactor from the bytes captured at the first read. A host-side refusal before
+the reactor is entered, such as the symlink scan, keeps the live reactor.
+
+### Scoped disposal
+
+`layer` and `make` never dispose a reactor that did not trap; its descriptors
+last as long as the page. When the service has a shorter life than the page,
+use `layerScoped` or `makeScoped`. Both close the live reactor's descriptors
+when the scope closes, and every operation on the service after that fails
+with `unknown`.
+
+```ts
+const program = Effect.gen(function*() {
+  const jj = yield* Jj
+  return yield* jj.status()
+}).pipe(Effect.provide(BrowserJj.layerScoped({ fs, wasm, root: "/repo" })))
+```
+
 ## Durability is the mount's job
 
 ZenFS fronts OPFS or IndexedDB with a synchronous mirror and writes back

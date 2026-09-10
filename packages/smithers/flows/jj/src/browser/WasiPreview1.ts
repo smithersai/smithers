@@ -314,6 +314,19 @@ export interface WasiPreview1 {
    * `_initialize` may already issue syscalls (environ probing).
    */
   readonly initialize: (memory: WebAssembly.Memory) => void
+  /**
+   * Releases every host descriptor the guest still holds and empties the fd
+   * table, so a guest that trapped (a Rust panic, `proc_exit`, a thrown host
+   * callback) before its own `fd_close` calls leaks nothing into the backend.
+   * Idempotent: a second call finds nothing to close. After it, every
+   * descriptor answers `badf`, and the preopen is gone too, so the host must
+   * not reuse the instance.
+   *
+   * A backend that refuses to close a descriptor does not stop the sweep: the
+   * remaining descriptors are still closed, the table is still emptied, and
+   * the first failure is rethrown afterwards.
+   */
+  readonly dispose: () => void
 }
 
 /**
@@ -1175,10 +1188,25 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
     sock_shutdown: syscall(sockShutdown)
   }
 
+  const dispose = (): void => {
+    let first: { readonly cause: unknown } | undefined
+    for (const [fd, entry] of fds) {
+      fds.delete(fd)
+      if (entry.kind !== "file") continue
+      try {
+        fs.closeSync(entry.osFd)
+      } catch (cause) {
+        first ??= { cause }
+      }
+    }
+    if (first !== undefined) throw first.cause
+  }
+
   return {
     imports,
     initialize: (exported) => {
       memory = exported
-    }
+    },
+    dispose
   }
 }

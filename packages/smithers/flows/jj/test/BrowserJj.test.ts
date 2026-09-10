@@ -344,10 +344,113 @@ describe("BrowserJj over the fake ABI module", () => {
       }
       const error = yield* flip(options, (jj) => jj.status())
       expect(error.code).toBe("unknown")
-      // The instance stays cached and reused after a trap, so the error path
-      // must free what it allocated: exactly one ALOC, exactly one FREE.
+      // The error path must free what it allocated before the trapped
+      // instance is discarded: exactly one ALOC, exactly one FREE.
       expect(stderr.filter((entry) => entry === "ALOC")).toHaveLength(1)
       expect(stderr.filter((entry) => entry === "FREE")).toHaveLength(1)
+    }))
+
+  /**
+   * A slice that counts host descriptors: `openSync` hands out fake fds and
+   * `closeSync` records them, so a test can see what a trapped guest left
+   * open on the backend and whether the host released it.
+   */
+  const countingSlice = () => {
+    const opened: Array<number> = []
+    const closed: Array<number> = []
+    return {
+      opened,
+      closed,
+      fs: {
+        ...slice,
+        openSync: () => {
+          const fd = 100 + opened.length
+          opened.push(fd)
+          return fd
+        },
+        closeSync: (fd: number) => {
+          closed.push(fd)
+        }
+      }
+    }
+  }
+
+  it.effect("closes the host descriptors a trapped guest left open and retries on a fresh reactor", () =>
+    Effect.gen(function*() {
+      // flows-jj/robustness/4: the guest opens a file, then traps before its
+      // own fd_close. The host must close that descriptor at the trap, and
+      // the next operation must run on a NEW instance rather than the one
+      // whose state is unknown.
+      const counting = countingSlice()
+      const stderr: Array<string> = []
+      const options: BrowserJj.BrowserJjOptions = {
+        wasm: fakeFlowsJjWasm({ trap: true, openBeforeTrap: true }),
+        fs: counting.fs,
+        onStderr: (text) => stderr.push(text)
+      }
+      const jj = BrowserJj.make(options)
+      for (let call = 1; call <= 3; call++) {
+        const error = jjError(yield* Effect.flip(jj.status()))
+        expect(error.message).toBe("jj status: wasm module called proc_exit(7)")
+        expect(counting.opened).toHaveLength(call)
+        expect(counting.closed).toEqual(counting.opened)
+        // One INIT per instantiation: every call after a trap starts fresh.
+        expect(stderr.filter((entry) => entry === "INIT")).toHaveLength(call)
+      }
+    }))
+
+  it.effect("keeps the reactor when a host-side guard refuses before the exchange", () =>
+    Effect.gen(function*() {
+      const stderr: Array<string> = []
+      const missingRepo = {
+        ...slice,
+        statSync: (path: string) => {
+          if (path.endsWith("/.jj")) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" })
+          return slice.statSync()
+        }
+      }
+      const options: BrowserJj.BrowserJjOptions = {
+        wasm: fakeFlowsJjWasm({ response: "{\"ok\":{\"status\":\"clean\"}}" }),
+        fs: missingRepo,
+        onStderr: (text) => stderr.push(text)
+      }
+      const jj = BrowserJj.make(options)
+      // `status` refuses a missing repository before entering the reactor.
+      expect(jjError(yield* Effect.flip(jj.status())).code).toBe("unknown")
+      expect(jjError(yield* Effect.flip(jj.status())).code).toBe("unknown")
+      expect(stderr.filter((entry) => entry === "INIT")).toHaveLength(1)
+    }))
+
+  it.effect("layerScoped closes the live reactor's descriptors when the scope closes", () =>
+    Effect.gen(function*() {
+      const counting = countingSlice()
+      const stderr: Array<string> = []
+      let escaped: Jj | undefined
+      // The fake never closes `/f` and never traps here, so the descriptor is
+      // live until something outside the guest releases it.
+      const wasm = fakeFlowsJjWasm({ trap: true, openBeforeTrap: true })
+      const options: BrowserJj.BrowserJjOptions = { wasm, fs: counting.fs, onStderr: (text) => stderr.push(text) }
+      yield* Effect.scoped(
+        Effect.gen(function*() {
+          const jj = yield* BrowserJj.makeScoped(options)
+          escaped = jj
+          yield* Effect.flip(jj.status())
+        })
+      )
+      expect(counting.closed).toEqual(counting.opened)
+      // A service that escaped its scope answers in the error channel.
+      const error = jjError(yield* Effect.flip(escaped!.status()))
+      expect(error.message).toBe("jj status: the browser reactor was disposed")
+      expect(stderr.filter((entry) => entry === "INIT")).toHaveLength(1)
+    }))
+
+  it.effect("layerScoped provides the same service as layer", () =>
+    Effect.gen(function*() {
+      const status = yield* Effect.provide(
+        Effect.flatMap(Jj, (jj) => jj.status()),
+        BrowserJj.layerScoped({ wasm: fakeFlowsJjWasm({ response: "{\"ok\":{\"status\":\"clean\"}}" }), fs: slice })
+      )
+      expect(status).toBe("clean")
     }))
 
   it.effect("surfaces a proc_exit trap as a failed operation naming the command", () =>

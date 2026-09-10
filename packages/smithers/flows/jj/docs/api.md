@@ -300,12 +300,14 @@ hand-written WASI preview 1 shim in this package. The mount and the compiled
 module are arguments rather than dependencies, so the library never picks a
 storage backend for its host, and persistence stays the page's concern.
 
-| Export             | Signature                                  |
-| ------------------ | ------------------------------------------ |
-| `make(options)`    | `(options: BrowserJjOptions) => Jj`        |
-| `layer(options)`   | `(options: BrowserJjOptions) => Layer<Jj>` |
-| `layerUnsupported` | `Layer<Jj>`                                |
-| `BrowserJjOptions` | `interface` (below)                        |
+| Export                 | Signature                                                 |
+| ---------------------- | --------------------------------------------------------- |
+| `make(options)`        | `(options: BrowserJjOptions) => Jj`                       |
+| `layer(options)`       | `(options: BrowserJjOptions) => Layer<Jj>`                |
+| `makeScoped(options)`  | `(options: BrowserJjOptions) => Effect<Jj, never, Scope>` |
+| `layerScoped(options)` | `(options: BrowserJjOptions) => Layer<Jj>`                |
+| `layerUnsupported`     | `Layer<Jj>`                                               |
+| `BrowserJjOptions`     | `interface` (below)                                       |
 
 | `BrowserJjOptions` field | Type                                 | Meaning                                                            |
 | ------------------------ | ------------------------------------ | ------------------------------------------------------------------ |
@@ -321,6 +323,13 @@ page hand over bytes it is still loading. Raw bytes are copied at that read, so
 the executable authority cannot be swapped between a failed operation and a
 retry. Instantiation is lazy, and every operation runs under a single-permit
 semaphore, because the wasm instance is single-threaded mutable state.
+
+A reactor that traps (a Rust panic, `proc_exit`, a response outside memory) is
+discarded: the shim closes every host descriptor the guest still held, and the
+next operation instantiates a fresh reactor. `layerScoped` and `makeScoped`
+close the live reactor the same way when their scope closes, after which every
+operation fails with `unknown`. `layer` and `make` have no end of life beyond a
+trap; the live reactor's descriptors last as long as the page.
 
 `BrowserJj.layerUnsupported` is the layer for a host that ships no module. Every
 operation reports `not_installed`, the same code the Node adapter reports for a
@@ -419,11 +428,11 @@ Honest divergences from a kernel WASI host, documented rather than hidden:
 Names the synchronous filesystem shape the shim runs over, and imports nothing,
 so the browser bundle decides which backend is mounted.
 
-| Export           | Meaning                                                                                                                                                                                                                                                                           |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Export           | Meaning                                                                                                                                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SyncFsLike`     | The filesystem surface: `openSync`, `closeSync`, `readSync`, `writeSync`, `fstatSync`, `ftruncateSync`, `futimesSync`, `statSync`, `lstatSync`, `mkdirSync`, `readdirSync`, `renameSync`, `unlinkSync`, `rmdirSync`, `readlinkSync`, `symlinkSync`, `utimesSync`. |
-| `SyncStatsLike`  | The `Stats` subset the shim reads: `size`, `atimeMs`, `mtimeMs`, `ctimeMs`, optional `ino`, and the three `is*` predicates.                                                                                                                                                       |
-| `SyncDirentLike` | The `Dirent` subset `fd_readdir` needs: `name` and the three `is*` predicates.                                                                                                                                                                                                    |
+| `SyncStatsLike`  | The `Stats` subset the shim reads: `size`, `atimeMs`, `mtimeMs`, `ctimeMs`, optional `ino`, and the three `is*` predicates.                                                                                                                                       |
+| `SyncDirentLike` | The `Dirent` subset `fd_readdir` needs: `name` and the three `is*` predicates.                                                                                                                                                                                    |
 
 Both ZenFS's sync API and Node's `node:fs` satisfy the shape structurally. Two
 deliberate consequences: `openSync` takes Node string flags (`"r"`, `"r+"`,

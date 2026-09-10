@@ -25,6 +25,7 @@ import { isRecord } from "@smthrs/canonical/Record"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
+import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import { Jj, JjError, JjErrorCode } from "../Jj.ts"
 import type { SyncFsLike } from "./WasiFs.ts"
@@ -61,6 +62,16 @@ interface AbiExports {
 }
 
 const REQUIRED_EXPORTS = ["memory", "_initialize", "flows_jj_alloc", "flows_jj_free", "flows_jj_call"] as const
+
+/**
+ * One live reactor: the ABI exports and the WASI host they were instantiated
+ * over. The two are disposed together, because the host's fd table is the
+ * only record of which backend descriptors the guest holds.
+ */
+interface Reactor {
+  readonly abi: AbiExports
+  readonly wasi: WasiPreview1.WasiPreview1
+}
 
 /**
  * What the browser `Jj` layer needs to run jj in a page: the wasm reactor, and
@@ -144,9 +155,10 @@ const exchange = (abi: AbiExports, request: Record<string, unknown>): string => 
     abi.flows_jj_free(resPtr, resLen)
     return decoder.decode(response)
   } finally {
-    // The instance survives a trapped call (it stays cached and reused), so
-    // the request buffer must be freed on the error path too — otherwise
-    // every trap leaks its request bytes into the instance's allocator.
+    // The request buffer is freed on the error path too. A trapped instance is
+    // discarded by the caller, but the free is what keeps the pairing honest
+    // when the throw came from the host side (a response outside memory) and
+    // the guest allocator is still intact.
     try {
       abi.flows_jj_free(reqPtr, req.length)
     } catch {
@@ -227,6 +239,11 @@ const stringField = (
  * frozen export surface, bind memory, and run the reactor initializer —
  * memory must be bound first because `_initialize` may already issue
  * syscalls.
+ *
+ * A failure after the WASI host exists (a missing export, a trapping
+ * `_initialize`) disposes the host before rethrowing: an initializer that
+ * opened a file and then panicked would otherwise leave that descriptor on
+ * the backend with no instance left to close it.
  */
 const instantiate = async (
   host: {
@@ -235,32 +252,42 @@ const instantiate = async (
     readonly onStderr?: ((text: string) => void) | undefined
   },
   wasm: WebAssembly.Module | BufferSource
-): Promise<AbiExports> => {
+): Promise<Reactor> => {
   const wasi = WasiPreview1.make({
     fs: host.fs,
     ...(host.onStdout === undefined ? {} : { onStdout: host.onStdout }),
     ...(host.onStderr === undefined ? {} : { onStderr: host.onStderr })
   })
-  const imports: WebAssembly.Imports = { wasi_snapshot_preview1: { ...wasi.imports } }
-  // The two `instantiate` overloads return different shapes, and the lib
-  // definitions disagree across type environments (lib.dom returns a
-  // `WebAssemblyInstantiatedSource` for bytes; workers-types returns the
-  // instance for both). Discriminate the value, not the overload.
-  const instantiated: unknown = await WebAssembly.instantiate(wasm as never, imports)
-  const instance = instantiated instanceof WebAssembly.Instance
-    ? instantiated
-    : (instantiated as { readonly instance: WebAssembly.Instance }).instance
-  const exports = instance.exports as Record<string, unknown>
-  const missing = REQUIRED_EXPORTS.filter((name) =>
-    name === "memory" ? !(exports[name] instanceof WebAssembly.Memory) : typeof exports[name] !== "function"
-  )
-  if (missing.length > 0) {
-    throw new Error(`the module does not export the flows_jj ABI (missing: ${missing.join(", ")})`)
+  try {
+    const imports: WebAssembly.Imports = { wasi_snapshot_preview1: { ...wasi.imports } }
+    // The two `instantiate` overloads return different shapes, and the lib
+    // definitions disagree across type environments (lib.dom returns a
+    // `WebAssemblyInstantiatedSource` for bytes; workers-types returns the
+    // instance for both). Discriminate the value, not the overload.
+    const instantiated: unknown = await WebAssembly.instantiate(wasm as never, imports)
+    const instance = instantiated instanceof WebAssembly.Instance
+      ? instantiated
+      : (instantiated as { readonly instance: WebAssembly.Instance }).instance
+    const exports = instance.exports as Record<string, unknown>
+    const missing = REQUIRED_EXPORTS.filter((name) =>
+      name === "memory" ? !(exports[name] instanceof WebAssembly.Memory) : typeof exports[name] !== "function"
+    )
+    if (missing.length > 0) {
+      throw new Error(`the module does not export the flows_jj ABI (missing: ${missing.join(", ")})`)
+    }
+    const abi = exports as unknown as AbiExports
+    wasi.initialize(abi.memory)
+    abi._initialize()
+    return { abi, wasi }
+  } catch (cause) {
+    try {
+      wasi.dispose()
+    } catch {
+      // The instantiation failure is the one to report; a backend that also
+      // refuses to close what the initializer opened cannot improve on it.
+    }
+    throw cause
   }
-  const abi = exports as unknown as AbiExports
-  wasi.initialize(abi.memory)
-  abi._initialize()
-  return abi
 }
 
 /**
@@ -301,11 +328,25 @@ const assertNoSymlinks = (fs: SyncFsLike, root: string): void => {
  * single-threaded mutable state, so concurrent fibers serialize rather than
  * interleave inside it.
  *
+ * A reactor that traps is discarded, not reused: its host descriptors are
+ * closed at once and the next operation instantiates a fresh one. A `Jj` from
+ * `make` has no explicit end of life beyond that; {@link layerScoped} closes
+ * the live reactor when its scope closes.
+ *
  * @category constructors
  * @since 0.1.0
  * @slop
  */
-export const make = (options: BrowserJjOptions): Jj => {
+export const make = (options: BrowserJjOptions): Jj => create(options).jj
+
+/**
+ * A `Jj` together with the disposal `make` keeps private: closes the live
+ * reactor's host descriptors and refuses every later operation.
+ */
+const create = (options: BrowserJjOptions): {
+  readonly jj: Jj
+  readonly dispose: Effect.Effect<void>
+} => {
   // The host surface is snapshotted here rather than re-read per operation, so
   // replacing `options.fs` or a stdio sink after `make` returns cannot change
   // which authority crosses the wasm boundary. `wasm` stays a single lazy read
@@ -318,7 +359,26 @@ export const make = (options: BrowserJjOptions): Jj => {
     ...(options.onStderr === undefined ? {} : { onStderr: options.onStderr })
   }
   const gate = Semaphore.makeUnsafe(1)
-  let ready: AbiExports | undefined
+  let ready: Reactor | undefined
+  let disposed = false
+
+  /**
+   * Drops the live reactor and closes every host descriptor its guest still
+   * held. Runs after a trap, where the guest's own cleanup never happened, and
+   * at disposal. The cache is cleared BEFORE the close so a backend that
+   * refuses to close cannot keep a trapped reactor in service.
+   */
+  const discard = (): void => {
+    const reactor = ready
+    ready = undefined
+    if (reactor === undefined) return
+    try {
+      reactor.wasi.dispose()
+    } catch {
+      // The trap that led here is the failure to report; a backend that also
+      // refuses to close what the guest opened cannot improve on it.
+    }
+  }
 
   /**
    * The module, read from the options object EXACTLY once.
@@ -367,16 +427,24 @@ export const make = (options: BrowserJjOptions): Jj => {
    * that reached a caller without a `method` and a `command` is exactly what
    * `jjError` exists to prevent. `invoke` completes it.
    */
-  const ensure: Effect.Effect<AbiExports, string> = Effect.suspend(() =>
-    ready === undefined
+  const ensure: Effect.Effect<Reactor, string> = Effect.suspend(() =>
+    disposed
+      ? Effect.fail("the browser reactor was disposed")
+      : ready === undefined
       ? Effect.map(
         Effect.tryPromise({
           try: () => instantiate(host, wasmOnce()),
           catch: (cause) => `failed to instantiate flows_jj.wasm: ${messageOf(cause)}`
         }),
-        (abi) => {
-          ready = abi
-          return abi
+        (reactor) => {
+          // A disposal that raced the instantiation wins: the reactor it never
+          // saw is closed here rather than kept past the scope.
+          if (disposed) {
+            reactor.wasi.dispose()
+            return reactor
+          }
+          ready = reactor
+          return reactor
         }
       )
       : Effect.succeed(ready)
@@ -396,8 +464,22 @@ export const make = (options: BrowserJjOptions): Jj => {
           Effect.fail(
             new JjError({ code: "unknown", module: MODULE, method, command, message: `jj ${method}: ${description}` })
           )),
-        (abi) =>
+        ({ abi }) =>
           Effect.suspend(() => {
+            // A throw out of an ABI exchange (proc_exit, a Rust panic, a
+            // response outside memory, an allocator that answers null) leaves
+            // the guest's state and its open descriptors unknown, so the
+            // reactor is discarded before the failure is reported and the next
+            // operation starts fresh. The host-side guards above the exchange
+            // throw too, but they never entered the reactor, so it stays.
+            const call = (request: Record<string, unknown>): string => {
+              try {
+                return exchange(abi, request)
+              } catch (cause) {
+                discard()
+                throw cause
+              }
+            }
             let text: string
             try {
               // Keep the guard and the synchronous ABI call in one turn under
@@ -413,12 +495,12 @@ export const make = (options: BrowserJjOptions): Jj => {
                   host.fs.statSync(`${String(request.root)}/.jj`)
                 } catch (cause) {
                   if (method !== "snapshot" || (cause as { code?: string }).code !== "ENOENT") throw cause
-                  const initialized = exchange(abi, { op: "init", root: request.root })
+                  const initialized = call({ op: "init", root: request.root })
                   const response: unknown = JSON.parse(initialized)
                   if (!isRecord(response) || !isRecord(response.ok)) return decodeResponse(method, command, initialized)
                 }
               }
-              text = exchange(abi, request)
+              text = call(request)
             } catch (cause) {
               // A trap (proc_exit, a Rust panic, an out-of-range response) is a
               // failed operation, never a failed fiber.
@@ -437,7 +519,17 @@ export const make = (options: BrowserJjOptions): Jj => {
       )
     )
 
-  return Jj.of({
+  // Disposal takes the permit so it never runs between an operation's
+  // instantiation and its exchange; an operation that arrives afterwards fails
+  // in `ensure` instead of instantiating a reactor nobody will close.
+  const dispose: Effect.Effect<void> = gate.withPermit(
+    Effect.sync(() => {
+      disposed = true
+      discard()
+    })
+  )
+
+  const jj = Jj.of({
     snapshot: (message) =>
       invoke("snapshot", "jj snapshot", { op: "snapshot", root, ...(message === undefined ? {} : { message }) }).pipe(
         Effect.flatMap((ok) => stringField("snapshot", "jj snapshot", ok, "changeId")),
@@ -529,16 +621,47 @@ export const make = (options: BrowserJjOptions): Jj => {
     // optional property disappearing.
     revert: () => fail("revert", "jj revert")
   })
+  return { jj, dispose }
 }
 
 /**
  * Provides the `Jj` service backed by a `flows_jj.wasm` module.
+ *
+ * The service outlives whatever consumed the layer: a reactor that is still
+ * live when the program ends keeps its host descriptors until the page does.
+ * {@link layerScoped} is the layer to use when that matters.
  *
  * @category layers
  * @since 0.1.0
  * @slop
  */
 export const layer = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer.succeed(Jj)(make(options))
+
+/**
+ * Provides the `Jj` service backed by a `flows_jj.wasm` module, and closes
+ * the live reactor's host descriptors when the layer's scope closes. Every
+ * operation after that fails in the error channel, so a service that escaped
+ * its scope answers rather than reviving a reactor nobody will close.
+ *
+ * @category layers
+ * @since 0.1.0
+ * @slop
+ */
+export const layerScoped = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer.effect(Jj)(makeScoped(options))
+
+/**
+ * The scoped form of {@link make}: the `Jj` is released, closing the live
+ * reactor's host descriptors, when the scope it was acquired in closes.
+ *
+ * @category constructors
+ * @since 0.1.0
+ * @slop
+ */
+export const makeScoped = (options: BrowserJjOptions): Effect.Effect<Jj, never, Scope.Scope> =>
+  Effect.map(
+    Effect.acquireRelease(Effect.sync(() => create(options)), (created) => created.dispose),
+    (created) => created.jj
+  )
 
 /**
  * A namespace path reduced to its meaning: `.` and empty segments drop, `..`

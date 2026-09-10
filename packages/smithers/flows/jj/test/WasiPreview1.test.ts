@@ -393,6 +393,69 @@ describe("WasiPreview1 bookkeeping", () => {
   })
 })
 
+describe("WasiPreview1 dispose", () => {
+  it("closes every open host file once, empties the table, and is idempotent", () => {
+    const closed: Array<number> = []
+    const dir = freshDir()
+    fsModule.writeFileSync(join(dir, "a"), "a")
+    fsModule.writeFileSync(join(dir, "b"), "b")
+    const counting: SyncFsLike = {
+      ...nodeFs,
+      closeSync: (fd) => {
+        closed.push(fd)
+        nodeFs.closeSync(fd)
+      }
+    }
+    const wasi = make({ fs: counting, root: dir })
+    const memory = new WebAssembly.Memory({ initial: 1 })
+    wasi.initialize(memory)
+    const sys = wasi.imports
+    const open = (name: string, at: number) => {
+      const bytes = encoder.encode(name)
+      new Uint8Array(memory.buffer, at, bytes.length).set(bytes)
+      expect(sys.path_open!(3, 0, at, bytes.length, 0, 2n, 0n, 0, 4)).toBe(E.success)
+      return new DataView(memory.buffer).getUint32(4, true)
+    }
+    const a = open("a", 64)
+    const b = open("b", 80)
+    // A directory fd holds no host descriptor and must not be closed as one.
+    expect(sys.path_open!(3, 0, 64, 0, 0, 0n, 0n, 0, 4)).not.toBe(E.success)
+    wasi.dispose()
+    expect(closed).toHaveLength(2)
+    expect(sys.fd_close!(a)).toBe(E.badf)
+    expect(sys.fd_close!(b)).toBe(E.badf)
+    expect(sys.fd_prestat_get!(3, 4)).toBe(E.badf)
+    wasi.dispose()
+    expect(closed).toHaveLength(2)
+  })
+
+  it("keeps sweeping when the backend refuses one close, then rethrows the first refusal", () => {
+    const closed: Array<number> = []
+    const refusing: SyncFsLike = {
+      ...nodeFs,
+      openSync: () => 100 + closed.length + openedCount++,
+      closeSync: (fd) => {
+        closed.push(fd)
+        if (fd === 100) throw Object.assign(new Error("EIO"), { code: "EIO" })
+      }
+    }
+    let openedCount = 0
+    const dir = freshDir()
+    fsModule.writeFileSync(join(dir, "a"), "a")
+    const wasi = make({ fs: refusing, root: dir })
+    const memory = new WebAssembly.Memory({ initial: 1 })
+    wasi.initialize(memory)
+    new Uint8Array(memory.buffer, 64, 1).set(encoder.encode("a"))
+    expect(wasi.imports.path_open!(3, 0, 64, 1, 0, 2n, 0n, 0, 4)).toBe(E.success)
+    expect(wasi.imports.path_open!(3, 0, 64, 1, 0, 2n, 0n, 0, 8)).toBe(E.success)
+    expect(() => wasi.dispose()).toThrow("EIO")
+    expect(closed).toEqual([100, 101])
+    // The table was emptied despite the refusal: a second sweep closes nothing.
+    wasi.dispose()
+    expect(closed).toEqual([100, 101])
+  })
+})
+
 describe("WasiPreview1 preopen protocol", () => {
   it("announces exactly one preopen: '/' at fd 3", () => {
     const h = host({ root: freshDir() })
