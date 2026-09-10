@@ -15,10 +15,11 @@
  * Run it with `node --test "scripts/repo-contract/*.test.mjs"`.
  */
 import assert from "node:assert/strict"
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { describe, it } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { libraryPackages } from "../workspace-packages.mjs"
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
 
@@ -84,39 +85,17 @@ describe("the 0.x umbrella", () => {
   })
 })
 
-/**
- * Every package directory under `packages/`, at any depth.
- *
- * The walk descends because a granular package can live inside the product
- * package it belongs to — `packages/smithers/flows/canonical` is `@smthrs/canonical` —
- * and a reading that stopped at the first level would drop it silently. The
- * directory it reports is the path under `packages/`, which is what reaches it
- * on disk.
- */
-const packageDirectories = (parent = "") =>
-  readdirSync(join(root, "packages", parent), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name !== "node_modules")
-    .flatMap((entry) => {
-      const directory = parent === "" ? entry.name : `${parent}/${entry.name}`
-      return existsSync(join(root, "packages", directory, "package.json"))
-        ? [directory, ...packageDirectories(directory)]
-        : []
-    })
-
 describe("every package's declared root export", () => {
-  const packages = packageDirectories()
-    .map((directory) => ({ directory, path: join(root, "packages", directory, "package.json") }))
-    .map((entry) => ({ ...entry, manifest: JSON.parse(readFileSync(entry.path, "utf8")) }))
-    .filter((entry) => entry.manifest.private !== true)
+  const packages = libraryPackages(root).filter((entry) => entry.manifest.private !== true)
 
   it("points at a file that exists", () => {
     for (const entry of packages) {
       const root_ = entry.manifest.exports?.["."]
       const target = typeof root_ === "string" ? root_ : root_?.import
-      assert.ok(typeof target === "string", `packages/${entry.directory} has no resolvable root export`)
+      assert.ok(typeof target === "string", `${entry.dir} has no resolvable root export`)
       assert.ok(
-        existsSync(join(root, "packages", entry.directory, target)),
-        `packages/${entry.directory} points its root export at ${target}, which does not exist`
+        existsSync(join(root, entry.dir, target)),
+        `${entry.dir} points its root export at ${target}, which does not exist`
       )
     }
   })

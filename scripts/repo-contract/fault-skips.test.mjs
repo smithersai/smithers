@@ -50,6 +50,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import { describe, it } from "node:test"
 import { fileURLToPath } from "node:url"
+import { libraryPackages } from "../workspace-packages.mjs"
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
 const packagesRoot = join(root, "packages")
@@ -130,10 +131,46 @@ const requiredGates = new Map([
  * a required CI job. While this map is empty the matrix is expected to be green
  * end to end; adding an entry back means putting `continueOnError` back on that
  * job in the root `PACKAGE.ts` in the same commit.
+ *
+ * An entry is keyed like {@link requiredGates} and carries
+ * `limitation: { row, anchor }`: `row` is how its fault-gaps row starts
+ * (`| 22 |`) and `anchor` is the known-limitations link that row must carry.
  */
 const requiredRedGates = new Map([])
 
 const faultGaps = join(root, "scripts", "repo-contract", "fault-gaps.md")
+
+/**
+ * What a set of required red gates gets wrong, one message per defect.
+ *
+ * It reads its arguments rather than the module's maps so the rules can be
+ * proven against a fixture while {@link requiredRedGates} is empty. A red gate
+ * must also be a required gate, or nothing checks that its test still exists,
+ * and its fault-gaps row must link its known-limitations section instead of
+ * describing the limitation where no reader of the release looks.
+ */
+const redGateDefects = (redGates, gates, gaps) => {
+  const rows = gaps.split("\n")
+  return [...redGates].flatMap(([relative_, gate]) => {
+    const defects = []
+    if (!gates.has(relative_)) {
+      defects.push(
+        `${relative_} is listed as red by design and is not in requiredGates, so nothing checks that the test `
+          + "still exists. Add it there as well."
+      )
+    }
+    const row = rows.find((line) => line.startsWith(gate.limitation.row))
+    if (row === undefined) {
+      defects.push(`scripts/repo-contract/fault-gaps.md has no ${gate.limitation.row} row for ${relative_}`)
+    } else if (!row.includes(gate.limitation.anchor)) {
+      defects.push(
+        `the ${gate.limitation.row} row claims the limitation is recorded on the known-limitations page and does `
+          + `not link to it. Link ${gate.limitation.anchor}.`
+      )
+    }
+    return defects
+  })
+}
 
 /**
  * The conditional skips the matrix is allowed to carry, and what each skips on.
@@ -152,26 +189,6 @@ const allowedSkips = new Map([
   ]
 ])
 
-/**
- * Every package directory under `packages/`, at any depth, that has a
- * `test/faults` tree.
- *
- * The walk descends. Packages nest — a granular package lives inside the
- * product package it belongs to — and a reading that stopped at the first
- * directory level would leave most of the matrix outside this audit while the
- * audit stayed green, which is the exact failure the matrix's own gate exists
- * to stop. Names are paths under `packages/`, which is what reaches them.
- */
-const packageDirectories = (parent = "") =>
-  readdirSync(join(packagesRoot, parent), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name !== "node_modules")
-    .flatMap((entry) => {
-      const directory = parent === "" ? entry.name : `${parent}/${entry.name}`
-      return existsSync(join(packagesRoot, directory, "package.json"))
-        ? [directory, ...packageDirectories(directory)]
-        : []
-    })
-
 /** Every TypeScript file under a package's `test/faults` tree. */
 const walk = (directory) =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -180,7 +197,12 @@ const walk = (directory) =>
     return entry.isFile() && path.endsWith(".ts") ? [path] : []
   })
 
-const faultPackages = packageDirectories()
+/**
+ * Every library package, at any depth, that has a `test/faults` tree. Names are
+ * paths under `packages/`, which is what reaches them.
+ */
+const faultPackages = libraryPackages(root)
+  .map((entry) => entry.dir.slice("packages/".length))
   .filter((name) => {
     const directory = join(packagesRoot, name, "test", "faults")
     return existsSync(directory) && walk(directory).some((path) => path.endsWith(".test.ts"))
@@ -251,20 +273,37 @@ describe("the fault-suite skip audit", () => {
     }
   })
 
-  it("keeps every red gate in the required set, so its existence is checked too", () => {
-    for (const relative_ of requiredRedGates.keys()) {
-      assert.ok(
-        requiredGates.has(relative_),
-        `${relative_} is listed as red by design and is not in requiredGates, so nothing checks that the test `
-          + "still exists. Add it there as well."
-      )
-    }
+  it("keeps every red gate required and its fault-gaps row pointed at its limitation", () => {
+    assert.deepEqual(redGateDefects(requiredRedGates, requiredGates, readFileSync(faultGaps, "utf8")), [])
+  })
+
+  it("refuses a red gate that is not required, has no fault-gaps row, or does not link its limitation", () => {
+    const anchor = "docs/pages/release/known-limitations.md#credential-redaction-in-logs"
+    const red = (row) => ({ limitation: { row, anchor } })
+    const gates = new Map([["linked.test.ts", {}], ["unlinked.test.ts", {}], ["missing.test.ts", {}]])
+    const gaps = [
+      "| Case | What is covered | What is not | Cost |",
+      `| 22 | The journal. | The terminal, stated in \`${anchor}\`. | M |`,
+      "| 25 | Refusals. | The terminal, described here instead. | M |"
+    ].join("\n")
+
+    assert.deepEqual(redGateDefects(new Map([["linked.test.ts", red("| 22 |")]]), gates, gaps), [])
+    assert.deepEqual(redGateDefects(new Map([["unrequired.test.ts", red("| 22 |")]]), gates, gaps), [
+      "unrequired.test.ts is listed as red by design and is not in requiredGates, so nothing checks that the test "
+        + "still exists. Add it there as well."
+    ])
+    assert.deepEqual(redGateDefects(new Map([["missing.test.ts", red("| 99 |")]]), gates, gaps), [
+      "scripts/repo-contract/fault-gaps.md has no | 99 | row for missing.test.ts"
+    ])
+    assert.deepEqual(redGateDefects(new Map([["unlinked.test.ts", red("| 25 |")]]), gates, gaps), [
+      "the | 25 | row claims the limitation is recorded on the known-limitations page and does not link to it. "
+        + `Link ${anchor}.`
+    ])
   })
 
   it("keeps the fault job's CI status in step with the required-red set", () => {
     // The comment over `requiredRedGates` states this rule; without a case it
-    // is enforced by nothing, and the two limitation cases below pass over an
-    // empty collection. A red gate the matrix is required to carry means
+    // is enforced by nothing. A red gate the matrix is required to carry means
     // `e2e-faults` cannot fail the pipeline, and an empty map means it must.
     const build = readFileSync(join(root, "PACKAGE.ts"), "utf8")
     const faultsJob = build.slice(build.indexOf("id: \"e2e-faults\""))
@@ -277,19 +316,6 @@ describe("the fault-suite skip audit", () => {
     } else {
       assert.ok(advisory, "a required red gate is listed, so e2e-faults must carry continueOnError")
       assert.ok(!required, "a required red gate is listed, so e2e-faults must not be in requiredJobs")
-    }
-  })
-
-  it("points the fault-gaps row at that limitation instead of describing it", () => {
-    const gaps = readFileSync(faultGaps, "utf8")
-    for (const [relative_, gate] of requiredRedGates) {
-      const row = gaps.split("\n").find((line) => line.startsWith(gate.limitation.row))
-      assert.ok(row !== undefined, `scripts/repo-contract/fault-gaps.md has no ${gate.limitation.row} row for ${relative_}`)
-      assert.ok(
-        row.includes(gate.limitation.anchor),
-        `the ${gate.limitation.row} row claims the limitation is recorded on the known-limitations page and does `
-          + `not link to it. Link ${gate.limitation.anchor}.`
-      )
     }
   })
 
