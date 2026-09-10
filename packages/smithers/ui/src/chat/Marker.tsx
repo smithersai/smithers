@@ -2,8 +2,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss } from "./conversationFoundationCss";
 import { Shimmer } from "./Shimmer";
 
 export type MarkerProps = Omit<ComponentProps<"div">, "children"> & {
@@ -23,7 +21,6 @@ export function Marker({
   ...nativeProps
 }: MarkerProps) {
   useInjectUiCss();
-  useInjectLaneCss(CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss);
   const { role, "aria-live": _ariaLive, ...props } = nativeProps;
   const label = shimmer ? <Shimmer active>{children}</Shimmer> : children;
   return (

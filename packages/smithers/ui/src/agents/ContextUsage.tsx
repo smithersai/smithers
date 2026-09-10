@@ -12,8 +12,6 @@ import {
 } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss } from "./agentsCss";
 
 export type TokenUsageModel = {
   usedTokens?: number;
@@ -103,7 +101,6 @@ export function ContextUsage({
   ...props
 }: ContextUsageProps) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const triggerId = `${useId()}-ctx-trigger`;
   const contentId = `${useId()}-ctx-content`;
   const isControlled = open !== undefined;
@@ -243,7 +240,6 @@ export function ContextTrigger({
   ...props
 }: ComponentProps<"button">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const ctx = useContextUsage("ContextTrigger");
   const percent = contextUsagePercent(ctx.usage);
   const label =
@@ -283,7 +279,6 @@ export function ContextTrigger({
 
 export function ContextContent({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const ctx = useContextUsage("ContextContent");
   if (!ctx.open) return null;
   return (
@@ -313,7 +308,6 @@ export function ContextContent({ className, children, ...props }: ComponentProps
 
 export function ContextContentHeader({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const { usage } = useContextUsage("ContextContentHeader");
   const percent = contextUsagePercent(usage);
   return (
@@ -336,13 +330,11 @@ export function ContextContentHeader({ className, children, ...props }: Componen
 
 export function ContextContentBody({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   return <div data-slot="context-content-body" className={cn("sui-ctx-body", className)} {...props} />;
 }
 
 export function ContextContentFooter({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const { usage } = useContextUsage("ContextContentFooter");
   return (
     <div data-slot="context-content-footer" className={cn("sui-ctx-footer", className)} {...props}>
@@ -369,7 +361,6 @@ function tokenValue(n: number | undefined): string {
 
 export function ContextInputUsage({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const { usage } = useContextUsage("ContextInputUsage");
   return (
     <UsageRow
@@ -384,7 +375,6 @@ export function ContextInputUsage({ className, children, ...props }: ComponentPr
 
 export function ContextOutputUsage({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const { usage } = useContextUsage("ContextOutputUsage");
   return (
     <UsageRow
@@ -399,7 +389,6 @@ export function ContextOutputUsage({ className, children, ...props }: ComponentP
 
 export function ContextReasoningUsage({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const { usage } = useContextUsage("ContextReasoningUsage");
   return (
     <UsageRow
@@ -414,7 +403,6 @@ export function ContextReasoningUsage({ className, children, ...props }: Compone
 
 export function ContextCacheUsage({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const { usage } = useContextUsage("ContextCacheUsage");
   return (
     <UsageRow

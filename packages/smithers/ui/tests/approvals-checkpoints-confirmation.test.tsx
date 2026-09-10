@@ -14,6 +14,7 @@ import {
   approvalStateToStatus,
   type ApprovalState,
 } from "../src/approvals/Confirmation";
+import { approvalsCss } from "../src/approvals/approvalsCss";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -31,7 +32,6 @@ afterEach(async () => {
   container = undefined;
   delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
-  document.querySelectorAll("style[data-smithers-ui-lane]").forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -261,10 +261,10 @@ describe("Confirmation", () => {
     }
   });
 
-  test("renders under data-theme=dark with lane css self-injected", async () => {
+  test("renders under data-theme=dark with the composed sheet injected", async () => {
     document.documentElement.dataset.theme = "dark";
     await render(fullConfirmation("requested"));
     expect(container!.querySelector(".sui-confirm")).not.toBeNull();
-    expect(document.querySelector("style[data-smithers-ui-lane='approvals-checkpoints']")).not.toBeNull();
+    expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(approvalsCss.trim());
   });
 });

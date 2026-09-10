@@ -2,8 +2,6 @@
 import { Children, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss } from "./conversationFoundationCss";
 import { ChatMessage } from "./ChatMessage";
 import {
   MessageScrollerButton,
@@ -31,7 +29,6 @@ export function ChatTranscript({
   ...props
 }: ChatTranscriptProps) {
   useInjectUiCss();
-  useInjectLaneCss(CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss);
   const isEmpty = Children.toArray(children).length === 0;
   return (
     <div

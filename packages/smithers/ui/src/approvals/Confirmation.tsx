@@ -11,9 +11,7 @@ import {
 } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { Button } from "../button";
-import { APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss } from "./approvalsCss";
 
 export type ApprovalState =
   | "synchronizing"
@@ -116,7 +114,6 @@ function updateRef<T>(ref: Ref<T> | undefined, value: T | null): void {
  */
 export function Confirmation({ state, children, className, ref, tabIndex, ...props }: ConfirmationProps) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const status = approvalStateToStatus(state);
   const rootRef = useRef<HTMLDivElement>(null);
   const previousState = useRef(state);
@@ -173,14 +170,12 @@ export function Confirmation({ state, children, className, ref, tabIndex, ...pro
 
 export function ConfirmationTitle({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   return <div data-slot="confirmation-title" className={cn("sui-confirm-title", className)} {...props} />;
 }
 
 /** Request body; visible while synchronizing, requested, approving, or denying. */
 export function ConfirmationRequest({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const state = useConfirmationState();
   if (state !== "synchronizing" && state !== "requested" && state !== "approving" && state !== "denying") {
     return null;
@@ -191,7 +186,6 @@ export function ConfirmationRequest({ className, ...props }: ComponentProps<"div
 /** Resolution body; visible once approved. */
 export function ConfirmationAccepted({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const state = useConfirmationState();
   if (state !== "approved") return null;
   return (
@@ -204,7 +198,6 @@ export function ConfirmationAccepted({ className, children, ...props }: Componen
 /** Resolution body; visible once denied. */
 export function ConfirmationRejected({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const state = useConfirmationState();
   if (state !== "denied") return null;
   return (
@@ -217,7 +210,6 @@ export function ConfirmationRejected({ className, children, ...props }: Componen
 /** Action row; visible while requested or after a failed submission (retry). */
 export function ConfirmationActions({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const state = useConfirmationState();
   if (state !== "requested" && state !== "failed-submission") return null;
   return (
@@ -248,7 +240,6 @@ export function ConfirmationAction({
   ...props
 }: ConfirmationActionProps) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const state = useConfirmationState();
   const busy = state === "approving" || state === "denying";
   return (

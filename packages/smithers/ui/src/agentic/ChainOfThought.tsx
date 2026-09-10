@@ -1,10 +1,8 @@
 /** @jsxImportSource react */
 import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { formatStatus, statusClass } from "../status";
 import { useInjectUiCss } from "../styles";
-import { REASONING_TOOLS_CSS_ID, reasoningToolsCss } from "./reasoningToolsCss";
 
 export type ChainOfThoughtStepStatus = "pending" | "active" | "done";
 
@@ -72,7 +70,6 @@ export function ChainOfThought({
   ...props
 }: ChainOfThoughtProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   const bodyId = `${useId()}-chain-of-thought-body`;
   const isControlled = controlledOpen !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(() => defaultOpen ?? streaming);
@@ -174,7 +171,6 @@ export function ChainOfThoughtStep({
   ...props
 }: ChainOfThoughtStepProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   const baseId = useId();
   const detailId = `${baseId}-cot-step-detail`;
   const triggerId = `${baseId}-cot-step-trigger`;

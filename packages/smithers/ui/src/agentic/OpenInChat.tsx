@@ -1,9 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { useInjectUiCss } from "../styles";
-import { SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss } from "./sourcesCitationsCss";
 
 export type OpenInChatSubjectKind = "file" | "diff" | "issue" | "test" | "run" | "log" | "error" | "artifact";
 
@@ -96,7 +94,6 @@ function KindIcon({ kind }: { kind: OpenInChatSubjectKind }) {
  */
 export function OpenInChat({ subject, onOpen, label = "Ask Smithers", className, type, ...props }: OpenInChatProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   return (
     <button
       type={type ?? "button"}

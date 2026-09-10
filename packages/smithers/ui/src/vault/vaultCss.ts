@@ -1,8 +1,9 @@
 /**
  * vault lane CSS fragment. All classes `sui-vault-*` namespaced and colored
  * only through the tokens bridge (`var(--house-token, lightFallback)` /
- * `color-mix(in srgb, ...)`). Composed into `smithersUiCss` by uiCss.ts;
- * every vault component also self-injects this via `useVaultCss`.
+ * `color-mix(in srgb, ...)`). Composed into `smithersUiCss` by uiCss.ts,
+ * which every vault component injects through `useVaultCss`; exported for
+ * hosts that mount the lane alone.
  */
 export const VAULT_CSS_ID = "vault";
 

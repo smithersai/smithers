@@ -1,9 +1,9 @@
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { VAULT_CSS_ID, vaultCss } from "./vaultCss";
 
-/** Inject the package sheet plus the vault lane fragment, idempotently. */
+/**
+ * Inject the package stylesheet, idempotently. The vault fragment is composed
+ * into `smithersUiCss`, so this is the whole delivery path for a vault view.
+ */
 export function useVaultCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(VAULT_CSS_ID, vaultCss);
 }

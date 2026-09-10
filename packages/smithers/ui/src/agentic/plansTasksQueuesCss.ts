@@ -1,7 +1,7 @@
 /**
- * plans-tasks-queues lane CSS fragment. Self-injected by every component in
- * this lane via useInjectLaneCss and composed into smithersUiCss by the
- * integration lane. Obeys the css-contract: sui- namespace only, no :root,
+ * plans-tasks-queues lane CSS fragment. Composed into smithersUiCss, which
+ * every component in this lane injects. Obeys the css-contract: sui-
+ * namespace only, no :root,
  * colors only through the tokens bridge.
  */
 import { tokens as t } from "../tokens";

@@ -27,7 +27,6 @@ afterEach(async () => {
   container = undefined;
   delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((el) => el.remove());
-  document.querySelectorAll("style[data-smithers-ui-lane]").forEach((el) => el.remove());
 });
 
 async function render(element: ReactElement) {

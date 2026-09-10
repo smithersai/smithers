@@ -2,8 +2,6 @@
 import { createContext, useContext, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
 import { byteCountString } from "../diff-paginate";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { PROMPT_ATTACHMENTS_CSS_ID, promptAttachmentsCss } from "../prompt/promptAttachmentsCss";
 import { useInjectUiCss } from "../styles";
 
 export type AttachmentState = "uploading" | "processing" | "ready" | "error";
@@ -64,7 +62,6 @@ function attachmentMeta(context: AttachmentContextValue): string {
 
 function useInjectAttachmentCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(PROMPT_ATTACHMENTS_CSS_ID, promptAttachmentsCss);
 }
 
 /** File or image attachment chip with upload and processing state. */

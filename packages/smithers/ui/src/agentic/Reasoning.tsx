@@ -10,8 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "../cn";
-import { REASONING_TOOLS_CSS_ID, reasoningToolsCss } from "./reasoningToolsCss";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { useInjectUiCss } from "../styles";
 
 export type ReasoningProps = Omit<ComponentProps<"div">, "children"> & {
@@ -78,7 +76,6 @@ export function Reasoning({
   ...props
 }: ReasoningProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   const baseId = useId();
   const bodyId = `${baseId}-reasoning-body`;
   const triggerId = `${baseId}-reasoning-trigger`;
@@ -158,7 +155,6 @@ export type ReasoningTriggerProps = ComponentProps<"button">;
 /** Disclosure trigger for a composed Reasoning. */
 export function ReasoningTrigger({ className, children, onClick, ...props }: ReasoningTriggerProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   const context = useReasoningContext("ReasoningTrigger");
   return (
     <button
@@ -187,7 +183,6 @@ export type ReasoningContentProps = ComponentProps<"div">;
 /** Content region for a composed Reasoning; renders only while open. */
 export function ReasoningContent({ className, ...props }: ReasoningContentProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   const context = useReasoningContext("ReasoningContent");
   if (!context.open) return null;
   return (
@@ -228,7 +223,6 @@ export function ReasoningSummary({
   ...props
 }: ReasoningSummaryProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   return (
     <div
       data-slot="reasoning-summary"

@@ -1,10 +1,8 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { formatStatus, normalizeStatus, statusClass } from "../status";
 import { useInjectUiCss } from "../styles";
-import { PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss } from "./plansTasksQueuesCss";
 
 export type TaskItemProps = Omit<ComponentProps<"div">, "children"> & {
   label: ReactNode;
@@ -27,7 +25,6 @@ function formatDuration(n: number): string {
 /** A file chip associated with a task, with an optional leading icon. */
 export function TaskItemFile({ name, icon, className, ...props }: TaskItemFileProps) {
   useInjectUiCss();
-  useInjectLaneCss(PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss);
   return (
     <span data-slot="task-item-file" className={cn("sui-taskitem-file", className)} {...props}>
       {icon !== undefined ? (
@@ -43,7 +40,6 @@ export function TaskItemFile({ name, icon, className, ...props }: TaskItemFilePr
 /** A compact status-aware unit-of-work row for plans and standalone lists. */
 export function TaskItem({ label, status, files, elapsedSeconds, className, children, ...props }: TaskItemProps) {
   useInjectUiCss();
-  useInjectLaneCss(PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss);
   const normalized = normalizeStatus(status);
   const tone = statusClass(status);
 

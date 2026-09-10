@@ -1,10 +1,8 @@
 /** @jsxImportSource react */
 import { createContext, useContext, useId, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
-import { PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss } from "./plansTasksQueuesCss";
 
 type AgentTaskContextValue = {
   open: boolean;
@@ -47,7 +45,6 @@ export function AgentTask({
   ...props
 }: AgentTaskProps) {
   useInjectUiCss();
-  useInjectLaneCss(PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss);
   const triggerId = useId();
   const contentId = useId();
   const isControlled = controlledOpen !== undefined;
@@ -78,7 +75,6 @@ export function AgentTask({
 /** Disclosure trigger for an AgentTask; shows the task title and status pill. */
 export function AgentTaskTrigger({ className, children, onClick, ...props }: ComponentProps<"button">) {
   useInjectUiCss();
-  useInjectLaneCss(PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss);
   const { open, toggle, title, status, triggerId, contentId } = useAgentTaskContext();
   return (
     <button
@@ -114,7 +110,6 @@ export type AgentTaskContentProps = ComponentProps<"div"> & {
 /** Body region of an AgentTask; optionally remains mounted for exit animations. */
 export function AgentTaskContent({ className, forceMount = false, ...props }: AgentTaskContentProps) {
   useInjectUiCss();
-  useInjectLaneCss(PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss);
   const { open, triggerId, contentId } = useAgentTaskContext();
   if (!open && !forceMount) return null;
   return (
@@ -134,6 +129,5 @@ export function AgentTaskContent({ className, forceMount = false, ...props }: Ag
 /** A list grouping several AgentTask units. */
 export function AgentTaskGroup({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss);
   return <div data-slot="agent-task-group" role="list" className={cn("sui-agenttask-group", className)} {...props} />;
 }

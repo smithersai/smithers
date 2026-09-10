@@ -2,9 +2,7 @@
 import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { cn } from "../cn";
 import { type CopyFailureCode, copyToClipboard } from "../internal/copyToClipboard";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { useInjectUiCss } from "../styles";
-import { artifactsCss, CODING_ARTIFACTS_CSS_ID } from "./artifactsCss";
 
 export type SecretFieldProps = Omit<ComponentProps<"span">, "children" | "onCopy"> & {
   value: string;
@@ -37,7 +35,6 @@ export function SecretField({
   ...props
 }: SecretFieldProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const [uncontrolledRevealed, setUncontrolledRevealed] = useState(defaultRevealed);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);

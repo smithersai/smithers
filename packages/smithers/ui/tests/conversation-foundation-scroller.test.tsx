@@ -2,7 +2,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { CONVERSATION_FOUNDATION_CSS_ID } from "../src/chat/conversationFoundationCss";
 import {
   MessageScrollerButton,
   type MessageScrollerCommands,
@@ -150,9 +149,6 @@ afterEach(async () => {
   document.documentElement.removeAttribute("data-theme");
   removeDarkThemeStyles();
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
-  document
-    .querySelectorAll(`style[data-smithers-ui-lane="${CONVERSATION_FOUNDATION_CSS_ID}"]`)
-    .forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement, metrics: Metrics): Promise<void> {

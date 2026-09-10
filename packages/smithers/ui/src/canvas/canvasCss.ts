@@ -2,8 +2,7 @@
  * workflow-canvas lane CSS fragment. Renderer-neutral canvas anatomy styles,
  * all `sui-canvas-*` namespaced and colored only through the tokens bridge
  * (`var(--house-token, lightFallback)` / `color-mix(in srgb, ...)`). Composed
- * into `smithersUiCss` by the integration lane; until then (and harmlessly
- * after) every canvas component self-injects this via `useInjectLaneCss`.
+ * into `smithersUiCss`, which every canvas component injects.
  */
 export const WORKFLOW_CANVAS_CSS_ID = "workflow-canvas";
 

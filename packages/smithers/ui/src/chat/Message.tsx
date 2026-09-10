@@ -10,8 +10,6 @@ import {
 } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss } from "./conversationFoundationCss";
 
 export type MessageRole = "user" | "assistant" | "system" | "tool";
 
@@ -26,7 +24,6 @@ export type MessageProps = ComponentProps<"div"> & {
 
 function useMessageLaneCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss);
 }
 
 /** Conversation row: avatar rail plus header/content/footer/actions layout. */

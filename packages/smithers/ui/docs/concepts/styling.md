@@ -46,12 +46,11 @@ approvals, sources and citations, agents, artifacts, sandbox, canvas, calendar,
 and vault. Each fragment is composed into `smithersUiCss`, so a host that
 renders `SmithersUiStyles` already has all of them.
 
-Components in those families additionally call `useInjectLaneCss(id, css)`,
-which dedupes per fragment on a `data-smithers-ui-lane` attribute. Once the
-fragment is composed into the main sheet, the extra element is redundant, and
-harmless, because the rules are identical. Two fragments carry a public id and
-string so a host can mount them alone: `CALENDAR_CSS_ID` with `calendarCss`, and
-`VAULT_CSS_ID` with `vaultCss`.
+Components in those families inject nothing beyond the composed sheet: one
+`useInjectUiCss()` call delivers every lane fragment, so a mounted lane
+component adds at most one `<style>` element. Two fragments carry a public id
+and string so a host can mount them alone: `CALENDAR_CSS_ID` with `calendarCss`,
+and `VAULT_CSS_ID` with `vaultCss`.
 
 ## Compose your own sheet
 

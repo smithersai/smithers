@@ -9,11 +9,9 @@ import {
 } from "react";
 import { Badge } from "../badge";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { formatStatus, statusClass, type StatusClass } from "../status";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
-import { canvasCss, WORKFLOW_CANVAS_CSS_ID } from "./canvasCss";
 
 /**
  * Renderer-neutral workflow canvas anatomy: the visual language a graph
@@ -25,7 +23,6 @@ import { canvasCss, WORKFLOW_CANVAS_CSS_ID } from "./canvasCss";
 
 function useCanvasCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(WORKFLOW_CANVAS_CSS_ID, canvasCss);
 }
 
 const TOOLBAR_ITEM_SELECTOR = "button, [href], input, select, textarea, [tabindex]";

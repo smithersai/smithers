@@ -2,8 +2,8 @@
  * calendar lane CSS fragment. All `sui-cal-*` namespaced and colored only
  * through the tokens bridge (`var(--house-token, lightFallback)` /
  * `color-mix(in srgb, ...)`); tints rotate across the shared semantic
- * soft/border pairs. Composed into `smithersUiCss` by uiCss.ts; every
- * calendar component also self-injects this via `useInjectLaneCss`.
+ * soft/border pairs. Composed into `smithersUiCss` by uiCss.ts, which every
+ * calendar component injects; exported for hosts that mount the lane alone.
  */
 import { tokens as t } from "../tokens";
 

@@ -2,8 +2,6 @@
 import { useId, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { CODING_ARTIFACTS_CSS_ID, artifactsCss } from "./artifactsCss";
 
 export type StackFrameData = {
   functionName?: string;
@@ -89,7 +87,6 @@ export function StackTrace({
   ...props
 }: StackTraceProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const triggerId = useId();
   const contentId = useId();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
@@ -154,7 +151,6 @@ export type StackFrameProps = Omit<ComponentProps<"li">, "children"> & {
 /** One frame row; renders a button only when the onFrameClick seam is used. */
 export function StackFrame({ frame, onFrameClick, className, ...props }: StackFrameProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const body = frame.raw !== undefined ? (
     <span className="sui-stack-frame-loc">{frame.raw}</span>
   ) : (

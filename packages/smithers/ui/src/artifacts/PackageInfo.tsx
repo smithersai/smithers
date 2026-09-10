@@ -2,10 +2,8 @@
 import type { ComponentProps } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { safeHref } from "../internal/safeHref";
 import { Snippet } from "./Snippet";
-import { CODING_ARTIFACTS_CSS_ID, artifactsCss } from "./artifactsCss";
 
 export type PackageInfoProps = Omit<ComponentProps<"div">, "children"> & {
   name: string;
@@ -28,7 +26,6 @@ export function PackageInfo({
   ...props
 }: PackageInfoProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const href = registryUrl === undefined ? undefined : safeHref(registryUrl);
   return (
     <div data-slot="package-info" className={cn("sui-pkginfo", className)} {...props}>

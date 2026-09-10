@@ -11,7 +11,7 @@ import {
   sandboxStateToStatus,
   type SandboxState,
 } from "../src/sandbox/AgentSandbox";
-import { SANDBOX_CSS_ID } from "../src/sandbox/sandboxCss";
+import { sandboxCss } from "../src/sandbox/sandboxCss";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -29,7 +29,6 @@ afterEach(async () => {
   container = undefined;
   delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
-  document.querySelectorAll(`style[data-smithers-ui-lane="${SANDBOX_CSS_ID}"]`).forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -156,7 +155,7 @@ describe("Sandbox", () => {
     expect(container!.querySelector('[data-slot="agent-sandbox-actions"]')?.getAttribute("role")).toBe("group");
     await act(async () => retry.click());
     expect(retries).toBe(1);
-    expect(document.querySelector(`style[data-smithers-ui-lane="${SANDBOX_CSS_ID}"]`)).not.toBeNull();
+    expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(sandboxCss.trim());
   });
 
   test("SandboxStatus maps suspended to a paused pill with the sandbox label", async () => {

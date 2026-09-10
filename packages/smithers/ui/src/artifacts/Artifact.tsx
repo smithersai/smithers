@@ -2,38 +2,31 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
-import { CODING_ARTIFACTS_CSS_ID, artifactsCss } from "./artifactsCss";
 
 /** A titled work-product surface (file, report, preview) with header actions. */
 export function Artifact({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="artifact" className={cn("sui-artifact", className)} {...props} />;
 }
 
 export function ArtifactHeader({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="artifact-header" className={cn("sui-artifact-header", className)} {...props} />;
 }
 
 export function ArtifactTitle({ className, ...props }: ComponentProps<"h3">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <h3 data-slot="artifact-title" className={cn("sui-artifact-title", className)} {...props} />;
 }
 
 export function ArtifactDescription({ className, ...props }: ComponentProps<"p">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <p data-slot="artifact-description" className={cn("sui-artifact-description", className)} {...props} />;
 }
 
 export function ArtifactActions({ className, "aria-label": ariaLabel, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return (
     <div
       data-slot="artifact-actions"
@@ -55,7 +48,6 @@ export type ArtifactActionProps = Omit<ComponentProps<"button">, "children"> & {
 /** Icon button for an artifact toolbar; the sr label is mandatory. */
 export function ArtifactAction({ label, tooltip, icon, className, type, ...props }: ArtifactActionProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const button = (
     <button
       type={type ?? "button"}
@@ -87,7 +79,6 @@ export type ArtifactCloseProps = Omit<ComponentProps<"button">, "children"> & {
 /** Dismiss affordance for hosts that render artifacts in closable panels. */
 export function ArtifactClose({ onClose, label = "Close artifact", className, type, onClick, ...props }: ArtifactCloseProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return (
     <button
       type={type ?? "button"}
@@ -107,6 +98,5 @@ export function ArtifactClose({ onClose, label = "Close artifact", className, ty
 
 export function ArtifactContent({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="artifact-content" className={cn("sui-artifact-content", className)} {...props} />;
 }

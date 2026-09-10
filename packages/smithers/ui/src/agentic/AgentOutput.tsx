@@ -1,11 +1,9 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { useInjectUiCss } from "../styles";
 import { MessageResponse as Response } from "./MessageResponse";
 import { Reasoning, ReasoningSummary } from "./Reasoning";
-import { REASONING_TOOLS_CSS_ID, reasoningToolsCss } from "./reasoningToolsCss";
 import {
   ToolCall,
   ToolCallContent,
@@ -48,7 +46,6 @@ export type AgentOutputProps = Omit<ComponentProps<"div">, "children"> & {
 /** Props-driven composition for a parsed assistant response, reasoning, and tools. */
 export function AgentOutput({ model, className, ...props }: AgentOutputProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   const summary = model.reasoningSummary;
   return (
     <div

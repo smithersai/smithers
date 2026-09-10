@@ -9,10 +9,8 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { useInjectUiCss } from "../styles";
 import { safeHref } from "../internal/safeHref";
-import { SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss } from "./sourcesCitationsCss";
 
 export type SourceItem = { id: string; label: string; href?: string };
 
@@ -41,7 +39,6 @@ const SourcesContext = createContext<SourcesContextValue | null>(null);
 /** Text-only, collapsible attribution list for response sources. */
 export function Sources(props: SourcesProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   const { open: controlledOpen, defaultOpen = false, onOpenChange, className } = props;
   const triggerId = useId();
   const contentId = useId();
@@ -139,7 +136,6 @@ export type SourcesTriggerProps = Omit<ComponentProps<"button">, "children"> & {
 /** Disclosure trigger for a compound Sources; defaults to a 'Used N sources' label. */
 export function SourcesTrigger({ count, children, className, onClick, type, ...props }: SourcesTriggerProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   const context = useContext(SourcesContext);
   const label = children ?? (count === undefined ? "Sources" : `Used ${count} ${count === 1 ? "source" : "sources"}`);
 
@@ -167,7 +163,6 @@ export type SourcesContentProps = ComponentProps<"div">;
 /** Collapsible source list region for a compound Sources; renders a <ul>. */
 export function SourcesContent({ className, children, role, ...props }: SourcesContentProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   const context = useContext(SourcesContext);
   if (context && !context.open) return null;
 
@@ -208,7 +203,6 @@ export function Source({
   ...props
 }: SourceProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   const href = rawHref === undefined ? undefined : safeHref(rawHref);
   const initial =
     (domain ?? "").trim().charAt(0).toUpperCase() ||

@@ -1,7 +1,7 @@
 /**
  * coding-artifacts lane stylesheet fragment. Ships as a TypeScript string
- * (never a .css import) and self-injects via useInjectLaneCss; the integration
- * lane also composes it into smithersUiCss. Rules follow the css contract:
+ * (never a .css import) composed into smithersUiCss, which every component in
+ * this lane injects. Rules follow the css contract:
  * sui- namespace only, colors only through the tokens bridge, no :root.
  */
 import { tokens as t } from "../tokens";

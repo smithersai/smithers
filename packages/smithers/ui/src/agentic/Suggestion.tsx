@@ -1,9 +1,7 @@
 /** @jsxImportSource react */
 import { useRef, type ComponentProps, type ReactNode, type WheelEvent, type KeyboardEvent } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { prefersReducedMotion, useInjectUiCss } from "../styles";
-import { SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss } from "./sourcesCitationsCss";
 
 export type SuggestionProps = Omit<ComponentProps<"button">, "onClick" | "children" | "value"> & {
   suggestion: string;
@@ -14,7 +12,6 @@ export type SuggestionProps = Omit<ComponentProps<"button">, "onClick" | "childr
 /** Ghost pill carrying one prompt suggestion; fires onClick with the suggestion text. */
 export function Suggestion({ suggestion, onClick, children, className, type, ...props }: SuggestionProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   return (
     <button
       type={type ?? "button"}
@@ -35,7 +32,6 @@ const ARROW_SCROLL_PX = 160;
 /** Horizontally scrollable row of prompt suggestion chips (not a tablist). */
 export function SuggestionGroup({ className, children, role, onWheel, onKeyDown, ...props }: SuggestionGroupProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   const ref = useRef<HTMLDivElement | null>(null);
 
   function scrollByPx(delta: number) {

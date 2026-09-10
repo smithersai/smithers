@@ -2,8 +2,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss } from "./agentsCss";
 
 export type ModelBadgeProps = Omit<ComponentProps<"span">, "children"> & {
   model: string;
@@ -14,7 +12,6 @@ export type ModelBadgeProps = Omit<ComponentProps<"span">, "children"> & {
 /** Text-first model identity chip; `icon` is a slot, no logo assets bundled. */
 export function ModelBadge({ model, provider, icon, className, ...props }: ModelBadgeProps) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   return (
     <span data-slot="model-badge" data-provider={provider} className={cn("sui-model-badge", className)} {...props}>
       {icon ? (
@@ -36,7 +33,6 @@ export type ProviderBadgeProps = Omit<ComponentProps<"span">, "children"> & {
 /** Text-first provider identity chip; `icon` is a slot, no logo assets bundled. */
 export function ProviderBadge({ provider, icon, className, ...props }: ProviderBadgeProps) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   return (
     <span data-slot="provider-badge" className={cn("sui-provider-badge", className)} {...props}>
       {icon ? (

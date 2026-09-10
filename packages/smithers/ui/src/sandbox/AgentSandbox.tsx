@@ -11,11 +11,9 @@ import {
 } from "react";
 import { cn } from "../cn";
 import { EmptyState } from "../empty-state";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { formatStatus } from "../status";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
-import { SANDBOX_CSS_ID, sandboxCss } from "./sandboxCss";
 
 export type SandboxState = "provisioning" | "ready" | "disconnected" | "suspended" | "failed" | "destroyed";
 
@@ -84,7 +82,6 @@ export function Sandbox({
   ...props
 }: SandboxProps) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   const triggerId = useId();
   const contentId = useId();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
@@ -150,7 +147,6 @@ export function Sandbox({
 
 export function SandboxHeader({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   const ctx = useContext(SandboxContext);
   return (
     <div data-slot="agent-sandbox-header" className={cn("sui-sandbox-header", className)} {...props}>
@@ -179,7 +175,6 @@ export type SandboxStatusProps = Omit<ComponentProps<"span">, "children"> & {
 
 export function SandboxStatus({ state, className, ...props }: SandboxStatusProps) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   return (
     <StatusPill
       status={sandboxStateToStatus(state)}
@@ -200,7 +195,6 @@ export type SandboxActionsProps = Omit<ComponentProps<"div">, "children"> & {
 
 export function SandboxActions({ onRetry, onReconnect, className, children, ...props }: SandboxActionsProps) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   const ctx = useContext(SandboxContext);
   const showRetry = onRetry !== undefined && (ctx === null || ctx.state === "failed");
   const showReconnect =
@@ -230,7 +224,6 @@ export function SandboxActions({ onRetry, onReconnect, className, children, ...p
 
 export function SandboxContent({ className, children, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   const ctx = useContext(SandboxContext);
   if (ctx !== null && !ctx.open) return null;
   const empty = ctx !== null && ctx.state !== "ready" ? STATE_EMPTY[ctx.state] : null;

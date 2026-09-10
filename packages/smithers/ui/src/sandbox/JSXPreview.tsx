@@ -2,9 +2,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
 import { EmptyState } from "../empty-state";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { useInjectUiCss } from "../styles";
-import { SANDBOX_CSS_ID, sandboxCss } from "./sandboxCss";
 
 export type JSXPreviewProps = Omit<ComponentProps<"div">, "children"> & {
   node?: ReactNode;
@@ -18,7 +16,6 @@ export type JSXPreviewProps = Omit<ComponentProps<"div">, "children"> & {
  */
 export function JSXPreview({ node, inert = true, unavailableReason, className, ...props }: JSXPreviewProps) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   if (node === undefined) {
     return (
       <div data-slot="jsx-preview" className={cn("sui-jsxpreview", className)} {...props}>

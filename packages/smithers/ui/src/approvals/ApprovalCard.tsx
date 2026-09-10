@@ -2,7 +2,6 @@
 import { useId, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { safeHref } from "../internal/safeHref";
 import {
   Confirmation,
@@ -13,7 +12,6 @@ import {
   ConfirmationRejected,
   type ApprovalState,
 } from "./Confirmation";
-import { APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss } from "./approvalsCss";
 
 export type ApprovalRiskLevel = "low" | "medium" | "high" | "critical";
 
@@ -64,7 +62,6 @@ export function ApprovalCard({
   ...props
 }: ApprovalCardProps) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const [uncontrolledNote, setUncontrolledNote] = useState(defaultNote ?? "");
   const isNoteControlled = controlledNote !== undefined;
   const note = isNoteControlled ? controlledNote : uncontrolledNote;
@@ -123,7 +120,6 @@ export type ApprovalRiskProps = Omit<ComponentProps<"span">, "children"> & {
 /** Risk badge over warning/destructive tokens. */
 export function ApprovalRisk({ level, className, ...props }: ApprovalRiskProps) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   return (
     <span data-slot="approval-risk" data-level={level} className={cn("sui-approval-risk", className)} {...props}>
       <span className="sui-sr-only">Risk: </span>
@@ -139,7 +135,6 @@ export type ApprovalResourcesProps = Omit<ComponentProps<"div">, "children"> & {
 /** The resources an approval decision affects. */
 export function ApprovalResources({ resources, className, ...props }: ApprovalResourcesProps) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   return (
     <div data-slot="approval-resources" className={cn("sui-approval-resources", className)} {...props}>
       {resources.map((resource) => {
@@ -174,7 +169,6 @@ export function ApprovalNote({
   ...props
 }: ApprovalNoteProps) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const textareaId = useId();
   const [uncontrolledValue, setUncontrolledValue] = useState(defaultValue ?? "");
   const isControlled = controlledValue !== undefined;

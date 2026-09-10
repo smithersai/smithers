@@ -2,7 +2,7 @@ import { tokens as t } from "../tokens";
 
 const focusRing = `outline:none; border-color:${t.ringBorder}; box-shadow:0 0 0 3px ${t.ring};`;
 
-/** CSS fragment id stamped on the self-injected <style> element. */
+/** Stable id for this lane fragment. */
 export const CONVERSATION_FOUNDATION_CSS_ID = "conversation-foundation";
 
 /**

@@ -9,7 +9,7 @@ import {
   WebPreviewToolbar,
   type WebPreviewSandboxToken,
 } from "../src/sandbox/WebPreview";
-import { SANDBOX_CSS_ID } from "../src/sandbox/sandboxCss";
+import { sandboxCss } from "../src/sandbox/sandboxCss";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -27,7 +27,6 @@ afterEach(async () => {
   container = undefined;
   delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
-  document.querySelectorAll(`style[data-smithers-ui-lane="${SANDBOX_CSS_ID}"]`).forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -475,6 +474,6 @@ describe("WebPreview", () => {
     document.documentElement.dataset.theme = "dark";
     await render(<WebPreview url="https://example.com" />);
     expect(container!.querySelector('[data-slot="web-preview"]')).not.toBeNull();
-    expect(document.querySelector(`style[data-smithers-ui-lane="${SANDBOX_CSS_ID}"]`)).not.toBeNull();
+    expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(sandboxCss.trim());
   });
 });

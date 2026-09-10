@@ -10,11 +10,9 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { useInjectUiCss } from "../styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
 import { safeHref } from "../internal/safeHref";
-import { SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss } from "./sourcesCitationsCss";
 
 export type CitationSource = {
   id: string;
@@ -55,7 +53,6 @@ export function InlineCitation({
   ...props
 }: InlineCitationProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   const href = rawHref === undefined ? undefined : safeHref(rawHref);
   const accessibleName = `Source ${index}: ${label}`;
 
@@ -184,7 +181,6 @@ export type CitationCardProps = Omit<ComponentProps<"div">, "children" | "title"
 /** Single-source preview card: favicon, title link, domain, excerpt, optional quote. */
 export function CitationCard({ source, children, className, ...props }: CitationCardProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   const href = source.url === undefined ? undefined : safeHref(source.url);
 
   return (
@@ -227,7 +223,6 @@ export function CitationCarousel({
   ...props
 }: CitationCarouselProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   const [uncontrolledIndex, setUncontrolledIndex] = useState(defaultIndex);
   const isControlled = controlledIndex !== undefined;
   const max = Math.max(sources.length - 1, 0);
@@ -295,7 +290,6 @@ export type CitationQuoteProps = Omit<ComponentProps<"blockquote">, "children"> 
 /** Verbatim quoted passage from a cited source. */
 export function CitationQuote({ quote, children, className, ...props }: CitationQuoteProps) {
   useInjectUiCss();
-  useInjectLaneCss(SOURCES_CITATIONS_CSS_ID, sourcesCitationsCss);
   return (
     <blockquote data-slot="citation-quote" className={cn("sui-citation-quote", className)} {...props}>
       <p>{quote}</p>

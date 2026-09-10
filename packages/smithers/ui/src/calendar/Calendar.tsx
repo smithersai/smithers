@@ -16,9 +16,7 @@ import { Button } from "../button";
 import { EmptyState } from "../empty-state";
 import { statusColor } from "../status";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { RelativeTime } from "../time/RelativeTime";
-import { CALENDAR_CSS_ID, calendarCss } from "./calendarCss";
 import {
   addDays,
   addMonths,
@@ -50,11 +48,6 @@ const TINTS = ["brand", "success", "info", "warning"] as const;
 const VIEWS: readonly CalendarView[] = ["month", "week", "agenda"];
 
 type Tint = (typeof TINTS)[number];
-
-function useCalendarCss(): void {
-  useInjectUiCss();
-  useInjectLaneCss(CALENDAR_CSS_ID, calendarCss);
-}
 
 /** The per-source tint: explicit `color` wins; otherwise the source hash rotates the semantic tints. */
 function tintFor(event: CalendarEvent): Tint {
@@ -535,7 +528,7 @@ export function Calendar({
   className,
   ...props
 }: CalendarProps) {
-  useCalendarCss();
+  useInjectUiCss();
 
   const [nowState, setNowState] = useState(() => now ?? Date.now());
   useEffect(() => {

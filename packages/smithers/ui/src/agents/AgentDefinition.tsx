@@ -2,10 +2,8 @@
 import { useId, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { Markdown } from "../primitives/markdown";
 import { formatJsonSafe } from "../agentic/formatJsonSafe";
-import { AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss } from "./agentsCss";
 
 export type AgentAvailability = "available" | "unauthenticated" | "unavailable" | "unknown";
 
@@ -33,7 +31,6 @@ export type AgentAvailabilityBadgeProps = Omit<ComponentProps<"span">, "children
 
 export function AgentAvailabilityBadge({ availability, className, ...props }: AgentAvailabilityBadgeProps) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   return (
     <span
       data-slot="agent-availability"
@@ -70,7 +67,6 @@ export function AgentDefinition({
   ...props
 }: AgentDefinitionProps) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   return (
     <div
       data-slot="agent-definition"
@@ -101,13 +97,11 @@ export function AgentDefinition({
 
 export function AgentHeader({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   return <div data-slot="agent-header" className={cn("sui-agentdef-header", className)} {...props} />;
 }
 
 export function AgentContent({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   return <div data-slot="agent-content" className={cn("sui-agentdef-content", className)} {...props} />;
 }
 
@@ -142,7 +136,6 @@ export function AgentInstructions({
   ...props
 }: AgentInstructionsProps) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const triggerId = `${useId()}-agentdef-instructions-trigger`;
   const contentId = `${useId()}-agentdef-instructions-content`;
   const { isOpen, toggle } = useDisclosure({ open, defaultOpen, onOpenChange });
@@ -184,7 +177,6 @@ export function AgentInstructions({
 
 export function AgentTools({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   return <div data-slot="agent-tools" role="list" className={cn("sui-agentdef-tools", className)} {...props} />;
 }
 
@@ -205,7 +197,6 @@ export function AgentTool({
   ...props
 }: AgentToolProps) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const triggerId = `${useId()}-agentdef-tool-trigger`;
   const contentId = `${useId()}-agentdef-tool-content`;
   const { isOpen, toggle } = useDisclosure({ open, defaultOpen, onOpenChange });
@@ -279,7 +270,6 @@ export function AgentOutputSchema({
   ...props
 }: AgentOutputSchemaProps) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const triggerId = `${useId()}-agentdef-output-schema-trigger`;
   const contentId = `${useId()}-agentdef-output-schema-content`;
   const { isOpen, toggle } = useDisclosure({ open, defaultOpen, onOpenChange });

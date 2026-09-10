@@ -13,8 +13,6 @@ import {
 import { cva } from "class-variance-authority";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss } from "./conversationFoundationCss";
 
 const bubbleVariantClasses = cva("sui-bubble", {
   variants: {
@@ -57,7 +55,6 @@ type BubbleStyle = CSSProperties & { "--sui-bubble-clamp"?: string };
 
 function useBubbleLaneCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss);
 }
 
 /** Message surface with role variants and mounted-content clamp disclosure. */

@@ -17,7 +17,6 @@ import {
   WorkflowPanel,
   WorkflowToolbar,
 } from "../src/canvas/WorkflowCanvas";
-import { WORKFLOW_CANVAS_CSS_ID } from "../src/canvas/canvasCss";
 import workflowCanvasProvenance from "../provenance/workflow-canvas.json";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -35,9 +34,6 @@ afterEach(async () => {
   container = undefined;
   delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
-  document
-    .querySelectorAll(`style[data-smithers-ui-lane="${WORKFLOW_CANVAS_CSS_ID}"]`)
-    .forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement): Promise<HTMLElement> {
@@ -64,10 +60,11 @@ describe("WorkflowCanvas", () => {
     expect(host.querySelector("[data-slot='workflow-canvas']")!.getAttribute("aria-label")).toBe("Run DAG");
   });
 
-  test("self-injects the lane stylesheet exactly once", async () => {
+  test("injects the composed sheet exactly once and adds no lane element", async () => {
     await render(<WorkflowCanvas />);
-    const styles = document.querySelectorAll(`style[data-smithers-ui-lane="${WORKFLOW_CANVAS_CSS_ID}"]`);
+    const styles = document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`);
     expect(styles.length).toBe(1);
+    expect(document.querySelectorAll("style[data-smithers-ui-lane]").length).toBe(0);
     expect(styles[0]!.textContent).toContain(".sui-canvas-node {");
   });
 });

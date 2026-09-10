@@ -22,6 +22,7 @@ import {
   type PromptInputMessage,
 } from "../src/prompt/PromptInput";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/index";
+import { promptAttachmentsCss } from "../src/prompt/promptAttachmentsCss";
 import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -40,7 +41,6 @@ afterEach(async () => {
   document.documentElement.removeAttribute("data-theme");
   removeDarkThemeStyles();
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
-  document.querySelectorAll('style[data-smithers-ui-lane="prompt-attachments"]').forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -564,6 +564,6 @@ describe("PromptInput", () => {
     expect(form.className).toContain("sui-prompt");
     expect(container!.querySelector('[data-slot="prompt-input-header"]')!.textContent).toBe("queued");
     expect(getComputedStyle(form).backgroundColor).toBe("#0d2132");
-    expect(document.querySelector('style[data-smithers-ui-lane="prompt-attachments"]')).not.toBeNull();
+    expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(promptAttachmentsCss.trim());
   });
 });

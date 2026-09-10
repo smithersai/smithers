@@ -17,9 +17,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { prefersReducedMotion, useInjectUiCss } from "../styles";
-import { CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss } from "./conversationFoundationCss";
 import { subscribeVisibility } from "./visibilitySubscriptionRegistry";
 
 /* -------------------------------------------------------------------------- */
@@ -105,7 +103,6 @@ function useScrollerContext(part: string): ScrollerContextValue {
 
 function useScrollerLaneCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss);
 }
 
 const SCROLL_KEYS = new Set(["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown"]);

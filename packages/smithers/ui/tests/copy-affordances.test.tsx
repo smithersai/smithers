@@ -69,7 +69,6 @@ afterEach(async () => {
   } else {
     delete (navigator as Navigator & { clipboard?: Clipboard; }).clipboard;
   }
-  document.querySelectorAll("style[data-smithers-ui-lane]").forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement): Promise<void> {

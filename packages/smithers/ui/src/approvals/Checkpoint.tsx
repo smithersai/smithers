@@ -7,11 +7,9 @@
 import { type ComponentProps, createContext, type ReactNode, useContext } from "react";
 import { Button } from "../button";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { Spinner } from "../spinner";
 import { useInjectUiCss } from "../styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
-import { APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss } from "./approvalsCss";
 
 export type CheckpointModel = {
   id: string;
@@ -60,7 +58,6 @@ export type CheckpointProps = Omit<ComponentProps<"div">, "children"> & {
  */
 export function Checkpoint({ checkpoint, current = false, children, className, ...props }: CheckpointProps) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   return (
     <CheckpointContext.Provider value={{ checkpoint, current }}>
       <div
@@ -99,7 +96,6 @@ function BookmarkGlyph() {
 /** Bookmark glyph; decorative (aria-hidden). */
 export function CheckpointIcon({ className, children, ...props }: ComponentProps<"span">) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   return (
     <span data-slot="checkpoint-icon" aria-hidden="true" className={cn("sui-checkpoint-icon", className)} {...props}>
       {children ?? <BookmarkGlyph />}
@@ -110,7 +106,6 @@ export function CheckpointIcon({ className, children, ...props }: ComponentProps
 /** Timestamp + message count from the checkpoint model. */
 export function CheckpointMetadata({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const { checkpoint } = useCheckpoint();
   return (
     <div data-slot="checkpoint-metadata" className={cn("sui-checkpoint-metadata", className)} {...props}>
@@ -135,7 +130,6 @@ export type CheckpointTriggerProps = Omit<ComponentProps<"button">, "children"> 
 /** Ghost sm trigger button, optionally wrapped in a ui Tooltip. */
 export function CheckpointTrigger({ tooltip, children, className, ...props }: CheckpointTriggerProps) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   const button = (
     <Button
       type="button"
@@ -183,7 +177,6 @@ export function CheckpointActions({
   ...props
 }: CheckpointActionsProps) {
   useInjectUiCss();
-  useInjectLaneCss(APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss);
   return (
     <div
       data-slot="checkpoint-actions"

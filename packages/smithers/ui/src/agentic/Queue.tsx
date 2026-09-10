@@ -1,14 +1,11 @@
 /** @jsxImportSource react */
 import { createContext, useContext, useId, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { formatStatus, normalizeStatus, statusClass } from "../status";
 import { useInjectUiCss } from "../styles";
-import { PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss } from "./plansTasksQueuesCss";
 
 function useQueueCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss);
 }
 
 type QueueSectionContextValue = {

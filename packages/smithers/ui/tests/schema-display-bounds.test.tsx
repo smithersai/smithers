@@ -19,7 +19,6 @@ afterEach(async () => {
   }
   container?.remove();
   container = undefined;
-  document.querySelectorAll("style[data-smithers-ui-lane]").forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement): Promise<void> {

@@ -14,10 +14,8 @@ import {
 import { cn } from "../cn";
 import { EmptyState } from "../empty-state";
 import { Input } from "../input";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { Skeleton } from "../skeleton";
 import { useInjectUiCss } from "../styles";
-import { SANDBOX_CSS_ID, sandboxCss } from "./sandboxCss";
 
 export type WebPreviewSandboxToken =
   | "allow-scripts"
@@ -208,7 +206,6 @@ export function WebPreview({
   ...props
 }: WebPreviewProps) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   const [uncontrolledUrl, setUncontrolledUrl] = useState(defaultUrl);
   const isControlled = controlledUrl !== undefined;
   const url = isControlled ? controlledUrl : uncontrolledUrl;
@@ -281,7 +278,6 @@ export function WebPreviewToolbar({
   ...props
 }: WebPreviewToolbarProps) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   const ref = useRef<HTMLDivElement | null>(null);
   const rovingKeyDown = useRovingTabIndex(ref);
   return (
@@ -344,7 +340,6 @@ export function WebPreviewAddress({
   ...props
 }: WebPreviewAddressProps) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   const ctx = useContext(WebPreviewContext);
   const errorId = useId();
   const [draft, setDraft] = useState(ctx?.url ?? "");
@@ -406,7 +401,6 @@ export function WebPreviewContent({
   ...props
 }: WebPreviewContentProps) {
   useInjectUiCss();
-  useInjectLaneCss(SANDBOX_CSS_ID, sandboxCss);
   const ctx = useContext(WebPreviewContext);
   const safeSrc = sanitizePreviewSrc(src ?? ctx?.url);
   const loading = ctx?.loading ?? false;

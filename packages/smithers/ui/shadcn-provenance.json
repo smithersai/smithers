@@ -994,7 +994,7 @@
       "ported": "partial-anatomy",
       "omissions": [],
       "divergences": [
-        "Lane CSS fragment self-injected via useInjectLaneCss until integration composes it into smithersUiCss"
+        "Lane CSS fragment composed into smithersUiCss, which every canvas component injects"
       ]
     }
   ]

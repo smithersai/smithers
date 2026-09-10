@@ -2,8 +2,6 @@
 import type { ComponentProps } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { CODING_ARTIFACTS_CSS_ID, artifactsCss } from "./artifactsCss";
 
 export type ChangeSummaryProps = Omit<ComponentProps<"div">, "children"> & {
   additions: number;
@@ -26,7 +24,6 @@ export function ChangeSummary({
   ...props
 }: ChangeSummaryProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const subject = vcs === "jj" ? "working-copy change" : "diff";
   const ariaLabel = `${additions} additions, ${deletions} deletions, ${filesChanged} files changed in this ${subject}`;
   return (

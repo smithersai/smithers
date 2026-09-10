@@ -2,8 +2,6 @@
 import { useId, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss } from "./conversationFoundationCss";
 
 export type CompactGroupProps = Omit<ComponentProps<"div">, "children"> & {
   open?: boolean;
@@ -28,7 +26,6 @@ export function CompactGroup({
   ...props
 }: CompactGroupProps) {
   useInjectUiCss();
-  useInjectLaneCss(CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss);
   const triggerId = useId();
   const contentId = useId();
   const [internalOpen, setInternalOpen] = useState(defaultOpen);

@@ -24,7 +24,7 @@ import {
 import { Bubble, BubbleActions, BubbleContent, BubbleReactions } from "../src/chat/Bubble";
 import { CompactGroup } from "../src/chat/CompactGroup";
 import { ConversationCheckpoint } from "../src/chat/ConversationCheckpoint";
-import { CONVERSATION_FOUNDATION_CSS_ID } from "../src/chat/conversationFoundationCss";
+import { conversationFoundationCss } from "../src/chat/conversationFoundationCss";
 import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -43,9 +43,6 @@ afterEach(async () => {
   document.documentElement.removeAttribute("data-theme");
   removeDarkThemeStyles();
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
-  document
-    .querySelectorAll(`style[data-smithers-ui-lane="${CONVERSATION_FOUNDATION_CSS_ID}"]`)
-    .forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -170,7 +167,7 @@ describe("Message", () => {
         <MessageContent>dark</MessageContent>
       </Message>,
     );
-    expect(document.querySelector(`style[data-smithers-ui-lane="${CONVERSATION_FOUNDATION_CSS_ID}"]`)).not.toBeNull();
+    expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(conversationFoundationCss.trim());
     const avatar = container!.querySelector<HTMLElement>('[data-slot="message-avatar"]')!;
     expect(getComputedStyle(avatar).backgroundColor).toBe("#15293a");
   });

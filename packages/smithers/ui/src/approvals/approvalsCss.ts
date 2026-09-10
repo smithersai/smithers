@@ -1,8 +1,8 @@
 /**
  * Lane CSS fragment for the approvals-checkpoints lane: Confirmation,
- * ApprovalCard, and Checkpoint families. Self-injected by every component in
- * this lane via useInjectLaneCss; the integration lane also composes this
- * string into smithersUiCss. Obeys the css-contract: sui- namespace only, no
+ * ApprovalCard, and Checkpoint families. Composed into smithersUiCss, which
+ * every component in this lane injects. Obeys the css-contract: sui-
+ * namespace only, no
  * :root, colors only via the tokens bridge or color-mix(in srgb, ...).
  */
 import { tokens as t } from "../tokens";

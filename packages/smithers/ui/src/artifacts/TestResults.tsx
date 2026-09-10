@@ -12,11 +12,9 @@ import {
 } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { Progress } from "../progress";
 import { StatusPill } from "../status-pill";
 import { StackTrace, type StackFrameData } from "./StackTrace";
-import { CODING_ARTIFACTS_CSS_ID, artifactsCss } from "./artifactsCss";
 
 export type TestCaseStatus = "passed" | "failed" | "skipped" | "running" | "todo";
 
@@ -97,7 +95,6 @@ export type TestResultsProps = Omit<ComponentProps<"div">, "children"> & { runni
  */
 export function TestResults(props: TestResultsProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const p = props as { running?: boolean; className?: string; suites?: readonly TestSuiteModel[]; children?: ReactNode } & ComponentProps<"div">;
   const { running = false, className, suites, children, ...divProps } = p;
   const counts = useMemo(() => (suites ? summarize(suites) : null), [suites]);
@@ -140,14 +137,12 @@ export function TestResults(props: TestResultsProps) {
 
 export function TestResultsHeader({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="test-results-header" className={cn("sui-tests-header", className)} {...props} />;
 }
 
 /** Passed/failed/skipped/todo counts derived from the root model. */
 export function TestResultsSummary({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const context = useContext(TestResultsContext);
   const counts = context?.counts;
   return (
@@ -169,7 +164,6 @@ export type TestResultsDurationProps = Omit<ComponentProps<"span">, "children"> 
 
 export function TestResultsDuration({ durationMs, className, ...props }: TestResultsDurationProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return (
     <span data-slot="test-results-duration" className={cn("sui-tests-duration", className)} {...props}>
       {formatTestDuration(durationMs)}
@@ -180,7 +174,6 @@ export function TestResultsDuration({ durationMs, className, ...props }: TestRes
 /** ui Progress over the run; indeterminate while the root is `running`. */
 export function TestResultsProgress({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const context = useContext(TestResultsContext);
   const running = context?.running ?? false;
   const counts = context?.counts;
@@ -201,7 +194,6 @@ export function TestResultsProgress({ className, ...props }: ComponentProps<"div
 
 export function TestResultsContent({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="test-results-content" className={cn("sui-tests-content", className)} {...props} />;
 }
 
@@ -224,7 +216,6 @@ export function TestSuite({
   ...props
 }: TestSuiteProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const triggerId = useId();
   const contentId = useId();
   const suiteCounts = useMemo(() => (suite ? summarizeSuite(suite) : null), [suite]);
@@ -311,14 +302,12 @@ export function TestSuite({
 
 export function TestSuiteName({ className, ...props }: ComponentProps<"span">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <span data-slot="test-suite-name" className={cn("sui-tests-suite-name", className)} {...props} />;
 }
 
 /** "3/4 passed" plus failure/skip badges, derived from the suite context. */
 export function TestSuiteStats({ className, ...props }: ComponentProps<"span">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const context = useContext(TestSuiteContext);
   const counts = context?.counts;
   const parts: string[] = [`${counts?.passed ?? 0}/${counts?.total ?? 0} passed`];
@@ -335,7 +324,6 @@ export function TestSuiteStats({ className, ...props }: ComponentProps<"span">) 
 
 export function TestSuiteContent({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="test-suite-content" role="region" className={cn("sui-tests-suite-content", className)} {...props} />;
 }
 
@@ -347,7 +335,6 @@ export type TestRowProps = Omit<ComponentProps<"div">, "children"> & {
 /** One test case: status pill, name, duration; failures nest error + stack. */
 export function TestRow({ test, children, className, ...props }: TestRowProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return (
     <div
       data-slot="test-row"
@@ -377,7 +364,6 @@ export type TestStatusProps = Omit<ComponentProps<"span">, "children"> & { statu
 
 export function TestStatus({ status, className, ...props }: TestStatusProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return (
     <StatusPill
       data-slot="test-status"
@@ -391,6 +377,5 @@ export function TestStatus({ status, className, ...props }: TestStatusProps) {
 
 export function TestName({ className, ...props }: ComponentProps<"span">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <span data-slot="test-name" className={cn("sui-tests-name", className)} {...props} />;
 }

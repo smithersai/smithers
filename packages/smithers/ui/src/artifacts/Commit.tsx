@@ -2,8 +2,6 @@
 import { createContext, useContext, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { CODING_ARTIFACTS_CSS_ID, artifactsCss } from "./artifactsCss";
 
 export type CommitFileStatusKind = "added" | "modified" | "deleted" | "renamed" | "copied";
 
@@ -38,7 +36,6 @@ export type CommitProps = Omit<ComponentProps<"div">, "children"> & {
  */
 export function Commit({ commit, children, className, ...props }: CommitProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const body = children ?? (commit ? (
     <>
       <CommitHeader>
@@ -74,31 +71,26 @@ export function Commit({ commit, children, className, ...props }: CommitProps) {
 
 export function CommitHeader({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="commit-header" className={cn("sui-commit-header", className)} {...props} />;
 }
 
 export function CommitAuthor({ className, ...props }: ComponentProps<"span">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <span data-slot="commit-author" className={cn("sui-commit-author", className)} {...props} />;
 }
 
 export function CommitInfo({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="commit-info" className={cn("sui-commit-info", className)} {...props} />;
 }
 
 export function CommitMessage({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="commit-message" className={cn("sui-commit-message", className)} {...props} />;
 }
 
 export function CommitMetadata({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <div data-slot="commit-metadata" className={cn("sui-commit-metadata", className)} {...props} />;
 }
 
@@ -112,7 +104,6 @@ export type CommitHashProps = Omit<ComponentProps<"span">, "children"> & {
 /** Identifier chip; prefers the jj change id when one is set. */
 export function CommitHash({ hash, changeId, short = true, className, ...props }: CommitHashProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const full = changeId ?? hash;
   const shown = short ? full.slice(0, 7) : full;
   return (
@@ -132,7 +123,6 @@ export type CommitTimestampProps = Omit<ComponentProps<"span">, "children"> & { 
 
 export function CommitTimestamp({ timestampMs, className, ...props }: CommitTimestampProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const date = new Date(timestampMs);
   return (
     <span data-slot="commit-timestamp" className={cn("sui-commit-timestamp", className)} {...props}>
@@ -143,7 +133,6 @@ export function CommitTimestamp({ timestampMs, className, ...props }: CommitTime
 
 export function CommitActions({ className, "aria-label": ariaLabel, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return (
     <div
       data-slot="commit-actions"
@@ -157,7 +146,6 @@ export function CommitActions({ className, "aria-label": ariaLabel, ...props }: 
 
 export function CommitFiles({ className, ...props }: ComponentProps<"ul">) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return <ul data-slot="commit-files" className={cn("sui-commit-files", className)} {...props} />;
 }
 
@@ -165,7 +153,6 @@ export type CommitFileProps = Omit<ComponentProps<"li">, "children"> & { file: C
 
 export function CommitFile({ file, className, ...props }: CommitFileProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return (
     <li data-slot="commit-file" data-status={file.status} className={cn("sui-commit-file", className)} {...props}>
       <CommitFileStatus status={file.status} />
@@ -202,7 +189,6 @@ export type CommitFileStatusProps = Omit<ComponentProps<"span">, "children"> & {
 /** A/M/D/R/C glyph with screen-reader text for the changed-file status. */
 export function CommitFileStatus({ status, className, ...props }: CommitFileStatusProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return (
     <span
       data-slot="commit-file-status"
@@ -225,7 +211,6 @@ export type CommitFilePathProps = Omit<ComponentProps<"span">, "children"> & {
 /** File path; renames render `oldPath → path`. */
 export function CommitFilePath({ path, oldPath, className, ...props }: CommitFilePathProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   return (
     <span data-slot="commit-file-path" className={cn("sui-commit-file-path", className)} {...props}>
       {oldPath !== undefined && oldPath !== path ? (

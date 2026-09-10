@@ -14,7 +14,7 @@ import {
   AgentTools,
 } from "../src/agents/AgentDefinition";
 import { AgentCard } from "../src/agents/AgentCard";
-import { AGENT_IDENTITY_CONTEXT_CSS_ID } from "../src/agents/agentsCss";
+import { agentsCss } from "../src/agents/agentsCss";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -28,7 +28,6 @@ afterEach(async () => {
   container = undefined;
   delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((el) => el.remove());
-  document.querySelectorAll(`style[data-smithers-ui-lane]`).forEach((el) => el.remove());
 });
 
 async function render(element: ReactElement) {
@@ -78,9 +77,9 @@ describe("AgentDefinition", () => {
     expect(html).toContain("Unauthenticated");
   });
 
-  test("self-injects the lane css fragment", async () => {
+  test("injects the composed sheet carrying the lane css fragment", async () => {
     await render(<AgentDefinition name="a" />);
-    expect(document.querySelector(`style[data-smithers-ui-lane="${AGENT_IDENTITY_CONTEXT_CSS_ID}"]`)).not.toBeNull();
+    expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(agentsCss.trim());
   });
 });
 

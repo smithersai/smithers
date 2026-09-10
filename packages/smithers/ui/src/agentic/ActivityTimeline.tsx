@@ -1,10 +1,8 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { formatStatus, normalizeStatus, statusClass } from "../status";
 import { useInjectUiCss } from "../styles";
-import { PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss } from "./plansTasksQueuesCss";
 
 export type ActivityKind =
   | "message"
@@ -48,7 +46,6 @@ const ACTIVITY_GLYPHS: Record<ActivityKind, string> = {
 
 function useActivityCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss);
 }
 
 function formatTimestamp(timestampMs: number): { dateTime: string; text: string } {

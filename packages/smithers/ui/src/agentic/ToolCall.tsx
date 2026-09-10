@@ -10,13 +10,11 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { CodeBlock } from "../primitives/CodeBlock";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
 import { formatJsonSafe } from "./formatJsonSafe";
 import { formatPartialJson } from "./formatPartialJson";
-import { REASONING_TOOLS_CSS_ID, reasoningToolsCss } from "./reasoningToolsCss";
 
 export type ToolCallState =
   | "input-streaming"
@@ -114,7 +112,6 @@ function formatDurationMs(durationMs: number): string {
 
 function useToolCallInjected() {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
 }
 
 /** One polite announcement region per ToolCall (state labels + completion). */

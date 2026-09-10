@@ -2,9 +2,8 @@
  * prompt-attachments lane stylesheet fragment: PromptInput family and the
  * Attachment compound parts. Obeys the css-contract: sui- namespace only, no
  * :root, colors only through the tokens bridge with byte-equal light
- * fallbacks, tints only via color-mix(in srgb, ...). Self-injected per
- * component via useInjectLaneCss until integration composes this fragment
- * into smithersUiCss.
+ * fallbacks, tints only via color-mix(in srgb, ...). Composed into
+ * smithersUiCss, which every component in this lane injects.
  */
 import { tokens as t } from "../tokens";
 

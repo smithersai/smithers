@@ -10,10 +10,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { REASONING_TOOLS_CSS_ID, reasoningToolsCss } from "../agentic/reasoningToolsCss";
 import { cn } from "../cn";
 import { type CopyFailureCode, copyToClipboard } from "../internal/copyToClipboard";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { useInjectUiCss } from "../styles";
 
 export type HighlightedToken = { text: string; color?: string; };
@@ -51,7 +49,6 @@ export function CodeBlock({
   ...props
 }: CodeBlockProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   const [uncontrolledWrap, setUncontrolledWrap] = useState(defaultWrap);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
@@ -183,7 +180,6 @@ export type CodeBlockHeaderProps = ComponentProps<"div">;
 /** Custom header row slot for code block compositions. */
 export function CodeBlockHeader({ className, ...props }: CodeBlockHeaderProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   return <div data-slot="code-block-header" className={cn("sui-codeblock-header", className)} {...props} />;
 }
 
@@ -195,7 +191,6 @@ export type CodeBlockFilenameProps = Omit<ComponentProps<"span">, "children"> & 
 /** Monospace filename chip for code block headers. */
 export function CodeBlockFilename({ name, icon, className, ...props }: CodeBlockFilenameProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   return (
     <span data-slot="code-block-filename" className={cn("sui-codeblock-filename", className)} {...props}>
       {icon != null ? <span aria-hidden="true">{icon}</span> : null}
@@ -245,7 +240,6 @@ export function CodeBlockTabs({
   ...props
 }: CodeBlockTabsProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   const idPrefix = useContext(CodeBlockTabsIdContext);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -319,7 +313,6 @@ export function CodeBlockGroup({
   ...props
 }: CodeBlockGroupProps) {
   useInjectUiCss();
-  useInjectLaneCss(REASONING_TOOLS_CSS_ID, reasoningToolsCss);
   const baseId = useId();
   const isControlled = controlledActiveId !== undefined;
   const [uncontrolledActiveId, setUncontrolledActiveId] = useState(() => defaultActiveId ?? items[0]?.id ?? "");

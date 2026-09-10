@@ -7,7 +7,7 @@ export const REASONING_TOOLS_CSS_ID = "reasoning-tools";
  * extends an existing canonical prefix (sui-reasoning*, sui-cot*,
  * sui-toolcall*, sui-codeblock*) and resolves color only through the tokens
  * bridge. The shimmer keyframes (`sui-shimmer-sweep`) are owned by uiCss,
- * which every component injects alongside this fragment.
+ * which composes this fragment and which every component injects.
  */
 export const reasoningToolsCss = `
 .sui-reasoning-summary { min-width:0; display:grid; gap:4px; }

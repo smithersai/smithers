@@ -2,10 +2,8 @@
 import { type ComponentProps, type ReactNode, useId, useState } from "react";
 import { formatJsonSafe } from "../agentic/formatJsonSafe";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { CodeBlock } from "../primitives/CodeBlock";
 import { useInjectUiCss } from "../styles";
-import { artifactsCss, CODING_ARTIFACTS_CSS_ID } from "./artifactsCss";
 
 export type SchemaDisplayProps = Omit<ComponentProps<"div">, "children"> & {
   schema: unknown;
@@ -153,7 +151,6 @@ export function SchemaDisplay({
   ...props
 }: SchemaDisplayProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const triggerId = useId();
   const contentId = useId();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);

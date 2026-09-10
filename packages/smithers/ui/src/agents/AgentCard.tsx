@@ -2,8 +2,6 @@
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss } from "./agentsCss";
 import { AgentAvailabilityBadge, type AgentAvailability } from "./AgentDefinition";
 
 export type AgentCardProps = Omit<ComponentProps<"div">, "children" | "title" | "onSelect"> & {
@@ -37,7 +35,6 @@ export function AgentCard({
   ...props
 }: AgentCardProps) {
   useInjectUiCss();
-  useInjectLaneCss(AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss);
   const body = (
     <>
       <span className="sui-agentcard-header">

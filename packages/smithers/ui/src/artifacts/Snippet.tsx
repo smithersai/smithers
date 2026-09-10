@@ -2,9 +2,7 @@
 import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { cn } from "../cn";
 import { type CopyFailureCode, copyToClipboard } from "../internal/copyToClipboard";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { useInjectUiCss } from "../styles";
-import { artifactsCss, CODING_ARTIFACTS_CSS_ID } from "./artifactsCss";
 
 export type SnippetProps = Omit<ComponentProps<"div">, "children"> & {
   code: string;
@@ -20,7 +18,6 @@ export type SnippetProps = Omit<ComponentProps<"div">, "children"> & {
  */
 export function Snippet({ code, language, onCopyCode, onCopyError, className, ...props }: SnippetProps) {
   useInjectUiCss();
-  useInjectLaneCss(CODING_ARTIFACTS_CSS_ID, artifactsCss);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

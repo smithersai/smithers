@@ -11,8 +11,6 @@ import {
 } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
-import { CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss } from "./conversationFoundationCss";
 
 type MessageBranchContextValue = {
   count: number;
@@ -30,7 +28,6 @@ function useMessageBranch(part: string): MessageBranchContextValue {
 
 function useBranchLaneCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(CONVERSATION_FOUNDATION_CSS_ID, conversationFoundationCss);
 }
 
 export type MessageBranchProps = Omit<ComponentProps<"div">, "children"> & {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { JSXPreview } from "../src/sandbox/JSXPreview";
-import { SANDBOX_CSS_ID } from "../src/sandbox/sandboxCss";
+import { sandboxCss } from "../src/sandbox/sandboxCss";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -21,7 +21,6 @@ afterEach(async () => {
   container = undefined;
   delete document.documentElement.dataset.theme;
   document.querySelectorAll(`style[${SMITHERS_UI_STYLE_ATTR}]`).forEach((element) => element.remove());
-  document.querySelectorAll(`style[data-smithers-ui-lane="${SANDBOX_CSS_ID}"]`).forEach((element) => element.remove());
 });
 
 async function render(element: ReactElement): Promise<void> {
@@ -60,6 +59,6 @@ describe("JSXPreview", () => {
     document.documentElement.dataset.theme = "dark";
     await render(<JSXPreview node={<span>Dark</span>} />);
     expect(container!.querySelector('[data-slot="jsx-preview"]')).not.toBeNull();
-    expect(document.querySelector(`style[data-smithers-ui-lane="${SANDBOX_CSS_ID}"]`)).not.toBeNull();
+    expect(document.querySelector(`style[${SMITHERS_UI_STYLE_ATTR}]`)?.textContent).toContain(sandboxCss.trim());
   });
 });

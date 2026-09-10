@@ -1,10 +1,8 @@
 /** @jsxImportSource react */
 import { type ComponentProps, createContext, type ReactNode, useContext, useId, useState } from "react";
 import { cn } from "../cn";
-import { useInjectLaneCss } from "../internal/useInjectLaneCss";
 import { formatStatus, statusClass } from "../status";
 import { useInjectUiCss } from "../styles";
-import { PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss } from "./plansTasksQueuesCss";
 
 export type PlanStepStatus = "pending" | "active" | "done" | "failed" | "skipped";
 
@@ -46,7 +44,6 @@ function usePlanContext(part: string): PlanContextValue {
 
 function usePlanCss(): void {
   useInjectUiCss();
-  useInjectLaneCss(PLANS_TASKS_QUEUES_CSS_ID, plansTasksQueuesCss);
 }
 
 /** Header row of a compound Plan; hosts PlanTrigger, PlanTitle, PlanAction. */
