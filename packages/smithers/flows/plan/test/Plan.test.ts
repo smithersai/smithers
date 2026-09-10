@@ -19,19 +19,12 @@ import * as PlanDiff from "../src/PlanDiff.ts"
 import * as Planned from "../src/Planned.ts"
 import * as StepKey from "../src/StepKey.ts"
 import { withCrypto, withCryptoFailure } from "./Crypto.ts"
-
+import { params } from "./FastCheckParams.ts"
 import { compile, draft, effects } from "./PlanFixtures.ts"
-
-export { compile, draft, effects }
 
 const keyOf = (plan: Plan.Plan, id: string) => plan.nodes.find((node) => node.id === id)!.key
 
-const propertyParams = {
-  numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
-  ...(process.env.FC_SEED === undefined ? {} : { seed: Number(process.env.FC_SEED) }),
-  interruptAfterTimeLimit: 20_000,
-  markInterruptAsFailure: true
-} satisfies FastCheck.Parameters<unknown>
+const propertyParams = params(100)
 
 const draftSpec = FastCheck.tuple(
   FastCheck.jsonValue({ stringUnit: "grapheme" }),

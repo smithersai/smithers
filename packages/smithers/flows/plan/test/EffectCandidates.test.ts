@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import * as FileSet from "../src/FileSet.ts"
 import * as EffectCandidates from "../src/internal/EffectCandidates.ts"
 import { withCrypto } from "./Crypto.ts"
+import { params } from "./FastCheckParams.ts"
 import { compile, draft } from "./PlanFixtures.ts"
 
 const tree = (path: string): FileSet.Entry => ({ _tag: "TreeArtifact", path })
@@ -84,12 +85,7 @@ describe("compiler file-effect candidates", () => {
           expect(selected.filter((owner) => overlaps(produced[owner]!))).toEqual(expected)
         }
       ),
-      {
-        seed: Number(process.env.FC_SEED ?? 20260904),
-        numRuns: Number(process.env.FC_NUM_RUNS ?? 1_000),
-        interruptAfterTimeLimit: 20_000,
-        markInterruptAsFailure: true
-      }
+      params(1_000, 20260904)
     )
   })
 

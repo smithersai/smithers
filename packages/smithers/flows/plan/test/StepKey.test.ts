@@ -596,6 +596,67 @@ describe("StepKey.dispatchIdentity", () => {
       expect(yield* Effect.flip(Fiber.join(waiter))).toBe(schemaError)
     }).pipe(Effect.provide(NodeCrypto.layer)))
 
+  it.effect("separates memo entries by upstream id and projection path", () =>
+    Effect.gen(function*() {
+      const digestMemo = StepKey.makeDigestMemo()
+      const results = {
+        alpha: { "a.b": 1, a: { b: 2 } },
+        beta: { "a.b": 3, a: { b: 4 } }
+      }
+      const addresses = [
+        { from: "alpha", path: ["a.b"] },
+        { from: "alpha", path: ["a", "b"] },
+        { from: "alpha", path: [] },
+        { from: "beta", path: ["a.b"] },
+        { from: "beta", path: ["a", "b"] },
+        { from: "beta", path: [] }
+      ] as const
+      const derive = (address: (typeof addresses)[number], memo?: StepKey.DigestMemo) =>
+        StepKey.dispatchIdentity({
+          material: material({ inputs: [{ _tag: "Ref", ...address }] }),
+          results,
+          hermetic,
+          ...(memo === undefined ? {} : { digestMemo: memo })
+        })
+      const memoized = yield* withCrypto(Effect.all(
+        addresses.map((address) => derive(address, digestMemo)),
+        { concurrency: "unbounded" }
+      ))
+      // Every concurrent distinct-address request matches an unmemoized derivation.
+      for (const [index, address] of addresses.entries()) {
+        expect(memoized[index]).toBe(yield* withCrypto(derive(address)))
+      }
+      expect(new Set(memoized).size).toBe(addresses.length)
+      // A repeat request for a settled address shares its memo entry.
+      expect(yield* withCrypto(derive(addresses[0]!, digestMemo))).toBe(memoized[0])
+    }))
+
+  it.effect("does not reuse a failed memo entry when the address is retried", () =>
+    Effect.gen(function*() {
+      const memo = StepKey.makeDigestMemo()
+      const schemaError = yield* Effect.flip(Schema.decodeUnknownEffect(Schema.String)(123))
+      const failure = yield* Effect.flip(memo.digest("upstream", ["value"], Effect.fail(schemaError)))
+      expect(failure).toBe(schemaError)
+
+      const recoveredKey =
+        "key1_cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" as StepKey.StepKey
+      let attempts = 0
+      const recovered = yield* memo.digest(
+        "upstream",
+        ["value"],
+        Effect.sync(() => {
+          attempts = attempts + 1
+          return recoveredKey
+        })
+      )
+      expect(recovered).toBe(recoveredKey)
+      expect(attempts).toBe(1)
+
+      // A failure at one address leaves other addresses untouched.
+      const otherKey = "key1_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" as StepKey.StepKey
+      expect(yield* memo.digest("upstream", ["other"], Effect.succeed(otherKey))).toBe(otherKey)
+    }).pipe(Effect.provide(NodeCrypto.layer)))
+
   it.effect("folds an engine-resolved environment without moving the absent identity", () =>
     Effect.gen(function*() {
       const absent = yield* withCrypto(dispatch({}, {}))

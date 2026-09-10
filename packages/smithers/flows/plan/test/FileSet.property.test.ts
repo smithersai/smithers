@@ -2,13 +2,9 @@ import * as FileSet from "@smthrs/plan/FileSet"
 import * as Schema from "effect/Schema"
 import { FastCheck } from "effect/testing"
 import { describe, expect, it } from "vitest"
+import { params as sharedParams } from "./FastCheckParams.ts"
 
-const params = {
-  numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
-  ...(process.env.FC_SEED === undefined ? {} : { seed: Number(process.env.FC_SEED) }),
-  interruptAfterTimeLimit: 20_000,
-  markInterruptAsFailure: true
-} satisfies FastCheck.Parameters<unknown>
+const params = sharedParams(100)
 
 // --- workspace-relative confinement -----------------------------------------
 

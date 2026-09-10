@@ -5,13 +5,9 @@ import { FastCheck } from "effect/testing"
 import * as KeyMaterial from "../src/KeyMaterial.ts"
 import * as StepKey from "../src/StepKey.ts"
 import { withCrypto } from "./Crypto.ts"
+import { params as sharedParams } from "./FastCheckParams.ts"
 
-const params = {
-  numRuns: Number(process.env.FC_NUM_RUNS ?? 100),
-  ...(process.env.FC_SEED === undefined ? {} : { seed: Number(process.env.FC_SEED) }),
-  interruptAfterTimeLimit: 20_000,
-  markInterruptAsFailure: true
-} satisfies FastCheck.Parameters<unknown>
+const params = sharedParams(100)
 
 /** Path segments biased toward prototype-chain keys and serialization hazards. */
 const hostileSegment = FastCheck.oneof(
