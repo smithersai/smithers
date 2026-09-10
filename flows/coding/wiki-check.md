@@ -30,6 +30,8 @@ failed ordinary check receipt. Findings name the checked Change, exact source
 commit, page, section and owning Markdown path. The existing correction policy
 can repair that owner while preserving the old review evidence. A completed
 check procedure must still have a passed domain receipt to validate the Change.
+Malformed review structure or citations refuse the check until the reviewer
+provides valid evidence; those errors do not become source-owner findings.
 
 ## Reuse the native evidence store
 
@@ -51,7 +53,7 @@ host fingerprint retains its existing four-source compatibility policy.
 The configured host derives only descriptors that delegate to `coding/WikiCheck`.
 Its private `smithersCodingWikiPolicy` frontmatter value hashes the operator's
 page catalog and actual reviewer policy. A source-supplied value cannot override
-it. One derived Registry is shared by Control planning, native module authority
+it. The same derived Registry layer supplies Control planning, native module authority
 and the executable catalog. Its list/get/visible views agree; refresh delegates
 to the original registry. Body loading checks the derived requested identity,
 then asks the original registry to verify its original source identity and bytes.

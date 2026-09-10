@@ -1,5 +1,6 @@
 /** This repository's opinionated configuration of existing coding primitives. */
 import { Console, Effect } from "effect"
+import { fileURLToPath } from "node:url"
 import { pages } from "../wiki/catalog.ts"
 import type { ProjectConfig } from "../../flows/coding/project-config.ts"
 
@@ -15,4 +16,6 @@ export const smithersProject = (wikiOutput = "../smithers-wiki"): ProjectConfig 
   ], historyLimit: 100, maxMemoryBytes: 48 * 1024
 })
 
-if (import.meta.main) await Effect.runPromise(Console.log(JSON.stringify(smithersProject(process.argv[2]), null, 2)))
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await Effect.runPromise(Console.log(JSON.stringify(smithersProject(process.argv[2]), null, 2)))
+}

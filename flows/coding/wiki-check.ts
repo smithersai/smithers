@@ -86,7 +86,8 @@ const previousCheck = (flow: string, policy: string) => Effect.gen(function*() {
   return null
 })
 
-/** The caller supplies its existing reviewer with the evidence-only authority. */
+/** The caller supplies its existing reviewer with evidence-only authority and
+ * the shared Select/Bind handlers from planningWikiLayers (reuseLayers). */
 export const wikiCheckLayers = (options: WikiCheckOptions) => {
   return Layer.mergeAll(Interpreter.layer(wikiCheckDelegate), Interpreter.layer(ReviewCaptured),
     Capture.toLayer(invocation => guarded(Effect.gen(function*() {
