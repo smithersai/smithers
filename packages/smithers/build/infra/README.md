@@ -30,9 +30,14 @@ Provide these credentials in the deploying shell:
 
 - `SMITHERS_CACHE_READ_TOKEN` and `SMITHERS_CACHE_WRITE_TOKEN`: The two bearer
   tokens used to derive the Worker's Cloudflare `secret_text` verifiers. Use at
-  least 32 random bytes each. The Worker receives only their SHA-256 digests;
-  do not put a bearer value in an `.env` file or source control. Both are
-  required and they must differ. The deployment reads the pair before it
+  least 32 random bytes each. The deployment enforces that floor: it refuses a
+  value shorter than 32 or longer than 4096 printable ASCII bytes, one with a
+  space, or one drawn from a single character class (only digits, only
+  lowercase, only uppercase, or only punctuation). The Worker receives only
+  their SHA-256 digests, which are unsalted and live in `.alchemy/` state and
+  in the Worker's secret binding, so a guessable value is recoverable offline
+  from either copy; do not put a bearer value in an `.env` file or source
+  control. Both are required and they must differ. The deployment reads the pair before it
   applies any resource and fails when either is missing or the two are equal,
   because one value under two names lets every reader publish. To roll the
   split out without breaking a client that still sends one credential, set

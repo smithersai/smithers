@@ -22,10 +22,15 @@ export const stackName = "SmithersBuildRemoteCache"
 /**
  * The shortest cache credential a deployment accepts.
  *
+ * The Worker's verifier is an unsalted SHA-256 of the credential, held in
+ * Alchemy state and as a Cloudflare secret, so anyone who reads either can run
+ * an offline guess against it. Thirty-two bytes is the floor at which a random
+ * credential puts that guess out of reach; `openssl rand -hex 32` yields 64.
+ *
  * @category constants
  * @since 0.1.0
  */
-export const minCacheTokenBytes = 16
+export const minCacheTokenBytes = 32
 
 /**
  * The longest cache credential a deployment accepts.
@@ -110,6 +115,16 @@ export const artifactLifecycleRules = [
 const printableAscii = /^[!-~]+$/
 
 /**
+ * The character classes a credential draws from. One class alone (`xxxx…`,
+ * `1234…`, `----…`) is the shape of a memorable value, which an offline
+ * dictionary recovers from the verifier however long it is.
+ */
+const characterClasses: ReadonlyArray<RegExp> = [/[0-9]/, /[a-z]/, /[A-Z]/, /[!-\/:-@[-`{-~]/]
+
+const characterClassCount = (value: string): number =>
+  characterClasses.filter((characterClass) => characterClass.test(value)).length
+
+/**
  * The name of one cache credential.
  *
  * @category models
@@ -121,16 +136,22 @@ export type CacheTokenName = "SMITHERS_CACHE_READ_TOKEN" | "SMITHERS_CACHE_WRITE
  * Names the rule one cache credential breaks, or `null` when it holds.
  *
  * A credential is {@link minCacheTokenBytes} to {@link maxCacheTokenBytes}
- * printable ASCII bytes with no spaces. The one rule serves both the throwing
+ * printable ASCII bytes with no spaces, drawn from at least two of digits,
+ * lowercase, uppercase, and punctuation. The one rule serves both the throwing
  * digest and the deploy-time `Config`, so the two cannot drift apart.
  *
  * @category utilities
  * @since 0.1.0
  */
-export const cacheTokenFault = (name: CacheTokenName, value: string): string | null =>
-  value.length < minCacheTokenBytes || value.length > maxCacheTokenBytes || !printableAscii.test(value)
-    ? `${name} must be ${minCacheTokenBytes}-${maxCacheTokenBytes} printable ASCII bytes with no spaces`
-    : null
+export const cacheTokenFault = (name: CacheTokenName, value: string): string | null => {
+  if (value.length < minCacheTokenBytes || value.length > maxCacheTokenBytes || !printableAscii.test(value)) {
+    return `${name} must be ${minCacheTokenBytes}-${maxCacheTokenBytes} printable ASCII bytes with no spaces`
+  }
+  if (characterClassCount(value) < 2) {
+    return `${name} must mix at least two of digits, lowercase, uppercase, and punctuation`
+  }
+  return null
+}
 
 const sha256Hex = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex")
 

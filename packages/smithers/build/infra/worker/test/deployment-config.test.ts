@@ -2,7 +2,7 @@ import * as Config from "effect/Config"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { fileURLToPath } from "node:url"
@@ -48,28 +48,83 @@ const deployed = <A, E>(effect: Effect.Effect<A, E>, read: string, write: string
     Effect.provide(effect, ConfigProvider.layer(ConfigProvider.fromUnknown({ [readToken]: read, [writeToken]: write })))
   )
 
-const distinct = { read: "read-credential-with-entropy", write: "write-credential-with-entropy" } as const
+const distinct = {
+  read: "read-credential-with-entropy-2026",
+  write: "write-credential-with-entropy-2026"
+} as const
+/** The shortest credential the deployment accepts: two classes at the floor. */
+const shortest = "0123456789abcdef".repeat(minCacheTokenBytes / 16)
+/** What the README's `openssl rand -hex` command mints: hex, two classes. */
+const mintedHex = (bytes: number): string =>
+  Array.from(randomBytes(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
 
 describe("cache credential verification", () => {
   it("hands the Worker a digest rather than the credential", async () => {
-    const token = "x".repeat(minCacheTokenBytes)
+    const token = shortest
 
+    expect(token).toHaveLength(minCacheTokenBytes)
     expect(cacheTokenDigest(readToken, token)).toBe(createHash("sha256").update(token, "utf8").digest("hex"))
     await expect(configured(token)).resolves.toBe(createHash("sha256").update(token, "utf8").digest("hex"))
   })
 
   it("refuses a credential that is too short, too long, or not printable ASCII", () => {
+    const longest = `${shortest}${"0a".repeat((maxCacheTokenBytes - minCacheTokenBytes) / 2)}`
     const cases = [
-      "x".repeat(minCacheTokenBytes - 1),
-      "x".repeat(maxCacheTokenBytes + 1),
-      `${"x".repeat(minCacheTokenBytes)} withspace`,
-      `${"x".repeat(minCacheTokenBytes)}\u0000`,
-      `${"x".repeat(minCacheTokenBytes)}é`,
+      shortest.slice(1),
+      `${longest}a`,
+      `${shortest} withspace`,
+      `${shortest}\u0000`,
+      `${shortest}é`,
       ""
     ]
 
     for (const value of cases) {
-      expect(() => cacheTokenDigest(readToken, value)).toThrow(readToken)
+      expect(() => cacheTokenDigest(readToken, value)).toThrow(`${readToken} must be`)
+    }
+    expect(longest).toHaveLength(maxCacheTokenBytes)
+    expect(() => cacheTokenDigest(readToken, longest)).not.toThrow()
+  })
+
+  /**
+   * The verifier is an unsalted SHA-256 held in Alchemy state and as a
+   * Cloudflare secret, so the floor has to put an offline guess out of reach:
+   * the 32 random bytes the README asks for, never the 16 a memorable value
+   * fits in.
+   */
+  it("enforces the floor the README asks for", async () => {
+    const guide = (await Fs.readFile(NodePath.join(infraRoot, "README.md"), "utf8")).replace(/\s+/g, " ")
+
+    expect(minCacheTokenBytes).toBe(32)
+    expect(guide).toContain(`at least ${minCacheTokenBytes} random bytes`)
+    expect(guide).toContain(`shorter than ${minCacheTokenBytes} or longer than ${maxCacheTokenBytes}`)
+    expect(guide).toContain(`openssl rand -hex ${minCacheTokenBytes}`)
+    const minted = mintedHex(minCacheTokenBytes)
+    expect(minted).toHaveLength(minCacheTokenBytes * 2)
+    expect(() => cacheTokenDigest(readToken, minted)).not.toThrow()
+    await expect(configured(minted)).resolves.toBe(digestOf(minted))
+  })
+
+  it("refuses a credential drawn from a single character class however long it is", async () => {
+    const singleClass = [
+      "x".repeat(minCacheTokenBytes),
+      "X".repeat(minCacheTokenBytes * 2),
+      "7".repeat(maxCacheTokenBytes),
+      "-".repeat(minCacheTokenBytes)
+    ]
+
+    for (const value of singleClass) {
+      expect(() => cacheTokenDigest(readToken, value)).toThrow(`${readToken} must mix at least two of`)
+    }
+    await expect(configured("x".repeat(minCacheTokenBytes))).rejects.toThrow("must mix at least two of")
+    // Any second class is enough: the rule refuses the shape of a memorable
+    // value, it does not grade entropy.
+    const twoClasses = [
+      `${"x".repeat(minCacheTokenBytes - 1)}1`,
+      `${"7".repeat(minCacheTokenBytes - 1)}-`,
+      `${"X".repeat(minCacheTokenBytes - 1)}x`
+    ]
+    for (const value of twoClasses) {
+      expect(cacheTokenDigest(readToken, value)).toBe(digestOf(value))
     }
   })
 
@@ -80,7 +135,7 @@ describe("cache credential verification", () => {
       Effect.runPromise(
         Effect.provide(
           cacheTokenVerifier("SMITHERS_CACHE_WRITE_TOKEN"),
-          ConfigProvider.layer(ConfigProvider.fromUnknown({ [readToken]: "x".repeat(minCacheTokenBytes) }))
+          ConfigProvider.layer(ConfigProvider.fromUnknown({ [readToken]: shortest }))
         )
       )
     ).rejects.toThrow()
