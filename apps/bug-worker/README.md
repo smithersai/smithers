@@ -96,11 +96,14 @@ TTL semantics (`tests/helpers/memoryKv.ts`); no route mocking.
 
 ## Deploy
 
-Not run by CI. From this directory:
+Not run by CI. `alchemy.run.ts` requires `CLOUDFLARE_API_TOKEN`,
+`ALCHEMY_PASSWORD`, and `BUG_ADMIN_TOKEN` in the environment. Configure them
+through your usual secret mechanism (a gitignored `.env`, or the runner's
+secret store); never type them on the command line, where shell history keeps
+them in plaintext. Then, from this directory:
 
 ```sh
-CLOUDFLARE_API_TOKEN=... ALCHEMY_PASSWORD=... BUG_ADMIN_TOKEN=... \
-  pnpm -C apps/bug-worker deploy
+pnpm -C apps/bug-worker deploy
 ```
 
 Optional: `CLOUDFLARE_SMITHERS_ZONE_ID` (zone id for smithers.sh; alchemy

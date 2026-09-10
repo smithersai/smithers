@@ -69,11 +69,19 @@ Post progress by appending to `updates`. When it is over, set `status` to
 
 ## Deploy
 
+Not run by CI. Authenticate once with `wrangler login` (OAuth, no long-lived
+token on disk), then:
+
 ```sh
 pnpm -C apps/status-site test
-CLOUDFLARE_API_TOKEN=... pnpm -C apps/status-site deploy
+pnpm -C apps/status-site deploy
 ```
 
-`wrangler.jsonc` claims `status.smithers.sh` as a custom domain, the same way
-the sibling sites in `apps/*-site` do. `alchemy.run.ts` is the alternative
-deploy path and is kept in sync with the sibling pattern.
+For CI or a non-interactive shell, configure `CLOUDFLARE_API_TOKEN` through
+your usual secret mechanism (a gitignored `.env`, or the runner's secret
+store). Never type the token on the command line: shell history keeps it in
+plaintext, and it can replace the public status page.
+
+`wrangler.jsonc` claims `status.smithers.sh` as a custom domain.
+`alchemy.run.ts` is the alternative deploy path; `apps/bug-worker/alchemy.run.ts`
+uses the same pattern for `bug.smithers.sh`.
