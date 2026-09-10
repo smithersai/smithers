@@ -393,34 +393,25 @@ export const evaluate = (
   rulesets: ReadonlyArray<ReadonlyArray<Rule>>,
   capability: Capability
 ): RuleEffect => {
-  for (const ruleset of rulesets) {
+  // One indexed pass: an undecidable rule anywhere vetoes, so returning on the
+  // first one is equivalent to a separate budget preflight. Each rule is
+  // matched once; index 0 additionally tracks the configured last-match.
+  let configuredEffect: RuleEffect = "ask"
+  let effect: RuleEffect = "ask"
+  for (const [index, ruleset] of rulesets.entries()) {
     for (const rule of ruleset) {
       if (!withinMatchBudget(rule.pattern, capability)) {
         return "deny"
       }
-    }
-  }
-
-  const configured = rulesets[0]
-  let configuredEffect: RuleEffect = "ask"
-  for (const rule of configured ?? []) {
-    if (matches(rule.pattern, capability)) {
-      configuredEffect = rule.effect
-    }
-  }
-  if (configuredEffect === "deny") {
-    return "deny"
-  }
-
-  let effect: RuleEffect = "ask"
-  for (const ruleset of rulesets) {
-    for (const rule of ruleset) {
       if (matches(rule.pattern, capability)) {
         effect = rule.effect
+        if (index === 0) {
+          configuredEffect = rule.effect
+        }
       }
     }
   }
-  return effect
+  return configuredEffect === "deny" ? "deny" : effect
 }
 
 /**
