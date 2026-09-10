@@ -3,6 +3,7 @@ import * as Input from "../src/Input.ts"
 import { HttpSecret, Secret } from "../src/Secret.ts"
 import * as Target from "../src/Target.ts"
 import { ToolRun } from "../src/ToolRun.ts"
+import { plannedCalls } from "./plan.ts"
 
 describe("ToolRun", () => {
   it("declares a run-kind, non-cacheable target gated to the run verb", () => {
@@ -23,6 +24,25 @@ describe("ToolRun", () => {
     // effect never rides along with a `ci` run.
     expect(metadata.verbGate).toEqual(["run"])
     expect(metadata.inputs).toHaveLength(1)
+  })
+
+  it("hands the declared credentials to the irreversible call so the proxy can substitute them", () => {
+    const credential = HttpSecret(Secret("FIREWORKS_API_KEY"), ["https://api.fireworks.ai"])
+    const call = plannedCalls(ToolRun({
+      command: "firectl",
+      args: ["dataset", "create", "pilot", "data/pilot.jsonl"],
+      inputs: [Input.file("data/pilot.jsonl")],
+      deps: [],
+      secrets: [credential],
+      env: { FIREWORKS_ACCOUNT: "pilot" },
+      cwd: "evals/authoring"
+    }))[0]
+    expect(call?.action).toBe("smithers-build/exec-irreversible")
+    // The credential rides on the call as a declaration, never as a value: the
+    // substituting proxy resolves it at spawn time.
+    expect(call?.payload["secrets"]).toEqual([credential])
+    expect(call?.payload["env"]).toEqual({ FIREWORKS_ACCOUNT: "pilot" })
+    expect(call?.payload["cwd"]).toBe("evals/authoring")
   })
 
   it("collects dependency edges so an operation can order behind a check", () => {

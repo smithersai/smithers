@@ -11,9 +11,12 @@ import { DepsLint } from "../src/DepsLint.ts"
 import { Dev } from "../src/Dev.ts"
 import * as Input from "../src/Input.ts"
 import { JsrPublish } from "../src/JsrPublish.ts"
+import { Install, inputsFor } from "../src/Install.ts"
 import { Lockfile } from "../src/Lockfile.ts"
+import * as PackageManager from "../src/PackageManager.ts"
 import { NpmPublish } from "../src/NpmPublish.ts"
 import { PackageLint } from "../src/PackageLint.ts"
+import * as Runtime from "../src/Runtime.ts"
 import { SortPackageJson } from "../src/SortPackageJson.ts"
 import * as Target from "../src/Target.ts"
 import { ToolRun } from "../src/ToolRun.ts"
@@ -190,6 +193,28 @@ describe("Vitest rules", () => {
     )).not.toContain("--config")
   })
 
+  it("Vitest renders the declared config as --config and forwards the timeout to the exec payload", () => {
+    const call = plannedCalls(Vitest({ ...base, coverage: false, passWithNoTests: false, timeoutMs: 1_000 }))[0]
+    expect(call?.payload["argv"]).toEqual([
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--config",
+      "vitest.config.ts",
+      "--environment",
+      "node",
+      "--coverage.enabled=false"
+    ])
+    expect(call?.payload["cwd"]).toBe("packages/example")
+    expect(call?.payload["timeoutMs"]).toBe(1_000)
+  })
+
+  it("Vitest bounds the run at twenty minutes when the declaration names no timeout", () => {
+    const call = plannedCalls(Vitest({ ...base, coverage: true, passWithNoTests: false }))[0]
+    expect(call?.payload["timeoutMs"]).toBe(1_200_000)
+  })
+
   it("VitestWatch spells the watch command", () => {
     expect(plannedArgv(VitestWatch(base)))
       .toEqual(["pnpm", "exec", "vitest", "watch", "--config", "vitest.config.ts", "--environment", "node"])
@@ -343,8 +368,19 @@ describe("ToolRun", () => {
     }))[0]
     expect(call?.action).toBe("smithers-build/exec-irreversible")
     expect(call?.payload["argv"]).toEqual(["deploy", "--now"])
+    expect(call?.payload["cwd"]).toBe("packages/example")
+    expect(call?.payload["env"]).toEqual({ REGION: "us" })
     expect(call?.payload["expectedExitCodes"]).toEqual([0, 2])
     expect(call?.payload["timeoutMs"]).toBe(5_000)
+  })
+
+  it("carries an explicit empty env and credential list for a bare declaration", () => {
+    // The exec action never has to guess what "absent" means.
+    const bare = plannedCalls(ToolRun({ command: "deploy", args: [], inputs: [], deps: [] }))[0]
+    expect(bare?.payload["env"]).toEqual({})
+    expect(bare?.payload["secrets"]).toEqual([])
+    expect(bare?.payload["expectedExitCodes"]).toEqual([0])
+    expect(bare?.payload["cwd"]).toBe(".")
   })
 
   it("omits the timeout when the declaration names none", () => {
@@ -375,9 +411,62 @@ describe("Dev", () => {
 })
 
 describe("Lockfile", () => {
-  it("plans the manager's lockfile-only install", () => {
-    expect(plannedArgv(Lockfile({ packageManager }))[0]).toBe("pnpm")
-    expect(plannedArgv(Lockfile({ packageManager }))).toContain("install")
+  const bun = PackageManager.BunPackages({ runtime: Runtime.Bun({ version: ">=1.4.0" }) })
+
+  it("plans a resolve-only run: unfrozen, lockfile-only, no lifecycle scripts, no linking", () => {
+    // `--frozen-lockfile` would refuse the regeneration this target exists
+    // for, and a plain `install` would link a tree the target never declared.
+    expect(plannedArgv(Lockfile({ packageManager })))
+      .toEqual(["pnpm", "install", "--lockfile-only", "--ignore-scripts"])
+    expect(plannedArgv(Lockfile({ packageManager: bun })))
+      .toEqual(["bun", "install", "--lockfile-only", "--ignore-scripts"])
+  })
+
+  it("runs from the declared directory and captures the file the manager wrote", () => {
+    const calls = plannedCalls(Lockfile({ packageManager, cwd: "packages/example" }))
+    expect(calls).toHaveLength(2)
+    expect(calls[0]?.action).toBe("smithers-build/exec")
+    expect(calls[0]?.payload["cwd"]).toBe("packages/example")
+    expect(calls[1]).toEqual({
+      action: "smithers-build/capture-outputs",
+      payload: { cwd: "packages/example", paths: ["pnpm-lock.yaml"] }
+    })
+  })
+
+  it("captures the declared lockfilePath instead of the manager's conventional file", () => {
+    const calls = plannedCalls(Lockfile({ packageManager, lockfilePath: "lock/pnpm-lock.yaml" }))
+    expect(calls.at(-1)?.payload).toEqual({ cwd: ".", paths: ["lock/pnpm-lock.yaml"] })
+  })
+
+  it("leaves the manager to the workspace when the declaration names its lockfile", () => {
+    // The documented PACKAGE.ts spelling: no manager, only the file it expects.
+    const metadata = Target.metadata(Lockfile({ lockfilePath: "pnpm-lock.yaml" }))
+    expect(metadata.workspaceAttrs).toEqual(["packageManager"])
+    expect(metadata.outputs).toEqual({ cwd: ".", paths: ["pnpm-lock.yaml"] })
+    expect(metadata.inputs).toEqual([{ _tag: "Glob", pattern: "packages/*/package.json", exclude: [] }])
+    expect(metadata.cacheable).toBe(false)
+  })
+})
+
+describe("Install", () => {
+  it("leaves the manager to the workspace when the declaration names its lockfile", () => {
+    // The documented PACKAGE.ts spelling: no manager, only the file it reads.
+    const target = Install({ lockfilePath: "bun.lock" })
+    const metadata = Target.metadata(target)
+    expect(metadata.workspaceAttrs).toEqual(["packageManager"])
+    expect(metadata.kinds).toEqual(["run"])
+    expect(metadata.cacheable).toBe(false)
+    expect(metadata.outputs).toBeUndefined()
+    expect(metadata.inputs.map((input) => (input as Input.File).path))
+      .toEqual(["bun.lock", ".npmrc", "package.json"])
+    expect(inputsFor(metadata.attrs as Parameters<typeof inputsFor>[0]).map((input) => (input as Input.File).path))
+      .toEqual(["bun.lock", ".npmrc", "package.json"])
+  })
+
+  it("prefers the declared lockfilePath over the manager's conventional file", () => {
+    const metadata = Target.metadata(Install({ packageManager, lockfilePath: "lock/pnpm-lock.yaml" }))
+    expect(metadata.inputs.map((input) => (input as Input.File).path))
+      .toEqual(["lock/pnpm-lock.yaml", ".npmrc", "package.json"])
   })
 })
 
