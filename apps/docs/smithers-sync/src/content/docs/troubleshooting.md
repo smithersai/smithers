@@ -91,7 +91,8 @@ has expired, or the serving composition provides no `BranchShare` authority.
 Without an authority in scope, every branch run is closed.
 
 **Fix.** Check that the capability's branch id matches the branch behind the
-run id, and that the server provides `BranchShare.layerHmac`. A workspace
+run id, and that the server provides `BranchShare.layerHmac` or
+`BranchShare.layerConfig`. A workspace
 listing does not fail here: it silently excludes the branch runs the caller's
 capability does not cover, so a run missing from a listing is the same problem
 seen from the other side.
@@ -117,9 +118,9 @@ retried as a transport failure.
 
 ## invalid_request from the keyring
 
-**Symptom.** `WorkspaceShare.makeHmac` fails with "The workspace keyring names
-kid `K` twice" or "The workspace keyring's active kid names no key in the
-ring".
+**Symptom.** `WorkspaceShare.makeHmac` or `BranchShare.makeHmac` fails with
+"The workspace keyring names kid `K` twice" or "The branch keyring's active kid
+names no key in the ring".
 
 **Cause.** The keyring is malformed. A duplicate `kid` makes verification
 ambiguous, and an `activeKid` with no matching key leaves nothing to mint with.

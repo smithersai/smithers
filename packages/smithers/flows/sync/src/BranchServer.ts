@@ -24,9 +24,10 @@ import type * as RpcGroup from "effect/unstable/rpc/RpcGroup"
 import * as BranchCommands from "./BranchCommands.ts"
 import * as BranchIds from "./BranchIds.ts"
 import * as BranchPresence from "./BranchPresence.ts"
-import type { BranchId, Participant } from "./BranchProtocol.ts"
+import { BranchId, type Participant } from "./BranchProtocol.ts"
 import { BranchRpcs } from "./BranchRpcs.ts"
 import * as BranchShare from "./BranchShare.ts"
+import * as Admission from "./internal/admission.ts"
 import { SyncError } from "./SyncError.ts"
 import * as SyncPrincipal from "./SyncPrincipal.ts"
 
@@ -109,8 +110,13 @@ export const layerHandlers: Layer.Layer<
               message: "Creating a branch requires an authenticated workspace principal"
             })
           }
+          // Decoded, not branded: `BranchIds` is a host port whose `fresh` is
+          // typed `Effect<string>`, so a host id source yielding "" turned an
+          // asserted `BranchId` into a schema defect inside `mint` rather than
+          // the `SyncError` this handler declares.
+          const branchId = yield* Admission.decode(BranchId, yield* ids.fresh, "invalid_request")
           const capability = yield* share.mint({
-            branchId: (yield* ids.fresh) as BranchId,
+            branchId,
             capabilityId: yield* ids.fresh,
             access: "write",
             ttlMs

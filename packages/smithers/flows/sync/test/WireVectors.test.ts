@@ -115,7 +115,7 @@ describe("signing vectors", () => {
 
   it.effect("freezes the branch authority's signature over fixed claims", () =>
     Effect.gen(function*() {
-      const share = yield* BranchShare.makeHmac({ secret })
+      const share = yield* BranchShare.makeHmac({ activeKid: "vector-kid", keys: [{ kid: "vector-kid", secret }] })
       const capability = yield* share.mint({
         branchId: "vector-branch" as ShareClaims["branchId"],
         capabilityId: "vector-capability",
@@ -125,10 +125,11 @@ describe("signing vectors", () => {
 
       expect(capability.claims.issuedAtMs).toBe(0)
       expect(capability.claims.expiresAtMs).toBe(60_000)
+      expect(capability.claims.kid).toBe("vector-kid")
       // canonical:
-      // 27:@smthrs/sync/BranchShare/v113:vector-branch17:vector-capability4:read1:05:60000
+      // 27:@smthrs/sync/BranchShare/v210:vector-kid13:vector-branch17:vector-capability4:read1:05:60000
       expect(capability.signature).toBe(
-        "1d7cf95ddcf4ac754c7fcfb56dbd02562d7d381f82692e4e4be3878cea0797c1"
+        "327d2f713b3a40f9c07357c2274519db29c89847960abb791cca7d45e0811304"
       )
     }).pipe(Effect.provide(TestClock.layer())))
 

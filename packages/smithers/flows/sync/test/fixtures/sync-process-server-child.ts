@@ -12,6 +12,7 @@ import * as BranchCommands from "../../src/BranchCommands.ts"
 import * as BranchProtocol from "../../src/BranchProtocol.ts"
 import * as BranchShare from "../../src/BranchShare.ts"
 import * as RunCatalog from "../../src/RunCatalog.ts"
+import { SyncError } from "../../src/SyncError.ts"
 import * as SyncRpcs from "../../src/SyncRpcs.ts"
 import * as SyncServer from "../../src/SyncServer.ts"
 
@@ -34,7 +35,10 @@ const journal = SqlJournal.layer({ capacity: 512, overflow: "reject" }).pipe(
 )
 const stack = Layer.mergeAll(
   journal,
-  BranchShare.layerHmac({ secret: Redacted.make("process-recovery-secret") }),
+  BranchShare.layerHmac({
+    activeKid: "primary",
+    keys: [{ kid: "primary", secret: Redacted.make("process-recovery-secret") }]
+  }),
   RunCatalog.layerStatic([runId]),
   Layer.succeed(SyncRpcs.SyncAuth)((effect) => effect)
 )
@@ -59,16 +63,17 @@ const emit = (value: unknown): Effect.Effect<void> =>
 const request = (
   capability: BranchProtocol.ShareCapability,
   index: number
-): BranchCommands.SubmitRequest => ({
-  capability,
-  submission: BranchCommands.submission({
-    branchId,
-    commandId: `command-${index}` as BranchProtocol.CommandId,
-    participantId,
-    name: BranchProtocol.SayCommand,
-    args: `message-${index}`
-  })
-})
+): Effect.Effect<BranchCommands.SubmitRequest, SyncError> =>
+  Effect.map(
+    BranchCommands.submission({
+      branchId,
+      commandId: `command-${index}` as BranchProtocol.CommandId,
+      participantId,
+      name: BranchProtocol.SayCommand,
+      args: `message-${index}`
+    }),
+    (submission) => ({ capability, submission })
+  )
 
 const program = Effect.scoped(
   Effect.gen(function*() {
@@ -85,10 +90,10 @@ const program = Effect.scoped(
     let retry: BranchProtocol.CommandReceipt | undefined
     if (mode === "first") {
       for (let index = 0; index < entryCount; index += 1) {
-        yield* commands.submit(request(capability, index))
+        yield* commands.submit(yield* request(capability, index))
       }
     } else {
-      retry = yield* commands.submit(request(capability, 0))
+      retry = yield* commands.submit(yield* request(capability, 0))
     }
     const durable = yield* Journal.Journal
     const page = yield* durable.entries({ runId, limit: entryCount + 1 })

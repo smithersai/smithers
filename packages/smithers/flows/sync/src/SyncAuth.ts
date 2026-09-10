@@ -27,6 +27,7 @@ import * as Schema from "effect/Schema"
 import * as Headers from "effect/unstable/http/Headers"
 import * as RpcMiddleware from "effect/unstable/rpc/RpcMiddleware"
 import { causeText } from "./internal/causeText.ts"
+import * as shareSigner from "./internal/shareSigner.ts"
 import { SyncError } from "./SyncError.ts"
 import * as SyncPrincipal from "./SyncPrincipal.ts"
 import { SyncAuth } from "./SyncRpcs.ts"
@@ -40,7 +41,7 @@ import * as WorkspaceShare from "./WorkspaceShare.ts"
  */
 export const capabilityHeader = "flows-sync-workspace"
 
-const denied = (message: string): SyncError => new SyncError({ code: "unauthorized", message })
+const denied = shareSigner.unauthorized
 
 /**
  * Renders a workspace capability as its header value: unpadded base64url of

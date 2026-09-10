@@ -10,7 +10,10 @@
  *
  * @since 0.1.0
  */
+import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
+import * as Redacted from "effect/Redacted"
+import type { Access } from "../BranchProtocol.ts"
 import { SyncError } from "../SyncError.ts"
 import { causeText } from "./causeText.ts"
 
@@ -126,3 +129,134 @@ export const signHmac = (key: CryptoKey, canonical: string): Effect.Effect<strin
     (signature) => hex(new Uint8Array(signature))
   )
 }
+
+/**
+ * The refusal both authorities issue. Declared once so a message added to one
+ * authority's verification cannot land under a different error code in the
+ * other.
+ *
+ * @category errors
+ * @since 1.0.0-rc.0
+ */
+export const unauthorized = (message: string): SyncError => new SyncError({ code: "unauthorized", message })
+
+/**
+ * One named signing key. The secret is `Redacted` so a keyring never renders
+ * it into logs or inspection output.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Key {
+  readonly kid: string
+  readonly secret: Redacted.Redacted<string>
+}
+
+/**
+ * A keyring: the key that signs new capabilities plus every key still
+ * accepted for verification. Rotation adds a new active key and keeps the
+ * retired one in `keys` until its outstanding capabilities expire.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Keyring {
+  readonly activeKid: string
+  readonly keys: ReadonlyArray<Key>
+}
+
+/**
+ * A keyring whose every secret is already an imported Web Crypto key: the
+ * signer for new capabilities, and the map a verifier selects a retired key
+ * from by `kid`.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface ImportedKeyring {
+  readonly activeKid: string
+  readonly active: CryptoKey
+  readonly verification: ReadonlyMap<string, CryptoKey>
+}
+
+/**
+ * Imports every key in a keyring, so a misconfigured ring — an unknown active
+ * kid, a duplicate kid, or a key Web Crypto refuses — fails at construction
+ * rather than at the first request. `subject` names the authority in the
+ * refusal ("branch", "workspace").
+ *
+ * @category crypto
+ * @since 1.0.0-rc.0
+ */
+export const importKeyring = (keyring: Keyring, subject: string): Effect.Effect<ImportedKeyring, SyncError> =>
+  Effect.gen(function*() {
+    // Copied BEFORE the first import, for the reason snapshots exist on the
+    // verify path: the keyring belongs to the caller and every import below is
+    // an await, so a `for..of` over the caller's own array re-reads it between
+    // them. A splice landing in that window changed which keys the authority
+    // ended up holding, and reading `activeKid` only after the loop let it name
+    // a key the ring was validated with rather than the one the caller passed.
+    const activeKid = keyring.activeKid
+    const keys = keyring.keys.map((key): Key => ({ kid: key.kid, secret: key.secret }))
+    const verification = new Map<string, CryptoKey>()
+    for (const key of keys) {
+      if (verification.has(key.kid)) {
+        return yield* Effect.fail(
+          new SyncError({ code: "invalid_request", message: `The ${subject} keyring names kid ${key.kid} twice` })
+        )
+      }
+      verification.set(key.kid, yield* importHmacKey(Redacted.value(key.secret)))
+    }
+    const active = verification.get(activeKid)
+    if (active === undefined) {
+      return yield* Effect.fail(
+        new SyncError({
+          code: "invalid_request",
+          message: `The ${subject} keyring's active kid names no key in the ring`
+        })
+      )
+    }
+    return { activeKid, active, verification }
+  })
+
+/**
+ * The authorization both capability authorities run once their signing key is
+ * selected: the signature, then the expiry, then the requested access.
+ *
+ * The order is the contract. A capability is authenticated before anything it
+ * claims is reported back, so a forged claim set is refused as a bad signature
+ * and never as a scope or an expiry. `scope` is the one check an authority
+ * adds for itself — the branch authority's cross-branch refusal — and it runs
+ * after the signature for exactly that reason.
+ *
+ * Both authorities called this sequence out by hand, which left a fix to the
+ * expiry boundary or the read-only refusal landing in one and not the other.
+ *
+ * @category crypto
+ * @since 1.0.0-rc.0
+ */
+export const verifyClaims = (options: {
+  readonly key: CryptoKey
+  readonly canonical: string
+  readonly signature: string
+  readonly expiresAtMs: number
+  readonly granted: Access
+  readonly requested: Access
+  /** The refused thing, named as it appears in the message: "The share capability". */
+  readonly subject: string
+  readonly scope?: Effect.Effect<void, SyncError>
+}): Effect.Effect<void, SyncError> =>
+  Effect.gen(function*() {
+    const expected = yield* signHmac(options.key, options.canonical)
+    if (!constantTimeEquals(expected, options.signature)) {
+      return yield* Effect.fail(unauthorized(`${options.subject} signature is invalid`))
+    }
+    if (options.scope !== undefined) yield* options.scope
+    const nowMs = yield* Clock.currentTimeMillis
+    if (nowMs >= options.expiresAtMs) {
+      return yield* Effect.fail(unauthorized(`${options.subject} has expired`))
+    }
+    if (options.requested === "write" && options.granted !== "write") {
+      return yield* Effect.fail(unauthorized(`${options.subject} is read-only`))
+    }
+  })

@@ -92,8 +92,8 @@ authenticated workspace principal (`SyncPrincipal`, default anonymous), which
 capability presented in the `flows-sync-workspace` request header. A connection
 with no valid credential is refused every non-branch read.
 
-Both authorities take `Redacted` secrets and lead their signed encoding with a
-scheme label; `WorkspaceShare` additionally carries a rotation-ready `kid`. An
+Both authorities take `Redacted` keyrings, lead their signed encoding with a
+scheme label, and carry a rotation-ready `kid` inside the signed claims. An
 open subscription ends with `unauthorized` when the credential that opened it
 expires, because a stream authorized once at open is otherwise the one thing a
 signed expiry cannot revoke. See
@@ -177,7 +177,7 @@ each one.
 | `SyncServer`       | The read-path implementation, its policy, and `layerHandlers`.                                                  |
 | `SyncClient`       | The browser-safe replay-then-follow client and its subscription options.                                        |
 | `BranchProtocol`   | The branch vocabulary: ids, claims, capabilities, submissions, receipts, and the run-id mapping.                |
-| `BranchShare`      | The branch capability authority.                                                                                |
+| `BranchShare`      | The branch capability authority over a `Redacted` keyring with `kid` rotation.                                  |
 | `BranchIds`        | The port branch and capability ids are minted through.                                                          |
 | `BranchCommands`   | Idempotent command admission onto a branch's journal run.                                                       |
 | `BranchPresence`   | The ephemeral, lease-expiring roster.                                                                           |

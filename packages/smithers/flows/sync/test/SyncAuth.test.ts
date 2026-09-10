@@ -45,7 +45,10 @@ const stack = Layer.mergeAll(SyncServer.layerHandlers, SyncAuth.layer).pipe(
     Layer.mergeAll(
       TestJournal.layer(),
       RunCatalog.layerStatic([engineRun, branchRun]),
-      BranchShare.layerHmac({ secret: Redacted.make("auth-branch-secret") })
+      BranchShare.layerHmac({
+        activeKid: "primary",
+        keys: [{ kid: "primary", secret: Redacted.make("auth-branch-secret") }]
+      })
     )
   )
 )

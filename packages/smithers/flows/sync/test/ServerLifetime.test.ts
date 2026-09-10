@@ -33,7 +33,10 @@ const entry = (runId: JournalEvent.RunId, sequence: number) =>
     meta: null
   })
 
-const shareLayer = BranchShare.layerHmac({ secret: Redacted.make("lifetime-secret") })
+const shareLayer = BranchShare.layerHmac({
+  activeKid: "primary",
+  keys: [{ kid: "primary", secret: Redacted.make("lifetime-secret") }]
+})
 
 describe("subscription lifetime", () => {
   // A signed expiry is this package's only revocation mechanism, and a

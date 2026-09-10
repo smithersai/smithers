@@ -15,7 +15,10 @@ import * as TestSocket from "../src/test/TestSocket.ts"
 import * as TestSync from "../src/test/TestSync.ts"
 
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength
-const base = Layer.mergeAll(TestJournal.layer(), BranchShare.layerHmac({ secret: Redacted.make("boundary-secret") }))
+const base = Layer.mergeAll(
+  TestJournal.layer(),
+  BranchShare.layerHmac({ activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("boundary-secret") }] })
+)
 
 // JSON round trips exercise the encoded protocol, rather than passing service
 // instances directly to the client. The outer envelope is measured separately:
@@ -43,8 +46,8 @@ describe("command admission through durable synchronization", () => {
               participantId: "alice" as BranchProtocol.ParticipantId,
               name: BranchProtocol.SayCommand
             }
-            const blank = BranchCommands.submission({ ...fields, args: prefix })
-            const submission = BranchCommands.submission({
+            const blank = yield* BranchCommands.submission({ ...fields, args: prefix })
+            const submission = yield* BranchCommands.submission({
               ...fields,
               args: prefix + "x".repeat(maxCommandBytes + offset - bytes(blank))
             })
@@ -109,7 +112,7 @@ describe("command admission through durable synchronization", () => {
       const runId = BranchProtocol.branchRunId(branchId)
       const share = yield* BranchShare.BranchShare
       const journal = yield* Journal.Journal
-      const submission = BranchCommands.submission({
+      const submission = yield* BranchCommands.submission({
         branchId,
         commandId: "command" as BranchProtocol.CommandId,
         participantId: "alice" as BranchProtocol.ParticipantId,
@@ -168,21 +171,22 @@ describe("command admission through durable synchronization", () => {
         Effect.provideService(SyncServer.SyncServer, server),
         Effect.provide(TestSync.layerWorkspaceAuth)
       )
-      const submit = (id: string) => {
-        const fields = {
-          branchId,
-          commandId: id as BranchProtocol.CommandId,
-          participantId: "alice" as BranchProtocol.ParticipantId,
-          name: BranchProtocol.SayCommand
-        }
-        const empty = BranchCommands.submission(fields)
-        const submission = BranchCommands.submission({
-          ...fields,
-          args: "x".repeat(BranchCommands.defaultMaxCommandBytes - bytes(empty))
+      const submit = (id: string) =>
+        Effect.gen(function*() {
+          const fields = {
+            branchId,
+            commandId: id as BranchProtocol.CommandId,
+            participantId: "alice" as BranchProtocol.ParticipantId,
+            name: BranchProtocol.SayCommand
+          }
+          const empty = yield* BranchCommands.submission(fields)
+          const submission = yield* BranchCommands.submission({
+            ...fields,
+            args: "x".repeat(BranchCommands.defaultMaxCommandBytes - bytes(empty))
+          })
+          expect(bytes(submission)).toBe(BranchCommands.defaultMaxCommandBytes)
+          return yield* commands.submit({ capability, submission })
         })
-        expect(bytes(submission)).toBe(BranchCommands.defaultMaxCommandBytes)
-        return commands.submit({ capability, submission })
-      }
       yield* submit("first")
       const bootstrapped = yield* Deferred.make<void>()
       const fiber = yield* client.subscribe({ scope: { _tag: "Run", runId }, cursors: [], capability }).pipe(

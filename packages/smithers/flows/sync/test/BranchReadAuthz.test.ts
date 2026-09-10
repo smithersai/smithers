@@ -25,7 +25,10 @@ const branchId = "guarded-branch" as BranchId
 const branchRun = branchRunId(branchId)
 const engineRun = "flows/engine/run-1" as JournalEvent.RunId
 
-const layer = Layer.mergeAll(TestJournal.layer(), BranchShare.layerHmac({ secret: Redacted.make("authz-secret") }))
+const layer = Layer.mergeAll(
+  TestJournal.layer(),
+  BranchShare.layerHmac({ activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("authz-secret") }] })
+)
 
 const program = <A, E>(effect: Effect.Effect<A, E, Journal.Journal | BranchShare.BranchShare | Scope.Scope>) =>
   effect.pipe(Effect.provide(layer), Effect.provide(TestClock.layer()), Effect.scoped)

@@ -15,17 +15,23 @@
  * secret is misconfigured into both authorities. Web Crypto is used directly
  * so the same module runs in the browser and on node.
  *
+ * A `kid` inside the claims names the key that signed them, so a branch secret
+ * rotates the way the workspace secret already did: the new key signs, the
+ * retired key stays in the verification keyring, and the share links already
+ * out keep working until they expire.
+ *
  * @since 0.1.0
  */
 import * as Clock from "effect/Clock"
+import * as Config from "effect/Config"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { Access, BranchId, ShareCapability, ShareClaims } from "./BranchProtocol.ts"
+import * as Admission from "./internal/admission.ts"
 import * as shareSigner from "./internal/shareSigner.ts"
-import { SyncError } from "./SyncError.ts"
+import type { SyncError } from "./SyncError.ts"
 
 /**
  * The branch and access one authorization request needs.
@@ -100,7 +106,7 @@ export class BranchShare extends Context.Service<BranchShare, Service>()("@smthr
  */
 export const make = (implementation: Service): Service => BranchShare.of(implementation)
 
-const denied = (message: string): SyncError => new SyncError({ code: "unauthorized", message })
+const denied = shareSigner.unauthorized
 
 /**
  * Constructs a share authority that mints nothing and trusts nothing.
@@ -133,12 +139,13 @@ export const layerNoop: Layer.Layer<BranchShare> = Layer.succeed(BranchShare, ma
  * own label; a one-sided label protects one direction, and the branch side is
  * the one anonymous share-link holders reach.
  */
-const schemeLabel = "@smthrs/sync/BranchShare/v1"
+const schemeLabel = "@smthrs/sync/BranchShare/v2"
 
 /** Length-prefixed so no two distinct claim sets share an encoding. */
 const canonical = (claims: ShareClaims): string =>
   shareSigner.lengthPrefixed([
     schemeLabel,
+    claims.kid,
     claims.branchId,
     claims.capabilityId,
     claims.access,
@@ -157,6 +164,7 @@ const canonical = (claims: ShareClaims): string =>
  */
 const snapshot = (claims: ShareClaims): ShareClaims =>
   new ShareClaims({
+    kid: claims.kid,
     branchId: claims.branchId,
     capabilityId: claims.capabilityId,
     access: claims.access,
@@ -165,42 +173,67 @@ const snapshot = (claims: ShareClaims): ShareClaims =>
   })
 
 /**
- * Constructs the HMAC-SHA-256 share authority over a shared secret.
+ * One named signing key. The secret is `Redacted` so a keyring never renders
+ * it into logs or inspection output.
  *
- * The secret is `Redacted`, matching {@link WorkspaceShare}: an authority
- * never holds a plain string that a log, a span, or an inspection of the
- * options object could render.
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Key = shareSigner.Key
+
+/**
+ * A keyring: the key that signs new capabilities plus every key still
+ * accepted for verification. Rotation adds a new active key and keeps the
+ * retired one in `keys` until its outstanding links expire, so rotating the
+ * branch secret no longer breaks every share link that is already out.
  *
- * Fails with a `SyncError` carrying the rejection as `cause` when Web Crypto
- * refuses to import the signing key.
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type Keyring = shareSigner.Keyring
+
+/**
+ * Constructs the HMAC-SHA-256 share authority over a keyring.
+ *
+ * Every key is imported up front, so a misconfigured keyring — an unknown
+ * active kid, a duplicate kid, or a key Web Crypto refuses — fails at
+ * construction rather than at the first request. Secrets enter as `Redacted`
+ * values: an authority never holds a plain string that a log, a span, or an
+ * inspection of the keyring could render.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const makeHmac = (
-  options: { readonly secret: Redacted.Redacted<string> }
-): Effect.Effect<Service, SyncError> =>
+export const makeHmac = (keyring: Keyring): Effect.Effect<Service, SyncError> =>
   Effect.map(
-    shareSigner.importHmacKey(Redacted.value(options.secret)),
-    (key) => {
-      const sign = (claims: ShareClaims): Effect.Effect<string, SyncError> =>
-        shareSigner.signHmac(key, canonical(claims))
-
+    shareSigner.importKeyring(keyring, "branch"),
+    (ring) => {
       const mint = Effect.fn("BranchShare.mint")(function*(request: MintRequest) {
-        yield* Effect.annotateCurrentSpan({ branchId: request.branchId, access: request.access })
+        // Decoded, not read: the declared parameter type admits an empty
+        // branch id, an empty capability id and a non-positive ttl that the
+        // schema forbids, and reading them straight into `new ShareClaims`
+        // turned a caller's bad argument into a defect out of an operation
+        // whose type promises a `SyncError`. A `ttlMs` of 0 minted an
+        // already-expired capability instead of being refused.
+        const admitted = yield* Admission.decode(MintRequest, request, "invalid_request")
+        yield* Effect.annotateCurrentSpan({ branchId: admitted.branchId, access: admitted.access })
         const issuedAtMs = yield* Clock.currentTimeMillis
-        const maxExpiresAtMs = request.maxExpiresAtMs ?? Infinity
+        const maxExpiresAtMs = admitted.maxExpiresAtMs ?? Infinity
         if (issuedAtMs >= maxExpiresAtMs) {
           return yield* Effect.fail(denied("The share capability has expired"))
         }
         const claims = new ShareClaims({
-          branchId: request.branchId,
-          capabilityId: request.capabilityId,
-          access: request.access,
+          kid: ring.activeKid,
+          branchId: admitted.branchId,
+          capabilityId: admitted.capabilityId,
+          access: admitted.access,
           issuedAtMs,
-          expiresAtMs: Math.min(issuedAtMs + request.ttlMs, maxExpiresAtMs)
+          expiresAtMs: Math.min(issuedAtMs + admitted.ttlMs, maxExpiresAtMs)
         })
-        return new ShareCapability({ claims, signature: yield* sign(claims) })
+        return new ShareCapability({
+          claims,
+          signature: yield* shareSigner.signHmac(ring.active, canonical(claims))
+        })
       })
 
       const verify = Effect.fn("BranchShare.verify")(function*(
@@ -213,23 +246,25 @@ export const makeHmac = (
         const claims = snapshot(capability.claims)
         const signature = capability.signature
         const branchId = request.branchId
-        const access = request.access
-        const expected = yield* sign(claims)
-        if (!shareSigner.constantTimeEquals(expected, signature)) {
-          return yield* Effect.fail(denied("The share capability signature is invalid"))
+        const key = ring.verification.get(claims.kid)
+        if (key === undefined) {
+          return yield* Effect.fail(denied("The share capability names an unknown signing key"))
         }
-        if (claims.branchId !== branchId) {
-          return yield* Effect.fail(
-            denied(`The share capability is scoped to branch ${claims.branchId}`)
-          )
-        }
-        const nowMs = yield* Clock.currentTimeMillis
-        if (nowMs >= claims.expiresAtMs) {
-          return yield* Effect.fail(denied("The share capability has expired"))
-        }
-        if (access === "write" && claims.access !== "write") {
-          return yield* Effect.fail(denied("The share capability is read-only"))
-        }
+        yield* shareSigner.verifyClaims({
+          key,
+          canonical: canonical(claims),
+          signature,
+          expiresAtMs: claims.expiresAtMs,
+          granted: claims.access,
+          requested: request.access,
+          subject: "The share capability",
+          // The one check this authority adds, run after the signature so a
+          // forged claim set is refused as a bad signature and never reported
+          // back as the branch it names.
+          scope: claims.branchId === branchId
+            ? Effect.void
+            : Effect.fail(denied(`The share capability is scoped to branch ${claims.branchId}`))
+        })
         return claims
       })
 
@@ -238,11 +273,37 @@ export const makeHmac = (
   )
 
 /**
- * Provides the HMAC-SHA-256 share authority.
+ * Provides the HMAC-SHA-256 share authority over a keyring.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layerHmac = (
-  options: { readonly secret: Redacted.Redacted<string> }
-): Layer.Layer<BranchShare, SyncError> => Layer.effect(BranchShare, makeHmac(options))
+export const layerHmac = (keyring: Keyring): Layer.Layer<BranchShare, SyncError> =>
+  Layer.effect(BranchShare, makeHmac(keyring))
+
+/**
+ * Provides the branch share authority from configuration: the secret from
+ * `SMITHERS_SYNC_BRANCH_SECRET` (read as `Redacted`, never logged) and the key
+ * name from `SMITHERS_SYNC_BRANCH_KEY_ID`, defaulting to `primary`. Rotation
+ * beyond one configured key uses {@link layerHmac} with an explicit keyring.
+ *
+ * The names are the branch authority's own, not the workspace's: the scheme
+ * label makes one secret in both authorities survivable, not advisable, and a
+ * deployment that rotates one credential should not silently invalidate the
+ * other's outstanding capabilities.
+ *
+ * There is deliberately no default secret: a deployment that configures
+ * neither name fails to construct the authority, and every branch operation
+ * stays closed.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerConfig: Layer.Layer<BranchShare, SyncError | Config.ConfigError> = Layer.effect(
+  BranchShare,
+  Effect.gen(function*() {
+    const secret = yield* Config.redacted("SMITHERS_SYNC_BRANCH_SECRET")
+    const kid = yield* Config.string("SMITHERS_SYNC_BRANCH_KEY_ID").pipe(Config.withDefault("primary"))
+    return yield* makeHmac({ activeKid: kid, keys: [{ kid, secret }] })
+  })
+)

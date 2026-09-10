@@ -27,7 +27,10 @@ const bob = "bob" as BranchProtocol.ParticipantId
 
 const layer = Layer.mergeAll(
   TestJournal.layer(),
-  BranchShare.layerHmac({ secret: Redacted.make("convergence-secret") }),
+  BranchShare.layerHmac({
+    activeKid: "primary",
+    keys: [{ kid: "primary", secret: Redacted.make("convergence-secret") }]
+  }),
   RunCatalog.layerStatic([runId])
 )
 
@@ -66,22 +69,22 @@ describe("branch convergence", () => {
             (share) => share.mint({ branchId, capabilityId: "cap", access: "write", ttlMs: 600_000 })
           )
           const say = (participantId: BranchProtocol.ParticipantId, id: string, text: string) =>
-            commands.submit({
-              capability,
-              submission: BranchCommands.submission({
+            Effect.flatMap(
+              BranchCommands.submission({
                 branchId,
                 commandId: id as BranchProtocol.CommandId,
                 participantId,
                 name: BranchProtocol.SayCommand,
                 args: text
-              })
-            })
+              }),
+              (submission) => commands.submit({ capability, submission })
+            )
           yield* say(alice, "c1", "opening the branch")
           yield* say(bob, "c2", "joined from another tab")
           yield* say(alice, "c3", "renaming next")
           yield* commands.submit({
             capability,
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId,
               commandId: "c4" as BranchProtocol.CommandId,
               participantId: bob,
@@ -122,16 +125,16 @@ describe("branch convergence", () => {
             (share) => share.mint({ branchId, capabilityId: "cap", access: "write", ttlMs: 600_000 })
           )
           const say = (id: string, text: string) =>
-            commands.submit({
-              capability,
-              submission: BranchCommands.submission({
+            Effect.flatMap(
+              BranchCommands.submission({
                 branchId,
                 commandId: id as BranchProtocol.CommandId,
                 participantId: alice,
                 name: BranchProtocol.SayCommand,
                 args: text
-              })
-            })
+              }),
+              (submission) => commands.submit({ capability, submission })
+            )
           yield* say("c1", "first")
           yield* say("c2", "second")
 
@@ -173,7 +176,7 @@ describe("branch convergence", () => {
           )
           const request = {
             capability,
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId,
               commandId: "optimistic" as BranchProtocol.CommandId,
               participantId: alice,
@@ -215,7 +218,7 @@ describe("branch convergence", () => {
           )
           yield* commands.submit({
             capability,
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId,
               commandId: "alice-title" as BranchProtocol.CommandId,
               participantId: alice,
@@ -226,7 +229,7 @@ describe("branch convergence", () => {
           })
           yield* commands.submit({
             capability,
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId,
               commandId: "bob-title" as BranchProtocol.CommandId,
               participantId: bob,

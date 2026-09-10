@@ -14,7 +14,12 @@ const participant = (id: string) => id as BranchProtocol.ParticipantId
 const leaseMs = 30_000
 
 const layer = BranchPresence.layer({ leaseMs }).pipe(
-  Layer.provideMerge(BranchShare.layerHmac({ secret: Redacted.make("presence-secret") }))
+  Layer.provideMerge(
+    BranchShare.layerHmac({
+      activeKid: "primary",
+      keys: [{ kid: "primary", secret: Redacted.make("presence-secret") }]
+    })
+  )
 )
 
 const run = <A, E>(effect: Effect.Effect<A, E, BranchPresence.BranchPresence | BranchShare.BranchShare>) =>
@@ -315,6 +320,7 @@ describe("BranchPresence", () => {
       const noop = BranchPresence.makeNoop()
       const capability = new BranchProtocol.ShareCapability({
         claims: new BranchProtocol.ShareClaims({
+          kid: "primary",
           branchId,
           capabilityId: "cap",
           access: "write",
@@ -364,7 +370,10 @@ describe("BranchPresence request detachment", () => {
    * a test can mutate the caller's request object while the operation awaits.
    */
   const pausedShare = Effect.gen(function*() {
-    const share = yield* BranchShare.makeHmac({ secret: Redacted.make("presence-secret") })
+    const share = yield* BranchShare.makeHmac({
+      activeKid: "primary",
+      keys: [{ kid: "primary", secret: Redacted.make("presence-secret") }]
+    })
     const entered = yield* Deferred.make<void>()
     const release = yield* Deferred.make<void>()
     let pause = false
@@ -436,7 +445,10 @@ describe("BranchPresence request detachment", () => {
       expect(joined.branchId).toBe(branchId)
       expect(joined.participantId).toBe("intruder")
       expect(joined.cursor?.cardId).toBe("card-1")
-      const readOnly = yield* BranchShare.makeHmac({ secret: Redacted.make("presence-secret") })
+      const readOnly = yield* BranchShare.makeHmac({
+        activeKid: "primary",
+        keys: [{ kid: "primary", secret: Redacted.make("presence-secret") }]
+      })
       const capability = yield* readOnly.mint({
         branchId: otherBranchId,
         capabilityId: "cap-read",
@@ -457,7 +469,10 @@ describe("BranchPresence request detachment", () => {
       request.participantId = participant("victim")
       yield* Deferred.succeed(release, undefined)
       yield* Fiber.join(gone)
-      const readOnly = yield* BranchShare.makeHmac({ secret: Redacted.make("presence-secret") })
+      const readOnly = yield* BranchShare.makeHmac({
+        activeKid: "primary",
+        keys: [{ kid: "primary", secret: Redacted.make("presence-secret") }]
+      })
       const capability = yield* readOnly.mint({
         branchId: otherBranchId,
         capabilityId: "cap-read",

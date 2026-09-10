@@ -73,7 +73,10 @@ const storage = SqlJournal.layer({ capacity: 64, overflow: "reject" }).pipe(
   Layer.provideMerge(Layer.provideMerge(JournalMigrations.layer, database))
 )
 const auth = Layer.mergeAll(
-  BranchShare.layerHmac({ secret: Redacted.make("projection-rebuild-test") }),
+  BranchShare.layerHmac({
+    activeKid: "primary",
+    keys: [{ kid: "primary", secret: Redacted.make("projection-rebuild-test") }]
+  }),
   WorkspaceShare.layerHmac({
     activeKid: "test",
     keys: [{ kid: "test", secret: Redacted.make("workspace-rebuild-test") }]
@@ -105,7 +108,7 @@ const program = Effect.gen(function*() {
     for (let index = 0; index < count; index++) {
       yield* commands.submit({
         capability: branchCapability,
-        submission: BranchCommands.submission({
+        submission: yield* BranchCommands.submission({
           branchId,
           commandId: `command-${index}` as BranchProtocol.CommandId,
           participantId: (index % 2 === 0 ? "alice" : "bob") as BranchProtocol.ParticipantId,

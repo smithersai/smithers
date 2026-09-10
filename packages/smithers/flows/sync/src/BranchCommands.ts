@@ -637,7 +637,8 @@ export const layerWith = (
   Layer.effect(BranchCommands, makeLiveWith(options))
 
 /**
- * Builds a submission, filling in the fields a plain command never sets.
+ * Builds a submission, filling in the fields a plain command never sets, and
+ * refusing a field the schema forbids with a `SyncError` rather than a defect.
  *
  * @category constructors
  * @since 0.1.0
@@ -649,12 +650,16 @@ export const submission = (fields: {
   readonly name: string
   readonly args?: string
   readonly target?: string
-}): CommandSubmission =>
-  new CommandSubmission({
+}): Effect.Effect<CommandSubmission, SyncError> =>
+  // Decoded, not constructed: `name` is a `NonEmptyString` the parameter type
+  // admits `""` for, and `new CommandSubmission` throws on it. A builder that
+  // dies on a caller's argument is the same defect `submit` already refuses
+  // typed, one call earlier.
+  Admission.decode(CommandSubmission, {
     branchId: fields.branchId,
     commandId: fields.commandId,
     participantId: fields.participantId,
     name: fields.name,
     args: fields.args ?? "",
     target: fields.target ?? ""
-  })
+  }, "invalid_request")

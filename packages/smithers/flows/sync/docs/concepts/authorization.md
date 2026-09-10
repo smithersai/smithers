@@ -68,10 +68,13 @@ Three details make that hold up:
 - **`Redacted` secrets.** A keyring never holds a plain string, so a log, a
   span, or an inspection of the options object cannot render it.
 
-`WorkspaceShare` adds a `kid` inside the signed claims. The verifier both
+Both authorities carry a `kid` inside the signed claims. The verifier both
 selects the right key and refuses a capability whose key name was swapped after
 minting, which is what lets a deployment rotate keys while capabilities minted
-under a retired key are still outstanding. See
+under a retired key are still outstanding. The keyrings are separate:
+`BranchShare.layerConfig` provisions the branch authority from
+`SMITHERS_SYNC_BRANCH_SECRET` and `SMITHERS_SYNC_BRANCH_KEY_ID`, so rotating
+one credential leaves the other's outstanding capabilities alone. See
 [Authorize a connection](../guides/authorize-a-connection.md).
 
 ## A subscription carries its own deadline

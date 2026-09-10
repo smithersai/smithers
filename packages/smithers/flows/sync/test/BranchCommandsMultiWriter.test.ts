@@ -46,18 +46,19 @@ const runRace = (rightParticipant: BranchProtocol.ParticipantId) =>
       access: "write",
       ttlMs: 60_000
     })
-    const request = (participantId: BranchProtocol.ParticipantId) => ({
-      capability,
-      submission: BranchCommands.submission({
-        branchId,
-        commandId,
-        participantId,
-        name: BranchProtocol.SayCommand,
-        args: "execute exactly once"
-      })
-    })
+    const request = (participantId: BranchProtocol.ParticipantId) =>
+      Effect.map(
+        BranchCommands.submission({
+          branchId,
+          commandId,
+          participantId,
+          name: BranchProtocol.SayCommand,
+          args: "execute exactly once"
+        }),
+        (submission) => ({ capability, submission })
+      )
     const receipts = yield* Effect.all(
-      [left.submit(request(alice)), right.submit(request(rightParticipant))],
+      [left.submit(yield* request(alice)), right.submit(yield* request(rightParticipant))],
       { concurrency: "unbounded" }
     )
     const page = yield* journal.entries({ runId, limit: 10 })
@@ -66,7 +67,10 @@ const runRace = (rightParticipant: BranchProtocol.ParticipantId) =>
     Effect.provide(
       Layer.mergeAll(
         TestJournal.layer(),
-        BranchShare.layerHmac({ secret: Redacted.make("multi-writer-secret") })
+        BranchShare.layerHmac({
+          activeKid: "primary",
+          keys: [{ kid: "primary", secret: Redacted.make("multi-writer-secret") }]
+        })
       )
     ),
     Effect.provide(TestClock.layer())

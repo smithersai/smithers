@@ -7,8 +7,9 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import type { JournalEvent } from "@smthrs/journal"
-import { Effect, Fiber, Layer, Redacted } from "effect"
+import { ConfigProvider, Duration, Effect, Exit, Fiber, Layer, Redacted } from "effect"
 import { TestClock } from "effect/testing"
+import type { Access } from "../src/BranchProtocol.ts"
 import { branchOfRunId, branchRunId, ShareCapability, ShareClaims } from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import { SyncError } from "../src/SyncError.ts"
@@ -20,7 +21,15 @@ const branchId = "branch-hardening" as ShareClaims["branchId"]
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => effect.pipe(Effect.provide(TestClock.layer()))
 
-const branchAuthority = BranchShare.makeHmac({ secret: Redacted.make(secret) })
+const branchAuthority = BranchShare.makeHmac({
+  activeKid: "primary",
+  keys: [{ kid: "primary", secret: Redacted.make(secret) }]
+})
+
+const workspaceAuthority = WorkspaceShare.makeHmac({
+  activeKid: "primary",
+  keys: [{ kid: "primary", secret: Redacted.make(secret) }]
+})
 
 describe("share claim encoding", () => {
   // `TextEncoder` folds every unpaired surrogate to U+FFFD, so two claim sets
@@ -38,6 +47,7 @@ describe("share claim encoding", () => {
           )
           const forged = new ShareCapability({
             claims: new ShareClaims({
+              kid: "primary",
               branchId: lone,
               capabilityId: "cap",
               access: "read",
@@ -115,6 +125,7 @@ describe("share domain separation", () => {
           })
           const replayed = new ShareCapability({
             claims: new ShareClaims({
+              kid: "primary",
               branchId,
               capabilityId: "cap",
               access: "read",
@@ -196,5 +207,203 @@ describe("share authorities that are switched off", () => {
       expect(branchMint.code).toBe("unauthorized")
       expect(SyncError.is(workspaceMint)).toBe(true)
       expect(workspaceMint.code).toBe("unauthorized")
+    }))
+})
+
+/**
+ * The two authorities as one table, so every refusal below is asserted against
+ * both.
+ *
+ * `ShareHardening` tested each authority separately, which is what let the
+ * expiry boundary and the read-only refusal drift: a fix landing in one
+ * verification pipeline was not caught if it missed the other. Both now run
+ * through `shareSigner.verifyClaims`, and this table is what says so.
+ */
+const authorities = [
+  {
+    name: "BranchShare",
+    subject: "The share capability",
+    /** Requests whose declared TypeScript type admits a value the schema forbids. */
+    invalid: [
+      { label: "an empty branch id", request: { branchId: "", capabilityId: "cap", access: "read", ttlMs: 1_000 } },
+      { label: "an empty capability id", request: { branchId, capabilityId: "", access: "read", ttlMs: 1_000 } },
+      { label: "a zero ttl", request: { branchId, capabilityId: "cap", access: "read", ttlMs: 0 } },
+      { label: "a NaN ttl", request: { branchId, capabilityId: "cap", access: "read", ttlMs: NaN } }
+    ],
+    mintUnchecked: (request: unknown): Effect.Effect<unknown, SyncError> =>
+      Effect.flatMap(branchAuthority, (share) => share.mint(request as BranchShare.MintRequest)),
+    minted: (access: Access, ttlMs: number) =>
+      Effect.flatMap(
+        branchAuthority,
+        (share) =>
+          Effect.map(share.mint({ branchId, capabilityId: "cap", access, ttlMs }), (capability) => ({
+            verify: (requested: Access): Effect.Effect<unknown, SyncError> =>
+              share.verify(capability, { branchId, access: requested })
+          }))
+      )
+  },
+  {
+    name: "WorkspaceShare",
+    subject: "The workspace capability",
+    invalid: [
+      { label: "an empty capability id", request: { capabilityId: "", access: "read", ttlMs: 1_000 } },
+      { label: "a zero ttl", request: { capabilityId: "cap", access: "read", ttlMs: 0 } },
+      { label: "a NaN ttl", request: { capabilityId: "cap", access: "read", ttlMs: NaN } }
+    ],
+    mintUnchecked: (request: unknown): Effect.Effect<unknown, SyncError> =>
+      Effect.flatMap(workspaceAuthority, (share) => share.mint(request as WorkspaceShare.MintRequest)),
+    minted: (access: Access, ttlMs: number) =>
+      Effect.flatMap(
+        workspaceAuthority,
+        (share) =>
+          Effect.map(share.mint({ capabilityId: "cap", access, ttlMs }), (capability) => ({
+            verify: (requested: Access): Effect.Effect<unknown, SyncError> =>
+              share.verify(capability, { access: requested })
+          }))
+      )
+  }
+] as const
+
+describe("share mint admission", () => {
+  // `mint` is typed `Effect<_, SyncError>` over a request whose schema forbids
+  // an empty id and a non-positive ttl, and neither authority decoded it: the
+  // TypeScript type admits `""` and `NaN`, so an in-process caller passing one
+  // got a `Schema.Class` defect out of an operation that promised a refusal,
+  // and `ttlMs: 0` was accepted and minted an already-expired capability.
+  for (const authority of authorities) {
+    for (const { label, request } of authority.invalid) {
+      it.effect(`${authority.name} refuses ${label} typed`, () =>
+        Effect.gen(function*() {
+          const outcome = yield* run(Effect.exit(authority.mintUnchecked(request)))
+
+          expect(died(outcome)).toBe(false)
+          expect(SyncError.is(refusalOf(outcome))).toBe(true)
+          expect(refusalOf(outcome)?.code).toBe("invalid_request")
+        }))
+    }
+  }
+})
+
+describe("share verification, both authorities", () => {
+  // The boundary is `>=`: a capability is dead at the instant it expires, not
+  // one millisecond after. Asserted on both authorities through the shared
+  // pipeline, so the boundary cannot drift in one of them alone.
+  for (const authority of authorities) {
+    it.effect(`${authority.name} accepts the last millisecond and refuses the expiry instant`, () =>
+      Effect.gen(function*() {
+        const [before, at] = yield* run(
+          Effect.gen(function*() {
+            const capability = yield* authority.minted("read", 60_000)
+            yield* TestClock.adjust(Duration.millis(59_999))
+            const before = yield* Effect.exit(capability.verify("read"))
+            yield* TestClock.adjust(Duration.millis(1))
+            return [before, yield* Effect.exit(capability.verify("read"))] as const
+          })
+        )
+
+        expect(Exit.isSuccess(before)).toBe(true)
+        expect(died(at)).toBe(false)
+        expect(refusalOf(at)?.code).toBe("unauthorized")
+        expect(refusalOf(at)?.message).toBe(`${authority.subject} has expired`)
+      }))
+
+    it.effect(`${authority.name} refuses a write against a read capability`, () =>
+      Effect.gen(function*() {
+        const [widened, narrowed] = yield* run(
+          Effect.gen(function*() {
+            const read = yield* authority.minted("read", 60_000)
+            const write = yield* authority.minted("write", 60_000)
+            return [yield* Effect.exit(read.verify("write")), yield* Effect.exit(write.verify("read"))] as const
+          })
+        )
+
+        expect(died(widened)).toBe(false)
+        expect(refusalOf(widened)?.code).toBe("unauthorized")
+        expect(refusalOf(widened)?.message).toBe(`${authority.subject} is read-only`)
+        expect(Exit.isSuccess(narrowed)).toBe(true)
+      }))
+  }
+})
+
+describe("branch key rotation", () => {
+  // The branch authority signed under one bare secret with no `kid`, so
+  // rotating the branch secret invalidated every share link already out. It
+  // now carries the workspace scheme: the retired key stays in the ring until
+  // its links expire, and dropping it is what revokes them.
+  it.effect("verifies a link minted under a retired key and refuses it once the key leaves the ring", () =>
+    Effect.gen(function*() {
+      const [minted, rotated, revoked] = yield* run(
+        Effect.gen(function*() {
+          const retired = { kid: "2026-08", secret: Redacted.make("retired-secret") }
+          const active = { kid: "2026-09", secret: Redacted.make("active-secret") }
+          const old = yield* BranchShare.makeHmac({ activeKid: retired.kid, keys: [retired] })
+          const capability = yield* old.mint({ branchId, capabilityId: "cap", access: "read", ttlMs: 60_000 })
+          const rotated = yield* BranchShare.makeHmac({ activeKid: active.kid, keys: [active, retired] })
+          const dropped = yield* BranchShare.makeHmac({ activeKid: active.kid, keys: [active] })
+          return [
+            capability.claims.kid,
+            yield* rotated.verify(capability, { branchId, access: "read" }),
+            yield* Effect.exit(dropped.verify(capability, { branchId, access: "read" }))
+          ] as const
+        })
+      )
+
+      expect(minted).toBe("2026-08")
+      expect(rotated.kid).toBe("2026-08")
+      expect(died(revoked)).toBe(false)
+      expect(refusalOf(revoked)?.message).toBe("The share capability names an unknown signing key")
+    }))
+
+  it.effect("refuses a branch keyring that names a kid twice or an active kid it has no key for", () =>
+    Effect.gen(function*() {
+      const [duplicate, missing] = yield* run(
+        Effect.gen(function*() {
+          const key = { kid: "k1", secret: Redacted.make(secret) }
+          return [
+            yield* Effect.flip(BranchShare.makeHmac({ activeKid: "k1", keys: [key, key] })),
+            yield* Effect.flip(BranchShare.makeHmac({ activeKid: "k2", keys: [key] }))
+          ] as const
+        })
+      )
+
+      expect(duplicate.code).toBe("invalid_request")
+      expect(duplicate.message).toBe("The branch keyring names kid k1 twice")
+      expect(missing.code).toBe("invalid_request")
+      expect(missing.message).toBe("The branch keyring's active kid names no key in the ring")
+    }))
+
+  it.effect("layerConfig reads the redacted branch secret and key id from configuration", () =>
+    Effect.gen(function*() {
+      const mintedKid = (environment: Record<string, string>) =>
+        Effect.gen(function*() {
+          const share = yield* BranchShare.BranchShare
+          const capability = yield* share.mint({ branchId, capabilityId: "cap", access: "read", ttlMs: 60_000 })
+          yield* share.verify(capability, { branchId, access: "read" })
+          return capability.claims.kid
+        }).pipe(
+          Effect.provide(
+            BranchShare.layerConfig.pipe(
+              Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(environment)))
+            )
+          )
+        )
+      const [defaultKid, namedKid, unconfigured] = yield* run(
+        Effect.gen(function*() {
+          return [
+            yield* mintedKid({ SMITHERS_SYNC_BRANCH_SECRET: "configured-secret" }),
+            yield* mintedKid({
+              SMITHERS_SYNC_BRANCH_SECRET: "configured-secret",
+              SMITHERS_SYNC_BRANCH_KEY_ID: "2026-09"
+            }),
+            yield* Effect.exit(mintedKid({}))
+          ] as const
+        })
+      )
+
+      expect(defaultKid).toBe("primary")
+      expect(namedKid).toBe("2026-09")
+      // No default secret: an unconfigured deployment fails to construct the
+      // authority and every branch operation stays closed.
+      expect(Exit.isSuccess(unconfigured)).toBe(false)
     }))
 })

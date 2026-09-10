@@ -12,7 +12,10 @@ for (const live of [false, true]) {
     Effect.gen(function*() {
       const branchId = "authorized-scope" as BranchProtocol.BranchId
       const runId = BranchProtocol.branchRunId(branchId)
-      const share = yield* BranchShare.makeHmac({ secret: Redacted.make("authorization-race") })
+      const share = yield* BranchShare.makeHmac({
+        activeKid: "primary",
+        keys: [{ kid: "primary", secret: Redacted.make("authorization-race") }]
+      })
       const entered = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
       const capability = yield* share.mint({ branchId, capabilityId: "reader", access: "read", ttlMs: 60_000 })

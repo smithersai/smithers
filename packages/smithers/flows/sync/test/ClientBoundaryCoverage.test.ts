@@ -60,6 +60,7 @@ describe("SyncClient covered-frame boundaries", () => {
     Effect.gen(function*() {
       const capability = new BranchProtocol.ShareCapability({
         claims: new BranchProtocol.ShareClaims({
+          kid: "primary",
           branchId: "boundary" as BranchProtocol.BranchId,
           capabilityId: "cap-boundary",
           access: "read",

@@ -57,7 +57,7 @@ describe("branch write admission integrity", () => {
         const capability = yield* share.mint({ branchId, capabilityId: "hydrate", access: "write", ttlMs: 60_000 })
         const request = {
           capability,
-          submission: BranchCommands.submission({
+          submission: yield* BranchCommands.submission({
             branchId,
             commandId: "c-0" as BranchProtocol.CommandId,
             participantId: "alice" as BranchProtocol.ParticipantId,
@@ -73,7 +73,14 @@ describe("branch write admission integrity", () => {
         }
         expect(afters).toEqual([undefined, 0, undefined, 0])
         expect(writes).toBe(0)
-      }).pipe(Effect.provide(BranchShare.layerHmac({ secret: Redacted.make("hydrate-test") }))))
+      }).pipe(
+        Effect.provide(
+          BranchShare.layerHmac({
+            activeKid: "primary",
+            keys: [{ kid: "primary", secret: Redacted.make("hydrate-test") }]
+          })
+        )
+      ))
   }
   it.effect("refuses malformed submissions before authorization or durable writes", () =>
     Effect.gen(function*() {
@@ -112,7 +119,7 @@ describe("branch write admission integrity", () => {
           )
       }))
       const capability = yield* share.mint({ branchId, capabilityId: "write", access: "write", ttlMs: 60_000 })
-      const submission = BranchCommands.submission({
+      const submission = yield* BranchCommands.submission({
         branchId,
         commandId: "c" as BranchProtocol.CommandId,
         participantId: "alice" as BranchProtocol.ParticipantId,
@@ -139,7 +146,13 @@ describe("branch write admission integrity", () => {
       ).toEqual([])
     }).pipe(
       Effect.provide(
-        Layer.mergeAll(TestJournal.layer(), BranchShare.layerHmac({ secret: Redacted.make("admission-test") }))
+        Layer.mergeAll(
+          TestJournal.layer(),
+          BranchShare.layerHmac({
+            activeKid: "primary",
+            keys: [{ kid: "primary", secret: Redacted.make("admission-test") }]
+          })
+        )
       )
     ))
 })

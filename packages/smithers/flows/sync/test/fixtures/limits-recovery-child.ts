@@ -29,7 +29,10 @@ const journalLayer = SqlJournal.layer({ capacity: 32, overflow: "reject" }).pipe
 ))
 const base = Layer.mergeAll(
   journalLayer,
-  BranchShare.layerHmac({ secret: Redacted.make("disk-limits-test") }),
+  BranchShare.layerHmac({
+    activeKid: "primary",
+    keys: [{ kid: "primary", secret: Redacted.make("disk-limits-test") }]
+  }),
   TestSync.layerWorkspaceAuth
 )
 const program = Effect.gen(function*() {
@@ -54,7 +57,7 @@ const program = Effect.gen(function*() {
           access: "write",
           ttlMs: 120_000
         })
-        const blank = BranchCommands.submission({
+        const blank = yield* BranchCommands.submission({
           branchId,
           commandId: "c" as BranchProtocol.CommandId,
           participantId: "alice" as BranchProtocol.ParticipantId,
@@ -283,7 +286,7 @@ const program = Effect.gen(function*() {
     const commands = yield* BranchCommands.makeLive
     const failure = yield* Effect.flip(commands.submit({
       capability,
-      submission: BranchCommands.submission({
+      submission: yield* BranchCommands.submission({
         branchId,
         commandId: "new" as BranchProtocol.CommandId,
         participantId: "alice" as BranchProtocol.ParticipantId,

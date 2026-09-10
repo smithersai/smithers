@@ -21,7 +21,10 @@ const otherBranchId = "bounded-other" as BranchProtocol.BranchId
 const alice = "alice" as BranchProtocol.ParticipantId
 const commandId = (id: string) => id as BranchProtocol.CommandId
 
-const shareLayer = BranchShare.layerHmac({ secret: Redacted.make("bounds-secret") })
+const shareLayer = BranchShare.layerHmac({
+  activeKid: "primary",
+  keys: [{ kid: "primary", secret: Redacted.make("bounds-secret") }]
+})
 
 const capabilityFor = (target: BranchProtocol.BranchId) =>
   Effect.flatMap(
@@ -49,7 +52,7 @@ describe("BranchCommands identity and bounds", () => {
           const right = "a b" as BranchProtocol.BranchId
           const leftReceipt = yield* commands.submit({
             capability: yield* capabilityFor(left),
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId: left,
               commandId: commandId("b c"),
               participantId: alice,
@@ -58,7 +61,7 @@ describe("BranchCommands identity and bounds", () => {
           })
           const rightReceipt = yield* commands.submit({
             capability: yield* capabilityFor(right),
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId: right,
               commandId: commandId("c"),
               participantId: alice,
@@ -89,15 +92,15 @@ describe("BranchCommands identity and bounds", () => {
           const commands = yield* BranchCommands.makeLiveWith({ ledgerCapacity: 2 })
           const capability = yield* capabilityFor(branchId)
           const submit = (id: string) =>
-            commands.submit({
-              capability,
-              submission: BranchCommands.submission({
+            Effect.flatMap(
+              BranchCommands.submission({
                 branchId,
                 commandId: commandId(id),
                 participantId: alice,
                 name: BranchProtocol.SayCommand
-              })
-            })
+              }),
+              (submission) => commands.submit({ capability, submission })
+            )
           const original = yield* submit("c1")
           yield* submit("c2")
           yield* submit("c3")
@@ -125,16 +128,16 @@ describe("BranchCommands identity and bounds", () => {
           const commands = yield* BranchCommands.makeLiveWith({ ledgerCapacity: 2 })
           const capability = yield* capabilityFor(branchId)
           const submit = (id: string, args: string) =>
-            commands.submit({
-              capability,
-              submission: BranchCommands.submission({
+            Effect.flatMap(
+              BranchCommands.submission({
                 branchId,
                 commandId: commandId(id),
                 participantId: alice,
                 name: BranchProtocol.SayCommand,
                 args
-              })
-            })
+              }),
+              (submission) => commands.submit({ capability, submission })
+            )
           const original = yield* submit("c1", "original")
           yield* submit("c2", "")
           yield* submit("c3", "")
@@ -159,15 +162,15 @@ describe("BranchCommands identity and bounds", () => {
           const journal = yield* Journal.Journal
           const capability = yield* capabilityFor(branchId)
           const submit = (commands: BranchCommands.Service, id: string) =>
-            commands.submit({
-              capability,
-              submission: BranchCommands.submission({
+            Effect.flatMap(
+              BranchCommands.submission({
                 branchId,
                 commandId: commandId(id),
                 participantId: alice,
                 name: BranchProtocol.SayCommand
-              })
-            })
+              }),
+              (submission) => commands.submit({ capability, submission })
+            )
           const seeded = yield* BranchCommands.makeLive
           yield* submit(seeded, "c1")
           const second = yield* submit(seeded, "c2")
@@ -237,7 +240,7 @@ describe("BranchCommands identity and bounds", () => {
           return yield* Effect.exit(
             commands.submit({
               capability,
-              submission: BranchCommands.submission({
+              submission: yield* BranchCommands.submission({
                 branchId,
                 commandId: commandId("c1"),
                 participantId: alice,
@@ -275,15 +278,15 @@ describe("BranchCommands identity and bounds", () => {
           const stuckCapability = yield* capabilityFor(otherBranchId)
           const liveCapability = yield* capabilityFor(branchId)
           const submit = (target: BranchProtocol.BranchId, capability: BranchProtocol.ShareCapability) =>
-            commands.submit({
-              capability,
-              submission: BranchCommands.submission({
+            Effect.flatMap(
+              BranchCommands.submission({
                 branchId: target,
                 commandId: commandId(`cmd-${target}`),
                 participantId: alice,
                 name: BranchProtocol.SayCommand
-              })
-            })
+              }),
+              (submission) => commands.submit({ capability, submission })
+            )
           yield* Effect.forkChild(submit(otherBranchId, stuckCapability), { startImmediately: true })
           return yield* submit(branchId, liveCapability)
         }).pipe(

@@ -168,8 +168,9 @@ Two procedures enforce policy in the adapter itself, on top of what
   branch, refuses an expired parent with `unauthorized`, and passes the parent's
   expiry as `maxExpiresAtMs` so the child never outlives it.
 
-`BranchShare.mint` performs none of those checks. An in-process host that
-mints through the service directly must gate the principal and the parent
+`BranchShare.mint` performs none of those checks. It decodes its request, so a
+malformed id or ttl is refused with `invalid_request`, but an in-process host
+that mints through the service directly must gate the principal and the parent
 capability itself or it hands out branches and links the wire would refuse.
 
 The payload schemas **are** the service schemas rather than copies of them, so

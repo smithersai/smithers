@@ -38,7 +38,7 @@ const entry = (sequence: number, payload: unknown) =>
 
 const branchLayers = Layer.mergeAll(
   TestJournal.layer(),
-  BranchShare.layerHmac({ secret: Redacted.make("payload-secret") })
+  BranchShare.layerHmac({ activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("payload-secret") }] })
 )
 
 const submitOutcome = (
@@ -58,7 +58,7 @@ const submitOutcome = (
     const exit = yield* Effect.exit(
       commands.submit({
         capability,
-        submission: BranchCommands.submission({
+        submission: yield* BranchCommands.submission({
           branchId,
           commandId: "oversized-command" as BranchProtocol.CommandId,
           participantId: "alice" as BranchProtocol.ParticipantId,

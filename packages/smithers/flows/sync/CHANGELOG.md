@@ -35,9 +35,28 @@
   failure crosses as its stable journal code and never as the driver's own
   message.
 - **Breaking.** `BranchShare.makeHmac` and `layerHmac` take a `Redacted`
-  secret, and the branch scheme signs a scheme label, so a branch signature can
-  no longer be replayed as a workspace signature under a shared secret.
-  Outstanding branch capabilities do not verify under this release.
+  keyring rather than a single secret, `ShareClaims` carries the signing `kid`,
+  and the branch scheme signs a scheme label, now `v2`, so a branch signature
+  can no longer be replayed as a workspace signature under a shared secret and
+  the branch secret rotates the way the workspace secret already did: the
+  retired key stays in the keyring until its links expire. `BranchShare`
+  gained `layerConfig`, which reads `SMITHERS_SYNC_BRANCH_SECRET` and
+  `SMITHERS_SYNC_BRANCH_KEY_ID`. Outstanding branch capabilities do not verify
+  under this release.
+- **Breaking.** `BranchCommands.submission` returns
+  `Effect<CommandSubmission, SyncError>`. It decodes the fields it fills in, so
+  a command name the schema forbids is the same typed refusal `submit` returns
+  one call later rather than a throw at the caller.
+- `BranchShare.mint` and `WorkspaceShare.mint` decode their request before
+  signing it. An empty `branchId` or `capabilityId` and a `ttlMs` of `0` or
+  `NaN` are refused with `invalid_request`; `ttlMs: 0` used to mint an
+  already-expired capability, and the others died where the declared type
+  promises a `SyncError`. `Branch.CreateBranch` decodes the id its `BranchIds`
+  port yields instead of branding it, so a host id source returning `""`
+  refuses rather than crashing the handler.
+- Both authorities verify through one pipeline, `shareSigner.verifyClaims`, so
+  the signature check, the expiry boundary, and the read-only refusal cannot
+  drift apart between them. `ShareHardening` asserts each against both.
 - **Breaking.** A subscription's `credit` must be between 1 and
   `maxSubscribeCredit`, and a read's `limit` at most `maxReadLimit`. A cursor
   set that names one run twice is refused with `invalid_request`.

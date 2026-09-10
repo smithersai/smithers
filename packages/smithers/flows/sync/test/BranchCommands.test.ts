@@ -7,6 +7,7 @@ import * as BranchCommands from "../src/BranchCommands.ts"
 import * as BranchProtocol from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
 import { SyncError } from "../src/SyncError.ts"
+import { died, refusalOf } from "./refusal.ts"
 
 const branchId = "live-branch" as BranchProtocol.BranchId
 const otherBranchId = "other-branch" as BranchProtocol.BranchId
@@ -15,7 +16,10 @@ const alice = "alice" as BranchProtocol.ParticipantId
 const bob = "bob" as BranchProtocol.ParticipantId
 const commandId = (id: string) => id as BranchProtocol.CommandId
 
-const shareLayer = BranchShare.layerHmac({ secret: Redacted.make("commands-secret") })
+const shareLayer = BranchShare.layerHmac({
+  activeKid: "primary",
+  keys: [{ kid: "primary", secret: Redacted.make("commands-secret") }]
+})
 
 const capabilityFor = (target: BranchProtocol.BranchId, access: BranchProtocol.Access) =>
   Effect.flatMap(
@@ -35,6 +39,25 @@ const entriesOf = Effect.flatMap(
 )
 
 describe("BranchCommands", () => {
+  // `submission` filled the defaults and constructed `CommandSubmission`
+  // directly, and `name` is a `NonEmptyString` its parameter type admits `""`
+  // for: a builder one call ahead of the refusal `submit` already returns
+  // typed threw a schema error at its caller instead.
+  it.effect("refuses a command name the schema forbids rather than throwing", () =>
+    Effect.gen(function*() {
+      const outcome = yield* Effect.exit(BranchCommands.submission({
+        branchId,
+        commandId: commandId("c-empty"),
+        participantId: alice,
+        name: ""
+      }))
+
+      const refusal = refusalOf(outcome)
+      expect(died(outcome)).toBe(false)
+      expect(SyncError.is(refusal)).toBe(true)
+      expect(refusal?.code).toBe("invalid_request")
+    }))
+
   it.effect("admits one command and records it on the branch journal", () =>
     Effect.gen(function*() {
       const [receipt, page] = yield* durable(
@@ -43,7 +66,7 @@ describe("BranchCommands", () => {
           const capability = yield* capabilityFor(branchId, "write")
           const admitted = yield* commands.submit({
             capability,
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId,
               commandId: commandId("c1"),
               participantId: alice,
@@ -74,7 +97,7 @@ describe("BranchCommands", () => {
           const capability = yield* capabilityFor(branchId, "write")
           const request = {
             capability,
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId,
               commandId: commandId("c1"),
               participantId: alice,
@@ -99,16 +122,16 @@ describe("BranchCommands", () => {
           const commands = yield* BranchCommands.makeLive
           const capability = yield* capabilityFor(branchId, "write")
           const submit = (participantId: BranchProtocol.ParticipantId) =>
-            commands.submit({
-              capability,
-              submission: BranchCommands.submission({
+            Effect.flatMap(
+              BranchCommands.submission({
                 branchId,
                 commandId: commandId("shared"),
                 participantId,
                 name: "goal",
                 args: "ship it"
-              })
-            })
+              }),
+              (submission) => commands.submit({ capability, submission })
+            )
           const settled = yield* Effect.all([submit(alice), submit(bob)], { concurrency: "unbounded" })
           return [settled, yield* entriesOf] as const
         })
@@ -126,7 +149,7 @@ describe("BranchCommands", () => {
           const capability = yield* capabilityFor(branchId, "write")
           const request = {
             capability,
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId,
               commandId: commandId("c1"),
               participantId: alice,
@@ -155,7 +178,7 @@ describe("BranchCommands", () => {
           const commands = yield* BranchCommands.makeLive
           const foreign = yield* capabilityFor(otherBranchId, "write")
           const readOnly = yield* capabilityFor(branchId, "read")
-          const submission = BranchCommands.submission({
+          const submission = yield* BranchCommands.submission({
             branchId,
             commandId: commandId("c1"),
             participantId: alice,
@@ -213,15 +236,15 @@ describe("BranchCommands", () => {
           const commands = yield* BranchCommands.makeLive
           const capability = yield* capabilityFor(branchId, "write")
           const submit = (id: string) =>
-            commands.submit({
-              capability,
-              submission: BranchCommands.submission({
+            Effect.flatMap(
+              BranchCommands.submission({
                 branchId,
                 commandId: commandId(id),
                 participantId: alice,
                 name: BranchProtocol.SayCommand
-              })
-            })
+              }),
+              (submission) => commands.submit({ capability, submission })
+            )
           return [yield* submit("c-known"), yield* submit("c-new")] as const
         }).pipe(
           Effect.provide(
@@ -262,7 +285,7 @@ describe("BranchCommands", () => {
           return yield* Effect.flip(
             commands.submit({
               capability,
-              submission: BranchCommands.submission({
+              submission: yield* BranchCommands.submission({
                 branchId,
                 commandId: commandId("c1"),
                 participantId: alice,
@@ -307,7 +330,7 @@ describe("BranchCommands", () => {
           return yield* Effect.flip(
             commands.submit({
               capability,
-              submission: BranchCommands.submission({
+              submission: yield* BranchCommands.submission({
                 branchId,
                 commandId: commandId("contested"),
                 participantId: alice,
@@ -346,6 +369,7 @@ describe("BranchCommands", () => {
     Effect.gen(function*() {
       const capability = new BranchProtocol.ShareCapability({
         claims: new BranchProtocol.ShareClaims({
+          kid: "primary",
           branchId,
           capabilityId: "cap",
           access: "write",
@@ -354,7 +378,7 @@ describe("BranchCommands", () => {
         }),
         signature: ""
       })
-      const submission = BranchCommands.submission({
+      const submission = yield* BranchCommands.submission({
         branchId,
         commandId: commandId("c1"),
         participantId: alice,
@@ -395,7 +419,7 @@ describe("BranchCommands", () => {
           const capability = yield* capabilityFor(branchId, "write")
           return (yield* commands.submit({
             capability,
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId,
               commandId: commandId("c1"),
               participantId: alice,
@@ -422,7 +446,7 @@ describe("BranchCommands", () => {
           for (const id of ["c1", "c2", "c3"]) {
             yield* commands.submit({
               capability,
-              submission: BranchCommands.submission({
+              submission: yield* BranchCommands.submission({
                 branchId,
                 commandId: commandId(id),
                 participantId: alice,

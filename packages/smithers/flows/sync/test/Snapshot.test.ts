@@ -264,7 +264,14 @@ describe("public snapshot admission", () => {
       const capability = yield* share.mint({ branchId, access: "read", capabilityId: "right", ttlMs: 1000 })
       expect(yield* service.snapshot({ ...input, capability })).toEqual({ ...snapshot, runId })
       expect(calls).toBe(1)
-    }).pipe(Effect.provide(BranchShare.layerHmac({ secret: Redacted.make("snapshot-test-only") }))))
+    }).pipe(
+      Effect.provide(
+        BranchShare.layerHmac({
+          activeKid: "primary",
+          keys: [{ kid: "primary", secret: Redacted.make("snapshot-test-only") }]
+        })
+      )
+    ))
 
   it.live("authenticates snapshot headers through production JSON RPC before calling the provider", () => {
     let calls = 0

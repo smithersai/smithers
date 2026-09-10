@@ -28,7 +28,10 @@ type Requirements =
   | Scope.Scope
 
 const base = Layer.mergeAll(
-  BranchShare.layerHmac({ secret: Redacted.make("roster-watch-secret") }),
+  BranchShare.layerHmac({
+    activeKid: "primary",
+    keys: [{ kid: "primary", secret: Redacted.make("roster-watch-secret") }]
+  }),
   BranchCommands.layerNoop,
   BranchIds.layerSequential("roster"),
   Layer.succeed(SyncAuth)((effect) =>

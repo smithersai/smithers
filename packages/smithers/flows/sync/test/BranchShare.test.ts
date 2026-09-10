@@ -10,7 +10,10 @@ import { died, refusalOf } from "./refusal.ts"
 const branchId = "live-branch" as BranchProtocol.BranchId
 const otherBranchId = "other-branch" as BranchProtocol.BranchId
 
-const authority = BranchShare.makeHmac({ secret: Redacted.make("share-secret") })
+const authority = BranchShare.makeHmac({
+  activeKid: "primary",
+  keys: [{ kid: "primary", secret: Redacted.make("share-secret") }]
+})
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => effect.pipe(Effect.provide(TestClock.layer()))
 
@@ -24,8 +27,13 @@ describe("BranchShare", () => {
     Effect.gen(function*() {
       const [empty, shortClaims] = yield* run(
         Effect.gen(function*() {
-          const empty = yield* Effect.exit(BranchShare.makeHmac({ secret: Redacted.make("") }))
-          const short = yield* BranchShare.makeHmac({ secret: Redacted.make("x") })
+          const empty = yield* Effect.exit(
+            BranchShare.makeHmac({ activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("") }] })
+          )
+          const short = yield* BranchShare.makeHmac({
+            activeKid: "primary",
+            keys: [{ kid: "primary", secret: Redacted.make("x") }]
+          })
           const capability = yield* short.mint({
             branchId,
             capabilityId: "short-key",
@@ -210,7 +218,14 @@ describe("BranchShare", () => {
           const share = yield* BranchShare.BranchShare
           const capability = yield* share.mint({ branchId, capabilityId: "cap-l", access: "write", ttlMs: 1_000 })
           return (yield* share.verify(capability, { branchId, access: "write" })).access
-        }).pipe(Effect.provide(BranchShare.layerHmac({ secret: Redacted.make("layer-secret") })))
+        }).pipe(
+          Effect.provide(
+            BranchShare.layerHmac({
+              activeKid: "primary",
+              keys: [{ kid: "primary", secret: Redacted.make("layer-secret") }]
+            })
+          )
+        )
       )
 
       expect(access).toBe("write")
@@ -232,6 +247,7 @@ describe("BranchShare", () => {
             share.verify(
               new BranchProtocol.ShareCapability({
                 claims: new BranchProtocol.ShareClaims({
+                  kid: "primary",
                   branchId,
                   capabilityId: "cap",
                   access: "read",
@@ -262,6 +278,7 @@ describe("BranchShare", () => {
             overridden.verify(
               new BranchProtocol.ShareCapability({
                 claims: new BranchProtocol.ShareClaims({
+                  kid: "primary",
                   branchId,
                   capabilityId: "cap",
                   access: "read",
@@ -286,7 +303,11 @@ describe("BranchShare", () => {
     Effect.gen(function*() {
       const importFailure = new Error("import refused")
       const importKeySpy = vi.spyOn(crypto.subtle, "importKey").mockRejectedValueOnce(importFailure)
-      const importError = yield* run(Effect.flip(BranchShare.makeHmac({ secret: Redacted.make("broken") })))
+      const importError = yield* run(
+        Effect.flip(
+          BranchShare.makeHmac({ activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("broken") }] })
+        )
+      )
       importKeySpy.mockRestore()
 
       const [share, capability] = yield* run(

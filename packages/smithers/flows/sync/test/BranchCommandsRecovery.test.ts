@@ -48,7 +48,7 @@ describe("BranchCommands ambiguous commit recovery", () => {
           })
           const request = {
             capability,
-            submission: BranchCommands.submission({
+            submission: yield* BranchCommands.submission({
               branchId,
               commandId: "ambiguous-command" as BranchProtocol.CommandId,
               participantId,
@@ -68,7 +68,10 @@ describe("BranchCommands ambiguous commit recovery", () => {
           Effect.provide(
             Layer.mergeAll(
               TestJournal.layer(),
-              BranchShare.layerHmac({ secret: Redacted.make("ambiguous-secret") })
+              BranchShare.layerHmac({
+                activeKid: "primary",
+                keys: [{ kid: "primary", secret: Redacted.make("ambiguous-secret") }]
+              })
             )
           ),
           Effect.provide(TestClock.layer())

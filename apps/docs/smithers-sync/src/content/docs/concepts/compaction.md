@@ -81,6 +81,9 @@ durable cursor together. This client's in-memory cursor is not a cross-store
 transaction. A moving compaction floor may require another idempotent restore.
 Raw journal checkpoints are unredacted execution state. `SnapshotSource` is
 an explicit public-projection boundary, not a passthrough for those checkpoints.
+Provider failures and defects are logged at warning level with their original
+cause. The caller receives `not_found` without provider details. Interruption
+remains interruption.
 
 ## Retention and rebuilding
 

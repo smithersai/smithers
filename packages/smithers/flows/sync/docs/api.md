@@ -55,9 +55,18 @@ Both authorities sign a length-prefixed encoding of their claims under
 HMAC-SHA-256, led by a scheme label, so neither's signature can be replayed as
 the other's under a shared secret. Length prefixes count UTF-8 bytes, and a
 claim set that does not survive UTF-8 (an unpaired surrogate) is refused with
-`invalid_request` rather than signed. Secrets are `Redacted` on both sides;
-`WorkspaceShare` additionally carries a `kid` so keys rotate without
-invalidating capabilities minted under a retired one.
+`invalid_request` rather than signed. Secrets are `Redacted` on both sides, and
+both carry a `kid` inside the signed claims, so keys rotate without
+invalidating capabilities minted under a retired one. Each authority takes its
+own keyring: `BranchShare.layerConfig` reads `SMITHERS_SYNC_BRANCH_SECRET` and
+`SMITHERS_SYNC_BRANCH_KEY_ID`, `WorkspaceShare.layerConfig` reads
+`SMITHERS_SYNC_SECRET` and `SMITHERS_SYNC_KEY_ID`.
+
+Both authorities decode their mint request before signing it, so an empty id
+or a non-positive `ttlMs` from an in-process caller is refused with
+`invalid_request` rather than crashing the operation. `BranchCommands.submission`
+returns an `Effect` for the same reason: a command name the schema forbids is a
+refusal, not a throw.
 
 ## Bounds
 

@@ -162,10 +162,18 @@ export const CommandEvent = "flows/branch/command"
 /**
  * Schema for the claims a share capability carries.
  *
+ * `kid` names the key that signed the claims and is itself signed, so a
+ * verifier both selects the right key out of a rotating keyring and refuses a
+ * capability whose key name was swapped after minting. It matches
+ * `WorkspaceShare.WorkspaceClaims`: the two authorities are one scheme, and a
+ * branch link that could not survive a secret rotation was the only place they
+ * differed.
+ *
  * @category schemas
  * @since 0.1.0
  */
 export class ShareClaims extends Schema.Class<ShareClaims>("@smthrs/sync/BranchProtocol/ShareClaims")({
+  kid: Schema.NonEmptyString,
   branchId: BranchId,
   capabilityId: Schema.NonEmptyString,
   access: Access,

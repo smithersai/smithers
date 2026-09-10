@@ -52,7 +52,7 @@ import * as TestSocket from "../src/test/TestSocket.ts"
 
 const base = Layer.mergeAll(
   TestJournal.layer(),
-  BranchShare.layerHmac({ secret: Redacted.make("wire-secret") }),
+  BranchShare.layerHmac({ activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("wire-secret") }] }),
   BranchIds.layer
 )
 const services = Layer.mergeAll(BranchPresence.layer({ leaseMs: 600_000 }), BranchCommands.layer).pipe(
@@ -87,12 +87,15 @@ type Client = RpcClient.RpcClient<RpcGroup.Rpcs<typeof BranchRpcs.BranchRpcs>, R
 const connect = (
   pair: TestSocket.Pair,
   authenticated = true,
-  shareOverride?: BranchShare.Service
+  shareOverride?: BranchShare.Service,
+  idsOverride?: BranchIds.Service
 ): Effect.Effect<Client, never, Requirements> =>
   Effect.gen(function*() {
     const ambient = yield* BranchShare.BranchShare
+    const ambientIds = yield* BranchIds.BranchIds
     const handlers = yield* Layer.build(BranchServer.layerHandlers).pipe(
-      Effect.provideService(BranchShare.BranchShare, shareOverride ?? ambient)
+      Effect.provideService(BranchShare.BranchShare, shareOverride ?? ambient),
+      Effect.provideService(BranchIds.BranchIds, idsOverride ?? ambientIds)
     )
     const serialization = RpcSerialization.json.makeUnsafe()
     const writer = yield* pair.server.writer
@@ -148,7 +151,7 @@ const say = (
   participantId: ParticipantId,
   commandId: string,
   text: string
-): BranchRpcs.SubmitPayload["submission"] =>
+): Effect.Effect<BranchRpcs.SubmitPayload["submission"], SyncError> =>
   BranchCommands.submission({
     branchId,
     commandId: commandId as CommandId,
@@ -158,6 +161,26 @@ const say = (
   })
 
 describe("BranchRpcs over the wire", () => {
+  // `BranchIds` is a host port typed `Effect<string>`, and `Branch.CreateBranch`
+  // branded its result as a `BranchId` with a cast. A host id source yielding
+  // "" therefore reached `new ShareClaims` and crashed a handler whose declared
+  // failure is `SyncError`.
+  it.effect("refuses a host id source that yields an empty branch id", () =>
+    Effect.gen(function*() {
+      const failure = yield* program(Effect.gen(function*() {
+        const client = yield* connect(
+          yield* TestSocket.makePair(),
+          true,
+          undefined,
+          BranchIds.make({ fresh: Effect.succeed("") })
+        )
+        return yield* Effect.flip(client["Branch.CreateBranch"]({ ttlMs: 60_000 }))
+      }))
+
+      expect(SyncError.is(failure)).toBe(true)
+      expect(failure).toMatchObject({ code: "invalid_request" })
+    }))
+
   it.effect("requires workspace authentication and enforces the branch TTL policy", () =>
     Effect.gen(function*() {
       const denied = yield* program(Effect.gen(function*() {
@@ -179,7 +202,7 @@ describe("BranchRpcs over the wire", () => {
           const pair = yield* TestSocket.makePair()
           const client = yield* connect(pair)
           const created = yield* client["Branch.CreateBranch"]({ ttlMs: 600_000 })
-          const submission = say(created.branchId, alice, "cmd-1", "hello branch")
+          const submission = yield* say(created.branchId, alice, "cmd-1", "hello branch")
           const admitted = yield* client["Branch.Submit"]({ capability: created.capability, submission })
           const duplicate = yield* client["Branch.Submit"]({ capability: created.capability, submission })
           const journal = yield* Journal.Journal
@@ -209,13 +232,13 @@ describe("BranchRpcs over the wire", () => {
           const tamperedError = yield* Effect.flip(
             client["Branch.Submit"]({
               capability: { ...created.capability, signature: "00" },
-              submission: say(created.branchId, alice, "cmd-t", "forgery")
+              submission: yield* say(created.branchId, alice, "cmd-t", "forgery")
             })
           )
           const readOnlyError = yield* Effect.flip(
             client["Branch.Submit"]({
               capability: readLink,
-              submission: say(created.branchId, bob, "cmd-r", "readers cannot write")
+              submission: yield* say(created.branchId, bob, "cmd-r", "readers cannot write")
             })
           )
           return [tamperedError, readOnlyError] as const
@@ -313,6 +336,7 @@ describe("BranchRpcs over the wire", () => {
             verify: (capability) =>
               Effect.succeed(
                 new ShareClaims({
+                  kid: "primary",
                   access: "write",
                   branchId: capability.claims.branchId,
                   capabilityId: capability.claims.capabilityId,

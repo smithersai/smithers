@@ -32,14 +32,21 @@ one entry whose own encoded size exceeds the ceiling, refused with
 
 ### Why a page is shared, not filled in order
 
-A workspace read covers many runs. Every covered run takes a share of the page
-budget before any run takes a second helping, and whatever the shares leave
-unspent is offered back in run order. A run with a backlog takes the larger
-part of a page and never all of it.
+A workspace read offers each covered run a share of the page before offering
+unused budget back to runs that still have entries. Both passes prioritize the
+least advanced supplied cursor, with run ID breaking ties. Runs without a
+cursor come first. Cursor values set scheduling priority only; sequences still
+order entries within their own run.
 
-Filling in run order instead let a producer that stayed one page ahead take
-every slot of every page. `done` never became true, so a bootstrapping follower
-never reached the runs behind it and never reached the live follow either.
+A count or byte budget can end a page before every run gets a share. Reusing the
+returned cursors changes the next page's priority: served runs advance, while
+unserved runs keep their priority. A continuously readable run cannot indefinitely
+hold a slot ahead of another pending run. Empty runs spend no entry budget.
+This requires no server-side session and does not depend on cursor array order.
+
+Fair service does not guarantee `done`: a producer that continuously outpaces
+catch-up can keep the follower in this phase. Every pending run still receives
+service; a single page need not contain every run.
 
 ## Phase two: credit windows
 

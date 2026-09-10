@@ -22,11 +22,11 @@ import * as Config from "effect/Config"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { Access } from "./BranchProtocol.ts"
+import * as Admission from "./internal/admission.ts"
 import * as shareSigner from "./internal/shareSigner.ts"
-import { SyncError } from "./SyncError.ts"
+import type { SyncError } from "./SyncError.ts"
 
 /**
  * Schema for the claims a workspace capability carries.
@@ -129,7 +129,7 @@ export class WorkspaceShare extends Context.Service<WorkspaceShare, Service>()("
  */
 export const make = (implementation: Service): Service => WorkspaceShare.of(implementation)
 
-const denied = (message: string): SyncError => new SyncError({ code: "unauthorized", message })
+const denied = shareSigner.unauthorized
 
 /**
  * Constructs a workspace share authority that mints nothing and trusts
@@ -163,10 +163,7 @@ export const layerNoop: Layer.Layer<WorkspaceShare> = Layer.succeed(WorkspaceSha
  * @category models
  * @since 0.1.0
  */
-export interface Key {
-  readonly kid: string
-  readonly secret: Redacted.Redacted<string>
-}
+export type Key = shareSigner.Key
 
 /**
  * A keyring: the key that signs new capabilities plus every key still
@@ -176,10 +173,7 @@ export interface Key {
  * @category models
  * @since 0.1.0
  */
-export interface Keyring {
-  readonly activeKid: string
-  readonly keys: ReadonlyArray<Key>
-}
+export type Keyring = shareSigner.Keyring
 
 /**
  * Domain separation: the label leads the signed encoding, so a workspace
@@ -225,77 +219,59 @@ const snapshot = (claims: WorkspaceClaims): WorkspaceClaims =>
  * @since 0.1.0
  */
 export const makeHmac = (keyring: Keyring): Effect.Effect<Service, SyncError> =>
-  Effect.gen(function*() {
-    // Copied BEFORE the first import, for the reason {@link snapshot} exists:
-    // the keyring belongs to the caller and every import below is an await, so
-    // a `for..of` over the caller's own array re-reads it between them. A
-    // splice landing in that window changed which keys the authority ended up
-    // holding, and reading `activeKid` only after the loop let it name a key
-    // the ring was validated with rather than the one the caller passed.
-    const activeKid = keyring.activeKid
-    const keys = keyring.keys.map((key): Key => ({ kid: key.kid, secret: key.secret }))
-    const imported = new Map<string, CryptoKey>()
-    for (const key of keys) {
-      if (imported.has(key.kid)) {
-        return yield* Effect.fail(
-          new SyncError({ code: "invalid_request", message: `The workspace keyring names kid ${key.kid} twice` })
-        )
-      }
-      imported.set(key.kid, yield* shareSigner.importHmacKey(Redacted.value(key.secret)))
-    }
-    const active = imported.get(activeKid)
-    if (active === undefined) {
-      return yield* Effect.fail(
-        new SyncError({
-          code: "invalid_request",
-          message: "The workspace keyring's active kid names no key in the ring"
+  Effect.map(
+    shareSigner.importKeyring(keyring, "workspace"),
+    (ring) => {
+      const mint = Effect.fn("WorkspaceShare.mint")(function*(request: MintRequest) {
+        // Decoded, not read: the declared parameter type admits an empty
+        // capability id and a `ttlMs` of 0 or NaN that the schema forbids, and
+        // reading them straight into `new WorkspaceClaims` turned a caller's
+        // bad argument into a defect out of an operation whose type promises a
+        // `SyncError`.
+        const admitted = yield* Admission.decode(MintRequest, request, "invalid_request")
+        yield* Effect.annotateCurrentSpan({ access: admitted.access })
+        const issuedAtMs = yield* Clock.currentTimeMillis
+        const claims = new WorkspaceClaims({
+          kid: ring.activeKid,
+          capabilityId: admitted.capabilityId,
+          access: admitted.access,
+          issuedAtMs,
+          expiresAtMs: issuedAtMs + admitted.ttlMs
         })
-      )
-    }
-
-    const mint = Effect.fn("WorkspaceShare.mint")(function*(request: MintRequest) {
-      yield* Effect.annotateCurrentSpan({ access: request.access })
-      const issuedAtMs = yield* Clock.currentTimeMillis
-      const claims = new WorkspaceClaims({
-        kid: activeKid,
-        capabilityId: request.capabilityId,
-        access: request.access,
-        issuedAtMs,
-        expiresAtMs: issuedAtMs + request.ttlMs
+        return new WorkspaceCapability({
+          claims,
+          signature: yield* shareSigner.signHmac(ring.active, canonical(claims))
+        })
       })
-      return new WorkspaceCapability({ claims, signature: yield* shareSigner.signHmac(active, canonical(claims)) })
-    })
 
-    const verify = Effect.fn("WorkspaceShare.verify")(function*(
-      capability: WorkspaceCapability,
-      request: AuthorizeRequest
-    ) {
-      yield* Effect.annotateCurrentSpan({ access: request.access })
-      // Everything authorized below is read from these locals, never from the
-      // caller's objects, which may change while Web Crypto is awaited.
-      const claims = snapshot(capability.claims)
-      const signature = capability.signature
-      const access = request.access
-      const key = imported.get(claims.kid)
-      if (key === undefined) {
-        return yield* Effect.fail(denied("The workspace capability names an unknown signing key"))
-      }
-      const expected = yield* shareSigner.signHmac(key, canonical(claims))
-      if (!shareSigner.constantTimeEquals(expected, signature)) {
-        return yield* Effect.fail(denied("The workspace capability signature is invalid"))
-      }
-      const nowMs = yield* Clock.currentTimeMillis
-      if (nowMs >= claims.expiresAtMs) {
-        return yield* Effect.fail(denied("The workspace capability has expired"))
-      }
-      if (access === "write" && claims.access !== "write") {
-        return yield* Effect.fail(denied("The workspace capability is read-only"))
-      }
-      return claims
-    })
+      const verify = Effect.fn("WorkspaceShare.verify")(function*(
+        capability: WorkspaceCapability,
+        request: AuthorizeRequest
+      ) {
+        yield* Effect.annotateCurrentSpan({ access: request.access })
+        // Everything authorized below is read from these locals, never from the
+        // caller's objects, which may change while Web Crypto is awaited.
+        const claims = snapshot(capability.claims)
+        const signature = capability.signature
+        const key = ring.verification.get(claims.kid)
+        if (key === undefined) {
+          return yield* Effect.fail(denied("The workspace capability names an unknown signing key"))
+        }
+        yield* shareSigner.verifyClaims({
+          key,
+          canonical: canonical(claims),
+          signature,
+          expiresAtMs: claims.expiresAtMs,
+          granted: claims.access,
+          requested: request.access,
+          subject: "The workspace capability"
+        })
+        return claims
+      })
 
-    return make({ mint, verify })
-  })
+      return make({ mint, verify })
+    }
+  )
 
 /**
  * Provides the HMAC-SHA-256 workspace share authority over a keyring.
