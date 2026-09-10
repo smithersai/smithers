@@ -47,6 +47,9 @@ describe("journal migrations", () => {
       expect(journalSql).toContain("PRIMARY KEY (run_id, seq)")
       expect(journalSql).toContain("UNIQUE (run_id, source_id, source_seq)")
       expect(master.some((row) => row.name === "flows_journal_dedup_insert_guard" && row.type === "trigger")).toBe(true)
+      expect(master.some((row) => row.name === "flows_journal_events_run_event_type_idx" && row.type === "index")).toBe(
+        true
+      )
       const dedupSql = master.find((row) => row.name === "flows_journal_dedup")?.sql ?? ""
       expect(dedupSql).toContain("PRIMARY KEY (run_id, source_id, source_seq)")
       expect(dedupSql).toContain("content_hash")
@@ -61,6 +64,6 @@ describe("journal migrations", () => {
       expect(applied).toEqual([[1, "journal_initial"], [2, "journal_checkpoints"], [3, "journal_startup_index"], [
         4,
         "journal_dedup"
-      ]])
+      ], [5, "journal_run_event_type"]])
     }))
 })

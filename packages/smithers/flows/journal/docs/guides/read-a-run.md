@@ -46,6 +46,29 @@ const readAll = (runId: JournalEvent.RunId) =>
 memory in full before the caller sees its first entry, so an unbounded limit
 would let one call materialize a whole run.
 
+For a nonempty list of at most 64 exact event types, use the optional `eventTypes` field on `entries`:
+
+```ts
+const finished = yield * journal.entries({ runId, eventTypes: ["build.finished", "build.failed"], limit: 100 })
+```
+
+This is a new public query option. Filtering happens in SQL before the page
+limit, using the journal's `(run_id, event_type, seq)` index. `SqlJournal` is the
+existing SQLite-specific adapter and explicitly selects that index: SQLite can
+otherwise choose the run/sequence index for an `IN` query and scan unrelated
+history. Multiple types may sort matching rows by sequence. The dialect-specific
+hint stays inside `SqlJournal`; `Journal.Service` remains platform-independent. `after` remains the
+canonical run sequence, and `hasMore` counts only matching events. Gaps between
+matching sequences are expected. Duplicate types do not duplicate entries. No match returns an empty final page. Omitting
+the option preserves the existing full-run read. The event type uses the same
+bounded identifier schema as journal emission.
+
+Filtering does not restore compacted evidence: a cursor below the run's
+compaction floor still fails with `compacted`, even when no matching row remains.
+Apply journal migration `0005_run_event_type` before using the updated service.
+Custom `Journal.Service` adapters must implement the filter before a caller
+relies on it; an older adapter may silently ignore an unknown option.
+
 ## Follow a run with stream
 
 `stream` replays the run's durable history from `afterSequence`, then follows

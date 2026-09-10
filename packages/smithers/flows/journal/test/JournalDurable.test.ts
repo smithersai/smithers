@@ -226,7 +226,9 @@ describe("SqlJournal durable emission", () => {
                 writer.write(
                   Effect.flatMap(effect, () =>
                     Effect.fail(
-                      new DatabaseError({ code: "busy" })
+                      // A permanent COMMIT rejection, not a transient lock:
+                      // normalized busy errors correctly retry under TestClock.
+                      new DatabaseError({ code: "constraint" })
                     ))
                 ) as never
             })

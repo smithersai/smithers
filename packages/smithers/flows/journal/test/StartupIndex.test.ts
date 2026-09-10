@@ -37,7 +37,7 @@ describe("journal startup ordering", () => {
       expect(yield* DatabaseMigrations.run([Migrations.set, other])).toEqual([[3, "journal_startup_index"], [
         4,
         "journal_dedup"
-      ]])
+      ], [5, "journal_run_event_type"]])
       const after = yield* sql<
         { detail: string }
       >`EXPLAIN QUERY PLAN SELECT run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json FROM flows_journal_events ORDER BY emitted_at_ms DESC, run_id DESC, seq DESC LIMIT 20`

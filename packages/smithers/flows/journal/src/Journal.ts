@@ -247,7 +247,10 @@ export const maxEntriesLimit = 10_000
 /**
  * Cursor and page size for durable journal reads.
  *
- * `limit` is at most `maxEntriesLimit` (10,000 entries).
+ * `limit` is at most `maxEntriesLimit` (10,000 entries). Optional `eventTypes`
+ * selects a nonempty list of at most 64 exact types before pagination; cursors remain canonical run
+ * sequences and `hasMore` describes matching entries. Omit it for the full run.
+ * Filtering does not bypass the run's compaction floor.
  *
  * @category models
  * @since 0.1.0
@@ -255,6 +258,9 @@ export const maxEntriesLimit = 10_000
 export const EntriesOptions = Schema.Struct({
   runId: RunId,
   after: Schema.optionalKey(Seq),
+  eventTypes: Schema.optionalKey(
+    Schema.Array(Entry.fields.eventType).check(Schema.isMinLength(1), Schema.isMaxLength(64))
+  ),
   limit: Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(maxEntriesLimit))
 })
 

@@ -1215,10 +1215,19 @@ export const layer = (
 
       const readPage: Service["entries"] = Effect.fn("Journal.entries")((pageOptions) =>
         Effect.gen(function*() {
+          // Snapshot the caller-owned list before the first suspension so its
+          // validated bound is also the bound passed to the SQL client.
+          const options = {
+            ...pageOptions,
+            ...(Array.isArray(pageOptions.eventTypes)
+              ? { eventTypes: [...pageOptions.eventTypes] } :
+              {})
+          }
           yield* Effect.annotateCurrentSpan({
-            runId: pageOptions.runId,
-            limit: pageOptions.limit,
-            ...(pageOptions.after === undefined ? {} : { after: pageOptions.after })
+            runId: options.runId,
+            limit: options.limit,
+            ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
+            ...(options.after === undefined ? {} : { after: options.after })
           })
           // `EntriesOptions` already carries every one of these invariants: a
           // well-formed non-empty `runId`, a `Seq` cursor, and a `limit`
@@ -1227,43 +1236,55 @@ export const layer = (
           // lone-surrogate run id was refused at `emit` and answered with an
           // empty page at `entries`.
           yield* Effect.fromResult(Result.mapError(
-            decodeEntriesOptions(pageOptions),
+            decodeEntriesOptions(options),
             (cause) => error("invalid_event", "entries options violate the journal read contract", cause)
           ))
-          const after = pageOptions.after ?? -1
-          const rows = yield* sql<JournalRow>`
+          const after = options.after ?? -1
+          // With several types SQLite can prefer the run/sequence index to
+          // avoid sorting, scanning every unrelated event instead. Require
+          // the journal-owned type index; only matching rows may be sorted.
+          const rows = yield* (options.eventTypes === undefined ?
+            sql<JournalRow>`
             SELECT run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
               event_type, payload_json, meta_json
             FROM flows_journal_events
-            WHERE run_id = ${pageOptions.runId} AND seq > ${after}
+            WHERE run_id = ${options.runId} AND seq > ${after}
             ORDER BY seq ASC
-            LIMIT ${pageOptions.limit + 1}
-          `.pipe(
-            Effect.mapError((cause) => error("read_failed", "durable journal read failed", cause))
-          )
+            LIMIT ${options.limit + 1}
+          ` :
+            sql<JournalRow>`
+            SELECT run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+              event_type, payload_json, meta_json
+            FROM flows_journal_events INDEXED BY flows_journal_events_run_event_type_idx
+            WHERE run_id = ${options.runId} AND ${sql.in("event_type", options.eventTypes)} AND seq > ${after}
+            ORDER BY seq ASC
+            LIMIT ${options.limit + 1}
+          `).pipe(
+              Effect.mapError((cause) => error("read_failed", "durable journal read failed", cause))
+            )
           // The floor is read AFTER the page. Truncation and the floor
           // advance commit atomically, so any deletion that could have
           // shortened the page above is visible in this floor read, and a
           // cursor at or above `floor - 1` therefore read a complete page.
           // The converse order would let a compaction commit between the two
           // reads and hand back a silently gapped history.
-          const floor = yield* compactionFloor(pageOptions.runId).pipe(
+          const floor = yield* compactionFloor(options.runId).pipe(
             Effect.mapError((cause) => error("read_failed", "durable journal read failed", cause))
           )
           if (floor !== undefined && after < floor - 1) {
             return yield* Effect.fail(
               new JournalError({
                 code: "compacted",
-                message: `run ${pageOptions.runId} is compacted through sequence ${floor}; resync from its checkpoint`,
+                message: `run ${options.runId} is compacted through sequence ${floor}; resync from its checkpoint`,
                 checkpointSeq: floor as Seq
               })
             )
           }
-          const page = rows.slice(0, pageOptions.limit)
+          const page = rows.slice(0, options.limit)
           const entries = yield* Effect.forEach(page, decodeRow)
           return {
             entries,
-            hasMore: rows.length > pageOptions.limit
+            hasMore: rows.length > options.limit
           } satisfies EntriesPage
         })
       )

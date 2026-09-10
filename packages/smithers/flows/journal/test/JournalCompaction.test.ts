@@ -23,6 +23,7 @@ import * as Stream from "effect/Stream"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import type * as Statement from "effect/unstable/sql/Statement"
+import { vi } from "vitest"
 import { Journal, JournalError, type Service } from "../src/Journal.ts"
 import { type Entry, Input, type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
 import * as Migrations from "../src/Migrations.ts"
@@ -361,6 +362,24 @@ const replayView = (service: Service) =>
   })
 
 describe("compacted producer identities", () => {
+  effect("a fingerprint failure rolls back compaction without losing replay evidence", () =>
+    Effect.gen(function*() {
+      const service = yield* Journal
+      yield* claim(owner)
+      yield* emitMany(service, 0, 3)
+      yield* service.checkpoint({ runId: run, seq: seqOf(2), state: { applied: 3 } }, owner)
+      const digest = vi.spyOn(crypto.subtle, "digest").mockRejectedValueOnce(new Error("digest unavailable"))
+      const failure = yield* service.compact({ runId: run }, owner).pipe(
+        Effect.flip,
+        Effect.ensuring(Effect.sync(() => digest.mockRestore()))
+      )
+      expect(failure.code).toBe("sink_failed")
+      expect(failure.message).toBe("could not fingerprint journal content")
+      expect((yield* service.entries({ runId: run, limit: 10 })).entries.map((entry) => entry.seq)).toEqual([0, 1, 2])
+      expect(Option.getOrThrow(yield* service.latestCheckpoint(run)).compactedAtMs).toBe(null)
+      expect((yield* service.compact({ runId: run }, owner)).deleted).toBe(2)
+    }).pipe(Effect.provide(journal()), Effect.scoped))
+
   effect(
     "deduplicates compacted events after cache eviction and preserves producer floors",
     () =>
@@ -670,6 +689,11 @@ describe("Journal.compact", () => {
         const behind = yield* Effect.flip(service.entries({ runId: run, limit: 10 }))
         expect(behind.code).toBe("compacted")
         expect(behind.checkpointSeq).toBe(1)
+        for (const eventType of ["event", "absent"]) {
+          const filtered = yield* service.entries({ runId: run, eventTypes: [eventType], limit: 10 }).pipe(Effect.flip)
+          expect(filtered.code).toBe("compacted")
+          expect(filtered.checkpointSeq).toBe(1)
+        }
       }).pipe(
         Effect.ensuring(Deferred.succeed(gate, undefined)),
         Effect.provide(journal({}, gateFirstWrite(reached, gate))),

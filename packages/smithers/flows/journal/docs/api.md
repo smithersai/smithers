@@ -42,22 +42,22 @@ Fallible journal operations use `JournalError` with a stable `code`.
 
 ### Operations
 
-| Method                | Signature                                                                                          | Behavior                                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `emitLossy`           | `(input: Input) => Effect<EmitReceipt, JournalError>`                                              | bounded non-blocking queue; may return `Dropped`                                  |
-| `emitDurable`         | `(input: Input, owner: OwnerId) => Effect<DurableReceipt, JournalError>`                           | allocates and commits inside the write transaction, fenced on `owner`             |
-| `emitDurableUnfenced` | `(input: Input) => Effect<DurableReceipt, JournalError>`                                           | the same commit with no fence, for a genuinely ownerless admission                |
-| `transact`            | `<A, E, R>(effect: Effect<A, E, R>) => Effect<A, E \| JournalError, R>`                            | runs a state projection and its `emitDurable` calls in one transaction            |
-| `whenCommitted`       | `(update: Effect<void>) => Effect<boolean>`                                                         | accepts a short, non-failing update after managed commit, or runs it immediately outside a transaction; returns `false` without publishing when commit ownership is unknown |
-| `stream`              | `(options: StreamOptions) => Stream<Entry, JournalError>`                                          | durable history, then committed changes; never completes                          |
-| `entries`             | `(options: EntriesOptions) => Effect<EntriesPage, JournalError>`                                   | paged read                                                                        |
-| `changes`             | `Effect<PubSub.Subscription<Entry>, never, Scope>`                                                 | post-commit publication, bounded and sliding                                      |
-| `project`             | `<S, E, R>(projection: Projection<S, E, R>, options: StreamOptions) => Stream<S, JournalError, R>` | folds `stream` through a deterministic reducer                                    |
-| `flush`               | `Effect<void, JournalError>`                                                                       | barrier for the lossy queue                                                       |
-| `checkpoint`          | `(options: CheckpointOptions, owner: OwnerId) => Effect<Checkpoint, JournalError>`                 | durably captures replay state at a committed sequence, in `transact`'s discipline |
-| `latestCheckpoint`    | `(runId: RunId) => Effect<Option<Checkpoint>, JournalError>`                                       | the resync point for a compacted run                                              |
-| `compact`             | `(options: CompactOptions, owner: OwnerId) => Effect<Compacted, JournalError>`                     | truncates strictly below a checkpoint, atomically with the floor advance          |
-| `generation?`         | `(runId: RunId) => Effect<{ generation: number; afterSeq: number }, JournalError>`                  | optional durable rewind generation and archive boundary; omission means generation zero |
+| Method                | Signature                                                                                          | Behavior                                                                                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `emitLossy`           | `(input: Input) => Effect<EmitReceipt, JournalError>`                                              | bounded non-blocking queue; may return `Dropped`                                                                                                                            |
+| `emitDurable`         | `(input: Input, owner: OwnerId) => Effect<DurableReceipt, JournalError>`                           | allocates and commits inside the write transaction, fenced on `owner`                                                                                                       |
+| `emitDurableUnfenced` | `(input: Input) => Effect<DurableReceipt, JournalError>`                                           | the same commit with no fence, for a genuinely ownerless admission                                                                                                          |
+| `transact`            | `<A, E, R>(effect: Effect<A, E, R>) => Effect<A, E \| JournalError, R>`                            | runs a state projection and its `emitDurable` calls in one transaction                                                                                                      |
+| `whenCommitted`       | `(update: Effect<void>) => Effect<boolean>`                                                        | accepts a short, non-failing update after managed commit, or runs it immediately outside a transaction; returns `false` without publishing when commit ownership is unknown |
+| `stream`              | `(options: StreamOptions) => Stream<Entry, JournalError>`                                          | durable history, then committed changes; never completes                                                                                                                    |
+| `entries`             | `(options: EntriesOptions) => Effect<EntriesPage, JournalError>`                                   | paged read                                                                                                                                                                  |
+| `changes`             | `Effect<PubSub.Subscription<Entry>, never, Scope>`                                                 | post-commit publication, bounded and sliding                                                                                                                                |
+| `project`             | `<S, E, R>(projection: Projection<S, E, R>, options: StreamOptions) => Stream<S, JournalError, R>` | folds `stream` through a deterministic reducer                                                                                                                              |
+| `flush`               | `Effect<void, JournalError>`                                                                       | barrier for the lossy queue                                                                                                                                                 |
+| `checkpoint`          | `(options: CheckpointOptions, owner: OwnerId) => Effect<Checkpoint, JournalError>`                 | durably captures replay state at a committed sequence, in `transact`'s discipline                                                                                           |
+| `latestCheckpoint`    | `(runId: RunId) => Effect<Option<Checkpoint>, JournalError>`                                       | the resync point for a compacted run                                                                                                                                        |
+| `compact`             | `(options: CompactOptions, owner: OwnerId) => Effect<Compacted, JournalError>`                     | truncates strictly below a checkpoint, atomically with the floor advance                                                                                                    |
+| `generation?`         | `(runId: RunId) => Effect<{ generation: number; afterSeq: number }, JournalError>`                 | optional durable rewind generation and archive boundary; omission means generation zero                                                                                     |
 
 `whenCommitted` returning `true` means accepted, possibly deferred. Failed
 savepoints and transaction retries discard their registrations. See
@@ -108,17 +108,17 @@ diagnosed in [Troubleshooting](./troubleshooting.md).
 
 ### Options and models
 
-| Export              | Shape                                                                                                    |
-| ------------------- | -------------------------------------------------------------------------------------------------------- |
-| `OverflowPolicy`    | `"reject" \| "drop-newest" \| "drop-oldest"`                                                             |
-| `StreamOptions`     | `{ runId, afterSequence? }`                                                                              |
-| `EntriesOptions`    | `{ runId, after?, limit }`, `limit` in `1..maxEntriesLimit`                                              |
-| `EntriesPage`       | `{ entries: ReadonlyArray<Entry>, hasMore: boolean }`                                                    |
-| `CheckpointOptions` | `{ runId, seq, state }`                                                                                  |
-| `Checkpoint`        | `{ runId, seq, state, createdAtMs, compactedAtMs }`, the last null until a compaction truncated below it |
-| `CompactOptions`    | `{ runId, upTo? }`, defaulting to the run's latest checkpoint                                            |
-| `Compacted`         | `{ runId, checkpointSeq, deleted }`, `deleted: 0` for a retried compaction                               |
-| `maxEntriesLimit`   | `10_000`, the largest page `entries` reads                                                               |
+| Export              | Shape                                                                                                                                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OverflowPolicy`    | `"reject" \| "drop-newest" \| "drop-oldest"`                                                                                                                                                                   |
+| `StreamOptions`     | `{ runId, afterSequence? }`                                                                                                                                                                                    |
+| `EntriesOptions`    | `{ runId, after?, eventTypes?, limit }`, `limit` in `1..maxEntriesLimit`; optional nonempty list of up to 64 exact types is filtered before pagination. Cursors stay canonical; compaction checks still apply. |
+| `EntriesPage`       | `{ entries: ReadonlyArray<Entry>, hasMore: boolean }`                                                                                                                                                          |
+| `CheckpointOptions` | `{ runId, seq, state }`                                                                                                                                                                                        |
+| `Checkpoint`        | `{ runId, seq, state, createdAtMs, compactedAtMs }`, the last null until a compaction truncated below it                                                                                                       |
+| `CompactOptions`    | `{ runId, upTo? }`, defaulting to the run's latest checkpoint                                                                                                                                                  |
+| `Compacted`         | `{ runId, checkpointSeq, deleted }`, `deleted: 0` for a retried compaction                                                                                                                                     |
+| `maxEntriesLimit`   | `10_000`, the largest page `entries` reads                                                                                                                                                                     |
 
 ### Constructors and layers
 
