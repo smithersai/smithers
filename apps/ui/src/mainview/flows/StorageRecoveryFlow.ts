@@ -5,7 +5,6 @@ import { Effect, Schema } from "effect"
 import { StorageRecoveryError } from "../chain/StorageRecovery"
 import { STORAGE_RECOVERY_EXPORT, STORAGE_RECOVERY_USER_ONLY_REASON } from "../state/StorageRecoveryContract"
 import type { FlowEntry } from "./registry"
-export { STORAGE_RECOVERY_EXPORT, STORAGE_RECOVERY_USER_ONLY_REASON } from "../state/StorageRecoveryContract"
 
 const input = Schema.Struct({})
 const declaration = Flow.make({

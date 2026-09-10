@@ -3,7 +3,6 @@ import { z } from "zod"
 import { encodeStorageRecovery, StorageRecoveryError } from "../chain/StorageRecovery"
 import type { StorageRecoverySnapshot } from "../chain/StorageRecovery"
 import { RECOVERY_HUMAN_ONLY } from "./StorageRecoveryContract"
-export { RECOVERY_DOWNLOAD_LABEL, RECOVERY_HUMAN_ONLY, RECOVERY_PRIVATE_WARNING } from "./StorageRecoveryContract"
 const CANCELED = "Recovery was canceled because the app closed. Saved data was not reset."
 
 const RecoveryStateSchema = z.object({

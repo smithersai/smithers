@@ -22,11 +22,11 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
 import type { AppStore } from "../state/AppStore"
+import { STORAGE_RECOVERY_USER_ONLY_REASON } from "../state/StorageRecoveryContract"
 import { modelInvocable, nameOf } from "./registry"
 import { PALETTE_ACTIONS_REASON, PALETTE_OPEN_REASON } from "./entries/palette"
 import { PLUGINS_USER_ONLY_REASON } from "./entries/plugins"
 import { WIKI_HEADING_USER_ONLY_REASON } from "./entries/wiki"
-import { STORAGE_RECOVERY_USER_ONLY_REASON } from "./StorageRecoveryFlow"
 
 /**
  * Every user-only flow, with the reason the registry states. A flow user-only

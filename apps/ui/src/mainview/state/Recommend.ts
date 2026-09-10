@@ -93,9 +93,6 @@ export interface RecommendAnswer {
 
 const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`)
 
-/** The flows a recommendation may name: listed, never hidden. */
-export const offerable = (catalog: ReadonlyArray<CatalogItem>): ReadonlyArray<CatalogItem> => visible(catalog)
-
 /**
  * The chat tail: the newest messages last, act markers and empty rows left
  * out, at most TAIL_MAX_MESSAGES entries and TAIL_MAX_CHARS of text. Over the
@@ -127,7 +124,7 @@ export const recommendTail = (
 export const recommendRequest = (input: Pick<RecommendInput, "repo" | "messages" | "catalog">): RecommendRequest => ({
   repo: input.repo,
   tail: recommendTail(input.messages),
-  commands: offerable(input.catalog)
+  commands: visible(input.catalog)
     .slice(0, COMMANDS_MAX)
     .map((command): RecommendCommand => ({ name: command.name, summary: command.summary }))
 })
@@ -160,7 +157,7 @@ export const parseRecommendation = (
   const id = asString(record.id)
   if (id === undefined || !Array.isArray(record.commands)) return undefined
   const model = asString(record.model) ?? "unknown"
-  const allowed = new Map(offerable(catalog).map((command) => [command.name, command]))
+  const allowed = new Map(visible(catalog).map((command) => [command.name, command]))
   const seen = new Set<string>()
   const suggestions: Array<Suggestion> = []
   for (const entry of record.commands) {
@@ -193,7 +190,7 @@ export const ruleSuggestions = (
   input: Pick<RecommendInput, "state" | "catalog" | "repoStep"> & Partial<Pick<RecommendInput, "cards">>
 ): ReadonlyArray<Suggestion> => {
   if (input.state.typing) return []
-  const byName = new Map(offerable(input.catalog).map((command) => [command.name, command]))
+  const byName = new Map(visible(input.catalog).map((command) => [command.name, command]))
   const cards = input.cards ?? []
   const gateOpen = cards.some((card) => card.kind === "approval" && card.status === "active")
   const runLive = cards.some((card) => card.kind === "run-trace" && card.status === "active")

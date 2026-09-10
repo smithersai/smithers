@@ -59,7 +59,6 @@ import {
   LocalRepositoryConnectorSchema,
   conversationTabIdOf,
   inConversation,
-  localCopyIdOf,
   MAIN_TAB_ID,
   mainTab,
   MessageSchema,
@@ -1130,7 +1129,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
       revision: session().revision,
       // The model sees the conversation it is answering in, never another tab's.
       messages: [...collections.messages.values()]
-        .filter((message) => inConversation(message, conversationTabIdOf(session(), (id) => collections.tabs.get(id))))
+        .filter((message) => inConversation(message, conversationTabIdOf(session())))
         .sort((left, right) => left.ordinal - right.ordinal),
       connectors: [...collections.connectors.values()].sort((left, right) => left.name.localeCompare(right.name)),
       tabs: orderedTabs(collections),
@@ -1234,7 +1233,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
        * the two helpers are the only way a message or a card enters its
        * collection here.
        */
-      const conversationTabId = conversationTabIdOf(current, (id) => collections.tabs.get(id))
+      const conversationTabId = conversationTabIdOf(current)
       const insertMessage = (row: Message): void => {
         collections.messages.insert(conversationTabId === undefined ? row : { ...row, tabId: conversationTabId })
       }
@@ -2629,7 +2628,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
              * the checkout's own name (never an invented owner); the jj
              * probe fills ahead/readAt when the server ran one.
              */
-            const copyId = localCopyIdOf(repo.path)
+            const copyId = id
             const existing = collections.workingCopies.get(copyId)
             const repoId = repoIdFromRemote(repo.git?.remote) ?? existing?.repoId ?? repo.name
             const copy: WorkingCopy = {

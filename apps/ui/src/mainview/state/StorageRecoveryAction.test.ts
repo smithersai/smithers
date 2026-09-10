@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { StorageRecoveryError } from "../chain/StorageRecovery"
 import type { StorageRecoverySnapshot } from "../chain/StorageRecovery"
 import { invokeStartupRecovery, storageRecoveryExportFlow } from "../flows/StorageRecoveryFlow"
-import { createStorageRecoveryAction, RECOVERY_HUMAN_ONLY } from "./StorageRecoveryAction"
+import { createStorageRecoveryAction } from "./StorageRecoveryAction"
+import { RECOVERY_HUMAN_ONLY } from "./StorageRecoveryContract"
 
 const raw = "private recovery fixture"
 const snapshot: StorageRecoverySnapshot = {

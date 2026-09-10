@@ -76,8 +76,7 @@ export function GuideShell({ children }: { children: ReactNode }) {
   const { data: toasts } = useLiveQuery(controller.store.collections.toasts)
   const { data: messages } = useLiveQuery(controller.store.collections.messages)
   const { data: cards } = useLiveQuery(controller.store.collections.cards)
-  const { data: tabs } = useLiveQuery(controller.store.collections.tabs)
-  const conversationTabId = conversationTabIdOf(sessions[0] ?? controller.store.session(), (id) => tabs.find((tab) => tab.id === id))
+  const conversationTabId = conversationTabIdOf(sessions[0] ?? controller.store.session())
   // The outro belongs to an empty conversation. Real output owns this space
   // as soon as it exists, including after reload or a tutorial replay.
   const hasConversation = messages.some((row) => inConversation(row, conversationTabId)) ||

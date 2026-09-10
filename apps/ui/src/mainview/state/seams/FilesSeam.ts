@@ -15,7 +15,7 @@
 import { REPO_FILES_PATH, RepoFilesResponseSchema } from "@smthrs/rpc/LocalApp"
 import type { Repo, RepoFilesResponse } from "@smthrs/rpc/LocalApp"
 import type { Card } from "../AppState"
-import { localCopyIdOf, repoIdFromRemote, repoKeyOf } from "../AppState"
+import { repoIdFromRemote, repoKeyOf } from "../AppState"
 import type { AppStore } from "../AppStore"
 import { resolveOpenRepo, resolveTargetRepo } from "../RepoContext"
 import { readErrorMessage } from "./SeamContext"
@@ -148,7 +148,7 @@ const localAddressing = (
   repo: Repo,
   normalized: string
 ): { readonly address?: string; readonly readAt?: { readonly changeId: string | null; readonly commitId: string | null; readonly source: "working-copy" } } => {
-  const repoId = store.collections.workingCopies.get(localCopyIdOf(repo.path))?.repoId ?? repoIdFromRemote(repo.git?.remote)
+  const repoId = store.collections.workingCopies.get(repoKeyOf(repo.path))?.repoId ?? repoIdFromRemote(repo.git?.remote)
   return {
     ...(repoId !== null && repoId.includes("/") ? { address: `/${repoId}/${normalized}` } : {}),
     ...(repo.jj === undefined ? {} : { readAt: { changeId: repo.jj.changeId, commitId: repo.jj.commitId, source: "working-copy" as const } })

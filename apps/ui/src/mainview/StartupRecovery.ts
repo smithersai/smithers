@@ -1,11 +1,11 @@
 import { createRecoveryDownload } from "./state/BrowserStorageRecovery"
-import {
-  createStorageRecoveryAction,
-  RECOVERY_DOWNLOAD_LABEL,
-  RECOVERY_PRIVATE_WARNING
-} from "./state/StorageRecoveryAction"
+import { createStorageRecoveryAction } from "./state/StorageRecoveryAction"
 import type { StorageRecoveryHost } from "./state/StorageRecoveryAction"
-import { STORAGE_RECOVERY_EXPORT } from "./state/StorageRecoveryContract"
+import {
+  RECOVERY_DOWNLOAD_LABEL,
+  RECOVERY_PRIVATE_WARNING,
+  STORAGE_RECOVERY_EXPORT
+} from "./state/StorageRecoveryContract"
 
 /** A non-React projection: the watchdog must also work when React never boots. */
 export const createStartupRecovery = (

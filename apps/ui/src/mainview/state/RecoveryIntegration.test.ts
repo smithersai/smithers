@@ -3,7 +3,7 @@ import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { RECOVERY_DOWNLOAD_LABEL, RECOVERY_PRIVATE_WARNING } from "./StorageRecoveryAction"
+import { RECOVERY_DOWNLOAD_LABEL, RECOVERY_PRIVATE_WARNING } from "./StorageRecoveryContract"
 
 const repositories: NativeRepositories = {
   available: false,

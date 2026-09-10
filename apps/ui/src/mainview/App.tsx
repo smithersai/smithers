@@ -163,7 +163,6 @@ function App() {
   const { data: worldDocumentRows } = useLiveQuery(collections.worldDocuments)
   const cardRows = useCardRows(collections.cards)
   const workflowCatalogs = useWorkflowCatalogRows(collections.cards)
-  const { data: tabRows } = useLiveQuery(collections.tabs)
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
   const { data: toastRows } = useLiveQuery((q) =>
     q.from({ toast: collections.toasts }).orderBy(({ toast }) => toast.createdAt)
@@ -199,7 +198,7 @@ function App() {
    * always main's. Rows keep their conversation stamp (a turn in flight writes
    * where it started), and this filter reads it.
    */
-  const conversationTabId = conversationTabIdOf(session, (id) => tabRows.find((tab) => tab.id === id))
+  const conversationTabId = conversationTabIdOf(session)
   const messages = messageRows.filter((message) => inConversation(message, conversationTabId))
   const conversationCards = cardRows.filter((card) => inConversation(card, conversationTabId))
   /*
