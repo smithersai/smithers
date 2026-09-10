@@ -603,27 +603,50 @@ The sentinel an implicit temporary directory is named with. An implicit
 is outside the workspace root by construction, so granting an ordinary
 workspace write does not grant system temporary-directory access.
 
-### FileSystem.AtomicFileSystemTypeId, AtomicRequest, AtomicFileSystem, AtomicHostFileSystem
+### FileSystem.AtomicFileSystemTypeId, AtomicRoot, AtomicRequest, AtomicResults, AtomicResult, AtomicHandlers, AtomicFileSystem, AtomicHostFileSystem
 
 ```ts
 const AtomicFileSystemTypeId: unique symbol
 
-interface AtomicRequest {
-  readonly operation: string
+interface AtomicRoot {
   readonly boundaryRoot?: string | undefined
   readonly logicalRoot?: string | undefined
-  readonly path?: string | undefined
-  readonly from?: string | undefined
-  readonly to?: string | undefined
-  readonly pattern?: string | undefined
-  readonly root?: string | undefined
-  readonly data?: string | undefined
-  readonly encoding?: string | undefined
-  readonly options?: object | undefined
+  readonly rootIdentity?: string | undefined
+}
+
+type AtomicRequest =
+  | (AtomicRoot & { readonly operation: "exists"; readonly path: string })
+  | (AtomicRoot & {
+    readonly operation: "glob"
+    readonly pattern: string
+    readonly root: string
+    readonly options?: { readonly exclude?: ReadonlyArray<string> | undefined } | undefined
+  })
+  | (AtomicRoot & { readonly operation: "rename"; readonly from: string; readonly to: string })
+  | (AtomicRoot & { readonly operation: "batch"; readonly requests: ReadonlyArray<BatchRequest> })
+// ...one member per operation: makeDirectory, readDirectory, readFile,
+// readFileString, readLink, realPath, remove, stat, writeFile, writeFileString
+
+interface AtomicResults {
+  readonly exists: boolean
+  readonly glob: Array<string>
+  readonly readFile: Uint8Array
+  readonly stat: FileSystem.File.Info
+  readonly rename: void
+  readonly batch: BatchResponse
+  // ...one entry per operation
+}
+
+type AtomicResult<R extends AtomicRequest> = AtomicResults[R["operation"]]
+
+type AtomicHandlers = {
+  readonly [K in keyof AtomicResults]: (
+    request: Extract<AtomicRequest, { readonly operation: K }>
+  ) => Effect.Effect<AtomicResults[K], PlatformError>
 }
 
 interface AtomicFileSystem {
-  readonly execute: <A>(request: AtomicRequest) => Effect.Effect<A, PlatformError>
+  readonly execute: <R extends AtomicRequest>(request: R) => Effect.Effect<AtomicResult<R>, PlatformError>
   readonly isolated?: FileSystem.FileSystem | undefined
 }
 
@@ -637,6 +660,13 @@ plain path-based filesystem cannot provide confinement, because an attacker can
 replace any checked component before the delegate resolves it. `isolated` is
 the escape hatch for a filesystem already confined by an enforceable boundary,
 used for methods not expressible as one descriptor-relative request.
+
+A request is discriminated by `operation` and carries exactly the operands that
+operation needs, and `execute` answers the result that operation names rather
+than a type its caller picked. The wire shape is unchanged: every member is the
+same flat JSON object, so a journaled or serialized request still decodes. An
+executor that dispatches in process can be written as an `AtomicHandlers`
+record, which does not compile while an operation is unimplemented.
 
 ### FileSystem.withAtomicFileSystem
 

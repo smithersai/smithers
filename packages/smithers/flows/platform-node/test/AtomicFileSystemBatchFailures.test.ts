@@ -139,13 +139,16 @@ describe("batch helper admission", () => {
       Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
         const atomic = (fs as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
-        for (
-          const requests of [
-            undefined,
-            [],
-            Array.from({ length: 129 }, () => ({ operation: "stat" as const, path: "/a" }))
-          ]
-        ) {
+        // A batch names its members, so neither `undefined` nor an empty list
+        // is a request a caller can build. They reach an executor only across
+        // the serialized boundary these stand in for, and are refused before
+        // any helper starts.
+        const malformed = [
+          undefined,
+          [],
+          Array.from({ length: 129 }, () => ({ operation: "stat" as const, path: "/a" }))
+        ] as unknown as ReadonlyArray<ReadonlyArray<KernelFileSystem.BatchRequest>>
+        for (const requests of malformed) {
           expect(yield* Effect.flip(atomic.execute({ operation: "batch", requests }))).toMatchObject({
             reason: { _tag: "BadArgument" }
           })
@@ -352,11 +355,11 @@ describe("batch confinement and concurrent mutation", () => {
         const atomic = (fs as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
         return KernelFileSystem.withAtomicFileSystem(fs, {
           ...atomic,
-          execute: <A>(request: KernelFileSystem.AtomicRequest) =>
+          execute: (request) =>
             Effect.promise(async () => {
               await rename(join(root, "dir"), join(root, "moved"))
               await symlink(outside, join(root, "dir"))
-            }).pipe(Effect.andThen(atomic.execute<A>(request)))
+            }).pipe(Effect.andThen(atomic.execute(request)))
         })
       })
     ).pipe(Layer.provide(AtomicFileSystem.layer))

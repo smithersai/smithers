@@ -98,7 +98,11 @@ describe("FileSystem", () => {
     // Identity alone would pass for a wrapper that cannot run. Invoking it
     // proves the layering actually delegates, and terminates.
     expect(
-      Effect.runSync(Effect.flip(relayered[FileSystem.AtomicFileSystemTypeId].execute({ operation: "exists" })))
+      Effect.runSync(
+        Effect.flip(
+          relayered[FileSystem.AtomicFileSystemTypeId].execute({ operation: "exists", path: "/workspace/a" })
+        )
+      )
     ).toBe(reached)
     expect(delegated).toEqual(["exists"])
   })

@@ -91,13 +91,13 @@ const swappingHost = (swap: () => Promise<void>) =>
       const atomic = (fileSystem as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
       let swapped = false
       return KernelFileSystem.withAtomicFileSystem(fileSystem, {
-        execute: <A>(request: KernelFileSystem.AtomicRequest) =>
+        execute: (request) =>
           Effect.promise(async () => {
             if (!swapped) {
               swapped = true
               await swap()
             }
-          }).pipe(Effect.andThen(atomic.execute<A>(request)))
+          }).pipe(Effect.andThen(atomic.execute(request)))
       })
     })
   ).pipe(Layer.provide(AtomicFileSystem.layer))
@@ -1125,7 +1125,7 @@ describe("Node atomic filesystem", () => {
       const atomic = yield* Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
         const extension = (fs as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
-        return yield* extension.execute<Array<string>>({
+        return yield* extension.execute({
           operation: "glob",
           boundaryRoot: root,
           rootIdentity: `${info.dev}:${info.ino}`,
@@ -1157,7 +1157,7 @@ describe("Node atomic filesystem", () => {
         const fs = yield* FileSystem.FileSystem
         const atomic = (fs as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
         const request = (selected: string, exclude: ReadonlyArray<string>) =>
-          atomic.execute<Array<string>>({
+          atomic.execute({
             operation: "glob",
             boundaryRoot: root,
             rootIdentity: `${info.dev}:${info.ino}`,

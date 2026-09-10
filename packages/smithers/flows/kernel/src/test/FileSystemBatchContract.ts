@@ -24,7 +24,7 @@ export const check = (fs: FileSystem.FileSystem, root: string) =>
     const boundaryRoot = yield* fs.realPath(root)
     const info = yield* fs.stat(root)
     const rootIdentity = `${info.dev}:${Option.getOrThrow(info.ino)}`
-    const response = yield* atomic.execute<KernelFileSystem.BatchResponse>({
+    const response = yield* atomic.execute({
       operation: "batch",
       boundaryRoot,
       logicalRoot: root,

@@ -62,26 +62,134 @@ export const systemTemporaryDirectoryName = "<system-temp>"
  */
 export const AtomicFileSystemTypeId = Symbol.for("@smthrs/kernel/AtomicFileSystem")
 
-/** A serializable operation executed relative to a pinned filesystem root.
+/** The pinned root every atomic request is resolved against.
+ *
+ * The guarded layer fills these in at the boundary from the composed
+ * workspace, so a caller that builds a request leaves them out.
  *
  * @since 1.0.0-rc.0
  * @category security
  * @slop
  */
-export interface AtomicRequest {
-  readonly operation: string
+export interface AtomicRoot {
   readonly boundaryRoot?: string | undefined
   readonly logicalRoot?: string | undefined
-  readonly path?: string | undefined
-  readonly from?: string | undefined
-  readonly to?: string | undefined
-  readonly pattern?: string | undefined
-  readonly root?: string | undefined
-  readonly data?: string | undefined
-  readonly encoding?: string | undefined
-  readonly options?: object | undefined
-  readonly requests?: ReadonlyArray<Batch.BatchRequest> | undefined
   readonly rootIdentity?: string | undefined
+}
+
+/** A serializable operation executed relative to a pinned filesystem root.
+ *
+ * One member per operation, discriminated by `operation`, so a request cannot
+ * omit an operand its operation needs — a `rename` carries both endpoints or
+ * does not compile — and an adapter cannot quietly leave an operation
+ * unimplemented. Every member is the same flat JSON object the helper protocol
+ * already framed, so the wire shape is unchanged.
+ *
+ * @since 1.0.0-rc.0
+ * @category security
+ * @slop
+ */
+export type AtomicRequest =
+  | (AtomicRoot & { readonly operation: "exists"; readonly path: string })
+  | (AtomicRoot & {
+    readonly operation: "glob"
+    readonly pattern: string
+    readonly root: string
+    readonly options?: { readonly exclude?: ReadonlyArray<string> | undefined } | undefined
+  })
+  | (AtomicRoot & {
+    readonly operation: "makeDirectory"
+    readonly path: string
+    readonly options?: { readonly recursive?: boolean | undefined; readonly mode?: number | undefined } | undefined
+  })
+  | (AtomicRoot & {
+    readonly operation: "readDirectory"
+    readonly path: string
+    readonly options?: { readonly recursive?: boolean | undefined } | undefined
+  })
+  | (AtomicRoot & { readonly operation: "readFile"; readonly path: string })
+  | (AtomicRoot & {
+    readonly operation: "readFileString"
+    readonly path: string
+    readonly encoding?: string | undefined
+  })
+  | (AtomicRoot & { readonly operation: "readLink"; readonly path: string })
+  | (AtomicRoot & { readonly operation: "realPath"; readonly path: string })
+  | (AtomicRoot & {
+    readonly operation: "remove"
+    readonly path: string
+    readonly options?: { readonly recursive?: boolean | undefined; readonly force?: boolean | undefined } | undefined
+  })
+  | (AtomicRoot & { readonly operation: "rename"; readonly from: string; readonly to: string })
+  | (AtomicRoot & { readonly operation: "stat"; readonly path: string })
+  | (AtomicRoot & {
+    readonly operation: "writeFile"
+    readonly path: string
+    /** Base64 of the bytes, bounded by the host's `contentLimit`. */
+    readonly data: string
+    readonly options?:
+      | { readonly flag?: EffectFileSystem.OpenFlag | undefined; readonly mode?: number | undefined }
+      | undefined
+  })
+  | (AtomicRoot & {
+    readonly operation: "writeFileString"
+    readonly path: string
+    readonly data: string
+    readonly options?:
+      | { readonly flag?: EffectFileSystem.OpenFlag | undefined; readonly mode?: number | undefined }
+      | undefined
+  })
+  | (AtomicRoot & { readonly operation: "batch"; readonly requests: ReadonlyArray<Batch.BatchRequest> })
+
+/** The value each atomic operation resolves to.
+ *
+ * The executor no longer takes the result type from its caller: an operation
+ * names its own result here, so a host that answers a `stat` with a boolean is
+ * a compile error rather than a decode that succeeds and reads wrong.
+ *
+ * @since 1.0.0-rc.0
+ * @category security
+ * @slop
+ */
+export interface AtomicResults {
+  readonly exists: boolean
+  readonly glob: Array<string>
+  readonly makeDirectory: void
+  readonly readDirectory: Array<string>
+  readonly readFile: Uint8Array
+  readonly readFileString: string
+  readonly readLink: string
+  readonly realPath: string
+  readonly remove: void
+  readonly rename: void
+  readonly stat: EffectFileSystem.File.Info
+  readonly writeFile: void
+  readonly writeFileString: void
+  readonly batch: Batch.BatchResponse
+}
+
+/** The result of one request, read from the operation it names.
+ *
+ * @since 1.0.0-rc.0
+ * @category security
+ * @slop
+ */
+export type AtomicResult<R extends AtomicRequest> = AtomicResults[R["operation"]]
+
+/** One typed implementation per operation.
+ *
+ * A record of this type receives each operation's own request and returns that
+ * operation's own result, and a record missing an operation does not compile,
+ * which is the exhaustiveness a `string` operation could not give an adapter.
+ *
+ * @since 1.0.0-rc.0
+ * @category security
+ * @slop
+ */
+export type AtomicHandlers = {
+  readonly [K in keyof AtomicResults]: (
+    request: Extract<AtomicRequest, { readonly operation: K }>
+  ) => Effect.Effect<AtomicResults[K], PlatformError.PlatformError>
 }
 
 /** Trusted host extension implementing atomic path resolution and operation.
@@ -91,7 +199,9 @@ export interface AtomicRequest {
  * @slop
  */
 export interface AtomicFileSystem {
-  readonly execute: <A>(request: AtomicRequest) => Effect.Effect<A, PlatformError.PlatformError>
+  readonly execute: <R extends AtomicRequest>(
+    request: R
+  ) => Effect.Effect<AtomicResult<R>, PlatformError.PlatformError>
   /**
    * A filesystem already confined by an enforceable process/filesystem
    * boundary (for example an in-memory browser volume). Methods not expressible
@@ -164,46 +274,57 @@ export const withIsolatedFileSystem = (
   }
   return withAtomicFileSystem(fileSystem, {
     isolated: fileSystem,
-    execute: (request) => {
-      switch (request.operation) {
-        case "glob":
-          return fileSystem.glob(request.pattern!, {
-            ...(request.options as { readonly exclude?: ReadonlyArray<string> | undefined } | undefined),
-            root: request.root
-          })
-        case "exists":
-          return fileSystem.exists(request.path!)
-        case "makeDirectory":
-          return fileSystem.makeDirectory(request.path!, request.options)
-        case "readDirectory":
-          return fileSystem.readDirectory(request.path!, request.options)
-        case "readFile":
-          return fileSystem.readFile(request.path!)
-        case "readFileString":
-          return fileSystem.readFileString(request.path!, request.encoding)
-        case "readLink":
-          return fileSystem.readLink(request.path!)
-        case "realPath":
-          return fileSystem.realPath(request.path!)
-        case "remove":
-          return fileSystem.remove(request.path!, request.options)
-        case "rename":
-          return fileSystem.rename(request.from!, request.to!)
-        case "stat":
-          return fileSystem.stat(request.path!)
-        case "writeFile":
-          return Encoding.decodeBase64(request.data!).pipe(
-            Effect.fromResult,
-            Effect.orDie,
-            Effect.flatMap((data) => fileSystem.writeFile(request.path!, data, request.options))
-          )
-        case "writeFileString":
-          return fileSystem.writeFileString(request.path!, request.data!, request.options)
-        default:
-          return Effect.die(`unsupported isolated filesystem operation: ${request.operation}`)
-      }
-    }
-  } as AtomicFileSystem)
+    execute: dispatch({
+      exists: (request) => fileSystem.exists(request.path),
+      glob: (request) => fileSystem.glob(request.pattern, { ...request.options, root: request.root }),
+      makeDirectory: (request) => fileSystem.makeDirectory(request.path, request.options),
+      readDirectory: (request) => fileSystem.readDirectory(request.path, request.options),
+      readFile: (request) => fileSystem.readFile(request.path),
+      readFileString: (request) => fileSystem.readFileString(request.path, request.encoding),
+      readLink: (request) => fileSystem.readLink(request.path),
+      realPath: (request) => fileSystem.realPath(request.path),
+      remove: (request) => fileSystem.remove(request.path, request.options),
+      rename: (request) => fileSystem.rename(request.from, request.to),
+      stat: (request) => fileSystem.stat(request.path),
+      writeFile: (request) =>
+        Encoding.decodeBase64(request.data).pipe(
+          Effect.fromResult,
+          Effect.orDie,
+          Effect.flatMap((data) => fileSystem.writeFile(request.path, data, request.options))
+        ),
+      writeFileString: (request) => fileSystem.writeFileString(request.path, request.data, request.options),
+      // An attested volume advertises no `batchLimits`, so the guarded layer
+      // never frames a batch for this executor.
+      batch: (request) => unsupportedIsolated(request.operation)
+    })
+  })
+}
+
+const unsupportedIsolated = (operation: string): Effect.Effect<never> =>
+  Effect.die(`unsupported isolated filesystem operation: ${operation}`)
+
+/**
+ * Turns a typed handler record into the executor the host extension declares.
+ *
+ * The record is what carries the safety: every operation is implemented, each
+ * handler reads its own operands, and each returns its own result. The lookup
+ * itself is one assertion because TypeScript cannot correlate an index it
+ * narrowed only on the key with the request and result types that key selects.
+ * An operation no handler implements can only arrive from a serialized
+ * boundary that framed an operation this build does not know, so it dies
+ * rather than resolving to `undefined` and being called.
+ */
+const dispatch = (handlers: AtomicHandlers): AtomicFileSystem["execute"] => {
+  const table = handlers as unknown as Record<
+    string,
+    ((request: AtomicRequest) => Effect.Effect<unknown, PlatformError.PlatformError>) | undefined
+  >
+  return <R extends AtomicRequest>(request: R) => {
+    const handler = table[request.operation]
+    return (
+      handler === undefined ? unsupportedIsolated(request.operation) : handler(request)
+    ) as Effect.Effect<AtomicResult<R>, PlatformError.PlatformError>
+  }
 }
 
 const readableOpenFlags: ReadonlySet<EffectFileSystem.OpenFlag> = new Set([
@@ -428,17 +549,17 @@ export const layer: Layer.Layer<
         normalize(value),
         "host does not provide descriptor-relative, no-follow filesystem isolation"
       )
-    const atomicOne = <A>(
+    const atomicOne = <R extends AtomicRequest>(
       action: "fs:read" | "fs:write",
       value: string,
       method: string,
-      request: AtomicRequest
-    ): Effect.Effect<A, PlatformError.PlatformError> =>
+      request: R
+    ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
       atomic === undefined
         ? atomicUnavailable(action, value, method)
         : guard(action, value).pipe(
           Effect.andThen(
-            atomic.execute<A>({
+            atomic.execute<R>({
               ...request,
               boundaryRoot,
               logicalRoot,
@@ -446,18 +567,18 @@ export const layer: Layer.Layer<
             })
           )
         )
-    const atomicTwo = <A>(
+    const atomicTwo = <R extends AtomicRequest>(
       first: readonly ["fs:read" | "fs:write", string],
       second: readonly ["fs:read" | "fs:write", string],
       method: string,
-      request: AtomicRequest
-    ): Effect.Effect<A, PlatformError.PlatformError> =>
+      request: R
+    ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
       atomic === undefined
         ? atomicUnavailable(first[0], first[1], method)
         : guard(first[0], first[1]).pipe(
           Effect.andThen(guard(second[0], second[1])),
           Effect.andThen(
-            atomic.execute<A>({
+            atomic.execute<R>({
               ...request,
               boundaryRoot,
               logicalRoot,
@@ -618,7 +739,7 @@ export const layer: Layer.Layer<
           const captured = snapshotOptions(options)
           const root = captured?.root === undefined ? workspace.root : normalize(captured.root)
           const normalizedPattern = normalizeFrom(root, pattern)
-          return atomicOne<Array<string>>("fs:read", normalizedPattern, "glob", {
+          return atomicOne("fs:read", normalizedPattern, "glob", {
             operation: "glob",
             pattern: normalizedPattern,
             root,
@@ -630,7 +751,7 @@ export const layer: Layer.Layer<
         ),
         makeDirectory: Effect.fn("FileSystem.makeDirectory")((value, options) => {
           const captured = snapshotOptions(options)
-          return atomicOne<void>("fs:write", value, "makeDirectory", {
+          return atomicOne("fs:write", value, "makeDirectory", {
             operation: "makeDirectory",
             path: normalize(value),
             options: captured
@@ -713,47 +834,47 @@ export const layer: Layer.Layer<
         }),
         readDirectory: Effect.fn("FileSystem.readDirectory")((value, options) => {
           const captured = snapshotOptions(options)
-          return atomicOne<Array<string>>("fs:read", value, "readDirectory", {
+          return atomicOne("fs:read", value, "readDirectory", {
             operation: "readDirectory",
             path: normalize(value),
             options: captured
           })
         }),
         readFile: Effect.fn("FileSystem.readFile")((value) =>
-          atomicOne<Uint8Array>("fs:read", value, "readFile", {
+          atomicOne("fs:read", value, "readFile", {
             operation: "readFile",
             path: normalize(value)
           })
         ),
         readLink: Effect.fn("FileSystem.readLink")((value) =>
-          atomicOne<string>("fs:read", value, "readLink", {
+          atomicOne("fs:read", value, "readLink", {
             operation: "readLink",
             path: normalize(value)
           })
         ),
         realPath: Effect.fn("FileSystem.realPath")((value) =>
-          atomicOne<string>("fs:read", value, "realPath", {
+          atomicOne("fs:read", value, "realPath", {
             operation: "realPath",
             path: normalize(value)
           })
         ),
         remove: Effect.fn("FileSystem.remove")((value, options) => {
           const captured = snapshotOptions(options)
-          return atomicOne<void>("fs:write", value, "remove", {
+          return atomicOne("fs:write", value, "remove", {
             operation: "remove",
             path: normalize(value),
             options: captured
           })
         }),
         rename: Effect.fn("FileSystem.rename")((from, to) =>
-          atomicTwo<void>(["fs:write", from], ["fs:write", to], "rename", {
+          atomicTwo(["fs:write", from], ["fs:write", to], "rename", {
             operation: "rename",
             from: normalize(from),
             to: normalize(to)
           })
         ),
         stat: Effect.fn("FileSystem.stat")((value) =>
-          atomicOne<EffectFileSystem.File.Info>("fs:read", value, "stat", {
+          atomicOne("fs:read", value, "stat", {
             operation: "stat",
             path: normalize(value)
           })
@@ -805,7 +926,7 @@ export const layer: Layer.Layer<
                 `writeFile payload of ${bytes.byteLength} bytes exceeds the ${limit} byte limit advertised by the host`
             }))
           }
-          return atomicOne<void>("fs:write", value, "writeFile", {
+          return atomicOne("fs:write", value, "writeFile", {
             operation: "writeFile",
             path: normalize(value),
             data: Encoding.encodeBase64(bytes),
@@ -814,13 +935,13 @@ export const layer: Layer.Layer<
         })
       }),
       exists: Effect.fn("FileSystem.exists")((value) =>
-        atomicOne<boolean>("fs:read", value, "exists", {
+        atomicOne("fs:read", value, "exists", {
           operation: "exists",
           path: normalize(value)
         })
       ),
       readFileString: Effect.fn("FileSystem.readFileString")((value, encoding) =>
-        atomicOne<string>("fs:read", value, "readFileString", {
+        atomicOne("fs:read", value, "readFileString", {
           operation: "readFileString",
           path: normalize(value),
           encoding
@@ -857,7 +978,7 @@ export const layer: Layer.Layer<
       },
       writeFileString: Effect.fn("FileSystem.writeFileString")((value, data, options) => {
         const captured = snapshotOptions(options)
-        return atomicOne<void>("fs:write", value, "writeFileString", {
+        return atomicOne("fs:write", value, "writeFileString", {
           operation: "writeFileString",
           path: normalize(value),
           data,
@@ -865,10 +986,10 @@ export const layer: Layer.Layer<
         })
       })
     }
-    if (atomic?.batchLimits === undefined) {
+    if (atomic === undefined || atomic.batchLimits === undefined) {
       return guarded
     } else {
-      const limits = atomic!.batchLimits!
+      const limits = atomic.batchLimits
       const executeBatch: Batch.FileSystemBatch["execute"] = Effect.fn("FileSystem.batch")(function*(requests) {
         if (requests.length === 0 || requests.length > Math.min(limits.size, Batch.maxBatchSize)) {
           return yield* Effect.fail(
@@ -965,7 +1086,7 @@ export const layer: Layer.Layer<
         }
         yield* verifyRoot()
         if (admitted.length > 0) {
-          const measured = yield* atomic!.execute<Batch.BatchResponse>({
+          const measured = yield* atomic.execute({
             operation: "batch",
             boundaryRoot,
             logicalRoot,

@@ -60,14 +60,14 @@ const run = <A, E>(
   host: Layer.Layer<FileSystem.FileSystem> = AtomicFileSystem.layer
 ) => effect.pipe(Effect.provide(guarded(root, host)))
 
-const runDirect = <A>(
-  request: KernelFileSystem.AtomicRequest,
+const runDirect = <R extends KernelFileSystem.AtomicRequest>(
+  request: R,
   host: Layer.Layer<FileSystem.FileSystem>
 ) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const atomic = (fs as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
-    return yield* atomic.execute<A>(request)
+    return yield* atomic.execute(request)
   }).pipe(Effect.provide(host))
 
 const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`
@@ -284,14 +284,14 @@ describe("atomic helper root identity", () => {
       const target = join(root, "value")
       yield* Effect.promise(() => writeFile(target, "inside"))
       const info = yield* Effect.promise(() => stat(root))
-      const request = { operation: "readFileString", boundaryRoot: root, logicalRoot: root, path: target }
+      const request = { operation: "readFileString", boundaryRoot: root, logicalRoot: root, path: target } as const
       for (const rootIdentity of [undefined, "0:0"]) {
         const failure = yield* Effect.flip(runDirect({ ...request, rootIdentity }, AtomicFileSystem.layer))
         expect(failure).toMatchObject({ reason: { _tag: "PermissionDenied" } })
         expect(described(failure)).toContain("root no longer names the authorized descriptor")
       }
       expect(
-        yield* runDirect<string>(
+        yield* runDirect(
           { ...request, rootIdentity: `${info.dev}:${info.ino}` },
           AtomicFileSystem.layer
         )
@@ -693,7 +693,9 @@ describe("atomic helper response framing", () => {
         logicalRoot: root,
         path: join(root, "any.txt"),
         options: cyclicOptions
-      } satisfies KernelFileSystem.AtomicRequest
+        // No operation declares options this shape; only a serialized boundary
+        // could frame one, which is what the refusal below is about.
+      } as unknown as KernelFileSystem.AtomicRequest
 
       expect(yield* Effect.flip(runDirect(omitted, host))).toMatchObject({ reason: { _tag: "BadArgument" } })
       expect(yield* Effect.flip(runDirect(cyclic, host))).toMatchObject({ reason: { _tag: "BadArgument" } })
@@ -705,7 +707,13 @@ describe("atomic helper response framing", () => {
       const root = yield* Effect.promise(() => temporaryDirectory())
       const executable = yield* Effect.promise(() => writing(frame(`{"ok":true,"value":null}`)))
       const failure = yield* Effect.flip(runDirect(
-        { operation: "unsupported", boundaryRoot: root, logicalRoot: root },
+        // The union names every operation, so an unsupported one reaches the
+        // helper only across the serialized boundary this stands in for.
+        {
+          operation: "unsupported",
+          boundaryRoot: root,
+          logicalRoot: root
+        } as unknown as KernelFileSystem.AtomicRequest,
         hostedBy(executable)
       ))
       expect(failure).toMatchObject({ reason: { _tag: "PermissionDenied" } })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Capability from "@smthrs/capability/Capability"
 import { fromPlatformError, permissionDenied } from "@smthrs/capability/Permission"
-import { Effect, FileSystem as EffectFileSystem, Option, Path as EffectPath, Sink, Stream } from "effect"
+import { Effect, FileSystem as EffectFileSystem, Option, Path as EffectPath, PlatformError, Sink, Stream } from "effect"
 import * as FileSystem from "../src/FileSystem.ts"
 import { GrantStore } from "../src/GrantStore.ts"
 import * as Workspace from "../src/Workspace.ts"
@@ -614,9 +614,106 @@ describe("FileSystem operation guards", () => {
       expect(calls).toEqual([])
 
       const isolated = FileSystem.withIsolatedFileSystem(host)
+      // The request union no longer admits an unknown operation, so this guard
+      // is reachable only from a serialized boundary that framed one. The
+      // assertion stands in for that boundary.
       const unsupported = yield* Effect.exit(
-        isolated[FileSystem.AtomicFileSystemTypeId].execute({ operation: "unsupported" })
+        isolated[FileSystem.AtomicFileSystemTypeId].execute(
+          { operation: "unsupported" } as unknown as FileSystem.AtomicRequest
+        )
       )
       expect(unsupported._tag).toBe("Failure")
+    }))
+})
+
+/**
+ * The atomic protocol is the host contract, so an operation names its own
+ * operands and its own result. Every `@ts-expect-error` below compiled in
+ * silence while a request was one arbitrary `operation` string beside optional
+ * operands and the caller chose the result type.
+ */
+describe("the atomic request protocol", () => {
+  const attested = FileSystem.withIsolatedFileSystem(
+    EffectFileSystem.makeNoop({ realPath: (path) => Effect.succeed(path) })
+  )[FileSystem.AtomicFileSystemTypeId]
+
+  /** One request per operation. A new operation does not compile until it is listed. */
+  const samples: {
+    readonly [K in FileSystem.AtomicRequest["operation"]]: Extract<
+      FileSystem.AtomicRequest,
+      { readonly operation: K }
+    >
+  } = {
+    exists: { operation: "exists", path: "/workspace/a" },
+    glob: { operation: "glob", pattern: "/workspace/*.ts", root: "/workspace" },
+    makeDirectory: { operation: "makeDirectory", path: "/workspace/dir" },
+    readDirectory: { operation: "readDirectory", path: "/workspace" },
+    readFile: { operation: "readFile", path: "/workspace/a" },
+    readFileString: { operation: "readFileString", path: "/workspace/a" },
+    readLink: { operation: "readLink", path: "/workspace/a" },
+    realPath: { operation: "realPath", path: "/workspace/a" },
+    remove: { operation: "remove", path: "/workspace/a" },
+    rename: { operation: "rename", from: "/workspace/a", to: "/workspace/b" },
+    stat: { operation: "stat", path: "/workspace/a" },
+    writeFile: { operation: "writeFile", path: "/workspace/a", data: "" },
+    writeFileString: { operation: "writeFileString", path: "/workspace/a", data: "text" },
+    batch: { operation: "batch", requests: [{ operation: "stat", path: "/workspace/a" }] }
+  }
+
+  it("requires the operands the operation it names needs", () => {
+    const rename: FileSystem.AtomicRequest = { operation: "rename", from: "/workspace/a", to: "/workspace/b" }
+    // @ts-expect-error a rename names both of its endpoints
+    const halfRename: FileSystem.AtomicRequest = { operation: "rename", from: "/workspace/a" }
+    // @ts-expect-error a glob names the pattern it expands
+    const patternlessGlob: FileSystem.AtomicRequest = { operation: "glob", root: "/workspace" }
+    // @ts-expect-error the protocol names every operation it carries
+    const invented: FileSystem.AtomicRequest = { operation: "chmod", path: "/workspace/a" }
+
+    expect([rename, halfRename, patternlessGlob, invented].map((request) => request.operation))
+      .toEqual(["rename", "rename", "glob", "chmod"])
+  })
+
+  it("fixes each operation's result instead of taking it from its caller", () => {
+    const info: Effect.Effect<EffectFileSystem.File.Info, PlatformError.PlatformError> = attested.execute(samples.stat)
+    const bytes: Effect.Effect<Uint8Array, PlatformError.PlatformError> = attested.execute(samples.readFile)
+    // @ts-expect-error a stat answers File.Info, and no caller may ask for another type
+    const misread: Effect.Effect<boolean, PlatformError.PlatformError> = attested.execute(samples.stat)
+
+    expect([info, bytes, misread].every((effect) => Effect.isEffect(effect))).toBe(true)
+  })
+
+  it.effect("implements every operation the union names", () =>
+    Effect.gen(function*() {
+      const calls: Array<string> = []
+      const executor = FileSystem.withIsolatedFileSystem(makeHostFileSystem(calls))[
+        FileSystem.AtomicFileSystemTypeId
+      ]
+      const { batch, ...direct } = samples
+
+      const exits = yield* Effect.forEach(
+        Object.values(direct),
+        (request) => Effect.exit(executor.execute(request))
+      )
+
+      expect(exits.map((exit) => exit._tag)).toEqual(exits.map(() => "Success"))
+      // `realPath` is the one host method the double answers without recording.
+      expect(calls).toEqual([
+        "exists",
+        "glob",
+        "makeDirectory",
+        "readDirectory",
+        "readFile",
+        "readFileString",
+        "readLink",
+        "remove",
+        "rename",
+        "stat",
+        "writeFile",
+        "writeFileString"
+      ])
+      // An attested volume advertises no batch limits, so the guarded layer
+      // never frames a batch for it and the executor refuses one.
+      const refused = yield* Effect.exit(executor.execute(batch))
+      expect(refused._tag).toBe("Failure")
     }))
 })

@@ -1455,13 +1455,32 @@ const reasons: Record<string, PlatformError.SystemErrorTag | undefined> = {
 }
 
 /**
+ * A request framed for the helper: one atomic operation, or one member of a
+ * batch. The two protocols name their operands differently — a batch `glob`
+ * carries the `path` it expands where an atomic `glob` carries a `pattern` —
+ * so the reporting helpers read the operand by narrowing on the operation
+ * rather than by taking whichever of three optional fields happened to be set.
+ */
+type FramedRequest = KernelFileSystem.AtomicRequest | KernelFileSystem.BatchRequest
+
+/** The operand a framed request names, for a failure's `pathOrDescriptor`. */
+const operand = (request: FramedRequest): string | undefined =>
+  "path" in request ?
+    request.path :
+    request.operation === "rename" ?
+    request.from :
+    request.operation === "glob" ?
+    request.pattern :
+    undefined
+
+/**
  * A rejection carrying no errno is a transport or host failure — an absent
  * interpreter, a killed child, output that is not a helper result — and stays
  * `PermissionDenied` so the boundary fails closed rather than reporting a
  * benign-looking reason for an operation that never ran.
  */
 const failure = (
-  request: KernelFileSystem.AtomicRequest,
+  request: FramedRequest,
   cause: unknown,
   rejection?: HelperResult
 ): PlatformError.PlatformError => {
@@ -1473,7 +1492,7 @@ const failure = (
   return PlatformError.systemError({
     module: moduleName,
     method,
-    pathOrDescriptor: request.path ?? request.from ?? request.pattern,
+    pathOrDescriptor: operand(request),
     // `@effect/platform-node` sets `syscall` on every system error it reports,
     // so a consumer that switches on it has to read a populated field here too.
     // It names the operation's own syscall rather than whichever of the calls
@@ -1769,13 +1788,13 @@ const toStringArray = (value: unknown, what: string): Array<string> => {
 }
 
 const convert = <A>(
-  request: KernelFileSystem.AtomicRequest,
+  request: FramedRequest,
   value: unknown,
   limits: Limits
 ): Effect.Effect<A, PlatformError.PlatformError> => {
   if (request.operation === "batch") {
     const response = record(value, "batch")
-    const requests = request.requests!
+    const requests = request.requests
     if (
       response.rootIdentity !== request.rootIdentity || !Array.isArray(response.entries) ||
       response.entries.length !== requests.length
@@ -1888,7 +1907,9 @@ const convert = <A>(
     }
     return Effect.succeed(undefined as A)
   }
-  throw new Error(`atomic helper returned success for unsupported operation ${request.operation}`)
+  throw new Error(
+    `atomic helper returned success for unsupported operation ${(request as FramedRequest).operation}`
+  )
 }
 
 const spawnHelper = <A>(
@@ -2062,10 +2083,17 @@ const spawnHelper = <A>(
     return Effect.sync(cleanup)
   })
 
-const execute = (options: Options, resolved: Settings | { readonly invalid: unknown }) =>
-<A>(
+/**
+ * The framed half, one concrete result type. Nothing on this side of the pipe
+ * can prove what the helper answered: the protocol pairs an operation with its
+ * result, and {@link execute} restates that pairing for the kernel's typed
+ * request. Keeping the decode `unknown` here confines that promise to one
+ * assertion instead of one per caller.
+ */
+const executeFramed = (options: Options, resolved: Settings | { readonly invalid: unknown }) =>
+(
   request: KernelFileSystem.AtomicRequest
-): Effect.Effect<A, PlatformError.PlatformError> =>
+): Effect.Effect<unknown, PlatformError.PlatformError> =>
   Effect.suspend(() => {
     if ("invalid" in resolved) {
       const cause = resolved.invalid
@@ -2128,7 +2156,7 @@ const execute = (options: Options, resolved: Settings | { readonly invalid: unkn
       } catch (cause) {
         return Effect.fail(failure(request, cause))
       }
-      return spawnHelper<A>(
+      return spawnHelper<unknown>(
         request,
         executable,
         Buffer.concat([header, body], header.byteLength + body.byteLength),
@@ -2136,6 +2164,15 @@ const execute = (options: Options, resolved: Settings | { readonly invalid: unkn
       )
     }))
   })
+
+const execute = (
+  options: Options,
+  resolved: Settings | { readonly invalid: unknown }
+): KernelFileSystem.AtomicFileSystem["execute"] => {
+  const framed = executeFramed(options, resolved)
+  return <R extends KernelFileSystem.AtomicRequest>(request: R) =>
+    framed(request) as Effect.Effect<KernelFileSystem.AtomicResult<R>, PlatformError.PlatformError>
+}
 
 /**
  * A Node filesystem layer carrying the kernel's atomic host extension, built

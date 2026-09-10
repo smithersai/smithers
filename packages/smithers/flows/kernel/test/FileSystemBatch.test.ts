@@ -9,8 +9,26 @@ import * as BatchContract from "../src/test/FileSystemBatchContract.ts"
 import * as Workspace from "../src/Workspace.ts"
 
 const info = { type: "Directory", dev: 7, ino: Option.some(9) } as FileSystem.File.Info
+
+type BatchOperation = Extract<Batch.AtomicRequest, { readonly operation: "batch" }>
+
+/**
+ * A double for a host that advertises batching. `execute` answers the result
+ * type its request names, which no implementation can prove from the inside:
+ * the response is framed by the host, so the one assertion lives here rather
+ * than at every fixture, and anything but a batch is a defect.
+ */
+const batchExecutor = (
+  run: (request: BatchOperation) => Effect.Effect<Batch.BatchResponse, PlatformError.PlatformError>
+): Batch.AtomicFileSystem["execute"] => {
+  const execute = (request: Batch.AtomicRequest): Effect.Effect<Batch.BatchResponse, PlatformError.PlatformError> =>
+    request.operation === "batch" ? run(request) : Effect.die(`unexpected operation: ${request.operation}`)
+  return <R extends Batch.AtomicRequest>(request: R) =>
+    execute(request) as unknown as Effect.Effect<Batch.AtomicResult<R>, PlatformError.PlatformError>
+}
+
 const fixture = (options: { readonly missingIdentity?: boolean; readonly size?: number } = {}) => {
-  const requests: Array<Batch.AtomicRequest> = []
+  const requests: Array<BatchOperation> = []
   const fs = Batch.withAtomicFileSystem(
     FileSystem.makeNoop({
       realPath: (path) => Effect.succeed(path),
@@ -18,18 +36,19 @@ const fixture = (options: { readonly missingIdentity?: boolean; readonly size?: 
     }),
     {
       batchLimits: { size: options.size ?? 128, response: 24 * 1024 * 1024 },
-      execute: <A>(request: Batch.AtomicRequest) =>
+      execute: batchExecutor((request) =>
         Effect.sync(() => {
           requests.push(request)
           return {
             rootIdentity: "7:9",
-            entries: request.requests!.map((member, index) => ({
+            entries: request.requests.map((member, index) => ({
               index,
               path: member.path,
               result: Result.succeed({ operation: "stat", info })
             }))
-          } as A
+          }
         })
+      )
     }
   )
   return { fs, requests }
@@ -302,14 +321,14 @@ describe("guarded filesystem batches", () => {
       yield* BatchContract.check(fs, "/workspace")
       Batch.withAtomicFileSystem(fs, {
         batchLimits: { size: 128, response: 1024 },
-        execute: <A>(request: Batch.AtomicRequest) => {
+        execute: batchExecutor((request) => {
           expect(request).toMatchObject({
             operation: "batch",
             rootIdentity: "7:9",
             boundaryRoot: "/workspace",
             logicalRoot: "/workspace"
           })
-          expect(request.requests!.map((member) => member.operation)).toEqual([
+          expect(request.requests.map((member) => member.operation)).toEqual([
             "digest",
             "stat",
             "readDirectory",
@@ -349,8 +368,8 @@ describe("guarded filesystem batches", () => {
             }
           ]
           results.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : a.index - b.index)
-          return Effect.succeed({ rootIdentity: "7:9", entries: results } as A)
-        }
+          return Effect.succeed({ rootIdentity: "7:9", entries: results })
+        })
       })
       yield* BatchContract.check(fs, "/workspace")
     }))
