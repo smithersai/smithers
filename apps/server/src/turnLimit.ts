@@ -1,3 +1,11 @@
+import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import { runDurable } from "./Boundary"
+import { answeredJson, DurableStorage, namespaceCall, storageLayer } from "./DurableStorage"
+import type { NativeNamespace, NativeStorage } from "./DurableStorage"
+import { CryptoFailure } from "./Failures"
 /**
  * A per-login ceiling on model calls, because every one of them spends model
  * dollars.
@@ -113,20 +121,6 @@ export const ANONYMOUS_ALL_CEILING: TurnCeiling = {
   windowMs: ANONYMOUS_TURN_WINDOW_MS
 }
 
-export interface TurnLimitStorage {
-  readonly get: <T>(key: string) => Promise<T | undefined>
-  readonly put: (key: string, value: unknown) => Promise<void>
-}
-
-export interface TurnLimitStub {
-  readonly fetch: (request: Request) => Promise<Response>
-}
-
-export interface TurnLimitNamespace {
-  readonly idFromName: (name: string) => unknown
-  readonly get: (id: unknown) => TurnLimitStub
-}
-
 interface TurnLimitWindow {
   /** When the current window opened. */
   readonly start: number
@@ -149,21 +143,29 @@ const ceilingParam = (url: URL, name: string, fallback: number): number => {
   return Number.isInteger(value) && value > 0 ? value : fallback
 }
 
-export class TurnRateLimiter {
-  constructor(private readonly ctx: { readonly storage: TurnLimitStorage }) {}
+const answer = (body: TurnBudget): Response =>
+  new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
-  async fetch(request: Request): Promise<Response> {
-    const now = Date.now()
+/* ------------------------------------------------------------------------ */
+/* The Durable Object                                                        */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * One bucket's request: `POST /spend?max=&windowMs=` admits or refuses a
+ * turn, `GET /peek` reports without spending. The caller names the ceiling
+ * with each request; the login ceiling is the default so an unadorned call
+ * keeps its old meaning. One bucket only ever sees one ceiling, because the
+ * key already says whose it is. A storage failure is the object's own 500.
+ */
+export const turnRateLimiterRequest = (request: Request): Effect.Effect<Response, never, DurableStorage> =>
+  Effect.gen(function*() {
+    const storage = yield* DurableStorage
+    const now = yield* Clock.currentTimeMillis
     const url = new URL(request.url)
-    // The caller names the ceiling with each request; the login ceiling is
-    // the default so an unadorned call keeps its old meaning. One bucket
-    // only ever sees one ceiling, because the key already says whose it is.
     const max = ceilingParam(url, "max", TURN_WINDOW_MAX)
     const windowMs = ceilingParam(url, "windowMs", TURN_WINDOW_MS)
-    const stored = await this.ctx.storage.get<TurnLimitWindow>(WINDOW_KEY)
+    const stored = yield* storage.get<TurnLimitWindow>(WINDOW_KEY)
     const open = stored !== undefined && now - stored.start < windowMs ? stored : { start: now, count: 0 }
-    const answer = (body: TurnBudget): Response =>
-      new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
     switch (url.pathname) {
       case "/spend": {
@@ -173,7 +175,7 @@ export class TurnRateLimiter {
           return answer({ allowed: false, remaining: 0, retryAt: open.start + windowMs })
         }
         const next = { start: open.start, count: open.count + 1 }
-        await this.ctx.storage.put(WINDOW_KEY, next)
+        yield* storage.put(WINDOW_KEY, next)
         return answer({ allowed: true, remaining: max - next.count })
       }
       case "/peek":
@@ -185,38 +187,73 @@ export class TurnRateLimiter {
       default:
         return new Response("not found", { status: 404 })
     }
+  }).pipe(
+    Effect.catchTag("StorageFailure", (failure) => Effect.succeed(new Response(failure.message, { status: 500 })))
+  )
+
+export class TurnRateLimiter {
+  constructor(private readonly ctx: { readonly storage: NativeStorage }) {}
+
+  fetch(request: Request): Promise<Response> {
+    return runDurable(turnRateLimiterRequest(request).pipe(Effect.provide(storageLayer(this.ctx.storage))))
   }
 }
 
+/* ------------------------------------------------------------------------ */
+/* The Worker-side service                                                   */
+/* ------------------------------------------------------------------------ */
+
+export interface TurnLimitsShape {
+  /** Spend one turn from `key`'s budget under `ceiling` (the login ceiling by default). */
+  readonly spend: (key: string, ceiling?: TurnCeiling) => Effect.Effect<TurnBudget>
+}
+
+export class TurnLimits extends Context.Service<TurnLimits, TurnLimitsShape>()("smithers-server/TurnLimits") {}
+
+const isBudget = (value: unknown): value is TurnBudget =>
+  typeof value === "object" && value !== null &&
+  typeof (value as { allowed?: unknown }).allowed === "boolean" &&
+  typeof (value as { remaining?: unknown }).remaining === "number"
+
 /**
- * Spend one turn from `login`'s budget.
+ * The ceiling over the TURN_LIMITS namespace.
  *
  * Fails OPEN when no namespace is bound. A deployment without the binding is
  * local dev or a stub stack, where there is no real model credential to
  * protect; refusing every turn there would break the e2e suites to guard
  * nothing. The binding is declared in `wrangler.jsonc`, so the deployed Worker
- * always has it.
+ * always has it. It also fails open when the object cannot be reached or
+ * answers something unreadable: our own infrastructure hiccuping must never
+ * lock a person out.
  */
-export const spendTurn = async (
-  limits: TurnLimitNamespace | undefined,
-  key: string,
-  ceiling: TurnCeiling = LOGIN_CEILING
-): Promise<TurnBudget> => {
-  if (limits === undefined) return { allowed: true, remaining: ceiling.max }
-  try {
-    const stub = limits.get(limits.idFromName(key))
-    const response = await stub.fetch(
-      new Request(`https://turn-limit.internal/spend?max=${ceiling.max}&windowMs=${ceiling.windowMs}`, { method: "POST" })
-    )
-    const budget = (await response.json()) as TurnBudget | undefined
-    return budget ?? { allowed: true, remaining: ceiling.max }
-  } catch (error) {
-    // A rejected fetch or unreadable answer is an infrastructure fault, not
-    // a signal about this user: admit the turn and log the cause.
-    console.error("turn-limit spend failed:", error)
-    return { allowed: true, remaining: ceiling.max }
-  }
-}
+export const turnLimitsLayer = (namespace: NativeNamespace | undefined): Layer.Layer<TurnLimits> =>
+  Layer.succeed(TurnLimits, {
+    spend: Effect.fn("TurnLimits.spend")(function*(key: string, ceiling: TurnCeiling = LOGIN_CEILING) {
+      const open: TurnBudget = { allowed: true, remaining: ceiling.max }
+      if (namespace === undefined) return open
+      const budget = yield* namespaceCall(
+        "turnLimits.spend",
+        namespace,
+        key,
+        new Request(`https://turn-limit.internal/spend?max=${ceiling.max}&windowMs=${ceiling.windowMs}`, { method: "POST" })
+      ).pipe(
+        Effect.flatMap((response) => answeredJson("turnLimits.spend", "The turn limiter", response)),
+        Effect.catch((failure) =>
+          Effect.sync(() => {
+            // A rejected fetch, a refusal, or an unreadable answer is an
+            // infrastructure fault, not a signal about this user: admit the
+            // turn and log the cause (a refusal names its status and body).
+            console.error("turn-limit spend failed:", failure.cause)
+            return undefined
+          }))
+      )
+      return isBudget(budget) ? budget : open
+    })
+  })
+
+/* ------------------------------------------------------------------------ */
+/* The anonymous bucket                                                      */
+/* ------------------------------------------------------------------------ */
 
 /**
  * The part of a client address that names its bucket. An IPv4 address is
@@ -238,6 +275,16 @@ export const anonymousBucketAddress = (ip: string): string => {
   return `${hextets.slice(0, 4).map((hextet) => hextet.replace(/^0+(?=.)/, "")).join(":")}::/64`
 }
 
+/** SHA-256 of `text` as lowercase hex. WebCrypto refusing SHA-256 is a defect, not a route outcome. */
+export const sha256Hex = (text: string): Effect.Effect<string> =>
+  Effect.tryPromise({
+    try: () => crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)),
+    catch: (cause) => new CryptoFailure({ operation: "digest SHA-256", cause })
+  }).pipe(
+    Effect.map((digest) => [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")),
+    Effect.orDie
+  )
+
 /**
  * The bucket an anonymous turn spends from: a salted SHA-256 of the client
  * address Cloudflare reports (`anonymousBucketAddress`, so one IPv6 /64 is
@@ -246,11 +293,14 @@ export const anonymousBucketAddress = (ip: string): string => {
  * deployment's ANONYMOUS_TURN_SALT secret; without one the hash is still
  * not an address, only linkable across deployments that also have none.
  */
-export const anonymousTurnKey = async (request: Request, salt: string | undefined): Promise<string> => {
+export const anonymousTurnKey = (request: Request, salt: string | undefined): Effect.Effect<string> => {
   const ip = anonymousBucketAddress(request.headers.get("cf-connecting-ip") ?? "")
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt ?? ""}\n${ip}`))
-  return `anonymous:${[...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`
+  return Effect.map(sha256Hex(`${salt ?? ""}\n${ip}`), (digest) => `anonymous:${digest}`)
 }
+
+/* ------------------------------------------------------------------------ */
+/* The refusal                                                               */
+/* ------------------------------------------------------------------------ */
 
 const waitLabel = (seconds: number): string =>
   seconds >= 2 * 60 * 60 ? `${Math.ceil(seconds / 3600)} hours` : `${Math.ceil(seconds / 60)} minutes`

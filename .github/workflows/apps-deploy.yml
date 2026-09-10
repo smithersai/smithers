@@ -100,12 +100,43 @@ jobs:
         id: deploy_dry
         if: steps.mode.outputs.dry_run == 'true'
         run: pnpm --filter smithers-server run deploy:dry
+      # EVERY Worker secret and knob must be exported here. An Alchemy upload
+      # replaces the script's bindings wholesale (`keepBindings: undefined`,
+      # alchemy WorkerProvider.ts:3584), so a secret that is set on the live
+      # script but missing from this env is DROPPED by the deploy and its
+      # route answers its honest 501/503 until someone notices. The names come
+      # from apps/server/src/workerIdentity.ts (`secrets` + `optionalVars`) and
+      # apps/server/scripts/deploy-docs.test.ts fails if this list drifts from
+      # it. `SMITHERS_BUILD_SHA` is deliberately absent: scripts/deploy.ts
+      # computes it from the commit it stamped the site with and passes it to
+      # Alchemy itself, so a repository secret would be ignored at best.
+      # `GITHUB_TOKEN` is bound to SMITHERS_CATALOG_GITHUB_TOKEN, never to
+      # `secrets.GITHUB_TOKEN`: that one is the job's own ephemeral Actions
+      # token, which would be deployed into the Worker, expire within the
+      # hour, and override the working GitHub App for the public catalog.
       - name: Deploy (real)
         id: deploy_real
         if: steps.mode.outputs.dry_run == 'false'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SMITHERS_CHAT_AUTH_TOKEN: ${{ secrets.SMITHERS_CHAT_AUTH_TOKEN }}
+          CHAT_PRODUCT_SERVICE_TOKEN: ${{ secrets.CHAT_PRODUCT_SERVICE_TOKEN }}
+          IDENTITY_SERVICE_TOKEN: ${{ secrets.IDENTITY_SERVICE_TOKEN }}
+          IDENTITY_ADMIN_TOKEN: ${{ secrets.IDENTITY_ADMIN_TOKEN }}
+          BILLING_AUTH_TOKEN: ${{ secrets.BILLING_AUTH_TOKEN }}
+          BILLING_PRODUCT_SERVICE_TOKEN: ${{ secrets.BILLING_PRODUCT_SERVICE_TOKEN }}
+          BILLING_ADMIN_TOKEN: ${{ secrets.BILLING_ADMIN_TOKEN }}
+          ANONYMOUS_TURN_SALT: ${{ secrets.ANONYMOUS_TURN_SALT }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          SMITHERS_GITHUB_APP_ID: ${{ secrets.SMITHERS_GITHUB_APP_ID }}
+          SMITHERS_GITHUB_APP_PRIVATE_KEY: ${{ secrets.SMITHERS_GITHUB_APP_PRIVATE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.SMITHERS_CATALOG_GITHUB_TOKEN }}
+          UPSTREAM_TIMEOUT_MS: ${{ secrets.UPSTREAM_TIMEOUT_MS }}
+          BILLING_CHECKOUT_ENABLED: ${{ secrets.BILLING_CHECKOUT_ENABLED }}
+          CEREBRAS_MODEL: ${{ secrets.CEREBRAS_MODEL }}
+          CEREBRAS_MODEL_LIBRARIAN: ${{ secrets.CEREBRAS_MODEL_LIBRARIAN }}
+          CEREBRAS_MODEL_FLOWS: ${{ secrets.CEREBRAS_MODEL_FLOWS }}
         run: pnpm --filter smithers-server run deploy
       # --- Post-deploy verification ---------------------------------------
       #

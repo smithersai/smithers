@@ -1,7 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test"
-import worker from "./index"
-import type { WorkerEnv } from "./index"
-import { memoryDurableObjects } from "./memoryDurableObjects"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import { TestClock } from "effect/testing"
+import { memoryStorage, storageLayer } from "./DurableStorage"
+import type { NativeNamespace } from "./DurableStorage"
 import {
   ANONYMOUS_ALL_CEILING,
   ANONYMOUS_ALL_KEY,
@@ -10,13 +12,15 @@ import {
   ANONYMOUS_TURN_MAX,
   anonymousBucketAddress,
   anonymousTurnKey,
-  spendTurn,
   TURN_WINDOW_MAX,
   TURN_WINDOW_MS,
+  TurnLimits,
   turnLimitResponse,
-  TurnRateLimiter
+  turnLimitsLayer,
+  TurnRateLimiter,
+  turnRateLimiterRequest
 } from "./turnLimit"
-import type { TurnBudget, TurnLimitNamespace, TurnLimitStorage } from "./turnLimit"
+import type { TurnBudget, TurnCeiling } from "./turnLimit"
 
 /*
  * The per-login turn ceiling. Chat is comped during the alpha, so the balance
@@ -26,23 +30,15 @@ import type { TurnBudget, TurnLimitNamespace, TurnLimitStorage } from "./turnLim
  * lock someone out because our own infrastructure hiccuped.
  */
 
-const memoryStorage = (seed?: Record<string, unknown>): TurnLimitStorage => {
-  const data = new Map<string, unknown>(Object.entries(seed ?? {}))
-  return {
-    get: async (key) => data.get(key) as never,
-    put: async (key, value) => void data.set(key, value)
-  }
-}
-
 /**
- * A namespace of in-memory buckets. `spent` names logins whose budget is
- * already exhausted — seeding the window is how a route test reaches the
- * refusal without driving `TURN_WINDOW_MAX` real turns through the seam,
- * which would make the suite slower every time the ceiling rises.
+ * A namespace of in-memory buckets. `spent` names keys whose budget is
+ * already exhausted — seeding the window is how a test reaches the refusal
+ * without driving `TURN_WINDOW_MAX` real turns through the seam, which would
+ * make the suite slower every time the ceiling rises.
  */
 const memoryLimits = (
   spent: ReadonlyArray<string> = []
-): TurnLimitNamespace & { readonly logins: () => Array<string> } => {
+): NativeNamespace & { readonly logins: () => Array<string> } => {
   const buckets = new Map<string, TurnRateLimiter>()
   const bucketFor = (name: string): TurnRateLimiter => {
     let bucket = buckets.get(name)
@@ -67,6 +63,14 @@ const spend = async (limiter: TurnRateLimiter): Promise<TurnBudget> => {
   const response = await limiter.fetch(new Request("https://turn-limit.internal/spend", { method: "POST" }))
   return (await response.json()) as TurnBudget
 }
+
+/** Spend through the Worker-side service, over `limits` (or no binding at all). */
+const spendTurn = (limits: NativeNamespace | undefined, key: string, ceiling?: TurnCeiling): Promise<TurnBudget> =>
+  Effect.runPromise(
+    TurnLimits.use((service) => service.spend(key, ceiling)).pipe(Effect.provide(turnLimitsLayer(limits)))
+  )
+
+const keyFor = (request: Request, salt: string | undefined): Promise<string> => Effect.runPromise(anonymousTurnKey(request, salt))
 
 describe("the per-login turn ceiling (Durable Object state)", () => {
   test("admits every turn up to the ceiling and counts down honestly", async () => {
@@ -106,6 +110,36 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
     expect(budget.remaining).toBe(TURN_WINDOW_MAX - 1)
   })
 
+  test("the window is the clock's: a spent bucket reopens exactly one window after it opened", async () => {
+    // The object reads the Effect clock, so the expiry is proved by moving
+    // time instead of by seeding a stale window.
+    const opened = 1_700_000_000_000
+    const storage = memoryStorage()
+    const spendAt = () =>
+      turnRateLimiterRequest(new Request("https://turn-limit.internal/spend?max=2&windowMs=1000", { method: "POST" })).pipe(
+        Effect.flatMap((response) => Effect.promise(() => response.json() as Promise<TurnBudget>))
+      )
+    const budgets = await Effect.runPromise(
+      Effect.gen(function*() {
+        yield* TestClock.setTime(opened)
+        const first = yield* spendAt()
+        const second = yield* spendAt()
+        const refused = yield* spendAt()
+        yield* TestClock.adjust(999)
+        const stillRefused = yield* spendAt()
+        yield* TestClock.adjust(1)
+        const reopened = yield* spendAt()
+        return { first, second, refused, stillRefused, reopened }
+      }).pipe(Effect.provide(Layer.mergeAll(storageLayer(storage), TestClock.layer())))
+    )
+    expect(budgets.first.remaining).toBe(1)
+    expect(budgets.second.remaining).toBe(0)
+    expect(budgets.refused).toEqual({ allowed: false, remaining: 0, retryAt: opened + 1000 })
+    expect(budgets.stillRefused.retryAt).toBe(opened + 1000)
+    expect(budgets.reopened).toEqual({ allowed: true, remaining: 1 })
+    expect(storage.data.get("window")).toEqual({ start: opened + 1000, count: 1 })
+  })
+
   test("peek reports the state without spending anything", async () => {
     const limiter = new TurnRateLimiter({ storage: memoryStorage() })
     await spend(limiter)
@@ -115,13 +149,43 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
     expect((await peek()).remaining).toBe(TURN_WINDOW_MAX - 1)
   })
 
+  test("an unknown path is the object's own 404", async () => {
+    const limiter = new TurnRateLimiter({ storage: memoryStorage() })
+    expect((await limiter.fetch(new Request("https://turn-limit.internal/nope"))).status).toBe(404)
+  })
+
+  test("the caller names the ceiling with each request", async () => {
+    const limiter = new TurnRateLimiter({ storage: memoryStorage() })
+    const small = new Request("https://turn-limit.internal/spend?max=2&windowMs=60000", { method: "POST" })
+    expect(((await (await limiter.fetch(small)).json()) as TurnBudget).remaining).toBe(1)
+    expect(((await (await limiter.fetch(small)).json()) as TurnBudget).remaining).toBe(0)
+    expect(((await (await limiter.fetch(small)).json()) as TurnBudget).allowed).toBe(false)
+    // A malformed ceiling is the login default, never zero.
+    const malformed = new Request("https://turn-limit.internal/spend?max=-1&windowMs=abc", { method: "POST" })
+    expect(((await (await limiter.fetch(malformed)).json()) as TurnBudget).remaining).toBe(TURN_WINDOW_MAX - 3)
+  })
+
+  test("a storage failure is the object's own 500, not a defect", async () => {
+    const limiter = new TurnRateLimiter({
+      storage: {
+        get: async () => {
+          throw new Error("storage unavailable")
+        },
+        put: async () => {}
+      }
+    })
+    const response = await limiter.fetch(new Request("https://turn-limit.internal/spend", { method: "POST" }))
+    expect(response.status).toBe(500)
+  })
+
   test("with no namespace bound the ceiling fails open", async () => {
     const budget = await spendTurn(undefined, "will")
     expect(budget.allowed).toBe(true)
+    expect(budget.remaining).toBe(TURN_WINDOW_MAX)
   })
 
   test("an unreadable answer from our own Durable Object admits the turn", async () => {
-    const broken: TurnLimitNamespace = {
+    const broken: NativeNamespace = {
       idFromName: (name) => name,
       get: () => ({ fetch: async () => new Response("not json at all", { status: 500 }) })
     }
@@ -130,16 +194,53 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
 
   test("a rejected Durable Object spend admits the turn and logs the cause", async () => {
     const cause = new Error("Durable Object reset because its code was updated.")
-    const broken: TurnLimitNamespace = {
+    const broken: NativeNamespace = {
       idFromName: (name) => name,
-      get: () => ({ fetch: async () => { throw cause } })
+      get: () => ({
+        fetch: async () => {
+          throw cause
+        }
+      })
     }
     const logged = spyOn(console, "error").mockImplementation(() => {})
     try {
-      expect(await spendTurn(broken, "will", ANONYMOUS_CEILING)).toEqual({
-        allowed: true, remaining: ANONYMOUS_CEILING.max
-      })
+      expect(await spendTurn(broken, "will", ANONYMOUS_CEILING)).toEqual({ allowed: true, remaining: ANONYMOUS_CEILING.max })
       expect(logged).toHaveBeenCalledWith("turn-limit spend failed:", cause)
+      expect(await spendTurn(broken, "will")).toEqual({ allowed: true, remaining: TURN_WINDOW_MAX })
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  test("a refusal from our own Durable Object is logged with its status and body, not as a decoder error", async () => {
+    const refusing: NativeNamespace = {
+      idFromName: (name) => name,
+      get: () => ({ fetch: async () => new Response("storage is sealed", { status: 500 }) })
+    }
+    const logged = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect((await spendTurn(refusing, "will")).allowed).toBe(true)
+      expect(logged).toHaveBeenCalledTimes(1)
+      expect(logged.mock.calls[0]![0]).toBe("turn-limit spend failed:")
+      const cause = logged.mock.calls[0]![1] as Error
+      expect(cause).toBeInstanceOf(Error)
+      expect(cause.message).toBe("The turn limiter answered HTTP 500: storage is sealed")
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  test("an unreadable 200 answer is logged with what the decoder choked on", async () => {
+    const broken: NativeNamespace = {
+      idFromName: (name) => name,
+      get: () => ({ fetch: async () => new Response("not json at all", { status: 200 }) })
+    }
+    const logged = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect((await spendTurn(broken, "will")).allowed).toBe(true)
+      expect(logged).toHaveBeenCalledTimes(1)
+      expect(logged.mock.calls[0]![0]).toBe("turn-limit spend failed:")
+      expect(logged.mock.calls[0]![1]).toBeInstanceOf(SyntaxError)
     } finally {
       logged.mockRestore()
     }
@@ -150,6 +251,15 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
     for (let turn = 0; turn < TURN_WINDOW_MAX; turn += 1) await spendTurn(limits, "will")
     expect((await spendTurn(limits, "will")).allowed).toBe(false)
     expect((await spendTurn(limits, "someone-else")).allowed).toBe(true)
+    expect(limits.logins()).toEqual(["will", "someone-else"])
+  })
+
+  test("a spent bucket refuses before anything else is asked, with a retry time", async () => {
+    const limits = memoryLimits(["will"])
+    const refused = await spendTurn(limits, "will")
+    expect(refused.allowed).toBe(false)
+    expect(typeof refused.retryAt).toBe("number")
+    expect(turnLimitResponse(refused, {}).headers.get("retry-after")).not.toBeNull()
   })
 
   test("the refusal reads as a bug report, not a bill", () => {
@@ -168,122 +278,11 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
       expect(body.message.toLowerCase()).not.toContain(word)
     }
   })
-})
 
-/*
- * The routes. A ceiling that let the upstream call happen first would not save
- * a dollar, so what matters is that a refusal costs nothing beyond one
- * Durable Object read.
- */
-describe("the turn routes under the ceiling", () => {
-  const identityEnv = (limits: TurnLimitNamespace): WorkerEnv => ({
-    ...memoryDurableObjects(),
-    ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
-    IDENTITY_UPSTREAM_URL: "https://identity.test",
-    SMITHERS_CHAT_URL: "https://upstream.test/chat",
-    TURN_LIMITS: limits
-  })
-
-  const signedIn = (path: string, runId: string): Request =>
-    new Request(`https://mvp.test${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: "smithers_session=abc" },
-      body: JSON.stringify({ runId, messages: [{ role: "user", content: "hi" }], instructions: "Be brief." })
-    })
-
-  const withStubbedSeams = async (run: (upstreamCalls: () => number) => Promise<void>): Promise<void> => {
-    const original = globalThis.fetch
-    let calls = 0
-    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-      const request = typeof input === "string" ? new Request(input, init) : (input as Request)
-      if (new URL(request.url).hostname === "identity.test") {
-        return new Response(JSON.stringify({ login: "will", allowlisted: true }), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        })
-      }
-      calls += 1
-      return new Response("{\"type\":\"done\"}\n", { status: 200, headers: { "content-type": "application/x-ndjson" } })
-    }) as typeof fetch
-    try {
-      await run(() => calls)
-    } finally {
-      globalThis.fetch = original
-    }
-  }
-
-  for (const path of ["/api/agent/turn", "/api/model/stream"]) {
-    test(`a rejected Durable Object spend still reaches the model on ${path}`, async () => {
-      const env = identityEnv({
-        idFromName: (name) => name,
-        get: () => ({ fetch: async () => { throw new Error("Durable Object reset") } })
-      })
-      await withStubbedSeams(async (upstreamCalls) => {
-        const response = await worker.fetch(signedIn(path, `rejected-spend-${path}`), env)
-        expect(response.status).toBe(200)
-        await response.text()
-        expect(upstreamCalls()).toBe(1)
-      })
-    })
-  }
-
-  test("a spent budget refuses the turn with 429 before any credential is spent", async () => {
-    // A run id may be registered only once; the in-isolate cancel registry is
-    // module state, so each test gets its own namespace.
-    const lane = "spent-budget"
-    const env = identityEnv(memoryLimits(["will"]))
-    await withStubbedSeams(async (upstreamCalls) => {
-      const refused = await worker.fetch(signedIn("/api/agent/turn", `${lane}-over`), env)
-      expect(refused.status).toBe(429)
-      // The whole point: nothing reached the upstream, so nothing was spent.
-      expect(upstreamCalls()).toBe(0)
-      expect(refused.headers.get("retry-after")).not.toBeNull()
-    })
-  })
-
-  test("a budget with room admits the turn", async () => {
-    const env = identityEnv(memoryLimits())
-    await withStubbedSeams(async (upstreamCalls) => {
-      const ok = await worker.fetch(signedIn("/api/agent/turn", "with-room-1"), env)
-      expect(ok.status).toBe(200)
-      expect(upstreamCalls()).toBe(1)
-    })
-  })
-
-  test("the model-stream route shares the same budget", async () => {
-    // A run id may be registered only once; the in-isolate cancel registry is
-    // module state, so each test gets its own namespace.
-    const lane = "model-stream"
-    const env = identityEnv(memoryLimits(["will"]))
-    await withStubbedSeams(async () => {
-      const refused = await worker.fetch(signedIn("/api/model/stream", `${lane}-stream`), env)
-      expect(refused.status).toBe(429)
-    })
-  })
-
-  test("the budget is keyed by the validated login, never by anything a client sends", async () => {
-    // A run id may be registered only once; the in-isolate cancel registry is
-    // module state, so each test gets its own namespace.
-    const lane = "keyed-by-login"
-    const limits = memoryLimits()
-    const env = identityEnv(limits)
-    await withStubbedSeams(async () => {
-      await worker.fetch(signedIn("/api/agent/turn", `${lane}-1`), env)
-    })
-    expect(limits.logins()).toEqual(["will"])
-  })
-
-  test("killing a turn is never rate limited", async () => {
-    // A run id may be registered only once; the in-isolate cancel registry is
-    // module state, so each test gets its own namespace.
-    const lane = "cancel-unlimited"
-    const env = identityEnv(memoryLimits(["will"]))
-    await withStubbedSeams(async () => {
-      // The budget is already spent, so a turn here would be refused.
-      expect((await worker.fetch(signedIn("/api/agent/turn", `${lane}-turn`), env)).status).toBe(429)
-      const cancel = await worker.fetch(signedIn("/api/agent/turn/cancel", `${lane}-1`), env)
-      expect(cancel.status).not.toBe(429)
-    })
+  test("the refusal carries the isolation headers it is given", () => {
+    const response = turnLimitResponse({ allowed: false, remaining: 0 }, { "x-iso": "1" })
+    expect(response.headers.get("x-iso")).toBe("1")
+    expect(response.headers.get("content-type")).toBe("application/json")
   })
 
   test("an ordinary hour of chat never reaches the ceiling", async () => {
@@ -291,22 +290,14 @@ describe("the turn routes under the ceiling", () => {
     // a heavy hour of conversation, and the browser chain authors several
     // links for each, so the ceiling has to clear sixty times a handful — it
     // sits at a thousand.
-    // A run id may be registered only once; the in-isolate cancel registry is
-    // module state, so each test gets its own namespace.
-    const lane = "ordinary-hour"
     const limits = memoryLimits()
-    const env = identityEnv(limits)
-    await withStubbedSeams(async () => {
-      for (let turn = 0; turn < 60; turn += 1) {
-        const response = await worker.fetch(signedIn("/api/agent/turn", `${lane}-${turn}`), env)
-        expect(response.status).toBe(200)
-        // The chain's links for that message spend from the same budget.
-        for (let link = 0; link < 8; link += 1) {
-          const authored = await worker.fetch(signedIn("/api/model/stream", `${lane}-${turn}-${link}`), env)
-          expect(authored.status).toBe(200)
-        }
+    for (let turn = 0; turn < 60; turn += 1) {
+      expect((await spendTurn(limits, "will")).allowed).toBe(true)
+      // The chain's links for that message spend from the same budget.
+      for (let link = 0; link < 8; link += 1) {
+        expect((await spendTurn(limits, "will")).allowed).toBe(true)
       }
-    })
+    }
   })
 })
 
@@ -317,80 +308,34 @@ describe("the turn routes under the ceiling", () => {
  * questions, and the refusal names sign-in as the way on.
  */
 describe("the anonymous ceiling", () => {
-  const identityEnv = (limits: TurnLimitNamespace): WorkerEnv => ({
-    ...memoryDurableObjects(),
-    ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
-    IDENTITY_UPSTREAM_URL: "https://identity.test",
-    SMITHERS_CHAT_URL: "https://upstream.test/chat",
-    ANONYMOUS_TURN_SALT: "test-salt",
-    TURN_LIMITS: limits
-  })
+  const exploring = (ip: string): Request =>
+    new Request("https://mvp.test/api/agent/turn", { method: "POST", headers: { "cf-connecting-ip": ip } })
 
-  const exploring = (ip: string, runId: string): Request =>
-    new Request("https://mvp.test/api/agent/turn", {
-      method: "POST",
-      headers: { "content-type": "application/json", "cf-connecting-ip": ip },
-      body: JSON.stringify({
-        runId,
-        messages: [{ role: "user", content: "what is this repo?" }],
-        instructions: "Be brief.",
-        context: {
-          version: 1,
-          product: "smithers",
-          capturedAt: 1786223000000,
-          revision: 1,
-          surface: "chat",
-          theme: "light",
-          selectedWorldDocument: null,
-          connectors: [],
-          activeRepository: "smithersai/smithers",
-          github: { connected: false, login: null, repositories: null },
-          worldState: { documentCount: 0, documents: [] },
-          capabilities: [],
-          limitations: []
-        }
-      })
-    })
-
-  const withSignedOutSeams = async (run: (upstreamCalls: () => number) => Promise<void>): Promise<void> => {
-    const original = globalThis.fetch
-    let calls = 0
-    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-      const request = typeof input === "string" ? new Request(input, init) : (input as Request)
-      if (new URL(request.url).hostname === "identity.test") return new Response("{}", { status: 401 })
-      calls += 1
-      return new Response("{\"type\":\"done\"}\n", { status: 200, headers: { "content-type": "application/x-ndjson" } })
-    }) as typeof fetch
-    try {
-      await run(() => calls)
-    } finally {
-      globalThis.fetch = original
-    }
+  /** What the router does for a visitor: the address bucket, then the deployment-wide one. */
+  const anonymousTurn = async (limits: NativeNamespace, ip: string): Promise<{ readonly budget: TurnBudget; readonly ceiling: TurnCeiling }> => {
+    const key = await keyFor(exploring(ip), "test-salt")
+    const budget = await spendTurn(limits, key, ANONYMOUS_CEILING)
+    if (!budget.allowed) return { budget, ceiling: ANONYMOUS_CEILING }
+    const shared = await spendTurn(limits, ANONYMOUS_ALL_KEY, ANONYMOUS_ALL_CEILING)
+    return { budget: shared, ceiling: ANONYMOUS_ALL_CEILING }
   }
 
-  test("one address gets a day of questions, then the sign-in refusal, and nothing more is spent", async () => {
+  test("one address gets a day of questions, then the sign-in refusal", async () => {
     const limits = memoryLimits()
-    const env = identityEnv(limits)
-    await withSignedOutSeams(async (upstreamCalls) => {
-      for (let turn = 0; turn < ANONYMOUS_TURN_MAX; turn += 1) {
-        const response = await worker.fetch(exploring("203.0.113.7", `anon-day-${turn}`), env)
-        expect(response.status).toBe(200)
-        await response.text()
-      }
-      expect(upstreamCalls()).toBe(ANONYMOUS_TURN_MAX)
-      const refused = await worker.fetch(exploring("203.0.113.7", "anon-day-over"), env)
-      expect(refused.status).toBe(429)
-      expect(refused.headers.get("retry-after")).not.toBeNull()
-      const body = (await refused.json()) as { code: string; message: string }
-      expect(body.code).toBe("turn_rate_limited")
-      expect(body.message).toContain("Sign in with GitHub")
-      expect(body.message).not.toContain("looping")
-      expect(upstreamCalls()).toBe(ANONYMOUS_TURN_MAX)
-      // Another address is another bucket.
-      const other = await worker.fetch(exploring("198.51.100.9", "anon-day-other"), env)
-      expect(other.status).toBe(200)
-      await other.text()
-    })
+    for (let turn = 0; turn < ANONYMOUS_TURN_MAX; turn += 1) {
+      expect((await anonymousTurn(limits, "203.0.113.7")).budget.allowed).toBe(true)
+    }
+    const over = await anonymousTurn(limits, "203.0.113.7")
+    expect(over.budget.allowed).toBe(false)
+    const refused = turnLimitResponse(over.budget, {}, over.ceiling)
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get("retry-after")).not.toBeNull()
+    const body = (await refused.json()) as { code: string; message: string }
+    expect(body.code).toBe("turn_rate_limited")
+    expect(body.message).toContain("Sign in with GitHub")
+    expect(body.message).not.toContain("looping")
+    // Another address is another bucket.
+    expect((await anonymousTurn(limits, "198.51.100.9")).budget.allowed).toBe(true)
     // The buckets are hashes under the anonymous prefix: no address, no login.
     // The third bucket is the deployment-wide one, charged for every turn.
     expect(limits.logins()).toContain(ANONYMOUS_ALL_KEY)
@@ -414,40 +359,32 @@ describe("the anonymous ceiling", () => {
 
   test("two addresses in one /64 spend the same day of questions", async () => {
     const limits = memoryLimits()
-    const env = identityEnv(limits)
-    await withSignedOutSeams(async (upstreamCalls) => {
-      for (let turn = 0; turn < ANONYMOUS_TURN_MAX; turn += 1) {
-        const response = await worker.fetch(exploring("2001:db8:1:2::1", `anon-v6-${turn}`), env)
-        expect(response.status).toBe(200)
-        await response.text()
-      }
-      // A sibling address in the same /64 finds the bucket already spent.
-      const sibling = await worker.fetch(exploring("2001:db8:1:2:aaaa:bbbb:cccc:dddd", "anon-v6-sibling"), env)
-      expect(sibling.status).toBe(429)
-      expect(((await sibling.json()) as { message: string }).message).toContain(`${ANONYMOUS_TURN_MAX} turns today`)
-      expect(upstreamCalls()).toBe(ANONYMOUS_TURN_MAX)
-      // The next /64 over is another visitor.
-      const neighbour = await worker.fetch(exploring("2001:db8:1:3::1", "anon-v6-neighbour"), env)
-      expect(neighbour.status).toBe(200)
-      await neighbour.text()
-    })
+    for (let turn = 0; turn < ANONYMOUS_TURN_MAX; turn += 1) {
+      expect((await anonymousTurn(limits, "2001:db8:1:2::1")).budget.allowed).toBe(true)
+    }
+    // A sibling address in the same /64 finds the bucket already spent.
+    const sibling = await anonymousTurn(limits, "2001:db8:1:2:aaaa:bbbb:cccc:dddd")
+    expect(sibling.budget.allowed).toBe(false)
+    const body = (await turnLimitResponse(sibling.budget, {}, sibling.ceiling).json()) as { message: string }
+    expect(body.message).toContain(`${ANONYMOUS_TURN_MAX} turns today`)
+    // The next /64 over is another visitor.
+    expect((await anonymousTurn(limits, "2001:db8:1:3::1")).budget.allowed).toBe(true)
     expect(limits.logins().filter((key) => key !== ANONYMOUS_ALL_KEY)).toHaveLength(2)
   })
 
   test("the deployment-wide bucket refuses a fresh address once everyone's day is spent", async () => {
     const limits = memoryLimits([ANONYMOUS_ALL_KEY])
-    const env = identityEnv(limits)
-    await withSignedOutSeams(async (upstreamCalls) => {
-      const refused = await worker.fetch(exploring("198.51.100.9", "anon-all-over"), env)
-      expect(refused.status).toBe(429)
-      expect(refused.headers.get("retry-after")).not.toBeNull()
-      const body = (await refused.json()) as { code: string; message: string }
-      expect(body.code).toBe("turn_rate_limited")
-      expect(body.message).toContain("everyone")
-      expect(body.message).toContain("Sign in with GitHub")
-      expect(body.message).not.toContain(`${ANONYMOUS_TURN_MAX} turns today`)
-      expect(upstreamCalls()).toBe(0)
-    })
+    const over = await anonymousTurn(limits, "198.51.100.9")
+    expect(over.budget.allowed).toBe(false)
+    expect(over.ceiling).toBe(ANONYMOUS_ALL_CEILING)
+    const refused = turnLimitResponse(over.budget, {}, over.ceiling)
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get("retry-after")).not.toBeNull()
+    const body = (await refused.json()) as { code: string; message: string }
+    expect(body.code).toBe("turn_rate_limited")
+    expect(body.message).toContain("everyone")
+    expect(body.message).toContain("Sign in with GitHub")
+    expect(body.message).not.toContain(`${ANONYMOUS_TURN_MAX} turns today`)
     // A login is not a visitor: its own bucket is untouched by the shared one.
     expect((await spendTurn(limits, "will")).allowed).toBe(true)
   })
@@ -464,11 +401,12 @@ describe("the anonymous ceiling", () => {
 
   test("the bucket key is salted and never a user's login", async () => {
     const request = new Request("https://mvp.test/api/agent/turn", { headers: { "cf-connecting-ip": "203.0.113.7" } })
-    const salted = await anonymousTurnKey(request, "salt-a")
+    const salted = await keyFor(request, "salt-a")
     expect(salted).toMatch(/^anonymous:[0-9a-f]{64}$/)
-    expect(await anonymousTurnKey(request, "salt-a")).toBe(salted)
-    expect(await anonymousTurnKey(request, "salt-b")).not.toBe(salted)
-    expect(await anonymousTurnKey(new Request("https://mvp.test/", { headers: { "cf-connecting-ip": "198.51.100.9" } }), "salt-a"))
+    expect(await keyFor(request, "salt-a")).toBe(salted)
+    expect(await keyFor(request, "salt-b")).not.toBe(salted)
+    expect(await keyFor(request, undefined)).not.toBe(salted)
+    expect(await keyFor(new Request("https://mvp.test/", { headers: { "cf-connecting-ip": "198.51.100.9" } }), "salt-a"))
       .not.toBe(salted)
   })
 

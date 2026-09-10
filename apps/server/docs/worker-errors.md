@@ -10,21 +10,31 @@ Durable Object transport failures use the route's JSON contract:
 - Admin client-error reads return HTTP 200 with `status: "ok"`, an empty log,
   and a `note` stating that the log is unavailable. The cause is logged.
 
-The exported Worker fetch handler catches unexpected route failures, logs
-the cause, and returns HTTP 500 with `status: "error"` and a generic `message`.
+Both Worker entrypoints catch unexpected route failures, log the cause, and
+return HTTP 500 with `status: "error"`, a generic `message`, and the isolation
+headers every JSON answer carries. A client that disconnects interrupts the
+route's fiber — its finalizers run, the upstream fetch aborts — and reads
+HTTP 499; an interruption is never restated as a 500. The native adapter
+(`src/index.ts`) goes through `runRequest` and the deployed Worker
+(`src/Worker.ts`) through `runFetch`; both map the fiber's exit with the same
+`responseFromExit` in `src/Boundary.ts`, so the two paths answer identically.
 This boundary covers response creation; errors after a streaming response
 has been returned remain the stream handler's responsibility.
 
 `UPSTREAM_TIMEOUT_MS` bounds upstream response headers, defaulting to 20,000
 milliseconds when unset or invalid. The model turn and stream routes, admin
 forwards and health reads, identity and billing proxies, and gateway calls
-share `src/upstreamDeadline.ts`. The timer clears when headers arrive;
-streaming bodies can continue and caller cancellation remains effective.
+share `fetchWithDeadline` in `src/Http.ts`, read through
+`ServerConfig.upstreamTimeoutMs` (`src/Config.ts`). The deadline covers
+headers only: a streaming body continues past it, and caller cancellation
+(fiber interruption) remains effective and aborts the upstream fetch.
 
 Model and admin forward deadlines return HTTP 504 with `status: "error"`
-and a `message` naming the effective duration in milliseconds. Turn deadlines
-also settle the cancellation registry. Client disconnects on model routes
-remain HTTP 499. Gateway deadlines retain the states and retry policy in
+and a `message` naming the effective duration in milliseconds:
+`${seam} did not answer within ${timeoutMs}ms.` (`UpstreamTimeout` in
+`src/Failures.ts`). Turn deadlines also settle the cancellation registry.
+Client disconnects on model routes remain HTTP 499 (`src/Boundary.ts`).
+Gateway deadlines retain the states and retry policy in
 [gateway-retries.md](gateway-retries.md).
 
 Admin health retains its HTTP 200 partial report: timed-out health checks
@@ -39,9 +49,11 @@ through `/current` before attempting cancellation. A replacement between
 those calls returns `not-found` instead of cancelling the replacement.
 
 The terminal frame, headers deadline, disconnect, and stream finalization
-share one settlement promise. Settlement runs under `waitUntil`, including
-when the client disconnects. Settlement failures are logged; the ten-minute
-stale registration window remains the recovery backstop.
+share one settlement. Settlement runs under `waitUntil`, including when the
+client disconnects; the deployed Worker (`src/Worker.ts`) hands the router
+the platform execution context for that, and the native adapter in
+`src/index.ts` takes it from workerd's `ctx`. Settlement failures are logged;
+the ten-minute stale registration window remains the recovery backstop.
 
 Silent turn polling backs off from 500 milliseconds to 5 seconds, resets on
 upstream data, and stops after 96 registry reads. A monitoring failure or

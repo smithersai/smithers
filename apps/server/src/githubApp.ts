@@ -1,3 +1,16 @@
+import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Redacted from "effect/Redacted"
+import * as Ref from "effect/Ref"
+import * as Result from "effect/Result"
+import * as Semaphore from "effect/Semaphore"
+import { ServerConfig } from "./Config"
+import { CryptoFailure } from "./Failures"
+import { fetchWithDeadline, readJson, readText, Transport } from "./Http"
+import type { TransportShape } from "./Http"
+
 /**
  * Server-to-server GitHub reads authenticate as the GitHub App
  * `smitherspreviewrelease` (app id 4163546, owned by the `smithersai` org),
@@ -33,23 +46,6 @@
  * header, and the token's own cache entry.
  */
 
-/** The App secrets, and the token that overrides them. */
-export interface GithubAppEnv {
-  /** The GitHub App's numeric id (`wrangler secret put SMITHERS_GITHUB_APP_ID`). */
-  readonly SMITHERS_GITHUB_APP_ID?: string
-  /**
-   * The App's PEM private key. GitHub issues it as PKCS#1
-   * (`-----BEGIN RSA PRIVATE KEY-----`), which is how the deployed secret is
-   * stored; a PKCS#8 key (`-----BEGIN PRIVATE KEY-----`) is accepted too.
-   */
-  readonly SMITHERS_GITHUB_APP_PRIVATE_KEY?: string
-  /**
-   * The optional override. Set, it wins over the App and is sent as the bearer
-   * unchanged; it cannot be re-minted, so a 401 under it is not retried.
-   */
-  readonly GITHUB_TOKEN?: string
-}
-
 /** The bearer one GitHub read carries. */
 export interface GithubBearer {
   readonly value: string
@@ -57,23 +53,71 @@ export interface GithubBearer {
   readonly renewable: boolean
 }
 
-/** The Cache API surface this module uses; `delete` is optional because a test cache rarely has one. */
-type TokenCache = Pick<Cache, "match" | "put"> & Partial<Pick<Cache, "delete">>
+/*
+ * The edge cache: Cloudflare's Cache API, keyed by URL. Every operation
+ * swallows its own failure, because a cache that is down is a cache miss and
+ * never a failed request. Absent (unit tests, a runtime without `caches`)
+ * every read misses and every write is dropped.
+ */
 
-export interface GithubAppDeps {
-  readonly fetch: (request: Request) => Promise<Response>
-  readonly now: () => number
-  readonly cache: () => TokenCache | undefined
-  /** One line per failure. Defaults to `console.warn`; never receives a secret. */
-  readonly log?: (line: string) => void
+export interface EdgeCacheShape {
+  readonly match: (key: string) => Effect.Effect<Response | undefined>
+  readonly put: (key: string, response: Response) => Effect.Effect<void>
+  readonly delete: (key: string) => Effect.Effect<void>
 }
 
-export interface GithubAppAuth {
+export class EdgeCache extends Context.Service<EdgeCache, EdgeCacheShape>()("smithers-server/EdgeCache") {}
+
+const noEdgeCache: EdgeCacheShape = {
+  match: () => Effect.succeed(undefined),
+  put: () => Effect.void,
+  delete: () => Effect.void
+}
+
+/** The Workers Cache API as an `EdgeCache`; `undefined` (no `caches` binding) never hits. */
+export const edgeCacheFrom = (cache: Cache | undefined): EdgeCacheShape =>
+  cache === undefined
+    ? noEdgeCache
+    : {
+      match: (key) =>
+        Effect.tryPromise(() => cache.match(key)).pipe(Effect.orElseSucceed(() => undefined)),
+      put: (key, response) =>
+        Effect.tryPromise(() => cache.put(key, response)).pipe(Effect.ignore),
+      delete: (key) =>
+        Effect.tryPromise(() => cache.delete(key)).pipe(Effect.ignore)
+    }
+
+export const edgeCacheLayer = (cache: Cache | undefined): Layer.Layer<EdgeCache> =>
+  Layer.succeed(EdgeCache, edgeCacheFrom(cache))
+
+export interface MemoryEdgeCache extends EdgeCacheShape {
+  /** The stored responses by URL, for a test to inspect. */
+  readonly records: Map<string, Response>
+}
+
+/** An in-memory edge cache for tests; one instance shared by two layers plays a cold isolate. */
+export const memoryEdgeCache = (): MemoryEdgeCache => {
+  const records = new Map<string, Response>()
+  return {
+    records,
+    match: (key) => Effect.sync(() => records.get(key)?.clone()),
+    put: (key, response) => Effect.sync(() => {
+      records.set(key, response.clone())
+    }),
+    delete: (key) => Effect.sync(() => {
+      records.delete(key)
+    })
+  }
+}
+
+export interface GithubAppAuthShape {
   /** The bearer for a server-to-server read, or undefined for the anonymous read. */
-  readonly token: (env: GithubAppEnv) => Promise<GithubBearer | undefined>
+  readonly token: () => Effect.Effect<GithubBearer | undefined>
   /** Drops the cached installation token, in the isolate and at the edge, after a 401. */
-  readonly forget: () => Promise<void>
+  readonly forget: () => Effect.Effect<void>
 }
+
+export class GithubAppAuth extends Context.Service<GithubAppAuth, GithubAppAuthShape>()("smithers-server/GithubAppAuth") {}
 
 const GITHUB_API = "https://api.github.com"
 
@@ -85,6 +129,9 @@ const TOKEN_TTL_MS = 55 * 60 * 1000
 
 /** How long a failed exchange is remembered, so a broken secret is not retried on every refresh. */
 const FAILURE_TTL_MS = 5 * 60 * 1000
+
+/** How long one exchange call gets to answer its headers. */
+const GITHUB_TIMEOUT_MS = 10_000
 
 /** GitHub rejects a JWT that lives longer than 10 minutes; 9 leaves room for skew. */
 const JWT_BACKDATE_S = 60
@@ -189,26 +236,32 @@ const privateKeyDer = (rawPem: string): Bytes => {
 /**
  * The App JWT GitHub accepts on `/app/*`. Exported so a test can verify the
  * signature against the matching public key instead of trusting the shape.
+ * The failure names the WebCrypto operation and never quotes the key.
  */
-export const createAppJwt = async (appId: string, privateKeyPem: string, nowMs: number): Promise<string> => {
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    privateKeyDer(privateKeyPem),
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  )
-  const seconds = Math.floor(nowMs / 1000)
-  const header = base64url(encoder.encode(JSON.stringify({ alg: "RS256", typ: "JWT" })))
-  const claims = base64url(encoder.encode(JSON.stringify({
-    iat: seconds - JWT_BACKDATE_S,
-    exp: seconds + JWT_LIFETIME_S,
-    iss: appId
-  })))
-  const signingInput = `${header}.${claims}`
-  const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, encoder.encode(signingInput))
-  return `${signingInput}.${base64url(new Uint8Array(signature))}`
-}
+export const createAppJwt = (appId: string, privateKeyPem: string, nowMs: number): Effect.Effect<string, CryptoFailure> =>
+  Effect.gen(function*() {
+    const keyDer = yield* Effect.try({
+      try: () => privateKeyDer(privateKeyPem),
+      catch: (cause) => new CryptoFailure({ operation: "decodePrivateKey", cause })
+    })
+    const key = yield* Effect.tryPromise({
+      try: () => crypto.subtle.importKey("pkcs8", keyDer, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]),
+      catch: (cause) => new CryptoFailure({ operation: "importKey", cause })
+    })
+    const seconds = Math.floor(nowMs / 1000)
+    const header = base64url(encoder.encode(JSON.stringify({ alg: "RS256", typ: "JWT" })))
+    const claims = base64url(encoder.encode(JSON.stringify({
+      iat: seconds - JWT_BACKDATE_S,
+      exp: seconds + JWT_LIFETIME_S,
+      iss: appId
+    })))
+    const signingInput = `${header}.${claims}`
+    const signature = yield* Effect.tryPromise({
+      try: () => crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, encoder.encode(signingInput)),
+      catch: (cause) => new CryptoFailure({ operation: "sign", cause })
+    })
+    return `${signingInput}.${base64url(new Uint8Array(signature))}`
+  })
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
@@ -224,151 +277,184 @@ const installationId = (entry: unknown): number | undefined => {
   return typeof id === "number" && Number.isSafeInteger(id) && id > 0 ? id : undefined
 }
 
-export const createGithubAppAuth = (deps: GithubAppDeps): GithubAppAuth => {
-  const log = deps.log ?? ((line: string) => console.warn(line))
-  let held: { readonly value: string; readonly expiresAt: number } | undefined
-  let failedUntil = 0
-  let pending: Promise<GithubBearer | undefined> | undefined
+export interface GithubAppAuthOptions {
+  /** One line per failure. Defaults to `console.warn`; never receives a secret. */
+  readonly log?: (line: string) => void
+}
 
-  const cacheKey = () => new Request(TOKEN_CACHE_URL)
+interface HeldToken {
+  readonly value: string
+  readonly expiresAt: number
+}
 
-  const githubRequest = (url: string, jwt: string, method: "GET" | "POST") =>
-    new Request(url, {
-      method,
-      headers: {
-        accept: "application/vnd.github+json",
-        authorization: `Bearer ${jwt}`,
-        "user-agent": "Smithers-github-app",
-        "x-github-api-version": "2022-11-28"
-      },
-      // workerd throws on redirect: "error" before the request is sent, so a
-      // redirect is asked for manually and read as the non-answer it is.
-      redirect: "manual",
-      signal: AbortSignal.timeout(10_000)
+/**
+ * The App credential as one service instance: the held token, the failure
+ * memory, and the single-flight gate live for the layer's lifetime (one
+ * isolate). Concurrent callers queue on the gate; the first one exchanges
+ * and the rest read the token it held, so N callers cost one exchange.
+ */
+export const makeGithubAppAuth = (
+  options: GithubAppAuthOptions = {}
+): Effect.Effect<GithubAppAuthShape, never, ServerConfig | Transport | EdgeCache> =>
+  Effect.gen(function*() {
+    const config = yield* ServerConfig
+    const transport: TransportShape = yield* Transport
+    const edge = yield* EdgeCache
+    const log = options.log ?? ((line: string) => console.warn(line))
+    const held = yield* Ref.make<HeldToken | undefined>(undefined)
+    const failedUntil = yield* Ref.make(0)
+    const gate = yield* Semaphore.make(1)
+
+    const githubRequest = (url: string, jwt: string, method: "GET" | "POST") =>
+      new Request(url, {
+        method,
+        headers: {
+          accept: "application/vnd.github+json",
+          authorization: `Bearer ${jwt}`,
+          "user-agent": "Smithers-github-app",
+          "x-github-api-version": "2022-11-28"
+        },
+        // workerd throws on redirect: "error" before the request is sent, so a
+        // redirect is asked for manually and read as the non-answer it is.
+        redirect: "manual"
+      })
+
+    const github = (url: string, jwt: string, method: "GET" | "POST") =>
+      fetchWithDeadline("githubApp", githubRequest(url, jwt, method), undefined, GITHUB_TIMEOUT_MS).pipe(
+        Effect.provideService(Transport, transport)
+      )
+
+    const readEdgeToken: Effect.Effect<GithubBearer | undefined> = Effect.gen(function*() {
+      const stored = yield* edge.match(TOKEN_CACHE_URL)
+      if (stored === undefined) return undefined
+      const expiresAt = Number(stored.headers.get(EXPIRES_HEADER))
+      const value = (yield* readText(stored).pipe(Effect.orElseSucceed(() => ""))).trim()
+      const now = yield* Clock.currentTimeMillis
+      if (value === "" || !Number.isFinite(expiresAt) || expiresAt <= now) return undefined
+      yield* Ref.set(held, { value, expiresAt })
+      return { value, renewable: true }
     })
 
-  const readEdgeToken = async (): Promise<GithubBearer | undefined> => {
-    const stored = await deps.cache()?.match(cacheKey()).catch(() => undefined)
-    if (stored === undefined) return undefined
-    const expiresAt = Number(stored.headers.get(EXPIRES_HEADER))
-    const value = (await stored.text().catch(() => "")).trim()
-    if (value === "" || !Number.isFinite(expiresAt) || expiresAt <= deps.now()) return undefined
-    held = { value, expiresAt }
-    return { value, renewable: true }
-  }
+    const writeEdgeToken = (value: string, expiresAt: number): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const now = yield* Clock.currentTimeMillis
+        const maxAge = Math.max(1, Math.floor((expiresAt - now) / 1000))
+        yield* edge.put(
+          TOKEN_CACHE_URL,
+          new Response(value, { headers: { "cache-control": `max-age=${maxAge}`, [EXPIRES_HEADER]: String(expiresAt) } })
+        )
+      })
 
-  const writeEdgeToken = async (value: string, expiresAt: number): Promise<void> => {
-    const maxAge = Math.max(1, Math.floor((expiresAt - deps.now()) / 1000))
-    await deps.cache()?.put(
-      cacheKey(),
-      new Response(value, { headers: { "cache-control": `max-age=${maxAge}`, [EXPIRES_HEADER]: String(expiresAt) } })
-    ).catch(() => undefined)
-  }
+    /** The installation to mint a token on: the `smithersai` one, else the first GitHub returned. */
+    const chooseInstallation = (jwt: string): Effect.Effect<number | undefined> =>
+      Effect.gen(function*() {
+        const response = yield* Effect.result(github(`${GITHUB_API}/app/installations`, jwt, "GET"))
+        if (Result.isFailure(response)) {
+          log("the GitHub App installation lookup could not reach GitHub")
+          return undefined
+        }
+        if (!response.success.ok) {
+          log(`the GitHub App installation lookup answered ${response.success.status}`)
+          return undefined
+        }
+        const body = yield* Effect.result(readJson(response.success))
+        if (Result.isFailure(body)) {
+          log("the GitHub App installation lookup answered an unreadable body")
+          return undefined
+        }
+        const installations: ReadonlyArray<unknown> = Array.isArray(body.success) ? body.success : []
+        const preferred = installations.find((entry) => accountLogin(entry) === PREFERRED_ACCOUNT)
+        const id = installationId(preferred ?? installations[0])
+        if (id === undefined) {
+          log("the GitHub App is not installed on any organization")
+          return undefined
+        }
+        return id
+      })
 
-  /** The installation to mint a token on: the `smithersai` one, else the first GitHub returned. */
-  const chooseInstallation = async (jwt: string): Promise<number | undefined> => {
-    let response: Response
-    try {
-      response = await deps.fetch(githubRequest(`${GITHUB_API}/app/installations`, jwt, "GET"))
-    } catch {
-      log("the GitHub App installation lookup could not reach GitHub")
-      return undefined
-    }
-    if (!response.ok) {
-      log(`the GitHub App installation lookup answered ${response.status}`)
-      return undefined
-    }
-    let body: unknown
-    try {
-      body = await response.json()
-    } catch {
-      log("the GitHub App installation lookup answered an unreadable body")
-      return undefined
-    }
-    const installations: ReadonlyArray<unknown> = Array.isArray(body) ? body : []
-    const preferred = installations.find((entry) => accountLogin(entry) === PREFERRED_ACCOUNT)
-    const id = installationId(preferred ?? installations[0])
-    if (id === undefined) {
-      log("the GitHub App is not installed on any organization")
-      return undefined
-    }
-    return id
-  }
+    const exchange = (id: number, jwt: string): Effect.Effect<GithubBearer | undefined> =>
+      Effect.gen(function*() {
+        const response = yield* Effect.result(github(`${GITHUB_API}/app/installations/${id}/access_tokens`, jwt, "POST"))
+        if (Result.isFailure(response)) {
+          log("the GitHub App installation token exchange could not reach GitHub")
+          return undefined
+        }
+        if (!response.success.ok) {
+          log(`the GitHub App installation token exchange answered ${response.success.status}`)
+          return undefined
+        }
+        const body = yield* Effect.result(readJson(response.success))
+        if (Result.isFailure(body)) {
+          log("the GitHub App installation token exchange answered an unreadable body")
+          return undefined
+        }
+        const value = record(body.success)?.token
+        if (typeof value !== "string" || value === "") {
+          log("the GitHub App installation token exchange answered no token")
+          return undefined
+        }
+        const now = yield* Clock.currentTimeMillis
+        const expiresAt = record(body.success)?.expires_at
+        const stated = typeof expiresAt === "string" ? Date.parse(expiresAt) - 60_000 - now : Number.NaN
+        const lifetime = Number.isFinite(stated) ? Math.min(TOKEN_TTL_MS, stated) : TOKEN_TTL_MS
+        if (lifetime > 0) {
+          yield* Ref.set(held, { value, expiresAt: now + lifetime })
+          yield* writeEdgeToken(value, now + lifetime)
+        }
+        return { value, renewable: true }
+      })
 
-  const exchange = async (id: number, jwt: string): Promise<GithubBearer | undefined> => {
-    let response: Response
-    try {
-      response = await deps.fetch(githubRequest(`${GITHUB_API}/app/installations/${id}/access_tokens`, jwt, "POST"))
-    } catch {
-      log("the GitHub App installation token exchange could not reach GitHub")
-      return undefined
-    }
-    if (!response.ok) {
-      log(`the GitHub App installation token exchange answered ${response.status}`)
-      return undefined
-    }
-    let body: unknown
-    try {
-      body = await response.json()
-    } catch {
-      log("the GitHub App installation token exchange answered an unreadable body")
-      return undefined
-    }
-    const value = record(body)?.token
-    if (typeof value !== "string" || value === "") {
-      log("the GitHub App installation token exchange answered no token")
-      return undefined
-    }
-    const expiresAt = record(body)?.expires_at
-    const stated = typeof expiresAt === "string" ? Date.parse(expiresAt) - 60_000 - deps.now() : Number.NaN
-    const lifetime = Number.isFinite(stated) ? Math.min(TOKEN_TTL_MS, stated) : TOKEN_TTL_MS
-    if (lifetime > 0) {
-      held = { value, expiresAt: deps.now() + lifetime }
-      await writeEdgeToken(value, held.expiresAt)
-    }
-    return { value, renewable: true }
-  }
+    const mint = (appId: string, privateKey: string): Effect.Effect<GithubBearer | undefined> =>
+      Effect.gen(function*() {
+        const edgeToken = yield* readEdgeToken
+        if (edgeToken !== undefined) return edgeToken
+        const now = yield* Clock.currentTimeMillis
+        const jwt = yield* Effect.result(createAppJwt(appId, privateKey, now))
+        if (Result.isFailure(jwt)) {
+          // The failure's cause could quote the key, so only the fact is named.
+          log("the GitHub App private key could not be imported")
+          return undefined
+        }
+        const id = yield* chooseInstallation(jwt.success)
+        if (id === undefined) return undefined
+        return yield* exchange(id, jwt.success)
+      })
 
-  const mint = async (appId: string, privateKey: string): Promise<GithubBearer | undefined> => {
-    const edge = await readEdgeToken()
-    if (edge !== undefined) return edge
-    let jwt: string
-    try {
-      jwt = await createAppJwt(appId, privateKey, deps.now())
-    } catch {
-      // The message could quote the key, so only the cause is named.
-      log("the GitHub App private key could not be imported")
-      return undefined
-    }
-    const id = await chooseInstallation(jwt)
-    if (id === undefined) return undefined
-    return exchange(id, jwt)
-  }
-
-  const token = async (env: GithubAppEnv): Promise<GithubBearer | undefined> => {
-    const override = env.GITHUB_TOKEN?.trim()
-    if (override !== undefined && override !== "") return { value: override, renewable: false }
-    const appId = env.SMITHERS_GITHUB_APP_ID?.trim()
-    const privateKey = env.SMITHERS_GITHUB_APP_PRIVATE_KEY?.trim()
-    if (appId === undefined || appId === "" || privateKey === undefined || privateKey === "") return undefined
-    if (held !== undefined && held.expiresAt > deps.now()) return { value: held.value, renewable: true }
-    if (deps.now() < failedUntil) return undefined
-    pending ??= mint(appId, privateKey)
-      .then((bearer) => {
-        if (bearer === undefined) failedUntil = deps.now() + FAILURE_TTL_MS
+    /** Under the gate: one exchange at a time, and a caller behind it reads what it held. */
+    const mintOnce = (appId: string, privateKey: string): Effect.Effect<GithubBearer | undefined> =>
+      gate.withPermit(Effect.gen(function*() {
+        const now = yield* Clock.currentTimeMillis
+        const current = yield* Ref.get(held)
+        if (current !== undefined && current.expiresAt > now) return { value: current.value, renewable: true }
+        if (now < (yield* Ref.get(failedUntil))) return undefined
+        const bearer = yield* mint(appId, privateKey)
+        // The window starts when the mint ENDED: a slow refusal must not
+        // hand back a window that is already half spent.
+        if (bearer === undefined) yield* Ref.set(failedUntil, (yield* Clock.currentTimeMillis) + FAILURE_TTL_MS)
         return bearer
-      })
-      .finally(() => {
-        pending = undefined
-      })
-    return pending
-  }
+      }))
 
-  const forget = async (): Promise<void> => {
-    held = undefined
-    failedUntil = 0
-    await deps.cache()?.delete?.(cacheKey()).catch(() => undefined)
-  }
+    const token = (): Effect.Effect<GithubBearer | undefined> =>
+      Effect.gen(function*() {
+        // The override wins over the App, and is sent unchanged; it cannot be re-minted.
+        if (config.githubToken !== undefined) return { value: Redacted.value(config.githubToken), renewable: false }
+        if (config.githubAppId === undefined || config.githubAppPrivateKey === undefined) return undefined
+        const now = yield* Clock.currentTimeMillis
+        const current = yield* Ref.get(held)
+        if (current !== undefined && current.expiresAt > now) return { value: current.value, renewable: true }
+        if (now < (yield* Ref.get(failedUntil))) return undefined
+        return yield* mintOnce(config.githubAppId, Redacted.value(config.githubAppPrivateKey))
+      })
 
-  return { token, forget }
-}
+    const forget = (): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        yield* Ref.set(held, undefined)
+        yield* Ref.set(failedUntil, 0)
+        yield* edge.delete(TOKEN_CACHE_URL)
+      })
+
+    return { token, forget }
+  })
+
+export const githubAppAuthLayer: Layer.Layer<GithubAppAuth, never, ServerConfig | Transport | EdgeCache> =
+  Layer.effect(GithubAppAuth, makeGithubAppAuth())

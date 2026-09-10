@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Smithers closed-alpha Cloudflare Worker: same-origin agent API, gateway relay, and host for the smithers-ui build",
+  "description": "Smithers closed-alpha Cloudflare Worker: same-origin agent API, gateway relay, and host for the smithers-app build",
   "exports": {
     "./package.json": "./package.json",
     "./*": {
@@ -15,7 +15,7 @@
     "deploy:dry-run": "bun scripts/deploy.ts --dry-run",
     "deploy": "bun scripts/deploy.ts",
     "deploy:dry": "bun scripts/deploy.ts --dry-run",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && bun scripts/effect-policy.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test src scripts",
     "seed:allowlist": "node scripts/seed-allowlist.mjs",
@@ -23,14 +23,18 @@
     "canary:workers": "bun scripts/canary/workers-health.ts",
     "canary:uptime": "bun scripts/canary/uptime-probe.ts",
     "canary:invite": "bun scripts/canary/invite-probe.ts",
-    "canary:rollback": "bun scripts/canary/rollback-probe.ts"
+    "canary:rollback": "bun scripts/canary/rollback-probe.ts",
+    "deploy:plan": "bun node_modules/alchemy/bin/alchemy.ts plan --stage prod",
+    "deploy:preflight": "bun scripts/adopt-durable-objects.ts",
+    "check:effect": "bun scripts/effect-policy.ts"
   },
   "dependencies": {
-    "@smthrs/rpc": "workspace:*"
+    "@smthrs/rpc": "workspace:*",
+    "alchemy": "2.0.0-beta.76",
+    "effect": "4.0.0-rc.112"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "effect": "4.0.0-rc.112",
     "typescript": "^5.9.3"
   }
 }

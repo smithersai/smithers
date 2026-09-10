@@ -24,7 +24,7 @@ const SETTINGS = {
   IDENTITY_SERVICE_TOKEN: "svc",
   SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
 }
-const durable = memoryDurableObjects(SETTINGS)
+const durable = memoryDurableObjects({ env: SETTINGS })
 const env: WorkerEnv = { ...SETTINGS, GATEWAY_SESSIONS: durable.GATEWAY_SESSIONS, TURN_CANCELS: durable.TURN_CANCELS }
 
 const REPO = "smithersai/smithers"

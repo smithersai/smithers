@@ -7,7 +7,7 @@ const SETTINGS = {
   IDENTITY_UPSTREAM_URL: "https://identity.test",
   IDENTITY_SERVICE_TOKEN: "synthetic-identity-service"
 }
-const durable = memoryDurableObjects(SETTINGS)
+const durable = memoryDurableObjects({ env: SETTINGS })
 
 afterEach(() => durable.reset())
 

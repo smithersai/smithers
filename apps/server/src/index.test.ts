@@ -1,17 +1,36 @@
-import { describe, expect, spyOn, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
+import * as Clock from "effect/Clock"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import { AppBootstrapSchema } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
 import { COMING_SOON_WORKER_FIRST } from "./appDocument"
+import {
+  CLIENT_ERROR_LOG_MAX_BYTES,
+  CLIENT_ERROR_SOURCE_WINDOW_MAX,
+  CLIENT_ERROR_WINDOW_MAX,
+  CLIENT_ERROR_WINDOW_MS,
+  ClientErrorLog,
+  clientErrorLogRequest,
+  clientErrorThrottleLayer,
+  makeClientErrorThrottle
+} from "./clientErrorLog"
+import type { ClientErrorRecord } from "./clientErrorLog"
+import { memoryStorage as memoryObjectStorage, storageLayer } from "./DurableStorage"
+import type { NativeNamespace } from "./DurableStorage"
+import { ALLOWED_GATEWAY_PROCEDURES } from "./gatewayRpc"
 import worker, { PLATFORM_PROXY_RULES, TurnCancelRegistry } from "./index"
-import type { TurnCancelNamespace, TurnCancelStorage, WorkerEnv } from "./index"
 import { memoryDurableObjects } from "./memoryDurableObjects"
-import type { TurnLimitNamespace } from "./turnLimit"
+import type { TurnCancelNamespace, TurnCancelStorage, WorkerEnv } from "./index"
+import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "./publicRepoCatalog"
+import { memoryRecommendStorage, RecommendLog } from "./recommend"
+import { TURN_WINDOW_MAX, TurnRateLimiter } from "./turnLimit"
 
 const assetsEnv = (html = "<html><body>smithers</body></html>"): WorkerEnv => ({
-  ASSETS: { fetch: async () => new Response(html, { status: 200 }) },
-  ...memoryDurableObjects()
+  ...memoryDurableObjects(),
+  ASSETS: { fetch: async () => new Response(html, { status: 200 }) }
 })
 
 const turnBody = {
@@ -261,7 +280,7 @@ describe("smithers mvp worker", () => {
    * string length, so a UTF-16 `.length` check would wave a 2 MB body through.
    */
   /*
-   * Repro apps/ui/canary-repros/chat/4.13: every model call replays the whole
+   * Repro apps/app/canary-repros/chat/4.13: every model call replays the whole
    * transcript, so an over-cap body is a fact about the CONVERSATION. The turn
    * seam said so; the relay — which carries every turn now that the browser
    * chain is the only backend — answered the bare "Request body is too large."
@@ -297,7 +316,7 @@ describe("smithers mvp worker", () => {
   })
 
   /*
-   * Repro apps/ui/canary-repros/chat/4.13: every turn replays the whole
+   * Repro apps/app/canary-repros/chat/4.13: every turn replays the whole
    * transcript, so at the old 64 KB cap seven long answers wedged the seam
    * permanently — and `/clear`, which runs a model turn of its own to decide
    * what to keep, hit the same refusal, so the conversation had no in-app
@@ -342,7 +361,7 @@ describe("smithers mvp worker", () => {
   })
 
   /*
-   * Repro apps/ui/canary-repros/honesty/24.3: the seam pasted the upstream's
+   * Repro apps/app/canary-repros/honesty/24.3: the seam pasted the upstream's
    * body onto a fixed prefix, so a provider's rate-limit envelope arrived in
    * the transcript as raw JSON. The status is classified here rather than
    * trusting every upstream to write prose for a human.
@@ -727,7 +746,7 @@ describe("auth navigation seam (wave 8)", () => {
   })
 
   /*
-   * Repro apps/ui/canary-repros/access/2.3: pressing Cancel on GitHub's
+   * Repro apps/app/canary-repros/access/2.3: pressing Cancel on GitHub's
    * consent screen returns `?error=access_denied` with no `code`. That was
    * forwarded to identity, which read it as a malformed callback, and the page
    * told the user "the sign-in service answered HTTP 400" — blaming a service
@@ -1770,7 +1789,7 @@ describe("the admin surface (non-enumerable)", () => {
   })
 
   /*
-   * Repro apps/ui/canary-repros/access/1.5: `admin` comes from identity's
+   * Repro apps/app/canary-repros/access/1.5: `admin` comes from identity's
    * ADMIN_LOGINS var, so removing a login from the closed-alpha allowlist left
    * the whole admin surface open to it — including POST /api/admin/allowlist,
    * the door that edits the allowlist itself. Identity now withholds the claim
@@ -2800,7 +2819,7 @@ describe("the browser tool route (§2d)", () => {
       ["PUT", "/api/orgs/smithersai/provider-connections"],
       ["PUT", "/api/linear/7"],
       /*
-       * Doors no product seam calls (apps/ui/src/mainview/state/seams): a PAT
+       * Doors no product seam calls (apps/app/src/mainview/state/seams): a PAT
        * mint, a provider-connection write, an org delete, an integration
        * create or patch, a Linear delete. The bridge hands the page whatever
        * the platform answers, so a row here is a capability, and every row
@@ -2823,7 +2842,7 @@ describe("the browser tool route (§2d)", () => {
   })
 
   /*
-   * Repro apps/ui/canary-repros/admin/28.5 and cards/8.21: the proxy forwarded
+   * Repro apps/app/canary-repros/admin/28.5 and cards/8.21: the proxy forwarded
    * every allowlisted path, and the Smithers Cloud Go router's plain-text
    * `404 page not found` came back through it and was rendered verbatim into
    * the user's toast. A body written for a router is never a message for a
@@ -2873,7 +2892,7 @@ describe("the browser tool route (§2d)", () => {
   })
 
   /*
-   * Repro apps/ui/canary-repros/money/17.4: `/billing.upgrade` on an MVP
+   * Repro apps/app/canary-repros/money/17.4: `/billing.upgrade` on an MVP
    * account fired a live POST /api/billing/checkout and came back the
    * platform's `stripe billing is not configured`. The alpha comps every
    * balance, so the honest answer is that there is nothing to buy — and the
@@ -2998,7 +3017,7 @@ describe("the browser tool route (§2d)", () => {
 })
 
 /*
- * The `/api/cloud/<inner>` bridge (apps/ui/docs/web-mode/PLAN.md §0 correction
+ * The `/api/cloud/<inner>` bridge (apps/app/docs/web-mode/PLAN.md §0 correction
  * 4, lane W0). Seven product seams call `CLOUD_ROUTE_PREFIX + path`, which the
  * Bun origin proxies with the Smithers Cloud PAT and this Worker answered with the
  * canonical 404, so on the web the repository list never loaded. The Worker
@@ -3288,7 +3307,7 @@ describe("cloud roles on Cerebras", () => {
   const completion = (content: string, model = "gpt-oss-120b"): Response =>
     Response.json({ model, choices: [{ message: { content } }] })
 
-  const recordingLimits = (): TurnLimitNamespace & { readonly spends: () => ReadonlyArray<string> } => {
+  const recordingLimits = (): NativeNamespace & { readonly spends: () => ReadonlyArray<string> } => {
     const spent: Array<string> = []
     return {
       spends: () => spent,
@@ -3443,6 +3462,9 @@ describe("cloud roles on Cerebras", () => {
     expect(wire.calls.upstream.length).toBe(0)
     const spends = limits.spends()
     expect(spends.length).toBe(2)
+    // The visitor's own bucket first, the deployment-wide bucket only once it admits.
+    expect(spends[0]).toMatch(/^anonymous:(?!all$)/)
+    expect(spends[1]).toBe("anonymous:all")
     expect(spends.filter((key) => key.startsWith("anonymous:") && key !== "anonymous:all").length).toBe(1)
     expect(spends.filter((key) => key === "anonymous:all").length).toBe(1)
     // The system message carries the runtime context the client derived, rendered server-side.
@@ -3903,5 +3925,1128 @@ describe("generation-scoped turn lifecycle", () => {
       timer.mockRestore()
       clock.mockRestore()
     }
+  })
+})
+
+/*
+ * ---------------------------------------------------------------------------
+ * Route-level assertions re-homed beside the router. The seam modules hold
+ * the service halves of these in their own test files; the assertions below
+ * are the HTTP halves that used to live there and exercise the router.
+ * ---------------------------------------------------------------------------
+ */
+
+/*
+ * Wave 11 — the /api/workflow/* routes over the relay double (from
+ * gateway.test.ts). The hard invariant every one of these pins: a gateway
+ * token is an operator credential on the user's VM. It lives server-side only.
+ */
+describe("wave 11 — the /api/workflow/* routes", () => {
+  const GATEWAY_TOKEN = "smithers_gateway_secret-operator-token"
+  const CLOUD_TOKEN = "smithers_pat_cloud-identity"
+
+  const BASE_ENV = {
+    ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
+    IDENTITY_UPSTREAM_URL: "https://identity.test",
+    IDENTITY_SERVICE_TOKEN: "service-token",
+    SMITHERS_CLOUD_API_BASE_URL: "https://api.smithers-cloud.test"
+  }
+
+  /*
+   * The Durable Object bindings are the REAL classes over in-memory storage,
+   * one fixture per test: records persist across `env()` calls inside a test
+   * (a deployment keeps them across Worker requests) and vanish between tests.
+   * The registry runs the resolution itself, so the first `env()` of a test
+   * fixes the settings it resolves with.
+   */
+  let durable: ReturnType<typeof memoryDurableObjects> | undefined
+  const env = (extra: Partial<WorkerEnv> = {}): WorkerEnv => {
+    const settings = { ...BASE_ENV, ...extra }
+    durable ??= memoryDurableObjects({ env: settings })
+    return { GATEWAY_SESSIONS: durable.GATEWAY_SESSIONS, TURN_CANCELS: durable.TURN_CANCELS, ...settings }
+  }
+
+  const json = (status: number, body: unknown): Response =>
+    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+
+  interface RelayCall {
+    readonly url: string
+    readonly method: string
+    readonly authorization: string | null
+    readonly serviceToken: string | null
+    readonly body: unknown
+  }
+
+  /**
+   * The relay double: the identity cloud-token door plus the Cloud provision
+   * route and a per-gateway RPC/REST surface, each answering the exact shapes
+   * the receipts recorded. `script` lets a test bend one leg at a time.
+   */
+  const withRelay = async (
+    script: {
+      readonly cloudToken?: (call: RelayCall, attempt: number) => Response | undefined
+      readonly provision?: (call: RelayCall, attempt: number) => Response | undefined
+      readonly gateway?: (call: RelayCall, attempt: number, signal: AbortSignal) => Response | undefined | Promise<Response>
+    },
+    run: (calls: RelayCall[]) => Promise<void>
+  ): Promise<void> => {
+    const calls: RelayCall[] = []
+    const attempts = { cloudToken: 0, provision: 0, gateway: 0 }
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+      const request = typeof input === "string"
+        ? new Request(input, init)
+        : input instanceof URL
+        ? new Request(input.toString(), init)
+        : new Request(input as Request, init)
+      const url = new URL(request.url)
+      const raw = await request.clone().text()
+      const call: RelayCall = {
+        url: request.url,
+        method: request.method,
+        authorization: request.headers.get("authorization"),
+        serviceToken: request.headers.get("x-smithers-service-token"),
+        body: raw === "" ? undefined : JSON.parse(raw)
+      }
+      calls.push(call)
+      if (url.pathname === "/api/identity/cloud-token") {
+        attempts.cloudToken += 1
+        return (
+          script.cloudToken?.(call, attempts.cloudToken) ??
+            json(200, { valid: true, login: "codeplanesmithers", found: true, token: CLOUD_TOKEN })
+        )
+      }
+      if (/^\/api\/repos\/[^/]+\/[^/]+\/gateway$/.test(url.pathname)) {
+        attempts.provision += 1
+        return (
+          script.provision?.(call, attempts.provision) ??
+            json(200, {
+              base_url: "https://api.smithers-cloud.test/api/gateways/gw-1",
+              token: GATEWAY_TOKEN,
+              expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+              gateway_id: "gw-1",
+              vm_id: "msb_1",
+              status: "running"
+            })
+        )
+      }
+      if (url.pathname.startsWith("/api/gateways/")) {
+        attempts.gateway += 1
+        return script.gateway?.(call, attempts.gateway, request.signal) ?? json(200, { ok: true, apiVersion: "v1", payload: [] })
+      }
+      if (url.hostname === "identity.test") {
+        // The session probe every workflow route gates on.
+        return json(200, { login: "codeplanesmithers", allowlisted: true, admin: false })
+      }
+      return originalFetch(request)
+    }) as typeof fetch
+    try {
+      await run(calls)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  }
+
+  const signedIn = (path: string, init?: RequestInit): Request =>
+    new Request(`https://mvp.test${path}`, {
+      ...init,
+      headers: { "content-type": "application/json", cookie: "smithers_session=abc", ...(init?.headers ?? {}) }
+    })
+
+  afterEach(() => {
+    durable = undefined
+  })
+
+  test("provision answers the gateway id and cadence — and NEVER the token", async () => {
+    await withRelay({}, async () => {
+      const response = await worker.fetch(
+        signedIn("/api/workflow/provision", {
+          method: "POST",
+          body: JSON.stringify({ repo: "codeplanesmithers/smithers-demo" })
+        }),
+        env()
+      )
+      expect(response.status).toBe(200)
+      const text = await response.text()
+      expect(JSON.parse(text)).toMatchObject({ status: "ready", gatewayId: "gw-1" })
+      // The one invariant that matters most on this seam.
+      expect(text).not.toContain(GATEWAY_TOKEN)
+      expect(text).not.toContain(CLOUD_TOKEN)
+      expect(text).not.toContain("smithers_gateway")
+    })
+  })
+
+  test("a signed-out caller gets 401 and nothing is provisioned", async () => {
+    const originalFetch = globalThis.fetch
+    let provisions = 0
+    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+      const request = typeof input === "string" ? new Request(input, init) : (input as Request)
+      if (new URL(request.url).pathname.endsWith("/gateway")) provisions += 1
+      return json(401, { error: "unauthorized" })
+    }) as typeof fetch
+    try {
+      const response = await worker.fetch(
+        new Request("https://mvp.test/api/workflow/provision", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ repo: "will/mvp" })
+        }),
+        env()
+      )
+      expect(response.status).toBe(401)
+      expect(provisions).toBe(0)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  test("the rpc relay refuses any procedure outside the allowlist before touching the gateway", async () => {
+    await withRelay({}, async (calls) => {
+      const refused = await worker.fetch(
+        signedIn("/api/workflow/rpc", {
+          method: "POST",
+          body: JSON.stringify({ repo: "will/mvp", procedure: "RunShell", payload: { cmd: "rm -rf /" } })
+        }),
+        env()
+      )
+      expect(refused.status).toBe(400)
+      expect(((await refused.json()) as { message: string }).message).toContain("does not relay RunShell")
+
+      // A call that names no procedure at all is refused the same way.
+      const unnamed = await worker.fetch(
+        signedIn("/api/workflow/rpc", { method: "POST", body: JSON.stringify({ repo: "will/mvp" }) }),
+        env()
+      )
+      expect(unnamed.status).toBe(400)
+      expect(calls.filter((call) => call.url.includes("/api/gateways/"))).toHaveLength(0)
+    })
+    // The allowlist is exactly the product's floor. Nothing else crosses.
+    expect([...ALLOWED_GATEWAY_PROCEDURES].sort()).toEqual([
+      "Approval.Submit",
+      "Cancel",
+      "List",
+      "Plan",
+      "Projection.Snapshot",
+      "Resume",
+      "Run",
+      "Signal",
+      "Steer"
+    ])
+  })
+
+  test("a malformed repo is refused before any upstream call", async () => {
+    await withRelay({}, async (calls) => {
+      for (const repo of ["not-a-repo", "../../etc/passwd", "owner/repo/extra", ""]) {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/rpc", {
+            method: "POST",
+            body: JSON.stringify({ repo, procedure: "List", payload: { _tag: "runs" } })
+          }),
+          env()
+        )
+        expect(response.status).toBe(400)
+      }
+      expect(calls.filter((call) => call.url.includes("/api/gateways/"))).toHaveLength(0)
+    })
+  })
+
+  /*
+   * `..` matches every character a repository name may contain, and URL
+   * parsing resolves it away — `POST /api/repos/../admin/gateway` becomes
+   * `POST /api/admin/gateway`, carrying the user's server-held Cloud token
+   * to a route this seam never allowlisted. Holding the token server-side is
+   * pointless if the browser can still choose where it is spent.
+   */
+  test("a dot-segment repo cannot steer the Cloud token off the provision route", async () => {
+    await withRelay({}, async (calls) => {
+      for (const repo of ["../admin", "../..", "owner/..", "./config", "codeplanesmithers/."]) {
+        const rpc = await worker.fetch(
+          signedIn("/api/workflow/rpc", {
+            method: "POST",
+            body: JSON.stringify({ repo, procedure: "List", payload: { _tag: "runs" } })
+          }),
+          env()
+        )
+        expect(rpc.status).toBe(400)
+        const provision = await worker.fetch(
+          signedIn("/api/workflow/provision", { method: "POST", body: JSON.stringify({ repo }) }),
+          env()
+        )
+        expect(provision.status).toBe(400)
+      }
+      // Not one call left the Worker: no Cloud token was minted, let alone spent.
+      expect(calls.filter((call) => call.url.includes("/api/repos/"))).toHaveLength(0)
+      expect(calls.filter((call) => call.url.endsWith("/api/identity/cloud-token"))).toHaveLength(0)
+    })
+  })
+
+  test("a projection read reaches the gateway's projections mount under the seam's bearer", async () => {
+    await withRelay(
+      {
+        gateway: () =>
+          new Response(
+            `${
+              JSON.stringify({
+                _tag: "Exit",
+                requestId: 1,
+                exit: { _tag: "Success", value: { cursor: { projection: "run-summary" }, rows: [{ runId: "run-9" }] } }
+              })
+            }\n`,
+            { status: 200 }
+          )
+      },
+      async (calls) => {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/rpc", {
+            method: "POST",
+            body: JSON.stringify({
+              repo: "will/mvp",
+              procedure: "Projection.Snapshot",
+              payload: { selector: { _tag: "run-summary", runId: "run-9" } }
+            })
+          }),
+          env()
+        )
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({
+          ok: true,
+          payload: { cursor: { projection: "run-summary" }, rows: [{ runId: "run-9" }] }
+        })
+        const relayed = calls.find((call) => call.url.endsWith("/projections"))
+        // The credential the browser can never hold is added on this side.
+        expect(relayed?.url).toBe("https://api.smithers-cloud.test/api/gateways/gw-1/projections")
+        expect(relayed?.authorization).toBe(`Bearer ${GATEWAY_TOKEN}`)
+        expect(relayed?.body).toMatchObject({ _tag: "Request", tag: "Projection.Snapshot" })
+      }
+    )
+  })
+
+  test("an approval decision is one relayed call that also resumes the run", async () => {
+    await withRelay(
+      {
+        gateway: () =>
+          new Response(
+            `${
+              JSON.stringify({
+                _tag: "Exit",
+                requestId: 1,
+                exit: {
+                  _tag: "Success",
+                  value: { decision: { _tag: "Accepted" }, resume: { _tag: "Accepted" } }
+                }
+              })
+            }\n`,
+            { status: 200 }
+          )
+      },
+      async (calls) => {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/rpc", {
+            method: "POST",
+            body: JSON.stringify({
+              repo: "will/mvp",
+              procedure: "Approval.Submit",
+              payload: { decision: "approve" }
+            })
+          }),
+          env()
+        )
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as { ok: boolean; payload: { resume?: unknown } }
+        expect(body.ok).toBe(true)
+        // One relayed call records the decision AND resumes the run, because
+        // the gateway binds the pair behind `Approval.Submit`. There is no
+        // second round trip for a lost answer to strand.
+        expect(body.payload.resume).toEqual({ _tag: "Accepted" })
+        expect(calls.filter((call) => call.url.includes("/api/gateways/"))).toHaveLength(1)
+      }
+    )
+  })
+
+  test("no_capacity reaches the browser as an honest state, not a 500 and not a retry loop", async () => {
+    await withRelay(
+      { provision: () => json(500, { error: "no_capacity" }) },
+      async (calls) => {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/provision", {
+            method: "POST",
+            body: JSON.stringify({ repo: "will/mvp" })
+          }),
+          env()
+        )
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as { status: string; message: string }
+        expect(body.status).toBe("no-capacity")
+        expect(body.message).toContain("nothing was queued")
+        expect(calls.filter((call) => call.url.includes("/gateway"))).toHaveLength(1)
+      }
+    )
+  })
+
+  test("the browser sees no-cloud-repo as a 200 state, not a 502", async () => {
+    await withRelay(
+      { provision: () => json(404, { error: "not_found" }) },
+      async () => {
+        const response = await worker.fetch(
+          signedIn("/api/workflow/provision", { method: "POST", body: JSON.stringify({ repo: "will/mvp" }) }),
+          env()
+        )
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as { status?: string; message?: string }
+        expect(body.status).toBe("no-cloud-repo")
+        expect(body.message).toContain("isn't on Smithers Cloud yet")
+      }
+    )
+  })
+
+  /*
+   * Repro apps/app/canary-repros/honesty/22.6: Smithers Cloud accepted the
+   * provision POST and never answered, so the route hung past 70s. A deadline
+   * turns silence into one of the seam's own honest states.
+   */
+  test("the provision ROUTE answers a state a client can act on when Cloud stays silent", async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+      const url = new URL(typeof input === "string" ? input : (input as Request).url)
+      if (url.pathname === "/api/identity/validate") {
+        return json(200, { login: "codeplanesmithers", allowlisted: true, admin: false })
+      }
+      if (url.pathname === "/api/identity/cloud-token") {
+        return json(200, { found: true, token: CLOUD_TOKEN })
+      }
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason ?? new Error("aborted")))
+      })
+    }) as typeof fetch
+    try {
+      const response = await worker.fetch(
+        signedIn("/api/workflow/provision", {
+          method: "POST",
+          body: JSON.stringify({ repo: "codeplanesmithers/canary-sandbox" })
+        }),
+        env({ UPSTREAM_TIMEOUT_MS: "150" })
+      )
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as { status: string; message: string }
+      expect(body.status).toBe("provisioning")
+      expect(body.message).toContain("codeplanesmithers/canary-sandbox")
+      expect(body.message).toContain("150ms")
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  describe("owning workspace routing", () => {
+    const first = "83e75ae5-0920-4000-8000-000000000001"
+    const second = "83e75ae5-0920-4000-8000-000000000002"
+    const repo = "codeplanesmithers/smithers-demo"
+    const provision = (call: RelayCall): Response => {
+      const workspaceId = (call.body as { workspace_id?: string } | undefined)?.workspace_id
+      return json(200, {
+        base_url: `https://api.smithers-cloud.test/api/gateways/${workspaceId ?? "legacy"}`,
+        token: GATEWAY_TOKEN,
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        gateway_id: workspaceId ?? "legacy",
+        ...(workspaceId === undefined ? {} : { workspace_id: workspaceId })
+      })
+    }
+
+    test("partitions legacy and two owning workspaces without exposing their credentials", async () => {
+      await withRelay({ provision }, async (calls) => {
+        for (const workspaceId of [undefined, first, second, first, undefined]) {
+          const response = await worker.fetch(signedIn("/api/workflow/provision", {
+            method: "POST", body: JSON.stringify({ repo, workspaceId })
+          }), env())
+          expect(response.status).toBe(200)
+          const result = await response.json() as Record<string, unknown>
+          expect(result.status).toBe("ready")
+          expect(result.workspaceId).toBe(workspaceId)
+          expect(result.gatewayId).toBe(workspaceId ?? "legacy")
+          expect(JSON.stringify(result)).not.toContain(GATEWAY_TOKEN)
+        }
+        const provisions = calls.filter((call) => call.url.endsWith("/gateway"))
+        expect(provisions.map((call) => call.body)).toEqual([undefined, { workspace_id: first }, { workspace_id: second }])
+        const response = await worker.fetch(signedIn("/api/workflow/rpc", {
+          method: "POST", body: JSON.stringify({ repo, workspaceId: first, procedure: "List", payload: { _tag: "flows" } })
+        }), env())
+        expect(response.status).toBe(200)
+        expect(calls.at(-1)?.url).toContain(`/api/gateways/${first}/`)
+      })
+    })
+
+    test("rejects malformed bindings before provisioning", async () => {
+      await withRelay({}, async (calls) => {
+        for (const workspaceId of ["../other", first.toUpperCase(), "00000000-0000-0000-0000-000000000000", null]) {
+          const result = await worker.fetch(signedIn("/api/workflow/rpc", {
+            method: "POST", body: JSON.stringify({ repo, workspaceId, procedure: "List", payload: { _tag: "flows" } })
+          }), env())
+          expect(result.status).toBe(400)
+        }
+        expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(0)
+      })
+    })
+  })
+})
+
+/*
+ * The turn routes under the ceiling (from turnLimit.test.ts): the ceiling
+ * refuses before a credential is spent, and our own infrastructure hiccuping
+ * never locks a person out.
+ */
+describe("the turn routes under the ceiling", () => {
+  const identityEnv = (limits: NativeNamespace): WorkerEnv => ({
+    ...assetsEnv(),
+    IDENTITY_UPSTREAM_URL: "https://identity.test",
+    SMITHERS_CHAT_URL: "https://upstream.test/chat",
+    TURN_LIMITS: limits
+  })
+
+  const signedIn = (path: string, runId: string): Request =>
+    new Request(`https://mvp.test${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: "smithers_session=abc" },
+      body: JSON.stringify(path.endsWith("/stream") ? { messages: turnBody.messages } : { ...turnBody, runId })
+    })
+
+  /** Identity admits `will`; the model upstream answers one done frame and counts its calls. */
+  const withStubbedSeams = (run: (upstreamCalls: () => number) => Promise<void>): Promise<void> => {
+    let upstream = 0
+    return withMockedFetch((request) => {
+      if (new URL(request.url).hostname === "identity.test") {
+        return new Response(JSON.stringify({ login: "will", allowlisted: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      }
+      upstream += 1
+      return ndjsonUpstream([{ type: "done" }])
+    }, () => run(() => upstream))
+  }
+
+  const spentLimits = (): NativeNamespace => {
+    const limiter = new TurnRateLimiter({
+      storage: memoryObjectStorage({ window: { start: Date.now(), count: TURN_WINDOW_MAX } })
+    })
+    return { idFromName: (name) => name, get: () => ({ fetch: (request) => limiter.fetch(request) }) }
+  }
+
+  for (const path of ["/api/agent/turn", "/api/model/stream"]) {
+    test(`a rejected Durable Object spend still reaches the model on ${path}`, async () => {
+      const env = identityEnv({
+        idFromName: (name) => name,
+        get: () => ({ fetch: async () => { throw new Error("Durable Object reset") } })
+      })
+      const logged = spyOn(console, "error").mockImplementation(() => {})
+      try {
+        await withStubbedSeams(async (upstreamCalls) => {
+          const response = await worker.fetch(signedIn(path, `rejected-spend-${path}`), env)
+          expect(response.status).toBe(200)
+          await response.text()
+          expect(upstreamCalls()).toBe(1)
+        })
+        expect(logged).toHaveBeenCalledWith("turn-limit spend failed:", expect.any(Error))
+      } finally {
+        logged.mockRestore()
+      }
+    })
+
+    test(`a spent budget refuses ${path} with 429 before any credential is spent`, async () => {
+      const env = identityEnv(spentLimits())
+      await withStubbedSeams(async (upstreamCalls) => {
+        const response = await worker.fetch(signedIn(path, `spent-${path}`), env)
+        expect(response.status).toBe(429)
+        expect(response.headers.get("retry-after")).toMatch(/^\d+$/)
+        expect(response.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin")
+        const body = (await response.json()) as { code: string; message: string; retryAt: string }
+        expect(body.code).toBe("turn_rate_limited")
+        expect(body.message).toContain("something is looping")
+        expect(Number.isFinite(Date.parse(body.retryAt))).toBe(true)
+        expect(upstreamCalls()).toBe(0)
+      })
+    })
+  }
+
+  test("killing a turn is never rate limited: a spent budget still cancels, and the cancel spends nothing", async () => {
+    let spends = 0
+    const spent = spentLimits()
+    const counted: NativeNamespace = {
+      idFromName: (name) => spent.idFromName(name),
+      get: (id) => {
+        const stub = spent.get(id)
+        return { fetch: (request) => { spends += 1; return stub.fetch(request) } }
+      }
+    }
+    const env = identityEnv(counted)
+    await withStubbedSeams(async (upstreamCalls) => {
+      const refused = await worker.fetch(signedIn("/api/agent/turn", "spent-then-cancel"), env)
+      expect(refused.status).toBe(429)
+      expect(spends).toBe(1)
+      const cancel = await worker.fetch(
+        new Request("https://mvp.test/api/agent/turn/cancel", {
+          method: "POST",
+          headers: { "content-type": "application/json", cookie: "smithers_session=abc" },
+          body: JSON.stringify({ runId: "spent-then-cancel" })
+        }),
+        env
+      )
+      expect(cancel.status).toBe(200)
+      expect(await cancel.json()).toEqual({ status: "not-found" })
+      expect(spends).toBe(1)
+      expect(upstreamCalls()).toBe(0)
+    })
+  })
+
+  test("with no TURN_LIMITS binding the routes fail open", async () => {
+    const env: WorkerEnv = { ...assetsEnv(), IDENTITY_UPSTREAM_URL: "https://identity.test", SMITHERS_CHAT_URL: "https://upstream.test/chat" }
+    await withStubbedSeams(async (upstreamCalls) => {
+      const response = await worker.fetch(signedIn("/api/agent/turn", "unbound-limits"), env)
+      expect(response.status).toBe(200)
+      await response.text()
+      expect(upstreamCalls()).toBe(1)
+    })
+  })
+})
+
+/*
+ * The client-error route and its admin read (from clientErrorLog.test.ts).
+ * The route is unauthenticated by design: it must record a crash that happens
+ * before or during sign-in. So the only thing standing between an anonymous
+ * flood and the log is the throttle, and that throttle is the log's own
+ * Durable Object, never a per-isolate counter.
+ */
+describe("the client-error route", () => {
+  /** A clock that answers `now()`; the throttle window is the only thing that reads it. */
+  const clockOf = (now: () => number): Clock.Clock => ({
+    currentTimeMillisUnsafe: now,
+    currentTimeMillis: Effect.sync(now),
+    currentTimeNanosUnsafe: () => BigInt(now()) * 1_000_000n,
+    currentTimeNanos: Effect.sync(() => BigInt(now()) * 1_000_000n),
+    monotonicTimeNanosUnsafe: () => BigInt(now()) * 1_000_000n,
+    monotonicTimeNanos: Effect.sync(() => BigInt(now()) * 1_000_000n),
+    sleep: () => Effect.void
+  })
+
+  /** The one log Durable Object of a deployment, under an injectable clock. */
+  const memoryLog = (now?: () => number): NativeNamespace & { readonly names: () => Array<string> } => {
+    const logs = new Map<string, (request: Request) => Promise<Response>>()
+    return {
+      names: () => [...logs.keys()],
+      idFromName: (name) => name,
+      get: (id) => {
+        const name = String(id)
+        let log = logs.get(name)
+        if (log === undefined) {
+          if (now === undefined) {
+            const object = new ClientErrorLog({ storage: memoryObjectStorage() })
+            log = (request) => object.fetch(request)
+          } else {
+            const layers = Layer.mergeAll(storageLayer(memoryObjectStorage()), clientErrorThrottleLayer(makeClientErrorThrottle()))
+            log = (request) =>
+              Effect.runPromise(
+                clientErrorLogRequest(request).pipe(Effect.provide(layers), Effect.provideService(Clock.Clock, clockOf(now)))
+              )
+          }
+          logs.set(name, log)
+        }
+        return { fetch: log }
+      }
+    }
+  }
+
+  const adminEnv = (logs?: NativeNamespace): WorkerEnv => ({
+    ...assetsEnv(),
+    IDENTITY_UPSTREAM_URL: "https://identity.test",
+    ...(logs === undefined ? {} : { CLIENT_ERRORS: logs })
+  })
+
+  const report = (body: unknown, headers: Record<string, string> = {}): Request =>
+    new Request("https://mvp.test/api/client-errors", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: typeof body === "string" ? body : JSON.stringify(body)
+    })
+
+  /** Identity admits `will` as an admin for every cookie, and nothing else answers. */
+  const asAdmin = (run: () => Promise<void>): Promise<void> =>
+    withMockedFetch(
+      (request) =>
+        new URL(request.url).hostname === "identity.test"
+          ? new Response(JSON.stringify({ login: "will", allowlisted: true, admin: true }), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          })
+          : undefined,
+      run
+    )
+
+  const readAdmin = (env: WorkerEnv, query = ""): Promise<Response> =>
+    worker.fetch(new Request(`https://mvp.test/api/admin/errors${query}`, { headers: { cookie: "smithers_session=admin" } }), env)
+
+  type Page = { status: string; total: number; reports: Array<ClientErrorRecord>; note?: string }
+
+  test("a report is accepted with 202, kept verbatim, and read back newest first by an admin", async () => {
+    const logs = memoryLog()
+    const env = adminEnv(logs)
+    const quiet = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const first = await worker.fetch(report({ message: "boom" }, { referer: "https://smithers.sh/smithersai/smithers", "user-agent": "canary/1" }), env)
+      expect(first.status).toBe(202)
+      expect(await first.json()).toEqual({ status: "accepted" })
+      // A report that is not JSON is kept as the text it was.
+      const text = await worker.fetch(report("not json at all"), env)
+      expect(text.status).toBe(202)
+      expect(quiet).toHaveBeenCalledWith("client-error:", "not json at all")
+      await asAdmin(async () => {
+        const read = await readAdmin(env)
+        expect(read.status).toBe(200)
+        const page = (await read.json()) as Page
+        expect(page.status).toBe("ok")
+        expect(page.total).toBe(2)
+        expect(page.note).toBeUndefined()
+        expect(page.reports.map((row) => row.report)).toEqual(["not json at all", { message: "boom" }])
+        expect(page.reports[1]).toMatchObject({ page: "https://smithers.sh/smithersai/smithers", userAgent: "canary/1" })
+        expect(page.reports[1]!.signedIn).toBeUndefined()
+        const limited = (await (await readAdmin(env, "?limit=1")).json()) as Page
+        expect(limited.total).toBe(2)
+        expect(limited.reports).toHaveLength(1)
+      })
+    } finally {
+      quiet.mockRestore()
+    }
+  })
+
+  test("a signed-in report is marked so the log keeps it ahead of anonymous noise", async () => {
+    const logs = memoryLog()
+    const env = adminEnv(logs)
+    const quiet = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect((await worker.fetch(report({ message: "mine" }, { cookie: "smithers_session=abc" }), env)).status).toBe(202)
+      await asAdmin(async () => {
+        const page = (await (await readAdmin(env)).json()) as Page
+        expect(page.reports[0]?.signedIn).toBe(true)
+      })
+    } finally {
+      quiet.mockRestore()
+    }
+  })
+
+  test("an oversize report is 413 and never stored; a declared oversize body is refused before it is read", async () => {
+    const logs = memoryLog()
+    const env = adminEnv(logs)
+    const big = await worker.fetch(report({ message: "x".repeat(17 * 1024) }), env)
+    expect(big.status).toBe(413)
+    expect(await big.json()).toEqual({ status: "error", message: "Error report too large." })
+    const declared = await worker.fetch(
+      new Request("https://mvp.test/api/client-errors", {
+        method: "POST",
+        headers: { "content-length": String(17 * 1024) },
+        body: "{}"
+      }),
+      env
+    )
+    expect(declared.status).toBe(413)
+    await asAdmin(async () => {
+      expect(((await (await readAdmin(env)).json()) as Page).total).toBe(0)
+    })
+  })
+
+  test("only POST is served, and the route stays behind the same-origin guard", async () => {
+    const env = adminEnv(memoryLog())
+    expect((await worker.fetch(new Request("https://mvp.test/api/client-errors"), env)).status).toBe(404)
+    const cross = await worker.fetch(report({ message: "x" }, { origin: "https://evil.example" }), env)
+    expect(cross.status).toBe(403)
+  })
+
+  test("the admin read is the canonical 404 for a visitor and a member, and notes an unbound log for an admin", async () => {
+    const env = adminEnv()
+    await withMockedFetch(
+      (request) => new URL(request.url).hostname === "identity.test" ? new Response("{}", { status: 401 }) : undefined,
+      async () => {
+        const visitor = await worker.fetch(new Request("https://mvp.test/api/admin/errors"), env)
+        expect(visitor.status).toBe(404)
+        expect(await visitor.json()).toEqual({ status: "error", message: "Not found." })
+      }
+    )
+    await withMockedFetch(
+      (request) =>
+        new URL(request.url).hostname === "identity.test"
+          ? new Response(JSON.stringify({ login: "will", allowlisted: true, admin: false }), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          })
+          : undefined,
+      async () => {
+        const member = await readAdmin(env)
+        expect(member.status).toBe(404)
+        expect(await member.json()).toEqual({ status: "error", message: "Not found." })
+      }
+    )
+    await asAdmin(async () => {
+      const unbound = await readAdmin(env)
+      expect(unbound.status).toBe(200)
+      expect(await unbound.json()).toEqual({
+        status: "ok",
+        total: 0,
+        reports: [],
+        note: "No CLIENT_ERRORS binding on this deployment: nothing is stored, so this log is always empty."
+      })
+    })
+  })
+
+  describe("the throttle is the log's, not the isolate's", () => {
+    const frozen = (): (() => number) => () => 1_700_000_000_000
+    const anonymous = (index: number, chars = 3_500): Request =>
+      report({ message: "x".repeat(chars), index }, { "cf-connecting-ip": `203.0.113.${index}` })
+    const signedIn = (message: string): Request =>
+      report({ message }, { cookie: "smithers_session=abc", "cf-connecting-ip": "198.51.100.9" })
+
+    const quietly = async (run: () => Promise<void>): Promise<void> => {
+      const quiet = spyOn(console, "error").mockImplementation(() => {})
+      try {
+        await run()
+      } finally {
+        quiet.mockRestore()
+      }
+    }
+
+    test("one genuine report survives 40 anonymous 4 KiB reports in one window", async () => {
+      const logs = memoryLog(frozen())
+      const env = adminEnv(logs)
+      await quietly(async () => {
+        expect((await worker.fetch(signedIn("the real crash"), env)).status).toBe(202)
+        for (let index = 0; index < 40; index += 1) {
+          expect((await worker.fetch(anonymous(index), env)).status).toBe(202)
+        }
+      })
+      await asAdmin(async () => {
+        const read = (await (await readAdmin(env)).json()) as Page
+        expect(new TextEncoder().encode(JSON.stringify(read.reports)).length).toBeLessThanOrEqual(CLIENT_ERROR_LOG_MAX_BYTES)
+        const genuine = read.reports.find((row) => (row.report as { message: string }).message === "the real crash")
+        expect(genuine?.signedIn).toBe(true)
+        // The flood still fills what is left: the noise is recorded, the report survives.
+        expect(read.reports.length).toBeGreaterThan(10)
+      })
+    })
+
+    test("one source is capped inside the window, and other sources are not", async () => {
+      const logs = memoryLog(frozen())
+      const env = adminEnv(logs)
+      const flood = (index: number): Request => report({ index }, { "cf-connecting-ip": "203.0.113.7" })
+      await quietly(async () => {
+        for (let index = 0; index < CLIENT_ERROR_SOURCE_WINDOW_MAX; index += 1) {
+          expect((await worker.fetch(flood(index), env)).status).toBe(202)
+        }
+        const refused = await worker.fetch(flood(CLIENT_ERROR_SOURCE_WINDOW_MAX), env)
+        expect(refused.status).toBe(429)
+        expect(await refused.json()).toEqual({ status: "error", message: "Too many error reports." })
+        expect((await worker.fetch(anonymous(1, 10), env)).status).toBe(202)
+      })
+      await asAdmin(async () => {
+        expect(((await (await readAdmin(env)).json()) as Page).total).toBe(CLIENT_ERROR_SOURCE_WINDOW_MAX + 1)
+      })
+    })
+
+    test("the window ceiling is global across sources, and a new window opens it again", async () => {
+      let now = 1_700_000_000_000
+      const logs = memoryLog(() => now)
+      const env = adminEnv(logs)
+      await quietly(async () => {
+        for (let index = 0; index < CLIENT_ERROR_WINDOW_MAX; index += 1) {
+          expect((await worker.fetch(anonymous(index % 250, 10), env)).status).toBe(202)
+        }
+        expect((await worker.fetch(anonymous(251, 10), env)).status).toBe(429)
+        expect((await worker.fetch(signedIn("also refused: the ceiling is the ceiling"), env)).status).toBe(429)
+        now += CLIENT_ERROR_WINDOW_MS + 1
+        expect((await worker.fetch(anonymous(251, 10), env)).status).toBe(202)
+      })
+    })
+
+    test("an IPv6 visitor's /64 is one source", async () => {
+      const logs = memoryLog(frozen())
+      const env = adminEnv(logs)
+      await quietly(async () => {
+        for (let index = 0; index < CLIENT_ERROR_SOURCE_WINDOW_MAX; index += 1) {
+          const ip = `2001:db8:0:0:${index.toString(16)}::1`
+          expect((await worker.fetch(report({ index }, { "cf-connecting-ip": ip }), env)).status).toBe(202)
+        }
+        const response = await worker.fetch(report({}, { "cf-connecting-ip": "2001:db8::ffff" }), env)
+        expect(response.status).toBe(429)
+      })
+    })
+  })
+})
+
+/*
+ * The recommender's router half (from recommend.test.ts): the method and
+ * origin guards, and the admin log read.
+ */
+describe("the recommend routes at the router", () => {
+  const memoryLog = (): NativeNamespace => {
+    const logs = new Map<string, RecommendLog>()
+    return {
+      idFromName: (name) => name,
+      get: (id) => {
+        const name = String(id)
+        let log = logs.get(name)
+        if (log === undefined) {
+          log = new RecommendLog({ storage: memoryRecommendStorage() })
+          logs.set(name, log)
+        }
+        const object = log
+        return { fetch: (request) => object.fetch(request) }
+      }
+    }
+  }
+
+  const adminEnv = (logs?: NativeNamespace): WorkerEnv => ({
+    ...assetsEnv(),
+    IDENTITY_UPSTREAM_URL: "https://identity.test",
+    CEREBRAS_API_KEY: "csk-test",
+    ...(logs === undefined ? {} : { RECOMMEND_LOG: logs })
+  })
+
+  const identity = (validate: Response) => (request: Request): Response | undefined =>
+    new URL(request.url).hostname === "identity.test" ? validate.clone() : undefined
+
+  const admin = new Response(JSON.stringify({ login: "will", allowlisted: true, admin: true }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  })
+
+  test("GET is 405 and a cross-origin POST is 403, before anything is spent", async () => {
+    await withMockedFetch(() => { throw new Error("nothing may leave the Worker") }, async () => {
+      for (const path of ["/api/recommend", "/api/recommend/outcome"]) {
+        const get = await worker.fetch(new Request(`https://mvp.test${path}`), adminEnv())
+        expect(get.status).toBe(405)
+        expect(await get.json()).toEqual({ status: "error", message: "Method not allowed." })
+        const cross = await worker.fetch(
+          new Request(`https://mvp.test${path}`, { method: "POST", headers: { origin: "https://evil.example" }, body: "{}" }),
+          adminEnv()
+        )
+        expect(cross.status).toBe(403)
+      }
+    })
+  })
+
+  test("the admin log read answers the rows newest first, bounded by limit; a visitor and a member get the 404", async () => {
+    const logs = memoryLog()
+    const env = adminEnv(logs)
+    const object = logs.get(logs.idFromName("recommendations"))
+    for (const index of [1, 2, 3]) {
+      const appended = await object.fetch(
+        new Request("https://recommend-log.internal/append", {
+          method: "POST",
+          body: JSON.stringify({
+            at: new Date(index).toISOString(),
+            repo: "smithersai/smithers",
+            tailDigest: "d".repeat(64),
+            commandCount: index,
+            commands: [`cmd-${index}`],
+            model: "gpt-oss-120b",
+            outcome: null
+          })
+        })
+      )
+      expect(appended.status).toBe(200)
+    }
+    await withMockedFetch(identity(admin), async () => {
+      const read = await worker.fetch(new Request("https://mvp.test/api/admin/recommend/log", { headers: { cookie: "smithers_session=admin" } }), env)
+      expect(read.status).toBe(200)
+      const body = (await read.json()) as { status: string; rows: Array<{ commands: Array<string> }>; note?: string }
+      expect(body.status).toBe("ok")
+      expect(body.note).toBeUndefined()
+      expect(body.rows.map((row) => row.commands[0])).toEqual(["cmd-3", "cmd-2", "cmd-1"])
+      const limited = await worker.fetch(new Request("https://mvp.test/api/admin/recommend/log?limit=2", { headers: { cookie: "smithers_session=admin" } }), env)
+      expect(((await limited.json()) as { rows: Array<unknown> }).rows).toHaveLength(2)
+      // Unbound: honestly empty, and it says so.
+      const unbound = await worker.fetch(new Request("https://mvp.test/api/admin/recommend/log", { headers: { cookie: "smithers_session=admin" } }), adminEnv())
+      expect(await unbound.json()).toEqual({
+        status: "ok",
+        rows: [],
+        note: "No RECOMMEND_LOG binding on this deployment: nothing is stored, so this log is always empty."
+      })
+    })
+    await withMockedFetch(identity(new Response("{}", { status: 401 })), async () => {
+      const visitor = await worker.fetch(new Request("https://mvp.test/api/admin/recommend/log"), env)
+      expect(visitor.status).toBe(404)
+      expect(await visitor.json()).toEqual({ status: "error", message: "Not found." })
+    })
+    const member = new Response(JSON.stringify({ login: "will", allowlisted: true, admin: false }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+    await withMockedFetch(identity(member), async () => {
+      const response = await worker.fetch(new Request("https://mvp.test/api/admin/recommend/log", { headers: { cookie: "smithers_session=x" } }), env)
+      expect(response.status).toBe(404)
+    })
+  })
+})
+
+/*
+ * The public catalog routes at the Worker (from publicRepos.test.ts,
+ * publicRepoActivity.test.ts and publicRepositoryReads.test.ts). The catalog
+ * and activity handlers keep one snapshot per isolate, so the two tests that
+ * GET them run first in this block and no other test in this file does.
+ */
+describe("the public catalog routes at the Worker", () => {
+  const TOKEN = "ghp_test_token_never_served"
+  const MIRROR = "https://cloud.test/api/repos/smithers-canary/smithers"
+
+  test("the Worker hands its env to the catalog route, so a deployed secret reaches GitHub", async () => {
+    const original = globalThis.fetch
+    const seen: Array<Request> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const req = new Request(input, init)
+      seen.push(req)
+      return Response.json({
+        full_name: new URL(req.url).pathname.replace("/repos/", ""),
+        private: false,
+        stargazers_count: 407,
+        forks_count: 50,
+        open_issues_count: 4,
+        language: "TypeScript",
+        license: { spdx_id: "MIT" }
+      })
+    }) as typeof fetch
+    try {
+      const env: WorkerEnv = { ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, IDENTITY_UPSTREAM_URL: "https://identity.test", GITHUB_TOKEN: TOKEN }
+      const response = await worker.fetch(new Request(`https://app.test/api/public/repos?worker=${Date.now()}`), env)
+      expect(response.status).toBe(200)
+      expect(seen.length).toBeGreaterThan(0)
+      for (const req of seen) {
+        expect(new URL(req.url).hostname).toBe("api.github.com")
+        expect(req.headers.get("authorization")).toBe(`Bearer ${TOKEN}`)
+      }
+      expect(await response.text()).not.toContain(TOKEN)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  test("the Worker serves the activity route before the same-origin guard and reads the configured Cloud origin", async () => {
+    const original = globalThis.fetch
+    const seen: Array<string> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      seen.push(request.url)
+      return Response.json({ message: "not found" }, { status: 404 })
+    }) as typeof fetch
+    try {
+      const env: WorkerEnv = { ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" }
+      const response = await worker.fetch(new Request("https://app.test/api/public/repos/smithersai/smithers/activity", {
+        headers: { origin: "https://smithers.sh" }
+      }), env)
+      expect(response.status).toBe(200)
+      expect(((await response.json()) as { sentence: string }).sentence).toBe("Recent activity is not available.")
+      expect(seen.length).toBeGreaterThan(0)
+      expect(seen.every((url) => url.startsWith(MIRROR))).toBe(true)
+      const missing = await worker.fetch(new Request("https://app.test/api/public/repos/example/other/activity"), env)
+      expect(missing.status).toBe(404)
+    } finally { globalThis.fetch = original }
+  })
+
+  test("a coming-soon repository is never available: its path is the prerendered coming-soon page, never the app", async () => {
+    const available = AVAILABLE_REPOS.map((repo) => repo.name.toLowerCase())
+    for (const repo of COMING_SOON_REPOS) {
+      expect(available).not.toContain(repo.name.toLowerCase())
+    }
+    const siteEnv = () => {
+      const served: Array<string> = []
+      const env: WorkerEnv = {
+        ...memoryDurableObjects(),
+        ASSETS: { fetch: async (req: Request) => { served.push(new URL(req.url).pathname); return new Response("page") } },
+        IDENTITY_UPSTREAM_URL: "https://identity.test"
+      }
+      return { env, served }
+    }
+    // Every coming-soon path serves the site page the build prerenders at its
+    // canonical path, as the assets layer serves it: no app isolation headers.
+    for (const repo of COMING_SOON_REPOS) {
+      const { env, served } = siteEnv()
+      const response = await worker.fetch(new Request(`https://smithers.sh/${repo.name.toLowerCase()}`), env)
+      expect({ name: repo.name, status: response.status, served, coep: response.headers.get("Cross-Origin-Embedder-Policy") })
+        .toEqual({ name: repo.name, status: 200, served: [`/${repo.name}/`], coep: null })
+    }
+    // The routed owner's app page answers only catalog names; a coming-soon name
+    // under that owner leaves like any unknown repository, never as the app.
+    const { env, served } = siteEnv()
+    const response = await worker.fetch(new Request("https://smithers.sh/smithersai/effect"), env)
+    expect({ status: response.status, location: response.headers.get("location"), served })
+      .toEqual({ status: 302, location: "https://smithers.sh/", served: [] })
+  })
+
+  test("the Worker exposes only this catalog across origins, while write routes remain gated", async () => {
+    const env: WorkerEnv = { ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, IDENTITY_UPSTREAM_URL: "https://identity.test" }
+    const options = await worker.fetch(
+      new Request("https://app.test/api/public/repos", { method: "OPTIONS", headers: { origin: "https://smithers.sh" } }),
+      env
+    )
+    expect(options.status).toBe(204)
+    const write = await worker.fetch(new Request("https://app.test/api/repos/smithersai/smithers/issues", {
+      method: "POST", headers: { origin: "https://smithers.sh" }
+    }), env)
+    expect(write.status).toBe(403)
+  })
+
+  test("an interrupted upstream refusal still returns the app's structured error", async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(new ReadableStream({
+      start(controller) { controller.error(new Error("upstream error body disconnected")) }
+    }), { status: 404, headers: { vary: "Cookie", "set-cookie": "session=upstream" } })) as typeof fetch
+    try {
+      for (const prefix of ["/api", "/api/cloud/api"]) {
+        const response = await worker.fetch(new Request(`https://app.test${prefix}/repos/owner/repo`), {
+          ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
+        })
+        expect(response.status).toBe(404)
+        expect(await response.json()).toEqual({
+          status: "error", message: "Smithers Cloud doesn't serve that request on this deployment."
+        })
+        expect(response.headers.get("cache-control")).toBe("private, no-store")
+        expect(response.headers.get("vary")).toBe("Cookie")
+        expect(response.headers.has("set-cookie")).toBe(false)
+      }
+    } finally { globalThis.fetch = original }
+  })
+
+  test("the app's direct and Cloud-prefixed read routes work without a session, but writes require one", async () => {
+    const original = globalThis.fetch
+    const requests: Array<Request> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? new Request(input, init) : new Request(input, init)
+      requests.push(request)
+      if (request.url.startsWith("https://identity.test/")) {
+        return request.headers.get("cookie") === "smithers_session=not-admitted"
+          ? Response.json({ login: "visitor", allowlisted: false, admin: false })
+          : new Response(null, { status: 401 })
+      }
+      return Response.json({ full_name: "smithersai/smithers", private: false })
+    }) as typeof fetch
+    const env: WorkerEnv = {
+      ...memoryDurableObjects(),
+      ASSETS: { fetch: async () => new Response("app") },
+      IDENTITY_UPSTREAM_URL: "https://identity.test",
+      SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
+    }
+    try {
+      for (const prefix of ["/api", "/api/cloud/api"]) {
+        const response = await worker.fetch(new Request(`https://app.test${prefix}/repos/smithersai/smithers`), env)
+        expect(response.status).toBe(200)
+        expect((await response.json() as { full_name: string }).full_name).toBe("smithersai/smithers")
+      }
+      expect(requests).toHaveLength(2)
+      expect(requests.every((request) => request.url === "https://cloud.test/api/repos/smithers-canary/smithers" && !request.headers.has("authorization"))).toBe(true)
+      for (const session of ["expired", "not-admitted"]) {
+        const response = await worker.fetch(new Request("https://app.test/api/repos/smithersai/smithers", {
+          headers: { cookie: `smithers_session=${session}` }
+        }), env)
+        expect(response.status).toBe(200)
+      }
+      const write = await worker.fetch(new Request("https://app.test/api/repos/smithersai/smithers/issues", { method: "POST" }), env)
+      expect(write.status).toBe(401)
+      const cloudRequests = requests.filter((request) => request.url.startsWith("https://cloud.test/"))
+      expect(cloudRequests).toHaveLength(4)
+      expect(cloudRequests.every((request) => !request.headers.has("cookie") && !request.headers.has("authorization"))).toBe(true)
+    } finally { globalThis.fetch = original }
   })
 })

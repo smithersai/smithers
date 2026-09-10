@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test"
-import worker from "./index"
-import { memoryDurableObjects } from "./memoryDurableObjects"
-import { createPublicReposHandler } from "./publicRepos"
+import * as Clock from "effect/Clock"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as ManagedRuntime from "effect/ManagedRuntime"
+import { configLayer } from "./Config"
+import type { ServerEnvVars } from "./Config"
+import { EdgeCache, githubAppAuthLayer, memoryEdgeCache } from "./githubApp"
+import type { EdgeCacheShape } from "./githubApp"
+import { transportLayer } from "./Http"
+import type { FetchImplementation } from "./Http"
 import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "./publicRepoCatalog"
 import type { PublicComingSoonRepository, PublicRepoCatalog, PublicRepository } from "./publicRepoCatalog"
+import { makePublicReposHandler } from "./publicRepos"
 
 /** The roster a claimed-repo wave will produce; the launch catalog holds only Smithers. */
 const CLAIMED_ROSTER = [
@@ -48,21 +56,68 @@ const request = (query = "") => new Request(`https://app.test/api/public/repos${
   headers: { origin: "https://smithers.sh", cookie: "session=private", authorization: "Bearer private" }
 })
 
-const harness = (
-  answer: (req: Request) => Response | Promise<Response> = answerEach,
-  repos: ReadonlyArray<Pick<PublicRepository, "name" | "title" | "url" | "summary">> = AVAILABLE_REPOS,
-  comingSoon: ReadonlyArray<Pick<PublicComingSoonRepository, "name" | "title" | "url">> = COMING_SOON_REPOS
-) => {
-  let now = 1_000
+/** A clock the test moves by hand; sleeps (deadlines) still run on the real timer. */
+const testClock = (start: number) => {
+  let now = start
+  const real = Clock.Clock.defaultValue()
+  const clock: Clock.Clock = {
+    currentTimeMillisUnsafe: () => now,
+    currentTimeMillis: Effect.sync(() => now),
+    currentTimeNanosUnsafe: () => BigInt(now) * 1_000_000n,
+    currentTimeNanos: Effect.sync(() => BigInt(now) * 1_000_000n),
+    monotonicTimeNanosUnsafe: () => real.monotonicTimeNanosUnsafe(),
+    monotonicTimeNanos: real.monotonicTimeNanos,
+    sleep: (duration) => real.sleep(duration)
+  }
+  return { clock, advance: (ms: number) => { now += ms } }
+}
+
+interface HarnessOptions {
+  readonly answer?: (req: Request) => Response | Promise<Response>
+  readonly repos?: ReadonlyArray<Pick<PublicRepository, "name" | "title" | "url" | "summary">>
+  readonly comingSoon?: ReadonlyArray<Pick<PublicComingSoonRepository, "name" | "title" | "url">>
+  /** The Worker's vars and secrets, as the deployment binds them. */
+  readonly env?: ServerEnvVars
+  readonly edge?: EdgeCacheShape
+}
+
+/**
+ * One Worker isolate: a catalog handler over an injected transport, config,
+ * edge cache, clock, and the real `githubAppAuthLayer`. `handlers(n)` builds
+ * more isolates over the same services, for the edge-cache test.
+ */
+const harness = (options: HarnessOptions = {}) => {
+  const answer = options.answer ?? answerEach
+  const { clock, advance } = testClock(1_000)
   const requests: Array<Request> = []
-  const handler = createPublicReposHandler({
-    fetch: async (req) => { requests.push(req); return answer(req) },
-    now: () => now,
-    cache: () => undefined,
-    repos,
-    comingSoon
-  })
-  return { handler, requests, advance: (ms: number) => { now += ms } }
+  const fetchImpl: FetchImplementation = async (input, init) => {
+    const req = new Request(input, init)
+    requests.push(req)
+    return answer(req)
+  }
+  const services = Layer.mergeAll(
+    transportLayer(fetchImpl),
+    configLayer(options.env ?? {}),
+    Layer.succeed(EdgeCache, options.edge ?? memoryEdgeCache()),
+    Layer.succeed(Clock.Clock, clock)
+  )
+  const runtime = ManagedRuntime.make(githubAppAuthLayer.pipe(Layer.provideMerge(services)))
+  const roster = { repos: options.repos ?? AVAILABLE_REPOS, comingSoon: options.comingSoon ?? COMING_SOON_REPOS }
+  const handler = makePublicReposHandler(roster)
+  const serve = (req: Request) => runtime.runPromise(handler(req))
+  return {
+    handler: serve,
+    /** N concurrent readers of this isolate, as N fibers. */
+    concurrently: (reqs: ReadonlyArray<Request>) =>
+      runtime.runPromise(Effect.all(reqs.map((req) => handler(req)), { concurrency: "unbounded" })),
+    /** Another isolate over the same transport, edge cache, and clock. */
+    coldIsolate: () => {
+      const cold = makePublicReposHandler(roster)
+      return (req: Request) => runtime.runPromise(cold(req))
+    },
+    requests,
+    advance
+  }
 }
 
 const TOKEN = "ghp_test_token_never_served"
@@ -80,12 +135,12 @@ const exported = new Uint8Array(await crypto.subtle.exportKey("pkcs8", pair.priv
 let exportedBinary = ""
 for (const byte of exported) exportedBinary += String.fromCharCode(byte)
 const APP_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----\n${btoa(exportedBinary).replace(/(.{64})/g, "$1\n")}\n-----END PRIVATE KEY-----\n`
-const APP_ENV = { SMITHERS_GITHUB_APP_ID: "4163546", SMITHERS_GITHUB_APP_PRIVATE_KEY: APP_PRIVATE_KEY }
+const APP_ENV: ServerEnvVars = { SMITHERS_GITHUB_APP_ID: "4163546", SMITHERS_GITHUB_APP_PRIVATE_KEY: APP_PRIVATE_KEY }
 const INSTALLATION_TOKEN = "ghs_installation_token_never_served"
 
-/** Runs the pending microtasks so an in-flight refresh has issued its fetches. */
-const flush = async () => {
-  for (let tick = 0; tick < 10; tick += 1) await Promise.resolve()
+/** Lets the refresh fiber run until it has issued its fetches. */
+const flush = async (until: () => boolean) => {
+  for (let tick = 0; tick < 50 && !until(); tick += 1) await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 const pathOf = (req: Request) => new URL(req.url).pathname
@@ -144,44 +199,23 @@ describe("the curated catalog", () => {
     ])
   })
 
-  test("a coming-soon repository is never available: its path is the prerendered coming-soon page, never the app", async () => {
+  test("a coming-soon repository is never available", () => {
+    // The Worker's routed app page and the Cloud mirror lookup consult
+    // AVAILABLE_REPOS alone (index.test.ts covers the page each path serves).
     const available = AVAILABLE_REPOS.map((repo) => repo.name.toLowerCase())
     for (const repo of COMING_SOON_REPOS) {
       expect(available).not.toContain(repo.name.toLowerCase())
     }
-    const siteEnv = () => {
-      const served: Array<string> = []
-      const env = {
-        ...memoryDurableObjects(),
-        ASSETS: { fetch: async (req: Request) => { served.push(new URL(req.url).pathname); return new Response("page") } },
-        IDENTITY_UPSTREAM_URL: "https://identity.test"
-      }
-      return { env, served }
-    }
-    // Every coming-soon path serves the site page the build prerenders at its
-    // canonical path, as the assets layer serves it: no app isolation headers.
-    for (const repo of COMING_SOON_REPOS) {
-      const { env, served } = siteEnv()
-      const response = await worker.fetch(new Request(`https://smithers.sh/${repo.name.toLowerCase()}`), env)
-      expect({ name: repo.name, status: response.status, served, coep: response.headers.get("Cross-Origin-Embedder-Policy") })
-        .toEqual({ name: repo.name, status: 200, served: [`/${repo.name}/`], coep: null })
-    }
-    // The routed owner's app page answers only catalog names; a coming-soon name
-    // under that owner leaves like any unknown repository, never as the app.
-    const { env, served } = siteEnv()
-    const response = await worker.fetch(new Request("https://smithers.sh/smithersai/effect"), env)
-    expect({ status: response.status, location: response.headers.get("location"), served })
-      .toEqual({ status: 302, location: "https://smithers.sh/", served: [] })
   })
 
   test("explains every entry in one curated sentence the app's welcome can read", () => {
     for (const repo of AVAILABLE_REPOS) {
+      // One sentence: a capital, one terminal period, no sentence break inside.
       expect(repo.summary).toMatch(/^[A-Z].*\.$/)
       expect(repo.summary.split(/[.!?]\s/).length).toBe(1)
+      // The welcome speaks it as the repository's own introduction, so it names the title first.
+      expect(repo.summary.startsWith(`${repo.title} is `)).toBe(true)
     }
-    expect(AVAILABLE_REPOS[0].summary).toBe(
-      "Smithers is a durable framework that lets agents plan, run, and review changes to a code repository through flows."
-    )
   })
 })
 
@@ -218,12 +252,16 @@ describe("public available repositories", () => {
 
   test("fetches every repo in a claimed roster concurrently, and one failing repo never nulls the others", async () => {
     const pending = new Map<string, (response: Response) => void>()
-    const { handler, requests } = harness((req) => new Promise((resolve) => { pending.set(repoName(req), resolve) }), CLAIMED_ROSTER)
+    const { handler, requests } = harness({
+      answer: (req) => new Promise((resolve) => { pending.set(repoName(req), resolve) }),
+      repos: CLAIMED_ROSTER
+    })
     const served = handler(request())
     // A refresh first asks the GitHub App layer for a bearer (undefined here,
-    // with no secrets set), so the metadata reads start a few microtasks in.
-    await flush()
-    expect(requests).toHaveLength(CLAIMED_ROSTER.length + COMING_SOON_REPOS.length)
+    // with no secrets set), then issues every metadata read before any answers.
+    const expected = CLAIMED_ROSTER.length + COMING_SOON_REPOS.length
+    await flush(() => requests.length === expected)
+    expect(requests).toHaveLength(expected)
     expect([...pending.keys()]).toEqual([...CLAIMED_ROSTER.map((repo) => repo.name), ...COMING_SOON_REPOS.map((repo) => repo.name)])
     pending.get("example/later")!(answerEach(requests[2]!))
     pending.get("example/claimed")!(Response.json({ message: "rate limited" }, { status: 403 }))
@@ -240,8 +278,9 @@ describe("public available repositories", () => {
   })
 
   test("a coming-soon repo's metadata outage nulls only its stats and shortens the cache like an available one's", async () => {
-    const { handler } = harness((req) =>
-      repoName(req) === "wevm/incur" ? Response.json({ message: "bad gateway" }, { status: 502 }) : answerEach(req))
+    const { handler } = harness({
+      answer: (req) => repoName(req) === "wevm/incur" ? Response.json({ message: "bad gateway" }, { status: 502 }) : answerEach(req)
+    })
     const response = await handler(request())
     expect(response.headers.get("cache-control")).toBe("public, max-age=30")
     const catalog = await response.json() as PublicRepoCatalog
@@ -254,8 +293,9 @@ describe("public available repositories", () => {
   })
 
   test("joins concurrent reads, caches for five minutes, and refreshes after expiry", async () => {
-    const { handler, requests, advance } = harness()
-    await Promise.all([handler(request()), handler(request("?cache-bust=1")), handler(request())])
+    const { handler, concurrently, requests, advance } = harness()
+    const responses = await concurrently([request(), request("?cache-bust=1"), request()])
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200])
     expect(requests).toHaveLength(FETCH_COUNT)
     advance(299_000)
     expect((await handler(request())).headers.get("cache-control")).toBe("public, max-age=1")
@@ -266,21 +306,16 @@ describe("public available repositories", () => {
   })
 
   test("the edge cache is reusable across Worker instances and expires", async () => {
-    const records = new Map<string, Response>()
-    const cache = {
-      match: async (req: RequestInfo | URL) => records.get((req as Request).url)?.clone(),
-      put: async (req: RequestInfo | URL, response: Response) => { records.set((req as Request).url, response.clone()) }
-    }
-    let calls = 0
-    let now = 1_000
-    const deps = { fetch: async (req: Request) => { calls++; return answerEach(req) }, now: () => now, cache: () => cache }
-    await createPublicReposHandler(deps)(request())
-    const second = await createPublicReposHandler(deps)(request("?different=1"))
-    expect(calls).toBe(FETCH_COUNT)
+    const edge = memoryEdgeCache()
+    const { handler, coldIsolate, requests, advance } = harness({ edge })
+    await handler(request())
+    const second = await coldIsolate()(request("?different=1"))
+    expect(requests).toHaveLength(FETCH_COUNT)
     expect((await second.json() as PublicRepoCatalog).repos[0]?.stats?.stars).toBe(407)
-    now += 300_001
-    await createPublicReposHandler(deps)(request())
-    expect(calls).toBe(FETCH_COUNT * 2)
+    expect([...edge.records.keys()]).toEqual(["https://app.test/api/public/repos"])
+    advance(300_001)
+    await coldIsolate()(request())
+    expect(requests).toHaveLength(FETCH_COUNT * 2)
   })
 
   test("a transient outage never invents counts or removes availability, and retries after 30 s", async () => {
@@ -289,7 +324,7 @@ describe("public available repositories", () => {
       () => new Response(null, { status: 503 }),
       () => { throw new Error("offline") }
     ]) {
-      const { handler, requests, advance } = harness(answer)
+      const { handler, requests, advance } = harness({ answer })
       const response = await handler(request())
       expect(response.status).toBe(200)
       expect(response.headers.get("cache-control")).toBe("public, max-age=30")
@@ -306,8 +341,9 @@ describe("public available repositories", () => {
     // Retrying a 403 or 429 every 30 s would send 600 calls an hour from one
     // instance and keep the 60-an-hour anonymous ceiling tripped forever.
     for (const status of [403, 429]) {
-      const { handler, requests, advance } = harness(() =>
-        Response.json({ message: "API rate limit exceeded" }, { status, headers: { "x-ratelimit-remaining": "0" } }))
+      const { handler, requests, advance } = harness({
+        answer: () => Response.json({ message: "API rate limit exceeded" }, { status, headers: { "x-ratelimit-remaining": "0" } })
+      })
       const response = await handler(request())
       expect(response.status).toBe(200)
       expect(response.headers.get("cache-control")).toBe("public, max-age=300")
@@ -331,7 +367,7 @@ describe("public available repositories", () => {
       () => Response.json({ ...metadata, stargazers_count: -1 }),
       () => new Response("not json")
     ]) {
-      const { handler, requests, advance } = harness(answer)
+      const { handler, requests, advance } = harness({ answer })
       const response = await handler(request())
       expect(response.headers.get("cache-control")).toBe("public, max-age=300")
       expect(await response.json()).toEqual({ repos: expectedRepos(() => null), comingSoon: expectedComingSoon(() => null) })
@@ -342,8 +378,8 @@ describe("public available repositories", () => {
   })
 
   test("sends the GITHUB_TOKEN secret as a bearer on the stats reads when set, and nothing when unset", async () => {
-    const { handler, requests } = harness()
-    const response = await handler(request(), { GITHUB_TOKEN: ` ${TOKEN} ` })
+    const { handler, requests } = harness({ env: { GITHUB_TOKEN: ` ${TOKEN} ` } })
+    const response = await handler(request())
     expect(requests).toHaveLength(FETCH_COUNT)
     for (const req of requests) {
       expect(req.headers.get("authorization")).toBe(`Bearer ${TOKEN}`)
@@ -353,19 +389,20 @@ describe("public available repositories", () => {
     expect([...response.headers.entries()].join("\n")).not.toContain(TOKEN)
     expect(await response.text()).not.toContain(TOKEN)
 
-    const unset = harness()
-    await unset.handler(request(), { GITHUB_TOKEN: "" })
-    await unset.handler(request())
-    expect(unset.requests).toHaveLength(FETCH_COUNT)
-    for (const req of unset.requests) {
-      expect(req.headers.has("authorization")).toBe(false)
-      expect(req.headers.has("x-github-api-version")).toBe(false)
+    for (const env of [{ GITHUB_TOKEN: "" }, {}]) {
+      const unset = harness({ env })
+      await unset.handler(request())
+      expect(unset.requests).toHaveLength(FETCH_COUNT)
+      for (const req of unset.requests) {
+        expect(req.headers.has("authorization")).toBe(false)
+        expect(req.headers.has("x-github-api-version")).toBe(false)
+      }
     }
   })
 
   test("mints one GitHub App installation token and sends it on every stats read", async () => {
-    const { handler, requests, advance } = harness(asTheApp())
-    const response = await handler(request(), APP_ENV)
+    const { handler, requests, advance } = harness({ answer: asTheApp(), env: APP_ENV })
+    const response = await handler(request())
     expect(appCalls(requests)).toEqual(["/app/installations", "/app/installations/150824198/access_tokens"])
     expect(statsCalls(requests)).toHaveLength(FETCH_COUNT)
     for (const req of statsCalls(requests)) {
@@ -376,7 +413,7 @@ describe("public available repositories", () => {
     expect(catalog.repos[0]!.stats?.stars).toBe(407)
     // The token outlives the catalog's five-minute window: a second refresh reuses it.
     advance(300_001)
-    await handler(request(), APP_ENV)
+    await handler(request())
     expect(appCalls(requests)).toHaveLength(2)
     expect(statsCalls(requests)).toHaveLength(FETCH_COUNT * 2)
     // Neither credential is ever served.
@@ -387,55 +424,61 @@ describe("public available repositories", () => {
 
   test("a 401 on a stats read buys exactly one new installation token, and no more", async () => {
     let exchanges = 0
-    const { handler, requests, advance } = harness((req) => {
-      if (pathOf(req) === "/app/installations") return Response.json([{ id: 150824198, account: { login: "smithersai" } }])
-      if (pathOf(req).endsWith("/access_tokens")) {
-        exchanges += 1
-        return Response.json({ token: `ghs_round_${exchanges}` }, { status: 201 })
-      }
-      // The first installation token has been revoked; the second one works.
-      return req.headers.get("authorization") === "Bearer ghs_round_1"
-        ? Response.json({ message: "Bad credentials" }, { status: 401 })
-        : answerEach(req)
+    const { handler, requests, advance } = harness({
+      answer: (req) => {
+        if (pathOf(req) === "/app/installations") return Response.json([{ id: 150824198, account: { login: "smithersai" } }])
+        if (pathOf(req).endsWith("/access_tokens")) {
+          exchanges += 1
+          return Response.json({ token: `ghs_round_${exchanges}` }, { status: 201 })
+        }
+        // The first installation token has been revoked; the second one works.
+        return req.headers.get("authorization") === "Bearer ghs_round_1"
+          ? Response.json({ message: "Bad credentials" }, { status: 401 })
+          : answerEach(req)
+      },
+      env: APP_ENV
     })
-    const catalog = await (await handler(request(), APP_ENV)).json() as PublicRepoCatalog
+    const catalog = await (await handler(request())).json() as PublicRepoCatalog
     expect(exchanges).toBe(2)
     expect(statsCalls(requests)).toHaveLength(FETCH_COUNT * 2)
     expect(statsCalls(requests).at(-1)!.headers.get("authorization")).toBe("Bearer ghs_round_2")
     expect(catalog.repos[0]!.stats?.stars).toBe(407)
     // The renewed token is held: the next window does not exchange again.
     advance(300_001)
-    await handler(request(), APP_ENV)
+    await handler(request())
     expect(exchanges).toBe(2)
   })
 
   test("a token GitHub keeps refusing nulls the stats without a second re-exchange", async () => {
     let exchanges = 0
-    const { handler, requests } = harness((req) => {
-      if (pathOf(req) === "/app/installations") return Response.json([{ id: 150824198, account: { login: "smithersai" } }])
-      if (pathOf(req).endsWith("/access_tokens")) {
-        exchanges += 1
-        return Response.json({ token: INSTALLATION_TOKEN }, { status: 201 })
-      }
-      return Response.json({ message: "Bad credentials" }, { status: 401 })
+    const { handler, requests } = harness({
+      answer: (req) => {
+        if (pathOf(req) === "/app/installations") return Response.json([{ id: 150824198, account: { login: "smithersai" } }])
+        if (pathOf(req).endsWith("/access_tokens")) {
+          exchanges += 1
+          return Response.json({ token: INSTALLATION_TOKEN }, { status: 201 })
+        }
+        return Response.json({ message: "Bad credentials" }, { status: 401 })
+      },
+      env: APP_ENV
     })
-    const response = await handler(request(), APP_ENV)
+    const response = await handler(request())
     expect(exchanges).toBe(2)
     expect(statsCalls(requests)).toHaveLength(FETCH_COUNT * 2)
     expect(await response.json()).toEqual({ repos: expectedRepos(() => null), comingSoon: expectedComingSoon(() => null) })
   })
 
   test("GITHUB_TOKEN overrides the App, and an App installed nowhere reads anonymously", async () => {
-    const override = harness(asTheApp())
-    await override.handler(request(), { ...APP_ENV, GITHUB_TOKEN: TOKEN })
+    const override = harness({ answer: asTheApp(), env: { ...APP_ENV, GITHUB_TOKEN: TOKEN } })
+    await override.handler(request())
     expect(appCalls(override.requests)).toEqual([])
     for (const req of statsCalls(override.requests)) expect(req.headers.get("authorization")).toBe(`Bearer ${TOKEN}`)
 
-    const uninstalled = harness(asTheApp([]))
+    const uninstalled = harness({ answer: asTheApp([]), env: APP_ENV })
     const warned: Array<unknown> = []
     const warn = console.warn
     console.warn = (line: unknown) => warned.push(line)
-    const response = await uninstalled.handler(request(), APP_ENV).finally(() => {
+    const response = await uninstalled.handler(request()).finally(() => {
       console.warn = warn
     })
     expect(warned).toEqual(["the GitHub App is not installed on any organization"])
@@ -445,41 +488,17 @@ describe("public available repositories", () => {
     expect((await response.json() as PublicRepoCatalog).repos[0]!.stats?.stars).toBe(407)
   })
 
-  test("the Worker hands its env to the catalog route, so a deployed secret reaches GitHub", async () => {
-    const original = globalThis.fetch
-    const seen: Array<Request> = []
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const req = new Request(input, init)
-      seen.push(req)
-      return answerEach(req)
-    }) as typeof fetch
-    try {
-      const env = { ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, IDENTITY_UPSTREAM_URL: "https://identity.test", GITHUB_TOKEN: TOKEN }
-      const response = await worker.fetch(new Request(`https://app.test/api/public/repos?worker=${Date.now()}`), env)
-      expect(response.status).toBe(200)
-      expect(seen.length).toBeGreaterThan(0)
-      for (const req of seen) expect(req.headers.get("authorization")).toBe(`Bearer ${TOKEN}`)
-    } finally {
-      globalThis.fetch = original
-    }
-  })
-
   test("preflight and unsupported writes do not touch the backend", async () => {
     const { handler, requests } = harness()
     const options = await handler(new Request(request(), { method: "OPTIONS" }))
     expect(options.status).toBe(204)
     const write = await handler(new Request(request(), { method: "POST" }))
     expect(write.status).toBe(405)
+    expect(write.headers.get("allow")).toBe("GET, HEAD, OPTIONS")
+    expect(await write.json()).toEqual({ message: "Method not allowed." })
     expect(requests).toHaveLength(0)
-  })
-
-  test("the Worker exposes only this catalog across origins, while write routes remain gated", async () => {
-    const env = { ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, IDENTITY_UPSTREAM_URL: "https://identity.test" }
-    const options = await worker.fetch(new Request(request(), { method: "OPTIONS" }), env)
-    expect(options.status).toBe(204)
-    const write = await worker.fetch(new Request("https://app.test/api/repos/smithersai/smithers/issues", {
-      method: "POST", headers: { origin: "https://smithers.sh" }
-    }), env)
-    expect(write.status).toBe(403)
+    const head = await handler(new Request(request(), { method: "HEAD" }))
+    expect(head.status).toBe(200)
+    expect(await head.text()).toBe("")
   })
 })

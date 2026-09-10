@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect"
 /**
  * The cloud roles: turns the Worker answers itself, on Cerebras.
  *
@@ -20,6 +21,10 @@
  * twenty questions a day are twenty whether Smithers or the Librarian
  * answers.
  *
+ * The client going away is the fiber's interruption (src/Boundary.ts): it
+ * aborts the provider call and the boundary answers 499, so nothing here
+ * watches a signal.
+ *
  * First cut: one non-streaming completion becomes one text delta and one
  * done frame, tagged with the body's runId like every other turn stream.
  * Translating the provider's SSE stream into deltas is a follow-up.
@@ -28,8 +33,11 @@ import { composeAgentInstructions } from "@smthrs/rpc/AgentContext"
 import { AGENT_ROLE_ID, cloudRole, cloudRoleModelId, isCloudRoleId } from "@smthrs/rpc/AgentRoles"
 import type { CloudRole } from "@smthrs/rpc/AgentRoles"
 import type { AgentChatMessage, AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
+import { ServerConfig } from "./Config"
+import type { ServerConfigShape } from "./Config"
+import type { Transport } from "./Http"
 import { cerebrasChat } from "./recommend"
-import type { CerebrasChatMessage, FetchLike } from "./recommend"
+import type { CerebrasChatMessage } from "./recommend"
 
 /** How long a cloud role completion gets, in ms. Cerebras answers in seconds; a side turn that takes longer has failed. */
 export const CLOUD_ROLE_TIMEOUT_MS = 30_000
@@ -43,16 +51,6 @@ export const TURN_PURPOSE_MAX_CHARS = 200
 export const TURN_ROLE_MAX_CHARS = 40
 
 const TIERS: ReadonlyArray<string> = ["cheap", "default"]
-
-/** The environment the cloud role turn reads. `WorkerEnv` carries all of it. */
-export interface CloudRoleEnv {
-  /** The Cerebras key the recommender also spends. Unset = the turn answers 503. */
-  readonly CEREBRAS_API_KEY?: string
-  /** Overrides the Librarian's default model id (CLOUD_AGENT_ROLES). */
-  readonly CEREBRAS_MODEL_LIBRARIAN?: string
-  /** Overrides the Flows agent's default model id (CLOUD_AGENT_ROLES). */
-  readonly CEREBRAS_MODEL_FLOWS?: string
-}
 
 /**
  * The three optional hints a turn body may carry, as this Worker reads them:
@@ -93,11 +91,11 @@ export const turnHints = (body: object): TurnHints => {
 export const isCloudRoleTurn = (body: TurnRequest): boolean =>
   body.role !== undefined && isCloudRoleId(body.role)
 
-/** The model id the deployment serves a cloud role on: the env override, else the table default. */
-export const cloudRoleModel = (role: CloudRole, env: CloudRoleEnv): string =>
+/** The model id the deployment serves a cloud role on: the configured override, else the table default. */
+export const cloudRoleModel = (role: CloudRole, config: Pick<ServerConfigShape, "cerebrasModelLibrarian" | "cerebrasModelFlows">): string =>
   cloudRoleModelId(role, {
-    CEREBRAS_MODEL_LIBRARIAN: env.CEREBRAS_MODEL_LIBRARIAN,
-    CEREBRAS_MODEL_FLOWS: env.CEREBRAS_MODEL_FLOWS
+    CEREBRAS_MODEL_LIBRARIAN: config.cerebrasModelLibrarian,
+    CEREBRAS_MODEL_FLOWS: config.cerebrasModelFlows
   })
 
 const isPlainMessage = (message: AgentChatMessage): message is { readonly role: "user" | "assistant"; readonly content: string } =>
@@ -132,79 +130,75 @@ const ndjson = (frames: ReadonlyArray<AgentTurnFrame>, headers: Record<string, s
  * `isCloudRoleTurn`, and spent the ceilings. Order: the body's shape first (a
  * refusal there costs nothing), then the key, then the model. A failure is
  * JSON with the status that names it (503 no key, 429 the provider's own
- * limit, 502 the provider failed or is unreachable, 504 the deadline, 499
- * the client left); a success is the NDJSON turn stream every other turn
- * answers with.
+ * limit, 502 the provider failed or is unreachable, 504 the deadline; the
+ * client leaving interrupts the fiber and the boundary answers 499); a
+ * success is the NDJSON turn stream every other turn answers with.
  */
-export const handleCloudRoleTurn = async (
+export const handleCloudRoleTurn = (
   body: TurnRequest,
-  env: CloudRoleEnv,
-  headers: Record<string, string>,
-  signal?: AbortSignal,
-  fetchImpl: FetchLike = (input, init) => globalThis.fetch(input, init)
-): Promise<Response> => {
-  if (body.role === undefined || !isCloudRoleId(body.role)) {
-    return jsonWith(400, { status: "error", message: "Not a cloud role turn." }, headers)
-  }
-  const role = cloudRole(body.role)
-  if (body.tools !== undefined && body.tools.length > 0) {
-    return jsonWith(400, {
-      status: "error",
-      message: `The ${role.label} answers one question at a time and runs no tools; send this turn without tools.`
-    }, headers)
-  }
-  const messages = cloudRoleMessages(body)
-  if (messages === undefined) {
-    return jsonWith(400, {
-      status: "error",
-      message: `The ${role.label} runs no tools, so it cannot continue a tool call; send plain messages only.`
-    }, headers)
-  }
-  const apiKey = env.CEREBRAS_API_KEY?.trim()
-  if (apiKey === undefined || apiKey === "") {
-    return jsonWith(503, {
-      status: "error",
-      message: `CEREBRAS_API_KEY is unset. The ${role.label} is unavailable on this deployment.`
-    }, headers)
-  }
-  const model = cloudRoleModel(role, env)
-  const answer = await cerebrasChat({
-    model,
-    messages,
-    maxTokens: CLOUD_ROLE_MAX_TOKENS,
-    temperature: CLOUD_ROLE_TEMPERATURE,
-    timeoutMs: CLOUD_ROLE_TIMEOUT_MS,
-    ...(signal === undefined ? {} : { signal })
-  }, apiKey, fetchImpl)
-  if (!answer.ok) {
-    switch (answer.reason) {
-      case "http":
-        return jsonWith(answer.status === 429 ? 429 : 502, {
-          status: "error",
-          message: `The ${role.label}'s model service answered HTTP ${answer.status}.`
-        }, headers)
-      case "empty":
-        return jsonWith(502, { status: "error", message: `The ${role.label}'s model service sent no answer.` }, headers)
-      case "timeout":
-        return jsonWith(504, {
-          status: "error",
-          message: `The ${role.label} did not answer within ${Math.round(CLOUD_ROLE_TIMEOUT_MS / 1000)}s.`
-        }, headers)
-      case "aborted":
-        return jsonWith(499, { status: "error", message: "The client disconnected." }, headers)
-      case "unreachable":
-        return jsonWith(502, {
-          status: "error",
-          message: `The ${role.label}'s model service is unreachable: ${answer.message}`
-        }, headers)
+  headers: Record<string, string>
+): Effect.Effect<Response, never, Transport | ServerConfig> =>
+  Effect.gen(function*() {
+    if (body.role === undefined || !isCloudRoleId(body.role)) {
+      return jsonWith(400, { status: "error", message: "Not a cloud role turn." }, headers)
     }
-  }
-  const runId = body.runId
-  if (answer.content.trim() === "") {
-    return ndjson([{ runId, type: "done", reason: "stop", error: `The ${role.label} answered with no text.` }], headers)
-  }
-  return ndjson([
-    { runId, type: "delta", kind: "text", text: answer.content },
-    { runId, type: "done", reason: "stop" }
-  ], headers)
-}
+    const role = cloudRole(body.role)
+    if (body.tools !== undefined && body.tools.length > 0) {
+      return jsonWith(400, {
+        status: "error",
+        message: `The ${role.label} answers one question at a time and runs no tools; send this turn without tools.`
+      }, headers)
+    }
+    const messages = cloudRoleMessages(body)
+    if (messages === undefined) {
+      return jsonWith(400, {
+        status: "error",
+        message: `The ${role.label} runs no tools, so it cannot continue a tool call; send plain messages only.`
+      }, headers)
+    }
+    const config = yield* ServerConfig
+    if (config.cerebrasApiKey === undefined) {
+      return jsonWith(503, {
+        status: "error",
+        message: `CEREBRAS_API_KEY is unset. The ${role.label} is unavailable on this deployment.`
+      }, headers)
+    }
+    const model = cloudRoleModel(role, config)
+    const answer = yield* cerebrasChat({
+      model,
+      messages,
+      maxTokens: CLOUD_ROLE_MAX_TOKENS,
+      temperature: CLOUD_ROLE_TEMPERATURE
+    }, CLOUD_ROLE_TIMEOUT_MS)
+    if (!answer.ok) {
+      switch (answer.reason) {
+        case "http":
+          return jsonWith(answer.status === 429 ? 429 : 502, {
+            status: "error",
+            message: `The ${role.label}'s model service answered HTTP ${answer.status}.`
+          }, headers)
+        case "empty":
+          return jsonWith(502, { status: "error", message: `The ${role.label}'s model service sent no answer.` }, headers)
+        case "timeout":
+          return jsonWith(504, {
+            status: "error",
+            message: `The ${role.label} did not answer within ${Math.round(CLOUD_ROLE_TIMEOUT_MS / 1000)}s.`
+          }, headers)
+        case "aborted":
+          return jsonWith(499, { status: "error", message: "The client disconnected." }, headers)
+        case "unreachable":
+          return jsonWith(502, {
+            status: "error",
+            message: `The ${role.label}'s model service is unreachable: ${answer.message}`
+          }, headers)
+      }
+    }
+    const runId = body.runId
+    if (answer.content.trim() === "") {
+      return ndjson([{ runId, type: "done", reason: "stop", error: `The ${role.label} answered with no text.` }], headers)
+    }
+    return ndjson([
+      { runId, type: "delta", kind: "text", text: answer.content },
+      { runId, type: "done", reason: "stop" }
+    ], headers)
+  })

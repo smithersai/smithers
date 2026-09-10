@@ -1,6 +1,13 @@
 import { publicRepoActivityPath } from "@smthrs/rpc/AgentApiRoutes"
+import * as Clock from "effect/Clock"
+import * as Effect from "effect/Effect"
+import * as PartitionedSemaphore from "effect/PartitionedSemaphore"
+import * as Ref from "effect/Ref"
+import { ServerConfig } from "./Config"
+import { EdgeCache } from "./githubApp"
+import { readJsonOrUndefined, readText, Transport } from "./Http"
 import { AVAILABLE_REPOS, cloudRepoFor } from "./publicRepoCatalog"
-import { createPublicRepositoryReader } from "./publicRepositoryReads"
+import { readPublicRepository } from "./publicRepositoryReads"
 
 /*
  * GET /api/public/repos/<owner>/<name>/activity: one sentence about the last
@@ -10,12 +17,6 @@ import { createPublicRepositoryReader } from "./publicRepositoryReads"
  * feed the mirror cannot answer becomes an honest "not available" clause, never
  * a zero.
  */
-
-interface Dependencies {
-  readonly fetch: (request: Request) => Promise<Response>
-  readonly now: () => number
-  readonly cache: () => Pick<Cache, "match" | "put"> | undefined
-}
 
 export interface PublicRepoActivity {
   readonly sentence: string
@@ -35,6 +36,10 @@ const PAGE_SIZE = 100
 /** Bounds upstream traffic on a cache miss; a window that outruns the bound is reported as unavailable. */
 const MAX_COMMIT_PAGES = 20
 const MAX_LIST_PAGES = 5
+
+/** The cache TTL in seconds: a complete answer, or a short retry when a feed could not be counted. */
+const FULL_TTL = 300
+const RETRY_TTL = 30
 
 const headers = {
   "content-type": "application/json; charset=utf-8",
@@ -116,25 +121,30 @@ export const activitySentence = (counts: PublicRepoActivity["counts"], bookmark:
   return [`In the last 7 days, ${joinClauses(clauses)}.`, ...missing].join(" ")
 }
 
-export const createPublicRepoActivityHandler = (deps: Dependencies) => {
-  const read = createPublicRepositoryReader({ fetch: deps.fetch })
-  const snapshots = new Map<string, { body: string; expiresAt: number }>()
-  const pending = new Map<string, Promise<void>>()
+interface Document {
+  readonly body: unknown
+  readonly response: Response
+}
 
-  /** One mirror document, parsed, or null when the mirror could not answer it. */
-  const document = async (appPath: string, origin: string, base: string): Promise<{ body: unknown; response: Response } | null> => {
-    const response = await read(new URL(appPath, origin), base)
+/** One mirror document, parsed, or null when the mirror could not answer it. */
+const document = (appPath: string, origin: string, base: string): Effect.Effect<Document | null, never, Transport> =>
+  Effect.gen(function*() {
+    const response = yield* readPublicRepository(new URL(appPath, origin), base)
     if (!response.ok) return null
-    const body: unknown = await response.json().catch(() => undefined)
+    const body = yield* readJsonOrUndefined(response)
     return body === undefined ? null : { body, response }
-  }
+  })
 
-  /** Counts `created_at` within the window across a keyset-paginated array feed. */
-  const countCreated = async (appPath: string, origin: string, base: string, since: number): Promise<number | null> => {
+const paged = (appPath: string, cursor: string | undefined): string =>
+  `${appPath}?limit=${PAGE_SIZE}${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`
+
+/** Counts `created_at` within the window across a keyset-paginated array feed. */
+const countCreated = (appPath: string, origin: string, base: string, since: number): Effect.Effect<number | null, never, Transport> =>
+  Effect.gen(function*() {
     let count = 0
     let cursor: string | undefined
     for (let page = 0; page < MAX_LIST_PAGES; page++) {
-      const answer = await document(`${appPath}?limit=${PAGE_SIZE}${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`, origin, base)
+      const answer = yield* document(paged(appPath, cursor), origin, base)
       if (answer === null || !Array.isArray(answer.body)) return null
       let oldestInWindow = true
       for (const item of answer.body) {
@@ -148,19 +158,25 @@ export const createPublicRepoActivityHandler = (deps: Dependencies) => {
     }
     // The window holds more than the bound reads; a partial count would be a lie.
     return null
-  }
+  })
 
-  /**
-   * Commits reachable from the default bookmark's head that were made inside
-   * the window. The mirror's change feed is every visible change in jj index
-   * order (newest first), so the pages are read until one falls entirely
-   * outside the window and the bookmark's ancestry is walked inside them.
-   */
-  const countCommits = async (repo: string, origin: string, base: string, since: number): Promise<{ count: number | null; bookmark: string | null }> => {
-    const [root, refs] = await Promise.all([
+interface CommitCount {
+  readonly count: number | null
+  readonly bookmark: string | null
+}
+
+/**
+ * Commits reachable from the default bookmark's head that were made inside
+ * the window. The mirror's change feed is every visible change in jj index
+ * order (newest first), so the pages are read until one falls entirely
+ * outside the window and the bookmark's ancestry is walked inside them.
+ */
+const countCommits = (repo: string, origin: string, base: string, since: number): Effect.Effect<CommitCount, never, Transport> =>
+  Effect.gen(function*() {
+    const [root, refs] = yield* Effect.all([
       document(`/api/repos/${repo}`, origin, base),
       document(`/api/repos/${repo}/git/refs`, origin, base)
-    ])
+    ], { concurrency: "unbounded" })
     const bookmark = root !== null && isRecord(root.body) && typeof root.body.default_bookmark === "string" && root.body.default_bookmark !== ""
       ? root.body.default_bookmark
       : null
@@ -174,7 +190,7 @@ export const createPublicRepoActivityHandler = (deps: Dependencies) => {
     let cursor: string | undefined
     let exhausted = false
     for (let page = 0; page < MAX_COMMIT_PAGES; page++) {
-      const answer = await document(`/api/repos/${repo}/changes?limit=${PAGE_SIZE}${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`, origin, base)
+      const answer = yield* document(paged(`/api/repos/${repo}/changes`, cursor), origin, base)
       if (answer === null || !isRecord(answer.body) || !Array.isArray(answer.body.items)) return { count: null, bookmark }
       let anyInWindow = false
       for (const item of answer.body.items) {
@@ -208,67 +224,110 @@ export const createPublicRepoActivityHandler = (deps: Dependencies) => {
       }
     }
     return { count, bookmark }
-  }
+  })
 
-  const compute = async (repo: string, origin: string, base: string): Promise<PublicRepoActivity> => {
-    const since = deps.now() - ACTIVITY_WINDOW_MS
-    const [commits, pullRequests, issues] = await Promise.all([
+/** The three feeds, read concurrently, as one sentence. */
+const compute = (repo: string, origin: string, base: string): Effect.Effect<PublicRepoActivity, never, Transport> =>
+  Effect.gen(function*() {
+    const now = yield* Clock.currentTimeMillis
+    const since = now - ACTIVITY_WINDOW_MS
+    const [commits, pullRequests, issues] = yield* Effect.all([
       countCommits(repo, origin, base, since),
       countCreated(`/api/repos/${repo}/landings`, origin, base, since),
       countCreated(`/api/repos/${repo}/issues`, origin, base, since)
-    ])
+    ], { concurrency: "unbounded" })
     const counts = { commits: commits.count, pullRequests, issues }
     return { sentence: activitySentence(counts, commits.bookmark), counts, since: new Date(since).toISOString() }
-  }
+  })
 
-  const refresh = async (repo: string, cacheKey: Request, base: string): Promise<void> => {
-    const cache = deps.cache()
-    const cached = await cache?.match(cacheKey).catch(() => undefined)
-    if (cached) {
-      const ttl = Math.max(0, Number(cached.headers.get("x-activity-expires")) - deps.now()) / 1000
-      if (ttl > 0) {
-        snapshots.set(repo, { body: await cached.text(), expiresAt: deps.now() + ttl * 1000 })
-        return
-      }
-    }
-    const activity = await compute(repo, cacheKey.url, base)
-    // A count the mirror could not answer is retried sooner than a complete answer is kept.
-    const ttl = Object.values(activity.counts).every((count) => count !== null) ? 300 : 30
-    const snapshot = { body: JSON.stringify(activity), expiresAt: deps.now() + ttl * 1000 }
-    snapshots.set(repo, snapshot)
-    await cache?.put(cacheKey, new Response(snapshot.body, {
-      headers: { ...headers, "cache-control": `public, max-age=${ttl}`, "x-activity-expires": String(snapshot.expiresAt) }
-    })).catch(() => undefined)
-  }
-
-  /** `base` is the Smithers Cloud API origin the mirror is read from. */
-  return async (request: Request, base: string): Promise<Response> => {
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers })
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      return new Response(JSON.stringify({ message: "Method not allowed." }), {
-        status: 405, headers: { ...headers, allow: "GET, HEAD, OPTIONS" }
-      })
-    }
-    const name = parsePublicRepoActivityPath(new URL(request.url).pathname)
-    if (name === undefined || cloudRepoFor(name) === undefined) {
-      return new Response(JSON.stringify({ message: "Repository is not in the public catalog." }), { status: 404, headers })
-    }
-    // The catalog's spelling is the cache key, so a mixed-case request shares the answer.
-    const repo = AVAILABLE_REPOS.find((entry) => entry.name.toLowerCase() === name.toLowerCase())!.name
-    const snapshot = snapshots.get(repo)
-    if (snapshot === undefined || snapshot.expiresAt <= deps.now()) {
-      // Query strings and visitor headers never change the public cache key.
-      const key = new Request(new URL(publicRepoActivityPath(repo), request.url))
-      let join = pending.get(repo)
-      if (join === undefined) {
-        join = refresh(repo, key, base).finally(() => { pending.delete(repo) })
-        pending.set(repo, join)
-      }
-      await join
-    }
-    const current = snapshots.get(repo)!
-    return new Response(request.method === "HEAD" ? null : current.body, {
-      headers: { ...headers, "cache-control": `public, max-age=${Math.max(0, Math.ceil((current.expiresAt - deps.now()) / 1000))}` }
-    })
-  }
+interface Snapshot {
+  readonly body: string
+  readonly expiresAt: number
 }
+
+export type PublicRepoActivityHandler = (
+  request: Request
+) => Effect.Effect<Response, never, Transport | ServerConfig | EdgeCache>
+
+/**
+ * An activity handler with its own per-repository snapshots and in-flight
+ * gates: the isolate's copy. `handlePublicRepoActivity` is the deployed one; a
+ * test builds its own to play two isolates over one edge cache. The Cloud
+ * origin the mirror is read from is `ServerConfig.cloudApiBaseUrl`.
+ */
+export const makePublicRepoActivityHandler = (): PublicRepoActivityHandler => {
+  const snapshots = Ref.makeUnsafe(new Map<string, Snapshot>())
+  const gates = PartitionedSemaphore.makeUnsafe<string>({ permits: 1 })
+
+  const snapshotOf = (repo: string) => Effect.map(Ref.get(snapshots), (all) => all.get(repo))
+
+  const stale = (repo: string) =>
+    Effect.gen(function*() {
+      const current = yield* snapshotOf(repo)
+      const now = yield* Clock.currentTimeMillis
+      return current === undefined || current.expiresAt <= now
+    })
+
+  const remember = (repo: string, snapshot: Snapshot) =>
+    Ref.update(snapshots, (all) => new Map(all).set(repo, snapshot))
+
+  const refresh = (repo: string, cacheKey: string, base: string): Effect.Effect<void, never, Transport | EdgeCache> =>
+    Effect.gen(function*() {
+      const edge = yield* EdgeCache
+      const cached = yield* edge.match(cacheKey)
+      if (cached !== undefined) {
+        const now = yield* Clock.currentTimeMillis
+        const ttl = Math.max(0, Number(cached.headers.get("x-activity-expires")) - now) / 1000
+        if (ttl > 0) {
+          const body = yield* readText(cached).pipe(Effect.orElseSucceed(() => undefined))
+          if (body !== undefined) {
+            yield* remember(repo, { body, expiresAt: now + ttl * 1000 })
+            return
+          }
+        }
+      }
+      const activity = yield* compute(repo, cacheKey, base)
+      // A count the mirror could not answer is retried sooner than a complete answer is kept.
+      const ttl = Object.values(activity.counts).every((count) => count !== null) ? FULL_TTL : RETRY_TTL
+      const now = yield* Clock.currentTimeMillis
+      const snapshot: Snapshot = { body: JSON.stringify(activity), expiresAt: now + ttl * 1000 }
+      yield* remember(repo, snapshot)
+      yield* edge.put(cacheKey, new Response(snapshot.body, {
+        headers: { ...headers, "cache-control": `public, max-age=${ttl}`, "x-activity-expires": String(snapshot.expiresAt) }
+      }))
+    })
+
+  return (request) =>
+    Effect.gen(function*() {
+      if (request.method === "OPTIONS") return new Response(null, { status: 204, headers })
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response(JSON.stringify({ message: "Method not allowed." }), {
+          status: 405, headers: { ...headers, allow: "GET, HEAD, OPTIONS" }
+        })
+      }
+      const name = parsePublicRepoActivityPath(new URL(request.url).pathname)
+      if (name === undefined || cloudRepoFor(name) === undefined) {
+        return new Response(JSON.stringify({ message: "Repository is not in the public catalog." }), { status: 404, headers })
+      }
+      // The catalog's spelling is the cache key, so a mixed-case request shares the answer.
+      const repo = AVAILABLE_REPOS.find((entry) => entry.name.toLowerCase() === name.toLowerCase())!.name
+      if (yield* stale(repo)) {
+        const config = yield* ServerConfig
+        // Query strings and visitor headers never change the public cache key.
+        const key = new URL(publicRepoActivityPath(repo), request.url).href
+        // Concurrent readers of one repository queue behind one refresh; a
+        // reader that waited finds the snapshot fresh and never refreshes again.
+        yield* gates.withPermit(repo)(Effect.gen(function*() {
+          if (yield* stale(repo)) yield* refresh(repo, key, config.cloudApiBaseUrl)
+        }))
+      }
+      const current = (yield* snapshotOf(repo))!
+      const now = yield* Clock.currentTimeMillis
+      return new Response(request.method === "HEAD" ? null : current.body, {
+        headers: { ...headers, "cache-control": `public, max-age=${Math.max(0, Math.ceil((current.expiresAt - now) / 1000))}` }
+      })
+    })
+}
+
+/** The deployed activity route: one set of snapshots per isolate. */
+export const handlePublicRepoActivity: PublicRepoActivityHandler = makePublicRepoActivityHandler()

@@ -1,22 +1,31 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
+import * as Clock from "effect/Clock"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
 import {
-  appendClientError,
   bounded,
   capRecord,
   CLIENT_ERROR_LOG_LIMIT,
   CLIENT_ERROR_LOG_MAX_BYTES,
+  CLIENT_ERROR_LOG_NAME,
+  CLIENT_ERROR_LOG_UNAVAILABLE_NOTE,
   CLIENT_ERROR_RECORD_MAX_BYTES,
+  CLIENT_ERROR_SOURCE_HEADER,
   CLIENT_ERROR_SOURCE_WINDOW_MAX,
   CLIENT_ERROR_TEXT_MAX_BYTES,
+  CLIENT_ERROR_UNKNOWN_SOURCE,
   CLIENT_ERROR_WINDOW_MAX,
   CLIENT_ERROR_WINDOW_MS,
   ClientErrorLog,
-  readClientErrors
+  clientErrorLogRequest,
+  ClientErrors,
+  clientErrorsLayer,
+  clientErrorThrottleLayer,
+  makeClientErrorThrottle
 } from "./clientErrorLog"
-import type { ClientErrorNamespace, ClientErrorRecord, ClientErrorStorage } from "./clientErrorLog"
-import worker from "./index"
-import type { WorkerEnv } from "./index"
-import { memoryDurableObjects } from "./memoryDurableObjects"
+import type { ClientErrorAppendOutcome, ClientErrorPage, ClientErrorRecord } from "./clientErrorLog"
+import { memoryStorage, storageLayer } from "./DurableStorage"
+import type { NativeNamespace } from "./DurableStorage"
 
 /*
  * What broke in a user's browser has to survive longer than a `wrangler tail`.
@@ -24,21 +33,25 @@ import { memoryDurableObjects } from "./memoryDurableObjects"
  * able to fail the report it is recording.
  */
 
-const memoryStorage = (): ClientErrorStorage => {
-  const data = new Map<string, unknown>()
-  return {
-    get: async (key) => data.get(key) as never,
-    put: async (key, value) => void data.set(key, value)
-  }
-}
+/** A clock that answers `now()`; the throttle window is the only thing that reads it. */
+const clockOf = (now: () => number): Clock.Clock => ({
+  currentTimeMillisUnsafe: now,
+  currentTimeMillis: Effect.sync(now),
+  currentTimeNanosUnsafe: () => BigInt(now()) * 1_000_000n,
+  currentTimeNanos: Effect.sync(() => BigInt(now()) * 1_000_000n),
+  monotonicTimeNanosUnsafe: () => BigInt(now()) * 1_000_000n,
+  monotonicTimeNanos: Effect.sync(() => BigInt(now()) * 1_000_000n),
+  sleep: () => Effect.void
+})
 
 /**
  * A log with an injectable clock. The throttle window is the Durable Object's,
  * so a test that wants to feed the ring more than one window's worth of
- * reports advances the clock; a test of the throttle freezes it.
+ * reports advances the clock; a test of the throttle freezes it. Without a
+ * clock the native class (and the live clock) answers, as in production.
  */
-const memoryLog = (now: () => number = Date.now): ClientErrorNamespace & { readonly names: () => Array<string> } => {
-  const logs = new Map<string, ClientErrorLog>()
+const memoryLog = (now?: () => number): NativeNamespace & { readonly names: () => Array<string> } => {
+  const logs = new Map<string, (request: Request) => Promise<Response>>()
   return {
     names: () => [...logs.keys()],
     idFromName: (name) => name,
@@ -46,57 +59,34 @@ const memoryLog = (now: () => number = Date.now): ClientErrorNamespace & { reado
       const name = String(id)
       let log = logs.get(name)
       if (log === undefined) {
-        log = new ClientErrorLog({ storage: memoryStorage(), now })
+        if (now === undefined) {
+          const object = new ClientErrorLog({ storage: memoryStorage() })
+          log = (request) => object.fetch(request)
+        } else {
+          const layers = Layer.mergeAll(storageLayer(memoryStorage()), clientErrorThrottleLayer(makeClientErrorThrottle()))
+          log = (request) =>
+            Effect.runPromise(
+              clientErrorLogRequest(request).pipe(Effect.provide(layers), Effect.provideService(Clock.Clock, clockOf(now)))
+            )
+        }
         logs.set(name, log)
       }
-      return { fetch: (request) => log.fetch(request) }
+      return { fetch: log }
     }
   }
 }
 
-/** Every read is a new throttle window: the ring alone is under test. */
+/** Every append is a new throttle window: the ring alone is under test. */
 const unthrottled = (): (() => number) => {
   let tick = 0
   return () => (tick += CLIENT_ERROR_WINDOW_MS + 1)
 }
 
-const adminEnv = (logs?: ClientErrorNamespace): WorkerEnv => ({
-  ...memoryDurableObjects(),
-  ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
-  IDENTITY_UPSTREAM_URL: "https://identity.test",
-  ...(logs === undefined ? {} : { CLIENT_ERRORS: logs })
-})
+const appendClientError = (logs: NativeNamespace | undefined, record: ClientErrorRecord, source?: string): Promise<ClientErrorAppendOutcome> =>
+  Effect.runPromise(ClientErrors.use((service) => service.append(record, source)).pipe(Effect.provide(clientErrorsLayer(logs))))
 
-const withIdentity = async (
-  session: { readonly login: string; readonly admin: boolean } | undefined,
-  run: () => Promise<void>
-): Promise<void> => {
-  const original = globalThis.fetch
-  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-    const request = typeof input === "string" ? new Request(input, init) : (input as Request)
-    if (new URL(request.url).hostname === "identity.test") {
-      return session === undefined
-        ? new Response("{}", { status: 401 })
-        : new Response(JSON.stringify({ ...session, allowlisted: true }), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        })
-    }
-    return new Response("{}", { status: 200 })
-  }) as typeof fetch
-  try {
-    await run()
-  } finally {
-    globalThis.fetch = original
-  }
-}
-
-const report = (path: string, body: unknown, headers: Record<string, string> = {}): Request =>
-  new Request(`https://mvp.test${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...headers },
-    body: JSON.stringify(body)
-  })
+const readClientErrors = (logs: NativeNamespace | undefined, limit?: number): Promise<ClientErrorPage> =>
+  Effect.runPromise(ClientErrors.use((service) => service.page(limit)).pipe(Effect.provide(clientErrorsLayer(logs))))
 
 describe("the client-error log (Durable Object state)", () => {
   test("keeps reports newest first", async () => {
@@ -106,6 +96,9 @@ describe("the client-error log (Durable Object state)", () => {
     const read = await readClientErrors(logs)
     expect(read.total).toBe(2)
     expect(read.reports.map((row) => (row.report as { message: string }).message)).toEqual(["second", "first"])
+    // `read` is the same list without the total.
+    const reports = await Effect.runPromise(ClientErrors.use((service) => service.read()).pipe(Effect.provide(clientErrorsLayer(logs))))
+    expect(reports).toEqual(read.reports)
   })
 
   test("is bounded: an error storm evicts the oldest, never the newest", async () => {
@@ -172,162 +165,118 @@ describe("the client-error log (Durable Object state)", () => {
     expect(trace.slice(0, 4)).toEqual(["get", "put", "get", "put"])
   })
 
+  test("a body that is not a record is 400 and an unknown path 404", async () => {
+    const log = new ClientErrorLog({ storage: memoryStorage() })
+    const bad = await log.fetch(new Request("https://client-errors.internal/append", { method: "POST", body: "not json" }))
+    expect(bad.status).toBe(400)
+    const shapeless = await log.fetch(new Request("https://client-errors.internal/append", { method: "POST", body: "null" }))
+    expect(shapeless.status).toBe(400)
+    expect((await log.fetch(new Request("https://client-errors.internal/nope"))).status).toBe(404)
+  })
+
   test("a limit trims the read and never exceeds what is kept", async () => {
     const logs = memoryLog()
     for (let index = 0; index < 10; index += 1) {
       await appendClientError(logs, { at: new Date(index).toISOString(), report: { index } })
     }
     expect((await readClientErrors(logs, 3)).reports).toHaveLength(3)
+    expect((await readClientErrors(logs, 3)).total).toBe(10)
     expect((await readClientErrors(logs, 10_000)).reports).toHaveLength(10)
   })
 
   test("with no namespace bound, appending is a no-op and the read is honestly empty", async () => {
-    await appendClientError(undefined, { at: "2026-08-18T00:00:00.000Z", report: {} })
+    expect(await appendClientError(undefined, { at: "2026-08-18T00:00:00.000Z", report: {} })).toBe("unbound")
     expect(await readClientErrors(undefined)).toEqual({ total: 0, reports: [] })
   })
 
-  test("a failing log never fails the report", async () => {
-    const broken: ClientErrorNamespace = {
+  test("a failing log never fails the report, and a rejected read is an empty log with an unavailable note", async () => {
+    const cause = new Error("durable object unavailable")
+    const broken: NativeNamespace = {
       idFromName: (name) => name,
       get: () => ({
         fetch: async () => {
-          throw new Error("durable object unavailable")
+          throw cause
         }
       })
     }
-    await appendClientError(broken, { at: "2026-08-18T00:00:00.000Z", report: {} })
-  })
-})
-
-describe("the client-error route and its admin read", () => {
-  test("a posted error is stored with when it arrived, the page, and the agent", async () => {
-    const logs = memoryLog()
-    const env = adminEnv(logs)
-    const response = await worker.fetch(
-      report(
-        "/api/client-errors",
-        { message: "Cannot read properties of undefined", stack: "at App" },
-        { referer: "https://canary.smithers.sh/", "user-agent": "TestBrowser/1.0" }
-      ),
-      env
-    )
-    expect(response.status).toBe(202)
-    const stored = await readClientErrors(logs)
-    expect(stored.total).toBe(1)
-    expect(stored.reports[0]?.page).toBe("https://canary.smithers.sh/")
-    expect(stored.reports[0]?.userAgent).toBe("TestBrowser/1.0")
-    expect((stored.reports[0]?.report as { message: string }).message).toBe(
-      "Cannot read properties of undefined"
-    )
-    expect(Date.parse(stored.reports[0]?.at ?? "")).toBeGreaterThan(0)
+    expect(await appendClientError(broken, { at: "2026-08-18T00:00:00.000Z", report: {} })).toBe("failed")
+    const logged = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect(await readClientErrors(broken)).toEqual({ total: 0, reports: [], note: CLIENT_ERROR_LOG_UNAVAILABLE_NOTE })
+      expect(CLIENT_ERROR_LOG_UNAVAILABLE_NOTE).toBe("The client-error log is unavailable right now. Try again in a moment.")
+      expect(logged).toHaveBeenCalledWith("client-error log read failed:", cause)
+    } finally {
+      logged.mockRestore()
+    }
   })
 
-  test("a report that is not JSON is kept verbatim rather than dropped", async () => {
-    const logs = memoryLog()
-    const response = await worker.fetch(
-      new Request("https://mvp.test/api/client-errors", { method: "POST", body: "boom, not json" }),
-      adminEnv(logs)
-    )
-    expect(response.status).toBe(202)
-    expect((await readClientErrors(logs)).reports[0]?.report).toBe("boom, not json")
+  test("a log that refuses a read is logged with its status and body, and the read is honestly unavailable", async () => {
+    const refusing: NativeNamespace = {
+      idFromName: (name) => name,
+      get: () => ({ fetch: async () => new Response("storage is sealed", { status: 500 }) })
+    }
+    const logged = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect(await readClientErrors(refusing)).toEqual({ total: 0, reports: [], note: CLIENT_ERROR_LOG_UNAVAILABLE_NOTE })
+      expect(logged).toHaveBeenCalledTimes(1)
+      expect((logged.mock.calls[0]![1] as Error).message).toBe("The client-error log answered HTTP 500: storage is sealed")
+    } finally {
+      logged.mockRestore()
+    }
   })
 
-  test("an over-cap report is refused before the whole body is read", async () => {
-    const logs = memoryLog()
-    // A declared content-length over the 16 KiB cap: refused up front.
-    const declared = await worker.fetch(
-      new Request("https://mvp.test/api/client-errors", {
-        method: "POST",
-        headers: { "content-length": String(17 * 1024) },
-        body: "x".repeat(17 * 1024)
-      }),
-      adminEnv(logs)
-    )
-    expect(declared.status).toBe(413)
-    // A chunked body declares no length: the read stops at the cap instead.
-    let cancelled = false
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new Uint8Array(10 * 1024))
-        controller.enqueue(new Uint8Array(10 * 1024))
-      },
-      cancel() {
-        cancelled = true
+  test("a storage failure inside the object is its own 500, which the report survives", async () => {
+    const log = new ClientErrorLog({
+      storage: {
+        get: async () => {
+          throw new Error("storage unavailable")
+        },
+        put: async () => {}
       }
     })
-    const streamed = await worker.fetch(
-      new Request("https://mvp.test/api/client-errors", { method: "POST", body }),
-      adminEnv(logs)
+    const response = await log.fetch(
+      new Request("https://client-errors.internal/append", {
+        method: "POST",
+        body: JSON.stringify({ at: "2026-08-18T00:00:00.000Z", report: {} })
+      })
     )
-    expect(streamed.status).toBe(413)
-    expect(cancelled).toBe(true)
-    expect((await readClientErrors(logs)).total).toBe(0)
+    expect(response.status).toBe(500)
+    const failing: NativeNamespace = { idFromName: (name) => name, get: () => ({ fetch: (request) => log.fetch(request) }) }
+    expect(await appendClientError(failing, { at: "2026-08-18T00:00:00.000Z", report: {} })).toBe("failed")
+  })
+
+  test("a stored report answers \"stored\"", async () => {
+    expect(await appendClientError(memoryLog(), { at: "2026-08-18T00:00:00.000Z", report: {} })).toBe("stored")
   })
 
   test("every deployment writes to one log, so any request finds every report", async () => {
     const logs = memoryLog()
-    await worker.fetch(report("/api/client-errors", { message: "a" }), adminEnv(logs))
-    await worker.fetch(report("/api/client-errors", { message: "b" }), adminEnv(logs))
-    expect(logs.names()).toEqual(["client-errors"])
+    await appendClientError(logs, { at: "2026-08-18T00:00:00.000Z", report: { message: "a" } })
+    await appendClientError(logs, { at: "2026-08-18T00:00:01.000Z", report: { message: "b" } })
+    expect(logs.names()).toEqual([CLIENT_ERROR_LOG_NAME])
+    expect(CLIENT_ERROR_LOG_NAME).toBe("client-errors")
   })
 
-  test("the admin read answers the log, newest first", async () => {
+  test("a record keeps when it arrived, the page, and the agent", async () => {
     const logs = memoryLog()
-    const env = adminEnv(logs)
-    await withIdentity({ login: "will", admin: true }, async () => {
-      await worker.fetch(report("/api/client-errors", { message: "older" }), env)
-      await worker.fetch(report("/api/client-errors", { message: "newer" }), env)
-      const response = await worker.fetch(
-        new Request("https://mvp.test/api/admin/errors", { headers: { cookie: "smithers_session=abc" } }),
-        env
-      )
-      expect(response.status).toBe(200)
-      const body = (await response.json()) as {
-        total: number
-        reports: Array<{ report: { message: string } }>
-      }
-      expect(body.total).toBe(2)
-      expect(body.reports.map((row) => row.report.message)).toEqual(["newer", "older"])
+    await appendClientError(logs, {
+      at: "2026-08-18T00:00:00.000Z",
+      page: "https://canary.smithers.sh/",
+      userAgent: "TestBrowser/1.0",
+      report: { message: "Cannot read properties of undefined", stack: "at App" }
     })
+    const stored = await readClientErrors(logs)
+    expect(stored.total).toBe(1)
+    expect(stored.reports[0]?.page).toBe("https://canary.smithers.sh/")
+    expect(stored.reports[0]?.userAgent).toBe("TestBrowser/1.0")
+    expect((stored.reports[0]?.report as { message: string }).message).toBe("Cannot read properties of undefined")
+    expect(Date.parse(stored.reports[0]?.at ?? "")).toBeGreaterThan(0)
   })
 
-  test("a non-admin gets the canonical unknown-route 404, never a 403", async () => {
-    const env = adminEnv(memoryLog())
-    await withIdentity({ login: "someone", admin: false }, async () => {
-      const response = await worker.fetch(
-        new Request("https://mvp.test/api/admin/errors", { headers: { cookie: "smithers_session=abc" } }),
-        env
-      )
-      expect(response.status).toBe(404)
-      const unknown = await worker.fetch(
-        new Request("https://mvp.test/api/definitely-not-a-route", {
-          headers: { cookie: "smithers_session=abc" }
-        }),
-        env
-      )
-      expect(await response.text()).toBe(await unknown.text())
-    })
-  })
-
-  test("an anonymous read is the same 404", async () => {
-    const env = adminEnv(memoryLog())
-    await withIdentity(undefined, async () => {
-      const response = await worker.fetch(new Request("https://mvp.test/api/admin/errors"), env)
-      expect(response.status).toBe(404)
-    })
-  })
-
-  test("with no log bound the admin read says so instead of implying nothing broke", async () => {
-    const env = adminEnv()
-    await withIdentity({ login: "will", admin: true }, async () => {
-      const response = await worker.fetch(
-        new Request("https://mvp.test/api/admin/errors", { headers: { cookie: "smithers_session=abc" } }),
-        env
-      )
-      const body = (await response.json()) as { total: number; note?: string }
-      expect(body.total).toBe(0)
-      expect(body.note).toContain("nothing is stored")
-    })
+  test("a report that is not JSON is kept verbatim as text", async () => {
+    const logs = memoryLog()
+    await appendClientError(logs, { at: "2026-08-18T00:00:00.000Z", report: "boom, not json" })
+    expect((await readClientErrors(logs)).reports[0]?.report).toBe("boom, not json")
   })
 })
 
@@ -423,21 +372,22 @@ describe("the byte bound counts bytes, not characters", () => {
  * flood and the log is the throttle, and a per-isolate counter is no throttle
  * at all — workerd runs many isolates. The log's own Durable Object is the one
  * authority, and it keeps a signed-in user's report out of an anonymous
- * flood's reach.
+ * flood's reach. The source a report counts against is the router's to name
+ * (the client address, one IPv6 /64 per bucket); here it is the header.
  */
 describe("the client-error throttle is the log's, not the isolate's", () => {
   const frozen = (): (() => number) => () => 1_700_000_000_000
-  const anonymous = (index: number, chars = 3_500): Request =>
-    report("/api/client-errors", { message: "x".repeat(chars), index }, { "cf-connecting-ip": `203.0.113.${index}` })
-  const signedIn = (message: string): Request =>
-    report("/api/client-errors", { message }, { cookie: "smithers_session=abc", "cf-connecting-ip": "198.51.100.9" })
+  const anonymous = (index: number, chars = 3_500): ClientErrorRecord => ({
+    at: new Date(index).toISOString(),
+    report: { message: "x".repeat(chars), index }
+  })
+  const signedIn = (message: string): ClientErrorRecord => ({ at: "2026-08-18T00:00:00.000Z", signedIn: true, report: { message } })
 
   test("one genuine report survives 40 anonymous 4 KiB reports in one window", async () => {
     const logs = memoryLog(frozen())
-    const env = adminEnv(logs)
-    expect((await worker.fetch(signedIn("the real crash"), env)).status).toBe(202)
+    expect(await appendClientError(logs, signedIn("the real crash"), "198.51.100.9")).toBe("stored")
     for (let index = 0; index < 40; index += 1) {
-      expect((await worker.fetch(anonymous(index), env)).status).toBe(202)
+      expect(await appendClientError(logs, anonymous(index), `203.0.113.${index}`)).toBe("stored")
     }
     const read = await readClientErrors(logs)
     expect(new TextEncoder().encode(JSON.stringify(read.reports)).length).toBeLessThanOrEqual(CLIENT_ERROR_LOG_MAX_BYTES)
@@ -449,7 +399,7 @@ describe("the client-error throttle is the log's, not the isolate's", () => {
 
   test("a signed-in report is never evicted by anonymous noise, however much arrives", async () => {
     const logs = memoryLog(unthrottled())
-    await appendClientError(logs, { at: "2026-08-18T00:00:00.000Z", signedIn: true, report: { message: "mine" } })
+    await appendClientError(logs, signedIn("mine"))
     for (let index = 0; index < CLIENT_ERROR_LOG_LIMIT + 50; index += 1) {
       await appendClientError(logs, { at: new Date(index + 1).toISOString(), report: { message: "x".repeat(3_500) } })
     }
@@ -461,40 +411,51 @@ describe("the client-error throttle is the log's, not the isolate's", () => {
 
   test("one source is capped inside the window, and other sources are not", async () => {
     const logs = memoryLog(frozen())
-    const env = adminEnv(logs)
-    const flood = (index: number): Request =>
-      report("/api/client-errors", { index }, { "cf-connecting-ip": "203.0.113.7" })
     for (let index = 0; index < CLIENT_ERROR_SOURCE_WINDOW_MAX; index += 1) {
-      expect((await worker.fetch(flood(index), env)).status).toBe(202)
+      expect(await appendClientError(logs, anonymous(index, 10), "203.0.113.7")).toBe("stored")
     }
-    const refused = await worker.fetch(flood(CLIENT_ERROR_SOURCE_WINDOW_MAX), env)
-    expect(refused.status).toBe(429)
-    expect((await worker.fetch(anonymous(1, 10), env)).status).toBe(202)
+    expect(await appendClientError(logs, anonymous(CLIENT_ERROR_SOURCE_WINDOW_MAX, 10), "203.0.113.7")).toBe("throttled")
+    expect(await appendClientError(logs, anonymous(1, 10), "203.0.113.1")).toBe("stored")
     expect((await readClientErrors(logs)).total).toBe(CLIENT_ERROR_SOURCE_WINDOW_MAX + 1)
+  })
+
+  test("a report with no source counts against the unknown source", async () => {
+    const logs = memoryLog(frozen())
+    for (let index = 0; index < CLIENT_ERROR_SOURCE_WINDOW_MAX; index += 1) {
+      expect(await appendClientError(logs, anonymous(index, 10))).toBe("stored")
+    }
+    expect(await appendClientError(logs, anonymous(0, 10))).toBe("throttled")
+    expect(await appendClientError(logs, anonymous(0, 10), CLIENT_ERROR_UNKNOWN_SOURCE)).toBe("throttled")
+    expect(CLIENT_ERROR_SOURCE_HEADER).toBe("x-client-error-source")
   })
 
   test("the window ceiling is global across sources, and a new window opens it again", async () => {
     let now = 1_700_000_000_000
     const logs = memoryLog(() => now)
-    const env = adminEnv(logs)
     for (let index = 0; index < CLIENT_ERROR_WINDOW_MAX; index += 1) {
-      expect((await worker.fetch(anonymous(index % 250, 10), env)).status).toBe(202)
+      expect(await appendClientError(logs, anonymous(index, 10), `203.0.113.${index % 250}`)).toBe("stored")
     }
-    expect((await worker.fetch(anonymous(251, 10), env)).status).toBe(429)
-    expect((await worker.fetch(signedIn("also refused: the ceiling is the ceiling"), env)).status).toBe(429)
+    expect(await appendClientError(logs, anonymous(251, 10), "203.0.113.251")).toBe("throttled")
+    expect(await appendClientError(logs, signedIn("also refused: the ceiling is the ceiling"), "198.51.100.9")).toBe("throttled")
     now += CLIENT_ERROR_WINDOW_MS + 1
-    expect((await worker.fetch(anonymous(251, 10), env)).status).toBe(202)
+    expect(await appendClientError(logs, anonymous(251, 10), "203.0.113.251")).toBe("stored")
   })
 
-  test("an IPv6 visitor's /64 is one source", async () => {
+  test("the object answers a throttled append with 429 in its own words", async () => {
     const logs = memoryLog(frozen())
-    const env = adminEnv(logs)
-    for (let index = 0; index < CLIENT_ERROR_SOURCE_WINDOW_MAX; index += 1) {
-      const ip = `2001:db8:0:0:${index.toString(16)}::1`
-      expect((await worker.fetch(report("/api/client-errors", { index }, { "cf-connecting-ip": ip }), env)).status).toBe(202)
-    }
-    const response = await worker.fetch(report("/api/client-errors", {}, { "cf-connecting-ip": "2001:db8::ffff" }), env)
-    expect(response.status).toBe(429)
+    const stub = logs.get(logs.idFromName(CLIENT_ERROR_LOG_NAME))
+    const append = () =>
+      stub.fetch(
+        new Request("https://client-errors.internal/append", {
+          method: "POST",
+          headers: { [CLIENT_ERROR_SOURCE_HEADER]: "203.0.113.7" },
+          body: JSON.stringify(anonymous(0, 10))
+        })
+      )
+    for (let index = 0; index < CLIENT_ERROR_SOURCE_WINDOW_MAX; index += 1) expect((await append()).status).toBe(200)
+    const refused = await append()
+    expect(refused.status).toBe(429)
+    expect(await refused.json()).toEqual({ status: "throttled" })
   })
 
   test("the page and the user agent are capped, so a record cannot outgrow its budget through its headers", () => {

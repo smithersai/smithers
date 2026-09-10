@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import worker from "./index"
-import { memoryDurableObjects } from "./memoryDurableObjects"
 import type { WorkerEnv } from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 
 const context: AgentRuntimeContext = {
   version: 1,

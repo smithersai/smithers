@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import worker from "./index"
-import { ACTIVITY_WINDOW_MS, activitySentence, createPublicRepoActivityHandler, parsePublicRepoActivityPath } from "./publicRepoActivity"
+import * as Clock from "effect/Clock"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as ManagedRuntime from "effect/ManagedRuntime"
+import { configLayer } from "./Config"
+import { EdgeCache, memoryEdgeCache } from "./githubApp"
+import type { EdgeCacheShape } from "./githubApp"
+import { transportLayer } from "./Http"
+import type { FetchImplementation } from "./Http"
+import { ACTIVITY_WINDOW_MS, activitySentence, makePublicRepoActivityHandler, parsePublicRepoActivityPath } from "./publicRepoActivity"
 import type { PublicRepoActivity } from "./publicRepoActivity"
 
 const NOW = Date.parse("2026-09-07T12:00:00Z")
@@ -54,25 +62,63 @@ const mirror = () => {
 
 type Answer = (path: string, url: URL) => Response | undefined
 
-const harness = (answer?: Answer, documents: Record<string, unknown> = mirror().documents) => {
-  let now = NOW
+/** A clock the test moves by hand; sleeps (deadlines) still run on the real timer. */
+const testClock = (start: number) => {
+  let now = start
+  const real = Clock.Clock.defaultValue()
+  const clock: Clock.Clock = {
+    currentTimeMillisUnsafe: () => now,
+    currentTimeMillis: Effect.sync(() => now),
+    currentTimeNanosUnsafe: () => BigInt(now) * 1_000_000n,
+    currentTimeNanos: Effect.sync(() => BigInt(now) * 1_000_000n),
+    monotonicTimeNanosUnsafe: () => real.monotonicTimeNanosUnsafe(),
+    monotonicTimeNanos: real.monotonicTimeNanos,
+    sleep: (duration) => real.sleep(duration)
+  }
+  return { clock, advance: (ms: number) => { now += ms } }
+}
+
+const ACTIVITY_PATH = "/api/public/repos/smithersai/smithers/activity"
+
+/**
+ * One Worker isolate: an activity handler over an injected transport (the
+ * mirror), the configured Cloud origin, an edge cache, and a clock.
+ */
+const harness = (answer?: Answer, documents: Record<string, unknown> = mirror().documents, edge: EdgeCacheShape = memoryEdgeCache()) => {
+  const { clock, advance } = testClock(NOW)
   const requests: Array<Request> = []
-  const handler = createPublicRepoActivityHandler({
-    fetch: async (request) => {
-      requests.push(request)
-      const url = new URL(request.url)
-      if (!url.href.startsWith(MIRROR)) return Response.json({ message: "not the mirror" }, { status: 404 })
-      const path = url.pathname.slice(new URL(MIRROR).pathname.length)
-      const custom = answer?.(path, url)
-      if (custom !== undefined) return custom
-      return path in documents ? Response.json(documents[path]) : Response.json({ message: "not found" }, { status: 404 })
+  const fetchImpl: FetchImplementation = async (input, init) => {
+    const request = new Request(input, init)
+    requests.push(request)
+    const url = new URL(request.url)
+    if (!url.href.startsWith(MIRROR)) return Response.json({ message: "not the mirror" }, { status: 404 })
+    const path = url.pathname.slice(new URL(MIRROR).pathname.length)
+    const custom = answer?.(path, url)
+    if (custom !== undefined) return custom
+    return path in documents ? Response.json(documents[path]) : Response.json({ message: "not found" }, { status: 404 })
+  }
+  const runtime = ManagedRuntime.make(Layer.mergeAll(
+    transportLayer(fetchImpl),
+    configLayer({ SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" }),
+    Layer.succeed(EdgeCache, edge),
+    Layer.succeed(Clock.Clock, clock)
+  ))
+  const handler = makePublicRepoActivityHandler()
+  const toRequest = (path = ACTIVITY_PATH, init?: RequestInit) =>
+    new Request(`https://app.test${path}`, { headers: { origin: "https://smithers.sh", cookie: "session=private" }, ...init })
+  return {
+    request: (path?: string, init?: RequestInit) => runtime.runPromise(handler(toRequest(path, init))),
+    /** N concurrent readers of this isolate, as N fibers. */
+    concurrently: (paths: ReadonlyArray<string>) =>
+      runtime.runPromise(Effect.all(paths.map((path) => handler(toRequest(path))), { concurrency: "unbounded" })),
+    /** Another isolate over the same mirror, edge cache, and clock. */
+    coldIsolate: () => {
+      const cold = makePublicRepoActivityHandler()
+      return (path?: string) => runtime.runPromise(cold(toRequest(path)))
     },
-    now: () => now,
-    cache: () => undefined
-  })
-  const request = (path = "/api/public/repos/smithersai/smithers/activity", init?: RequestInit) =>
-    handler(new Request(`https://app.test${path}`, { headers: { origin: "https://smithers.sh", cookie: "session=private" }, ...init }), "https://cloud.test")
-  return { handler, request, requests, advance: (ms: number) => { now += ms } }
+    requests,
+    advance
+  }
 }
 
 describe("the activity sentence", () => {
@@ -97,7 +143,7 @@ describe("the activity sentence", () => {
   test("is one sentence, no em dashes, deterministic for equal counts", () => {
     const first = activitySentence({ commits: 7, pullRequests: 2, issues: 1 }, "main")
     expect(first).toBe(activitySentence({ commits: 7, pullRequests: 2, issues: 1 }, "main"))
-    expect(first).not.toContain("\u2014")
+    expect(first).not.toContain("—")
   })
 })
 
@@ -121,7 +167,7 @@ describe("GET /api/public/repos/<owner>/<name>/activity", () => {
       counts: { commits: 12, pullRequests: 3, issues: 5 },
       since: new Date(NOW - ACTIVITY_WINDOW_MS).toISOString()
     })
-    // Every read is the credential-free mirror read; GitHub is never called.
+    // Every read is the credential-free mirror read at the configured Cloud origin; GitHub is never called.
     expect(requests.length).toBeGreaterThan(0)
     for (const upstream of requests) {
       expect(upstream.url.startsWith(MIRROR)).toBe(true)
@@ -152,6 +198,16 @@ describe("GET /api/public/repos/<owner>/<name>/activity", () => {
     const { request } = harness(undefined, { ...mirror().documents, "": { default_bookmark: "" } })
     expect(((await (await request()).json()) as PublicRepoActivity).sentence)
       .toBe("In the last 7 days, 3 pull requests were opened and 5 issues were filed. Commit activity is not available.")
+  })
+
+  test("a mirror that answers nothing is the honest empty sentence", async () => {
+    const { request, requests } = harness(() => Response.json({ message: "not found" }, { status: 404 }))
+    const response = await request()
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("public, max-age=30")
+    expect(((await response.json()) as PublicRepoActivity).sentence).toBe("Recent activity is not available.")
+    expect(requests.length).toBeGreaterThan(0)
+    expect(requests.every((upstream) => upstream.url.startsWith(MIRROR))).toBe(true)
   })
 
   test("follows the mirror's next link until a page falls outside the window, and stops at the bound", async () => {
@@ -192,8 +248,9 @@ describe("GET /api/public/repos/<owner>/<name>/activity", () => {
   })
 
   test("a cache hit skips the upstream for five minutes and joins concurrent reads", async () => {
-    const { request, requests, advance } = harness()
-    await Promise.all([request(), request("/api/public/repos/SmithersAI/Smithers/activity"), request("/api/public/repos/smithersai/smithers/activity?bust=1")])
+    const { request, concurrently, requests, advance } = harness()
+    const responses = await concurrently([ACTIVITY_PATH, "/api/public/repos/SmithersAI/Smithers/activity", `${ACTIVITY_PATH}?bust=1`])
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200])
     const first = requests.length
     expect(first).toBe(5)
     advance(299_000)
@@ -205,32 +262,16 @@ describe("GET /api/public/repos/<owner>/<name>/activity", () => {
   })
 
   test("the edge cache is reusable across Worker instances and expires", async () => {
-    const records = new Map<string, Response>()
-    const cache = {
-      match: async (req: RequestInfo | URL) => records.get((req as Request).url)?.clone(),
-      put: async (req: RequestInfo | URL, response: Response) => { records.set((req as Request).url, response.clone()) }
-    }
-    const { documents } = mirror()
-    let calls = 0
-    let now = NOW
-    const deps = {
-      fetch: async (req: Request) => {
-        calls++
-        const path = new URL(req.url).pathname.slice(new URL(MIRROR).pathname.length)
-        return path in documents ? Response.json(documents[path]) : Response.json({}, { status: 404 })
-      },
-      now: () => now,
-      cache: () => cache
-    }
-    const url = "https://app.test/api/public/repos/smithersai/smithers/activity"
-    await createPublicRepoActivityHandler(deps)(new Request(url), "https://cloud.test")
-    const second = await createPublicRepoActivityHandler(deps)(new Request(`${url}?different=1`), "https://cloud.test")
-    expect(calls).toBe(5)
+    const edge = memoryEdgeCache()
+    const { request, coldIsolate, requests, advance } = harness(undefined, mirror().documents, edge)
+    await request()
+    const second = await coldIsolate()(`${ACTIVITY_PATH}?different=1`)
+    expect(requests).toHaveLength(5)
     expect(((await second.json()) as PublicRepoActivity).counts.commits).toBe(12)
-    expect([...records.keys()]).toEqual([url])
-    now += 300_001
-    await createPublicRepoActivityHandler(deps)(new Request(url), "https://cloud.test")
-    expect(calls).toBe(10)
+    expect([...edge.records.keys()]).toEqual([`https://app.test${ACTIVITY_PATH}`])
+    advance(300_001)
+    await coldIsolate()()
+    expect(requests).toHaveLength(10)
   })
 
   test("preflight and unsupported writes do not touch the mirror", async () => {
@@ -240,31 +281,10 @@ describe("GET /api/public/repos/<owner>/<name>/activity", () => {
     const post = await request(undefined, { method: "POST" })
     expect(post.status).toBe(405)
     expect(post.headers.get("allow")).toBe("GET, HEAD, OPTIONS")
+    expect(await post.json()).toEqual({ message: "Method not allowed." })
     expect(requests).toHaveLength(0)
     const head = await request(undefined, { method: "HEAD" })
     expect(head.status).toBe(200)
     expect(await head.text()).toBe("")
-  })
-
-  test("the Worker serves the route before the same-origin guard and reads the configured Cloud origin", async () => {
-    const original = globalThis.fetch
-    const seen: Array<string> = []
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init)
-      seen.push(request.url)
-      return Response.json({ message: "not found" }, { status: 404 })
-    }) as typeof fetch
-    try {
-      const env = { ASSETS: { fetch: async () => new Response("app") }, SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" }
-      const response = await worker.fetch(new Request("https://app.test/api/public/repos/smithersai/smithers/activity", {
-        headers: { origin: "https://smithers.sh" }
-      }), env as never)
-      expect(response.status).toBe(200)
-      expect(((await response.json()) as PublicRepoActivity).sentence).toBe("Recent activity is not available.")
-      expect(seen.length).toBeGreaterThan(0)
-      expect(seen.every((url) => url.startsWith(MIRROR))).toBe(true)
-      const missing = await worker.fetch(new Request("https://app.test/api/public/repos/example/other/activity"), env as never)
-      expect(missing.status).toBe(404)
-    } finally { globalThis.fetch = original }
   })
 })

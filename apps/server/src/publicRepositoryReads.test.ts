@@ -1,7 +1,21 @@
 import { describe, expect, test } from "bun:test"
-import { cloudReadPath, createPublicRepositoryReader, isPublicRepositoryRead } from "./publicRepositoryReads"
-import worker from "./index"
-import { memoryDurableObjects } from "./memoryDurableObjects"
+import * as Effect from "effect/Effect"
+import { transportLayer } from "./Http"
+import type { FetchImplementation } from "./Http"
+import { cloudReadPath, isPublicRepositoryRead, readPublicRepository } from "./publicRepositoryReads"
+
+/** A reader over one fake Cloud backend; every request it sent is recorded. */
+const reader = (answer: (request: Request) => Response | Promise<Response>) => {
+  const seen: Array<Request> = []
+  const fetchImpl: FetchImplementation = async (input, init) => {
+    const request = new Request(input, init)
+    seen.push(request)
+    return answer(request)
+  }
+  const read = (url: URL, base: string) =>
+    Effect.runPromise(readPublicRepository(url, base).pipe(Effect.provide(transportLayer(fetchImpl))))
+  return { read, seen }
+}
 
 describe("anonymous repository reads", () => {
   test("admits public document reads and excludes writes, account data, and workspace credentials", () => {
@@ -17,16 +31,11 @@ describe("anonymous repository reads", () => {
   })
 
   test("checks public visibility on every read without forwarding credentials", async () => {
-    const seen: Array<Request> = []
     let isPublic = true
-    const read = createPublicRepositoryReader({
-      fetch: async (request) => {
-        seen.push(request)
-        return isPublic
-          ? Response.json([{ name: "README.md", type: "file" }], { headers: { "cache-control": "public, max-age=300" } })
-          : Response.json({ message: "repository not found" }, { status: 404 })
-      }
-    })
+    const { read, seen } = reader(() =>
+      isPublic
+        ? Response.json([{ name: "README.md", type: "file" }], { headers: { "cache-control": "public, max-age=300" } })
+        : Response.json({ message: "repository not found" }, { status: 404 }))
     const url = new URL("https://app.test/api/repos/smithersai/smithers/contents?ref=main")
     const first = await read(url, "https://cloud.test")
     expect(await first.json()).toEqual([{ name: "README.md", type: "file" }])
@@ -45,13 +54,7 @@ describe("anonymous repository reads", () => {
   })
 
   test("a catalog read reaches the Smithers Cloud mirror with the same document path and query", async () => {
-    const seen: Array<Request> = []
-    const read = createPublicRepositoryReader({
-      fetch: async (request) => {
-        seen.push(request)
-        return Response.json({ name: "src", type: "dir", mirror: new URL(request.url).pathname })
-      }
-    })
+    const { read, seen } = reader((request) => Response.json({ name: "src", type: "dir", mirror: new URL(request.url).pathname }))
     const response = await read(new URL("https://app.test/api/repos/smithersai/smithers/contents/src?ref=main&recursive=1"), "https://cloud.test")
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ name: "src", type: "dir", mirror: "/api/repos/smithers-canary/smithers/contents/src" })
@@ -65,13 +68,7 @@ describe("anonymous repository reads", () => {
   test("the upstream request asks for a manual redirect and a 3xx answer is unavailable", async () => {
     // workerd rejects redirect: "error" before sending anything, which made
     // every production public read a 502; "manual" is the accepted mode.
-    const seen: Array<Request> = []
-    const read = createPublicRepositoryReader({
-      fetch: async (request) => {
-        seen.push(request)
-        return new Response(null, { status: 302, headers: { location: "https://elsewhere.test/login" } })
-      }
-    })
+    const { read, seen } = reader(() => new Response(null, { status: 302, headers: { location: "https://elsewhere.test/login" } }))
     const response = await read(new URL("https://app.test/api/repos/smithersai/smithers/contents/README.md"), "https://cloud.test")
     expect(seen[0]?.redirect).toBe("manual")
     expect(response.status).toBe(502)
@@ -79,14 +76,19 @@ describe("anonymous repository reads", () => {
     expect(await response.json()).toEqual({ message: "Repository data is temporarily unavailable." })
   })
 
-  test("a repository outside the catalog is read under the name the browser asked for", async () => {
-    const seen: Array<Request> = []
-    const read = createPublicRepositoryReader({
-      fetch: async (request) => {
-        seen.push(request)
-        return Response.json({ message: "repository not found" }, { status: 404 })
-      }
+  test("an unreachable backend is the same honest 502, never a thrown error", async () => {
+    const { read, seen } = reader(() => {
+      throw new Error("offline")
     })
+    const response = await read(new URL("https://app.test/api/repos/smithersai/smithers"), "https://cloud.test")
+    expect(seen).toHaveLength(1)
+    expect(response.status).toBe(502)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    expect(await response.json()).toEqual({ message: "Repository data is temporarily unavailable." })
+  })
+
+  test("a repository outside the catalog is read under the name the browser asked for", async () => {
+    const { read, seen } = reader(() => Response.json({ message: "repository not found" }, { status: 404 }))
     const response = await read(new URL("https://app.test/api/repos/example/other/issues?state=open"), "https://cloud.test")
     expect(response.status).toBe(404)
     expect(seen.map((request) => request.url)).toEqual(["https://cloud.test/api/repos/example/other/issues?state=open"])
@@ -96,13 +98,7 @@ describe("anonymous repository reads", () => {
   })
 
   test("a mixed-case catalog name still reaches the mirror", async () => {
-    const seen: Array<Request> = []
-    const read = createPublicRepositoryReader({
-      fetch: async (request) => {
-        seen.push(request)
-        return Response.json({ full_name: "smithers-canary/smithers" })
-      }
-    })
+    const { read, seen } = reader(() => Response.json({ full_name: "smithers-canary/smithers" }))
     const response = await read(new URL("https://app.test/api/repos/SmithersAI/Smithers/topics"), "https://cloud.test")
     expect(response.status).toBe(200)
     expect(seen.map((request) => request.url)).toEqual(["https://cloud.test/api/repos/smithers-canary/smithers/topics"])
@@ -112,11 +108,10 @@ describe("anonymous repository reads", () => {
 
   test("preserves Vary and forbids storage even when the upstream answer is successful", async () => {
     for (const cacheControl of ["private", "no-store", "private, no-store", "public, max-age=300"]) {
-      const read = createPublicRepositoryReader({
-        fetch: async () => Response.json({ name: "README.md" }, { headers: {
+      const { read } = reader(() =>
+        Response.json({ name: "README.md" }, { headers: {
           "cache-control": cacheControl, vary: "Cookie, Accept", "set-cookie": "session=upstream"
-        } })
-      })
+        } }))
       const response = await read(new URL("https://app.test/api/repos/owner/repo/contents"), "https://cloud.test")
       expect(response.status).toBe(200)
       expect(response.headers.get("cache-control")).toBe("private, no-store")
@@ -127,74 +122,24 @@ describe("anonymous repository reads", () => {
   })
 
   test("a private repository's refusal is neither converted to data nor made cacheable", async () => {
-    const read = createPublicRepositoryReader({
-      fetch: async () => Response.json({ message: "repository not found" }, { status: 404 })
-    })
+    const { read } = reader(() => Response.json({ message: "repository not found" }, { status: 404 }))
     const response = await read(new URL("https://app.test/api/repos/owner/private"), "https://cloud.test")
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({ message: "repository not found" })
     expect(response.headers.get("cache-control")).toBe("private, no-store")
   })
 
-  test("an interrupted upstream refusal still returns the app's structured error", async () => {
-    const original = globalThis.fetch
-    globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(new ReadableStream({
+  test("a refusal whose body stream breaks is still forwarded with its status and headers", async () => {
+    // The body is handed through untouched; the route that maps it to the
+    // app's structured error (index.ts) reads it there, and reads "" on a break.
+    const { read } = reader(() => new Response(new ReadableStream({
       start(controller) { controller.error(new Error("upstream error body disconnected")) }
-    }), { status: 404, headers: { vary: "Cookie", "set-cookie": "session=upstream" } })) as typeof fetch
-    try {
-      for (const prefix of ["/api", "/api/cloud/api"]) {
-        const response = await worker.fetch(new Request(`https://app.test${prefix}/repos/owner/repo`), {
-          ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
-        })
-        expect(response.status).toBe(404)
-        expect(await response.json()).toEqual({
-          status: "error", message: "Smithers Cloud doesn't serve that request on this deployment."
-        })
-        expect(response.headers.get("cache-control")).toBe("private, no-store")
-        expect(response.headers.get("vary")).toBe("Cookie")
-        expect(response.headers.has("set-cookie")).toBe(false)
-      }
-    } finally { globalThis.fetch = original }
-  })
-
-  test("the app's direct and Cloud-prefixed read routes work without a session, but writes require one", async () => {
-    const original = globalThis.fetch
-    const requests: Array<Request> = []
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init)
-      requests.push(request)
-      if (request.url.startsWith("https://identity.test/")) {
-        return request.headers.get("cookie") === "smithers_session=not-admitted"
-          ? Response.json({ login: "visitor", allowlisted: false, admin: false })
-          : new Response(null, { status: 401 })
-      }
-      return Response.json({ full_name: "smithersai/smithers", private: false })
-    }) as typeof fetch
-    const env = {
-      ...memoryDurableObjects(),
-      ASSETS: { fetch: async () => new Response("app") },
-      IDENTITY_UPSTREAM_URL: "https://identity.test",
-      SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
-    }
-    try {
-      for (const prefix of ["/api", "/api/cloud/api"]) {
-        const response = await worker.fetch(new Request(`https://app.test${prefix}/repos/smithersai/smithers`), env)
-        expect(response.status).toBe(200)
-        expect((await response.json() as { full_name: string }).full_name).toBe("smithersai/smithers")
-      }
-      expect(requests).toHaveLength(2)
-      expect(requests.every((request) => request.url === "https://cloud.test/api/repos/smithers-canary/smithers" && !request.headers.has("authorization"))).toBe(true)
-      for (const session of ["expired", "not-admitted"]) {
-        const response = await worker.fetch(new Request("https://app.test/api/repos/smithersai/smithers", {
-          headers: { cookie: `smithers_session=${session}` }
-        }), env)
-        expect(response.status).toBe(200)
-      }
-      const write = await worker.fetch(new Request("https://app.test/api/repos/smithersai/smithers/issues", { method: "POST" }), env)
-      expect(write.status).toBe(401)
-      const cloudRequests = requests.filter((request) => request.url.startsWith("https://cloud.test/"))
-      expect(cloudRequests).toHaveLength(4)
-      expect(cloudRequests.every((request) => !request.headers.has("cookie") && !request.headers.has("authorization"))).toBe(true)
-    } finally { globalThis.fetch = original }
+    }), { status: 404, headers: { vary: "Cookie", "set-cookie": "session=upstream" } }))
+    const response = await read(new URL("https://app.test/api/repos/owner/repo"), "https://cloud.test")
+    expect(response.status).toBe(404)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    expect(response.headers.get("vary")).toBe("Cookie")
+    expect(response.headers.has("set-cookie")).toBe(false)
+    await expect(response.text()).rejects.toThrow()
   })
 })

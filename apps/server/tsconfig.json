@@ -15,9 +15,9 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  // scripts/ is typechecked too: the deploy script and the canary probes are
+  // alchemy.run.ts is the stack; scripts/ is typechecked too: the deploy script and the canary probes are
   // the only things that verify a deployment, and an untypechecked verifier
   // is not one (scripts/seed-allowlist.mjs is JavaScript and is not matched).
-  "include": ["src", "scripts"],
+  "include": ["src", "scripts", "alchemy.run.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -1,3 +1,5 @@
+import * as Effect from "effect/Effect"
+import { fetchWithDeadline, Transport } from "./Http"
 import { cloudRepoFor } from "./publicRepoCatalog"
 
 /** Public repository documents, not account, workspace, gateway, or secret reads. */
@@ -6,10 +8,6 @@ export const isPublicRepositoryRead = (method: string, pathname: string): boolea
   const match = /^\/api\/repos\/([a-z\d][a-z\d-]{0,38})\/([a-z\d_.-]{1,100})(.*)$/i.exec(pathname)
   if (!match || match[2] === "." || match[2] === "..") return false
   return /^(?:\/?|\/contents(?:\/.*)?|\/topics|\/stargazers|\/bookmarks(?:\/[^/]+)?|\/changes(?:\/[^/]+(?:\/(?:diff|files))?)?|\/issues(?:\/\d+(?:\/comments)?)?|\/labels|\/git\/(?:refs|trees\/[^/]+|commits\/[^/]+))$/.test(match[3]!)
-}
-
-interface Dependencies {
-  readonly fetch: (request: Request) => Promise<Response>
 }
 
 /**
@@ -24,6 +22,9 @@ export const cloudReadPath = (pathname: string): string => {
   return cloudRepo === undefined ? pathname : `/api/repos/${cloudRepo}${match[3]}`
 }
 
+/** How long the Cloud backend gets to send a document's headers. */
+const READ_TIMEOUT_MS = 15_000
+
 /**
  * The Cloud backend remains the authority for public visibility. Anonymous
  * reads carry no credentials. Repository visibility and documents can change,
@@ -35,28 +36,25 @@ const unavailable = (): Response =>
     status: 502, headers: { "cache-control": "private, no-store" }
   })
 
-export const createPublicRepositoryReader = (deps: Dependencies) => {
-  return async (url: URL, base: string): Promise<Response> => {
+/**
+ * One anonymous document read against the Cloud mirror at `base`. An
+ * unreachable, slow, or redirecting backend is the one 502 above; every
+ * other answer is forwarded with its status and body, never cacheable.
+ */
+export const readPublicRepository = Effect.fn("PublicRepositories.read")(
+  function*(url: URL, base: string) {
     const target = new URL(cloudReadPath(url.pathname) + url.search, base)
-    try {
-      const upstream = await deps.fetch(new Request(target, {
-        headers: { accept: "application/json" },
-        redirect: "manual", signal: AbortSignal.timeout(15_000)
-      }))
-      // workerd refuses redirect: "error" (it throws before the request is
-      // sent, which read as a 502 for every public read in production), so
-      // the redirect is requested manually and a 3xx answer is unavailable.
-      if (upstream.status >= 300 && upstream.status < 400) return unavailable()
-      const headers = new Headers(upstream.headers)
-      headers.delete("set-cookie")
-      headers.set("cache-control", "private, no-store")
-      return new Response(upstream.body, { status: upstream.status, headers })
-    } catch {
-      return unavailable()
-    }
-  }
-}
-
-export const readPublicRepository = createPublicRepositoryReader({
-  fetch: (request) => fetch(request)
-})
+    const upstream = yield* fetchWithDeadline(
+      "publicRepositories.fetch",
+      new Request(target, { headers: { accept: "application/json" }, redirect: "manual" }),
+      undefined,
+      READ_TIMEOUT_MS
+    )
+    if (upstream.status >= 300 && upstream.status < 400) return unavailable()
+    const headers = new Headers(upstream.headers)
+    headers.delete("set-cookie")
+    headers.set("cache-control", "private, no-store")
+    return new Response(upstream.body, { status: upstream.status, headers })
+  },
+  Effect.catch(() => Effect.sync(unavailable))
+) satisfies (url: URL, base: string) => Effect.Effect<Response, never, Transport>

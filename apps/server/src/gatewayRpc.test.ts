@@ -47,7 +47,7 @@ describe("the relayed procedure catalog", () => {
     // The relay holds the gateway credential on the product's behalf, so the
     // allowlist is the reach a compromised session gets. `Resume`, `Steer`,
     // and `Signal` earned their mounts beside the runs lane's callers
-    // (apps/ui runs.resume / runs.steer / runs.signal); `Approve` and `Deny`
+    // (apps/app runs.resume / runs.steer / runs.signal); `Approve` and `Deny`
     // stay out because a decision crosses as the gateway's
     // `Approval.Submit`, payload unchanged.
     expect(ALLOWED_GATEWAY_PROCEDURES).not.toContain("Approve")

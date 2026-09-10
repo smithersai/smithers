@@ -1,10 +1,22 @@
 import { describe, expect, test } from "bun:test"
-import worker from "./index"
-import type { WorkerEnv } from "./index"
-import { memoryDurableObjects } from "./memoryDurableObjects"
+import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
+import * as Layer from "effect/Layer"
+import * as Redacted from "effect/Redacted"
+import { TestClock } from "effect/testing"
+import { testConfigLayer } from "./Config"
+import type { ServerConfigShape } from "./Config"
+import { memoryStorage } from "./DurableStorage"
+import type { NativeNamespace } from "./DurableStorage"
+import { transportLayer } from "./Http"
 import {
+  cerebrasChat,
   filterAnswer,
+  handleRecommend,
+  handleRecommendOutcome,
+  memoryRecommendStorage,
   parseAnswer,
+  readRecommendLog,
   RECOMMEND_ADDRESS_MAX,
   RECOMMEND_ALL_KEY,
   RECOMMEND_ALL_MAX,
@@ -12,39 +24,26 @@ import {
   RECOMMEND_COMMAND_NAME_MAX_CHARS,
   RECOMMEND_COMMAND_SUMMARY_MAX_CHARS,
   RECOMMEND_LOG_LIMIT,
+  RECOMMEND_LOG_NAME,
   RECOMMEND_OUTCOME_BODY_MAX_BYTES,
   RECOMMEND_TAIL_MAX_CHARS,
   RECOMMEND_TAIL_MAX_ENTRIES,
   RECOMMEND_TIMEOUT_MS,
   RecommendLog,
+  recommendLogLayer,
   recommendMessages
 } from "./recommend"
-import type { RecommendLogNamespace, RecommendLogRow, RecommendLogStorage } from "./recommend"
-import { TurnRateLimiter } from "./turnLimit"
-import type { TurnLimitNamespace, TurnLimitStorage } from "./turnLimit"
+import type { RecommendLogRow } from "./recommend"
+import { turnLimitsLayer, TurnRateLimiter } from "./turnLimit"
 
 /*
  * The command recommender. These tests hold the route to its contract: an
  * ordered, filtered answer from the model; honest refusals (400, 413, 429,
- * 503) with never an invented list; one outcome per recommendation; and an
- * admin-only log the scorer can read newest first.
+ * 503) with never an invented list; one outcome per recommendation; and a
+ * log the scorer can read newest first.
  */
 
-const memoryLogStorage = (): RecommendLogStorage => {
-  const data = new Map<string, unknown>()
-  return {
-    get: async (key) => data.get(key) as never,
-    put: async (key, value) => void data.set(key, value),
-    delete: async (key) => data.delete(key),
-    list: async ({ prefix, reverse, limit }) => {
-      const keys = [...data.keys()].filter((key) => key.startsWith(prefix)).sort()
-      if (reverse) keys.reverse()
-      return new Map(keys.slice(0, limit).map((key) => [key, data.get(key) as never]))
-    }
-  }
-}
-
-const memoryLog = (): RecommendLogNamespace & { readonly names: () => Array<string> } => {
+const memoryLog = (): NativeNamespace & { readonly names: () => Array<string> } => {
   const logs = new Map<string, RecommendLog>()
   return {
     names: () => [...logs.keys()],
@@ -53,7 +52,7 @@ const memoryLog = (): RecommendLogNamespace & { readonly names: () => Array<stri
       const name = String(id)
       let log = logs.get(name)
       if (log === undefined) {
-        log = new RecommendLog({ storage: memoryLogStorage() })
+        log = new RecommendLog({ storage: memoryRecommendStorage() })
         logs.set(name, log)
       }
       return { fetch: (request) => log.fetch(request) }
@@ -61,18 +60,10 @@ const memoryLog = (): RecommendLogNamespace & { readonly names: () => Array<stri
   }
 }
 
-const memoryLimitStorage = (seed?: Record<string, unknown>): TurnLimitStorage => {
-  const data = new Map<string, unknown>(Object.entries(seed ?? {}))
-  return {
-    get: async (key) => data.get(key) as never,
-    put: async (key, value) => void data.set(key, value)
-  }
-}
-
 /** In-memory buckets; `spent` names buckets seeded at `count` so a test reaches the refusal directly. */
 const memoryLimits = (
   spent: ReadonlyArray<{ readonly key: string; readonly count: number }> = []
-): TurnLimitNamespace & { readonly keys: () => Array<string> } => {
+): NativeNamespace & { readonly keys: () => Array<string> } => {
   const buckets = new Map<string, TurnRateLimiter>()
   return {
     keys: () => [...buckets.keys()],
@@ -84,8 +75,8 @@ const memoryLimits = (
         const seeded = spent.find((entry) => entry.key === name)
         bucket = new TurnRateLimiter({
           storage: seeded === undefined
-            ? memoryLimitStorage()
-            : memoryLimitStorage({ window: { start: Date.now(), count: seeded.count } })
+            ? memoryStorage()
+            : memoryStorage({ window: { start: Date.now(), count: seeded.count } })
         })
         buckets.set(name, bucket)
       }
@@ -118,12 +109,7 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
     body: typeof body === "string" ? body : JSON.stringify(body)
   })
 
-const env = (overrides: Partial<WorkerEnv> = {}): WorkerEnv => ({
-  ...memoryDurableObjects(),
-  ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
-  CEREBRAS_API_KEY: "csk-test",
-  ...overrides
-})
+const HEADERS = { "x-isolation": "1" }
 
 /** A Cerebras chat completion whose content is `content`. */
 const completion = (content: string, model = "gpt-oss-120b"): Response =>
@@ -132,229 +118,239 @@ const completion = (content: string, model = "gpt-oss-120b"): Response =>
     headers: { "content-type": "application/json" }
   })
 
-/**
- * Stand in for the network. `cerebras` answers the model call; identity
- * answers a session probe when `session` is given, else 401.
- */
-const withNetwork = async (
-  cerebras: (request: Request) => Promise<Response>,
-  run: (calls: Array<Request>) => Promise<void>,
-  session?: { readonly login: string; readonly admin: boolean }
-): Promise<void> => {
-  const original = globalThis.fetch
+/** Stand in for the network: `cerebras` answers the model call, and every call is recorded. */
+const network = (cerebras: (request: Request) => Promise<Response>) => {
   const calls: Array<Request> = []
-  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-    const request = typeof input === "string" ? new Request(input, init) : (input as Request)
-    const host = new URL(request.url).hostname
-    if (host === "api.cerebras.ai") {
+  return {
+    calls,
+    layer: transportLayer(async (input, init) => {
+      const request = input instanceof Request ? new Request(input, init) : new Request(input, init)
+      if (new URL(request.url).hostname !== "api.cerebras.ai") throw new Error(`unexpected fetch to ${request.url}`)
       calls.push(request)
       return cerebras(request)
-    }
-    if (host === "identity.test") {
-      return session === undefined
-        ? new Response("{}", { status: 401 })
-        : new Response(JSON.stringify({ ...session, allowlisted: true }), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        })
-    }
-    throw new Error(`unexpected fetch to ${request.url}`)
-  }) as typeof fetch
-  try {
-    await run(calls)
-  } finally {
-    globalThis.fetch = original
+    })
   }
 }
+
+const never = (): Promise<Response> => {
+  throw new Error("must not be called")
+}
+
+interface Deps {
+  readonly cerebras?: (request: Request) => Promise<Response>
+  readonly config?: Partial<ServerConfigShape>
+  readonly limits?: NativeNamespace
+  readonly logs?: NativeNamespace
+  readonly login?: string
+}
+
+const KEY = { cerebrasApiKey: Redacted.make("csk-test") }
+
+/** The route with its dependencies injected: the key is set unless `config` says otherwise. */
+const recommend = (request: Request, deps: Deps = {}): Promise<{ readonly response: Response; readonly calls: Array<Request> }> => {
+  const net = network(deps.cerebras ?? never)
+  return Effect.runPromise(
+    handleRecommend(request, deps.login, HEADERS).pipe(
+      Effect.provide(Layer.mergeAll(
+        net.layer,
+        testConfigLayer({ ...KEY, ...deps.config }),
+        turnLimitsLayer(deps.limits),
+        recommendLogLayer(deps.logs)
+      )),
+      Effect.map((response) => ({ response, calls: net.calls }))
+    )
+  )
+}
+
+const outcome = (request: Request, logs?: NativeNamespace): Promise<Response> =>
+  Effect.runPromise(handleRecommendOutcome(request, HEADERS).pipe(Effect.provide(recommendLogLayer(logs))))
+
+const readRows = (logs: NativeNamespace | undefined, limit?: number): Promise<ReadonlyArray<RecommendLogRow>> =>
+  Effect.runPromise(readRecommendLog(limit).pipe(Effect.provide(recommendLogLayer(logs))))
 
 describe("POST /api/recommend", () => {
   test("a good answer is ordered as the model ranked it, hallucinations dropped, capped at five", async () => {
     const logs = memoryLog()
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: ["run.start", "made.up", "repo.open", "run.start", "help", "keys.list", "extra"] })),
-      async (calls) => {
-        const response = await worker.fetch(post("/api/recommend", goodBody), env({ RECOMMEND_LOG: logs }))
-        expect(response.status).toBe(200)
-        const body = (await response.json()) as { id: string; commands: Array<string>; model: string }
-        expect(body.commands).toEqual(["run.start", "repo.open", "help", "keys.list"])
-        expect(body.commands.length).toBeLessThanOrEqual(RECOMMEND_ANSWER_MAX)
-        expect(body.model).toBe("gpt-oss-120b")
-        expect(body.id).not.toBe("")
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
+      cerebras: async () => completion(JSON.stringify({ commands: ["run.start", "made.up", "repo.open", "run.start", "help", "keys.list", "extra"] })),
+      logs
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get("x-isolation")).toBe("1")
+    const body = (await response.json()) as { id: string; commands: Array<string>; model: string }
+    expect(body.commands).toEqual(["run.start", "repo.open", "help", "keys.list"])
+    expect(body.commands.length).toBeLessThanOrEqual(RECOMMEND_ANSWER_MAX)
+    expect(body.model).toBe("gpt-oss-120b")
+    expect(body.id).not.toBe("")
 
-        // The call carried the contract: temperature 0, strict JSON, the key, every command.
-        expect(calls.length).toBe(1)
-        expect(calls[0]!.headers.get("authorization")).toBe("Bearer csk-test")
-        const sent = (await calls[0]!.json()) as {
-          temperature: number
-          model: string
-          response_format: { type: string }
-          messages: Array<{ role: string; content: string }>
-        }
-        expect(sent.temperature).toBe(0)
-        expect(sent.model).toBe("gpt-oss-120b")
-        expect(sent.response_format.type).toBe("json_schema")
-        const prompt = sent.messages.map((message) => message.content).join("\n")
-        for (const command of COMMANDS) expect(prompt).toContain(`${command.name}: ${command.summary}`)
-        expect(prompt).toContain("How do I run the tests here?")
-      }
-    )
+    // The call carried the contract: temperature 0, strict JSON, the key, every command.
+    expect(calls.length).toBe(1)
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer csk-test")
+    const sent = (await calls[0]!.json()) as {
+      temperature: number
+      model: string
+      response_format: { type: string }
+      messages: Array<{ role: string; content: string }>
+    }
+    expect(sent.temperature).toBe(0)
+    expect(sent.model).toBe("gpt-oss-120b")
+    expect(sent.response_format.type).toBe("json_schema")
+    const prompt = sent.messages.map((message) => message.content).join("\n")
+    for (const command of COMMANDS) expect(prompt).toContain(`${command.name}: ${command.summary}`)
+    expect(prompt).toContain("How do I run the tests here?")
+  })
+
+  test("CEREBRAS_MODEL names the model asked", async () => {
+    const { calls } = await recommend(post("/api/recommend", goodBody), {
+      cerebras: async () => completion(JSON.stringify({ commands: ["help"] }), "llama-fast"),
+      config: { cerebrasModel: "llama-fast" }
+    })
+    expect(((await calls[0]!.json()) as { model: string }).model).toBe("llama-fast")
   })
 
   test("every name hallucinated is an honest empty list, not a 503", async () => {
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: ["nothing.real", "also.fake"] })),
-      async () => {
-        const response = await worker.fetch(post("/api/recommend", goodBody), env())
-        expect(response.status).toBe(200)
-        expect(((await response.json()) as { commands: Array<string> }).commands).toEqual([])
-      }
-    )
+    const { response } = await recommend(post("/api/recommend", goodBody), {
+      cerebras: async () => completion(JSON.stringify({ commands: ["nothing.real", "also.fake"] }))
+    })
+    expect(response.status).toBe(200)
+    expect(((await response.json()) as { commands: Array<string> }).commands).toEqual([])
   })
 
   test("a provider that refuses the JSON schema is asked once more without it and its prose is parsed", async () => {
-    await withNetwork(
-      async (request) => {
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), {
+      cerebras: async (request) => {
         const sent = (await request.json()) as { response_format?: unknown }
         return sent.response_format !== undefined
           ? new Response(JSON.stringify({ message: "incompatible", code: "wrong_api_format" }), { status: 400 })
           : completion("Sure. Here you go: {\"commands\": [\"help\", \"repo.open\"]} Hope that helps.")
-      },
-      async (calls) => {
-        const response = await worker.fetch(post("/api/recommend", goodBody), env())
-        expect(response.status).toBe(200)
-        expect(((await response.json()) as { commands: Array<string> }).commands).toEqual(["help", "repo.open"])
-        expect(calls.length).toBe(2)
       }
-    )
+    })
+    expect(response.status).toBe(200)
+    expect(((await response.json()) as { commands: Array<string> }).commands).toEqual(["help", "repo.open"])
+    expect(calls.length).toBe(2)
   })
 
   test("a malformed body is 400 and never reaches the model", async () => {
-    await withNetwork(
-      async () => {
-        throw new Error("must not be called")
-      },
-      async (calls) => {
-        const cases: Array<unknown> = [
-          "not json",
-          [],
-          { repo: 7, tail: [], commands: COMMANDS },
-          { repo: null, tail: [{ role: "robot", text: "hi" }], commands: COMMANDS },
-          { repo: null, tail: [{ role: "user" }], commands: COMMANDS },
-          { repo: null, tail: [], commands: [{ name: "", summary: "x" }] },
-          { repo: null, tail: [], commands: "help" }
-        ]
-        for (const body of cases) {
-          const response = await worker.fetch(post("/api/recommend", body), env())
-          expect(response.status).toBe(400)
-          expect(((await response.json()) as { status: string }).status).toBe("error")
-        }
-        expect(calls.length).toBe(0)
+    const cases: Array<unknown> = [
+      "not json",
+      [],
+      { repo: 7, tail: [], commands: COMMANDS },
+      { repo: null, tail: [{ role: "robot", text: "hi" }], commands: COMMANDS },
+      { repo: null, tail: [{ role: "user" }], commands: COMMANDS },
+      { repo: null, tail: [], commands: [{ name: "", summary: "x" }] },
+      { repo: null, tail: [], commands: "help" }
+    ]
+    for (const body of cases) {
+      const { response, calls } = await recommend(post("/api/recommend", body))
+      expect(response.status).toBe(400)
+      expect(((await response.json()) as { status: string }).status).toBe("error")
+      expect(calls.length).toBe(0)
+    }
+    const { response } = await recommend(post("/api/recommend", "not json"))
+    expect(((await response.json()) as { message: string }).message).toBe("The recommendation request is not JSON.")
+  })
+
+  test("an unreadable body is 400 and says so", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new Error("socket reset"))
       }
-    )
+    })
+    const request = new Request("https://mvp.test/api/recommend", { method: "POST", body, headers: { "cf-connecting-ip": "203.0.113.7" } })
+    const { response } = await recommend(request)
+    expect(response.status).toBe(400)
+    expect(((await response.json()) as { message: string }).message).toBe("The recommendation request could not be read.")
   })
 
   test("repo is owner/name or null, and a command name or summary past its cap is 400, so the log and the prompt hold only what the contract names", async () => {
-    await withNetwork(
-      async () => {
-        throw new Error("must not be called")
-      },
-      async (calls) => {
-        const badRepos = ["smithers", "a/b/c", "owner/na me", "-owner/name", `${"o".repeat(40)}/name`, `owner/${"n".repeat(101)}`, "x".repeat(4000)]
-        for (const repo of badRepos) {
-          const response = await worker.fetch(post("/api/recommend", { ...goodBody, repo }), env())
-          expect(response.status).toBe(400)
-          expect(((await response.json()) as { message: string }).message).toContain("owner/name")
-        }
-        const longName = [{ name: "c".repeat(RECOMMEND_COMMAND_NAME_MAX_CHARS + 1), summary: "s" }]
-        const longSummary = [{ name: "c", summary: "s".repeat(RECOMMEND_COMMAND_SUMMARY_MAX_CHARS + 1) }]
-        for (const commands of [longName, longSummary]) {
-          const response = await worker.fetch(post("/api/recommend", { ...goodBody, commands }), env())
-          expect(response.status).toBe(400)
-        }
-        expect(calls.length).toBe(0)
-      }
-    )
+    const badRepos = ["smithers", "a/b/c", "owner/na me", "-owner/name", `${"o".repeat(40)}/name`, `owner/${"n".repeat(101)}`, "x".repeat(4000)]
+    for (const repo of badRepos) {
+      const { response, calls } = await recommend(post("/api/recommend", { ...goodBody, repo }))
+      expect(response.status).toBe(400)
+      expect(((await response.json()) as { message: string }).message).toContain("owner/name")
+      expect(calls.length).toBe(0)
+    }
+    const longName = [{ name: "c".repeat(RECOMMEND_COMMAND_NAME_MAX_CHARS + 1), summary: "s" }]
+    const longSummary = [{ name: "c", summary: "s".repeat(RECOMMEND_COMMAND_SUMMARY_MAX_CHARS + 1) }]
+    for (const commands of [longName, longSummary]) {
+      const { response, calls } = await recommend(post("/api/recommend", { ...goodBody, commands }))
+      expect(response.status).toBe(400)
+      expect(calls.length).toBe(0)
+    }
     // The shape admits real repositories at the caps, with dots, underscores and hyphens.
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: ["help"] })),
-      async () => {
-        for (const repo of ["smithersai/smithers", "my-org/my.repo_v2", `${"o".repeat(39)}/${"n".repeat(100)}`, null]) {
-          const response = await worker.fetch(post("/api/recommend", { ...goodBody, repo }), env())
-          expect(response.status).toBe(200)
-        }
-        const atCaps = [{ name: "c".repeat(RECOMMEND_COMMAND_NAME_MAX_CHARS), summary: "s".repeat(RECOMMEND_COMMAND_SUMMARY_MAX_CHARS) }]
-        expect((await worker.fetch(post("/api/recommend", { ...goodBody, commands: atCaps }), env())).status).toBe(200)
-      }
-    )
+    const cerebras = async () => completion(JSON.stringify({ commands: ["help"] }))
+    for (const repo of ["smithersai/smithers", "my-org/my.repo_v2", `${"o".repeat(39)}/${"n".repeat(100)}`, null]) {
+      const { response } = await recommend(post("/api/recommend", { ...goodBody, repo }), { cerebras })
+      expect(response.status).toBe(200)
+    }
+    const atCaps = [{ name: "c".repeat(RECOMMEND_COMMAND_NAME_MAX_CHARS), summary: "s".repeat(RECOMMEND_COMMAND_SUMMARY_MAX_CHARS) }]
+    expect((await recommend(post("/api/recommend", { ...goodBody, commands: atCaps }), { cerebras })).response.status).toBe(200)
   })
 
   test("an oversize body is 413: too many tail messages, too much tail text, too many commands", async () => {
-    await withNetwork(
-      async () => {
-        throw new Error("must not be called")
-      },
-      async (calls) => {
-        const longTail = Array.from({ length: RECOMMEND_TAIL_MAX_ENTRIES + 1 }, () => ({ role: "user", text: "x" }))
-        const bigText = [{ role: "user", text: "x".repeat(RECOMMEND_TAIL_MAX_CHARS + 1) }]
-        const manyCommands = Array.from({ length: 301 }, (_, index) => ({ name: `c${index}`, summary: "s" }))
-        for (const body of [{ ...goodBody, tail: longTail }, { ...goodBody, tail: bigText }, { ...goodBody, commands: manyCommands }]) {
-          const response = await worker.fetch(post("/api/recommend", body), env())
-          expect(response.status).toBe(413)
-        }
-        // A declared length past the byte cap is refused before a byte is read.
-        const declared = await worker.fetch(post("/api/recommend", goodBody, { "content-length": String(10 * 1024 * 1024) }), env())
-        expect(declared.status).toBe(413)
-        expect(calls.length).toBe(0)
+    const longTail = Array.from({ length: RECOMMEND_TAIL_MAX_ENTRIES + 1 }, () => ({ role: "user", text: "x" }))
+    const bigText = [{ role: "user", text: "x".repeat(RECOMMEND_TAIL_MAX_CHARS + 1) }]
+    const manyCommands = Array.from({ length: 301 }, (_, index) => ({ name: `c${index}`, summary: "s" }))
+    for (const body of [{ ...goodBody, tail: longTail }, { ...goodBody, tail: bigText }, { ...goodBody, commands: manyCommands }]) {
+      const { response, calls } = await recommend(post("/api/recommend", body))
+      expect(response.status).toBe(413)
+      expect(calls.length).toBe(0)
+    }
+    // A declared length past the byte cap is refused before a byte is read.
+    const declared = await recommend(post("/api/recommend", goodBody, { "content-length": String(10 * 1024 * 1024) }))
+    expect(declared.response.status).toBe(413)
+    expect(((await declared.response.json()) as { message: string }).message).toBe("The recommendation request is too large.")
+    // So is a chunked body that grows past it.
+    const chunks = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let index = 0; index < 30; index += 1) controller.enqueue(new Uint8Array(10 * 1024))
+        controller.close()
       }
-    )
-  })
-
-  test("a GET is 405", async () => {
-    const response = await worker.fetch(new Request("https://mvp.test/api/recommend"), env())
-    expect(response.status).toBe(405)
+    })
+    const streamed = await recommend(new Request("https://mvp.test/api/recommend", { method: "POST", body: chunks }))
+    expect(streamed.response.status).toBe(413)
+    expect(declared.calls.length + streamed.calls.length).toBe(0)
   })
 
   test("without CEREBRAS_API_KEY the route is an honest 503 that spends no ceiling", async () => {
     const limits = memoryLimits()
-    await withNetwork(
-      async () => {
-        throw new Error("must not be called")
-      },
-      async () => {
-        const response = await worker.fetch(post("/api/recommend", goodBody), env({ CEREBRAS_API_KEY: undefined, TURN_LIMITS: limits }))
-        expect(response.status).toBe(503)
-        const body = (await response.json()) as { status: string; message: string }
-        expect(body.status).toBe("error")
-        expect(body.message).toContain("CEREBRAS_API_KEY")
-        expect(limits.keys()).toEqual([])
-      }
-    )
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), { config: { cerebrasApiKey: undefined }, limits })
+    expect(response.status).toBe(503)
+    const body = (await response.json()) as { status: string; message: string }
+    expect(body.status).toBe("error")
+    expect(body.message).toContain("CEREBRAS_API_KEY")
+    expect(limits.keys()).toEqual([])
+    expect(calls.length).toBe(0)
   })
 
-  test("a model that does not answer within the deadline is a 503, never a list", async () => {
-    const original = RECOMMEND_TIMEOUT_MS
-    expect(original).toBe(6000)
-    await withNetwork(
-      (request) =>
-        new Promise<Response>((_, reject) => {
-          request.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))
-        }),
-      async () => {
-        const started = Date.now()
-        // The deadline is real time; the test does not wait six seconds for it.
-        // It proves the abort path by cancelling from the stub through the
-        // request's own signal, which is what the deadline timer does.
-        const pending = worker.fetch(post("/api/recommend", goodBody), env())
-        const response = await Promise.race([
-          pending,
-          new Promise<Response>((resolve) => setTimeout(() => resolve(new Response(null, { status: 599 })), RECOMMEND_TIMEOUT_MS + 500))
-        ])
-        expect(response.status).toBe(503)
-        expect(Date.now() - started).toBeGreaterThanOrEqual(RECOMMEND_TIMEOUT_MS - 50)
-        expect(((await response.json()) as { message: string }).message).toContain("did not answer within 6s")
-      }
+  test("a model that does not answer within the deadline is a 503, never a list, and the call is aborted", async () => {
+    expect(RECOMMEND_TIMEOUT_MS).toBe(6000)
+    let aborted = false
+    const net = network((request) =>
+      new Promise<Response>((_, reject) => {
+        request.signal.addEventListener("abort", () => {
+          aborted = true
+          reject(new DOMException("aborted", "AbortError"))
+        })
+      })
     )
-  }, RECOMMEND_TIMEOUT_MS + 2000)
+    // The deadline is the Effect clock's, so the test moves the clock instead
+    // of waiting six seconds: once the provider call is in flight, six seconds
+    // pass, the fetch is aborted, and the route answers.
+    const response = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(handleRecommend(post("/api/recommend", goodBody), undefined, HEADERS))
+        while (net.calls.length === 0) yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 0)))
+        yield* TestClock.adjust(RECOMMEND_TIMEOUT_MS - 1)
+        expect(aborted).toBe(false)
+        yield* TestClock.adjust(1)
+        return yield* Fiber.join(fiber)
+      }).pipe(Effect.provide(Layer.mergeAll(net.layer, testConfigLayer(KEY), turnLimitsLayer(undefined), recommendLogLayer(undefined), TestClock.layer())))
+    )
+    expect(response.status).toBe(503)
+    expect(((await response.json()) as { message: string }).message).toContain("did not answer within 6s")
+    expect(aborted).toBe(true)
+  })
 
   test("a model error, an unreadable answer, or an unreachable host is a 503", async () => {
     const answers: Array<() => Promise<Response>> = [
@@ -364,121 +360,117 @@ describe("POST /api/recommend", () => {
         throw new TypeError("fetch failed")
       }
     ]
-    for (const answer of answers) {
-      await withNetwork(answer, async () => {
-        const response = await worker.fetch(post("/api/recommend", goodBody), env())
-        expect(response.status).toBe(503)
-        expect(((await response.json()) as { status: string }).status).toBe("error")
-      })
+    for (const cerebras of answers) {
+      const { response } = await recommend(post("/api/recommend", goodBody), { cerebras })
+      expect(response.status).toBe(503)
+      expect(((await response.json()) as { status: string }).status).toBe("error")
     }
   })
 
   test("a visitor spends an address bucket and the deployment bucket; the spent one is 429 in the turn_rate_limited shape", async () => {
     const limits = memoryLimits()
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: ["help"] })),
-      async () => {
-        const first = await worker.fetch(post("/api/recommend", goodBody), env({ TURN_LIMITS: limits }))
-        expect(first.status).toBe(200)
-        const keys = limits.keys()
-        expect(keys).toContain(RECOMMEND_ALL_KEY)
-        const address = keys.find((key) => key.startsWith("recommend:anonymous:"))
-        expect(address).toBeDefined()
-        expect(address).not.toContain("203.0.113.7")
-        // A second visitor from the same IPv6 /64 shares the address bucket.
-        const sibling = memoryLimits()
-        const prefixed = (ip: string) => post("/api/recommend", goodBody, { "cf-connecting-ip": ip })
-        await worker.fetch(prefixed("2001:db8:1:2::1"), env({ TURN_LIMITS: sibling }))
-        await worker.fetch(prefixed("2001:db8:1:2:ffff::9"), env({ TURN_LIMITS: sibling }))
-        expect(sibling.keys().filter((key) => key.startsWith("recommend:anonymous:")).length).toBe(1)
-      }
-    )
-    const spentAddress = memoryLimits([{ key: limits.keys().find((key) => key.startsWith("recommend:anonymous:"))!, count: RECOMMEND_ADDRESS_MAX }])
-    await withNetwork(
-      async () => {
-        throw new Error("must not be called")
-      },
-      async () => {
-        const response = await worker.fetch(post("/api/recommend", goodBody), env({ TURN_LIMITS: spentAddress }))
-        expect(response.status).toBe(429)
-        const body = (await response.json()) as { status: string; code: string; message: string; retryAt: string }
-        expect(body.code).toBe("turn_rate_limited")
-        expect(body.message).toContain("Chat keeps working")
-        expect(new Date(body.retryAt).getTime()).toBeGreaterThan(Date.now())
-        expect(response.headers.get("retry-after")).not.toBeNull()
-        // The address refusal never draws down everyone's bucket.
-        expect(spentAddress.keys()).not.toContain(RECOMMEND_ALL_KEY)
-      }
-    )
+    const cerebras = async () => completion(JSON.stringify({ commands: ["help"] }))
+    const first = await recommend(post("/api/recommend", goodBody), { cerebras, limits })
+    expect(first.response.status).toBe(200)
+    const keys = limits.keys()
+    expect(keys).toContain(RECOMMEND_ALL_KEY)
+    const address = keys.find((key) => key.startsWith("recommend:anonymous:"))
+    expect(address).toBeDefined()
+    expect(address).not.toContain("203.0.113.7")
+    // A second visitor from the same IPv6 /64 shares the address bucket.
+    const sibling = memoryLimits()
+    const prefixed = (ip: string) => post("/api/recommend", goodBody, { "cf-connecting-ip": ip })
+    await recommend(prefixed("2001:db8:1:2::1"), { cerebras, limits: sibling })
+    await recommend(prefixed("2001:db8:1:2:ffff::9"), { cerebras, limits: sibling })
+    expect(sibling.keys().filter((key) => key.startsWith("recommend:anonymous:")).length).toBe(1)
+
+    const spentAddress = memoryLimits([{ key: address!, count: RECOMMEND_ADDRESS_MAX }])
+    const refused = await recommend(post("/api/recommend", goodBody), { limits: spentAddress })
+    expect(refused.response.status).toBe(429)
+    expect(refused.calls.length).toBe(0)
+    const body = (await refused.response.json()) as { status: string; code: string; message: string; retryAt: string }
+    expect(body.code).toBe("turn_rate_limited")
+    expect(body.message).toContain("Chat keeps working")
+    expect(new Date(body.retryAt).getTime()).toBeGreaterThan(Date.now())
+    expect(refused.response.headers.get("retry-after")).not.toBeNull()
+    expect(refused.response.headers.get("x-isolation")).toBe("1")
+    // The address refusal never draws down everyone's bucket.
+    expect(spentAddress.keys()).not.toContain(RECOMMEND_ALL_KEY)
+
     const spentAll = memoryLimits([{ key: RECOMMEND_ALL_KEY, count: RECOMMEND_ALL_MAX }])
-    await withNetwork(
-      async () => {
-        throw new Error("must not be called")
-      },
-      async () => {
-        const response = await worker.fetch(post("/api/recommend", goodBody), env({ TURN_LIMITS: spentAll }))
-        expect(response.status).toBe(429)
-      }
-    )
+    const everyone = await recommend(post("/api/recommend", goodBody), { limits: spentAll })
+    expect(everyone.response.status).toBe(429)
+    expect(everyone.calls.length).toBe(0)
+  })
+
+  test("the salt changes the address bucket, so buckets are not linkable across deployments", async () => {
+    const cerebras = async () => completion(JSON.stringify({ commands: ["help"] }))
+    const a = memoryLimits()
+    const b = memoryLimits()
+    await recommend(post("/api/recommend", goodBody), { cerebras, limits: a, config: { anonymousTurnSalt: Redacted.make("salt-a") } })
+    await recommend(post("/api/recommend", goodBody), { cerebras, limits: b, config: { anonymousTurnSalt: Redacted.make("salt-b") } })
+    const addressOf = (limits: { keys: () => Array<string> }) => limits.keys().find((key) => key.startsWith("recommend:anonymous:"))
+    expect(addressOf(a)).toBeDefined()
+    expect(addressOf(a)).not.toBe(addressOf(b))
   })
 
   test("a signed-in caller is keyed by login, apart from every turn bucket", async () => {
     const limits = memoryLimits()
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: ["help"] })),
-      async () => {
-        const response = await worker.fetch(
-          post("/api/recommend", goodBody, { cookie: "smithers_session=abc" }),
-          env({ TURN_LIMITS: limits, IDENTITY_UPSTREAM_URL: "https://identity.test" })
-        )
-        expect(response.status).toBe(200)
-        expect(limits.keys()).toContain("recommend:login:will")
-        expect(limits.keys()).not.toContain("will")
-      },
-      { login: "will", admin: false }
-    )
+    const { response } = await recommend(post("/api/recommend", goodBody), {
+      cerebras: async () => completion(JSON.stringify({ commands: ["help"] })),
+      limits,
+      login: "will"
+    })
+    expect(response.status).toBe(200)
+    expect(limits.keys()).toContain("recommend:login:will")
+    expect(limits.keys()).not.toContain("will")
   })
 
-  test("a cross-origin request is refused like every other API route", async () => {
-    const response = await worker.fetch(post("/api/recommend", goodBody, { origin: "https://elsewhere.test" }), env())
-    expect(response.status).toBe(403)
+  test("with no TURN_LIMITS binding the route still answers", async () => {
+    const { response } = await recommend(post("/api/recommend", goodBody), {
+      cerebras: async () => completion(JSON.stringify({ commands: ["help"] }))
+    })
+    expect(response.status).toBe(200)
+    expect(((await response.json()) as { id: string }).id).toMatch(/^unlogged-/)
   })
 })
 
 describe("POST /api/recommend/outcome", () => {
+  const cerebras = async () => completion(JSON.stringify({ commands: ["run.start", "help"] }))
+
   test("an outcome is 204 once, 409 the second time, and lands on the row", async () => {
     const logs = memoryLog()
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: ["run.start", "help"] })),
-      async () => {
-        const recommended = await worker.fetch(post("/api/recommend", goodBody), env({ RECOMMEND_LOG: logs }))
-        const { id } = (await recommended.json()) as { id: string }
-        const first = await worker.fetch(post("/api/recommend/outcome", { id, command: "help" }), env({ RECOMMEND_LOG: logs }))
-        expect(first.status).toBe(204)
-        const second = await worker.fetch(post("/api/recommend/outcome", { id, command: "run.start" }), env({ RECOMMEND_LOG: logs }))
-        expect(second.status).toBe(409)
-        const rows = await readRows(logs)
-        expect(rows[0]!.outcome?.command).toBe("help")
-      }
-    )
+    const recommended = await recommend(post("/api/recommend", goodBody), { cerebras, logs })
+    const { id } = (await recommended.response.json()) as { id: string }
+    const first = await outcome(post("/api/recommend/outcome", { id, command: "help" }), logs)
+    expect(first.status).toBe(204)
+    expect(first.headers.get("x-isolation")).toBe("1")
+    const second = await outcome(post("/api/recommend/outcome", { id, command: "run.start" }), logs)
+    expect(second.status).toBe(409)
+    const rows = await readRows(logs)
+    expect(rows[0]!.outcome?.command).toBe("help")
   })
 
   test("an unknown id is 404, a malformed outcome is 400", async () => {
     const logs = memoryLog()
-    const unknown = await worker.fetch(post("/api/recommend/outcome", { id: "zz-0000", command: "help" }), env({ RECOMMEND_LOG: logs }))
+    const unknown = await outcome(post("/api/recommend/outcome", { id: "zz-0000", command: "help" }), logs)
     expect(unknown.status).toBe(404)
-    const garbage = await worker.fetch(post("/api/recommend/outcome", { id: "not a seq!", command: "help" }), env({ RECOMMEND_LOG: logs }))
+    const garbage = await outcome(post("/api/recommend/outcome", { id: "not a seq!", command: "help" }), logs)
     expect(garbage.status).toBe(404)
-    const malformed = await worker.fetch(post("/api/recommend/outcome", { id: 5 }), env({ RECOMMEND_LOG: logs }))
+    const malformed = await outcome(post("/api/recommend/outcome", { id: 5 }), logs)
     expect(malformed.status).toBe(400)
-    const unbound = await worker.fetch(post("/api/recommend/outcome", { id: "1-abc", command: "help" }), env())
+    const notJson = await outcome(post("/api/recommend/outcome", "not json"), logs)
+    expect(notJson.status).toBe(400)
+    expect(((await notJson.json()) as { message: string }).message).toBe("An outcome is { id, command }, both strings.")
+    const unbound = await outcome(post("/api/recommend/outcome", { id: "1-abc", command: "help" }))
     expect(unbound.status).toBe(404)
+    expect(((await unbound.json()) as { message: string }).message).toContain("No recommendation log on this deployment")
   })
 
   test("an oversize outcome is 413 and a command longer than a name is 400, before the log is touched", async () => {
     const logs = memoryLog()
     let touched = 0
-    const counted: RecommendLogNamespace = {
+    const counted: NativeNamespace = {
       idFromName: (name) => logs.idFromName(name),
       get: (id) => {
         const stub = logs.get(id)
@@ -490,74 +482,78 @@ describe("POST /api/recommend/outcome", () => {
         }
       }
     }
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: ["help"] })),
-      async () => {
-        const recommended = await worker.fetch(post("/api/recommend", goodBody), env({ RECOMMEND_LOG: counted }))
-        const { id } = (await recommended.json()) as { id: string }
-        expect(touched).toBe(1)
-        const huge = { id, command: "h".repeat(RECOMMEND_OUTCOME_BODY_MAX_BYTES + 1) }
-        expect((await worker.fetch(post("/api/recommend/outcome", huge), env({ RECOMMEND_LOG: counted }))).status).toBe(413)
-        const declared = post("/api/recommend/outcome", { id, command: "help" }, { "content-length": String(RECOMMEND_OUTCOME_BODY_MAX_BYTES + 1) })
-        expect((await worker.fetch(declared, env({ RECOMMEND_LOG: counted }))).status).toBe(413)
-        const long = { id, command: "h".repeat(RECOMMEND_COMMAND_NAME_MAX_CHARS + 1) }
-        expect((await worker.fetch(post("/api/recommend/outcome", long), env({ RECOMMEND_LOG: counted }))).status).toBe(400)
-        expect((await worker.fetch(post("/api/recommend/outcome", "null"), env({ RECOMMEND_LOG: counted }))).status).toBe(400)
-        expect(touched).toBe(1)
-        // The row is untouched: the real outcome still lands once.
-        const real = await worker.fetch(post("/api/recommend/outcome", { id, command: "help" }), env({ RECOMMEND_LOG: counted }))
-        expect(real.status).toBe(204)
-        expect((await readRows(logs))[0]!.outcome?.command).toBe("help")
-      }
-    )
+    const recommended = await recommend(post("/api/recommend", goodBody), { cerebras: async () => completion(JSON.stringify({ commands: ["help"] })), logs: counted })
+    const { id } = (await recommended.response.json()) as { id: string }
+    expect(touched).toBe(1)
+    const huge = { id, command: "h".repeat(RECOMMEND_OUTCOME_BODY_MAX_BYTES + 1) }
+    expect((await outcome(post("/api/recommend/outcome", huge), counted)).status).toBe(413)
+    const declared = post("/api/recommend/outcome", { id, command: "help" }, { "content-length": String(RECOMMEND_OUTCOME_BODY_MAX_BYTES + 1) })
+    expect((await outcome(declared, counted)).status).toBe(413)
+    const long = { id, command: "h".repeat(RECOMMEND_COMMAND_NAME_MAX_CHARS + 1) }
+    expect((await outcome(post("/api/recommend/outcome", long), counted)).status).toBe(400)
+    expect((await outcome(post("/api/recommend/outcome", "null"), counted)).status).toBe(400)
+    expect(touched).toBe(1)
+    // The row is untouched: the real outcome still lands once.
+    const real = await outcome(post("/api/recommend/outcome", { id, command: "help" }), counted)
+    expect(real.status).toBe(204)
+    expect((await readRows(logs))[0]!.outcome?.command).toBe("help")
   })
 
   test("an id with the right sequence but the wrong random tail is 404, so ids cannot be guessed", async () => {
     const logs = memoryLog()
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: ["help"] })),
-      async () => {
-        const recommended = await worker.fetch(post("/api/recommend", goodBody), env({ RECOMMEND_LOG: logs }))
-        const { id } = (await recommended.json()) as { id: string }
-        const forged = `${id.split("-")[0]}-0000000000000000`
-        const response = await worker.fetch(post("/api/recommend/outcome", { id: forged, command: "help" }), env({ RECOMMEND_LOG: logs }))
-        expect(response.status).toBe(404)
-      }
-    )
+    const recommended = await recommend(post("/api/recommend", goodBody), { cerebras, logs })
+    const { id } = (await recommended.response.json()) as { id: string }
+    const forged = `${id.split("-")[0]}-0000000000000000`
+    const response = await outcome(post("/api/recommend/outcome", { id: forged, command: "help" }), logs)
+    expect(response.status).toBe(404)
+  })
+
+  test("a log that cannot be reached is a 500 that says the outcome was not recorded", async () => {
+    const down: NativeNamespace = {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async () => {
+          throw new Error("durable object unavailable")
+        }
+      })
+    }
+    const response = await outcome(post("/api/recommend/outcome", { id: "1-abc", command: "help" }), down)
+    expect(response.status).toBe(500)
+    expect(((await response.json()) as { message: string }).message).toContain("did not record")
   })
 })
-
-const readRows = async (logs: RecommendLogNamespace, limit?: number): Promise<ReadonlyArray<RecommendLogRow>> => {
-  const stub = logs.get(logs.idFromName("recommendations"))
-  const response = await stub.fetch(new Request(`https://recommend-log.internal/read${limit === undefined ? "" : `?limit=${limit}`}`))
-  return ((await response.json()) as { rows: ReadonlyArray<RecommendLogRow> }).rows
-}
 
 describe("the recommendation log", () => {
   test("a row holds the contract's fields and a digest of the tail, never the text", async () => {
     const logs = memoryLog()
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: ["keys.list", "help"] })),
-      async () => {
-        await worker.fetch(post("/api/recommend", goodBody), env({ RECOMMEND_LOG: logs }))
-        const [row] = await readRows(logs)
-        expect(row).toBeDefined()
-        expect(Object.keys(row!).sort()).toEqual(["at", "commandCount", "commands", "id", "model", "outcome", "repo", "tailDigest"])
-        expect(row!.repo).toBe("smithersai/smithers")
-        expect(row!.commandCount).toBe(COMMANDS.length)
-        expect(row!.commands).toEqual(["keys.list", "help"])
-        expect(row!.model).toBe("gpt-oss-120b")
-        expect(row!.outcome).toBeNull()
-        expect(row!.tailDigest).toMatch(/^[0-9a-f]{64}$/)
-        expect(new Date(row!.at).toISOString()).toBe(row!.at)
-        expect(JSON.stringify(row)).not.toContain("How do I run the tests")
-        expect(logs.names()).toEqual(["recommendations"])
-      }
-    )
+    await recommend(post("/api/recommend", goodBody), { cerebras: async () => completion(JSON.stringify({ commands: ["keys.list", "help"] })), logs })
+    const [row] = await readRows(logs)
+    expect(row).toBeDefined()
+    expect(Object.keys(row!).sort()).toEqual(["at", "commandCount", "commands", "id", "model", "outcome", "repo", "tailDigest"])
+    expect(row!.repo).toBe("smithersai/smithers")
+    expect(row!.commandCount).toBe(COMMANDS.length)
+    expect(row!.commands).toEqual(["keys.list", "help"])
+    expect(row!.model).toBe("gpt-oss-120b")
+    expect(row!.outcome).toBeNull()
+    expect(row!.tailDigest).toMatch(/^[0-9a-f]{64}$/)
+    expect(new Date(row!.at).toISOString()).toBe(row!.at)
+    expect(JSON.stringify(row)).not.toContain("How do I run the tests")
+    expect(logs.names()).toEqual([RECOMMEND_LOG_NAME])
+    expect(RECOMMEND_LOG_NAME).toBe("recommendations")
+  })
+
+  test("the scorer reads the rows newest first, bounded by limit; an unbound log is empty", async () => {
+    const logs = memoryLog()
+    let calls = 0
+    const cerebras = async () => completion(JSON.stringify({ commands: [COMMANDS[calls++ % COMMANDS.length]!.name] }))
+    for (let index = 0; index < 3; index += 1) await recommend(post("/api/recommend", goodBody), { cerebras, logs })
+    expect((await readRows(logs)).map((row) => row.commands[0])).toEqual(["keys.list", "run.start", "repo.open"])
+    expect((await readRows(logs, 2)).length).toBe(2)
+    expect(await readRows(undefined)).toEqual([])
   })
 
   test("is a ring: past the limit the oldest row goes and the newest stays", async () => {
-    const storage = memoryLogStorage()
+    const storage = memoryRecommendStorage()
     const log = new RecommendLog({ storage })
     const append = (index: number) =>
       log.fetch(
@@ -573,70 +569,61 @@ describe("the recommendation log", () => {
     const rows = [...all.values()]
     expect(rows[0]!.at).toBe(new Date(RECOMMEND_LOG_LIMIT + overflow - 1).toISOString())
     expect(rows[rows.length - 1]!.at).toBe(new Date(overflow).toISOString())
+  }, 60_000)
+
+  test("the object refuses a bad row, a bad outcome, and an unknown path in its own words", async () => {
+    const log = new RecommendLog({ storage: memoryRecommendStorage() })
+    expect((await log.fetch(new Request("https://recommend-log.internal/append", { method: "POST", body: "nope" }))).status).toBe(400)
+    expect((await log.fetch(new Request("https://recommend-log.internal/outcome", { method: "POST", body: "{}" }))).status).toBe(400)
+    expect((await log.fetch(new Request("https://recommend-log.internal/elsewhere"))).status).toBe(404)
+  })
+
+  test("a storage failure is the object's own 500", async () => {
+    const log = new RecommendLog({
+      storage: {
+        ...memoryRecommendStorage(),
+        get: async () => {
+          throw new Error("storage unavailable")
+        }
+      }
+    })
+    const response = await log.fetch(
+      new Request("https://recommend-log.internal/append", {
+        method: "POST",
+        body: JSON.stringify({ at: "2026-01-01T00:00:00.000Z", repo: null, tailDigest: "0", commandCount: 0, commands: [], model: "m", outcome: null })
+      })
+    )
+    expect(response.status).toBe(500)
   })
 })
 
-describe("GET /api/admin/recommend/log", () => {
-  const adminEnv = (logs?: RecommendLogNamespace): WorkerEnv =>
-    env({ IDENTITY_UPSTREAM_URL: "https://identity.test", ...(logs === undefined ? {} : { RECOMMEND_LOG: logs }) })
-  const read = (query = "") =>
-    new Request(`https://mvp.test/api/admin/recommend/log${query}`, { headers: { cookie: "smithers_session=abc" } })
+describe("the Cerebras client", () => {
+  const request = { model: "m", messages: [{ role: "user" as const, content: "hi" }], maxTokens: 8, temperature: 0 }
+  const chat = (cerebras: (request: Request) => Promise<Response>, config: Partial<ServerConfigShape> = KEY) =>
+    Effect.runPromise(cerebrasChat(request, 1000).pipe(Effect.provide(Layer.mergeAll(network(cerebras).layer, testConfigLayer(config)))))
 
-  test("an admin reads the rows newest first, bounded by limit", async () => {
-    const logs = memoryLog()
-    let calls = 0
-    await withNetwork(
-      async () => completion(JSON.stringify({ commands: [COMMANDS[calls++ % COMMANDS.length]!.name] })),
-      async () => {
-        for (let index = 0; index < 3; index += 1) {
-          await worker.fetch(post("/api/recommend", goodBody), adminEnv(logs))
-        }
-        const response = await worker.fetch(read(), adminEnv(logs))
-        expect(response.status).toBe(200)
-        const body = (await response.json()) as { rows: Array<RecommendLogRow> }
-        expect(body.rows.map((row) => row.commands[0])).toEqual(["keys.list", "run.start", "repo.open"])
-        const limited = await worker.fetch(read("?limit=2"), adminEnv(logs))
-        expect(((await limited.json()) as { rows: Array<unknown> }).rows.length).toBe(2)
-      },
-      { login: "will", admin: true }
-    )
+  test("answers content and the provider's model, and names each failure", async () => {
+    expect(await chat(async () => completion("hello", "served-model"))).toEqual({ ok: true, content: "hello", model: "served-model" })
+    expect(await chat(async () => new Response("{}", { status: 200 }))).toEqual({ ok: false, reason: "empty" })
+    expect(await chat(async () => new Response("slow down", { status: 429 }))).toEqual({ ok: false, reason: "http", status: 429 })
+    expect(await chat(async () => {
+      throw new TypeError("fetch failed")
+    })).toEqual({ ok: false, reason: "unreachable", message: "fetch failed" })
+    expect(await chat(async () => completion("x"), { cerebrasApiKey: undefined })).toEqual({ ok: false, reason: "unreachable", message: "CEREBRAS_API_KEY is unset." })
   })
 
-  test("a non-admin and a visitor get the canonical unknown-route 404", async () => {
-    const logs = memoryLog()
-    await withNetwork(
-      async () => completion("{}"),
-      async () => {
-        const response = await worker.fetch(read(), adminEnv(logs))
-        expect(response.status).toBe(404)
-        const unknown = await worker.fetch(
-          new Request("https://mvp.test/api/definitely-not-a-route", { headers: { cookie: "smithers_session=abc" } }),
-          adminEnv(logs)
-        )
-        expect(await response.text()).toBe(await unknown.text())
+  test("a refused response has its body cancelled", async () => {
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("oops"))
       },
-      { login: "someone", admin: false }
-    )
-    await withNetwork(
-      async () => completion("{}"),
-      async () => {
-        const response = await worker.fetch(new Request("https://mvp.test/api/admin/recommend/log"), adminEnv(logs))
-        expect(response.status).toBe(404)
+      cancel() {
+        cancelled = true
       }
-    )
-  })
-
-  test("with no log bound the read says so instead of implying nothing was recommended", async () => {
-    await withNetwork(
-      async () => completion("{}"),
-      async () => {
-        const response = await worker.fetch(read(), adminEnv())
-        const body = (await response.json()) as { rows: Array<unknown>; note?: string }
-        expect(body.rows).toEqual([])
-        expect(body.note).toContain("nothing is stored")
-      },
-      { login: "will", admin: true }
-    )
+    })
+    expect(await chat(async () => new Response(body, { status: 500 }))).toEqual({ ok: false, reason: "http", status: 500 })
+    expect(cancelled).toBe(true)
   })
 })
 

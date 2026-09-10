@@ -29,7 +29,7 @@
  * `Approval.Submit` are `@smthrs/gateway` `GatewayRpcs` at `/projections`.
  *
  * This is the product floor and no more: every procedure here has a caller in
- * `apps/ui`, and the relay carries the server-held gateway credential, so
+ * `apps/app`, and the relay carries the server-held gateway credential, so
  * mounting a procedure before a product call needs it widens what a
  * compromised browser session can reach for nothing. `Approve` and `Deny`
  * stay out — a decision crosses as the gateway's `Approval.Submit`, which

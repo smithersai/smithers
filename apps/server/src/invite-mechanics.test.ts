@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import worker from "./index"
-import { memoryDurableObjects } from "./memoryDurableObjects"
 import type { WorkerEnv } from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 
 /**
  * End-to-end coverage of the invite path (readiness audit §7.9): a
@@ -232,7 +232,7 @@ describe("invite mechanics: request-access -> admin approval -> allowlist gate",
   })
 
   /*
-   * Repro apps/ui/canary-repros/access/1.5: removing a login from the
+   * Repro apps/app/canary-repros/access/1.5: removing a login from the
    * allowlist has to revoke the ADMIN surface too. It did not — `admin` rides
    * ADMIN_LOGINS, so a revoked admin kept every /api/admin/* route, the
    * allowlist editor included, and could simply put itself back.

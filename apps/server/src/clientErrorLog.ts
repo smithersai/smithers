@@ -1,3 +1,12 @@
+import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Ref from "effect/Ref"
+import { runDurable } from "./Boundary"
+import { answeredJson, DurableStorage, namespaceCall, storageLayer } from "./DurableStorage"
+import type { NativeNamespace, NativeStorage } from "./DurableStorage"
+import { discardBody, readJsonOrUndefined } from "./Http"
 /**
  * A readable record of what broke in a user's browser.
  *
@@ -73,26 +82,6 @@ export const CLIENT_ERROR_RECORD_MAX_BYTES = 4 * 1024
  */
 export const CLIENT_ERROR_TEXT_MAX_BYTES = 512
 
-export interface ClientErrorStorage {
-  readonly get: <T>(key: string) => Promise<T | undefined>
-  readonly put: (key: string, value: unknown) => Promise<void>
-}
-
-/** The Durable Object's state, plus the clock the throttle reads (the real one, unless a test says otherwise). */
-export interface ClientErrorContext {
-  readonly storage: ClientErrorStorage
-  readonly now?: () => number
-}
-
-export interface ClientErrorStub {
-  readonly fetch: (request: Request) => Promise<Response>
-}
-
-export interface ClientErrorNamespace {
-  readonly idFromName: (name: string) => unknown
-  readonly get: (id: unknown) => ClientErrorStub
-}
-
 export interface ClientErrorRecord {
   /** When the Worker received it, ISO 8601. */
   readonly at: string
@@ -111,6 +100,13 @@ export interface ClientErrorRecord {
 
 /** What became of one report offered to the log. */
 export type ClientErrorAppendOutcome = "stored" | "throttled" | "unbound" | "failed"
+
+/** What a read answers: how many reports the log holds, the newest of them, and why it is empty when it should not be. */
+export interface ClientErrorPage {
+  readonly total: number
+  readonly reports: ReadonlyArray<ClientErrorRecord>
+  readonly note?: string
+}
 
 const LOG_KEY = "reports"
 
@@ -198,35 +194,66 @@ export const bounded = (records: ReadonlyArray<ClientErrorRecord>): Array<Client
   return records.filter((_, index) => kept.has(index))
 }
 
-interface ThrottleWindow {
+/* ------------------------------------------------------------------------ */
+/* The throttle                                                              */
+/* ------------------------------------------------------------------------ */
+
+/** One throttle window: when it opened, what it admitted, and from whom. */
+export interface ClientErrorWindow {
   readonly start: number
-  count: number
-  readonly sources: Map<string, number>
+  readonly count: number
+  readonly sources: ReadonlyMap<string, number>
 }
+
+const CLOSED_WINDOW: ClientErrorWindow = { start: 0, count: 0, sources: new Map() }
 
 /**
  * The window is Durable Object memory, not storage: a flood keeps the object
  * alive, and a quiet minute that lets it go is a window that has passed
- * anyway. What matters is that there is exactly one of it.
+ * anyway. What matters is that there is exactly one of it per object, so the
+ * native class makes the `Ref` once and provides it to every request.
  */
-const admit = (window: ThrottleWindow, source: string): boolean => {
-  if (window.count >= CLIENT_ERROR_WINDOW_MAX) return false
-  const fromSource = window.sources.get(source) ?? 0
-  if (fromSource >= CLIENT_ERROR_SOURCE_WINDOW_MAX) return false
-  window.count += 1
-  window.sources.set(source, fromSource + 1)
-  return true
-}
+export class ClientErrorThrottle extends Context.Service<ClientErrorThrottle, Ref.Ref<ClientErrorWindow>>()("smithers-server/ClientErrorThrottle") {}
+
+/** A fresh throttle: the Durable Object's, made once when the object wakes. */
+export const makeClientErrorThrottle = (): Ref.Ref<ClientErrorWindow> => Ref.makeUnsafe(CLOSED_WINDOW)
+
+export const clientErrorThrottleLayer = (throttle: Ref.Ref<ClientErrorWindow>): Layer.Layer<ClientErrorThrottle> =>
+  Layer.succeed(ClientErrorThrottle, throttle)
+
+/** Count one report from `source` at `now`: admitted, or refused by the global or the per-source ceiling. */
+const admit = (throttle: Ref.Ref<ClientErrorWindow>, source: string, now: number): Effect.Effect<boolean> =>
+  Ref.modify(throttle, (current) => {
+    const window = now - current.start > CLIENT_ERROR_WINDOW_MS ? { start: now, count: 0, sources: new Map<string, number>() } : current
+    if (window.count >= CLIENT_ERROR_WINDOW_MAX) return [false, window]
+    const fromSource = window.sources.get(source) ?? 0
+    if (fromSource >= CLIENT_ERROR_SOURCE_WINDOW_MAX) return [false, window]
+    const sources = new Map(window.sources)
+    sources.set(source, fromSource + 1)
+    return [true, { start: window.start, count: window.count + 1, sources }]
+  })
 
 /** Every deployment shares one log; the name is fixed so any request finds it. */
 export const CLIENT_ERROR_LOG_NAME = "client-errors"
 
-export class ClientErrorLog {
-  private window: ThrottleWindow = { start: 0, count: 0, sources: new Map() }
+const isRecord = (value: unknown): value is ClientErrorRecord => typeof value === "object" && value !== null
 
-  constructor(private readonly ctx: ClientErrorContext) {}
+/* ------------------------------------------------------------------------ */
+/* The Durable Object                                                        */
+/* ------------------------------------------------------------------------ */
 
-  async fetch(request: Request): Promise<Response> {
+/**
+ * The log's request: `POST /append` counts one report against the source
+ * named by `x-client-error-source` (429 `{ status: "throttled" }` when the
+ * window or the source is spent) and records it; `GET /read?limit=` answers
+ * the newest. A storage failure is the object's own 500; the Worker-side
+ * `append` reports it as "failed", because the report must never fail.
+ */
+export const clientErrorLogRequest = (
+  request: Request
+): Effect.Effect<Response, never, DurableStorage | ClientErrorThrottle> =>
+  Effect.gen(function*() {
+    const storage = yield* DurableStorage
     const url = new URL(request.url)
     switch (url.pathname) {
       case "/append": {
@@ -237,24 +264,22 @@ export class ClientErrorLog {
         // a second append load the same snapshot and overwrite the first one's
         // put. During a storm, which is the only time this log is read, that
         // silently drops reports.
-        const record = (await request.json().catch(() => undefined)) as ClientErrorRecord | undefined
-        if (record === undefined) return new Response("bad record", { status: 400 })
-        const now = (this.ctx.now ?? Date.now)()
-        if (now - this.window.start > CLIENT_ERROR_WINDOW_MS) {
-          this.window = { start: now, count: 0, sources: new Map() }
-        }
+        const record = yield* readJsonOrUndefined(request)
+        if (!isRecord(record)) return new Response("bad record", { status: 400 })
+        const throttle = yield* ClientErrorThrottle
+        const now = yield* Clock.currentTimeMillis
         const source = request.headers.get(CLIENT_ERROR_SOURCE_HEADER) ?? CLIENT_ERROR_UNKNOWN_SOURCE
-        if (!admit(this.window, source)) {
+        if (!(yield* admit(throttle, source, now))) {
           return new Response(JSON.stringify({ status: "throttled" }), {
             status: 429,
             headers: { "content-type": "application/json" }
           })
         }
-        const stored = (await this.ctx.storage.get<ReadonlyArray<ClientErrorRecord>>(LOG_KEY)) ?? []
+        const stored = (yield* storage.get<ReadonlyArray<ClientErrorRecord>>(LOG_KEY)) ?? []
         // Newest first, oldest evicted: a storm never buries the report
         // that is being read right now.
         const next = bounded([capRecord(record), ...stored])
-        await this.ctx.storage.put(LOG_KEY, next)
+        yield* storage.put(LOG_KEY, next)
         return new Response(JSON.stringify({ status: "ok", kept: next.length }), {
           headers: { "content-type": "application/json" }
         })
@@ -264,7 +289,7 @@ export class ClientErrorLog {
         const limit = Number.isInteger(asked) && asked > 0
           ? Math.min(asked, CLIENT_ERROR_LOG_LIMIT)
           : CLIENT_ERROR_LOG_LIMIT
-        const stored = (await this.ctx.storage.get<ReadonlyArray<ClientErrorRecord>>(LOG_KEY)) ?? []
+        const stored = (yield* storage.get<ReadonlyArray<ClientErrorRecord>>(LOG_KEY)) ?? []
         return new Response(
           JSON.stringify({ status: "ok", total: stored.length, reports: stored.slice(0, limit) }),
           { headers: { "content-type": "application/json" } }
@@ -273,54 +298,101 @@ export class ClientErrorLog {
       default:
         return new Response("not found", { status: 404 })
     }
+  }).pipe(
+    Effect.catchTag("StorageFailure", (failure) => Effect.succeed(new Response(failure.message, { status: 500 })))
+  )
+
+export class ClientErrorLog {
+  private readonly throttle = makeClientErrorThrottle()
+
+  constructor(private readonly ctx: { readonly storage: NativeStorage }) {}
+
+  fetch(request: Request): Promise<Response> {
+    return runDurable(
+      clientErrorLogRequest(request).pipe(
+        Effect.provide(Layer.mergeAll(storageLayer(this.ctx.storage), clientErrorThrottleLayer(this.throttle)))
+      )
+    )
   }
 }
+
+/* ------------------------------------------------------------------------ */
+/* The Worker-side service                                                   */
+/* ------------------------------------------------------------------------ */
+
+export interface ClientErrorsShape {
+  /**
+   * Record one report, counted against `source`. Never fails: a browser
+   * that just hit an error is not helped by the report failing too, so a
+   * log that cannot be reached answers "failed" and the caller still
+   * accepts the report. "throttled" is the one outcome the caller refuses
+   * on.
+   */
+  readonly append: (record: ClientErrorRecord, source?: string) => Effect.Effect<ClientErrorAppendOutcome>
+  /** The stored reports, newest first, at most `limit` of them. */
+  readonly read: (limit?: number) => Effect.Effect<ReadonlyArray<ClientErrorRecord>>
+  /** The stored reports with the log's total, for the admin read; an unavailable log says so in `note`. */
+  readonly page: (limit?: number) => Effect.Effect<ClientErrorPage>
+}
+
+export class ClientErrors extends Context.Service<ClientErrors, ClientErrorsShape>()("smithers-server/ClientErrors") {}
+
+const EMPTY: ClientErrorPage = { total: 0, reports: [] }
+
+/** What the admin read answers when the log cannot be reached. */
+export const CLIENT_ERROR_LOG_UNAVAILABLE_NOTE = "The client-error log is unavailable right now. Try again in a moment."
+
+const UNAVAILABLE: ClientErrorPage = { total: 0, reports: [], note: CLIENT_ERROR_LOG_UNAVAILABLE_NOTE }
+
+const isPage = (value: unknown): value is ClientErrorPage =>
+  typeof value === "object" && value !== null &&
+  typeof (value as { total?: unknown }).total === "number" &&
+  Array.isArray((value as { reports?: unknown }).reports)
 
 /**
- * Record one report, counted against `source`. Never throws: a browser that
- * just hit an error is not helped by the report failing too, so a log that
- * cannot be reached answers "failed" and the caller still accepts the report.
- * "throttled" is the one outcome the caller refuses on. With no namespace
- * bound (local dev, the stub stack) this is a no-op and the handler's
- * `console.error` remains the only trace, as it always was.
+ * The log over the CLIENT_ERRORS namespace. With no namespace bound (local
+ * dev, the stub stack) appending is "unbound" and the handler's
+ * `console.error` remains the only trace, as it always was; a read is
+ * honestly empty.
  */
-export const appendClientError = async (
-  logs: ClientErrorNamespace | undefined,
-  record: ClientErrorRecord,
-  source: string = CLIENT_ERROR_UNKNOWN_SOURCE
-): Promise<ClientErrorAppendOutcome> => {
-  if (logs === undefined) return "unbound"
-  const stub = logs.get(logs.idFromName(CLIENT_ERROR_LOG_NAME))
-  const response = await stub
-    .fetch(
-      new Request("https://client-errors.internal/append", {
-        method: "POST",
-        headers: { [CLIENT_ERROR_SOURCE_HEADER]: source },
-        body: JSON.stringify(record)
-      })
-    )
-    .catch(() => undefined)
-  if (response === undefined) return "failed"
-  if (response.status === 429) return "throttled"
-  return response.ok ? "stored" : "failed"
-}
-
-/** The stored reports, newest first. An unavailable log returns no reports and an explanatory note. */
-export const readClientErrors = async (
-  logs: ClientErrorNamespace | undefined,
-  limit?: number
-): Promise<{ readonly total: number; readonly reports: ReadonlyArray<ClientErrorRecord>; readonly note?: string }> => {
-  if (logs === undefined) return { total: 0, reports: [] }
-  try {
-    const stub = logs.get(logs.idFromName(CLIENT_ERROR_LOG_NAME))
+export const clientErrorsLayer = (namespace: NativeNamespace | undefined): Layer.Layer<ClientErrors> => {
+  const page = Effect.fn("ClientErrors.read")(function*(limit?: number) {
+    if (namespace === undefined) return EMPTY
     const query = limit === undefined ? "" : `?limit=${limit}`
-    const response = await stub.fetch(new Request(`https://client-errors.internal/read${query}`))
-    const body = (await response.json()) as
-      | { readonly total: number; readonly reports: ReadonlyArray<ClientErrorRecord> }
-      | undefined
-    return body ?? { total: 0, reports: [] }
-  } catch (error) {
-    console.error("client-error log read failed:", error)
-    return { total: 0, reports: [], note: "The client-error log is unavailable right now. Try again in a moment." }
-  }
+    const body = yield* namespaceCall(
+      "clientErrors.read",
+      namespace,
+      CLIENT_ERROR_LOG_NAME,
+      new Request(`https://client-errors.internal/read${query}`)
+    ).pipe(
+      Effect.flatMap((response) => answeredJson("clientErrors.read", "The client-error log", response)),
+      Effect.catch((failure) =>
+        Effect.sync(() => {
+          console.error("client-error log read failed:", failure.cause)
+          return UNAVAILABLE
+        }))
+    )
+    return isPage(body) ? body : UNAVAILABLE
+  })
+  return Layer.succeed(ClientErrors, {
+    append: Effect.fn("ClientErrors.append")(function*(record: ClientErrorRecord, source: string = CLIENT_ERROR_UNKNOWN_SOURCE) {
+      if (namespace === undefined) return "unbound"
+      const response = yield* namespaceCall(
+        "clientErrors.append",
+        namespace,
+        CLIENT_ERROR_LOG_NAME,
+        new Request("https://client-errors.internal/append", {
+          method: "POST",
+          headers: { [CLIENT_ERROR_SOURCE_HEADER]: source },
+          body: JSON.stringify(record)
+        })
+      ).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (response === undefined) return "failed"
+      yield* discardBody(response)
+      if (response.status === 429) return "throttled"
+      return response.ok ? "stored" : "failed"
+    }),
+    read: (limit) => Effect.map(page(limit), (found) => found.reports),
+    page
+  })
 }

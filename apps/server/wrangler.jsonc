@@ -1,4 +1,12 @@
 {
+	// ADOPTION BRIDGE, not the deploy configuration. The Worker is deployed
+	// with Alchemy (alchemy.run.ts -> src/Worker.ts, props from
+	// src/workerIdentity.ts); this file records the Worker exactly as Wrangler
+	// last deployed it, and src/workerIdentity.test.ts holds it to
+	// WORKER_IDENTITY so scripts/adopt-durable-objects.ts can compare the live
+	// script to both. Nothing runs `wrangler deploy` against it any more; keep
+	// it in step with src/workerIdentity.ts (the test fails otherwise) and read
+	// DEPLOY.md "The adopting deploy" before changing a binding or a class.
 	"name": "smithers-mvp-web",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-08-01",
