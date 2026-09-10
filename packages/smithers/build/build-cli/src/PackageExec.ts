@@ -35,10 +35,18 @@ export { execute } from "./internal/PackageRunner.ts"
  * Plans and, unless `--plan` asked for the inert report, executes one
  * PACKAGE.ts invocation.
  *
+ * The result follows the `plan` option: a literal `true` yields the
+ * `PlanReport`, an omitted or literal `false` plan yields the executor
+ * `Summary`, and only a runtime `boolean` keeps the union, so a caller that
+ * already chose reads `Summary.ok` without an assertion.
+ *
  * @category execution
  * @since 0.1.0
  */
-export const run = async (options: RunOptions): Promise<Executor.Summary | PlanReport> => {
+export function run(options: RunOptions & { readonly plan: true }): Promise<PlanReport>
+export function run(options: RunOptions & { readonly plan?: false }): Promise<Executor.Summary>
+export function run(options: RunOptions): Promise<Executor.Summary | PlanReport>
+export async function run(options: RunOptions): Promise<Executor.Summary | PlanReport> {
   const planned = await plan(options)
   if (options.plan === true) {
     return {

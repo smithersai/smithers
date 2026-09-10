@@ -15,7 +15,6 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
-import type * as Executor from "../src/Executor.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
@@ -125,7 +124,7 @@ describe("PackageExec reporter hooks", () => {
       readCache: false,
       reporter,
       environment: { ...process.env, API_TOKEN: "private-value" }
-    }) as Executor.Summary
+    })
     expect(summary.ok).toBe(true)
     const { events } = reporter
     const stdout = events.findIndex((event) => event.startsWith("tool //:good stdout"))
@@ -153,7 +152,7 @@ describe("PackageExec reporter hooks", () => {
       readCache: false,
       reporter,
       environment: { ...process.env, API_TOKEN: "private-value", SMTHRS_REPO_CHILD: "1" }
-    }) as Executor.Summary
+    })
     expect(summary.ok).toBe(true)
     const stdout = captured.stdout.join("")
     const stderr = captured.stderr.join("")
@@ -176,7 +175,7 @@ describe("PackageExec reporter hooks", () => {
       readCache: false,
       reporter,
       environment: { ...process.env, SMTHRS_REPO_CHILD: "1" }
-    }) as Executor.Summary
+    })
     expect(summary.ok).toBe(true)
     const stdout = captured.stdout.join("")
     expect(stdout).toContain("… live output limit reached")
@@ -198,7 +197,7 @@ describe("PackageExec reporter hooks", () => {
       readCache: false,
       reporter,
       environment: { ...ambient, API_TOKEN: "private-value" }
-    }) as Executor.Summary
+    })
     expect(summary.ok).toBe(true)
     expect(reporter.events.join("\n")).toContain("tool //:good stdout hello [REDACTED]")
     expect(captured.stdout.join("") + captured.stderr.join("")).toBe("")
@@ -215,7 +214,7 @@ describe("PackageExec reporter hooks", () => {
       readCache: false,
       jobs: 1,
       reporter
-    }) as Executor.Summary
+    })
     expect(summary.ok).toBe(false)
     const { events } = reporter
     expect(events[0]).toMatch(/^begin auto \/\/:all /)
@@ -243,7 +242,7 @@ describe("PackageExec reporter hooks", () => {
       pattern: "//:good",
       readCache: false,
       log: (line) => lines.push(line)
-    }) as Executor.Summary
+    })
     expect(summary.ok).toBe(true)
     expect(lines.some((line) => /^\/\/:good {2}ran {2}\d+(?:\.\d)?m?s$/.test(line))).toBe(true)
     expect(lines.at(-1)).toMatch(/^1 targets: 0 hit, 1 ran, 0 failed, 0 skipped \(/)
