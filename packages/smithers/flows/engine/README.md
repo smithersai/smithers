@@ -21,11 +21,6 @@ Effect values you compose as layers. `effect` is a peer dependency pinned to
 one exact version per release, listed under `peerDependencies` in
 `package.json`.
 
-Built on [Effect](https://effect.website): flows, actions, and the engine are
-Effect values you compose as layers. `effect` is a peer dependency pinned to
-one exact version per release, listed under `peerDependencies` in
-`package.json`.
-
 ## Mental model
 
 A `Flow` is the durable program and `Action` values are its recorded

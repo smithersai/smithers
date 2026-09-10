@@ -104,10 +104,14 @@ Its limits are the honest boundary of what an in-memory test can prove:
 - There is no eviction. Completed executions, action settlements, deferred
   results, and clocks are retained for the life of the layer, which is fine for
   a test and wrong for a long-lived process.
-- The optional seam members are absent. There is no durable retry origin and no
-  persisted attempt counter, so the schedule-to-close budget and the attempt
-  number are in-process. A test that must prove those survive a restart needs
-  the durable engine from [`@smthrs/engine-store`](/api/engine-store).
+- Three optional seam members are absent: `actionRetryOrigin`,
+  `actionLatestAttempt`, and `resumeSignal`. There is no durable retry origin
+  and no persisted attempt counter, so the schedule-to-close budget and the
+  attempt number are in-process, and a parked run wakes on its next poll
+  rather than at once. A test that must prove those survive a restart needs
+  the durable engine from [`@smthrs/engine-store`](/api/engine-store). The
+  fourth optional member, `deferredDoneIfWaiting`, is implemented in memory,
+  so conditional completion on a reason and token can be tested here.
 
 Everything else, identity, admission conflicts, the retry decision, the
 keyless-dispatch guard, and trampoline rounds, behaves as it does in
