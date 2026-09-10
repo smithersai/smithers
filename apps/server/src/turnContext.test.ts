@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import worker from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 import type { WorkerEnv } from "./index"
 
 const context: AgentRuntimeContext = {
@@ -19,6 +20,7 @@ const context: AgentRuntimeContext = {
 }
 
 const assetsEnv = (): WorkerEnv => ({
+  ...memoryDurableObjects(),
   ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) }
 })
 

@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import worker from "./index"
 import type { WorkerEnv } from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 import {
   ANONYMOUS_ALL_CEILING,
   ANONYMOUS_ALL_KEY,
@@ -176,6 +177,7 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
  */
 describe("the turn routes under the ceiling", () => {
   const identityEnv = (limits: TurnLimitNamespace): WorkerEnv => ({
+    ...memoryDurableObjects(),
     ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
     IDENTITY_UPSTREAM_URL: "https://identity.test",
     SMITHERS_CHAT_URL: "https://upstream.test/chat",
@@ -316,6 +318,7 @@ describe("the turn routes under the ceiling", () => {
  */
 describe("the anonymous ceiling", () => {
   const identityEnv = (limits: TurnLimitNamespace): WorkerEnv => ({
+    ...memoryDurableObjects(),
     ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
     IDENTITY_UPSTREAM_URL: "https://identity.test",
     SMITHERS_CHAT_URL: "https://upstream.test/chat",

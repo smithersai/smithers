@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { WORKFLOW_TRIGGERS_PATH } from "@smthrs/rpc/AgentApiRoutes"
-import { clearMemoryGatewayRecords, seedMemoryGatewayRecord } from "./gateway"
 import worker from "./index"
 import type { WorkerEnv } from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 import { noLiveTriggers, workflowTriggersFromFrame } from "./workflowTriggers"
 import type { WorkflowTriggersBody } from "./workflowTriggers"
 
@@ -18,12 +18,14 @@ import type { WorkflowTriggersBody } from "./workflowTriggers"
  * token mint leaves the Worker on this route.
  */
 
-const env: WorkerEnv = {
+const SETTINGS = {
   ASSETS: { fetch: async () => new Response("app") },
   IDENTITY_UPSTREAM_URL: "https://identity.test",
   IDENTITY_SERVICE_TOKEN: "svc",
   SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
 }
+const durable = memoryDurableObjects(SETTINGS)
+const env: WorkerEnv = { ...SETTINGS, GATEWAY_SESSIONS: durable.GATEWAY_SESSIONS, TURN_CANCELS: durable.TURN_CANCELS }
 
 const REPO = "smithersai/smithers"
 const GATEWAY = "https://cloud.test/api/gateways/gw-0"
@@ -62,8 +64,8 @@ const validated = () =>
     headers: { "content-type": "application/json" }
   })
 
-const seedBox = (renewAfter = Date.now() + 20 * 60 * 1000): void =>
-  seedMemoryGatewayRecord("will", REPO, {
+const seedBox = (renewAfter = Date.now() + 20 * 60 * 1000): Promise<void> =>
+  durable.seedGatewayRecord("will", REPO, {
     gatewayId: "gw-0",
     baseUrl: GATEWAY,
     token: "gateway-token",
@@ -109,7 +111,7 @@ const TRIGGER_PAGE = {
   ]
 }
 
-afterEach(() => clearMemoryGatewayRecords())
+afterEach(() => durable.reset())
 
 describe("GET /api/workflow/triggers", () => {
   test("an anonymous read answers live:false with empty lists as a 200, never a 401 and never a reason as a row", async () => {
@@ -134,7 +136,7 @@ describe("GET /api/workflow/triggers", () => {
   })
 
   test("a box whose record is past its half-life is not re-provisioned to answer a read: live:false, nothing left the Worker but the identity check", async () => {
-    seedBox(Date.now() - 1)
+    await seedBox(Date.now() - 1)
     await withUpstreams(
       validated,
       async (seen) => {
@@ -151,7 +153,7 @@ describe("GET /api/workflow/triggers", () => {
   })
 
   test("a box that answers 401 is not re-provisioned to answer a read: live:false, one relay call, no provision POST", async () => {
-    seedBox()
+    await seedBox()
     let relayed = 0
     await withUpstreams(
       validated,
@@ -171,7 +173,7 @@ describe("GET /api/workflow/triggers", () => {
   })
 
   test("a relay tunnel failure (the VM idle-suspended) is not resumed by a read: live:false, no provision POST", async () => {
-    seedBox()
+    await seedBox()
     await withUpstreams(
       validated,
       async (seen) => {
@@ -186,7 +188,7 @@ describe("GET /api/workflow/triggers", () => {
   })
 
   test("a signed-in login whose box answers List { _tag: \"triggers\" } gets live:true and the box's rows", async () => {
-    seedBox()
+    await seedBox()
     const relayed: Array<string> = []
     await withUpstreams(
       validated,
@@ -225,7 +227,7 @@ describe("GET /api/workflow/triggers", () => {
   })
 
   test("a box whose host serves no trigger store answers live:false, not an empty live list", async () => {
-    seedBox()
+    await seedBox()
     await withUpstreams(
       validated,
       async () => {
@@ -257,7 +259,7 @@ describe("GET /api/workflow/triggers", () => {
   })
 
   test("with no identity seam there is no signed-in session, so the answer is live:false", async () => {
-    const response = await worker.fetch(request(`?repo=${REPO}`), { ASSETS: env.ASSETS })
+    const response = await worker.fetch(request(`?repo=${REPO}`), { ASSETS: env.ASSETS, GATEWAY_SESSIONS: env.GATEWAY_SESSIONS, TURN_CANCELS: env.TURN_CANCELS })
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual(noLiveTriggers(REPO))
   })

@@ -311,8 +311,8 @@ export class TurnCancelRegistry {
   }
 }
 
-const turnCancelStub = (env: WorkerEnv, runId: string): TurnCancelStub | undefined =>
-  env.TURN_CANCELS?.get(env.TURN_CANCELS.idFromName(runId))
+const turnCancelStub = (env: WorkerEnv, runId: string): TurnCancelStub =>
+  env.TURN_CANCELS.get(env.TURN_CANCELS.idFromName(runId))
 
 const readStubJson = async <T>(response: Response): Promise<T | undefined> =>
   (response.json().catch(() => undefined)) as Promise<T | undefined>
@@ -400,11 +400,11 @@ export interface WorkerEnv extends RecommendEnv, CloudRoleEnv {
   readonly IDENTITY_ADMIN_TOKEN?: string
   readonly BILLING_ADMIN_TOKEN?: string
   /**
-   * The per-runId cancellation registry (Durable Object). Present on every
-   * real deployment — wrangler.jsonc binds it; only unit tests that exercise
-   * the in-isolate fallback leave it unset.
+   * The per-runId cancellation registry (Durable Object). Bound on every real
+   * deployment — wrangler.jsonc binds it, and tests drive the real class over
+   * in-memory storage.
    */
-  readonly TURN_CANCELS?: TurnCancelNamespace
+  readonly TURN_CANCELS: TurnCancelNamespace
   /**
    * Smithers Cloud API base (Wave 11): the per-user gateway provision route
    * lives here (`POST /api/repos/{owner}/{repo}/gateway`).
@@ -413,9 +413,11 @@ export interface WorkerEnv extends RecommendEnv, CloudRoleEnv {
   /**
    * The per-user gateway session registry (Wave 11, Durable Object keyed by
    * login): holds the relay records server-side so gateway tokens never
-   * reach a browser. Unset only in unit tests (in-isolate fallback).
+   * reach a browser, and coordinates provisioning so concurrent cold or
+   * expired misses join one resolution. Bound on every real deployment;
+   * tests drive the real class over in-memory storage.
    */
-  readonly GATEWAY_SESSIONS?: GatewaySessionNamespace
+  readonly GATEWAY_SESSIONS: GatewaySessionNamespace
   /**
    * The per-login turn ceiling (Durable Object keyed by the validated login).
    * An abuse guard on a comped seam, not a billing pause — see turnLimit.ts.
@@ -524,14 +526,6 @@ class BodyTooLargeError extends Error {
  */
 const TRANSCRIPT_TOO_LARGE =
   "This conversation has grown too long to send in one turn. Start a new conversation to keep going — nothing was charged, and the transcript above stays where it is."
-
-/*
- * Live turns keyed by runId so /cancel can abort one. Per-isolate best effort,
- * used only when no TURN_CANCELS binding exists (unit tests): a disconnect of
- * the turn's own request always cancels upstream regardless. The owner is the
- * validated login the turn was registered with — only it may cancel.
- */
-const activeTurns = new Map<string, { readonly controller: AbortController; readonly owner: string | undefined }>()
 
 /** How often the streaming pump re-checks the kill state while the upstream is silent. */
 const CANCEL_POLL_MS = 500
@@ -812,55 +806,45 @@ const handleTurn = async (
   // A cloud role (librarian, flows) is answered here on Cerebras, never upstream.
   if (isCloudRoleTurn(body)) return handleCloudRoleTurn(body, env, ISOLATION_HEADERS, request.signal)
   const registry = turnCancelStub(env, body.runId)
-  let generation: string | undefined
-  if (registry !== undefined) {
-    // The registry is the cross-isolate authority on duplicate turns; the
-    // per-isolate map only ever sees this isolate's requests.
-    let registration: { status?: string; generation?: string } | undefined
-    try {
-      registration = await readStubJson<{ status?: string; generation?: string }>(
-        await registry.fetch(
-          new Request("https://turn-cancel.internal/register", {
-            method: "POST",
-            headers: turnSession === undefined ? {} : { [TURN_OWNER_HEADER]: turnSession.login }
-          })
-        )
+  // The registry is the cross-isolate authority on duplicate turns.
+  let registration: { status?: string; generation?: string } | undefined
+  try {
+    registration = await readStubJson<{ status?: string; generation?: string }>(
+      await registry.fetch(
+        new Request("https://turn-cancel.internal/register", {
+          method: "POST",
+          headers: turnSession === undefined ? {} : { [TURN_OWNER_HEADER]: turnSession.login }
+        })
       )
-    } catch (error) {
-      console.error("turn registry register failed:", error)
-      return upstreamUnreachable("The turn registry", error)
-    }
-    if (registration?.status !== "started" || typeof registration.generation !== "string") {
-      return json(409, { status: "error", message: "That Smithers turn is already running." })
-    }
-    generation = registration.generation
-  } else if (activeTurns.has(body.runId)) {
+    )
+  } catch (error) {
+    console.error("turn registry register failed:", error)
+    return upstreamUnreachable("The turn registry", error)
+  }
+  if (registration?.status !== "started" || typeof registration.generation !== "string") {
     return json(409, { status: "error", message: "That Smithers turn is already running." })
   }
+  const generation = registration.generation
   const upstream = new AbortController()
-  const generationHeaders: Record<string, string> = generation === undefined ? {} : { [TURN_GENERATION_HEADER]: generation }
+  const generationHeaders: Record<string, string> = { [TURN_GENERATION_HEADER]: generation }
   let settlement: Promise<void> | undefined
   const settle = (): Promise<void> => {
     if (settlement !== undefined) return settlement
-    if (activeTurns.get(body.runId)?.controller === upstream) activeTurns.delete(body.runId)
     settlement = (async () => {
-      if (registry !== undefined) {
-        try {
-          const response = await registry.fetch(new Request("https://turn-cancel.internal/settle", {
-            method: "POST", headers: generationHeaders
-          }))
-          if (!response.ok) throw new Error(`Registry settle returned ${response.status}`)
-          await response.arrayBuffer()
-        } catch (error) {
-          console.error("turn registry settle failed:", error)
-        }
+      try {
+        const response = await registry.fetch(new Request("https://turn-cancel.internal/settle", {
+          method: "POST", headers: generationHeaders
+        }))
+        if (!response.ok) throw new Error(`Registry settle returned ${response.status}`)
+        await response.arrayBuffer()
+      } catch (error) {
+        console.error("turn registry settle failed:", error)
       }
     })()
     ctx?.waitUntil(settlement)
     return settlement
   }
 
-  activeTurns.set(body.runId, { controller: upstream, owner: turnSession?.login })
   // Register cleanup before an aborted fetch can end the request context.
   const disconnect = () => {
     upstream.abort(request.signal.reason)
@@ -921,19 +905,17 @@ const handleTurn = async (
   // the client can match it to its turn; a terminal frame, a kill observed
   // between chunks, or a closed connection settles the registry entry.
   const hooks: TurnStreamHooks = {
-    ...(registry === undefined ? {} : {
-      isCancelled: async () => {
-        const response = await registry.fetch(new Request("https://turn-cancel.internal/state", {
-          headers: generationHeaders
-        }))
-        const state = await readStubJson<{ state?: string }>(response)
-        if (!response.ok || state === undefined || !["active", "cancelled", "settled", "unknown"].includes(state.state ?? "")) {
-          throw new Error("Invalid turn registry state response")
-        }
-        // A replaced registration must not leave its old upstream running.
-        return state.state !== "active"
+    isCancelled: async () => {
+      const response = await registry.fetch(new Request("https://turn-cancel.internal/state", {
+        headers: generationHeaders
+      }))
+      const state = await readStubJson<{ state?: string }>(response)
+      if (!response.ok || state === undefined || !["active", "cancelled", "settled", "unknown"].includes(state.state ?? "")) {
+        throw new Error("Invalid turn registry state response")
       }
-    }),
+      // A replaced registration must not leave its old upstream running.
+      return state.state !== "active"
+    },
     abort: (reason) => upstream.abort(reason),
     settle
   }
@@ -1073,52 +1055,40 @@ const handleCancel = async (
     return json(400, { status: "error", message: "runId is required." })
   }
   const registry = turnCancelStub(env, runId)
-  if (registry !== undefined) {
-    // workerd-legal kill: never touch the turn request's I/O from here —
-    // just flip the registry state. The turn's own streaming pump observes
-    // "cancelled" between chunks and aborts its own upstream fetch, then
-    // ends the stream with an honest terminal frame.
-    let result: { status?: string } | undefined
-    try {
-      const headers = new Headers(session === undefined ? {} : { [TURN_OWNER_HEADER]: session.login })
-      const current = await readStubJson<{ status?: string; generation?: string }>(
-        await registry.fetch(new Request("https://turn-cancel.internal/current", { headers }))
-      )
-      if (current?.status === "forbidden") {
-        return json(403, { status: "error", message: "That turn belongs to a different account." })
-      }
-      if (current?.status === "not-found") return json(200, { status: "not-found" })
-      if (current?.status !== "active" || typeof current.generation !== "string") {
-        throw new Error("Invalid turn registry current response")
-      }
-      headers.set(TURN_GENERATION_HEADER, current.generation)
-      result = await readStubJson<{ status?: string }>(
-        await registry.fetch(
-          new Request("https://turn-cancel.internal/cancel", {
-            method: "POST",
-            headers
-          })
-        )
-      )
-    } catch (error) {
-      console.error("turn registry cancel failed:", error)
-      return upstreamUnreachable("The turn registry", error)
-    }
-    if (result?.status === "forbidden") {
+  // workerd-legal kill: never touch the turn request's I/O from here —
+  // just flip the registry state. The turn's own streaming pump observes
+  // "cancelled" between chunks and aborts its own upstream fetch, then
+  // ends the stream with an honest terminal frame.
+  let result: { status?: string } | undefined
+  try {
+    const headers = new Headers(session === undefined ? {} : { [TURN_OWNER_HEADER]: session.login })
+    const current = await readStubJson<{ status?: string; generation?: string }>(
+      await registry.fetch(new Request("https://turn-cancel.internal/current", { headers }))
+    )
+    if (current?.status === "forbidden") {
       return json(403, { status: "error", message: "That turn belongs to a different account." })
     }
-    return json(200, { status: result?.status === "cancelled" ? "cancelled" : "not-found" })
+    if (current?.status === "not-found") return json(200, { status: "not-found" })
+    if (current?.status !== "active" || typeof current.generation !== "string") {
+      throw new Error("Invalid turn registry current response")
+    }
+    headers.set(TURN_GENERATION_HEADER, current.generation)
+    result = await readStubJson<{ status?: string }>(
+      await registry.fetch(
+        new Request("https://turn-cancel.internal/cancel", {
+          method: "POST",
+          headers
+        })
+      )
+    )
+  } catch (error) {
+    console.error("turn registry cancel failed:", error)
+    return upstreamUnreachable("The turn registry", error)
   }
-  // In-isolate fallback (unit tests only; the bindingless dev boundary keeps
-  // its own implementation). Same-request abort is legal everywhere.
-  const active = activeTurns.get(runId)
-  if (active === undefined) return json(200, { status: "not-found" })
-  if (active.owner !== undefined && active.owner !== session?.login) {
+  if (result?.status === "forbidden") {
     return json(403, { status: "error", message: "That turn belongs to a different account." })
   }
-  active.controller.abort()
-  activeTurns.delete(runId)
-  return json(200, { status: "cancelled" })
+  return json(200, { status: result?.status === "cancelled" ? "cancelled" : "not-found" })
 }
 
 const notConfigured = (name: string, detail: string): Response =>

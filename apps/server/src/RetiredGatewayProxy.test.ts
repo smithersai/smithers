@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import worker from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 
 describe("retired deployment-identity gateway proxy", () => {
   for (const path of ["/rpc", "/projections", "/sync", "/health"]) {
@@ -18,6 +19,7 @@ describe("retired deployment-identity gateway proxy", () => {
               // Leftover deployment configuration must not reactivate the
               // removed path, including when the caller has a user cookie.
               const env = {
+                ...memoryDurableObjects(),
                 ASSETS: { fetch: async () => new Response("SPA") },
                 IDENTITY_UPSTREAM_URL: "https://identity.test",
                 IDENTITY_SERVICE_TOKEN: "synthetic-identity-secret",

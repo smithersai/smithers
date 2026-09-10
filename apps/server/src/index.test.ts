@@ -6,10 +6,12 @@ import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
 import { COMING_SOON_WORKER_FIRST } from "./appDocument"
 import worker, { PLATFORM_PROXY_RULES, TurnCancelRegistry } from "./index"
 import type { TurnCancelNamespace, TurnCancelStorage, WorkerEnv } from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 import type { TurnLimitNamespace } from "./turnLimit"
 
 const assetsEnv = (html = "<html><body>smithers</body></html>"): WorkerEnv => ({
-  ASSETS: { fetch: async () => new Response(html, { status: 200 }) }
+  ASSETS: { fetch: async () => new Response(html, { status: 200 }) },
+  ...memoryDurableObjects()
 })
 
 const turnBody = {
@@ -51,6 +53,7 @@ describe("routed repository pages", () => {
   const siteEnv = () => {
     const served: Array<string> = []
     const env: WorkerEnv = {
+      ...memoryDurableObjects(),
       ASSETS: {
         fetch: async (request) => {
           const path = new URL(request.url).pathname
@@ -2490,7 +2493,7 @@ describe("the server-side kill route (B-3)", () => {
    * Owner scoping: any allowlisted login may hold a runId (they arrive in
    * client logs, URLs, bug reports), so the kill must check WHO asks, not
    * just WHICH run. The registry records the validated login at register
-   * time and refuses everyone else; the in-isolate fallback does the same.
+   * time and refuses everyone else.
    */
   const signedPost = (path: string, body: unknown, login: string): Request =>
     new Request(`https://mvp.test${path}`, {
@@ -2499,11 +2502,11 @@ describe("the server-side kill route (B-3)", () => {
       body: JSON.stringify(body)
     })
 
-  const ownerScopedEnv = (cancels: boolean): WorkerEnv => ({
+  const ownerScopedEnv = (): WorkerEnv => ({
     ...assetsEnv(),
     IDENTITY_UPSTREAM_URL: "https://identity.test",
     SMITHERS_CHAT_URL: "https://upstream.test/chat",
-    ...(cancels ? { TURN_CANCELS: memoryCancels() } : {})
+    TURN_CANCELS: memoryCancels()
   })
 
   const withSessions = async (
@@ -2528,7 +2531,7 @@ describe("the server-side kill route (B-3)", () => {
 
   test("only the turn's owner may kill it, through the registry", async () => {
     const upstream = hangingUpstream()
-    const env = ownerScopedEnv(true)
+    const env = ownerScopedEnv()
     await withSessions(upstream, async () => {
       const turn = await worker.fetch(
         signedPost("/api/agent/turn", { ...turnBody, runId: "run-owned" }, "alice"),
@@ -2543,30 +2546,6 @@ describe("the server-side kill route (B-3)", () => {
       expect(stranger.status).toBe(403)
       const mine = await worker.fetch(
         signedPost("/api/agent/turn/cancel", { runId: "run-owned" }, "alice"),
-        env
-      )
-      expect(mine.status).toBe(200)
-      expect(await mine.json()).toEqual({ status: "cancelled" })
-      await turn.body?.cancel()
-    })
-  })
-
-  test("only the turn's owner may kill it, through the in-isolate fallback", async () => {
-    const upstream = hangingUpstream()
-    const env = ownerScopedEnv(false)
-    await withSessions(upstream, async () => {
-      const turn = await worker.fetch(
-        signedPost("/api/agent/turn", { ...turnBody, runId: "run-local" }, "alice"),
-        env
-      )
-      expect(turn.status).toBe(200)
-      const stranger = await worker.fetch(
-        signedPost("/api/agent/turn/cancel", { runId: "run-local" }, "bob"),
-        env
-      )
-      expect(stranger.status).toBe(403)
-      const mine = await worker.fetch(
-        signedPost("/api/agent/turn/cancel", { runId: "run-local" }, "alice"),
         env
       )
       expect(mine.status).toBe(200)
@@ -3626,6 +3605,7 @@ describe("Durable Object rejections and the Worker error boundary", () => {
       const logged = spyOn(console, "error").mockImplementation(() => {})
       try {
         const response = await worker.fetch(new Request("https://mvp.test/"), {
+          ...memoryDurableObjects(),
           ASSETS: { fetch: async () => { throw failure } }
         })
         expect(response.status).toBe(500)

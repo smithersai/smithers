@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import worker from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 import type { WorkerEnv } from "./index"
 
 /**
@@ -14,6 +15,7 @@ import type { WorkerEnv } from "./index"
  */
 
 const assetsEnv = (): WorkerEnv => ({
+  ...memoryDurableObjects(),
   ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) }
 })
 

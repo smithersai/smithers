@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { cloudReadPath, createPublicRepositoryReader, isPublicRepositoryRead } from "./publicRepositoryReads"
 import worker from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 
 describe("anonymous repository reads", () => {
   test("admits public document reads and excludes writes, account data, and workspace credentials", () => {
@@ -143,7 +144,7 @@ describe("anonymous repository reads", () => {
     try {
       for (const prefix of ["/api", "/api/cloud/api"]) {
         const response = await worker.fetch(new Request(`https://app.test${prefix}/repos/owner/repo`), {
-          ASSETS: { fetch: async () => new Response("app") }, SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
+          ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
         })
         expect(response.status).toBe(404)
         expect(await response.json()).toEqual({
@@ -170,6 +171,7 @@ describe("anonymous repository reads", () => {
       return Response.json({ full_name: "smithersai/smithers", private: false })
     }) as typeof fetch
     const env = {
+      ...memoryDurableObjects(),
       ASSETS: { fetch: async () => new Response("app") },
       IDENTITY_UPSTREAM_URL: "https://identity.test",
       SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import worker from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 import { createPublicReposHandler } from "./publicRepos"
 import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "./publicRepoCatalog"
 import type { PublicComingSoonRepository, PublicRepoCatalog, PublicRepository } from "./publicRepoCatalog"
@@ -151,6 +152,7 @@ describe("the curated catalog", () => {
     const siteEnv = () => {
       const served: Array<string> = []
       const env = {
+        ...memoryDurableObjects(),
         ASSETS: { fetch: async (req: Request) => { served.push(new URL(req.url).pathname); return new Response("page") } },
         IDENTITY_UPSTREAM_URL: "https://identity.test"
       }
@@ -452,7 +454,7 @@ describe("public available repositories", () => {
       return answerEach(req)
     }) as typeof fetch
     try {
-      const env = { ASSETS: { fetch: async () => new Response("app") }, IDENTITY_UPSTREAM_URL: "https://identity.test", GITHUB_TOKEN: TOKEN }
+      const env = { ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, IDENTITY_UPSTREAM_URL: "https://identity.test", GITHUB_TOKEN: TOKEN }
       const response = await worker.fetch(new Request(`https://app.test/api/public/repos?worker=${Date.now()}`), env)
       expect(response.status).toBe(200)
       expect(seen.length).toBeGreaterThan(0)
@@ -472,7 +474,7 @@ describe("public available repositories", () => {
   })
 
   test("the Worker exposes only this catalog across origins, while write routes remain gated", async () => {
-    const env = { ASSETS: { fetch: async () => new Response("app") }, IDENTITY_UPSTREAM_URL: "https://identity.test" }
+    const env = { ...memoryDurableObjects(), ASSETS: { fetch: async () => new Response("app") }, IDENTITY_UPSTREAM_URL: "https://identity.test" }
     const options = await worker.fetch(new Request(request(), { method: "OPTIONS" }), env)
     expect(options.status).toBe(204)
     const write = await worker.fetch(new Request("https://app.test/api/repos/smithersai/smithers/issues", {

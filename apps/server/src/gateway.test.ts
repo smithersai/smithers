@@ -11,28 +11,40 @@
  * credential with `scopes:["*"]` on the user's VM. It lives server-side only.
  */
 import { afterEach, describe, expect, test } from "bun:test"
-import {
-  callGateway,
-  clearMemoryGatewayRecords,
-  GatewaySessionRegistry,
-  ensureGateway,
-  fetchCloudToken,
-  seedMemoryGatewayRecord
-} from "./gateway"
+import { callGateway, GatewaySessionRegistry, ensureGateway, fetchCloudToken } from "./gateway"
+import type { GatewayRecord, GatewayRegistryEnv } from "./gateway"
 import { ALLOWED_GATEWAY_PROCEDURES } from "./gatewayRpc"
 import worker from "./index"
 import type { WorkerEnv } from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 
 const GATEWAY_TOKEN = "smithers_gateway_secret-operator-token"
 const CLOUD_TOKEN = "smithers_pat_cloud-identity"
 
-const env = (extra: Partial<WorkerEnv> = {}): WorkerEnv => ({
+const BASE_ENV = {
   ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
   IDENTITY_UPSTREAM_URL: "https://identity.test",
   IDENTITY_SERVICE_TOKEN: "service-token",
-  SMITHERS_CLOUD_API_BASE_URL: "https://api.smithers-cloud.test",
-  ...extra
-})
+  SMITHERS_CLOUD_API_BASE_URL: "https://api.smithers-cloud.test"
+}
+
+/*
+ * The Durable Object bindings are the REAL classes over in-memory storage,
+ * one fixture per test: records persist across `env()` calls inside a test
+ * (a deployment keeps them across Worker requests) and vanish between tests.
+ * The registry runs the resolution itself, so the first `env()` of a test
+ * fixes the settings it resolves with.
+ */
+let durable: ReturnType<typeof memoryDurableObjects> | undefined
+const env = (extra: Partial<WorkerEnv> = {}): WorkerEnv => {
+  const settings = { ...BASE_ENV, ...extra }
+  durable ??= memoryDurableObjects(settings)
+  return { GATEWAY_SESSIONS: durable.GATEWAY_SESSIONS, TURN_CANCELS: durable.TURN_CANCELS, ...settings }
+}
+const seedRecord = (login: string, repo: string, record: GatewayRecord): Promise<void> => {
+  env()
+  return durable!.seedGatewayRecord(login, repo, record)
+}
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -121,7 +133,9 @@ const signedIn = (path: string, init?: RequestInit): Request =>
     headers: { "content-type": "application/json", cookie: "smithers_session=abc", ...(init?.headers ?? {}) }
   })
 
-afterEach(() => clearMemoryGatewayRecords())
+afterEach(() => {
+  durable = undefined
+})
 
 describe("wave 11 — provision-or-resume (§5)", () => {
   test("provisions with the user's Cloud token, adopts what comes back, and caches to the half-life", async () => {
@@ -153,24 +167,40 @@ describe("wave 11 — provision-or-resume (§5)", () => {
   })
 
   test("a resolved Durable Object write failure cannot report the gateway ready", async () => {
-    await withRelay({}, async () => {
+    await withRelay({}, async (calls) => {
+      const registry = new GatewaySessionRegistry({ storage: {
+        get: async () => undefined,
+        put: async () => { throw new Error("storage unavailable") }
+      } }, BASE_ENV)
       const outcome = await ensureGateway(
-        env({
-          GATEWAY_SESSIONS: {
-            idFromName: (name) => name,
-            get: () => ({
-              fetch: async (request) =>
-                request.method === "PUT"
-                  ? new Response("storage unavailable", { status: 500 })
-                  : json(200, { record: null })
-            })
-          }
-        }),
+        env({ GATEWAY_SESSIONS: { idFromName: (name) => name, get: () => registry } }),
         "will",
         "will/mvp"
       )
       expect(outcome.status).toBe("unavailable")
-      expect(outcome.status === "unavailable" && outcome.detail).toContain("HTTP 500")
+      expect(outcome.status === "unavailable" && outcome.detail).toContain("storage unavailable")
+      // The relay was asked, the record was minted, and it is not reported.
+      expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(1)
+    })
+  })
+
+  test("a session store that cannot be reached cannot report the gateway ready", async () => {
+    await withRelay({}, async (calls) => {
+      const outcome = await ensureGateway(
+        env({ GATEWAY_SESSIONS: { idFromName: (name) => name, get: () => ({ fetch: async () => { throw new Error("DO unreachable") } }) } }),
+        "will",
+        "will/mvp"
+      )
+      expect(outcome.status).toBe("unavailable")
+      expect(outcome.status === "unavailable" && outcome.detail).toContain("DO unreachable")
+      expect(calls).toHaveLength(0)
+      const refused = await ensureGateway(
+        env({ GATEWAY_SESSIONS: { idFromName: (name) => name, get: () => ({ fetch: async () => new Response("overloaded", { status: 503 }) }) } }),
+        "will",
+        "will/mvp"
+      )
+      expect(refused.status).toBe("unavailable")
+      expect(refused.status === "unavailable" && refused.detail).toContain("HTTP 503")
     })
   })
 
@@ -579,7 +609,7 @@ describe("wave 11 — provision-or-resume (§5)", () => {
       async (calls) => {
         // An hour-old record, exactly what a live DO holds when the VM
         // behind it has since idle-suspended.
-        seedMemoryGatewayRecord("will", "will/mvp", {
+        await seedRecord("will", "will/mvp", {
           gatewayId: "gw-0",
           baseUrl: "https://api.smithers-cloud.test/api/gateways/gw-0",
           token: `${GATEWAY_TOKEN}-0`,
@@ -610,7 +640,7 @@ describe("wave 11 — provision-or-resume (§5)", () => {
         gateway: () => new Response("error code: 502\n", { status: 502 })
       },
       async (calls) => {
-        seedMemoryGatewayRecord("will", "will/mvp", {
+        await seedRecord("will", "will/mvp", {
           gatewayId: "gw-0",
           baseUrl: "https://api.smithers-cloud.test/api/gateways/gw-0",
           token: `${GATEWAY_TOKEN}-0`,
@@ -1001,10 +1031,11 @@ describe("owning workspace routing", () => {
 
 test("durable gateway cache keeps owning workspace records separate across worker restarts", async () => {
   const stored = new Map<string, unknown>()
-  const registry = new GatewaySessionRegistry({ storage: {
+  const storage = {
     get: async <T>(key: string): Promise<T | undefined> => stored.get(key) as T | undefined,
-    put: async (key, value) => { stored.set(key, value) }
-  } })
+    put: async (key: string, value: unknown) => { stored.set(key, value) }
+  }
+  let registry = new GatewaySessionRegistry({ storage }, BASE_ENV)
   const environment = env({ GATEWAY_SESSIONS: { idFromName: (login) => login, get: () => registry } })
   const workspaceId = "83e75ae5-0920-4000-8000-000000000003"
   await withRelay({ provision: (call) => json(200, {
@@ -1014,12 +1045,199 @@ test("durable gateway cache keeps owning workspace records separate across worke
   }) }, async (calls) => {
     expect((await ensureGateway(environment, "codeplanesmithers", "o/r", false, workspaceId)).status).toBe("ready")
     expect((await ensureGateway(environment, "codeplanesmithers", "o/r")).status).toBe("ready")
-    clearMemoryGatewayRecords()
+    // A new isolate: the instance is gone, the storage behind it is not.
+    registry = new GatewaySessionRegistry({ storage }, BASE_ENV)
     const restored = await ensureGateway(environment, "codeplanesmithers", "o/r", false, workspaceId)
     expect(restored.status).toBe("ready")
     if (restored.status === "ready") expect(restored.record.workspaceId).toBe(workspaceId)
     expect(stored.size).toBe(2)
     expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(2)
+  })
+})
+
+/*
+ * The credential store as deployed: one GatewaySessionRegistry per login over
+ * its own storage. Every case below constructs the real class, recreates it
+ * over retained storage (a Worker restart), and reads exact credentials back.
+ */
+describe("the gateway session registry", () => {
+  /** A per-login storage map that survives registry instances. */
+  const retainedNamespace = (registryEnv: GatewayRegistryEnv = BASE_ENV) => {
+    const stores = new Map<string, Map<string, unknown>>()
+    const failures = { get: false, put: false }
+    const storageFor = (login: string) => {
+      let data = stores.get(login)
+      if (data === undefined) {
+        data = new Map()
+        stores.set(login, data)
+      }
+      const rows = data
+      return {
+        get: async <T>(key: string): Promise<T | undefined> => {
+          if (failures.get) throw new Error("read failed")
+          return rows.get(key) as T | undefined
+        },
+        put: async (key: string, value: unknown) => {
+          if (failures.put) throw new Error("write failed")
+          rows.set(key, value)
+        }
+      }
+    }
+    const instances = new Map<string, GatewaySessionRegistry>()
+    const namespace = {
+      idFromName: (login: string) => login,
+      get: (id: unknown) => {
+        const login = String(id)
+        let registry = instances.get(login)
+        if (registry === undefined) {
+          registry = new GatewaySessionRegistry({ storage: storageFor(login) }, registryEnv)
+          instances.set(login, registry)
+        }
+        return registry
+      }
+    }
+    return { namespace, stores, failures, restart: () => instances.clear() }
+  }
+
+  const provisionEach = (call: RelayCall, attempt: number): Response => {
+    const [, owner, repo] = /\/api\/repos\/([^/]+)\/([^/]+)\/gateway$/.exec(new URL(call.url).pathname) ?? []
+    const login = call.authorization?.replace("Bearer cloud-", "") ?? "?"
+    return json(200, {
+      base_url: `https://api.smithers-cloud.test/api/gateways/${login}-${owner}-${repo}-${attempt}`,
+      token: `${GATEWAY_TOKEN}-${login}-${owner}-${repo}-${attempt}`,
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      gateway_id: `${login}-${owner}-${repo}-${attempt}`
+    })
+  }
+  const tokenEach = (call: RelayCall): Response =>
+    json(200, { found: true, token: `cloud-${(call.body as { login: string }).login}` })
+
+  const ready = async (environment: WorkerEnv, login: string, repo: string, force = false): Promise<GatewayRecord> => {
+    const outcome = await ensureGateway(environment, login, repo, force)
+    expect(outcome.status).toBe("ready")
+    if (outcome.status !== "ready") throw new Error(outcome.status)
+    return outcome.record
+  }
+
+  test("round-trips exact credentials per login and repository across restarts, provision and renewal", async () => {
+    const retained = retainedNamespace()
+    const environment = env({ GATEWAY_SESSIONS: retained.namespace })
+    await withRelay({ cloudToken: tokenEach, provision: provisionEach }, async (calls) => {
+      const minted = new Map<string, GatewayRecord>()
+      for (const login of ["alice", "bob"]) {
+        for (const repo of ["org/one", "org/two"]) minted.set(`${login} ${repo}`, await ready(environment, login, repo))
+      }
+      expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(4)
+      expect(retained.stores.get("alice")?.size).toBe(2)
+      expect(retained.stores.get("bob")?.size).toBe(2)
+
+      // Each record names its own login and repository, nothing else's.
+      retained.restart()
+      for (const [key, record] of minted) {
+        const [login, repo] = key.split(" ") as [string, string]
+        const [owner, name] = repo.split("/")
+        const restored = await ready(environment, login, repo)
+        expect(restored).toEqual(record)
+        expect(restored.gatewayId).toMatch(new RegExp(`^${login}-${owner}-${name}-\\d+$`))
+        expect(restored.baseUrl).toBe(`https://api.smithers-cloud.test/api/gateways/${restored.gatewayId}`)
+        expect(restored.token).toBe(`${GATEWAY_TOKEN}-${restored.gatewayId}`)
+      }
+      expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(4)
+
+      // Renewal replaces exactly the expired record and adopts what came back.
+      const aged = minted.get("alice org/one")!
+      await retained.namespace.get("alice").fetch(new Request("https://gateway-sessions.internal/record", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repo: "org/one", record: { ...aged, renewAfter: Date.now() - 1 } })
+      }))
+      const renewed = await ready(environment, "alice", "org/one")
+      expect(renewed.gatewayId).not.toBe(aged.gatewayId)
+      expect(renewed.gatewayId).toMatch(/^alice-org-one-\d+$/)
+      expect(renewed.token).toBe(`${GATEWAY_TOKEN}-${renewed.gatewayId}`)
+      retained.restart()
+      expect(await ready(environment, "alice", "org/one")).toEqual(renewed)
+      expect(await ready(environment, "alice", "org/two")).toEqual(minted.get("alice org/two")!)
+      expect(await ready(environment, "bob", "org/one")).toEqual(minted.get("bob org/one")!)
+      expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(5)
+
+      // A forced refresh re-provisions even a fresh record.
+      const forced = await ready(environment, "bob", "org/two", true)
+      expect(forced.gatewayId).not.toBe(minted.get("bob org/two")!.gatewayId)
+      expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(6)
+    })
+  })
+
+  test("serves a legacy record without provisionedAt and treats storage failures as cold or unavailable", async () => {
+    const retained = retainedNamespace()
+    const environment = env({ GATEWAY_SESSIONS: retained.namespace })
+    await withRelay({ cloudToken: tokenEach, provision: provisionEach }, async (calls) => {
+      const now = Date.now()
+      const legacy = {
+        gatewayId: "legacy", baseUrl: "https://api.smithers-cloud.test/api/gateways/legacy",
+        token: `${GATEWAY_TOKEN}-legacy`, vmId: null, expiresAt: now + 3_600_000, renewAfter: now + 1_800_000
+      }
+      await retained.namespace.get("alice").fetch(new Request("https://gateway-sessions.internal/record", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repo: "org/legacy", record: legacy })
+      }))
+      expect(await ready(environment, "alice", "org/legacy")).toEqual({ ...legacy, provisionedAt: 0 })
+      expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(0)
+
+      retained.failures.put = true
+      const unwritable = await ensureGateway(environment, "alice", "org/fresh")
+      expect(unwritable.status).toBe("unavailable")
+      expect(unwritable.status === "unavailable" && unwritable.detail).toContain("write failed")
+      retained.failures.put = false
+
+      retained.failures.get = true
+      const reprovisioned = await ready(environment, "alice", "org/legacy")
+      expect(reprovisioned.gatewayId).not.toBe("legacy")
+      retained.failures.get = false
+      expect(await ready(environment, "alice", "org/legacy")).toEqual(reprovisioned)
+    })
+  })
+
+  for (const state of ["cold", "expired"] as const) {
+    test(`${state} concurrent misses for one login and repository share a single provisioning`, async () => {
+      const retained = retainedNamespace()
+      const environment = env({ GATEWAY_SESSIONS: retained.namespace })
+      await withRelay({ cloudToken: tokenEach, provision: provisionEach }, async (calls) => {
+        if (state === "expired") {
+          const stale = await ready(environment, "alice", "org/one")
+          await retained.namespace.get("alice").fetch(new Request("https://gateway-sessions.internal/record", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ repo: "org/one", record: { ...stale, renewAfter: Date.now() - 1 } })
+          }))
+          calls.length = 0
+        }
+        const records = await Promise.all(
+          Array.from({ length: 8 }, () => ready(environment, "alice", "org/one"))
+        )
+        const others = await Promise.all([ready(environment, "alice", "org/two"), ready(environment, "bob", "org/one")])
+        expect(calls.filter((call) => call.url.endsWith("/api/identity/cloud-token"))).toHaveLength(3)
+        expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(3)
+        for (const record of records) expect(record).toEqual(records[0])
+        expect(records[0]!.gatewayId).toMatch(/^alice-org-one-\d+$/)
+        expect(new Set([records[0]!.gatewayId, ...others.map((record) => record.gatewayId)]).size).toBe(3)
+        retained.restart()
+        expect(await ready(environment, "alice", "org/one")).toEqual(records[0]!)
+      })
+    })
+  }
+
+  test("a joiner adopts the outcome of a failed provisioning instead of retrying it", async () => {
+    const retained = retainedNamespace()
+    const environment = env({ GATEWAY_SESSIONS: retained.namespace })
+    await withRelay({ cloudToken: tokenEach, provision: () => json(500, { error: "no_capacity" }) }, async (calls) => {
+      const outcomes = await Promise.all(Array.from({ length: 4 }, () => ensureGateway(environment, "alice", "org/one")))
+      for (const outcome of outcomes) expect(outcome).toEqual(outcomes[0])
+      expect(outcomes[0]?.status).toBe("no_capacity")
+      expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(1)
+      expect(retained.stores.get("alice")?.size ?? 0).toBe(0)
+    })
   })
 })
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { MODEL_STREAM_PATH, TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import worker from "./index"
 import type { WorkerEnv } from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 
 /*
  * The relay boundary, driven through the Worker's real fetch handler with the
@@ -14,6 +15,7 @@ import type { WorkerEnv } from "./index"
 
 const env = (overrides: Partial<WorkerEnv> = {}): WorkerEnv =>
   ({
+    ...memoryDurableObjects(),
     ASSETS: { fetch: async () => new Response("not-found", { status: 404 }) },
     SMITHERS_CHAT_URL: "https://upstream.test/chat",
     ...overrides

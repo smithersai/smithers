@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { clearMemoryGatewayRecords, seedMemoryGatewayRecord } from "./gateway"
 import worker from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 
-afterEach(clearMemoryGatewayRecords)
+const SETTINGS = {
+  ASSETS: { fetch: async () => new Response("SPA") },
+  IDENTITY_UPSTREAM_URL: "https://identity.test",
+  IDENTITY_SERVICE_TOKEN: "synthetic-identity-service"
+}
+const durable = memoryDurableObjects(SETTINGS)
+
+afterEach(() => durable.reset())
 
 describe("supported per-user workflow relay", () => {
   for (const path of ["/api/workflow/provision", "/api/workflow/rpc"]) {
@@ -10,7 +17,7 @@ describe("supported per-user workflow relay", () => {
       test(`${path} derives authority from the validated ${caller} session, never a supplied login`, async () => {
         const now = Date.now()
         for (const login of ["alice", "bob"]) {
-          seedMemoryGatewayRecord(login, "org/repo", {
+          await durable.seedGatewayRecord(login, "org/repo", {
             gatewayId: `gateway-${login}`,
             baseUrl: `https://gateway.test/${login}`,
             token: `synthetic-${login}-token`,
@@ -55,11 +62,7 @@ describe("supported per-user workflow relay", () => {
               headers,
               body: JSON.stringify({ repo: "org/repo", procedure: "List", payload: {}, login: forgedLogin })
             }),
-            {
-              ASSETS: { fetch: async () => new Response("SPA") },
-              IDENTITY_UPSTREAM_URL: "https://identity.test",
-              IDENTITY_SERVICE_TOKEN: "synthetic-identity-service"
-            }
+            { ...SETTINGS, GATEWAY_SESSIONS: durable.GATEWAY_SESSIONS, TURN_CANCELS: durable.TURN_CANCELS }
           )
           const text = await response.text()
           if (caller === "anonymous" || caller === "expired") {

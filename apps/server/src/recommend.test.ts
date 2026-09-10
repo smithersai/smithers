@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import worker from "./index"
 import type { WorkerEnv } from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 import {
   filterAnswer,
   parseAnswer,
@@ -118,6 +119,7 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
   })
 
 const env = (overrides: Partial<WorkerEnv> = {}): WorkerEnv => ({
+  ...memoryDurableObjects(),
   ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
   CEREBRAS_API_KEY: "csk-test",
   ...overrides

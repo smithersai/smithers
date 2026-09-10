@@ -16,6 +16,7 @@ import {
 import type { ClientErrorNamespace, ClientErrorRecord, ClientErrorStorage } from "./clientErrorLog"
 import worker from "./index"
 import type { WorkerEnv } from "./index"
+import { memoryDurableObjects } from "./memoryDurableObjects"
 
 /*
  * What broke in a user's browser has to survive longer than a `wrangler tail`.
@@ -60,6 +61,7 @@ const unthrottled = (): (() => number) => {
 }
 
 const adminEnv = (logs?: ClientErrorNamespace): WorkerEnv => ({
+  ...memoryDurableObjects(),
   ASSETS: { fetch: async () => new Response("<html></html>", { status: 200 }) },
   IDENTITY_UPSTREAM_URL: "https://identity.test",
   ...(logs === undefined ? {} : { CLIENT_ERRORS: logs })
