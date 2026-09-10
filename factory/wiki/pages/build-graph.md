@@ -17,3 +17,9 @@ A source digest proves which bytes were read. It cannot prove that prose accurat
 ## Understand the portability boundary
 
 The workspace currently declares a Node toolchain for repository targets and separately declares Bun. Selecting Node for the build command is a repository policy; it is not a reason for a reusable flow to import Node filesystem or SQL APIs. The generation actions depend on Effect services, and the executable selects the Node or Bun runtime composition.
+
+## Give coding checks real graph inputs
+
+The private coding gate recipe declares source-only Filegroups with each owning package directory. The CLI honors explicit Filegroup cwd consistently in planning, target indexing and affected-file matching; the default remains the declaring package. Package-scoped glob and escape checks remain in force. The coding inventory also depends on the workspace membership manifest and package export maps, so another package's source change cannot hide behind a stale partial glob.
+
+Fast policy targets, slower runtime/native targets and bundle acceptance are distinct existing target kinds. Native launchers refuse missing Plue/JJ helpers before opt-in fixtures could skip; they invoke the selected Node or Bun runtime and run fixtures sequentially. A per-fixture timeout is not the enclosing target's total timeout. See the owning coding testing guide for exact labels and limits; declaring those targets is not a receipt that they passed.

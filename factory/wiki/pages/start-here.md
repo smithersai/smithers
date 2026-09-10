@@ -25,4 +25,6 @@ The coding agent uses this machinery too. Its generated JavaScript cells run in 
 
 Slash commands, buttons and agent tools share one flow; missing required input becomes a schema-derived form. React components project state held in TanStack DB and changed through an actor-tagged dispatcher. Current onboarding policy keeps the UI and chat history in the main view and summons only the composer through Command-K / Control-K, superseding the older always-visible-composer requirement. Every required interaction needs a keyboard completion path.
 
+Follow the [configured host](coding-host.md) into the [request lifecycle](coding-request.md), [planning memory](coding-planning.md), [disposable prototype](coding-poc.md), [owner correction](coding-correction.md) and [coding evidence UI](coding-ui.md). Read the [mythical contract](coding-direction.md) and [interaction study](coding-experience.md) as intended direction, separately from current implementation.
+
 Start with the linked focused pages. The wiki writer records captured source references, content identity and semantic verification state in each generated page record. A verified source snapshot does not establish that a build passed or that production was deployed.

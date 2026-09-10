@@ -2,6 +2,10 @@
 
 The catalog is the only repository-specific input inventory. Each page has a small purpose, linked neighbors, an owning Markdown document and exact code inputs. Explicit inclusive line ranges can select bounded reviewer excerpts; complete files are still hashed and archived, so a change outside an excerpt invalidates the page. Reviews are capped at 90 KB of serialized prompt evidence per page; full-file capture is capped separately at 300 KB per page, and the flow accepts at most 30 pages. Prefer a focused page to concatenating package manuals. Read [how generation works](pages/wiki-generation.md) and [runtime portability](../../packages/smithers/flows/docs/concepts/runtime-portability.md).
 
+The catalog follows an overview-to-owner structure. Foundational pages explain flow authoring, runtime portability, durable stores and build dependencies. Focused coding pages cover the configured host, approved native control, wiki-backed planning, the two-pass request, retained source prototypes, immutable checks and bounded owner correction. UI pages distinguish predicted Changes, recorded native evidence and collaborative human documents. The mythical product contract and prior-art interaction study are explicitly `intent`, not claims of delivery.
+
+Keep source excerpts aligned with the current implementation when refreshing the catalog. Successful collection proves only that the declared files and ranges exist within the evidence bounds. It does not establish that an excerpt is relevant or that its prose is correct. Freeze one source revision for the actual semantic run, retain its native receipts, and publish only that verified artifact. A later main-branch change needs a new freshness check and, where input identity changes, a new semantic review. The HTML study should consume the exact verified projection rather than an older preview with a newer report timestamp.
+
 Generate an explicitly unreviewed preview through a real durable flow:
 
 ```sh
@@ -51,3 +55,7 @@ separately approved workspace filesystem.
 ## Validation evidence and limits
 
 The recipe tests invalidate pages after either code or prose edits, reject changed source after review, require complete exact citations, refuse unsupported reviews, preserve independent human files, detect altered immutable artifacts and forged verification fields, and exercise real AgentAction/QuickJS correction and engine replay. They also verify that citation assessment waits for independent reviews. A scripted model proves protocol and replay mechanics; it does not certify the repository pages. Live provider review receipts belong to each generated snapshot, not to a permanent claim in this README.
+
+## Required coding backpressure integration
+
+Pre-planning wiki refresh is implemented. Automatic semantic review after every coding change or rebase is still a gap. The intended integration is an ordinary registered slow check that captures the exact immutable implemented revision, runs existing ReviewPage and assessment actions in the current native runtime, and returns the existing coding Receipt with owner findings. It must not start another runtime/database or read the moving edit checkout while later stages work. Verified wiki publication remains a separate source-fenced step. See the accountable-wiki page for this explicit current-versus-required boundary.

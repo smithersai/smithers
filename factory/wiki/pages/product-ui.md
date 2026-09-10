@@ -19,3 +19,7 @@ The trace card now starts with a cheap Turns view: bounded excerpts of recorded 
 ## Keep wiki truth visible
 
 The UI rules describe the wiki as Markdown-native linked documents in its own TanStack DB collection, with provenance, confidence, actor and revision. Inferred world state must not look like ground truth. Generated wiki pages therefore expose freshness and semantic verification separately. The generator leaves canonical human-authored pages outside its output directory and does not overwrite them; explicitly catalogued intent can appear as a generated snapshot copy.
+
+## Decode native coding evidence separately
+
+Native executions appear beside recorded agent turns. Their results use the existing engine codecs and recorded parent edges; they are not invented model turns. The [coding view](coding-ui.md) derives prepared plans, retained POCs and product outcomes from completed owned children. The [observation contract](native-engine-evidence.md) explains why terminal Control status can coexist with a pending final native drain.

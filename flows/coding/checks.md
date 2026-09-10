@@ -4,6 +4,8 @@
 with the existing executable catalog and `checkLayers(options)` with the
 existing native action table. There is no additional executor or database.
 
+## Pin a registered command
+
 A project check is an ordinary discovered Markdown flow. Its verified body
 contains the command declaration as its first nonempty line, for example:
 
@@ -27,6 +29,8 @@ revision evidence validate a different input.
 The registry appends a resource trailer and encoded arguments; the recipe reads
 only that first JSON declaration line, so appended input cannot replace it.
 
+## Export immutable source
+
 The action asks Plue's `smithers-jj-export` to materialize the full commit ID in
 a new temporary directory. It verifies the returned commit, tree and JJ change
 IDs before running the command. Neither exporter nor checker changes the owning
@@ -38,6 +42,8 @@ links or links into the live checkout or anywhere else outside it before a
 checker starts. This prevents a committed dependency link from silently reading
 mutable source. Commands still need the host's execution confinement.
 
+## Run with explicit host policy
+
 The command runs with literal argv, a contained relative working directory, a
 bounded timeout, and a host-supplied build environment. It does not inherit the
 gateway's environment by default. Dependency installation and runtime selection
@@ -47,11 +53,15 @@ The example requires an explicit host `environment.PATH` containing `node`;
 without a supplied PATH the command must name an absolute executable. Tools
 that need HOME, a package cache or other build settings receive those explicitly.
 
+## Retain measured receipts
+
 Actual process exit zero produces a passing receipt. A nonzero exit produces a
 failed receipt and finding for its current owning Change. Invalid exports,
 missing executables, timeouts and unavailable cleanup fail execution instead of
 inventing validation evidence. Output is drained and a bounded prefix is stored
 in the existing receipt, with truncation disclosed.
+
+## Close scratch after contained processes
 
 The export directory is scoped to the action and removed after its process
 scope closes, including on cancellation. It is a source snapshot, not a security
