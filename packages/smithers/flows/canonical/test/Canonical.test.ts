@@ -600,12 +600,59 @@ describe("Canonical repeated-reference validation", () => {
     expect(serialize({ a: shared, b: shared })).toBe("{\"a\":{\"text\":\"fine\"},\"b\":{\"text\":\"fine\"}}")
   })
 
-  it("rejects a value whose only invalid occurrence is the repeated one", () => {
-    // The ordering half: the invalid object is visited first at `a`, nested a
-    // level deeper, so visit order can never be what decides validity.
+  it("rejects an invalid object whose first occurrence is the deeper one", () => {
+    // Depth, not only sibling order: the invalid object is visited first at
+    // `$.a.nested` and again one level shallower at `$.b`, so the shape of the
+    // first occurrence is never what decides validity.
     const invalid = { text: "\udfff" }
-    expect(failure({ a: { nested: invalid }, b: invalid })).toEqual(
-      expect.objectContaining({ _tag: "SchemaError" })
+    expect(failureMessage({ a: { nested: invalid }, b: invalid })).toContain(
+      "canonical_lone_surrogate: lone surrogate in value at $.a.nested.text"
     )
+  })
+
+  // Every cell above shares an object that is either always valid or always
+  // invalid, so a serializer that memoized an object's first successful
+  // serialization and reused it for later references would still pass them.
+  // These three pin the per-occurrence contract itself, with a shared object
+  // that answers differently on each visit: each occurrence reads the object
+  // again, and validates and emits whatever that read produced.
+  it("refuses a shared object whose getter turns invalid only on the second visit", () => {
+    let reads = 0
+    const shared = {
+      get text(): string {
+        reads++
+        return reads === 1 ? "fine" : "lone \ud800 surrogate"
+      }
+    }
+    expect(failureMessage({ a: { nested: shared }, b: { nested: shared } })).toContain(
+      "canonical_lone_surrogate: lone surrogate in value at $.b.nested.text"
+    )
+    expect(reads).toBe(2)
+  })
+
+  it("refuses a shared object whose toJSON turns invalid only on the second visit", () => {
+    let calls = 0
+    const shared = {
+      toJSON(): string {
+        calls++
+        return calls === 1 ? "fine" : "lone \ud800 surrogate"
+      }
+    }
+    expect(failureMessage({ a: { nested: shared }, b: { nested: shared } })).toContain(
+      "canonical_lone_surrogate: lone surrogate in value at $.b.nested.toJSON()"
+    )
+    expect(calls).toBe(2)
+  })
+
+  it("emits each occurrence of a changing shared object as the value that occurrence read", () => {
+    let reads = 0
+    const shared = {
+      get text(): string {
+        reads++
+        return `visit ${reads}`
+      }
+    }
+    expect(serialize({ a: shared, b: shared })).toBe("{\"a\":{\"text\":\"visit 1\"},\"b\":{\"text\":\"visit 2\"}}")
+    expect(reads).toBe(2)
   })
 })
