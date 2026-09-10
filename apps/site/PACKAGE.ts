@@ -64,6 +64,7 @@ import { Package as cliPackage } from "../../packages/smithers/PACKAGE.ts"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
 import { workspacePackages } from "../../scripts/workspace-packages.mjs"
 import { sites as docsSites } from "../docs/shared/manifest.mjs"
+import { Package as docsSharedPackage } from "../docs/shared/PACKAGE.ts"
 import { Package as uiPackage } from "../ui/PACKAGE.ts"
 
 const cwd = "apps/site"
@@ -98,12 +99,19 @@ const sources = [
  */
 const appSources = uiPackage.webSources
 
+/**
+ * The shared docs kit: scripts/docs-notice.mjs imports its release notice
+ * middleware into the /docs routes, so its edit changes the rendered pages
+ * without touching a file under apps/site. The edge carries its digest here.
+ */
+const docsKit = docsSharedPackage.sources
+
 /** `astro check`: the pages, components and the island's app sources typecheck against the package tsconfig. */
 const check = Smithers.ToolRun({
   command: "pnpm",
   args: ["run", "check"],
   inputs: sources,
-  deps: [appSources],
+  deps: [appSources, docsKit],
   cwd
 })
 
@@ -120,7 +128,7 @@ const build = Smithers.ToolBuild({
   args: ["run", "build"],
   inputs: [...sources, Smithers.file("//CHANGELOG.md")],
   outputs: ["dist"],
-  deps: [cliPackage.docsSources, appSources, uiPackage.devkit],
+  deps: [cliPackage.docsSources, appSources, docsKit, uiPackage.devkit],
   env: {},
   cache: true,
   cwd

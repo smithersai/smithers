@@ -4,26 +4,34 @@
  *
  * The content edge is the source package's docsFiles filegroup, imported by
  * label: input globs are package scoped, so a glob declared here could never
- * reach packages/smithers/flows/engine-store.
+ * reach packages/smithers/flows/engine-store. The kit edge is apps/docs/shared's sources group:
+ * astro.config.mjs imports its config factory, which mounts its release
+ * notice middleware, so the rendered HTML changes when the kit does.
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as engineStorePackage } from "../../../packages/smithers/flows/engine-store/PACKAGE.ts"
+import { Package as docsSharedPackage } from "../shared/PACKAGE.ts"
 
 const cwd = "apps/docs/engine-store"
 
-/** The site's config, content, styles, and scripts. */
+/** The site's config, content, styles, scripts, public assets, and tsconfig. */
 const sources = [
   Smithers.glob("//apps/docs/engine-store/src/**/*"),
+  Smithers.glob("//apps/docs/engine-store/public/**/*"),
   Smithers.file("//apps/docs/engine-store/astro.config.mjs"),
-  Smithers.file("//apps/docs/engine-store/package.json")
+  Smithers.file("//apps/docs/engine-store/package.json"),
+  Smithers.file("//apps/docs/engine-store/tsconfig.json")
 ]
+
+/** The shared Starlight kit the config imports; a filegroup is an edge, and its digest reaches this package's keys. */
+const kit = docsSharedPackage.sources
 
 /** `astro check`: the site typechecks against its package tsconfig. */
 const check = Smithers.ToolRun({
   command: "pnpm",
   args: ["run", "check"],
   inputs: sources,
-  deps: [],
+  deps: [kit],
   cwd
 })
 
@@ -34,7 +42,7 @@ const build = Smithers.ToolBuild({
   args: ["run", "build"],
   inputs: sources,
   outputs: ["dist"],
-  deps: [],
+  deps: [kit],
   env: {},
   cache: true,
   cwd
