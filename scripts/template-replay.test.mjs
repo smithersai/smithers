@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import test from "node:test"
 
-import { runTemplateReplay } from "./fixtures/dependency-consumers.mjs"
+import { runTemplateReplay } from "./release-consumers.mjs"
 
 const repoRoot = resolve(import.meta.dirname, "..")
 

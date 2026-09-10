@@ -32,7 +32,7 @@ import { releaseRegistry } from "./release-registry.mjs"
 import { recordSmokeSuccess, verifyLocalCandidate } from "./publish-release.mjs"
 import { assertNodeSupport } from "./release-node-support.mjs"
 import { assertSmokeNpmSupport } from "./release-npm-support.mjs"
-import { adapterProfiles, migrationProfiles, minimalProfiles, releasePackageManager, runConsumerMatrix, templateProfile } from "./fixtures/dependency-consumers.mjs"
+import { adapterProfiles, migrationProfiles, minimalProfiles, releasePackageManager, runConsumerMatrix, templateProfile } from "./release-consumers.mjs"
 
 const repoRoot = resolve(import.meta.dirname, "..")
 

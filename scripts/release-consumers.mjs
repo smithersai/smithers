@@ -7,11 +7,16 @@ import { copyFile, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/prom
 import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { releaseRegistry } from "../release-registry.mjs"
+import { releaseRegistry } from "./release-registry.mjs"
+import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
 import { build as bundle } from "esbuild"
 import { valid } from "semver"
 
-const effect = "4.0.0-rc.112"
+// The one Effect pin every published manifest carries; declared once for the whole release line.
+const effect = EXPECTED_EFFECT_VERSION
+/** The published RC one below the pin: an exact library peer must refuse it. */
+export const adjacentEffectVersion = effect.replace(/-rc\.(\d+)$/, (_, rc) => "-rc." + (Number(rc) - 1))
+const literally = (text) => new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
 /** Consumer requests must select this candidate, including a future stable cut. */
 export const candidateVersion = (entries) => {
   const versions = new Set(entries.map((entry) => entry.version))
@@ -22,7 +27,7 @@ export const candidateVersion = (entries) => {
 }
 // Temporary projects must select the same pnpm toolchain as the repository.
 // Otherwise a different pnpm on a Node-version PATH can change command support.
-export const releasePackageManager = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../package.json"), "utf8")).packageManager
+export const releasePackageManager = JSON.parse(readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8")).packageManager
 const runners = ["vitest", "@effect/vitest", "@smthrs/testing"]
 const nodeRuntime = ["@smthrs/platform-node", "@effect/platform-node", "@effect/platform-node-shared"]
 const nodeAdapters = [...nodeRuntime, "@effect/sql-sqlite-node"]
@@ -310,7 +315,7 @@ export const refuseIncompatibleRc = async (manager, registryUrl, entries) => {
     // Adjacent published RC, deliberately incompatible with the exact library peer.
     await writeFile(join(consumer, "package.json"), JSON.stringify({
       private: true, packageManager: releasePackageManager,
-      dependencies: { "@smthrs/database": firstParty, effect: "4.0.0-rc.111" }
+      dependencies: { "@smthrs/database": firstParty, effect: adjacentEffectVersion }
     }))
     await successful(manager, ["--version"], consumer)
     const result = await consumerCommand(manager, ["install", "--ignore-scripts",
@@ -318,8 +323,8 @@ export const refuseIncompatibleRc = async (manager, registryUrl, entries) => {
     assert.notEqual(result.exit, 0, "incompatible RC must be refused")
     assert.equal(result.signal, null)
     assert.match(result.output, manager === "npm" ? /ERESOLVE/ : /ERR_PNPM_PEER_DEP_ISSUES/)
-    assert.match(result.output, /4\.0\.0-rc\.112/)
-    assert.match(result.output, /4\.0\.0-rc\.111/)
+    assert.match(result.output, literally(effect))
+    assert.match(result.output, literally(adjacentEffectVersion))
     return { manager, exit: result.exit }
   } finally {
     await rm(consumer, { recursive: true, force: true })

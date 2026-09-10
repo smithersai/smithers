@@ -1,10 +1,11 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { adapterProfiles, candidateVersion, migrationProfiles, minimalProfiles, runConsumerProfile, templateProfile } from "./fixtures/dependency-consumers.mjs"
+import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
+import { adapterProfiles, adjacentEffectVersion, candidateVersion, migrationProfiles, minimalProfiles, runConsumerProfile, templateProfile } from "./release-consumers.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
 
 test("every library, adapter and migration profile selects the supplied candidate version", () => {
@@ -16,9 +17,40 @@ test("every library, adapter and migration profile selects the supplied candidat
       const firstParty = Object.entries(profile.dependencies).filter(([name]) => name.startsWith("@smthrs/"))
       assert.ok(firstParty.length > 0, profile.name)
       for (const [name, range] of firstParty) assert.equal(range, version, `${profile.name}: ${name}`)
-      assert.equal(profile.dependencies.effect, "4.0.0-rc.112")
+      assert.equal(profile.dependencies.effect, EXPECTED_EFFECT_VERSION)
     }
   }
+})
+
+test("the incompatible consumer requests the published RC one below the pin", () => {
+  const [, rc] = /-rc\.(\d+)$/.exec(EXPECTED_EFFECT_VERSION)
+  assert.equal(adjacentEffectVersion, EXPECTED_EFFECT_VERSION.replace(/-rc\.\d+$/, "-rc." + (Number(rc) - 1)))
+  assert.notEqual(adjacentEffectVersion, EXPECTED_EFFECT_VERSION)
+})
+
+// Release logic that reads the pin imports it from check-single-effect-version.mjs.
+// A second literal is the drift the exact-pin gate exists to stop: a bump there
+// left these files asserting the old RC until a release rehearsal failed.
+test("the release consumer matrix and the package contract declare no Effect RC of their own", () => {
+  for (const file of ["release-consumers.mjs", "check-npm-dedupe.mjs", "smoke-release.mjs", "repo-contract/package-contract.test.mjs"]) {
+    const literals = readFileSync(join(import.meta.dirname, file), "utf8").match(/\d+\.\d+\.\d+-rc\.\d+/g) ?? []
+    assert.deepEqual(literals, [], `${file} hand-restates a release-line version: ${literals.join(", ")}`)
+  }
+})
+
+// scripts/fixtures/ holds files a consumer copies: probes and the installed
+// consumer. Lint ignores the directory and the boundary gate reads it as a
+// consumer, so release logic that lived there ran unlinted and unchecked.
+test("no release script imports a module from scripts/fixtures", () => {
+  const importers = []
+  for (const directory of [".", "repo-contract"]) {
+    for (const entry of readdirSync(join(import.meta.dirname, directory))) {
+      if (!entry.endsWith(".mjs")) continue
+      const source = readFileSync(join(import.meta.dirname, directory, entry), "utf8")
+      if (/from\s+["'](?:\.\.?\/)+fixtures\/[^/"']+\.mjs["']/.test(source)) importers.push(join(directory, entry))
+    }
+  }
+  assert.deepEqual(importers, [], "move the module beside its importers under scripts/")
 })
 
 test("candidate selection rejects empty, mixed and non-exact versions", () => {

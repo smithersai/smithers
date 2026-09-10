@@ -28025,7 +28025,7 @@
       },
       {
         "kind": "file",
-        "path": "scripts/dependency-consumers.test.mjs"
+        "path": "scripts/release-consumers.test.mjs"
       },
       {
         "kind": "file",

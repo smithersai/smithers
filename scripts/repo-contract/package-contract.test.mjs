@@ -15,13 +15,17 @@ import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { describe, it } from "node:test"
 import { fileURLToPath } from "node:url"
+import { EXPECTED_EFFECT_VERSION as effectVersion } from "../check-single-effect-version.mjs"
 import { libraryPackages } from "../workspace-packages.mjs"
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
 
-/** The one version every package on the release line carries. */
-const releaseVersion = "1.0.0-rc.0"
-const effectVersion = "4.0.0-rc.112"
+/**
+ * The one version every package on the release line carries, read from the CLI
+ * manifest `set-release-version.mjs` rewrites, so a cut never leaves this suite
+ * asserting the previous line.
+ */
+const releaseVersion = JSON.parse(readFileSync(join(root, "packages/smithers/package.json"), "utf8")).version
 
 /** Executables own their runtime; libraries make the host supply the singleton. */
 const effectRuntimeOwners = new Set(["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate"])
@@ -263,7 +267,7 @@ describe("the workspace package contract", () => {
     const platform = publishable.find((entry) => entry.manifest.name === "@smthrs/platform-bun")
     assert.ok(platform, "@smthrs/platform-bun must be publishable")
 
-    assert.equal(platform.manifest.peerDependencies?.["@effect/platform-bun"], "4.0.0-rc.112")
+    assert.equal(platform.manifest.peerDependencies?.["@effect/platform-bun"], effectVersion)
     assert.notEqual(platform.manifest.peerDependenciesMeta?.["@effect/platform-bun"]?.optional, true)
   })
 

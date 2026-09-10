@@ -20,7 +20,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { SINGLETONS, copiesOf, maxPackagesFrom, optionalPeersOf, resolveConsumerTree, resolveConsumerProfiles } from "./check-npm-dedupe.mjs";
-import { assertConsumerTree } from "./fixtures/dependency-consumers.mjs";
+import { assertConsumerTree } from "./release-consumers.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 

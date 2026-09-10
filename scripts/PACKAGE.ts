@@ -104,7 +104,7 @@ const releaseRehearsal = Smithers.NodeTest({
     Smithers.file("//scripts/release-rehearsal.test.mjs"),
     Smithers.file("//scripts/release-publish.test.mjs"),
     Smithers.file("//scripts/build-release.test.mjs"),
-    Smithers.file("//scripts/dependency-consumers.test.mjs"),
+    Smithers.file("//scripts/release-consumers.test.mjs"),
     Smithers.file("//scripts/installed-consumer-boundary.test.mjs"),
     Smithers.file("//scripts/template-replay.test.mjs"),
     Smithers.file("//scripts/release-npm-support.test.mjs"),

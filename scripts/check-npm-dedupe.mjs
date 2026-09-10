@@ -34,7 +34,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readWorkspaceManifests } from "./pack-release.mjs";
-import { minimalProfiles, adapterProfiles, runConsumerMatrix } from "./fixtures/dependency-consumers.mjs";
+import { minimalProfiles, adapterProfiles, runConsumerMatrix } from "./release-consumers.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
