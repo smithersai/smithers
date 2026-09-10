@@ -24,30 +24,54 @@ There is no process-local retry loop or parallel correction writer.
 
 The first pass uses `ObservePlan`, an opt-in composition of the existing
 implementation, fast-gate and check leaves. Each fast-gated implementation and
-finished slow-check receipt is immediately recorded in the existing native
+validated slow-check receipt is immediately recorded in the existing native
 `DurableDeferred` store. The first valid actionable receipt wins a named durable
 slot. Both that writer and the final implementation-ready writer check the
-committed pair, so no process-local race decides which findings survive replay.
+committed pair, so neither can miss the other's completion.
 Once every planned native implementation exists and feedback is actionable, a
 typed `EarlyFeedback` outcome stops the pass before unrelated slow checks finish.
 An implementation or fast-gate failure ends the pass directly; there is no
 separate all-IDs waiter that can be orphaned by that failure.
+
+A malformed slow receipt is retained as the existing typed `CodingError` in one
+private `coding/feedback/invalid-receipt` deferred slot. It is not an actionable
+finding and never enters the validated receipt slots. Its recording action keeps
+the original check output; returning that output does not validate it. The pass
+waits until every implementation is fast-gated before raising the retained
+refusal. The invalid slot takes priority over valid first feedback, so a valid
+finding cannot hide a later malformed owner, source revision or input digest.
+The native action input, typed failure and blocked pass ID remain available for
+inspection. This adds no public API, store, receipt type or execution service.
 
 The controller requests cancellation through the existing native flow runtime,
 then uses the ordinary bounded `Poll` pattern and the engine's lineage/DAG reads
 to require terminal states for the pass and all linked descendants. A cancellation
 request alone is insufficient. Failure to acknowledge within 300 observations
 100 ms apart returns blocked evidence, retaining the original pass and receipts.
+That bounded poll has a stable execution ID. If it exhausts and the host restarts
+before the round records its blocked outcome, replay retains the exhaustion even
+if children have since stopped. Retrying that situation requires a new
+`CorrectPlan` execution; the old cursor does not silently refresh its evidence.
 This is a native terminal-state acknowledgement; it does not add a new lease,
 process registry, cancellation service or history store. Immutable check processes
 remain scoped to their existing check leaf. The native acceptance fixture also
 checks the cancelled process and source export are gone before it accepts success.
 
 Only then does correction choose the earliest owning Change among the completed
-receipts. The implementation branch must have finished; this version does not
-preempt a JJ edit midway through an atom or replan uncreated atoms. Repair passes
+receipts. The implementation branch must have finished; actionable feedback and
+receipt-validation refusals do not preempt a JJ edit midway through an atom or
+replan uncreated atoms. An execution failure inside a check remains a separate
+failure path and can interrupt parallel work. Repair passes
 use the same feedback path. All originally completed receipts remain in their
 original execution, including the typed early outcome and its trigger.
+
+If several checks finish after implementation readiness, their early outcomes
+can contain different subsets of completed slow receipts. The round's recorded
+outcome pins the selected snapshot. A host crash between the pass failing and
+that round record can select another recorded partial snapshot on recovery.
+Every such result remains `changes-requested`; missing checks are rerun where
+required and final validation still requires exact receipts. This recipe does
+not claim one atomic snapshot across concurrent check completions.
 
 ## Native owner repair
 

@@ -14,6 +14,7 @@ export { EarlyFeedback } from "./feedback-schema.ts"
 export const FeedbackError = Schema.Union([CodingError, EarlyFeedback])
 const Ready = DurableDeferred.make("coding/feedback/implementations-ready", { success: Schema.Boolean })
 const First = DurableDeferred.make("coding/feedback/first-actionable", { success: Receipt })
+const Invalid = DurableDeferred.make("coding/feedback/invalid-receipt", { success: CodingError })
 const gated = (index: number) => DurableDeferred.make(`coding/feedback/gated/${index}`, { success: ValidatedChange })
 const checked = (index: number, id: string) => DurableDeferred.make(`coding/feedback/check/${index}/${Digest.digest(id)}`, { success: Receipt })
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
@@ -38,9 +39,14 @@ const record = <S extends Schema.Constraint>(deferred: DurableDeferred.DurableDe
 const interruptOnFeedback = (plan: Plan) => Effect.gen(function*() {
   const runtime = yield* FlowRuntime.FlowRuntime
   const ready = yield* runtime.deferredResult(Ready)
-  const first = yield* runtime.deferredResult(First)
-  if (Option.isNone(ready) || Option.isNone(first)) return
+  if (Option.isNone(ready)) return
   yield* ready.value
+  // Invalid evidence is never actionable feedback. Delay its typed refusal
+  // until all native writers finish, even when a valid finding arrived first.
+  const rejected = yield* runtime.deferredResult(Invalid)
+  if (Option.isSome(rejected)) return yield* (yield* rejected.value)
+  const first = yield* runtime.deferredResult(First)
+  if (Option.isNone(first)) return
   const trigger = yield* first.value
   const changes: ValidatedChange[] = []
   for (const [index, change] of plan.changes.entries()) {
@@ -122,12 +128,21 @@ export const feedbackLayers = Layer.mergeAll(
     return group
   })),
   RecordSlow.toLayer(({ plan, index, implementation, check, receipt }) => Effect.gen(function*() {
-    const findings = yield* Effect.try({ try: () => receiptFindings(plan, index, implementation, check, receipt),
-      catch: error => error instanceof CodingError ? error : invalid(String(error)) })
-    if (check.tier !== "slow" || !receiptMatches(implementation, check, receipt)) return yield* invalid("Only exact slow-check receipts can trigger early feedback")
-    yield* record(checked(index, check.id), receipt)
-    if (findings.length) yield* record(First, receipt)
+    const validation = yield* Effect.try({ try: () => {
+      const findings = receiptFindings(plan, index, implementation, check, receipt)
+      if (check.tier !== "slow" || !receiptMatches(implementation, check, receipt)) throw invalid("Only exact slow-check receipts can trigger early feedback")
+      return findings
+    }, catch: error => error instanceof CodingError ? error : invalid(String(error)) }).pipe(
+      Effect.match({ onFailure: error => ({ error }), onSuccess: findings => ({ findings }) })
+    )
+    if ("error" in validation) yield* record(Invalid, validation.error)
+    else {
+      yield* record(checked(index, check.id), receipt)
+      if (validation.findings.length) yield* record(First, receipt)
+    }
     yield* interruptOnFeedback(plan)
+    // This is the check's recorded output, not an assertion that it is valid.
+    // Ready or final Assess must expose a retained invalid-receipt refusal.
     return receipt
   })),
   ChildrenStopped.toLayer(({ executionId }) => Effect.gen(function*() {
