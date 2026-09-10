@@ -3,6 +3,11 @@
  * Keep control flow independent of RuntimeGraph. Relative imports,
  * test-irrelevant coverage annotations, and the corrected stop-merge
  * settlement identity differ from the captured source.
+ *
+ * The dispatch seam is shared with production, not frozen: this oracle
+ * constructs `ActionPersistence` the way the live caller does, including
+ * the run-scoped cache-age projection. Freezing the seam instead would
+ * make the differential report seam read counts as scheduler divergence.
  */
 /**
  * Drives a persisted plan: the node scheduler.
@@ -91,6 +96,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as EngineStoreMetrics from "../src/EngineStoreMetrics.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
+import * as CacheAgeVerdicts from "../src/internal/CacheAgeVerdicts.ts"
 import * as FileEnumeration from "../src/internal/FileEnumeration.ts"
 import * as JournalRecords from "../src/internal/JournalRecords.ts"
 import { compareText } from "../src/internal/Ordering.ts"
@@ -455,6 +461,7 @@ const nonNegativeSafeInteger = (name: string, value: number): number => {
  * @category constructors
  */
 export const make = (options: Options): Service => {
+  const cacheAgeVerdict = CacheAgeVerdicts.make(options.runId)
   const rebaseLimit = nonNegativeSafeInteger("rebaseLimit", options.rebaseLimit ?? 3)
   const scheduling = Scheduling.make(options.concurrency)
   // Capture before the first async boundary. Callers can retain and mutate
@@ -1112,6 +1119,7 @@ export const make = (options: Options): Service => {
             const exit = yield* ActionPersistence.make({
               runId: options.runId,
               owner: options.owner,
+              cacheAgeVerdict,
               sourceId: `${options.sourceId}/node/${node.id}`,
               execute: () =>
                 Ref.set(ran, true).pipe(
