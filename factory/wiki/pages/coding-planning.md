@@ -18,7 +18,7 @@ Unsupported or uncertain prose blocks planning and retains the wiki's needs-chan
 
 `VerifyContext` observes current bytes again, checks native identities and ancestry, and rechecks wiki freshness. `FinalizePlan` binds the proposal to measured executable digests, memory revision, base and observed head. Unknown checks, omitted or reordered existing descendants, duplicate ownership and escaping paths are refused. Every configured required check is retained on every Change, even when the model selected another check in that tier. Optional available checks remain model choices. Each Change still needs a required fast and required slow check; delivery checks keep their later tier.
 
-The current planner supports append or a complete visible suffix amendment. It does not insert new atoms among retained descendants or reorder history. The model is taught small emoji conventional commits; final cleanup belongs to later lifecycle policy. Request source admission separately fences dependent stages after planning.
+The current planner supports append or a complete visible suffix amendment. It does not insert new atoms among retained descendants or reorder history. The model is taught small emoji conventional commits. Request source admission separately fences dependent stages after planning.
 
 ## Enforce planning authority
 

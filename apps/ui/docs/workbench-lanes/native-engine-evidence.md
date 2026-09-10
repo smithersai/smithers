@@ -16,8 +16,7 @@ The decoder reuses the owning schemas:
 - `@smthrs/journal/EngineEvent` for current attempt markers and v2 evidence.
 
 Those first two packages are explicit UI dependencies for their existing data
-contracts. No new public package API, app flow, gateway procedure, database, or
-collection is introduced. `EngineTrace` holds an ephemeral render projection;
+contracts. `EngineTrace` holds an ephemeral render projection;
 the source remains the card's persisted journal records in TanStack DB.
 
 Attempt identity includes execution ID, native rewind generation, step digest,
@@ -55,13 +54,13 @@ pending. A projection gap remains visible evidence; a transport refusal or the
 existing quiet deadline leaves a visible observation error without changing the
 run's actual verdict. The optional persisted `run-trace.payload.observationError`
 keeps this reader failure separate from `error`, the run's actual diagnosis.
-Retry clears only the reader error for terminal runs. Reload does not repeat an
-already recorded progress summary. The existing retry gesture can try the observation again.
+Retry clears only the reader error for terminal runs. The existing retry gesture
+can try the observation again.
 Legacy runs without a started marker keep their existing terminal behavior.
 
-The compact rows are native buttons with visible existing focus styles. They
-enter the same slash/button/agent selection flow; rendering introduces no React
-effect or component-owned application state. The current onboarding shell and its
+The compact rows are native buttons that invoke the existing
+`runs.trace.select` flow. Contributors must preserve the application rule against
+React effects or component-owned application state. The current onboarding shell and its
 Command-K composer remain the owning presentation.
 
 Native handoff rounds use the recorded `Handoff` result and finish without a

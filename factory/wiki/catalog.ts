@@ -86,7 +86,7 @@ export const pages: readonly PageSpec[] = [
   page({ id: "coding-host", title: "Configured coding host", purpose: "Compose the native host and operator policy without a new product service.", kind: "current", document: "factory/wiki/pages/coding-host.md", related: ["native-control", "coding-request", "coding-checks", "runtime"] }, [
     "flows/coding/host.ts", "flows/coding/host.md", "flows/coding/serve.ts", "flows/coding/project-config.ts", "flows/coding/project-config.md",
     "flows/coding/build.mjs", "flows/coding/planning-authority.ts", "flows/coding/wiki-policy.ts", "flows/coding/wiki-output.ts", "flows/coding/wiki-registry.ts", "factory/coding/project.ts", "flows/checks/wiki/flow.ts", "packages/smithers/NATIVE-CONTROL.md",
-    "flows/test/coding-host.test.ts", "flows/test/coding-host-bundle.mjs"
+    "flows/test/coding-host.test.ts", "flows/test/coding-host-bundle.mjs", ["flows/coding/planning-wiki.ts", [111, 138]], ["flows/wiki/operations.ts", [129, 140]]
   ]),
   page({ id: "coding-request", title: "Prompt to coding outcome", purpose: "Follow verified wiki, planning, saved prototype and owner correction through ordinary native children.", kind: "current", document: "factory/wiki/pages/coding-request.md", related: ["coding-planning", "coding-poc", "coding-correction", "coding-host", "coding-ui"] }, [
     "flows/coding/request.ts", "flows/coding/request.md", "flows/coding/request/flow.ts", "flows/coding/schema.ts",
@@ -123,7 +123,7 @@ export const pages: readonly PageSpec[] = [
     "apps/ui/src/mainview/cards/EngineTrace.ts", "packages/smithers/src/internal/EngineJournalProjection.ts",
     "packages/smithers/src/internal/EngineJournalSupervisor.ts",
     ["apps/ui/src/mainview/state/controller/workflow-pump.ts", [55, 66], [155, 242], [284, 380], [427, 475]]
-    , ["apps/ui/src/mainview/cards/RunTraceCard.tsx", [197, 226], [250, 272]],
+    , ["apps/ui/src/mainview/cards/RunTraceCard.tsx", [197, 235], [250, 272]],
     ["apps/ui/src/mainview/state/controller/runs.ts", [412, 445]], ["apps/ui/src/mainview/flows/entries/runs.ts", [185, 202]],
     ["apps/ui/package.json", [30, 40]], ["apps/ui/AGENTS.md", [27, 42]], ["apps/ui/docs/ONBOARDING.md", [82, 96]]
   ]),
