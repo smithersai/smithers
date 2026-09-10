@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, type Exit, Layer, Result } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { existsSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
+import { holdWriteLock } from "./harness/holdWriteLock.ts"
+import { tempDirectoryFixture } from "./harness/tempDirectoryFixture.ts"
 
 /**
  * Negative gates for the two rc.0 exclusions the Node driver enforces:
@@ -16,22 +17,7 @@ import * as NodeDatabase from "../src/node/NodeDatabase.ts"
  * `NodeDatabase.UnsupportedDatabase` value with its stable code.
  */
 
-const tempDirectories = new Set<string>()
-
-const tempDirectory = (): string => {
-  const directory = mkdtempSync(join(tmpdir(), "flows-db-guard-"))
-  tempDirectories.add(directory)
-  return directory
-}
-
-const tempFile = (name = "guard.sqlite"): string => join(tempDirectory(), name)
-
-afterEach(() => {
-  for (const directory of tempDirectories) {
-    rmSync(directory, { recursive: true, force: true })
-  }
-  tempDirectories.clear()
-})
+const { directory: tempDirectory, file: tempFile } = tempDirectoryFixture("flows-db-guard-", "guard.sqlite")
 
 /** Writes a file that carries tables but no `flows_migrations`: a 0.x `smithers.db`. */
 const seedZeroX = (filename: string): void => {
@@ -63,22 +49,6 @@ const seedZeroXWal = (filename: string): void => {
   }
 }
 
-/** Takes the file's write lock, as a 0.x process mid-transaction holds it. */
-const holdWriteLock = (filename: string): { readonly release: () => void } => {
-  const db = new DatabaseSync(filename)
-  let released = false
-  db.exec("PRAGMA busy_timeout = 0")
-  db.exec("BEGIN EXCLUSIVE")
-  return {
-    release: () => {
-      if (released) return
-      released = true
-      db.exec("COMMIT")
-      db.close()
-    }
-  }
-}
-
 /** Writes a file that carries the flows migration ledger: a Smithers 1.0 database. */
 const seedFlows = (filename: string): void => {
   const db = new DatabaseSync(filename)
@@ -104,7 +74,7 @@ const tableNames = (filename: string): ReadonlyArray<string> => {
 }
 
 const build = (options: NodeDatabase.NodeDatabaseOptions) =>
-  Effect.exit(Effect.scoped(Layer.build(NodeDatabase.layer(options) as unknown as Layer.Layer<never>)))
+  Effect.exit(Effect.scoped(Layer.build(NodeDatabase.layer(options))))
 
 /** Reads the defect a failed layer build carries, so its type and message can be asserted. */
 const defectOf = (exit: Exit.Exit<unknown, unknown>): unknown => {

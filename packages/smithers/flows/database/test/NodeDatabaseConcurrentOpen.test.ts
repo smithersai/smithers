@@ -1,12 +1,13 @@
-import { afterEach, describe, expect, it } from "@effect/vitest"
+import { describe, expect, it } from "@effect/vitest"
 import { Cause, Duration, Effect, Fiber, Layer, Result } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
-import { fstatSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { fstatSync, readdirSync, statSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
 import * as DurableWriter from "../src/DurableWriter.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
+import { connect } from "./harness/connect.ts"
+import { holdWriteLock } from "./harness/holdWriteLock.ts"
+import { tempDirectoryFixture } from "./harness/tempDirectoryFixture.ts"
 
 /**
  * The exhaustion case takes about nine seconds here, so it carries a finite
@@ -14,22 +15,7 @@ import * as NodeDatabase from "../src/node/NodeDatabase.ts"
  */
 const openLadderTimeout = 60_000
 
-const tempDirectories = new Set<string>()
-
-const tempDirectory = (): string => {
-  const directory = mkdtempSync(join(tmpdir(), "flows-db-open-"))
-  tempDirectories.add(directory)
-  return directory
-}
-
-const tempFile = (): string => join(tempDirectory(), "open.sqlite")
-
-afterEach(() => {
-  for (const directory of tempDirectories) {
-    rmSync(directory, { recursive: true, force: true })
-  }
-  tempDirectories.clear()
-})
+const { directory: tempDirectory, file: tempFile } = tempDirectoryFixture("flows-db-open-", "open.sqlite")
 
 /**
  * Creates the database in rollback journal mode, so opening it still has to
@@ -93,22 +79,6 @@ const holdReadLock = (filename: string): { readonly release: () => void } => {
   let released = false
   db.exec("BEGIN")
   db.prepare("SELECT id FROM seeded").all()
-  return {
-    release: () => {
-      if (released) return
-      released = true
-      db.exec("COMMIT")
-      db.close()
-    }
-  }
-}
-
-/** Takes the file's write lock, as a peer process mid-transaction would hold it. */
-const holdWriteLock = (filename: string): { readonly release: () => void } => {
-  const db = new DatabaseSync(filename)
-  let released = false
-  db.exec("PRAGMA busy_timeout = 0")
-  db.exec("BEGIN EXCLUSIVE")
   return {
     release: () => {
       if (released) return
@@ -192,12 +162,7 @@ describe("NodeDatabase concurrent open", () => {
       try {
         const rows = yield* (
           Effect.scoped(Effect.gen(function*() {
-            const context = yield* Layer.build(
-              NodeDatabase.layer({ filename }) as unknown as Layer.Layer<never>
-            )
-            const sql = yield* (Effect.service(SqlClient.SqlClient).pipe(
-              Effect.provide(context as never)
-            ) as Effect.Effect<SqlClient.SqlClient>)
+            const sql = yield* connect(NodeDatabase.layer({ filename }))
             return yield* sql<{ readonly id: number }>`SELECT id FROM seeded`
           }))
         )
@@ -237,7 +202,7 @@ describe("NodeDatabase concurrent open", () => {
       const opening = NodeDatabase.layer({
         filename,
         sqlite: { busyTimeout: 0 }
-      }) as unknown as Layer.Layer<never>
+      })
 
       try {
         expect(openHandles(filename)).toBe(1)
@@ -294,7 +259,7 @@ describe("NodeDatabase concurrent open", () => {
 
         try {
           const exit = yield* Effect.exit(
-            Effect.scoped(Layer.build(NodeDatabase.layer({ filename }) as unknown as Layer.Layer<never>))
+            Effect.scoped(Layer.build(NodeDatabase.layer({ filename })))
           )
           expect(exit._tag).toBe("Failure")
           if (exit._tag === "Failure") {
@@ -323,7 +288,7 @@ describe("NodeDatabase concurrent open", () => {
       // a lock, so it must surface immediately rather than burn the retry budget.
       const directory = tempDirectory()
       const exit = yield* Effect.exit(
-        Effect.scoped(Layer.build(NodeDatabase.layer({ filename: directory }) as unknown as Layer.Layer<never>))
+        Effect.scoped(Layer.build(NodeDatabase.layer({ filename: directory })))
       )
       expect(exit._tag).toBe("Failure")
     }))
@@ -335,7 +300,7 @@ describe("NodeDatabase concurrent open", () => {
   ])("opens $label unaffected by the retry", ({ options }) =>
     Effect.gen(function*() {
       const exit = yield* Effect.exit(
-        Effect.scoped(Layer.build(NodeDatabase.layer(options()) as unknown as Layer.Layer<never>))
+        Effect.scoped(Layer.build(NodeDatabase.layer(options())))
       )
       expect(exit._tag).toBe("Success")
     }))
@@ -347,7 +312,7 @@ describe("NodeDatabase concurrent open", () => {
 
       yield* (
         Effect.scoped(
-          Layer.build(NodeDatabase.layer({ filename }) as unknown as Layer.Layer<never>)
+          Layer.build(NodeDatabase.layer({ filename }))
         )
       )
 

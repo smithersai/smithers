@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Deferred, Duration, Effect, Exit, Fiber } from "effect"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -7,26 +7,17 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Migrations from "../src/Migrations.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
+import { connect } from "./harness/connect.ts"
 
-const connect = (filename: string) =>
-  Effect.gen(function*() {
-    const context = yield* Layer.build(
-      NodeDatabase.layer({
-        filename,
-        sqlite: { busyTimeout: Duration.millis(1) }
-      }) as unknown as Layer.Layer<never>
-    )
-    return yield* (Effect.service(SqlClient.SqlClient).pipe(
-      Effect.provide(context as never)
-    ) as Effect.Effect<SqlClient.SqlClient>)
-  })
+const open = (filename: string) =>
+  connect(NodeDatabase.layer({ filename, sqlite: { busyTimeout: Duration.millis(1) } }))
 
 const runWithConnection = <A, E>(
   filename: string,
   body: (sql: SqlClient.SqlClient) => Effect.Effect<A, E, SqlClient.SqlClient>
 ) =>
   Effect.scoped(Effect.gen(function*() {
-    const sql = yield* connect(filename)
+    const sql = yield* open(filename)
     return yield* body(sql).pipe(Effect.provideService(SqlClient.SqlClient, sql))
   }))
 
@@ -77,8 +68,8 @@ describe("file-backed migrations", () => {
       try {
         const result = yield* (
           Effect.scoped(Effect.gen(function*() {
-            const sqlA = yield* connect(filename)
-            const sqlB = yield* connect(filename)
+            const sqlA = yield* open(filename)
+            const sqlB = yield* open(filename)
             const entered = yield* Deferred.make<void>()
             const release = yield* Deferred.make<void>()
             const concurrentSet: Migrations.MigrationSet = {

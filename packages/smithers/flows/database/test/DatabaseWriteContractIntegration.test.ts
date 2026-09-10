@@ -1,27 +1,18 @@
-import { Duration, Effect, Layer } from "effect"
-import * as SqlClient from "effect/unstable/sql/SqlClient"
+import { Duration, Effect } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as DurableWriter from "../src/DurableWriter.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 import { describeContract, type Harness } from "./contract/DatabaseWriteContract.ts"
+import { connect } from "./harness/connect.ts"
 
 /** Builds one real client/writer pair and keeps its connection open for the scope. */
-const connect = (filename: string) =>
-  Effect.gen(function*() {
-    const context = yield* Layer.build(
-      NodeDatabase.layer({
-        filename,
-        sqlite: { busyTimeout: Duration.millis(5) }
-      }) as unknown as Layer.Layer<never>
-    )
-    const sql = yield* (Effect.service(SqlClient.SqlClient).pipe(
-      Effect.provide(context as never)
-    ) as Effect.Effect<SqlClient.SqlClient>)
-    const writer = DurableWriter.make(sql)
-    return { sql, write: writer.write }
-  })
+const connectPair = (filename: string) =>
+  Effect.map(
+    connect(NodeDatabase.layer({ filename, sqlite: { busyTimeout: Duration.millis(5) } })),
+    (sql) => ({ sql, write: DurableWriter.make(sql).write })
+  )
 
 /**
  * The production Node path: two independent connections over one database
@@ -37,8 +28,8 @@ const nodeFileHarness: Harness = {
       (directory) =>
         Effect.scoped(Effect.gen(function*() {
           const filename = join(directory, "contract.sqlite")
-          const a = yield* connect(filename)
-          const b = yield* connect(filename)
+          const a = yield* connectPair(filename)
+          const b = yield* connectPair(filename)
           return yield* body({ a, b })
         })),
       (directory) => Effect.sync(() => rmSync(directory, { recursive: true, force: true }))

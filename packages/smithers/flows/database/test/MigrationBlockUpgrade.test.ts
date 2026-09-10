@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, Context, Deferred, Duration, Effect, Fiber, Layer, Result } from "effect"
+import { Cause, Deferred, Duration, Effect, Fiber, Result } from "effect"
 import { TestClock } from "effect/testing"
 import * as Migrator from "effect/unstable/sql/Migrator"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
@@ -9,15 +9,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Migrations from "../src/Migrations.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
+import { connect } from "./harness/connect.ts"
 
-const connect = (filename: string) =>
-  Effect.map(
-    Layer.build(NodeDatabase.layer({ filename, sqlite: { busyTimeout: Duration.millis(1) } })),
-    (context) => Context.get(context, SqlClient.SqlClient)
-  )
+const open = (filename: string) =>
+  connect(NodeDatabase.layer({ filename, sqlite: { busyTimeout: Duration.millis(1) } }))
 
 const opened = <A, E>(filename: string, body: Effect.Effect<A, E, SqlClient.SqlClient>) =>
-  Effect.scoped(Effect.flatMap(connect(filename), (sql) => Effect.provideService(body, SqlClient.SqlClient, sql)))
+  Effect.scoped(Effect.flatMap(open(filename), (sql) => Effect.provideService(body, SqlClient.SqlClient, sql)))
 
 const lower: Migrations.MigrationSet = {
   namespace: "lower",
@@ -222,8 +220,8 @@ describe("installed package migration block upgrades", () => {
         yield* opened(filename, Migrations.run([lower, higher]))
         let applications = 0
         const completed = yield* Effect.scoped(Effect.gen(function*() {
-          const first = yield* connect(filename)
-          const second = yield* connect(filename)
+          const first = yield* open(filename)
+          const second = yield* open(filename)
           const entered = yield* Deferred.make<void>()
           const release = yield* Deferred.make<void>()
           const appended = nextLower(Effect.gen(function*() {
