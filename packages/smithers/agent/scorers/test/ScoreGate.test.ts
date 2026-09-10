@@ -226,6 +226,43 @@ describe("runtime score gates", () => {
     })
   })
 
+  it("reads each sample once however many cases a gate names", async () => {
+    // A complexity pin, not a stopwatch: counting the reads of `case` is
+    // stable under the load a timing assertion would misread. A gate that
+    // rescans the sample list per named case reads every sample once per
+    // name, so the two counts below diverge by a factor of `names.length`.
+    let reads = 0
+    const counted = (caseName: string, value: number): ScoreGate.ScoreSample => ({
+      get case() {
+        reads += 1
+        return caseName
+      },
+      stepKey: `${caseName}-key`,
+      scorer: "quality",
+      kind: "score",
+      value
+    })
+    const names = Array.from({ length: 50 }, (_, index) => `case-${index}`)
+    const samples = names.flatMap((caseName) =>
+      Array.from({ length: 20 }, (_, index) => counted(caseName, (index + 1) / 20))
+    )
+    const readsToGrade = async (named: ReadonlyArray<string>): Promise<number> => {
+      reads = 0
+      const thresholds = Object.fromEntries(named.map((caseName) => [caseName, 0] as const))
+      expect(await Effect.runPromise(ScoreGate.expectScores(samples).perCase(thresholds))).toEqual({
+        _tag: "Passed",
+        inconclusive: []
+      })
+      return reads
+    }
+    const one = await readsToGrade(names.slice(0, 1))
+    const every = await readsToGrade(names)
+    expect(every).toEqual(one)
+    // Bucketing reads a sample's case to look its bucket up, and once more to
+    // create the bucket the first time a case is seen.
+    expect(every).toBeLessThanOrEqual(samples.length + names.length)
+  })
+
   it("takes minima beyond JavaScript's argument-count limit", async () => {
     const samples = Array.from({ length: 200_000 }, (_, index) => sample(index === 199_999 ? 0.25 : 0.75))
     const gates = ScoreGate.expectScores(samples)
