@@ -83,6 +83,7 @@ The evaluation options are `Sandbox.RealmEvaluation`:
 | `cell`    | The `Cell.Source` to run; construct it with `Cell.source(text)`.                                               |
 | `frame`   | The controller frame number.                                                                                   |
 | `call`    | The `Sandbox.Handler` that resolves the cell's flow calls.                                                     |
+| `program` | Optional program the controller's own parse compiled from `cell`. A binding runs it verbatim instead of parsing the cell again. |
 | `mint`    | Optional `Sandbox.Minter` that settles `ctx.checkpoint()`. Absent means the run pins no trees.                 |
 | `bounded` | Set when the caller journals and bounds each settlement itself, so the loop adds no `callMs` clock of its own. |
 | `limits`  | Per-evaluation limit overrides.                                                                                |

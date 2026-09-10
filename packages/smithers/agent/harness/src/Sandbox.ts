@@ -317,82 +317,9 @@ export const minimumTimeMs = 1
  */
 export const minimumMemoryBytes = 1024 * 1024
 
-/**
- * How many UTF-8 bytes of one frame's whole print buffer reach the next model turn.
- *
- * This is the only ceiling on the channel. A frame's statements *share* it:
- * each is middle-elided to the share it is apportioned, and a statement short
- * of its share hands the remainder back to the statements that are over theirs.
- *
- * They used to cap independently at 4 KiB each, head-first, and the r95repl
- * lane priced that: 197 of its 357 printing frames had a statement cut, 191 of
- * them while this frame budget sat mostly unspent, and 3.06 MB went to
- * per-statement caps against 6 frames that ever reached this one. The
- * `sympy__sympy-13878` run fused one `console.log` of 38,928 bytes; it was
- * shown the first 4,096 and lost the tail, which held the result of a
- * three-minute test suite the frame had already paid for. It ran that suite
- * again four frames later. Sharing the budget shows that frame 16 KiB from both
- * ends instead of 4 KiB from the head, and moves no ceiling: 16 KiB was the
- * most a frame could ever deliver before, and it is the most now.
- *
- * Every elision is from the middle with the dropped byte count stated, because
- * the head and the tail of a log are where it identifies itself, and the notices
- * are reserved out of this budget before any of it is apportioned — so the
- * assembled buffer is bounded outright and nothing has to shorten it a second
- * time. Sized against the `recall` budget it replaces, and delivered once rather
- * than re-rendered every frame.
- *
- * @category constants
- * @since 0.1.0
- */
-export const printFrameBytes = 16 * 1024
-
-/**
- * The smallest UTF-8-byte share of {@link printFrameBytes} one print statement is given.
- *
- * A share below this is all notice and no value — a middle elision of 80 bytes
- * says less than the sentence explaining it — so a frame that printed more
- * statements than the budget can floor drops whole statements from the middle
- * and states how many, rather than cutting every one of them to nothing. That
- * is the same shape the frame bound already had, applied a statement at a time
- * so nothing is cut mid-line.
- *
- * It bounds how many statements are *kept*, but it is not a division of the
- * budget: how many a frame can carry is priced off the statements it actually
- * printed, so a statement at or under this size is shown whole and costs only
- * itself. Two hundred eight-byte lines cost eighteen hundred bytes and all two
- * hundred survive; sixty statements of four times this size do not, and whole
- * ones go from the middle rather than every one of them being cut to a notice.
- *
- * @category constants
- * @since 0.1.0
- * @slop
- */
-export const printStatementFloor = 512
-
-/**
- * How many UTF-8 bytes of one frame's print buffer the host keeps while the cell still runs.
- *
- * {@link printFrameBytes} bounds what the model is shown; this bounds what the
- * host holds to show it from, and the two are different numbers because they
- * answer different questions. A cell printing in a loop hands the host one
- * payload per statement, and every payload is copied out of the sandbox's heap
- * and decoded before anything can judge it surplus, so the frame budget alone
- * bounds the answer while leaving the work unbounded. Sixteen times the frame
- * budget is far past any honest use and still a fixed ceiling: past it the
- * payload is not read at all, and the count of what went unread is stated in the
- * buffer rather than dropped in silence.
- *
- * A statement is held at no more than {@link printFrameBytes} — the two ends of
- * it, with the size it had — because a whole frame's budget is the most any one
- * statement could ever be shown. So this ceiling holds at least sixteen
- * statements whatever a cell prints, and a cell that prints many small values
- * reaches it only after hundreds of them.
- *
- * @category constants
- * @since 0.1.0
- */
-export const printRetainedBytes = 256 * 1024
+// The print-channel budgets live with the channel that spends them, and are
+// re-exported here because a host reads them to size what it prints.
+export { printFrameBytes, printRetainedBytes, printStatementFloor } from "./internal/printChannel.ts"
 
 const invalidLimit = (name: keyof Limits, requirement: string): SandboxError =>
   new SandboxError({
@@ -540,6 +467,17 @@ export interface RealmEvaluation {
   /** Replaces ctx.flows with this frame's frozen catalog; omitted keeps the current catalog. */
   readonly flows?: Readonly<Record<string, Cell.FlowProjection>> | undefined
   readonly cell: Cell.Source
+  /**
+   * The program the controller's boundary parse already compiled from `cell`.
+   *
+   * A binding evaluates this verbatim when it is present, because the parse it
+   * would do is the parse the boundary already did: a controller runs
+   * {@link compile} before it commits a frame, so a binding that parses the
+   * cell again parses every cell of the run twice. Omitted means the binding
+   * compiles the cell itself, which is what a host driving a realm directly
+   * does.
+   */
+  readonly program?: string | undefined
   readonly frame: number
   readonly call: Handler
   /**
@@ -743,30 +681,6 @@ export const realmUnsupported: SandboxError = new SandboxError({
   message: "This sandbox has no persistent realm, so it cannot run a cell loop; select the QuickJS binding"
 })
 
-/**
- * A queued call awaiting resolution by the driver.
- *
- * @private
- */
-interface Pending {
-  readonly ordinal: number
-  readonly flow: string
-  readonly input: Schema.Json
-  /** Undecoded `at` option; see {@link Invocation.at}. */
-  readonly at?: Schema.Json | undefined
-  /**
-   * Whether this entry is a flow call or a request to pin the tree.
-   *
-   * Both ride one queue because both have to be ordered against each other: a
-   * mint that overtook an edit, or an edit that overtook a mint, would pin the
-   * wrong tree. Absent means `call`, so every binding that queues an ordinary
-   * call is unchanged.
-   */
-  readonly kind?: "call" | "checkpoint" | undefined
-  readonly settle: (result: Cell.CallResult) => void
-  readonly abort: (message: string) => void
-}
-
 const seconds = (milliseconds: number): string => {
   const value = milliseconds / 1_000
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "")
@@ -796,133 +710,6 @@ export const callTimedOut = (flow: string, callMs: number): Cell.CallResult =>
   })
 
 /**
- * The state a binding's driver loop observes.
- *
- * Bindings differ only in how a cell is compiled and how its promises are
- * settled; the interleaving of "drain queued calls, then wait" is identical,
- * so it lives here once.
- *
- * @private
- */
-interface Pump {
-  readonly pending: Array<Pending>
-  /** Called after each resolved call so a binding may flush its job queue. */
-  readonly flush: () => void
-  readonly finished: () => Cell.Outcome | undefined
-  readonly wait: Effect.Effect<void>
-  readonly abort: (message: string) => void
-}
-
-/**
- * Runs the shared drive loop: settle queued calls one at a time, in the order
- * the cell issued them, until the cell settles.
- *
- * One at a time is deliberate. Data-dependent calls are the normal case, and a
- * deterministic execution ordinal is what makes a mid-cell crash replayable.
- *
- * @private
- */
-const drive = (
-  pump: Pump,
-  handler: Handler,
-  minter: Minter,
-  bounded: boolean,
-  limits: Limits | undefined,
-  replay: RealmEvaluation["replay"],
-  progress: ((dispatched: number, settled: number) => void) | undefined
-): Effect.Effect<Cell.Outcome, SandboxError | HarnessError> =>
-  Effect.gen(function*() {
-    let calls = 0
-    let settledOrdinal = -1
-    for (;;) {
-      const next = pump.pending.shift()
-      if (next !== undefined) {
-        if (
-          replay !== undefined && (next.ordinal > replay.boundary.settled || next.ordinal > replay.boundary.dispatched)
-        ) {
-          // Match interruption cleanup without delivering an answer that the
-          // original cell never received. This also covers queued checkpoints.
-          next.abort("The cell was interrupted")
-          pump.abort("The cell was interrupted")
-          pump.flush()
-          return replay.outcome
-        }
-        if (limits?.calls !== undefined && calls >= limits.calls) {
-          const message = `This cell exceeded its limit of ${limits.calls} flow calls`
-          next.abort(message)
-          pump.abort(message)
-          pump.flush()
-          return new Cell.Rejected({ code: "limit_exceeded", message })
-        }
-        calls = calls + 1
-        progress?.(next.ordinal, settledOrdinal)
-        const callMs = limits?.callMs ?? defaultLimits.callMs
-        // A mint is settled here rather than on a channel of its own so that it
-        // is ordered against the calls around it. See `Minter`.
-        const settling = next.kind === "checkpoint"
-          ? minter({ ordinal: next.ordinal })
-          : handler({
-            ordinal: next.ordinal,
-            flow: next.flow,
-            input: next.input,
-            ...(next.at === undefined ? {} : { at: next.at })
-          })
-        const result = yield* (bounded
-          // The caller bounds its own settlements, inside the boundary it
-          // journals them under. Racing a second clock here would settle the
-          // call from the one reading nothing records. See `bounded`.
-          ? settling
-          : settling.pipe(
-            // The per-call ceiling, ahead of the interrupt cleanup below: a call
-            // that overruns is answered, not abandoned, so the cell sees a
-            // resolved failure and the frame keeps its remaining budget.
-            Effect.timeoutOrElse({
-              duration: callMs,
-              orElse: () => Effect.succeed(callTimedOut(next.flow, callMs))
-            })
-          )).pipe(
-            Effect.flatMap(Cell.decodeCallResult),
-            Effect.onExit((exit) =>
-              Exit.isSuccess(exit)
-                ? Effect.void
-                : Effect.sync(() => {
-                  // `next` was shifted out of `pending` before the handler ran.
-                  // Settle that active bridge as well as calls queued behind it,
-                  // then flush the VM so a scoped runtime has no live promise
-                  // handles when a permission park or engine failure unwinds it.
-                  next.abort("The cell was interrupted")
-                  pump.abort("The cell was interrupted")
-                  pump.flush()
-                })
-            )
-          )
-        next.settle(result)
-        settledOrdinal = next.ordinal
-        progress?.(next.ordinal, settledOrdinal)
-        pump.flush()
-        continue
-      }
-      const outcome = pump.finished()
-      if (outcome !== undefined) return yield* Cell.decodeOutcome(outcome)
-      yield* pump.wait
-    }
-  })
-
-const makeLatch = (): Latch => {
-  let notify: (() => void) | undefined
-  return {
-    wake: () => {
-      const resume = notify
-      notify = undefined
-      resume?.()
-    },
-    wait: Effect.callback<void>((resume) => {
-      notify = () => resume(Effect.void)
-    })
-  }
-}
-
-/**
  * Erases type-only syntax from a cell without evaluating or resolving modules.
  *
  * Only Node's strip-safe TypeScript subset is accepted. Constructs that need
@@ -941,18 +728,6 @@ export const compile = (cell: Cell.Source): string | Cell.Rejected => {
   const validation = CellValidation.validate(cell)
   /* v8 ignore next -- `validate` returns exactly one of the two, so the coalesce never reaches its fallback; it only discharges the optional types the interface declares */
   return validation.rejected ?? validation.compiled ?? cell.text
-}
-
-/**
- * The failure a cell threw, projected into stable serializable text.
- *
- * @private
- */
-const raised = (error: unknown): Cell.Raised => {
-  if (error instanceof Error) {
-    return new Cell.Raised({ name: error.name, message: error.message })
-  }
-  return new Cell.Raised({ name: "Error", message: describe(error) })
 }
 
 /**
@@ -978,35 +753,34 @@ const describe = (value: unknown): string => {
  * @since 0.1.0
  * @slop
  */
-export type PendingCall = Pending
-
-/**
- * A wake-up latch shared between a binding's driver loop and its cell.
- *
- * @category models
- * @since 0.1.0
- * @slop
- */
-export interface Latch {
-  readonly wake: () => void
-  readonly wait: Effect.Effect<void>
+export interface PendingCall {
+  readonly ordinal: number
+  readonly flow: string
+  readonly input: Schema.Json
+  /** Undecoded `at` option; see {@link Invocation.at}. */
+  readonly at?: Schema.Json | undefined
+  /**
+   * Whether this entry is a flow call or a request to pin the tree.
+   *
+   * Both ride one queue because both have to be ordered against each other: a
+   * mint that overtook an edit, or an edit that overtook a mint, would pin the
+   * wrong tree. Absent means `call`, so every binding that queues an ordinary
+   * call is unchanged.
+   */
+  readonly kind?: "call" | "checkpoint" | undefined
+  readonly settle: (result: Cell.CallResult) => void
+  readonly abort: (message: string) => void
 }
 
 /**
- * Creates the wake-up latch a binding's driver waits on.
+ * Drives one externally compiled cell to settlement: settle queued calls one at
+ * a time, in the order the cell issued them, until the cell settles.
  *
- * @category constructors
- * @since 0.1.0
- * @slop
- */
-export const latch = (): Latch => makeLatch()
-
-/**
- * Drives one externally compiled cell to settlement.
+ * One at a time is deliberate. Data-dependent calls are the normal case, and a
+ * deterministic execution ordinal is what makes a mid-cell crash replayable.
  *
- * Exposed so a separate-realm binding reuses the exact interleaving the
- * restricted binding uses — settle queued calls one at a time, in issue order,
- * until the cell settles — instead of reimplementing it.
+ * Bindings differ only in how a cell is compiled and how its promises are
+ * settled, so the interleaving lives here once rather than in each of them.
  *
  * @category constructors
  * @since 0.1.0
@@ -1015,10 +789,10 @@ export const latch = (): Latch => makeLatch()
 export const driveCell = (options: {
   readonly replay?: RealmEvaluation["replay"]
   readonly progress?: ((dispatched: number, settled: number) => void) | undefined
-  readonly pending: Array<Pending>
+  readonly pending: Array<PendingCall>
+  /** Called after each resolved call so a binding may flush its job queue. */
   readonly flush: () => void
   readonly finished: () => Cell.Outcome | undefined
-  readonly wait: Effect.Effect<void>
   readonly abort: (message: string) => void
   readonly handler: Handler
   /** Settles a `ctx.checkpoint()`; omitted means the run pins none. */
@@ -1027,21 +801,85 @@ export const driveCell = (options: {
   readonly bounded?: boolean | undefined
   readonly limits?: Limits | undefined
 }): Effect.Effect<Cell.Outcome, SandboxError | HarnessError> =>
-  drive(
-    {
-      pending: options.pending,
-      flush: options.flush,
-      finished: options.finished,
-      wait: options.wait,
-      abort: options.abort
-    },
-    options.handler,
-    options.mint ?? mintUnavailable,
-    options.bounded ?? false,
-    options.limits,
-    options.replay,
-    options.progress
-  )
+  Effect.gen(function*() {
+    let calls = 0
+    let settledOrdinal = -1
+    for (;;) {
+      const next = options.pending.shift()
+      if (next !== undefined) {
+        if (
+          options.replay !== undefined &&
+          (next.ordinal > options.replay.boundary.settled || next.ordinal > options.replay.boundary.dispatched)
+        ) {
+          // Match interruption cleanup without delivering an answer that the
+          // original cell never received. This also covers queued checkpoints.
+          next.abort("The cell was interrupted")
+          options.abort("The cell was interrupted")
+          options.flush()
+          return options.replay.outcome
+        }
+        if (options.limits?.calls !== undefined && calls >= options.limits.calls) {
+          const message = `This cell exceeded its limit of ${options.limits.calls} flow calls`
+          next.abort(message)
+          options.abort(message)
+          options.flush()
+          return new Cell.Rejected({ code: "limit_exceeded", message })
+        }
+        calls = calls + 1
+        options.progress?.(next.ordinal, settledOrdinal)
+        const callMs = options.limits?.callMs ?? defaultLimits.callMs
+        // A mint is settled here rather than on a channel of its own so that it
+        // is ordered against the calls around it. See `Minter`.
+        const settling = next.kind === "checkpoint"
+          ? (options.mint ?? mintUnavailable)({ ordinal: next.ordinal })
+          : options.handler({
+            ordinal: next.ordinal,
+            flow: next.flow,
+            input: next.input,
+            ...(next.at === undefined ? {} : { at: next.at })
+          })
+        const result = yield* (options.bounded === true
+          // The caller bounds its own settlements, inside the boundary it
+          // journals them under. Racing a second clock here would settle the
+          // call from the one reading nothing records. See `bounded`.
+          ? settling
+          : settling.pipe(
+            // The per-call ceiling, ahead of the interrupt cleanup below: a call
+            // that overruns is answered, not abandoned, so the cell sees a
+            // resolved failure and the frame keeps its remaining budget.
+            Effect.timeoutOrElse({
+              duration: callMs,
+              orElse: () => Effect.succeed(callTimedOut(next.flow, callMs))
+            })
+          )).pipe(
+            Effect.flatMap(Cell.decodeCallResult),
+            Effect.onExit((exit) =>
+              Exit.isSuccess(exit)
+                ? Effect.void
+                : Effect.sync(() => {
+                  // `next` was shifted out of `pending` before the handler ran.
+                  // Settle that active bridge as well as calls queued behind it,
+                  // then flush the VM so a scoped runtime has no live promise
+                  // handles when a permission park or engine failure unwinds it.
+                  next.abort("The cell was interrupted")
+                  options.abort("The cell was interrupted")
+                  options.flush()
+                })
+            )
+          )
+        next.settle(result)
+        settledOrdinal = next.ordinal
+        options.progress?.(next.ordinal, settledOrdinal)
+        options.flush()
+        continue
+      }
+      const outcome = options.finished()
+      if (outcome !== undefined) return yield* Cell.decodeOutcome(outcome)
+      // Nothing is queued and the cell has not settled: hand the runtime a
+      // yield point so a peer fiber and an interrupt are both still observable.
+      yield* Effect.yieldNow
+    }
+  })
 
 /**
  * Projects a thrown value into a stable serializable cell outcome.
@@ -1050,4 +888,9 @@ export const driveCell = (options: {
  * @since 0.1.0
  * @slop
  */
-export const raisedOutcome = (error: unknown): Cell.Raised => raised(error)
+export const raisedOutcome = (error: unknown): Cell.Raised => {
+  if (error instanceof Error) {
+    return new Cell.Raised({ name: error.name, message: error.message })
+  }
+  return new Cell.Raised({ name: "Error", message: describe(error) })
+}

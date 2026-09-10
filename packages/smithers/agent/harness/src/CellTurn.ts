@@ -1898,7 +1898,9 @@ const frame = (
     // cache and the answer costs the output it writes.
     let contextWindow = state.contextWindow
     let settled = undefined as ReturnType<typeof ModelEvent.ModelEvent.settledMessage> | undefined
-    let produced: { readonly source: Cell.Source; readonly blocks: number } | undefined
+    let produced:
+      | { readonly source: Cell.Source; readonly blocks: number; readonly program: string }
+      | undefined
     let refused: Cell.Rejected | undefined
     for (let attempt = 0;; attempt++) {
       const request = yield* Effect.fromResult(requestFrom(state, contextWindow))
@@ -1946,8 +1948,12 @@ const frame = (
         // run is refused before the frame commits to it.
         const validation = CellValidation.validate(extracted.success.source)
         rejection = validation.rejected
-        if (rejection === undefined) {
-          produced = { source: extracted.success.source, blocks: extracted.success.blocks }
+        if (validation.rejected === undefined) {
+          produced = {
+            source: extracted.success.source,
+            blocks: extracted.success.blocks,
+            program: validation.compiled
+          }
         }
       }
       if (rejection === undefined) break
@@ -2095,6 +2101,7 @@ const frame = (
     }
 
     const cell = produced.source
+    const program = produced.program
     yield* emit(
       new AgentEvent.CellProduced({
         eventType: eventType.cellProduced,
@@ -2284,6 +2291,9 @@ const frame = (
         replaying = replay !== undefined
         const frame = yield* realm.evaluate({
           cell,
+          // The boundary parse above is the only one this cell gets: the realm
+          // runs what it compiled rather than parsing the same text again.
+          program,
           frame: state.frame,
           flows: input.refreshFlows === undefined ? undefined : projections,
           call: observing,

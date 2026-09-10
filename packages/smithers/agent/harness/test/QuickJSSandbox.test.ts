@@ -457,6 +457,27 @@ Object.defineProperty(globalThis.probedArray, "0", {
     })
   })
 
+  it("evaluates the boundary's compiled program instead of parsing the cell again", async () => {
+    // The controller parses once, at the boundary, and hands the realm what it
+    // compiled. The text beside it here is module syntax, which `Sandbox.compile`
+    // refuses — so a realm that parsed again could not have settled this frame.
+    const frame = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const sandbox = yield* QuickJSSandbox.make
+      const realm = yield* sandbox.openRealm!({ flows })
+      return yield* realm.evaluate({
+        cell: Cell.source("import { readFileSync } from \"node:fs\""),
+        program: "ctx.done(\"the boundary's program\")",
+        frame: 0,
+        call: succeeds
+      })
+    })))
+
+    expect(frame.outcome).toMatchObject({
+      _tag: "settled",
+      transition: { _tag: "complete", output: "the boundary's program" }
+    })
+  })
+
   it("projects a thrown non-object into a stable raised outcome", async () => {
     expect(await outcomeOf(`throw "plain"`)).toStrictEqual(new Cell.Raised({ name: "Error", message: "plain" }))
     expect(await outcomeOf(`throw 42`)).toStrictEqual(new Cell.Raised({ name: "Error", message: "42" }))

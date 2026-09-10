@@ -38,9 +38,85 @@
 import { isRecord } from "@smthrs/canonical/Record"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import type { Schema } from "effect"
-import * as Sandbox from "../Sandbox.ts"
 import * as bytes from "./bytes.ts"
 import * as elide from "./elide.ts"
+
+/**
+ * How many UTF-8 bytes of one frame's whole print buffer reach the next model turn.
+ *
+ * This is the only ceiling on the channel. A frame's statements *share* it:
+ * each is middle-elided to the share it is apportioned, and a statement short
+ * of its share hands the remainder back to the statements that are over theirs.
+ *
+ * They used to cap independently at 4 KiB each, head-first, and the r95repl
+ * lane priced that: 197 of its 357 printing frames had a statement cut, 191 of
+ * them while this frame budget sat mostly unspent, and 3.06 MB went to
+ * per-statement caps against 6 frames that ever reached this one. The
+ * `sympy__sympy-13878` run fused one `console.log` of 38,928 bytes; it was
+ * shown the first 4,096 and lost the tail, which held the result of a
+ * three-minute test suite the frame had already paid for. It ran that suite
+ * again four frames later. Sharing the budget shows that frame 16 KiB from both
+ * ends instead of 4 KiB from the head, and moves no ceiling: 16 KiB was the
+ * most a frame could ever deliver before, and it is the most now.
+ *
+ * Every elision is from the middle with the dropped byte count stated, because
+ * the head and the tail of a log are where it identifies itself, and the notices
+ * are reserved out of this budget before any of it is apportioned — so the
+ * assembled buffer is bounded outright and nothing has to shorten it a second
+ * time. Sized against the `recall` budget it replaces, and delivered once rather
+ * than re-rendered every frame.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const printFrameBytes = 16 * 1024
+
+/**
+ * The smallest UTF-8-byte share of {@link printFrameBytes} one print statement is given.
+ *
+ * A share below this is all notice and no value — a middle elision of 80 bytes
+ * says less than the sentence explaining it — so a frame that printed more
+ * statements than the budget can floor drops whole statements from the middle
+ * and states how many, rather than cutting every one of them to nothing. That
+ * is the same shape the frame bound already had, applied a statement at a time
+ * so nothing is cut mid-line.
+ *
+ * It bounds how many statements are *kept*, but it is not a division of the
+ * budget: how many a frame can carry is priced off the statements it actually
+ * printed, so a statement at or under this size is shown whole and costs only
+ * itself. Two hundred eight-byte lines cost eighteen hundred bytes and all two
+ * hundred survive; sixty statements of four times this size do not, and whole
+ * ones go from the middle rather than every one of them being cut to a notice.
+ *
+ * @category constants
+ * @since 0.1.0
+ * @slop
+ */
+export const printStatementFloor = 512
+
+/**
+ * How many UTF-8 bytes of one frame's print buffer the host keeps while the cell still runs.
+ *
+ * {@link printFrameBytes} bounds what the model is shown; this bounds what the
+ * host holds to show it from, and the two are different numbers because they
+ * answer different questions. A cell printing in a loop hands the host one
+ * payload per statement, and every payload is copied out of the sandbox's heap
+ * and decoded before anything can judge it surplus, so the frame budget alone
+ * bounds the answer while leaving the work unbounded. Sixteen times the frame
+ * budget is far past any honest use and still a fixed ceiling: past it the
+ * payload is not read at all, and the count of what went unread is stated in the
+ * buffer rather than dropped in silence.
+ *
+ * A statement is held at no more than {@link printFrameBytes} — the two ends of
+ * it, with the size it had — because a whole frame's budget is the most any one
+ * statement could ever be shown. So this ceiling holds at least sixteen
+ * statements whatever a cell prints, and a cell that prints many small values
+ * reaches it only after hundreds of them.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const printRetainedBytes = 256 * 1024
 
 /**
  * The fewest records an array needs before it is rendered as a table.
@@ -195,14 +271,14 @@ const unreadNotice = (count: number): string =>
 /**
  * What keeping one statement costs the budget: its floor, its notice, its newline.
  *
- * A statement at or under {@link Sandbox.printStatementFloor} costs only itself
+ * A statement at or under {@link printStatementFloor} costs only itself
  * and no notice, because {@link buffer} shows it whole and a whole statement has
  * nothing to say about what it lost. One over the floor is promised the floor,
  * and the notice that shortening it prints is charged with it.
  */
 const price = (statement: Statement): number =>
-  Math.min(statement.bytes, Sandbox.printStatementFloor) +
-  (statement.bytes > Sandbox.printStatementFloor ? elide.noticeCost(statement.bytes, recall) : 0) + 1
+  Math.min(statement.bytes, printStatementFloor) +
+  (statement.bytes > printStatementFloor ? elide.noticeCost(statement.bytes, recall) : 0) + 1
 
 /**
  * How many of *these* statements a budget can keep at the floor, head first.
@@ -237,7 +313,7 @@ export const capacity = (statements: ReadonlyArray<Statement>, budget: number): 
 }
 
 /**
- * Assembles what a frame printed, bounded by {@link Sandbox.printFrameBytes}.
+ * Assembles what a frame printed, bounded by {@link printFrameBytes}.
  *
  * `unread` is the count of statements the host stopped copying out of the realm
  * because the frame had already handed over more than it holds. It is stated
@@ -263,10 +339,10 @@ export const buffer = (statements: ReadonlyArray<Statement>, unread: number): st
   // and the drop line only where there is a drop — so it is priced by asking
   // twice, rather than by charging every frame for a line most never print.
   const overhead = unread === 0 ? 0 : bytes.size(unreadNotice(unread)) + 1
-  const roomy = capacity(statements, Sandbox.printFrameBytes - overhead)
+  const roomy = capacity(statements, printFrameBytes - overhead)
   const affordable = roomy === statements.length
     ? roomy
-    : capacity(statements, Sandbox.printFrameBytes - overhead - bytes.size(droppedNotice(statements.length)) - 1)
+    : capacity(statements, printFrameBytes - overhead - bytes.size(droppedNotice(statements.length)) - 1)
   // More statements than the budget can floor: whole statements go from the
   // middle, counted, rather than every one of them being cut to a notice.
   const head = Math.ceil(affordable / 2)
@@ -283,13 +359,12 @@ export const buffer = (statements: ReadonlyArray<Statement>, unread: number): st
   // cover whole.
   const sizes = kept.map((statement) => statement.bytes)
   const reserve = kept.reduce(
-    (sum, statement) =>
-      sum + (statement.bytes > Sandbox.printStatementFloor ? elide.noticeCost(statement.bytes, recall) : 0),
+    (sum, statement) => sum + (statement.bytes > printStatementFloor ? elide.noticeCost(statement.bytes, recall) : 0),
     0
   ) +
     notices.reduce((sum, line) => sum + bytes.size(line), 0) +
     Math.max(0, kept.length + notices.length - 1)
-  const allotted = shares(sizes, Math.max(0, Sandbox.printFrameBytes - reserve))
+  const allotted = shares(sizes, Math.max(0, printFrameBytes - reserve))
   const lines = kept.map((statement, index) =>
     elide.middleFrom(statement.text, statement.bytes, allotted[index]!, recall)
   )

@@ -8,6 +8,7 @@
  * not break: a frame never delivers more than `Sandbox.printFrameBytes`.
  */
 import type { Schema } from "effect"
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as bytes from "../src/internal/bytes.ts"
 import * as elide from "../src/internal/elide.ts"
@@ -17,6 +18,19 @@ import * as Sandbox from "../src/Sandbox.ts"
 const statement = (text: string): printChannel.Statement => ({ text, bytes: bytes.size(text) })
 
 const record = (file: string, line: number, text: string): Schema.Json => ({ file, line, text })
+
+describe("printChannel budgets", () => {
+  it("owns the numbers it spends rather than importing them back from the port", () => {
+    // The port is the public module; an internal one that reads its own
+    // ceilings off it points the dependency the wrong way round.
+    const source = readFileSync(new URL("../src/internal/printChannel.ts", import.meta.url), "utf8")
+    expect(source).not.toContain("../Sandbox.ts")
+    // A host still reads one number: the port re-exports what the channel owns.
+    expect(Sandbox.printFrameBytes).toBe(printChannel.printFrameBytes)
+    expect(Sandbox.printStatementFloor).toBe(printChannel.printStatementFloor)
+    expect(Sandbox.printRetainedBytes).toBe(printChannel.printRetainedBytes)
+  })
+})
 
 describe("printChannel.shares", () => {
   it("gives every statement what it needs when the budget covers them all", () => {

@@ -1072,14 +1072,12 @@ describe("Sandbox.driveCell", () => {
     // unbounded one.
     const observed: Array<Sandbox.Invocation> = []
     let settled: Cell.Outcome | undefined
-    const gate = Sandbox.latch()
     const pending: Array<Sandbox.PendingCall> = [{
       ordinal: 0,
       flow: "fs/list",
       input: { path: "." },
       settle: () => {
         settled = new Cell.Settled({ transition: Sandbox.replTransition({ _tag: "Done", output: "ok" }, undefined) })
-        gate.wake()
       },
       abort: () => {}
     }]
@@ -1089,7 +1087,6 @@ describe("Sandbox.driveCell", () => {
         pending,
         flush: () => {},
         finished: () => settled,
-        wait: gate.wait,
         abort: () => {},
         handler: handler({ "fs/list": { entries: [] } }, observed)
       })
@@ -1098,31 +1095,43 @@ describe("Sandbox.driveCell", () => {
     expect(observed.map((call) => call.flow)).toEqual(["fs/list"])
     expect(outcome._tag).toBe("settled")
   })
-})
 
-describe("Sandbox.latch", () => {
-  it("holds a waiting fiber until it is woken, and drops a wake nobody is waiting on", async () => {
-    const gate = Sandbox.latch()
-    const order: Array<string> = []
+  it("waits for a queued call the flush produced rather than calling the cell stalled", async () => {
+    // The loop reaches its yield point only here: the queue was empty when it
+    // last looked, and flushing the binding's jobs queued the next call.
+    const observed: Array<Sandbox.Invocation> = []
+    const pending: Array<Sandbox.PendingCall> = []
+    let settled: Cell.Outcome | undefined
+    let queued = false
+    const queue = (ordinal: number): void => {
+      pending.push({
+        ordinal,
+        flow: "fs/list",
+        input: { path: "." },
+        settle: () => {
+          settled = new Cell.Settled({ transition: Sandbox.replTransition({ _tag: "Done", output: "ok" }, undefined) })
+        },
+        abort: () => {}
+      })
+    }
 
-    // Nothing is waiting yet, so this wake has nobody to resume and nothing to
-    // remember: the fiber that arrives afterwards still has to be woken.
-    gate.wake()
+    const outcome = await Effect.runPromise(
+      Sandbox.driveCell({
+        pending,
+        flush: () => {},
+        finished: () => {
+          if (queued) return settled
+          queued = true
+          queue(0)
+          return undefined
+        },
+        abort: () => {},
+        handler: handler({ "fs/list": { entries: [] } }, observed)
+      })
+    )
 
-    const woken = await Effect.gen(function*() {
-      const waiter = yield* gate.wait.pipe(
-        Effect.andThen(Effect.sync(() => order.push("woken"))),
-        Effect.as("woken"),
-        Effect.forkChild({ startImmediately: true })
-      )
-      yield* Effect.yieldNow
-      order.push("still waiting")
-      gate.wake()
-      return yield* Fiber.join(waiter)
-    }).pipe(Effect.scoped, Effect.runPromise)
-
-    expect(woken).toBe("woken")
-    expect(order).toEqual(["still waiting", "woken"])
+    expect(observed.map((call) => call.ordinal)).toEqual([0])
+    expect(outcome._tag).toBe("settled")
   })
 })
 

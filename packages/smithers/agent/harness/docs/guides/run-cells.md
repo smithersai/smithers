@@ -85,15 +85,16 @@ frame 7 says which cell threw. The returned `Sandbox.RealmFrame` carries:
 
 The evaluation options are `Sandbox.RealmEvaluation`:
 
-| Field     | Purpose                                                                                                            |
-| --------- | ------------------------------------------------------------------------------------------------------------------ |
-| `cell`    | The `Cell.Source` to run; construct it with `Cell.source(text)`.                                                   |
-| `frame`   | The controller frame number.                                                                                       |
-| `call`    | The `Sandbox.Handler` that resolves the cell's flow calls.                                                         |
-| `flows`   | Optional replacement for the frozen `ctx.flows` catalog before this cell runs. Omit to retain the current catalog. |
-| `mint`    | Optional `Sandbox.Minter` that settles `ctx.checkpoint()`. Absent means the run pins no trees.                     |
-| `bounded` | Set when the caller journals and bounds each settlement itself, so the loop adds no `callMs` clock of its own.     |
-| `limits`  | Per-frame `Sandbox.EvaluationLimits` overrides; `memoryBytes` is set only when opening the realm.                  |
+| Field     | Purpose                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `cell`    | The `Cell.Source` to run; construct it with `Cell.source(text)`.                                                                |
+| `frame`   | The controller frame number.                                                                                                    |
+| `call`    | The `Sandbox.Handler` that resolves the cell's flow calls.                                                                      |
+| `program` | Optional program the controller's own parse compiled from `cell`. A binding runs it verbatim instead of parsing the cell again. |
+| `flows`   | Optional replacement for the frozen `ctx.flows` catalog before this cell runs. Omit to retain the current catalog.              |
+| `mint`    | Optional `Sandbox.Minter` that settles `ctx.checkpoint()`. Absent means the run pins no trees.                                  |
+| `bounded` | Set when the caller journals and bounds each settlement itself, so the loop adds no `callMs` clock of its own.                  |
+| `limits`  | Per-frame `Sandbox.EvaluationLimits` overrides; `memoryBytes` is set only when opening the realm.                               |
 
 References retained by earlier cells keep their old frozen catalog snapshots.
 

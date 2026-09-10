@@ -1283,7 +1283,8 @@ const openRealm = (
           return frameOf(refusal)
         }
 
-        const compiled = Sandbox.compile(evaluation.cell)
+        // The boundary's own parse when it has one; see `RealmEvaluation.program`.
+        const compiled = evaluation.program ?? Sandbox.compile(evaluation.cell)
         if (compiled instanceof Cell.Rejected) return frameOf(compiled)
 
         const started = context.evalCode(compiled, `cell-${evaluation.frame}.js`, 128)
@@ -1361,7 +1362,6 @@ const openRealm = (
                 "The cell awaited something that never settles. Inside a cell the only thing worth awaiting is ctx.call."
             })
           },
-          wait: Effect.void,
           abort,
           handler: (call) =>
             Effect.suspend(() => {
