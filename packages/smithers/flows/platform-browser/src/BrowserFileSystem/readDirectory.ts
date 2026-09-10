@@ -5,8 +5,9 @@
  */
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
+import { normalizePath } from "./normalizePath.ts"
 import { platformError } from "./platformError.ts"
-import { normalizePath, realPath } from "./realPath.ts"
+import { realPath } from "./realPath.ts"
 import type { ZenFsPromisesLike } from "./ZenFsPromisesLike.ts"
 import type { ZenFsStatsLike } from "./ZenFsStatsLike.ts"
 
@@ -91,10 +92,14 @@ const collect = (
       }))
     }
     const collected: Array<string> = []
+    // The mount root already ends in the separator: joining under it verbatim
+    // would hand the backend `//name`, which a backend keyed by exact path
+    // cannot find.
+    const parent = directory === "/" ? "" : directory
     for (const name of yield* entriesOf(fs, directory)) {
       const relative = prefix === "" ? name : `${prefix}/${name}`
       collected.push(relative)
-      const child = `${directory}/${name}`
+      const child = `${parent}/${name}`
       const stats = yield* inspect(fs, child)
       if (!stats.isDirectory()) continue
       const canonical = yield* directoryIdentity(fs, child)

@@ -280,6 +280,36 @@ describe("BrowserFileSystem error mapping", () => {
     }))
 
   /**
+   * The mount root is the only workspace root the isolation layer permits, and
+   * it already ends in the separator. A backend keyed by exact pathname, like
+   * this one, cannot find `//a`, so every child under `/` must be joined
+   * without doubling it.
+   */
+  it.effect("walks the mount root without handing the backend a doubled separator", () =>
+    Effect.gen(function*() {
+      const tree: Record<string, Array<string>> = { "/": ["a"], "/a": ["b"], "/a/b": [] }
+      const seen: Array<string> = []
+      const exactKey = async (at: string): Promise<Array<string>> => {
+        seen.push(at)
+        const names = tree[at]
+        if (names === undefined) throw codeError("ENOENT")
+        return names
+      }
+      const fileSystem = BrowserFileSystem.make({
+        ...throwingFs(codeError("ENOENT")),
+        readdir: exactKey,
+        stat: async (at: string) => {
+          await exactKey(at)
+          return chainDirectory
+        }
+      })
+
+      expect(yield* (fileSystem.readDirectory("/", { recursive: true }))).toEqual(["a", "a/b"])
+      expect(seen.filter((at) => at.includes("//"))).toEqual([])
+      expect(seen).toEqual(["/", "/a", "/a", "/a/b", "/a/b"])
+    }))
+
+  /**
    * The visited set only closes a loop for a backend that can canonicalize.
    * One with neither `lstat` nor `realpath` follows the link and reports a
    * fresh path at every level, so that walk, and only that walk, is bounded.

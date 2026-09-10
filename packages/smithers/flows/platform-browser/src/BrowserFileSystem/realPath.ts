@@ -1,7 +1,7 @@
 /**
- * Canonicalization of a path inside the mounted volume. Lexical collapse is
- * reserved for backends with no links to follow so a link is resolved before
- * a later `..` segment chooses its parent.
+ * Canonicalization of a path inside the mounted volume: the backend's own
+ * `realpath` when it has one, and a refusal when it does not, because a
+ * lexical collapse cannot prove where a symlink resolves.
  *
  * @since 0.1.0
  */
@@ -9,32 +9,6 @@ import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import { platformError } from "./platformError.ts"
 import type { ZenFsPromisesLike } from "./ZenFsPromisesLike.ts"
-
-/**
- * Lexically canonicalizes a path against the volume root.
- *
- * A tab has no working directory, so `.` and a relative path resolve against
- * `/` — the root of the mounted volume — rather than against an ambient cwd
- * that does not exist. `.` and `..` segments are removed, and `..` above the
- * root is dropped the way a POSIX resolver drops it.
- *
- * @private
- * @category utilities
- * @since 0.1.0
- * @slop
- */
-export const normalizePath = (path: string): string => {
-  const resolved: Array<string> = []
-  for (const segment of path.split("/")) {
-    if (segment === "" || segment === ".") continue
-    if (segment === "..") {
-      resolved.pop()
-      continue
-    }
-    resolved.push(segment)
-  }
-  return `/${resolved.join("/")}`
-}
 
 /**
  * Roots a relative path without changing the order in which links and parent
