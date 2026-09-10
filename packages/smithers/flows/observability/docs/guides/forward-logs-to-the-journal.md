@@ -136,6 +136,13 @@ rather than serialized (`[Function]`, `[Symbol]`, `[Binary]`), and a cycle
 becomes `[Circular]`. Text is bounded in one pass that never cuts a surrogate
 pair, so a truncated string is still well formed.
 
+An `Error` is projected to `name`, `message`, `stack`, and `cause` first, then
+to every other own data property it carries, under the same member and byte
+budgets. A `Schema.TaggedError` therefore keeps its `_tag` and its declared
+fields, and a Node system error keeps `code`, `syscall`, and `path`. Accessor
+properties become `[Unrenderable]`, and members past the budget become one
+`[Truncated]` entry.
+
 Container-shaped fields keep their shape. Annotations whose snapshot spent the
 whole budget arrive as `{ "[Truncated]": "[Truncated]" }` rather than as a
 scalar the schema would refuse. A projection that still fails `TelemetryLog`

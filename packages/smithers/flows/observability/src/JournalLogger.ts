@@ -310,6 +310,12 @@ const boundedText = (value: string, budget: SnapshotBudget): string => {
   return `${prefix.text}${truncatedMarker}`
 }
 
+/**
+ * Error fields read through the prototype chain, in the order the snapshot
+ * projects them before any own data property the error added.
+ */
+const standardErrorKeys = ["name", "message", "stack", "cause"] as const
+
 const snapshotValue = (
   value: unknown,
   budget: SnapshotBudget,
@@ -351,7 +357,7 @@ const snapshotValue = (
     }
     if (value instanceof Error) {
       const record: Record<string, unknown> = Object.create(null)
-      for (const key of (["name", "message", "stack", "cause"] as const).slice(0, budget.members)) {
+      for (const key of standardErrorKeys.slice(0, budget.members)) {
         budget.members--
         try {
           record[key] = snapshotValue(value[key], budget, ancestors, depth + 1)
@@ -359,6 +365,25 @@ const snapshotValue = (
           record[key] = unrenderableMarker
         }
       }
+      // Tagged failures (`_tag`, domain fields) and system errors (`code`,
+      // `path`, `syscall`) keep their diagnostics as own data properties, so
+      // the walk that projects plain records runs over the remaining keys.
+      let names: ReadonlyArray<string>
+      try {
+        names = Object.getOwnPropertyNames(value).filter((key) => !(standardErrorKeys as ReadonlyArray<string>).includes(key))
+      } catch {
+        return record
+      }
+      let projected = 0
+      for (; projected < names.length && budget.members > 0; projected++) {
+        budget.members--
+        const key = names[projected]!
+        const descriptor = Object.getOwnPropertyDescriptor(value, key)
+        record[boundedText(key, budget)] = descriptor !== undefined && "value" in descriptor
+          ? snapshotValue(descriptor.value, budget, ancestors, depth + 1)
+          : unrenderableMarker
+      }
+      if (projected < names.length) record[truncatedMarker] = truncatedMarker
       return record
     }
     if (Array.isArray(value)) {

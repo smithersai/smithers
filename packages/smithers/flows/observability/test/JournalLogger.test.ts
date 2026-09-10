@@ -428,6 +428,48 @@ describe("JournalLogger", () => {
     ])
   })
 
+  it("keeps tagged error fields and system error diagnostics through the snapshot", async () => {
+    const id = runId("tagged-error-run")
+    class ActionFailed extends Schema.TaggedError<ActionFailed>()("ActionFailed", {
+      code: Schema.String,
+      actionId: Schema.String,
+      cause: Schema.optional(Schema.Unknown)
+    }) {}
+    const systemError = Object.assign(new Error("ENOENT: no such file"), {
+      code: "ENOENT",
+      syscall: "open",
+      path: "/tmp/missing token=sk-live-abcdefgh"
+    })
+    const tagged = new ActionFailed({ code: "quota_exhausted", actionId: "action-7", cause: systemError })
+    const payload = await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logError("failed", Cause.combine(Cause.fail(tagged), Cause.die(systemError)))
+        const [entry] = yield* entriesEventually(journal, id, 1)
+        return Schema.decodeUnknownSync(TelemetryLog)(entry!.payload)
+      }).pipe(
+        Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id }), TestJournal.layer()))
+      )
+    )
+
+    const [failed, died] = payload.cause.reasons as ReadonlyArray<{ error?: unknown; defect?: unknown }>
+    expect(failed!.error).toMatchObject({
+      name: "ActionFailed",
+      message: "",
+      _tag: "ActionFailed",
+      code: "quota_exhausted",
+      actionId: "action-7",
+      cause: { name: "Error", code: "ENOENT", syscall: "open", path: "/tmp/missing token=[REDACTED]" }
+    })
+    expect(died!.defect).toMatchObject({
+      name: "Error",
+      message: "ENOENT: no such file",
+      code: "ENOENT",
+      syscall: "open",
+      path: "/tmp/missing token=[REDACTED]"
+    })
+  })
+
   it("drops a record when the bounded queue is actually saturated", async () => {
     const id = runId("overflow-run")
     const entered = Deferred.makeUnsafe<void>()
