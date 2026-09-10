@@ -226,6 +226,11 @@ const layerHttpClient: Layer.Layer<HttpClient> = Layer.provide(
  * Provides all five Bun Host services, including the runtime-independent Path
  * service.
  *
+ * Fails at construction with {@link JjError} carrying `not_installed` or
+ * `unsupported_version`: the `Jj` slot is merged eagerly and probes
+ * `jj --version` while the layer is built, before the program body runs and
+ * whether or not the program asks for `Jj`. Requires jj 0.39.0 or later.
+ *
  * @category layers
  * @since 1.0.0-rc.0
  * @slop
@@ -243,6 +248,9 @@ export const layer: Layer.Layer<BunHost | Crypto.Crypto, JjError> = Layer.mergeA
  * Throws {@link BunHostError} with code `invalid_repository_root` when `root`
  * is not absolute; the empty string counts. The check runs when the factory is
  * called, before any layer exists.
+ *
+ * Fails at construction with {@link JjError} exactly as {@link layer} does:
+ * the `Jj` slot probes `jj --version` while the layer is built.
  *
  * @category layers
  * @since 1.0.0-rc.0
@@ -267,6 +275,10 @@ export const layerAt = (root: string): Layer.Layer<BunHost | Crypto.Crypto, JjEr
  * behind. The reaper module lives in `@smthrs/platform-node` because the calls
  * it makes, `process.kill` and `taskkill`, are Node's, and Bun implements
  * them unchanged.
+ *
+ * Fails at construction with {@link JjError} exactly as {@link layer} does;
+ * here the `jj --version` probe runs through the contained spawner, so its
+ * record enters and leaves the ledger like any other child.
  *
  * @category layers
  * @since 1.0.0-rc.0
@@ -293,6 +305,8 @@ export const layerContained = (
  *
  * Refuses a root exactly as {@link layerAt} does: {@link BunHostError} with
  * code `invalid_repository_root`, thrown when the factory is called.
+ * Fails at construction with {@link JjError} exactly as {@link layerContained}
+ * does.
  *
  * @category layers
  * @since 1.0.0-rc.0

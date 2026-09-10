@@ -1,30 +1,33 @@
 ---
 title: "Installation"
-description: "Install @smthrs/platform-bun, the @effect/platform-bun peer dependency it imports at module load, the CPython 3 interpreter the filesystem slot needs, and the import forms for each entry point."
+description: "Install @smthrs/platform-bun, its required peers, the CPython 3 interpreter the filesystem slot needs, the jj executable every complete bundle probes at startup, and the import forms for each entry point."
 sidebar:
   order: 1
 ---
 
-## Install the package and its peer
+## Install the package and its peers
 
 ```bash
-pnpm add @smthrs/platform-bun@1.0.0-rc.0 @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.112 @effect/platform-bun@4.0.0-rc.112 effect@4.0.0-rc.112
+pnpm add @smthrs/platform-bun@1.0.0-rc.0 @smthrs/platform-node@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.112 @effect/platform-node-shared@4.0.0-rc.112 @effect/platform-bun@4.0.0-rc.112 effect@4.0.0-rc.112
 ```
 
 Version 1.0.0-rc.0 is not on npm yet. Until it is published, take the package
 from [the repository](https://github.com/smithersai/smithers); the rest of this
 page applies either way.
 
-`@smthrs/platform-node@1.0.0-rc.0`, `@effect/platform-node@4.0.0-rc.112`, and
-`effect@4.0.0-rc.112` are required peers for the shared filesystem and Node
-fallback. The Effect adapters own their node-shared implementation dependency.
+The manifest declares five required peers, none optional:
 
-`@effect/platform-bun` is a required peer at exactly `4.0.0-rc.112` because
-the root entry point and `@smthrs/platform-bun/BunHost` import it at module
-load. Package managers that resolve required peers install it automatically.
-`effect` and `@effect/platform-node` are also exact peers at that version, so
-the host shares one compatible Effect runtime; `@effect/platform-node-shared`
-arrives through `@effect/platform-node` rather than as a peer of this package.
+| Peer                           | Version        | Why                                                        |
+| ------------------------------ | -------------- | ---------------------------------------------------------- |
+| `effect`                       | `4.0.0-rc.112` | The runtime every service tag belongs to.                  |
+| `@effect/platform-bun`         | `4.0.0-rc.112` | Imported at module load by the root entry and `BunHost`.   |
+| `@effect/platform-node`        | `4.0.0-rc.112` | The Node adapters the bundle falls back to off Bun.        |
+| `@effect/platform-node-shared` | `4.0.0-rc.112` | The shared adapter implementation both Effect bundles use. |
+| `@smthrs/platform-node`        | `1.0.0-rc.0`   | The atomic filesystem slot and the containment machinery.  |
+
+Package managers that resolve required peers install all five automatically;
+the command above pins them so a lockfile records the versions. All Effect
+versions are exact so the host shares one compatible Effect runtime.
 
 ## Supported runtimes
 
@@ -53,6 +56,33 @@ else, build the layer with `BunFileSystem.layerWith({ executable })`; see
 [Run where python3 is not at /usr/bin/python3](./guides/configure-the-filesystem-helper.md).
 
 Windows is unsupported for this slot.
+
+## Install Jujutsu for the complete bundles
+
+Every complete bundle, `BunHost.layer`, `layerAt`, `layerContained`, and
+`layerContainedAt`, requires jj 0.39.0 or later on the host, whether or not
+the program uses the `Jj` slot. Each factory merges its `Jj` layer with the
+other four, and that layer runs one `jj --version` probe while the layer is
+built. On a host without the executable, or with an older one, construction
+fails with `JjError` carrying `not_installed` or `unsupported_version` before
+the program body runs, even for a program that asked for only `FileSystem`.
+
+Install [Jujutsu](https://jj-vcs.github.io), a version-control system that
+works on a Git repository, and confirm the version:
+
+```bash
+jj --version
+```
+
+This package vendors no binaries. [`@smthrs/jj`](/api/jj) documents the
+resolution order and the `SMITHERS_JJ_PATH` override for an executable that is
+not on `PATH`.
+
+A program that must run without jj composes the individual service layers
+instead of a complete bundle: `BunFileSystem.layer`, `Path.layer`, and the
+spawner and HTTP client layers each build without a probe. See
+[The Host surface on Bun](./concepts/host-surface.md) for taking one service
+without the other four.
 
 ## Import forms
 
@@ -92,11 +122,10 @@ page composes [`@smthrs/platform-browser`](/api/platform-browser) instead.
   durable journal to write to. See
   [Contain and reap child processes](./guides/contain-child-processes.md).
 
-The `Jj` slot spawns the `jj` command from
-[Jujutsu](https://jj-vcs.github.io), a version-control system that works on a
-Git repository. This package vendors no binaries, so install Jujutsu yourself if
-your program uses that slot; [`@smthrs/jj`](/api/jj) documents the resolution
-order and the `SMITHERS_JJ_PATH` override.
+The `Jj` slot spawns the `jj` command that
+[Install Jujutsu for the complete bundles](#install-jujutsu-for-the-complete-bundles)
+covers. A bundle probes it at construction, so the executable is a startup
+requirement rather than a slot the program opts into.
 
 ## Next step
 

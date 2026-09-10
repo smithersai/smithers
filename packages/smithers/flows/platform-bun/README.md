@@ -1,6 +1,7 @@
 # @smthrs/platform-bun
 
-This package declares `effect`, `@effect/platform-node`, and `@effect/platform-bun` as exact
+This package declares `effect`, `@effect/platform-node`,
+`@effect/platform-node-shared`, and `@effect/platform-bun` as exact
 `4.0.0-rc.112` peer dependencies. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
@@ -27,10 +28,11 @@ npm install @smthrs/platform-bun@1.0.0-rc.0 @smthrs/platform-node@1.0.0-rc.0 @ef
 Version 1.0.0-rc.0 is not on npm yet. Until it is published, take the package
 from https://github.com/smithersai/smithers.
 
-`@smthrs/platform-node`, `@effect/platform-node`, `@effect/platform-bun`, and
-`effect` are required peers. Package managers that resolve required peers install
-them automatically; all Effect versions are exact. `@effect/platform-node-shared`
-arrives through `@effect/platform-node` and is not a peer of this package.
+`@smthrs/platform-node`, `@effect/platform-node`,
+`@effect/platform-node-shared`, `@effect/platform-bun`, and `effect` are
+required peers, exactly as `package.json` declares them. Package managers that
+resolve required peers install all five automatically; all Effect versions are
+exact.
 
 The filesystem slot spawns a CPython 3 helper, so the host also needs a
 `python3` supporting `O_NOFOLLOW`, `O_DIRECTORY`, and `dir_fd` at

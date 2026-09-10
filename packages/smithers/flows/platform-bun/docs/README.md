@@ -43,13 +43,9 @@ pnpm add @smthrs/platform-bun@next @effect/platform-bun@4.0.0-rc.112
 
 `@effect/platform-bun` is a required peer at exactly `4.0.0-rc.112`. Package
 managers install it with the other required Effect peers. The filesystem slot
-also needs a CPython 3 interpreter on the host. For both, see
-[Installation](./installation.md).
-
-`@effect/platform-bun` is an optional peer dependency that this package imports
-at module load, so your package manager will not fetch it for you.
-[Installation](./installation.md) covers that, the CPython 3 interpreter the
-filesystem slot spawns, and the import forms.
+also needs a CPython 3 interpreter on the host, and every complete bundle needs
+jj 0.39.0 or later because it probes jj while the layer is built.
+[Installation](./installation.md) covers all three and the import forms.
 
 ## Run a command and a file operation through the host
 
