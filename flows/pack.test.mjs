@@ -26,10 +26,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-import * as Capability from "../packages/smithers/flows/capability/src/Capability.ts";
-import * as Discovery from "../packages/smithers/agent/registry/src/Discovery.ts";
-import * as MarkdownFlow from "../packages/smithers/agent/registry/src/MarkdownFlow.ts";
-import * as Detect from "../packages/smithers/migrate/src/Detect.ts";
+import * as Capability from "@smthrs/capability/Capability";
+import * as Detect from "@smthrs/migrate/Detect";
+import * as Discovery from "@smthrs/registry/Discovery";
+import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow";
 
 const flowsRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(flowsRoot);

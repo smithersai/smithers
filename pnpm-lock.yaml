@@ -22,12 +22,33 @@ importers:
       '@smthrs/database':
         specifier: workspace:*
         version: link:packages/smithers/flows/database
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:packages/smithers/flows/engine
       '@smthrs/engine-store':
         specifier: workspace:*
         version: link:packages/smithers/flows/engine-store
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:packages/smithers/flows/flow
+      '@smthrs/flows':
+        specifier: workspace:*
+        version: link:packages/smithers/flows
+      '@smthrs/journal':
+        specifier: workspace:*
+        version: link:packages/smithers/flows/journal
+      '@smthrs/kernel':
+        specifier: workspace:*
+        version: link:packages/smithers/flows/kernel
+      '@smthrs/plan':
+        specifier: workspace:*
+        version: link:packages/smithers/flows/plan
       '@smthrs/repo-targets':
         specifier: workspace:*
         version: link:packages/repo-targets
+      '@smthrs/run-store':
+        specifier: workspace:*
+        version: link:packages/smithers/flows/run-store
       '@smthrs/targets':
         specifier: workspace:*
         version: link:packages/smithers/build/targets
@@ -1804,6 +1825,9 @@ importers:
       '@smthrs/agent':
         specifier: workspace:*
         version: link:../packages/smithers/agent
+      '@smthrs/capability':
+        specifier: workspace:*
+        version: link:../packages/smithers/flows/capability
       '@smthrs/cli':
         specifier: workspace:*
         version: link:../packages/smithers
@@ -1825,6 +1849,9 @@ importers:
       '@smthrs/flows':
         specifier: workspace:*
         version: link:../packages/smithers/flows
+      '@smthrs/migrate':
+        specifier: workspace:*
+        version: link:../packages/smithers/migrate
       '@smthrs/model':
         specifier: workspace:*
         version: link:../packages/smithers/agent/model

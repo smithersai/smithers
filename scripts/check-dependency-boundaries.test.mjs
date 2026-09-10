@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
-import { blankLiteralRanges } from "./check-dependency-boundaries.mjs"
+import { blankLiteralRanges, packageSourceReachedBy } from "./check-dependency-boundaries.mjs"
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -89,4 +89,35 @@ test("blanking a source with tens of thousands of literals stays linear in the f
   assert.equal(blanked.length, text.length)
   assert.doesNotMatch(blanked, /padding/)
   assert.ok(cpuMs < 1_000, `blanking took ${cpuMs.toFixed(1)} ms of CPU`)
+})
+
+test("a relative specifier into another workspace package's src/ names that package", () => {
+  const dirs = ["packages/smithers", "packages/smithers/flows/plan", "packages/smithers/build/targets", "flows"]
+  assert.equal(
+    packageSourceReachedBy("scripts/bench/corpus.mjs", "../../packages/smithers/flows/plan/src/Plan.ts", dirs),
+    "packages/smithers/flows/plan",
+  )
+  assert.equal(
+    packageSourceReachedBy("factory/flows/harness.ts", "../../packages/smithers/flows/plan/src/index.ts", dirs),
+    "packages/smithers/flows/plan",
+  )
+  // The deepest package owns the file: `packages/smithers` also contains it.
+  assert.equal(
+    packageSourceReachedBy("flows/pack.test.mjs", "../packages/smithers/flows/plan/src/Node.ts", dirs),
+    "packages/smithers/flows/plan",
+  )
+  assert.equal(packageSourceReachedBy("flows/coding/serve.ts", "../../packages/smithers/src/Serve.ts", dirs), "packages/smithers")
+})
+
+test("a relative specifier that stays inside its own package or outside every src/ names nothing to reject", () => {
+  const dirs = ["packages/smithers", "packages/smithers/flows/plan", "packages/smithers/flows/flow"]
+  // Same package: the caller compares the owner with the importing package.
+  assert.equal(packageSourceReachedBy("packages/smithers/flows/plan/src/Plan.ts", "./KeyMaterial.ts", dirs), "packages/smithers/flows/plan")
+  // Build-graph declarations are root-owned and sit outside src/.
+  assert.equal(packageSourceReachedBy("packages/smithers/flows/flow/PACKAGE.ts", "../plan/PACKAGE.ts", dirs), null)
+  // A sibling's test helper outside src/ is not an export-map bypass.
+  assert.equal(packageSourceReachedBy("scripts/test/spawnContainment.test.ts", "../../packages/smithers/flows/test/SpawnSpecifiers.ts", dirs), null)
+  assert.equal(packageSourceReachedBy("scripts/generate-ci.mjs", "./workspace-packages.mjs", dirs), null)
+  assert.equal(packageSourceReachedBy("scripts/generate-ci.mjs", "@smthrs/targets/Target", dirs), null)
+  assert.equal(packageSourceReachedBy("scripts/generate-ci.mjs", "../../outside/src/x.ts", dirs), null)
 })

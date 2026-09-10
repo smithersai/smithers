@@ -4,8 +4,8 @@
  */
 import * as Schema from "effect/Schema"
 import * as path from "node:path"
-import { Flow } from "../../packages/smithers/flows/flow/src/index.ts"
-import { Node } from "../../packages/smithers/flows/plan/src/index.ts"
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import { REPORTS_DIR, runFlow, ShellTask, TaskResult } from "./harness.ts"
 
 const logDir = path.join(REPORTS_DIR, "smoke")

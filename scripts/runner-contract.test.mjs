@@ -26,7 +26,7 @@ function fixture(modules = "node_modules") {
   // Reuse the installed tools without pnpm 11's implicit dependency install.
   write(directory, "pnpm-workspace.yaml", "verifyDepsBeforeRun: false\n")
   write(directory, ".gitignore", ".flows/\nnode_modules/\n")
-  write(directory, "WORKSPACE.ts", `import { Smithers as S } from ${JSON.stringify(join(root, "packages/smithers/build/targets/src/index.ts"))}
+  write(directory, "WORKSPACE.ts", `import { Smithers as S } from ${JSON.stringify(fileURLToPath(import.meta.resolve("@smthrs/targets")))}
 export const Workspace = S.Workspace("runner-contract", {
   repository: "git+https://example.invalid/runner-contract.git",
   cache: S.Cache({ directory: ".flows" }),
@@ -43,7 +43,7 @@ function removeFixture(directory) {
   scratchRoots.delete(directory)
 }
 function declaration(directory, target) {
-  write(directory, "PACKAGE.ts", `import { Smithers as S } from ${JSON.stringify(join(root, "packages/smithers/build/targets/src/index.ts"))}
+  write(directory, "PACKAGE.ts", `import { Smithers as S } from ${JSON.stringify(fileURLToPath(import.meta.resolve("@smthrs/targets")))}
 export const Package = S.Package({ targets: { sentinel: ${target} } })\n`)
 }
 function run(directory, name) {

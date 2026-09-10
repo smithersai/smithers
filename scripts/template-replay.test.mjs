@@ -4,7 +4,7 @@ import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import test from "node:test"
-import { pathToFileURL } from "node:url"
+
 import { runTemplateReplay } from "./fixtures/dependency-consumers.mjs"
 
 const repoRoot = resolve(import.meta.dirname, "..")
@@ -44,7 +44,7 @@ test("the template smoke scaffolds then executes its generated replay, and propa
     writeFileSync(join(installedLoader, "package.json"), JSON.stringify({ name: "@smthrs/create-app", version: "1.0.0",
       type: "module", exports: { "./loader": "./loader.mjs", "./package.json": "./package.json" } }))
     writeFileSync(join(installedLoader, "loader.mjs"), 'export const load = (file) => import(file)')
-    const scaffold = pathToFileURL(join(repoRoot, "packages/smithers/build/build-cli/src/CreateApp.ts")).href
+    const scaffold = import.meta.resolve("@smthrs/build-cli/CreateApp")
     const binary = join(consumer, "node_modules/.bin/smithers-build")
     writeFileSync(binary, [
       "#!/usr/bin/env node",

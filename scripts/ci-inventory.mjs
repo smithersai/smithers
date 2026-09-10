@@ -4,12 +4,12 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { parseWorkflow } from "./release-rehearsal.mjs"
-import { openPackageIndex } from "../packages/smithers/build/build-cli/src/Cli.ts"
-import * as Target from "../packages/smithers/build/targets/src/Target.ts"
-import * as NodeTest from "../packages/smithers/build/targets/src/NodeTest.ts"
-import * as NodeBinary from "../packages/smithers/build/targets/src/NodeBinary.ts"
-import * as Cargo from "../packages/smithers/build/targets/src/Cargo.ts"
-import * as PackageManager from "../packages/smithers/build/targets/src/PackageManager.ts"
+import { openPackageIndex } from "@smthrs/build-cli/Cli"
+import * as Cargo from "@smthrs/targets/Cargo"
+import * as NodeBinary from "@smthrs/targets/NodeBinary"
+import * as NodeTest from "@smthrs/targets/NodeTest"
+import * as PackageManager from "@smthrs/targets/PackageManager"
+import * as Target from "@smthrs/targets/Target"
 
 export const root = fileURLToPath(new URL("../", import.meta.url))
 const cli = resolve(root, "packages/smithers/src/bin.ts")

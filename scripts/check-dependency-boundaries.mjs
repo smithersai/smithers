@@ -6,7 +6,9 @@
  * import a sibling it never declared and still resolve locally. A consumer who
  * installs the published tarball gets a module-not-found error instead. This
  * This gate prevents package imports through unpublished workspace-relative
- * paths.
+ * paths: a bare specifier must name a declared dependency, and a relative
+ * specifier must not resolve into another workspace package's `src/`, which
+ * a tarball consumer can only reach through that package's export map.
  *
  * Test files, config files, and anything under a `scripts/` directory may use
  * `devDependencies`; everything else may use only runtime, peer, and optional
@@ -53,6 +55,19 @@ const ignoredDirs = new Set([
   "tmp",
 ]);
 const builtinPackages = new Set(["bun", ...builtinModules, ...builtinModules.map((mod) => `node:${mod}`)]);
+// Reach-throughs that predate the rule, as `file -> specifier`. Each is a
+// debt: the target is either an `internal/*` module its package deliberately
+// does not export, or an app source no export map covers. Remove the entry
+// when the import moves to a package name; the gate fails on a stale entry so
+// the list only shrinks.
+const knownReachThroughs = new Set([
+  "PACKAGE.ts -> ./apps/site/src/data/project.json",
+  "apps/site/src/AppIsland.tsx -> ../../ui/src/mainview/AppIsland",
+  "apps/site/src/components/repoStats.ts -> ../../../server/src/publicRepoCatalog",
+  "apps/ui/src/mainview/cards/EngineTrace.test.ts -> ../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
+  "apps/ui/src/mainview/cards/fixtures/CodingJournal.ts -> ../../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts",
+  "packages/smithers/build/infra/worker/test/action-cache.test.ts -> ../../../../flows/step-cache/src/CacheStore.ts",
+]);
 
 /** @typedef {{ dir: string; name: string; manifestPath: string; manifest: Record<string, unknown> }} WorkspacePackage */
 
@@ -182,9 +197,11 @@ function filesForPackage(pkg, memberDirs = new Set()) {
   /** @type {string[]} */
   const nestedPackageDirs = [];
   if (pkg.dir === ".") {
-    // The root workspace's own sources live under scripts/, and it owns every
-    // build-graph declaration in the tree.
+    // The root workspace's own sources live under scripts/ and factory/ (the
+    // dogfood harness has no manifest and runs against the root install),
+    // and it owns every build-graph declaration in the tree.
     collectSourceFiles("scripts", files, nestedPackageDirs);
+    collectSourceFiles("factory", files, nestedPackageDirs);
     collectGraphFiles("", memberDirs, files);
   } else if (isDirectory(join(repoRoot, pkg.dir, "src"))) {
     collectSourceFiles(join(pkg.dir, "src"), files, nestedPackageDirs);
@@ -217,6 +234,32 @@ function packageNameForSpecifier(specifier) {
     return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : specifier;
   }
   return parts[0] ?? null;
+}
+
+/**
+ * The workspace package whose `src/` a relative specifier resolves into, or
+ * null when it stays outside every package source tree.
+ *
+ * `../../packages/smithers/flows/plan/src/Plan.ts` from `scripts/bench/corpus.mjs`
+ * names `packages/smithers/flows/plan`; `../plan/PACKAGE.ts` from a sibling
+ * build-graph declaration names nothing, because declarations are root-owned
+ * and sit outside `src/`. The caller decides whether the importing package is
+ * the same one; only a different owner is a reach-through.
+ *
+ * @param {string} file Repo-relative path of the importing file.
+ * @param {string} specifier
+ * @param {Iterable<string>} packageDirs Repo-relative workspace package directories.
+ * @returns {string | null}
+ */
+export function packageSourceReachedBy(file, specifier, packageDirs) {
+  if (!specifier.startsWith(".")) return null;
+  const target = relative(repoRoot, resolve(repoRoot, dirname(file), specifier));
+  if (target.startsWith("..")) return null;
+  let owner = null;
+  for (const dir of packageDirs) {
+    if (target.startsWith(`${dir}${sep}src${sep}`) && (owner === null || dir.length > owner.length)) owner = dir;
+  }
+  return owner;
 }
 
 /** @param {string} path */
@@ -378,6 +421,10 @@ function main() {
   const memberDirs = new Set(workspacePackages.map((pkg) => pkg.dir).filter((dir) => dir !== "."));
   /** @type {Array<{ file: string; specifier: string; packageName: string; section: "dependencies" | "devDependencies" }>} */
   const violations = [];
+  /** @type {Array<{ file: string; specifier: string; packageDir: string }>} */
+  const reachThroughs = [];
+  /** @type {Set<string>} */
+  const seenReachThroughs = new Set();
 
   const packageQueue = [...workspacePackages];
   let checkedPackageCount = 0;
@@ -395,6 +442,13 @@ function main() {
       const allowed = devOnly ? deps.dev : deps.runtime;
       const expectedSection = devOnly ? "devDependencies" : "dependencies";
       for (const specifier of importSpecifiersForFile(file)) {
+        const reached = packageSourceReachedBy(file, specifier, memberDirs);
+        if (reached !== null && reached !== pkg.dir) {
+          const key = `${file.split(sep).join("/")} -> ${specifier}`;
+          if (knownReachThroughs.has(key)) seenReachThroughs.add(key);
+          else reachThroughs.push({ file, specifier, packageDir: reached });
+          continue;
+        }
         const packageName = packageNameForSpecifier(specifier);
         if (!packageName || packageName === pkg.name) continue;
         if (allowed.has(packageName)) continue;
@@ -403,7 +457,8 @@ function main() {
     }
   }
 
-  if (violations.length > 0) {
+  const staleReachThroughs = [...knownReachThroughs].filter((key) => !seenReachThroughs.has(key));
+  if (violations.length > 0 || reachThroughs.length > 0 || staleReachThroughs.length > 0) {
     console.error("Dependency boundary check failed: undeclared imports found.\n");
     for (const violation of violations) {
       const workspaceHint = workspaceNames.has(violation.packageName) ? "workspace dependency" : "dependency";
@@ -411,6 +466,16 @@ function main() {
         `- ${relative(repoRoot, join(repoRoot, violation.file))} imports ${violation.specifier}; ` +
           `declare ${violation.packageName} as a ${workspaceHint} in ${violation.section}.`,
       );
+    }
+    for (const reach of reachThroughs) {
+      const name = readPackage(reach.packageDir)?.name ?? reach.packageDir;
+      console.error(
+        `- ${relative(repoRoot, join(repoRoot, reach.file))} imports ${reach.specifier}, ` +
+          `which resolves inside ${reach.packageDir}/src; import ${name} by package name through its export map.`,
+      );
+    }
+    for (const key of staleReachThroughs) {
+      console.error(`- knownReachThroughs entry "${key}" no longer matches an import; remove it from the gate.`);
     }
     process.exitCode = 1;
   } else {

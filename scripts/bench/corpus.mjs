@@ -11,11 +11,11 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import * as PlanScheduler from "@smthrs/engine-store/PlanScheduler"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
-import * as Plan from "../../packages/smithers/flows/plan/src/Plan.ts"
-import * as KeyMaterial from "../../packages/smithers/flows/plan/src/KeyMaterial.ts"
-import * as RunStore from "../../packages/smithers/flows/run-store/src/RunStore.ts"
-import * as Journal from "../../packages/smithers/flows/journal/src/Journal.ts"
-import * as Jj from "../../packages/smithers/flows/kernel/src/Jj.ts"
+import * as Journal from "@smthrs/journal/Journal"
+import * as Jj from "@smthrs/kernel/Jj"
+import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
+import * as Plan from "@smthrs/plan/Plan"
+import * as RunStore from "@smthrs/run-store/RunStore"
 
 const owner = { hostId: "benchmark", pid: process.pid, nonce: "deterministic-fixture" }
 const digest = (output) => createHash("sha256").update(JSON.stringify(output)).digest("hex")

@@ -7,10 +7,9 @@
  * is tailable, and both report failure as a value (`exitCode`) instead of
  * failing the flow, so one bad task never aborts a wave.
  *
- * Imports reach the workspace packages by relative path because the
- * workspace root does not depend on `@smthrs/flow`; pnpm's per-package
- * node_modules resolve their internal deps to the same realpaths, so module
- * identity stays consistent.
+ * The harness runs against the root install: the workspace root declares
+ * `@smthrs/engine`, `@smthrs/flow` and `@smthrs/plan`, so the packages are
+ * imported by name through their export maps like any other consumer.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Effect from "effect/Effect"
@@ -21,8 +20,8 @@ import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import * as fs from "node:fs"
 import * as path from "node:path"
-import { FlowEngine } from "../../packages/smithers/flows/engine/src/index.ts"
-import { Action, Flow, Interpreter } from "../../packages/smithers/flows/flow/src/index.ts"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { libraryPackages } from "../../scripts/workspace-packages.mjs"
 
 export const REPO_ROOT = path.resolve(import.meta.dirname, "../..")

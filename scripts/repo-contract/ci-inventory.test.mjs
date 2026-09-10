@@ -4,8 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { planned, resolveInventory, root, runnerFor, targetInvocation } from "../ci-inventory.mjs"
-import { openPackageIndex } from "../../packages/smithers/build/build-cli/src/Cli.ts"
-import * as Target from "../../packages/smithers/build/targets/src/Target.ts"
+import { openPackageIndex } from "@smthrs/build-cli/Cli"
+import * as Target from "@smthrs/targets/Target"
 
 test("CI command discovery retains diagnostic options and refuses unknown selection syntax", () => {
   for (const options of ["--jobs 2 --verbose", "--verbose --jobs 2"]) {

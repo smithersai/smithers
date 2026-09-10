@@ -1,10 +1,10 @@
 /** Apply the owning PACKAGE.ts declaration through the actual workflow generator. */
 import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
-import { openPackageIndex } from "../packages/smithers/build/build-cli/src/Cli.ts"
-import { render } from "../packages/smithers/build/targets/src/GithubCiGen.ts"
-import { resolveOutputPath, writeGeneratedFile } from "../packages/smithers/build/targets/src/GeneratedFile.ts"
-import * as Target from "../packages/smithers/build/targets/src/Target.ts"
+import { openPackageIndex } from "@smthrs/build-cli/Cli"
+import { resolveOutputPath, writeGeneratedFile } from "@smthrs/targets/GeneratedFile"
+import { render } from "@smthrs/targets/GithubCiGen"
+import * as Target from "@smthrs/targets/Target"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
 const index = await openPackageIndex({ workspace: root })
