@@ -593,6 +593,45 @@ describe("evictions", () => {
       expect(remote.rows.has(entry.keyDigest)).toBe(true)
     }))
 
+  it.effect.each([
+    { runId: "other-run", eventSeq: entry.recordedEventSeq },
+    { runId: entry.recordedRunId, eventSeq: entry.recordedEventSeq + 1 }
+  ])(
+    "forwards a stale provenance fence to the durable local tier: %j",
+    (stale) =>
+      withSqlStore(Effect.gen(function*() {
+        // The engine evicts under a fence because the row it observed to be
+        // poison may already have been replaced. The Map-backed tiers above
+        // delete by key alone, so only the real SQL tier can show that the
+        // composition hands the fence through instead of dropping it.
+        const local = yield* CacheStore.CacheStore
+        yield* local.put(entry)
+        const remote = tier()
+        remote.rows.set(entry.keyDigest, entry)
+        const combined = CombinedCacheStore.make({ local, remote: remote.store })
+
+        expect(yield* combined.evict(entry.keyDigest, { ifRecordedBy: stale })).toBe(false)
+        expect(Option.getOrThrow(yield* local.get(entry.keyDigest))).toEqual(entry)
+        expect(remote.calls).toEqual([])
+        expect(remote.rows.get(entry.keyDigest)).toEqual(entry)
+      }))
+  )
+
+  it.effect("evicts the local head under a matching provenance fence without touching the remote tier", () =>
+    withSqlStore(Effect.gen(function*() {
+      const local = yield* CacheStore.CacheStore
+      yield* local.put(entry)
+      const remote = tier()
+      remote.rows.set(entry.keyDigest, entry)
+      const combined = CombinedCacheStore.make({ local, remote: remote.store })
+      const fence = { runId: entry.recordedRunId, eventSeq: entry.recordedEventSeq }
+
+      expect(yield* combined.evict(entry.keyDigest, { ifRecordedBy: fence })).toBe(true)
+      expect(yield* local.get(entry.keyDigest)).toEqual(Option.none())
+      expect(remote.calls).toEqual([])
+      expect(remote.rows.get(entry.keyDigest)).toEqual(entry)
+    })))
+
   it.effect("sweeps only the local tier", () =>
     Effect.gen(function*() {
       // Retention is a per-machine judgement for the same reason eviction is.
