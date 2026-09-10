@@ -252,6 +252,21 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
       }
     }))
 
+  it.live("trusts the version the injected spawner reports over an old local answer", () =>
+    Effect.gen(function*() {
+      // The host resolves the old binary, and a direct probe of it fails. A
+      // spawner that executes a supported jj at that path is authoritative for
+      // its own layer: it is asked, and the ambient answer never decides.
+      process.env.SMITHERS_JJ_PATH = oldBinary
+      const direct = yield* Effect.flip(Effect.provide(Jj, NodeJj.layerAt(directory)))
+      expect(direct).toMatchObject({ code: "unsupported_version", method: "version" })
+      const calls: Array<EffectChildProcess.StandardCommand> = []
+      const jj = yield* run(Jj, spawnerWithPath(directory, calls, join(directory, "jj")))
+      expect(yield* jj.status()).toBe("the working copy is clean\n")
+      expect(calls.map((command) => command.command)).toEqual([oldBinary, oldBinary])
+      expect(calls.map((command) => command.args[0])).toEqual(["--version", "status"])
+    }))
+
   it.live("rejects an old local version before exposing the spawner-backed Jj", () =>
     Effect.gen(function*() {
       process.env.SMITHERS_JJ_PATH = oldBinary
