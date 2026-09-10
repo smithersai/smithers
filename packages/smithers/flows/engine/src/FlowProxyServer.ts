@@ -21,7 +21,6 @@
 import { Flow } from "@smthrs/flow"
 import type { FlowRuntime } from "@smthrs/flow"
 import type { NonEmptyReadonlyArray } from "effect/Array"
-import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -145,6 +144,63 @@ const guardDefects = (flowName: string) => <A, E, R>(effect: Effect.Effect<A, E,
     )
   })
 
+/** The decoded body of an execute or a discard request. */
+type ExecuteRequest = {
+  readonly payload: any
+  readonly executionId: string
+}
+
+/** The decoded body of a resume request, which names only an execution. */
+type ResumeRequest = {
+  readonly executionId: string
+}
+
+/**
+ * Builds the body one served execute or discard request runs.
+ *
+ * Both transports decode the same request and answer it by executing the
+ * flow, so the scoped execution id, the defect guard, and the log annotation
+ * are assembled once here instead of once per transport per operation.
+ *
+ * @private
+ */
+const handleExecute = (
+  flow: Flow.AnyWithProps,
+  scope: ExecutionIdScope | undefined,
+  operation: "execute" | "discard",
+  method: string
+) =>
+(request: ExecuteRequest) =>
+  flow.execute(request.payload, {
+    discard: operation === "discard",
+    executionId: scopeExecutionId(scope, {
+      flow,
+      operation,
+      clientValue: request.executionId,
+      payload: request.payload
+    })
+  }).pipe(
+    guardDefects(flow._tag),
+    Effect.annotateLogs({ module: "FlowProxyServer", method })
+  )
+
+/**
+ * Builds the body one served resume request runs.
+ *
+ * @private
+ */
+const handleResume = (
+  flow: Flow.AnyWithProps,
+  scope: ExecutionIdScope | undefined,
+  method: string
+) =>
+(request: ResumeRequest) =>
+  resumeExecutionId(scope, flow, request.executionId).pipe(
+    Effect.flatMap((executionId) => flow.resume(executionId)),
+    guardDefects(flow._tag),
+    Effect.annotateLogs({ module: "FlowProxyServer", method })
+  )
+
 /**
  * Creates handlers for a flow HTTP API group, wiring execute, discard, and
  * resume endpoints to the supplied flows.
@@ -179,66 +235,13 @@ export const layerHttpApi = <
       for (const flow_ of flows) {
         const flow = flow_ as Flow.AnyWithProps
         const operation = FlowProxy.operationAddresses(flow._tag)
+        const execute = handleExecute(flow, options?.executionId, "execute", operation.execute)
+        const discard = handleExecute(flow, options?.executionId, "discard", operation.discard)
+        const resume = handleResume(flow, options?.executionId, operation.resume)
         handlers = handlers
-          .handle(
-            operation.execute,
-            ({ payload: request }: {
-              payload: {
-                payload: any
-                executionId: string
-              }
-            }) =>
-              flow.execute(request.payload, {
-                executionId: scopeExecutionId(options?.executionId, {
-                  flow,
-                  operation: "execute",
-                  clientValue: request.executionId,
-                  payload: request.payload
-                })
-              }).pipe(
-                guardDefects(flow._tag),
-                Effect.annotateLogs({
-                  module: "FlowProxyServer",
-                  method: operation.execute
-                })
-              )
-          )
-          .handle(
-            operation.discard,
-            ({ payload: request }: {
-              payload: {
-                payload: any
-                executionId: string
-              }
-            }) =>
-              flow.execute(request.payload, {
-                discard: true,
-                executionId: scopeExecutionId(options?.executionId, {
-                  flow,
-                  operation: "discard",
-                  clientValue: request.executionId,
-                  payload: request.payload
-                })
-              }).pipe(
-                guardDefects(flow._tag),
-                Effect.annotateLogs({
-                  module: "FlowProxyServer",
-                  method: operation.discard
-                })
-              )
-          )
-          .handle(
-            operation.resume,
-            ({ payload }: { payload: { readonly executionId: string } }) =>
-              resumeExecutionId(options?.executionId, flow, payload.executionId).pipe(
-                Effect.flatMap((executionId) => flow.resume(executionId)),
-                guardDefects(flow._tag),
-                Effect.annotateLogs({
-                  module: "FlowProxyServer",
-                  method: operation.resume
-                })
-              )
-          )
+          .handle(operation.execute, ({ payload }: { payload: ExecuteRequest }) => execute(payload))
+          .handle(operation.discard, ({ payload }: { payload: ExecuteRequest }) => discard(payload))
+          .handle(operation.resume, ({ payload }: { payload: ResumeRequest }) => resume(payload))
       }
       return handlers as HttpApiBuilder.Handlers<never>
     })
@@ -267,65 +270,22 @@ export const layerRpcHandlers = <
   | Flow.RequirementsHandler<Flows[number]>
 > => {
   const prefix = options?.prefix ?? ""
-  FlowProxy.assertNoCollisions(flows, prefix)
-  return Layer.effectContext(Effect.gen(function*() {
-    const context = yield* Effect.context<never>()
-    const handlers = new Map<string, Rpc.Handler<string>>()
-    for (const flow_ of flows) {
-      const flow = flow_ as Flow.AnyWithProps
-      const operation = FlowProxy.operationAddresses(flow._tag, prefix)
-      const tag = operation.execute
-      const tagDiscard = operation.discard
-      const tagResume = operation.resume
-      const key = `effect/rpc/Rpc/${tag}`
-      const keyDiscard = `${key}Discard`
-      const keyResume = `${key}Resume`
-      handlers.set(key, {
-        context,
-        tag,
-        handler: (request: any) =>
-          flow.execute(request.payload, {
-            executionId: scopeExecutionId(options?.executionId, {
-              flow,
-              operation: "execute",
-              clientValue: request.executionId,
-              payload: request.payload
-            })
-          }).pipe(
-            guardDefects(flow._tag),
-            Effect.annotateLogs({ module: "FlowProxyServer", method: tag })
-          ) as any
-      } as any)
-      handlers.set(keyDiscard, {
-        context,
-        tag: tagDiscard,
-        handler: (request: any) =>
-          flow.execute(request.payload, {
-            discard: true,
-            executionId: scopeExecutionId(options?.executionId, {
-              flow,
-              operation: "discard",
-              clientValue: request.executionId,
-              payload: request.payload
-            })
-          }).pipe(
-            guardDefects(flow._tag),
-            Effect.annotateLogs({ module: "FlowProxyServer", method: tagDiscard })
-          ) as any
-      } as any)
-      handlers.set(keyResume, {
-        context,
-        tag: tagResume,
-        handler: (payload: { readonly executionId: string }) =>
-          resumeExecutionId(options?.executionId, flow, payload.executionId).pipe(
-            Effect.flatMap((executionId) => flow.resume(executionId)),
-            guardDefects(flow._tag),
-            Effect.annotateLogs({ module: "FlowProxyServer", method: tagResume })
-          ) as any
-      } as any)
-    }
-    return Context.makeUnsafe(handlers)
-  }))
+  // The group owns both halves of a handler address: `Rpc.key`, effect's own
+  // service key for a handler, and the execute, discard, and resume names
+  // `FlowProxy.operationAddresses` derives. Implementing the group through
+  // `toLayer` registers each body against the very `Rpc` the client calls, so
+  // neither the key format nor the operation suffixes are restated here.
+  // `toRpcGroup` refuses an ambiguous flow set on the way in.
+  const group = FlowProxy.toRpcGroup(flows, { prefix })
+  const handlers: Record<string, (request: any) => Effect.Effect<any, any, any>> = {}
+  for (const flow_ of flows) {
+    const flow = flow_ as Flow.AnyWithProps
+    const operation = FlowProxy.operationAddresses(flow._tag, prefix)
+    handlers[operation.execute] = handleExecute(flow, options?.executionId, "execute", operation.execute)
+    handlers[operation.discard] = handleExecute(flow, options?.executionId, "discard", operation.discard)
+    handlers[operation.resume] = handleResume(flow, options?.executionId, operation.resume)
+  }
+  return group.toLayer(handlers as never) as any
 }
 
 /**

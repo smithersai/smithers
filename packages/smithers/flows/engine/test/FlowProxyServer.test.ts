@@ -2,6 +2,7 @@
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
+import { readFileSync } from "node:fs"
 import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import {
@@ -523,6 +524,37 @@ describe("FlowProxyServer.layerRpcHandlers", () => {
     )
   })
 
+  effect("registers execute, discard, and resume under the rpc keys the group publishes", () => {
+    const { layer } = makeLayer((value) => Effect.succeed(value + 100))
+    const group = FlowProxy.toRpcGroup(flows, { prefix: "v1/" })
+    return Effect.gen(function*() {
+      const context = yield* Layer.build(
+        FlowProxyServer.layerRpcHandlers(flows, { prefix: "v1/" }).pipe(Layer.provide(layer))
+      )
+      // Every address is read off the rpc the client calls. A server that
+      // rebuilt one by appending to a restated key format answers execute and
+      // leaves discard and resume unregistered the moment either convention
+      // moves.
+      const registered = [...group.requests.values()].map((rpc) => ({
+        tag: rpc._tag,
+        key: rpc.key,
+        entry: context.mapUnsafe.get(rpc.key)
+      }))
+      expect(registered.map((found) => found.tag)).toEqual([
+        "v1/Proxy/Echo",
+        "v1/Proxy/EchoDiscard",
+        "v1/Proxy/EchoResume",
+        "v1/Proxy/Suspends",
+        "v1/Proxy/SuspendsDiscard",
+        "v1/Proxy/SuspendsResume"
+      ])
+      for (const found of registered) {
+        expect(found.entry, found.key).toBeDefined()
+        expect(found.entry).toMatchObject({ tag: found.tag, handler: expect.any(Function) })
+      }
+    })
+  })
+
   effect("serves prefixed rpc tags when a prefix is configured", () => {
     const { layer } = makeLayer((value) => Effect.succeed(value + 100))
     const group = FlowProxy.toRpcGroup(flows, { prefix: "v1/" })
@@ -538,6 +570,21 @@ describe("FlowProxyServer.layerRpcHandlers", () => {
         FlowProxyServer.layerRpcHandlers(flows, { prefix: "v1/" }).pipe(Layer.provide(layer))
       )
     )
+  })
+})
+
+describe("FlowProxyServer handler addresses", () => {
+  const source = readFileSync(new URL("../src/FlowProxyServer.ts", import.meta.url), "utf8")
+
+  // `Rpc.key` is effect's own service key for a handler and
+  // `FlowProxy.operationAddresses` owns the three operation names. Restating
+  // either one here reads correct and breaks silently on the next effect
+  // release or address change, so the layer has to come from the generated
+  // group instead of from a hand-assembled context.
+  it("restates neither effect's handler key format nor the operation suffixes", () => {
+    expect(source).not.toContain("effect/rpc/Rpc/")
+    expect(source).not.toMatch(/\$\{key[^}]*\}(Discard|Resume)/)
+    expect(source).toMatch(/group\.toLayer\(/)
   })
 })
 
