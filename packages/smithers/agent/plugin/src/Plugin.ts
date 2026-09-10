@@ -55,8 +55,9 @@ export interface FlowsPlugin<H = FlowsHooks> {
 }
 
 /**
- * What a `plugins` array may contain: plugins, falsy entries, and arbitrarily
- * nested arrays: so a preset is just a function returning plugins.
+ * What a `plugins` array may contain: plugins, falsy entries, and arrays nested
+ * up to `Resolve.maximumPluginDepth`: so a preset is just a function returning
+ * plugins.
  *
  * @category models
  * @since 1.0.0-rc.0

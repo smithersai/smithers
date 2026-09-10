@@ -18,9 +18,11 @@ The steps run in this order, and the order is part of the contract:
 1. **Snapshot the options.** `target`, `hooks`, `parallelConcurrency`,
    `cacheEnvironment`, and `config` are read through property descriptors. An
    unknown option key is `invalid_plugin`.
-2. **Flatten the input.** Nested arrays flatten to any depth, and `false`,
-   `null`, and `undefined` entries drop. A preset is therefore just a function
-   that returns plugins.
+2. **Flatten the input.** Nested arrays flatten within the depth and node
+   limits, and `false`, `null`, and `undefined` entries drop. Array length must
+   fit the remaining node budget, including queued entries, before keys are
+   enumerated or element descriptors are read. A preset is therefore just a
+   function that returns plugins.
 3. **Validate every plugin record.** Each plugin, each hook entry, and each
    ordering object is checked for shape and copied. This happens _before_
    `apply` filtering, so an excluded plugin cannot hide a malformed one.
@@ -67,7 +69,9 @@ A plugin name is a bounded, non-empty, control-free, well-formed string of at
 most 256 UTF-16 code units, and it is never normalized. Two canonically
 equivalent spellings are two different plugins, and a name that is only
 whitespace is refused. The same rules apply to `version` and to hook names in a
-host catalog.
+host catalog and to keys declared in a plugin's `hooks` record. Invalid
+plugin-declared hook names fail with `invalid_plugin` before `apply` filtering,
+using the bounded path `.hooks[N]`, where `N` is the key's zero-based index.
 
 The naming convention is `flows-plugin-<thing>`, following Vite's
 `vite-plugin-<thing>`. The kernel does not enforce it.
@@ -104,6 +108,26 @@ One kernel accepts:
 | Parallel observers at once, by default                      | 16    | `Resolve.defaultParallelConcurrency` |
 | Parallel observers at once, at most                         | 256   | `Resolve.maximumParallelConcurrency` |
 
-Exceeding one fails with `resource_limit` and the path of the offending entry.
+Exceeding a count or depth limit fails with `resource_limit` and the path of the
+offending entry or preset array. Invalid names fail with `invalid_plugin`.
 The handler bound counts the handlers the kernel dispatches, so a plugin whose
 hooks were filtered out costs nothing against it.
+
+Resolution diagnostics truncate property and unknown-hook key text after 64
+UTF-16 code units, appending `...`. Paths use dot notation for identifiers and
+JSON-quoted brackets for other keys; unknown-hook messages also JSON-quote the
+key. The `hook` error field retains the complete, validated hook identity.
+
+Configuration and cache-identity JSON admission also bounds strings and diagnostic paths:
+
+| Limit                                                        | Value             |
+| ------------------------------------------------------------ | ----------------- |
+| One JSON-encoded string, including quotes and escapes        | 64 KiB            |
+| One JSON-encoded property name, including quotes and escapes | 1 KiB             |
+| Refusal path, as a JSON-encoded string                       | At most 192 bytes |
+
+String and key lengths are checked before scanning or encoding oversized text.
+Oversized or ill-formed property names use the parent path plus `[key:N]`, where
+`N` is the zero-based index in the record's own-key order. Longer refusal paths
+retain a prefix ending in `...`; truncation preserves Unicode characters and
+accounts for JSON escaping. Short paths for admitted keys keep their usual shape.

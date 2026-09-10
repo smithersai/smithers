@@ -9,9 +9,11 @@ set. Find the code and read its section. The full error schema is in the
 [API reference](/reference/api/).
 
 Most errors carry `plugin`, `hook`, and `path` alongside the message. Read
-`path` first: it is a JSON pointer into the value the kernel refused, such as
-`$[2].hooks.config` for the third plugin's `config` entry, or
-`$options.parallelConcurrency` for an option.
+`path` first: it is a diagnostic dollar-path into the value the kernel refused,
+not an RFC 6901 JSON Pointer. `$` is the input, `.config` an identifier
+property, `[2]` an array index, and `["not an identifier"]` any other key,
+JSON-quoted. So `$[2].hooks.config` is the third plugin's `config` entry and
+`$options.parallelConcurrency` is an option.
 
 ## duplicate_name
 

@@ -85,8 +85,9 @@ const make: <H = FlowsHooks>(plugin: FlowsPlugin<H>) => FlowsPlugin<H>
 
 `make` is an identity function that pins a plugin literal to `FlowsPlugin<H>`,
 so an excess or misspelled hook key fails at the definition site.
-`PluginInput` accepts nested arrays and falsy entries, which is what makes a
-preset an ordinary function that returns plugins.
+`PluginInput` accepts falsy entries and arrays nested up to
+`maximumPluginDepth`, which is what makes a preset an ordinary function that
+returns plugins.
 
 ## Hooks
 
@@ -337,20 +338,22 @@ cache environment, `layer` also provides
 
 ### Limits
 
-| Constant                     | Value |
-| ---------------------------- | ----- |
-| `maximumPlugins`             | 256   |
-| `maximumHandlers`            | 1,024 |
-| `maximumPluginInputNodes`    | 4,096 |
-| `maximumPluginDepth`         | 64    |
-| `maximumPluginNameLength`    | 256   |
-| `defaultParallelConcurrency` | 16    |
-| `maximumParallelConcurrency` | 256   |
+| Constant                     | Value | Refusal                       |
+| ---------------------------- | ----- | ----------------------------- |
+| `maximumPlugins`             | 256   | `resource_limit`              |
+| `maximumHandlers`            | 1,024 | `resource_limit`              |
+| `maximumPluginInputNodes`    | 4,096 | `resource_limit`              |
+| `maximumPluginDepth`         | 64    | `resource_limit`              |
+| `maximumParallelConcurrency` | 256   | `resource_limit`              |
+| `maximumPluginNameLength`    | 256   | `invalid_plugin`              |
+| `defaultParallelConcurrency` | 16    | none, it is the default value |
 
-Exceeding one fails with `resource_limit` and the path of the offending entry.
-The handler bound counts the handlers the kernel dispatches. Plugin, version,
-and hook names are control-free, well-formed strings within
-`maximumPluginNameLength` that are neither empty nor entirely whitespace.
+A `resource_limit` carries the path of the offending entry or preset array, and
+the handler bound counts the handlers the kernel dispatches. Plugin, version,
+and hook names are a separate check, not a budget: they are control-free,
+well-formed strings within `maximumPluginNameLength` that are neither empty nor
+entirely whitespace, and a name that is not fails with `invalid_plugin` at its
+own path even when every budget is free.
 
 ## Config
 
@@ -463,10 +466,14 @@ class PluginError extends Schema.TaggedError<PluginError>()("flows/plugin/Plugin
 ```
 
 Every startup and dispatch refusal uses this one error. `plugin` and `hook` are
-attribution, `path` is a JSON pointer into the refused value (`$[2].hooks.config`
-for the third plugin's `config` entry, `$options.parallelConcurrency` for an
-option), and `cause` carries a failing handler's or layer's original failure.
-Match on `code`; the messages are prose.
+attribution, `path` is a diagnostic dollar-path into the refused value, and
+`cause` carries a failing handler's or layer's original failure. Match on
+`code`; the messages are prose.
+
+A dollar-path is not an RFC 6901 JSON Pointer: `$` is the input, `.config` an
+identifier property, `[2]` an array index, and `["not an identifier"]` any other
+key, JSON-quoted. So `$[2].hooks.config` is the third plugin's `config` entry
+and `$options.parallelConcurrency` is an option.
 
 | Code                        | Meaning                                                                        |
 | --------------------------- | ------------------------------------------------------------------------------ |
