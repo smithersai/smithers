@@ -1,11 +1,20 @@
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 
 export class ReleaseError extends Schema.TaggedError<ReleaseError>()("ReleaseError", {
   step: Schema.String,
   message: Schema.String
 }) {}
 
-export const Version = Schema.NonEmptyString.check(Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/))
+/** Semver without a v prefix or build metadata; every operator message for a version lives here. */
+export const Version = Schema.NonEmptyString.check(
+  Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/, {
+    message: "version must be a semver without a v prefix or build metadata"
+  }),
+  Schema.makeFilter<string>(
+    (value) => value.split("-").slice(1).join("-").split(".").every((part) => !/^0\d+$/.test(part)),
+    { message: "Numeric prerelease identifiers cannot have leading zeros" }
+  )
+)
 
 export const Channels = Schema.Struct({
   changelog: Schema.Boolean,
@@ -37,10 +46,10 @@ export const ContentInput = Schema.Struct({
   channels: Channels,
   title: Schema.String,
   notes: Schema.String,
-  minScore: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
-  maxRevisions: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })),
-  maxTweets: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 12 })),
-  maxTweetChars: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 280 }))
+  minScore: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }, { message: "minScore must be between 0 and 1" })),
+  maxRevisions: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 }, { message: "maxRevisions must be an integer from 0 to 3" })),
+  maxTweets: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 12 }, { message: "maxTweets must be an integer from 1 to 12" })),
+  maxTweetChars: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 280 }, { message: "maxTweetChars must be an integer from 1 to 280" }))
 })
 export type ContentInput = typeof ContentInput.Type
 
@@ -54,6 +63,21 @@ export const ReleaseInput = Schema.Struct({
   provenance: Schema.Boolean
 })
 export type ReleaseInput = typeof ReleaseInput.Type
+
+const storedRun = <const Kind extends string, Input extends Schema.Top>(kind: Kind, input: Input) => Schema.Struct({
+  schemaVersion: Schema.optionalKey(Schema.Literal(1)).pipe(Schema.withDecodingDefaultKey(Effect.succeed(1 as const))),
+  kind: Schema.Literal(kind),
+  id: Schema.String,
+  input,
+  model: Schema.String,
+  maxTokens: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
+})
+/**
+ * The run record persisted at .flows/releases/runs/<id>/run.json. Records written
+ * before schemaVersion existed decode as version 1.
+ */
+export const StoredRun = Schema.Union([storedRun("release", ReleaseInput), storedRun("release-content", ContentInput)])
+export type StoredRun = typeof StoredRun.Type
 
 export const Evidence = Schema.Struct({
   version: Schema.String,

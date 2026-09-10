@@ -12,7 +12,15 @@ test("inputs default to previews, reject typoed publication flags and bound revi
   assert.equal(contentInput({}, evidence.version).dryRun, true)
   assert.equal(releaseInput({}, evidence.version).dryRun, true)
   assert.throws(() => contentInput({ dryrun: false }, evidence.version), /Unknown input/)
-  assert.throws(() => contentInput({ maxRevisions: 20 }, evidence.version))
+  assert.throws(() => contentInput({ maxRevisions: 20 }, evidence.version), (error: unknown) => {
+    const message = (error as Error).message
+    return message.split("maxRevisions must be an integer from 0 to 3").length === 2 && !message.includes("Expected a value")
+  })
+  assert.throws(() => contentInput({ minScore: 2 }, evidence.version), /minScore must be between 0 and 1/)
+  assert.throws(() => contentInput({ maxTweets: 0 }, evidence.version), /maxTweets must be an integer from 1 to 12/)
+  assert.throws(() => contentInput({ maxTweetChars: 281 }, evidence.version), /maxTweetChars must be an integer from 1 to 280/)
+  assert.throws(() => releaseInput({ version: "1.0.0-rc.01" }, evidence.version), /leading zeros/)
+  assert.throws(() => releaseInput({ version: "v1.0.0" }, evidence.version), /semver without a v prefix/)
   assert.throws(() => contentInput({ postX: true }, evidence.version), /requires/)
   assert.throws(() => releaseInput({ version: "../../escape" }, evidence.version), /RegExp|semver/)
   assert.equal(releaseInput({ bump: "patch" }, "0.35.0").version, "0.35.1")

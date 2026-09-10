@@ -1,13 +1,7 @@
 import { Schema } from "effect"
-import { ContentInput, ReleaseInput } from "./schema.ts"
+import { ContentInput, ReleaseInput, Version } from "./schema.ts"
 
-export const version = (value: unknown): string => {
-  if (typeof value !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.test(value)) throw new Error("version must be a semver without a v prefix or build metadata")
-  for (const part of value.split("-").slice(1).join("-").split(".")) {
-    if (/^0\d+$/.test(part)) throw new Error("Numeric prerelease identifiers cannot have leading zeros")
-  }
-  return value
-}
+export const version = (value: unknown): string => Schema.decodeUnknownSync(Version)(value)
 const record = (value: unknown): Record<string, unknown> => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Input must be a JSON object")
   return value as Record<string, unknown>
@@ -43,11 +37,6 @@ export const contentInput = (value: unknown, currentVersion: string): ContentInp
     ...fields, version: resolvedVersion,
     channels: { changelog: true, blog: true, thread: true, media: true, ...channels }
   })
-  version(decoded.version)
-  if (!Number.isInteger(decoded.maxRevisions) || decoded.maxRevisions < 0 || decoded.maxRevisions > 3) throw new Error("maxRevisions must be an integer from 0 to 3")
-  if (!Number.isFinite(decoded.minScore) || decoded.minScore < 0 || decoded.minScore > 1) throw new Error("minScore must be between 0 and 1")
-  if (!Number.isInteger(decoded.maxTweets) || decoded.maxTweets < 1 || decoded.maxTweets > 12) throw new Error("maxTweets must be an integer from 1 to 12")
-  if (!Number.isInteger(decoded.maxTweetChars) || decoded.maxTweetChars < 1 || decoded.maxTweetChars > 280) throw new Error("maxTweetChars must be an integer from 1 to 280")
   if (!decoded.channels.changelog && !decoded.channels.blog && !decoded.channels.thread) throw new Error("Enable at least one text channel")
   if (decoded.postX && (!decoded.publish || !decoded.channels.thread)) throw new Error("postX requires publish=true and channels.thread=true")
   if (decoded.autoCommit && !decoded.publish) throw new Error("autoCommit requires publish=true")
@@ -67,6 +56,5 @@ export const releaseInput = (value: unknown, currentVersion: string): ReleaseInp
     from: "auto", phase: "prepare", dryRun: true,
     contentArtifact: "", requireContentApproval: true, provenance: true, ...fields, version: resolvedVersion
   })
-  version(decoded.version)
   return decoded
 }
