@@ -18,12 +18,16 @@
  *  10. a page that imports a workspace-private package says so beside its name
  *  11. no repository request or nomination instruction (the home page
  *      registers a repository through GitHub sign-in and app installation)
+ *  12. every package a page heads a section with, or teaches installing, is in
+ *      the release roster unless the page labels it workspace-private
  *
  * Usage: node apps/site/scripts/check-docs.mjs
  */
 import { readdirSync, readFileSync, existsSync } from "node:fs"
 import { join, dirname, relative } from "node:path"
 import { fileURLToPath } from "node:url"
+import { catalogPublicationErrors } from "./catalog-publication.mjs"
+import { publishedPackages } from "../../../scripts/pack-release.mjs"
 
 const siteRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
 const repoRoot = join(siteRoot, "..", "..")
@@ -98,6 +102,10 @@ function scanPkgs(dir, depth) {
 }
 scanPkgs(join(repoRoot, "packages"), 0)
 
+// The 1.0 release roster. `private` alone says a package is unpublishable;
+// this says which of the publishable ones a train actually packs.
+const releaseRoster = new Set(publishedPackages)
+
 function sourceExport(value) {
   if (typeof value === "string") return value
   if (value && typeof value === "object") return sourceExport(value.import ?? value.default ?? value.types)
@@ -161,6 +169,12 @@ for (const p of pages) {
   const nomination = p.noFences.match(/repository request|request(?:ing)? (?:a|another) repositor\w*|\bnominat(?:e|es|ed|ing|ion|ions)\b/i)
   if (nomination) {
     err(p.path, `repository registration is GitHub sign-in plus app installation, not: ${nomination[0]}`)
+  }
+  // 12. publication. A heading or an install command sells a package as one
+  // the reader can add to their own project; the release roster decides which
+  // ones a train actually publishes.
+  for (const message of catalogPublicationErrors(p.text, { manifests: packagePaths, roster: releaseRoster })) {
+    err(p.path, message)
   }
   // 4/5. links and anchors
   const links = [

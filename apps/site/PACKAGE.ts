@@ -327,6 +327,25 @@ const recordTapeTest = Smithers.Shell.Test({
   ]
 })
 
+/**
+ * Verify the package catalog's publication labels against the release roster:
+ * a package the train does not publish cannot be presented as installable, and
+ * one it does publish cannot be labelled workspace-private.
+ */
+const catalogPublicationTest = Smithers.Shell.Test({
+  shell: "node --test --test-concurrency=1 apps/site/scripts/catalog-publication.test.mjs",
+  data: [
+    Smithers.file("scripts/catalog-publication.mjs"),
+    Smithers.file("scripts/catalog-publication.test.mjs"),
+    Smithers.file("src/content/docs/docs/reference/subpackages.mdx"),
+    Smithers.file("//scripts/pack-release.mjs"),
+    Smithers.file("//scripts/workspace-packages.mjs"),
+    // The roster is checked against what every member manifest declares, so a
+    // manifest flipping `private` has to re-run this.
+    ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`))
+  ]
+})
+
 /** Verify the support claims against the release workflow and complete workspace inventory. */
 const supportMatrixTest = Smithers.Shell.Test({
   shell: "node --test --test-concurrency=1 apps/site/scripts/support-matrix.test.mjs",
@@ -389,7 +408,9 @@ const docsLint = Smithers.Shell.Test({
   data: [
     Smithers.glob("//apps/site/src/content/**/*"),
     Smithers.glob("//apps/site/src/pages/**/*"),
-    Smithers.file("//apps/site/src/data/versions.json")
+    Smithers.file("//apps/site/src/data/versions.json"),
+    Smithers.file("//apps/site/scripts/catalog-publication.mjs"),
+    Smithers.file("//scripts/pack-release.mjs")
   ]
 })
 
@@ -441,6 +462,7 @@ export const Package = Smithers.Package({
     projectCopyTest,
     recordTapeTest,
     supportMatrixTest,
+    catalogPublicationTest,
     docsRuntimeTests,
     examplesPages,
     llms,
