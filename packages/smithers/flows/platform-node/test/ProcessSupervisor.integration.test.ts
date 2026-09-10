@@ -7,15 +7,17 @@ import { Cause, Effect, Exit, Layer, Stream } from "effect"
 import * as Path from "effect/Path"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import * as PipedProcess from "../src/internal/PipedProcess.ts"
 import { policy } from "../src/internal/ProcessCleanup.ts"
 import { prepare, targetPidOf } from "../src/internal/ProcessSupervisor.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
+import { waitForExit } from "./helpers/waitForExit.ts"
 
 const rawLayer = NodeSpawner.layer.pipe(Layer.provide(Layer.mergeAll(NodeFileSystem.layer, Path.layer)))
 const layers = Layer.succeed(ChildProcessSpawner)(
@@ -30,6 +32,24 @@ const text = (value: string) => Stream.make(new TextEncoder().encode(value))
 const output = (stream: Stream.Stream<Uint8Array, unknown>) => stream.pipe(Stream.decodeText(), Stream.mkString)
 const group = (pid: number) =>
   Number(spawnSync("/bin/ps", ["-o", "pgid=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim())
+const hostFixture = fileURLToPath(new URL("./fixtures/supervised-host.ts", import.meta.url))
+/** What the fixture host reports once its target and that target's child run. */
+type Ready = {
+  readonly host: number
+  readonly supervisor: number
+  readonly target: number
+  readonly grandchild: number
+  readonly graceMs: number
+}
+const commandOf = (pid: number) =>
+  spawnSync("/bin/ps", ["-ww", "-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 2000 }).stdout ?? ""
+const beatOf = (path: string): { readonly token: string; readonly pid: number; readonly tick: number } | undefined => {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"))
+  } catch {
+    return undefined
+  }
+}
 
 describe.skipIf(process.platform === "win32")("prepared POSIX process contract", () => {
   for (const operation of ["stdout", "stdin", "custom-output", "custom-input"] as const) {
@@ -365,6 +385,66 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
         }
       }
     }).pipe(Effect.provide(layers), Effect.scoped))
+
+  it.live("stops a killed host's own target and its child without a replacement host", () =>
+    Effect.gen(function*() {
+      const directory = yield* fixture
+      const token = randomUUID()
+      const beats = { target: join(directory, "target.json"), child: join(directory, "child.json") }
+      // A separate process is the only way to lose a real host: this suite's
+      // own runtime must survive to observe what that host's supervisor did.
+      const host = spawn(process.execPath, [hostFixture, directory, token], { stdio: ["ignore", "pipe", "pipe"] })
+      let reported: Ready | undefined
+      let out = ""
+      let err = ""
+      try {
+        host.stdout!.setEncoding("utf8")
+        host.stdout!.on("data", (chunk: string) => void (out += chunk))
+        host.stderr!.setEncoding("utf8")
+        host.stderr!.on("data", (chunk: string) => void (err += chunk))
+        const readyBy = Date.now() + 20_000
+        while (reported === undefined && host.exitCode === null && Date.now() < readyBy) {
+          const line = out.split("\n").find((value) => value.startsWith("{"))
+          if (line === undefined) yield* Effect.sleep(20)
+          else reported = JSON.parse(line)
+        }
+        expect(reported, JSON.stringify({ out, err, exitCode: host.exitCode })).toBeDefined()
+        const ready = reported!
+        const started = { target: beatOf(beats.target), child: beatOf(beats.child) }
+        expect([started.target?.token, started.child?.token]).toEqual([token, token])
+        expect([started.target?.pid, started.child?.pid]).toEqual([ready.target, ready.grandchild])
+        // Both workloads are doing work at the moment the host dies, so their
+        // stopped heartbeats afterwards cannot predate that death.
+        const workingBy = Date.now() + 5000
+        const advanced = () => ({
+          target: beatOf(beats.target)!.tick > started.target!.tick,
+          child: beatOf(beats.child)!.tick > started.child!.tick
+        })
+        while (Date.now() < workingBy && !(advanced().target && advanced().child)) yield* Effect.sleep(10)
+        expect(advanced()).toEqual({ target: true, child: true })
+        // Only the host dies, and nothing here starts another one or reaps for
+        // it. Both workloads ignore SIGTERM, so the supervisor's own loss of
+        // the private channel is the single remaining cause of their exits.
+        process.kill(ready.host, "SIGKILL")
+        const budget = ready.graceMs + 8000
+        expect(
+          yield* Effect.promise(() =>
+            Promise.all([
+              waitForExit(ready.target, budget),
+              waitForExit(ready.grandchild, budget),
+              waitForExit(ready.supervisor, budget)
+            ])
+          )
+        ).toEqual([true, true, true])
+        const last = { target: beatOf(beats.target)!.tick, child: beatOf(beats.child)!.tick }
+        yield* Effect.sleep(200)
+        expect({ target: beatOf(beats.target)!.tick, child: beatOf(beats.child)!.tick }).toEqual(last)
+      } finally {
+        for (const pid of [host.pid, reported?.supervisor, reported?.target, reported?.grandchild]) {
+          if (pid !== undefined && commandOf(pid).includes(token)) process.kill(pid, "SIGKILL")
+        }
+      }
+    }).pipe(Effect.scoped), 60_000)
 
   for (const stdio of ["ignore", "inherit"] as const) {
     it.live(`closes the helper's ${stdio} standard descriptors safely`, () =>
