@@ -1,10 +1,12 @@
-import { describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import {
   BROWSER_FETCH_MAX_BYTES,
   BROWSER_FETCH_MAX_TEXT,
   browserFetch,
+  browserFetchResponseBody,
   extractReadableText,
-  isPublicAddress
+  isPublicAddress,
+  resolveHostOverHttps
 } from "../src/BrowserFetch.ts"
 
 /*
@@ -280,6 +282,75 @@ describe("browserFetch guards", () => {
     if (wildcard.ok) expect(wildcard.frameable).toBe(true)
   })
 
+  test("X-Frame-Options SAMEORIGIN refuses embedding", async () => {
+    const outcome = await browserFetch("https://example.com/", {
+      resolveHost: publicResolver,
+      fetchImpl: async () => okPage("<p>x</p>", { "x-frame-options": "SAMEORIGIN" })
+    })
+    expect(outcome).toMatchObject({
+      ok: true,
+      frameable: false,
+      blockReason: "The site refuses embedding (X-Frame-Options: SAMEORIGIN)."
+    })
+  })
+
+  test.each(["*:*", "https:", "http:", "https://*", "'self' https:"])(
+    "a frame-ancestors list containing %s admits any origin and still frames",
+    async (token) => {
+      const outcome = await browserFetch("https://example.com/", {
+        resolveHost: publicResolver,
+        fetchImpl: async () => okPage("<p>x</p>", { "content-security-policy": `frame-ancestors ${token}` })
+      })
+      expect(outcome).toMatchObject({ ok: true, frameable: true, blockReason: null })
+    }
+  )
+
+  /*
+   * Every enforced policy applies on its own. A permissive first policy
+   * cannot override a later `frame-ancestors 'none'`, whether the policies
+   * arrive as repeated headers (which Headers.get joins with a comma) or as
+   * one comma-combined header, and in either order.
+   */
+  test.each([
+    ["repeated headers, permissive first", ["frame-ancestors *;", "frame-ancestors 'none';"]],
+    ["repeated headers, restrictive first", ["frame-ancestors 'none';", "frame-ancestors *;"]],
+    ["comma-combined, permissive first", ["default-src 'self'; frame-ancestors *, frame-ancestors 'none'"]],
+    ["comma-combined, restrictive first", ["frame-ancestors 'none', frame-ancestors *; img-src *"]]
+  ])("%s: any refusing CSP policy makes the page unframeable", async (_label, policies) => {
+    const outcome = await browserFetch("https://example.com/", {
+      resolveHost: publicResolver,
+      fetchImpl: async () => {
+        const headers = new Headers({ "content-type": "text/html" })
+        for (const policy of policies) headers.append("content-security-policy", policy)
+        return new Response("<p>x</p>", { status: 200, headers })
+      }
+    })
+    expect(outcome).toMatchObject({
+      ok: true,
+      frameable: false,
+      blockReason: "The site refuses embedding (Content-Security-Policy frame-ancestors 'none')."
+    })
+  })
+
+  test("several policies that all admit any origin still frame", async () => {
+    const outcome = await browserFetch("https://example.com/", {
+      resolveHost: publicResolver,
+      fetchImpl: async () =>
+        okPage("<p>x</p>", {
+          "content-security-policy": "frame-ancestors *, default-src 'self'; frame-ancestors https:"
+        })
+    })
+    expect(outcome).toMatchObject({ ok: true, frameable: true, blockReason: null })
+  })
+
+  test("a bare frame-ancestors directive with no sources refuses embedding", async () => {
+    const outcome = await browserFetch("https://example.com/", {
+      resolveHost: publicResolver,
+      fetchImpl: async () => okPage("<p>x</p>", { "content-security-policy": "frame-ancestors" })
+    })
+    expect(outcome).toMatchObject({ ok: true, frameable: false })
+  })
+
   test("the request carries no credentials and the declared user-agent", async () => {
     let seen: RequestInit | undefined
     await browserFetch("https://example.com/", {
@@ -295,14 +366,41 @@ describe("browserFetch guards", () => {
     expect(headers.get("authorization")).toBeNull()
   })
 
-  test("the size cap truncates an oversized page", async () => {
-    const big = `<p>${"x".repeat(2 * 1024 * 1024)}</p>`
+  /*
+   * The byte cap is what keeps the Worker from buffering an unbounded body.
+   * The text cap (BROWSER_FETCH_MAX_TEXT) would truncate the OUTPUT on its
+   * own, so the assertion has to watch the bytes actually pulled from the
+   * body and the cancellation that stops the read.
+   */
+  test("the size cap stops reading the body at BROWSER_FETCH_MAX_BYTES and cancels the stream", async () => {
+    const chunk = new TextEncoder().encode("x".repeat(64 * 1024))
+    const total = 4 * 1024 * 1024
+    let pulled = 0
+    let cancelReason: unknown
     const outcome = await browserFetch("https://example.com/", {
       resolveHost: publicResolver,
-      fetchImpl: async () => okPage(big)
+      fetchImpl: async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (pulled >= total) {
+                controller.close()
+                return
+              }
+              pulled += chunk.byteLength
+              controller.enqueue(chunk)
+            },
+            cancel(reason) {
+              cancelReason = reason
+            }
+          }),
+          { status: 200, headers: { "content-type": "text/plain" } }
+        )
     })
-    expect(outcome.ok).toBe(true)
-    if (outcome.ok) expect(outcome.text.length).toBeLessThanOrEqual(20_000)
+    expect(outcome).toMatchObject({ ok: true, text: "x".repeat(BROWSER_FETCH_MAX_TEXT) })
+    expect(cancelReason).toBe("size cap")
+    expect(pulled).toBeGreaterThanOrEqual(BROWSER_FETCH_MAX_BYTES)
+    expect(pulled).toBeLessThan(total)
   })
 
   test.each(["pending", "rejecting"])("a %s size-cap cancellation does not block the result", async (cleanup) => {
@@ -326,6 +424,89 @@ describe("browserFetch guards", () => {
     expect(outcome).toMatchObject({ ok: true, text: "x".repeat(BROWSER_FETCH_MAX_TEXT) })
     expect(cancelReason).toBe("size cap")
   }, 1000)
+
+  test("a redirect chain past MAX_REDIRECTS stops after four fetches", async () => {
+    let fetches = 0
+    const outcome = await browserFetch("https://example.com/", {
+      resolveHost: publicResolver,
+      fetchImpl: async () => {
+        fetches += 1
+        return new Response(null, { status: 302, headers: { location: `https://example.com/${fetches}` } })
+      }
+    })
+    expect(outcome).toEqual({ ok: false, message: "The page redirected too many times." })
+    expect(fetches).toBe(4)
+  })
+
+  test("a 3xx without a Location header is an honest failure", async () => {
+    const outcome = await browserFetch("https://example.com/", {
+      resolveHost: publicResolver,
+      fetchImpl: async () => new Response(null, { status: 301 })
+    })
+    expect(outcome).toEqual({ ok: false, message: "The page answered HTTP 301 with nowhere to go." })
+  })
+
+  test("a bodiless 204 succeeds with empty text and its frameability", async () => {
+    const outcome = await browserFetch("https://example.com/", {
+      resolveHost: publicResolver,
+      fetchImpl: async () => new Response(null, { status: 204, headers: { "x-frame-options": "DENY" } })
+    })
+    expect(outcome).toEqual({
+      ok: true,
+      status: 204,
+      finalUrl: "https://example.com/",
+      contentType: "",
+      text: "",
+      frameable: false,
+      blockReason: "The site refuses embedding (X-Frame-Options: DENY)."
+    })
+  })
+
+  test("a non-HTML body is returned raw, not run through extraction", async () => {
+    const body = "line one\n<not a tag> &amp; still raw   spaced"
+    const outcome = await browserFetch("https://example.com/", {
+      resolveHost: publicResolver,
+      fetchImpl: async () => new Response(body, { status: 200, headers: { "content-type": "text/plain" } })
+    })
+    expect(outcome).toMatchObject({ ok: true, contentType: "text/plain", text: body })
+  })
+
+  test("browserFetchResponseBody maps both outcomes to the route's JSON shape", () => {
+    expect(browserFetchResponseBody({ ok: false, message: "m" })).toEqual({ status: "error", message: "m" })
+    expect(
+      browserFetchResponseBody({
+        ok: true,
+        status: 200,
+        finalUrl: "https://example.com/",
+        contentType: "text/html",
+        text: "t",
+        frameable: false,
+        blockReason: "r"
+      })
+    ).toEqual({
+      status: 200,
+      finalUrl: "https://example.com/",
+      contentType: "text/html",
+      text: "t",
+      frameable: false,
+      blockReason: "r"
+    })
+  })
+
+  test("an empty DNS answer is 'could not be resolved', a resolver fault says to try again", async () => {
+    const empty = await browserFetch("https://example.com/", {
+      resolveHost: async () => [],
+      fetchImpl: async () => okPage("unexpected")
+    })
+    expect(empty).toEqual({ ok: false, message: "The host example.com could not be resolved." })
+    const outage = await browserFetch("https://example.com/", {
+      resolveHost: async () => {
+        throw new Error("status 503")
+      },
+      fetchImpl: async () => okPage("unexpected")
+    })
+    expect(outage).toEqual({ ok: false, message: "The name resolver did not answer (status 503); try again." })
+  })
 
   test("an unreachable host is an honest failure, never a throw", async () => {
     const outcome = await browserFetch("https://example.com/", {
@@ -428,6 +609,41 @@ describe("browserFetch guards", () => {
     })
     expect(outcome.ok).toBe(false)
     if (!outcome.ok) expect(outcome.message).toContain("body disconnected")
+  })
+})
+
+describe("resolveHostOverHttps", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const dnsJson = (answers: Array<{ type: number; data: string }>) =>
+    new Response(JSON.stringify({ Answer: answers }), {
+      status: 200,
+      headers: { "content-type": "application/dns-json" }
+    })
+
+  test("collects A and AAAA answers", async () => {
+    vi.stubGlobal("fetch", async (input: string) =>
+      input.includes("type=A&") || input.endsWith("type=A")
+        ? dnsJson([{ type: 1, data: "140.82.112.3" }, { type: 5, data: "alias.example.com." }])
+        : dnsJson([{ type: 28, data: "2606:4700::1111" }]))
+    await expect(resolveHostOverHttps("example.com")).resolves.toEqual(["140.82.112.3", "2606:4700::1111"])
+  })
+
+  test("a non-2xx resolver answer is a fault carrying the status, not an empty answer set", async () => {
+    let cancelled = 0
+    vi.stubGlobal("fetch", async () =>
+      new Response(
+        new ReadableStream({
+          cancel() {
+            cancelled += 1
+          }
+        }),
+        { status: 503 }
+      ))
+    await expect(resolveHostOverHttps("example.com")).rejects.toThrow("status 503")
+    expect(cancelled).toBeGreaterThan(0)
   })
 })
 

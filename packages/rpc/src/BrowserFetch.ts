@@ -193,8 +193,17 @@ const guardTarget = async (
   let addresses: ReadonlyArray<string>
   try {
     addresses = await resolveHost(hostname, signal)
-  } catch {
-    return { ok: false, message: `The host ${hostname} could not be resolved.` }
+  } catch (error) {
+    // The shared deadline owns the abort wording; only a resolver fault is reported here.
+    if (signal?.aborted === true) throw error
+    /*
+     * A resolver that errors (DoH 429/503, blocked egress, a network fault) is
+     * not the same answer as a name that does not exist: the first is worth a
+     * retry, the second is bad input. Carry the cause so the user, the model
+     * and the operator can tell them apart.
+     */
+    const cause = error instanceof Error ? error.message : "unknown error"
+    return { ok: false, message: `The name resolver did not answer (${cause}); try again.` }
   }
   if (addresses.length === 0) {
     return { ok: false, message: `The host ${hostname} could not be resolved.` }
@@ -263,6 +272,29 @@ export const extractReadableText = (html: string): string => {
   return decoded.replace(/\s+/g, " ").trim().slice(0, BROWSER_FETCH_MAX_TEXT)
 }
 
+const ANY_ORIGIN_TOKENS = new Set(["*", "*:*", "https:", "http:", "https://*"])
+
+/*
+ * Every enforced Content-Security-Policy applies on its own: a page delivered
+ * with two policies must satisfy both, so a permissive first policy cannot
+ * override a later `frame-ancestors 'none'`. `Headers.get` joins repeated
+ * headers with a comma, and a single header may also carry comma-separated
+ * policies, so both spellings are split the same way. Source expressions never
+ * contain a comma or a semicolon, which makes the split safe.
+ */
+const frameAncestorsDirectives = (headers: Headers): Array<string> => {
+  const csp = headers.get("content-security-policy")
+  if (csp === null) return []
+  const directives: Array<string> = []
+  for (const policy of csp.split(",")) {
+    for (const directive of policy.split(";")) {
+      const match = /^\s*frame-ancestors(?:\s+(.*))?$/i.exec(directive)
+      if (match !== null) directives.push((match[1] ?? "").trim())
+    }
+  }
+  return directives
+}
+
 /** May this response's page be framed by the app? XFO and CSP frame-ancestors answer. */
 const frameability = (headers: Headers): { frameable: boolean; blockReason: string | null } => {
   const xfo = headers.get("x-frame-options")
@@ -272,25 +304,19 @@ const frameability = (headers: Headers): { frameable: boolean; blockReason: stri
       return { frameable: false, blockReason: `The site refuses embedding (X-Frame-Options: ${xfo.trim()}).` }
     }
   }
-  const csp = headers.get("content-security-policy")
-  if (csp !== null) {
-    const ancestors = /frame-ancestors\s+([^;]+)/i.exec(csp)?.[1]?.trim()
-    if (ancestors !== undefined) {
-      /*
-       * frame-ancestors is an allowlist of parents. Unless it admits ANY
-       * origin, this app is not on it and the iframe would render blank —
-       * so the card says what happened instead (§2d′: never a silent
-       * blank). A named-origin list is reported as refusing embedding.
-       */
-      const tokens = ancestors.split(/\s+/).filter((token) => token !== "")
-      const admitsAnyOrigin = tokens.some(
-        (token) => token === "*" || token === "*:*" || token === "https:" || token === "http:" || token === "https://*"
-      )
-      if (!admitsAnyOrigin) {
-        return {
-          frameable: false,
-          blockReason: `The site refuses embedding (Content-Security-Policy frame-ancestors ${ancestors}).`
-        }
+  for (const ancestors of frameAncestorsDirectives(headers)) {
+    /*
+     * frame-ancestors is an allowlist of parents. Unless it admits ANY
+     * origin, this app is not on it and the iframe would render blank —
+     * so the card says what happened instead (§2d′: never a silent
+     * blank). A named-origin list is reported as refusing embedding, and
+     * the first policy that refuses is the one named.
+     */
+    const tokens = ancestors.split(/\s+/).filter((token) => token !== "")
+    if (!tokens.some((token) => ANY_ORIGIN_TOKENS.has(token))) {
+      return {
+        frameable: false,
+        blockReason: `The site refuses embedding (Content-Security-Policy frame-ancestors ${ancestors}).`
       }
     }
   }
@@ -474,8 +500,9 @@ export const resolveHostOverHttps: ResolveHost = async (hostname, signal) => {
       { headers: { accept: "application/dns-json" }, ...(signal === undefined ? {} : { signal }) }
     )
     if (!response.ok) {
-      await response.body?.cancel()
-      return []
+      // A resolver fault is not an empty answer set: surface it so guardTarget can say "try again".
+      await response.body?.cancel().catch(() => {})
+      throw new Error(`status ${response.status}`)
     }
     const body = (await response.json().catch(() => undefined)) as
       | { Answer?: Array<{ type?: unknown; data?: unknown }> }
