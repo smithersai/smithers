@@ -42,19 +42,19 @@ await makeCli({
 ```
 
 Everything in `RuntimeConfig` is optional, and each field replaces something
-the process would otherwise supply:
+the process would otherwise supply.
+[`RuntimeConfig`](../api.md#runtimeconfig) is the field-by-field inventory:
+the CLI's own name, version and description, the remote cache credentials, the
+interruption signal, the environment, both terminals, the audience policy, and
+the exit hook. Two of them decide how deterministic an embedded invocation is.
 
-| Field         | Replaces                                                                    |
-| ------------- | --------------------------------------------------------------------------- |
-| `cacheUrl`    | `SMITHERS_CACHE_URL`, already captured by the caller.                       |
-| `cacheToken`  | `SMITHERS_CACHE_TOKEN`, already captured by the caller.                     |
-| `signal`      | The interruption source. Aborting it aborts every running target.           |
-| `environment` | `process.env`, for agent-fake selection, `PATH` lookups, and preconditions. |
-| `stdout`      | `process.stdout` as a `Terminal`.                                           |
-| `stderr`      | `process.stderr` as a `Terminal`.                                           |
-| `exit`        | The exit-code setter. Omit it and a failure returns the structured error.   |
+`presentation` fixes the audience. Without it the run detects one from the
+injected environment and the terminals' `isTTY`, so the same argv renders
+differently under a PTY than under a pipe. Pass an `Audience.Policy` and every
+renderer reads that instead. Explicit presentation flags in the argv still
+override it.
 
-`exit` is the field to think about. Deciding a process's exit code is a choice
+`exit` is the other field to think about. Deciding a process's exit code is a choice
 only a process owner may make, so `makeCli` never sets one. Supply the setter
 when you own the process; omit it when you want the structured error back
 instead.

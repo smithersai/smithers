@@ -22,7 +22,7 @@ The CLI writes to two streams and never mixes them.
 
 **Standard output belongs to the structured envelope.** incur prints the
 command's return value there, TOON by default, or JSON, YAML, Markdown, or
-JSONL under `--format`. A program reading `smthrs query --format json`
+JSONL under `--format`. A program reading `smithers-build query --format json`
 sees exactly the envelope and nothing else.
 
 **Standard error belongs to progress.** A reporter turns execution events into
@@ -76,15 +76,15 @@ data.
 Ask for the format you want and read standard output:
 
 ```bash
-smthrs query 'deps(//packages/api:lib)' --format json
-smthrs ci '//packages/...' --plan --format json
-smthrs runs logs <run-id> --follow --format jsonl
+smithers-build query 'deps(//packages/api:lib)' --format json
+smithers-build ci '//packages/...' --plan --format json
+smithers-build targets '//packages/...' --format json
 ```
 
-Agent history pulls without `--follow` default to 100 events and incremental
-JSONL. Use `--limit 1..10000` for a different page size and `--after <sequence>`
-for the next page; a bounded result includes the continuation command. Following
-has no default event limit, but an explicit `--limit` still applies.
+[Commands](../cli.md) lists every command and the formats it accepts. The main
+`smithers` CLI shares this policy but registers its own commands, including the
+paged run-history reader; see
+[its command reference](../../../../docs/reference/cli/README.md).
 
 Use `--silent` to suppress unsolicited progress, or `--ui plain` for stable
 target-progress lines. The two streams can always be captured separately.

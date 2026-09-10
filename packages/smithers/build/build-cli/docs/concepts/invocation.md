@@ -57,19 +57,11 @@ unchanged. That one rule is the whole bare-label form.
 `makeCli(config)` builds the [incur](https://github.com/wevm/incur) CLI. The
 [command reference](../cli.md) lists its commands, arguments, and options. The
 `RuntimeConfig` it takes is everything process-scoped that a command must not
-reach for on its own:
-
-```ts
-interface RuntimeConfig {
-  readonly cacheUrl?: string | undefined
-  readonly cacheToken?: string | undefined
-  readonly signal?: AbortSignal | undefined
-  readonly environment?: Readonly<Record<string, string | undefined>> | undefined
-  readonly stdout?: Reporter.Terminal | undefined
-  readonly stderr?: Reporter.Terminal | undefined
-  readonly exit?: ((code: number) => void) | undefined
-}
-```
+reach for on its own: the CLI's own name, version and description, the remote
+cache credentials, the interruption signal, the environment, both terminals,
+the audience policy, and the exit hook.
+[`RuntimeConfig`](../api.md#runtimeconfig) lists every field and what it
+replaces.
 
 `exit` is the interesting one. Deciding a process's exit code is a choice only
 a process owner may make, so `makeCli` never sets one itself. The entry point

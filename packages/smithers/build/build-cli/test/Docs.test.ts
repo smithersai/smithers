@@ -233,3 +233,122 @@ describe("discovery guide loading model", () => {
     expect(page).toMatch(/refuses the command even when the pattern names one target in an unrelated package/)
   })
 })
+
+/** One page of this package, read from disk. */
+const readPage = (path: string): string => Fs.readFileSync(NodePath.join(import.meta.dirname, "..", path), "utf8")
+
+/**
+ * The embedding contract, pinned to its source. `RuntimeConfig` was
+ * transcribed by hand into three pages and every copy omitted the same four
+ * fields, including `presentation`, the seam this package's own tests inject
+ * an audience policy through. `docs/api.md` holds the one copy; the concept
+ * page and the guide link to it.
+ */
+describe("RuntimeConfig documentation", () => {
+  const source = Fs.readFileSync(NodePath.join(import.meta.dirname, "../src/Cli.ts"), "utf8")
+
+  /** Every field name the exported `RuntimeConfig` interface declares. */
+  const fields = (): ReadonlyArray<string> => {
+    const open = source.indexOf("export interface RuntimeConfig {")
+    expect(open, "src/Cli.ts no longer exports a RuntimeConfig interface").toBeGreaterThan(0)
+    const body = source.slice(open, source.indexOf("\n}", open))
+    const names = [...body.matchAll(/^\s*readonly (\w+)\??:/gm)].map((match) => match[1]!)
+    expect(names.length, "RuntimeConfig parsed as empty").toBeGreaterThan(7)
+    return names
+  }
+
+  it("api.md's interface block lists every field src/Cli.ts declares", () => {
+    const page = readPage("docs/api.md")
+    const heading = page.indexOf("### RuntimeConfig")
+    expect(heading, "docs/api.md no longer documents RuntimeConfig").toBeGreaterThan(0)
+    const open = page.indexOf("```ts", heading)
+    const block = page.slice(open, page.indexOf("```", open + 5))
+    for (const field of fields()) {
+      expect(block, `docs/api.md's RuntimeConfig block omits ${field}`).toMatch(
+        new RegExp(`readonly ${field}\\?:`)
+      )
+    }
+  })
+
+  it.each(["docs/concepts/invocation.md", "docs/guides/embed-the-cli.md"])(
+    "%s links to that one copy instead of transcribing it",
+    (path) => {
+      const page = readPage(path)
+      expect(page, `${path} still carries its own RuntimeConfig block`).not.toContain(
+        "interface RuntimeConfig {"
+      )
+      expect(page, `${path} still carries its own RuntimeConfig field table`).not.toMatch(
+        /\|\s*`cacheUrl`\s*\|/
+      )
+      expect(page).toContain("../api.md#runtimeconfig")
+    }
+  )
+})
+
+/**
+ * The export map, pinned to `package.json`. The barrel header and the API
+ * reference both explained the curated barrel by a `./*` wildcard the manifest
+ * has never had and the root generator refuses, and the reference calling
+ * itself every export omitted three exported modules.
+ */
+describe("export map documentation", () => {
+  const manifest = JSON.parse(readPage("package.json")) as {
+    readonly exports: Readonly<Record<string, string | null>>
+  }
+
+  it("package.json enumerates every subpath and declares no positive wildcard", () => {
+    const keys = Object.keys(manifest.exports)
+    expect(keys.length, "package.json no longer enumerates subpaths").toBeGreaterThan(20)
+    for (const key of keys) {
+      if (!key.includes("*")) continue
+      expect(manifest.exports[key], `package.json exports a positive wildcard ${key}`).toBeNull()
+    }
+  })
+
+  it.each(["src/index.ts", "docs/api.md"])("%s explains the export map without a wildcard", (path) => {
+    const text = readPage(path).replace(/\s*\*?\s+/g, " ")
+    expect(text, `${path} still claims a ./* wildcard`).not.toMatch(/maps\s*`?\.\/\*`?\s*onto/)
+    expect(text).toContain("scripts/public-export-map.mjs")
+  })
+
+  it("api.md accounts for every module package.json exports", () => {
+    const page = readPage("docs/api.md")
+    const headings = new Set([...page.matchAll(/^## (.+)$/gm)].map((match) => match[1]!.trim()))
+    for (const [key, target] of Object.entries(manifest.exports)) {
+      if (target === null || key === "." || key === "./package.json") continue
+      const name = key.slice(2)
+      if (headings.has(name)) continue
+      const named = page.includes(`\`${name}\``) || page.includes(`\`@smthrs/build-cli/${name}`)
+      expect(named, `docs/api.md never names the exported ${name} module`).toBe(true)
+    }
+  })
+
+  it("api.md counts the namespaces the barrel re-exports", () => {
+    const barrel = readPage("src/index.ts")
+    const count = [...barrel.matchAll(/^export \* as \w+ from/gm)].length
+    const written = readPage("docs/api.md").match(/the (\w+) namespaces the root barrel re-exports/)
+    expect(written, "docs/api.md no longer states how many namespaces the barrel re-exports").not.toBeNull()
+    expect(numberWords.indexOf(written![1]!), `docs/api.md counts ${written![1]} namespaces, the barrel has ${count}`)
+      .toBe(count)
+  })
+})
+
+/**
+ * The programmatic-output recipe. `Audience` is shared with the main CLI, so
+ * its concept page drifted into showing that CLI's binary and its `runs logs`
+ * history interface, neither of which this package registers.
+ */
+describe("programmatic output documentation", () => {
+  const page = readPage("docs/concepts/output.md")
+
+  it("invokes this package's binary in its examples", () => {
+    expect(page, "docs/concepts/output.md invokes the main CLI's binary").not.toContain("smthrs ")
+    expect(page).toContain("smithers-build query")
+  })
+
+  it("leaves the run-history interface to the package that owns it", () => {
+    expect(page).not.toContain("runs logs")
+    expect(page).not.toContain("--after <sequence>")
+    expect(page).not.toContain("--limit 1..10000")
+  })
+})
