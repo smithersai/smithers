@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
@@ -40,4 +40,29 @@ test("mutation failures cannot be overwritten or reused as fresh evidence", () =
     assert.throws(() => runMutations(directory), /prior evidence is immutable/)
     assert.equal(readFileSync(prior, "utf8"), "prior failure")
   } finally { rmSync(directory, { recursive: true, force: true }) }
+})
+
+test("a runner that ends without its report is diagnosed by mutant, ending and log", () => {
+  for (const [runner, ending] of [
+    ["process.exit(1)", /exit status 1/],
+    ["process.kill(process.pid, 'SIGKILL')", /signal SIGKILL/],
+    ["process.stdout.write('x'.repeat(5 * 1024 * 1024))", /ENOBUFS.*signal SIGTERM/]
+  ]) {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-mutation-runner-"))
+    try {
+      const pkg = join(directory, "package")
+      mkdirSync(join(pkg, "src"), { recursive: true })
+      mkdirSync(join(pkg, "node_modules", "vitest"), { recursive: true })
+      writeFileSync(join(pkg, "package.json"), "{}")
+      writeFileSync(join(pkg, "src", "site.mjs"), "export const over = (a, b) => a > b\n")
+      writeFileSync(join(pkg, "node_modules", "vitest", "package.json"), "{}")
+      writeFileSync(join(pkg, "node_modules", "vitest", "vitest.mjs"), `${runner}\n`)
+      const artifacts = join(directory, "artifacts")
+      const mutant = { id: "fixture", package: pkg, source: "src/site.mjs", original: "a > b", replacement: "a >= b", file: "site.test.mjs", test: "fixture oracle" }
+      const log = join(artifacts, "fixture-baseline.log").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      const diagnosis = new RegExp(`fixture-baseline: runner ended by .*${ending.source}.* without a complete report; log ${log}`)
+      assert.throws(() => runMutations(artifacts, [mutant]), diagnosis)
+      assert.match(JSON.parse(readFileSync(join(artifacts, "failure.json"), "utf8")).message, diagnosis)
+    } finally { rmSync(directory, { recursive: true, force: true }) }
+  }
 })

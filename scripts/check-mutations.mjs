@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFil
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { mutants, exclusions } from "./mutations/manifest.mjs"
+import { mutants as manifest, exclusions } from "./mutations/manifest.mjs"
 
 const root = fileURLToPath(new URL("../", import.meta.url))
 const hash = (path) => createHash("sha256").update(readFileSync(path)).digest("hex")
@@ -39,7 +39,7 @@ export function verifyOutcome(result, baseline, mutant) {
   return executed.map(({ fullName, status }) => ({ fullName, status }))
 }
 
-export function runMutations(artifacts = mkdtempSync(join(tmpdir(), "smithers-mutations-"))) {
+export function runMutations(artifacts = mkdtempSync(join(tmpdir(), "smithers-mutations-")), mutants = manifest) {
   artifacts = resolve(artifacts)
   mkdirSync(artifacts, { recursive: true })
   assert.equal(readdirSync(artifacts).length, 0, "Use a new artifact directory; prior evidence is immutable")
@@ -72,7 +72,10 @@ export default {
           "--testNamePattern", escapeRegex(mutant.test), "--reporter=json", `--outputFile=${reportPath}`], {
           cwd, encoding: "utf8", timeout: 90_000, maxBuffer: 4 * 1024 * 1024
         })
-        writeFileSync(join(artifacts, `${name}.log`), `${ran.stdout ?? ""}${ran.stderr ?? ""}`)
+        const log = join(artifacts, `${name}.log`)
+        writeFileSync(log, `${ran.stdout ?? ""}${ran.stderr ?? ""}`)
+        const ending = [ran.error?.message, ran.signal && `signal ${ran.signal}`, ran.status !== null && `exit status ${ran.status}`].filter(Boolean).join(", ")
+        assert.ok(!ran.error && !ran.signal && existsSync(reportPath), `${name}: runner ended by ${ending} without a complete report; log ${log}`)
         const report = JSON.parse(readFileSync(reportPath, "utf8"))
         const assertions = verifyOutcome({ ...ran, report, applied: existsSync(marker) }, baseline, mutant)
         if (!baseline) results.push({ ...mutant, status: "killed", assertions })
