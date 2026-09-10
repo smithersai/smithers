@@ -1,80 +1,12 @@
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import {
-  type ActionCache,
-  type ActionCachePublication,
-  type ContentStore,
-  createHandler,
-  type DeleteFence
-} from "../protocol.ts"
+import { createHandler } from "../protocol.ts"
+import { MemoryActionCache, MemoryContentStore } from "./MemoryStores.ts"
 
 const token = "test-token-with-sufficient-entropy-for-unit-tests"
 /** These cases exercise routes, not the credential split, so `token` publishes. */
 const writeTokenHash = createHash("sha256").update(token, "utf8").digest("hex")
 const readTokenHash = createHash("sha256").update("a-reader-that-never-publishes", "utf8").digest("hex")
-
-interface StoredEntry {
-  readonly publication: ActionCachePublication
-}
-
-class MemoryActionCache implements ActionCache {
-  private readonly entries = new Map<string, StoredEntry>()
-
-  async get(keyDigest: string): Promise<string | null> {
-    return this.entries.get(keyDigest)?.publication.body ?? null
-  }
-
-  async put(
-    keyDigest: string,
-    publication: ActionCachePublication
-  ): Promise<"inserted" | "identical" | "conflict"> {
-    const stored = this.entries.get(keyDigest)
-    if (stored === undefined) {
-      this.entries.set(keyDigest, { publication })
-      return "inserted"
-    }
-    return stored.publication.resultJson === publication.resultJson ? "identical" : "conflict"
-  }
-
-  async delete(keyDigest: string, fence: DeleteFence | null): Promise<boolean> {
-    const stored = this.entries.get(keyDigest)
-    if (stored === undefined) return false
-    if (
-      fence !== null &&
-      (stored.publication.recordedRunId !== fence.runId ||
-        stored.publication.recordedEventSeq !== fence.eventSeq)
-    ) {
-      return false
-    }
-    return this.entries.delete(keyDigest)
-  }
-}
-
-class MemoryContentStore implements ContentStore {
-  private readonly objects = new Map<string, Uint8Array<ArrayBuffer>>()
-
-  async get(digest: string): Promise<{ readonly body: BodyInit } | null> {
-    const bytes = this.objects.get(digest)
-    return bytes === undefined ? null : { body: bytes }
-  }
-
-  async has(digest: string): Promise<boolean> {
-    return this.objects.has(digest)
-  }
-
-  async put(
-    digest: string,
-    bytes: Uint8Array<ArrayBuffer>
-  ): Promise<"inserted" | "present"> {
-    if (this.objects.has(digest)) return "present"
-    this.objects.set(digest, new Uint8Array(bytes))
-    return "inserted"
-  }
-
-  async presentDigests(digests: ReadonlyArray<string>): Promise<ReadonlySet<string>> {
-    return new Set(digests.filter((digest) => this.objects.has(digest)))
-  }
-}
 
 const makeHandler = (contentStore = new MemoryContentStore()) =>
   createHandler({

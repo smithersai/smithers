@@ -35,6 +35,9 @@ const isWellFormedText = (value: string): boolean => {
 /**
  * The largest action-cache document the service accepts.
  *
+ * Migration 0002 also bounds `entry_json`. Changing this bound requires a new
+ * migration and an updated migration contract test; never edit an applied migration.
+ *
  * @category constants
  * @since 0.1.0
  */
@@ -60,7 +63,9 @@ export const maxFindMissingDigests = 1000
  * The longest action-cache key the service stores.
  *
  * `worker/migrations/0002_bound_cache_rows.sql` hardcodes the same 512 bytes
- * for `key_digest`, so the constant and the migration move together.
+ * for `key_digest`; the migration contract test pins this relationship.
+ * Changing a persisted bound requires a new migration and an updated contract
+ * test. Never edit an applied migration.
  *
  * @category constants
  * @since 0.1.0
@@ -81,7 +86,8 @@ export const maxReferencedDigests = 1000
  * Separate from {@link maxKeyDigestLength} because a cache key and a run
  * identifier are unrelated protocol limits that happen to share a value.
  * `worker/migrations/0002_bound_cache_rows.sql` hardcodes the same 512 bytes
- * for `recorded_run_id`, so the constant and the migration move together.
+ * for `recorded_run_id`. Changing this bound requires a new migration and
+ * an updated migration contract test; never edit an applied migration.
  *
  * @category constants
  * @since 0.1.0
@@ -114,6 +120,9 @@ export const maxJsonMembers = 100_000
 
 /**
  * The largest canonical conflict discriminator retained in memory.
+ *
+ * Migration 0002 also bounds `result_json`. Changing this bound requires a new
+ * migration and an updated migration contract test; never edit an applied migration.
  *
  * @category constants
  * @since 0.1.0

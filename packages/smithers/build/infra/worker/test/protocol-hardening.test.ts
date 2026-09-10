@@ -2,13 +2,13 @@ import { createHash } from "node:crypto"
 import { describe, expect, it, vi } from "vitest"
 import {
   type ActionCache,
-  type ActionCachePublication,
   canonicalJson,
   type ContentStore,
   createHandler,
-  type DeleteFence,
   describeFailure,
   invalidKeyDigest,
+  maxActionCacheBodyBytes,
+  maxFindMissingBodyBytes,
   maxBodyChunks,
   maxCanonicalJsonBytes,
   maxConcurrentActionCachePublications,
@@ -22,6 +22,7 @@ import {
   maxRecordedRunIdLength,
   maxReferencedDigests
 } from "../protocol.ts"
+import { MemoryActionCache, MemoryContentStore } from "./MemoryStores.ts"
 
 const token = "test-token-with-sufficient-entropy-for-unit-tests"
 /** These cases exercise hardening, not the credential split, so `token` publishes. */
@@ -29,66 +30,6 @@ const writeTokenHash = createHash("sha256").update(token, "utf8").digest("hex")
 const readTokenHash = createHash("sha256").update("a-reader-that-never-publishes", "utf8").digest("hex")
 const keyDigest = "a".repeat(64)
 const textEncoder = new TextEncoder()
-
-class MemoryActionCache implements ActionCache {
-  readonly entries = new Map<string, ActionCachePublication>()
-
-  async get(key: string): Promise<string | null> {
-    return this.entries.get(key)?.body ?? null
-  }
-
-  async put(
-    key: string,
-    publication: ActionCachePublication
-  ): Promise<"conflict" | "identical" | "inserted"> {
-    const stored = this.entries.get(key)
-    if (stored === undefined) {
-      this.entries.set(key, publication)
-      return "inserted"
-    }
-    return stored.resultJson === publication.resultJson ? "identical" : "conflict"
-  }
-
-  async delete(key: string, fence: DeleteFence | null): Promise<boolean> {
-    const stored = this.entries.get(key)
-    if (stored === undefined) return false
-    if (
-      fence !== null &&
-      (stored.recordedRunId !== fence.runId || stored.recordedEventSeq !== fence.eventSeq)
-    ) {
-      return false
-    }
-    return this.entries.delete(key)
-  }
-}
-
-class MemoryContentStore implements ContentStore {
-  readonly objects = new Map<string, Uint8Array<ArrayBuffer>>()
-  presentCalls = 0
-
-  async get(digest: string): Promise<{ readonly body: BodyInit } | null> {
-    const bytes = this.objects.get(digest)
-    return bytes === undefined ? null : { body: bytes }
-  }
-
-  async has(digest: string): Promise<boolean> {
-    return this.objects.has(digest)
-  }
-
-  async put(
-    digest: string,
-    bytes: Uint8Array<ArrayBuffer>
-  ): Promise<"inserted" | "present"> {
-    if (this.objects.has(digest)) return "present"
-    this.objects.set(digest, new Uint8Array(bytes))
-    return "inserted"
-  }
-
-  async presentDigests(digests: ReadonlyArray<string>): Promise<ReadonlySet<string>> {
-    this.presentCalls += 1
-    return new Set(digests.filter((digest) => this.objects.has(digest)))
-  }
-}
 
 interface HandlerOverrides {
   readonly actionCache?: ActionCache
@@ -1789,5 +1730,273 @@ describe("admitted body cancellation edges", () => {
       time.mockRestore()
       errors.mockRestore()
     }
+  })
+})
+
+// Include an ASCII suffix so odd byte lengths remain exact for multibyte text.
+const boundedText = (bytes: number, multibyte: boolean): string =>
+  multibyte ? "é".repeat(Math.floor(bytes / 2)) + "x".repeat(bytes % 2) : "x".repeat(bytes)
+
+const boundaryOffsets = [-1, 0, 1] as const
+
+describe("exact protocol boundaries", () => {
+  describe.each([false, true])("UTF-8 identifiers (multibyte: %s)", (multibyte) => {
+    it.each(boundaryOffsets)("pins action-key bytes at limit offset %i", async (offset) => {
+      const key = boundedText(maxKeyDigestLength + offset, multibyte)
+      expect(textEncoder.encode(key)).toHaveLength(maxKeyDigestLength + offset)
+      expect(invalidKeyDigest(key)).toBe(
+        offset > 0 ? `keyDigest must be at most ${maxKeyDigestLength} UTF-8 bytes` : null
+      )
+      const actionCache = new MemoryActionCache()
+      const handler = makeHandler({ actionCache })
+      const response = await handler(jsonRequest(`/ac/${encodeURIComponent(key)}`, "{}", { method: "PUT" }))
+      expect(response.status).toBe(offset > 0 ? 400 : 201)
+      expect(await actionCache.get(key)).toBe(offset > 0 ? null : "{}")
+    })
+
+    it.each(boundaryOffsets)("pins publication and deletion run-ID bytes at limit offset %i", async (offset) => {
+      const runId = boundedText(maxRecordedRunIdLength + offset, multibyte)
+      expect(textEncoder.encode(runId)).toHaveLength(maxRecordedRunIdLength + offset)
+      const actionCache = new MemoryActionCache()
+      const handler = makeHandler({ actionCache })
+      const response = await handler(jsonRequest(`/ac/${keyDigest}`, {
+        keyDigest,
+        result: {},
+        recordedRunId: runId,
+        recordedEventSeq: 0
+      }, { method: "PUT" }))
+      expect(response.status).toBe(offset > 0 ? 400 : 422)
+      // Valid provenance reaches the hosted-tier refusal; invalid provenance fails validation first.
+      expect(await response.json()).toEqual(
+        offset > 0
+          ? { error: "publication provenance is invalid" }
+          : {
+            code: "UNSUPPORTED_PROVENANCE",
+            error: "the hosted cache supports result-only arbitration, not journal provenance"
+          }
+      )
+      expect(actionCache.entries.size).toBe(0)
+      const legacy = { body: "{}", resultJson: "{}", createdAtMs: null, recordedRunId: runId, recordedEventSeq: 0 }
+      await actionCache.put(keyDigest, legacy)
+      const deleted = await handler(request(
+        `/ac/${keyDigest}?${new URLSearchParams({
+          recordedRunId: runId,
+          recordedEventSeq: "0"
+        })}`,
+        { method: "DELETE" }
+      ))
+      expect(deleted.status).toBe(offset > 0 ? 400 : 200)
+      expect(actionCache.entries.get(keyDigest)).toEqual(offset > 0 ? legacy : undefined)
+    })
+  })
+
+  it.each(boundaryOffsets)("pins findMissing digest count at limit offset %i before deduplication", async (offset) => {
+    const contentStore = new MemoryContentStore()
+    const digest = "b".repeat(64)
+    const response = await makeHandler({ contentStore })(jsonRequest("/cas/findMissing", {
+      digests: Array.from({ length: maxFindMissingDigests + offset }, () => digest)
+    }, { method: "POST" }))
+    expect(response.status).toBe(offset > 0 ? 413 : 200)
+    expect(contentStore.presentCalls).toBe(offset > 0 ? 0 : 1)
+    if (offset <= 0) expect(await response.json()).toEqual({ missing: [digest] })
+  })
+
+  it.each(boundaryOffsets)("pins unique artifact-reference count at limit offset %i", async (offset) => {
+    const actionCache = new MemoryActionCache()
+    const outputs = Array.from({ length: maxReferencedDigests + offset }, (_, index) => ({
+      digest: index.toString(16).padStart(64, "0")
+    }))
+    // Duplicate references do not consume the independent unique-digest budget.
+    const body = JSON.stringify({
+      keyDigest,
+      result: {},
+      meta: {
+        boundary: { declaredOutputs: { outputs: [...outputs, ...outputs] } }
+      }
+    })
+    const response = await makeHandler({ actionCache })(jsonRequest(`/ac/${keyDigest}`, body, { method: "PUT" }))
+    expect(response.status).toBe(offset > 0 ? 400 : 201)
+    expect(await actionCache.get(keyDigest)).toBe(offset > 0 ? null : body)
+  })
+
+  describe.each(["array", "object"] as const)("canonical %s bounds", (shape) => {
+    it.each(boundaryOffsets)("pins depth at limit offset %i", async (offset) => {
+      let value: unknown = null
+      for (let depth = 0; depth < maxJsonDepth + offset; depth += 1) {
+        value = shape === "array" ? [value] : { child: value }
+      }
+      const body = JSON.stringify(value)
+      if (offset > 0) expect(() => canonicalJson(value)).toThrow("JSON is nested too deeply")
+      else expect(canonicalJson(value)).toBe(body)
+      const response = await makeHandler()(jsonRequest(`/ac/${keyDigest}`, body, { method: "PUT" }))
+      expect(response.status).toBe(offset > 0 ? 400 : 201)
+    })
+
+    it.each(boundaryOffsets)("pins aggregate members across nested containers at limit offset %i", (offset) => {
+      const members = maxJsonMembers + offset
+      const left = Math.floor((members - 2) / 2)
+      const right = members - 2 - left
+      const object = (count: number) =>
+        Object.fromEntries(Array.from({ length: count }, (_, index) => [String(index), 0]))
+      // Two parent members plus both children; neither child alone exceeds the budget.
+      const value = shape === "array"
+        ? { left: new Array(left).fill(0), right: new Array(right).fill(0) }
+        : [object(left), object(right)]
+      if (offset > 0) expect(() => canonicalJson(value)).toThrow("JSON has too many members")
+      else expect(JSON.parse(canonicalJson(value))).toEqual(value)
+    })
+  })
+
+  describe.each(["ascii", "multibyte", "escaped", "aggregate"] as const)("canonical %s bytes", (shape) => {
+    it.each(boundaryOffsets)("pins encoded bytes at limit offset %i", (offset) => {
+      const bytes = maxCanonicalJsonBytes + offset
+      const stringBytes = bytes - 2
+      const value = shape === "escaped"
+        ? "\u0000".repeat(Math.floor(stringBytes / 6)) + "x".repeat(stringBytes % 6)
+        : shape === "aggregate"
+        ? [boundedText(Math.floor((bytes - 7) / 2), true), boundedText(Math.ceil((bytes - 7) / 2), true)]
+        : boundedText(stringBytes, shape === "multibyte")
+      const expected = JSON.stringify(value)
+      expect(textEncoder.encode(expected)).toHaveLength(bytes)
+      if (offset > 0) expect(() => canonicalJson(value)).toThrow("canonical JSON exceeds its byte bound")
+      else expect(canonicalJson(value)).toBe(expected)
+    })
+  })
+
+  describe.each([
+    {
+      route: "action cache",
+      path: `/ac/${keyDigest}`,
+      method: "PUT",
+      limit: maxActionCacheBodyBytes,
+      json: "{}",
+      status: 201
+    },
+    {
+      route: "findMissing",
+      path: "/cas/findMissing",
+      method: "POST",
+      limit: maxFindMissingBodyBytes,
+      json: "{\"digests\":[]}",
+      status: 200
+    }
+  ])("$route body bytes", ({ path, method, limit, json, status }) => {
+    describe.each([false, true])("declared length: %s", (declared) => {
+      it.each(boundaryOffsets)("pins body bytes at limit offset %i", async (offset) => {
+        const actionCache = new MemoryActionCache()
+        const contentStore = new MemoryContentStore()
+        const text = json + " ".repeat(limit + offset - json.length)
+        const bytes = textEncoder.encode(text)
+        const stream = instrumentedBody({ chunks: [bytes.subarray(0, limit - 1), bytes.subarray(limit - 1)] })
+        const response = await makeHandler({ actionCache, contentStore })(rawRequest(path, {
+          method,
+          headers: {
+            "content-type": "application/json",
+            ...(declared ? { "content-length": String(bytes.byteLength) } : {})
+          },
+          body: stream.body
+        }))
+        expect(response.status).toBe(offset > 0 ? 413 : status)
+        if (method === "PUT") expect(await actionCache.get(keyDigest)).toBe(offset > 0 ? null : text)
+        else if (offset <= 0) expect(await response.json()).toEqual({ missing: [] })
+        if (offset > 0) {
+          expect(stream.log).toEqual(declared ? ["body-cancel"] : ["get-reader", "reader-cancel", "release"])
+        }
+      })
+    })
+  })
+
+  it.each(boundaryOffsets)("pins stored action-cache body bytes at limit offset %i", async (offset) => {
+    const actionCache = new MemoryActionCache()
+    const body = JSON.stringify(boundedText(maxActionCacheBodyBytes + offset - 2, true))
+    await actionCache.put(keyDigest, {
+      body,
+      resultJson: body,
+      createdAtMs: null,
+      recordedRunId: null,
+      recordedEventSeq: null
+    })
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    try {
+      const response = await makeHandler({ actionCache })(request(`/ac/${keyDigest}`))
+      expect(response.status).toBe(offset > 0 ? 503 : 200)
+      if (offset <= 0) expect(await response.text()).toBe(body)
+    } finally {
+      errors.mockRestore()
+    }
+  })
+
+  it.each(boundaryOffsets)("pins body chunk count at limit offset %i", async (offset) => {
+    const stream = instrumentedBody({
+      chunks: [
+        textEncoder.encode("{}"),
+        ...Array.from({ length: maxBodyChunks + offset - 1 }, () => new Uint8Array())
+      ]
+    })
+    const actionCache = new MemoryActionCache()
+    const response = await makeHandler({ actionCache })(rawRequest(`/ac/${keyDigest}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: stream.body
+    }))
+    expect(response.status).toBe(offset > 0 ? 413 : 201)
+    expect(await actionCache.get(keyDigest)).toBe(offset > 0 ? null : "{}")
+    expect(stream.log).toEqual(offset > 0 ? ["get-reader", "reader-cancel", "release"] : ["get-reader", "release"])
+  })
+
+  it.each([0, 1, 2])("pins identifier lower bounds at %i bytes", async (bytes) => {
+    const value = "x".repeat(bytes)
+    expect(invalidKeyDigest(value)).toBe(bytes === 0 ? "empty keyDigest" : null)
+    const actionCache = new MemoryActionCache()
+    const legacy = { body: "{}", resultJson: "{}", createdAtMs: null, recordedRunId: value, recordedEventSeq: 0 }
+    await actionCache.put(keyDigest, legacy)
+    const handler = makeHandler({ actionCache })
+    const publication = await handler(jsonRequest(`/ac/${keyDigest}`, {
+      keyDigest,
+      result: {},
+      recordedRunId: value,
+      recordedEventSeq: 0
+    }, { method: "PUT" }))
+    expect(publication.status).toBe(bytes === 0 ? 400 : 422)
+    const deletion = await handler(
+      request(`/ac/${keyDigest}?recordedRunId=${value}&recordedEventSeq=0`, { method: "DELETE" })
+    )
+    expect(deletion.status).toBe(bytes === 0 ? 400 : 200)
+    expect(actionCache.entries.get(keyDigest)).toEqual(bytes === 0 ? legacy : undefined)
+  })
+
+  describe.each(["createdAtMs", "recordedEventSeq"] as const)("%s integer boundaries", (field) => {
+    it.each([-1, 0, 1, Number.MAX_SAFE_INTEGER - 1, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER + 1])(
+      "pins %i",
+      async (value) => {
+        const accepted = value >= 0 && value <= Number.MAX_SAFE_INTEGER
+        const actionCache = new MemoryActionCache()
+        const handler = makeHandler({ actionCache })
+        const body = JSON.stringify({
+          keyDigest,
+          result: {},
+          [field]: value,
+          ...(field === "recordedEventSeq" ? { recordedRunId: "run" } : {})
+        })
+        const response = await handler(jsonRequest(`/ac/${keyDigest}`, body, { method: "PUT" }))
+        expect(response.status).toBe(accepted ? (field === "createdAtMs" ? 201 : 422) : 400)
+        expect(await actionCache.get(keyDigest)).toBe(accepted && field === "createdAtMs" ? body : null)
+        if (field === "recordedEventSeq") {
+          const legacy = {
+            body: "{}",
+            resultJson: "{}",
+            createdAtMs: null,
+            recordedRunId: "run",
+            recordedEventSeq: value
+          }
+          await actionCache.put(keyDigest, legacy)
+          const deletion = await handler(
+            request(`/ac/${keyDigest}?recordedRunId=run&recordedEventSeq=${value}`, { method: "DELETE" })
+          )
+          expect(deletion.status).toBe(accepted ? 200 : 400)
+          expect(actionCache.entries.get(keyDigest)).toEqual(accepted ? undefined : legacy)
+        }
+      }
+    )
   })
 })
