@@ -91,6 +91,34 @@ const keyOf = (planOutput: string, label: string): string => {
   throw new Error(`no key found for ${label} in:\n${planOutput}`)
 }
 
+it("plans gitDiff digests for thousands of selected paths", async () => {
+  const root = await temporaryWorkspace()
+  await write(root, "WORKSPACE.ts", workspaceModule())
+  await write(
+    root,
+    "PACKAGE.ts",
+    `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  review: S.Shell.Run({ shell: "true", data: [S.gitDiff({ base: "HEAD", paths: ["src/**"] })] })
+} })
+`
+  )
+  commitAll(root)
+  const paths = Array.from(
+    { length: 6000 },
+    (_, index) => `src/${String(index).padStart(4, "0")}-${"x".repeat(220)}.ts`
+  )
+  for (const path of paths) await write(root, path, "changed\n")
+  git(root, "add", "src")
+  const first = await serve(root, ["//:review", "--plan"])
+  expect(first.exitCode, first.output + first.logs).toBe(0)
+  const firstKey = keyOf(first.output, "//:review")
+  await write(root, paths.at(-1)!, "changed again\n")
+  const changed = await serve(root, ["//:review", "--plan"])
+  expect(changed.exitCode, changed.output + changed.logs).toBe(0)
+  expect(keyOf(changed.output, "//:review")).not.toBe(firstKey)
+})
+
 describe("package execution format", () => {
   it("pins the package cache format number", () => {
     // The number is part of every cache address. Bumping it declares a format

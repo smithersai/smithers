@@ -46,6 +46,7 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { optionalOpenFlag } from "./internal/Fs.ts"
+import { gitPathspecBatches } from "./internal/GitPathspecBatches.ts"
 import * as Path from "./internal/Path.ts"
 
 /**
@@ -682,6 +683,32 @@ const runGit = (
     )
   )
 
+/** Concatenates bounded path batches while retaining the per-diff output ceiling. */
+const runGitWithPaths = (
+  workspaceRoot: string,
+  args: ReadonlyArray<string>,
+  paths: ReadonlyArray<string>,
+  timeoutMs: number
+): Effect.Effect<string, AgentTarget.AgentSessionError> =>
+  Effect.gen(function*() {
+    const parts: Array<string> = []
+    let bytes = 0
+    for (const batch of gitPathspecBatches(paths)) {
+      const part = yield* runGit(workspaceRoot, [...args, "--", ...batch], timeoutMs)
+      bytes += Buffer.byteLength(part, "utf8")
+      if (bytes > maximumGitOutputBytes) {
+        return yield* Effect.fail(
+          sessionError("diff", new Error(`agent subprocess stdout exceeded ${maximumGitOutputBytes} bytes`))
+        )
+      }
+      parts.push(part)
+    }
+    return parts.join("")
+  }).pipe(Effect.timeoutOrElse({
+    duration: timeoutMs,
+    orElse: () => Effect.fail(sessionError("diff", new Error(`agent subprocess timed out after ${timeoutMs}ms`)))
+  }))
+
 const workspacePattern = (pattern: string): string => pattern.startsWith("//") ? pattern.slice(2) : pattern
 
 const matchesAny = (path: string, patterns: ReadonlyArray<string>): boolean =>
@@ -747,17 +774,20 @@ export const expandDiffSlice = (
           try: () => new RegExp(diff.addedLines as string),
           catch: (cause) => sessionError("diff", new Error(`addedLines is not a usable pattern: ${messageOf(cause)}`))
         })
-        const zero = yield* runGit(workspaceRoot, [
-          "diff",
-          "--no-ext-diff",
-          "--no-textconv",
-          "--no-renames",
-          "-U0",
-          "--end-of-options",
-          diff.base,
-          "--",
-          ...files
-        ], timeoutMs)
+        const zero = yield* runGitWithPaths(
+          workspaceRoot,
+          [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-renames",
+            "-U0",
+            "--end-of-options",
+            diff.base
+          ],
+          files,
+          timeoutMs
+        )
         const matched = filesWithMatchingAddedLines(zero, pattern)
         files = files.filter((path) => matched.has(path))
       }
@@ -773,16 +803,19 @@ export const expandDiffSlice = (
       byBase.set(base, group)
     }
     for (const [base, group] of [...byBase.entries()].sort(([left], [right]) => left < right ? -1 : 1)) {
-      const patch = yield* runGit(workspaceRoot, [
-        "diff",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--no-renames",
-        "--end-of-options",
-        base,
-        "--",
-        ...group.sort()
-      ], timeoutMs)
+      const patch = yield* runGitWithPaths(
+        workspaceRoot,
+        [
+          "diff",
+          "--no-ext-diff",
+          "--no-textconv",
+          "--no-renames",
+          "--end-of-options",
+          base
+        ],
+        group.sort(),
+        timeoutMs
+      )
       parts.push(patch)
     }
     const patch = parts.join("\n")

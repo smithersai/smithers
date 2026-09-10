@@ -579,6 +579,17 @@ callers must serialize concurrent workspace directory mutations with commits.
 `defaultSessionTimeoutMs` (5 minutes), `defaultMcpProbeTimeoutMs` (2.5
 seconds), and `defaultGitTimeoutMs` (30 seconds).
 
+Byte ceilings accept exactly the limit and reject one byte over it. The
+stdout ceiling includes the CLI JSON envelope. The prompt ceiling includes
+all rendered file sections. The diff ceiling includes every base's patch
+and the newlines between base groups.
+
+Diff paths are passed to Git in bounded batches of literal pathspecs. Patches
+are concatenated within each base; base groups are rendered in sorted base
+order. Both session expansion and plan-time diff digests use bounded batches
+because `git diff` does not accept stdin pathspec files.
+
+
 ## AgentFake
 
 The deterministic replacement for a real agent CLI. From

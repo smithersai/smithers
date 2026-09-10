@@ -53,8 +53,9 @@ import * as TargetIndex from "../TargetIndex.ts"
 import * as Workspace from "../Workspace.ts"
 import * as WorkspaceToolchain from "../WorkspaceToolchain.ts"
 import { collectTargets } from "./Attrs.ts"
-import { inputPackage } from "./InputPackage.ts"
 import * as CoreRuleSelection from "./CoreRuleSelection.ts"
+import { gitPathspecBatches } from "./GitPathspecBatches.ts"
+import { inputPackage } from "./InputPackage.ts"
 import type { CrateRow, Mode, PackageNode, PackagePlan, RunOptions, TestOperandPlan } from "./PackageOptions.ts"
 import * as Path from "./Path.ts"
 import type * as RuleContract from "./RuleContract.ts"
@@ -1200,9 +1201,16 @@ const expandGitDiff = async (
   })
   const paths = selected.map((entry) => entry.path).sort()
   const files = await Input.digestFiles(context.root, paths, { signal: context.signal })
-  const patch = paths.length === 0
-    ? ""
-    : await PackageTree.runGit(context.root, ["diff", "--binary", "--end-of-options", base, "--", ...paths])
+  const patches: Array<string> = []
+  let patchBytes = 0
+  for (const batch of gitPathspecBatches(paths)) {
+    const part = await PackageTree.runGit(context.root, ["diff", "--binary", "--end-of-options", base, "--", ...batch])
+    patchBytes += Buffer.byteLength(part, "utf8")
+    // Preserve runGit's output limit across all batches of this diff.
+    if (patchBytes > 256 * 1024 * 1024) throw new Error("git diff failed: stdout maxBuffer length exceeded")
+    patches.push(part)
+  }
+  const patch = patches.join("")
   return {
     declaration,
     files,

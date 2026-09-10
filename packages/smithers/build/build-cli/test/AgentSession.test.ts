@@ -3,7 +3,7 @@ import * as Input from "@smthrs/targets/Input"
 import * as Reference from "@smthrs/targets/Reference"
 import * as Effect from "effect/Effect"
 import { execFileSync, spawnSync } from "node:child_process"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
@@ -120,6 +120,110 @@ describe("expandDiffSlice", () => {
       ])
     )
     expect(slice.files).toEqual(["src/a.ts"])
+  })
+})
+
+describe("diff slice path and byte boundaries", () => {
+  const patchFor = (base: string, path: string): string =>
+    execFileSync("git", ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", base, "--", path], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024
+    })
+
+  const twoBases = async (): Promise<ReadonlyArray<Input.GitDiff>> => {
+    git("tag", "a-base")
+    await write("src/a.ts", "middle\n")
+    git("add", "src/a.ts")
+    git("commit", "-qm", "middle")
+    git("tag", "z-base")
+    // Declarations are deliberately opposite to the base sort order.
+    return [
+      Input.gitDiff({ base: "z-base", paths: ["src/**"] }),
+      Input.gitDiff({ base: "a-base", paths: ["docs/**"] })
+    ]
+  }
+
+  it.each([undefined, "TODO"])("handles thousands of paths with addedLines=%s", async (addedLines) => {
+    const files = Array.from(
+      { length: 6000 },
+      (_, index) => `src/${String(index).padStart(4, "0")}-${"x".repeat(220)}.ts`
+    )
+    for (const file of files) await write(file, "// TODO next\n")
+    await write("docs/readme.md", "excluded TODO\n")
+    git("add", "src")
+    const slice = await Effect.runPromise(AgentSession.expandDiffSlice(root, [
+      Input.gitDiff({ base: "HEAD", paths: ["src/**"], ...(addedLines === undefined ? {} : { addedLines }) })
+    ]))
+    expect(slice.files).toEqual(files)
+    expect(slice.patch.match(/^diff --git /gm)).toHaveLength(files.length)
+    expect(slice.patch).not.toContain("excluded TODO")
+    expect(slice.patch.indexOf(files[0]!)).toBeLessThan(slice.patch.indexOf(files.at(-1)!))
+    expect(slice.digest).toBe(createHash("sha256").update(slice.patch).digest("hex"))
+  })
+
+  it("renders two bases in base order with each patch using its declared base", async () => {
+    const diffs = await twoBases()
+    await write("src/a.ts", "last\n")
+    await write("docs/readme.md", "changed\n")
+    const slice = await Effect.runPromise(AgentSession.expandDiffSlice(root, diffs))
+    expect(slice.files).toEqual(["docs/readme.md", "src/a.ts"])
+    expect(slice.patch).toBe([patchFor("a-base", "docs/readme.md"), patchFor("z-base", "src/a.ts")].join("\n"))
+    expect(slice.patch).toContain("-middle\n+last")
+    expect(slice.digest).toBe(createHash("sha256").update(slice.patch).digest("hex"))
+  })
+
+  it.each([0, 1])("checks the aggregate diff ceiling at N+%i UTF-8 bytes across two bases", async (extra) => {
+    const diffs = await twoBases()
+    await write("src/a.ts", "é\n")
+    await write("docs/readme.md", "é\n")
+    const overhead = Buffer.byteLength(
+      [patchFor("a-base", "docs/readme.md"), patchFor("z-base", "src/a.ts")].join("\n")
+    )
+    const padding = AgentSession.maximumDiffSliceBytes + extra - overhead
+    await write("src/a.ts", `é${"x".repeat(Math.floor(padding / 2))}\n`)
+    await write("docs/readme.md", `é${"x".repeat(Math.ceil(padding / 2))}\n`)
+    const parts = [patchFor("a-base", "docs/readme.md"), patchFor("z-base", "src/a.ts")]
+    expect(parts.every((part) => Buffer.byteLength(part) < AgentSession.maximumDiffSliceBytes)).toBe(true)
+    expect(Buffer.byteLength(parts.join("\n"))).toBe(AgentSession.maximumDiffSliceBytes + extra)
+    const effect = AgentSession.expandDiffSlice(root, diffs)
+    if (extra === 0) {
+      expect((await Effect.runPromise(effect)).patch).toBe(parts.join("\n"))
+    } else {
+      const error = await Effect.runPromise(Effect.flip(effect))
+      expect(error.phase).toBe("diff")
+      expect(error.message).toContain(`the expanded diff slice exceeds ${AgentSession.maximumDiffSliceBytes} bytes`)
+    }
+  })
+
+  it.each([0, 1])("checks the rendered prompt ceiling at N+%i UTF-8 bytes", async (extra) => {
+    await write("src/a.ts", "changed\n")
+    const dataFiles = Array.from({ length: 16 }, (_, index) => `data/${index}.txt`)
+    for (const file of dataFiles) await write(file, "é")
+    const probe = scripted([{ findings: [] }])
+    await Effect.runPromise(AgentSession.runAgentLint(runtimeOf({ sessions: probe, dataFiles }), lintPayload()))
+    const overhead = Buffer.byteLength(probe.requests()[0]!.prompt)
+    let padding = AgentSession.maximumSessionPromptBytes + extra - overhead
+    for (const file of dataFiles) {
+      const size = Math.min(padding, AgentSession.maximumSessionFileBytes - 2)
+      await write(file, `é${"x".repeat(size)}`)
+      padding -= size
+    }
+    expect(padding).toBe(0)
+    const factory = scripted([{ findings: [] }])
+    const effect = AgentSession.runAgentLint(runtimeOf({ sessions: factory, dataFiles }), lintPayload())
+    if (extra === 0) {
+      await Effect.runPromise(effect)
+      expect(Buffer.byteLength(factory.requests()[0]!.prompt)).toBe(AgentSession.maximumSessionPromptBytes)
+      expect(factory.spawns()).toBe(1)
+    } else {
+      const error = await Effect.runPromise(Effect.flip(effect))
+      expect(error._tag).toBe("smithers-build/AgentSessionError")
+      expect(error.message).toContain(
+        `the rendered session prompt exceeds ${AgentSession.maximumSessionPromptBytes} bytes`
+      )
+      expect(factory.spawns()).toBe(0)
+    }
   })
 })
 
@@ -692,6 +796,53 @@ describe("CLI engine adapters", () => {
     default: AgentTarget.Pool(["luna", "sol"]),
     luna: AgentTarget.ClaudeCode({ model: "claude-luna-1" }),
     sol: AgentTarget.Codex({ model: "gpt-5.6-sol" })
+  })
+
+  it.each([0, 1])("checks CLI stdout at N+%i UTF-8 bytes including its envelope", async (extra) => {
+    const encode = (note: string): string => JSON.stringify({ result: JSON.stringify({ findings: [], note }) })
+    const note = "é".repeat(8000)
+    // JSON whitespace counts toward stdout without exceeding the note schema limit.
+    const output = encode(note) +
+      " ".repeat(AgentSession.maximumSessionOutputBytes + extra - Buffer.byteLength(encode(note)))
+    expect(Buffer.byteLength(output)).toBe(AgentSession.maximumSessionOutputBytes + extra)
+    await write("response.json", output)
+    const claude = await fakeExecutable("large-claude", "cat > /dev/null\ncat response.json")
+    const session = await Effect.runPromise(
+      AgentSession.makeCliSessionFactory({
+        workspaceRoot: root,
+        agents: AgentTarget.Agents({ default: AgentTarget.ClaudeCode({ model: "m" }) }),
+        executables: { claude },
+        timeoutMs: 10_000
+      }).open(undefined)
+    )
+    const effect = session.run({ purpose: "lint", prompt: "p" })
+    if (extra === 0) {
+      expect((await Effect.runPromise(effect)).note).toBe(note)
+    } else {
+      const error = await Effect.runPromise(Effect.flip(effect))
+      expect(error.phase).toBe("spawn")
+      expect(error.message).toContain(
+        `agent subprocess stdout exceeded ${AgentSession.maximumSessionOutputBytes} bytes`
+      )
+    }
+  })
+
+  it("reports stdinFailure when a silent child closes stdin before reading the prompt", async () => {
+    const claude = await fakeExecutable("closed-stdin", "exec 0<&-\nsleep 0.1")
+    const session = await Effect.runPromise(
+      AgentSession.makeCliSessionFactory({
+        workspaceRoot: root,
+        agents: AgentTarget.Agents({ default: AgentTarget.ClaudeCode({ model: "m" }) }),
+        executables: { claude },
+        timeoutMs: 10_000
+      }).open(undefined)
+    )
+    const error = await Effect.runPromise(Effect.flip(session.run({
+      purpose: "lint",
+      prompt: "x".repeat(AgentSession.maximumSessionPromptBytes)
+    })))
+    expect(error.phase).toBe("spawn")
+    expect(error.message).toContain("stdin could not be written:")
   })
 
   it("parses the claude JSON envelope from a fake claude CLI", async () => {
