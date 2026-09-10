@@ -194,10 +194,11 @@ only state the chain has.
 - `layerNoop(overrides?: Partial<Service>): Layer.Layer<Journal>`: the
   unavailable journal as a layer.
 - `layerMemory(initial?: ReadonlyArray<Event.Event>): Layer.Layer<Journal>`:
-  an in-memory journal over a `Ref`, optionally seeded with prior events.
-  The seed is how tests replay and resume a chain. `append` fails with
-  `journal_conflict` when `expectedPosition` does not match the current
-  length.
+  an in-memory journal over one array, optionally seeded with prior events.
+  The seed is how tests replay and resume a chain. `append` pushes in place
+  and fails with `journal_conflict` when `expectedPosition` does not match
+  the current length; `read` returns a copy, so a reader never sees a later
+  append.
 
 ## `Event`
 

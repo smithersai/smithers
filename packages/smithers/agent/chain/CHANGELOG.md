@@ -24,6 +24,19 @@
   digest value is unchanged, so one declaration is now one number on both
   sides of the boundary.
 
+### Fixed
+
+- `Chain.run` re-read and rescanned the whole shared journal before every
+  append, then mirrored it with an argument spread, so a run cost
+  O(events x journal) and threw `RangeError: Maximum call stack size
+  exceeded` inside `append` once the journal passed about 120,000 events on
+  Node. A run now reads the journal once at start, keeps only its own
+  scope's events, and tracks the position it last observed; a stale position
+  conflicts, and one fresh read decides whether a sub-chain moved the journal
+  (retry at the new position) or a second writer holds this scope
+  (`journal_conflict`). `Journal.layerMemory` appends in place instead of
+  copying the history, and `read` hands out a copy. The port is unchanged.
+
 ## 0.1.0
 
 The version the manifest has carried since the package moved into

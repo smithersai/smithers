@@ -9,6 +9,7 @@ import * as Chain from "../src/Chain.ts"
 import type * as Event from "../src/Event.ts"
 import * as Journal from "../src/Journal.ts"
 import * as Observation from "../src/Observation.ts"
+import type * as Outcome from "../src/Outcome.ts"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as ScriptRunner from "../src/ScriptRunner.ts"
 import * as Steering from "../src/Steering.ts"
@@ -698,6 +699,164 @@ describe("Chain journal ownership", () => {
     const catalog = Layer.effect(Catalog.Catalog)(SubChains.make({ entries: [] }))
     const { outcome } = await runChain({ author: Author.layerMock(scripts), catalog })
     expect(outcome).toEqual({ _tag: "Done", value: { _tag: "Done", value: "child done" } })
+  })
+})
+
+describe("Chain journal cost", () => {
+  /**
+   * A binding that counts its operations: a run's position bookkeeping is
+   * observable only through how often it has to read the whole journal.
+   */
+  const countingJournal = (initial: ReadonlyArray<Event.Event> = []) => {
+    const stored: Array<Event.Event> = [...initial]
+    let reads = 0
+    let appends = 0
+    const layer = Layer.succeed(Journal.Journal)(Journal.make({
+      append: (event, expectedPosition) =>
+        Effect.suspend(() => {
+          appends = appends + 1
+          if (stored.length !== expectedPosition) {
+            return Effect.fail(
+              new Journal.JournalError({
+                code: "journal_conflict",
+                message: `append expected journal position ${expectedPosition}, found ${stored.length}`
+              })
+            )
+          }
+          stored.push(event)
+          return Effect.void
+        }),
+      read: Effect.sync(() => {
+        reads = reads + 1
+        return stored.slice()
+      })
+    }))
+    return { appends: () => appends, layer, reads: () => reads, stored }
+  }
+
+  const layersOver = (
+    journal: Layer.Layer<Journal.Journal>,
+    author: Layer.Layer<Author.Author>,
+    catalog: Layer.Layer<Catalog.Catalog, never, Journal.Journal | Author.Author | ScriptRunner.ScriptRunner>
+  ) => {
+    const base = Layer.mergeAll(journal, author, ScriptRunner.layerInProcess)
+    return Layer.mergeAll(base, catalog.pipe(Layer.provide(base)))
+  }
+
+  const foreign = (count: number): Array<Event.Event> => {
+    const events: Array<Event.Event> = []
+    for (let index = 0; index < count; index++) {
+      events.push({ _tag: "LinkEnded", chain: `other-${index}`, link: 0, outcome: { _tag: "Done", value: null } })
+    }
+    return events
+  }
+
+  it("reads the journal once on a run with no sub-chains", async () => {
+    // Before position tracking became incremental every append re-read and
+    // rescanned the whole journal, so reads grew with appends: ten events
+    // cost eleven reads. One read, at run start, is the whole hydration.
+    const grep = countingEntry("grep", grepResult)
+    const edit = countingEntry("edit", { ok: true })
+    const journal = countingJournal()
+    const outcome = await Effect.runPromise(
+      Chain.run({ goal: "count" }).pipe(
+        Effect.provide(layersOver(journal.layer, Author.layerMock([l1, l2]), Catalog.layer([grep.entry, edit.entry])))
+      ) as Effect.Effect<Outcome.RunResult, never, never>
+    )
+    expect(outcome).toEqual({ _tag: "Done", value: { patched: true } })
+    expect(journal.stored.map((event) => event._tag)).toEqual(goldenTags)
+    expect(journal.appends()).toBe(goldenTags.length)
+    expect(journal.reads()).toBe(1)
+  })
+
+  it("re-reads only when a sub-chain advanced the journal", async () => {
+    // The parent reads once at start, the child reads once at ITS start, and
+    // the parent's first append after the child returns lands on a moved
+    // position: one conflict, one repairing read, then the retry succeeds.
+    const spawn = flow(
+      `const child = await ctx.call("agent", { goal: "child work" })`,
+      `return done(child)`
+    )
+    const journal = countingJournal()
+    const catalog = Layer.effect(Catalog.Catalog)(SubChains.make({ entries: [] }))
+    const outcome = await Effect.runPromise(
+      Chain.run({ goal: "spawn" }).pipe(
+        Effect.provide(layersOver(journal.layer, Author.layerMock([spawn, flow(`return done("child done")`)]), catalog))
+      ) as Effect.Effect<Outcome.RunResult, never, never>
+    )
+    expect(outcome).toEqual({ _tag: "Done", value: { _tag: "Done", value: "child done" } })
+    expect(journal.reads()).toBe(3)
+    expect(journal.appends()).toBe(journal.stored.length + 1)
+  })
+
+  it("runs over a journal seeded with 250,000 foreign-scope events", async () => {
+    // Node caps argument spreading near 120,000 elements, so mirroring the
+    // journal with `splice(0, length, ...latest)` threw RangeError inside
+    // `append` once a shared journal outgrew that: nothing was journaled and
+    // every resume died on the same line.
+    const { events, outcome } = await runChain({
+      author: Author.layerMock([doneScript]),
+      initial: foreign(250_000)
+    })
+    expect(outcome).toEqual({ _tag: "Done", value: "recovered" })
+    expect(events.slice(250_000).map((event) => event._tag)).toEqual([
+      "ChainStarted",
+      "CallSettled",
+      "LinkAuthored",
+      "LinkEnded",
+      "LinkEnded"
+    ])
+    expect(events.length).toBe(250_000 + 5)
+  })
+
+  it("surfaces a binding conflict at a position the journal did not move past", async () => {
+    // A conflict the run can repair is one where the journal grew under a
+    // scope it does not own. A binding that refuses the very position its
+    // read reports has nothing to repair: the run must not spin on it.
+    let refusals = 0
+    const stored: Array<Event.Event> = []
+    const journal = Layer.succeed(Journal.Journal)(Journal.make({
+      append: (event, expectedPosition) =>
+        Effect.suspend(() => {
+          if (stored.length === 3) {
+            refusals = refusals + 1
+            return Effect.fail(new Journal.JournalError({ code: "journal_conflict", message: "refused at 3" }))
+          }
+          stored.push(event)
+          return Effect.void
+        }),
+      read: Effect.sync(() => stored.slice())
+    }))
+    const error = await Effect.runPromise(
+      Effect.flip(Chain.run({ goal: "stuck" })).pipe(
+        Effect.provide(layersOver(journal, Author.layerMock([doneScript]), Catalog.layer([])))
+      ) as unknown as Effect.Effect<Journal.JournalError, never, never>
+    )
+    expect(error._tag).toBe("/chain/JournalError")
+    expect(error.code).toBe("journal_conflict")
+    expect(error.message).toBe("refused at 3")
+    expect(refusals).toBe(1)
+  })
+
+  it("propagates an unavailable journal from a mid-run append", async () => {
+    const stored: Array<Event.Event> = []
+    const journal = Layer.succeed(Journal.Journal)(Journal.make({
+      append: (event) =>
+        Effect.suspend(() => {
+          if (stored.length === 2) return Effect.fail(new Journal.JournalError({ message: "disk gone" }))
+          stored.push(event)
+          return Effect.void
+        }),
+      read: Effect.sync(() => stored.slice())
+    }))
+    const error = await Effect.runPromise(
+      Effect.flip(Chain.run({ goal: "gone" })).pipe(
+        Effect.provide(layersOver(journal, Author.layerMock([doneScript]), Catalog.layer([])))
+      ) as unknown as Effect.Effect<Journal.JournalError, never, never>
+    )
+    expect(error.code).toBe("journal_unavailable")
+    expect(error.message).toBe("disk gone")
+    expect(stored.length).toBe(2)
   })
 })
 

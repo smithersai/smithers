@@ -39,6 +39,17 @@ describe("Journal", () => {
     expect(events).toEqual([started])
   })
 
+  it("hands readers a snapshot that later appends do not mutate", async () => {
+    const [before, after] = await withJournal(Journal.layerMemory([started]), (journal) =>
+      Effect.gen(function*() {
+        const first = yield* journal.read
+        yield* journal.append({ _tag: "LinkEnded", link: 0, outcome: { _tag: "Done", value: null } }, 1)
+        return [first, yield* journal.read] as const
+      }))
+    expect(before.map((event) => event._tag)).toEqual(["ChainStarted"])
+    expect(after.map((event) => event._tag)).toEqual(["ChainStarted", "LinkEnded"])
+  })
+
   it("defaults to an empty journal", async () => {
     const events = await withJournal(Journal.layerMemory(), (journal) => journal.read)
     expect(events).toEqual([])

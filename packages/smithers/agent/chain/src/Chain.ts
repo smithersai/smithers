@@ -10,7 +10,7 @@
  * @since 0.1.0
  */
 import * as Digest from "@smthrs/core/Digest"
-import { Effect, Fiber, Option, Schema } from "effect"
+import { Effect, Fiber, Option, Result, Schema } from "effect"
 import * as Author from "./Author.ts"
 import * as AuthorDeclaration from "./AuthorDeclaration.ts"
 import * as Authorize from "./Authorize.ts"
@@ -229,40 +229,52 @@ export const run = (options: Options): Effect.Effect<Outcome.RunResult, RunError
     const prefix = options.prefix ?? ""
 
     const initial = yield* journal.read
-    const events: Array<Event.Event> = [...initial]
+
+    // Only this scope's events are mirrored: every fold takes the scope, so
+    // a child's or a sibling's events never need to be held here, and the
+    // mirror grows by one per append instead of being rebuilt from a fresh
+    // read of the whole journal before every event.
+    const events: Array<Event.Event> = initial.filter((event) => Event.inChain(event, chainId))
 
     const existing = Event.terminal(events, chainId)
 
-    // The count of in-scope events this run believes it owns. A run cannot
-    // simply track the journal's LENGTH: a sub-chain legitimately appends to
-    // the same journal under its own id while this frame is suspended inside
-    // the spawning handler, so the position has to be re-derived from a fresh
-    // read — and that fresh read is exactly what neuters `append`'s
-    // compare-and-swap. Counting our own scope restores the guarantee the
+    // `position` is the journal length this run last observed. A run cannot
+    // simply trust it: a sub-chain legitimately appends to the same journal
+    // under its own id while this frame is suspended inside the spawning
+    // handler. The next append then conflicts, and ONE fresh read decides
+    // what moved. Counting our own scope restores the guarantee the
     // `expectedPosition` argument exists for: a second writer on THIS chain
-    // is a conflict, a child writing its own scope is not.
-    let owned = events.filter((event) => Event.inChain(event, chainId)).length
+    // is a conflict, a child writing its own scope is not, and the retry
+    // lands on the position the child left behind.
+    let position = initial.length
 
     const append = (event: Event.Event): Effect.Effect<void, Journal.JournalError> =>
       Effect.gen(function*() {
         const scoped = chainId === "" ? event : { ...event, chain: chainId }
-        const latest = yield* journal.read
-        const seen = latest.filter((candidate) => Event.inChain(candidate, chainId)).length
-        if (seen !== owned) {
-          // Never absorb the other writer's events mid-link: their call
-          // ordinals are keyed to a state this run does not hold, and
-          // continuing would settle one slot twice.
-          return yield* new Journal.JournalError({
-            code: "journal_conflict",
-            message: `chain ${
-              JSON.stringify(chainId)
-            } holds ${owned} events but the journal carries ${seen}: another writer advanced it`
-          })
+        for (;;) {
+          const attempt = yield* Effect.result(journal.append(scoped, position))
+          if (Result.isSuccess(attempt)) break
+          if (attempt.failure.code !== "journal_conflict") return yield* attempt.failure
+          const latest = yield* journal.read
+          const seen = latest.filter((candidate) => Event.inChain(candidate, chainId)).length
+          if (seen !== events.length) {
+            // Never absorb the other writer's events mid-link: their call
+            // ordinals are keyed to a state this run does not hold, and
+            // continuing would settle one slot twice.
+            return yield* new Journal.JournalError({
+              code: "journal_conflict",
+              message: `chain ${
+                JSON.stringify(chainId)
+              } holds ${events.length} events but the journal carries ${seen}: another writer advanced it`
+            })
+          }
+          // A binding that refuses the very position its read reports has
+          // nothing this run can repair; retry only when the journal moved.
+          if (latest.length === position) return yield* attempt.failure
+          position = latest.length
         }
-        events.splice(0, events.length, ...latest)
-        yield* journal.append(scoped, events.length)
         events.push(scoped)
-        owned = owned + 1
+        position = position + 1
       })
 
     const hasRejection = (link: number, ordinal: number): boolean =>

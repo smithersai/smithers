@@ -10,7 +10,6 @@
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Ref from "effect/Ref"
 import * as Schema from "effect/Schema"
 import type * as Event from "./Event.ts"
 
@@ -86,8 +85,10 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<Journal
   Layer.succeed(Journal)(makeNoop(overrides))
 
 /**
- * An in-memory journal over a `Ref`, optionally seeded with prior events —
- * the seed is how tests replay and resume a chain.
+ * An in-memory journal over one array, optionally seeded with prior events —
+ * the seed is how tests replay and resume a chain. Appends push in place and
+ * reads hand out a copy, so a reader never sees a later append and an append
+ * never copies the history.
  *
  * @category layers
  * @since 0.1.0
@@ -97,26 +98,25 @@ export const layerMemory = (initial: ReadonlyArray<Event.Event> = []): Layer.Lay
   // Snapshot now, not when the lazy layer is later built: a caller may
   // mutate its seed after constructing the layer but before providing it.
   const snapshot = [...initial]
-  return Layer.effect(Journal)(
-    Effect.gen(function*() {
-      const ref = yield* Ref.make<ReadonlyArray<Event.Event>>(snapshot)
-      return make({
-        append: Effect.fn("Journal.append")((event, expectedPosition) =>
-          Ref.modify(ref, (events) =>
-            events.length === expectedPosition
-              ? [undefined, [...events, event]] as const
-              : [
-                new JournalError({
-                  code: "journal_conflict",
-                  message: `append expected journal position ${expectedPosition}, found ${events.length}`
-                }),
-                events
-              ] as const).pipe(
-              Effect.flatMap((error) => error === undefined ? Effect.void : Effect.fail(error))
+  return Layer.sync(Journal)(() => {
+    // Copy per build, so two builds of one layer never share a history.
+    const events: Array<Event.Event> = [...snapshot]
+    return make({
+      append: Effect.fn("Journal.append")((event, expectedPosition) =>
+        Effect.suspend(() => {
+          if (events.length !== expectedPosition) {
+            return Effect.fail(
+              new JournalError({
+                code: "journal_conflict",
+                message: `append expected journal position ${expectedPosition}, found ${events.length}`
+              })
             )
-        ),
-        read: Ref.get(ref)
-      })
+          }
+          events.push(event)
+          return Effect.void
+        })
+      ),
+      read: Effect.sync(() => events.slice())
     })
-  )
+  })
 }

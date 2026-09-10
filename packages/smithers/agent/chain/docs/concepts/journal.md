@@ -23,7 +23,7 @@ interface Service {
 `append` takes an `expectedPosition`, so an append is a compare-and-swap: the
 journal refuses the write when another writer has advanced past the position
 the caller believes is next. `Journal.layerMemory()` is the in-process
-stand-in over a `Ref`, optionally seeded with prior events; the seed is how
+stand-in over one array, optionally seeded with prior events; the seed is how
 tests replay and resume a chain.
 
 ## The events
@@ -57,13 +57,14 @@ fold; neither writes anything down.
 
 ## Concurrency
 
-`Chain.run` cannot track the journal's length, because a sub-chain
+`Chain.run` reads the journal once, at start, and then tracks the position
+it last observed. It cannot simply trust that position, because a sub-chain
 legitimately appends to the same journal under its own id while the parent
-frame is suspended inside the spawning handler. What a run tracks instead is
-the number of events in its own chain scope: a second writer on that scope
-fails the run with `journal_conflict`, and a child writing its own scope does
-not. Each `(link, ordinal)` slot settles exactly once, and each link ends
-exactly once.
+frame is suspended inside the spawning handler. An append at a stale position
+conflicts, and one fresh read decides what moved: when only foreign scopes
+grew, the run retries at the new position; when its own scope grew, a second
+writer holds it and the run fails with `journal_conflict`. Each `(link,
+ordinal)` slot settles exactly once, and each link ends exactly once.
 
 For the full concurrency argument and the compare-and-swap protocol, see
 [The chain contract](../contract.md). For the failure codes, see

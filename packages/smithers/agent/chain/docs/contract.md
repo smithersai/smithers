@@ -127,14 +127,24 @@ the settlement append are separate operations.
 ## Concurrency
 
 `Journal.append` takes an `expectedPosition` so an append is a
-compare-and-swap. `Chain.run` cannot track the journal's length, because a
-sub-chain legitimately appends to the same journal under its own id while
-the parent frame is suspended inside the spawning handler. What a run tracks
-instead is the number of events in ITS OWN chain scope: a second writer on
-that scope fails the run with `journal_conflict`, and a child writing its
-own scope does not. Effect execution remains at-least-once: a losing writer
-may dispatch one handler before it discovers the conflict, but each `(link,
-ordinal)` slot settles exactly once and each link ends exactly once.
+compare-and-swap. `Chain.run` reads the journal once, at start, and then
+tracks the position it last observed; it never re-reads before an append.
+It cannot simply trust that position, because a sub-chain legitimately
+appends to the same journal under its own id while the parent frame is
+suspended inside the spawning handler. An append at a stale position
+conflicts, and one fresh read decides what moved. When only foreign scopes
+grew, the run retries at the position the journal now reports. When ITS OWN
+scope grew, a second writer holds the scope and the run fails with
+`journal_conflict`. A binding that refuses the very position its read
+reports is surfaced as its own conflict, never retried. Effect execution
+remains at-least-once: a losing writer may dispatch one handler before it
+discovers the conflict, but each `(link, ordinal)` slot settles exactly once
+and each link ends exactly once.
+
+The cost of a run is therefore one full read plus one append per event, plus
+one read per sub-chain return. Only this scope's events are held in memory;
+a journal shared with hundreds of thousands of foreign-scope events costs a
+run one filter at start, not one per append.
 
 ## Resource limits
 
