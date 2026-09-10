@@ -185,8 +185,15 @@ export class Recall extends Context.Service<Recall, Service>()("flows/memory/Rec
 
 const encoder = new TextEncoder()
 
-const serializedByteLength = (results: ReadonlyArray<Result>): number =>
-  encoder.encode(JSON.stringify(results)).byteLength
+const serializedByteLength = (result: Result): number => encoder.encode(JSON.stringify(result)).byteLength
+
+// `JSON.stringify(rows)` is `[` + rows joined by `,` + `]`, so the serialized
+// size of a selection is the two brackets plus every row's own serialization
+// plus one separator per row after the first. Tracking that sum lets the cap
+// serialize each row exactly once instead of re-serializing the selection for
+// every candidate.
+const ARRAY_BRACKETS_BYTES = 2
+const SEPARATOR_BYTES = 1
 
 /**
  * Applies Smithers' conservative UTF-8 byte cap: complete rows are selected
@@ -202,9 +209,14 @@ export const capRecallResults = (results: ReadonlyArray<Result>, maxTokens = 204
   const normalized = results.filter((result) => result.text.length > 0)
   const byteBudget = Math.max(0, Math.floor(maxTokens))
   const selected: Array<Result> = []
+  let usedBytes = ARRAY_BRACKETS_BYTES
   for (const result of normalized) {
-    if (serializedByteLength([...selected, result]) <= byteBudget) {
+    const separatorBytes = selected.length > 0 ? SEPARATOR_BYTES : 0
+    const rowBudget = byteBudget - usedBytes - separatorBytes
+    const rowBytes = serializedByteLength(result)
+    if (rowBytes <= rowBudget) {
       selected.push(result)
+      usedBytes += separatorBytes + rowBytes
       continue
     }
     const characters = [...result.text]
@@ -213,7 +225,7 @@ export const capRecallResults = (results: ReadonlyArray<Result>, maxTokens = 204
     while (low < high) {
       const middle = Math.ceil((low + high) / 2)
       const candidate = { ...result, text: characters.slice(0, middle).join("") }
-      if (serializedByteLength([...selected, candidate]) <= byteBudget) {
+      if (serializedByteLength(candidate) <= rowBudget) {
         low = middle
       } else {
         high = middle - 1

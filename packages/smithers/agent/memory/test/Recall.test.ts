@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import * as Bank from "../src/Bank.ts"
 import * as Recall from "../src/Recall.ts"
 
@@ -17,6 +17,77 @@ describe("Recall", () => {
     expect(overflowing).toBeDefined()
     if (overflowing === undefined) return
     expect(capped[1]?.text.length).toBeLessThan(overflowing.text.length)
+  })
+
+  // The previous implementation, kept as the oracle: it re-serialized the
+  // whole selection for every candidate, so its output is the contract the
+  // incremental version must reproduce byte for byte.
+  const capByReserializing = (results: ReadonlyArray<Recall.Result>, maxTokens: number): Array<Recall.Result> => {
+    const byteLength = (rows: ReadonlyArray<Recall.Result>) => new TextEncoder().encode(JSON.stringify(rows)).byteLength
+    const normalized = results.filter((result) => result.text.length > 0)
+    const byteBudget = Math.max(0, Math.floor(maxTokens))
+    const selected: Array<Recall.Result> = []
+    for (const result of normalized) {
+      if (byteLength([...selected, result]) <= byteBudget) {
+        selected.push(result)
+        continue
+      }
+      const characters = [...result.text]
+      let low = 0
+      let high = characters.length
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2)
+        if (byteLength([...selected, { ...result, text: characters.slice(0, middle).join("") }]) <= byteBudget) {
+          low = middle
+        } else {
+          high = middle - 1
+        }
+      }
+      if (low > 0) selected.push({ ...result, text: characters.slice(0, low).join("") })
+      break
+    }
+    return selected
+  }
+
+  // RecallKeyword can hand the cap up to 512 banks x 16 rows.
+  const wideRecall = Array.from({ length: 512 * 16 }, (_, index) => ({
+    bank: `bank-${index % 512}`,
+    key: `key-${index}`,
+    text: index % 7 === 0 ? `ünïcödé row ${index} 🚀` : `row ${index} ${"x".repeat(index % 13)}`,
+    score: 1 / (index + 1),
+    ...(index % 3 === 0 ? { updatedAtMs: index } : {})
+  }))
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // The oracle is quadratic, so the budgets stop at the largest one the
+  // schema admits; the spy test below covers selecting every row.
+  it.each([0, 1, 17, 2048, 4096, 30_000, Recall.MAX_RECALL_TOKENS])(
+    "matches the whole-selection re-serializing implementation on 512 x 16 rows (budget %s)",
+    (budget) => {
+      const capped = Recall.capRecallResults(wideRecall, budget)
+      expect(capped).toEqual(capByReserializing(wideRecall, budget))
+      // An empty selection still serializes to `[]`, two bytes.
+      const floor = new TextEncoder().encode(JSON.stringify([])).byteLength
+      expect(new TextEncoder().encode(JSON.stringify(capped)).byteLength).toBeLessThanOrEqual(Math.max(budget, floor))
+    }
+  )
+
+  it("serializes each selected row exactly once instead of the whole selection per candidate", () => {
+    // One bank's worth of rows: re-serializing the selection per candidate
+    // would count 512 * 513 / 2 row serializations instead of 512.
+    const rows = wideRecall.slice(0, 512)
+    let rowsSerialized = 0
+    const stringify = JSON.stringify.bind(JSON)
+    vi.spyOn(JSON, "stringify").mockImplementation((value, ...rest) => {
+      rowsSerialized += Array.isArray(value) ? value.length : 1
+      return stringify(value, ...(rest as []))
+    })
+    const capped = Recall.capRecallResults(rows, 10_000_000)
+    expect(capped).toHaveLength(rows.length)
+    expect(rowsSerialized).toBe(rows.length)
   })
 
   it.each([
