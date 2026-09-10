@@ -42,8 +42,8 @@ export function PluginsSurface() {
         {problem === undefined ? null : <p className="plugin-problem" role="status">{problem}</p>}
         <PluginGallery
           installed={installed}
-          onInstall={(id) => controller.runCommandArgs("plugins.install", id)}
-          onRemove={(id) => controller.runCommandArgs("plugins.remove", id)}
+          onInstall={(id) => controller.runCommand("plugins.install", id)}
+          onRemove={(id) => controller.runCommand("plugins.remove", id)}
         />
       </div>
     </section>

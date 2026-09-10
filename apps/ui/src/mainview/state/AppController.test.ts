@@ -1,5 +1,7 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { NativeRepositories } from "../native/NativeBridge"
 import type { AgentPort } from "../runtime/AgentPort"
@@ -121,5 +123,58 @@ describe("createAppController in pure web mode", () => {
 
     const journal = [...store.collections.transitions.values()]
     expect(journal.some((record) => record.type === "theme.changed" && record.actor === "user")).toBe(true)
+  })
+})
+
+describe("the controller's command surface", () => {
+  test("runCommand takes optional args in one member, with the split members gone", async () => {
+    const controller = createAppController(await webStore(), unavailableRepositories, webAgent())
+
+    expect(controller.runCommand("definitely-not-a-command")).toBe(false)
+    expect(controller.runCommand("definitely-not-a-command", "with args")).toBe(false)
+    expect(controller.commands.find("palette.open")).toBeDefined()
+    expect(controller.runCommand("palette.open")).toBe(true)
+    expect(controller.runCommand("palette.open", "ignored args")).toBe(true)
+
+    expect("runCommandArgs" in controller).toBe(false)
+    expect("withAgentActor" in controller).toBe(false)
+    // The registry's state read stays internal to it.
+    expect("snapshot" in controller).toBe(false)
+  })
+
+  /*
+   * ui-state-store/maintainability/1: the returned controller must BE the
+   * command registry's action map plus the composition root's own members —
+   * one spread, so every controller key is the same function reference the
+   * registry bound. A hand-wired member in the return block can drift from
+   * the registry's binding; fail on any member that is not the spread or a
+   * named composition-root extra.
+   */
+  test("every controller key is the registry binding by construction (one spread, no re-enumeration)", () => {
+    const source = readFileSync(fileURLToPath(new URL("./AppController.ts", import.meta.url)), "utf8")
+    expect(source).toContain("const { snapshot: _snapshot, ...sharedActions } = commandActions")
+    expect(source).not.toContain("withAgentActor")
+    expect(source).not.toContain("runCommandArgs")
+
+    const returned = source.slice(source.indexOf("...sharedActions"))
+    const block = returned.slice(0, returned.indexOf("\n  }\n}"))
+    const members = block.split("\n")
+      .map((line) => /^\s{4}(?:readonly )?([A-Za-z_$][\w$]*)\b/.exec(line)?.[1])
+      .filter((key): key is string => key !== undefined)
+    const compositionRoot = [
+      "store",
+      "storageRecoveryState",
+      "downloadUrl",
+      "features",
+      "nativeAgentAvailable",
+      "nativeRepositoriesAvailable",
+      "tappedFetch",
+      "commands",
+      "slashItems",
+      "slashTree",
+      "runCommand",
+      "dispose"
+    ]
+    expect(members.sort()).toEqual([...compositionRoot].sort())
   })
 })

@@ -550,19 +550,18 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
     // Preserve the native host's direct tool path. Form continuations
     // still enter runForAgent below and must bring authority or fail closed.
     runAsAgent: (name, args) => runAs("agent", name, args),
-    executeForAgent: (call) => actions.withAgentActor(() => executeAgentToolCall(registry, call)),
-    runForAgent: (name, args, invocation, signal) =>
-      actions.withAgentActor(async () => {
-        const clean = name.trim().replace(/^\/+/, "")
-        const target = find(clean)
-        if (target !== undefined && !modelInvocable(target)) {
-          return { status: "failed", error: userOnlyError(clean, target.metadata.userOnlyReason) }
-        }
-        return runAs("agent", clean, args, new Set(), {
-          ...(invocation ?? unscopedInvocation),
-          signal: signal ?? invocation?.signal
-        })
-      }),
+    executeForAgent: (call) => executeAgentToolCall(registry, call),
+    runForAgent: async (name, args, invocation, signal) => {
+      const clean = name.trim().replace(/^\/+/, "")
+      const target = find(clean)
+      if (target !== undefined && !modelInvocable(target)) {
+        return { status: "failed", error: userOnlyError(clean, target.metadata.userOnlyReason) }
+      }
+      return runAs("agent", clean, args, new Set(), {
+        ...(invocation ?? unscopedInvocation),
+        signal: signal ?? invocation?.signal
+      })
+    },
     callable,
     /*
      * Callable vs disclosed mirrors the tool contract exactly: the agent may

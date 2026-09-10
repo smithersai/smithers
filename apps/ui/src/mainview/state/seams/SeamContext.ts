@@ -19,7 +19,7 @@ export interface SeamContext {
   readonly baseUrl: string
   readonly store: AppStore
   readonly dispatch: AppStore["dispatch"]
-  /** The acting principal for dispatches: "user", or "smithers" under withAgentActor. */
+  /** The acting principal for dispatches: "user", or "smithers" in the agent's actor projection (ActorBindings). */
   readonly actor: () => "user" | "smithers"
   /** The next transcript ordinal — new cards surface at the end, never mid-history. */
   readonly nextOrdinal: () => number

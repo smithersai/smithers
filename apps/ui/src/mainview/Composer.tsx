@@ -449,7 +449,7 @@ function ComposerAdd({
                 onClick={() => {
                   controller.closeAddMenu()
                   if (entry.onChoose !== undefined) return entry.onChoose()
-                  return entry.args === undefined ? controller.runCommand(entry.flow) : controller.runCommandArgs(entry.flow, entry.args)
+                  return controller.runCommand(entry.flow, entry.args)
                 }}
               >
                 {entry.content}
@@ -761,8 +761,7 @@ function ComposerConnect({
                 onClick={() => {
                   controller.closeConnectMenu()
                   triggerRef.current?.focus()
-                  if (entry.args === undefined) controller.runCommand(entry.flow)
-                  else controller.runCommandArgs(entry.flow, entry.args)
+                  controller.runCommand(entry.flow, entry.args)
                 }}
               >
                 {entry.content}
@@ -840,7 +839,7 @@ function ComposerOrigin() {
                   type="button"
                   className="composer-origin-branch"
                   data-flow="change.view"
-                  onClick={() => controller.runCommandArgs("change.view", pin.changeId ?? "")}
+                  onClick={() => controller.runCommand("change.view", pin.changeId ?? "")}
                 >
                   {` · rev ${newerSeq} exists · view`}
                 </button>
@@ -1039,8 +1038,7 @@ export function Composer({
         controller.notePaletteItemOpened(decision.item)
         controller.changeDraft("")
         controller.closePalette(draft)
-        if (decision.action.args === undefined) controller.runCommand(decision.action.flow)
-        else controller.runCommandArgs(decision.action.flow, decision.action.args)
+        controller.runCommand(decision.action.flow, decision.action.args)
         return true
       }
       case "run-mode-flow":
@@ -1048,11 +1046,11 @@ export function Composer({
         controller.changeDraft("")
         controller.closePalette(draft)
         if (decision.rest === "") controller.runCommand(decision.flow)
-        else controller.runCommandArgs(decision.flow, decision.rest)
+        else controller.runCommand(decision.flow, decision.rest)
         return true
       case "actions":
       case "close-actions":
-        controller.runCommandArgs("palette.actions", decision.ref)
+        controller.runCommand("palette.actions", decision.ref)
         return true
       case "set-draft":
         setSlashMenu({ draft: `${decision.draft}\u0000`, index: 0, dismissed: false })
@@ -1146,7 +1144,7 @@ export function Composer({
         value={draft}
         onValueChange={controller.changeDraft}
         onSubmit={(text) => {
-          controller.runCommandArgs("chat.send", text)
+          controller.runCommand("chat.send", text)
         }}
         onStop={() => controller.runCommand("chat.stop")}
         placeholder={placeholder}

@@ -195,7 +195,7 @@ export function ChromeBar() {
         title={tab.title}
         data-flow="tab.select"
         data-tab-id={tab.id}
-        onClick={() => controller.runCommandArgs("tab.select", tab.id)}
+        onClick={() => controller.runCommand("tab.select", tab.id)}
       >
         {tab.title}
       </button>
@@ -206,7 +206,7 @@ export function ChromeBar() {
         title="Close session"
         data-flow="tab.close"
         data-testid={`tab-close-${tab.id}`}
-        onClick={() => controller.runCommandArgs("tab.close", tab.id)}
+        onClick={() => controller.runCommand("tab.close", tab.id)}
       >
         <X size={12} aria-hidden="true" />
       </button>
@@ -228,7 +228,7 @@ export function ChromeBar() {
           aria-label={root?.expanded === true ? `Collapse ${copy.label}` : `Expand ${copy.label}`}
           data-flow="repo.tree"
           data-testid={`repo-tree-toggle-${copy.id}`}
-          onClick={() => controller.runCommandArgs("repo.tree", copy.id)}
+          onClick={() => controller.runCommand("repo.tree", copy.id)}
         >
           <ChevronRight size={12} aria-hidden="true" />
         </button>
@@ -277,8 +277,8 @@ export function ChromeBar() {
           nodes={view.nodes}
           directories={view.directories}
           collapsed={view.collapsed}
-          onToggle={(path) => controller.runCommandArgs("repo.tree", `${copy.id}#${path}`)}
-          onSelect={(path) => controller.runCommandArgs(fileFlow, fileFlowArgs(path))}
+          onToggle={(path) => controller.runCommand("repo.tree", `${copy.id}#${path}`)}
+          onSelect={(path) => controller.runCommand(fileFlow, fileFlowArgs(path))}
           renderDirectoryEmpty={(path) => (
             <span className="repo-tree-state" data-state={view.rows.get(path)?.state ?? "loading"} data-testid={`repo-tree-state-${copy.id}#${path}`}>
               {stateOf(path)}
@@ -343,7 +343,7 @@ export function ChromeBar() {
             if (target === undefined) return
             target.focus()
             const id = target.dataset.tabId
-            if (id !== undefined && id !== activeTabId) controller.runCommandArgs("tab.select", id)
+            if (id !== undefined && id !== activeTabId) controller.runCommand("tab.select", id)
           }}
         >
           {
@@ -374,7 +374,7 @@ export function ChromeBar() {
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault()
-                      controller.runCommandArgs("workspace.rename", event.currentTarget.value)
+                      controller.runCommand("workspace.rename", event.currentTarget.value)
                     } else if (event.key === "Escape") {
                       event.preventDefault()
                       event.stopPropagation()
@@ -392,7 +392,7 @@ export function ChromeBar() {
                   data-flow="tab.select"
                   data-tab-id={MAIN_TAB_ID}
                   data-testid="workspace-name"
-                  onClick={() => controller.runCommandArgs("tab.select", MAIN_TAB_ID)}
+                  onClick={() => controller.runCommand("tab.select", MAIN_TAB_ID)}
                 >
                   {workspaceName}
                 </button>
@@ -467,7 +467,7 @@ export function ChromeBar() {
                         data-flow="repo.select"
                         data-testid={`repo-select-${groupKey}`}
                         disabled={!canSelectRepo}
-                        onClick={() => controller.runCommandArgs("repo.select", selectToken)}
+                        onClick={() => controller.runCommand("repo.select", selectToken)}
                       >
                         <FolderGit2 size={14} aria-hidden="true" />
                         <span className="repo-name">{group.name}</span>
@@ -481,7 +481,7 @@ export function ChromeBar() {
                             title={`New session in ${single.label}`}
                             data-flow="tab.menu"
                             data-testid={`repo-add-${single.id}`}
-                            onClick={() => controller.runCommandArgs("tab.menu", single.id)}
+                            onClick={() => controller.runCommand("tab.menu", single.id)}
                           >
                             <Plus size={12} aria-hidden="true" />
                           </button>
@@ -496,7 +496,7 @@ export function ChromeBar() {
                             title="Unpin repository"
                             data-flow="repo.unpin"
                             data-testid={`repo-unpin-${single.id}`}
-                            onClick={() => controller.runCommandArgs("repo.unpin", single.id)}
+                            onClick={() => controller.runCommand("repo.unpin", single.id)}
                           >
                             <X size={12} aria-hidden="true" />
                           </button>
@@ -528,7 +528,7 @@ export function ChromeBar() {
                                     data-flow="repo.select"
                                     data-testid={`copy-select-${copy.id}`}
                                     disabled={!canSelectRepo}
-                                    onClick={() => controller.runCommandArgs("repo.select", `${group.repoId}#${copy.id}`)}
+                                    onClick={() => controller.runCommand("repo.select", `${group.repoId}#${copy.id}`)}
                                   >
                                     <FolderGit2 size={12} aria-hidden="true" />
                                     <span className="repo-name">{copyLabel}</span>
@@ -543,7 +543,7 @@ export function ChromeBar() {
                                         title={`New session in ${copy.label}`}
                                         data-flow="tab.menu"
                                         data-testid={`repo-add-${copy.id}`}
-                                        onClick={() => controller.runCommandArgs("tab.menu", copy.id)}
+                                        onClick={() => controller.runCommand("tab.menu", copy.id)}
                                       >
                                         <Plus size={12} aria-hidden="true" />
                                       </button>
@@ -558,7 +558,7 @@ export function ChromeBar() {
                                         title="Unpin repository"
                                         data-flow="repo.unpin"
                                         data-testid={`repo-unpin-${copy.id}`}
-                                        onClick={() => controller.runCommandArgs("repo.unpin", copy.id)}
+                                        onClick={() => controller.runCommand("repo.unpin", copy.id)}
                                       >
                                         <X size={12} aria-hidden="true" />
                                       </button>
@@ -641,7 +641,7 @@ export function ChromeBar() {
                       data-flow="agent.role"
                       data-role={entry.role.id}
                       data-testid={`tab-add-role-${entry.role.id}`}
-                      onClick={() => controller.runCommandArgs("agent.role", entry.role.id)}
+                      onClick={() => controller.runCommand("agent.role", entry.role.id)}
                     >
                       <span>{entry.title}</span>
                       <span className="tab-add-account">{entry.available ? entry.account : entry.reason}</span>
@@ -655,7 +655,7 @@ export function ChromeBar() {
                       className="tab-add-item"
                       data-flow="tab.harness"
                       data-testid={`tab-add-harness-${harness.id}`}
-                      onClick={() => controller.runCommandArgs("tab.harness", harness.id)}
+                      onClick={() => controller.runCommand("tab.harness", harness.id)}
                     >
                       <span>{harness.displayName}</span>
                       <span className="tab-add-account">{harness.account?.email ?? harness.account?.label ?? ""}</span>
@@ -670,7 +670,7 @@ export function ChromeBar() {
                       disabled
                       data-flow="tab.harness"
                       data-testid={`tab-add-harness-${harness.id}`}
-                      onClick={() => controller.runCommandArgs("tab.harness", harness.id)}
+                      onClick={() => controller.runCommand("tab.harness", harness.id)}
                     >
                       <span>{harness.displayName}</span>
                       <span className="tab-add-account">{harness.status}</span>

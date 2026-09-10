@@ -37,7 +37,6 @@ export type CommandActions =
     | "slashItems"
     | "slashTree"
     | "runCommand"
-    | "runCommandArgs"
     | "commands"
     | "tappedFetch"
     // Feature flags and the download URL are the composition root's configuration, never an action.
@@ -48,11 +47,6 @@ export type CommandActions =
   >
   & {
     readonly snapshot: () => CommandState
-    /*
-     * Integration hook around agent dispatch. The app's actor is fixed by
-     * its separate action bindings; this hook must not mutate a shared actor.
-     */
-    readonly withAgentActor: <T>(work: () => Promise<T>) => Promise<T>
   }
 
 /**

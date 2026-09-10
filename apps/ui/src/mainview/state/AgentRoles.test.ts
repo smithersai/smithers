@@ -109,7 +109,7 @@ const boot = async () => {
 describe("agent roles — launching", () => {
   test("agent.role launches the role's harness by role id and records the subagent with its role", async () => {
     const { store, controller, bodies } = await boot()
-    controller.runCommandArgs("agent.role", "implementation")
+    controller.runCommand("agent.role", "implementation")
     await settle()
     expect(bodies.at(-1)).toMatchObject({ kind: "harness", harnessId: "codex", roleId: "implementation" })
     expect(bodies.at(-1)?.task).toBeUndefined()
@@ -128,7 +128,7 @@ describe("agent roles — launching", () => {
 
   test("agent.delegate hands the task to the role's CLI and the card names the task", async () => {
     const { store, controller, bodies } = await boot()
-    controller.runCommandArgs("agent.delegate", "trivial-implementation rename the flag to verbose")
+    controller.runCommand("agent.delegate", "trivial-implementation rename the flag to verbose")
     await settle()
     expect(bodies.at(-1)).toMatchObject({ roleId: "trivial-implementation", task: "rename the flag to verbose" })
     expect(store.collections.cards.get("agent-pty-1")?.payload).toMatchObject({
@@ -143,14 +143,14 @@ describe("agent roles — launching", () => {
 
   test("a role whose harness lacks a credential refuses with the reason, and an unknown role lists the roles", async () => {
     const { store, controller, bodies } = await boot()
-    controller.runCommandArgs("agent.role", "fast-ui")
+    controller.runCommand("agent.role", "fast-ui")
     await settle()
     expect(bodies).toHaveLength(0)
     expect(store.collections.tabs.size).toBe(1)
     // A refused flow states its reason as a failed toast (ComposerRefusals.test.ts).
     const failed = () => [...store.collections.toasts.values()].filter((toast) => toast.status === "failed")
     expect(failed().at(-1)?.detail).toContain("Fast UI · Cerebras gpt-oss-120b is not available")
-    controller.runCommandArgs("agent.delegate", "poet write a haiku")
+    controller.runCommand("agent.delegate", "poet write a haiku")
     await settle()
     // A well-formed id the agents store lacks is refused by the store's list (custom-agents.md), never by an enum.
     expect(failed().some((toast) => (toast.detail ?? "").includes("There is no agent named poet"))).toBe(true)
@@ -161,7 +161,7 @@ describe("agent roles — launching", () => {
 describe("agent roles — the explainer", () => {
   test("agent.explain runs one side turn on the explainer role and streams into an embedded card", async () => {
     const { store, controller, recorder } = await boot()
-    controller.runCommandArgs("agent.explain", "why is packages/smithers/flows/jj/wasm not a regular file")
+    controller.runCommand("agent.explain", "why is packages/smithers/flows/jj/wasm not a regular file")
     await settle()
     const launch = recorder.launches.at(-1)
     expect(launch).toBeDefined()
@@ -185,7 +185,7 @@ describe("agent roles — the explainer", () => {
 
   test("a refused or empty explanation lands as a failed card, and a blank ask is refused before any turn", async () => {
     const { store, controller, recorder } = await boot()
-    controller.runCommandArgs("agent.explain", "this")
+    controller.runCommand("agent.explain", "this")
     await settle()
     const launch = recorder.launches.at(-1)
     recorder.emit({ runId: launch?.runId ?? "", type: "done", error: "upstream refused" })
@@ -195,7 +195,7 @@ describe("agent roles — the explainer", () => {
       payload: { phase: "failed", error: "upstream refused" }
     })
     const before = recorder.launches.length
-    controller.runCommandArgs("agent.explain", "   ")
+    controller.runCommand("agent.explain", "   ")
     await settle()
     expect(recorder.launches.length).toBe(before)
   })

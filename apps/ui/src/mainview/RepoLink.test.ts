@@ -53,12 +53,8 @@ const fixture = async () => {
     controller: {
       store,
       selectRepo: tabs.selectRepo,
-      runCommand: (name: string) => {
-        ran.push(name)
-        return true
-      },
-      runCommandArgs: (name: string, args: string) => {
-        ran.push(`${name} ${args}`)
+      runCommand: (name: string, args?: string) => {
+        ran.push(args === undefined ? name : `${name} ${args}`)
         return true
       }
     }

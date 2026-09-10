@@ -29,32 +29,29 @@ export const cardActions = (controller: AppController): CardBindings => {
   if (cached !== undefined) return cached
   const actions: CardBindings = {
     onDecideApproval: (id, decision) =>
-      controller.runCommandArgs(
+      controller.runCommand(
         decision === "approved" ? "approval.approve" : "approval.deny",
         id
       ),
-    onGrantConfirm: (id) => controller.runCommandArgs("admin.grant.confirm", id),
-    onGrantCancel: (id) => controller.runCommandArgs("admin.grant.cancel", id),
-    onQueueApprove: (login) => controller.runCommandArgs("admin.queue.approve", login),
-    onMaximize: (id) => controller.runCommandArgs("card.maximize", id),
+    onGrantConfirm: (id) => controller.runCommand("admin.grant.confirm", id),
+    onGrantCancel: (id) => controller.runCommand("admin.grant.cancel", id),
+    onQueueApprove: (login) => controller.runCommand("admin.queue.approve", login),
+    onMaximize: (id) => controller.runCommand("card.maximize", id),
     onMinimize: () => controller.runCommand("card.minimize"),
     onFrameBack: () => controller.runCommand("frame.back"),
     onFrameForward: () => controller.runCommand("frame.forward"),
     onForkFrame: () => controller.runCommand("frame.fork"),
-    onOpenInTab: (id) => controller.runCommandArgs("tab.card", id),
+    onOpenInTab: (id) => controller.runCommand("tab.card", id),
     onConnectGitHub: () => controller.runCommand("auth.sign-in"),
-    onConnectLocal: () => controller.runCommandArgs("connector.add", "read"),
-    onRunWorkflow: (name) => controller.runCommandArgs("flow.run", name),
-    onStopRun: (id) => controller.runCommandArgs("flow.run.stop", id),
-    onRetryRun: (id) => controller.runCommandArgs("flow.run.retry", id),
-    onChooseWorkflowRepo: (name) => controller.runCommandArgs("flow.repo.choose", name),
+    onConnectLocal: () => controller.runCommand("connector.add", "read"),
+    onRunWorkflow: (name) => controller.runCommand("flow.run", name),
+    onStopRun: (id) => controller.runCommand("flow.run.stop", id),
+    onRetryRun: (id) => controller.runCommand("flow.run.retry", id),
+    onChooseWorkflowRepo: (name) => controller.runCommand("flow.repo.choose", name),
     onChangeWorldDocument: (id, body) =>
-      controller.runCommandArgs("wiki.edit", `${id} ${JSON.stringify(body)}`),
+      controller.runCommand("wiki.edit", `${id} ${JSON.stringify(body)}`),
     onAttachWorldEditor: controller.attachWorldEditor,
-    onRunCommand: (name, commandArgs) =>
-      commandArgs === undefined
-        ? controller.runCommand(name)
-        : controller.runCommandArgs(name, commandArgs)
+    onRunCommand: (name, commandArgs) => controller.runCommand(name, commandArgs)
   }
   bound.set(controller, actions)
   return actions

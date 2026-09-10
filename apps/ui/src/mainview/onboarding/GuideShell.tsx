@@ -125,7 +125,7 @@ export function GuideShell({ children }: { children: ReactNode }) {
           if (saveSequence.current === sequence) setSaveStatus("failed")
         },
       )
-    } else controller.runCommandArgs("onboarding.act", args)
+    } else controller.runCommand("onboarding.act", args)
     if (guide.sound && !["title", "heard", "project", "close"].includes(action)) chime()
   }
   const runCommandOpen = () => {
@@ -227,7 +227,7 @@ export function GuideShell({ children }: { children: ReactNode }) {
             if (stage === 6 || stage === 14) runCommandOpen()
             /* The plugin lessons finish with the real flows, not a tutorial action. */
             else if (stage === 7) controller.runCommand("plugins")
-            else if (stage === 8) controller.runCommandArgs("plugins.install", LESSON_PLUGIN)
+            else if (stage === 8) controller.runCommand("plugins.install", LESSON_PLUGIN)
             else runCommandGuide(guideForwardAction(stage))
           } else if (event.key === "ArrowLeft" && stage > 0) {
             event.preventDefault()
@@ -390,7 +390,7 @@ export function GuideShell({ children }: { children: ReactNode }) {
               <PluginGallery
                 installed={installedPlugins}
                 asked={LESSON_PLUGIN}
-                onInstall={(id) => controller.runCommandArgs("plugins.install", id)}
+                onInstall={(id) => controller.runCommand("plugins.install", id)}
               />
             </div>
           )}
@@ -608,7 +608,7 @@ export function GuideShell({ children }: { children: ReactNode }) {
                 className="guide-primary"
                 data-flow="plugins.install"
                 aria-keyshortcuts="Enter ArrowRight"
-                onClick={() => controller.runCommandArgs("plugins.install", LESSON_PLUGIN)}
+                onClick={() => controller.runCommand("plugins.install", LESSON_PLUGIN)}
               >
                 Install the Librarian
                 {keyHint()}
@@ -711,7 +711,7 @@ export function GuideShell({ children }: { children: ReactNode }) {
               <button
                 aria-label={`Dismiss ${toast.title}`}
                 data-flow="toast.dismiss"
-                onClick={() => controller.runCommandArgs("toast.dismiss", toast.id)}
+                onClick={() => controller.runCommand("toast.dismiss", toast.id)}
               >
                 <X size={14} />
                 {keyHint("Tab ↵")}

@@ -152,7 +152,6 @@ describe("registered flow cancellation", () => {
     const actions = new Proxy({
       bootstrap: undefined,
       snapshot: () => ({ admin: false, signedOut: false }),
-      withAgentActor: <T>(work: () => Promise<T>) => work(),
       createWorldDocument
     }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => undefined })
     const commands = createCommandRegistry(actions as unknown as CommandActions)

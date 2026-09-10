@@ -155,7 +155,7 @@ const openCardTab = async (): Promise<Opened> => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     flushSync(() => {})
   }
-  await act(() => controller.runCommandArgs("tab.card", CARD_ID))
+  await act(() => controller.runCommand("tab.card", CARD_ID))
   return { controller, history, host, act }
 }
 

@@ -142,7 +142,7 @@ const defaultBookmarkOf = async (http: FetchLike, repo: string): Promise<string 
  * refusal when the request could not be honoured.
  */
 export const openRequestedRepo = async (
-  controller: Pick<AppController, "store" | "selectRepo" | "runCommand" | "runCommandArgs">,
+  controller: Pick<AppController, "store" | "selectRepo" | "runCommand">,
   http: FetchLike,
   requested: string
 ): Promise<string | void> => {
@@ -184,7 +184,7 @@ export const openRequestedRepo = async (
     controller.store.collections.workingCopies.get(sharedId) !== undefined &&
     controller.store.collections.repoTree.get(repoTreeRowId(sharedId, "")) === undefined
   ) {
-    controller.runCommandArgs("repo.tree", sharedId)
+    controller.runCommand("repo.tree", sharedId)
   }
   const bookmark = await defaultBookmarkOf(http, repository.id)
   const row = controller.store.collections.repositories.get(repository.id)

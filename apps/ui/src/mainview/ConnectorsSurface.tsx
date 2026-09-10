@@ -209,10 +209,8 @@ export function ConnectorsSurface() {
                     disabled={row.action.disabled === true}
                     loading={row.action.flow === "connector.add" && selecting}
                     onClick={() =>
-                      row.action.kind === "button" && row.action.args !== undefined
-                        ? controller.runCommandArgs(row.action.flow, row.action.args)
-                        : row.action.kind === "button"
-                        ? controller.runCommand(row.action.flow)
+                      row.action.kind === "button"
+                        ? controller.runCommand(row.action.flow, row.action.args)
                         : undefined}
                   >
                     {row.action.label}
@@ -295,7 +293,7 @@ export function ConnectorsSurface() {
                             variant="ghost"
                             size="sm"
                             data-flow="connector.downgrade"
-                            onClick={() => controller.runCommandArgs("connector.downgrade", connector.id)}
+                            onClick={() => controller.runCommand("connector.downgrade", connector.id)}
                           >
                             Make read-only
                           </Button>
@@ -307,7 +305,7 @@ export function ConnectorsSurface() {
                         aria-label={`Remove ${connector.name}`}
                         title={`Remove ${connector.name}`}
                         data-flow="connector.remove.ask"
-                        onClick={() => controller.runCommandArgs("connector.remove.ask", connector.id)}
+                        onClick={() => controller.runCommand("connector.remove.ask", connector.id)}
                       >
                         <Trash2 size={14} />
                       </Button>
@@ -326,7 +324,7 @@ export function ConnectorsSurface() {
         confirmLabel="Disconnect"
         destructive
         onConfirm={() => {
-          if (pendingRemoval !== undefined) controller.runCommandArgs("connector.remove", pendingRemoval.id)
+          if (pendingRemoval !== undefined) controller.runCommand("connector.remove", pendingRemoval.id)
         }}
         onCancel={() => controller.runCommand("connector.remove.cancel")}
       />

@@ -30,7 +30,6 @@ const fixture = () => {
     noteCommandRun: () => {},
     traceFlow: () => {},
     snapshot: () => ({ surface: "chat", typing: false, hasConnectors: true, admin: false, signedOut: false }),
-    withAgentActor: <T>(work: () => Promise<T>) => work(),
     decideApproval: () => { effects.push("approval") },
     runWorkflow: async () => { effects.push("workflow") },
     openBrowser: async () => { effects.push("browser") },

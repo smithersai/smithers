@@ -180,12 +180,12 @@ describe("custom agents — the mirror and the Agents card", () => {
     // Nothing is preselected: no harness, no model list yet, and no list command has run.
     expect(form?.payload.fields[2]?.options).toEqual([])
     expect(modelsCalls()).toBe(0)
-    controller.runCommandArgs("form.set", "form-agent.create id reviewer")
-    controller.runCommandArgs("form.set", "form-agent.create purpose Reviews diffs for correctness")
+    controller.runCommand("form.set", "form-agent.create id reviewer")
+    controller.runCommand("form.set", "form-agent.create purpose Reviews diffs for correctness")
     await settle()
-    controller.runCommandArgs("form.set", "form-agent.create harness codex")
+    controller.runCommand("form.set", "form-agent.create harness codex")
     await settle()
-    controller.runCommandArgs("form.set", "form-agent.create model gpt-5.6-terra")
+    controller.runCommand("form.set", "form-agent.create model gpt-5.6-terra")
     await settle()
     const filled = cardOf(store, "form-agent.create", "flow-form")
     expect(filled?.payload.draft).toEqual({ id: "reviewer", purpose: "Reviews diffs for correctness", harness: "codex", model: "gpt-5.6-terra" })
@@ -193,11 +193,11 @@ describe("custom agents — the mirror and the Agents card", () => {
     expect(filled?.payload.fields[2]?.options?.map((option) => option.value)).toEqual(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])
     expect(modelsCalls()).toBe(1)
     // A harness the seam marked unpickable is refused with its reason.
-    controller.runCommandArgs("form.set", "form-agent.create harness crush")
+    controller.runCommand("form.set", "form-agent.create harness crush")
     await settle()
     expect(failedToasts(store).some((detail) => detail.includes("Crush · OPENAI_API_KEY cannot be picked: no verified model flag"))).toBe(true)
     // A blank value clears the field.
-    controller.runCommandArgs("form.set", "form-agent.create purpose")
+    controller.runCommand("form.set", "form-agent.create purpose")
     await settle()
     expect(cardOf(store, "form-agent.create", "flow-form")?.payload.draft.purpose).toBeUndefined()
   })
@@ -207,10 +207,10 @@ describe("custom agents — the mirror and the Agents card", () => {
     controller.runCommand("agent.new")
     await settle()
     for (const line of ["id reviewer", "harness codex", "model gpt-5.6-terra", "purpose Reviews diffs for correctness"]) {
-      controller.runCommandArgs("form.set", `form-agent.create ${line}`)
+      controller.runCommand("form.set", `form-agent.create ${line}`)
       await settle()
     }
-    controller.runCommandArgs("form.submit", "form-agent.create")
+    controller.runCommand("form.submit", "form-agent.create")
     await settle(10)
     expect(puts).toEqual([{
       id: "reviewer",
@@ -230,7 +230,7 @@ describe("custom agents — the mirror and the Agents card", () => {
     await settle()
     expect(cardOf(store, "agents", "agents")?.payload.agents.map((row) => row.id)).toEqual([...AGENT_ROLES.map((role) => role.id), "reviewer"])
     // The new agent delegates like a built-in: the launch goes by role id, the card names its purpose.
-    controller.runCommandArgs("agent.delegate", "reviewer review the retry")
+    controller.runCommand("agent.delegate", "reviewer review the retry")
     await settle()
     expect(ptyBodies.at(-1)).toMatchObject({ kind: "harness", harnessId: "codex", roleId: "reviewer", task: "review the retry" })
     expect(store.collections.cards.get(`agent-pty-${ptyBodies.length}`)?.payload).toMatchObject({ roleId: "reviewer", purpose: "Reviews diffs for correctness" })
@@ -246,23 +246,23 @@ describe("custom agents — the mirror and the Agents card", () => {
   test("agent.create refuses a taken id, a bad id, a flag-shaped model, and relays the server's refusal onto the form", async () => {
     const { store, controller, puts } = await boot()
     // One refusal at a time: a flow's failed toast is one row per flow, so a later refusal replaces an earlier one.
-    controller.runCommandArgs("agent.create", "ui codex gpt-5.6-terra")
+    controller.runCommand("agent.create", "ui codex gpt-5.6-terra")
     await settle()
     expect(failedToasts(store).at(-1)).toContain("An agent named ui already exists")
-    controller.runCommandArgs("agent.create", "Bad codex gpt-5.6-terra")
+    controller.runCommand("agent.create", "Bad codex gpt-5.6-terra")
     await settle()
     expect(failedToasts(store).at(-1)).toContain("Bad is not an agent id")
-    controller.runCommandArgs("agent.create", "evil codex --yolo")
+    controller.runCommand("agent.create", "evil codex --yolo")
     await settle()
     expect(failedToasts(store).at(-1)).toContain("--yolo is not a model id")
     expect(puts).toEqual([])
     controller.runCommand("agent.new")
     await settle()
     for (const line of ["id crusher", "harness codex", "model gpt-5.6-terra", "purpose refuse"]) {
-      controller.runCommandArgs("form.set", `form-agent.create ${line}`)
+      controller.runCommand("form.set", `form-agent.create ${line}`)
       await settle()
     }
-    controller.runCommandArgs("form.submit", "form-agent.create")
+    controller.runCommand("form.submit", "form-agent.create")
     await settle(10)
     const form = cardOf(store, "form-agent.create", "flow-form")
     expect(form?.status).toBe("error")
@@ -273,7 +273,7 @@ describe("custom agents — the mirror and the Agents card", () => {
 
   test("agent.edit changes a built-in's model and purpose (its harness stays), agent.remove refuses a built-in and removes a custom agent", async () => {
     const { store, controller, puts, agents } = await boot()
-    controller.runCommandArgs("agent.edit", "explainer --model kimi-for-coding/k3 --purpose Explains, briefly.")
+    controller.runCommand("agent.edit", "explainer --model kimi-for-coding/k3 --purpose Explains, briefly.")
     await settle(10)
     expect(puts.at(-1)).toEqual({
       id: "explainer",
@@ -286,29 +286,29 @@ describe("custom agents — the mirror and the Agents card", () => {
       }
     })
     expect(store.collections.agents.get("explainer")?.purpose).toBe("Explains, briefly.")
-    controller.runCommandArgs("agent.edit", "explainer")
+    controller.runCommand("agent.edit", "explainer")
     await settle()
     expect(failedToasts(store).some((detail) => detail.includes("needs --model"))).toBe(true)
-    controller.runCommandArgs("agent.remove", "explainer")
+    controller.runCommand("agent.remove", "explainer")
     await settle()
     expect(failedToasts(store).some((detail) => detail.includes("Explainer is a built-in agent and cannot be removed"))).toBe(true)
     expect(agents.some((row) => row.id === "explainer")).toBe(true)
-    controller.runCommandArgs("agent.create", "reviewer codex gpt-5.6-terra")
+    controller.runCommand("agent.create", "reviewer codex gpt-5.6-terra")
     await settle(10)
     expect(store.collections.agents.get("reviewer")).toBeDefined()
-    controller.runCommandArgs("agent.remove", "reviewer")
+    controller.runCommand("agent.remove", "reviewer")
     await settle(10)
     expect(store.collections.agents.get("reviewer")).toBeUndefined()
     expect(agents.some((row) => row.id === "reviewer")).toBe(false)
-    controller.runCommandArgs("agent.remove", "ghost")
+    controller.runCommand("agent.remove", "ghost")
     await settle()
     expect(failedToasts(store).some((detail) => detail.includes("There is no agent named ghost"))).toBe(true)
   })
 
   test("agent.models renders the harness's list card, honest about a failed list", async () => {
     const { store, controller } = await boot()
-    controller.runCommandArgs("agent.models", "codex")
-    controller.runCommandArgs("agent.models", "opencode-kimi")
+    controller.runCommand("agent.models", "codex")
+    controller.runCommand("agent.models", "opencode-kimi")
     await settle()
     expect(cardOf(store, "agent-models-codex", "agent-models")?.payload).toEqual({
       harnessId: "codex",
@@ -317,7 +317,7 @@ describe("custom agents — the mirror and the Agents card", () => {
       source: "suggestions"
     })
     expect(cardOf(store, "agent-models-opencode-kimi", "agent-models")?.payload).toMatchObject({ models: [], reason: "opencode models kimi-for-coding exited 2: no credential" })
-    controller.runCommandArgs("agent.models", "ghost")
+    controller.runCommand("agent.models", "ghost")
     await settle()
     expect(failedToasts(store).some((detail) => detail.includes("There is no harness with id ghost"))).toBe(true)
   })

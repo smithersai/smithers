@@ -466,10 +466,7 @@ function App() {
             suggestion={suggestion.label}
             title={suggestion.why}
             disabled={typing}
-            onClick={() =>
-              suggestion.args === undefined
-                ? controller.runCommand(suggestion.flow)
-                : controller.runCommandArgs(suggestion.flow, suggestion.args)}
+            onClick={() => controller.runCommand(suggestion.flow, suggestion.args)}
           >
             <Sparkles size={12} />
             {suggestion.label}
@@ -543,7 +540,7 @@ function App() {
         if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
           event.preventDefault()
           const last = session.paletteLastQuery ?? ""
-          if (event.shiftKey && last !== "") controller.runCommandArgs("palette.open", last)
+          if (event.shiftKey && last !== "") controller.runCommand("palette.open", last)
           else controller.runCommand("palette.open")
           requestAnimationFrame(() => {
             composerWrapRef.current?.querySelector("textarea")?.focus()
@@ -728,9 +725,7 @@ function App() {
                           autoFocus={entry.message.id === "auth-state"}
                           onClick={() =>
                             // A confirm flow's button carries the agent's argument text.
-                            entry.message.action?.args === undefined
-                              ? controller.runCommand(entry.message.action?.flow ?? "")
-                              : controller.runCommandArgs(entry.message.action.flow, entry.message.action.args)}
+                            controller.runCommand(entry.message.action?.flow ?? "", entry.message.action?.args)}
                         >
                           {entry.message.action.label}
                         </Button>
@@ -739,7 +734,7 @@ function App() {
                     <span className="message-actions">
                       <CopyMessageButton
                         text={entry.message.text}
-                        onCopy={(text) => controller.runCommandArgs("chat.copy-message", text)}
+                        onCopy={(text) => controller.runCommand("chat.copy-message", text)}
                       />
                       {entry.message.status === "failed" ?
                         (
@@ -766,7 +761,7 @@ function App() {
                             aria-label="Explain this"
                             title="Explain this"
                             onClick={() =>
-                              controller.runCommandArgs(
+                              controller.runCommand(
                                 "agent.explain",
                                 `This turn failed: ${systemNoteLabel(entry.message)}. ${entry.message.text}`.trim()
                               )}
@@ -814,7 +809,7 @@ function App() {
                   onClick={() =>
                     // A button always carries its args: a focused graph toggles back from its own focus.
                     session.wikiGraphPath ?
-                      controller.runCommandArgs("wiki.graph", session.wikiGraphPath) :
+                      controller.runCommand("wiki.graph", session.wikiGraphPath) :
                       controller.runCommand("wiki.graph")}
                 >
                   <Waypoints size={14} aria-hidden="true" />
@@ -851,7 +846,7 @@ function App() {
                     selected={selectedWorldDocument?.path}
                     onSelect={(path) => {
                       const document = worldDocuments.find((candidate) => candidate.path === path)
-                      if (document) controller.runCommandArgs("wiki.select", document.id)
+                      if (document) controller.runCommand("wiki.select", document.id)
                     }}
                   />
                 </aside>
@@ -876,7 +871,7 @@ function App() {
                           notes={wikiGraph.notes}
                           links={wikiGraph.links}
                           height="100%"
-                          onOpenNote={(path) => controller.runCommandArgs("wiki.open", path)}
+                          onOpenNote={(path) => controller.runCommand("wiki.open", path)}
                         />
                       </Suspense>
                     </main>
@@ -902,7 +897,7 @@ function App() {
                               data-flow="wiki.delete"
                               aria-label={`Delete ${selectedWorldDocument.title}`}
                               title="Delete note"
-                              onClick={() => controller.runCommandArgs("wiki.delete", selectedWorldDocument.id)}
+                              onClick={() => controller.runCommand("wiki.delete", selectedWorldDocument.id)}
                             >
                               <Trash2 size={13} />
                             </Button>
@@ -942,12 +937,12 @@ function App() {
                       <BacklinksPanel
                         backlinks={[...selectedWorldLinks.backlinks]}
                         linksOut={[...selectedWorldLinks.linksOut]}
-                        onOpenNote={(path) => controller.runCommandArgs("wiki.open", path)}
+                        onOpenNote={(path) => controller.runCommand("wiki.open", path)}
                       />
                       {/* Each heading is the button door of wiki.heading: the editor scrolls to its source line. */}
                       <OutlineView
                         markdown={selectedWorldDocument.body}
-                        onHeadingClick={(line) => controller.runCommandArgs("wiki.heading", String(line))}
+                        onHeadingClick={(line) => controller.runCommand("wiki.heading", String(line))}
                       />
                     </aside>
                   ) :
@@ -1006,10 +1001,7 @@ function App() {
                   (
                     <TriggerListCardBody
                       card={triggersCard}
-                      onRunCommand={(name, commandArgs) =>
-                        commandArgs === undefined
-                          ? controller.runCommand(name)
-                          : controller.runCommandArgs(name, commandArgs)}
+                      onRunCommand={(name, commandArgs) => controller.runCommand(name, commandArgs)}
                     />
                   )}
               </div>
@@ -1060,7 +1052,7 @@ function App() {
         (
           <ToastStack
             toasts={toasts}
-            onDismiss={(id) => controller.runCommandArgs("toast.dismiss", id)}
+            onDismiss={(id) => controller.runCommand("toast.dismiss", id)}
           />
         ) :
         null}

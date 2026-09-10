@@ -77,7 +77,7 @@ const suggest = (value: string, vocabulary: ReadonlySet<string>): string => {
  * position. `Array.prototype.find` takes a callback, so it never collides
  * here, and the dotted-name shape test below rejects the rest.
  */
-const FLOW_CALLS = new Set(["runCommand", "runCommandArgs", "runFlow", "find"])
+const FLOW_CALLS = new Set(["runCommand", "runFlow", "find"])
 
 /** Calls whose first argument is a prefix or suffix of an id the app builds. */
 const AFFIX_CALLS = new Set(["startsWith", "endsWith"])

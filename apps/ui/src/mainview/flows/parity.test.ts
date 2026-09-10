@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 
 /*
  * The launch-law gate: every interactive affordance in the app routes through
- * the command registry (`runCommand` / `runCommandArgs`), never a direct
+ * the command registry (`runCommand`), never a direct
  * controller call. This test enumerates the action props in every surface
  * file and asserts each one either dispatches through the registry itself or
  * is a delegated prop whose binding site does. Adding a button without a
@@ -72,8 +72,8 @@ const PRESENTATION_ONLY = [
   "setOpenLog(", // run timeline log panel: which row's log is open — local presentation state
   "setDeleteDraft", // workspace card delete: the typed-confirm row's open state and its draft — local presentation state; the act itself rides workspace.delete
   "setDisconnectArmed", // connector-setup card disconnect: the confirm row's open state — local presentation state; the act itself rides linear.disconnect
-  "onRunCommand(", // delegated: App.tsx binds it to the registry's runCommand/runCommandArgs
-  "onChoose(", // delegated: Composer.tsx routes a palette row through runCommand/runCommandArgs, or edits the draft (a namespace, a prefix)
+  "onRunCommand(", // delegated: App.tsx binds it to the registry's runCommand
+  "onChoose(", // delegated: Composer.tsx routes a palette row through runCommand, or edits the draft (a namespace, a prefix)
   // Card maximize/minimize: each calls the delegated onMaximize/onMinimize (bound to card.maximize /
   // card.minimize at the App.tsx and CardTabBody binding sites) and then hands focus to the button
   // that replaces the one pressed, so Escape keeps a shell to land on.
@@ -85,29 +85,29 @@ const PRESENTATION_ONLY = [
   "openNamespace", // slash-menu tree: opening a namespace rewrites the draft to `/ns.` — a draft edit, never a command
   "openMenu", // dispatches runCommand("chat.surfaces") — the /chat.surfaces command
   "closeMenu", // dispatches runCommand("chat.surfaces"); the entry itself runs its own command
-  "onCopy(", // delegated: App.tsx binds it to runCommandArgs("chat.copy-message", ...)
+  "onCopy(", // delegated: App.tsx binds it to runCommand("chat.copy-message", ...)
   "onDownload}", // delegated: App.tsx binds StorageRecoveryButton to storage.recovery.export
   "onDecideApproval(", // delegated: App.tsx binds it to approval.approve / approval.deny
   "onRecoAction(", // delegated: App.tsx binds it to reco.accept / reco.edit / reco.dismiss
   "onGrantConfirm(", // delegated: App.tsx binds it to admin.grant.confirm
   "onGrantCancel(", // delegated: App.tsx binds it to admin.grant.cancel
   "onQueueApprove(", // delegated: App.tsx binds it to admin.queue.approve
-  "onDismiss(", // delegated: App.tsx binds it to runCommandArgs("toast.dismiss", ...)
-  "onMaximize(", // delegated: App.tsx binds it to runCommandArgs("card.maximize", ...)
+  "onDismiss(", // delegated: App.tsx binds it to runCommand("toast.dismiss", ...)
+  "onMaximize(", // delegated: App.tsx binds it to runCommand("card.maximize", ...)
   "onMinimize(", // delegated: App.tsx binds it to card.minimize
   "onFrameBack", // delegated: App.tsx binds it to frame.back
   "onFrameForward", // delegated: App.tsx binds it to frame.forward
   "onForkFrame", // delegated: App.tsx binds it to frame.fork
-  "onOpenInTab(", // delegated: App.tsx and tabs/CardTabBody.tsx bind it to runCommandArgs("tab.card", ...)
-  "onInstall(", // delegated: PluginsSurface.tsx and the guide's Library bind it to runCommandArgs("plugins.install", ...)
-  "onRemove(", // delegated: PluginsSurface.tsx binds it to runCommandArgs("plugins.remove", ...)
+  "onOpenInTab(", // delegated: App.tsx and tabs/CardTabBody.tsx bind it to runCommand("tab.card", ...)
+  "onInstall(", // delegated: PluginsSurface.tsx and the guide's Library bind it to runCommand("plugins.install", ...)
+  "onRemove(", // delegated: PluginsSurface.tsx binds it to runCommand("plugins.remove", ...)
   "onOpen(", // delegated: the plugin rail's binding sites bind it to runCommand(<the entry's own flow>)
   "onConnectGitHub(", // delegated: App.tsx binds it to auth.sign-in
-  "onConnectLocal(", // delegated: App.tsx binds it to runCommandArgs("connector.add", ...)
-  "onRunWorkflow(", // delegated: App.tsx binds it to runCommandArgs("flow.run", ...)
-  "onStopRun(", // delegated: App.tsx binds it to runCommandArgs("flow.run.stop", ...)
-  "onRetryRun(", // delegated: App.tsx binds it to runCommandArgs("flow.run.retry", ...)
-  "onChooseWorkflowRepo(", // delegated: App.tsx binds it to runCommandArgs("flow.repo.choose", ...)
+  "onConnectLocal(", // delegated: App.tsx binds it to runCommand("connector.add", ...)
+  "onRunWorkflow(", // delegated: App.tsx binds it to runCommand("flow.run", ...)
+  "onStopRun(", // delegated: App.tsx binds it to runCommand("flow.run.stop", ...)
+  "onRetryRun(", // delegated: App.tsx binds it to runCommand("flow.run.retry", ...)
+  "onChooseWorkflowRepo(", // delegated: App.tsx binds it to runCommand("flow.repo.choose", ...)
   "onConfirm}", // SurfaceChrome delegates to its binding site
   "onCancel}", // dismissing a dialog changes no application state
   "onClose}" // SurfaceChrome delegates to its binding site
@@ -352,12 +352,12 @@ describe("launch-law parity: every affordance is a command", () => {
   test("delegated props are bound to commands at their call sites", () => {
     const app = files["../App.tsx"]
     expect(app).toMatch(/onDownload=\{\(\) => \{\s*controller\.runCommand\(STORAGE_RECOVERY_EXPORT\)/)
-    expect(app).toContain("runCommandArgs(\"chat.copy-message\"")
-    expect(app).toContain("runCommandArgs(\"toast.dismiss\"")
-    expect(app).toContain("runCommandArgs(\n")
+    expect(app).toContain("runCommand(\"chat.copy-message\"")
+    expect(app).toContain("runCommand(\"toast.dismiss\"")
+    expect(app).toContain("runCommand(\n")
     const connectors = files["../ConnectorsSurface.tsx"]
-    expect(connectors).toContain("runCommandArgs(\"connector.downgrade\"")
-    expect(connectors).toContain("runCommandArgs(\"connector.remove\"")
+    expect(connectors).toContain("runCommand(\"connector.downgrade\"")
+    expect(connectors).toContain("runCommand(\"connector.remove\"")
   })
 
   /*
@@ -370,22 +370,22 @@ describe("launch-law parity: every affordance is a command", () => {
     const actions = read("../cards/CardActions.ts")
     expect(actions).toContain("\"approval.approve\"")
     expect(actions).toContain("\"approval.deny\"")
-    expect(actions).toContain("runCommandArgs(\"admin.grant.confirm\"")
-    expect(actions).toContain("runCommandArgs(\"admin.grant.cancel\"")
-    expect(actions).toContain("runCommandArgs(\"admin.queue.approve\"")
-    expect(actions).toContain("runCommandArgs(\"card.maximize\"")
+    expect(actions).toContain("runCommand(\"admin.grant.confirm\"")
+    expect(actions).toContain("runCommand(\"admin.grant.cancel\"")
+    expect(actions).toContain("runCommand(\"admin.queue.approve\"")
+    expect(actions).toContain("runCommand(\"card.maximize\"")
     expect(actions).toContain("runCommand(\"card.minimize\"")
     expect(actions).toContain("runCommand(\"frame.back\"")
     expect(actions).toContain("runCommand(\"frame.forward\"")
     expect(actions).toContain("runCommand(\"frame.fork\"")
-    expect(actions).toContain("runCommandArgs(\"tab.card\"")
+    expect(actions).toContain("runCommand(\"tab.card\"")
     expect(actions).toContain("runCommand(\"auth.sign-in\"")
-    expect(actions).toContain("runCommandArgs(\"connector.add\"")
-    expect(actions).toContain("runCommandArgs(\"flow.run\"")
-    expect(actions).toContain("runCommandArgs(\"flow.run.stop\"")
-    expect(actions).toContain("runCommandArgs(\"flow.run.retry\"")
-    expect(actions).toContain("runCommandArgs(\"flow.repo.choose\"")
-    expect(actions).toContain("runCommandArgs(\"wiki.edit\"")
+    expect(actions).toContain("runCommand(\"connector.add\"")
+    expect(actions).toContain("runCommand(\"flow.run\"")
+    expect(actions).toContain("runCommand(\"flow.run.stop\"")
+    expect(actions).toContain("runCommand(\"flow.run.retry\"")
+    expect(actions).toContain("runCommand(\"flow.repo.choose\"")
+    expect(actions).toContain("runCommand(\"wiki.edit\"")
     for (const surface of ["../App.tsx", "../tabs/CardTabBody.tsx"] as const) {
       expect(files[surface]).toContain("cardActions(controller)")
     }

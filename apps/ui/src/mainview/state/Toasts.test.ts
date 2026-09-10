@@ -109,7 +109,7 @@ describe("the 300ms toast law", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(store.collections.toasts.get("toast-billing.balance.refresh")).toBeDefined()
     expect(controller.commands.find("toast.dismiss")).toBeDefined()
-    controller.runCommandArgs("toast.dismiss", "toast-billing.balance.refresh")
+    controller.runCommand("toast.dismiss", "toast-billing.balance.refresh")
     await settled()
     expect(store.collections.toasts.get("toast-billing.balance.refresh")).toBeUndefined()
   })

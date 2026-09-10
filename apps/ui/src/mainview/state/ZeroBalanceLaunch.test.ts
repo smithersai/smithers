@@ -238,7 +238,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
     const controller = createAppController(store, unavailableRepositories, silentAgent(), noWorkflowSeam())
     await signInAtZeroBalance(store)
 
-    controller.runCommandArgs("flow.run", "review-pr")
+    controller.runCommand("flow.run", "review-pr")
     await settle()
 
     expect(transcriptTexts(store)).toContain(EXHAUSTED_TEXT)
