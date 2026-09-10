@@ -6,11 +6,9 @@
  * replays events up to the cursor into the timeline and the graph overlay.
  */
 import { Button, EmptyState, StatusPill } from "@smthrs/ui"
-import { timeLabel } from "../Timestamps"
+import { durationLabel, timeLabel } from "../Timestamps"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
-
-const durationLabel = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
 
 export const RunHistoryCardBody = ({
   card,

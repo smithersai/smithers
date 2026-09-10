@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ageLabel, timeLabel, untilLabel } from "./Timestamps"
+import { ageLabel, dateLabel, dayLabel, durationLabel, timeLabel, untilLabel } from "./Timestamps"
 
 /*
  * §28.9: the transcript is persisted, so a stamp is read on days other than
@@ -64,5 +64,47 @@ describe("a distance to an instant ahead", () => {
 
   test("the age vocabulary still clamps the future — which is why the reset never uses it", () => {
     expect(ageLabel("2026-09-02T12:40:00", now)).toBe("just now")
+  })
+})
+
+/*
+ * Review finding ui-cards-tabs/maintainability/4: five duration formatters and
+ * three ISO slicers lived in the cards while this module claimed the whole
+ * vocabulary. The rules below are the ones the surviving copies agreed on.
+ */
+describe("a duration in words", () => {
+  test("under a second reads in whole milliseconds", () => {
+    expect(durationLabel(0)).toBe("0ms")
+    expect(durationLabel(940)).toBe("940ms")
+    expect(durationLabel(999)).toBe("999ms")
+  })
+
+  test("a fractional millisecond is rounded, never printed raw", () => {
+    expect(durationLabel(12.339_999_999)).toBe("12ms")
+    expect(durationLabel(0.4)).toBe("0ms")
+  })
+
+  test("a second or more reads to a tenth", () => {
+    expect(durationLabel(1000)).toBe("1.0s")
+    expect(durationLabel(1234)).toBe("1.2s")
+    expect(durationLabel(12_000)).toBe("12.0s")
+    expect(durationLabel(90_600)).toBe("90.6s")
+  })
+})
+
+describe("a recorded stamp as a card prints it", () => {
+  test("an ISO stamp keeps its own zone: date, space, clock, no seconds", () => {
+    expect(dateLabel("2026-08-11T09:00:00Z")).toBe("2026-08-11 09:00")
+    expect(dayLabel("2026-08-11T09:00:00Z")).toBe("2026-08-11")
+  })
+
+  test("the calendar day alone drops the clock", () => {
+    expect(dayLabel("2026-08-11T23:59:59.999Z")).toBe("2026-08-11")
+  })
+
+  test("a stamp is sliced, never re-parsed — a non-stamp is truncated, never Invalid Date", () => {
+    expect(dateLabel("never")).toBe("never")
+    expect(dayLabel("never")).toBe("never")
+    expect(dateLabel("unknown")).not.toContain("Invalid")
   })
 })

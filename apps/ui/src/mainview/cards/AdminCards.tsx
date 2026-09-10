@@ -5,6 +5,7 @@
  */
 import { Button, StatusPill } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
+import { dateLabel, dayLabel } from "../Timestamps"
 import type { CardFamily } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
@@ -26,7 +27,7 @@ const RequestQueueCardBody = ({
           <li key={entry.login} className="queue-row">
             <span className="queue-login">{entry.login}</span>
             {entry.note !== null ? <span className="queue-note">{entry.note}</span> : null}
-            <span className="queue-at">{entry.createdAt.slice(0, 10)}</span>
+            <span className="queue-at">{dayLabel(entry.createdAt)}</span>
             <Button
               size="sm"
               variant="outline"
@@ -70,7 +71,7 @@ const AdminHealthCardBody = ({ card }: { readonly card: Extract<Card, { kind: "a
           ? "Charges: unread."
           : `Charges: $${charges.lifetimeChargedUsd} across ${charges.chargeCount} turn${
             charges.chargeCount === 1 ? "" : "s"
-          }.`} Read at {checkedAt.replace("T", " ").slice(0, 16)}.
+          }.`} Read at {dateLabel(checkedAt)}.
       </p>
     </div>
   )

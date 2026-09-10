@@ -10,6 +10,7 @@
 import { Badge, Button, Markdown } from "@smthrs/ui"
 import { MessageSquare } from "lucide-react"
 import type { Card } from "../state/AppState"
+import { dateLabel } from "../Timestamps"
 import { trustedHttpsUrl } from "../state/seams/SeamContext"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
@@ -22,9 +23,6 @@ export interface IssueCardActions {
 export const trustedLinearUrl = (value: string): string | null => trustedHttpsUrl(value, "linear.app")
 
 const stateBadge = (state: "open" | "closed") => <Badge variant={state === "open" ? "success" : "muted"}>{state}</Badge>
-
-/** "2026-08-11T09:00:00Z" → "2026-08-11 09:00"; a non-ISO string passes through. */
-const dateLabel = (iso: string): string => iso.replace("T", " ").slice(0, 16)
 
 export const IssueListCardBody = ({
   card,

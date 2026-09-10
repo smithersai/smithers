@@ -4,10 +4,9 @@ import { TARGET_RUN_STATES, TARGETS_VIEW_MODES } from "@smthrs/rpc/Cards"
 import type { RunRecord } from "@smthrs/rpc/TargetGraph"
 import { Fragment, useMemo } from "react"
 import type { KeyboardEvent, ReactNode } from "react"
-import { timeLabel } from "../Timestamps"
+import { durationLabel, timeLabel } from "../Timestamps"
 import type { Card } from "../state/AppState"
 import {
-  durationLabel,
   filterRows,
   groupRows,
   groupSummary,
@@ -824,8 +823,6 @@ const NODE_WORDS: Readonly<Record<string, string>> = {
 
 const isFailure = (status: string): boolean => status === "failed" || status === "refused"
 
-const elapsedLabel = (ms: number): string => (ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`)
-
 export const TargetRunCardBody = ({
   card,
   onRunCommand
@@ -858,7 +855,7 @@ export const TargetRunCardBody = ({
         <Badge variant={status === "done" ? "success" : status === "failed" ? "destructive" : "outline"}>
           {status}{exitCode !== null ? ` · exit ${exitCode}` : ""}
         </Badge>
-        {elapsed !== undefined ? <span className="target-run-elapsed">{elapsedLabel(elapsed)}</span> : null}
+        {elapsed !== undefined ? <span className="target-run-elapsed">{durationLabel(elapsed)}</span> : null}
         {runId !== "" && onRunCommand !== undefined ?
           (
             <Button
@@ -963,7 +960,7 @@ export const TargetRunCardBody = ({
                         <td>
                           <StatusPill status={NODE_PILL[node.status] ?? node.status} label={NODE_WORDS[node.status] ?? node.status} />
                         </td>
-                        <td>{node.durationMs === undefined ? "" : elapsedLabel(node.durationMs)}</td>
+                        <td>{node.durationMs === undefined ? "" : durationLabel(node.durationMs)}</td>
                         <td className="targets-card-type">{node.status === "hit" ? "hit" : node.status === "ran" ? "miss" : ""}</td>
                       </tr>
                     </Fragment>

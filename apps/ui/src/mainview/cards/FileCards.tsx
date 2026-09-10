@@ -13,6 +13,7 @@ import { lazy, Suspense, useContext } from "react"
 import type { ReactNode } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { Card } from "../state/AppState"
+import { shortId } from "../state/ids"
 import type { AppController } from "../state/AppController"
 import { ControllerContext } from "../ControllerContext"
 import type { CardFamily, RunCommand } from "./CardFamily"
@@ -136,9 +137,6 @@ export interface FileCardActions {
 
 /** The entry's full path under the card's path — the argument the row's command takes. */
 const childPath = (parent: string, name: string): string => parent === "" ? name : `${parent}/${name}`
-
-/** Ids render short: jj change ids are already short words; commit hashes take the first 8. */
-const shortId = (id: string): string => (id.length > 12 ? id.slice(0, 8) : id)
 
 /*
  * The card's address header (lane piper step 5, ADR 0001): the global path

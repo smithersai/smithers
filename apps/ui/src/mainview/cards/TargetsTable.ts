@@ -272,5 +272,3 @@ export const toggled = (list: ReadonlyArray<string> | undefined, value: string):
   const current = list ?? []
   return current.includes(value) ? current.filter((entry) => entry !== value) : [...current, value]
 }
-
-export const durationLabel = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)

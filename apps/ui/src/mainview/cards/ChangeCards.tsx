@@ -18,6 +18,8 @@ import type { ChangeFacet, ChangeRevision, ChangeThread, LandingBlock } from "@s
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
+import { dateLabel, durationLabel } from "../Timestamps"
+import { shortId } from "../state/ids"
 import { flowArgs } from "../flows/FlowArgs"
 import type { FlowName } from "../flows/FlowName"
 
@@ -38,17 +40,11 @@ type ChangePayload = ChangeCard["payload"]
  */
 const DiffSurface = lazy(() => import("./DiffSurface").then((module) => ({ default: module.DiffSurface })))
 
-/** Ids render short: jj change ids are already short words; commit hashes take the first 8. */
-const shortId = (id: string): string => (id.length > 12 ? id.slice(0, 8) : id)
-
 /*
  * An unread auxiliary is null and `unread` names why; a null with no reason
  * (a payload built before the rule) says so rather than pass as "none".
  */
 const NO_REASON = "no reason recorded"
-
-/** A timestamp as the card prints it: `YYYY-MM-DD HH:MM`. */
-const when = (iso: string): string => iso.replace("T", " ").slice(0, 16)
 
 /** `rev N` when a recorded revision carries the commit, else the short commit — a lookup, never an inference. */
 const revisionLabel = (revisions: ReadonlyArray<ChangeRevision>, commitId: string | null): string | null => {
@@ -351,8 +347,7 @@ const checkWork = (check: NonNullable<ChangePayload["checks"]>[number]): string 
   const cached = check.targetsCached ?? 0
   const duration = check.durationMs ?? 0
   if (affected === 0 && ran === 0 && cached === 0 && duration === 0) return null
-  const seconds = duration >= 1000 ? `${Math.round(duration / 1000)}s` : `${duration}ms`
-  return `${affected} affected · ${ran} ran · ${cached} cached · ${seconds}`
+  return `${affected} affected · ${ran} ran · ${cached} cached · ${durationLabel(duration)}`
 }
 
 /* The checks facet: the revision picker, one row per context (newest answer per context) with its work. Unread (null) is never "no checks". */
@@ -682,7 +677,7 @@ const ChangeHistoryFacet = ({ card, onRunCommand }: { readonly card: ChangeCard 
             {revision.source !== undefined ? ` · ${revision.source}` : ""}
             {revision.agentSessionId !== undefined ? ` · agent session ${shortId(revision.agentSessionId)}` : ""}
             {revision.workspaceSnapshotId !== undefined ? ` · snapshot ${revision.workspaceSnapshotId}` : ""}
-            {revision.createdAt !== undefined ? ` · ${when(revision.createdAt)}` : ""}
+            {revision.createdAt !== undefined ? ` · ${dateLabel(revision.createdAt)}` : ""}
           </span>
           {payload.currentSeq !== null && revision.seq < payload.currentSeq ?
             (
@@ -712,7 +707,7 @@ const ChangeHistoryFacet = ({ card, onRunCommand }: { readonly card: ChangeCard 
               {landed.approvedBy.length > 0 ?
                 ` · approved by ${landed.approvedBy.map((approver) => approver.seq === null ? approver.login : `${approver.login} at rev ${approver.seq}`).join(", ")}` :
                 ""}
-              {landed.at !== null ? ` · ${when(landed.at)}` : ""}
+              {landed.at !== null ? ` · ${dateLabel(landed.at)}` : ""}
             </span>
           </li>
         ) :
@@ -866,7 +861,7 @@ export const ChangeCardBody = ({
           ) :
           null}
       </p>
-      {payload.timestamp !== null ? <p className="world-card-path">{when(payload.timestamp)}</p> : null}
+      {payload.timestamp !== null ? <p className="world-card-path">{dateLabel(payload.timestamp)}</p> : null}
       {payload.description !== "" ? <p className="world-card-title">{payload.description.split("\n")[0]}</p> : null}
       {payload.repos.length > 0 ?
         (

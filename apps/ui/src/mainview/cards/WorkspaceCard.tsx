@@ -33,7 +33,8 @@ import { useController } from "../ControllerContext"
 import type { Card } from "../state/AppState"
 import { readDesktopStream, subscribeDesktopStream } from "../state/seams/DesktopStream"
 import { DESKTOP_NOT_READY, GUEST_NOT_READY } from "../state/seams/WorkspaceSeam"
-import { timeLabel } from "../Timestamps"
+import { dayLabel, timeLabel } from "../Timestamps"
+import { shortId } from "../state/ids"
 import { FileListCardBody } from "./FileCards"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
@@ -59,9 +60,6 @@ const KINDS = [
   { kind: "vm", says: "NixOS closure image, systemd PID 1" },
   { kind: "desktop", says: "NixOS closure image, systemd PID 1, plus XFCE streamed over VNC" }
 ] as const
-
-/** Ids render short: a jj change id is already a short word; a commit hash takes the first 8. */
-const shortId = (id: string): string => (id.length > 12 ? id.slice(0, 8) : id)
 
 /**
  * How long the computer has been up, from the DTO's `started_at`. Null when
@@ -381,7 +379,7 @@ const WorkspaceFacetBody = ({
               <Camera size={14} aria-hidden="true" />
               <span className="world-card-title">{snapshot.name}</span>
               {snapshot.createdAt !== null ?
-                <span className="world-card-path">{snapshot.createdAt.slice(0, 10)}</span> :
+                <span className="world-card-path">{dayLabel(snapshot.createdAt)}</span> :
                 null}
               <Button
                 size="sm"
@@ -548,7 +546,7 @@ export const WorkspaceCardBody = ({
         <p className="world-card-path">Provisioning: {payload.provisioningStage}</p> :
         null}
       {payload.suspendedAt != null && payload.status === "suspended" ?
-        <p className="world-card-path">Suspended {payload.suspendedAt.slice(0, 10)}</p> :
+        <p className="world-card-path">Suspended {dayLabel(payload.suspendedAt)}</p> :
         null}
       {/*
         plue's own contract code for a worker that could not start the

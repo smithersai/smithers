@@ -475,7 +475,8 @@ describe("the change card", () => {
     )
     const text = host.textContent ?? ""
     expect(text).toContain("build")
-    expect(text).toContain("12 affected · 4 ran · 8 cached · 12s")
+    /* Duration reads through the one vocabulary (Timestamps durationLabel): a tenth of a second, not whole seconds. */
+    expect(text).toContain("12 affected · 4 ran · 8 cached · 12.0s")
     expect(text).toContain("lint")
     expect(text).not.toContain("0 affected")
     expect((host.querySelector('select[aria-label="Checks at revision"]') as HTMLSelectElement).value).toBe("2")

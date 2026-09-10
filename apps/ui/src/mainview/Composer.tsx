@@ -27,6 +27,7 @@ import { paletteKey, PaletteOverlay, paletteRows } from "./SearchPalette"
 import type { PaletteDecision, PaletteRow } from "./SearchPalette"
 import { activeRepoOf, parseRepoSelection, repoKeyOf, WIKI_DISPLAY_NAME } from "./state/AppState"
 import { workingCopyLabel } from "./state/WorkspaceViews"
+import { shortId } from "./state/ids"
 
 /** Stable Playwright handle; spread past ChatComposer's excess-property check. */
 const COMPOSER_INPUT_TEST_ID: Record<string, string> = { "data-testid": "composer-input" }
@@ -829,7 +830,7 @@ function ComposerOrigin() {
               (
                 <span className="composer-origin-branch">
                   {` · ${seq !== null ? `${pin.changeId}#${seq}` : pin.changeId}`}
-                  {pin.commitId != null ? ` · ${pin.commitId.length > 12 ? pin.commitId.slice(0, 8) : pin.commitId}` : ""}
+                  {pin.commitId != null ? ` · ${shortId(pin.commitId)}` : ""}
                 </span>
               ) :
               null}
@@ -861,7 +862,7 @@ function ComposerOrigin() {
           <span className="composer-origin" data-origin="cloud" data-testid="repo-chip" title={repository.id}>
             <Cloud size={14} aria-hidden="true" />
             <span className="composer-origin-name">
-              {headId === null ? "head" : `head @ ${headId.length > 12 ? headId.slice(0, 8) : headId}`}
+              {headId === null ? "head" : `head @ ${shortId(headId)}`}
             </span>
           </span>
         )

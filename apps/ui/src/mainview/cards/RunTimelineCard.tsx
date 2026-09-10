@@ -10,7 +10,7 @@
 import { Button, EmptyState, KpiStat, StatusPill } from "@smthrs/ui"
 import { useMemo, useRef, useState } from "react"
 import type { NodeTiming } from "@smthrs/rpc/TargetGraph"
-import { timeLabel } from "../Timestamps"
+import { durationLabel, timeLabel } from "../Timestamps"
 import type { Card } from "../state/AppState"
 import type { CardFamily, RunCommand } from "./CardFamily"
 
@@ -39,8 +39,6 @@ export const barGeometry = (
   const width = Math.max(((to - from) / span) * 100, 0)
   return { left: Math.round(left * 100) / 100, width: Math.round(width * 100) / 100 }
 }
-
-const durationLabel = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`)
 
 export const RunTimelineCardBody = ({
   card,

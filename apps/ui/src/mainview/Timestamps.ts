@@ -65,3 +65,24 @@ export const untilLabel = (iso: string, now: number = Date.now()): string => {
   if (minutes < 60) return `in ${minutes} min`
   return `at ${timeLabel(at, now)}`
 }
+
+/*
+ * A duration in words (`940ms`, `1.2s`) — the vocabulary the run, target and
+ * check cards use for wall time. Five hand-rolled copies disagreed on the
+ * sub-second branch (review finding 4): the surviving rule is a tenth of a
+ * second at a second and above, whole milliseconds below it, so a fractional
+ * `performance.now()` delta never renders as `12.339999999ms`.
+ */
+export const durationLabel = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`)
+
+/*
+ * A recorded stamp as a card prints it: `2026-08-11T09:00:00Z` reads
+ * `2026-08-11 09:00`. This slices the recorded text rather than parsing it,
+ * so the stamp keeps the zone it was recorded in and a string that is not a
+ * stamp is truncated rather than rendered as `Invalid Date`. Use `timeLabel`
+ * instead wherever the reading should follow the reader's clock.
+ */
+export const dateLabel = (iso: string): string => iso.replace("T", " ").slice(0, 16)
+
+/** The calendar day of a recorded stamp, on the same terms as `dateLabel`: `2026-08-11`. */
+export const dayLabel = (iso: string): string => iso.slice(0, 10)
