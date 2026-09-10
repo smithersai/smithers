@@ -7,14 +7,17 @@ The same Effect composition runs on Node and Bun. The concrete adapters supply f
 The `coding/implement` role must map to an explicit `provider:model` through the existing `SeatResolver`. Workspace/user provider configuration supplies authentication. The host neither invents provider defaults nor copies platform seat credentials into the workspace process. Its deployment entry requires `SMITHERS_CODING_IMPLEMENT_MODEL` and the owning `SMITHERS_GATEWAY_ID`; the existing `SMITHERS_API_KEY` authenticates the gateway. These are operator configuration, never fields accepted from a plan.
 
 The private deployment entry passes that same operator credential to the existing
-native control composition. This explicitly selects its gateway approval
+native control composition. The recipe explicitly selects its existing gateway approval
 delegation as well as authenticating HTTP. Programmatic composition can supply
 the existing `Application.Config.approvalAuthority` for a narrower policy; it
-takes precedence. An omitted credential retains local-only approval. These are
+takes precedence. Startup requires a nonempty credential or an explicitly supplied
+authority even on loopback: local check processes must not inherit unrestricted
+operator approval merely because HTTP authentication was omitted. These are
 private host options, not new control APIs, and do not change ordinary CLI
 `ControlBridge` delegation policy. The native request acceptance exercises
 plan, approve, run and steer through real bearer-authenticated HTTP; its local
-watch only collects the resulting journal evidence.
+watch only collects the resulting journal evidence. Its explicit Plan/once-only
+authority also proves that run/remembered scope requests are refused over HTTP.
 
 The executable accepts the existing command shape:
 

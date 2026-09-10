@@ -767,6 +767,7 @@ const layerExecutor = (
     }))
   }
   return { projectSources, layerHostPlatform, layerGrantStore, layerGuardedPlatform, layerObserver, layerRegistry,
+    gatewayApprovalAuthority,
     databasePath, executionDatabasePath, materializeEngine, engineDurable, layerExecutor, layerControlFromEngine,
     layerControl, layerGateway, layerGatewayHost, layerMemory, layerHost }
 }

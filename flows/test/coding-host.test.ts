@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Effect } from "effect"
+import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
 import * as Model from "@smthrs/model/Model"
 import type * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { platform } from "../../packages/smithers/src/internal/NodeControlHost.ts"
@@ -12,6 +13,11 @@ test("coding deployment requires an explicit model and owning gateway before ope
   assert.throws(() => layer(platform, { ...options, implementationModel: "implicit-model" }), /explicit provider:model/)
   assert.throws(() => layer(platform, { ...options, implementationModel: "test:model", gatewayId: "" }), /owning SMITHERS_GATEWAY_ID/)
   assert.throws(() => layer(platform, { ...options, implementationModel: "test:model", gatewayId: "00000000-0000-0000-0000-000000000000" }), /owning SMITHERS_GATEWAY_ID/)
+  for (const credential of [undefined, "", "  "]) {
+    assert.throws(() => layer(platform, { ...options, implementationModel: "test:model", credential }), /SMITHERS_API_KEY or an explicit approval authority/)
+  }
+  assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", credential: "operator-key" }))
+  assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", approvalAuthority: ApprovalAuthority.local }))
 })
 
 test("the coding role reuses the existing seat resolver and keeps the approved role identity", async () => {

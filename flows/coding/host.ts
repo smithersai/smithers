@@ -59,6 +59,9 @@ const configured = (options: Options) => {
   if (!/^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(options.gatewayId)) {
     throw new Error("A configured coding host requires its owning SMITHERS_GATEWAY_ID")
   }
+  if (!options.credential?.trim() && options.approvalAuthority === undefined) {
+    throw new Error("A configured coding host requires SMITHERS_API_KEY or an explicit approval authority, including on loopback")
+  }
 }
 
 /** Resolves the role through the existing workspace/user credential route. */
@@ -128,7 +131,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       if (binding.head.kind !== "resolved") return yield* Effect.die(new Error("Resolve native JJ conflicts before starting the configured coding host"))
     })), Layer.orDie)
     const host = native.layerHost({ root: options.repositoryPath, credential: options.credential,
-      approvalAuthority: options.approvalAuthority }, modules)
+      approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority }, modules)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,
         capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", ...(options.planning === undefined ? [] : ["coding-request/v1"])])] }, bind, root)

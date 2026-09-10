@@ -4,7 +4,7 @@ import { appendFile, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { Control, ControlRpcs } from "@smthrs/control"
+import { ApprovalAuthority, Control, ControlRpcs } from "@smthrs/control"
 import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import { Cause, Context, Deferred, Effect, Layer, Option, Schema, Stream } from "effect"
@@ -77,6 +77,9 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
   await writeFile(adapterSource, (await readFile(source!, "utf8")).replace('"/usr/local/bin/smithers-jj-export"', JSON.stringify(exporter)))
   await writeFile(wrapper, `import importlib.util,json,sys\nspec=importlib.util.spec_from_file_location("coding",${JSON.stringify(adapterSource)})\ncoding=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(coding)\ncoding.REPORTER_SCRIPT=${JSON.stringify(reporter)}\ntry:\n print(json.dumps(coding.run_local(${JSON.stringify(config)}, engine="--engine" in sys.argv)))\nexcept coding.CodingError as error:\n print(json.dumps({"error":{"code":error.code,"message":error.message}}))\n sys.exit(1)\n`)
   const options = { repositoryPath: root, adapterPath: wrapper, credential: "fixture-key",
+    approvalAuthority: await Effect.runPromise(ApprovalAuthority.make([
+      { principal: platform.bearerPrincipal, scopes: ["once"], targets: ["Plan"] }
+    ])),
     gatewayId: "11111111-1111-4111-8111-111111111111", implementationModel: "test:scripted", exporterPath: exporter,
     planning: { wikiOutput, pages: [page], reviewer: "scripted-host-acceptance/v1", implementation: "coding/implementation", checks: ["fast", "slow"].map(tier => ({
       id: tier, target: "hello.txt", flow: `checks/${tier}`, tier: tier as "fast" | "slow", required: true
@@ -165,7 +168,11 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
     }).pipe(Layer.provide([FetchHttpClient.layer, RpcSerialization.layerNdjson])))
     const remote = yield* RpcClient.make(ControlRpcs.ControlRpcs).pipe(Effect.provide(protocol))
     const card = yield* remote.Plan({ flowId: "coding/request", input: { prompt: "Write hello.txt", feedback: "Keep the verifier unchanged.", maxRounds: 2 } })
-    yield* remote.Approve(card.approval)
+    for (const scope of ["run", "remembered"] as const) {
+      const denied = yield* remote.Approve({ ...card.approval, scope }).pipe(Effect.flip)
+      assert.equal(denied._tag, "/control/Unauthorized", "explicit narrower authority overrides gateway defaults")
+    }
+    yield* remote.Approve({ ...card.approval, scope: "once" })
     const receipt = yield* remote.Run({ _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope, idempotencyKey: "native-request-host" })
     assert.equal(receipt._tag, "Accepted")
     if (receipt._tag !== "Accepted" || receipt.runId === undefined) throw new Error("expected accepted native run")
