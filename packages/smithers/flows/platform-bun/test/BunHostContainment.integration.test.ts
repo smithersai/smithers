@@ -63,7 +63,9 @@ const waitForFile = async (path: string): Promise<string> => {
  */
 const startOrphanGroup = (directory: string): { follower: Promise<number>; leader: number } => {
   const pidFile = join(directory, "follower.pid")
-  const child = spawn("sh", ["-c", `sleep 30 & echo $! > ${pidFile}; sleep 30`], {
+  // The path rides in as `$1`, never spliced into the script: a TMPDIR with a
+  // space or a shell metacharacter must not change what `sh` parses.
+  const child = spawn("sh", ["-c", 'sleep 30 & echo $! > "$1"; sleep 30', "sh", pidFile], {
     detached: true,
     stdio: "ignore"
   })
@@ -218,9 +220,12 @@ describe.skipIf(process.platform === "win32")("BunHost.layerContained", () => {
           Effect.gen(function*() {
             const spawner = yield* ChildProcessSpawner
             const handle = yield* spawner.spawn(
+              // The marker path rides in as `$1` for the same reason as in `startOrphanGroup`.
               ChildProcess.make("sh", [
                 "-c",
-                `trap "" TERM\necho ready > ${marker}\nwhile true; do sleep 0.2; done\n`
+                'trap "" TERM; echo ready > "$1"; while true; do sleep 0.2; done',
+                "sh",
+                marker
               ])
             )
             yield* Deferred.succeed(pidReady, Number(handle.pid))
