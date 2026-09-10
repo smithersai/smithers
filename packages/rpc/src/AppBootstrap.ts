@@ -81,7 +81,7 @@ export const AppBootstrapSchema = z.object({
 export type AppBootstrap = z.infer<typeof AppBootstrapSchema>
 
 /**
- * Converts has capability values for the shared wire contract.
+ * True when the bootstrap lists the capability.
  *
  * @since 1.0.0
  * @category conversions

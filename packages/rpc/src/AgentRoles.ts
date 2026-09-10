@@ -7,12 +7,12 @@ import { z } from "zod"
 import { HARNESS_IDS } from "./LocalApp.ts"
 
 /*
- * The agent roles (docs/LOCAL-APP.md "Tabs" → "Agents";
- * docs/workbench-lanes/custom-agents.md): every role is a job description
- * bound to one model and to the local harness that runs that model. Roles
- * are DATA — the `+` menus, the PTY route, the subagent card, the Agents
- * card, and the orchestrator's instructions all read one list — so a role
- * can never be launched with a different model than it names, and the
+ * The agent roles (apps/ui/docs/LOCAL-APP.md "Tabs" → "Agents";
+ * apps/ui/docs/workbench-lanes/custom-agents.md): every role is a job
+ * description bound to one model and to the local harness that runs that
+ * model. Roles are DATA — the `+` menus, the PTY route, the subagent card, the
+ * Agents card, and the orchestrator's instructions all read one list — so a
+ * role can never be launched with a different model than it names, and the
  * server (not the renderer) turns a role id into a launch argv.
  *
  * Agents are rows, not an enum. The built-ins below seed `<stateDir>/

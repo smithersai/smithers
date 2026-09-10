@@ -53,11 +53,11 @@ export const AgentRuntimeConnectorSchema = z.object({
 export type AgentRuntimeConnector = z.infer<typeof AgentRuntimeConnectorSchema>
 
 /*
- * One open tab of the local app (docs/LOCAL-APP.md "Tabs"), as the model sees
- * it: Smithers is the first tab and knows every other one — a terminal, a
- * harness (a subagent), or a card — and can read a tab's output with
- * `tab.read <id>`. Optional on the context so a boundary built before tabs
- * existed still validates the payload.
+ * One open tab of the local app (apps/ui/docs/LOCAL-APP.md "Tabs"), as the
+ * model sees it: Smithers is the first tab and knows every other one — a
+ * terminal, a harness (a subagent), or a card — and can read a tab's output
+ * with `tab.read <id>`. Optional on the context so a boundary built before
+ * tabs existed still validates the payload.
  */
 /**
  * Validates agent runtime tab values at the RPC boundary.
@@ -136,7 +136,7 @@ export const AgentRuntimeContextSchema = z.object({
   selectedWorldDocument: runtimeLineSchema.nullable(),
   connectors: z.array(AgentRuntimeConnectorSchema),
   /*
-   * Repositories open in the LOCAL app (docs/LOCAL-APP.md), by name and
+   * Repositories open in the LOCAL app (apps/ui/docs/LOCAL-APP.md), by name and
    * path: what files.list / files.read / target.list act on. Optional so a
    * boundary built before this field, and the cloud client, still validate.
    */
@@ -182,12 +182,12 @@ export const AgentRuntimeContextSchema = z.object({
     repositoryNames: z.array(runtimeLineSchema).optional()
   }),
   /*
-   * The Smithers Cloud session (agent-parity.md): the GitHub line above says
-   * nothing about it, so the model reached for the GitHub prompt when the
-   * cloud session was what was missing. `degraded` is a signed-in legacy
-   * token that reads but cannot act; `unavailable` is a host with no cloud
-   * door answering. Optional so a boundary built before this field still
-   * validates the payload.
+   * The Smithers Cloud session (apps/ui/docs/workbench-lanes/agent-parity.md):
+   * the GitHub line above says nothing about it, so the model reached for the
+   * GitHub prompt when the cloud session was what was missing. `degraded` is a
+   * signed-in legacy token that reads but cannot act; `unavailable` is a host
+   * with no cloud door answering. Optional so a boundary built before this
+   * field still validates the payload.
    */
   cloud: z
     .object({
@@ -215,7 +215,7 @@ export const AgentRuntimeContextSchema = z.object({
     documents: z.array(AgentRuntimeWorldDocumentSchema)
   }),
   /*
-   * The guided introduction while it runs (apps/ui docs/ONBOARDING.md): the
+   * The guided introduction while it runs (apps/ui/docs/ONBOARDING.md): the
    * lesson the user is on and the lesson transcript they have seen. The
    * tutorial is the app's whole screen then, so the model answers a mid-
    * tutorial message against it — deferring to the lesson for chatter,

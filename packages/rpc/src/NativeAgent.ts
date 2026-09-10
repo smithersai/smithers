@@ -141,7 +141,7 @@ export const AgentTurnDoneReasonSchema = z.enum(["stop", "tool_call", "tool_limi
 
 /*
  * The chain frame vocabulary (DESIGN.md §14). These schemas MIRROR the
- * `@smthrs/chain` journal event union — they never import it: src/shared stays
+ * `@smthrs/chain` journal event union — they never import it: @smthrs/rpc stays
  * runtime-free zod so the Worker and both bridges can speak the envelope
  * without pulling effect. On a chain turn `runId` is the lineage id.
  */

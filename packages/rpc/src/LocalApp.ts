@@ -49,8 +49,9 @@ export const HarnessSchema = z.object({
   account: z.object({ email: z.string().optional(), label: z.string().optional() }).nullable(),
   launch: z.object({ argv: z.array(z.string()) }),
   /**
-   * How this harness takes a model (docs/workbench-lanes/custom-agents.md):
-   * the table's verified suggestions and whether it has a list command
+   * How this harness takes a model
+   * (apps/ui/docs/workbench-lanes/custom-agents.md): the table's verified
+   * suggestions and whether it has a list command
    * (`GET /api/harnesses/{id}/models` runs it). Absent when the binary's
    * `--help` names no model flag the app has verified — such a harness runs
    * only as itself, never as a custom agent. Optional so rows persisted
@@ -808,11 +809,12 @@ export const splitLabel = (label: string): { readonly package: string; readonly 
 }
 
 /*
- * The Smithers Cloud seam on the local origin (docs/decisions/0001-piper-one-truth.md):
- * `/api/cloud/*` proxies to the cloud API (SMITHERS_CLOUD_API, default
- * https://api.jjhub.tech) with the Bun-held bearer attached, and the
- * `/api/cloud-auth/*` routes run the CLI's browser login. The token NEVER
- * reaches the renderer: the session answer carries only what a person sees.
+ * The Smithers Cloud seam on the local origin
+ * (apps/ui/docs/decisions/0001-piper-one-truth.md): `/api/cloud/*` proxies to
+ * the cloud API (SMITHERS_CLOUD_API, default https://api.jjhub.tech) with the
+ * Bun-held bearer attached, and the `/api/cloud-auth/*` routes run the CLI's
+ * browser login. The token NEVER reaches the renderer: the session answer
+ * carries only what a person sees.
  */
 /**
  * The cloud route prefix route shared by server and client.

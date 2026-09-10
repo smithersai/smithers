@@ -170,7 +170,7 @@ describe("AgentTurnFrame — chain family (DESIGN.md §14)", () => {
 })
 
 /*
- * The dependency law of DESIGN.md §14: src/shared mirrors chain vocabulary and
+ * The dependency law of DESIGN.md §14: @smthrs/rpc mirrors chain vocabulary and
  * imports only the runtime-free canonical record guard. This keeps the Worker
  * and both bridges free of Effect runtime imports.
  */

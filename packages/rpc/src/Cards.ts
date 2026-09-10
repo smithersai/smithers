@@ -210,7 +210,7 @@ const cardBaseShape = {
  * the verbatim error, never an invented reset.
  */
 /**
- * Validates git hub rate limit values at the RPC boundary.
+ * Validates GitHub rate-limit values at the RPC boundary.
  *
  * @since 1.0.0
  * @category schemas
@@ -782,22 +782,22 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
-   * The run trace (factory spec 06, review/RULINGS.md #6): one card kind for
-   * every run, whatever its kind (implement, prototype, review, ...). The
-   * card tracks the run live (phase, `steps` as a short tail of progress
-   * words, `result` once it settles) and renders its journal as a trace: a
-   * call tree, a waterfall and a span pane, folded on the client from
-   * `events` (the `run-events` projection) until the gateway serves a
-   * run-trace projection. The pump POLLS the summary and run-events
-   * projections from the start on every load — there is no per-run event
-   * cursor and nothing reconnects mid-stream. `lastSeq` is a retained legacy
-   * field name: it carries the summary projection's `updatedAt`, when the
-   * card last heard from the run, never a replay position. Stopping a watch
-   * asks the gateway's durable Cancel; the card reads "cancelled" when the
-   * workspace accepts and "stopped" (this client stopped watching) when it
-   * refuses. The reader's view state (selection, cursor, filter, live tail)
-   * lives here too, so the tree, the waterfall and the pane never disagree.
-   * The id scheme `flow-run-<runId>` stays so links resolve.
+   * The run trace (factory spec 06): one card kind for every run, whatever its
+   * kind (implement, prototype, review, ...). The card tracks the run live
+   * (phase, `steps` as a short tail of progress words, `result` once it
+   * settles) and renders its journal as a trace: a call tree, a waterfall and
+   * a span pane, folded on the client from `events` (the `run-events`
+   * projection) until the gateway serves a run-trace projection. The pump
+   * POLLS the summary and run-events projections from the start on every load
+   * — there is no per-run event cursor and nothing reconnects mid-stream.
+   * `lastSeq` is a retained legacy field name: it carries the summary
+   * projection's `updatedAt`, when the card last heard from the run, never a
+   * replay position. Stopping a watch asks the gateway's durable Cancel; the
+   * card reads "cancelled" when the workspace accepts and "stopped" (this
+   * client stopped watching) when it refuses. The reader's view state
+   * (selection, cursor, filter, live tail) lives here too, so the tree, the
+   * waterfall and the pane never disagree. The id scheme `flow-run-<runId>`
+   * stays so links resolve.
    */
   z.object({
     ...cardBaseShape,
@@ -1998,12 +1998,12 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
-   * The agents as data (docs/workbench-lanes/custom-agents.md): the Agents
-   * card lists every built-in and custom agent with its harness's live
+   * The agents as data (apps/ui/docs/workbench-lanes/custom-agents.md): the
+   * Agents card lists every built-in and custom agent with its harness's live
    * availability (from the harness signals, never guessed); the form card
    * holds the New-agent draft IN ITS PAYLOAD (form edits are card-payload
-   * updates, never component state); the models card is what a harness's
-   * own list command printed.
+   * updates, never component state); the models card is what a harness's own
+   * list command printed.
    */
   z.object({
     ...cardBaseShape,
@@ -2033,12 +2033,12 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
     })
   }),
   /*
-   * THE FORM LAW (apps/ui/AGENTS.md; docs/workbench-lanes/flow-forms.md): a
-   * flow invoked without its required input renders this card for the
-   * missing fields. The fields derive from the flow's input schema; the
-   * draft IS the payload (a field commit is a card-payload update, never
-   * component state); `given` is what the slash line already carried; an
-   * option the human cannot pick carries its reason.
+   * THE FORM LAW (apps/ui/AGENTS.md;
+   * apps/ui/docs/workbench-lanes/flow-forms.md): a flow invoked without its
+   * required input renders this card for the missing fields. The fields derive
+   * from the flow's input schema; the draft IS the payload (a field commit is
+   * a card-payload update, never component state); `given` is what the slash
+   * line already carried; an option the human cannot pick carries its reason.
    */
   z.object({
     ...cardBaseShape,

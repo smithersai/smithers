@@ -31,7 +31,7 @@ export const isLocalSessionToken = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value)
 
 /**
- * Converts local session protocol values for the shared wire contract.
+ * The WebSocket subprotocol that carries a local session token.
  *
  * @since 1.0.0
  * @category conversions

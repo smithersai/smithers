@@ -180,7 +180,7 @@ describe("renderAgentRuntimeContext", () => {
   })
 
   /*
-   * The guided introduction while it runs (apps/ui docs/ONBOARDING.md): the
+   * The guided introduction while it runs (apps/ui/docs/ONBOARDING.md): the
    * model must answer a mid-tutorial message against the lesson transcript
    * the user has actually seen — chatter defers to the lesson, real work
    * skips the tutorial through onboarding.act finish.

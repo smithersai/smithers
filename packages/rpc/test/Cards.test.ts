@@ -165,7 +165,7 @@ describe("the file card", () => {
 })
 
 /*
- * Custom agents (docs/workbench-lanes/custom-agents.md): the Agents card
+ * Custom agents (apps/ui/docs/workbench-lanes/custom-agents.md): the Agents card
  * carries every agent with the harness's live availability, the form card
  * carries its draft in the payload, and the subagent card accepts a custom
  * role id beside a built-in one.
