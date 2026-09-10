@@ -155,7 +155,6 @@ export const make = (
     const author = yield* Author.Author
     const runner = yield* ScriptRunner.ScriptRunner
     const maxDepth = options.maxDepth ?? defaultMaxDepth
-    const self: { current: Catalog.Service | undefined } = { current: undefined }
 
     const agent: Catalog.Entry = {
       capabilities: [agentCapability],
@@ -195,7 +194,7 @@ export const make = (
             maxLinks: options.maxLinks,
             prefix: options.prefix
           }).pipe(
-            Effect.provideService(Catalog.Catalog, self.current as Catalog.Service),
+            Effect.provideService(Catalog.Catalog, catalog),
             Effect.provideService(Journal.Journal, journal),
             Effect.provideService(Author.Author, author),
             Effect.provideService(ScriptRunner.ScriptRunner, runner),
@@ -218,8 +217,10 @@ export const make = (
       name: agentName
     }
 
-    const catalog = Catalog.make(Catalog.withSystem([...options.entries, agent]))
-    self.current = catalog
+    // The handler above closes over this binding, not a second state
+    // holder: `Catalog.make` only snapshots handler references, so the
+    // entry can never run before the binding is initialized.
+    const catalog: Catalog.Service = Catalog.make(Catalog.withSystem([...options.entries, agent]))
     return catalog
   })
 
