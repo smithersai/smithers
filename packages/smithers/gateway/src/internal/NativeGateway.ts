@@ -64,7 +64,7 @@ export const defaultServerOptions: ServerOptions = { host: "127.0.0.1", port: 73
  * @since 1.0.0
  * @category predicates
  */
-export const isLoopbackHost = (host: string): boolean => host === "127.0.0.1" || host === "::1" || host === "localhost"
+export const isLoopbackHost = (host: string): boolean => GatewayServer.loopbackHostNames.includes(host)
 
 /**
  * The typed refusal a requested bind earns, or `undefined` when it is allowed.
@@ -155,13 +155,28 @@ export const layerAuth = (options: ServerOptions): Layer.Layer<ControlRpcs.Contr
  */
 export const bearerPrincipal = Object.freeze({ id: "gateway", kind: "bearer" })
 
-/** Authenticates protected HTTP paths before any request body is read. */
-const ingressOptions = (options: ServerOptions): GatewayServer.IngressOptions => {
+/**
+ * The ingress policy a requested bind runs behind.
+ *
+ * The accepted Host names are the loopback names, the operator's
+ * `allowedHosts`, and the concrete bind host itself, so `--host 192.168.1.10`
+ * is reachable at that address without naming it twice. A wildcard bind
+ * (`0.0.0.0` or `::`) adds nothing: every interface is not a Host name, and
+ * the operator names the reachable ones. Protected paths are authenticated
+ * before any request body is read.
+ *
+ * @param options the requested bind
+ * @since 1.0.0
+ * @category constructors
+ */
+export const ingressOptions = (options: ServerOptions): GatewayServer.IngressOptions => {
   const maxRequestBodyBytes = options.maxRequestBodyBytes
   const host = options.host ?? "127.0.0.1"
-  const allowedHosts = ["127.0.0.1", "localhost", "[::1]", ...options.allowedHosts ?? []]
+  const allowedHosts = [...GatewayServer.loopbackHostHeaderNames, ...options.allowedHosts ?? []]
   const bindAuthority = URL.parse(`http://${host.includes(":") ? `[${host}]` : host}`)
-  if (host !== "0.0.0.0" && host !== "::" && bindAuthority !== null) allowedHosts.push(bindAuthority.hostname)
+  if (host !== "0.0.0.0" && host !== "::" && bindAuthority !== null && !allowedHosts.includes(bindAuthority.hostname)) {
+    allowedHosts.push(bindAuthority.hostname)
+  }
   if (options.credential === undefined || options.credential === "") {
     return {
       loopbackOnly: true,
@@ -190,9 +205,26 @@ const bindFailure = (failure: ServeError | GatewayError): GatewayError =>
     cause: { _tag: failure._tag }
   })
 
-const mapServeError = <A, R>(server: Layer.Layer<A, ServeError | GatewayError, R>): Layer.Layer<A, GatewayError, R> =>
+/**
+ * Fails the layer with the sanitized refusal every bearer holder may see, after
+ * logging the operator's copy: the requested authority and the operating-system
+ * cause (`EADDRINUSE`, `EACCES`, `EADDRNOTAVAIL`), which the wire error omits.
+ */
+const mapServeError = <A, R>(
+  bind: ListenOptions,
+  server: Layer.Layer<A, ServeError | GatewayError, R>
+): Layer.Layer<A, GatewayError, R> =>
   server.pipe(
-    Layer.catch((failure) => Layer.effectContext<A, GatewayError, never>(Effect.fail(bindFailure(failure))))
+    Layer.catch((failure) =>
+      Layer.effectContext<A, GatewayError, never>(
+        Effect.logError({
+          message: "The gateway socket could not be bound",
+          host: bind.host,
+          port: bind.port,
+          cause: failure
+        }).pipe(Effect.andThen(Effect.fail(bindFailure(failure))))
+      )
+    )
   )
 
 /**
@@ -216,7 +248,8 @@ const mapServeError = <A, R>(server: Layer.Layer<A, ServeError | GatewayError, R
  */
 export const makeLayer = (
   server: (options: ListenOptions) => Layer.Layer<HttpServer, ServeError | GatewayError>
-) => (
+) =>
+(
   health: GatewayServer.Health,
   options: ServerOptions = defaultServerOptions
 ) =>
@@ -232,6 +265,6 @@ export const makeLayer = (
         ),
         { disableListenLog: true, disableLogger: true }
       ).pipe(
-        Layer.provideMerge(mapServeError(server(nodeOptions)))
+        Layer.provideMerge(mapServeError(nodeOptions, server(nodeOptions)))
       ))
   )

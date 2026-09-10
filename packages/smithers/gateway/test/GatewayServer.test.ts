@@ -33,7 +33,7 @@ import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import { type ApprovalPayload, type PlanCard, RunStatus } from "@smthrs/control/ControlSchema"
 import { SyncAuth as SyncAuthTag } from "@smthrs/sync/SyncRpcs"
 import * as SyncServer from "@smthrs/sync/SyncServer"
-import { Effect, Fiber, Layer, type Scope, Stream } from "effect"
+import { Effect, Fiber, Layer, Logger, type Scope, Stream } from "effect"
 import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { RpcSerialization } from "effect/unstable/rpc"
 import { createServer } from "node:http"
@@ -1134,14 +1134,19 @@ describe("the assembled gateway over a real loopback bind", () => {
       const eventSelector = { _tag: "run-events" as const, runId: receipt.runId }
       const journal = yield* projections.snapshot(eventSelector)
       expect(journal.rows.length).toBeGreaterThan(0)
-      const incrementalResponse = yield* Effect.promise(() => fetch(`${url}/projections`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          _tag: "Request", id: 2, tag: "Projection.Snapshot",
-          payload: { selector: eventSelector, after: journal.cursor }, headers: []
-        }) + "\n"
-      }))
+      const incrementalResponse = yield* Effect.promise(() =>
+        fetch(`${url}/projections`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            _tag: "Request",
+            id: 2,
+            tag: "Projection.Snapshot",
+            payload: { selector: eventSelector, after: journal.cursor },
+            headers: []
+          }) + "\n"
+        })
+      )
       const incrementalText = yield* Effect.promise(() => incrementalResponse.text())
       const incremental = JSON.parse(incrementalText.split("\n")[0] ?? "{}")
       expect(incremental.exit._tag).toBe("Success")
@@ -1531,6 +1536,13 @@ describe("gateway bind policy", () => {
       }
     }))
 
+  it("spells the loopback names once, in bind form and in Host-header form", () => {
+    expect(GatewayServer.loopbackHostNames).toEqual(["127.0.0.1", "localhost", "::1"])
+    expect(GatewayServer.loopbackHostHeaderNames).toEqual(["127.0.0.1", "localhost", "[::1]"])
+    for (const host of GatewayServer.loopbackHostNames) expect(NodeGateway.isLoopbackHost(host)).toBe(true)
+    expect(NodeGateway.ingressOptions({}).allowedHosts).toEqual(GatewayServer.loopbackHostHeaderNames)
+  })
+
   it("classifies every other host as reachable from elsewhere", () => {
     // `127.0.0.2` is loopback to the kernel and is not one of the three names
     // this policy accepts: the policy is a list of spellings a person types,
@@ -1579,8 +1591,9 @@ describe("gateway bind policy", () => {
       })
     }))
 
-  it.effect("maps an operating-system listen failure to a sanitized gateway refusal", () =>
+  it.effect("maps an operating-system listen failure to a sanitized gateway refusal and logs the cause", () =>
     Effect.scoped(Effect.gen(function*() {
+      const logged: Array<unknown> = []
       const occupied = yield* Effect.acquireRelease(
         Effect.tryPromise({
           try: () =>
@@ -1609,14 +1622,81 @@ describe("gateway bind policy", () => {
       )
       const failure = yield* Effect.flip(
         Layer.build(served({ host: "127.0.0.1", port: occupied.port }))
-      )
+      ).pipe(Effect.provide(Logger.layer([Logger.make(({ logLevel, message }) => {
+        logged.push({ logLevel, message })
+      })])))
 
       expect(failure).toBeInstanceOf(GatewayError)
       if (!(failure instanceof GatewayError)) throw failure
       expect(failure.code).toBe("bind_failed")
       expect(failure.cause).toEqual({ _tag: "ServeError" })
       expect(JSON.stringify(failure)).not.toContain("127.0.0.1")
+      // The wire error is sanitized for every bearer holder; the operator's
+      // copy, with the requested authority and the errno, is the server log.
+      expect(logged).toHaveLength(1)
+      const [entry] = logged as ReadonlyArray<{
+        readonly logLevel: string
+        readonly message: ReadonlyArray<{
+          readonly message: string
+          readonly host: string
+          readonly port: number
+          readonly cause: { readonly _tag: string; readonly cause: { readonly code: string } }
+        }>
+      }>
+      expect(entry?.logLevel).toBe("Error")
+      expect(entry?.message).toHaveLength(1)
+      const line = entry?.message[0]
+      expect(line).toMatchObject({
+        message: "The gateway socket could not be bound",
+        host: "127.0.0.1",
+        port: occupied.port
+      })
+      expect(line?.cause._tag).toBe("ServeError")
+      expect(line?.cause.cause.code).toBe("EADDRINUSE")
     })))
+
+  it("admits the concrete bind host and nothing else beyond the loopback names", () => {
+    const admitted = (host: string) =>
+      NodeGateway.ingressOptions({ host, port: 7331, listen: true, credential: "secret" }).allowedHosts
+    expect(admitted("10.0.0.5")).toEqual([...GatewayServer.loopbackHostHeaderNames, "10.0.0.5"])
+    expect(admitted("fe80::1")).toEqual([...GatewayServer.loopbackHostHeaderNames, "[fe80::1]"])
+    // A wildcard bind is every interface, and every interface is not a Host
+    // name: the operator names the reachable ones through `allowedHosts`.
+    expect(admitted("0.0.0.0")).toEqual(GatewayServer.loopbackHostHeaderNames)
+    expect(admitted("::")).toEqual(GatewayServer.loopbackHostHeaderNames)
+    expect(
+      NodeGateway.ingressOptions({ host: "0.0.0.0", listen: true, credential: "s", allowedHosts: ["lan.example"] })
+        .allowedHosts
+    ).toEqual([...GatewayServer.loopbackHostHeaderNames, "lan.example"])
+    expect(NodeGateway.ingressOptions({ port: 7331 }).allowedHosts).toEqual(GatewayServer.loopbackHostHeaderNames)
+  })
+
+  it.effect("serves the concrete bind host through the ingress Host policy", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() =>
+        HttpRouter.toWebHandler(
+          Layer.mergeAll(
+            HttpRouter.add("GET", "/health", HttpServerResponse.text("ok")),
+            GatewayServer.layerIngress(
+              NodeGateway.ingressOptions({ host: "10.0.0.5", port: 7331, listen: true, credential: "secret" })
+            )
+          ).pipe(Layer.provide(RpcSerialization.layerNdjson)),
+          { disableLogger: true }
+        )
+      ),
+      ({ handler }) =>
+        Effect.gen(function*() {
+          const status = (host: string) =>
+            Effect.promise(async () =>
+              (await handler(new Request("http://gateway/health", { headers: { host } }))).status
+            )
+          expect(yield* status("10.0.0.5:7331")).toBe(200)
+          expect(yield* status("10.0.0.5")).toBe(200)
+          expect(yield* status("127.0.0.1:7331")).toBe(200)
+          expect(yield* status("10.0.0.6:7331")).toBe(421)
+        }),
+      ({ dispose }) => Effect.promise(() => dispose())
+    ))
 
   it("defaults to a loopback bind on the gateway port", () => {
     expect(NodeGateway.defaultServerOptions).toEqual({ host: "127.0.0.1", port: 7331 })

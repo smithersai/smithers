@@ -14,7 +14,7 @@ import * as RunCatalog from "@smthrs/sync/RunCatalog"
 import * as SyncAuth from "@smthrs/sync/SyncAuth"
 import * as SyncServer from "@smthrs/sync/SyncServer"
 import * as WorkspaceShare from "@smthrs/sync/WorkspaceShare"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Logger } from "effect"
 import { HttpServer } from "effect/unstable/http"
 import * as BunGateway from "../../src/bun/BunGateway.ts"
 import * as Projections from "../../src/Projections.ts"
@@ -69,4 +69,5 @@ await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
   }))
   assert.match(frame, /"Success"/)
   process.stdout.write(JSON.stringify({ runtime: "bun", passed: true, checks: "SQLite, HTTP RPC, authenticated WebSocket RPC, bind conflict, bearer, Host and Origin" }) + "\n")
-})))
+// The bind-conflict probe logs the operating-system cause at error level; stdout is the one JSON result the test parses, so the log goes to stderr.
+}).pipe(Effect.provide(Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)])))))

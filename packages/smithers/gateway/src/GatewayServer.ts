@@ -82,7 +82,9 @@ export const layerHandlers = GatewayRpcs.toLayer(
     const projections = yield* Projections
     const control = yield* Control
     return GatewayRpcs.of({
-      "Projection.Snapshot": Effect.fn("Gateway.snapshot")(({ selector, after }) => projections.snapshot(selector, after)),
+      "Projection.Snapshot": Effect.fn("Gateway.snapshot")(({ selector, after }) =>
+        projections.snapshot(selector, after)
+      ),
       "Projection.Subscribe": ({ after, selector }) => projections.subscribe(selector, after),
       /* One operator command. Control owns the atomic decision plus durable
        * resume delegation; the gateway is only a transport adapter. */
@@ -419,7 +421,33 @@ const requestTooLarge = (path: string, maxBytes: number) =>
 /** The message `@effect/platform-node-shared` `NodeStream` gives a size overflow. */
 const maxBytesExceeded = "maxBytes exceeded"
 
-const loopbackHost = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i
+/**
+ * The names that mean this machine only, as a bind address is spelled.
+ *
+ * This is a list of spellings a person types, not a subnet test: `127.0.0.2`
+ * is loopback to the kernel and is not on it. The Node host's
+ * `isLoopbackHost`, the Host-header names below, and the ingress regex all
+ * derive from this one list so widening it is one edit.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const loopbackHostNames: ReadonlyArray<string> = ["127.0.0.1", "localhost", "::1"]
+
+/**
+ * {@link loopbackHostNames} as a Host header spells them: an IPv6 address is
+ * bracketed as a URL authority. This is the default `allowedHosts`.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const loopbackHostHeaderNames: ReadonlyArray<string> = loopbackHostNames.map((name) =>
+  name.includes(":") ? `[${name}]` : name
+)
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+const loopbackHost = new RegExp(`^(?:${loopbackHostHeaderNames.map(escapeRegExp).join("|")})(?::\\d{1,5})?$`, "i")
 
 /**
  * Whether a failed request-body read hit the configured size limit rather than
@@ -536,7 +564,7 @@ export const layerIngress = (options: IngressOptions = {}) => {
   const refusal = settingRefusal("The gateway request body limit", options.maxRequestBodyBytes)
   if (refusal !== undefined) return Layer.effectDiscard(Effect.fail(refusal))
   const maxBytes = options.maxRequestBodyBytes ?? defaultMaxRequestBodyBytes
-  const allowedHosts = options.allowedHosts ?? ["127.0.0.1", "localhost", "[::1]"]
+  const allowedHosts = options.allowedHosts ?? loopbackHostHeaderNames
   return HttpRouter.middleware(
     Effect.gen(function*() {
       const serialization = yield* RpcSerialization.RpcSerialization

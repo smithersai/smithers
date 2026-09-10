@@ -49,11 +49,14 @@ milliseconds and 1,048,576 bytes.
 **Cause** The operating system refused the listen: the port is already in use,
 the address is not local, or the port is privileged.
 
-**Fix** Check what already holds the port. A gateway already serving this
-workspace answers `GET /health` with the workspace hash, which is how a
-supervisor decides whether to keep it. The original operating-system failure is
-deliberately not on the error, because that error reaches every bearer holder;
-it is in the server log.
+**Fix** Read the server log. The Node host writes one error-level line before
+it sanitizes the failure: `The gateway socket could not be bound`, with the
+requested `host` and `port` and the `ServeError` whose `cause` is the
+operating-system error (`EADDRINUSE`, `EACCES`, `EADDRNOTAVAIL`). The wire error
+deliberately omits all of that, because it reaches every bearer holder. Then
+check what already holds the port. A gateway already serving this workspace
+answers `GET /health` with the workspace hash, which is how a supervisor decides
+whether to keep it.
 
 ## The gateway is up but a request is refused
 
