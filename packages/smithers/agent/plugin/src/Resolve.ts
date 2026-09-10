@@ -436,6 +436,12 @@ export const resolve = <H = FlowsHooks>(
           ? cause
           : invalidPlugin("$options", "could not be inspected without executing user code")
     })
+    if (configOverride !== undefined && raw.config !== undefined) {
+      return yield* Effect.fail(invalidPlugin(
+        "$options.config",
+        "cannot declare config in options alongside the positional override"
+      ))
+    }
     if (raw.target !== undefined && raw.target !== "engine" && raw.target !== "harness") {
       return yield* Effect.fail(invalidPlugin("$options.target", "must be engine or harness"))
     }

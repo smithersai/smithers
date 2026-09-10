@@ -158,8 +158,11 @@ describe("Kernel.runConfig", () => {
 
 describe("Kernel.make", () => {
   it("accepts pre-resolution config only through the positional argument", async () => {
-    // @ts-expect-error Kernel options must not accept a second config source.
-    void Kernel.make([], {}, { config: {} })
+    const error = await run(
+      // @ts-expect-error Kernel options must not accept a second config source.
+      Kernel.make([], {}, { config: {} }).pipe(Effect.flip)
+    )
+    expect(error).toMatchObject({ code: "invalid_plugin", path: "$options.config" })
     expect((await run(Kernel.make([], { plugin: { enabled: true } }))).config).toEqual({
       plugin: { enabled: true }
     })

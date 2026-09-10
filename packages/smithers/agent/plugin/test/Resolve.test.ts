@@ -126,6 +126,13 @@ describe("Resolve.resolve", () => {
     expect(narrow.plugins.map((plugin) => plugin.name)).toEqual(["slow"])
   })
 
+  it("refuses options.config when a positional override is supplied", async () => {
+    const error = await run(
+      Resolve.resolve([], { config: { mode: "fast" } }, { mode: "slow" }).pipe(Effect.flip)
+    )
+    expect(error).toMatchObject({ code: "invalid_plugin", path: "$options.config" })
+  })
+
   it("refuses undefined and null hook entries because declarations must be callable", async () => {
     const sparse = {
       name: "sparse",

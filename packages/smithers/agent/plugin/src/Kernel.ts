@@ -67,7 +67,8 @@ export const runConfig = <H = FlowsHooks>(
 /**
  * Resolves plugins, executes the config pipeline, and merges plugin layers.
  * The positional `config` is the kernel's only pre-resolution configuration;
- * the options object cannot declare a second source.
+ * the options object cannot declare a second source, and a `config` key
+ * supplied anyway fails with `invalid_plugin` at `$options.config`.
  *
  * @category constructors
  * @since 1.0.0-rc.0

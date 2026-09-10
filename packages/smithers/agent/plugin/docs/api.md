@@ -161,7 +161,9 @@ const runConfig: <H = FlowsHooks>(
 
 The positional `config` is the kernel's only pre-resolution configuration
 source. `Options.config` is excluded from the options type so a caller cannot
-declare a second one. `runConfig` exposes step 3 and step 4 on their own, for a
+declare a second one, and a `config` key smuggled past the type fails at
+runtime with `invalid_plugin` at `$options.config`, the same refusal an
+unknown option key gets. `runConfig` exposes step 3 and step 4 on their own, for a
 host that resolved its plugin list separately. Before dispatching the first
 hook, it validates and copies the supplied config into a detached, recursively
 frozen snapshot. Invalid or accessor-bearing input fails with `config_invalid`
@@ -274,7 +276,7 @@ const layer: <H>(resolved: Resolved<H>) => Layer.Layer<any, PluginError, any>
 
 | Option                | Default       | Meaning                                                                                                                 |
 | --------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `config`              | `{}`          | Pre-resolution configuration tested by `apply` predicates. `Kernel.make` supplies it positionally and omits this field. |
+| `config`              | `{}`          | Pre-resolution configuration tested by `apply` predicates. `Kernel.make` supplies it positionally and omits this field. Supplying both `config` and `configOverride` fails with `invalid_plugin` at `$options.config`. |
 | `target`              | `"engine"`    | The host whose literal `apply` selectors are active.                                                                    |
 | `hooks`               | `engineHooks` | The hook names and kinds this host recognizes. The `unknown_hook` guard checks against it.                              |
 | `cacheEnvironment`    | absent        | Complete composition identity for sealed activity keys. Requires a `version` on every selected plugin.                  |
