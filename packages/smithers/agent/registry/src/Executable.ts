@@ -60,7 +60,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
-import type * as Descriptor from "./Descriptor.ts"
+import * as Descriptor from "./Descriptor.ts"
 import { readVerifiedBody } from "./internal/Body.ts"
 import * as MarkdownFlow from "./MarkdownFlow.ts"
 import * as Registry from "./Registry.ts"
@@ -127,7 +127,7 @@ export const Invocation = Schema.Struct({
    * The lowered host kind, or `null`. A loaded body annotation wins over the
    * descriptor directive.
    */
-  placement: Schema.NullOr(Schema.Literals(["client", "local", "sandbox", "remote"])),
+  placement: Schema.NullOr(Descriptor.Placement),
   /**
    * Host-selection detail for the lowered placement, or `null` when it names
    * no image, profile, or target. A loaded body annotation wins here too.
@@ -169,6 +169,13 @@ export type Invocation = typeof Invocation.Type
  * See {@link fromDescriptor} for the choice and {@link Lowered.cache} for why
  * it is a choice at all.
  *
+ * Structural does not mean untyped. Both ways in take the {@link Invocation}
+ * envelope, because that is the only value the bridge ever supplies: a
+ * delegate is resolved by TAG, so a flow whose payload is its own shape would
+ * otherwise resolve, load, and fail at dispatch on an envelope missing every
+ * field it asked for. Requiring the envelope here refuses that flow where the
+ * host writes it down instead.
+ *
  * @category models
  * @since 1.0.0-rc.0
  */
@@ -186,7 +193,7 @@ export interface Delegate {
    * fan-out, its priorities, its waits — is part of the plan the engine builds
    * for the bridged flow, and a host reading that plan sees the real work.
    */
-  readonly call: (payload: any) => PlanNode.Node<any, any, any>
+  readonly call: (payload: Invocation) => PlanNode.Node<any, any, any>
   /**
    * Runs the delegate as an execution of its own. This is the shape a
    * descriptor that DECLARES a cache policy takes, because a result can only
@@ -194,7 +201,7 @@ export interface Delegate {
    * see {@link fromDescriptor}.
    */
   readonly execute: (
-    payload: any,
+    payload: Invocation,
     options?: { readonly executionId?: string | undefined }
   ) => Effect.Effect<any, any, any>
 }

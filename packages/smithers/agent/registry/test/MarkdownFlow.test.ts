@@ -483,26 +483,28 @@ describe("MarkdownFlow", () => {
     })
   })
 
-  it.each([
-    ["client", "client"],
-    ["local", "local"],
-    ["sandbox", "sandbox"],
-    ["remote", "remote"]
-  ])("reads the %s placement", (declared, placement) => {
+  // Driven by the descriptor's own literals, so a placement added there is
+  // read here without a second edit rather than passing an untouched list.
+  it.each(Descriptor.Placement.literals)("reads the %s placement", (declared) => {
     const result = fromMarkdown(`---\ndescription: Review\nplacement: ${declared}\n---\nbody`)
 
-    expect(Option.getOrThrow(Option.getOrThrow(result.descriptor).placement)).toBe(placement)
+    expect(Option.getOrThrow(Option.getOrThrow(result.descriptor).placement)).toBe(declared)
     expect(result.warnings).not.toContainEqual(expect.objectContaining({ code: "unsupported_module_metadata" }))
+    expect(result.warnings).not.toContainEqual(expect.objectContaining({ code: "invalid_placement" }))
   })
 
   it("ignores an unknown placement and keeps the entry unplaced", () => {
     const result = fromMarkdown("---\ndescription: Review\nplacement: orbit\n---\nbody")
 
     expect(Option.isNone(Option.getOrThrow(result.descriptor).placement)).toBe(true)
+    // Frontmatter is the markdown side, which spends its own codes;
+    // `unsupported_module_metadata` is the module-side umbrella
+    // (docs/concepts/authority.md).
     expect(result.warnings).toContainEqual(expect.objectContaining({
-      code: "unsupported_module_metadata",
+      code: "invalid_placement",
       message: "Ignoring invalid placement; expected client, local, sandbox, or remote"
     }))
+    expect(result.warnings).not.toContainEqual(expect.objectContaining({ code: "unsupported_module_metadata" }))
   })
 
   it("warns once for each unsupported schema key", () => {

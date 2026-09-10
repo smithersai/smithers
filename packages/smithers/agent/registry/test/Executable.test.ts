@@ -281,6 +281,26 @@ describe("refusals", () => {
       expect(failure.available).toEqual(["agent", "test/echo", "test/other"])
     }).pipe(Effect.provide(platform)))
 
+  /**
+   * A delegate is resolved by TAG alone, so nothing at run time re-checks that
+   * the flow found under a name can read the envelope the bridge hands it. The
+   * type contract is where that is refused: this registration compiles only
+   * while `Delegate` accepts a payload other than `Invocation`, so `tsc -p
+   * tsconfig.test.json` is the assertion, and it fails if the `any` returns.
+   */
+  it("does not admit a delegate whose payload is not the invocation envelope", () => {
+    const Mismatched = Flow.make("test/mismatched", {
+      payload: Schema.Struct({ command: Schema.String }),
+      success: Schema.String,
+      body: (payload) => Node.succeed(payload.command)
+    })
+
+    // @ts-expect-error the envelope has no `command`, so this flow is not a delegate
+    const refused: ReadonlyArray<Executable.Delegate> = [Mismatched]
+
+    expect(refused.map((delegate) => delegate._tag)).toEqual(["test/mismatched"])
+  })
+
   it.effect("refuses a declaration with nothing to choose between", () =>
     Effect.gen(function*() {
       const descriptor = yield* descriptorNamed("undecided")
@@ -729,6 +749,31 @@ describe("annotation lowering", () => {
       expect(lowered("local")).toEqual(CorePlacement.local())
       expect(lowered("sandbox")).toEqual(CorePlacement.sandbox())
       expect(lowered("remote")).toEqual(CorePlacement.remote())
+    }).pipe(Effect.provide(platform)))
+
+  /**
+   * The envelope does not re-spell the descriptor's placements; it carries the
+   * descriptor's own schema. A hand-copied second list passes the round trip
+   * above while it happens to agree, and stops agreeing silently the day a
+   * placement is added on one side only, so the reuse is pinned by identity.
+   */
+  it("spells the envelope's placement with the descriptor's own schema", () => {
+    expect(Executable.Invocation.fields.placement.members[0]).toBe(Descriptor.Placement)
+  })
+
+  it.effect("carries every descriptor placement through lower and the envelope", () =>
+    Effect.gen(function*() {
+      const base = yield* descriptorNamed("greet")
+      for (const placement of Descriptor.Placement.literals) {
+        const lowered = Executable.lower(
+          new Descriptor.FlowDescriptor({ ...base, placement: Option.some(placement) }),
+          Context.empty()
+        ).placement
+        expect(lowered, placement).toBeDefined()
+        const decoded = Schema.decodeUnknownSync(Executable.Invocation)({ ...invocationGolden, placement })
+        expect(decoded.placement, placement).toBe(placement)
+        expect(Schema.encodeUnknownSync(Executable.Invocation)(decoded)).toMatchObject({ placement })
+      }
     }).pipe(Effect.provide(platform)))
 
   it.effect("leaves an undeclared policy, priority, and placement undeclared", () =>

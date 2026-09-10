@@ -19,6 +19,7 @@ import {
   type FlowBudget,
   FlowDescriptor,
   type FlowDescriptor as FlowDescriptorType,
+  Placement,
   type Provenance,
   SchemaRefMarkdownArgs,
   SchemaRefMarkdownOutput
@@ -419,20 +420,23 @@ const deriveEffects = (
   return projection.effects
 }
 
+/** The accepted placements, spelled the way the warning reads them back. */
+const placements = `${Placement.literals.slice(0, -1).join(", ")}, or ${Placement.literals.at(-1)}`
+
+const isPlacement = Schema.is(Placement)
+
 const derivePlacement = (
   fields: Record<string, unknown>,
   path: string,
   warnings: Array<DiscoveryWarning>
-): Option.Option<"client" | "local" | "sandbox" | "remote"> => {
+): Option.Option<Placement> => {
   const value = fields.placement
   if (value === undefined) return Option.none()
-  if (value === "client" || value === "local" || value === "sandbox" || value === "remote") {
-    return Option.some(value)
-  }
+  if (isPlacement(value)) return Option.some(value)
   warnings.push({
-    code: "unsupported_module_metadata",
+    code: "invalid_placement",
     path,
-    message: "Ignoring invalid placement; expected client, local, sandbox, or remote"
+    message: `Ignoring invalid placement; expected ${placements}`
   })
   return Option.none()
 }

@@ -75,13 +75,13 @@ These are the codes that explain a flow showing up as `tier: "irreversible"`
 with wildcard reads and writes. [Declared authority](../concepts/authority.md)
 explains why each fallback is the conservative one.
 
-| Code                          | What happened                                                                                                                                                                                                         |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unprojectable_authority`     | A markdown flow declared no `capabilities`, or it names collaborator `flows` whose authority discovery cannot read. The wildcard was used.                                                                            |
-| `invalid_capabilities`        | A markdown `capabilities` value is not a string array. A space-separated string is accepted with this warning; anything else falls back to the wildcard.                                                              |
-| `invalid_effect_declaration`  | `effects` is not an object, or `effects.reads`, `effects.writes`, `effects.mode`, or `effects.onConflict` is not a value the schema allows. The conservative reading was used.                                        |
-| `invalid_effect_tier`         | A declared `effects.tier` under-classifies the authority the capabilities imply, or is not one of the three tiers. The conservative tier was used.                                                                    |
-| `unsupported_module_metadata` | A module declaration could not be read statically: a non-literal `capabilities` or `effects`, an object spread, a computed property, an unreadable default export, or an invalid `placement`. The message says which. |
+| Code                          | What happened                                                                                                                                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unprojectable_authority`     | A markdown flow declared no `capabilities`, or it names collaborator `flows` whose authority discovery cannot read. The wildcard was used.                                                    |
+| `invalid_capabilities`        | A markdown `capabilities` value is not a string array. A space-separated string is accepted with this warning; anything else falls back to the wildcard.                                      |
+| `invalid_effect_declaration`  | `effects` is not an object, or `effects.reads`, `effects.writes`, `effects.mode`, or `effects.onConflict` is not a value the schema allows. The conservative reading was used.                |
+| `invalid_effect_tier`         | A declared `effects.tier` under-classifies the authority the capabilities imply, or is not one of the three tiers. The conservative tier was used.                                            |
+| `unsupported_module_metadata` | A module declaration could not be read statically: a non-literal `capabilities` or `effects`, an object spread, a computed property, or an unreadable default export. The message says which. |
 
 ## The declaration had a key discovery did not use
 
@@ -90,6 +90,7 @@ explains why each fallback is the conservative one.
 | `unknown_frontmatter_key`  | A frontmatter key outside the accepted set. Check it against the [flow.mdx reference](/docs/reference/flow-mdx/); a typo is the usual cause.                                                  |
 | `invalid_allowed_tools`    | `flows` or `allowed-tools` is neither a string array nor a space-separated string. It was ignored, so the flow now delegates to the agent.                                                    |
 | `invalid_model_invocation` | `disable-model-invocation` is not a boolean or the strings `"true"` or `"false"`. It was ignored, so the flow stays model-invocable.                                                          |
+| `invalid_placement`        | `placement` is not `client`, `local`, `sandbox`, or `remote`. It was ignored, so the flow is discovered unplaced and the host chooses where it runs.                                          |
 | `invalid_budget`           | `budget` is not an object, a ceiling is not a positive safe integer, or the object holds a key that is not `tokens` or `milliseconds`. The unreadable part was dropped rather than tightened. |
 | `invalid_license`          | `license` is not a string.                                                                                                                                                                    |
 | `invalid_compatibility`    | `compatibility` is not a string of at most 500 characters.                                                                                                                                    |

@@ -339,6 +339,7 @@ export const DiscoveryWarningCode = Schema.Literals([
   "invalid_budget",
   "unprojectable_authority",
   "invalid_model_invocation",
+  "invalid_placement",
   "invalid_compatibility",
   "invalid_license",
   "invalid_metadata",

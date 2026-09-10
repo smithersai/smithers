@@ -317,15 +317,15 @@ class DiscoveryWarning {
 
 A non-fatal source-discovery diagnostic. Anything a scan can survive is
 reported this way rather than raised, and read back through
-`registry.warnings()`. The 30 codes are grouped by what they say:
+`registry.warnings()`. The 32 codes are grouped by what they say:
 
-| Group                  | Codes                                                                                                                                                                                                                                               |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Naming and description | `missing_description`, `invalid_description`, `missing_name`, `invalid_name`, `directory_name_mismatch`, `name_field_ignored`, `duplicate_name`, `root_level_entry`                                                                                 |
-| Declaration fields     | `unknown_frontmatter_key`, `invalid_allowed_tools`, `invalid_capabilities`, `invalid_budget`, `invalid_model_invocation`, `invalid_compatibility`, `invalid_license`, `invalid_metadata`, `unsupported_input_schema`, `unsupported_module_metadata` |
-| Authority              | `unprojectable_authority`, `invalid_effect_declaration`, `invalid_effect_tier`                                                                                                                                                                      |
-| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`                                                                           |
-| Packs                  | `unknown_pack_key`, `shadowed`                                                                                                                                                                                                                      |
+| Group                  | Codes                                                                                                                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Naming and description | `missing_description`, `invalid_description`, `missing_name`, `invalid_name`, `directory_name_mismatch`, `name_field_ignored`, `duplicate_name`, `root_level_entry`                                                                                                      |
+| Declaration fields     | `unknown_frontmatter_key`, `invalid_allowed_tools`, `invalid_capabilities`, `invalid_budget`, `invalid_model_invocation`, `invalid_placement`, `invalid_compatibility`, `invalid_license`, `invalid_metadata`, `unsupported_input_schema`, `unsupported_module_metadata` |
+| Authority              | `unprojectable_authority`, `invalid_effect_declaration`, `invalid_effect_tier`                                                                                                                                                                                           |
+| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`                                                                                                |
+| Packs                  | `unknown_pack_key`, `shadowed`                                                                                                                                                                                                                                           |
 
 Each code, with its cause and its fix, is in
 [Diagnose a flow that did not appear](./guides/diagnose-a-missing-flow.md).

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 
 // The package owns its own prose. Nothing generates these files, so this is
@@ -60,5 +61,25 @@ describe("the documented scan cost model", () => {
     } finally {
       rmSync(root, { force: true, recursive: true })
     }
+  })
+})
+
+/**
+ * The reference lists the warning codes by hand, and the diagnostic guide
+ * explains them one at a time. A code added to the schema and left out of
+ * either one is a code a reader cannot look up, which is how the count in
+ * api.md came to say 30 for a schema holding 31.
+ */
+describe("the documented warning vocabulary", () => {
+  const api = readFileSync(join(packageRoot, "docs", "api.md"), "utf8")
+  const guide = readFileSync(join(packageRoot, "docs", "guides", "diagnose-a-missing-flow.md"), "utf8")
+
+  it("counts the codes the schema declares", () => {
+    expect(api).toContain(`The ${Descriptor.DiscoveryWarningCode.literals.length} codes are grouped`)
+  })
+
+  it.each(Descriptor.DiscoveryWarningCode.literals)("explains %s in both documents", (code) => {
+    expect(api).toContain(`\`${code}\``)
+    expect(guide).toContain(`| \`${code}\``)
   })
 })
