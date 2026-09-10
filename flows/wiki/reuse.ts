@@ -65,9 +65,17 @@ const fail = (message: string) => new WikiError({ code: "review-failed", message
 const guarded = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.catch((error) =>
   Effect.fail(error instanceof WikiError ? error : fail(error instanceof Error ? error.message : String(error)))))
 
-export const reuseOperations = (options: { root: string; output: string; fs?: FileSystem.FileSystem | undefined }) => {
+type ReuseOptions = Parameters<typeof operations>[0] & { readonly hostPolicy?: string | undefined }
+
+export const reuseOperations = (options: ReuseOptions) => {
   const ops = operations(options)
   const policy = (reviewer: string) => Effect.gen(function*() {
+    // Configured coding hosts fingerprint the code they actually execute. The
+    // target repository need not vendor this implementation to describe itself.
+    if (options.hostPolicy !== undefined) {
+      if (!options.hostPolicy.trim()) return yield* Effect.fail(fail("Host reviewer policy identity is empty"))
+      return { policyDigest: yield* digest(canonical({ version: 2, reviewer, hostPolicy: options.hostPolicy })), policySources: [] }
+    }
     const fs = options.fs ?? (yield* FileSystem.FileSystem), path = yield* Path.Path
     const sources = yield* Effect.forEach(policySources, (file) => Effect.gen(function*() {
       const text = yield* fs.readFileString(path.resolve(options.root, file))
@@ -120,7 +128,7 @@ export const reuseOperations = (options: { root: string; output: string; fs?: Fi
       const collected = Schema.decodeUnknownOption(Evidence)(row.value.outcome)
       const evidence = Option.isSome(old) ? old.value.evidence : Option.isSome(collected) ? collected.value : undefined
       if (evidence) for (const source of evidence.sources) {
-        if (!policySources.some((path) => path === source.path)) continue
+        if (!current.policySources.some((policySource) => policySource.path === source.path)) continue
         if ((yield* digest(source.text)) !== source.digest || (captured.has(source.path) && captured.get(source.path) !== source.digest)) return empty
         captured.set(source.path, source.digest)
       }
@@ -157,7 +165,7 @@ export const reuseOperations = (options: { root: string; output: string; fs?: Fi
     return { review: candidate.review, reason: "exact recorded review reused",
       provenance: { originRunId: candidate.originRunId, policyDigest: pool.policyDigest, policySources: pool.policySources, reusedFrom: candidate.attempt } }
   }))
-  return { load, select, bind: (page: typeof BoundPage.Type) => Effect.succeed(page),
+  return { policy, load, select, bind: (page: typeof BoundPage.Type) => ops.assess(page).pipe(Effect.as(page)),
     publish: ({ pages }: { pages: Record<string, typeof BoundPage.Type> }) => {
       const ordered = Object.keys(pages).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).map((key) => pages[key]!)
       return guarded(Effect.gen(function*() {
@@ -174,7 +182,7 @@ export const reuseOperations = (options: { root: string; output: string; fs?: Fi
       }))
     } }
 }
-export const reuseLayers = (options: { root: string; output: string; fs?: FileSystem.FileSystem | undefined }) => {
+export const reuseLayers = (options: ReuseOptions) => {
   const ops = reuseOperations(options)
   return Layer.mergeAll(Load.toLayer(ops.load), Select.toLayer(ops.select), Bind.toLayer(ops.bind), Publish.toLayer(ops.publish), Interpreter.layer(IncrementalWiki))
 }

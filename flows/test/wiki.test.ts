@@ -8,6 +8,7 @@ import { Effect, FileSystem, Schema } from "effect"
 import { operations } from "../wiki/operations.ts"
 import { reviewEvidence } from "../wiki/evidence.ts"
 import { PageSpec, type ReviewedPage, type Review } from "../wiki/schema.ts"
+import { separateWikiOutput } from "../coding/wiki-output.ts"
 
 const fixture = async (t: TestContext) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-wiki-")))
@@ -283,4 +284,24 @@ test("artifact installation failure without a winning version remains a failure"
   const ops = operations({ root: f.root, output: f.output, fs: failingFs })
   await assert.rejects(run(ops.write([{ evidence, review: supported(evidence), reviewer: "test" }], "verified")), /rename|NotFound/)
   assert.equal(await run(fs.exists(join(f.output, "current.json"))), false)
+})
+
+
+test("publication revalidates an output ancestor changed while semantic review was running", async t => {
+  const f = await fixture(t)
+  const outside = await realpath(await mkdtemp(join(tmpdir(), "smithers-wiki-boundary-")))
+  t.after(() => rm(outside, { recursive: true, force: true }))
+  const ancestor = join(outside, "destination"), output = join(ancestor, "wiki")
+  await mkdir(ancestor)
+  const fs = await run(FileSystem.FileSystem)
+  const publicationRoot = separateWikiOutput(f.root, output).pipe(Effect.provideService(FileSystem.FileSystem, fs))
+  assert.equal(await run(publicationRoot), output)
+  const ops = operations({ root: f.root, output, fs, publicationRoot })
+  const evidence = await run(ops.collect(f.spec))
+  // Model review can outlive host setup. The formerly external ancestor now
+  // points inside the source; publication must fail before creating wiki files.
+  await rm(ancestor, { recursive: true })
+  await symlink(f.root, ancestor, "dir")
+  await assert.rejects(run(ops.write([{ evidence, review: supported(evidence), reviewer: "scripted" }], "verified")), /outside the source workspace/)
+  await assert.rejects(readFile(join(f.root, "wiki", "current.json")), /ENOENT/)
 })

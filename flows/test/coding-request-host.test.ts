@@ -53,6 +53,9 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
       "---\ndescription: Verify the implemented file.\nflows: [coding/CommandCheck]\ncapabilities: ['*']\n---\n" +
       JSON.stringify({ argv: [process.execPath, "verify.mjs"], cwd: ".", timeoutMs: 30_000 }) + "\n")
   }
+  await mkdir(join(root, "flows", "checks", "wiki"), { recursive: true })
+  await writeFile(join(root, "flows", "checks", "wiki", "flow.mdx"),
+    "---\ndescription: Verify current wiki semantics.\nflows: [coding/WikiCheck]\ncapabilities: ['*']\n---\nReview the operator-configured wiki.\n")
   await writeFile(join(root, "verify.mjs"), "import {readFileSync} from 'node:fs';\n" +
     "if (readFileSync('hello.txt', 'utf8') !== 'hello from the real agent cell\\n') process.exit(7);\n")
   // Declaration imports use this worktree's exact packages. Immutable checks
@@ -60,10 +63,8 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
   await symlink(join(authoring, "node_modules"), join(root, "node_modules"), "dir")
   await writeFile(join(root, ".gitignore"), ".flows/\nnode_modules\n*.tmp\nignored.txt\n")
   await writeFile(join(root, "guide.md"), "# File verifier\n\nThe verifier reads hello.txt.\n")
-  await mkdir(join(root, "flows", "wiki"), { recursive: true })
-  for (const file of policySources) await cp(join(authoring, "..", file), join(root, file))
   const page: PageSpec = { id: "verifier", title: "File verifier", kind: "current", purpose: "Find the current verifier.",
-    document: "guide.md", inputs: ["verify.mjs", ...policySources], related: [] }
+    document: "guide.md", inputs: ["verify.mjs"], related: [] }
   const wikiOutput = join(temporary, "wiki")
   const wiki = operations({ root, output: wikiOutput })
   const evidence = await Effect.runPromise(wiki.collect(page).pipe(Effect.provide(platform.host)))
@@ -81,8 +82,8 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
       { principal: platform.bearerPrincipal, scopes: ["once"], targets: ["Plan"] }
     ])),
     gatewayId: "11111111-1111-4111-8111-111111111111", implementationModel: "test:scripted", exporterPath: exporter,
-    planning: { wikiOutput, pages: [page], reviewer: "scripted-host-acceptance/v1", implementation: "coding/implementation", checks: ["fast", "slow"].map(tier => ({
-      id: tier, target: "hello.txt", flow: `checks/${tier}`, tier: tier as "fast" | "slow", required: true
+    planning: { wikiOutput, pages: [page], reviewer: "scripted-host-acceptance/v1", implementation: "coding/implementation", checks: ["fast", "slow", "wiki"].map(tier => ({
+      id: tier, target: "hello.txt", flow: `checks/${tier}`, tier: tier === "fast" ? "fast" as const : "slow" as const, required: true
     })) } }
   const initial = await Effect.runPromise(Effect.flatMap(NativeCoding, native => native.read()).pipe(
     Effect.provide(nativeLayer(options)), Effect.provide(platform.host), Effect.scoped))
@@ -118,7 +119,7 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
       : reviewingPoc ? { findings: ["The measured prototype greeting differs from the verifier's expected text; no checks ran."], nextPlan: "Use the exact expected real greeting for implementation." }
       : review ? { explanation: "The repository has a file verifier; preserve its expected contents.", clarification: "" }
       : { rationale: "Append one native atom and use both registered checks.", baseChangeId: initial.head.changeId,
-          changes: [{ id: "hello", title: "Hello", intent: "Write the requested file.", checks: ["fast", "slow"],
+          changes: [{ id: "hello", title: "Hello", intent: "Write the requested file.", checks: ["fast", "slow", "wiki"],
             atoms: [{ changeId: null, message: "✨ feat: add hello", intent: "Write hello.txt", reads: ["verify.mjs"], writes: ["hello.txt"] }] }] }
     const emitted = review || planning || wikiReviewing || draftingPoc || reviewingPoc ? `
       const forbidden = await ctx.call("write", ${JSON.stringify({path:join(root,"planner-mutation.txt"),content:"must not persist"})});

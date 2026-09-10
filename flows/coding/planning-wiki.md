@@ -55,7 +55,7 @@ Existing reuse validation checks the terminal native run, committed attempt,
 reviewer and policy identities, every page/source digest, section boundaries,
 and the current exact-citation assessment. Unchanged pages do not call the
 model again. Changed pages are reviewed again. The configured Smithers catalog
-must include the four existing `policySources` files; that is an explicit
+must include the four existing `policySources` files only when no trusted host fingerprint is supplied; that is an explicit
 requirement of the current wiki recipe's reuse protocol, not a new generic
 policy subsystem. Source files stay inside the configured public engineering
 repository. Private Ops content is not an input.
@@ -93,3 +93,23 @@ Collected parents or children are skipped. The window contains all flow kinds;
 a large intervening workload can cause a normal cold-review miss. This is a
 bounded optimization, never a guarantee that the newest refresh in all history
 was found and never permission to reuse missing evidence.
+
+
+The configured host reevaluates its external-output boundary during configuration,
+child generation and immediately before publication after semantic review. The
+writer uses that newly canonical destination with the explicitly supplied host
+filesystem. A changed output ancestor cannot silently turn wiki publication into
+an edit of the coding workspace. This is an option on the private wiki recipe;
+it does not change the standalone wiki CLI's local artifact policy.
+
+The configured coding host supplies its actual running reviewer fingerprint to
+reuse policy. Such target repositories need only their own declared public page
+inputs; they do not vendor Smithers' reviewer implementation. Standalone wiki
+composition retains the older four-source policy when no host identity is
+provided. The reviewer string also retains model, gateway and operator policy,
+so a host upgrade cannot inherit a review under the old identity.
+
+Required `checks/wiki` entries now run semantic review as ordinary asynchronous
+backpressure after implementation and rewritten-source checks. They capture an
+immutable native export and return owner findings without racing publication;
+see `wiki-check.md` for the source, replay and catalog identity contracts.

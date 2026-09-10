@@ -24,7 +24,7 @@ export const agentLayers = (seats: Layer.Layer<SeatResolver.SeatResolver>, maxRe
 export const registration = (options: { readonly root: string; readonly output: string }, reviewers: ReturnType<typeof agentLayers>) =>
   Layer.mergeAll(actionLayers(options), reviewers, Interpreter.layer(Wiki)).pipe(Layer.provideMerge(Action.layerImplementations))
 
-export const actionLayers = (options: { readonly root: string; readonly output: string; readonly fs?: FileSystem.FileSystem | undefined }) => {
+export const actionLayers = (options: Parameters<typeof operations>[0]) => {
   const ops = operations(options)
   return Layer.mergeAll(Collect.toLayer(({ spec }) => ops.collect(spec)), Assess.toLayer(ops.assess), Write.toLayer(({ pages, mode }) => ops.write(Object.keys(pages).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).map((key) => pages[key]!), mode)))
 }

@@ -110,3 +110,14 @@ proof with `node flows/test/coding-host-bundle.mjs` or
 `bun flows/test/coding-host-bundle.mjs`, with `PLUE_CODING_ADAPTER_SOURCE` and
 `PLUE_JJ_EXPORT_BINARY` pointing to the actual Plue artifacts. It exercises bundled
 QuickJS, builtin SQLite and contained processes; `--version` alone is insufficient.
+
+
+Configured planning also registers the private `coding/WikiCheck` delegate.
+Projects opt into continuous semantic backpressure by declaring `checks/wiki`
+and including it as a required slow check. Its catalog policy is derived from
+the operator's pages and the actual host reviewer. The same derived Registry is
+shared by approvals, module authority and executable dispatch. Only this check's
+descriptors change; source-authored policy metadata cannot override the host.
+The check returns ordinary receipts and owner findings over immutable exports;
+it never publishes a competing wiki pointer. Target repositories no longer need
+to copy the host's four reviewer source files merely to generate their own wiki.

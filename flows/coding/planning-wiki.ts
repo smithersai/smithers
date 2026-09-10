@@ -12,6 +12,7 @@ import { Input as WikiInput, type PageSpec, Receipt, WikiError } from "../wiki/s
 import { Wiki } from "../wiki/workflow.ts"
 import { PlanningInput, PreparePlan } from "./planning.ts"
 import { Plan } from "./schema.ts"
+import { separateWikiOutput } from "./wiki-output.ts"
 
 /** Operator configuration, never model-supplied paths, catalog or reviewer. */
 export interface PlanningWikiOptions {
@@ -19,6 +20,8 @@ export interface PlanningWikiOptions {
   readonly wikiOutput: string
   readonly pages: ReadonlyArray<PageSpec>
   readonly reviewer: string
+  /** Trusted running-host fingerprint; never a model or target-repo assertion. */
+  readonly hostPolicy?: string | undefined
 }
 const Config = Schema.Struct({ ...WikiInput.fields, mode: Schema.Literal("verified"),
   scopeDigest: Schema.String, output: Schema.String })
@@ -87,29 +90,38 @@ export const findPlanningWikiReview = (config: typeof Config.Type) => guarded(Ef
   return null
 }))
 
-/** Reuse existing actions, journal, catalog and platform; the caller supplies the
- * authority-narrowed ReviewPage layer and existing planning/agent services. */
-export const planningWikiLayers = (options: PlanningWikiOptions, hostFilesystem?: FileSystem.FileSystem) => Layer.mergeAll(
-  Interpreter.layer(PrepareWithWiki), Interpreter.layer(RefreshWiki), Interpreter.layer(Wiki),
-  actionLayers({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }),
-  reuseLayers({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem }),
-  Configure.toLayer(() => guarded(Effect.gen(function*() {
+/** The same private configuration identity is used by planning and slow wiki checks. */
+export const planningWikiConfiguration = (options: PlanningWikiOptions, hostFilesystem?: FileSystem.FileSystem) =>
+  guarded(Effect.gen(function*() {
     const fs = hostFilesystem ?? (yield* FileSystem.FileSystem), path = yield* Path.Path
     const input = yield* Schema.decodeUnknownEffect(WikiInput)({ pages: options.pages, mode: "verified", reviewer: options.reviewer })
     if (!input.reviewer.trim() || bytes(JSON.stringify(input)) > maximumCatalogBytes) return yield* fail("Wiki reviewer and catalog must fit 128 KiB")
     const sources = new Set(input.pages.flatMap(page => [page.document, ...page.inputs]))
     if (sources.size > maximumSources) return yield* fail("The planning wiki catalog exceeds 256 distinct source files")
-    if (policySources.some(source => !sources.has(source))) return yield* fail("The planning wiki catalog must capture its existing reviewer policy sources")
+    if (options.hostPolicy === undefined && policySources.some(source => !sources.has(source))) return yield* fail("The planning wiki catalog must capture its existing reviewer policy sources")
     const root = yield* fs.realPath(options.repositoryPath)
-    const output = path.resolve(options.wikiOutput)
+    const output = yield* separateWikiOutput(options.repositoryPath, options.wikiOutput).pipe(Effect.provideService(FileSystem.FileSystem, fs))
     // Configuration identity excludes changing source bytes: existing Collect
     // and Load/Select independently measure those and invalidate affected pages.
     const scopeDigest = Digest.digest(Digest.canonical({ policy: "coding/wiki-refresh/v1", root, output, input,
-      policySources, maximumCatalogBytes, maximumSources, maximumCandidates, maximumLookupRuns, maximumCandidateBytes, maximumLookupBytes }))
+      policySources: options.hostPolicy === undefined ? policySources : [], hostPolicy: options.hostPolicy ?? null, maximumCatalogBytes, maximumSources, maximumCandidates, maximumLookupRuns, maximumCandidateBytes, maximumLookupBytes }))
     return { ...input, mode: "verified" as const, scopeDigest, output }
-  }))),
+  }))
+
+/** Reuse existing actions, journal, catalog and platform; the caller supplies the
+ * authority-narrowed ReviewPage layer and existing planning/agent services. */
+export const planningWikiLayers = (options: PlanningWikiOptions, hostFilesystem?: FileSystem.FileSystem) => {
+  const publicationRoot = separateWikiOutput(options.repositoryPath, options.wikiOutput).pipe(
+    effect => hostFilesystem === undefined ? effect : Effect.provideService(effect, FileSystem.FileSystem, hostFilesystem))
+  return Layer.mergeAll(
+  Interpreter.layer(PrepareWithWiki), Interpreter.layer(RefreshWiki), Interpreter.layer(Wiki),
+  actionLayers({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem, publicationRoot }),
+  reuseLayers({ root: options.repositoryPath, output: options.wikiOutput, fs: hostFilesystem, publicationRoot, hostPolicy: options.hostPolicy }),
+  Configure.toLayer(() => planningWikiConfiguration(options, hostFilesystem)),
   Prior.toLayer(({ config }) => findPlanningWikiReview(config)),
   Generate.toLayer(({ config, priorRunId }) => guarded(Effect.gen(function*() {
+    const currentOutput = yield* publicationRoot
+    if (currentOutput !== config.output) return yield* fail("Wiki output boundary changed after configuration", "output-conflict")
     const instance = yield* FlowRuntime.FlowInstance, runtime = yield* FlowRuntime.FlowRuntime
     const wikiRunId = Digest.digest(Digest.canonical(["coding/wiki-child/v1", instance.executionId, config, priorRunId]))
     const input = { pages: config.pages, mode: "verified" as const, reviewer: config.reviewer }
@@ -125,3 +137,4 @@ export const planningWikiLayers = (options: PlanningWikiOptions, hostFilesystem?
     return { scopeDigest: config.scopeDigest, wikiRunId, receipt }
   })))
 ).pipe(Layer.provideMerge(RunCatalogRead.layer))
+}

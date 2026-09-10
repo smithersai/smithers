@@ -45,10 +45,6 @@ test("wiki generation precedes planning, reuses exact reviews, rechecks changed 
     await writeFile(join(root, `${id}.md`), `# ${id}\n\nThe ${id} is ${value}.\n`)
     await writeFile(join(root, `src/${id}.ts`), `export const ${id} = ${value}\n`)
   }
-  for (const file of policySources) {
-    await mkdir(join(root, file, ".."), { recursive: true })
-    await writeFile(join(root, file), await readFile(new URL(`../../${file}`, import.meta.url)))
-  }
   for (const [name, delegate, body] of [["coding/atoms", "coding/Implement", "Implement the supplied atom."],
     ["checks/fast", "coding/CommandCheck", JSON.stringify({ argv: ["true"], cwd: ".", timeoutMs: 1000 })],
     ["checks/slow", "coding/CommandCheck", JSON.stringify({ argv: ["true"], cwd: ".", timeoutMs: 1000 })]]) {
@@ -72,8 +68,8 @@ test("wiki generation precedes planning, reuses exact reviews, rechecks changed 
     return yield* Effect.forEach(catalog.entries, descriptor => Executable.fromDescriptor(descriptor, { delegates: [atomDelegate, checkDelegate] }))
   }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(platform)))))
   const pages: PageSpec[] = ["answer", "stable"].map(id => ({ id, title: id, purpose: `Understand ${id}.`, kind: "current", document: `${id}.md`,
-    inputs: [`src/${id}.ts`, ...policySources], related: [] }))
-  const options = { repositoryPath: root, wikiOutput: output, pages, reviewer: "scripted-wiki-planning-acceptance", implementation: "coding/atoms",
+    inputs: [`src/${id}.ts`], related: [] }))
+  const options = { repositoryPath: root, wikiOutput: output, pages, reviewer: "scripted-wiki-planning-acceptance", hostPolicy: "artifact:planning-fixture-v1", implementation: "coding/atoms",
     checks: ["fast", "slow"].map(tier => ({ id: tier, target: tier, flow: `checks/${tier}`, tier: tier as "fast" | "slow", required: true })) }
   const reviews: string[] = []
   let requests = 0, drafts = 0

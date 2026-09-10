@@ -2,6 +2,7 @@
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Executable from "@smthrs/registry/Executable"
+import * as Registry from "@smthrs/registry/Registry"
 import * as Digest from "@smthrs/core/Digest"
 import { HumanTask, Interpreter } from "@smthrs/flow"
 import { Context, Effect, FileSystem, Layer } from "effect"
@@ -28,6 +29,8 @@ import { pocSource } from "./poc-source.ts"
 import { feedbackLayer, routeMessages } from "./steering.ts"
 import { runningWikiPolicy } from "./wiki-policy.ts"
 import { separateWikiOutput } from "./wiki-output.ts"
+import { wikiCheckDelegate, wikiCheckLayers, wikiCheckPolicy } from "./wiki-check.ts"
+import { bindWikiRegistry } from "./wiki-registry.ts"
 
 /** Operator configuration, never accepted from a workflow or gateway request. */
 export interface Options extends NativeOptions {
@@ -95,11 +98,17 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     const fs = yield* FileSystem.FileSystem
     const reviewerPolicy = options.planning === undefined ? undefined : yield* runningWikiPolicy
     const wikiOutput = options.planning === undefined ? undefined : yield* separateWikiOutput(options.repositoryPath, options.planning.wikiOutput)
+    const wikiReviewer = options.planning === undefined ? undefined : Digest.canonical({ policy: options.planning.reviewer,
+      model: options.wikiModel ?? options.implementationModel, gateway: options.gatewayId, hostPolicy: reviewerPolicy })
+    const wikiOptions = options.planning === undefined ? undefined : { ...options.planning, wikiOutput: wikiOutput!,
+      repositoryPath: options.repositoryPath, reviewer: wikiReviewer!, hostPolicy: reviewerPolicy! }
+    const registry = wikiOptions === undefined ? undefined : Layer.effect(Registry.Registry)(
+      Effect.map(Registry.Registry, base => bindWikiRegistry(base, wikiCheckPolicy(wikiOptions)))
+    ).pipe(Layer.provide(native.layerRegistry(options.repositoryPath)))
     const request = options.planning === undefined ? Layer.empty : Layer.mergeAll(
       memoryLayer({ ...options.planning, wikiOutput: wikiOutput!, repositoryPath: options.repositoryPath }, fs),
-      planningWikiLayers({ ...options.planning, wikiOutput: wikiOutput!, repositoryPath: options.repositoryPath,
-        reviewer: Digest.canonical({ policy: options.planning.reviewer, model: options.wikiModel ?? options.implementationModel,
-          gateway: options.gatewayId, hostPolicy: reviewerPolicy }) }, fs),
+      planningWikiLayers(wikiOptions!, fs),
+      wikiCheckLayers({ ...wikiOptions!, fs, exporterPath: options.exporterPath, environment: options.checkEnvironment }),
       planningPolicy, Interpreter.layer(PreparePlan), HumanTask.layer, correctionLayers, sourceAdmission, requestRegistration, feedbackLayer,
       pocPolicy, pocModels, pocSource({ ...options, fs }),
       evidenceOnly(Layer.mergeAll(ReviewRequest.layer, DraftPlan.layer, SelectRepair.layer, ReviewPage.layer))
@@ -111,7 +120,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     // Loading verified declaration bytes reserves a sibling temporary module.
     // This is host startup work. Register the resulting flows only after that
     // read/import effect ends, under the original guarded handler context.
-    const catalog = Layer.unwrap(Executable.catalog({ delegates: [RunPlan, atomDelegate, checkDelegate, ...(options.planning === undefined ? [] : [RunRequest])] }).pipe(
+    const catalog = Layer.unwrap(Executable.catalog({ delegates: [RunPlan, atomDelegate, checkDelegate, ...(options.planning === undefined ? [] : [RunRequest, wikiCheckDelegate])] }).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.map(built => Layer.mergeAll(leaves, ...built.executables.map(entry => entry.layer)).pipe(
         Layer.provideMerge(Layer.succeed(Executable.Catalog, built))
@@ -131,7 +140,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       if (binding.head.kind !== "resolved") return yield* Effect.die(new Error("Resolve native JJ conflicts before starting the configured coding host"))
     })), Layer.orDie)
     const host = native.layerHost({ root: options.repositoryPath, credential: options.credential,
-      approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority }, modules)
+      approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,
         capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", ...(options.planning === undefined ? [] : ["coding-request/v1"])])] }, bind, root)

@@ -38,7 +38,9 @@ export const sections = (markdown: string) => {
   return result
 }
 
-export const operations = (options: { readonly root: string; readonly output: string; readonly fs?: FileSystem.FileSystem | undefined }) => {
+export const operations = (options: { readonly root: string; readonly output: string; readonly fs?: FileSystem.FileSystem | undefined;
+  /** Host policy is reevaluated at publication, after potentially slow review. */
+  readonly publicationRoot?: Effect.Effect<string, Error, FileSystem.FileSystem | Path.Path> | undefined }) => {
   // Native action execution may replace construction-time context services.
   // A host-owned recipe can retain its explicitly injected filesystem here;
   // canonical source/output boundaries below still apply to every operation.
@@ -124,7 +126,7 @@ export const operations = (options: { readonly root: string; readonly output: st
     for (const page of pages) for (const source of page.evidence.sources) files[`sources/${source.path}`] = source.text
     for (const page of rendered) files[`pages/${page.id}.md`] = page.body
     files["README.md"] = `# Smithers engineering wiki\n\nSnapshot: \`${sourceRevision}\`. Semantic verification: **${verification}**.\n\nThe source snapshot is immutable content evidence, not a claim about the current main branch or production. Canonical human-authored pages are not overwritten; explicitly catalogued intent may appear as generated copies and archived source evidence.\n\n` + rendered.map((page) => `- [${page.title}](pages/${page.id}.md) — ${page.purpose}`).join("\n") + "\n"
-    const requestedRoot = path.resolve(options.output)
+    const requestedRoot = options.publicationRoot === undefined ? path.resolve(options.output) : yield* options.publicationRoot
     yield* fs.makeDirectory(requestedRoot, { recursive: true })
     const root = yield* fs.realPath(requestedRoot)
     if (root !== path.join(yield* fs.realPath(path.dirname(requestedRoot)), path.basename(requestedRoot))) return yield* Effect.fail(fail("output-conflict", "Output must be a real, dedicated directory"))

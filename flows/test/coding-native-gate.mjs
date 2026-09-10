@@ -7,7 +7,7 @@ import { resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 export const nativeTests = [
-  "coding-native.test.ts", "coding-snapshots.test.ts", "coding-filesystem-native.test.ts", "coding-checks.test.ts",
+  "coding-native.test.ts", "coding-snapshots.test.ts", "coding-filesystem-native.test.ts", "coding-checks.test.ts", "coding-wiki-check.test.ts",
   "coding-atoms.test.ts", "coding-correction.test.ts", "coding-planning.test.ts", "coding-planning-wiki.test.ts",
   "coding-poc.test.ts", "coding-feedback.test.ts", "coding-host-native.test.ts", "coding-request-host.test.ts"
 ]

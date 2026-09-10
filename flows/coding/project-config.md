@@ -77,3 +77,22 @@ Its private `ProjectConfig` is the existing memory configuration plus the wiki
 reviewer identity. Operator data is never accepted from model output or a
 gateway request. Startup diagnostics identify the invalid contract without
 printing the JSON contents.
+
+
+For this Smithers repository, generate the opinionated configuration from the
+same public page catalog rather than copying its page inventory:
+
+```sh
+node factory/coding/project.ts ../smithers-wiki > /tmp/smithers-project.json
+SMITHERS_CODING_PROJECT=/tmp/smithers-project.json smithers-coding-host serve --root .
+```
+
+`factory/coding/project.ts` selects existing PACKAGE targets: codingPolicy blocks
+as the policy gate; codingRuntime, native Node/Bun, deployment bundle Node/Bun,
+and semantic wiki review run as required slow checks. The ordinary `checks/*`
+declarations contain only target invocations, not copied test lists. The host
+must provide `smithers-build`, the declared toolchain, native helpers and build
+cache through its existing command environment. An immutable source export does
+not borrow the editing checkout's node_modules. Cold toolchain/bootstrap cost
+may make the blocking target slow; its label is policy, not a latency receipt.
+The default config is generated without provider credentials or private Ops data.

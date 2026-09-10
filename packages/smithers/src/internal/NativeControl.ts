@@ -758,9 +758,9 @@ const layerExecutor = (
     })).pipe(Layer.provide([control, engine.journal]))
   const layerMemory = (root: string, engine: EngineDurable = engineDurable(root)) =>
     MemoryStore.layer.pipe(Layer.provide([engine.stores, native.crypto]), Layer.orDie)
-  const layerHost = (config: Application.Config, modules?: ModuleRegistration) => {
+  const layerHost = (config: Application.Config, modules?: ModuleRegistration, suppliedRegistry?: Layer.Layer<Registry.Registry>) => {
     const root = config.root ?? process.cwd()
-    const registry = layerRegistry(root)
+    const registry = suppliedRegistry ?? layerRegistry(root)
     return Layer.unwrap(Effect.map(materializeEngine(engineDurable(root, registry, config)), engine => {
       const control = layerControlFromEngine(config, registry, engine, modules)
       return Layer.mergeAll(control, layerGatewayHost(engine, control), layerMemory(root, engine), native.host)
