@@ -794,6 +794,15 @@ export const SessionSchema = z.object({
    * Optional (missing = main) so persisted sessions parse without a reset.
    */
   turnTabId: z.string().nullable().optional(),
+  /*
+   * The turn in flight. Read only while `phase` is "responding", so boot
+   * reconciliation names the turn the session was actually answering:
+   * steering inserts its own `message-steer-<revision>` user bubble and a
+   * retry re-runs an older turn, so the newest user message does not
+   * identify it. Optional (missing = derive it from the transcript) so
+   * sessions persisted before the field parse without a schema reset.
+   */
+  turnId: z.string().nullable().optional(),
   tabMenuOpen: z.boolean().optional(),
   pendingTabCloseId: z.string().nullable().optional(),
   /** The composer's `+` menu (the /composer.add command's open state); optional like the menus above. */

@@ -215,6 +215,20 @@ export const verboseTrace = (transition: AppTransition): string | undefined => {
 }
 
 type ApprovalRequest = Extract<Card, { kind: "approval" | "approvals-inbox" }>
+/*
+ * The turn a session persisted before it recorded `turnId` was answering.
+ * Only a submission row (`message-<turnId>-user`) names a turn: steering
+ * inserts `message-steer-<revision>` user bubbles, so the newest user
+ * message is not the turn in flight.
+ */
+const latestSubmittedTurnId = (messages: Iterable<Message>): string | undefined =>
+  [...messages]
+    .filter((message) => message.role === "user")
+    .sort((left, right) => left.ordinal - right.ordinal)
+    .reverse()
+    .map((message) => message.id.match(/^message-(.+)-user$/)?.[1])
+    .find((id) => id !== undefined)
+
 const isApprovalRequest = (card: Card | undefined): card is ApprovalRequest =>
   card?.kind === "approval" || card?.kind === "approvals-inbox"
 
@@ -989,6 +1003,7 @@ const forgetAccountState = (collections: StoredCollections): void => {
     draft.phase = "idle"
     draft.composerOwner = "user"
     draft.turnTabId = null
+    draft.turnId = null
     draft.devtoolsOpen = false
     draft.resetConfirmOpen = false
     draft.paletteActionsRef = null
@@ -1270,6 +1285,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.phase = "responding"
             // The turn belongs to the conversation it was asked in, whatever tab is active later.
             draft.turnTabId = conversationTabId ?? null
+            draft.turnId = transition.turnId
             draft.revision = revision
           })
           break
@@ -1349,6 +1365,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "responding"
+            draft.turnId = transition.turnId
             draft.revision = revision
           })
           break
@@ -1389,18 +1406,14 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           // interrupted with the honest line; never restore a silently stuck
           // pending surface.
           //
-          // The in-flight turn is the most recent user message, and its
-          // response lives at the id derived from that turn — resolving it
-          // that way (rather than "the last Smithers message") is what keeps
-          // the reconciliation honest: if the app died between the submit and
-          // the first delta there is no response yet, and an earlier turn that
+          // The session names the turn it was answering, and that turn's
+          // response lives at the id derived from it — resolving it that way
+          // (rather than "the last Smithers message") is what keeps the
+          // reconciliation honest: if the app died between the submit and the
+          // first delta there is no response yet, and an earlier turn that
           // genuinely completed must not be relabelled as interrupted.
           if (current.phase !== "responding") return
-          const inFlight = [...collections.messages.values()]
-            .filter((message) => message.role === "user")
-            .sort((left, right) => left.ordinal - right.ordinal)
-            .at(-1)
-          const turnId = inFlight?.id.match(/^message-(.+)-user$/)?.[1]
+          const turnId = current.turnId ?? latestSubmittedTurnId(collections.messages.values())
           const orphaned = turnId === undefined
             ? undefined
             : collections.messages.get(`message-${turnId}-smithers`)
@@ -1425,6 +1438,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           }
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "idle"
+            draft.turnId = null
             draft.revision = revision
           })
           break
@@ -1535,6 +1549,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
             draft.activeBranchId = branchId
             draft.activeFrameId = rootId
             draft.turnTabId = null
+            draft.turnId = null
             draft.resetConfirmOpen = false
             draft.revision = revision
           })
@@ -1806,6 +1821,7 @@ const initializeAppStore = async (resolved: ResolvedPersistence): Promise<AppSto
           if (current.phase !== "idle") return
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.phase = "responding"
+            draft.turnId = transition.turnId
             draft.revision = revision
           })
           break

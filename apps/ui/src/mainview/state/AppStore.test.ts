@@ -124,6 +124,84 @@ describe("createAppStore with the localStorage fallback backend", () => {
     expect(orphaned?.status).toBe("interrupted")
     expect(orphaned?.text).toBe("That turn was interrupted when the app closed.")
   })
+
+  /**
+   * Steering inserts its own user bubble (`message-steer-<revision>`), so "the
+   * newest user message" stops naming the turn in flight. Reconciliation must
+   * still find the turn the session was actually answering, whether the app
+   * died after the first delta (a partial answer to relabel) or before it (no
+   * answer at all), and however many times the user steered.
+   */
+  test("boot reconciles a steered turn whose partial answer already streamed", async () => {
+    const storage = memoryStorage()
+    const first = await createAppStore({ kind: "localStorage", storage })
+    await first.dispatch({ type: "message.submitted", actor: "user", turnId: "turn-steered", text: "Do work" })
+      .isPersisted.promise
+    await first.dispatch({
+      type: "message.response.delta",
+      actor: "smithers",
+      turnId: "turn-steered",
+      channel: "text",
+      delta: "unfinished answer"
+    }).isPersisted.promise
+    await first.dispatch({ type: "message.steered", actor: "user", turnId: "turn-steered", text: "also do this" })
+      .isPersisted.promise
+
+    const second = await createAppStore({ kind: "localStorage", storage })
+    expect(second.session().phase).toBe("idle")
+    const restored = second.collections.messages.get("message-turn-steered-smithers")
+    expect(restored?.text).toBe("unfinished answer")
+    expect(restored?.status).toBe("interrupted")
+    expect(restored?.statusDetail).toBe("That turn was interrupted when the app closed.")
+  })
+
+  test("boot reconciles a twice-steered turn that died before its first delta", async () => {
+    const storage = memoryStorage()
+    const first = await createAppStore({ kind: "localStorage", storage })
+    await first.dispatch({ type: "message.submitted", actor: "user", turnId: "turn-silent", text: "Do work" })
+      .isPersisted.promise
+    await first.dispatch({ type: "message.steered", actor: "user", turnId: "turn-silent", text: "also do this" })
+      .isPersisted.promise
+    await first.dispatch({ type: "message.steered", actor: "user", turnId: "turn-silent", text: "and this" })
+      .isPersisted.promise
+
+    const second = await createAppStore({ kind: "localStorage", storage })
+    expect(second.session().phase).toBe("idle")
+    // The steering bubbles stay the user's own words, never relabelled.
+    const steers = [...second.collections.messages.values()].filter((message) => message.id.startsWith("message-steer-"))
+    expect(steers).toHaveLength(2)
+    expect(steers.every((message) => message.status === "complete")).toBe(true)
+    const orphaned = second.collections.messages.get("message-turn-silent-smithers")
+    expect(orphaned?.status).toBe("interrupted")
+    expect(orphaned?.text).toBe("That turn was interrupted when the app closed.")
+  })
+
+  /**
+   * A retry re-runs an EARLIER turn: the newest submission row is a later
+   * turn that genuinely finished. The session names the turn it is answering,
+   * so reconciliation relabels the retried turn and leaves the later one alone.
+   */
+  test("boot reconciles the retried turn, not the newest submission", async () => {
+    const storage = memoryStorage()
+    const first = await createAppStore({ kind: "localStorage", storage })
+    for (const turnId of ["turn-one", "turn-two"]) {
+      await first.dispatch({ type: "message.submitted", actor: "user", turnId, text: `Work ${turnId}` })
+        .isPersisted.promise
+      await first.dispatch({
+        type: "message.response.delta", actor: "smithers", turnId, channel: "text", delta: `Answer ${turnId}`
+      }).isPersisted.promise
+      await first.dispatch({ type: "message.response.completed", actor: "smithers", turnId }).isPersisted.promise
+    }
+    await first.dispatch({ type: "message.retried", actor: "user", turnId: "turn-one" }).isPersisted.promise
+
+    const second = await createAppStore({ kind: "localStorage", storage })
+    expect(second.session().phase).toBe("idle")
+    const retried = second.collections.messages.get("message-turn-one-smithers")
+    expect(retried?.status).toBe("interrupted")
+    const untouched = second.collections.messages.get("message-turn-two-smithers")
+    expect(untouched?.status).toBe("complete")
+    expect(untouched?.statusDetail).toBeUndefined()
+  })
 })
 
 /*
