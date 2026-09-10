@@ -32,10 +32,12 @@ const opening = Effect.gen(function*() {
 
 The input extends the recall input, so `banks`, `query`, `tagGroups`, `maxTokens`, and `budget` all behave as they do for the `recall` flow. Two fields are new:
 
-- `lineageId` and `iteration` form the retry identity. The first read for an identity fetches; every later read for the same identity answers the frozen text.
-- `maxBytes` caps the complete fenced snapshot, defaulting to 16,384. It is a separate ceiling from `maxTokens`, which caps only the recalled rows. A cap too small for the fence itself yields empty text.
+- `lineageId` and `iteration` form the retry identity. The first successful read for an identity fetches; later reads answer the frozen text. With a recorder, a degraded fetch remains retryable.
+- `maxBytes` caps the complete fenced snapshot, defaulting to 16,384. It is a separate ceiling from `maxTokens`, which caps only the recalled rows. A cap too small for the fence itself yields empty text. Non-finite caps use the default.
 
-Primer banks default to `banks` when omitted. Primers are the accepted notes of each primer bank, rendered before the recalled rows.
+Primer banks default to `banks` when omitted. Each bank reads a newest-first candidate window through `searchRows`, with a row limit derived from `maxBytes`, the fence size, and the minimum rendered primer label size. Only accepted, non-superseded notes render as primers. The window includes facts, which occupy candidate slots but do not render as primers; use note-focused primer banks when that distinction matters.
+
+Primer banks retain input order after alias deduplication. Within each bank, newer notes survive truncation ahead of older notes, with ties ordered by key. Primers render before recalled rows. The byte cap keeps the beginning of that ordered text, so earlier banks take priority, and the final row may be partial. The limit bounds returned candidates, not SQL work or the size of one stored note.
 
 The effect needs `MemoryStore.MemoryStore` and `Recall.Recall` in context and never fails:
 
@@ -51,7 +53,9 @@ const layers = Layer.provideMerge(RecallKeyword.layer, TestMemory.layer)
 
 Every source has an in-process memo (`Source.make` accepts a `capacity`, defaulting to 1,024 identities). With no recorder in context, that memo is the whole guarantee: two reads through one source return the same text, while a second source refetches live memory. Only the first read for an identity honors the banks, query, tag groups, primer banks, and budgets; a later read that changes them logs a warning naming the changed fields and answers the frozen text.
 
-The snapshot degrades rather than fail: a fetch that exceeds two seconds or fails with a typed error yields empty text and a debug log. Fiber interruption propagates unchanged, so cancellation still cancels.
+The snapshot degrades rather than fails: a fetch that exceeds two seconds or fails with a typed error yields empty text and a warning log. The warning includes elapsed milliseconds, requested primer and recall bank counts, and per-bank candidate limits and observed row counts (`null` means the read did not finish). These are bounded read sizes, not total bank sizes. Fiber interruption propagates unchanged, so cancellation still cancels.
+
+With a recorder, degradation cancels the pending record and removes the local memo entry. A later read for the identity retries, including after a process restart. A successful empty snapshot is still recorded. Without a recorder, the process-local memo retains degraded empty text as before.
 
 ## The fence is a delimiter, not a trust boundary
 

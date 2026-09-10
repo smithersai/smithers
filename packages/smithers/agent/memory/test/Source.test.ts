@@ -1,13 +1,17 @@
 import { Cause, Effect, Fiber, Layer, Logger } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
+import { MemoryError } from "../src/MemoryError.ts"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as Recall from "../src/Recall.ts"
 import * as SnapshotRecorder from "../src/SnapshotRecorder.ts"
 import * as Source from "../src/Source.ts"
+import * as TestMemory from "../src/test/TestMemory.ts"
 
 const storeOf = (listNotes: () => Effect.Effect<ReadonlyArray<{ readonly text: string }>>) =>
-  MemoryStore.MemoryStore.of({ listNotes } as unknown as MemoryStore.Service)
+  MemoryStore.MemoryStore.of({
+    searchRows: () => listNotes().pipe(Effect.map((rows) => rows.map((row) => ({ ...row, kind: "note" }))))
+  } as unknown as MemoryStore.Service)
 
 const read = (
   input: Source.Input,
@@ -28,7 +32,7 @@ const read = (
 describe("Source", () => {
   it("returns no injection after the advisory timeout", async () => {
     const store = MemoryStore.MemoryStore.of({
-      listNotes: () => Effect.never
+      searchRows: () => Effect.never
     } as unknown as MemoryStore.Service)
     const recall = Recall.makeNoop()
     const result = await Effect.runPromise(
@@ -50,13 +54,196 @@ describe("Source", () => {
     expect(result).toMatchObject({ text: "" })
   })
 
+  it("bounds primer candidates by bytes and renders the newest notes", async () => {
+    const limits: Array<number | undefined> = []
+    const maxBytes = 100
+    const text = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        for (let index = 0; index < 100; index++) {
+          yield* store.putNote({
+            namespace: "bank",
+            id: `note-${String(index).padStart(3, "0")}`,
+            text: `note ${index}`,
+            tags: [],
+            provenance: {}
+          })
+          yield* TestClock.adjust("1 millis")
+        }
+        return yield* Source.make().read({
+          lineageId: "bounded",
+          iteration: 0,
+          banks: ["bank"],
+          query: "q",
+          maxBytes
+        }).pipe(Effect.provideService(MemoryStore.MemoryStore, {
+          ...store,
+          listNotes: (input) => {
+            limits.push(input.limit)
+            return store.listNotes(input)
+          },
+          searchRows: (input) => {
+            limits.push(input.limit)
+            return store.searchRows(input)
+          }
+        }))
+      }).pipe(
+        Effect.provide(TestMemory.layer),
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(Recall.Recall, Recall.makeNoop())
+      )
+    )
+    expect(limits.length).toBeGreaterThan(0)
+    expect(limits.every((limit) => limit !== undefined && limit > 0 && limit <= maxBytes)).toBe(true)
+    expect(text).toContain("[primer:bank] note 99\n[primer:bank] note 98")
+    expect(text).not.toContain("[primer:bank] note 0")
+    expect(Source.byteLength(text)).toBeLessThanOrEqual(maxBytes)
+  })
+
+  it("warns on a slow store and retries a degraded snapshot without recording empty text", async () => {
+    const logged: Array<{ readonly level: string; readonly message: string }> = []
+    const recorded = new Map<string, string>()
+    const recorder = SnapshotRecorder.layer({
+      record: (identity, effect) =>
+        Effect.suspend(() => {
+          const snapshot = recorded.get(identity.lineageId)
+          return snapshot === undefined
+            ? effect.pipe(Effect.tap((text) => Effect.sync(() => recorded.set(identity.lineageId, text))))
+            : Effect.succeed(snapshot)
+        })
+    })
+    let slow = true
+    const notes = () => slow ? Effect.never : Effect.succeed([{ kind: "note", text: "recovered primer" }])
+    const store = MemoryStore.MemoryStore.of({ listNotes: notes, searchRows: notes } as unknown as MemoryStore.Service)
+    const source = Source.make()
+    const input = { lineageId: "slow", iteration: 1, banks: ["bank"], query: "q" }
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const fiber = yield* source.read(input).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* TestClock.adjust("2 seconds")
+        const degraded = yield* Fiber.join(fiber)
+        const afterTimeout = [...recorded.values()]
+        slow = false
+        const recovered = yield* source.read(input)
+        const resumed = yield* Source.make().read(input)
+        return { degraded, afterTimeout, recovered, resumed }
+      }).pipe(
+        Effect.provideService(MemoryStore.MemoryStore, store),
+        Effect.provideService(Recall.Recall, Recall.makeNoop()),
+        Effect.provide(recorder),
+        Effect.provide(TestClock.layer()),
+        Effect.provide(Logger.layer([Logger.make<unknown, void>(({ logLevel, message }) => {
+          logged.push({ level: logLevel, message: String(message) })
+        })]))
+      )
+    )
+    expect(logged).toEqual([{
+      level: "Warn",
+      message: expect.stringMatching(/memory source degraded.*elapsedMs=2000.*primerBanks=1.*recallBanks=1.*rowsRead/)
+    }])
+    expect(result.degraded).toBe("")
+    expect(result.afterTimeout).toEqual([])
+    expect(result.recovered).toContain("recovered primer")
+    expect(result.resumed).toBe(result.recovered)
+  })
+
+  it("does not record typed fetch failures and can retry them immediately", async () => {
+    let failing = true
+    let recordings = 0
+    const notes = () =>
+      failing
+        ? Effect.fail(new MemoryError({ code: "store", message: "temporarily unavailable" }))
+        : Effect.succeed([{ kind: "note", text: "recovered" }])
+    const store = MemoryStore.MemoryStore.of({ listNotes: notes, searchRows: notes } as unknown as MemoryStore.Service)
+    const source = Source.make()
+    const input = { lineageId: "failed", iteration: 0, banks: ["bank"], query: "q" }
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const degraded = yield* source.read(input)
+        const afterFailure = recordings
+        failing = false
+        const recovered = yield* source.read(input)
+        return { degraded, afterFailure, recovered }
+      }).pipe(
+        Effect.provideService(MemoryStore.MemoryStore, store),
+        Effect.provideService(Recall.Recall, Recall.makeNoop()),
+        Effect.provide(SnapshotRecorder.layer({
+          record: (_identity, effect) => effect.pipe(Effect.tap(() => Effect.sync(() => recordings++)))
+        })),
+        Effect.provide(TestClock.layer())
+      )
+    )
+    expect(result.degraded).toBe("")
+    expect(result.afterFailure).toBe(0)
+    expect(result.recovered).toContain("recovered")
+    expect(recordings).toBe(1)
+  })
+
+  it("records a successful empty snapshot and replays it without fetching", async () => {
+    let fetches = 0
+    let recordings = 0
+    let recorded: string | undefined
+    const recorder = SnapshotRecorder.layer({
+      record: (_identity, effect) =>
+        Effect.suspend(() =>
+          recorded === undefined
+            ? effect.pipe(Effect.tap((text) =>
+              Effect.sync(() => {
+                recordings++
+                recorded = text
+              })
+            ))
+            : Effect.succeed(recorded)
+        )
+    })
+    const options = {
+      store: storeOf(() =>
+        Effect.sync(() => {
+          fetches++
+          return []
+        })
+      ),
+      recall: Recall.makeNoop(),
+      recorder
+    }
+    const input = { lineageId: "recorded-empty", iteration: 0, banks: ["bank"], query: "q" }
+    expect((await read(input, options)).text).toBe("")
+    expect((await read(input, options)).text).toBe("")
+    expect(fetches).toBe(1)
+    expect(recordings).toBe(1)
+  })
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "uses a bounded default for non-finite maxBytes %s",
+    async (maxBytes) => {
+      const limits: Array<number | undefined> = []
+      const declared = await read({ lineageId: "finite", iteration: 0, banks: ["bank"], query: "q", maxBytes }, {
+        store: MemoryStore.MemoryStore.of({
+          searchRows: (input: MemoryStore.SearchRowsInput) => {
+            limits.push(input.limit)
+            return Effect.succeed([
+              { kind: "fact", text: "not a primer" },
+              { kind: "note", text: "x".repeat(20_000) }
+            ])
+          }
+        } as unknown as MemoryStore.Service),
+        recall: Recall.makeNoop()
+      })
+      expect(limits).toEqual([expect.any(Number)])
+      expect(limits[0]).toBeGreaterThan(0)
+      expect(limits[0]).toBeLessThan(16_384)
+      expect(Source.byteLength(declared.text)).toBe(16_384)
+      expect(declared.text).not.toContain("not a primer")
+    }
+  )
+
   it("produces the agent's declared memory text shape and freezes a retry snapshot", async () => {
     let reads = 0
     const store = MemoryStore.MemoryStore.of({
-      listNotes: () =>
+      searchRows: () =>
         Effect.sync(() => {
           reads += 1
-          return [{ namespace: "bank", text: `primer-${reads}` }]
+          return [{ kind: "note", namespace: "bank", text: `primer-${reads}` }]
         })
     } as unknown as MemoryStore.Service)
     const recall = Recall.make({ recall: () => Effect.succeed([]) })
@@ -82,7 +269,7 @@ describe("Source", () => {
 
   it("preserves a complete fence when applying the byte cap", async () => {
     const store = MemoryStore.MemoryStore.of({
-      listNotes: () => Effect.succeed([{ namespace: "bank", text: "x".repeat(1_000) }])
+      searchRows: () => Effect.succeed([{ kind: "note", namespace: "bank", text: "x".repeat(1_000) }])
     } as unknown as MemoryStore.Service)
     const result = await Effect.runPromise(
       Source.declaredText(Source.make(), {
@@ -102,9 +289,9 @@ describe("Source", () => {
     expect(result.text).toMatch(/<\/flows_memory_context>$/)
   })
 
-  it("propagates fiber interruption instead of degrading it", async () => {
+  it.each([false, true])("propagates fiber interruption instead of degrading it (recorder=%s)", async (record) => {
     const store = MemoryStore.MemoryStore.of({
-      listNotes: () => Effect.interrupt
+      searchRows: () => Effect.interrupt
     } as unknown as MemoryStore.Service)
     const exit = await Effect.runPromiseExit(
       Source.declaredText(Source.make(), {
@@ -114,7 +301,8 @@ describe("Source", () => {
         query: "q"
       }).pipe(
         Effect.provideService(MemoryStore.MemoryStore, store),
-        Effect.provideService(Recall.Recall, Recall.makeNoop())
+        Effect.provideService(Recall.Recall, Recall.makeNoop()),
+        Effect.provide(record ? SnapshotRecorder.layer({ record: (_identity, effect) => effect }) : Layer.empty)
       )
     )
     expect(exit._tag).toBe("Failure")
@@ -312,10 +500,10 @@ describe("Source", () => {
   it("reads primer notes once for duplicate and aliased banks", async () => {
     let scans = 0
     const store = MemoryStore.MemoryStore.of({
-      listNotes: () =>
+      searchRows: () =>
         Effect.sync(() => {
           scans += 1
-          return [{ text: "primer" }]
+          return [{ kind: "note", text: "primer" }]
         })
     } as unknown as MemoryStore.Service)
     const text = await Effect.runPromise(
