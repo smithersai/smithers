@@ -1792,11 +1792,9 @@ const compacted = (
     // already given up everything it can, and the frame proceeds as declared.
     if (prefixLength === 0) return state
     // `InvalidStep` is discharged as a defect, not surfaced as a typed failure.
-    // Every way to raise it is a prefix outside `[1, compactable.length]` or a
-    // digest that disagrees with the declaration, and all three calls below are
-    // handed the same immutable window plus `selectPrefix`'s own output on that
-    // window. Raising it would mean compaction's prefix arithmetic contradicts
-    // itself, which is a bug here rather than a condition a caller could act on.
+    // All three calls below receive the same immutable window, `selectPrefix`'s
+    // own output, and the state's validated generation parameters. An invalid
+    // prefix, digest, or parameter value here would contradict those invariants.
     const step = yield* Compaction.declare(state.contextWindow, prefixLength, {
       identity: "flows/harness/CellTurn.compaction",
       modelId: state.contextWindow.modelId,
@@ -1844,6 +1842,11 @@ const compacted = (
       new AgentEvent.CompactionSettled({
         eventType: eventType.compactionSettled,
         replacedPrefixDigest: step.replacedPrefixDigest,
+        retainedMessageCount: state.contextWindow.segments
+          .filter((segment) => ["transcript", "summary", "steering"].includes(segment.kind))
+          .slice(step.prefixLength)
+          .flatMap((segment) => segment.content)
+          .filter((item) => "role" in item).length,
         summary
       })
     )

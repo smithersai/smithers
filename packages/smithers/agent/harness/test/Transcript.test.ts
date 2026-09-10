@@ -5,10 +5,12 @@
  */
 import type { JournalEvent } from "@smthrs/journal"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
-import { Option, Result, Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import * as Cell from "../src/Cell.ts"
+import * as Compaction from "../src/Compaction.ts"
+import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
 import * as DemandText from "../src/internal/demandText.ts"
 import { printsObservation } from "../src/internal/printsObservation.ts"
@@ -157,6 +159,109 @@ describe("Transcript", () => {
       "transcript"
     ])
     expect(entries.map((entry) => entry.seq)).toEqual(before)
+  })
+
+  it("keeps the live retained suffix across partial and repeated compactions", () => {
+    const messages = ["old", "recent one", "recent two"].map((text) => ModelRequest.Message.user(text))
+    let live = ContextWindow.make({
+      modelId: "test",
+      segments: [
+        {
+          kind: "transcript",
+          zone: "tail",
+          content: messages.slice(0, 1),
+          tokens: { value: 30_000, estimated: false }
+        },
+        { kind: "transcript", zone: "tail", content: messages.slice(1), tokens: { value: 20_000, estimated: false } }
+      ]
+    })
+    const entries = [entry(
+      1,
+      AgentEvent.eventType.steeringDrained,
+      new AgentEvent.SteeringDrained({
+        eventType: AgentEvent.eventType.steeringDrained,
+        messages
+      })
+    )]
+    for (const round of [1, 2]) {
+      const prefixLength = Compaction.selectPrefix(live)
+      expect(prefixLength).toBe(1)
+      const step = Effect.runSync(Compaction.declare(live, prefixLength, { identity: "summary" }))
+      const summary = ModelRequest.Message.user(`summary ${round}`)
+      live = Effect.runSync(Compaction.apply(live, step, summary))
+      entries.push(entry(round + 1, AgentEvent.eventType.compactionSettled, {
+        _tag: "compaction-settled",
+        eventType: AgentEvent.eventType.compactionSettled,
+        replacedPrefixDigest: step.replacedPrefixDigest,
+        retainedMessageCount: 2,
+        summary
+      }))
+      expect(project(entries)).toEqual(ContextWindow.render(live).messages)
+      expect(Result.getOrThrow(Transcript.projectStateResult(entries)).replaced).toBe(step.replacedPrefixDigest)
+    }
+  })
+
+  it("replaces the whole prefix when the retained message count is zero", () => {
+    expect(project([
+      ...journal(),
+      entry(10, AgentEvent.eventType.compactionSettled, {
+        _tag: "compaction-settled",
+        eventType: AgentEvent.eventType.compactionSettled,
+        replacedPrefixDigest: "all",
+        retainedMessageCount: 0,
+        summary: ModelRequest.Message.user("all summarized")
+      })
+    ])).toEqual([ModelRequest.Message.user("all summarized")])
+  })
+
+  it("retains messages after a legacy summary when a later compaction supplies a boundary", () => {
+    const entries = [...journal()]
+    const recent = project(entries)[1]!
+    entries.push(entry(10, AgentEvent.eventType.compactionSettled, {
+      _tag: "compaction-settled",
+      eventType: AgentEvent.eventType.compactionSettled,
+      replacedPrefixDigest: "new-prefix",
+      retainedMessageCount: 1,
+      summary: ModelRequest.Message.user("updated summary")
+    }))
+    entries.push(entry(11, AgentEvent.eventType.steeringDrained, {
+      _tag: "steering-drained",
+      eventType: AgentEvent.eventType.steeringDrained,
+      messages: [ModelRequest.Message.user("next instruction")]
+    }))
+    const state = Result.getOrThrow(Transcript.projectStateResult(entries))
+    expect(state.messages.map(({ message }) => message)).toEqual([
+      ModelRequest.Message.user("updated summary"),
+      recent,
+      ModelRequest.Message.user("next instruction")
+    ])
+    expect(state.messages.map(({ kind }) => kind)).toEqual(["summary", "transcript", "steering"])
+    expect(state.replaced).toBe("new-prefix")
+  })
+
+  it.each([-1, 0.5, null, "2"])("rejects an invalid retained message count %j", (retainedMessageCount) => {
+    const result = Transcript.projectResult([entry(1, AgentEvent.eventType.compactionSettled, {
+      _tag: "compaction-settled",
+      eventType: AgentEvent.eventType.compactionSettled,
+      replacedPrefixDigest: "prefix",
+      retainedMessageCount,
+      summary: ModelRequest.Message.user("summary")
+    })])
+    expect(Result.isFailure(result) && result.failure.code).toBe("projection_failed")
+  })
+
+  it("decodes old compaction journals without a boundary and replaces all preceding messages", () => {
+    const payload = JSON.parse(JSON.stringify(
+      new AgentEvent.CompactionSettled({
+        eventType: AgentEvent.eventType.compactionSettled,
+        replacedPrefixDigest: "legacy",
+        summary: ModelRequest.Message.user("legacy summary")
+      })
+    ))
+    expect(Result.isSuccess(Schema.decodeUnknownResult(AgentEvent.CompactionSettled)(payload))).toBe(true)
+    expect(project([...journal(), entry(10, AgentEvent.eventType.compactionSettled, payload)])).toEqual([
+      ModelRequest.Message.user("legacy summary")
+    ])
   })
 
   it("returns a typed failure for malformed known payloads without throwing", () => {

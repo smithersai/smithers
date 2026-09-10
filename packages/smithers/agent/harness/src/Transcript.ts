@@ -223,12 +223,11 @@ export const projectStateResult = (
   const transitions: Array<Cell.Transition> = []
   const suspensions: Array<EngineLike.SuspendReason> = []
   const aborts: Array<string> = []
-  let compaction:
-    | {
-      readonly sequence: number
-      readonly payload: AgentEvent.CompactionSettled
-    }
-    | undefined
+  const compactions = new Map<number, AgentEvent.CompactionSettled>()
+  let replaced: string | undefined
+  // Legacy events replaced everything before themselves. Preserve that
+  // behavior, including skipping obsolete model payloads, for old journals.
+  let legacyBoundary = Number.NEGATIVE_INFINITY
 
   for (const entry of events) {
     switch (entry.eventType) {
@@ -287,26 +286,15 @@ export const projectStateResult = (
       case eventType.compactionSettled: {
         const decoded = decode(decodeCompactionSettled, entry)
         if (Result.isFailure(decoded)) return Result.fail(decoded.failure)
-        compaction = {
-          sequence: entry.seq,
-          payload: decoded.success
-        }
+        compactions.set(entry.seq, decoded.success)
+        replaced = decoded.success.replacedPrefixDigest
+        if (decoded.success.retainedMessageCount === undefined) legacyBoundary = entry.seq
         break
       }
     }
   }
 
   const messages: Array<ProjectedMessage> = []
-  if (compaction !== undefined) {
-    messages.push({
-      kind: "summary",
-      message: compaction.payload.summary.role === "user"
-        ? compaction.payload.summary
-        : ModelRequest.Message.user(
-          compaction.payload.summary.content.filter((part): part is ModelRequest.TextPart => part.type === "text")
-        )
-    })
-  }
   // Set only after emitting a print and cleared whenever another message is
   // emitted, so presence means the last projected turn is exactly this print.
   let precedingPrint: AgentEvent.CellPrinted | undefined
@@ -316,7 +304,22 @@ export const projectStateResult = (
   }
 
   for (const entry of events) {
-    if (compaction !== undefined && entry.seq <= compaction.sequence) continue
+    if (entry.seq < legacyBoundary) continue
+    const compaction = compactions.get(entry.seq)
+    if (compaction !== undefined) {
+      // Apply each boundary to the already-projected messages so repeated
+      // compactions replace prior summaries without dropping the recent tail.
+      messages.splice(0, Math.max(0, messages.length - (compaction.retainedMessageCount ?? 0)), {
+        kind: "summary",
+        message: compaction.summary.role === "user"
+          ? compaction.summary
+          : ModelRequest.Message.user(
+            compaction.summary.content.filter((part): part is ModelRequest.TextPart => part.type === "text")
+          )
+      })
+      precedingPrint = undefined
+      continue
+    }
     // The print buffer is the context channel: what a cell printed is what the
     // next model turn read, in the place the journal put it.
     const print = prints.get(entry.seq)
@@ -409,7 +412,7 @@ export const projectStateResult = (
   }
   return Result.succeed({
     messages,
-    replaced: compaction?.payload.replacedPrefixDigest,
+    replaced,
     cell: {
       produced,
       printed,

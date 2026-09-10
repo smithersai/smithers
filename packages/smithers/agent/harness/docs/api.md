@@ -896,7 +896,11 @@ journal sequence order; `Transcript.projectStateResult` projects the same
 events into typed state (`ProjectedState`, with the compaction replacement
 identity when one was recorded), preserving malformed-payload failures as
 typed `TranscriptError`s instead of throwing. `CellEvidence` is the
-schema-decoded cell evidence the rebuild consumes.
+schema-decoded cell evidence the rebuild consumes. `CompactionSettled.retainedMessageCount`
+records the number of messages in the live retained suffix, across all retained
+segments. Projection applies these boundaries in journal order, replacing only
+the preceding prefix with the summary. Older events without the field replace
+all messages preceding the event.
 
 ## Compaction
 
@@ -912,7 +916,10 @@ invoking a model; `summaryRequest` builds the model request input for the
 step, with `summaryInstruction` as its stable instruction; and `apply`
 splices a recorded summary into a projected window, failing with
 `InvalidStep` when the declaration does not match the window it is applied
-to.
+to. `Summarizer.params` is an optional `ModelRequest.GenerationParams`.
+`summaryRequest` schema-decodes supplied parameters, including JSON-round-tripped
+values, and returns `InvalidStep` for invalid values or unknown parameter keys.
+Defaults apply only when `params` is absent.
 
 ## Plan
 

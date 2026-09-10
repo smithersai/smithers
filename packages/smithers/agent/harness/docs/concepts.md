@@ -148,6 +148,9 @@ stable span is byte-identical for the life of a run.
 Compaction summaries are rendered as user messages, including summaries read
 from older journal records. This keeps every compacted request anchored by a
 leading user turn on providers that reject assistant-first conversations.
+The settlement records the retained suffix's message count so transcript
+projection replaces only the summarized prefix. Repeated compactions apply in
+journal order. Legacy settlements without a count replace all earlier messages.
 
 Enforced by `ContextWindow`, `Tokens`, and `Compaction`.
 

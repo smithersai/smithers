@@ -1,7 +1,7 @@
 import { ModelRequest } from "@smthrs/model"
 import { Effect } from "effect"
 import * as Result from "effect/Result"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Compaction from "../src/Compaction.ts"
 import { ContextWindow, prefixDigest } from "../src/ContextWindow.ts"
 
@@ -381,6 +381,10 @@ describe("Compaction", () => {
   })
 
   describe("summaryRequest", () => {
+    it("types the summarizer parameters as generation parameters", () => {
+      expectTypeOf<Compaction.Summarizer["params"]>().toEqualTypeOf<ModelRequest.GenerationParams | undefined>()
+    })
+
     it("asks for a summary of exactly the declared prefix and nothing after it", () => {
       const input = window()
       const step = Effect.runSync(Compaction.declare(input, 2, summarizer))
@@ -407,12 +411,24 @@ describe("Compaction", () => {
       expect(request.params).toEqual(ModelRequest.GenerationParams.make())
     })
 
-    it("falls back to default parameters when the summarizer carries a foreign params value", () => {
-      for (const params of [undefined, { temperature: 0.5 }, "high", null]) {
-        const step = Effect.runSync(Compaction.declare(window(), 1, { identity: "summary-v1", params }))
-        expect(Effect.runSync(Compaction.summaryRequest(window(), step)).params).toEqual(
-          ModelRequest.GenerationParams.make()
-        )
+    it("preserves parameters after a JSON round trip", () => {
+      const declaration: Compaction.Summarizer = JSON.parse(JSON.stringify({
+        ...summarizer,
+        params: ModelRequest.GenerationParams.make({ temperature: 0.5, maxTokens: 512, stopSequences: ["end"] })
+      }))
+      const step = Effect.runSync(Compaction.declare(window(), 1, declaration))
+      expect(Effect.runSync(Compaction.summaryRequest(window(), step)).params).toEqual(
+        ModelRequest.GenerationParams.make({ temperature: 0.5, maxTokens: 512, stopSequences: ["end"] })
+      )
+    })
+
+    it("rejects invalid supplied parameters instead of silently defaulting", () => {
+      for (const params of ["high", null, { temperature: "hot" }, { temperature: Infinity }, { unknown: 1 }]) {
+        const declaration = { identity: "summary-v1", params } as unknown as Compaction.Summarizer
+        const step = Effect.runSync(Compaction.declare(window(), 1, declaration))
+        const error = Effect.runSync(Compaction.summaryRequest(window(), step).pipe(Effect.flip))
+        expect(error).toBeInstanceOf(Compaction.InvalidStep)
+        expect(error.message).toBe("Invalid summarizer generation parameters")
       }
     })
 

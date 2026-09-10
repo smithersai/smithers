@@ -47,7 +47,7 @@ export class InvalidStep extends Schema.TaggedError<InvalidStep>("flows/harness/
 export interface Summarizer {
   readonly identity: string
   readonly modelId?: string | undefined
-  readonly params?: unknown
+  readonly params?: ModelRequest.GenerationParams | undefined
 }
 
 /**
@@ -234,14 +234,19 @@ export const summaryRequest = Effect.fn("flows/harness/Compaction.summaryRequest
   for (const segment of segments) {
     for (const item of segment.content) if ("role" in item) messages.push(item)
   }
+  const params = step.summarizer.params === undefined
+    ? ModelRequest.GenerationParams.make()
+    : yield* Schema.decodeUnknownEffect(ModelRequest.GenerationParams, { onExcessProperty: "error" })(
+      step.summarizer.params
+    ).pipe(
+      Effect.mapError((cause) => new InvalidStep({ message: "Invalid summarizer generation parameters", cause }))
+    )
   return ModelRequest.ModelRequest.make({
     modelId: step.summarizer.modelId ?? window.modelId,
     system: [ModelRequest.SystemPart.make({ text: summaryInstruction })],
     messages,
     tools: [],
-    params: step.summarizer.params instanceof ModelRequest.GenerationParams
-      ? step.summarizer.params
-      : ModelRequest.GenerationParams.make()
+    params
   })
 })
 

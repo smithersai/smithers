@@ -20,7 +20,9 @@ import { printsObservation } from "../src/internal/printsObservation.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
+import * as Transcript from "../src/Transcript.ts"
 import { batchedReply } from "./fixtures/batchedReplies.ts"
+import { entry } from "./fixtures/journal.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
@@ -817,8 +819,11 @@ const crowded = ContextWindow.make({
     bulk("two", 6_000),
     bulk("three", 6_000),
     bulk("four", 6_000),
-    bulk("five", 6_000),
-    bulk("six", 6_000)
+    {
+      kind: "transcript",
+      zone: "tail",
+      content: [...bulk("five", 6_000).content, ...bulk("six", 6_000).content]
+    }
   ]
 })
 
@@ -2706,6 +2711,9 @@ describe("CellTurn compaction", () => {
     expect(settled[0]?.replacedPrefixDigest).toBe(
       Result.getOrThrow(ContextWindow.prefixDigest(crowded, prefixLength))
     )
+    // The one retained segment holds two messages, as real frame segments do.
+    expect(crowded.segments.length - 1 - prefixLength).toBe(1)
+    expect(settled[0]?.retainedMessageCount).toBe(2)
     const summary = settled[0]?.summary
     expect(summary?.role).toBe("user")
     const summaryText = summary?.content.filter((part) => part.type === "text").map((part) => part.text).join("\n")
@@ -2726,6 +2734,17 @@ describe("CellTurn compaction", () => {
     )
     const rebuilt = Effect.runSync(Compaction.apply(crowded, step, summary!))
     expect(conversation(model.recorder.requests[1])).toEqual(ContextWindow.render(rebuilt).messages)
+    // The initial context represents already-journaled conversation; project
+    // through the emitted compaction event at the next model boundary.
+    const initial = new AgentEvent.SteeringDrained({
+      eventType: AgentEvent.eventType.steeringDrained,
+      messages: ContextWindow.render(crowded).messages
+    })
+    const boundary = events.findIndex((event) => event._tag === "compaction-settled")
+    const entries = [initial, ...events.slice(0, boundary + 1)].map((event, index) =>
+      entry(index + 1, event.eventType, event)
+    )
+    expect(Result.getOrThrow(Transcript.projectResult(entries))).toEqual(ContextWindow.render(rebuilt).messages)
     expect(of(events, "resolved")[0]?.message.content).toEqual([
       ModelRequest.TextPart.make({ text: "done" })
     ])

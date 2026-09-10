@@ -707,6 +707,9 @@ export class CompactionSettled extends Schema.TaggedClass<CompactionSettled>(
 )("compaction-settled", {
   eventType: Schema.Literal("flows.harness.compaction-settled.v1"),
   replacedPrefixDigest: Schema.String,
+  // Counts messages, not segments: one live transcript segment can contain
+  // both an assistant turn and its observations. Absent in older journals.
+  retainedMessageCount: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   summary: ModelRequest.Message
 }) {}
 
