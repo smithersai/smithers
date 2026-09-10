@@ -28,6 +28,7 @@ import * as DurableEngineState from "./DurableEngineState.ts"
 import * as ActionPersistence from "./internal/ActionPersistence.ts"
 import * as AttemptAdmission from "./internal/AttemptAdmission.ts"
 import * as AttemptProbe from "./internal/AttemptProbe.ts"
+import * as CacheAgeVerdicts from "./internal/CacheAgeVerdicts.ts"
 import * as DeferredPersistence from "./internal/DeferredPersistence.ts"
 import * as EngineJj from "./internal/EngineJj.ts"
 import * as RunDriver from "./internal/RunDriver.ts"
@@ -121,6 +122,9 @@ const makeWithEngineJj = (
     // per-make default would never contend and the same-key exclusion the
     // adoption evidence rests on (issues #102, #103) would silently vanish.
     const admission = AttemptAdmission.makeUnsafe()
+    // Run instances own the projection's lifetime, including nested actions.
+    // A resumed instance rebuilds it without retaining completed runs here.
+    const ageVerdicts = new WeakMap<FlowRuntime.FlowInstance["Service"], ReturnType<typeof CacheAgeVerdicts.make>>()
     const attemptStore = yield* AttemptStore.AttemptStore
     const cacheStore = yield* CacheStore.CacheStore
     const journal = yield* Journal.Journal
@@ -172,6 +176,11 @@ const makeWithEngineJj = (
 
     const actionExecute = Effect.fn("FlowEngine.actionExecute")(function*(input: FlowEngine.ActionExecuteOptions) {
       const parent = yield* FlowRuntime.FlowInstance
+      let cacheAgeVerdict = ageVerdicts.get(parent)
+      if (cacheAgeVerdict === undefined) {
+        cacheAgeVerdict = CacheAgeVerdicts.make(parent.executionId)
+        ageVerdicts.set(parent, cacheAgeVerdict)
+      }
       yield* Effect.annotateCurrentSpan({
         runId: parent.executionId,
         action: input.action.name,
@@ -190,6 +199,7 @@ const makeWithEngineJj = (
         parent.flow,
         parent.executionId
       )
+      ageVerdicts.set(instance, cacheAgeVerdict)
       const flowEngine = yield* Deferred.await(engine)
       instance.interrupted = parent.interrupted
       // DECIDED (2026-08-11, pending review): the waiting classification is
@@ -221,7 +231,8 @@ const makeWithEngineJj = (
         idempotencyKey: input.action.idempotencyKey === undefined
           ? undefined
           : input.key,
-        admission
+        admission,
+        cacheAgeVerdict
       })({
         action: input.action,
         attempt: input.attempt,

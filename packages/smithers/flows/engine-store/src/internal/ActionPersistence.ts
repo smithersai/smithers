@@ -33,6 +33,7 @@ import * as WorkspaceSandbox from "../WorkspaceSandbox.ts"
 import * as AttemptAdmission from "./AttemptAdmission.ts"
 import * as CacheAdmission from "./CacheAdmission.ts"
 import * as CacheAgeHistory from "./CacheAgeHistory.ts"
+import * as CacheAgeVerdicts from "./CacheAgeVerdicts.ts"
 import * as CacheOutputPolicy from "./CacheOutputPolicy.ts"
 import * as CachePublication from "./CachePublication.ts"
 import * as EffectRecords from "./EffectRecords.ts"
@@ -308,6 +309,8 @@ export interface Dependencies {
    * same-key dispatches share the returned executor.
    */
   readonly admission?: AttemptAdmission.Service | undefined
+  /** Shared by callers that construct an executor for every dispatch in a run. */
+  readonly cacheAgeVerdict?: ReturnType<typeof CacheAgeVerdicts.make> | undefined
 }
 
 const AttemptMeta = Schema.Struct({
@@ -710,6 +713,7 @@ const declaredCachePolicy = (action: unknown): CacheEnvironment.CachePolicy | un
  */
 export const make = (deps: Dependencies) => {
   const admission = deps.admission ?? AttemptAdmission.makeUnsafe()
+  const recordedAgeVerdict = deps.cacheAgeVerdict ?? CacheAgeVerdicts.make(deps.runId)
   // The lineage every record this executor writes addresses itself to.
   // An action is a node inside its run's root lineage, not a lineage of
   // its own: a lineage segment is minted only where a separate run is
@@ -1277,6 +1281,10 @@ export const make = (deps: Dependencies) => {
            * The bound is applied here rather than inside `cache.get` so the
            * refusal is a decision this run journalled and owns, not a read
            * policy the store re-derives from a fresh clock on every lookup.
+           * The no-TTL guard refreshes a per-executor verdict index through
+           * the journal's current tail before answering absence. Its cursor
+           * covers only fully processed pages in the same journal generation;
+           * resume or a changed history rebuilds it once, never per dispatch.
            */
           const admissible = (
             ttlMs: number | undefined,
@@ -1286,10 +1294,7 @@ export const make = (deps: Dependencies) => {
               // Removing TTL cannot bypass a verdict this run already consumed,
               // even if the head was subsequently evicted or replaced.
               if (ttlMs === undefined) {
-                const recorded = yield* CacheAgeHistory.find(journal, deps.runId, (entry) =>
-                  entry.sourceId.startsWith(`cache:${keyDigest}:ttl:`) ||
-                  ((entry.payload as { action?: unknown } | null)?.action === "ttl" &&
-                    (entry.payload as { keyDigest?: unknown }).keyDigest === keyDigest))
+                const recorded = yield* recordedAgeVerdict(journal, keyDigest)
                 if (recorded !== undefined) {
                   return yield* Effect.fail(
                     new Journal.JournalError({

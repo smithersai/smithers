@@ -141,6 +141,13 @@ policy or use a new action identity. Before a verdict exists, the policy can
 still change. Scope continues to narrow the cache address without changing the
 durable attempt identity.
 
+The no-TTL guard indexes verdicts per executor and reads only journal entries
+after its last validated sequence on subsequent dispatches. It checks new
+entries before answering absence. Resume, a different journal service, or a
+changed rewind generation rebuilds the index from retained history once.
+EngineStore shares it across a run's action instances; PlanScheduler shares it
+across its node dispatches.
+
 A fork may reuse a copied parent's age verdict only after a paged history
 lookup validates the complete producer identity, event type, payload including
 TTL and recorded provenance, sequence, timestamp, and lineage metadata against

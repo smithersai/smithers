@@ -14,8 +14,9 @@ import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
 import * as TestStores from "../src/test/TestStores.ts"
-import { activate, boundary, dispatch, jj, owner } from "./CachePolicyFixtures.ts"
+import { activate, boundary, descriptor, dispatch, jj, owner } from "./CachePolicyFixtures.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const action = Action.make({
@@ -42,6 +43,72 @@ const at = (millis: number) =>
 const lineage = (runId: string) => `smithers-journal-lineage/v1:${JSON.stringify([runId])}`
 
 describe("immutable age policy and validated fork replay", () => {
+  it.effect("refreshes a prior absence after the same executor consumes a TTL verdict and loses the head", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        let bodies = 0
+        const body = () => Effect.sync(() => (bodies++, "recorded"))
+        yield* activate("producer")
+        yield* dispatch("producer", "later-ttl", body).pipe(at(100))
+        yield* activate("consumer")
+        const execute = ActionPersistence.make({ runId: "consumer", owner, sourceId: "cache-policy", execute: body })
+        const input = { key: "later-ttl", tier: "sealed" as const, attempt: 1, metadata: descriptor }
+        expect(yield* execute({ ...input, action: policy() }).pipe(at(200))).toBe("recorded")
+        expect(yield* execute({ ...input, action: policy(1000) }).pipe(at(300))).toBe("recorded")
+        const cache = yield* CacheStore.CacheStore
+        yield* cache.evict(sha256(input.key))
+        const result = yield* execute({ ...input, action: policy() }).pipe(at(400), Effect.result)
+        expect(Result.isFailure(result)).toBe(true)
+        if (Result.isFailure(result)) {
+          expect(result.failure).toMatchObject({
+            code: "idempotency_conflict",
+            message: expect.stringContaining("ttlMs cannot be removed"),
+            cause: expect.anything()
+          })
+        }
+        expect(bodies).toBe(1)
+      }).pipe(Effect.provide(Layer.mergeAll(TestStores.layer(), jj, boundary())), Effect.scoped)
+    ))
+
+  for (const evicted of [false, true]) {
+    it(`refuses TTL removal after reopening the database (evicted head: ${evicted})`, async () => {
+      const root = mkdtempSync(join(tmpdir(), "cache-age-resume-"))
+      const db = join(root, "engine.sqlite")
+      let bodies = 0
+      const body = () => Effect.sync(() => (bodies++, "recorded"))
+      try {
+        await Effect.runPromise(withCrypto(
+          Effect.gen(function*() {
+            yield* activate("producer")
+            yield* dispatch("producer", "resume-ttl", body, policy(1000)).pipe(at(100))
+            yield* activate("consumer")
+            yield* dispatch("consumer", "resume-ttl", body, policy(1000)).pipe(at(200))
+            if (evicted) {
+              const cache = yield* CacheStore.CacheStore
+              yield* cache.evict(sha256("resume-ttl"))
+            }
+          }).pipe(Effect.provide(Layer.mergeAll(TestStores.layerAt(db), jj, boundary())), Effect.scoped)
+        ))
+        await Effect.runPromise(withCrypto(
+          Effect.gen(function*() {
+            const result = yield* dispatch("consumer", "resume-ttl", body, policy()).pipe(at(300), Effect.result)
+            expect(Result.isFailure(result)).toBe(true)
+            if (Result.isFailure(result)) {
+              expect(result.failure).toMatchObject({
+                code: "idempotency_conflict",
+                message: expect.stringContaining("ttlMs cannot be removed"),
+                cause: expect.anything()
+              })
+            }
+          }).pipe(Effect.provide(Layer.mergeAll(TestStores.layerAt(db), jj, boundary())), Effect.scoped)
+        ))
+        expect(bodies).toBe(1)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+
   it.effect("preserves a copied-history read failure without serving or expiring the row", () =>
     withCrypto(
       Effect.gen(function*() {

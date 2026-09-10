@@ -4,6 +4,7 @@ import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import * as History from "../src/internal/CacheAgeHistory.ts"
+import * as Verdicts from "../src/internal/CacheAgeVerdicts.ts"
 
 const payload = {
   keyDigest: "key",
@@ -86,6 +87,116 @@ const services = (state: Fixture) => ({
       })
   }),
   runs: RunStore.makeNoop({ get: (runId) => Effect.succeed(run(runId, state.parents[runId] ?? null)) })
+})
+
+describe("incremental verdict lookup", () => {
+  it.effect("indexes producer and payload keys across pages and observes later verdicts", () =>
+    Effect.gen(function*() {
+      const state = fixture()
+      state.child = Array.from({ length: 129 }, (_, seq) =>
+        makeEntry("child", {
+          seq: JournalEvent.Seq.make(seq),
+          sourceId: JournalEvent.SourceId.make(`ordinary:${seq}`),
+          payload: null
+        }))
+      const recorded = makeEntry("child", {
+        seq: JournalEvent.Seq.make(129),
+        // Both identities must survive even when the event is malformed.
+        eventType: "unexpected",
+        payload: { ...payload, keyDigest: "payload-key" }
+      })
+      state.child.push(recorded)
+      const base = services(state).journal
+      const cursors: Array<number | undefined> = []
+      const journal = Journal.makeNoop({
+        entries: (options) => {
+          cursors.push(options.after)
+          return base.entries(options)
+        }
+      })
+      const lookup = Verdicts.make("child")
+      expect(yield* lookup(journal, "missing")).toBeUndefined()
+      expect(yield* lookup(journal, "key")).toEqual(recorded)
+      expect(yield* lookup(journal, "payload-key")).toEqual(recorded)
+      const later = makeEntry("child", {
+        seq: JournalEvent.Seq.make(130),
+        sourceId: JournalEvent.SourceId.make("altered-producer"),
+        payload: { ...payload, keyDigest: "missing" }
+      })
+      state.child.push(later, makeEntry("child", { seq: JournalEvent.Seq.make(131) }))
+      expect(yield* lookup(journal, "missing")).toEqual(later)
+      expect(yield* lookup(journal, "key")).toEqual(recorded)
+      expect(cursors).toEqual([undefined, 127, 129, 129, 129, 131])
+      const malformed = makeEntry("child", {
+        seq: JournalEvent.Seq.make(132),
+        sourceId: JournalEvent.SourceId.make("cache:malformed:ttl:producer:7"),
+        payload: { action: "ttl", keyDigest: 1 }
+      })
+      state.child.push(malformed)
+      expect(yield* lookup(journal, "malformed")).toEqual(malformed)
+    }))
+
+  it.effect("rebuilds when the journal service or rewind generation changes", () =>
+    Effect.gen(function*() {
+      const state = fixture()
+      const base = services(state).journal
+      let generation = 0
+      const journal = Journal.makeNoop({
+        ...base,
+        generation: () => Effect.succeed({ generation, afterSeq: -1 })
+      })
+      const lookup = Verdicts.make("child")
+      expect(yield* lookup(journal, "key")).toEqual(state.child[0])
+      state.child = []
+      generation++
+      expect(yield* lookup(journal, "key")).toBeUndefined()
+      state.child = [makeEntry("child")]
+      generation++
+      expect(yield* lookup(journal, "key")).toEqual(state.child[0])
+      const other = Journal.makeNoop({ entries: () => Effect.succeed({ entries: [], hasMore: false }) })
+      expect(yield* lookup(other, "key")).toBeUndefined()
+      expect(yield* lookup(journal, "key")).toEqual(state.child[0])
+    }))
+
+  it.effect("preserves read failures and retries from the last fully processed page", () =>
+    Effect.gen(function*() {
+      const state = fixture()
+      state.child = Array.from({ length: 129 }, (_, seq) =>
+        makeEntry("child", {
+          seq: JournalEvent.Seq.make(seq),
+          sourceId: JournalEvent.SourceId.make(`ordinary:${seq}`),
+          payload: {}
+        }))
+      state.child[128] = makeEntry("child", { seq: JournalEvent.Seq.make(128) })
+      const base = services(state).journal
+      const failure = new Journal.JournalError({ code: "read_failed", message: "injected suffix read failure" })
+      let fail = true
+      const cursors: Array<number | undefined> = []
+      const journal = Journal.makeNoop({
+        entries: (options) => {
+          cursors.push(options.after)
+          return fail && options.after !== undefined ? Effect.fail(failure) : base.entries(options)
+        }
+      })
+      const lookup = Verdicts.make("child")
+      expect(yield* lookup(journal, "key").pipe(Effect.result)).toEqual(Result.fail(failure))
+      fail = false
+      expect(yield* lookup(journal, "key")).toEqual(state.child[128])
+      expect(cursors).toEqual([undefined, 127, 127])
+    }))
+
+  for (const empty of [false, true]) {
+    it.effect(`refuses a nonadvancing projection cursor (${empty})`, () =>
+      Effect.gen(function*() {
+        const journal = Journal.makeNoop({
+          entries: () => Effect.succeed({ entries: empty ? [] : [makeEntry("child")], hasMore: true })
+        })
+        const lookup = Verdicts.make("child")
+        const result = yield* lookup(journal, "key").pipe(Effect.result)
+        expect(Result.isFailure(result)).toBe(true)
+        if (Result.isFailure(result)) expect(result.failure.code).toBe("read_failed")
+      }))
+  }
 })
 
 describe("validated history identity", () => {

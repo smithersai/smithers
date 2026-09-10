@@ -64,6 +64,65 @@ const layer = Layer.mergeAll(TestStores.layer(), StepBoundary.layerTest(), jj)
 const tolerantLayer = Layer.provideMerge(Inconsistency.layerTolerant(owner), layer)
 
 describe("ActionPersistence", () => {
+  it.effect("bounds default cache history reads per dispatch as the run grows", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        yield* activate("incremental-cache-history")
+        const journal = yield* Journal.Journal
+        let pages = 0
+        let rows = 0
+        const counting: Journal.Service = {
+          ...journal,
+          entries: (options) =>
+            journal.entries(options).pipe(Effect.tap((page) =>
+              Effect.sync(() => {
+                pages++
+                rows += page.entries.length
+              })
+            ))
+        }
+        const makeExecute = () =>
+          ActionPersistence.make({
+            runId: "incremental-cache-history",
+            owner,
+            sourceId: "action-test",
+            execute: () => Effect.succeed("result")
+          })
+        const execute = makeExecute()
+        const reads: Array<{ pages: number; rows: number }> = []
+        for (let index = 0; index < 200; index++) {
+          pages = 0
+          rows = 0
+          yield* execute({
+            action: {},
+            attempt: 1,
+            key: `incremental-cache-history/${index}`,
+            tier: "sealed",
+            metadata: boundary
+          }).pipe(Effect.provideService(Journal.Journal, counting))
+          reads.push({ pages, rows })
+        }
+        expect(Math.max(...reads.map((read) => read.pages))).toBeLessThanOrEqual(1)
+        expect(Math.max(...reads.map((read) => read.rows))).toBeLessThanOrEqual(4)
+        expect(reads.reduce((total, read) => total + read.rows, 0)).toBeLessThanOrEqual(4 * 199)
+        const resumed = makeExecute()
+        for (let index = 200; index < 202; index++) {
+          pages = 0
+          rows = 0
+          yield* resumed({
+            action: {},
+            attempt: 1,
+            key: `incremental-cache-history/${index}`,
+            tier: "sealed",
+            metadata: boundary
+          }).pipe(Effect.provideService(Journal.Journal, counting))
+          // A new executor rebuilds once, then returns to incremental reads.
+          expect(pages).toBe(index === 200 ? 7 : 1)
+          expect(rows).toBe(index === 200 ? 800 : 4)
+        }
+      }).pipe(Effect.provide(layer), Effect.scoped)
+    ))
+
   it.effect("does not dispatch when attempt admission reports an existing or conflicting row", () =>
     Effect.gen(function*() {
       let dispatches = 0

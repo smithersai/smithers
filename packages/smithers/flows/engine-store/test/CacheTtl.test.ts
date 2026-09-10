@@ -987,6 +987,52 @@ describe("a WithCache policy on the durable engine", () => {
       return yield* Build.execute({ target: "server" }, { executionId }).pipe(Effect.provide(wiring))
     })
 
+  it.effect("shares incremental age history across the engine's per-dispatch executors", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        let pages = 0
+        const reads: Array<number> = []
+        const counting: Journal.Service = {
+          ...journal,
+          entries: (options) =>
+            journal.entries(options).pipe(Effect.tap(() =>
+              Effect.sync(() => {
+                pages++
+              })
+            ))
+        }
+        const engine = yield* EngineStore.make({
+          owner: { hostId: "incremental-engine" },
+          journalSource: "incremental-engine",
+          isAlive: () => Effect.succeed(false)
+        }).pipe(Effect.provideService(Journal.Journal, counting))
+        const wiring = Layer.mergeAll(
+          Bundle.toLayer(() =>
+            Effect.gen(function*() {
+              for (let index = 0; index < 50; index++) {
+                pages = 0
+                yield* compile({}, () => {}, `incremental-${index}`)
+                reads.push(pages)
+              }
+              return "built"
+            })
+          ),
+          Interpreter.layer(Build)
+        ).pipe(
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
+        )
+        expect(
+          yield* Build.execute({ target: "server" }, { executionId: "incremental-engine" }).pipe(
+            Effect.provide(wiring)
+          )
+        ).toBe("built")
+        expect(reads).toHaveLength(50)
+        expect(Math.max(...reads)).toBeLessThanOrEqual(1)
+      }).pipe(Effect.provide(engineLayers), Effect.scoped)
+    ))
+
   it.effect("replays inside the declared bound and dispatches again past it", () =>
     withCrypto(
       Effect.gen(function*() {

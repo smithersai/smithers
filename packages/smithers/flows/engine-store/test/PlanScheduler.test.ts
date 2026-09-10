@@ -141,6 +141,36 @@ const scheduler = (options: Harness) =>
 describe("PlanScheduler option bounds", () => {
   const executor: PlanScheduler.Executor = { execute: () => Effect.succeed("unused") }
 
+  it("shares incremental age history across scheduled node executors", async () => {
+    const plan = await runPromise(compile(Array.from({ length: 50 }, (_, index) => draft(`incremental-${index}`))))
+    let pages = 0
+    await runPromise(
+      Effect.gen(function*() {
+        yield* activate("incremental-scheduler")
+        const journal = yield* Journal.Journal
+        yield* scheduler({
+          runId: "incremental-scheduler",
+          executor,
+          options: { concurrency: { steps: 1 } }
+        }).run(plan).pipe(Effect.provideService(Journal.Journal, {
+          ...journal,
+          entries: (options) =>
+            journal.entries(options).pipe(Effect.tap(() =>
+              Effect.sync(() => {
+                // The scheduler also drains deviations in 512-row pages.
+                // Count the cache guard's 128-row pages independently.
+                if (options.limit === 128) pages++
+              })
+            ))
+        }))
+      }).pipe(
+        Effect.provide(harness({ runId: "incremental-scheduler", executor })),
+        Effect.provide(TestStores.layer())
+      )
+    )
+    expect(pages).toBe(50)
+  })
+
   it("rejects non-positive or non-integral concurrency caps synchronously", () => {
     for (const value of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
       expect(() =>

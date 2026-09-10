@@ -84,6 +84,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as EngineStoreMetrics from "./EngineStoreMetrics.ts"
 import * as ActionPersistence from "./internal/ActionPersistence.ts"
+import * as CacheAgeVerdicts from "./internal/CacheAgeVerdicts.ts"
 import * as FileEnumeration from "./internal/FileEnumeration.ts"
 import * as JournalRecords from "./internal/JournalRecords.ts"
 import { compareText } from "./internal/Ordering.ts"
@@ -439,6 +440,7 @@ const nonNegativeSafeInteger = (name: string, value: number): number => {
  * @category constructors
  */
 export const make = (options: Options): Service => {
+  const cacheAgeVerdict = CacheAgeVerdicts.make(options.runId)
   const rebaseLimit = nonNegativeSafeInteger("rebaseLimit", options.rebaseLimit ?? 3)
   const scheduling = Scheduling.make(options.concurrency)
   // Capture before the first async boundary. Callers can retain and mutate
@@ -1059,6 +1061,7 @@ export const make = (options: Options): Service => {
             const exit = yield* ActionPersistence.make({
               runId: options.runId,
               owner: options.owner,
+              cacheAgeVerdict,
               sourceId: `${options.sourceId}/node/${node.id}`,
               execute: () =>
                 Ref.set(ran, true).pipe(
