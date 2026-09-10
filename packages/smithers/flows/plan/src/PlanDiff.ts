@@ -28,10 +28,11 @@ export interface Rekeyed {
   readonly from: string
   readonly to: string
   /**
-   * Field labels such as `"body"`, `"layers"`, `"capabilities"`, `"effects"`,
-   * and `"input[0]"` whose declaration differs. A `Pending`-referenced
-   * upstream re-key is attributed to that input position too. `changed` is
-   * empty only when none of the compared fields moved.
+   * Field labels such as `"kind"`, `"body"`, `"layers"`, `"capabilities"`,
+   * `"effects"`, and `"input[0]"` whose declaration differs. `"kind"` is the
+   * effect tier (`sealed`, `compensable`, or `irreversible`). A
+   * `Pending`-referenced upstream re-key is attributed to that input position
+   * too. `changed` is empty only when none of the compared fields moved.
    */
   readonly changed: ReadonlyArray<string>
 }
@@ -108,8 +109,11 @@ const changedFields = (
 ): ReadonlyArray<string> => {
   const changed: Array<string> = []
   // StepKey.materialBody is the identity list this attribution must mirror.
-  // Inputs, layers, and capabilities complete fromKeyMaterial's hashed value.
+  // Inputs, layers, and capabilities complete fromKeyMaterial's hashed value,
+  // and material.kind selects the key namespace (content versus tier-bearing
+  // plan declaration), so a tier-only move still re-keys and is blamed here.
   if (!sameField(previous.material.version, next.material.version, next.id, "version")) changed.push("version")
+  if (previous.material.kind !== next.material.kind) changed.push("kind")
   if (!sameField(previous.material.body, next.material.body, next.id, "body")) changed.push("body")
   if (!sameField(previous.material.nondeterministic, next.material.nondeterministic, next.id, "nondeterministic")) {
     changed.push("nondeterministic")

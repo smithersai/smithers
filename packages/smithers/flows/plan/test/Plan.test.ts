@@ -1425,6 +1425,7 @@ describe("PlanDiff.diff", () => {
       const before = yield* withCrypto(compile([material({})]))
       const after = yield* withCrypto(compile([
         material({
+          kind: "irreversible",
           body: 2,
           nondeterministic: true,
           layers: ["b"],
@@ -1435,6 +1436,7 @@ describe("PlanDiff.diff", () => {
         }, { reads: ["input"], writes: [], boundaryMode: "expected" })
       ]))
       expect(PlanDiff.diff(before, after).rekeyed[0]!.changed).toEqual([
+        "kind",
         "body",
         "nondeterministic",
         "effects",
@@ -1470,6 +1472,7 @@ describe("PlanDiff.diff", () => {
       const cases: ReadonlyArray<
         readonly [string, Partial<KeyMaterial.KeyMaterial>, Plan.NodeEffects?]
       > = [
+        ["kind", { kind: "irreversible" }],
         ["body", { body: 2 }],
         ["nondeterministic", { nondeterministic: true }],
         ["effects", {}, { reads: ["input"], writes: [], boundaryMode: "expected" }],
@@ -1485,6 +1488,48 @@ describe("PlanDiff.diff", () => {
       }
 
       expect(attributions).toEqual(cases.map(([field]) => [field, [field]]))
+    }))
+
+  it.effect("attributes a tier-only change to kind for every effect-tier pair", () =>
+    Effect.gen(function*() {
+      const tiered = (
+        id: string,
+        kind: KeyMaterial.KeyMaterial["kind"],
+        inputs: ReadonlyArray<KeyMaterial.InputRef> = []
+      ): Plan.NodeDraft => ({
+        id,
+        material: {
+          version: KeyMaterial.version,
+          kind,
+          body: { action: id },
+          inputs: [...inputs],
+          layers: [],
+          capabilities: []
+        },
+        effects: effects([], [])
+      })
+      const tiers: ReadonlyArray<KeyMaterial.KeyMaterial["kind"]> = ["sealed", "compensable", "irreversible"]
+      for (const from of tiers) {
+        for (const to of tiers) {
+          if (from === to) continue
+          const before = yield* withCrypto(compile([tiered("node", from)]))
+          const after = yield* withCrypto(compile([tiered("node", to)]))
+          expect(PlanDiff.diff(before, after).rekeyed[0]!.changed).toEqual(["kind"])
+        }
+      }
+      // A dependent of a tier-changed node still blames the input position
+      // that references it; its own unchanged tier is not attributed.
+      const before = yield* withCrypto(compile([
+        tiered("source", "sealed"),
+        tiered("derived", "compensable", [{ _tag: "Ref", from: "source", path: [] }])
+      ]))
+      const after = yield* withCrypto(compile([
+        tiered("source", "irreversible"),
+        tiered("derived", "compensable", [{ _tag: "Ref", from: "source", path: [] }])
+      ]))
+      const result = PlanDiff.diff(before, after)
+      expect(result.rekeyed.find((entry) => entry.id === "source")!.changed).toEqual(["kind"])
+      expect(result.rekeyed.find((entry) => entry.id === "derived")!.changed).toEqual(["input[0]"])
     }))
 
   it.effect("says nothing changed when nothing did", () =>

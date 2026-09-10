@@ -53,10 +53,11 @@ needs saying, and `diff` says nothing else. Four lists come back:
 derived by comparing declarations field by field, and it is deliberately part of
 no digest. Changing how the report reads can never change what a plan hashes to.
 
-The labels mirror the fields the hashed material body folds:
+The labels mirror the hashed declaration: the effect tier `kind`, the fields
+the hashed material body folds, and the input positions:
 
 ```text
-body  layers  capabilities  effects  version  nondeterministic  placement  input[n]
+kind  body  layers  capabilities  effects  version  nondeterministic  placement  input[n]
 ```
 
 An `input[n]` entry appears when that input's declaration changed, and also when
