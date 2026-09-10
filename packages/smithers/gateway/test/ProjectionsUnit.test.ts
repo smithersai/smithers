@@ -12,8 +12,9 @@ import { describe, expect, it } from "@effect/vitest"
 import type { Service as ControlService } from "@smthrs/control/Control"
 import { PersistenceError, Unavailable } from "@smthrs/control/ControlError"
 import type { ControlEvent, ListResponse, RunSummary } from "@smthrs/control/ControlSchema"
-import { Effect, Logger, Schema, Stream } from "effect"
+import { Deferred, Effect, Logger, Schema, Stream } from "effect"
 import { GatewayError } from "../src/GatewayError.ts"
+import * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.ts"
 import * as Projections from "../src/Projections.ts"
 
@@ -885,18 +886,26 @@ describe("Projections subscriptions", () => {
       expect((yield* projections.snapshot({ _tag: "approvals" })).rows).toEqual([])
     }))
 
-  it.effect("reconsiders a judged run when it parks on a pending approval", () =>
+  // Live clock: the parking event must arrive after the first coalesced batch
+  // has judged the run, or the follower never holds a verdict to reconsider.
+  it.live("reconsiders a judged run when it parks on a pending approval", () =>
     Effect.gen(function*() {
       let parked = false
       let reads = 0
+      let lookups = 0
+      const judged = yield* Deferred.make<void>()
       const waiting = event(2, "control.run.waiting-approval", { runId: run.runId })
       const projections = make(control({
         list: (request) =>
-          Effect.succeed({
-            _tag: "runs",
-            items: request._tag === "runs" && request.filters?.runId
-              ? [{ ...run, status: parked ? "waiting-approval" : "running" }]
-              : []
+          Effect.gen(function*() {
+            const named = request._tag === "runs" && request.filters?.runId !== undefined
+            // The second named lookup is the reconciling re-read that ends the
+            // first admission, so the verdict is settled before the run parks.
+            if (named && (lookups += 1) === 2) yield* Deferred.succeed(judged, undefined)
+            return {
+              _tag: "runs",
+              items: named ? [{ ...run, status: parked ? "waiting-approval" : "running" }] : []
+            } satisfies ListResponse
           }),
         watch: (filter) => {
           if (!filter.follow) {
@@ -905,7 +914,7 @@ describe("Projections subscriptions", () => {
           }
           return Stream.concat(
             Stream.succeed(approvalRequested),
-            Stream.fromEffect(Effect.sync(() => {
+            Stream.fromEffect(Effect.map(Deferred.await(judged), () => {
               parked = true
               return waiting
             }))
@@ -955,7 +964,11 @@ describe("Projections subscriptions", () => {
       try {
         globalThis.Map = ObservedMap
         const frames = yield* Stream.runCollect(projections.subscribe({ _tag: "approvals" }))
-        expect(frames.filter((frame) => frame._tag === "delta")).toHaveLength(1002)
+        const deltas = frames.filter((frame) => frame._tag === "delta")
+        // 1502 followed events span two coalesced batches of 1024, and every
+        // admitted gate was approved by the end, so the inbox finishes empty.
+        expect(deltas).toHaveLength(2)
+        expect(deltas.at(-1)?.delta).toEqual([])
         expect(peak).toBeGreaterThan(0)
         expect(peak).toBeLessThanOrEqual(Projections.maxWorkspaceRuns)
       } finally {
@@ -1702,4 +1715,92 @@ describe("snapshot reconciliation bounds", () => {
         expect(frames.filter((frame) => frame._tag === "delta")).toHaveLength(1)
       }))
   }
+})
+
+describe("Projections delta cost", () => {
+  it.effect("coalesces a workspace burst into one frame and re-reads only the changed runs", () =>
+    Effect.gen(function*() {
+      const runs = Array.from(
+        { length: Projections.maxWorkspaceRuns },
+        (_, index): RunSummary => ({ ...numberedRun(index + 1), status: "running" })
+      )
+      const byId = new Map(runs.map((candidate) => [candidate.runId, candidate]))
+      const changedRuns = runs.slice(0, 5)
+      const burst = changedRuns.flatMap((changed) =>
+        Array.from({ length: 20 }, (_, index): ControlEvent => ({
+          ...event(index + 1, "control.agent.turn-opened", { runId: changed.runId, seat: "opus" }),
+          runId: changed.runId
+        }))
+      )
+      let runLookups = 0
+      let lookupsAtSnapshotEnd = 0
+      const projections = make(
+        control({
+          list: (request) =>
+            Effect.sync((): ListResponse => {
+              if (request._tag !== "runs") return { _tag: "runs", items: [] }
+              const runId = request.filters?.runId
+              if (runId === undefined) return { _tag: "runs", items: runs }
+              runLookups += 1
+              const found = byId.get(runId)
+              return { _tag: "runs", items: found === undefined ? [] : [found] }
+            }),
+          watch: (filter) => filter.follow === true ? Stream.fromIterable(burst) : Stream.empty
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+
+      const frames = yield* Stream.runCollect(
+        projections.subscribe({ _tag: "workspace-runs" }).pipe(
+          Stream.tap((frame) =>
+            Effect.sync(() => {
+              if (frame._tag === "snapshot-end") lookupsAtSnapshotEnd = runLookups
+            })
+          )
+        )
+      )
+      const deltas = frames.filter((frame) => frame._tag === "delta")
+      // A burst of a hundred events must not cost a hundred full-workspace
+      // frames, and only the runs whose journals grew need their row re-read.
+      expect(deltas).toHaveLength(1)
+      const rows = deltas[0]?._tag === "delta" ? [...deltas[0].delta] : []
+      expect(rows).toHaveLength(Projections.maxWorkspaceRuns)
+      expect(rows.filter((row) => "turns" in row && row.turns === 20)).toHaveLength(changedRuns.length)
+      expect(runLookups - lookupsAtSnapshotEnd).toBe(changedRuns.length)
+    }))
+
+  it.effect("appends transcript rows instead of re-sending the folded history", () =>
+    Effect.gen(function*() {
+      const history = Array.from({ length: 200 }, (_, index) =>
+        index % 4 === 0
+          ? event(index + 1, "control.agent.turn-opened", { runId: "run-1", seat: "opus" })
+          : event(index + 1, "control.agent.model-settled", { runId: "run-1", text: "done", usage: {} }))
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+          watch: (filter) =>
+            Stream.fromIterable(
+              filter.follow === true ? history.filter((entry) => entry.sequence > (filter.afterSequence ?? 0)) : history
+            )
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+      const selector = { _tag: "transcript", runId: "run-1" } as const
+      const after: GatewaySchema.ProjectionCursor = {
+        selector,
+        projection: "transcript",
+        runId: "run-1",
+        value: 50,
+        offset: 0
+      }
+
+      const frames = yield* Stream.runCollect(projections.subscribe(selector, after))
+      const deltas = frames.filter((frame) => frame._tag === "delta")
+      expect(deltas).toHaveLength(150)
+      // Each row is immutable once folded, so catching up on E events sends E
+      // rows, not E squared, and the rows still fold to the same transcript.
+      const sent = deltas.flatMap((frame) => frame._tag === "delta" ? [...frame.delta] : [])
+      expect(sent).toHaveLength(150)
+      expect(sent).toEqual(GatewayProjection.transcript(history).slice(50))
+    }))
 })

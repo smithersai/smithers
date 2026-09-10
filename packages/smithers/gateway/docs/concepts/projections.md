@@ -99,7 +99,9 @@ absence: the digest of a malformed journal is a sparse digest, never a throw.
 That purity is what makes a delta trustworthy. A subscription recomputes the
 selector's rows from accumulated events rather than patching them, and
 recomputation is only safe because the same events always fold to the same
-rows. See [Subscriptions and cursors](./subscriptions.md).
+rows. The two append-only projections, `run-events` and `transcript`, send
+only what one event added instead. See
+[Subscriptions and cursors](./subscriptions.md).
 
 ## What a projection costs
 

@@ -16,13 +16,18 @@
  * selector's rows from the accumulated events rather than patching them: a
  * projection is a reproducible fold (`@smthrs/journal` `Projection`), and
  * recomputation is the only delta that cannot disagree with a fresh snapshot.
- * The events are accumulated in the stream rather than re-read, so following a
- * run never re-reads history after reconciling the initial cutoff.
+ * The two append-only projections, `run-events` and `transcript`, are the
+ * exception: their rows never change once folded, so a delta carries only the
+ * rows one event appended. The events are accumulated in the stream rather
+ * than re-read, so following a run never re-reads history after reconciling
+ * the initial cutoff.
  *
  * A workspace subscription follows every journal partition without a cursor.
  * The follower stores each retained run's last position and drops replay
  * through that cutoff. Sources and exclusion verdicts share the snapshot's
  * run ceiling; eviction discards a verdict together with its cursor state.
+ * Events are gathered for a short window and folded into one frame, and each
+ * run's rows are cached so a burst refolds only the runs whose journals grew.
  *
  * @since 1.0.0
  */
@@ -76,6 +81,19 @@ export const maxEventsPerRun = 10_000
  * @category models
  */
 export const maxProjectionBytes = 4 * 1024 * 1024
+
+/**
+ * How long a workspace follower gathers events before folding one delta.
+ *
+ * A workspace delta replaces every row, so its cost is the whole workspace,
+ * not the one event that arrived. Gathering a burst into one frame bounds the
+ * frame rate at twenty per second however many runs journal at once, and
+ * fifty milliseconds is below what a dashboard reader can notice.
+ */
+const workspaceDeltaCoalesceMillis = 50
+
+/** The most events one workspace batch gathers before folding inside the window. */
+const workspaceDeltaBatchSize = 1_024
 
 /**
  * Read-path operations served by the gateway.
@@ -317,6 +335,23 @@ const rowsOfRun = (
   }
 }
 
+/** Turns opened so far, for numbering appended transcript rows without a refold. */
+const turnsOpened = (events: ReadonlyArray<ControlSchema.ControlEvent>): number =>
+  GatewayProjection.transcript(events).at(-1)?.turn ?? 0
+
+/**
+ * The transcript rows one appended event contributes.
+ *
+ * A transcript row is immutable once folded and only the turn counter carries
+ * across events, so folding the one event and offsetting its turn produces
+ * exactly the rows a full refold would append.
+ */
+const transcriptAppend = (
+  event: ControlSchema.ControlEvent,
+  turnsBefore: number
+): ReadonlyArray<GatewayProjection.TranscriptRow> =>
+  GatewayProjection.transcript([event]).map((row) => ({ ...row, turn: row.turn + turnsBefore }))
+
 /** Snapshot and follow admit exactly the same runs to the workspace inbox. */
 const eligibleForWorkspace = (selector: GatewaySchema.ProjectionSelector, source: RunSource): boolean =>
   selector._tag !== "approvals" ||
@@ -554,19 +589,23 @@ const makeService = (control: ControlService, heartbeatMillis: number): Service 
    * The rows one delta carries.
    *
    * `run-events`' rows are the ordered events themselves, so its delta is the
-   * one event that arrived. Every other selector answers a full replacement
-   * folded from the accumulated events, because recomputation is the only
-   * delta that cannot disagree with a fresh snapshot. Only the two selectors
-   * whose rows read the run row re-read it: a fenced status write does not
-   * always journal an event, so their status would otherwise lag.
+   * one event that arrived. `transcript` rows are immutable once folded, so
+   * its delta is the rows that event appended, numbered after the turns the
+   * follower has already counted. Every other selector answers a full
+   * replacement folded from the accumulated events, because recomputation is
+   * the only delta that cannot disagree with a fresh snapshot. Only the two
+   * selectors whose rows read the run row re-read it: a fenced status write
+   * does not always journal an event, so their status would otherwise lag.
    */
   const deltaRows = (
     selector: GatewaySchema.ProjectionSelector,
     run: ControlSchema.RunSummary,
     event: ControlSchema.ControlEvent,
-    events: ReadonlyArray<ControlSchema.ControlEvent>
+    events: ReadonlyArray<ControlSchema.ControlEvent>,
+    turnsBefore: number
   ): Effect.Effect<ReadonlyArray<unknown>, GatewayError> => {
     if (selector._tag === "run-events") return Effect.succeed([event])
+    if (selector._tag === "transcript") return Effect.succeed(transcriptAppend(event, turnsBefore))
     if (selector._tag === "run-summary" || selector._tag === "run-tree") {
       return Effect.map(runOf(run.runId), (fresh) => rowsOfRun(selector, { run: fresh, events }))
     }
@@ -576,12 +615,15 @@ const makeService = (control: ControlService, heartbeatMillis: number): Service 
   interface RunFollowState {
     readonly buffer: EventBuffer
     readonly observed: CursorPosition | undefined
+    /** Turns the transcript has opened so far; zero for every other selector. */
+    readonly turns: number
   }
 
   interface RunDelta {
     readonly event: ControlSchema.ControlEvent
     readonly events: ReadonlyArray<ControlSchema.ControlEvent>
     readonly position: CursorPosition
+    readonly turnsBefore: number
   }
 
   /**
@@ -619,7 +661,11 @@ const makeService = (control: ControlService, heartbeatMillis: number): Service 
         Stream.tapError((cause) => logReadFailure("follow-run", cause)),
         Stream.mapError((cause) => unavailable(message, cause)),
         Stream.mapAccumEffect(
-          (): RunFollowState => ({ buffer: initial, observed: undefined }),
+          (): RunFollowState => ({
+            buffer: initial,
+            observed: undefined,
+            turns: selector._tag === "transcript" ? turnsOpened(initial.events) : 0
+          }),
           (state, candidate): Effect.Effect<
             readonly [RunFollowState, ReadonlyArray<RunDelta>],
             GatewayError
@@ -638,19 +684,23 @@ const makeService = (control: ControlService, heartbeatMillis: number): Service 
                 if (seedEvents.length > 0 && comparePosition(position, from) <= 0) {
                   return Effect.succeed([nextState, [] as ReadonlyArray<RunDelta>] as const)
                 }
+                const turnsBefore = state.turns
+                const turns = selector._tag === "transcript"
+                  ? transcriptAppend(event, turnsBefore).at(-1)?.turn ?? turnsBefore
+                  : 0
                 return Effect.map(
                   appendEvent(state.buffer, event, `${message}: event history is invalid`),
                   (buffer) =>
                     [
-                      { buffer, observed: position } satisfies RunFollowState,
-                      [{ event, events: buffer.events, position }] satisfies ReadonlyArray<RunDelta>
+                      { buffer, observed: position, turns } satisfies RunFollowState,
+                      [{ event, events: buffer.events, position, turnsBefore }] satisfies ReadonlyArray<RunDelta>
                     ] as const
                 )
               }
             )
         ),
-        Stream.mapEffect(({ event, events, position }) =>
-          Effect.flatMap(deltaRows(selector, source.run, event, events), (rows) =>
+        Stream.mapEffect(({ event, events, position, turnsBefore }) =>
+          Effect.flatMap(deltaRows(selector, source.run, event, events, turnsBefore), (rows) =>
             Effect.flatMap(boundedRows(selector, rows), (delta) =>
               frameOf({
                 _tag: "delta",
@@ -671,6 +721,11 @@ const makeService = (control: ControlService, heartbeatMillis: number): Service 
    * events through each run's last folded position. Excluded runs retain only
    * a verdict and replay positions, sharing the source ceiling. Their replay
    * costs no further journal reads until the verdict is evicted.
+   *
+   * Events are gathered for `workspaceDeltaCoalesceMillis` and admitted as one
+   * batch. A batch re-reads each changed run's row once, refolds only those
+   * runs' cached rows, and answers one frame, so a burst across many runs
+   * costs one frame and one row read per run that changed.
    */
   const workspaceDeltaFrames = (
     selector: GatewaySchema.ProjectionSelector,
@@ -680,14 +735,17 @@ const makeService = (control: ControlService, heartbeatMillis: number): Service 
       interface FollowedSource {
         source: RunSource
         observed: CursorPosition | undefined
+        /** This run's rows, folded when its journal grows rather than on every frame. */
+        rows: ReadonlyArray<unknown>
       }
       interface JudgedRun {
         readonly lastPosition: CursorPosition | undefined
         observed: CursorPosition
       }
+      const rowsOfSource = (source: RunSource): ReadonlyArray<unknown> => rowsOfWorkspace(selector, [source])
       const sources = new Map<string, FollowedSource>(runs.map((source) => [
         source.run.runId,
-        { source, observed: undefined }
+        { source, observed: undefined, rows: rowsOfSource(source) }
       ]))
       // A verdict retains no journal. Undefined lastPosition means run_not_found.
       // Sources and verdicts share one ceiling; only verdicts may be evicted.
@@ -706,7 +764,7 @@ const makeService = (control: ControlService, heartbeatMillis: number): Service 
       const noFrames: ReadonlyArray<GatewaySchema.GatewayFrame> = []
       const delta = (): Effect.Effect<ReadonlyArray<GatewaySchema.GatewayFrame>, GatewayError> =>
         Effect.flatMap(
-          boundedRows(selector, rowsOfWorkspace(selector, [...sources.values()].map(({ source }) => source))),
+          boundedRows(selector, [...sources.values()].flatMap(({ rows }) => rows)),
           (rows) =>
             Effect.map(
               frameOf({
@@ -719,74 +777,103 @@ const makeService = (control: ControlService, heartbeatMillis: number): Service 
             )
         )
       const message = "Following the workspace failed"
+      /**
+       * What one admitted event did to the retained state: nothing a frame
+       * must report, a change already folded, or a change to a followed run
+       * whose row must be re-read before its rows are refolded.
+       */
+      type Admission = "unchanged" | "fresh" | "stale"
+      const admit = (event: ControlSchema.ControlEvent): Effect.Effect<Admission, GatewayError> =>
+        Effect.gen(function*() {
+          const runId = event.runId
+          if (runId === undefined) return "unchanged"
+          const current = sources.get(runId)
+          const verdict = judged.get(runId)
+          const previous = current?.observed ?? verdict?.observed
+          if (previous !== undefined && event.sequence < previous.value) {
+            return yield* Effect.fail(unavailable(`${message}: event sequences moved backward`, undefined))
+          }
+          const position: CursorPosition = {
+            value: event.sequence,
+            offset: previous?.value === event.sequence ? previous.offset + 1 : 0
+          }
+          if (current !== undefined) {
+            current.observed = position
+            if (
+              current.source.events.length > 0 && comparePosition(position, current.source.lastPosition) <= 0
+            ) return "unchanged"
+            const buffer = yield* appendEvent(current.source, event, `${message}: event history is invalid`)
+            current.source = { run: current.source.run, ...buffer }
+            return "stale"
+          }
+          if (verdict !== undefined) {
+            verdict.observed = position
+            if (verdict.lastPosition === undefined || comparePosition(position, verdict.lastPosition) <= 0) {
+              return "unchanged"
+            }
+          }
+          if (sources.size >= maxWorkspaceRuns) return "unchanged"
+          return yield* runSourceOf(runId).pipe(
+            Effect.flatMap((source) => {
+              const admitted = source.events.length > 0 && comparePosition(position, source.lastPosition) <= 0
+                ? Effect.succeed(source)
+                : Effect.map(
+                  appendEvent(source, event, `${message}: event history is invalid`),
+                  (buffer): RunSource => ({ run: source.run, ...buffer })
+                )
+              return Effect.map(admitted, (complete): Admission => {
+                if (!eligibleForWorkspace(selector, complete)) {
+                  remember(runId, complete.lastPosition, position)
+                  return "unchanged"
+                }
+                judged.delete(runId)
+                makeRoom()
+                sources.set(runId, { source: complete, observed: position, rows: rowsOfSource(complete) })
+                return "fresh"
+              })
+            }),
+            Effect.catchIf(
+              (failure) => failure.code === "run_not_found",
+              () => {
+                remember(runId, undefined, position)
+                return Effect.succeed<Admission>("unchanged")
+              }
+            )
+          )
+        })
+      /** Re-read one grown run's row, then refold its rows or exclude it. */
+      const refresh = (runId: string): Effect.Effect<void, GatewayError> =>
+        Effect.gen(function*() {
+          const current = sources.get(runId)
+          /* v8 ignore next -- only runs still followed after the batch are refreshed. */
+          if (current === undefined || current.observed === undefined) return
+          const fresh = yield* runOf(runId)
+          const source: RunSource = { ...current.source, run: fresh }
+          if (eligibleForWorkspace(selector, source)) {
+            current.source = source
+            current.rows = rowsOfSource(source)
+          } else {
+            sources.delete(runId)
+            remember(runId, source.lastPosition, current.observed)
+          }
+        })
       return control.watch({ follow: true }).pipe(
         Stream.tapError((cause) => logReadFailure("follow-workspace", cause)),
         Stream.mapError((cause) => unavailable(message, cause)),
-        Stream.mapEffect((candidate) =>
+        Stream.groupedWithin(workspaceDeltaBatchSize, workspaceDeltaCoalesceMillis),
+        Stream.mapEffect((batch) =>
           Effect.gen(function*() {
-            const event = yield* decodedEvent(candidate, `${message}: the control plane returned an invalid event`)
-            const runId = event.runId
-            if (runId === undefined) return noFrames
-            const current = sources.get(runId)
-            const verdict = judged.get(runId)
-            const previous = current?.observed ?? verdict?.observed
-            if (previous !== undefined && event.sequence < previous.value) {
-              return yield* Effect.fail(unavailable(`${message}: event sequences moved backward`, undefined))
+            const stale = new Set<string>()
+            let changed = false
+            for (const candidate of batch) {
+              const event = yield* decodedEvent(candidate, `${message}: the control plane returned an invalid event`)
+              const admission = yield* admit(event)
+              if (admission === "unchanged") continue
+              changed = true
+              if (admission === "stale" && event.runId !== undefined) stale.add(event.runId)
             }
-            const position: CursorPosition = {
-              value: event.sequence,
-              offset: previous?.value === event.sequence ? previous.offset + 1 : 0
-            }
-            if (current !== undefined) {
-              current.observed = position
-              if (
-                current.source.events.length > 0 && comparePosition(position, current.source.lastPosition) <= 0
-              ) return noFrames
-              const buffer = yield* appendEvent(current.source, event, `${message}: event history is invalid`)
-              const fresh = yield* runOf(runId)
-              const source = { run: fresh, ...buffer }
-              if (eligibleForWorkspace(selector, source)) {
-                current.source = source
-              } else {
-                sources.delete(runId)
-                remember(runId, source.lastPosition, position)
-              }
-              return yield* delta()
-            }
-            if (verdict !== undefined) {
-              verdict.observed = position
-              if (verdict.lastPosition === undefined || comparePosition(position, verdict.lastPosition) <= 0) {
-                return noFrames
-              }
-            }
-            if (sources.size >= maxWorkspaceRuns) return noFrames
-            return yield* runSourceOf(runId).pipe(
-              Effect.flatMap((source) => {
-                const admitted = source.events.length > 0 && comparePosition(position, source.lastPosition) <= 0
-                  ? Effect.succeed(source)
-                  : Effect.map(
-                    appendEvent(source, event, `${message}: event history is invalid`),
-                    (buffer): RunSource => ({ run: source.run, ...buffer })
-                  )
-                return Effect.flatMap(admitted, (complete) => {
-                  if (!eligibleForWorkspace(selector, complete)) {
-                    remember(runId, complete.lastPosition, position)
-                    return Effect.succeed(noFrames)
-                  }
-                  judged.delete(runId)
-                  makeRoom()
-                  sources.set(runId, { source: complete, observed: position })
-                  return delta()
-                })
-              }),
-              Effect.catchIf(
-                (failure) => failure.code === "run_not_found",
-                () => {
-                  remember(runId, undefined, position)
-                  return Effect.succeed(noFrames)
-                }
-              )
-            )
+            yield* Effect.forEach(stale, refresh, { discard: true })
+            return changed ? yield* delta() : noFrames
           })
         ),
         Stream.flattenIterable

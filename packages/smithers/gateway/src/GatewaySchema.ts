@@ -468,6 +468,11 @@ export type SnapshotEndFrame = typeof SnapshotEndFrame.Type
 /**
  * A projection mutation after snapshot completion.
  *
+ * `delta` replaces the selector's rows, except for the two append-only
+ * projections: a `run-events` delta carries the one event that arrived and a
+ * `transcript` delta carries the rows that event contributed, and a client
+ * appends those to the rows it already holds.
+ *
  * @since 0.1.0
  * @category models
  */
