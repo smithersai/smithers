@@ -20,50 +20,28 @@
  * a resumed turn replays rather than restarts.
  */
 import { DurableObject } from "cloudflare:workers"
-import type { Effect } from "effect"
+import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
 import type { FlowRunCard } from "@smthrs/create-app/ui"
-import type {
+import {
   AppCard,
-  CancelResponse,
-  FlowRunRequest,
-  FlowRunResponse,
-  FlowSummary,
-  Message,
-  SessionState,
-  SessionSummary,
-  TurnRequest
+  type CancelResponse,
+  type FlowRunRequest,
+  type FlowRunResponse,
+  type FlowSummary,
+  type Message,
+  type SessionState,
+  type SessionSummary,
+  type TurnRequest
 } from "../src/api.ts"
 import type { Env } from "./env.ts"
-import { INDEX_SESSION, byRecency, indexSession, titleFrom } from "./registry.ts"
+import { INDEX_SESSION, indexSession, titleFrom } from "./registry.ts"
 import { track } from "./stream.ts"
 import { runTurn } from "./turn.ts"
 
-// ---------------------------------------------------------------------------
-// App services
-// ---------------------------------------------------------------------------
-//
-// TODO(tools): re-import these as the `FlowStore`, `CardSink`, and
-// `CellHistory` Context.Service classes from `../tools/promote.ts` and
-// `../tools/ui.ts` once the tools layer declares them. The shapes below are
-// the agreed interfaces, restated here so this file compiles against a tools
-// directory that does not exist yet.
-
-/** What `flows/write-flow` writes into. Upstream ships a filesystem one. */
-export interface FlowStore {
-  readonly write: (id: string, files: Record<string, string>) => Effect.Effect<{ files: Array<string> }>
-  readonly list: () => Effect.Effect<Array<FlowSummary>>
-}
-
-/** Where `ui/pane` puts a card. The turn stream is the other half. */
-export interface CardSink {
-  readonly emit: (card: AppCard) => Effect.Effect<void>
-  readonly update: (card: AppCard) => Effect.Effect<void>
-}
-
-/** The source of every cell the current turn executed. */
-export interface CellHistory {
-  readonly cells: () => Effect.Effect<ReadonlyArray<{ ordinal: number; source: string }>>
-}
+// The tool services this object backs — `FlowStore`, `CardSink`, `CellHistory`
+// — are declared once, in `../tools/promote.ts` and `../tools/ui.ts`. This file
+// used to restate their shapes because those modules did not exist yet.
 
 // ---------------------------------------------------------------------------
 // Storage
@@ -96,8 +74,23 @@ const SCHEMA = [
      status TEXT NOT NULL,
      stage TEXT NOT NULL,
      at INTEGER NOT NULL
-   )`
+   )`,
+  // Both registry statements read this table newest-first. Without the index
+  // each one sorted every row the deployment ever wrote.
+  `CREATE INDEX IF NOT EXISTS sessions_at ON sessions(at)`
 ] as const
+
+/**
+ * How much of the registry the Recent column reads, and how much it keeps.
+ *
+ * The table holds one row per session that ever started a turn across the whole
+ * deployment, and nothing deleted them: an unbounded read grew with the age of
+ * the deployment on a path the shell hits on every page load. The column shows
+ * a page, so the read takes a page, and a write drops whatever falls past the
+ * history the column can page through.
+ */
+const RECENT_LIMIT = 100
+const RECENT_RETENTION = 1000
 
 type MessageRow = {
   readonly id: string
@@ -133,6 +126,18 @@ const isStatus = (value: string): value is SessionSummary["status"] =>
 const isRole = (value: string): value is Message["role"] =>
   value === "user" || value === "assistant" || value === "system"
 
+/**
+ * One persisted card row, decoded from the JSON a past deploy wrote.
+ *
+ * A row can hold a shape this build's `AppCard` union no longer admits — a
+ * `flow-run` phase that left the union, say — or JSON that was truncated. The
+ * read used to be `JSON.parse(row.json) as AppCard`, so one such row threw or
+ * failed the shell's `Schema.decodeUnknownSync(SessionState)` and made the
+ * whole session unreachable until someone deleted the row by hand. Decoding a
+ * row at a time keeps that row's problem to that row.
+ */
+const decodeCard = Schema.decodeUnknownOption(Schema.fromJsonString(AppCard))
+
 // ---------------------------------------------------------------------------
 // The object
 // ---------------------------------------------------------------------------
@@ -165,6 +170,17 @@ export class AppSession extends DurableObject<Env> {
    * still in flight.
    */
   private stage = ""
+
+  /**
+   * The registry stub, made once and reused.
+   *
+   * Cloudflare orders calls only within one stub. A fresh stub per status
+   * change let the `running` this object sent at turn start arrive after the
+   * `ready` it sent at settle milliseconds later, leaving the Recent column
+   * spinning on a turn that had finished. One stub keeps this object's writes
+   * in the order it made them; {@link recordSession} covers the rest.
+   */
+  private registryStub: ReturnType<typeof indexSession> | undefined
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -252,22 +268,37 @@ export class AppSession extends DurableObject<Env> {
     return this.sql
       .exec<CardRow>("SELECT id, json, at FROM cards ORDER BY seq ASC")
       .toArray()
-      .map((row) => JSON.parse(row.json) as AppCard)
+      .flatMap((row) => {
+        const card = decodeCard(row.json)
+        if (Option.isNone(card)) {
+          console.warn(`aomi: dropping card ${row.id}; its stored JSON does not decode as an AppCard`)
+          return []
+        }
+        return [card.value]
+      })
   }
 
   // -- API -----------------------------------------------------------------
 
   /** `GET /api/session?id=` — everything the shell needs to redraw. */
   state(id: string): SessionState {
+    const messages = this.messages()
+    const cards = this.cards()
+    // A row either side dropped has no entry: an entry naming a card the
+    // response does not carry is a gap the shell cannot render.
+    const messageIds = new Set(messages.map((message) => message.id))
+    const cardIds = new Set(cards.map((card) => card.id))
     const entries = this.sql.exec<{ kind: string; id: string }>(`
       SELECT 'message' AS kind, id, seq FROM messages WHERE role IN ('user', 'assistant', 'system')
       UNION ALL
       SELECT 'card' AS kind, id, seq FROM cards
       ORDER BY seq ASC
-    `).toArray().map((row) => row.kind === "message"
-      ? { kind: "message" as const, messageId: row.id }
-      : { kind: "card" as const, cardId: row.id })
-    return { id, messages: this.messages(), cards: this.cards(), entries, busy: this.busy }
+    `).toArray().flatMap((row) =>
+      row.kind === "message"
+        ? (messageIds.has(row.id) ? [{ kind: "message" as const, messageId: row.id }] : [])
+        : (cardIds.has(row.id) ? [{ kind: "card" as const, cardId: row.id }] : [])
+    )
+    return { id, messages, cards, entries, busy: this.busy }
   }
 
   /**
@@ -467,7 +498,8 @@ export class AppSession extends DurableObject<Env> {
       stage: this.stage,
       at: Date.now()
     }
-    this.ctx.waitUntil(indexSession(this.env).recordSession(summary))
+    this.registryStub ??= indexSession(this.env)
+    this.ctx.waitUntil(this.registryStub.recordSession(summary))
   }
 
   /** The session's first user message, which is what the Recent column shows. */
@@ -482,19 +514,31 @@ export class AppSession extends DurableObject<Env> {
    * Registry role: records one session's row.
    *
    * The title is written once. A session's first user message names it, and a
-   * later turn must not rename a row the user is reading.
+   * later turn must not rename a row the user is reading, so the upsert leaves
+   * `title` out of what it updates.
+   *
+   * The last writer by `at` wins. A turn reports `running` at start and
+   * `ready`, `failed` or `idle` at settle, `cancel` reports `idle`, and each
+   * arrives here as its own call: an unconditional replace let a slow `running`
+   * land after the settle it preceded and strand the row. The guard makes the
+   * row the newest report about the session rather than the last one delivered.
+   *
+   * The delete is the table's retention rule; see {@link RECENT_RETENTION}.
    */
   recordSession(summary: SessionSummary): void {
-    const existing = this.sql
-      .exec<SessionRow>("SELECT id, title, status, stage, at FROM sessions WHERE id = ?", summary.id)
-      .toArray()[0]
     this.sql.exec(
-      "INSERT OR REPLACE INTO sessions (id, title, status, stage, at) VALUES (?, ?, ?, ?, ?)",
+      `INSERT INTO sessions (id, title, status, stage, at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET status = excluded.status, stage = excluded.stage, at = excluded.at
+       WHERE excluded.at >= sessions.at`,
       summary.id,
-      existing?.title ?? summary.title,
+      summary.title,
       summary.status,
       summary.stage,
       summary.at
+    )
+    this.sql.exec(
+      "DELETE FROM sessions WHERE id IN (SELECT id FROM sessions ORDER BY at DESC LIMIT -1 OFFSET ?)",
+      RECENT_RETENTION
     )
   }
 
@@ -505,17 +549,22 @@ export class AppSession extends DurableObject<Env> {
    * reports the settle, so a `running` row can outlive its turn; the shell
    * learns the truth from `GET /api/session?id=`, which reads the session
    * object itself.
+   *
+   * One page, newest first, ordered by the `sessions_at` index. The whole list
+   * used to come back and then be sorted a second time in JavaScript.
    */
   sessions(): ReadonlyArray<SessionSummary> {
-    const rows = this.sql
-      .exec<SessionRow>("SELECT id, title, status, stage, at FROM sessions ORDER BY at DESC")
+    return this.sql
+      .exec<SessionRow>(
+        "SELECT id, title, status, stage, at FROM sessions ORDER BY at DESC LIMIT ?",
+        RECENT_LIMIT
+      )
       .toArray()
       .flatMap((row) =>
         isStatus(row.status)
           ? [{ id: row.id, title: row.title, status: row.status, stage: row.stage, at: row.at }]
           : []
       )
-    return byRecency(rows)
   }
 }
 

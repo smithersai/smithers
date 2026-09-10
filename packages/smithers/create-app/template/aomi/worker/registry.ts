@@ -11,7 +11,6 @@
  * The type-only `Env` import keeps this module free of `cloudflare:workers`,
  * so the router and its tests can import it without the Durable Object class.
  */
-import type { SessionSummary } from "../src/api.ts"
 import type { Env } from "./env.ts"
 
 /** The Durable Object name that holds the session list. */
@@ -41,8 +40,3 @@ export const titleFrom = (message: string): string => {
   const lastSpace = cut.lastIndexOf(" ")
   return `${(lastSpace > TITLE_LIMIT / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`
 }
-
-/** Newest first, which is the order the Recent column renders. */
-export const byRecency = (
-  sessions: ReadonlyArray<SessionSummary>
-): ReadonlyArray<SessionSummary> => [...sessions].sort((left, right) => right.at - left.at)

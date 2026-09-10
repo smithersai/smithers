@@ -1,6 +1,8 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
+import * as Schema from "effect/Schema"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { AppCard } from "../src/api.ts"
+import type { AppCard, SessionSummary } from "../src/api.ts"
+import { SessionState } from "../src/api.ts"
 import { AppSession } from "../worker/AppSession.ts"
 import type { Env } from "../worker/env.ts"
 
@@ -109,5 +111,97 @@ describe("durable transcript order", () => {
     session.appendCard({ ...card, html: "updated" })
     const next = session.appendMessage("user", "next")
     expect(open().state("s1").entries).toEqual([...expected, { kind: "message", messageId: next.id }])
+  })
+})
+
+
+describe("persisted card decoding", () => {
+  test("a row that no longer decodes is dropped instead of failing the whole session", () => {
+    const { db, open } = harness()
+    const session = open()
+    const before = session.appendMessage("user", "question")
+    session.appendCard(card)
+    const after = session.appendMessage("assistant", "answer")
+    const insert = db.prepare("INSERT INTO cards (id, json, at, seq) VALUES (?, ?, ?, ?)")
+    // A phase this build's AppCard union no longer admits, as an older deploy wrote it.
+    insert.run(
+      "stale-shape",
+      JSON.stringify({ kind: "flow-run", id: "stale-shape", flowId: "f", executionId: "e", phase: "paused", steps: [] }),
+      10,
+      98
+    )
+    insert.run("truncated", '{"kind":"html","id":"truncated","html":"half', 10, 99)
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    const state = session.state("s1")
+
+    expect(state.cards).toEqual([card])
+    expect(state.entries).toEqual([
+      { kind: "message", messageId: before.id },
+      { kind: "card", cardId: card.id },
+      { kind: "message", messageId: after.id }
+    ])
+    // What the shell does with the response; an undecodable row used to fail it.
+    expect(Schema.decodeUnknownSync(SessionState)(state).cards).toEqual([card])
+    const logged = warn.mock.calls.map((call) => call.join(" ")).join("\n")
+    expect(logged).toContain("stale-shape")
+    expect(logged).toContain("truncated")
+  })
+})
+
+describe("the registry role", () => {
+  const summary = (overrides: Partial<SessionSummary> = {}): SessionSummary => ({
+    id: "s1",
+    title: "first message",
+    status: "running",
+    stage: "chat",
+    at: 100,
+    ...overrides
+  })
+
+  test("a status that arrives late never overwrites a newer one", () => {
+    const registry = harness().open()
+    registry.recordSession(summary({ at: 100, status: "running" }))
+    registry.recordSession(summary({ at: 200, status: "ready", stage: "build" }))
+    // The turn-start write, delivered after the settle write it preceded.
+    registry.recordSession(summary({ at: 150, status: "running", stage: "chat" }))
+    expect(registry.sessions()).toEqual([
+      { id: "s1", title: "first message", status: "ready", stage: "build", at: 200 }
+    ])
+  })
+
+  test("the title is written once", () => {
+    const registry = harness().open()
+    registry.recordSession(summary({ at: 100, title: "first message" }))
+    registry.recordSession(summary({ at: 200, title: "a later turn" }))
+    expect(registry.sessions()[0]?.title).toBe("first message")
+  })
+
+  test("answers with one page, newest first, and keeps the table bounded", () => {
+    const { db, open } = harness()
+    const registry = open()
+    const insert = db.prepare("INSERT INTO sessions (id, title, status, stage, at) VALUES (?, ?, ?, ?, ?)")
+    for (let index = 0; index < 1200; index += 1) insert.run(`s${index}`, `session ${index}`, "ready", "chat", index)
+
+    registry.recordSession(summary({ id: "newest", at: 2000 }))
+
+    const listed = registry.sessions()
+    expect(listed).toHaveLength(100)
+    expect(listed[0]).toEqual({ id: "newest", title: "first message", status: "running", stage: "chat", at: 2000 })
+    expect(listed.map((row) => row.at)).toEqual([...listed.map((row) => row.at)].sort((left, right) => right - left))
+    expect(db.prepare("SELECT COUNT(*) AS rows FROM sessions").get()).toEqual({ rows: 1000 })
+    expect(db.prepare("SELECT MIN(at) AS oldest FROM sessions").get()).toEqual({ oldest: 201 })
+  })
+
+  test("reads the page off the timestamp index rather than sorting the table", () => {
+    const { db, open } = harness()
+    open()
+    const plan = db
+      .prepare("EXPLAIN QUERY PLAN SELECT id, title, status, stage, at FROM sessions ORDER BY at DESC LIMIT 100")
+      .all()
+      .map((row) => String((row as { detail: string }).detail))
+      .join("\n")
+    expect(plan).toContain("sessions_at")
+    expect(plan).not.toContain("TEMP B-TREE")
   })
 })
