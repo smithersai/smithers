@@ -19,6 +19,9 @@
  * @since 1.0.0-rc.0
  */
 
+import type * as Effects from "../Effects.ts"
+import type { GraphBuildError } from "./diagnostic.ts"
+
 const SLASH = 47
 const DOT = 46
 const STAR = 42
@@ -446,4 +449,101 @@ export const narrowPrepared = (envelope: PreparedEnvelope, step: DeclarationLike
     return { ok: false, code: "effect_tier_widening", paths: [] }
   }
   return { ok: true }
+}
+
+/**
+ * Maximum length, in UTF-16 code units, of one effect path `Graph.build`
+ * admits before it refuses the plan with `plan_too_large`. 4096 is `PATH_MAX`
+ * on Linux, the longest path a supported host can open, so no path that names
+ * a file is refused. Every per-character cost of a build is bounded by it:
+ * the one dot-segment scan each path gets, the comparisons that sort the
+ * distinct paths, and the comparisons that locate each pattern's prefix. The
+ * length is read before any character is, so an over-long path costs one
+ * property read.
+ *
+ * @category limits
+ * @since 1.0.0-rc.0
+ */
+export const maximumPathLength = 4096
+
+/**
+ * Maximum number of patterns, entries ending in `*`, one read list or one
+ * write list of an effect declaration may carry before `Graph.build` refuses
+ * the plan with `plan_too_large`. A pattern never costs a match more than a
+ * literal path does: its prefix is located once by binary search, patterns
+ * nested under another collapse into the outermost before the paths they
+ * cover are enumerated, and every match after that is an integer comparison.
+ * What a pattern costs beyond a literal is that search, two binary searches
+ * of at most 16 comparisons each over a plan at `Graph.maximumPlanEffectPaths`,
+ * every comparison reading up to {@link maximumPathLength} code units.
+ * 128 keeps that term, 4,096 comparisons per list, below the sort that admits
+ * a list of `Graph.maximumEffectPaths` literal paths, while still letting one
+ * declaration name a subtree per package of a large monorepo. The count is
+ * read from the last character of each path as it is admitted, so a pattern
+ * past the limit costs one character read.
+ *
+ * @category limits
+ * @since 1.0.0-rc.0
+ */
+export const maximumGlobs = 128
+
+/**
+ * Copies one declaration's paths, refusing before the copy grows past
+ * `limit`. A real array is refused by its length before a member is read; any
+ * other iterable is copied one path at a time and refused as soon as it
+ * exceeds the limit, so a caller-assembled declaration cannot dodge the bound
+ * by hiding its size from `length`. Each path is then refused by its length
+ * before any character is read, and by the count of patterns the list has
+ * carried so far, so an over-long path or a pattern past the limit costs one
+ * property read.
+ *
+ * @private
+ * @since 1.0.0-rc.0
+ */
+export const copyPaths = (
+  paths: ReadonlyArray<string>,
+  limit: number,
+  refuse: () => GraphBuildError
+): Array<string> => {
+  const copy: Array<string> = []
+  let globs = 0
+  const admit = (path: string): void => {
+    if (path.length > maximumPathLength) throw refuse()
+    if (isGlob(path) && ++globs > maximumGlobs) throw refuse()
+    copy.push(path)
+  }
+  if (Array.isArray(paths)) {
+    const length = paths.length
+    if (length > limit) throw refuse()
+    for (let index = 0; index < length; index++) admit(paths[index])
+    return copy
+  }
+  for (const path of paths) {
+    if (copy.length >= limit) throw refuse()
+    admit(path)
+  }
+  return copy
+}
+
+/**
+ * Snapshots a declaration into graph-owned data, copying at most `limit`
+ * paths in total across its reads and writes.
+ *
+ * @private
+ * @since 1.0.0-rc.0
+ */
+export const boundedEffects = (
+  declaration: Effects.Declaration,
+  limit: number,
+  refuse: () => GraphBuildError
+): Effects.Declaration => {
+  const reads = copyPaths(declaration.reads, limit, refuse)
+  const writes = copyPaths(declaration.writes, limit - reads.length, refuse)
+  return {
+    reads,
+    writes,
+    mode: declaration.mode,
+    onConflict: declaration.onConflict,
+    ...(declaration.tier === undefined ? {} : { tier: declaration.tier })
+  }
 }
