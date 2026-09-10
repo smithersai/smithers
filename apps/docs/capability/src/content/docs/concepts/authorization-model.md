@@ -22,12 +22,17 @@ A `CapabilityPattern` is a grant. Its action may be a family selector (`fs:*`,
 `*`), and its resource is a glob, so it names a set. An operator writes
 patterns; an adapter never does.
 
-The types differ because the directions differ. Matching runs pattern against
-request and answers "is this one in that set". It never runs request against
-request, and it never treats a request's literal text as a glob. Keeping them
-apart is what makes `Capability.patternFromCapability` a deliberate,
-checkable step rather than an implicit cast: see
+The classes carry distinct nominal brands. Pattern-consuming APIs reject an
+exact `Capability` at compile time, and `new Rule` requires a constructed
+`CapabilityPattern` at runtime. Matching runs pattern against request and
+answers "is this one in that set". Use `Capability.patternFromCapability` to
+convert an exact request into a grant; it refuses resources containing `*` or
+`?`, including query-string URLs, because those characters would widen the
+grant. Operators can explicitly construct or parse authored patterns. See
 [Grant a capability safely](/guides/grant-a-capability-safely/).
+
+Brands do not add wire fields. Schema decoding still accepts the existing
+`{ action, resource }` pattern payloads in stored rules and RPC messages.
 
 ## How rules reduce to a decision
 
@@ -99,10 +104,10 @@ recognizing when a decision surprises you:
 The cost bound behind the second row is real, not theoretical. Matching costs
 O(pattern length times resource length), both sides are capped at
 `Capability.maxResourceLength` (4096 UTF-16 code units), and
-`Capability.maxMatchWork` is the square of that cap. An ordinary grant such as
-`/workspace/**` still decides a resource well over a million units long, so the
-budget only bites when a structural input evaded the length check at the host
-boundary. `Capability.withinMatchBudget` reports that case before you evaluate.
+`Capability.maxMatchWork` is the square of that cap. Every supported pair fits
+the budget. The budget remains a defense for unchecked structural values that
+evaded the length check at the host boundary. `Capability.withinMatchBudget`
+reports that case before you evaluate.
 
 ## Stable identity
 

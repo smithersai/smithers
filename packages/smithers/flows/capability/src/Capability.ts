@@ -184,9 +184,11 @@ export const parse = (input: string): Option.Option<Capability> => {
  * the bare resource without trailing argument text. This rule makes a
  * `proc:spawn` command grant such as `npm *` grant bare `npm`.
  *
- * {@link subsumes} can prove only the `**` wildcard form. A grant written with
- * `*` can match a request but cannot be proven to cover it. Use `**` when an
- * envelope must prove coverage. The grammar has no escape. Callers whose
+ * Apart from an identical resource, {@link subsumes} can prove only the `**`
+ * wildcard form. A grant written `/workspace/*` can match `/workspace/src/a.ts`
+ * but cannot be proven to cover it; only the identical `/workspace/*` pattern
+ * is provable. Use `**` when an envelope must prove coverage of other
+ * resources. The grammar has no escape. Callers whose
  * resources can contain `*` or `?`, including URLs with query strings and
  * command lines, must not build patterns by string concatenation. Use
  * {@link patternFromCapability} to derive exact grants safely.
@@ -221,8 +223,9 @@ export class CapabilityPattern extends Schema.Class<
  * emitted form cannot change; this parser owns its meaning instead and reads
  * it as `{ action: "*", resource: "**" }`. The resource is `**` and not `*`
  * because {@link subsumes} recognises only `**` as recursive, so a grant
- * written `*` could never be proven to cover anything. Every other missing
- * component remains a rejection, not a default.
+ * written `*` could be proven to cover only the identical `*` resource and
+ * never any other. Every other missing component remains a rejection, not a
+ * default.
  *
  * @since 0.1.0
  * @category parsing

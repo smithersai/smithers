@@ -65,8 +65,9 @@ new Capability.CapabilityPattern({ action: "proc:spawn", resource: "npm *" })
 ```
 
 Use `**`, not `*`, for a subtree. `/workspace/*` matches nested paths but
-`Capability.subsumes` cannot prove it covers them, so an envelope built from
-`*` patterns re-asks forever. The reasoning is in
+`Capability.subsumes` cannot prove it covers them. It proves only the identical
+`/workspace/*` pattern, so an envelope built from `*` patterns re-asks for
+every other resource. The reasoning is in
 [Resource globs](../concepts/resource-globs.md).
 
 ## Prove coverage before you store it

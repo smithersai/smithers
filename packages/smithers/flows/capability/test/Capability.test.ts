@@ -282,14 +282,16 @@ describe("Capability", () => {
     //
     // Not a bug — `subsumes` is deliberately conservative — but the consequence
     // is invisible at the place a grant is written: a `*` grant can never be
-    // *proven* to cover anything, so an envelope built from `*` patterns
-    // re-prompts forever. Recorded here rather than rediscovered, alongside the
+    // *proven* to cover a different resource, so an envelope built from `*`
+    // patterns re-prompts forever. Only the identical `*` pattern is provable,
+    // through equality. Recorded here rather than rediscovered, alongside the
     // sentence now on `CapabilityPattern`.
     const grant = pattern("fs:read", "src/*")
     const wanted = capability("fs:read", "src/a/b")
 
     expect(Capability.matches(grant, wanted)).toBe(true)
     expect(Capability.subsumes(grant, pattern("fs:read", "src/a/b"))).toBe(false)
+    expect(Capability.subsumes(grant, pattern("fs:read", "src/*"))).toBe(true)
     // The provable form of the same intent.
     expect(Capability.subsumes(pattern("fs:read", "src/**"), pattern("fs:read", "src/a/b"))).toBe(true)
   })

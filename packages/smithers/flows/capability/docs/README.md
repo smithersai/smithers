@@ -116,9 +116,9 @@ Capability.Permission.evaluate([policy], Capability.Capability.make("fs:read", "
 // "allow"
 ```
 
-Install `@smthrs/capability` on its own when the vocabulary is all you want. It
-has one runtime dependency, [`effect`](https://effect.website), and no engine,
-no storage, and no I/O.
+Install `@smthrs/capability` on its own when the vocabulary is all you want.
+Its one runtime dependency is [`@smthrs/canonical`](/api/canonical) and its one
+peer is `effect@4.0.0-rc.112`. It has no engine, no storage, and no I/O.
 
 Within that engine, this package is deliberately the leaf of the permission
 kernel: it holds the words, never the enforcement.

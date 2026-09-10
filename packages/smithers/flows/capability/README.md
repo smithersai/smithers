@@ -12,8 +12,10 @@ those two values into `allow`, `deny`, or `ask`, and three typed failures carry
 the answer back to a caller.
 
 The package holds no state. It reads no files, opens no sockets, and enforces
-nothing. Its one runtime dependency is [`effect`](https://effect.website), and
-it bundles for a browser unchanged. Enforcement, the grant store, the layers
+nothing. Its one runtime dependency is
+[`@smthrs/canonical`](https://canonical.smithers.sh), and
+[`effect`](https://effect.website) is a peer pinned at `effect@4.0.0-rc.112`.
+It bundles for a browser unchanged. Enforcement, the grant store, the layers
 that decorate host services, and the journal live in
 [`@smthrs/kernel`](https://kernel.smithers.sh).
 
@@ -106,9 +108,11 @@ Capability.parse("fs:read")
 newlines included. `?` matches exactly one code unit, so an astral character
 needs two. A pattern ending in a space and `*` also matches the bare resource
 without its argument text, which is what makes the `proc:spawn` grant `npm *`
-cover bare `npm`. `**` is the only form `subsumes` can prove, so a grant
-written with `*` matches but can never be shown to cover anything, and an
-envelope built from `*` patterns re-prompts forever.
+cover bare `npm`. Apart from an identical resource, `**` is the only form
+`subsumes` can prove. A grant written `/workspace/*` matches
+`/workspace/src/a.ts` but can never be shown to cover it, so an envelope built
+from `*` patterns proves only those same patterns and re-prompts for everything
+else.
 
 **There is no escape.** A resource that genuinely contains `*` or `?` cannot be
 granted exactly, so `net:get:https://api.test/v1?k=1` reads as an exact URL and

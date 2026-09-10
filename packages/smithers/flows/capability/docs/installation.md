@@ -17,8 +17,13 @@ the command until 1.0 is final. `npm install @smthrs/capability@next` and
 
 The package requires Node.js 22.19.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. It has one runtime dependency,
-[`effect`](https://effect.website), which supplies the `Schema`, `Option`, and
-`PlatformError` types on its exported surface.
+[`@smthrs/canonical`](/api/canonical), which supplies the record guard
+`Permission.isPermissionError` validates payloads with.
+
+[`effect`](https://effect.website) is a peer dependency pinned at
+`effect@4.0.0-rc.112`. It supplies the `Schema`, `Option`, and `PlatformError`
+types on the exported surface. Install exactly that version: two copies of
+`effect` in one program are two sets of service tags.
 
 ## Import forms
 

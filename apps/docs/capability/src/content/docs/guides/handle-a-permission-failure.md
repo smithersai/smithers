@@ -74,7 +74,7 @@ Option.isSome(Permission.fromPlatformError(projected))
 // true
 ```
 
-Nothing is lost in the projection. The normalized reason is always
+The structured permission failure is preserved in the projection. The normalized reason is always
 `PermissionDenied`, meaning the operation did not happen because the kernel
 refused, suspended, or could not decide it. `description` carries the
 `Permission.formatError` rendering, and `cause` carries the failure itself, so
@@ -124,11 +124,19 @@ permission_denied: <action:resource>: <reason>
 grant store <code>: <message>
 ```
 
-The resource in that line came from an agent. `formatError` escapes C0 and C1
-control characters, so a resource containing a newline renders as `\n` instead
-of starting a second log line, and it caps each field at
-`Permission.maxDisplayFieldLength` (256 UTF-16 code units) with a visible
-`…[truncated]` marker. Ordinary non-ASCII text passes through unchanged.
+`formatError` escapes C0/C1 controls, Unicode format characters (`Cf`, including
+bidi controls), and line/paragraph separators (`Zl`/`Zp`). Newlines render as
+`\n`; U+2028 and U+202E render as `\u2028` and `\u202E`. These characters
+cannot introduce raw line breaks or bidi controls into the diagnostic.
+Each encoded field is capped at `Permission.maxDisplayFieldLength` (256 UTF-16
+code units), including the visible `…[truncated]` marker. Other non-ASCII text
+passes through unchanged.
+
+`toPlatformError` applies the same escaping and limit to `module`, `method`,
+and string `pathOrDescriptor` fields, so the complete `PlatformError.message`
+has the same one-line guarantee. Numeric descriptors are unchanged. The raw
+capability resource remains in `reason.cause` and is recovered by
+`fromPlatformError`; the projected path is display text.
 
 ## Put only journal-safe context in `meta`
 
@@ -142,7 +150,16 @@ naming the key, rather than later at the persistence boundary:
   it to `null` rather than omit it.
 - A `bigint`, a `Date`, a `Map`, or a class instance is rejected rather than
   flattened into an empty object.
-- A cycle is reported as a schema failure rather than overflowing the stack.
+- Own `__proto__` data properties are preserved, including in nested objects.
+- The maximum depth is 16, counting the metadata root as depth 0.
+- At most 1024 object properties and array elements are accepted in total.
+  Dropped `undefined` properties still count toward this work limit.
+- Serialized metadata is limited to 64 KiB of UTF-8 JSON, including keys,
+  punctuation and escapes, after dropping undefined properties.
+- Shared references reuse one frozen copy. Each occurrence counts toward depth,
+  members and serialized bytes, so a compact graph cannot expand past the limits.
+- A cycle or exceeded limit raises a schema error naming the field at
+  construction, before journal encoding.
 
 Construction takes a deep-frozen snapshot and never retains your object, and
 the `meta` and `capability` slots are non-writable. Mutating the object you

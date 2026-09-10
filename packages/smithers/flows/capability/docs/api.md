@@ -19,9 +19,11 @@ public. `@smthrs/capability/package.json` is exported.
 
 Every export is a value, a schema, or a pure function. Enforcement, the
 `GrantStore`, the decorating layers, and the journal live in
-[`@smthrs/kernel`](/api/kernel). This package has only the shared `effect` peer,
-so both the kernel and [`@smthrs/jj`](/api/jj) can depend on it without a
-cycle, and a protected service names permission failures in its own interface.
+[`@smthrs/kernel`](/api/kernel). This package's one runtime dependency is
+[`@smthrs/canonical`](/api/canonical), which itself depends only on the shared
+`effect@4.0.0-rc.112` peer. Both the kernel and [`@smthrs/jj`](/api/jj) can
+therefore depend on it without a cycle, and a protected service names
+permission failures in its own interface.
 
 :::note
 The schema ids (`@smthrs/capability/Capability`, `@smthrs/capability/PermissionDenied`, and the rest) and the `action:resource` text `format` renders are identity, not display text: a stored decision keeps those exact strings and is read back through them. Render capability text with `format` rather than assembling it yourself.
@@ -159,8 +161,9 @@ action `*` occupies the first component alone, so the bare string `*` parses to
 `{ action: "*", resource: "**" }`. That is how a source declaring no
 capabilities of its own is written down, and the string is stored and read back
 verbatim rather than rewritten, so this reader owns its meaning. The resource is
-`**` rather than `*` because only `**` can be proven to cover anything. Every
-other missing component is a rejection, not a default.
+`**` rather than `*` because `subsumes` proves that `**` covers every resource,
+while `*` proves only an identical `*`. Every other missing component is a
+rejection, not a default.
 
 ```ts
 Capability.parsePattern("*")
@@ -210,8 +213,8 @@ cannot prove.
 An action is subsumed when `left` is `*`, the two are equal, or `left` is a
 namespace family covering `right`. A resource is subsumed when the two are
 equal, `left` is `**`, or `left` ends in `/**` and `right` starts with that
-prefix and a separator. A single `*` is not provable, so an envelope entry that
-must prove coverage is written `**`.
+prefix and a separator. A single `*` proves only the identical resource, so an
+envelope entry that must prove coverage of any other resource is written `**`.
 
 ### Capability.withinMatchBudget
 

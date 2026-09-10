@@ -12,13 +12,13 @@ resource, and this page is about that half.
 
 ## The grammar
 
-| Form                        | Matches                                                                             |
-| --------------------------- | ----------------------------------------------------------------------------------- |
-| a literal character         | itself, byte for byte over UTF-16 code units                                        |
-| `*`                         | any run of code units, path separators and newlines included                        |
-| `?`                         | exactly one code unit, so an astral character such as an emoji needs two            |
-| a space then `*` at the end | additionally, the bare resource with no trailing text, so `npm *` also grants `npm` |
-| `**`                        | the same as `*` when matching, and the only form `Capability.subsumes` can prove    |
+| Form                        | Matches                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------ |
+| a literal character         | itself, byte for byte over UTF-16 code units                                               |
+| `*`                         | any run of code units, path separators and newlines included                               |
+| `?`                         | exactly one code unit, so an astral character such as an emoji needs two                   |
+| a space then `*` at the end | additionally, the bare resource with no trailing text, so `npm *` also grants `npm`        |
+| `**`                        | the same as `*` when matching; beyond equality, the only form `Capability.subsumes` proves |
 
 Every other character is literal. `.`, `+`, `(`, `[`, `^`, `$`, and `|` have no
 special meaning: the matcher is a two-pointer glob walk, not a regular
@@ -91,7 +91,8 @@ cannot prove, which is what a capability envelope needs.
 `subsumes` proves a resource relationship in exactly three cases: the two
 resources are identical, the covering resource is `**`, or the covering
 resource ends in `/**` and the covered resource starts with that prefix and a
-separator. A single `*` is not one of them:
+separator. A single `*` qualifies only through the first case, so it proves
+the identical pattern and nothing else:
 
 ```ts
 const wanted = new Capability.CapabilityPattern({ action: "fs:read", resource: "/workspace/src/a.ts" })
@@ -110,7 +111,8 @@ Capability.subsumes(
 
 So `/workspace/*` matches `/workspace/src/a.ts` but can never be shown to cover
 it. A run whose envelope is built from `*` patterns asks for permission it
-already has, every time. Write `**` whenever a pattern has to prove coverage.
+already has every time a request names any resource other than the `*` pattern
+itself. Write `**` whenever a pattern has to prove coverage.
 
 Action selectors follow the same shape: `*` covers everything, `fs:*` covers
 every `fs:` action and `fs:*` itself, and an exact action covers only itself.

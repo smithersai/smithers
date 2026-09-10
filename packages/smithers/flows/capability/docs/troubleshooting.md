@@ -58,8 +58,8 @@ build the `Capability`, or widen deliberately. The procedure is in
 `Capability.matches` accepts `/workspace/*` against `/workspace/src/a.ts`,
 because `*` crosses path separators. `Capability.subsumes` cannot prove that
 coverage: it recognizes only an identical resource, `**`, and a `prefix/**`
-form. A capability envelope is checked with `subsumes`, so a `*` grant is never
-provably sufficient and the run re-asks forever.
+form. A capability envelope is checked with `subsumes`, so a `*` grant proves
+only the identical `*` pattern and the run re-asks for every other resource.
 
 **What to change.** Write `/workspace/**`. Any pattern that has to prove
 coverage uses the recursive form.
