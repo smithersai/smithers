@@ -402,9 +402,13 @@ const brandCss: (brand: Brand) => string
 ```
 
 Renders a brand as one CSS rule of custom properties, scoped to
-`:root, [data-theme]`. A token the brand did not declare is not emitted, so the
-styleguide default survives. Google Fonts `@import` rules come first, because
-CSS ignores an `@import` that follows a rule.
+`:root:root:root:root, :root:root:root [data-theme]`. `:root` is repeated to
+raise specificity: the brand sheet is a CSS import and so lands in `<head>`,
+while `@smthrs/ui` renders its own `<style>` in the tree, so only specificity
+can carry the brand over the styleguide's token rules. A token the brand did
+not declare is not emitted, so the styleguide default survives; an app never
+needs a second sheet aliasing these names. Google Fonts `@import` rules come
+first, because CSS ignores an `@import` that follows a rule.
 
 ### loadManifest
 

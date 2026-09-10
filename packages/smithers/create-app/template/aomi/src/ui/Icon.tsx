@@ -1,4 +1,5 @@
-// TEMP: moves to @smthrs/ui (TODO.md)
+// TEMP: delete this file and import the component from @smthrs/ui once that
+// package exports one.
 /**
  * The small inline icon set the Aomi shell needs.
  *

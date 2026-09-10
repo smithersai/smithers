@@ -1,4 +1,5 @@
-// TEMP: moves to @smthrs/ui (TODO.md)
+// TEMP: delete this file and import the component from @smthrs/ui once that
+// package exports one.
 /**
  * Grouped sidebar navigation with an active row and a collapsed mode.
  *

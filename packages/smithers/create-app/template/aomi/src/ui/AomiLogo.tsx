@@ -1,5 +1,5 @@
-// TEMP: moves to @smthrs/ui (TODO.md) — the mark stays Aomi-specific; the
-// wordmark row is the generic part.
+// TEMP: the wordmark row is the generic part, so it moves to @smthrs/ui once
+// that package exports one; keep the mark here, it stays Aomi-specific.
 /**
  * The Aomi mark and wordmark. The two `<path>` geometries are copied verbatim
  * from apps/build/src/components/brand/aomi-logo.tsx in the aomi repo; the

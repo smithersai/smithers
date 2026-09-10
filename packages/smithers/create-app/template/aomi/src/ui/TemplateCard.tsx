@@ -1,4 +1,5 @@
-// TEMP: moves to @smthrs/ui (TODO.md)
+// TEMP: delete this file and import the component from @smthrs/ui once that
+// package exports one.
 /**
  * A pickable template tile: title, then a two-line description.
  *

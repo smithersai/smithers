@@ -1,4 +1,5 @@
-// TEMP: moves to @smthrs/ui/chain (TODO.md)
+// TEMP: delete this file and import the component from @smthrs/ui/chain once
+// that subpath exists.
 /**
  * An EVM address as a monospace pill: truncated middle, full value in the
  * title, click to copy. Built on `Badge` so the pill geometry is the house

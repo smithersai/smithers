@@ -1,4 +1,5 @@
-// TEMP: moves to @smthrs/ui/chain (TODO.md)
+// TEMP: delete this file and import the component from @smthrs/ui/chain once
+// that subpath exists.
 /**
  * A base-unit token balance rendered at its decimal scale.
  *

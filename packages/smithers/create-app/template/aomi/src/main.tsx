@@ -21,7 +21,6 @@ import type { AppRegistry } from "./shell/registry.ts"
 import { RegistryContext } from "./shell/registry.ts"
 import { redirect, startRouter } from "./shell/router.ts"
 import { actions, useRoute } from "./shell/store.ts"
-import { houseBridgeCss } from "./shell/theme.ts"
 import { readToken } from "./shell/token.ts"
 
 // Claim the bootstrap credential before routing can replace the URL.
@@ -57,7 +56,7 @@ function Router() {
 function App() {
   return (
     <>
-      <SmithersUiStyles withTheme extra={houseBridgeCss} />
+      <SmithersUiStyles withTheme />
       <Router />
     </>
   )

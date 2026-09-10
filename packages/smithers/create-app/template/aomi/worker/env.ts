@@ -35,7 +35,8 @@ export interface Env {
   /**
    * Milestone-1 switch. Anything but `"0"` streams the mock turn; `"0"` asks
    * for the real `Agent.run` path, which does not yet run under workerd (see
-   * `worker/turn.ts` and TODO.md).
+   * `worker/turn.ts`). Delete the switch, and the mock, once that path runs
+   * there.
    */
   readonly APP_MOCK_TURN?: string
 }

@@ -14,7 +14,7 @@
  * role.
  *
  * The engine journal is deliberately NOT here. `@smthrs/database` has no
- * Durable Object SQLite driver yet (TODO.md), so a turn runs on
+ * Durable Object SQLite driver yet, so a turn runs on
  * `FlowEngine.layerMemory` and this object persists the app's own state
  * instead. When the driver lands the journal moves in beside these tables and
  * a resumed turn replays rather than restarts.

@@ -71,11 +71,29 @@ const houseName = (token: string): string =>
   `--house-${token.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`
 
 /**
+ * The selector the brand rule is emitted with.
+ *
+ * `:root` is repeated to raise specificity, which is the only lever the rule
+ * has. `virtual:smthrs-app/brand.css` is a CSS import, so a bundler puts it in
+ * `<head>`, while `@smthrs/ui`'s `<SmithersUiStyles withTheme/>` renders its
+ * `<style>` inside the tree; the styleguide sheet is therefore always later in
+ * document order. Its most specific token rule is
+ * `:root[data-palette='<key>'][data-theme='dark']` at (0,3,0), so (0,4,0) here
+ * carries the brand over every palette and mode. The second half is the same
+ * rank for a themed subtree; the descendant combinator keeps it off `:root`
+ * itself, which the first half already covers.
+ */
+const brandSelector = ":root:root:root:root, :root:root:root [data-theme]"
+
+/**
  * Renders a brand as one CSS rule of custom properties.
  *
  * A token the brand did not declare is not emitted, so the styleguide default
- * survives. Google Fonts `@import` rules come first, because CSS ignores an
- * `@import` that follows a rule.
+ * survives; this is the only place that mapping is written, so an app never
+ * needs a second sheet to alias the same names. The rule is emitted with
+ * {@link brandSelector}, which outranks the styleguide's own token rules.
+ * Google Fonts `@import` rules come first, because CSS ignores an `@import`
+ * that follows a rule.
  *
  * @category constructors
  * @since 0.1.0
@@ -95,7 +113,7 @@ export const brandCss = (brand: Brand): string => {
   if (fonts.wordmark !== undefined) declarations.push(`  --house-font-wordmark: ${fonts.wordmark};`)
   const imports = (fonts.googleFonts ?? [])
     .map((family) => `@import url("https://fonts.googleapis.com/css2?family=${family}&display=swap");`)
-  return [...imports, ":root, [data-theme] {", ...declarations, "}", ""].join("\n")
+  return [...imports, `${brandSelector} {`, ...declarations, "}", ""].join("\n")
 }
 
 /**

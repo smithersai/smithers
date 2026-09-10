@@ -1,4 +1,5 @@
-// TEMP: moves to @smthrs/ui/chain (TODO.md)
+// TEMP: delete this file and import the component from @smthrs/ui/chain once
+// that subpath exists.
 /**
  * A transaction or block hash as a monospace pill. Same geometry as
  * `AddressPill`, wider truncation because a 32-byte hash carries more entropy

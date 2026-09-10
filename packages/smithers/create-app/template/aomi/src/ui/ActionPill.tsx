@@ -1,4 +1,5 @@
-// TEMP: moves to @smthrs/ui (TODO.md)
+// TEMP: delete this file and import the component from @smthrs/ui once that
+// package exports one.
 /**
  * A high-contrast ink pill under the composer. Distinct from `Suggestion` in
  * @smthrs/ui, which is a ghost chip: this one is a filled call to action with

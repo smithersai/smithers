@@ -63,9 +63,9 @@ describe("brandCss", () => {
     expect(css).toContain("--bg: #ffffff;")
   })
 
-  it("scopes declarations to :root and [data-theme]", () => {
+  it("scopes declarations to :root and a themed subtree", () => {
     const css = brandCss(minimal)
-    expect(css).toContain(":root, [data-theme] {")
+    expect(css).toContain(":root:root:root:root, :root:root:root [data-theme] {")
     expect(css.trimEnd().endsWith("}")).toBe(true)
   })
 
@@ -99,7 +99,7 @@ describe("brandCss", () => {
     const lines = css.split("\n")
     expect(lines[0]).toBe("@import url(\"https://fonts.googleapis.com/css2?family=Geist:wght@400&display=swap\");")
     expect(lines[1]).toBe("@import url(\"https://fonts.googleapis.com/css2?family=PT+Serif:wght@700&display=swap\");")
-    expect(lines.indexOf(":root, [data-theme] {")).toBe(2)
+    expect(lines.indexOf(":root:root:root:root, :root:root:root [data-theme] {")).toBe(2)
   })
 
   it("emits no @import when the brand names no Google fonts", () => {
@@ -107,7 +107,9 @@ describe("brandCss", () => {
   })
 
   it("emits a valid empty rule for a brand with no tokens", () => {
-    expect(brandCss({ name: "bare", tokens: {} })).toBe(":root, [data-theme] {\n}\n")
+    expect(brandCss({ name: "bare", tokens: {} })).toBe(
+      ":root:root:root:root, :root:root:root [data-theme] {\n}\n"
+    )
   })
 })
 

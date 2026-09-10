@@ -44,8 +44,9 @@ export interface ExecutedCell {
 /**
  * The source of every cell the current turn executed, oldest first.
  *
- * TODO(upstream): `packages/smithers/agent/harness` records this already for the transcript;
- * it needs to be exposed as a service (TODO.md).
+ * TODO(upstream): `packages/smithers/agent/harness` records this already for the transcript.
+ * Delete this service and read the harness's own record once that package
+ * exposes the executed cells of the current turn.
  */
 export interface CellHistoryService {
   readonly cells: () => Effect.Effect<ReadonlyArray<ExecutedCell>>
