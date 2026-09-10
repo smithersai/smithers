@@ -9,11 +9,12 @@ function fixture() {
   const env: BugWorkerEnv = { BUGS: memoryKv(), BUG_ADMIN_TOKEN: "test-admin", RESEND_API_KEY: "test-key", NOTIFICATION_FROM: "Smithers <test@example.com>" };
   env.REPO_COMPLETIONS = memoryRepoCompletions(env);
   const calls: { url: string; init?: RequestInit }[] = [];
+  let now = 1788500000000;
   let emailStatus = 200;
   let recipientStatus: ((email: string) => number) | undefined;
   let github: unknown = { private: false, license: { spdx_id: "MIT" } };
   let githubStatus = 200;
-  const worker = createBugWorker({ now: () => 1788500000000, fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+  const worker = createBugWorker({ now: () => now, fetch: (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init });
     if (url.includes("api.github.com")) return Response.json(github, { status: githubStatus });
@@ -24,7 +25,12 @@ function fixture() {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }), env);
   const complete = () => call({ repo: "owner/repo", appUrl: "https://app.smithers.sh/repos/owner/repo" }, "/complete", true);
-  return { env, worker, calls, call, complete, recipientStatus: (value: (email: string) => number) => { recipientStatus = value; }, emailStatus: (value: number) => { emailStatus = value; }, github: (value: unknown, status = 200) => { github = value; githubStatus = status; } };
+  const mails = (subject: string) => calls.filter((call) => call.url.includes("resend"))
+    .map((call) => JSON.parse(String(call.init?.body)) as { to: string[]; subject: string; text: string })
+    .filter((mail) => mail.subject.includes(subject));
+  const confirmTokenFor = (to: string) => /confirm\?token=([0-9a-f]{32})/.exec(mails("Confirm your Smithers notification").find((mail) => mail.to[0] === to)!.text)![1]!;
+  const confirm = (to: string) => call(undefined, `/confirm?token=${confirmTokenFor(to)}`);
+  return { env, worker, calls, call, complete, mails, confirm, confirmTokenFor, setNow: (value: number) => { now = value; }, recipientStatus: (value: (email: string) => number) => { recipientStatus = value; }, emailStatus: (value: number) => { emailStatus = value; }, github: (value: unknown, status = 200) => { github = value; githubStatus = status; } };
 }
 
 describe("public repository requests", () => {
@@ -38,10 +44,15 @@ describe("public repository requests", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ repo: { name: "owner/repo", status: "smithering", appUrl: null }, subscribed: true });
     await f.call({ repo: "owner/repo.git", email: "me@example.com" });
-    expect(f.calls.length).toBe(1);
+    expect(f.calls.filter((call) => call.url.includes("api.github.com"))).toHaveLength(1);
     const listing = await (await f.call()).text();
     expect(listing).toContain('"smithering"');
     expect(listing).not.toContain("example.com");
+    // Nothing is deliverable until the recipient confirms; submissions hold pending tokens only.
+    expect((await f.env.BUGS.list!({ prefix: "repo-subscriber:" })).keys).toHaveLength(0);
+    expect((await f.env.BUGS.list!({ prefix: "repo-confirm:" })).keys).toHaveLength(2);
+    expect(f.mails("Confirm your Smithers notification").map((mail) => mail.to[0])).toEqual(["me@example.com", "me@example.com"]);
+    expect((await f.confirm("me@example.com")).status).toBe(200);
     expect((await f.env.BUGS.list!({ prefix: "repo-subscriber:" })).keys).toHaveLength(1);
   });
   test("validates email before creating requests and rejects private or unlicensed repos", async () => {
@@ -89,6 +100,7 @@ describe("public repository requests", () => {
   test("concurrent conflicting completions publish and notify only the winning URL", async () => {
     const f = fixture();
     await f.call({ repo: "owner/repo", email: "one@example.com" });
+    expect((await f.confirm("one@example.com")).status).toBe(200);
     const get = f.env.BUGS.get.bind(f.env.BUGS);
     let arrivals = 0;
     let release!: () => void;
@@ -108,9 +120,9 @@ describe("public repository requests", () => {
     const winner = await responses.find((response) => response.status === 200)!.json();
     const ready = JSON.parse((await get("repo-ready:owner/repo"))!);
     expect(ready.appUrl).toBe(winner.repo.appUrl);
-    const emails = f.calls.filter((call) => call.url.includes("resend"));
+    const emails = f.mails("is ready in Smithers");
     expect(emails).toHaveLength(1);
-    expect(JSON.parse(String(emails[0]!.init!.body)).text).toContain(winner.repo.appUrl);
+    expect(emails[0]!.text).toContain(winner.repo.appUrl);
     expect((await f.call({ repo: "owner/repo", appUrl: winner.repo.appUrl }, "/complete", true)).status).toBe(200);
     expect(JSON.parse((await get("repo-ready:owner/repo"))!)).toEqual(ready);
   });
@@ -126,18 +138,19 @@ describe("public repository requests", () => {
   test("a failed readiness mirror cannot let a retry publish a different URL", async () => {
     const f = fixture();
     await f.call({ repo: "owner/repo", email: "one@example.com" });
+    expect((await f.confirm("one@example.com")).status).toBe(200);
     const put = f.env.BUGS.put.bind(f.env.BUGS);
     f.env.BUGS.put = async (key, value, options) => {
       if (key.startsWith("repo-ready:")) throw new Error("KV unavailable");
       return put(key, value, options);
     };
     expect((await f.complete()).status).toBe(503);
-    expect(f.calls.filter((call) => call.url.includes("resend"))).toHaveLength(0);
+    expect(f.mails("is ready in Smithers")).toHaveLength(0);
     f.env.BUGS.put = put;
     expect((await f.call({ repo: "owner/repo", appUrl: "https://app.smithers.sh/other" }, "/complete", true)).status).toBe(409);
     expect((await f.complete()).status).toBe(200);
     expect(JSON.parse((await f.env.BUGS.get("repo-ready:owner/repo"))!).appUrl).toBe("https://app.smithers.sh/repos/owner/repo");
-    expect(f.calls.filter((call) => call.url.includes("resend"))).toHaveLength(1);
+    expect(f.mails("is ready in Smithers")).toHaveLength(1);
   });
   test("stale KV readiness cannot overwrite the durable publication", async () => {
     const f = fixture();
@@ -158,22 +171,24 @@ describe("public repository requests", () => {
     delete f.env.REPO_COMPLETIONS;
     expect((await f.complete()).status).toBe(503);
     expect(await f.env.BUGS.get("repo-ready:owner/repo")).toBeNull();
-    expect(f.calls.filter((call) => call.url.includes("resend"))).toHaveLength(0);
+    expect(f.mails("is ready in Smithers")).toHaveLength(0);
   });
   test("notifies all subscribers once and retries failures without rolling back readiness", async () => {
     const f = fixture();
     await f.call({ repo: "owner/repo", email: "one@example.com" });
     await f.call({ repo: "owner/repo", email: "two@example.com" });
+    await f.confirm("one@example.com");
+    await f.confirm("two@example.com");
     f.emailStatus(500);
     const result = await (await f.complete()).json();
     expect(result).toMatchObject({ repo: { status: "ready" }, notifications: { failed: 2, pending: true } });
     f.emailStatus(200);
     await f.worker.scheduled({}, f.env);
-    const emails = f.calls.filter((call) => call.url.includes("resend"));
+    const emails = f.calls.filter((call) => call.url.includes("resend") && String(call.init?.body).includes("is ready in Smithers"));
     expect(emails).toHaveLength(4);
     expect(emails[0]!.init!.headers).toEqual(emails[2]!.init!.headers);
     await f.complete();
-    expect(f.calls.filter((call) => call.url.includes("resend"))).toHaveLength(4);
+    expect(f.calls.filter((call) => call.url.includes("resend") && String(call.init?.body).includes("is ready in Smithers"))).toHaveLength(4);
   });
   test("a permanent rejection cannot starve later pages and reaches terminal state", async () => {
     const f = fixture();
@@ -262,14 +277,22 @@ describe("public repository requests", () => {
       expect(f.calls.filter((call) => call.url.includes("resend"))).toHaveLength(3);
     } finally { log.mockRestore(); }
   });
-  test("missing email configuration leaves delivery pending and succeeds after configuration", async () => {
+  test("without email configuration no consent can be obtained and nothing is delivered", async () => {
     const f = fixture();
     delete f.env.RESEND_API_KEY;
-    await f.call({ repo: "owner/repo", email: "one@example.com" });
+    const submitted = await f.call({ repo: "owner/repo", email: "one@example.com" });
+    expect(await submitted.json()).toMatchObject({ subscribed: false, confirmation: "email_not_configured" });
+    expect((await f.env.BUGS.list!({ prefix: "repo-confirm:" })).keys).toHaveLength(0);
     expect(await (await f.complete()).json()).toMatchObject({ notifications: { pending: true, reason: "email_not_configured" } });
+    // Configuring the provider later cannot mail the unconfirmed address; the sweep skips it.
     f.env.RESEND_API_KEY = "test-key";
     await f.worker.scheduled({}, f.env);
-    expect(f.calls.filter((call) => call.url.includes("resend"))).toHaveLength(1);
+    expect(f.mails("is ready in Smithers")).toHaveLength(0);
+    // A fresh subscribe-confirm-complete round on another repo delivers normally.
+    await f.call({ repo: "owner/other", email: "one@example.com" });
+    expect((await f.confirm("one@example.com")).status).toBe(200);
+    await f.call({ repo: "owner/other", appUrl: "https://app.smithers.sh/other" }, "/complete", true);
+    expect(f.mails("is ready in Smithers")).toHaveLength(1);
   });
   test("scheduled sweep picks up signups arriving after completion", async () => {
     const f = fixture();
@@ -278,6 +301,89 @@ describe("public repository requests", () => {
     await f.env.BUGS.put("repo-subscriber:owner/repo:late-signup", "late@example.com");
     await f.worker.scheduled({}, f.env);
     expect(f.calls.filter((call) => call.url.includes("resend"))).toHaveLength(1);
+  });
+  test("delivers to an address only after the recipient confirms", async () => {
+    const f = fixture();
+    const submitted = await f.call({ repo: "owner/repo", email: "fan@example.com" });
+    expect(await submitted.json()).toMatchObject({ subscribed: true });
+    // A submission creates one pending token and one confirmation email, never a subscriber.
+    expect((await f.env.BUGS.list!({ prefix: "repo-subscriber:" })).keys).toHaveLength(0);
+    expect((await f.env.BUGS.list!({ prefix: "repo-confirm:" })).keys).toHaveLength(1);
+    const confirmation = f.mails("Confirm your Smithers notification for owner/repo");
+    expect(confirmation).toHaveLength(1);
+    expect(confirmation[0]!.to).toEqual(["fan@example.com"]);
+    expect(confirmation[0]!.text).toContain("cancel?token=");
+    // Completion and the scheduled sweep both skip the unconfirmed address.
+    await f.complete();
+    await f.worker.scheduled({}, f.env);
+    expect(f.mails("is ready in Smithers")).toHaveLength(0);
+    const confirmed = await f.confirm("fan@example.com");
+    expect(confirmed.status).toBe(200);
+    expect(await confirmed.json()).toMatchObject({ repo: "owner/repo", subscribed: true });
+    expect((await f.env.BUGS.list!({ prefix: "repo-subscriber:" })).keys).toHaveLength(1);
+    await f.worker.scheduled({}, f.env);
+    const ready = f.mails("is ready in Smithers");
+    expect(ready).toHaveLength(1);
+    expect(ready[0]!.to).toEqual(["fan@example.com"]);
+    expect(ready[0]!.text).toContain("Unsubscribe: https://bug.smithers.sh/api/repo-requests/cancel?token=");
+  });
+  test("confirmation tokens are validated, single-use, and expire after 24 hours", async () => {
+    const f = fixture();
+    await f.call({ repo: "owner/repo", email: "fan@example.com" });
+    const token = f.confirmTokenFor("fan@example.com");
+    expect((await f.call(undefined, "/confirm?token=oops")).status).toBe(400);
+    expect((await f.call(undefined, `/confirm?token=${"0".repeat(32)}`)).status).toBe(410);
+    expect((await f.confirm("fan@example.com")).status).toBe(200);
+    expect((await f.call(undefined, `/confirm?token=${token}`)).status).toBe(410);
+    await f.call({ repo: "owner/repo", email: "late@example.com" });
+    const lateToken = f.confirmTokenFor("late@example.com");
+    f.setNow(1788500000000 + 25 * 3_600_000);
+    const expired = await f.call(undefined, `/confirm?token=${lateToken}`);
+    expect(expired.status).toBe(410);
+    expect(await expired.json()).toEqual({ error: "This confirmation link has expired." });
+    expect((await f.env.BUGS.list!({ prefix: "repo-confirm:" })).keys).toHaveLength(0);
+    expect((await f.env.BUGS.list!({ prefix: "repo-subscriber:" })).keys).toHaveLength(1);
+  });
+  test("cancellation removes pending and confirmed subscriptions", async () => {
+    const f = fixture();
+    // Pending: the cancel link in the confirmation email kills the token before any delivery.
+    await f.call({ repo: "owner/repo", email: "pending@example.com" });
+    const pendingToken = /cancel\?token=([0-9a-f]{32})/.exec(f.mails("Confirm your Smithers notification").find((mail) => mail.to[0] === "pending@example.com")!.text)![1]!;
+    expect(await (await f.call(undefined, `/cancel?token=${pendingToken}`)).json()).toEqual({ cancelled: true });
+    expect((await f.call(undefined, `/confirm?token=${pendingToken}`)).status).toBe(410);
+    await f.complete();
+    await f.worker.scheduled({}, f.env);
+    expect(f.mails("is ready in Smithers")).toHaveLength(0);
+    // Confirmed: the cancel URL returned at confirmation removes the subscriber record.
+    await f.call({ repo: "owner/other", email: "confirmed@example.com" });
+    const confirmed = await (await f.confirm("confirmed@example.com")).json();
+    const cancelToken = /cancel\?token=([0-9a-f]{32})/.exec(confirmed.cancel)![1]!;
+    expect((await f.env.BUGS.list!({ prefix: "repo-subscriber:" })).keys).toHaveLength(1);
+    expect(await (await f.call(undefined, `/cancel?token=${cancelToken}`)).json()).toEqual({ cancelled: true });
+    expect((await f.env.BUGS.list!({ prefix: "repo-subscriber:" })).keys).toHaveLength(0);
+    expect((await f.call(undefined, `/cancel?token=${cancelToken}`)).status).toBe(404);
+    await f.call({ repo: "owner/other", appUrl: "https://app.smithers.sh/other" }, "/complete", true);
+    expect(f.mails("is ready in Smithers")).toHaveLength(0);
+  });
+  test("confirmation sends are throttled per recipient across repositories", async () => {
+    const f = fixture();
+    for (const name of ["owner/r1", "owner/r2", "owner/r3", "owner/r4"]) {
+      await f.env.BUGS.put(`repo-request:${name}`, JSON.stringify({ name, url: `https://github.com/${name}` }));
+    }
+    for (const name of ["owner/r1", "owner/r2", "owner/r3"]) {
+      expect(await (await f.call({ repo: name, email: "fan@example.com" })).json()).toMatchObject({ subscribed: true });
+    }
+    expect(await (await f.call({ repo: "owner/r4", email: "fan@example.com" })).json()).toMatchObject({ subscribed: false, confirmation: "rate_limited" });
+    expect(f.mails("Confirm your Smithers notification")).toHaveLength(3);
+    expect((await f.env.BUGS.list!({ prefix: "repo-confirm:" })).keys).toHaveLength(3);
+  });
+  test("a failed confirmation send stores nothing and reports it", async () => {
+    const f = fixture();
+    f.emailStatus(500);
+    expect(await (await f.call({ repo: "owner/repo", email: "fan@example.com" })).json()).toMatchObject({ subscribed: false, confirmation: "send_failed" });
+    expect((await f.env.BUGS.list!({ prefix: "repo-confirm:" })).keys).toHaveLength(0);
+    await f.complete();
+    expect(f.mails("is ready in Smithers")).toHaveLength(0);
   });
   test("a repeated nomination of the same repo increments its count", async () => {
     const f = fixture();

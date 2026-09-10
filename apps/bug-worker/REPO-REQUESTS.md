@@ -14,7 +14,11 @@ one case-insensitive repository identity. This records a request for the team
 to support the repository; it does not launch an agent or provision the app.
 Every accepted request is one nomination. The response is
 `{ repo, subscribed }`, and `repo.nominations` is the repository's current
-nomination count, including this one.
+nomination count, including this one. `subscribed` means a confirmation email
+was sent; the address receives the completion email only after the recipient
+confirms (see Notifications). When a confirmation could not be sent, the
+response adds `confirmation` with `rate_limited`, `send_failed`, or
+`email_not_configured`.
 
 Each public record has `name`, `url`, `status` (`smithering` or `ready`),
 `appUrl` (null until ready), and `nominations`.
@@ -99,10 +103,29 @@ stored with the claim and never appears in responses.
 ## Notifications
 
 Configure `RESEND_API_KEY` and `NOTIFICATION_FROM` (a verified sender) when
-deploying the Worker. Subscribers receive one transactional email upon
-completion. No emails are sent during development tests. Delivery uses the
-[Resend send endpoint](https://resend.com/docs/api-reference/emails/send-email)
+deploying the Worker. No emails are sent during development tests. Delivery
+uses the [Resend send endpoint](https://resend.com/docs/api-reference/emails/send-email)
 and [idempotency keys](https://resend.com/docs/dashboard/emails/idempotency-keys).
+
+Subscription requires recipient consent. A submission with an email stores no
+subscriber: it sends one confirmation email and keeps a pending record under
+`repo-confirm:<token>` for 24 hours. The token is 128 random bits, hex encoded,
+and single-use. `GET /api/repo-requests/confirm?token=<token>` deletes the
+pending record and creates the deliverable subscriber; expired or used tokens
+return 410, malformed tokens 400. The confirmation response includes a `cancel`
+URL, and every notification email ends with an unsubscribe link. Both point at
+`GET /api/repo-requests/cancel?token=<token>`, which removes a pending
+confirmation or a confirmed subscription (`repo-cancel:<token>` maps the
+cancellation token to the subscriber key) and returns 404 for unknown tokens.
+Confirmed subscribers are stored as `{ "email", "cancel" }` JSON; plain-address
+records written before this flow remain deliverable but carry no unsubscribe
+link. Without provider configuration no consent email can be sent, so the
+submission stores nothing and reports `confirmation: "email_not_configured"`;
+a send failure reports `"send_failed"`. Confirmation sends are throttled to
+three per recipient per hour across all repositories (excess submissions report
+`confirmation: "rate_limited"`), on top of the per-IP submission throttle.
+
+Confirmed subscribers receive one transactional email upon completion.
 Receipts skip already-sent messages; a cron runs every ten minutes to retry
 failed sends and catch signups concurrent with completion. Each invocation
 visits at most two repositories and one page of 50 subscribers per repository.
@@ -119,9 +142,9 @@ Corrupt readiness records and repository-specific storage errors are skipped
 and logged with the affected key, so healthy repositories continue and the
 global cursor advances. Future full scans revisit those records.
 
-Without provider configuration the subscriptions remain pending, and completion reports
-`email_not_configured`. Always supply both email variables on redeploy so
-Alchemy does not remove the bindings.
+Completion reports `email_not_configured` while the provider is unconfigured.
+Always supply both email variables on redeploy so Alchemy does not remove the
+bindings.
 
 Maintainers can also call `POST /api/repo-requests/notify` with `x-bug-admin`
 and `{ "repo": "owner/repo" }`. A batch handles up to 50 subscriptions and
@@ -139,8 +162,11 @@ protect concurrent delivery retries for 24 hours; if a send succeeds but its
 KV receipt cannot be saved for longer than that, a retry may send a duplicate.
 The existing KV per-IP throttle is advisory, not an atomic rate limiter.
 
-Email addresses never appear in public responses. They live under
-`repo-subscriber:<owner/repo>:<sha256(email)>`, separate from public metadata
+Email addresses never appear in public responses. Confirmed subscribers live
+under `repo-subscriber:<owner/repo>:<sha256(email)>`, pending confirmations
+under `repo-confirm:`, cancellation tokens under `repo-cancel:`, and the
+per-recipient confirmation throttle under `repo-confirm-throttle:`, separate
+from public metadata
 under `repo-request:`, counts under `repo-nominations:`, the leaderboard under
 `repo-nominations-top`, and completion under
 `repo-ready:`. Notification receipts use `repo-notified:`, failure records use

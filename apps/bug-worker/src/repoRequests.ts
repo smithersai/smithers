@@ -30,6 +30,14 @@ async function hash(value: string) {
   return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))))
     .map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+/** Single-use confirmation and cancellation tokens; 128 bits, hex encoded. */
+function newToken() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16))).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+/** Links in transactional email point back at this worker. */
+function baseUrl(env: BugWorkerEnv) {
+  return (env.PUBLIC_BASE_URL ?? "https://bug.smithers.sh").replace(/\/$/, "");
+}
 async function read<T>(env: BugWorkerEnv, key: string): Promise<T | null> {
   const value = await env.BUGS.get(key);
   return value === null ? null : JSON.parse(value) as T;
@@ -78,6 +86,83 @@ async function list(env: BugWorkerEnv, keyPrefix: string, cursor?: string, limit
 }
 
 const maxNotificationAttempts = 3;
+/** Pending confirmations live for a day; the KV TTL and the stored expiry agree. */
+const confirmationTtlMs = 24 * 3_600_000;
+/** Confirmation sends per recipient per hour, across all repositories. */
+const confirmationsPerRecipientPerHour = 3;
+/** One transactional send through the provider seam; returns the error message on failure. */
+async function sendMail(env: BugWorkerEnv, deps: BugWorkerDeps, message: { to: string; subject: string; text: string; idempotencyKey: string }): Promise<string | undefined> {
+  try {
+    const response = await deps.fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json",
+        "idempotency-key": message.idempotencyKey,
+      },
+      body: JSON.stringify({ from: env.NOTIFICATION_FROM, to: [message.to], subject: message.subject, text: message.text }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return response.ok ? undefined : `Email provider returned HTTP ${response.status}`;
+  } catch (cause) { return cause instanceof Error ? cause.message : String(cause); }
+}
+/**
+ * Consent gate: a submitted address becomes a pending confirmation token, never
+ * a subscriber. Only the recipient clicking the emailed link creates the
+ * deliverable record, so a caller cannot enroll a third party. The per-recipient
+ * throttle bounds confirmation mail a victim can be sent; the per-IP submission
+ * throttle bounds the sender side.
+ */
+async function subscribe(env: BugWorkerEnv, deps: BugWorkerDeps, name: string, email: string): Promise<"sent" | "rate_limited" | "send_failed" | "email_not_configured"> {
+  if (!env.RESEND_API_KEY || !env.NOTIFICATION_FROM) return "email_not_configured";
+  const now = deps.now();
+  const throttleKey = `repo-confirm-throttle:${await hash(email)}:${Math.floor(now / 3_600_000)}`;
+  const sent = Number(await env.BUGS.get(throttleKey)) || 0;
+  if (sent >= confirmationsPerRecipientPerHour) return "rate_limited";
+  const confirmToken = newToken();
+  const error = await sendMail(env, deps, {
+    to: email,
+    subject: `Confirm your Smithers notification for ${name}`,
+    text: `Someone asked Smithers to email this address once ${name} is smithered and available to everyone.\n\nIf that was you, confirm within 24 hours: ${baseUrl(env)}/api/repo-requests/confirm?token=${confirmToken}\n\nIf it was not you, ignore this email and nothing more will be sent. To cancel the request: ${baseUrl(env)}/api/repo-requests/cancel?token=${confirmToken}`,
+    idempotencyKey: `smithers-confirm-${await hash(confirmToken)}`,
+  });
+  if (error !== undefined) return "send_failed";
+  await env.BUGS.put(throttleKey, String(sent + 1), { expirationTtl: 3600 });
+  await env.BUGS.put(`repo-confirm:${confirmToken}`, JSON.stringify({ name, email, expiresAt: now + confirmationTtlMs }), { expirationTtl: confirmationTtlMs / 1000 });
+  return "sent";
+}
+const tokenPattern = /^[0-9a-f]{32}$/;
+/** Move a pending address into the deliverable set. The token is single-use. */
+async function confirmSubscription(env: BugWorkerEnv, deps: BugWorkerDeps, token: string): Promise<Response> {
+  if (!tokenPattern.test(token)) return json(400, { error: "A confirmation token is required." });
+  const key = `repo-confirm:${token}`;
+  const pending = await read<{ name: unknown; email: unknown; expiresAt: unknown }>(env, key);
+  if (!pending) return json(410, { error: "This confirmation link is invalid or has already been used." });
+  if (typeof pending.name !== "string" || typeof pending.email !== "string" || typeof pending.expiresAt !== "number" || deps.now() > pending.expiresAt) {
+    await env.BUGS.delete(key);
+    return json(410, { error: "This confirmation link has expired." });
+  }
+  await env.BUGS.delete(key);
+  const cancelToken = newToken();
+  const subscriberKey = `repo-subscriber:${pending.name}:${await hash(pending.email)}`;
+  await env.BUGS.put(subscriberKey, JSON.stringify({ email: pending.email, cancel: cancelToken }));
+  await env.BUGS.put(`repo-cancel:${cancelToken}`, JSON.stringify({ key: subscriberKey }));
+  return json(200, { repo: pending.name, subscribed: true, cancel: `${baseUrl(env)}/api/repo-requests/cancel?token=${cancelToken}` });
+}
+/** Remove a pending confirmation or a confirmed subscription. */
+async function cancelSubscription(env: BugWorkerEnv, token: string): Promise<Response> {
+  if (!tokenPattern.test(token)) return json(400, { error: "A cancellation token is required." });
+  const pendingKey = `repo-confirm:${token}`;
+  if (await env.BUGS.get(pendingKey) !== null) {
+    await env.BUGS.delete(pendingKey);
+    return json(200, { cancelled: true });
+  }
+  const cancelKey = `repo-cancel:${token}`;
+  const cancel = await read<{ key: unknown }>(env, cancelKey);
+  if (!cancel || typeof cancel.key !== "string") return json(404, { error: "This cancellation link is invalid or has already been used." });
+  await env.BUGS.delete(cancelKey);
+  await env.BUGS.delete(cancel.key);
+  return json(200, { cancelled: true });
+}
 /** Bounded delivery, with receipts, a failure budget, and provider deduplication. */
 async function notify(env: BugWorkerEnv, deps: BugWorkerDeps, name: string, ready: Ready, cursor?: string) {
   if (!env.RESEND_API_KEY || !env.NOTIFICATION_FROM) return { pending: true, reason: "email_not_configured" };
@@ -90,29 +175,29 @@ async function notify(env: BugWorkerEnv, deps: BugWorkerDeps, name: string, read
       const failureKey = `repo-notification-failure:${key.name}`;
       const failure = await read<{ attempts: number }>(env, failureKey);
       if (failure && failure.attempts >= maxNotificationAttempts) continue;
-      const email = await env.BUGS.get(key.name);
-      if (!email) continue;
-      let error: string | undefined;
+      const stored = await env.BUGS.get(key.name);
+      if (!stored) continue;
+      // Confirmed subscribers are JSON with a cancellation token; plain
+      // addresses predate the confirmation flow and stay deliverable.
+      let email = stored;
+      let cancel: string | undefined;
       try {
-        const response = await deps.fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json",
-            "idempotency-key": `smithers-ready-${await hash(key.name)}`,
-          },
-          body: JSON.stringify({
-            from: env.NOTIFICATION_FROM, to: [email], subject: `${name} is ready in Smithers`,
-            text: `You asked to be notified when ${name} was smithered. It is now supported in Smithers and available to everyone.\n\nOpen in Smithers: ${ready.appUrl}\n\nThis is the one-time notification you requested at smithers.sh.`,
-          }),
-          signal: AbortSignal.timeout(10_000),
-        });
-        if (!response.ok) error = `Email provider returned HTTP ${response.status}`;
-        else {
-          await env.BUGS.put(`repo-notified:${key.name}`, ready.completedAt);
-          sent++;
+        const parsed: unknown = JSON.parse(stored);
+        if (parsed && typeof parsed === "object" && "email" in parsed && typeof parsed.email === "string") {
+          email = parsed.email;
+          if ("cancel" in parsed && typeof parsed.cancel === "string") cancel = parsed.cancel;
         }
-      } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
-      if (error !== undefined) {
+      } catch { /* A plain address is a legacy confirmed subscriber. */ }
+      const error = await sendMail(env, deps, {
+        to: email,
+        subject: `${name} is ready in Smithers`,
+        text: `You asked to be notified when ${name} was smithered. It is now supported in Smithers and available to everyone.\n\nOpen in Smithers: ${ready.appUrl}\n\nThis is the one-time notification you requested at smithers.sh.${cancel ? `\n\nUnsubscribe: ${baseUrl(env)}/api/repo-requests/cancel?token=${cancel}` : ""}`,
+        idempotencyKey: `smithers-ready-${await hash(key.name)}`,
+      });
+      if (error === undefined) {
+        await env.BUGS.put(`repo-notified:${key.name}`, ready.completedAt);
+        sent++;
+      } else {
         const attempts = (failure?.attempts ?? 0) + 1;
         await env.BUGS.put(failureKey, JSON.stringify({ attempts, terminal: attempts >= maxNotificationAttempts, failedAt: new Date(deps.now()).toISOString(), error }));
         failed++;
@@ -138,6 +223,8 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
       if (!repo) return json(404, { error: "Repository has not been requested." });
       return json(200, { repo: await publicRepo(env, repo) });
     }
+    if (request.method === "GET" && route === "/confirm") return confirmSubscription(env, deps, url.searchParams.get("token") ?? "");
+    if (request.method === "GET" && route === "/cancel") return cancelSubscription(env, url.searchParams.get("token") ?? "");
     const admin = route === "/complete" || route === "/notify";
     if (request.method !== "POST" || (route !== "" && !admin)) return json(404, { error: "Not found." });
     if (admin && !(await isOperator(request, env))) {
@@ -221,8 +308,18 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
     await env.BUGS.put(`repo-nominations:${name}`, String(count));
     await rank(env, name, count);
     const result = await publicRepo(env, repo, count);
-    if (email && result.status !== "ready") await env.BUGS.put(`repo-subscriber:${name}:${await hash(email)}`, email);
-    return json(200, { repo: result, subscribed: Boolean(email) && result.status !== "ready" });
+    // Consent first: the address stays a pending token, and `subscribed` only
+    // means the confirmation email left; delivery starts after the recipient
+    // confirms. Without provider configuration no consent email can be sent,
+    // so nothing is stored.
+    let subscribed = false;
+    let confirmation: string | undefined;
+    if (email && result.status !== "ready") {
+      const outcome = await subscribe(env, deps, name, email);
+      if (outcome === "sent") subscribed = true;
+      else confirmation = outcome;
+    }
+    return json(200, { repo: result, subscribed, ...(confirmation ? { confirmation } : {}) });
   } catch {
     return json(503, { error: "Repository requests are temporarily unavailable. Please try again." });
   }

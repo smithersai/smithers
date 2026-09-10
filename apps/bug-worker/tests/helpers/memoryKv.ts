@@ -23,6 +23,9 @@ export function memoryKv(now: () => number = () => Date.now()): BugKv & {
       const expiresAt = options?.expirationTtl ? now() + options.expirationTtl * 1000 : null;
       store.set(key, { value, expiresAt });
     },
+    async delete(key: string): Promise<void> {
+      store.delete(key);
+    },
     async list(options) {
       const keys = [...store.keys()].filter((key) => key.startsWith(options.prefix)).sort();
       const offset = Number(options.cursor || 0);

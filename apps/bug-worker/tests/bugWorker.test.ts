@@ -348,6 +348,9 @@ describe("bug worker", () => {
       async put(): Promise<void> {
         throw new Error("KV namespace unavailable");
       },
+      async delete(): Promise<void> {
+        throw new Error("KV namespace unavailable");
+      },
     };
     const env: BugWorkerEnv = { ...makeEnv(), BUGS: broken };
 
