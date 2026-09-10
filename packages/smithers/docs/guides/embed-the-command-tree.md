@@ -94,11 +94,13 @@ const control = NodeControl.layerControl({ root }, registry, engine)
 
 - `NodeControl.layerControl(config, registry?, engine?)` builds `Control` alone,
   with the registry and engine you pass.
-- `NodeControl.layerExecutor(registry, engine, root, environment, mcpServers?,
-  grants?, requestExecutor?, quotaPolicy?)` builds the run executor. Pass a
-  stricter `GrantStore` to confine what a run may touch, and pass the same one
-  the filesystem gets: a filesystem pinned to the allow-all store beside a
-  shell pinned to a real one is a fail-open the types would not catch.
+- `NodeControl.layerExecutor(registry, engine, root, options)` builds the run
+  executor. `options.environment` is required; `mcpServers`, `grants`,
+  `requestExecutor`, `quotaPolicy`, `executionRoot`, and `modules` are
+  optional. Pass a stricter `GrantStore` to confine what a run may touch, and
+  pass the same one the filesystem gets: a filesystem pinned to the allow-all
+  store beside a shell pinned to a real one is a fail-open the types would not
+  catch.
 - `Application.layer(config, registry?, engine?, executor?)` is the
   transport-neutral composition underneath. It picks local or RPC from the same
   `Config` and leaves `HttpClient`, `RpcSerialization`, and `Socket` for a

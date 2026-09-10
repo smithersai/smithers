@@ -28,15 +28,11 @@ const transport = Layer.succeed(RequestExecutor, {
       )
     })
 })
-const executor = action === "plan" ? undefined : NodeControl.layerExecutor(
-  registry,
-  engine,
-  root,
-  { ANTHROPIC_API_KEY: "synthetic-offline-test", OPENAI_API_KEY: "synthetic-offline-test" },
-  [],
-  NodeControl.layerGrantStore(root),
-  transport
-)
+const executor = action === "plan" ? undefined : NodeControl.layerExecutor(registry, engine, root, {
+  environment: { ANTHROPIC_API_KEY: "synthetic-offline-test", OPENAI_API_KEY: "synthetic-offline-test" },
+  grants: NodeControl.layerGrantStore(root),
+  requestExecutor: transport
+})
 const result = await Effect.runPromise(
   Effect.gen(function*() {
     const control = yield* Control

@@ -18,6 +18,7 @@ import * as TestRunner from "@smthrs/std/TestRunner"
 import { Context, Effect, Layer, Redacted } from "effect"
 import type { Path, Result } from "effect"
 import { existsSync } from "node:fs"
+import { isAbsolute, relative } from "node:path"
 import * as CodexAuth from "../CodexAuth.ts"
 import * as Environment_ from "../Environment.ts"
 import * as Providers from "../Providers.ts"
@@ -215,6 +216,18 @@ export const cellLimits: Sandbox.Limits = {
 }
 
 /**
+ * The declared mount's name for a directory inside the repository, or
+ * `undefined` when the mount cannot name it. `TestRun` derives its baseline
+ * worktree's container path the same way, from the same pair of roots.
+ */
+const mountedAs = (mount: string, root: string, directory: string): string | undefined => {
+  const inside = relative(root, directory)
+  if (inside === "") return mount
+  if (inside.startsWith("..") || isAbsolute(inside)) return undefined
+  return `${mount.replace(/\/+$/, "")}/${inside}`
+}
+
+/**
  * The repository's own test invocation, as this host declares it.
  *
  * `TestRun` is a declaration flow: a caller selects *which* tests, never *how*
@@ -231,25 +244,39 @@ export const cellLimits: Sandbox.Limits = {
  * over a declaration that can only refuse is worse, because the catalog then
  * advertises a call whose every answer is "not configured".
  *
+ * `workspaceRoot` is the checkout this executor actually runs in, which is not
+ * `root` once a resumed history fork binds the run to its own worktree. The
+ * runner has to name that checkout, or the suite grades the files the forked
+ * agent never touched. `root` still decides the *container's* name for the
+ * tree: `SMITHERS_TEST_CWD` is the mount the project root is reachable at, so
+ * a workspace inside the project is reachable at the same relative path under
+ * that mount. A workspace the mount cannot name at all declares no runner,
+ * because the only alternative is a `test` call that silently runs elsewhere.
+ *
  * @category constructors
  * @since 0.1.0
  */
 export const testRunner = (
   environment: Readonly<Record<string, string | undefined>>,
-  root: string
+  root: string,
+  workspaceRoot: string = root
 ): TestRunner.Runner | undefined => {
   const command = Environment_.read(environment, "SMITHERS_TEST_COMMAND")?.trim()
   if (command === undefined || command === "") return undefined
   const container = Environment_.read(environment, "SMITHERS_TEST_CONTAINER")?.trim()
-  const cwd = Environment_.read(environment, "SMITHERS_TEST_CWD")?.trim()
+  const declared = Environment_.read(environment, "SMITHERS_TEST_CWD")?.trim()
   const timeout = Number(Environment_.read(environment, "SMITHERS_TEST_TIMEOUT_MS"))
+  // The runner's directory and the workspace's are the same path until a
+  // container gives the tree a second name; `root` stays a host path, because
+  // that is where a baseline worktree is checked out from.
+  const cwd = declared === undefined || declared === ""
+    ? workspaceRoot
+    : mountedAs(declared, root, workspaceRoot)
+  if (cwd === undefined) return undefined
   return {
     command,
-    // The runner's directory and the repository's are the same path until a
-    // container gives the tree a second name; `root` stays the host's, because
-    // that is where a baseline worktree is checked out from.
-    cwd: cwd === undefined || cwd === "" ? root : cwd,
-    root,
+    cwd,
+    root: workspaceRoot,
     ...(container === undefined || container === "" ? {} : { container }),
     ...(Number.isFinite(timeout) && timeout > 0 ? { timeoutMs: timeout } : {})
   }

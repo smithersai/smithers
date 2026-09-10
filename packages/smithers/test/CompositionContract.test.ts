@@ -71,20 +71,16 @@ const composition = (
   // Discover the actual descriptor, including its budget and executable
   // identity, through the same composition used by the shipped CLI.
   const engine = NodeControl.engineDurable(root, registry)
-  const runs = NodeControl.layerExecutor(
-    registry,
-    engine,
-    root,
-    { OPENAI_API_KEY: "test-key" },
-    [],
+  const runs = NodeControl.layerExecutor(registry, engine, root, {
+    environment: { OPENAI_API_KEY: "test-key" },
     // This is the deliberately permissive TEST input. Production takes the
     // executor's real store default.
-    GrantStore.layerNoop,
-    executor,
+    grants: GrantStore.layerNoop,
+    requestExecutor: executor,
     // Proves the recorder's floor: explicitly declining to park must not make
     // a provider-capacity refusal recordable again.
-    QuotaPolicy.layerUnclassified()
-  )
+    quotaPolicy: QuotaPolicy.layerUnclassified()
+  })
   return Application.layer({ root }, registry, engine, runs) as Layer.Layer<Control.Control>
 }
 

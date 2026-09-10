@@ -100,6 +100,34 @@ export type ModuleRegistration = Layer.Layer<
   | NotificationQueue.NotificationQueue
 >
 
+/** Everything the production executor is configured with beyond its stores.
+ * @since 1.0.0
+ * @private
+ */
+export interface ExecutorOptions {
+  /** Where seat credentials and the host's test declaration are read from. */
+  readonly environment: Readonly<Record<string, string | undefined>>
+  /**
+   * MCP servers to connect at startup, each projected into the run's flow
+   * catalog by `@smthrs/mcp/McpFlows`, one more source alongside filesystem,
+   * shell, and memory. Empty by default: a host that names none behaves
+   * exactly as it always has.
+   */
+  readonly mcpServers?: ReadonlyArray<McpClient.ConnectOptions> | undefined
+  /** The store the guarded filesystem and the spawner must both ask. */
+  readonly grants?: Layer.Layer<GrantStore.GrantStore> | undefined
+  readonly requestExecutor?: Layer.Layer<RequestExecutor.RequestExecutor> | undefined
+  readonly quotaPolicy?: Layer.Layer<QuotaPolicy.QuotaClassifier> | undefined
+  /** The checkout runs execute in, when it is not the project root. */
+  readonly executionRoot?: string | undefined
+  /**
+   * Trusted native registrations using the existing executable catalog.
+   * Built in the engine's registration phase with the guarded host platform;
+   * every registered handler restores its owning approved control envelope.
+   */
+  readonly modules?: ModuleRegistration | undefined
+}
+
 /** Existing service implementations selected by the executable boundary.
  * @since 1.0.0
  * @private
@@ -466,30 +494,25 @@ const executorFromEngine = (
   registry: Layer.Layer<Registry.Registry>,
   engine: EngineDurable,
   root: string,
-  environment: Readonly<Record<string, string | undefined>>,
-  /**
-   * MCP servers to connect at startup, each projected into the run's flow
-   * catalog by `@smthrs/mcp/McpFlows`, one more source alongside filesystem,
-   * shell, and memory below. Empty by default: a host that names none behaves
-   * exactly as it always has.
-   */
-  mcpServers: ReadonlyArray<McpClient.ConnectOptions> = [],
-  grants: Layer.Layer<GrantStore.GrantStore> = layerGrantStore(root),
-  requestExecutor: Layer.Layer<RequestExecutor.RequestExecutor> = native.requestExecutor,
-  quotaPolicy: Layer.Layer<QuotaPolicy.QuotaClassifier> = QuotaPolicy.layerDefault(),
-  executionRoot: string = root,
-  /**
-   * Trusted native registrations using the existing executable catalog.
-   * Built in the engine's registration phase with the guarded host platform;
-   * every registered handler restores its owning approved control envelope.
-   */
-  modules?: ModuleRegistration
+  options: ExecutorOptions
 ): Layer.Layer<
   ControlExecutor.ControlExecutor,
   never,
   ControlRuntime.ControlRuntime | Journal.Journal | NotificationQueue.NotificationQueue | Registry.Registry
 > => {
-  const workspaceRoot = resolve(executionRoot)
+  const {
+    environment,
+    grants = layerGrantStore(root),
+    mcpServers = [],
+    modules,
+    quotaPolicy = QuotaPolicy.layerDefault(),
+    requestExecutor = native.requestExecutor
+  } = options
+  // Every capability this executor equips a run with belongs to the checkout
+  // the run executes in, which is the fork's worktree once history resumed one
+  // and the project root otherwise. `root` still names the project: its
+  // databases, its routing table, and the mount a container knows it by.
+  const workspaceRoot = resolve(options.executionRoot ?? root)
   // Startup sweepers may ask before final registration captures the native SQL
   // client. They refuse until that existing final phase installs the reader.
   let admission: ((runId: string) => Effect.Effect<boolean>) | undefined
@@ -561,7 +584,7 @@ const executorFromEngine = (
       // `test` is offered exactly when this host can say how the repository
       // runs its tests. The declaration carries the container too, so the
       // runner reaches the same transport `bash` does.
-      const runner = testRunner(environment, root)
+      const runner = testRunner(environment, root, workspaceRoot)
       const container = Container.makeCommand()
       // Each configured server is a startup-time connection the operator
       // opted into by naming it, the same way `memory` below is: a server
@@ -726,8 +749,17 @@ const layerExecutor = (
     modules?: ModuleRegistration
   ) => {
     const root = config.root ?? process.cwd()
-    return LocalControl.layer(registry, engine, layerExecutor(registry, engine, root, process.env,
-      config.mcpServers ?? [], undefined, undefined, undefined, config.executionRoot ?? root, modules), decorateNotifications)
+    return LocalControl.layer(
+      registry,
+      engine,
+      layerExecutor(registry, engine, root, {
+        environment: process.env,
+        mcpServers: config.mcpServers ?? [],
+        executionRoot: config.executionRoot ?? root,
+        modules
+      }),
+      decorateNotifications
+    )
   }
   const layerControl = (config: Application.Config, suppliedRegistry?: Layer.Layer<Registry.Registry>, suppliedEngine?: EngineDurable, modules?: ModuleRegistration) => {
     const root = config.root ?? process.cwd()

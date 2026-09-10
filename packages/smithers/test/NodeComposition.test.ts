@@ -361,6 +361,57 @@ describe("NodeControl.testRunner", () => {
     }
   })
 
+  it("declares the checkout a resumed fork executes in, not the project it forked from", () => {
+    // A fork runs in its own worktree under the project. `TestRun` executes at
+    // `cwd` and checks the pristine baseline out of `root`, so both have to
+    // name that worktree; the project's tree holds the files the forked agent
+    // never touched.
+    expect(
+      NodeControl.testRunner({ SMITHERS_TEST_COMMAND: "pytest -q" }, "/work/repo", "/work/repo/.flows/forks/child")
+    ).toEqual({
+      command: "pytest -q",
+      cwd: "/work/repo/.flows/forks/child",
+      root: "/work/repo/.flows/forks/child"
+    })
+  })
+
+  it("names the fork's checkout under the mount the container knows the project by", () => {
+    // `SMITHERS_TEST_CWD` names the project root inside the container, so a
+    // directory inside the project is reachable at the same relative path
+    // under it. `root` stays a host path: that is where the baseline worktree
+    // is checked out.
+    expect(
+      NodeControl.testRunner(
+        {
+          SMITHERS_TEST_COMMAND: "pytest -q",
+          SMITHERS_TEST_CONTAINER: "swebench-1",
+          SMITHERS_TEST_CWD: "/testbed/"
+        },
+        "/work/repo",
+        "/work/repo/.flows/forks/child"
+      )
+    ).toEqual({
+      command: "pytest -q",
+      container: "swebench-1",
+      cwd: "/testbed/.flows/forks/child",
+      root: "/work/repo/.flows/forks/child"
+    })
+  })
+
+  it("declares no runner for a workspace the declared mount cannot name", () => {
+    // A workspace outside the project has no relative path under the mount, so
+    // there is no honest `cwd` to declare. Refusing the flow costs a run one
+    // "no runner" answer; declaring one costs it a suite that graded another
+    // tree and reported the result as its own.
+    expect(
+      NodeControl.testRunner(
+        { SMITHERS_TEST_COMMAND: "pytest -q", SMITHERS_TEST_CWD: "/testbed" },
+        "/work/repo",
+        "/elsewhere/child"
+      )
+    ).toBeUndefined()
+  })
+
   it("offers the `test` flow to a run exactly when a runner was declared", async () => {
     // The r91 finding about this flow is not that it was wrong, it is that no
     // composition offered it: 45 graded runs, zero `test` calls, while the cell

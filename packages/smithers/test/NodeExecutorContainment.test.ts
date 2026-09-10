@@ -78,11 +78,10 @@ describe.skipIf(process.platform === "win32")("NodeControl executor process grou
       try {
         const registry = NodeControl.layerRegistry(root)
         const engine = NodeControl.engineDurable(root, registry)
-        const executor = NodeControl.layerExecutor(registry, engine, root, {}, [{
-          server: "containment",
-          command: process.execPath,
-          args: ["-e", server]
-        }])
+        const executor = NodeControl.layerExecutor(registry, engine, root, {
+          environment: {},
+          mcpServers: [{ server: "containment", command: process.execPath, args: ["-e", server] }]
+        })
         await Effect.runPromise(
           Effect.gen(function*() {
             const control = yield* Control.Control

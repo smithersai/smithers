@@ -121,10 +121,10 @@ The Node composition for the command tree.
 | `EngineDurable` | `Application.Engine & { stores }` | The durable engine plus the shared database seam other stores hang off. |
 | `engineDurable` | `(root: string, registry?) => EngineDurable` | The real project engine. Open, migration, and journal startup failures are promoted to defects. |
 | `seatResolver`, `layerSeatResolver` | constructor, layer | Resolves a declared seat string into a credentialed model. |
-| `testRunner`, `testFlows`, `checkpointStore` | constructors | The `test` flow's runner, the flows it registers, and the checkpoint store. |
+| `testRunner`, `testFlows`, `checkpointStore` | constructors | The `test` flow's runner, the flows it registers, and the checkpoint store. `testRunner(environment, root, workspaceRoot?)` declares the runner for `workspaceRoot`, named inside the mount `SMITHERS_TEST_CWD` gives `root`. |
 | `rebuildableTransport` | constructor | The replaceable HTTP dispatcher a model captures and uses after seat resolution returns. |
 | `ModuleRegistration` | `Layer<Executable.Catalog, never, host registration services>` | Optional trusted native module registrations; see [native module hosts](guides/native-module-host.md) for authority and single-executor requirements. |
-| `layerExecutor` | `(registry, engine, root, environment, mcpServers?, grants?, requestExecutor?, quotaPolicy?, executionRoot?, modules?) => Layer<ControlExecutor, never, ControlRuntime \| Journal \| NotificationQueue \| Registry>` | The production run executor. Pass the same `GrantStore` the filesystem gets. |
+| `layerExecutor` | `(registry, engine, root, options: { environment, mcpServers?, grants?, requestExecutor?, quotaPolicy?, executionRoot?, modules? }) => Layer<ControlExecutor, never, ControlRuntime \| Journal \| NotificationQueue \| Registry>` | The production run executor. Pass the same `GrantStore` the filesystem gets. `executionRoot` is the checkout runs execute in when it is not `root`; every capability, including the declared test runner, is equipped from it. |
 | `layerControl` | `(config, registry?, engine?, modules?) => Layer` | `Control` alone, over the registry and engine you supply. |
 | `layerOutput` | `Layer<Output>` | Deterministic rendering that also publishes its status as `process.exitCode`. |
 | `layer` | `(config, modules?) => Layer` | The complete command-handler environment. This is the production layer for `smthrs`. |

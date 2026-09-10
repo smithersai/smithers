@@ -66,7 +66,7 @@ describe("NodeControl.seatResolver", () => {
     try {
       const registry = NodeControl.layerRegistry(root)
       const engine = NodeControl.engineDurable(root, registry)
-      const executor = NodeControl.layerExecutor(registry, engine, root, {})
+      const executor = NodeControl.layerExecutor(registry, engine, root, { environment: {} })
       // Building this layer migrates the durable engine, registers the agent
       // flow, starts the resume bridge, and migrates the memory store over the
       // control database — the whole local `smthrs run` composition, minus a
@@ -122,9 +122,10 @@ describe("NodeControl.seatResolver", () => {
     try {
       const registry = NodeControl.layerRegistry(root)
       const engine = NodeControl.engineDurable(root, registry)
-      const executor = NodeControl.layerExecutor(registry, engine, root, {}, [
-        { server: "ping", command: process.execPath, args: ["-e", server] }
-      ])
+      const executor = NodeControl.layerExecutor(registry, engine, root, {
+        environment: {},
+        mcpServers: [{ server: "ping", command: process.execPath, args: ["-e", server] }]
+      })
       const flowId = await Effect.runPromise(
         Effect.gen(function*() {
           const control = yield* Control.Control
