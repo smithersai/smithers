@@ -253,6 +253,20 @@ const pageBounds = (
     : Effect.fail(invalid(`cursor: must be a cursor this listing returned, received ${JSON.stringify(cursor)}`))
 }
 
+const cursorNatural = Schema.Number.check(
+  Schema.isInt(),
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+)
+const runCursor = Schema.fromJsonString(Schema.Struct({
+  version: Schema.Literal(1),
+  filters: Schema.String,
+  source: Schema.Union([Schema.Literal(0), Schema.Literal(1)]),
+  sequence: cursorNatural,
+  createdAt: cursorNatural,
+  runId: Schema.NonEmptyString
+}))
+
 const page = <A>(
   values: ReadonlyArray<A>,
   bounds: { readonly start: number; readonly size: number }
@@ -316,7 +330,7 @@ export const layer: Layer.Layer<
         }
       })
     const getRun = (runId: string) => runtime.getRun(runId).pipe(Effect.flatMap(observe))
-    const listRuns = runtime.listRuns.pipe(Effect.flatMap((runs) => Effect.forEach(runs, observe)))
+
     const mutationSemaphore = yield* Semaphore.make(1)
 
     const emit = (
@@ -772,7 +786,7 @@ export const layer: Layer.Layer<
 
     const list = (request: ListRequest): Effect.Effect<ListResponse, ControlError> =>
       Effect.gen(function*() {
-        const bounds = yield* pageBounds(request.cursor, request.limit)
+        const bounds = yield* pageBounds(request._tag === "runs" ? undefined : request.cursor, request.limit)
         if (request._tag === "flows") {
           const [registered, warnings] = yield* Effect.all([registry.list(), registry.warnings()])
           const available = registered.length > 0
@@ -829,34 +843,43 @@ export const layer: Layer.Layer<
             )
           )
         }
-        // One named run is one read. `listRuns` projects every row in the
-        // database — five index queries plus one store read per run — and
-        // `Monitor` pays it once a beat and every `smithers status <run>` pays
-        // it too, all to keep a single summary.
-        let runs = request.filters?.runId === undefined
-          ? Array.from(yield* listRuns)
-          : yield* getRun(request.filters.runId).pipe(
+        const filters = request.filters
+        const fingerprint = JSON.stringify([
+          filters?.runId ?? null,
+          filters?.flowId ?? null,
+          filters?.status ?? null,
+          filters?.parentRunId ?? null,
+          filters?.lineageId ?? null
+        ])
+        const cursor = request.cursor === undefined ? undefined : yield* Schema.decodeUnknownEffect(runCursor)(
+          request.cursor
+        ).pipe(Effect.mapError(() => invalid("cursor: expected a run listing cursor")))
+        if (cursor !== undefined && cursor.filters !== fingerprint) {
+          return yield* invalid("cursor: belongs to different run filters")
+        }
+        // Exact lookups retain their one-row path. Other queries select durable
+        // summary fields in the adapter before observing the selected page.
+        if (filters?.runId !== undefined) {
+          let runs = yield* getRun(filters.runId).pipe(
             Effect.map((run) => [run]),
-            Effect.catchTag("/control/RunNotFound", () => Effect.succeed<ReadonlyArray<RunSummary>>([])),
-            Effect.map((found) => Array.from(found))
+            Effect.catchTag("/control/RunNotFound", () => Effect.succeed<Array<RunSummary>>([]))
           )
-        if (request.filters?.flowId !== undefined) {
-          runs = runs.filter((run) => run.flowId === request.filters?.flowId)
+          if (filters.flowId !== undefined) runs = runs.filter((run) => run.flowId === filters.flowId)
+          if (filters.status !== undefined) runs = runs.filter((run) => run.status === filters.status)
+          if (filters.parentRunId !== undefined) runs = runs.filter((run) => run.parentRunId === filters.parentRunId)
+          if (filters.lineageId !== undefined) runs = runs.filter((run) => run.lineageId === filters.lineageId)
+          return { _tag: "runs", items: yield* withSteering(runs) }
         }
-        if (request.filters?.status !== undefined) {
-          runs = runs.filter((run) => run.status === request.filters?.status)
-        }
-        if (request.filters?.parentRunId !== undefined) {
-          runs = runs.filter((run) => run.parentRunId === request.filters?.parentRunId)
-        }
-        if (request.filters?.lineageId !== undefined) {
-          runs = runs.filter((run) => run.lineageId === request.filters?.lineageId)
-        }
-        const result = page(runs, bounds)
-        const items = yield* withSteering(result.items)
+        const result = yield* runtime.queryRuns({ filters, cursor, limit: bounds.size })
+        const observed = yield* Effect.forEach(result.items, observe)
+        const items = yield* withSteering(observed)
         return result.nextCursor === undefined
           ? { _tag: "runs", items }
-          : { _tag: "runs", items, nextCursor: result.nextCursor }
+          : {
+            _tag: "runs",
+            items,
+            nextCursor: JSON.stringify({ version: 1, filters: fingerprint, ...result.nextCursor })
+          }
       })
 
     const streamForRun = (
@@ -969,7 +992,7 @@ export const layer: Layer.Layer<
       )
 
     const journalPartitions = Effect.gen(function*() {
-      const [planIds, runs] = yield* Effect.all([runtime.listPlanIds, listRuns])
+      const [planIds, runs] = yield* Effect.all([runtime.listPlanIds, runtime.listRuns])
       return [
         ...planIds.map((planId) => `plan:${planId}`),
         ...runs.map((run) => run.runId)

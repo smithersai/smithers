@@ -28,7 +28,7 @@ import {
   RunNotFound
 } from "../src/ControlError.ts"
 import { ControlRuntime, type Service as ControlRuntimeService } from "../src/ControlRuntime.ts"
-import type { Envelope, Principal, SteerMessage } from "../src/ControlSchema.ts"
+import type { Envelope, Principal } from "../src/ControlSchema.ts"
 import { canonical } from "../src/internal/planning.ts"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
@@ -389,41 +389,6 @@ describe("SqlControlRuntime and a key another process claimed", () => {
 
     expect(error).toBeInstanceOf(PersistenceError)
     expect((error as PersistenceError).operation).toContain("control_mutations.receipt_json")
-  })
-})
-
-describe("SqlControlRuntime draining steering", () => {
-  it("drains the valid rows around one corrupt row, which is quarantined", async () => {
-    // A corrupt payload used to roll the whole delete back: one bad row
-    // poisoned every drain that run would ever take. The drain now claims each
-    // row in its own transaction, so the corrupt row is deleted and logged on
-    // its own and the valid rows on either side of it still drain, in order.
-    const observed = await withRuntime((runtime, sql) =>
-      Effect.gen(function*() {
-        const { runId } = yield* start(runtime, "quarantine")
-        const message = (id: string): SteerMessage => ({ messageId: id, body: id, runId, principal, createdAt: 1 })
-        yield* runtime.enqueueSteer(runId, message("first"))
-        yield* sql`
-          INSERT INTO control_run_messages (run_id, kind, payload_json)
-          VALUES (${runId}, 'steer', 'not json')
-        `
-        yield* runtime.enqueueSteer(runId, message("second"))
-        return {
-          drained: yield* runtime.drainSteering(runId),
-          again: yield* runtime.drainSteering(runId),
-          remaining: yield* sql`SELECT seq FROM control_run_messages WHERE run_id = ${runId}`
-        }
-      })
-    )
-
-    expect(observed.drained.map((message) => message.messageId)).toEqual([
-      "first",
-      "second"
-    ])
-    expect(observed.again).toEqual([])
-    // The corrupt row is gone with the valid ones: nothing is left to poison
-    // the next turn boundary's drain.
-    expect(observed.remaining).toEqual([])
   })
 })
 
@@ -844,7 +809,7 @@ describe("SqlControlRuntime when the tables are gone", () => {
         yield* sql`DROP TABLE control_mutations`
         yield* sql`DROP TABLE control_run_messages`
         return {
-          drained: yield* Effect.flip(runtime.drainSteering(runId)),
+          signals: yield* Effect.flip(runtime.deliveredSignals(runId)),
           recorded: yield* Effect.flip(
             runtime.recordMutation("cancel:dropped", "fingerprint", { _tag: "Accepted", receiptId: "r" })
           )
@@ -854,8 +819,8 @@ describe("SqlControlRuntime when the tables are gone", () => {
 
     expect(failures.recorded).toBeInstanceOf(PersistenceError)
     expect((failures.recorded as PersistenceError).operation).toBe("record a mutation")
-    expect(failures.drained).toBeInstanceOf(PersistenceError)
-    expect((failures.drained as PersistenceError).operation).toBe("drain steering")
+    expect(failures.signals).toBeInstanceOf(PersistenceError)
+    expect((failures.signals as PersistenceError).operation).toBe("read run messages")
   })
 
   it("reports a claim on a row another process deleted", async () => {

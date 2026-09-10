@@ -284,14 +284,14 @@ export const contract = (name: string, harness: Harness): void => {
         const plan = yield* runtime.getPlan("missing").pipe(Effect.flip)
         const run = yield* runtime.getRun("missing").pipe(Effect.flip)
         const fence = yield* runtime.claimFence("missing").pipe(Effect.flip)
-        const steer = yield* runtime.drainSteering("missing").pipe(Effect.flip)
+        const signal = yield* runtime.deliverSignal("missing", { name: "missing", payload: null }).pipe(Effect.flip)
 
         expect(plan).toBeInstanceOf(PlanNotFound)
         expect((plan as PlanNotFound).code).toBe("plan_not_found")
         expect((plan as PlanNotFound).planId).toBe("missing")
         expect(run).toBeInstanceOf(RunNotFound)
         expect(fence).toBeInstanceOf(RunNotFound)
-        expect(steer).toBeInstanceOf(RunNotFound)
+        expect(signal).toBeInstanceOf(RunNotFound)
       }))
 
     test("distinguishes a denied plan from a lost run claim", () =>
@@ -344,6 +344,30 @@ export const contract = (name: string, harness: Harness): void => {
         expect(grants).toMatchObject([{ tokenId: card.planId, scope: "run", envelope: card.envelope }])
       }))
 
+    test("bounds the runtime run query and isolates its returned summaries", () =>
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        expect(yield* runtime.queryRuns({ limit: 1 })).toEqual({ items: [] })
+        for (const limit of [0, -1, 1.5, 501, Number.NaN, Infinity]) {
+          expect(yield* Effect.flip(runtime.queryRuns({ limit }))).toBeInstanceOf(InvalidInput)
+        }
+        const { runId } = yield* start
+        const first = yield* runtime.queryRuns({ limit: 1 })
+        expect(first.items.map((run) => run.runId)).toEqual([runId])
+        expect(first.nextCursor).toBeUndefined()
+        Object.assign(first.items[0]!, { flowId: "mutated" })
+        expect((yield* runtime.getRun(runId)).flowId).toBe("system/test")
+        expect(yield* runtime.queryRuns({ limit: 1, filters: { lineageId: "missing" } })).toEqual({ items: [] })
+        expect(yield* runtime.queryRuns({ limit: 1, filters: { parentRunId: "missing" } })).toEqual({ items: [] })
+      }))
+
+    test("exposes NotificationQueue as the only steering queue", () =>
+      Effect.gen(function*() {
+        const runtime = yield* ControlRuntime
+        expect(runtime).not.toHaveProperty("enqueueSteer")
+        expect(runtime).not.toHaveProperty("drainSteering")
+      }))
+
     test("queues steering until a turn-boundary drain", () =>
       Effect.gen(function*() {
         const control = yield* Control
@@ -386,28 +410,31 @@ export const contract = (name: string, harness: Harness): void => {
 
     test("drains queued steering exactly once at a turn boundary", () =>
       Effect.gen(function*() {
-        const runtime = yield* ControlRuntime
+        const control = yield* Control
+        const notifications = yield* NotificationQueue.NotificationQueue
         const { runId } = yield* start
         const principal: Principal = { id: "operator", kind: "test", stampedAt: 1 }
-        yield* runtime.enqueueSteer(runId, {
-          messageId: "steer-a",
+        for (const [messageId, body] of [["steer-a", "first"], ["steer-b", "second"]] as const) {
+          yield* control.steer({
+            runId,
+            message: { messageId, runId, body, principal, createdAt: 1 },
+            idempotencyKey: messageId
+          })
+        }
+        const drained = yield* notifications.drain({
           runId,
-          body: "first",
-          principal,
-          createdAt: 1
+          targetLineageId: runId,
+          boundary: `${runId}/turn-1`,
+          wouldIdle: false
         })
-        yield* runtime.enqueueSteer(runId, {
-          messageId: "steer-b",
+        const again = yield* notifications.drain({
           runId,
-          body: "second",
-          principal,
-          createdAt: 2
+          targetLineageId: runId,
+          boundary: `${runId}/turn-2`,
+          wouldIdle: false
         })
-        const drained = yield* runtime.drainSteering(runId)
-        const again = yield* runtime.drainSteering(runId)
-
-        expect(drained.map((message) => message.messageId)).toEqual(["steer-a", "steer-b"])
-        expect(again).toEqual([])
+        expect(drained.notifications.map((message) => message.id)).toEqual(["steer-a", "steer-b"])
+        expect(again.notifications).toEqual([])
       }))
 
     test("registers an in-run approval token that approve turns into a grant", () =>

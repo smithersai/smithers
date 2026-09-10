@@ -39,8 +39,7 @@ import type {
   RunId,
   RunStatus,
   RunSummary,
-  SignalPayload,
-  SteerMessage
+  SignalPayload
 } from "./ControlSchema.ts"
 import { GrantScope as GrantScopeSchema, Principal as PrincipalSchema } from "./ControlSchema.ts"
 import { canonicalIssue } from "./internal/issues.ts"
@@ -53,6 +52,48 @@ import {
   sameEnvelope
 } from "./internal/planning.ts"
 import { plannable } from "./SystemFlows.ts"
+
+/**
+ * Immutable ordering keys for a run page. Control launches precede engine runs.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RunCursor {
+  readonly source: 0 | 1
+  readonly sequence: number
+  readonly createdAt: number
+  readonly runId: RunId
+}
+
+/**
+ * Durable summary filters, applied before projection and executor observation.
+ * `limit` must be an integer from 1 through 500. Reuse a cursor with the same filters.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RunQuery {
+  readonly filters?: {
+    readonly flowId?: FlowId | undefined
+    readonly status?: RunStatus | undefined
+    readonly parentRunId?: RunId | undefined
+    readonly lineageId?: string | undefined
+  } | undefined
+  readonly cursor?: RunCursor | undefined
+  readonly limit: number
+}
+
+/**
+ * A bounded page; the cursor names the last selected row, even if retention removed it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface RunPage {
+  readonly items: ReadonlyArray<RunSummary>
+  readonly nextCursor?: RunCursor | undefined
+}
 
 /**
  * A durably admitted signal, bound at most once to one concrete wait token.
@@ -385,15 +426,13 @@ export interface Service {
     PlanNotFound | PlanDenied | PlanDigestMismatch | EnvelopeMismatch | ClaimLost | PersistenceError
   >
   readonly getRun: (runId: RunId) => Effect.Effect<RunSummary, RunNotFound | PersistenceError>
+  /** Full inventory for recovery and journal partition discovery. Use queryRuns for listings. */
   readonly listRuns: Effect.Effect<ReadonlyArray<RunSummary>, PersistenceError>
+  readonly queryRuns: (request: RunQuery) => Effect.Effect<RunPage, InvalidInput | PersistenceError>
   readonly listFlows: Effect.Effect<
     ReadonlyArray<{ readonly flowId: FlowId; readonly description: string }>,
     PersistenceError
   >
-  readonly enqueueSteer: (runId: RunId, message: SteerMessage) => Effect.Effect<void, RunNotFound | PersistenceError>
-  readonly drainSteering: (
-    runId: RunId
-  ) => Effect.Effect<ReadonlyArray<SteerMessage>, RunNotFound | PersistenceError>
   readonly deliverSignal: (runId: RunId, signal: SignalPayload) => Effect.Effect<void, RunNotFound | PersistenceError>
   readonly admitSignal: (
     commandId: string,
@@ -573,7 +612,7 @@ interface MutableRun {
   fence?: string | undefined
   localFence?: string | undefined
   fiber?: Fiber.Fiber<unknown, unknown> | undefined
-  readonly steering: Array<SteerMessage>
+  readonly sequence: number
   readonly signals: Array<SignalPayload>
   /** The sequence of the outstanding resume delegation, if there is one. */
   pendingResume?: number | undefined
@@ -926,7 +965,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             summary: snapshot(summary),
             fence,
             localFence: fence,
-            steering: [],
+            sequence: runSequence,
             signals: []
           })
           return {
@@ -941,6 +980,39 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         listRuns: Effect.fn("ControlRuntime.listRuns")(() =>
           Effect.sync(() => Array.from(runs.values(), (run) => snapshot(run.summary)))
         )(),
+        queryRuns: Effect.fn("ControlRuntime.queryRuns")(function*(request) {
+          if (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 500) {
+            return yield* new InvalidInput({ issue: "limit: must be an integer between 1 and 500" })
+          }
+          const selected: Array<MutableRun> = []
+          const filters = request.filters
+          for (const run of runs.values()) {
+            if (
+              request.cursor !== undefined &&
+              (request.cursor.source !== 0 || run.sequence <= request.cursor.sequence)
+            ) continue
+            const summary = run.summary
+            if (filters?.flowId !== undefined && summary.flowId !== filters.flowId) continue
+            if (filters?.status !== undefined && summary.status !== filters.status) continue
+            if (filters?.parentRunId !== undefined && summary.parentRunId !== filters.parentRunId) continue
+            if (filters?.lineageId !== undefined && summary.lineageId !== filters.lineageId) continue
+            selected.push(run)
+            if (selected.length > request.limit) break
+          }
+          const page = selected.slice(0, request.limit)
+          const last = page.at(-1)
+          return {
+            items: page.map((run) => snapshot(run.summary)),
+            ...(selected.length <= request.limit || last === undefined ? {} : {
+              nextCursor: {
+                source: 0 as const,
+                sequence: last.sequence,
+                createdAt: last.summary.createdAt,
+                runId: last.summary.runId
+              }
+            })
+          }
+        }),
         listFlows: Effect.fn("ControlRuntime.listFlows")(() =>
           Effect.sync(() =>
             Array.from(flows.values(), (flow) => ({
@@ -949,15 +1021,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
             }))
           )
         )(),
-        enqueueSteer: Effect.fn("ControlRuntime.enqueueSteer")((runId, message) =>
-          Effect.tap(requireRun(runId), (run) => Effect.sync(() => void run.steering.push(snapshot(message))))
-        ),
-        drainSteering: Effect.fn("ControlRuntime.drainSteering")(function*(runId) {
-          const queue = (yield* requireRun(runId)).steering
-          const drained = snapshot(queue)
-          queue.length = 0
-          return drained
-        }),
         deliverSignal: Effect.fn("ControlRuntime.deliverSignal")((runId, signal) =>
           Effect.tap(requireRun(runId), (run) => Effect.sync(() => void run.signals.push(snapshot(signal))))
         ),

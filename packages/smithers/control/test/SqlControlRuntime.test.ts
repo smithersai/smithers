@@ -21,7 +21,7 @@ import { Control, type Service as ControlService } from "../src/Control.ts"
 import { ClaimLost, PersistenceError, PlanDigestMismatch, RunNotFound } from "../src/ControlError.ts"
 import * as ControlExecutor from "../src/ControlExecutor.ts"
 import * as ControlLive from "../src/ControlLive.ts"
-import { ControlRuntime, type Service as ControlRuntimeService } from "../src/ControlRuntime.ts"
+import { ControlRuntime, type RunQuery, type Service as ControlRuntimeService } from "../src/ControlRuntime.ts"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 import { contract, type Stack } from "./ControlContract.ts"
@@ -74,6 +74,172 @@ const durable = (
     Stack | DurableWriter | SqlClient.SqlClient | RunStore.RunStore | Crypto.Crypto
   >
 }
+
+it("reads only the selected durable run page", async () => {
+  let reads = 0
+  const countedDatabase = Layer.effect(
+    RunStore.RunStore,
+    Effect.map(RunStore.RunStore, (store) => ({
+      ...store,
+      get: (runId: string) =>
+        Effect.suspend(() => {
+          reads += 1
+          return store.get(runId)
+        })
+    }))
+  ).pipe(Layer.provideMerge(durableJournal))
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control
+      const sql = yield* SqlClient.SqlClient
+      for (let index = 0; index < 23; index++) {
+        const runId = `page-${String(index).padStart(2, "0")}`
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json, parent_run_id, lineage_id)
+        VALUES (${runId}, 'pending', 1, ${JSON.stringify({ version: 1, flowName: "page/test", payload: {} })},
+          ${index === 0 ? null : "page-00"}, 'page-lineage')`
+      }
+      const cases: ReadonlyArray<RunQuery["filters"]> = [
+        undefined,
+        { flowId: "page/test" },
+        { status: "accepted" },
+        { lineageId: "page-lineage" },
+        { parentRunId: "page-00" },
+        { flowId: "page/test", status: "accepted", lineageId: "page-lineage", parentRunId: "page-00" }
+      ]
+      for (const filters of cases) {
+        reads = 0
+        let cursor: string | undefined
+        const seen: Array<string> = []
+        do {
+          const before = reads
+          const listed = yield* control.list({ _tag: "runs", filters, limit: 5, cursor })
+          if (listed._tag !== "runs") return yield* Effect.die("expected runs")
+          seen.push(...listed.items.map((run) => run.runId))
+          expect(reads - before).toBe(listed.items.length)
+          cursor = listed.nextCursor
+        } while (cursor !== undefined && seen.length < 30)
+        expect(new Set(seen).size).toBe(filters?.parentRunId === undefined ? 23 : 22)
+        expect(reads).toBe(seen.length)
+      }
+    }).pipe(Effect.provide(durable({ database: countedDatabase })), Effect.scoped, Effect.orDie)
+  )
+})
+
+it("continues a run cursor after deletion without decoding later rows", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control
+      const sql = yield* SqlClient.SqlClient
+      for (const runId of ["a", "b", "c", "d"]) {
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${runId}, 'pending', 1, ${JSON.stringify({ flowName: "page/test" })})`
+      }
+      const first = yield* control.list({ _tag: "runs", limit: 1 })
+      expect(first.items).toMatchObject([{ runId: "a" }])
+      yield* sql`DELETE FROM flows_runs WHERE run_id = 'a'`
+      yield* sql`UPDATE flows_runs SET state_json = '[]' WHERE run_id = 'd'`
+      const second = yield* control.list({ _tag: "runs", limit: 1, cursor: first.nextCursor })
+      expect(second.items).toMatchObject([{ runId: "b" }])
+      const third = yield* control.list({ _tag: "runs", limit: 1, cursor: second.nextCursor })
+      expect(third.items).toMatchObject([{ runId: "c" }])
+      expect(yield* Effect.flip(control.list({ _tag: "runs", limit: 1, cursor: third.nextCursor })))
+        .toBeInstanceOf(PersistenceError)
+    }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+  )
+})
+
+it("keeps advancing when retention removes a selected row before projection", async () => {
+  const retainedDatabase = Layer.effect(
+    RunStore.RunStore,
+    Effect.gen(function*() {
+      const store = yield* RunStore.RunStore
+      const sql = yield* SqlClient.SqlClient
+      return {
+        ...store,
+        get: (runId: string) =>
+          Effect.gen(function*() {
+            if (runId === "a") yield* sql`DELETE FROM flows_runs WHERE run_id = ${runId}`.pipe(Effect.orDie)
+            return yield* store.get(runId)
+          })
+      }
+    })
+  ).pipe(Layer.provideMerge(durableJournal))
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const sql = yield* SqlClient.SqlClient
+      for (const runId of ["a", "b"]) {
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${runId}, 'pending', 1, ${JSON.stringify({ flowName: "page/test" })})`
+      }
+      const first = yield* runtime.queryRuns({ limit: 1 })
+      expect(first.items).toEqual([])
+      expect(first.nextCursor).toMatchObject({ runId: "a" })
+      const second = yield* runtime.queryRuns({ limit: 1, cursor: first.nextCursor })
+      expect(second.items.map((run) => run.runId)).toEqual(["b"])
+      expect(second.nextCursor).toBeUndefined()
+    }).pipe(Effect.provide(durable({ database: retainedDatabase })), Effect.scoped, Effect.orDie)
+  )
+})
+
+it("keeps SQL query filters consistent with durable summary projections", async () => {
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime
+      const sql = yield* SqlClient.SqlClient
+      const engine = { flowName: "engine/test" }
+      const states = [
+        { runId: "root", state: engine },
+        { runId: "other", state: engine },
+        { runId: "spawn", state: engine },
+        { runId: "round", state: engine },
+        { runId: "metadata", state: { ...engine, parentRunId: "root", lineageId: "lineage" } },
+        {
+          runId: "control",
+          state: {
+            runId: "control",
+            flowId: "control/test",
+            status: "waiting-approval",
+            createdAt: 1,
+            updatedAt: 1,
+            parentRunId: "root",
+            lineageId: "lineage"
+          }
+        }
+      ]
+      for (const row of states) {
+        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+        VALUES (${row.runId}, 'pending', 1, ${JSON.stringify(row.state)})`
+      }
+      yield* sql`CREATE TABLE flows_run_parents (seq INTEGER PRIMARY KEY, child_id TEXT, parent_id TEXT)`
+      yield* sql`INSERT INTO flows_run_parents (seq, child_id, parent_id)
+      VALUES (1, 'spawn', 'root'), (2, 'spawn', 'other'), (3, 'round', 'other')`
+      yield* sql`UPDATE flows_runs SET parent_run_id = 'spawn', lineage_id = 'lineage' WHERE run_id = 'round'`
+      const all = yield* runtime.listRuns
+      const cases: ReadonlyArray<RunQuery["filters"]> = [
+        { parentRunId: "root" },
+        { parentRunId: "spawn" },
+        { parentRunId: "other" },
+        { lineageId: "lineage" },
+        { status: "waiting-approval" },
+        { flowId: "engine/test", status: "accepted" }
+      ]
+      for (const filters of cases) {
+        const expected = all.filter((run) =>
+          Object.entries(filters!).every(([key, value]) => run[key as keyof typeof run] === value)
+        ).map((run) => run.runId)
+        const seen: Array<string> = []
+        let cursor: RunQuery["cursor"]
+        do {
+          const page = yield* runtime.queryRuns({ filters, limit: 1, cursor })
+          seen.push(...page.items.map((run) => run.runId))
+          cursor = page.nextCursor
+        } while (cursor !== undefined && seen.length < 10)
+        expect(seen).toEqual(expected)
+      }
+    }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
+  )
+})
 
 contract("durable", (executor) => durable(executor === undefined ? {} : { executor }))
 
@@ -663,22 +829,19 @@ describe("SqlControlRuntime", () => {
           yield* Effect.void.pipe(Effect.forkChild({ startImmediately: true }))
         ).pipe(Effect.flip)
         const missingSignal = yield* runtime.deliveredSignals("run-absent").pipe(Effect.flip)
-        const missingSteer = yield* runtime.enqueueSteer("run-absent", {
-          messageId: "m",
-          runId: "run-absent",
-          body: "b",
-          principal: { id: "p", kind: "test", stampedAt: 0 },
-          createdAt: 0
+        const missingSignalWrite = yield* runtime.deliverSignal("run-absent", {
+          name: "missing",
+          payload: null
         }).pipe(Effect.flip)
         const badFence = yield* runtime.writeStatus("run-absent", "not json", "running").pipe(Effect.flip)
-        return { missingFlow, missingRun, missingSignal, missingSteer, badFence }
+        return { missingFlow, missingRun, missingSignal, missingSignalWrite, badFence }
       }).pipe(Effect.provide(durable()), Effect.scoped, Effect.orDie)
     )
 
     expect(observed.missingFlow._tag).toBe("/control/FlowNotFound")
     expect(observed.missingRun).toBeInstanceOf(RunNotFound)
     expect(observed.missingSignal).toBeInstanceOf(RunNotFound)
-    expect(observed.missingSteer).toBeInstanceOf(RunNotFound)
+    expect(observed.missingSignalWrite).toBeInstanceOf(RunNotFound)
     expect(observed.badFence).toBeInstanceOf(RunNotFound)
   })
 

@@ -47,7 +47,7 @@
  */
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import { Clock, Crypto, Effect, Fiber, Layer, Option, Result, Schema } from "effect"
+import { Clock, Crypto, Effect, Fiber, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as ApprovalAuthority from "./ApprovalAuthority.ts"
 import * as Attribution from "./Cancellation.ts"
@@ -65,7 +65,16 @@ import {
   RunNotFound,
   Unauthorized
 } from "./ControlError.ts"
-import type { ApprovalToken, BulkGrant, LaunchResult, MemoryFlow, Service, StoredPlan } from "./ControlRuntime.ts"
+import type {
+  ApprovalToken,
+  BulkGrant,
+  LaunchResult,
+  MemoryFlow,
+  RunCursor,
+  RunQuery,
+  Service,
+  StoredPlan
+} from "./ControlRuntime.ts"
 import { ApprovalDecision, ControlRuntime, make } from "./ControlRuntime.ts"
 import {
   ApprovalTarget,
@@ -79,8 +88,7 @@ import {
   type RunId,
   type RunStatus,
   RunSummary,
-  SignalPayload,
-  SteerMessage
+  SignalPayload
 } from "./ControlSchema.ts"
 import * as ActiveFibers from "./internal/activeFibers.ts"
 import { canonicalIssue, cappedIssue, schemaIssuePath } from "./internal/issues.ts"
@@ -492,11 +500,10 @@ const makeRuntime = (
     /**
      * How much of the database one projection needs to read.
      *
-     * `undefined` is every row, which is what a LISTING needs: it projects
-     * every row at once, and a per-row query would make one listing N round
-     * trips. A single run needs the run and its ancestor chain and nothing
-     * else — cascade attribution walks ancestors and stops — so a mutation on
-     * one run does not pay for the size of the whole database.
+     * `undefined` is the full inventory used for recovery. A page needs only
+     * its selected runs and their ancestor chains. Cascade attribution walks
+     * ancestors and stops, so a page or a single-run mutation does not project
+     * unrelated runs.
      */
     type IndexScope = ReadonlyArray<string> | undefined
 
@@ -987,13 +994,63 @@ const makeRuntime = (
                indexed.created_seq, runs.created_at_ms, runs.run_id
     `.pipe(query("list runs"), Effect.map((rows) => rows.map((row) => row.runId)))
 
+    // Match summaryFrom's durable fields in SQL. Only the selected ids are
+    // decoded or expanded into ancestry; one extra key determines continuation.
+    const runPageKeys = (request: RunQuery, includeSpawn: boolean = true): Effect.Effect<
+      ReadonlyArray<RunCursor>,
+      PersistenceError
+    > => {
+      const filters = request.filters
+      const source = sql`CASE WHEN indexed.created_seq IS NULL THEN 1 ELSE 0 END`
+      const sequence = sql`COALESCE(indexed.created_seq, 0)`
+      const controlState = sql`(json_type(runs.state_json, '$.runId') IS NOT NULL
+        OR json_type(runs.state_json, '$.flowId') IS NOT NULL
+        OR json_type(runs.state_json, '$.status') IS NOT NULL)`
+      const flowId = sql`CASE WHEN ${controlState} THEN json_extract(runs.state_json, '$.flowId')
+        ELSE json_extract(runs.state_json, '$.flowName') END`
+      const status = sql`CASE WHEN ${controlState} THEN json_extract(runs.state_json, '$.status')
+        ELSE CASE runs.status WHEN 'pending' THEN 'accepted' WHEN 'suspended' THEN 'parked' ELSE runs.status END END`
+      const storedParent = sql`CASE WHEN ${controlState} THEN json_extract(runs.state_json, '$.parentRunId') END`
+      const storedLineage = sql`CASE WHEN ${controlState} THEN json_extract(runs.state_json, '$.lineageId') END`
+      const parent = includeSpawn
+        ? sql`COALESCE(runs.parent_run_id,
+            (SELECT parent_id FROM flows_run_parents WHERE child_id = runs.run_id ORDER BY seq LIMIT 1),
+            ${storedParent})`
+        : sql`COALESCE(runs.parent_run_id, ${storedParent})`
+      const lineage = sql`COALESCE(runs.lineage_id, ${storedLineage})`
+      const after = request.cursor
+      const conditions = [sql`1 = 1`]
+      if (filters?.flowId !== undefined) conditions.push(sql`${flowId} = ${filters.flowId}`)
+      if (filters?.status !== undefined) conditions.push(sql`${status} = ${filters.status}`)
+      if (filters?.parentRunId !== undefined) conditions.push(sql`${parent} = ${filters.parentRunId}`)
+      if (filters?.lineageId !== undefined) conditions.push(sql`${lineage} = ${filters.lineageId}`)
+      if (after !== undefined) {
+        conditions.push(sql`(${source}, ${sequence}, runs.created_at_ms, runs.run_id) >
+          (${after.source}, ${after.sequence}, ${after.createdAt}, ${after.runId})`)
+      }
+      return sql<RunCursor>`
+        SELECT runs.run_id AS "runId", ${source} AS source, ${sequence} AS sequence,
+               runs.created_at_ms AS "createdAt"
+        FROM flows_runs AS runs LEFT JOIN control_runs AS indexed ON indexed.run_id = runs.run_id
+        WHERE ${sql.and(conditions)}
+        ORDER BY ${source}, ${sequence}, runs.created_at_ms, runs.run_id
+        LIMIT ${request.limit + 1}
+      `.pipe(
+        Effect.catchIf(
+          (error) => includeSpawn && filters?.parentRunId !== undefined && missingTable("flows_run_parents")(error),
+          () => runPageKeys(request, false)
+        ),
+        Effect.mapError(persistence("query runs"))
+      )
+    }
+
     const listPlanIds: Effect.Effect<ReadonlyArray<string>, PersistenceError> = sql<{ readonly planId: string }>`
       SELECT plan_id AS "planId" FROM control_plans ORDER BY rowid
     `.pipe(query("list plans"), Effect.map((rows) => rows.map((row) => row.planId)))
 
     const messages = <S extends Schema.Top>(
       runId: RunId,
-      kind: "steer" | "signal",
+      kind: "signal",
       schema: S
     ): Effect.Effect<ReadonlyArray<S["Type"]>, PersistenceError, S["DecodingServices"]> =>
       sql<{ readonly payloadJson: string }>`
@@ -1011,7 +1068,7 @@ const makeRuntime = (
 
     const appendMessage = (
       runId: RunId,
-      kind: "steer" | "signal",
+      kind: "signal",
       payload: unknown
     ): Effect.Effect<void, RunNotFound | PersistenceError> =>
       Effect.gen(function*() {
@@ -1406,6 +1463,25 @@ const makeRuntime = (
           return summaries.filter(Option.isSome).map((summary) => summary.value)
         })
       )(),
+      queryRuns: Effect.fn("SqlControlRuntime.queryRuns")(function*(request) {
+        if (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 500) {
+          return yield* new InvalidInput({ issue: "limit: must be an integer between 1 and 500" })
+        }
+        const keys = yield* runPageKeys(request)
+        const selected = keys.slice(0, request.limit)
+        if (selected.length === 0) return { items: [] }
+        const chains = yield* Effect.forEach(selected, (key) => ancestorChain(key.runId))
+        const ancestry = yield* ancestryIndex([...new Set(chains.flat())])
+        const summaries = yield* Effect.forEach(selected, (key) =>
+          requireRow(key.runId).pipe(
+            Effect.flatMap((row) => Effect.map(summaryFrom(row, ancestry), Option.some)),
+            Effect.catchTag("/control/RunNotFound", () => Effect.succeed(Option.none<RunSummary>()))
+          ))
+        return {
+          items: summaries.filter(Option.isSome).map((summary) => summary.value),
+          ...(keys.length > request.limit ? { nextCursor: selected[selected.length - 1]! } : {})
+        }
+      }),
       listFlows: Effect.fn("SqlControlRuntime.listFlows")(() =>
         Effect.map(readFlows, (flows) =>
           Array.from(flows.values(), (flow) => ({
@@ -1413,42 +1489,6 @@ const makeRuntime = (
             description: flow.description
           })))
       )(),
-      enqueueSteer: Effect.fn("SqlControlRuntime.enqueueSteer")((runId: RunId, message: SteerMessage) =>
-        appendMessage(runId, "steer", message)
-      ),
-      drainSteering: Effect.fn("SqlControlRuntime.drainSteering")(function*(runId: RunId) {
-        yield* requireRow(runId)
-        const drained: Array<SteerMessage> = []
-        // Every message is claimed in its own transaction: two turn boundaries
-        // draining at once can never both take one message. Decoding happens
-        // AFTER the claim commits, one row at a time, so a row that fails to
-        // decode is quarantined by that claim — deleted and logged — instead
-        // of rolling the whole drain back and poisoning every drain after it.
-        while (true) {
-          const claimed = yield* writer.write(sql<{ readonly payloadJson: string }>`
-            DELETE FROM control_run_messages
-            WHERE seq = (
-              SELECT MIN(seq) FROM control_run_messages
-              WHERE run_id = ${runId} AND kind = 'steer'
-            )
-            RETURNING payload_json AS "payloadJson"
-          `).pipe(Effect.mapError(persistence("drain steering")))
-          const row = claimed[0]
-          if (row === undefined) break
-          const decoded = yield* Effect.result(
-            decodeStoredJson("control_run_messages.payload_json as steer", SteerMessage, row.payloadJson)
-          )
-          if (Result.isFailure(decoded)) {
-            yield* Effect.annotateLogs(
-              Effect.logWarning("A stored steer message could not be decoded and was quarantined"),
-              { runId, issue: decoded.failure.message }
-            )
-            continue
-          }
-          drained.push(decoded.success)
-        }
-        return drained
-      }),
       deliverSignal: Effect.fn("SqlControlRuntime.deliverSignal")((runId: RunId, signal: SignalPayload) =>
         // Durable delivery, and deliberately no resumption: a signal records a
         // fact, it does not decide who runs next.

@@ -134,29 +134,21 @@ describe("SqlControlRuntime persisted JSON decoding", () => {
     expectPersistence(error, "decode control_tokens.target_json")
   })
 
-  it("removes an invalid steering message so it cannot poison subsequent drains", async () => {
+  it("reads legacy signal history without touching obsolete steering rows", async () => {
     const observed = await run(Effect.gen(function*() {
       const runtime = yield* ControlRuntime
       const sql = yield* SqlClient.SqlClient
       const { run: summary } = yield* start(runtime)
-      yield* sql`
-        INSERT INTO control_run_messages (run_id, kind, payload_json)
-        VALUES (${summary.runId}, 'steer', ${
-        JSON.stringify({
-          messageId: "message-corrupt",
-          runId: summary.runId,
-          body: "continue",
-          principal: raw,
-          createdAt: 1
-        })
-      })
-      `.pipe(Effect.orDie)
-      const drained = yield* runtime.drainSteering(summary.runId)
-      const remaining = yield* sql`SELECT * FROM control_run_messages WHERE run_id = ${summary.runId}`
-      return { drained, remaining, again: yield* runtime.drainSteering(summary.runId) }
+      yield* sql`INSERT INTO control_run_messages (run_id, kind, payload_json)
+        VALUES (${summary.runId}, 'steer', 'not json')`
+      yield* runtime.deliverSignal(summary.runId, { name: "legacy", payload: null })
+      return {
+        signals: yield* runtime.deliveredSignals(summary.runId),
+        remaining: yield* sql`SELECT kind FROM control_run_messages WHERE run_id = ${summary.runId} ORDER BY seq`
+      }
     }))
-
-    expect(observed).toEqual({ drained: [], remaining: [], again: [] })
+    expect(observed.signals).toEqual([{ name: "legacy", payload: null }])
+    expect(observed.remaining).toEqual([{ kind: "steer" }, { kind: "signal" }])
   })
 
   it("rejects a structurally invalid signal message", async () => {

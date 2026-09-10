@@ -153,6 +153,19 @@ the same run.
 | `FireOutcome`     | `"launched" \| "completed" \| "skipped" \| "buffered" \| "superseded" \| "failed"`. The same words the triggers package records in its fire ledger.                                                                                                                                                                                                                       |
 | `FireSummary`     | `{ triggerId, occurrenceAtMs, outcome: FireOutcome \| null, runId?, error?, waiting?: "approval" }`. One claimed occurrence; `outcome: null` is the window between the claim and its result.                                                                                                                                                                              |
 
+Run listings default to 100 items and accept limits from 1 through 500. Pass
+`nextCursor` back unchanged with the same filters. Run cursors contain stable
+ordering keys, not numeric offsets. Control-launched runs retain launch order;
+engine-created runs follow in creation-time and run-id order. Removing a prior
+row does not skip the next row. Listings are live, not a fixed snapshot.
+
+Paginated run filters use durable summary fields. The runtime selects at most
+`limit` rows before decoding summaries, reading their ancestry, or observing
+execution. Executor observations and pending steering counts enrich only those
+rows, so an observed status may be newer than the status used for selection.
+An exact `runId` filter keeps the direct lookup and applies the remaining
+filters to that observation.
+
 `principalId` stays on the wire and is refused by `Control.list`. Deleting the
 field would move the same overbroad answer one layer out, because struct
 decoding strips a property the schema does not declare and the server would
@@ -296,11 +309,25 @@ terminal transition, and translates conflicts into typed failures.
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Plans             | `plan(input: PlanInput) => Effect<PlanOutcome, FlowNotFound \| InvalidInput \| PersistenceError>`, `getPlan(planId)`, `listPlanIds`                                                                 |
 | Approvals         | `authorizeApproval(request)`, `lookupApproval(target)`, `registerApproval(nodeTarget)`, `resolveApproval(token, decision, principal, scope?)`, `installBulkGrant(token, envelope, scope)`, `grants` |
-| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `listRuns`, `listFlows`                                                                                           |
-| Messages          | `enqueueSteer(runId, message)`, `drainSteering(runId)`, `deliverSignal(runId, signal)`, `deliveredSignals(runId)`                                                                                   |
+| Runs              | `launch(planId, digest, envelope) => Effect<LaunchResult, ...>`, `getRun(runId)`, `queryRuns({ filters?, cursor?, limit })`, `listRuns`, `listFlows`                                                |
+| Signal history    | `deliverSignal(runId, signal)`, `deliveredSignals(runId)`                                                                                                                                           |
 | Resume delegation | `requestResume(runId) => Effect<number, ...>`, `pendingResumes`, `clearResume(runId, sequence)`                                                                                                     |
 | Ownership         | `registerFiber(runId, fiber)`, `interrupt(runId, settle?)`, `resume(runId, options?)`, `claimFence(runId)`, `releasePending(runId, fence)`, `writeStatus(runId, fence, status)`                     |
 | Identity          | `stampPrincipal(submitted?)`, `lookupMutation(key, fingerprint)`, `recordMutation(key, fingerprint, receipt)`                                                                                       |
+
+`queryRuns` accepts `RunQuery`: optional `flowId`, `status`, `parentRunId`, and
+`lineageId` filters, an optional `RunCursor`, and a required integer `limit`
+from 1 through 500. It returns `RunPage` with `items` and optional `nextCursor`.
+`RunCursor` contains `source` (0 for control launches, 1 for engine runs),
+`sequence`, `createdAt`, and `runId`. Adapters must select the page before
+summary decoding and ancestry projection. SQL reads one extra ordering key to
+determine continuation. `listRuns` remains the full inventory for recovery and
+journal partition discovery; interactive listings use `queryRuns`.
+
+Steering uses `NotificationQueue.enqueue` and `NotificationQueue.drain`.
+`enqueueSteer` and `drainSteering` have been removed from the runtime port and
+both adapters. The legacy signal-history reader and database migrations remain;
+old steering rows are not drained or delivered by the runtime.
 
 `interrupt` must be called without mutation locks. Its optional `settle` wrapper
 runs only after the fiber's finalizers finish and wraps the fenced status

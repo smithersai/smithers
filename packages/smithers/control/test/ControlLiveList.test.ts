@@ -200,6 +200,14 @@ describe("ControlLive listings", () => {
           _tag: "runs",
           filters: { runId: first.runId, status: "parked" }
         }),
+        wrongParent: yield* control.list({
+          _tag: "runs",
+          filters: { runId: first.runId, parentRunId: "missing" }
+        }),
+        wrongLineage: yield* control.list({
+          _tag: "runs",
+          filters: { runId: first.runId, lineageId: "missing" }
+        }),
         paged: yield* control.list({ _tag: "runs", limit: 1 }),
         firstRunId: first.runId,
         secondRunId: second.runId
@@ -211,12 +219,74 @@ describe("ControlLive listings", () => {
     expect(items(observed.byAll)).toEqual([observed.secondRunId])
     // Filters intersect: a run matching one but not the other is excluded.
     expect(observed.contradictory).toEqual({ _tag: "runs", items: [] })
+    expect(observed.wrongParent).toEqual({ _tag: "runs", items: [] })
+    expect(observed.wrongLineage).toEqual({ _tag: "runs", items: [] })
     expect(items(observed.paged)).toEqual([observed.firstRunId])
-    expect(observed.paged).toMatchObject({ nextCursor: "1" })
+    expect(JSON.parse(observed.paged.nextCursor!)).toMatchObject({
+      version: 1,
+      source: 0,
+      sequence: 1,
+      runId: observed.firstRunId
+    })
+  })
+
+  it("observes only the selected page while walking filtered runs", async () => {
+    let reads = 0
+    await run(
+      Effect.gen(function*() {
+        const control = yield* Control
+        for (let index = 0; index < 23; index++) yield* start("system/test", `page-${index}`)
+        for (const filters of [undefined, { flowId: "system/test" }, { status: "accepted" as const }]) {
+          reads = 0
+          let cursor: string | undefined
+          const seen: Array<string> = []
+          do {
+            const before = reads
+            const listed = yield* control.list({ _tag: "runs", filters, limit: 5, cursor })
+            seen.push(...items(listed))
+            expect(reads - before).toBe(listed.items.length)
+            cursor = listed.nextCursor
+          } while (cursor !== undefined && seen.length < 30)
+          expect(new Set(seen).size).toBe(23)
+          expect(reads).toBe(23)
+        }
+      }),
+      live({
+        runtime: memoryRuntime({ flows }),
+        executor: {
+          ...ControlExecutor.makeNoop(),
+          readExecution: () =>
+            Effect.sync(() => {
+              reads += 1
+              return { _tag: "Missing" as const }
+            })
+        }
+      })
+    )
+  })
+
+  it("rejects invalid run cursors and cursors reused with different filters", async () => {
+    await run(Effect.gen(function*() {
+      const control = yield* Control
+      yield* start("system/test", "cursor-one")
+      yield* start("system/test", "cursor-two")
+      const first = yield* control.list({ _tag: "runs", limit: 1 })
+      for (const cursor of ["1", "not-json", JSON.stringify({ version: 9 })]) {
+        expect(yield* Effect.flip(control.list({ _tag: "runs", cursor }))).toBeInstanceOf(InvalidInput)
+      }
+      expect(
+        yield* Effect.flip(control.list({
+          _tag: "runs",
+          cursor: first.nextCursor,
+          filters: { status: "accepted" }
+        }))
+      ).toBeInstanceOf(InvalidInput)
+    }))
   })
 
   it("uses the direct run lookup for a runId filter, including a missing run", async () => {
     let listRunsCalls = 0
+    let queryRunsCalls = 0
     const guardedRuntime = Layer.effect(ControlRuntime)(
       Effect.map(ControlRuntime, (runtime) =>
         ControlRuntime.of({
@@ -224,7 +294,12 @@ describe("ControlLive listings", () => {
           listRuns: Effect.sync(() => {
             listRunsCalls += 1
             throw new Error("listRuns must not serve an exact run lookup")
-          })
+          }),
+          queryRuns: () =>
+            Effect.sync(() => {
+              queryRunsCalls += 1
+              throw new Error("queryRuns must not serve an exact run lookup")
+            })
         }))
     ).pipe(Layer.provide(memoryRuntime({ flows })))
 
@@ -244,6 +319,7 @@ describe("ControlLive listings", () => {
     expect(items(observed.found)).toEqual([observed.runId])
     expect(observed.missing).toEqual({ _tag: "runs", items: [] })
     expect(listRunsCalls).toBe(0)
+    expect(queryRunsCalls).toBe(0)
   })
 })
 
