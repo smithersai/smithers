@@ -74,9 +74,10 @@ writes `.wrangler/deploy/config.json`, and wrangler follows that redirect only
 when no `--config` flag is given: `resolveWranglerConfigPath` in
 `node_modules/wrangler/wrangler-dist/cli.js:2942` returns early with
 `redirected: false` as soon as `--config` is set. Passing
-`--config worker/wrangler.jsonc` makes wrangler bundle `worker/index.ts` with
-esbuild alone, which fails on `virtual:smthrs-app/manifest`, the create-app
-plugin's virtual module, reachable from `routes.gen.ts`.
+`--config worker/wrangler.jsonc` makes wrangler bundle `worker/index.ts` from
+source with esbuild alone. That is not the Worker `pnpm build` produced:
+`@cloudflare/vite-plugin` writes its own `dist/__APP_NAME__/wrangler.json`, and
+the redirect is the only thing that points a deploy at it.
 
 `package.json`'s `deploy` script is a bare `wrangler deploy` and `CreateApp`'s
 deploy target passes no `--config` either, so both paths already take the

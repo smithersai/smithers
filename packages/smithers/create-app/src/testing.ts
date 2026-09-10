@@ -1,13 +1,21 @@
 /**
  * Run one routed flow against a recorded model fixture.
  *
+ * The flow id is a string, so nothing infers the output type: state it, or
+ * `output` is `unknown` and `expect` cannot read a field.
+ *
  * ```ts
- * cachedModelTest("chat answers a balance question", {
- *   fixture: new URL("./fixtures/balance.json", import.meta.url),
- *   flow: "chat",
- *   payload: { message: "What is vitalik.eth's balance?" },
- *   expect: (output) => { expect(output.answer).toContain("ETH") }
- * })
+ * import { Flow } from "../flows/chat/flow.ts"
+ *
+ * cachedModelTest<{ message: string }, typeof Flow.output.Type>(
+ *   "chat answers a balance question",
+ *   {
+ *     fixture: new URL("./fixtures/balance.json", import.meta.url),
+ *     flow: "chat",
+ *     payload: { message: "What is vitalik.eth's balance?" },
+ *     expect: (output) => { expect(output.answer).toContain("ETH") }
+ *   }
+ * )
  * ```
  *
  * Two modes, one call site. Replay is the default: the fixture is decoded with
@@ -85,6 +93,13 @@ export interface CachedModelTestOptions<P, O> {
   readonly dirs?: AppDirs
   /** App root the default `routes` loader walks. Defaults to `process.cwd()`. */
   readonly root?: string
+  /**
+   * Cancels the run. {@link cachedModelTest} passes vitest's own test signal,
+   * so a test that exhausts `testTimeout` interrupts the flow instead of
+   * leaving the sandbox evaluating and, under `SMTHRS_RECORD=1`, the live
+   * provider stream spending until the worker exits.
+   */
+  readonly signal?: AbortSignal
 }
 
 /**
@@ -344,10 +359,12 @@ const named = <T extends { readonly _tag: string }>(
  * Resolves one flow by re-running the router, then imports only that flow and
  * its three layer files.
  *
- * `routes.gen.ts` is deliberately not used. It statically imports every page
- * and the shell layout so the Worker bundle sees them, and those pull in React
- * and `virtual:smthrs-app/manifest`, which exists only while the Vite plugin is
- * running. A model test has no business loading the UI graph.
+ * `routes.gen.ts` is deliberately not used. It is generated, so a test that
+ * read it would depend on it being current, and it imports every flow in the
+ * app together with every layer file and tool module any of them resolves to:
+ * one flow's test would load, and could be broken by, every other flow. The
+ * pages and the shell layout are not the reason; those live in
+ * `routes.ui.gen.ts` and no Worker table imports them.
  */
 const discoverRoutedFlow = async (id: string, root: string, dirs: AppDirs): Promise<ReadonlyArray<RoutedFlow>> => {
   const routes = discover({ root, dirs })
@@ -479,7 +496,8 @@ export const runCachedModelTest = async <P, O>(
     execute(options.payload, { executionId: `e2e/${flow.id}/${name}` }).pipe(
       Effect.orDie,
       Effect.provide(runtime as unknown as Layer.Layer<never>)
-    )
+    ),
+    { signal: options.signal }
   )
   await options.expect(output)
 
@@ -501,5 +519,9 @@ export const runCachedModelTest = async <P, O>(
  * @since 0.1.0
  */
 export const cachedModelTest = <P, O>(name: string, options: CachedModelTestOptions<P, O>): void => {
-  test(name, () => runCachedModelTest(name, options))
+  // The registered test is vitest's to cancel, so its signal wins over one the
+  // caller put in `options`: without it a run that exhausts `testTimeout` is
+  // reported failed while its fiber keeps evaluating cells and, when
+  // recording, keeps the provider stream open.
+  test(name, ({ signal }) => runCachedModelTest(name, { ...options, signal }))
 }

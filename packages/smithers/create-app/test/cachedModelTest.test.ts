@@ -33,7 +33,10 @@ import {
 } from "../src/testing.ts"
 
 const Output = Schema.Struct({ answer: Schema.String })
-type Output = typeof Output.Type
+// The spelling `docs/api.md` tells a caller to write for `cachedModelTest`'s
+// output type argument, which nothing infers from a string flow id. `tsc`
+// holds it to the schema the flow declares.
+type Output = typeof Flow.output.Type
 
 const answerText = "Durable runs resume instead of repeating."
 
@@ -54,6 +57,28 @@ const Agent = defineAgent({
 const Sandbox = defineSandbox({ limits: { heapBytes: 32 * 1024 * 1024, wallClockMs: 10_000 } })
 
 const Tools = defineTools({ sources: [] })
+
+/**
+ * The layer files a throwaway tree gets, worded so a recorded request names
+ * which of the two `AGENT.ts` files the loader resolved.
+ */
+const rootSystem = "You are the agent at the app root."
+const nearSystem = "You are the agent beside the flow."
+
+/**
+ * A real `flows/echo/flow.ts`: `defineFlow` with usable schemas, imported by
+ * absolute URL because the tree is written outside this package.
+ */
+const flowSource = `import { defineFlow } from ${JSON.stringify(new URL("../src/index.ts", import.meta.url).href)}
+import * as Schema from "effect/Schema"
+
+export const Flow = defineFlow({
+  description: "Answers a topic in one line.",
+  payload: { topic: Schema.String },
+  output: Schema.Struct({ answer: Schema.String }),
+  prompt: ({ topic }) => \`Answer in one line: \${topic}\`
+})
+`
 
 const routed: ReadonlyArray<RoutedFlow> = [{
   id: "echo",
@@ -168,6 +193,63 @@ describe("the default routes loader", () => {
       routes: async () => routed,
       expect: expectAnswer
     })
+  })
+
+  /**
+   * The loader on its own path: no `routes` override, a tree the router has to
+   * walk, real schemas, and an `AGENT.ts` beside the flow that has to beat the
+   * one at the app root. Every other case here proves a refusal; this one is
+   * the success, and the recorded request is what names the layer that ran.
+   */
+  it("routes a real tree, records through it, and replays what it recorded", async () => {
+    const root = tree({
+      "AGENT.ts": `export const Agent = ${JSON.stringify({ ...Agent, system: [rootSystem] })}\n`,
+      "SANDBOX.ts": `export const Sandbox = ${JSON.stringify(Sandbox)}\n`,
+      "TOOLS.ts": `export const Tools = ${JSON.stringify(Tools)}\n`,
+      // Nearer the flow than the root file, so this is the one that must run.
+      "flows/echo/AGENT.ts": `export const Agent = ${JSON.stringify({ ...Agent, system: [nearSystem] })}\n`,
+      "flows/echo/flow.ts": flowSource
+    })
+    const path = join(dir, "default-loader.json")
+    const seen: Array<Output> = []
+    const payload = { topic: "durable workflows" }
+
+    process.env["SMTHRS_RECORD"] = "1"
+    try {
+      await runCachedModelTest<{ topic: string }, Output>("default loader", {
+        fixture: pathToFileURL(path),
+        flow: "echo",
+        payload,
+        root,
+        live: scripted,
+        expect: (output) => {
+          seen.push(output)
+        }
+      })
+    } finally {
+      delete process.env["SMTHRS_RECORD"]
+    }
+    await runCachedModelTest<{ topic: string }, Output>("default loader", {
+      fixture: pathToFileURL(path),
+      flow: "echo",
+      payload,
+      root,
+      expect: (output) => {
+        seen.push(output)
+      }
+    })
+
+    // Both halves ran the flow to a decoded output, and the replay matched the
+    // request the recording digested: a loader that resolved a different
+    // `AGENT.ts` the second time would fail as an unscripted request.
+    expect(seen).toEqual([{ answer: answerText }, { answer: answerText }])
+    const recorded = JSON.parse(readFileSync(path, "utf8")) as {
+      calls: ReadonlyArray<{ request: { system: ReadonlyArray<{ text: string }> } }>
+    }
+    expect(recorded.calls.length).toBeGreaterThan(0)
+    const system = recorded.calls[0]!.request.system.map((part) => part.text).join("\n")
+    expect(system).toContain(nearSystem)
+    expect(system).not.toContain(rootSystem)
   })
 
   it("names the known flows when the requested flow is not routed", async () => {
@@ -382,6 +464,51 @@ describe("refusals", () => {
         expect: () => {}
       })
     ).rejects.toThrow()
+  })
+})
+
+/**
+ * Cancellation, which is what a vitest timeout amounts to.
+ *
+ * `runCachedModelTest` used to call `Effect.runPromise` with no signal, so a
+ * test that exhausted `testTimeout` was reported failed while its fiber kept
+ * evaluating cells in the sandbox and, under `SMTHRS_RECORD=1`, kept the live
+ * provider stream open until the worker process exited.
+ */
+describe("a cancelled run", () => {
+  /** A live seat whose stream never settles: only cancellation ends this run. */
+  const stalled = (): Model.Model => Model.make({ stream: () => Stream.never })
+
+  it("interrupts the flow when the caller's signal aborts", async () => {
+    const controller = new AbortController()
+    const path = join(dir, "aborted.json")
+    process.env["SMTHRS_RECORD"] = "1"
+    try {
+      const run = runCachedModelTest<{ topic: string }, Output>("aborted", {
+        fixture: pathToFileURL(path),
+        flow: "echo",
+        payload: { topic: "durable workflows" },
+        live: stalled,
+        routes: async () => routed,
+        signal: controller.signal,
+        expect: () => {
+          throw new Error("an interrupted run must not reach its assertions")
+        }
+      }).then(() => "settled" as const, () => "interrupted" as const)
+
+      setTimeout(() => controller.abort(), 100)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const stillRunning = new Promise<"still running">((resolve) => {
+        timer = setTimeout(resolve, 5_000, "still running")
+      })
+      const outcome = await Promise.race([run, stillRunning])
+      clearTimeout(timer)
+      expect(outcome).toBe("interrupted")
+    } finally {
+      delete process.env["SMTHRS_RECORD"]
+    }
+    // The run never reached `options.expect`, so nothing was written.
+    expect(existsSync(path)).toBe(false)
   })
 })
 

@@ -429,15 +429,24 @@ const cachedModelTest: <P, O>(name: string, options: CachedModelTestOptions<P, O
 
 Registers one Vitest test that runs a routed flow on a cached model.
 
+The flow id is a string and only `payload` constrains `P`, so nothing infers
+`O`. State both type arguments, or `output` is `unknown` and `expect` cannot
+read a field.
+
 ```ts
-cachedModelTest("chat answers a balance question", {
-  fixture: new URL("./fixtures/balance.json", import.meta.url),
-  flow: "chat",
-  payload: { message: "What is vitalik.eth's balance?" },
-  expect: (output) => {
-    expect(output.answer).toContain("ETH")
+import { Flow } from "../flows/chat/flow.ts"
+
+cachedModelTest<{ message: string }, typeof Flow.output.Type>(
+  "chat answers a balance question",
+  {
+    fixture: new URL("./fixtures/balance.json", import.meta.url),
+    flow: "chat",
+    payload: { message: "What is vitalik.eth's balance?" },
+    expect: (output) => {
+      expect(output.answer).toContain("ETH")
+    }
   }
-})
+)
 ```
 
 | `CachedModelTestOptions` field | Default                       | Meaning                                                    |
@@ -450,6 +459,7 @@ cachedModelTest("chat answers a balance question", {
 | `routes`                       | re-run the router over `root` | Loads the routed flows this test may run                   |
 | `dirs`                         | `defaultDirs`                 | Source directories, when the app does not use the defaults |
 | `root`                         | `process.cwd()`               | The app root the default loader walks                      |
+| `signal`                       | vitest's test signal          | Cancels the run, interrupting the flow                     |
 
 Replay is the default: the fixture is decoded with
 [`@smthrs/testing`](https://testing.smithers.sh/reference/api/)'s `Fixture` schema and served by
@@ -465,9 +475,12 @@ recorded: it is not a provider response, and replaying it would hand the code
 under test a refusal the provider never made.
 
 The default loader re-runs the router and imports only the named flow and its
-three layer files. `routes.gen.ts` is deliberately not used: it statically
-imports every page and the shell layout, which pull in React and a virtual
-module that exists only while Vite is running.
+three layer files. `routes.gen.ts` is deliberately not used: it is generated,
+so a test that read it would depend on it being current, and it imports every
+flow in the app with every layer file and tool module any of them resolves to,
+so one flow's test would load every other flow. The pages and the shell layout
+are not the reason; they live in `routes.ui.gen.ts`, which no Worker table
+imports.
 
 ### The rest
 
@@ -509,7 +522,10 @@ including exit codes and the shim's entry-point choice, is in
 `smithers-routes` writes two files at the app root and never anything else.
 `routes.gen.ts` holds every flow with its three resolved layers plus the pane
 names, and imports no React and no virtual module. `routes.ui.gen.ts` holds the
-shell layout, the pages, and the pane components.
+shell layout, the pages, the pane components, and `flowSummaries`: each flow's
+`id`, `file`, and `chat` flag, read from the flow file alone. A browser entry
+reads its flow list from there and never from `routes.gen.ts`, which imports
+every layer file and every tool module.
 
 ```bash
 smithers-routes           # write; exit 2 on a flag given no value
