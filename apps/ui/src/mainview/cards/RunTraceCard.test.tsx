@@ -7,7 +7,7 @@ import type { Card } from "../state/AppState"
 import { PROTOTYPE_BANNER, RunTraceBody } from "./RunTraceCard"
 import { WorkflowRunCardBody } from "./WorkflowCards"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
-import { completedRequestCard, vibeCatalog, CODING_REQUEST_ID } from "./fixtures/CodingVibe"
+import { completedRequestCard, vibeCatalog, CODING_REQUEST_ID, publicationVibeCard } from "./fixtures/CodingVibe"
 import { blockedCodingJournal, earlyCodingJournal, preparedCodingJournal } from "./fixtures/CodingJournal"
 
 /*
@@ -460,4 +460,21 @@ test("the completed Request card reuses source-qualified flow launch and catalog
   expect(absent.textContent).not.toContain("Vibe this change")
   click([...absent.querySelectorAll("button")].find(element => element.textContent === "Check available flows")!)
   expect(sent.at(-1)).toEqual({ name: "flow.list", args: `sourceCard=${card.id}` })
+})
+
+
+test("source retention is an early fact with the existing exact child debugger action", () => {
+  const original = publicationVibeCard()
+  const card = { ...original, payload: { ...original.payload, cursorSeq: 5 } }
+  const sent: Array<{ name: string; args?: string }> = []
+  const host = render(<RunTraceBody card={card} onRunCommand={(name, args) => sent.push({ name, args })} />)
+  expect(host.textContent).toContain("Original source retained.")
+  expect(host.textContent).not.toContain("Validated request admitted for cleanup.")
+  expect(host.textContent).not.toContain("landed")
+  expect(host.textContent).not.toContain("shipped")
+  const inspect = [...host.querySelectorAll("button")].find(button => button.textContent === "Inspect original source receipt")!
+  inspect.focus()
+  expect(document.activeElement).toBe(inspect)
+  inspect.click()
+  expect(sent).toEqual([{ name: "runs.trace.select", args: "sourceCard=vibe-card vibe-root engine:original-publication:0" }])
 })

@@ -3,7 +3,7 @@ import type { Locator, Page } from "@playwright/test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { CODING_PLAN } from "../../src/mainview/cards/fixtures/CodingPlan"
-import { blockedCodingJournal, earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"
+import { blockedCodingJournal, codingDecision, earlyCodingJournal } from "../../src/mainview/cards/fixtures/CodingJournal"
 import { installCloudFixture } from "./cloudFixture.ts"
 
 /*
@@ -529,4 +529,55 @@ test("T1: a validated Request offers Vibe through its retained host after keyboa
   expect(plan?.payload).toEqual({ flowId: "coding/vibe", input: { requestExecutionId } })
   expect(rpc.filter(call => call.procedure === "List")).toHaveLength(1)
   expect(rpc.filter(call => call.procedure === "Run")).toHaveLength(2)
+})
+
+
+test("T1: original source retention opens its native receipt by keyboard before admission completes", async ({ page }) => {
+  test.setTimeout(120_000)
+  const recorded = readFileSync(join(process.cwd(), "src/mainview/cards/fixtures/CodingHostDecisions.ndjson"), "utf8")
+  const request = recorded.trim().split("\n").map(line => JSON.parse(line)).find(row =>
+    row.payload.payload.status === "completed" && row.payload.payload.state?.flowName === "coding/Request")
+  const input = { requestExecutionId: request.payload.executionId }
+  const source = request.payload.payload.state.result.exit.value.plan.base
+  const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
+  const ref = `refs/smithers/workspaces/${workspaceId}/sources/${source.commitId}`
+  const events = [
+    codingDecision(1, RUN_ID, "agent/run", { status: "running", input: { planId: "vibe-plan" } }),
+    codingDecision(2, "bridge", "coding/vibe", { parent: RUN_ID, status: "running", input: { input } }),
+    codingDecision(3, "vibe", "coding/Vibe", { parent: "bridge", status: "running", input }),
+    codingDecision(4, "admission", "coding/AdmitVibe", { parent: "vibe", status: "running", input }),
+    codingDecision(5, "publication", "coding/PublishVibeSource", { parent: "admission", status: "completed",
+      input: { source, phase: "original" }, value: { status: "retained", workspaceId, repositoryId: 42,
+        requestId: "12345678-1234-1234-1234-123456789abc", ref, source } })
+  ]
+  await serve(page, events)
+  await page.goto("/")
+  await finishGuide(page)
+  await page.keyboard.press("Control+k")
+  await page.keyboard.insertText(`/flow.run coding/vibe ${REPO} ${JSON.stringify(input)}`)
+  await page.keyboard.press("Enter")
+  const card = page.getByTestId(`card-flow-run-${RUN_ID}`)
+  await expect(card).toContainText("Original source retained.")
+  await expect(card).not.toContainText("Validated request admitted for cleanup.")
+  await tabTo(page, page.getByTestId("composer-input"))
+  await page.keyboard.insertText("/debug.verbose")
+  await page.keyboard.press("Enter")
+  await expect(page.getByText("Verbose on — showing every flow, including hidden and background ones", { exact: true })).toBeVisible()
+  const inspect = card.getByRole("button", { name: "Inspect original source receipt", exact: true })
+  await tabTo(page, inspect)
+  await page.keyboard.press("Enter")
+  const pane = card.locator("[data-span='engine:publication:0']")
+  await expect(pane).toContainText("coding/PublishVibeSource")
+  await expect(pane).toContainText(ref)
+  await expect(page.getByText(/You ran \/runs\.trace\.select sourceCard=flow-run-run-e2e run-e2e engine:publication:0 .*→ executed/)).toBeVisible()
+  await page.reload()
+  await expect(pane).toContainText(ref)
+  await expect(card).toContainText("Original source retained.")
+  await tabTo(page, card.getByTestId(`card-maximize-flow-run-${RUN_ID}`))
+  await page.keyboard.press("Enter")
+  await expect(card).toHaveAttribute("data-maximized", "true")
+  await expect(card).toHaveCSS("opacity", "1")
+  await expect(card).toHaveCSS("transform", "none")
+  await expect(page.locator(".session-shell > .guide-wordmark")).toHaveCSS("top", "33px")
+  await page.screenshot({ path: "/tmp/smithers-coding-vibe-retention-ui.png", fullPage: true })
 })

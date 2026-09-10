@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { Schema } from "effect"
 import { RequestInput, RequestResult } from "../../../../../../flows/coding/schema.ts"
+import { codingDecision } from "./CodingJournal"
 import type { Card } from "../../state/AppState"
 
 /** Actual Node/JJ/SQLite host completion, retained unchanged from the native acceptance. */
@@ -28,4 +29,27 @@ export const VIBE_ADMISSION = {
   requestExecutionId: CODING_REQUEST_ID, controlRunId: "run-1", planId: "plan-1", planDigest: "retained-plan-digest",
   pocExecutionId: "retained-poc", originalSource: CODING_REQUEST_RESULT.plan.base,
   request: CODING_REQUEST_RESULT, validatedHead: CODING_REQUEST_RESULT.outcome.result!.changes.at(-1)!.implementation.head
+}
+
+/** Actual request sources in scripted native publication child envelopes. */
+export const publicationVibeCard = (): Extract<Card, { kind: "run-trace" }> => {
+  const workspaceId = "83e75ae5-0920-4000-8000-000000000001"
+  const input = { requestExecutionId: CODING_REQUEST_ID }
+  const cleanup = { admission: VIBE_ADMISSION, summary: "✨ feat: retain the validated greeting", result: VIBE_ADMISSION.request.outcome.result!, head: VIBE_ADMISSION.validatedHead }
+  const publication = (source: typeof VIBE_ADMISSION.originalSource) => ({ status: "retained", workspaceId, repositoryId: 42,
+    requestId: "12345678-1234-1234-1234-123456789abc", ref: `refs/smithers/workspaces/${workspaceId}/sources/${source.commitId}`,
+    source: { changeId: source.changeId, commitId: source.commitId, treeId: source.treeId, parentCommitIds: source.parentCommitIds } })
+  const card = completedRequestCard()
+  return { ...card, id: "vibe-card", payload: { ...card.payload, workspaceId, workflow: "coding/vibe", runId: "vibe-root", phase: "running", input, events: [
+    codingDecision(1, "vibe-root", "agent/run", { status: "running", input: { planId: "vibe-plan" } }),
+    codingDecision(2, "vibe-bridge", "coding/vibe", { parent: "vibe-root", status: "running", input: { input } }),
+    codingDecision(3, "vibe", "coding/Vibe", { parent: "vibe-bridge", status: "running", input }),
+    codingDecision(4, "admission", "coding/AdmitVibe", { parent: "vibe", status: "running", input }),
+    codingDecision(5, "original-publication", "coding/PublishVibeSource", { parent: "admission", status: "completed",
+      input: { phase: "original", source: VIBE_ADMISSION.originalSource }, value: publication(VIBE_ADMISSION.originalSource) }),
+    codingDecision(6, "admission", "coding/AdmitVibe", { parent: "vibe", status: "completed", input, value: VIBE_ADMISSION }),
+    codingDecision(7, "cleanup", "coding/CleanVibeHistory", { parent: "vibe", status: "completed", value: cleanup }),
+    codingDecision(8, "cleaned-publication", "coding/PublishVibeSource", { parent: "vibe", status: "completed",
+      input: { phase: "cleaned", source: cleanup.head }, value: publication(cleanup.head) })
+  ] } }
 }
