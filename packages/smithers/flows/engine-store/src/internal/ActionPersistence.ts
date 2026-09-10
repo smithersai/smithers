@@ -36,9 +36,11 @@ import * as CacheAgeHistory from "./CacheAgeHistory.ts"
 import * as CacheAgeVerdicts from "./CacheAgeVerdicts.ts"
 import * as CacheOutputPolicy from "./CacheOutputPolicy.ts"
 import * as CachePublication from "./CachePublication.ts"
+import * as CopiedRecord from "./CopiedRecord.ts"
 import * as EffectRecords from "./EffectRecords.ts"
 import * as HostReflection from "./HostReflection.ts"
 import * as JournalRecords from "./JournalRecords.ts"
+import * as ProvenanceSlot from "./ProvenanceSlot.ts"
 import * as SandboxedExecution from "./SandboxedExecution.ts"
 
 /**
@@ -1111,17 +1113,30 @@ export const make = (deps: Dependencies) => {
           /**
            * Journal-convergence emit for the replay branches (issue #109):
            * an identical re-emission collapses into a `Duplicate`, and an
-           * `idempotency_conflict` means the journal already holds a
-           * terminal record under this producer identity whose payload was
-           * recorded by another lineage — a time-travel fork copies the
-           * parent's journal rows, so the copied record names the parent
-           * run. Either way the terminal event exists; only its absence is
-           * the defect being repaired.
+           * `idempotency_conflict` may mean the journal already holds this
+           * record under this producer identity as another lineage recorded
+           * it — a time-travel fork copies the parent's journal rows, so the
+           * copied record names the parent run. A cache-provenance record
+           * may also restate a fact this run already journalled with fresh
+           * measurements (an expiry re-measured after a resume). Those are
+           * the only conflicts this emit tolerates, and only after reading
+           * the occupying record and validating it: an attempt-scoped record
+           * must be this record as a retained fork ancestor emitted it — same
+           * event type, attempt coordinates and terminal state
+           * (`CopiedRecord.accept`); a provenance record must state the same
+           * fact about the same row (`ProvenanceSlot.accept`). An unrelated
+           * or contradictory record in the slot — corrupt or imported
+           * history, a producer collision — surfaces the journal's own
+           * conflict instead of a replay that reports no inconsistency.
            */
           const emitConverging = (record: JournalEvent.Input) =>
             emitLifecycle(record).pipe(
               Effect.catch((error) =>
-                error.code === "idempotency_conflict" ? Effect.succeed(undefined) : Effect.fail(error)
+                error.code !== "idempotency_conflict"
+                  ? Effect.fail(error)
+                  : record.eventType === "flows.engine.cache-provenance"
+                  ? ProvenanceSlot.accept({ journal, runId: deps.runId, record, conflict: error })
+                  : CopiedRecord.accept({ journal, runs, runId: deps.runId, record, conflict: error })
               )
             )
           /**

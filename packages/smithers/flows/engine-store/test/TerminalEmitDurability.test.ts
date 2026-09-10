@@ -115,15 +115,17 @@ const evidence = {
   diffIdentity: "terminal-emit-diff"
 }
 
-describe("replay re-emission tolerates a foreign-lineage terminal record (issue #109)", () => {
-  it.effect("continues when the journal already holds the record under another lineage's payload", () =>
+describe("replay re-emission validates a foreign-lineage terminal record (issue #109)", () => {
+  it.effect("surfaces the conflict when the foreign record has no validated fork ancestry", () =>
     Effect.gen(function*() {
       // A time-travel fork copies the parent's journal rows: the copied
       // terminal record carries the same producer identity but names the
       // parent run in its payload, so the re-emission raises
-      // idempotency_conflict rather than collapsing to a Duplicate. The
-      // terminal event exists — only its absence is the defect — so the
-      // replay must proceed.
+      // idempotency_conflict rather than collapsing to a Duplicate. Replay
+      // tolerates that ONLY for a record a retained fork demonstrably
+      // copied (`ReplayConflictValidation.test.ts`). This record names a
+      // parent this run never forked from, so the journal's conflict stands
+      // and the body is not re-executed.
       const runId = "terminal-foreign-lineage"
       const key = "terminal-emit/foreign"
       const outcome = yield* withCrypto(
@@ -145,11 +147,19 @@ describe("replay re-emission tolerates a foreign-lineage terminal record (issue 
           } as never, owner)
           const replayed = yield* dispatch(runId, key, () => Effect.die("must not re-execute"), {
             metadata: declared
-          }).pipe(Effect.provide(boundary))
+          }).pipe(Effect.provide(boundary), Effect.exit)
           return { replayed }
         }).pipe(Effect.provide(Layer.mergeAll(TestStores.layer(), jjLayer)), Effect.scoped)
       )
-      expect(outcome.replayed).toBe("done")
+      expect(outcome.replayed._tag).toBe("Failure")
+      if (Exit.isFailure(outcome.replayed)) {
+        const reason = outcome.replayed.cause.reasons[0]
+        expect(reason?._tag).toBe("Fail")
+        expect((reason as { readonly error?: unknown }).error).toMatchObject({
+          _tag: "@smthrs/journal/JournalError",
+          code: "idempotency_conflict"
+        })
+      }
     }))
 
   it.effect("still surfaces journal failures that are not idempotency conflicts", () =>
