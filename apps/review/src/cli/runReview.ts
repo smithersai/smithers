@@ -158,7 +158,7 @@ export async function runReview(args: ReviewArgs): Promise<void> {
     }
   }
 
-  const runId = `review-${Date.now()}-${randomUUID()}`;
+  const runId = args.executionId || `review-${Date.now()}-${randomUUID()}`;
   const input = {
     repo: repoDir,
     from: args.from,
@@ -180,7 +180,7 @@ export async function runReview(args: ReviewArgs): Promise<void> {
   console.error(
     `[smithers-review] run ${runId} on ${repoDir} (review ${args.review ? "on" : "off"}, narration ${
       args.narrate ? "on" : "off"
-    }, verify ${args.verify ? "on" : "off"}, quiz ${args.quiz})`,
+    }, verify ${args.verify ? "on" : "off"}, quiz ${args.quiz}; db ${dbPath})`,
   );
   const startedAtMs = Date.now();
   const reporter = createProgressReporter({ write: (line) => console.error(`[smithers-review] ${line}`) });
@@ -189,6 +189,9 @@ export async function runReview(args: ReviewArgs): Promise<void> {
   let result: ReviewResult;
   try {
     result = await Effect.runPromise(
+      // The durable engine checks the stored flow and decoded input before
+      // joining this ID. A mismatch is an ExecutionIdentityConflict; a match
+      // replays the prepared snapshot and settled batches from this database.
       Review.execute(input, { executionId: runId }).pipe(
         Effect.provide(
           layerNode({ filename: dbPath, seats: reviewSeatResolver(seats) }).pipe(

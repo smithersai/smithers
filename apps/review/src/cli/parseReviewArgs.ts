@@ -7,6 +7,7 @@ export type ReviewArgs = {
   title: string;
   out: string;
   db: string;
+  executionId: string;
   review: boolean;
   narrate: boolean;
   verify: boolean;
@@ -33,6 +34,7 @@ export function parseReviewArgs(argv: string[]): ReviewArgs {
     title: "",
     out: "",
     db: "",
+    executionId: "",
     review: true,
     narrate: true,
     verify: true,
@@ -60,7 +62,13 @@ export function parseReviewArgs(argv: string[]): ReviewArgs {
     else if (arg === "--title") args.title = next();
     else if (arg === "--out") args.out = next();
     else if (arg === "--db") args.db = next();
-    else if (arg === "--no-review") args.review = false;
+    else if (arg === "--execution-id") {
+      const value = argv[++i];
+      if (!value?.trim() || value.startsWith("--")) {
+        throw new Error("--execution-id requires a non-empty value");
+      }
+      args.executionId = value;
+    } else if (arg === "--no-review") args.review = false;
     else if (arg === "--no-narrate") args.narrate = false;
     else if (arg === "--no-verify") args.verify = false;
     else if (arg === "--quiz") {

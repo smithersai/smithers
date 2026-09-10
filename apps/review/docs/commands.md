@@ -38,3 +38,26 @@ beside the output. The workflow returns that file as `walkthrough.artifactPath`;
 The JSON summary exposes it as `walkthroughArtifactPath`. Retain these files
 while a run may resume or publish; remove them manually when no longer needed.
 Older recorded results without an artifact path must be rerun before publishing.
+
+`--execution-id <id>` selects a durable review in `--db <file>` (default:
+`<repo>/.smithers-review/review.db`). An unused ID starts a review. Without this
+option, every invocation generates a fresh ID. The CLI prints the ID at startup
+and on execution failure.
+
+To recover after a crash, repeat the original command with its printed ID,
+the same database and review options:
+
+```sh
+smithers-review /path/to/repo --db /path/to/review.db --execution-id review-recovery
+```
+
+The engine rejects an existing ID if the decoded review input differs,
+including the repository, target, background, output, and review switches.
+Keep the original seat configuration for unfinished model work. A settled
+preparation preserves the original diff even when the working tree changes.
+Settled file batches reuse their findings without another provider call;
+in-flight calls may repeat. Before preparation settles, recovery can still
+read the current tree. A completed execution returns its recorded result.
+Use a fresh ID to review new changes. `--publish` and `--pr` reporting run
+again after recovery when supplied; these external effects are outside the
+durable review flow.

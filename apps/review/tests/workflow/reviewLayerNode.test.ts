@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,8 +35,8 @@ afterEach(() => {
   }
 });
 
-/** A repository whose working tree changes one file against its first commit. */
-function tempRepo(): string {
+/** A repository whose working tree changes `count` files against its first commit. */
+function tempRepo(count = 1): string {
   const dir = mkdtempSync(join(tmpdir(), "review-layer-node-"));
   tempDirs.push(dir);
   const run = (args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
@@ -45,10 +45,15 @@ function tempRepo(): string {
   run(["config", "user.name", "Test User"]);
   run(["config", "commit.gpgsign", "false"]);
   mkdirSync(dirname(join(dir, "src/file0.ts")), { recursive: true });
-  writeFileSync(join(dir, "src/file0.ts"), "export const value0 = 0;\n");
+  for (let index = 0; index < count; index++) {
+    writeFileSync(join(dir, `src/file${index}.ts`), `export const value${index} = ${index};\n`);
+  }
+  writeFileSync(join(dir, ".gitignore"), ".smithers-review/\n");
   run(["add", "."]);
   run(["commit", "-m", "base"]);
-  writeFileSync(join(dir, "src/file0.ts"), "export const value0 = 0;\nexport const next0 = 1;\n");
+  for (let index = 0; index < count; index++) {
+    writeFileSync(join(dir, `src/file${index}.ts`), `export const value${index} = ${index};\nexport const next${index} = ${index + 1};\n`);
+  }
   return dir;
 }
 
@@ -85,3 +90,96 @@ describe("the durable composition against a real provider route", () => {
     expect(report.paths).toEqual(["src/file0.ts"]);
   }, 240_000);
 });
+
+test("restarts the same execution after a settled file round without rereading the worktree or recalling its provider", async () => {
+  const repo = tempRepo(2);
+  const db = join(repo, ".smithers-review", "review.db");
+  const executionId = "review-node-restart";
+  const run = (id: string) => {
+    const result = spawnSync("node", [driver, repo, db, id], {
+      encoding: "utf8", env: process.env, timeout: 180_000,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    const line = result.stdout.trim().split("\n").filter((text) => text.startsWith("{")).at(-1);
+    expect(line, result.stderr).toBeDefined();
+    const report = JSON.parse(line!);
+    expect(report.error ?? "none").toBe("none");
+    expect(report.ok).toBe(true);
+    return report;
+  };
+  // A complete reference run pins exact findings and the original snapshot.
+  const reference = run("review-node-reference");
+  expect(reference.calls).toEqual(["src/file0.ts", "src/file1.ts"]);
+  expect(reference.findings).toEqual(["src/file0.ts", "src/file1.ts"].map((path) => ({
+    path, content: "The new binding shadows the old one.", severity: "major",
+    category: "correctness", confidence: "confirmed", startLine: 2, endLine: 2,
+    existingCode: "", suggestionCode: "", thinking: "",
+  })));
+  const child = spawn("node", [driver, repo, db, executionId, "src/file1.ts"], {
+    env: process.env, stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  let stderr = "";
+  const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
+  try {
+    const paused = await new Promise<{ requests: number; calls: string[] }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`pause timed out: ${stderr}`)), 180_000);
+      child.stderr.on("data", (data) => { stderr += data.toString(); });
+      child.stdout.on("data", (data) => {
+        stdout += data.toString();
+        for (const line of stdout.split("\n").slice(0, -1)) {
+          if (!line.startsWith("{")) continue;
+          const report = JSON.parse(line);
+          if (report.paused) { clearTimeout(timer); resolve(report); }
+        }
+      });
+      child.once("error", (error) => { clearTimeout(timer); reject(error); });
+      child.once("close", () => { clearTimeout(timer); reject(new Error(`exited before pause: ${stdout} ${stderr}`)); });
+    });
+    expect(paused.requests).toBe(1);
+    expect(paused.calls).toEqual(["src/file0.ts"]);
+  } finally {
+    child.kill("SIGKILL");
+    await closed;
+  }
+  expect(child.signalCode).toBe("SIGKILL");
+  for (let index = 0; index < 2; index++) {
+    writeFileSync(join(repo, `src/file${index}.ts`), "export const changedAfterCrash = true;\n");
+  }
+  const resumed = run(executionId);
+  expect(resumed.calls).toEqual(["src/file1.ts"]);
+  expect(resumed.requests).toBe(1);
+  expect(resumed.findings).toEqual(reference.findings);
+  expect(resumed.diffs).toEqual(reference.diffs);
+  expect(resumed.diffs.map((file: { diff: string }) => file.diff).join("\n")).toContain("export const next1 = 2;");
+  const replayed = run(executionId);
+  expect(replayed.requests).toBe(0);
+  expect(replayed.findings).toEqual(reference.findings);
+}, 600_000);
+
+test("CLI resumes its printed execution ID and refuses changed input in the same database", () => {
+  const repo = tempRepo();
+  const db = join(repo, ".smithers-review", "review.db");
+  const summary = join(repo, ".smithers-review", "summary.json");
+  const bin = fileURLToPath(new URL("../../bin/smithers-review.mjs", import.meta.url));
+  const run = (extra: string[] = []) => spawnSync("node", [
+    bin, repo, "--db", db, "--no-review", "--no-narrate", "--quiz", "off", ...extra,
+  ], {
+    encoding: "utf8", timeout: 180_000,
+    env: { ...process.env, SMITHERS_REVIEW_SUMMARY_PATH: summary },
+  });
+  const first = run();
+  expect(first.status, first.stderr).toBe(0);
+  const executionId = /\[smithers-review\] run (\S+) on/.exec(first.stderr)?.[1];
+  expect(executionId).toBeDefined();
+  const original = JSON.parse(readFileSync(summary, "utf8"));
+  writeFileSync(join(repo, "src/file0.ts"), "export const changedAfterCrash = true;\n");
+  const resumed = run(["--execution-id", executionId!]);
+  expect(resumed.status, resumed.stderr).toBe(0);
+  expect(resumed.stderr).toContain(`run ${executionId} on`);
+  expect(JSON.parse(readFileSync(summary, "utf8"))).toEqual(original);
+  const conflict = run(["--execution-id", executionId!, "--background", "a different review"]);
+  expect(conflict.status).toBe(1);
+  expect(conflict.stderr).toContain(`run ${executionId} failed`);
+  expect(conflict.stderr).toContain("payload identity");
+}, 600_000);

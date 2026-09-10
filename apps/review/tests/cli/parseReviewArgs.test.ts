@@ -27,6 +27,17 @@ describe("parseReviewArgs", () => {
     expect(args.quiz).toBe("auto");
   });
 
+  test("--execution-id selects the durable run in --db", () => {
+    expect(parseReviewArgs([]).executionId).toBe("");
+    const args = parseReviewArgs(["--execution-id", "review-recovery", "--db", "review.db"]);
+    expect(args.executionId).toBe("review-recovery");
+    expect(args.db).toBe("review.db");
+  });
+
+  test.each([undefined, "", "   ", "--db"])("--execution-id rejects a missing or empty value %j", (value) => {
+    expect(() => parseReviewArgs(value === undefined ? ["--execution-id"] : ["--execution-id", value])).toThrow("--execution-id requires a non-empty value");
+  });
+
   test("--quiz accepts off, auto, on", () => {
     expect(parseReviewArgs(["--quiz", "off"]).quiz).toBe("off");
     expect(parseReviewArgs(["--quiz", "auto"]).quiz).toBe("auto");

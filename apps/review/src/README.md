@@ -21,7 +21,25 @@ Directory map:
 Data flow: the flow's success value IS the answer. `Review.execute` resolves to
 a `ReviewResult` carrying the target, the review, the story, the quiz, and the
 walkthrough, and `cli/main.ts` reads that value directly to print summaries,
-publish, and post to GitHub. Run state lives in a per-run SQLite file so a run
-that dies mid-review resumes into the batches it had already settled.
+publish, and post to GitHub. Run state lives in SQLite (default:
+`<repo>/.smithers-review/review.db`), with each review identified by an execution
+ID printed at startup and on execution failure. Reusing the database alone
+starts a new review. To recover an interrupted review, repeat the original
+command with the same review options, database, and execution ID:
+
+```sh
+smithers-review /path/to/repo --db /path/to/review.db --execution-id review-recovery
+```
+
+An unused ID starts a review; an existing ID resumes it. The durable engine
+validates the stored input before joining the execution and rejects changed
+review options or repository paths. Once preparation has settled, recovery
+uses its recorded diff snapshot even if the working tree changes. Completed
+file batches are reused without calling their providers again; an in-flight
+call may run again. A completed execution returns its recorded result. Use a
+new ID (or omit `--execution-id`) to review the current working tree.
+Keep the original seat configuration when recovering unfinished model work.
+Publishing and GitHub posting happen after the durable flow and run again
+when those options are supplied on recovery.
 
 Tests live in `../tests`, mirroring these directories.

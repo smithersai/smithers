@@ -129,6 +129,7 @@ Output
   --title <text>            walkthrough title (default: narrator headline)
   --out <file>              output HTML path (default: <repo>/.smithers-review/walkthrough.html)
   --db <file>               smithers db path (default: <repo>/.smithers-review/review.db)
+  --execution-id <id>       start or resume this ID in --db; repeat the same review options
   --split                   side-by-side diffs instead of unified
   --publish                 upload to the share service and print the share URL
   --open                    open the walkthrough in the default browser
