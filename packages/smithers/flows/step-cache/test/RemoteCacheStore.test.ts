@@ -672,6 +672,59 @@ describe("publications", () => {
       expect(errorOf(exit).code).toBe("invalid_cache")
       expect(tier.calls).toEqual([])
     }))
+
+  it.effect("PUTs back the entry a lookup returned at the combined node boundary", () =>
+    Effect.gen(function*() {
+      // Each field sits exactly at its own 100,000-node budget (the array
+      // root plus 99,999 members), so the whole entry carries 200,005 nodes:
+      // past the per-field budget, exactly at the envelope-aware allowance.
+      const wide: CacheStore.CacheEntry = {
+        ...entry,
+        result: Array.from({ length: 99_999 }, () => 0),
+        meta: Array.from({ length: 99_999 }, () => 0)
+      }
+      const tier = tierOf((call) =>
+        call.method === "GET"
+          ? new Response(JSON.stringify(wide), { status: 200 })
+          : new Response(null, { status: 201 })
+      )
+      const store = yield* tier.store
+      const found = yield* store.get(wide.keyDigest)
+      expect(Option.getOrUndefined(found)).toEqual(wide)
+      expect(yield* store.put(Option.getOrThrow(found))).toEqual({ _tag: "Inserted" })
+      expect(JSON.parse(tier.calls[1]!.body)).toEqual(wide)
+    }))
+
+  it.effect("PUTs back the entry a lookup returned at the envelope depth boundary", () =>
+    Effect.gen(function*() {
+      // A field nested to its own depth budget of 128 sits one level deeper
+      // inside the entry envelope, at 129.
+      let nested: CacheStore.CacheEntry["result"] = 0
+      for (let index = 0; index < 128; index++) nested = [nested]
+      const deep: CacheStore.CacheEntry = { ...entry, result: nested, meta: nested }
+      const tier = tierOf((call) =>
+        call.method === "GET"
+          ? new Response(JSON.stringify(deep), { status: 200 })
+          : new Response(null, { status: 201 })
+      )
+      const store = yield* tier.store
+      const found = yield* store.get(deep.keyDigest)
+      expect(Option.getOrUndefined(found)).toEqual(deep)
+      expect(yield* store.put(Option.getOrThrow(found))).toEqual({ _tag: "Inserted" })
+      expect(JSON.parse(tier.calls[1]!.body)).toEqual(deep)
+    }))
+
+  it.effect("still refuses a field past its own node budget, without a request", () =>
+    Effect.gen(function*() {
+      const tier = tierOf(() => new Response(null, { status: 201 }))
+      const over = {
+        ...entry,
+        result: Array.from({ length: 100_000 }, () => 0)
+      }
+      const exit = yield* Effect.flatMap(tier.store, (store) => store.put(over)).pipe(Effect.exit)
+      expect(errorOf(exit).code).toBe("invalid_cache")
+      expect(tier.calls).toEqual([])
+    }))
 })
 
 describe("configuration", () => {

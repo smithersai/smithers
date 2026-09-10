@@ -345,6 +345,18 @@ through [`@smthrs/canonical`](https://canonical.smithers.sh/reference/api/), fai
 comparison a structural one: two results built in different key orders encode
 identically.
 
+### encodeEntryCanonical
+
+```ts
+const encodeEntryCanonical: (entry: CacheEntry) => Effect.Effect<string, CacheStoreError>
+```
+
+Encodes a whole entry as RFC 8785 canonical JSON for the wire. The entry is
+admitted under each field's own budget plus the envelope, one nesting level
+and the five shell nodes, with `maximumJsonBytes` bounding the whole
+encoding. A remote `put` therefore never refuses an entry a remote `get`
+could have returned.
+
 ### validateKey
 
 ```ts

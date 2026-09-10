@@ -74,6 +74,21 @@ const jsonLimits: CacheJsonLimits = {
 }
 
 /**
+ * The admission policy for a whole wire entry: each field's own budget, plus
+ * the envelope itself. The envelope adds one nesting level above `result` and
+ * `meta`, and five nodes (the entry object and its four scalar members), while
+ * `maximumJsonBytes` still bounds the whole encoding. Remote reads admit an
+ * entry field-by-field under `jsonLimits` with the same whole-entry byte
+ * bound, so encoding under these allowances keeps publication symmetric with
+ * lookup: an entry a `get` returned always fits a `put`.
+ */
+const entryJsonLimits: CacheJsonLimits = {
+  ...jsonLimits,
+  maxDepth: maximumJsonDepth + 1,
+  maxNodes: 2 * maximumJsonNodes + 5
+}
+
+/**
  * Stable error codes returned by cache persistence operations.
  *
  * @category models
@@ -389,6 +404,21 @@ type CacheRow = typeof CacheRow.Type
 const error = (code: CacheStoreErrorCode, message: string, cause?: unknown): CacheStoreError =>
   new CacheStoreError({ code, message, ...(cause === undefined ? {} : { cause }) })
 
+const encodeBounded = (
+  value: unknown,
+  field: string,
+  limits: CacheJsonLimits
+): Effect.Effect<string, CacheStoreError> =>
+  Effect.suspend(() => {
+    const admitted = BoundedJson.admit(value, limits)
+    return admitted.ok
+      ? Schema.decodeUnknownEffect(Canonical)(admitted.value).pipe(
+        /* v8 ignore next -- bounded inert JSON is exactly Canonical's accepted domain */
+        Effect.mapError(() => error("invalid_cache", `${field} must have a bounded canonical JSON form`))
+      )
+      : Effect.fail(error("invalid_cache", `${field} ${admitted.complaint}`))
+  })
+
 /**
  * Encodes a stored value as RFC 8785 canonical JSON.
  *
@@ -408,15 +438,23 @@ const error = (code: CacheStoreErrorCode, message: string, cause?: unknown): Cac
  * @since 1.0.0-rc.0
  */
 export const encodeCanonical = (value: unknown, field: string): Effect.Effect<string, CacheStoreError> =>
-  Effect.suspend(() => {
-    const admitted = BoundedJson.admit(value, jsonLimits)
-    return admitted.ok
-      ? Schema.decodeUnknownEffect(Canonical)(admitted.value).pipe(
-        /* v8 ignore next -- bounded inert JSON is exactly Canonical's accepted domain */
-        Effect.mapError(() => error("invalid_cache", `${field} must have a bounded canonical JSON form`))
-      )
-      : Effect.fail(error("invalid_cache", `${field} ${admitted.complaint}`))
-  })
+  encodeBounded(value, field, jsonLimits)
+
+/**
+ * Encodes a whole cache entry as RFC 8785 canonical JSON for the wire.
+ *
+ * The entry is admitted under the whole-entry policy documented on
+ * `entryJsonLimits`: the two field budgets plus the envelope's one nesting
+ * level and five nodes, with `maximumJsonBytes` bounding the encoding as a
+ * whole. A remote lookup reads an entry back under exactly that policy, so a
+ * publication that re-validates each field and then encodes here never
+ * refuses an entry a `get` could have returned.
+ *
+ * @category serialization
+ * @since 1.0.0-rc.0
+ */
+export const encodeEntryCanonical = (entry: CacheEntry): Effect.Effect<string, CacheStoreError> =>
+  encodeBounded(entry, "cache entry", entryJsonLimits)
 
 const decode = (value: string, field: string): Effect.Effect<unknown, CacheStoreError> =>
   Effect.suspend(() => {

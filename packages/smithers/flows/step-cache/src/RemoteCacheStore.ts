@@ -415,7 +415,13 @@ export const make = (
         // a struct encoder may omit an `undefined` member.
         yield* CacheStore.encodeCanonical(entry.result, "result")
         yield* CacheStore.encodeCanonical(entry.meta, "meta")
-        const body = yield* CacheStore.encodeCanonical(entry, "cache entry")
+        // The whole entry is encoded under the envelope-aware policy, not the
+        // per-field one: each field keeps its own node and depth budget, the
+        // envelope adds one nesting level and a fixed node allowance, and the
+        // whole-entry byte bound is enforced on the encoding itself. `get`
+        // admits an entry field-by-field under the same byte bound, so a
+        // publication never refuses an entry a lookup could have returned.
+        const body = yield* CacheStore.encodeEntryCanonical(entry)
         const response = yield* send(
           "a publication",
           HttpClientRequest.put(acUrl(entry.keyDigest)).pipe(

@@ -69,6 +69,14 @@ tier is called: forwarding the caller's object let a mutation between the two
 writes persist one value locally and publish a different one under the same
 digest, with `Inserted` answered for both.
 
+On the wire the entry is one JSON object, and the HTTP tier admits it under
+the same field budgets plus the envelope itself: one nesting level above
+`result` and `meta`, the five nodes of the shell, and `maximumJsonBytes`
+bounding the whole encoding. That keeps publication symmetric with lookup. A
+tier can return an entry whose `result` and `meta` each sit at their own node
+or depth budget, and `encodeEntryCanonical` puts that same entry back instead
+of charging both fields against one shared budget.
+
 ## Selectors are decoded, not copied
 
 `recordedBy`, `ifRecordedBy`, and the age bounds take the other path. Each
@@ -92,9 +100,9 @@ as the values the step produced.
 The checks are exported, so an adapter implementing this contract elsewhere,
 for example a shared-tier server, refuses exactly what the store refuses:
 `validateKey`, `validateRecordedBy`, `validateFence`, `validateAge`,
-`snapshotEntry`, and `encodeCanonical`, alongside the `KeyDigest`,
-`RecordedRunId`, `RecordedBy`, and `CacheEntry` schemas. Their signatures are
-on the [API reference](../api.md).
+`snapshotEntry`, `encodeCanonical`, and `encodeEntryCanonical`, alongside the
+`KeyDigest`, `RecordedRunId`, `RecordedBy`, and `CacheEntry` schemas. Their
+signatures are on the [API reference](../api.md).
 
 ## Related
 
