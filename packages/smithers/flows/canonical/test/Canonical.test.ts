@@ -50,6 +50,30 @@ describe("Canonical", () => {
     const document = serialize({ b: 2, a: [true, null] })
     expect(Schema.encodeUnknownSync(Canonical)(document)).toEqual({ a: [true, null], b: 2 })
   })
+
+  it("round trips a document byte for byte", () => {
+    const document = serialize({ b: 2, a: [true, null, "\u00e9\ud83d\ude00"], c: 1e21 })
+    expect(serialize(Schema.encodeUnknownSync(Canonical)(document))).toBe(document)
+  })
+})
+
+describe("encoding malformed text", () => {
+  const encodeFailure = (value: unknown) => Effect.runSync(Effect.flip(Schema.encodeUnknownEffect(Canonical)(value)))
+
+  it("fails in the error channel instead of throwing while building the effect", () => {
+    const error = encodeFailure("not json")
+    expect(error).toBeInstanceOf(Schema.SchemaError)
+    expect(error.message).toContain("canonical_malformed: ")
+  })
+
+  it("throws a SchemaError, not a SyntaxError, from the sync encoder", () => {
+    expect(() => Schema.encodeUnknownSync(Canonical)("{")).toThrow(Schema.SchemaError)
+    expect(() => Schema.encodeUnknownSync(Canonical)("{")).not.toThrow(SyntaxError)
+  })
+
+  it("still rejects a non-string before parsing", () => {
+    expect(encodeFailure(42).message).toContain("Expected string")
+  })
 })
 
 describe("arrays", () => {

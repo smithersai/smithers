@@ -64,7 +64,11 @@ fails with a `Schema.SchemaError` whose message carries the same
 
 **Encoding** takes a canonical document and parses it back into a plain JSON
 value. The round trip is lossy exactly where JSON is lossy: a `Date` comes back
-as a string, and a member dropped for being `undefined` does not return.
+as a string, and a member dropped for being `undefined` does not return. The
+brand guarantees canonical form on the typed path. An unknown-string encode
+(`Schema.encodeUnknownSync` or `Schema.encodeUnknownEffect`) validates the
+text: a string that does not parse fails with a `Schema.SchemaError` whose
+message starts with `canonical_malformed:`, never a raw `SyntaxError`.
 
 ```ts
 import * as Schema from "effect/Schema"

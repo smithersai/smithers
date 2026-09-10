@@ -142,6 +142,22 @@ A getter that throws under serialization usually means the object is a live
 view of something (a request, a connection, a lazily loaded record) rather than
 data. Digest a plain snapshot of the fields you care about instead.
 
+## canonical_malformed
+
+```text
+canonical_malformed: Unexpected token } in JSON at position 1
+```
+
+**Cause.** Encoding through the `Canonical` schema was handed a string that
+does not parse as JSON. This only happens on the unknown-string path
+(`Schema.encodeUnknownSync` or `Schema.encodeUnknownEffect`): a value carrying
+the `Canonical` brand was minted by decoding and always parses. The detail is
+the runtime's own parse message, so its wording varies by host.
+
+**Fix.** Encode the document a decode produced, not text assembled by hand. If
+the string came from storage, the stored bytes were altered after they were
+digested; treat it as corrupt rather than repairing it.
+
 ## My digest changed and the value did not
 
 The value probably did change, in one of the places `JSON.stringify` semantics

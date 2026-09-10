@@ -50,7 +50,12 @@ export type Canonical = typeof Canonical.Type
  * with another host's. The refusals live in the serializer itself, so they
  * hold for every string it emits — including one a `toJSON` mints during
  * serialization, which no pre-pass over the input value could ever see.
- * Encoding parses the document back into a plain value.
+ * Encoding parses the document back into a plain value. The brand is the
+ * guarantee of canonical form: a `Canonical` is only minted by decoding, so
+ * the typed encode path never sees malformed text. An unknown-string encode
+ * (`encodeUnknownEffect`, `encodeUnknownSync`) can, and a string that does
+ * not parse fails with a `canonical_malformed` schema issue in the error
+ * channel rather than a raw `SyntaxError`.
  *
  * @category schemas
  * @since 0.1.0
@@ -73,8 +78,16 @@ export const Canonical = Schema.Unknown.pipe(
           )
       })
     ),
-    encode: SchemaGetter.transform(
-      (document) => JSON.parse(document) as unknown
+    encode: SchemaGetter.transformOrFail((document, parseOptions) =>
+      Effect.try({
+        try: () => JSON.parse(document) as unknown,
+        catch: (cause) =>
+          new SchemaIssue.InvalidValue(
+            { message: `canonical_malformed: ${describe(cause)}` },
+            document,
+            parseOptions
+          )
+      })
     )
   })
 )
