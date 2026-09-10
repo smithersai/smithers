@@ -161,15 +161,20 @@ Durable Object engine store, so a turn's journal does not survive the request.
 
 ### What it needs to run
 
-`.dev.vars.example` lists four values, and the template's own README explains
+`.dev.vars.example` lists five values, and the template's own README explains
 each:
 
-| Variable            | What reads it                                                                                           |
-| ------------------- | ------------------------------------------------------------------------------------------------------- |
-| `OPENAI_API_KEY`    | Seat resolution, for the `openai:` seats the template ships                                             |
-| `TEVM_FORK_RPC_URL` | The real Tevm layer and fork test. The shipped Worker uses the mock                                     |
-| `APP_MOCK_TURN`     | The Worker's turn path                                                                                  |
-| `APP_API_TOKEN`     | The API guard. Unset means the API is open, which is what `pnpm dev` wants and a public domain does not |
+| Variable            | What reads it                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------ |
+| `OPENAI_API_KEY`    | Seat resolution, for the `openai:` seats the template ships                                            |
+| `TEVM_FORK_RPC_URL` | The real Tevm layer and fork test. The shipped Worker uses the mock                                    |
+| `APP_MOCK_TURN`     | The Worker's turn path                                                                                 |
+| `APP_API_TOKEN`     | The API guard. Missing or empty refuses requests (401) unless local open mode is explicitly enabled    |
+| `APP_API_OPEN`      | Set to `1` only in `.dev.vars.example` for local development without a token; never deploy this opt-in |
 
-Set `APP_API_TOKEN` as a secret before the first public deploy. See
+Set `APP_API_TOKEN` as a secret before the first public deploy. A configured
+token takes precedence over `APP_API_OPEN`. Health omits authentication
+configuration. JSON routes require `Content-Type: application/json` (415
+otherwise); present `Origin` and `Sec-Fetch-Site` headers must identify the
+same origin (403 otherwise). See
 [Deploy to Cloudflare](../guides/deploy-to-cloudflare.md).

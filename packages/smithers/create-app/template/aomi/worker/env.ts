@@ -24,11 +24,12 @@ export interface Env {
   /**
    * The shared credential every `/api/*` route but `GET /api/health` requires.
    *
-   * Unset means the API is open, which is what a `pnpm dev` run wants and what
-   * a deploy does not. `GET /api/health` reports which of the two an instance
-   * is in. `wrangler secret put APP_API_TOKEN`. See `worker/guard.ts`.
+   * Missing or empty refuses requests unless APP_API_OPEN=1. Set the secret
+   * before deploy with `wrangler secret put APP_API_TOKEN`. See `guard.ts`.
    */
   readonly APP_API_TOKEN?: string
+  /** Local-only opt-in to requests without a token. Never configure on deploy. */
+  readonly APP_API_OPEN?: string
   /** The app name from `PACKAGE.ts`, echoed by `GET /api/health`. */
   readonly APP_NAME: string
   /**

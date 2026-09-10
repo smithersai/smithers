@@ -12,7 +12,7 @@ second deployable and no origin server.
 | `index.ts` | The entry point. Exports the Durable Object class, so it is the only module here that imports `cloudflare:workers` |
 | `router.ts` | The router. One switch over `Routes` from `src/api.ts`; everything else falls through to `ASSETS`. Free of `cloudflare:workers`, so `test/worker.test.ts` drives it on plain Node |
 | `registry.ts` | Which Durable Object holds a session, and the one well-known object that holds the session list |
-| `guard.ts` | The three bounds every `/api/*` request passes: credential, body size, session-id shape |
+| `guard.ts` | Request admission: credential, browser origin, JSON media type, body size, session-id shape |
 | `stream.ts` | Streamed-response bookkeeping that runs once on close, source error, and cancel |
 | `env.ts` | The bindings, as an interface. Nothing else reads configuration |
 | `AppSession.ts` | One Durable Object per session: transcript, cards, saved flows |
@@ -32,13 +32,16 @@ second deployable and no origin server.
 | `GET /api/session` | `{ sessions: [] }` — the shell keeps its own list |
 | `GET /api/flows?sessionId=` | File flows from `routes.gen.ts` plus the session's saved flows |
 | `POST /api/flows/run` | `{ executionId }` |
-| `GET /api/health` | `{ ok, build, app, auth }`, reachable without a credential |
+| `GET /api/health` | `{ ok, build, app }`, reachable without a credential |
 | anything else | `env.ASSETS.fetch(request)` |
 
-Every `/api/*` route but health answers `401` when `APP_API_TOKEN` is set and
-the request carries no matching `Authorization: Bearer` header, `413` for a JSON
-body over 64 KiB, and `400` for a session id that is not a flat identifier of at
-most 128 characters.
+Every `/api/*` route but health answers `401` when `APP_API_TOKEN` is missing
+or empty without the local `APP_API_OPEN=1` opt-in, or when a configured token
+has no matching `Authorization: Bearer` header. API requests with a foreign
+`Origin` or a `Sec-Fetch-Site` other than `same-origin` answer `403`. JSON
+routes require `Content-Type: application/json` (`415` otherwise), answer
+`413` for a body over 64 KiB, and `400` for a session id that is not a flat
+identifier of at most 128 characters.
 
 `assets.run_worker_first` is scoped to `/api/*`, so an asset request never wakes
 this code. An unrouted `/api/*` path answers this Worker's own JSON 404 rather
@@ -55,7 +58,9 @@ pnpm dev
 `pnpm dev` runs Vite, and `@cloudflare/vite-plugin` runs `worker/index.ts`
 inside workerd in the same process. Durable Objects, the SQLite storage, and the
 assets binding are all local. `.dev.vars` supplies the secrets; it is
-gitignored.
+gitignored. The example explicitly sets `APP_API_OPEN=1` to admit local API
+requests without a token. A nonempty `APP_API_TOKEN` still requires a matching
+bearer header. Keep `APP_API_OPEN` out of deployed vars and secrets.
 
 ## Deploy
 
@@ -84,7 +89,7 @@ export CLOUDFLARE_API_TOKEN=<token with Workers Scripts + Workers Routes edit>
 export CLOUDFLARE_ACCOUNT_ID=<account id>
 ```
 
-Secrets, set once per environment and never committed:
+Secrets, required before deploy, set once per environment and never committed:
 
 ```sh
 wrangler secret put OPENAI_API_KEY --config worker/wrangler.jsonc
@@ -105,18 +110,21 @@ dashboard.
 
 `CreateApp` ships `deploy` as a first-class target with a custom domain, so what
 a deployed instance is bounded by is worth stating plainly. `guard.ts` owns all
-three bounds and `test/worker.test.ts` drives each of them.
+request checks; `test/guard.test.ts` and `test/worker.test.ts` drive them.
 
 | Bound | What it does | Default |
 | --- | --- | --- |
-| `APP_API_TOKEN` | Every `/api/*` route but `GET /api/health` requires `Authorization: Bearer <it>`, refused with 401 before any Durable Object is woken | **Unset, so the API is open** |
+| `APP_API_TOKEN` | Every `/api/*` route but `GET /api/health` requires `Authorization: Bearer <it>`, refused with 401 before any Durable Object is woken | **Unset, so the API refuses requests (401)** |
+| Browser origin | Refuses a present `Origin` unequal to the request URL origin or a present `Sec-Fetch-Site` other than `same-origin` with 403; absent headers allow non-browser clients | Always on |
+| JSON media type | JSON routes require `Content-Type: application/json`, with optional parameters; otherwise 415 | Always on |
 | 64 KiB body cap | Every JSON body is read through the cap and refused with 413 past it, with or without a declared `content-length` | Always on |
 | Session-id shape | A flat identifier of at most 128 characters, never the registry object's name, so `INDEX_SESSION` cannot be addressed as a session | Always on |
 
-Leaving `APP_API_TOKEN` unset is deliberate: a local `pnpm dev` run wants an
-open API, and failing closed there would only teach the reader to hardcode a
-token. `GET /api/health` reports `auth: "none"` or `auth: "token"` so an
-operator can tell which mode a deploy is in from outside. Open the browser shell
+A missing or empty `APP_API_TOKEN` refuses API requests unless `APP_API_OPEN`
+is exactly `1`. Only `.dev.vars.example` ships that opt-in for `pnpm dev`;
+never configure it on a deployment. A configured token always takes precedence.
+`GET /api/health` reports `{ ok, build, app }` without authentication details.
+Open the browser shell
 as `https://<host>/#token=<APP_API_TOKEN>` (URL-encode the value). The fragment
 stays out of HTTP requests. The shell claims it before redirecting to `/build`,
 strips it from the URL, and stores it in `sessionStorage` (`src/shell/token.ts`).

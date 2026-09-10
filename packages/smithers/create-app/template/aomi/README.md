@@ -8,10 +8,15 @@ purpose: every rule the router enforces is exercised somewhere in it.
 
 ```sh
 pnpm install
+cp .dev.vars.example .dev.vars  # includes APP_API_OPEN=1 for local development
 pnpm routes     # write routes.gen.ts and routes.ui.gen.ts
 pnpm typecheck
 pnpm dev        # vite, with workerd in the loop
 ```
+
+The local `.dev.vars` explicitly opts into an open API with `APP_API_OPEN=1`.
+Without that opt-in, a missing or empty `APP_API_TOKEN` refuses API requests
+with 401. A nonempty token always requires a matching bearer header.
 
 This UI reference remains repository-only for the 1.0 RC. It depends on the
 unreleased `@smthrs/ui` package and is deliberately excluded from the
@@ -82,12 +87,11 @@ pnpm build
 pnpm deploy
 ```
 
-`APP_API_TOKEN` is what closes the API. While it is unset every `/api/*` route
-answers any caller, which is what `pnpm dev` wants and what a public domain does
-not: an anonymous caller can allocate Durable Object storage and read or
-overwrite any session id it guesses. Set it before the first deploy.
-`GET /api/health` reports `auth: "none"` or `auth: "token"`, so you can tell
-which mode a running instance is in without a credential.
+`APP_API_TOKEN` is a required Worker secret for deployment. Set it before the
+first deploy. A missing or empty token refuses every `/api/*` route except
+`GET /api/health` with 401. Keep the local `APP_API_OPEN=1` opt-in out of
+production vars and secrets. Health reports only `{ ok, build, app }` and does
+not disclose authentication configuration.
 
 Open the deployed app as `https://<host>/#token=<APP_API_TOKEN>` (URL-encode the
 value). The fragment is not sent in the HTTP request. Before redirecting to
@@ -97,7 +101,11 @@ including reloads; closing the tab clears it. Bootstrap again for a new session.
 Legacy `?token=` links work for one release with a console warning; use the
 fragment form to keep credentials out of HTTP request URLs.
 
-Two bounds come with it and need no configuration: a JSON body over 64 KiB is
+JSON routes require `Content-Type: application/json` (415 otherwise). API
+requests carrying `Origin` or `Sec-Fetch-Site` must identify the same origin
+(403 otherwise); clients without these headers remain supported.
+
+Two further bounds need no configuration: a JSON body over 64 KiB is
 refused with 413, and a session id must be a flat identifier of at most 128
 characters, so the registry object cannot be addressed as a session. Per-session
 storage, model spend, and request rate stay unbounded; `worker/README.md` has

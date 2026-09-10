@@ -1,6 +1,6 @@
 /**
- * The three bounds every `/api/*` request passes before it reaches a Durable
- * Object: the shared credential, the request-size cap, and the session-id rule.
+ * The checks every API request passes before it reaches a Durable Object:
+ * credential, browser origin, JSON media type, body size, and session-id shape.
  *
  * They live here rather than inline in the switch because each one is a
  * security claim `README.md` and `worker/README.md` make, and a claim a test
@@ -50,11 +50,11 @@ export const MAX_BODY_BYTES = 64 * 1024
  * A decoded body, or the refusal the route should answer with.
  *
  * `400` keeps the shape the routes already answered for a body that does not
- * decode; `413` is the new one.
+ * decode; `413` bounds size and `415` refuses a non-JSON media type.
  */
 export type BodyResult =
   | { readonly ok: true; readonly value: unknown }
-  | { readonly ok: false; readonly status: 400 | 413; readonly message: string }
+  | { readonly ok: false; readonly status: 400 | 413 | 415; readonly message: string }
 
 const tooLarge = (limit: number): BodyResult => ({
   ok: false,
@@ -65,12 +65,17 @@ const tooLarge = (limit: number): BodyResult => ({
 /**
  * Reads a JSON body without ever buffering more than `limit` bytes.
  *
- * `content-length` is checked first because it refuses the common case before a
- * byte is read, and the running total is checked as well because a chunked body
- * declares no length at all. Passing the cap cancels the source rather than
+ * The media type must be application/json. Then `content-length` refuses an
+ * oversized body before a byte is read. The running total also bounds a body that
+ * declares no length. Passing the cap cancels the source rather than
  * draining it.
  */
 export const readJson = async (request: Request, limit: number = MAX_BODY_BYTES): Promise<BodyResult> => {
+  const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
+  if (mediaType !== "application/json") {
+    return { ok: false, status: 415, message: "Expected Content-Type: application/json." }
+  }
+
   const declared = request.headers.get("content-length")
   if (declared !== null && Number(declared) > limit) return tooLarge(limit)
 
@@ -126,17 +131,22 @@ const sameSecret = (a: string, b: string): boolean => {
 /**
  * Whether this request carries the credential `env.APP_API_TOKEN` names.
  *
- * An unset token means the API is open. That is deliberate: it is what a
- * `pnpm dev` run and the vite proxy want, and making a local run fail closed
- * would only teach the reader to hardcode a token. A deploy sets one, and
- * `GET /api/health` reports which of the two a running instance is in, so an
- * operator can tell from outside.
+ * Missing or empty credentials fail closed unless local development explicitly
+ * opts in with APP_API_OPEN=1. A configured token always takes precedence.
  */
-export const authorized = (request: Request, token: string | undefined): boolean => {
-  if (token === undefined || token === "") return true
+export const authorized = (request: Request, token: string | undefined, open?: string): boolean => {
+  if (token === undefined || token === "") return open === "1"
   const header = request.headers.get("authorization")
   if (header === null) return false
   const prefix = "Bearer "
   if (!header.startsWith(prefix)) return false
   return sameSecret(header.slice(prefix.length), token)
+}
+
+/** Browser metadata must name this origin; absent headers support non-browser clients. */
+export const sameOrigin = (request: Request): boolean => {
+  const origin = request.headers.get("origin")
+  const site = request.headers.get("sec-fetch-site")
+  return (origin === null || origin === new URL(request.url).origin)
+    && (site === null || site === "same-origin")
 }

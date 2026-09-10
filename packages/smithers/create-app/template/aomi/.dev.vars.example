@@ -16,8 +16,11 @@ TEVM_FORK_RPC_URL=
 # which does not run under workerd yet — see worker/README.md.
 APP_MOCK_TURN=1
 
-# The shared credential every /api/* route but GET /api/health requires.
-# Leave it empty locally: an empty or absent value keeps the API open, which is
-# what `pnpm dev` wants. A DEPLOY must set it as a secret, not as a var:
+# Explicit local-only opt-in: admit requests without APP_API_TOKEN.
+# Never copy APP_API_OPEN into the deployed Worker's vars or secrets.
+APP_API_OPEN=1
+
+# A nonempty token takes precedence over APP_API_OPEN, including locally.
+# Production requires this secret; without it the API refuses requests (401):
 #   wrangler secret put APP_API_TOKEN --config worker/wrangler.jsonc
 APP_API_TOKEN=

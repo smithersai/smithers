@@ -44,8 +44,8 @@
 	//   ANTHROPIC_API_KEY  — credential for an `anthropic:<model>` seat
 	//   TEVM_FORK_RPC_URL  — JSON-RPC the Tevm fork reads chain state from
 	//   APP_API_TOKEN      — shared credential every /api/* route but health
-	//                        requires. UNSET MEANS THE API IS OPEN; set it
-	//                        before pointing the custom domain above at this
-	//                        Worker. See worker/README.md's Security section.
+	//                        requires. Missing or empty refuses requests (401).
+	//                        Set before deploy. APP_API_OPEN is local-only and
+	//                        must not be added here. See worker/README.md.
 	"observability": { "enabled": true }
 }

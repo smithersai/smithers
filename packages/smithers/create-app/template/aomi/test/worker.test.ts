@@ -104,6 +104,7 @@ const harness = (): Harness => {
   }
   const env = {
     APP_NAME: "aomi",
+    APP_API_OPEN: "1",
     // The routing tests must not depend on which turn implementation is
     // compiled in, and the mock is what a default deploy runs.
     APP_MOCK_TURN: "1",
@@ -143,10 +144,10 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("GET /api/health", () => {
-  test("reports the app name, the build, and whether the API is credentialed", async () => {
+  test("reports the app name and build without disclosing authentication configuration", async () => {
     const response = await handle(get(Routes.health), app.env)
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true, build: "dev", app: "aomi", auth: "none" })
+    expect(await response.json()).toEqual({ ok: true, build: "dev", app: "aomi" })
   })
 })
 
@@ -187,7 +188,11 @@ describe("POST /api/agent/turn", () => {
   })
 
   test("refuses a body that is not JSON", async () => {
-    const request = new Request(`https://aomi.smithers.sh${Routes.turn}`, { method: "POST", body: "not json" })
+    const request = new Request(`https://aomi.smithers.sh${Routes.turn}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "not json"
+    })
     expect((await handle(request, app.env)).status).toBe(400)
   })
 
@@ -434,9 +439,9 @@ describe("guard", () => {
     const bearer = (value: string): Request =>
       new Request("https://aomi.smithers.sh/api/health", { headers: { authorization: value } })
 
-    test("an unset token leaves the API open, which is what a dev run wants", () => {
-      expect(authorized(get("/api/health"), undefined)).toBe(true)
-      expect(authorized(bearer("Bearer anything"), undefined)).toBe(true)
+    test("an unset token refuses even an arbitrary bearer header", () => {
+      expect(authorized(get("/api/health"), undefined)).toBe(false)
+      expect(authorized(bearer("Bearer anything"), undefined)).toBe(false)
     })
 
     test("a configured token admits its exact bearer header and nothing else", () => {
@@ -481,15 +486,14 @@ describe("guard", () => {
     test("health stays reachable without a token, so a deploy can be probed", async () => {
       const response = await handle(get(Routes.health), authed())
       expect(response.status).toBe(200)
-      expect(await response.json()).toEqual({ ok: true, build: "dev", app: "aomi", auth: "token" })
+      expect(await response.json()).toEqual({ ok: true, build: "dev", app: "aomi" })
     })
 
-    test("health reports an open API when no token is configured", async () => {
+    test("health omits authentication configuration when no token is configured", async () => {
       expect(await (await handle(get(Routes.health), app.env)).json()).toEqual({
         ok: true,
         build: "dev",
-        app: "aomi",
-        auth: "none"
+        app: "aomi"
       })
     })
 
@@ -500,6 +504,19 @@ describe("guard", () => {
       [Routes.flows, () => get(Routes.flows)],
       [Routes.flowRun, () => post(Routes.flowRun, { sessionId: "s1", flowId: "build", payload: {} })]
     ]
+
+    test.each(guarded)("%s fails closed without a token or local opt-in", async (_route, build) => {
+      const { APP_API_OPEN: _open, ...env } = app.env
+      expect((await handle(build(), env)).status).toBe(401)
+      expect((await handle(build(), { ...env, APP_API_TOKEN: "" })).status).toBe(401)
+      expect(app.session("s1").turns).toEqual([])
+      expect(app.session("s1").runs).toEqual([])
+      expect(app.session("s1").cancels).toEqual([])
+    })
+
+    test.each(guarded)("%s answers normally with explicit local opt-in", async (_route, build) => {
+      expect((await handle(build(), app.env)).status).toBe(200)
+    })
 
     test.each(guarded)("%s answers 401 with no credential", async (_route, build) => {
       const response = await handle(build(), authed())
@@ -555,6 +572,7 @@ describe("guard", () => {
       })
       const request = new Request(`https://aomi.smithers.sh${Routes.turn}`, {
         method: "POST",
+        headers: { "content-type": "application/json" },
         body,
         // Undici requires this for a streamed request body; it declares no length.
         duplex: "half"
@@ -590,5 +608,53 @@ describe("guard", () => {
       expect(response.status).toBe(400)
       expect(app.session("../s1").turns).toEqual([])
     })
+  })
+})
+
+describe("browser request admission", () => {
+  const mutations = [
+    [Routes.turn, { sessionId: "s1", flowId: "chat", message: "hi" }],
+    [Routes.turnCancel, { sessionId: "s1" }],
+    [Routes.flowRun, { sessionId: "s1", flowId: "build", payload: {} }]
+  ] as const
+
+  test.each(mutations)("%s refuses a simple text/plain POST", async (path, body) => {
+    const request = post(path, body)
+    request.headers.set("content-type", "text/plain")
+    expect((await handle(request, app.env)).status).toBe(415)
+    expect(app.session("s1").turns).toEqual([])
+    expect(app.session("s1").runs).toEqual([])
+    expect(app.session("s1").cancels).toEqual([])
+  })
+
+  test.each([
+    { origin: "https://evil.example" },
+    { origin: "https://other.smithers.sh" },
+    { origin: "http://aomi.smithers.sh" },
+    { origin: "https://aomi.smithers.sh:8443" },
+    { origin: "null" },
+    { "sec-fetch-site": "cross-site" },
+    { "sec-fetch-site": "same-site" },
+    { "sec-fetch-site": "none" },
+    { origin: "https://evil.example", "sec-fetch-site": "same-origin" },
+    { origin: "https://aomi.smithers.sh", "sec-fetch-site": "cross-site" }
+  ])("refuses foreign browser context %j before any session is reached", async (headers) => {
+    for (const [path, body] of mutations) {
+      const request = post(path, body)
+      for (const [name, value] of Object.entries(headers)) request.headers.set(name, value)
+      expect((await handle(request, app.env)).status).toBe(403)
+      request.headers.set("authorization", "Bearer secret")
+      expect((await handle(request, { ...app.env, APP_API_TOKEN: "secret" })).status).toBe(403)
+    }
+    expect(app.session("s1").turns).toEqual([])
+    expect(app.session("s1").runs).toEqual([])
+    expect(app.session("s1").cancels).toEqual([])
+  })
+
+  test.each(mutations)("%s accepts same-origin JSON", async (path, body) => {
+    const request = post(path, body)
+    request.headers.set("origin", "https://aomi.smithers.sh")
+    request.headers.set("sec-fetch-site", "same-origin")
+    expect((await handle(request, app.env)).status).toBe(200)
   })
 })

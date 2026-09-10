@@ -19,15 +19,16 @@
  * ## What bounds a deployed instance
  *
  * `CreateApp` ships `deploy` as a first-class target with a custom domain, so
- * read this before you point one at it. Three bounds run ahead of every route,
- * and `worker/guard.ts` owns all three:
+ * read this before you point one at it. Request checks run ahead of the routes;
+ * `worker/guard.ts` owns them:
  *
- * - **Credential.** `APP_API_TOKEN` is a Worker secret. When it is set, every
- *   `/api/*` path but `GET /api/health` requires `Authorization: Bearer <it>`
- *   and answers 401 otherwise, before any Durable Object is woken. **When it is
- *   unset the API is open**, which is what a `pnpm dev` run wants and what a
- *   deploy does not. `GET /api/health` reports `auth: "none"` or `auth:
- *   "token"` so an operator can tell which one is running from outside.
+ * - **Credential.** `APP_API_TOKEN` is a Worker secret. Every `/api/*` path
+ *   but `GET /api/health` requires its bearer header. Missing or empty tokens
+ *   refuse requests unless local development opts in with `APP_API_OPEN=1`.
+ *   Health does not disclose authentication configuration.
+ * - **Browser origin.** Present Origin and Sec-Fetch-Site headers must identify
+ *   the same origin, including in local open mode.
+ * - **Media type.** JSON routes require `Content-Type: application/json`.
  * - **Size.** Every JSON body is read through a 64 KiB cap and answers 413 past
  *   it, whether or not the request declared a `content-length`.
  * - **Identity.** A session id is a flat identifier of at most 128 characters,
@@ -49,7 +50,7 @@ import {
   TurnRequest
 } from "../src/api.ts"
 import type { Env } from "./env.ts"
-import { authorized, isSessionId, readJson } from "./guard.ts"
+import { authorized, isSessionId, readJson, sameOrigin } from "./guard.ts"
 import { indexSession, sessionOf } from "./registry.ts"
 
 /** The build this Worker was cut from. Vite replaces it; dev leaves the default. */
@@ -112,21 +113,23 @@ export const handle = async (request: Request, env: Env): Promise<Response> => {
   const url = new URL(request.url)
   const path = url.pathname
 
-  // Health answers before the credential check so an operator can probe a
-  // deploy they hold no token for, and it reports which mode that deploy is in.
+  if (path.startsWith("/api/") && !sameOrigin(request)) {
+    return fail(403, "This API requires same-origin requests.")
+  }
+
+  // Health stays public without disclosing the credential configuration.
   if (path === Routes.health) {
     return json({
       ok: true,
       build: build(),
-      app: env.APP_NAME,
-      auth: env.APP_API_TOKEN === undefined || env.APP_API_TOKEN === "" ? "none" : "token"
+      app: env.APP_NAME
     })
   }
 
   // Every other API path, the 404 included: an unrouted path that answered
   // before the credential check would report which paths exist to a caller with
   // no credential at all.
-  if (path.startsWith("/api/") && !authorized(request, env.APP_API_TOKEN)) {
+  if (path.startsWith("/api/") && !authorized(request, env.APP_API_TOKEN, env.APP_API_OPEN)) {
     return fail(401, "This API requires `Authorization: Bearer <APP_API_TOKEN>`.")
   }
 
