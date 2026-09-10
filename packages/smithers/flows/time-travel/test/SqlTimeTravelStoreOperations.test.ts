@@ -1237,7 +1237,9 @@ describe("SqlTimeTravelStore.createFork", () => {
 
       expect(result.first.runId).toBe("parent:fork:1:1")
       expect(result.second.runId).toBe("parent:fork:1:2")
-      expect(result.first.warnings).toEqual([])
+      // The store commits the row and nothing else: the warnings a fork
+      // discloses are computed above it and ride `TimeTravel.ForkResult`.
+      expect(Object.keys(result.first).sort()).toEqual(["edge", "runId"])
       expect(result.first.edge).toEqual({
         parentRunId: "parent",
         parentSeq: 1,

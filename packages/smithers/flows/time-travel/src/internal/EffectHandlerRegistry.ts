@@ -9,7 +9,7 @@ import * as HashMap from "effect/HashMap"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { Assessment, Classification } from "../CompensationHandlers.ts"
+import { Assessment, Classification, type Handler } from "../CompensationHandlers.ts"
 import { EffectRecord, EffectTier } from "../EffectBoundary.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
 
@@ -23,7 +23,16 @@ export {
    * @category models
    */
   Assessment,
-  Classification
+  Classification,
+  /**
+   * The handler shape, re-exported for the same reason. There is ONE handler
+   * type: the registry validates and resolves exactly what a contributor
+   * wrote, so a second shape here could only drift from it.
+   *
+   * @since 0.1.0
+   * @category models
+   */
+  type Handler
 }
 
 /**
@@ -49,38 +58,12 @@ export const RollbackReceipt = Schema.Struct({
 export type RollbackReceipt = typeof RollbackReceipt.Type
 
 /**
- * A compensation handler registered under a stable effect kind.
- *
- * Handlers are closed values: all services required by `assess`, `revert`,
- * and `rollback` must be provided when the handler layer is constructed.
- *
- * @since 0.1.0
- * @category models
- */
-export interface Handler {
-  readonly kind: string
-  readonly tier: EffectTier
-  readonly requiresIdempotencyKey: boolean
-  /**
-   * The compensation descriptor this handler implements. An effect that
-   * recorded one resolves only to a handler declaring the same descriptor.
-   */
-  readonly compensation?: string | undefined
-  readonly residue: (effect: EffectRecord) => string
-  readonly assess?: ((effect: EffectRecord) => Effect.Effect<Assessment, TimeTravelError>) | undefined
-  readonly revert: (effect: EffectRecord) => Effect.Effect<unknown, TimeTravelError>
-  readonly rollback: (effect: EffectRecord, receipt: unknown) => Effect.Effect<void, TimeTravelError>
-}
-
-/**
  * Immutable effect-handler lookup and execution operations.
  *
  * @since 0.1.0
  * @category models
  */
 export interface Service {
-  readonly handlers: HashMap.HashMap<string, Handler>
-  readonly register: (handler: Handler) => Effect.Effect<Service, TimeTravelError>
   readonly resolve: (kind: string) => Handler | undefined
   readonly assess: (effect: EffectRecord) => Effect.Effect<Assessment, TimeTravelError>
   readonly revert: (effect: EffectRecord) => Effect.Effect<RollbackReceipt, TimeTravelError>
@@ -113,7 +96,7 @@ const missing = (kind: string): TimeTravelError =>
 const Declaration = Schema.Struct({
   kind: Schema.NonEmptyString,
   tier: EffectTier,
-  requiresIdempotencyKey: Schema.Boolean,
+  requiresIdempotencyKey: Schema.optional(Schema.Boolean),
   compensation: Schema.optional(Schema.NonEmptyString)
 })
 
@@ -160,15 +143,6 @@ const fromHandlers = (handlers: HashMap.HashMap<string, Handler>): Service => {
   const resolve = (kind: string): Handler | undefined => Option.getOrUndefined(HashMap.get(handlers, kind))
 
   const service = EffectHandlerRegistry.of({
-    handlers,
-    register: (handler) =>
-      validate(handler).pipe(
-        Effect.flatMap((valid) =>
-          HashMap.has(handlers, valid.kind)
-            ? Effect.fail(duplicate(valid.kind))
-            : Effect.succeed(fromHandlers(HashMap.set(handlers, valid.kind, valid)))
-        )
-      ),
     resolve,
     assess: (effect) => {
       const handler = resolve(effect.kind)

@@ -122,8 +122,10 @@ const layer = Layer.succeed(TimeTravelStore.TimeTravelStore)(TimeTravelStore.mak
 
 Hold a new backend to the same answers the two shipped ones give. The reads
 reconstruct a frame's past, the audit trio makes an in-flight rewind
-recoverable, and `archiveAndTruncate`, `createFork`, and `recordReceipt` change
-the lineage tree. Two behaviours are easy to get wrong and are worth stating:
+recoverable, and `archiveAndTruncate` and `createFork` change the lineage tree.
+`recordReceipt` writes one compensation receipt against an open audit row and
+touches no lineage. Two behaviours are easy to get wrong and are worth
+stating:
 
 - `archiveAndTruncate` is **fenced**. It re-checks the run's recorded owner and
   every non-terminal attached child's exact owner inside the same transaction,

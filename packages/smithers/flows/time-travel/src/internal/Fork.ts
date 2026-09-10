@@ -20,7 +20,7 @@ import type * as Scope from "effect/Scope"
 import * as EffectBoundary from "../EffectBoundary.ts"
 import type { Frame } from "../Frame.ts"
 import { error, type TimeTravelError } from "../TimeTravelError.ts"
-import { type Fork as ForkResult, TimeTravelStore } from "../TimeTravelStore.ts"
+import { type Fork as ForkRecord, TimeTravelStore } from "../TimeTravelStore.ts"
 import * as Compensation from "./Compensation.ts"
 import type { EffectHandlerRegistry } from "./EffectHandlerRegistry.ts"
 import * as HistoryLimit from "./HistoryLimit.ts"
@@ -238,6 +238,24 @@ const normalize = (
   )
 
 /**
+ * A fork's outcome: the child run, its lineage edge, and everything the
+ * boundary assessment disclosed.
+ *
+ * `docs/specs/Concepts/Time Travel.md` §Fork: a fork never compensates, so the
+ * assessment still runs and its blocking and revertible entries are
+ * **normalized to warnings** — "this effect may execute again on the child".
+ * A fork with a non-empty `warnings` is a successful fork, not a refused one.
+ * The store commits {@link ForkRecord} and knows nothing of the warnings; this
+ * layer computes them.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export interface Result extends ForkRecord {
+  readonly warnings: ReadonlyArray<string>
+}
+
+/**
  * Branches a child run off a parent frame.
  *
  * Refuses with `live_parent` if the parent is still running, claimed, or
@@ -256,7 +274,7 @@ const normalize = (
 export const fork = (
   options: ForkOptions
 ): Effect.Effect<
-  ForkResult,
+  Result,
   TimeTravelError,
   | CacheStore.CacheStore
   | EffectHandlerRegistry

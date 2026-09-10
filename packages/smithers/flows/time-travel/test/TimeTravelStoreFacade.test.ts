@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import * as TimeTravelStore from "../src/TimeTravelStore.ts"
 
 const frame = { lineageId: "main", seq: 1 } as const
@@ -52,5 +53,48 @@ describe("TimeTravelStore.makeNoop", () => {
   it("returns the implementation unchanged from `make`", () => {
     const service = TimeTravelStore.makeNoop()
     expect(TimeTravelStore.make(service)).toStrictEqual(service)
+  })
+})
+
+describe("TimeTravelStore.auditPatchKeys", () => {
+  it("names exactly the keys `AuditPatch` declares", () => {
+    // The list used to be hand-written beside the schema, so a field added to
+    // `AuditPatch` alone was refused by `validateAuditPatch` with "unknown
+    // key" before the schema ever saw it. Deriving the list is what keeps the
+    // two from drifting; this asserts the derivation, not a copy of it.
+    expect(TimeTravelStore.auditPatchKeys).toEqual(Object.keys(TimeTravelStore.AuditPatch.fields))
+  })
+
+  it.effect("admits every declared key and refuses anything else", () =>
+    Effect.gen(function*() {
+      const patch = { status: "completed", rateLimit: { allowed: true }, detail: { note: "kept" } } as const
+      const admitted = yield* TimeTravelStore.validateAuditPatch(patch)
+      expect(admitted).toEqual(patch)
+      for (const key of Object.keys(patch)) {
+        expect(TimeTravelStore.auditPatchKeys, `auditPatchKeys omits ${key}`).toContain(key)
+      }
+
+      const refused = yield* Effect.flip(
+        TimeTravelStore.validateAuditPatch({ id: "audit" } as TimeTravelStore.AuditPatch)
+      )
+      expect(refused).toMatchObject({ code: "invalid", message: "audit patch contains unknown key id" })
+    }))
+})
+
+describe("TimeTravelStore.Fork", () => {
+  it("is the row a store commits, with no warnings channel", () => {
+    // The boundary assessment runs above the store, so the warnings belong to
+    // `TimeTravel.ForkResult`. A store that had to return `warnings: []` was
+    // being handed a field it could never fill.
+    expect(Object.keys(TimeTravelStore.Fork.fields)).toEqual(["runId", "edge"])
+    expect(
+      Schema.decodeUnknownSync(TimeTravelStore.Fork)({
+        runId: "child",
+        edge: { parentRunId: "run", parentSeq: 1, childRunId: "child", kind: "fork", attached: false }
+      })
+    ).toEqual({
+      runId: "child",
+      edge: { parentRunId: "run", parentSeq: 1, childRunId: "child", kind: "fork", attached: false }
+    })
   })
 })

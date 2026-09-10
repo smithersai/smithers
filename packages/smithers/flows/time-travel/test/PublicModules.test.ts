@@ -65,7 +65,7 @@ const runFork = (
 
 describe("public time-travel modules", () => {
   it("exports the service key and the injectable surface, and nothing else", () => {
-    // `Replay`, `Fork`, `Rewind`, `Retry`, `Recovery`, `Compensation`, and the
+    // `Replay`, `Fork`, `Rewind`, `Recovery`, `Compensation`, and the
     // effect-handler registry are machinery under `src/internal/` — this list
     // growing back is the regression.
     expect(Object.keys(TimeTravel).sort()).toEqual([

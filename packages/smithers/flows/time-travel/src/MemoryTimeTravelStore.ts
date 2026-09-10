@@ -568,7 +568,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
           }
           edges.push(edge)
           fail("createFork:commit")
-          return { runId, edge, warnings: [] }
+          return { runId, edge }
         }))
       )
     ),

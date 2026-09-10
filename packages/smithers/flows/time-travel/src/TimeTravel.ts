@@ -1,7 +1,7 @@
 /**
  * The one door into time travel: replay, inspect, fork, rewind.
  *
- * `Replay`, `Fork`, `Rewind`, `Retry`, `Recovery`, `Compensation`, and the
+ * `Replay`, `Fork`, `Rewind`, `Recovery`, `Compensation`, and the
  * effect-handler registry are machinery under `src/internal/`; a caller never
  * names them. This service fronts the verbs of
  * `docs/specs/Concepts/Time Travel.md` and owns the wiring they used to make
@@ -52,7 +52,7 @@ import * as Replay from "./internal/Replay.ts"
 import * as Rewind from "./internal/Rewind.ts"
 import * as SnapshotProjector from "./internal/SnapshotProjector.ts"
 import { error, type TimeTravelError } from "./TimeTravelError.ts"
-import { type Fork as ForkRecord, TimeTravelStore } from "./TimeTravelStore.ts"
+import { TimeTravelStore } from "./TimeTravelStore.ts"
 
 /**
  * Where in history an operation acts: a run, and a frame inside it.
@@ -113,13 +113,14 @@ export interface ReplayOptions {
 export const defaultMaxHistoryEntries: number = HistoryLimit.defaultMaxHistoryEntries
 
 /**
- * The successful shape of {@link Service.fork}: the child run and its lineage
- * edge back to the parent frame.
+ * The successful shape of {@link Service.fork}: the child run, its lineage
+ * edge back to the parent frame, and everything the boundary assessment
+ * disclosed. A non-empty `warnings` is a successful fork, not a refused one.
  *
  * @since 0.1.0
  * @category models
  */
-export type ForkResult = ForkRecord
+export type ForkResult = ForkOperation.Result
 
 /**
  * The successful shape of {@link Service.rewind}: the audit row, the archived
@@ -428,22 +429,13 @@ export const makeWith = (
     // handlers come from the composition that owns the effect boundary, and the
     // registry itself stays internal. Absent service means no handlers, which is
     // the pre-existing behaviour: every crossed irreversible effect blocks.
-    // Every declared member crosses the door, the descriptor included; a
-    // handler that declared one and lost it here resolved by kind alone, which
-    // is exactly the drift the descriptor exists to refuse.
+    // The contributed handler IS the registered handler. This used to copy
+    // every declared member across into a second registry-only shape, and a
+    // member dropped from that copy — the descriptor, say — silently widened
+    // resolution to kind alone, which is exactly the drift the descriptor
+    // exists to refuse. One shape cannot drop anything.
     const contributed = yield* Effect.serviceOption(CompensationHandlers)
-    const registry = yield* EffectHandlerRegistry.make(
-      Option.getOrElse(contributed, () => []).map((handler) => ({
-        kind: handler.kind,
-        tier: handler.tier,
-        requiresIdempotencyKey: handler.requiresIdempotencyKey ?? false,
-        ...(handler.compensation === undefined ? {} : { compensation: handler.compensation }),
-        residue: handler.residue,
-        ...(handler.assess === undefined ? {} : { assess: handler.assess }),
-        revert: handler.revert,
-        rollback: handler.rollback
-      }))
-    )
+    const registry = yield* EffectHandlerRegistry.make(Option.getOrElse(contributed, () => []))
 
     const provided = <A>(
       effect: Effect.Effect<

@@ -6,7 +6,6 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
-import * as HashMap from "effect/HashMap"
 import * as Layer from "effect/Layer"
 import * as Result from "effect/Result"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
@@ -216,29 +215,17 @@ describe("EffectHandlerRegistry", () => {
     expect(failure.message).toContain("already registered")
   })
 
-  it("registration returns a new immutable registry", () => {
-    const original = EffectHandlerRegistry.makeNoop()
-    const updated = Effect.runSync(original.register(handler()))
+  it("accepts a contributed handler that omits `requiresIdempotencyKey`", () => {
+    // `CompensationHandlers.Handler` leaves the flag optional, and the door
+    // used to copy every field across into a second registry-only shape just
+    // to apply `?? false`. There is one shape now, so an omitted flag reaches
+    // the registry as omitted and reads as "no key required".
+    const { requiresIdempotencyKey: _omitted, ...declared } = handler()
+    const registry = Effect.runSync(EffectHandlerRegistry.make([declared]))
+    const { idempotencyKey: _key, ...keyless } = crossed()
 
-    expect(original.resolve("mail.send")).toBeUndefined()
-    expect(updated.resolve("mail.send")).toMatchObject({
-      kind: "mail.send",
-      tier: "irreversible",
-      requiresIdempotencyKey: true
-    })
-    expect(HashMap.size(original.handlers)).toBe(0)
-    expect(HashMap.size(updated.handlers)).toBe(1)
-  })
-
-  it("rejects a duplicate registration on an existing immutable registry", () => {
-    const registry = Effect.runSync(EffectHandlerRegistry.make([handler()]))
-    const failure = Effect.runSync(Effect.flip(registry.register(handler())))
-
-    expect(failure).toMatchObject({
-      code: "unknown",
-      message: "effect handler mail.send is already registered"
-    })
-    expect(HashMap.size(registry.handlers)).toBe(1)
+    expect(registry.resolve("mail.send")).toMatchObject({ kind: "mail.send", tier: "irreversible" })
+    expect(Effect.runSync(registry.assess(keyless))).toMatchObject({ classification: "revertible" })
   })
 
   it("blocks unknown completion state with residue disclosure", () => {
@@ -915,9 +902,6 @@ describe("EffectHandlerRegistry safety", () => {
 
     for (const declaration of malformed) {
       expect(Effect.runSync(Effect.flip(EffectHandlerRegistry.make([declaration])))).toMatchObject({
-        code: "invalid"
-      })
-      expect(Effect.runSync(Effect.flip(EffectHandlerRegistry.makeNoop().register(declaration)))).toMatchObject({
         code: "invalid"
       })
     }

@@ -1120,8 +1120,7 @@ export const make: Effect.Effect<
                   childRunId: runId,
                   kind: "fork" as const,
                   attached: false
-                },
-                warnings: []
+                }
               }
             }).pipe(Effect.mapError(mapError))
           ).pipe(Effect.mapError(mapError))

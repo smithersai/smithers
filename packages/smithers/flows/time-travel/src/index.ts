@@ -2,8 +2,8 @@
  * Time travel over the journal: replay, inspect, fork, rewind.
  *
  * The verbs are reached through ONE injectable service. `Replay`, `Fork`,
- * `Rewind`, `Retry`, `Recovery`, `Compensation`, and the effect-handler
- * registry are machinery under `src/internal/` — the same way every other
+ * `Rewind`, `Recovery`, `Compensation`, and the effect-handler registry are
+ * machinery under `src/internal/` — the same way every other
  * package here hides the modules a caller should never name — and the package
  * blocks `@smthrs/time-travel/internal/*` at its `exports` map.
  *

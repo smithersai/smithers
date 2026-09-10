@@ -148,10 +148,18 @@ export type AuditPatch = typeof AuditPatch.Type
 /**
  * The keys {@link AuditPatch} admits, in the order a store reports them.
  *
+ * Derived from the schema so the two cannot drift: a hand-written copy would
+ * refuse a key {@link AuditPatch} had just gained, and nothing in the type
+ * checker would say so.
+ *
  * @since 0.1.0
  * @category models
  */
-export const auditPatchKeys: ReadonlyArray<string> = ["status", "rateLimit", "detail"]
+export const auditPatchKeys: ReadonlyArray<keyof AuditPatch> = Object.keys(
+  AuditPatch.fields
+) as ReadonlyArray<keyof AuditPatch>
+
+const admittedAuditPatchKeys = new Set<string>(auditPatchKeys)
 /**
  * Refuses a patch carrying a key {@link AuditPatch} does not admit.
  *
@@ -162,7 +170,7 @@ export const auditPatchKeys: ReadonlyArray<string> = ["status", "rateLimit", "de
  * @category validators
  */
 export const validateAuditPatch = (patch: AuditPatch): Effect.Effect<AuditPatch, TimeTravelError> => {
-  const unknown = Object.keys(patch).find((key) => !auditPatchKeys.includes(key))
+  const unknown = Object.keys(patch).find((key) => !admittedAuditPatchKeys.has(key))
   if (unknown !== undefined) {
     return Effect.fail(error("invalid", `audit patch contains unknown key ${unknown}`))
   }
@@ -236,21 +244,21 @@ export const ArchiveResult = Schema.Struct({
  */
 export type ArchiveResult = typeof ArchiveResult.Type
 /**
- * A fork's outcome: the child run, its lineage edge, and everything the
- * boundary assessment disclosed.
+ * What `createFork` commits: the child run and its lineage edge back to the
+ * parent frame.
  *
- * `docs/specs/Concepts/Time Travel.md` §Fork: a fork never compensates, so the
- * assessment still runs and its blocking and revertible entries are
- * **normalized to warnings** — "this effect may execute again on the child".
- * A fork with a non-empty `warnings` is a successful fork, not a refused one.
+ * The disclosure a fork carries is NOT here. `docs/specs/Concepts/Time
+ * Travel.md` §Fork normalizes the boundary assessment to warnings — "this
+ * effect may execute again on the child" — and that assessment runs above the
+ * store, so the warnings belong to the operation's result rather than to the
+ * row a store writes. A store returning this pair says nothing about them.
  *
  * @since 0.1.0
  * @category models
  */
 export const Fork = Schema.Struct({
   runId: Schema.NonEmptyString,
-  edge: LineageEdge,
-  warnings: Schema.Array(Schema.String)
+  edge: LineageEdge
 })
 /**
  * The value form of {@link Fork}.
@@ -292,8 +300,9 @@ export type ForkIntent = typeof ForkIntent.Type
  * The reads (`snapshotAt`, `stateAt`, `attemptsAt`, `descendants`) reconstruct
  * a frame's past; the audit trio (`writeAudit`, `updateAudit`,
  * `pendingAudits`) makes an in-flight rewind recoverable; and
- * `archiveAndTruncate`, `createFork`, and `recordReceipt` are the three
- * mutations that change the lineage tree. `nextForkId` sits beside them as the
+ * `archiveAndTruncate` and `createFork` are the two mutations that change the
+ * lineage tree, and `recordReceipt` writes one compensation receipt against an
+ * open audit row without touching it. `nextForkId` sits beside them as the
  * one mint: it names and reserves the child a later `createFork` will write,
  * so a caller can provision that child's workspace before any run exists, and
  * `abandonForkIntents` returns the reservations whose fork never committed so

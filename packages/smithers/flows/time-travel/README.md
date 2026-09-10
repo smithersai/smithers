@@ -56,9 +56,8 @@ Every module is also reachable at the matching `@smthrs/time-travel/*` subpath;
 | `CompensationHandlers`  | The contribution door: the `Handler` shape (`kind`, `tier`, `requiresIdempotencyKey`, `compensation`, `residue`, `assess`, `revert`, `rollback`), the `Classification` and `Assessment` schemas a custom `assess` is decoded against, the optional service, `layer(handlers)`, and `layerNoop`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `Migrations`            | The same DDL as a rung on the shared migration ladder at id block `5000`: `set`, `sets`, `run`, and `layer`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
-`Replay`, `Fork`, `Rewind`, `Retry`, `Recovery`, `Compensation`,
-`SnapshotProjector`, `HistoryLimit`, and `EffectHandlerRegistry` are machinery
-a caller never names, and `@smthrs/time-travel/internal/*` is not importable.
+`Replay`, `Fork`, `Rewind`, `Recovery`, `Compensation`, `SnapshotProjector`,
+`HistoryLimit`, and `EffectHandlerRegistry` are machinery a caller never names, and `@smthrs/time-travel/internal/*` is not importable.
 Recovery is never a call: building `TimeTravel.layer` finishes or rolls back any
 rewind a crash interrupted, and forgets the jj lane of any fork that reserved an
 id and died before it committed.

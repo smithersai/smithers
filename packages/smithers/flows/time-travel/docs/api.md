@@ -35,7 +35,7 @@ reached through
 `import * as TimeTravel from "@smthrs/time-travel/TimeTravel"`.
 
 `@smthrs/time-travel/internal/*` is mapped to `null`: `Replay`, `Fork`,
-`Rewind`, `Retry`, `Recovery`, `Compensation`, `SnapshotProjector`,
+`Rewind`, `Recovery`, `Compensation`, `SnapshotProjector`,
 `HistoryLimit`, and `EffectHandlerRegistry` are machinery a caller never names.
 
 ## TimeTravel
@@ -181,7 +181,11 @@ run whose journal carries those records is readable only through `replay`.
 ### ForkResult and RewindResult
 
 ```ts
-type ForkResult = TimeTravelStore.Fork
+type ForkResult = {
+  readonly runId: string
+  readonly edge: LineageEdge
+  readonly warnings: ReadonlyArray<string>
+}
 
 type RewindResult = {
   readonly auditId: string
@@ -349,13 +353,13 @@ moment the code under test reaches a third.
 | `AuditPatch`    | `{ status?, rateLimit?, detail? }`. The only keys an open audit row may be advanced through.                   |
 | `Receipt`       | `{ id, auditId, effectId, receipt }`. Proof one side effect was compensated.                                   |
 | `ArchiveResult` | `{ archived: number; orphaned: LineageEdge[] }`.                                                               |
-| `Fork`          | `{ runId, edge, warnings }`. A fork's outcome.                                                                 |
+| `Fork`          | `{ runId, edge }`. The row `createFork` commits; a fork's warnings ride `ForkResult`.                          |
 | `ForkIntent`    | `{ childRunId, parentRunId, parentSeq, reservedAtMs }`. A minted fork id whose fork has not committed.         |
 
 Three helpers travel with them:
 
 ```ts
-const auditPatchKeys: ReadonlyArray<string>
+const auditPatchKeys: ReadonlyArray<keyof AuditPatch>
 const validateAuditPatch: (patch: AuditPatch) => Effect<AuditPatch, TimeTravelError>
 const forkFrameMessage: (parentRunId: string, frame: Frame) => string
 ```
