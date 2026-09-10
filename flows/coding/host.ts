@@ -7,6 +7,7 @@ import { HumanTask, Interpreter } from "@smthrs/flow"
 import { Context, Effect, FileSystem, Layer } from "effect"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as NativeEquipment from "../../packages/smithers/src/internal/NativeEquipment.ts"
+import type * as Application from "../../packages/smithers/src/Application.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { atomDelegate, atomFlows, atomOperations, EditAtom } from "./atoms.ts"
 import { checkDelegate, checkLayers } from "./checks.ts"
@@ -28,6 +29,10 @@ import { feedbackLayer, routeMessages } from "./steering.ts"
 
 /** Operator configuration, never accepted from a workflow or gateway request. */
 export interface Options extends NativeOptions {
+  /** Same operator credential used by Serve; enables the existing native gateway delegation. */
+  readonly credential?: string | undefined
+  /** Existing authority override, including a narrower operator policy. */
+  readonly approvalAuthority?: Application.Config["approvalAuthority"]
   readonly gatewayId: string
   readonly implementationModel: string
   readonly exporterPath?: string | undefined
@@ -118,7 +123,8 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       const binding = yield* Context.get(context, NativeCoding).read()
       if (binding.head.kind !== "resolved") return yield* Effect.die(new Error("Resolve native JJ conflicts before starting the configured coding host"))
     })), Layer.orDie)
-    const host = native.layerHost({ root: options.repositoryPath }, modules)
+    const host = native.layerHost({ root: options.repositoryPath, credential: options.credential,
+      approvalAuthority: options.approvalAuthority }, modules)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,
         capabilities: [...new Set([...(health.capabilities ?? []), "coding-plan/v1", ...(options.planning === undefined ? [] : ["coding-request/v1"])])] }, bind, root)

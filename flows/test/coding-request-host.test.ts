@@ -4,11 +4,13 @@ import { appendFile, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { Control } from "@smthrs/control"
+import { Control, ControlRpcs } from "@smthrs/control"
 import * as Model from "@smthrs/model/Model"
 import { ModelEvent } from "@smthrs/model/ModelEvent"
 import { Cause, Context, Deferred, Effect, Layer, Option, Schema, Stream } from "effect"
 import * as HttpServer from "effect/unstable/http/HttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
 import * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
 import { layer } from "../coding/host.ts"
@@ -74,7 +76,7 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
   const adapterSource = join(temporary, "native-adapter.py")
   await writeFile(adapterSource, (await readFile(source!, "utf8")).replace('"/usr/local/bin/smithers-jj-export"', JSON.stringify(exporter)))
   await writeFile(wrapper, `import importlib.util,json,sys\nspec=importlib.util.spec_from_file_location("coding",${JSON.stringify(adapterSource)})\ncoding=importlib.util.module_from_spec(spec)\nspec.loader.exec_module(coding)\ncoding.REPORTER_SCRIPT=${JSON.stringify(reporter)}\ntry:\n print(json.dumps(coding.run_local(${JSON.stringify(config)}, engine="--engine" in sys.argv)))\nexcept coding.CodingError as error:\n print(json.dumps({"error":{"code":error.code,"message":error.message}}))\n sys.exit(1)\n`)
-  const options = { repositoryPath: root, adapterPath: wrapper,
+  const options = { repositoryPath: root, adapterPath: wrapper, credential: "fixture-key",
     gatewayId: "11111111-1111-4111-8111-111111111111", implementationModel: "test:scripted", exporterPath: exporter,
     planning: { wikiOutput, pages: [page], reviewer: "scripted-host-acceptance/v1", implementation: "coding/implementation", checks: ["fast", "slow"].map(tier => ({
       id: tier, target: "hello.txt", flow: `checks/${tier}`, tier: tier as "fast" | "slow", required: true
@@ -155,14 +157,21 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
     assert.equal(health.gatewayId, options.gatewayId)
     assert.deepEqual(health.capabilities, ["coding-plan/v1", "coding-request/v1"])
     assert.equal(Serve.health(root).capabilities, undefined, "ordinary CLI health does not claim native coding")
-    const card = yield* control.plan({ flowId: "coding/request", input: { prompt: "Write hello.txt", feedback: "Keep the verifier unchanged.", maxRounds: 2 } })
-    yield* control.approve(card.approval)
-    const receipt = yield* control.run({ _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope, idempotencyKey: "native-request-host" })
+    // Use the actual bearer-authenticated HTTP protocol for every mutation.
+    // An in-process operator approval cannot prove a hosted UI can approve.
+    const protocol = yield* Layer.build(RpcClient.layerProtocolHttp({
+      url: `http://127.0.0.1:${port}/rpc`,
+      transformClient: client => HttpClient.mapRequest(client, HttpClientRequest.bearerToken("fixture-key"))
+    }).pipe(Layer.provide([FetchHttpClient.layer, RpcSerialization.layerNdjson])))
+    const remote = yield* RpcClient.make(ControlRpcs.ControlRpcs).pipe(Effect.provide(protocol))
+    const card = yield* remote.Plan({ flowId: "coding/request", input: { prompt: "Write hello.txt", feedback: "Keep the verifier unchanged.", maxRounds: 2 } })
+    yield* remote.Approve(card.approval)
+    const receipt = yield* remote.Run({ _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope, idempotencyKey: "native-request-host" })
     assert.equal(receipt._tag, "Accepted")
     if (receipt._tag !== "Accepted" || receipt.runId === undefined) throw new Error("expected accepted native run")
     const runId = receipt.runId
     yield* Effect.forkScoped(Deferred.await(planningEntered).pipe(Effect.andThen(Effect.gen(function*() {
-      const steering = yield* control.steer({ runId, message: { runId, messageId: "native-request-poc-feedback", body: feedbackText,
+      const steering = yield* remote.Steer({ runId, message: { runId, messageId: "native-request-poc-feedback", body: feedbackText,
         principal: { id: "native-host-fixture", kind: "human", stampedAt: 0 }, createdAt: 0 }, idempotencyKey: "native-request-poc-feedback" })
       assert.equal(steering._tag, "Accepted")
       yield* Deferred.succeed(steeringAdmitted, undefined)

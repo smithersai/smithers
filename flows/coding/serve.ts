@@ -29,7 +29,7 @@ if (parsed.values.version) {
     credential: parsed.values.credential ?? process.env.SMITHERS_API_KEY }
   const refusal = Serve.refuse(bind)
   if (refusal) throw refusal
-  const options = { repositoryPath: root, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "",
+  const options = { repositoryPath: root, credential: bind.credential, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "",
     implementationModel: process.env.SMITHERS_CODING_IMPLEMENT_MODEL ?? "",
     ...(process.env.SMITHERS_CODING_PLAN_MODEL === undefined ? {} : { planningModel: process.env.SMITHERS_CODING_PLAN_MODEL }),
     ...(process.env.SMITHERS_CODING_POC_MODEL === undefined ? {} : { pocModel: process.env.SMITHERS_CODING_POC_MODEL }),
