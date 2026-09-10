@@ -16,6 +16,7 @@ import { join, resolve } from "node:path"
 import { describe, it } from "node:test"
 import { fileURLToPath } from "node:url"
 import { EXPECTED_EFFECT_VERSION as effectVersion } from "../check-single-effect-version.mjs"
+import { retarget } from "../set-release-version.mjs"
 import { libraryPackages } from "../workspace-packages.mjs"
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
@@ -25,7 +26,23 @@ const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..")
  * manifest `set-release-version.mjs` rewrites, so a cut never leaves this suite
  * asserting the previous line.
  */
-const releaseVersion = JSON.parse(readFileSync(join(root, "packages/smithers/package.json"), "utf8")).version
+const releaseManifest = "packages/smithers/package.json"
+const releaseVersion = JSON.parse(readFileSync(join(root, releaseManifest), "utf8")).version
+
+/**
+ * The release-line rule, over any set of manifests: the version is the CLI
+ * manifest's, read from that same set, and every other publishable package
+ * carries it. The rule owns its version source so a retargeted copy of the
+ * workspace is judged against its own line, never against this file's idea of
+ * the current one.
+ */
+const releaseLine = (entries) => {
+  const version = entries.find((entry) => entry.path === join(root, releaseManifest)).manifest.version
+  return {
+    version,
+    offLine: entries.filter((entry) => entry.manifest.private !== true && entry.manifest.version !== version)
+  }
+}
 
 /** Executables own their runtime; libraries make the host supply the singleton. */
 const effectRuntimeOwners = new Set(["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate"])
@@ -70,8 +87,9 @@ describe("the workspace package contract", () => {
   })
 
   it("keeps one version across the release line", () => {
-    const offLine = publishable.filter((entry) => entry.manifest.version !== releaseVersion)
-    for (const entry of offLine) {
+    const line = releaseLine(manifests)
+    assert.equal(line.version, releaseVersion, `${releaseManifest} is the release line's source`)
+    for (const entry of line.offLine) {
       assert.ok(
         offReleaseLine.has(entry.manifest.name),
         `packages/${entry.directory} publishes ${entry.manifest.name}@${entry.manifest.version} instead of `
@@ -86,6 +104,25 @@ describe("the workspace package contract", () => {
         `offReleaseLine names ${name}, which is not a publishable package any more`
       )
     }
+  })
+
+  it("follows the release line when a cut retargets every manifest", () => {
+    // The cut rewrites manifests, shipped templates, and a few source
+    // literals; it does not rewrite this suite. So the version the gate asserts
+    // must come from the manifests themselves, or the first cut after a release
+    // reddens a required gate. Retarget a copy through the cut's own function
+    // and hold it to the version it now declares.
+    const nextVersion = `${releaseVersion}-retarget-probe`
+    const workspaceNames = new Set(manifests.map((entry) => entry.manifest.name))
+    const cut = manifests.map((entry) => ({ ...entry, manifest: retarget(entry.manifest, nextVersion, workspaceNames) }))
+    const line = releaseLine(cut)
+
+    assert.equal(line.version, nextVersion, "the gate reads the version the cut wrote, not this file's")
+    assert.deepEqual(
+      line.offLine.map((entry) => entry.manifest.name),
+      [...offReleaseLine.keys()],
+      "after a cut, only the enumerated exemptions may sit off the release line"
+    )
   })
 
   it("declares a publishable surface for every published package", () => {
