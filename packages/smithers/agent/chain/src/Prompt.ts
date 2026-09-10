@@ -34,7 +34,8 @@ import * as sections from "./internal/prompts.ts"
 export type Role = "concierge" | "sub"
 
 /**
- * The BASE section: what the agent is and what a flow is.
+ * The BASE section: what the agent is and what a chain, link, script and
+ * call are. It names no host feature: the catalog block is the whole world.
  *
  * @category sections
  * @since 0.1.0
@@ -188,8 +189,16 @@ export const catalogBlock = (entries: ReadonlyArray<Catalog.Entry>): string => {
 }
 
 /**
- * What assembly needs: the role the prefix addresses and the entries the
- * catalog block advertises.
+ * What assembly needs: the role the prefix addresses, the entries the
+ * catalog block advertises, and an optional HOST section.
+ *
+ * The package sections promise only what this package dispatches: a
+ * links, journaled calls, and the catalog. A host that mounts
+ * more (a worldview store, background lineages, monitors, widgets) owns the
+ * prose that teaches them and passes it as `host`, so the promise and the
+ * entry that keeps it arrive from the same place. An empty or absent host
+ * section adds nothing. The host must describe only capabilities its
+ * catalog entries implement; assembly does not validate host prose.
  *
  * @category models
  * @since 0.1.0
@@ -198,11 +207,13 @@ export const catalogBlock = (entries: ReadonlyArray<Catalog.Entry>): string => {
 export interface AssembleOptions {
   readonly role: Role
   readonly entries: ReadonlyArray<Catalog.Entry>
+  readonly host?: string | undefined
 }
 
 /**
  * Assembles the full prefix in fixed order: BASE, CONCIERGE (concierge
- * role only), RULES, the authoring contract, the catalog block.
+ * role only), HOST (only when the host supplies one), RULES, the authoring
+ * contract, the catalog block.
  *
  * @category assembly
  * @since 0.1.0
@@ -212,6 +223,7 @@ export const assemble = (options: AssembleOptions): string =>
   [
     base,
     ...(options.role === "concierge" ? [concierge] : []),
+    ...(options.host === undefined || options.host === "" ? [] : [options.host]),
     rules,
     contract,
     catalogBlock(options.entries)
@@ -225,4 +237,5 @@ export const assemble = (options: AssembleOptions): string =>
  * @since 0.1.0
  * @slop
  */
-export const forCatalog = (catalog: Catalog.Service, role: Role): string => assemble({ entries: catalog.entries, role })
+export const forCatalog = (catalog: Catalog.Service, role: Role, host?: string): string =>
+  assemble({ entries: catalog.entries, host, role })

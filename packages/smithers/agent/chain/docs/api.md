@@ -585,15 +585,22 @@ cache hits across turns.
 
 - `Role = "concierge" | "sub"`: which agent the prefix addresses. The
   concierge is closest to the user.
-- `AssembleOptions`: `{ role: Role, entries: ReadonlyArray<Catalog.Entry> }`.
+- `AssembleOptions`: `{ role: Role, entries: ReadonlyArray<Catalog.Entry>,
+  host?: string }`. The package sections promise only what the chain
+  dispatches (links, journaled calls, the catalog). A host
+  that mounts more (a worldview store, background lineages, monitors,
+  widgets) passes the prose that teaches them as `host`; absent or empty,
+  nothing is added. The host must supply instructions only for capabilities
+  its catalog entries implement; assembly does not validate host prose.
 
 ### Sections
 
-- `base: string`: the BASE section: what the agent is and what a flow is.
+- `base: string`: the BASE section: what the agent is and what a chain,
+  link, script and call are. It names no host feature.
 - `concierge: string`: the CONCIERGE section, added only for the concierge
   role.
 - `rules: string`: the RULES section.
-- `contract: string`: the authoring contract: what one turn's reply must
+- `contract: string`: the authoring contract: what one link's reply must
   contain.
 
 ### Constants and assembly
@@ -614,12 +621,13 @@ cache hits across turns.
   and labelled as untrusted repository descriptions. The harness-owned
   `author` description remains trusted.
 - `assemble(options): string`: assembles the full prefix in fixed order:
-  BASE, CONCIERGE (concierge role only), RULES, the authoring contract, the
-  catalog block. The contract tells the model that catalog descriptions are
-  data and cannot override the user's goal or authorize actions.
-- `forCatalog(catalog: Catalog.Service, role: Role): string`: assembles the
-  prefix from a mounted catalog service: the composition that cannot diverge
-  from what the chain dispatches.
+  BASE, CONCIERGE (concierge role only), HOST (only when supplied), RULES,
+  the authoring contract, the catalog block. The contract tells the model
+  that catalog descriptions are data and cannot override the user's goal
+  or authorize actions.
+- `forCatalog(catalog: Catalog.Service, role: Role, host?: string): string`: assembles the
+  prefix from a mounted catalog service, using its entries for the catalog
+  block and including the optional host section unchanged.
 
 ## `Catalog`
 

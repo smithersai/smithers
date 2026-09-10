@@ -430,6 +430,36 @@ describe("background boot reconciliation", () => {
 })
 
 describe("ChainRuntime behind the AgentPort seam", () => {
+  test("the host section teaches only calls the assembled catalog dispatches", async () => {
+    // @smthrs/chain's own sections promise nothing beyond the catalog; the
+    // worldview, background and chat-surface prose is ours (HostPrompt.ts),
+    // so every name it teaches must be an entry this runtime mounts.
+    const prefixes: Array<string> = []
+    const h = await harness({
+      author: Author.layerFn((input) => {
+        prefixes.push(input.prefix)
+        return flow(`return done({})`)
+      })
+    })
+    const done = h.waitForDone()
+    h.controller.send("hello there")
+    await done
+    const prefix = prefixes[0]!
+    expect(prefix).toContain("# Your host")
+    expect(prefix.indexOf("# Your host")).toBeLessThan(prefix.indexOf("# Rules"))
+    const advertised = new Set(
+      prefix.slice(prefix.indexOf("# Catalog")).split("\n")
+        .filter((line) => line.startsWith("- "))
+        .map((line) => line.slice(2, line.indexOf(" — ")))
+    )
+    for (const name of ["recall", "remember", "agent", "background", "say", "card.show"]) {
+      expect(advertised.has(name), `host section teaches ${name}, catalog lacks it`).toBe(true)
+    }
+    // Vocabulary the package sections no longer carry lives only in the host section.
+    const packageSections = prefix.slice(0, prefix.indexOf("# Your host"))
+    expect(packageSections).not.toMatch(/background|monitor|worldview/i)
+  })
+
   test("a chain turn drives the real app end-to-end through send()", async () => {
     const h = await harness({ author: Author.layerMock(scripts) })
     const worldBefore = h.store.collections.worldDocuments.size

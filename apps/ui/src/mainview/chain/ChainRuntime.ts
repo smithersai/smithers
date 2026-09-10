@@ -12,6 +12,7 @@ import { commandEntries, disclosedEntries } from "./FlowCatalog"
 import { retiredLineageKey } from "./LineageRetirement"
 import { createChainPolicy } from "./Policy"
 import { layerAuthor } from "./StreamModel"
+import { hostPrompt } from "./HostPrompt"
 import { worldviewEntries } from "./Worldview"
 
 /*
@@ -241,6 +242,7 @@ export const createChainRuntime = (options: ChainRuntimeOptions): AgentPort => {
   const subPrefix = (): string =>
     Prompt.assemble({
       role: "sub",
+      host: hostPrompt("sub"),
       entries: [
         ...Catalog.system,
         ...disclosedEntries(options.commands),
@@ -492,6 +494,7 @@ export const createChainRuntime = (options: ChainRuntimeOptions): AgentPort => {
     }
     const prefix = Prompt.assemble({
       role: "concierge",
+      host: hostPrompt("concierge"),
       entries: [
         ...Catalog.system,
         ...disclosedEntries(options.commands),

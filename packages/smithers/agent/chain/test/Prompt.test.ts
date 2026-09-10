@@ -255,6 +255,48 @@ describe("Prompt", () => {
   it("assembles from a mounted catalog service via forCatalog", async () => {
     const service = Catalog.make(entries)
     expect(Prompt.forCatalog(service, "sub")).toBe(Prompt.assemble({ entries: service.entries, role: "sub" }))
+    expect(Prompt.forCatalog(service, "sub", "# Host")).toBe(
+      Prompt.assemble({ entries: service.entries, host: "# Host", role: "sub" })
+    )
+  })
+
+  it("promises only what the package dispatches, in the code's vocabulary", () => {
+    // The chain runs one script per link, journals its calls, and returns
+    // an outcome. A sub-agent is a synchronous `agent` call. Nothing here
+    // backgrounds work, fires monitors, or reads a worldview, so the
+    // package sections must not tell the model it can.
+    const hostOnly = /background|monitor|trigger|worldview|widget|no tabs/i
+    for (const role of ["concierge", "sub"] as const) {
+      const prefix = Prompt.assemble({ entries: [], role })
+      const packageSections = prefix.slice(0, prefix.indexOf("# Catalog"))
+      expect(packageSections, `${role} prefix names a host feature`).not.toMatch(hostOnly)
+    }
+    expect(Prompt.base).toContain("`agent`")
+    expect(Prompt.base).toContain("catalog")
+  })
+
+  it("uses link, script and call for the package contract", () => {
+    // The contract speaks link/script/call like Catalog, Chain and Outcome do,
+    // not the turn/Flow/Activity of an older design.
+    expect(Prompt.contract).toContain("Every link you write one script")
+    expect(Prompt.contract).not.toMatch(/\bturn\b|Activity|Activities/)
+    expect(Prompt.base).not.toMatch(/\bturn\b|Activity|Activities|Flows?\b/)
+  })
+
+  it("includes the host section only when the host supplies one, after the role sections", () => {
+    const host = "# Host\n\nYour worldview is a markdown wiki; `background` spawns work whose result arrives as a note."
+    const withHost = Prompt.assemble({ entries, host, role: "concierge" })
+    const without = Prompt.assemble({ entries, role: "concierge" })
+    expect(without).not.toContain("# Host")
+    expect(Prompt.assemble({ entries, host: "", role: "concierge" })).toBe(without)
+    expect(Prompt.assemble({ entries, host: undefined, role: "concierge" })).toBe(without)
+    expect(withHost).toContain(host)
+    const positions = ["# You are the concierge", "# Host", "# Rules", "# How you act", "# Catalog"]
+      .map((heading) => withHost.indexOf(heading))
+    expect(positions.every((position) => position >= 0)).toBe(true)
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions)
+    // Byte-stable with the host section too: same inputs, identical string.
+    expect(Prompt.assemble({ entries: [...entries].reverse(), host, role: "concierge" })).toBe(withHost)
   })
 
   it("reaches the author seat through a real chain run", async () => {
