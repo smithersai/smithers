@@ -60,7 +60,20 @@ const decodeJson = (value: string | null) =>
   value === null
     ? Effect.succeed(undefined)
     : Schema.decodeUnknownEffect(Json)(value).pipe(Effect.mapError(mapError))
+/**
+ * Encodes a value for a time-travel column WITHOUT the journal's redaction
+ * pass. Audit detail and receipts are executable state, not observability:
+ * recovery decodes `detail_json` and hands `compensation.handlerReceipts[].data`
+ * back to each handler's `rollback`, and a placeholder there would roll back
+ * the wrong thing (the same reason `@smthrs/journal` Redaction excludes
+ * `state_json`, checkpoints, and outcomes). A receipt must therefore never
+ * carry a credential; `docs/guides/compensate-an-effect.md` says so.
+ */
 const encodeJson = (value: unknown) => Schema.encodeEffect(Json)(value).pipe(Effect.mapError(mapError))
+
+/** The `[digest, attempt]` pairs of a set of attempts, as one JSON parameter. */
+const attemptRefsJson = (refs: ReadonlyArray<TimeTravelStore.AttemptRef>): string =>
+  JSON.stringify(refs.map((ref) => [ref.stepKeyDigest, ref.attempt]))
 
 const restartableStateJson = (stateJson: string) =>
   Schema.decodeUnknownEffect(RunStateJson)(stateJson).pipe(
@@ -344,6 +357,13 @@ export const make: Effect.Effect<
      * inherits, and the fork replays its recorded failure rather than re-running
      * the body.
      */
+    /**
+     * A row-value subquery naming a set of attempts, so one statement can copy
+     * or keep the whole set instead of issuing one statement per row.
+     */
+    const attemptRefsSelect = (refs: ReadonlyArray<TimeTravelStore.AttemptRef>) =>
+      sql`SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(${attemptRefsJson(refs)})`
+
     const attemptsAtFrame = (
       runId: string,
       frame: TimeTravelStore.Snapshot["frame"]
@@ -760,23 +780,14 @@ export const make: Effect.Effect<
                    * (`attemptsAtFrame`), and the two now agree about which attempts
                    * a prefix can explain.
                    */
-                  const survivors = new Set(
-                    (yield* attemptsAtFrame(runId, frame)).map((ref) => `${ref.stepKeyDigest}:${ref.attempt}`)
-                  )
-                  const present = yield* sql<
-                    { readonly step_key_digest: string; readonly attempt: number }
-                  >`
-            SELECT step_key_digest, attempt FROM flows_attempts WHERE run_id = ${runId}
+                  const survivors = yield* attemptsAtFrame(runId, frame)
+                  // One statement for the whole run rather than one round trip
+                  // per unexplained row while the writer lock is held.
+                  yield* sql`
+            DELETE FROM flows_attempts
+            WHERE run_id = ${runId}
+              AND (step_key_digest, attempt) NOT IN (${attemptRefsSelect(survivors)})
           `
-                  for (const row of present) {
-                    if (survivors.has(`${row.step_key_digest}:${row.attempt}`)) continue
-                    yield* sql`
-              DELETE FROM flows_attempts
-              WHERE run_id = ${runId}
-                AND step_key_digest = ${row.step_key_digest}
-                AND attempt = ${row.attempt}
-            `
-                  }
                   for (const childRunId of descendants.attachedRunIds) {
                     // An archived child's journal no longer explains any attempt,
                     // so none of its attempt rows may survive it.
@@ -994,8 +1005,9 @@ export const make: Effect.Effect<
                * fold names exactly the rows the copied prefix can explain.
                */
               const attempts = yield* attemptsAtFrame(parentRunId, frame)
-              for (const ref of attempts) {
-                yield* sql`
+              // One statement for the whole set rather than one round trip per
+              // surviving attempt while the writer lock is held.
+              yield* sql`
               INSERT INTO flows_attempts (
                 run_id, step_key_digest, attempt, state, started_at_ms, finished_at_ms,
                 heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
@@ -1005,10 +1017,8 @@ export const make: Effect.Effect<
                 heartbeat_at_ms, checkpoint_json, error_json, outcome_json, meta_json
               FROM flows_attempts
               WHERE run_id = ${parentRunId}
-                AND step_key_digest = ${ref.stepKeyDigest}
-                AND attempt = ${ref.attempt}
+                AND (step_key_digest, attempt) IN (${attemptRefsSelect(attempts)})
             `
-              }
               /**
                * THE FRAME'S ANCHORS CROSS THE FORK WITH IT.
                *

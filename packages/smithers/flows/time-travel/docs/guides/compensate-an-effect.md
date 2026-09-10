@@ -54,6 +54,13 @@ belongs to is truncated. The ordering is what lets recovery tell an effect that
 was already rolled back from one that never was, so a resumed rewind never
 compensates the same effect twice.
 
+The receipt is stored exactly as `revert` returned it, without the redaction
+pass `@smthrs/journal` applies to journal payloads: recovery decodes it and
+hands it back to `rollback` byte for byte, and a placeholder there would roll
+back the wrong thing. A receipt must never carry a credential. Keep tokens and
+connection strings in the handler's closure and return only the identifier
+`rollback` needs, such as a refund id or a retraction handle.
+
 **`rollback(effect, receipt)`** undoes a compensation this handler performed,
 from the receipt `revert` returned. A rewind that fails after compensating
 replays these in reverse order. It is required even when the answer is "nothing

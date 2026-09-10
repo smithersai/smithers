@@ -61,3 +61,9 @@ it("states the fork replay limitation once, and links the other pages to it", ()
   expect(readme).not.toContain("Make repeated external effects idempotent")
   expect(readme).toContain(anchor)
 })
+
+it("tells a handler author that receipts persist unredacted and must not carry credentials", () => {
+  const guide = read("../docs/guides/compensate-an-effect.md")
+  expect(guide).toContain("without the redaction pass")
+  expect(guide).toContain("A receipt must never carry a credential.")
+})

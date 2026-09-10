@@ -1364,3 +1364,94 @@ describe("SqlTimeTravelStore.createFork", () => {
       }))
   }
 })
+
+describe("SqlTimeTravelStore attempt statements", () => {
+  /** Records every compiled statement that names `flows_attempts`. */
+  const recordAttemptStatements = (sql: SqlClient.SqlClient) => {
+    const statements: Array<string> = []
+    const instrumented = new Proxy(sql, {
+      apply(target, thisArg, args) {
+        const statement: Statement.Statement<unknown> = Reflect.apply(target, thisArg, args)
+        if (typeof args[0] === "string") return statement
+        const [text] = statement.compile()
+        if (text.includes("flows_attempts")) statements.push(text.replace(/\s+/g, " ").trim())
+        return statement
+      }
+    })
+    return { statements, instrumented }
+  }
+
+  const insertAttempts = (sql: SqlClient.SqlClient, runId: string, digests: ReadonlyArray<string>) =>
+    Effect.forEach(digests, (digest, index) =>
+      Effect.gen(function*() {
+        const seq = index + 1
+        yield* sql`
+          INSERT INTO flows_journal_events
+            (run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+             event_type, payload_json, meta_json)
+          VALUES (
+            ${runId}, ${seq}, ${`attempt-${seq}`}, 'source', ${seq}, 0,
+            'flows.engine.attempt-started',
+            ${JSON.stringify({ stepKeyDigest: digest, attempt: 1 })},
+            ${JSON.stringify({ lineageId: "main" })}
+          )
+        `
+        yield* sql`
+          INSERT INTO flows_attempts
+            (run_id, step_key_digest, attempt, state, started_at_ms, meta_json)
+          VALUES (${runId}, ${digest}, 1, 'succeeded', 0, '{}')
+        `
+      }))
+
+  it.effect("createFork copies every surviving attempt with one set-based statement", () =>
+    run((_store, sql) =>
+      Effect.gen(function*() {
+        const { instrumented, statements } = recordAttemptStatements(sql)
+        const store = yield* SqlTimeTravelStore.make.pipe(Effect.provideService(SqlClient.SqlClient, instrumented))
+        yield* insertRun(sql, "set-parent")
+        yield* sql`
+          INSERT INTO flows_journal_events
+            (run_id, seq, event_id, source_id, source_seq, emitted_at_ms,
+             event_type, payload_json, meta_json)
+          VALUES ('set-parent', 0, 'set-0', 'source', 0, 0, 'flows.engine.run-decision',
+                  ${JSON.stringify({ state: { version: 1, flowName: "Demo", payload: {} } })},
+                  ${JSON.stringify({ lineageId: "main" })})
+        `
+        yield* insertAttempts(sql, "set-parent", ["a", "b", "c", "future"])
+        statements.length = 0
+        yield* store.createFork("set-parent", { lineageId: "main", seq: 3 }, "set-child")
+        const copied = yield* sql<{ readonly step_key_digest: string; readonly attempt: number }>`
+          SELECT step_key_digest, attempt FROM flows_attempts WHERE run_id = 'set-child' ORDER BY step_key_digest
+        `
+        expect(copied).toEqual([
+          { step_key_digest: "a", attempt: 1 },
+          { step_key_digest: "b", attempt: 1 },
+          { step_key_digest: "c", attempt: 1 }
+        ])
+        const inserts = statements.filter((text) => text.startsWith("INSERT INTO flows_attempts"))
+        expect(inserts).toHaveLength(1)
+        expect(inserts[0]).toContain("json_each")
+      })
+    ))
+
+  it.effect("archiveAndTruncate removes every unexplained attempt with one set-based statement", () =>
+    run((_store, sql) =>
+      Effect.gen(function*() {
+        const { instrumented, statements } = recordAttemptStatements(sql)
+        const store = yield* SqlTimeTravelStore.make.pipe(Effect.provideService(SqlClient.SqlClient, instrumented))
+        yield* insertOwnedRun(sql, "set-truncate")
+        yield* insertAttempts(sql, "set-truncate", ["a", "b", "c", "d"])
+        statements.length = 0
+        yield* store.archiveAndTruncate("set-truncate", { lineageId: "main", seq: 1 }, [], owner)
+        const kept = yield* sql<{ readonly step_key_digest: string; readonly attempt: number }>`
+          SELECT step_key_digest, attempt FROM flows_attempts WHERE run_id = 'set-truncate'
+        `
+        expect(kept).toEqual([{ step_key_digest: "a", attempt: 1 }])
+        expect(statements.filter((text) => text.startsWith("SELECT step_key_digest, attempt FROM flows_attempts")))
+          .toHaveLength(0)
+        const deletes = statements.filter((text) => text.startsWith("DELETE FROM flows_attempts"))
+        expect(deletes).toHaveLength(1)
+        expect(deletes[0]).toContain("json_each")
+      })
+    ))
+})
