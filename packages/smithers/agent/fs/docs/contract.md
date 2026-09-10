@@ -34,6 +34,14 @@ Interruption remains interruption. Original unexpected causes go only to the
 host's Effect debug logger; built-in console logging uses stderr. Custom
 loggers must keep diagnostics private from client output.
 
+The typed `CommandSurface.call` boundary is decoded in both directions. It
+validates `Schema.Type` input and output against the loaded schemas without
+running their encoding transformations, so a `Schema.DateFromString` route
+accepts and returns `Date` instances, and the encoded string is refused.
+Generated manifests declare these decoded types as `Route.Input` and
+`Route.Output`. The encoded `Schema.Encoded` transport applies only to
+`execute` and Incur.
+
 Middleware registered with Incur's `use()` guards HTTP, CLI, and MCP command
 invocations in registration order, including guards added after discovery has
 initialized the metadata surface.

@@ -11,6 +11,9 @@ declare module "../src/Route.ts" {
       readonly input: { readonly title: string }
       readonly output: { readonly accepted: boolean }
     }
+    // Schema.DateFromString: the manifest declares the decoded Schema.Type
+    // members, never the encoded Schema.Encoded strings.
+    readonly "typed/date": { readonly input: Date; readonly output: Date }
   }
 }
 
@@ -31,3 +34,12 @@ const scalar: Effect.Effect<number, FsError, FlowInvoker.FlowInvoker> = surface.
 void scalar
 // @ts-expect-error encoded strings are not decoded numeric input
 surface.call("typed/scalar", "42")
+
+const when: Route.Input<"typed/date"> = new Date("2026-01-01T00:00:00.000Z")
+const at: Route.Output<"typed/date"> = new Date("2026-01-01T00:00:00.000Z")
+void when
+void at
+const dated: Effect.Effect<Date, FsError, FlowInvoker.FlowInvoker> = surface.call("typed/date", when)
+void dated
+// @ts-expect-error encoded strings are not decoded date input
+surface.call("typed/date", "2026-01-01T00:00:00.000Z")
