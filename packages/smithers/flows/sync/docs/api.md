@@ -90,7 +90,7 @@ for an entry committed in this process reads only the runs it named. Size
 | `SyncServer.Options.tailIntervalMs`              | `SyncServer.defaultTailIntervalMs` (1000)       | Milliseconds a workspace subscription waits before revisiting every covered run when nothing wakes it, and the longest that local wakes may defer that catalog-wide round.     |
 | `SyncServer.Options.maxFrameBytes`               | `SyncProtocol.defaultMaxFrameBytes` (2 MiB)     | Summed encoded entries of one read page or subscription frame.                                                                                                                 |
 | `SyncClient.SubscribeOptions.credit`             | `SyncClient.defaultCredit` (256)                | Frames one subscription round carries before the follow replenishes the window by resubscribing from its acknowledged cursors.                                                 |
-| `SyncClient.make` `bootstrapLimit`               | `SyncClient.defaultBootstrapLimit` (256)        | Entries one catch-up page asks for.                                                                                                                                            |
+| `SyncClient.Options.bootstrapLimit`              | `SyncClient.defaultBootstrapLimit` (256)        | Entries one catch-up page asks for.                                                                                                                                            |
 | `BranchCommands.Options.maxCommandBytes`         | `BranchCommands.defaultMaxCommandBytes` (1 MiB) | Encoded size of one command submission, refused before anything is appended.                                                                                                   |
 | `BranchCommands.Options.ledgerCapacity`          | `BranchCommands.defaultLedgerCapacity` (4096)   | Receipts one branch keeps in memory. The journal's producer identity is the durable dedupe, so an evicted receipt costs a round trip and never correctness.                    |
 | `BranchCommands.Options.hydrationLimit`          | `BranchCommands.defaultHydrationLimit` (4096)   | Entries one branch's first-touch hydration reads before it stops, so a long history is not charged to the next writer's latency. What the walk misses, the journal answers.    |
@@ -99,9 +99,17 @@ for an entry committed in this process reads only the runs it named. Size
 | `RunCatalog.PollingOptions.intervalMs`           | `RunCatalog.defaultPollIntervalMs` (1000)       | Milliseconds between reads of the durable run set: one bounded query per interval per composition, not per subscriber.                                                         |
 | `BranchPresence.PresenceOptions.changesCapacity` | `BranchPresence.defaultChangesCapacity` (256)   | Roster notifications a stalled `changes` subscriber may fall behind by; the oldest slide out.                                                                                  |
 
-Every numeric option is validated where it enters: a value that is not a
-positive safe integer fails the constructor with `invalid_request` instead of
-quietly disabling the comparison it configures.
+Every numeric option is validated where it enters. A policy belongs to the
+constructor that takes it: `SyncServer.makeLiveWith`, `BranchCommands.makeLiveWith`,
+`SyncClient.makeWith`, `BranchPresence.makeMemory`, `RunCatalog.makeMemory` and
+`RunCatalog.makePolling`, plus the `layerWith`, `layerMemory` and `layerPolling`
+layers over them, fail with `invalid_request` when a value is not a positive
+safe integer, so a bad policy fails the composition instead of quietly
+disabling the comparison it configures. The plain `make`, `makeLive` and
+`layer` forms carry the defaults, which are valid by construction, and cannot
+fail on a policy. A count a REQUEST carries rather than a policy, meaning
+`Sync.Read`'s `limit` and `SyncClient.SubscribeOptions.credit`, is checked
+where the request is built.
 
 Both change feeds slide rather than block: a publisher never waits on a stalled
 subscriber and never grows the process on its behalf. Neither feed is a source

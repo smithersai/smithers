@@ -316,7 +316,7 @@ describe("BranchCommands identity and bounds", () => {
 
 describe("BranchPresence roster bounds", () => {
   const presenceLayer = (options: BranchPresence.PresenceOptions) =>
-    BranchPresence.layer(options).pipe(Layer.provideMerge(shareLayer))
+    BranchPresence.layerWith(options).pipe(Layer.provideMerge(shareLayer))
 
   const withPresence = <A, E>(
     options: BranchPresence.PresenceOptions,

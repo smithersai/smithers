@@ -228,7 +228,7 @@ describe("sync payload and frame limits", () => {
 
   it.effect("client refuses a live frame whose encoded entries exceed its frame ceiling", () =>
     Effect.gen(function*() {
-      const client = yield* SyncClient.make({
+      const client = yield* SyncClient.makeWith({
         client: {
           "Sync.Read": () => Effect.succeed({ entries: [], cursors: [], done: true }),
           "Sync.Subscribe": () =>
@@ -258,7 +258,7 @@ describe("sync payload and frame limits", () => {
 
   it.effect("client refuses a bootstrap page whose encoded entries exceed its frame ceiling", () =>
     Effect.gen(function*() {
-      const client = yield* SyncClient.make({
+      const client = yield* SyncClient.makeWith({
         client: {
           "Sync.Read": () =>
             Effect.succeed({

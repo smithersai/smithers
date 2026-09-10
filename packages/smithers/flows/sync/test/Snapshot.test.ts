@@ -43,7 +43,7 @@ const server = (read?: Source["read"], maxFrameBytes = 4096) =>
 const asOwner = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provideService(SyncPrincipal.SyncPrincipal, owner))
 const client = (response: unknown, maxFrameBytes = 4096) =>
-  SyncClient.make({
+  SyncClient.makeWith({
     maxFrameBytes,
     client: { "Sync.Snapshot": () => Effect.succeed(response) } as unknown as Parameters<
       typeof SyncClient.make
@@ -150,8 +150,9 @@ describe("public snapshot admission", () => {
       const remote = yield* client(snapshot)
       expect(yield* remote.snapshot(request)).toEqual(snapshot)
       expect(yield* remote.cursors).toEqual([])
-      const invalidLimit = yield* client(snapshot, Number.NaN)
-      expect(yield* Effect.flip(invalidLimit.snapshot(request))).toMatchObject({ code: "invalid_request" })
+      // A frame ceiling of `NaN` is the client's policy, so it is refused by
+      // the constructor rather than by each snapshot taken under it.
+      expect(yield* Effect.flip(client(snapshot, Number.NaN))).toMatchObject({ code: "invalid_request" })
     }))
 
   it.effect("enforces exact encoded UTF-8 snapshot size at N-1, N and N+1", () =>

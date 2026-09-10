@@ -99,7 +99,7 @@ describe("SyncClient bootstrap paging", () => {
   it.effect("asks for the configured bootstrap page size", () =>
     Effect.gen(function*() {
       const { client } = cursorHonouringServer(4, 2)
-      const sync = yield* SyncClient.make({ bootstrapLimit: 2, client })
+      const sync = yield* SyncClient.makeWith({ bootstrapLimit: 2, client })
       const entries = yield* Stream.runCollect(Stream.take(sync.subscribe({ scope, cursors: [] }), 4))
 
       expect(Array.from(entries, (value) => value.seq)).toEqual([0, 1, 2, 3])
@@ -192,16 +192,20 @@ describe("SyncClient subscription policy", () => {
       expect((failure as SyncError).message).toContain("SyncClient.SubscribeOptions.credit")
     }))
 
+  // The client used to accept either value and then refuse every `subscribe`
+  // and every `snapshot` under it, which reported a composition's mistake once
+  // per operation. The policy is checked where it enters, so the constructor
+  // is what fails.
   it.effect("refuses a frame ceiling or page size that is not a positive safe integer", () =>
     Effect.gen(function*() {
       const { client } = cursorHonouringServer(1, 1)
-      const bytes = yield* SyncClient.make({ client, maxFrameBytes: Number.NaN })
-      const limit = yield* SyncClient.make({ bootstrapLimit: 0, client })
-      const bytesFailure = yield* Effect.flip(Stream.runCollect(bytes.subscribe({ scope, cursors: [] })))
-      const limitFailure = yield* Effect.flip(Stream.runCollect(limit.subscribe({ scope, cursors: [] })))
+      const bytesFailure = yield* Effect.flip(SyncClient.makeWith({ client, maxFrameBytes: Number.NaN }))
+      const limitFailure = yield* Effect.flip(SyncClient.makeWith({ bootstrapLimit: 0, client }))
 
-      expect((bytesFailure as SyncError).message).toContain("maxFrameBytes")
-      expect((limitFailure as SyncError).message).toContain("bootstrapLimit")
+      expect(bytesFailure.code).toBe("invalid_request")
+      expect(bytesFailure.message).toContain("maxFrameBytes")
+      expect(limitFailure.code).toBe("invalid_request")
+      expect(limitFailure.message).toContain("bootstrapLimit")
     }))
 })
 
@@ -238,18 +242,19 @@ describe("SyncClient transport failures", () => {
     Effect.gen(function*() {
       const { client } = cursorHonouringServer(1, 1)
       const overCredit = yield* SyncClient.make({ client })
-      const overLimit = yield* SyncClient.make({ bootstrapLimit: SyncProtocol.maxReadLimit + 1, client })
       const creditFailure = yield* Effect.flip(
         Stream.runCollect(
           overCredit.subscribe({ scope, cursors: [], credit: SyncProtocol.maxSubscribeCredit + 1 })
         )
       )
-      const limitFailure = yield* Effect.flip(Stream.runCollect(overLimit.subscribe({ scope, cursors: [] })))
+      const limitFailure = yield* Effect.flip(
+        SyncClient.makeWith({ bootstrapLimit: SyncProtocol.maxReadLimit + 1, client })
+      )
 
       expect((creditFailure as SyncError).code).toBe("invalid_request")
       expect((creditFailure as SyncError).message).toContain("credit")
-      expect((limitFailure as SyncError).code).toBe("invalid_request")
-      expect((limitFailure as SyncError).message).toContain("bootstrapLimit")
+      expect(limitFailure.code).toBe("invalid_request")
+      expect(limitFailure.message).toContain("bootstrapLimit")
     }))
 })
 

@@ -159,31 +159,36 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
 export const layerNoop: Layer.Layer<BranchPresence> = Layer.succeed(BranchPresence, makeNoop())
 
 /**
- * How long an announcement keeps a participant on the roster.
+ * The policy one presence registry runs under. Every field defaults, and
+ * {@link makeMemory} and {@link layerWith} validate what a caller supplies.
  *
  * @category models
  * @since 0.1.0
  */
-export const PresenceOptions = Schema.Struct({
-  leaseMs: Schema.Int.check(Schema.isGreaterThan(0)),
+export interface PresenceOptions {
+  /**
+   * How long an announcement keeps a participant on the roster, in
+   * milliseconds. Defaults to {@link defaultLeaseMs}.
+   */
+  readonly leaseMs?: number | undefined
   /**
    * Roster changes a stalled {@link Service.changes} subscriber may fall
    * behind by. Defaults to {@link defaultChangesCapacity}.
    */
-  changesCapacity: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+  readonly changesCapacity?: number | undefined
   /**
    * Participants one branch may hold at once. Defaults to
    * {@link defaultMaxParticipants}.
    */
-  maxParticipants: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0)))
-})
-/**
- * The value form of {@link PresenceOptions}.
- *
- * @category models
- * @since 0.1.0
- */
-export type PresenceOptions = typeof PresenceOptions.Type
+  readonly maxParticipants?: number | undefined
+}
+
+/** The resolved, already-validated presence policy. */
+interface Resolved {
+  readonly leaseMs: number
+  readonly changesCapacity: number
+  readonly maxParticipants: number
+}
 
 /**
  * Roster changes a stalled {@link Service.changes} subscriber may fall behind
@@ -218,6 +223,12 @@ export const defaultChangesCapacity = 256
  */
 export const defaultMaxParticipants = 256
 
+const defaults: Resolved = {
+  leaseMs: defaultLeaseMs,
+  changesCapacity: defaultChangesCapacity,
+  maxParticipants: defaultMaxParticipants
+}
+
 /**
  * Constructs the in-memory, lease-expiring presence registry.
  *
@@ -240,20 +251,30 @@ export const defaultMaxParticipants = 256
  * @since 0.1.0
  */
 export const makeMemory = (
-  options: PresenceOptions
+  options: PresenceOptions = {}
 ): Effect.Effect<Service, SyncError, BranchShare.BranchShare> =>
+  Effect.flatMap(
+    Effect.all({
+      leaseMs: positiveInt("BranchPresence.PresenceOptions.leaseMs", options.leaseMs, defaults.leaseMs),
+      changesCapacity: positiveInt(
+        "BranchPresence.PresenceOptions.changesCapacity",
+        options.changesCapacity,
+        defaults.changesCapacity
+      ),
+      maxParticipants: positiveInt(
+        "BranchPresence.PresenceOptions.maxParticipants",
+        options.maxParticipants,
+        defaults.maxParticipants
+      )
+    }),
+    makeResolved
+  )
+
+/** The registry over an already-validated policy. */
+const makeResolved = (
+  { changesCapacity, leaseMs, maxParticipants }: Resolved
+): Effect.Effect<Service, never, BranchShare.BranchShare> =>
   Effect.gen(function*() {
-    const leaseMs = yield* positiveInt("BranchPresence.PresenceOptions.leaseMs", options.leaseMs, defaultLeaseMs)
-    const changesCapacity = yield* positiveInt(
-      "BranchPresence.PresenceOptions.changesCapacity",
-      options.changesCapacity,
-      defaultChangesCapacity
-    )
-    const maxParticipants = yield* positiveInt(
-      "BranchPresence.PresenceOptions.maxParticipants",
-      options.maxParticipants,
-      defaultMaxParticipants
-    )
     const share = yield* BranchShare.BranchShare
     const roster = new Map<BranchId, Map<ParticipantId, Participant>>()
     const changes = yield* PubSub.sliding<BranchId>(changesCapacity)
@@ -397,12 +418,25 @@ export const makeMemory = (
   })
 
 /**
- * Provides the in-memory, lease-expiring presence registry. Fails with
- * `invalid_request` when an option is not a positive safe integer.
+ * Provides the in-memory, lease-expiring presence registry under the default
+ * policy, which is valid by construction and so cannot fail.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layer = (
+export const layer: Layer.Layer<BranchPresence, never, BranchShare.BranchShare> = Layer.effect(
+  BranchPresence,
+  makeResolved(defaults)
+)
+
+/**
+ * Provides the in-memory, lease-expiring presence registry under an explicit
+ * policy. Fails with `invalid_request` when an option is not a positive safe
+ * integer, so a bad policy fails the composition rather than an announcement.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerWith = (
   options: PresenceOptions
 ): Layer.Layer<BranchPresence, SyncError, BranchShare.BranchShare> => Layer.effect(BranchPresence, makeMemory(options))

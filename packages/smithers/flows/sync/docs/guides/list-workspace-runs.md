@@ -58,6 +58,9 @@ const local = Effect.gen(function*() {
 })
 ```
 
+`RunCatalog.layerMemory` provides the same catalog when a composition needs the
+service and not the `register` function.
+
 The announcement feed slides at `RunCatalog.defaultChangesCapacity`
 announcements: registering never waits on a stalled subscriber and never grows
 the process on its behalf. A subscriber that falls further behind loses the

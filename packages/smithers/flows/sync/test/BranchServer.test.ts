@@ -55,7 +55,7 @@ const base = Layer.mergeAll(
   BranchShare.layerHmac({ activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("wire-secret") }] }),
   BranchIds.layer
 )
-const services = Layer.mergeAll(BranchPresence.layer({ leaseMs: 600_000 }), BranchCommands.layer).pipe(
+const services = Layer.mergeAll(BranchPresence.layerWith({ leaseMs: 600_000 }), BranchCommands.layer).pipe(
   Layer.provide(base)
 )
 const testAuth = Layer.succeed(SyncAuth)((effect) =>

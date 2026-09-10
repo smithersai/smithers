@@ -13,7 +13,7 @@ const participant = (id: string) => id as BranchProtocol.ParticipantId
 
 const leaseMs = 30_000
 
-const layer = BranchPresence.layer({ leaseMs }).pipe(
+const layer = BranchPresence.layerWith({ leaseMs }).pipe(
   Layer.provideMerge(
     BranchShare.layerHmac({
       activeKid: "primary",

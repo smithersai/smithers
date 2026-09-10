@@ -39,15 +39,10 @@ import type { SyncError } from "./SyncError.ts"
  * @category models
  * @since 0.1.0
  */
-export const AuthorizeRequest = Schema.Struct({ branchId: BranchId, access: Access })
-
-/**
- * The branch and access one authorization request needs.
- *
- * @category models
- * @since 0.1.0
- */
-export type AuthorizeRequest = typeof AuthorizeRequest.Type
+export interface AuthorizeRequest {
+  readonly branchId: BranchId
+  readonly access: Access
+}
 
 /**
  * What a freshly minted capability grants.

@@ -48,7 +48,7 @@ export const layerTest = SyncServer.layer.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       TestJournal.layer(),
-      Layer.effect(RunCatalog.RunCatalog)(Effect.map(RunCatalog.makeMemory(), ({ catalog }) => catalog)),
+      RunCatalog.layerMemory(),
       layerWorkspaceAuth
     )
   )

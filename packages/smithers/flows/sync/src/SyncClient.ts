@@ -74,6 +74,41 @@ export const defaultCredit = 256
 export const defaultBootstrapLimit = 256
 
 /**
+ * The policy one sync client runs every operation under.
+ *
+ * Both fields are validated by {@link makeWith} and {@link layerWith}, so a
+ * value that is not a positive safe integer fails the constructor rather than
+ * disabling the bound it configures.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Options {
+  /**
+   * Largest summed encoded-entry size one frame or bootstrap page may carry,
+   * in bytes. Defaults to {@link defaultMaxFrameBytes}.
+   */
+  readonly maxFrameBytes?: number | undefined
+  /**
+   * Entries one catch-up page asks for. Defaults to
+   * {@link defaultBootstrapLimit}, and may not exceed
+   * `SyncProtocol.maxReadLimit`.
+   */
+  readonly bootstrapLimit?: number | undefined
+}
+
+/** The resolved, already-validated client policy. */
+interface Resolved {
+  readonly maxFrameBytes: number
+  readonly bootstrapLimit: number
+}
+
+const defaults: Resolved = {
+  maxFrameBytes: defaultMaxFrameBytes,
+  bootstrapLimit: defaultBootstrapLimit
+}
+
+/**
  * Input accepted by a sync subscription.
  *
  * `capability` authorizes branch reads: following a shared branch's run
@@ -409,26 +444,50 @@ const pageViolation = (
  * is fast-forwarded. Rebuild a projection from an earlier position with a
  * fresh client, whose acknowledged map is empty.
  *
+ * This constructor carries the default policy, which is valid by
+ * construction and so cannot fail. {@link makeWith} takes an explicit
+ * {@link Options} and validates it.
+ *
  * @category constructors
  * @since 0.1.0
  */
-export const make = ({
-  bootstrapLimit = defaultBootstrapLimit,
+export const make = ({ client }: { readonly client: Client }): Effect.Effect<Service> => service(client, defaults)
+
+/**
+ * Constructs the sync client under an explicit policy.
+ *
+ * Every option is validated here, once, so a client either exists under a
+ * policy it can serve or never exists at all. Validating on each `subscribe`
+ * and each `snapshot` instead accepted a `maxFrameBytes` of `NaN` at
+ * construction and then refused every operation under it, which reported a
+ * composition's mistake as a run-time failure of the follow. This mirrors
+ * `SyncServer.makeLiveWith` and `BranchCommands.makeLiveWith`.
+ *
+ * `SubscribeOptions.credit` is a REQUEST count rather than a client policy, so
+ * it is still checked where the request is built.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const makeWith = ({
+  bootstrapLimit,
   client,
-  maxFrameBytes = defaultMaxFrameBytes
-}: {
-  readonly client: Client
-  /**
-   * Largest summed encoded-entry size one frame or bootstrap page may carry,
-   * in bytes. Defaults to {@link defaultMaxFrameBytes}.
-   */
-  readonly maxFrameBytes?: number | undefined
-  /**
-   * Entries one catch-up page asks for. Defaults to
-   * {@link defaultBootstrapLimit}.
-   */
-  readonly bootstrapLimit?: number | undefined
-}): Effect.Effect<Service> =>
+  maxFrameBytes
+}: Options & { readonly client: Client }): Effect.Effect<Service, SyncError> =>
+  Effect.flatMap(
+    Effect.all({
+      maxFrameBytes: positiveInt("SyncClient.Options.maxFrameBytes", maxFrameBytes, defaults.maxFrameBytes),
+      bootstrapLimit: boundedInt(
+        "SyncClient.Options.bootstrapLimit",
+        bootstrapLimit,
+        defaults.bootstrapLimit,
+        maxReadLimit
+      )
+    }),
+    (policy) => service(client, policy)
+  )
+
+const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): Effect.Effect<Service> =>
   Effect.sync(() => {
     const delivered = Ref.makeUnsafe<ReadonlyMap<JournalEvent.RunId, RunCursor>>(new Map())
     const applied = Ref.makeUnsafe<ReadonlyMap<JournalEvent.RunId, RunCursor>>(new Map())
@@ -443,7 +502,6 @@ export const make = ({
 
     const snapshot = (input: SnapshotRequest): Effect.Effect<Snapshot, SyncError> =>
       Effect.gen(function*() {
-        yield* positiveInt("SyncClient.make.maxFrameBytes", maxFrameBytes, defaultMaxFrameBytes)
         const request = yield* SnapshotBoundary.request(input)
         const supplied = yield* client["Sync.Snapshot"]({ ...request }).pipe(
           Effect.catchCause((cause) => Effect.failCause(rpcCause(cause)))
@@ -461,21 +519,15 @@ export const make = ({
             "invalid_request"
           )
         }
-        // Every policy this subscription runs under is checked once, here.
-        // The declared types say `number`, and `NaN` disabled each comparison
-        // it appears in rather than tightening it.
+        // The client's own policy was checked once, by the constructor. What
+        // is left is the count this REQUEST carries: the declared type says
+        // `number`, and `NaN` disabled each comparison it appears in rather
+        // than tightening it.
         const credit = yield* boundedInt(
           "SyncClient.SubscribeOptions.credit",
           options.credit,
           defaultCredit,
           maxSubscribeCredit
-        )
-        yield* positiveInt("SyncClient.make.maxFrameBytes", maxFrameBytes, defaultMaxFrameBytes)
-        yield* boundedInt(
-          "SyncClient.make.bootstrapLimit",
-          bootstrapLimit,
-          defaultBootstrapLimit,
-          maxReadLimit
         )
         const cursor = cursorMap(options.cursors)
         // A previous delivery-only subscriber cannot skip work for an applying subscriber.
@@ -801,3 +853,14 @@ export const layer: Layer.Layer<Sync, never, RpcClient.Protocol> = Layer.effect(
   Sync,
   Effect.flatMap(RpcClient.make(SyncRpcs), (client) => make({ client }))
 )
+
+/**
+ * Provides a Sync client under an explicit policy. Fails with
+ * `invalid_request` when an option is not a positive safe integer, so a bad
+ * policy fails the composition rather than every operation under it.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerWith = (options: Options): Layer.Layer<Sync, SyncError, RpcClient.Protocol> =>
+  Layer.effect(Sync, Effect.flatMap(RpcClient.make(SyncRpcs), (client) => makeWith({ ...options, client })))

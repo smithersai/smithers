@@ -11,6 +11,8 @@ import * as PubSub from "effect/PubSub"
 import * as Ref from "effect/Ref"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
+import { positiveInt } from "./internal/options.ts"
+import type { SyncError } from "./SyncError.ts"
 
 /**
  * Workspace run enumeration operations.
@@ -120,17 +122,20 @@ export interface MemoryOptions {
  * announcement feed slides: registering never waits on a stalled subscriber,
  * and never grows the process on its behalf.
  *
+ * Fails with `invalid_request` when `changesCapacity` is not a positive safe
+ * integer, rather than handing it to `PubSub.sliding` as a capacity.
+ *
  * @category constructors
  * @since 0.1.0
  */
 export const makeMemory = (options: MemoryOptions = {}): Effect.Effect<{
   readonly catalog: Service
   readonly register: (runId: JournalEvent.RunId) => Effect.Effect<void>
-}> =>
+}, SyncError> =>
   Effect.gen(function*() {
     const known = new Set<JournalEvent.RunId>()
     const changes = yield* PubSub.sliding<JournalEvent.RunId>(
-      options.changesCapacity ?? defaultChangesCapacity
+      yield* positiveInt("RunCatalog.MemoryOptions.changesCapacity", options.changesCapacity, defaultChangesCapacity)
     )
     return {
       catalog: make({
@@ -211,15 +216,24 @@ export interface PollingOptions<E, R> {
  *
  * The poll fiber belongs to the caller's scope. Closing the scope stops it.
  *
+ * Both numeric options are validated here, before the first read: an
+ * `intervalMs` of `NaN` or zero reached `Effect.delay` as the whole of the
+ * poll cadence, which is a loop with no interval rather than a refusal.
+ *
  * @category constructors
  * @since 0.1.0
  */
 export const makePolling = <E, R>(
   options: PollingOptions<E, R>
-): Effect.Effect<Service, E, R | Scope.Scope> =>
+): Effect.Effect<Service, E | SyncError, R | Scope.Scope> =>
   Effect.gen(function*() {
+    const intervalMs = yield* positiveInt(
+      "RunCatalog.PollingOptions.intervalMs",
+      options.intervalMs,
+      defaultPollIntervalMs
+    )
     const changes = yield* PubSub.sliding<JournalEvent.RunId>(
-      options.changesCapacity ?? defaultChangesCapacity
+      yield* positiveInt("RunCatalog.PollingOptions.changesCapacity", options.changesCapacity, defaultChangesCapacity)
     )
     const snapshot = yield* Ref.make<ReadonlyArray<JournalEvent.RunId>>([])
 
@@ -256,7 +270,7 @@ export const makePolling = <E, R>(
       })
     )
     yield* poll.pipe(
-      Effect.delay(options.intervalMs ?? defaultPollIntervalMs),
+      Effect.delay(intervalMs),
       Effect.forever,
       Effect.forkScoped
     )
@@ -276,7 +290,21 @@ export const makePolling = <E, R>(
  */
 export const layerPolling = <E, R>(
   options: PollingOptions<E, R>
-): Layer.Layer<RunCatalog, E, R> => Layer.effect(RunCatalog, makePolling(options))
+): Layer.Layer<RunCatalog, E | SyncError, R> => Layer.effect(RunCatalog, makePolling(options))
+
+/**
+ * Provides the mutable in-memory run catalog, matching how every other
+ * implementation here is provided. Fails with `invalid_request` when
+ * `changesCapacity` is not a positive safe integer.
+ *
+ * The layer provides the catalog alone. A composition that also registers runs
+ * builds {@link makeMemory} itself and keeps its `register`.
+ *
+ * @category layers
+ * @since 1.0.0-rc.0
+ */
+export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<RunCatalog, SyncError> =>
+  Layer.effect(RunCatalog, Effect.map(makeMemory(options), ({ catalog }) => catalog))
 
 /**
  * Provides an empty run catalog.

@@ -65,15 +65,9 @@ export class WorkspaceCapability extends Schema.Class<WorkspaceCapability>(
  * @category models
  * @since 0.1.0
  */
-export const AuthorizeRequest = Schema.Struct({ access: Access })
-
-/**
- * The access one authorization request needs.
- *
- * @category models
- * @since 0.1.0
- */
-export type AuthorizeRequest = typeof AuthorizeRequest.Type
+export interface AuthorizeRequest {
+  readonly access: Access
+}
 
 /**
  * What a freshly minted workspace capability grants.

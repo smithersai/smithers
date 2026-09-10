@@ -34,7 +34,9 @@ follower provides a WebSocket; a Node follower provides
 [Test a follower](./test-a-follower.md).
 
 To tune the catch-up page size or the frame ceiling the client enforces on
-responses, build the service directly with `SyncClient.make` instead:
+responses, build the service directly with `SyncClient.makeWith`, which
+validates both options and fails with `invalid_request` when one is not a
+positive safe integer:
 
 ```ts
 import { SyncRpcs } from "@smthrs/sync/SyncRpcs"
@@ -43,7 +45,7 @@ import * as RpcClient from "effect/unstable/rpc/RpcClient"
 
 const makeClient = Effect.flatMap(
   RpcClient.make(SyncRpcs),
-  (client) => SyncClient.make({ client, bootstrapLimit: 512 })
+  (client) => SyncClient.makeWith({ client, bootstrapLimit: 512 })
 )
 ```
 
