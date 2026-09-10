@@ -370,7 +370,9 @@ const snapshotValue = (
       // the walk that projects plain records runs over the remaining keys.
       let names: ReadonlyArray<string>
       try {
-        names = Object.getOwnPropertyNames(value).filter((key) => !(standardErrorKeys as ReadonlyArray<string>).includes(key))
+        names = Object.getOwnPropertyNames(value).filter((key) =>
+          !(standardErrorKeys as ReadonlyArray<string>).includes(key)
+        )
       } catch {
         return record
       }

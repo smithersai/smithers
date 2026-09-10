@@ -470,6 +470,77 @@ describe("JournalLogger", () => {
     })
   })
 
+  it("marks the snapshot truncated when an error carries more own properties than the member budget", async () => {
+    const id = runId("wide-error-run")
+    const wide = Object.assign(
+      new Error("wide"),
+      Object.fromEntries(Array.from({ length: maximumSnapshotMembers + 8 }, (_, index) => [`field${index}`, index]))
+    )
+    const payload = await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logError("failed", Cause.die(wide))
+        const [entry] = yield* entriesEventually(journal, id, 1)
+        return Schema.decodeUnknownSync(TelemetryLog)(entry!.payload)
+      }).pipe(
+        Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id }), TestJournal.layer()))
+      )
+    )
+
+    const [died] = payload.cause.reasons as ReadonlyArray<{ defect?: unknown }>
+    const defect = died!.defect as Record<string, unknown>
+    expect(defect[truncatedMarker]).toEqual(truncatedMarker)
+    expect(Object.keys(defect).length).toBeLessThanOrEqual(maximumSnapshotMembers + 1)
+  })
+
+  it("marks an own error property the snapshot must not read rather than running its getter", async () => {
+    const id = runId("accessor-error-run")
+    const withAccessor = Object.defineProperty(new Error("accessor"), "detail", {
+      enumerable: true,
+      get: () => {
+        throw new Error("must not run")
+      }
+    })
+    const payload = await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logError("failed", Cause.die(withAccessor))
+        const [entry] = yield* entriesEventually(journal, id, 1)
+        return Schema.decodeUnknownSync(TelemetryLog)(entry!.payload)
+      }).pipe(
+        Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id }), TestJournal.layer()))
+      )
+    )
+
+    const [died] = payload.cause.reasons as ReadonlyArray<{ defect?: unknown }>
+    expect(died!.defect).toMatchObject({ name: "Error", message: "accessor", detail: unrenderableMarker })
+  })
+
+  it("keeps the standard error fields when an error refuses to enumerate its own keys", async () => {
+    const id = runId("unenumerable-error-run")
+    // An `ownKeys` trap is the one way the own-property walk can throw, and a
+    // logger that rethrows there loses the record it was asked to forward.
+    const refuses = new Proxy(new Error("ownKeys refuses"), {
+      ownKeys: () => {
+        throw new Error("ownKeys trap refuses")
+      }
+    })
+    const payload = await run(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        yield* Effect.logError("failed", Cause.die(refuses))
+        const [entry] = yield* entriesEventually(journal, id, 1)
+        return Schema.decodeUnknownSync(TelemetryLog)(entry!.payload)
+      }).pipe(
+        Effect.provide(Layer.provideMerge(layerJournalForwarding({ runId: id }), TestJournal.layer()))
+      )
+    )
+
+    const [died] = payload.cause.reasons as ReadonlyArray<{ defect?: unknown }>
+    expect(Object.keys(died!.defect as Record<string, unknown>).sort()).toEqual(["cause", "message", "name", "stack"])
+    expect(died!.defect).toMatchObject({ name: "Error", message: "ownKeys refuses" })
+  })
+
   it("drops a record when the bounded queue is actually saturated", async () => {
     const id = runId("overflow-run")
     const entered = Deferred.makeUnsafe<void>()
