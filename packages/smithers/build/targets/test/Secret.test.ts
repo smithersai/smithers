@@ -675,7 +675,9 @@ describe("SecretProxy server", () => {
   it("enforces the elapsed deadline even while the upstream sends data", async () => {
     let send: NodeHttp.ServerResponse | undefined
     let started!: () => void
-    const ready = new Promise<void>((resolve) => { started = resolve })
+    const ready = new Promise<void>((resolve) => {
+      started = resolve
+    })
     const upstream = NodeHttp.createServer((_request, response) => {
       send = response
       response.writeHead(200)
@@ -755,6 +757,147 @@ describe("SecretProxy server", () => {
         socket.once("error", reject)
       })
       expect(response.startsWith("HTTP/1.1 400 Bad Request")).toBe(true)
+    } finally {
+      await proxy.close()
+    }
+  })
+
+  it("tunnels CONNECT when the vault is empty and pipes bytes both ways", async () => {
+    const echo = NodeNet.createServer((socket) => socket.pipe(socket))
+    await new Promise<void>((resolve) => echo.listen(0, "127.0.0.1", resolve))
+    const echoAddress = echo.address()
+    if (echoAddress === null || typeof echoAddress === "string") throw new Error("no echo port")
+    const proxy = await SecretProxy.startProxy(SecretProxy.makeVault())
+    try {
+      const port = Number(new URL(proxy.endpoint).port)
+      const transcript = await new Promise<string>((resolve, reject) => {
+        const socket = NodeNet.connect({ host: "127.0.0.1", port }, () => {
+          socket.write(`CONNECT 127.0.0.1:${echoAddress.port} HTTP/1.1\r\nHost: 127.0.0.1:${echoAddress.port}\r\n\r\n`)
+        })
+        socket.setEncoding("utf8")
+        let buffer = ""
+        let established = false
+        const watchdog = NodeTimers.setTimeout(() => {
+          socket.destroy()
+          reject(new Error(`tunnel did not echo within 5 seconds: ${JSON.stringify(buffer)}`))
+        }, 5_000)
+        socket.on("data", (data: string) => {
+          buffer += data
+          if (!established && buffer.includes("\r\n\r\n")) {
+            established = true
+            socket.write("ping-through-tunnel")
+            return
+          }
+          if (buffer.includes("ping-through-tunnel")) {
+            NodeTimers.clearTimeout(watchdog)
+            socket.end()
+            resolve(buffer)
+          }
+        })
+        socket.once("error", (error) => {
+          NodeTimers.clearTimeout(watchdog)
+          reject(error)
+        })
+      })
+      expect(transcript.startsWith("HTTP/1.1 200 Connection Established")).toBe(true)
+      expect(transcript.includes("ping-through-tunnel")).toBe(true)
+    } finally {
+      await proxy.close()
+      await new Promise<void>((resolve) => echo.close(() => resolve()))
+    }
+  })
+
+  it("answers 502 within the deadline when a CONNECT destination never completes the handshake", async () => {
+    const proxy = await SecretProxy.startProxy(SecretProxy.makeVault())
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      const port = Number(new URL(proxy.endpoint).port)
+      // 192.0.2.0/24 is TEST-NET-1: reserved and unrouted, so the SYN is
+      // never answered. Only the proxy's own connect deadline can settle
+      // this child.
+      let response = ""
+      const socket = NodeNet.connect({ host: "127.0.0.1", port }, () => {
+        socket.write("CONNECT 192.0.2.1:443 HTTP/1.1\r\nHost: 192.0.2.1:443\r\n\r\n")
+      })
+      socket.setEncoding("utf8")
+      socket.on("data", (data: string) => {
+        response += data
+      })
+      socket.once("error", () => {})
+      // Date and setImmediate are not faked, so these polls stay bounded in
+      // real time while the proxy deadline runs on the fake clock.
+      const until = async (limitMs: number, condition: () => boolean): Promise<boolean> => {
+        const start = Date.now()
+        while (!condition() && Date.now() - start < limitMs) {
+          await new Promise<void>((resolve) => setImmediate(resolve))
+        }
+        return condition()
+      }
+      // Wait for the proxy to register its connect deadline, then advance
+      // the fake clock past it. A host that refuses the SYN outright takes
+      // the error path to the same 502, so an early response also ends the
+      // wait.
+      await until(2_000, () => vi.getTimerCount() > 0 || response.length > 0)
+      await vi.advanceTimersByTimeAsync(SecretProxy.upstreamTimeoutMs)
+      const settled = await until(2_000, () => response.length > 0)
+      socket.destroy()
+      expect(settled).toBe(true)
+      expect(response).toMatch(/^HTTP\/1\.1 502 Bad Gateway/)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+      // Without a connect deadline the black-holed upstream keeps
+      // proxy.close() from ever settling; bound the wait so the regression
+      // fails here instead of hanging the file.
+      await Promise.race([
+        proxy.close(),
+        new Promise<void>((resolve) => NodeTimers.setTimeout(resolve, 3_000))
+      ])
+    }
+  })
+
+  it("refuses an upstream response larger than the buffered ceiling", async () => {
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    const result = await throughProxy(vault, () => ({
+      method: "GET",
+      headers: {},
+      responseBody: "a".repeat(SecretProxy.maximumResponseBodyBytes + 1)
+    }))
+    expect(result.status).toBe(502)
+    expect(result.responseBody).toBe("upstream response is too large")
+  })
+
+  it("refuses an encoded upstream response so redaction cannot miss it", async () => {
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    const result = await throughProxy(vault, () => ({
+      method: "GET",
+      headers: {},
+      responseHeaders: { "content-encoding": "gzip" },
+      responseBody: "not really gzip"
+    }))
+    expect(result.status).toBe(502)
+    expect(result.responseBody).toBe("upstream returned an encoded response")
+  })
+
+  it("answers 404 for an unknown secret destination route", async () => {
+    const proxy = await SecretProxy.startProxy(SecretProxy.makeVault())
+    try {
+      const result = await boundedProxyRequest(proxy.endpoint, "/.well-known/smithers-secret-url/deadbeef")
+      expect(result.status).toBe(404)
+      expect(result.body).toBe("unknown secret destination")
+    } finally {
+      await proxy.close()
+    }
+  })
+
+  it("answers 502 when a secret destination is not an http(s) URL", async () => {
+    const vault = SecretProxy.makeVault({ read: () => "ftp://example.invalid/x" })
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const capability = new URL(proxy.urlFor(Secret.Secret("PROXY_NON_HTTP_DESTINATION")))
+      const result = await boundedProxyRequest(proxy.endpoint, capability.pathname)
+      expect(result.status).toBe(502)
+      expect(result.body).toBe("the declared secret PROXY_NON_HTTP_DESTINATION is not an http(s) URL")
     } finally {
       await proxy.close()
     }

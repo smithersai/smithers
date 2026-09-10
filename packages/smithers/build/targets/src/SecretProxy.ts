@@ -705,6 +705,7 @@ export const startProxy = (vault: Vault): Promise<Proxy> =>
       try {
         upstream = NodeNet.connect(authority, () => {
           connected = true
+          clearTimeout(deadline)
           socket.write("HTTP/1.1 200 Connection Established\r\n\r\n")
           if (head.byteLength > 0) upstream.write(head)
           socket.pipe(upstream)
@@ -715,10 +716,16 @@ export const startProxy = (vault: Vault): Promise<Proxy> =>
         return
       }
       const drop = () => {
+        clearTimeout(deadline)
         if (!connected && !socket.destroyed) socket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n")
         else socket.destroy()
         upstream.destroy()
       }
+      // A destination that black-holes the SYN never connects and never
+      // errors. Without a deadline the child's CONNECT would wait for the
+      // operating system's whole TCP connect timeout, so the same elapsed
+      // bound as a proxy-owned request applies here.
+      const deadline = setTimeout(drop, upstreamTimeoutMs)
       upstream.once("error", drop)
       socket.once("error", drop)
       socket.once("close", () => upstream.destroy())
