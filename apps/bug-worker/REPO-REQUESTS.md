@@ -99,15 +99,43 @@ and recorded but never fails the nomination; the repository is still stored as
 A maintainer can claim a nominated repository. Claiming only records who
 claimed it; it does not grant access or start any work yet.
 
-`POST /api/repo-claims` accepts `{ "repo": "owner/repo", "login": "github-login", "email": "optional@example.com" }`.
-It returns `200` with `{ repo, login, claimedAt }` for the first claim, `409`
-if the repository is already claimed, `404` if the repository has never been
-nominated, and `400` for an invalid repository, login, or email. Claims share
-the per-IP throttle used by nominations.
+### Recording a claim (operator-only)
 
-`GET /api/repo-claims?repo=owner/repo` returns `{ repo, login, claimedAt }` or
-`404`. Claims live under `repo-claim:<owner/repo>`. The claimant's email is
-stored with the claim and never appears in responses.
+`POST /api/repo-claims` is temporary and operator-only. A typed login from an
+anonymous caller proves nothing, so the Worker refuses every request without a
+valid `x-bug-admin` header before it reads the body or looks up the repository.
+Maintainers cannot call it themselves. It stays in place until the OAuth-backed
+`repo.claim` flow ships on the product Worker, which will verify maintainership
+through GitHub sign-in and replace this endpoint.
+
+Operators send the deployed `BUG_ADMIN_TOKEN` in `x-bug-admin` with the JSON
+body `{ "repo": "owner/repo", "login": "github-login", "email": "optional@example.com" }`:
+
+```sh
+curl -X POST https://bug.smithers.sh/api/repo-claims \
+  -H "content-type: application/json" \
+  -H "x-bug-admin: $BUG_ADMIN_TOKEN" \
+  -d '{"repo":"owner/repo","login":"github-login","email":"optional@example.com"}'
+```
+
+Responses, in the order the handler checks them:
+
+- `401` when `x-bug-admin` is missing or wrong, or when `BUG_ADMIN_TOKEN` is
+  unset on the deployment. Nothing is read or written.
+- `429` when the per-IP throttle shared with nominations is exhausted.
+- `413` when the body exceeds 4096 bytes.
+- `400` for a body that is not a JSON object, or an invalid repository, login,
+  or email.
+- `404` if the repository has never been nominated.
+- `409` if the repository is already claimed.
+- `200` with `{ repo, login, claimedAt }` for the first claim.
+
+### Reading a claim (public)
+
+`GET /api/repo-claims?repo=owner/repo` needs no authentication. It returns
+`{ repo, login, claimedAt }` or `404`, and `400` without a valid `repo` query.
+Claims live under `repo-claim:<owner/repo>`. The claimant's email is stored
+with the claim and never appears in responses.
 
 ## Notifications
 
