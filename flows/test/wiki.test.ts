@@ -100,6 +100,19 @@ test("semantic gate requires complete exact citations and refuses false freshnes
   await assert.rejects(run(f.ops.write([page], "verified")), /Source changed during review/)
 })
 
+test("invalid citation diagnostics stay bounded without accepting omitted failures", async t => {
+  const f = await fixture(t), evidence = await run(f.ops.collect(f.spec))
+  const review = { sections: supported(evidence).sections.map(section => ({ ...section,
+    citations: Array.from({ length: 30 }, (_, index) => ({ path: "src/answer.ts", line: index + 100, quote: "x".repeat(1000) })) })) }
+  await assert.rejects(run(f.ops.assess({ evidence, review, reviewer: "scripted-test" })), (error: Error) => {
+    const report = JSON.parse(error.message.slice(error.message.indexOf("; ") + 2))
+    assert.equal(report.invalidCitationCount, 30)
+    assert.equal(report.citations.length, 24)
+    assert.ok(report.citations.every((citation: { quote: string }) => citation.quote.length === 320))
+    return true
+  })
+})
+
 test("citation boundary padding does not alter raw receipts or loosen source matching", async (t) => {
   const f = await fixture(t)
   await writeFile(join(f.root, "src/answer.ts"), "// hidden evidence\n   * The answer is 42.\n// unrelated visible evidence\n")
@@ -246,7 +259,7 @@ test("independent page reviews finish before exact citation assessment can fail"
   assert.deepEqual(completed.toSorted(), ["first", "first", "second"], "one repair is bounded and does not rerun the independent page")
 })
 
-test("one citation repair receives the same evidence and prior review, then replays without another model call", async t => {
+test("one citation repair receives every bad citation and the same evidence, then replays without another model call", async t => {
   const { Action, Interpreter } = await import("@smthrs/flow")
   const { FlowEngine } = await import("@smthrs/engine")
   const { Layer } = await import("effect")
@@ -261,11 +274,13 @@ test("one citation repair receives the same evidence and prior review, then repl
       if (correction === undefined) {
         initial = evidence
         return { sections: supported(evidence).sections.map(section => ({ ...section,
-          citations: [{ path: "src/answer.ts", line: 999, quote: "export const answer = 42" }] })) }
+          citations: [{ path: "src/answer.ts", line: 999, quote: "export const answer = 42" },
+            { path: "src/answer.ts", line: 1000, quote: "answer = 42" }] })) }
       }
       assert.deepEqual(evidence, initial, "repair cannot recapture moving source")
       assert.match(correction, /exact source evidence.*first\/section-1/)
       assert.match(correction, /"line":999/)
+      assert.match(correction, /"line":1000/, "one repair needs every invalid citation, not only the first")
       assert.equal(priorReview?.sections[0]?.citations[0]?.line, 999)
       return supported(evidence)
     }))

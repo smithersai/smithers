@@ -76,6 +76,8 @@ export const operations = (options: { readonly root: string; readonly output: st
     if (JSON.stringify(page.review.sections.map((section) => section.id)) !== JSON.stringify(expected)) {
       return yield* Effect.fail(fail("review-failed", `Review must assess every section exactly once: ${page.evidence.spec.id}`))
     }
+    const invalidCitations: Array<{ section: string; path: string; line: number; quote: string }> = []
+    let invalidCitationCount = 0
     for (const section of page.review.sections) {
       if (!section.explanation.trim()) return yield* Effect.fail(fail("review-failed", "Review explanations cannot be empty"))
       if (section.verdict === "supported" && section.citations.length === 0) return yield* Effect.fail(fail("review-failed", "Supported sections require source citations"))
@@ -87,10 +89,14 @@ export const operations = (options: { readonly root: string; readonly output: st
         // fragment; interior bytes, the source line and excerpt must stay exact.
         const fragment = citation.quote.replace(/^[ \t]+|[ \t]+$/g, "")
         if (!source || !Number.isSafeInteger(citation.line) || citation.line < 1 || citation.line > lines.length || !fragment || /[\r\n]/.test(fragment) || !lines[citation.line - 1]!.includes(fragment) || !visibleLine(page.evidence, citation.path, citation.line)) {
-          return yield* Effect.fail(fail("review-failed", `Review citation is not exact source evidence: ${page.evidence.spec.id}/${section.id}; ${JSON.stringify({ path: citation.path, line: citation.line, quote: citation.quote.slice(0, 320) })}`))
+          invalidCitationCount++
+          if (invalidCitations.length < 24) invalidCitations.push({ section: section.id.slice(0, 80), path: citation.path.slice(0, 320), line: citation.line, quote: citation.quote.slice(0, 320) })
         }
       }
     }
+    // One bounded repair needs all detected problems, not just the first one.
+    // The original review remains unchanged; no inferred replacement is supplied.
+    if (invalidCitationCount) return yield* Effect.fail(fail("review-failed", `Review citation is not exact source evidence: ${page.evidence.spec.id}/${invalidCitations[0]!.section}; ${JSON.stringify({ invalidCitationCount, citations: invalidCitations })}`))
     return page
   })
   const write = (pages: readonly ReviewedPage[], mode: "preview" | "verified", provenance: Readonly<Record<string, Provenance>> = {}) => Effect.gen(function*() {
