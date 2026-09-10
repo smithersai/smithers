@@ -25,9 +25,11 @@ not exist until the verifying round has settled.
 
 ## The parts
 
-- `reviewActions.ts` — the non-model steps: `PrepareReview` (one step, because
-  all four git reads must see the same working tree at the same instant),
-  `MergeFileBatch`, `FinalizeReview`, `ApplyVerdicts`, `RenderWalkthrough`.
+- `reviewActions.ts` — the non-model steps: `PrepareReview` (one git read,
+  because the preview, the walkthrough's changes and the review prompts must
+  describe the same working tree; `loadReviewSnapshot` reads it and the three
+  builders are pure over what it returns), `MergeFileBatch`, `FinalizeReview`,
+  `ApplyVerdicts`, `RenderWalkthrough`.
 - `reviewAgentActions.ts` — the model steps: `ReviewFile`, `VerifyFindings`,
   `NarrateChanges`, `QuizChanges`. Each declares its `output` schema, which the
   agent boundary renders into the run's system teaching and enforces on the way

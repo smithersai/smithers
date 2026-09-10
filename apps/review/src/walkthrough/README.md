@@ -5,7 +5,9 @@ self-contained walkthrough HTML (renders from `file://`, no network).
 
 Pipeline:
 
-1. `collectChanges.ts` — full diffs, including review-excluded files.
+1. `collectChanges.ts` — full diffs, including review-excluded files. It reads
+   one snapshot and hands it to `changesFromDiffs.ts`, which is pure, so a
+   caller that already holds a snapshot never reads the tree a second time.
 2. `normalizeStory.ts` — repairs narrator output so every changed file lands
    in exactly one diff block; falls back to `fallbackStory.ts`'s
    deterministic, churn-ordered story.

@@ -1004,19 +1004,65 @@ function whyExcluded(diff: DiffRecord, filter: FileFilter | null) {
 }
 
 /**
+ * Everything one review reads from git, read at a single instant.
+ *
+ * `previewFromSnapshot`, `nativeReviewPromptFromSnapshot` and
+ * `changesFromDiffs` are pure over this value, so a working tree edited while
+ * a run prepares cannot leave the preview, the walkthrough and the reviewer
+ * prompts describing different revisions.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type ReviewSnapshot = {
+  input: OpenCodeReviewInput;
+  target: ReviewTarget;
+  filter: FileFilter | null;
+  diffs: Array<DiffRecord>;
+};
+
+// A branch name read twice can name two commits. Pinning the endpoints once
+// keeps merge-base, the diff itself and any later read on the same revisions.
+async function pinRevisions(repoDir: string, input: OpenCodeReviewInput): Promise<OpenCodeReviewInput> {
+  // `--verify` keeps rev-parse strict: without it, an option it does not
+  // recognize is echoed into the output instead of rejected.
+  const pin = async (rev: string) =>
+    (await git(repoDir, ["rev-parse", "--verify", "--end-of-options", `${rev}^{commit}`], 30_000)).trim();
+  const mode = reviewMode(input);
+  if (mode === "commit") return { ...input, commit: await pin(input.commit.trim()) };
+  if (mode === "range") return { ...input, from: await pin(input.from.trim()), to: await pin(input.to.trim()) };
+  return input;
+}
+
+/**
+ * Resolves the target, pins its revisions, and reads every diff once.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export async function loadReviewSnapshot(input: OpenCodeReviewInput): Promise<ReviewSnapshot> {
+  const normalized = normalizeOpenCodeReviewInput(input);
+  const target = await resolveReviewTarget(normalized);
+  const pinned = await pinRevisions(target.repoDir, normalized);
+  return {
+    input: pinned,
+    target,
+    filter: buildFileFilter(target.repoDir, pinned.rule.trim()),
+    diffs: await loadDiffs(target.repoDir, pinned),
+  };
+}
+
+/**
  * Reports what a review would read without asking any seat: every changed
  * file, its size, and whether the filters keep it.
  *
  * @since 1.0.0
  * @category constructors
  */
-export async function previewOpenCodeReview(input: OpenCodeReviewInput): Promise<PreviewOutput> {
-  input = normalizeOpenCodeReviewInput(input);
-  const target = await resolveReviewTarget(input);
-  const filter = buildFileFilter(target.repoDir, input.rule.trim());
-  const diffs = await loadDiffs(target.repoDir, input);
+export function previewFromSnapshot(snapshot: ReviewSnapshot): PreviewOutput {
+  const diffs = snapshot.diffs;
   const entries = diffs.map((diff) => {
-    let excludeReason = whyExcluded(diff, filter);
+    let excludeReason = whyExcluded(diff, snapshot.filter);
     // Deleting code can break callers, so deletions with real removed content stay
     // reviewable; only content-free deletions (empty files) are skipped.
     if (excludeReason === "" && diff.isDeleted && diff.deletions === 0) excludeReason = "deleted";
@@ -1037,6 +1083,16 @@ export async function previewOpenCodeReview(input: OpenCodeReviewInput): Promise
     reviewableCount: entries.filter((entry) => entry.willReview).length,
     excludedCount: entries.filter((entry) => !entry.willReview).length,
   };
+}
+
+/**
+ * Reads one snapshot of the change set and previews it.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export async function previewOpenCodeReview(input: OpenCodeReviewInput): Promise<PreviewOutput> {
+  return previewFromSnapshot(await loadReviewSnapshot(input));
 }
 
 const defaultReviewChecklist = [
@@ -1214,18 +1270,17 @@ function renderFileReviewPrompt(
  * Builds the whole fan-out plan: which files to review, and the exact prompt
  * each one's seat is given.
  *
- * The diffs are embedded here rather than read later, so the reviewing round
- * never depends on a working tree that may have moved under the run.
+ * The diffs come from the snapshot rather than a fresh read, so the reviewing
+ * round never depends on a working tree that may have moved under the run.
  *
  * @since 1.0.0
  * @category constructors
  */
-export async function buildNativeReviewPrompt(
-  input: OpenCodeReviewInput,
+export function nativeReviewPromptFromSnapshot(
+  snapshot: ReviewSnapshot,
   preview: PreviewOutput,
-): Promise<NativeReviewPrompt> {
-  input = normalizeOpenCodeReviewInput(input);
-  const target = await resolveReviewTarget(input);
+): NativeReviewPrompt {
+  const { input, target } = snapshot;
   if (!input.runReview) {
     return decodePrompt({
       shouldReview: false,
@@ -1251,9 +1306,8 @@ export async function buildNativeReviewPrompt(
     });
   }
 
-  const filter = buildFileFilter(target.repoDir, input.rule.trim());
-  const allDiffs = await loadDiffs(target.repoDir, input);
-  const diffs = reviewableDiffs(allDiffs, filter);
+  const allDiffs = snapshot.diffs;
+  const diffs = reviewableDiffs(allDiffs, snapshot.filter);
   if (diffs.length === 0) {
     return decodePrompt({
       shouldReview: false,
@@ -1290,6 +1344,19 @@ export async function buildNativeReviewPrompt(
     files,
     message: `Prepared native review for ${diffs.length} file(s).`,
   });
+}
+
+/**
+ * Reads one snapshot of the change set and builds the fan-out plan from it.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export async function buildNativeReviewPrompt(
+  input: OpenCodeReviewInput,
+  preview: PreviewOutput,
+): Promise<NativeReviewPrompt> {
+  return nativeReviewPromptFromSnapshot(await loadReviewSnapshot(input), preview);
 }
 
 function skippedReviewOutput(prepared: NativeReviewPrompt): ReviewRunOutput {

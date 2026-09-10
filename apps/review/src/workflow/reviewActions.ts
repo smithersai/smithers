@@ -16,20 +16,20 @@ import { assessChangeImpact } from "../quiz/assessChangeImpact.ts";
 import { normalizeQuiz } from "../quiz/normalizeQuiz.ts";
 import { Quiz } from "../quiz/quizSchema.ts";
 import { pluralize } from "../text/pluralize.ts";
+import { changesFromDiffs } from "../walkthrough/changesFromDiffs.ts";
 import { Changes } from "../walkthrough/changesSchema.ts";
-import { collectChanges } from "../walkthrough/collectChanges.ts";
 import { normalizeStory } from "../walkthrough/normalizeStory.ts";
 import { renderWalkthroughHtml } from "../walkthrough/renderWalkthroughHtml.ts";
 import { writeWalkthroughArtifact } from "../walkthrough/writeWalkthroughArtifact.ts";
 import { Story } from "../walkthrough/storySchema.ts";
 import { applyFindingVerdicts } from "./applyFindingVerdicts.ts";
 import {
-  buildNativeReviewPrompt,
   finalizeNativeReview,
-  previewOpenCodeReview,
+  loadReviewSnapshot,
+  nativeReviewPromptFromSnapshot,
+  previewFromSnapshot,
   ReviewRunOutput,
   ReviewTarget,
-  resolveReviewTarget,
 } from "./openCodeReview.ts";
 import { ReviewInput } from "./reviewInputSchema.ts";
 import {
@@ -53,12 +53,12 @@ import { VerifyVerdicts } from "./verifyVerdictsSchema.ts";
 export const MAX_VERIFIABLE_FINDINGS = 40;
 
 /**
- * Resolves the target, previews the change set, collects every diff, and builds
- * the per-file review prompts.
+ * Reads the change set once, then derives the preview, the walkthrough's
+ * changes and the per-file review prompts from that one snapshot.
  *
- * One step rather than four because all four read the same working tree at the
- * same instant. Splitting them would let the tree move between them and leave
- * a review whose prompts and walkthrough disagree about what changed.
+ * Awaiting three readers inside one step would not make them atomic: a working
+ * tree edited, or a branch moved, between them leaves a review whose prompts
+ * and walkthrough disagree about what changed. Only a single read does.
  *
  * @since 1.0.0
  * @category actions
@@ -78,11 +78,11 @@ export const prepareReviewLayer = PrepareReview.toLayer(({ input }) =>
   Effect.promise(async () => {
     // Without review seats the per-file steps never run, so the finalizer must
     // see `runReview: false` and report "skipped" rather than "failed".
-    const target = await resolveReviewTarget(input);
-    const preview = await previewOpenCodeReview(input);
-    const changes = await collectChanges(input, preview);
-    const prompt = await buildNativeReviewPrompt(input, preview);
-    return { target, preview, changes, prompt };
+    const snapshot = await loadReviewSnapshot(input);
+    const preview = previewFromSnapshot(snapshot);
+    const changes = changesFromDiffs(snapshot.diffs, preview);
+    const prompt = nativeReviewPromptFromSnapshot(snapshot, preview);
+    return { target: snapshot.target, preview, changes, prompt };
   })
 );
 

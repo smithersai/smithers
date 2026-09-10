@@ -1,10 +1,11 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Flow, Interpreter } from "@smthrs/flow";
 import { Effect, Layer, Schema } from "effect";
-import { ApplyVerdicts, RenderWalkthrough } from "../../src/workflow/reviewActions.ts";
+import { ApplyVerdicts, PrepareReview, RenderWalkthrough } from "../../src/workflow/reviewActions.ts";
 import { ReviewRunOutput } from "../../src/workflow/openCodeReview.ts";
 import { layerMemory } from "../../src/workflow/reviewLayer.ts";
 import { scriptedSeats } from "./scriptedSeats.ts";
@@ -17,7 +18,14 @@ const VerifyTest = Flow.make("test/ApplyVerdicts", {
   payload: ApplyVerdicts.payloadSchema, success: ApplyVerdicts.successSchema,
   body: (payload) => ApplyVerdicts.call(payload),
 });
-const testLayer = () => Layer.merge(Interpreter.layer(RenderTest), Interpreter.layer(VerifyTest)).pipe(
+const PrepareTest = Flow.make("test/PrepareReview", {
+  payload: PrepareReview.payloadSchema, success: PrepareReview.successSchema,
+  body: (payload) => PrepareReview.call(payload),
+});
+const testLayer = () => Layer.merge(
+  Layer.merge(Interpreter.layer(RenderTest), Interpreter.layer(VerifyTest)),
+  Interpreter.layer(PrepareTest),
+).pipe(
   Layer.provideMerge(layerMemory(scriptedSeats(() => undefined))),
 );
 const dirs: string[] = [];
@@ -102,4 +110,77 @@ test.each(["failed", "completed_with_errors", "completed_with_warnings"] as cons
   }, { executionId: `verify-${crypto.randomUUID()}` }).pipe(Effect.provide(testLayer())));
   expect(result.status).toBe(status);
   expect(result.warnings[0]?.message).toContain("review-verify: provider refused");
+});
+
+
+function initRepo(): string {
+  const dir = fs.mkdtempSync(join(tmpdir(), "review-prepare-"));
+  dirs.push(dir);
+  const git = (args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+  git(["init"]);
+  git(["config", "user.email", "t@example.com"]);
+  git(["config", "user.name", "T"]);
+  fs.writeFileSync(join(dir, "app.ts"), "export const v = 1;\n");
+  git(["add", "."]);
+  git(["commit", "-m", "init"]);
+  fs.writeFileSync(join(dir, "app.ts"), "export const v = 2;\n");
+  return dir;
+}
+
+/**
+ * A `git` that adds one untracked file to the repository every time the
+ * untracked listing is read. Every extra read of the change set therefore sees
+ * a working tree the previous read did not.
+ */
+function mutatingGit(): { dir: string; counter: string } {
+  const dir = fs.mkdtempSync(join(tmpdir(), "review-git-shim-"));
+  dirs.push(dir);
+  const realGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  const counter = join(dir, "reads");
+  fs.writeFileSync(join(dir, "git"), [
+    "#!/bin/sh",
+    'if [ -n "$REVIEW_MUTATE_REPO" ]; then',
+    '  case " $* " in',
+    '    *" ls-files "*)',
+    '      n=$(cat "$REVIEW_MUTATE_COUNTER" 2>/dev/null || echo 0)',
+    "      n=$((n + 1))",
+    '      printf %s "$n" > "$REVIEW_MUTATE_COUNTER"',
+    `      printf 'export const mutation%s = %s;\\n' "$n" "$n" > "$REVIEW_MUTATE_REPO/mutation-$n.ts"`,
+    "      ;;",
+    "  esac",
+    "fi",
+    `exec ${realGit} "$@"`,
+    "",
+  ].join("\n"), { mode: 0o755 });
+  return { dir, counter };
+}
+
+test("preparation derives preview, changes and prompts from one diff snapshot", async () => {
+  const repo = initRepo();
+  const shim = mutatingGit();
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${shim.dir}:${previousPath}`;
+  process.env.REVIEW_MUTATE_REPO = repo;
+  process.env.REVIEW_MUTATE_COUNTER = shim.counter;
+  let prepared;
+  try {
+    prepared = await Effect.runPromise(PrepareTest.execute(
+      Schema.decodeUnknownSync(PrepareReview.payloadSchema)({ input: { repo } }),
+      { executionId: `prepare-${crypto.randomUUID()}` },
+    ).pipe(Effect.provide(testLayer())));
+  } finally {
+    process.env.PATH = previousPath;
+    delete process.env.REVIEW_MUTATE_REPO;
+    delete process.env.REVIEW_MUTATE_COUNTER;
+  }
+
+  // One read of the change set, so the mutation lands in all three views or none.
+  expect(fs.readFileSync(shim.counter, "utf8")).toBe("1");
+  const previewPaths = prepared.preview.entries.map((entry) => entry.path).sort();
+  expect(previewPaths).toEqual(["app.ts", "mutation-1.ts"]);
+  expect(prepared.changes.files.map((file) => file.path).sort()).toEqual(previewPaths);
+  expect(prepared.prompt.files.map((file) => file.path).sort()).toEqual(
+    prepared.preview.entries.filter((entry) => entry.willReview).map((entry) => entry.path).sort(),
+  );
+  expect(prepared.changes.totalFiles).toBe(prepared.preview.totalFiles);
 });
