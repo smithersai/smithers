@@ -16,10 +16,22 @@
   representation.
 - Redact derivation input from schema diagnostics and document domain,
   canonicalization, and memory requirements.
-- Retain `Key` as the one-way derivation compatibility schema with discoverable
-  `derive`, `StoredKey`, and `KeyV1` properties.
 - Move cache, invocation, environment, and filesystem policy to the engine;
   this package owns only generic key derivation and wire validation.
+
+### Removed
+
+- Removed the `Key` compatibility schema and its attached `derive`,
+  `StoredKey`, and `KeyV1` properties (commit 838d85c430). The package ships
+  no compatibility surface before its first release. Migrate to the named
+  exports:
+
+  | Before          | After        |
+  | --------------- | ------------ |
+  | `Key`           | `DerivedKey` |
+  | `Key.derive`    | `deriveKey`  |
+  | `Key.StoredKey` | `StoredKey`  |
+  | `Key.KeyV1`     | `KeyV1`      |
 
 ## [0.1.0] - 2026-08-05
 
