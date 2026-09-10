@@ -5,6 +5,7 @@ import { createActorBindings } from "../ActorBindings"
 import type { AppStore } from "../AppStore"
 import {
   createLinearSeam,
+  LINEAR_LOST_STREAM_TRIGGER,
   linearSyncPolling,
   OPS_PAGE_LIMIT,
   SETUP_EXPIRED_NOTE,
@@ -118,7 +119,7 @@ const run = (state: string, over: Record<string, unknown> = {}) => ({
 })
 
 /* A route sees the request init, so a double can record the body a write posted. */
-type Route = (init?: RequestInit) => Response
+type Route = (init?: RequestInit) => Response | Promise<Response>
 
 const harness = async (
   routes: Record<string, Route>,
@@ -976,5 +977,130 @@ describe("createLinearSeam", () => {
 
     expect(requests).toEqual(["GET api/integrations/linear"])
     expect(store.collections.linearIntegrations.get("7")?.teamKey).toBe("ENG")
+  })
+})
+
+/*
+ * The two fences the Linear run poll runs behind: the epoch that retires a
+ * superseded loop, and the drop budget that separates a lost connection from
+ * a run read the platform refused.
+ */
+describe("the Linear run poll's fences", () => {
+  /** A route that answers only when the test releases it, so a poll can be parked. */
+  const parked = () => {
+    let release: (response: Response) => void = () => {}
+    const answer = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    return { route: () => answer, release: (response: Response): void => release(response) }
+  }
+
+  const settleTicks = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20))
+
+  test("a poll parked across two newer runs never writes the run the card stopped tracking", async () => {
+    /*
+     * Review finding 4: the epoch used to be DELETED when a loop settled, so
+     * the third run was handed epoch 1 again and the first run's parked poll
+     * passed the fence and wrote its state and counts over the card.
+     */
+    const previous = { ...linearSyncPolling }
+    linearSyncPolling.delayMs = 1
+    linearSyncPolling.maxAttempts = 6
+    try {
+      const first = parked()
+      const third = parked()
+      let runId = 41
+      const { store, seam, requests } = await harness({
+        "api/integrations/linear": json(200, [INTEGRATION]),
+        "POST api/linear/7/sync": () => json(202, { run_id: runId })(),
+        "api/linear/7/sync/41": first.route,
+        "api/linear/7/sync/42": json(200, run("completed", { finished_at: "2026-09-02T09:05:00Z" })),
+        "api/linear/7/sync/43": third.route,
+        [`api/linear/7/ops?limit=${OPS_PAGE_LIMIT}`]: json(200, [])
+      })
+
+      /* Run 41's first poll parks; run 42 settles and retires its epoch; run 43 takes the card. */
+      await seam.syncNow()
+      await waitUntil(() => requests.includes("GET api/linear/7/sync/41"), "run 41's poll to be in flight")
+      runId = 42
+      await seam.syncNow()
+      await waitUntil(() => syncPayloadOf(store)?.runState === "completed", "run 42 to settle")
+      runId = 43
+      await seam.syncNow()
+      expect(syncPayloadOf(store)?.runId).toBe("43")
+
+      first.release(json(200, run("failed"))() as Response)
+      await settleTicks()
+
+      /* The card still states run 43 and nothing run 41 answered. */
+      expect(syncPayloadOf(store)?.runId).toBe("43")
+      expect(syncPayloadOf(store)?.runState).toBeNull()
+      expect(syncPayloadOf(store)?.counts).toBeNull()
+      third.release(json(200, run("completed"))() as Response)
+    } finally {
+      Object.assign(linearSyncPolling, previous)
+    }
+  })
+
+  test("one dropped run read is retried and the run still settles", async () => {
+    /* Review finding 3: a single transport drop used to end tracking with an error card. */
+    const previous = { ...linearSyncPolling }
+    linearSyncPolling.delayMs = 1
+    linearSyncPolling.maxAttempts = 6
+    try {
+      let polls = 0
+      const { store, seam } = await harness({
+        "api/integrations/linear": json(200, [INTEGRATION]),
+        "POST api/linear/7/sync": json(202, { run_id: 41 }),
+        "api/linear/7/sync/41": () => {
+          polls += 1
+          if (polls === 1) throw new Error("socket hung up")
+          return json(200, run("completed", { finished_at: "2026-09-02T09:05:00Z" }))()
+        },
+        [`api/linear/7/ops?limit=${OPS_PAGE_LIMIT}`]: json(200, [])
+      })
+
+      await seam.syncNow()
+      await waitUntil(() => syncPayloadOf(store)?.runState === "completed", "the run to settle after the drop")
+
+      expect(syncPayloadOf(store)?.error).toBeUndefined()
+      expect(store.collections.cards.get("sync-ops-linear-7")?.status).toBe("acted")
+    } finally {
+      Object.assign(linearSyncPolling, previous)
+    }
+  })
+
+  test("drops past the budget hand off honestly, keeping the last state instead of failing the run", async () => {
+    const previous = { ...linearSyncPolling }
+    linearSyncPolling.delayMs = 1
+    linearSyncPolling.maxAttempts = 20
+    try {
+      let polls = 0
+      const { store, seam } = await harness({
+        "api/integrations/linear": json(200, [INTEGRATION]),
+        "POST api/linear/7/sync": json(202, { run_id: 41 }),
+        "api/linear/7/sync/41": () => {
+          polls += 1
+          if (polls === 1) return json(200, run("running"))()
+          throw new Error("socket hung up")
+        },
+        [`api/linear/7/ops?limit=${OPS_PAGE_LIMIT}`]: json(200, [])
+      })
+
+      await seam.syncNow()
+      await waitUntil(
+        () => syncPayloadOf(store)?.trigger === LINEAR_LOST_STREAM_TRIGGER,
+        "the lost-stream hand-off"
+      )
+
+      /* The run keeps syncing upstream: an honest standstill, not an error. */
+      expect(syncPayloadOf(store)?.runState).toBe("running")
+      expect(syncPayloadOf(store)?.error).toBeUndefined()
+      expect(store.collections.cards.get("sync-ops-linear-7")?.status).toBe("active")
+      /* One read plus the budget's drops, then the hand-off — never a drop per attempt. */
+      expect(polls).toBe(1 + linearSyncPolling.networkRetries + 1)
+    } finally {
+      Object.assign(linearSyncPolling, previous)
+    }
   })
 })

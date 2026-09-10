@@ -3,7 +3,15 @@ import { describe, expect, test } from "bun:test"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
-import { createGitHubSeam, lowRateLimit, mirrorSyncPolling, parseMirrorRef, SIGN_OUT_REFUSAL, trustedInstallUrl } from "./GitHubSeam"
+import {
+  createGitHubSeam,
+  lowRateLimit,
+  MIRROR_LOST_STREAM_TRIGGER,
+  mirrorSyncPolling,
+  parseMirrorRef,
+  SIGN_OUT_REFUSAL,
+  trustedInstallUrl
+} from "./GitHubSeam"
 import type { GitHubSeamDeps } from "./GitHubSeam"
 import type { SeamContext } from "./SeamContext"
 
@@ -77,7 +85,7 @@ const MISSING = {
   install_url: "https://github.com/apps/smithers/installations/new"
 }
 
-type Route = () => Response
+type Route = () => Response | Promise<Response>
 
 const harness = async (
   routes: Record<string, Route>,
@@ -662,5 +670,131 @@ describe("createGitHubSeam", () => {
 
     expect(textOf(result)).toBe("GitHub rate limit exhausted")
     expect(mirrorPayloadOf(store)?.rateLimit).toEqual({ limit: 5000, remaining: 0, resetAt: "2026-09-02T13:00:00Z" })
+  })
+})
+
+/*
+ * The two fences the mirror poll runs behind: the epoch that retires a
+ * superseded loop, and the drop budget that separates a lost connection from
+ * a run the platform refused to read out.
+ */
+describe("the mirror run poll's fences", () => {
+  /** A route that answers only when the test releases it, so a poll can be parked. */
+  const parked = () => {
+    let release: (response: Response) => void = () => {}
+    const answer = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    return { route: () => answer, release: (response: Response): void => release(response) }
+  }
+
+  const settleTicks = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20))
+
+  test("a poll parked across two newer runs never writes the run the card stopped tracking", async () => {
+    /*
+     * Review finding 4: the epoch used to be DELETED when a loop settled, so
+     * the third run was handed epoch 1 again and the first run's parked poll
+     * passed the fence and wrote its state over the card.
+     */
+    const previous = { ...mirrorSyncPolling }
+    mirrorSyncPolling.delayMs = 1
+    mirrorSyncPolling.maxAttempts = 6
+    try {
+      const first = parked()
+      const third = parked()
+      let runId = 88
+      const { store, seam, requests } = await harness({
+        [REPO_PATH]: json(200, repoDto("behind")),
+        [`POST ${MIRROR_PATH}`]: () => json(202, { run_id: runId })(),
+        [`${MIRROR_PATH}/88`]: first.route,
+        [`${MIRROR_PATH}/89`]: json(200, mirrorRun("succeeded", [])),
+        [`${MIRROR_PATH}/90`]: third.route
+      })
+
+      /* Run 88's first poll parks; run 89 settles and retires its epoch; run 90 takes the card. */
+      await seam.mirrorSync()
+      await waitUntil(() => requests.includes(`GET ${MIRROR_PATH}/88`), "run 88's poll to be in flight")
+      runId = 89
+      await seam.mirrorSync()
+      await waitUntil(() => mirrorPayloadOf(store)?.runState === "succeeded", "run 89 to settle")
+      runId = 90
+      await seam.mirrorSync()
+      expect(mirrorPayloadOf(store)?.runId).toBe("90")
+
+      first.release(
+        json(200, mirrorRun("failed", [
+          { name: "refs/heads/stale", from: "aa11bb", to: "cc22dd", status: "failed", error: "run 88 lost" }
+        ]))() as Response
+      )
+      await settleTicks()
+
+      /* The card still states run 90 and nothing run 88 answered. */
+      expect(mirrorPayloadOf(store)?.runId).toBe("90")
+      expect(mirrorPayloadOf(store)?.runState).toBeNull()
+      expect(mirrorPayloadOf(store)?.ops).toEqual([])
+      third.release(json(200, mirrorRun("succeeded", []))() as Response)
+    } finally {
+      Object.assign(mirrorSyncPolling, previous)
+    }
+  })
+
+  test("one dropped run read is retried and the run still settles", async () => {
+    /* Review finding 3: a single transport drop used to end tracking with an error card. */
+    const previous = { ...mirrorSyncPolling }
+    mirrorSyncPolling.delayMs = 1
+    mirrorSyncPolling.maxAttempts = 6
+    try {
+      let polls = 0
+      const { store, seam } = await harness({
+        [REPO_PATH]: json(200, repoDto("synced")),
+        [`POST ${MIRROR_PATH}`]: json(202, { run_id: 88 }),
+        [`${MIRROR_PATH}/88`]: () => {
+          polls += 1
+          if (polls === 1) throw new Error("socket hung up")
+          return json(200, mirrorRun("succeeded", []))()
+        }
+      })
+
+      await seam.mirrorSync()
+      await waitUntil(() => mirrorPayloadOf(store)?.runState === "succeeded", "the run to settle after the drop")
+
+      expect(mirrorPayloadOf(store)?.error).toBeUndefined()
+      expect(store.collections.cards.get("sync-ops-mirror-will/smithers")?.status).toBe("acted")
+    } finally {
+      Object.assign(mirrorSyncPolling, previous)
+    }
+  })
+
+  test("drops past the budget hand off honestly, keeping the last state instead of failing the run", async () => {
+    const previous = { ...mirrorSyncPolling }
+    mirrorSyncPolling.delayMs = 1
+    mirrorSyncPolling.maxAttempts = 20
+    try {
+      let polls = 0
+      const { store, seam } = await harness({
+        [REPO_PATH]: json(200, repoDto("behind")),
+        [`POST ${MIRROR_PATH}`]: json(202, { run_id: 88 }),
+        [`${MIRROR_PATH}/88`]: () => {
+          polls += 1
+          if (polls === 1) return json(200, mirrorRun("running", []))()
+          throw new Error("socket hung up")
+        }
+      })
+
+      await seam.mirrorSync()
+      await waitUntil(
+        () => mirrorPayloadOf(store)?.trigger === MIRROR_LOST_STREAM_TRIGGER,
+        "the lost-stream hand-off"
+      )
+
+      /* The run keeps pushing refs upstream: an honest standstill, not an error. */
+      expect(mirrorPayloadOf(store)?.runState).toBe("running")
+      expect(mirrorPayloadOf(store)?.error).toBeUndefined()
+      expect(store.collections.cards.get("sync-ops-mirror-will/smithers")?.status).toBe("active")
+      /* One read plus the budget's drops, then the hand-off — never a drop per attempt. */
+      expect(polls).toBe(1 + mirrorSyncPolling.networkRetries + 1)
+    } finally {
+      Object.assign(mirrorSyncPolling, previous)
+    }
   })
 })

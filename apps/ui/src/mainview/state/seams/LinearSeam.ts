@@ -41,6 +41,7 @@ import { resolveTargetRepo } from "../RepoContext"
 import { nextEgressCursor } from "./EgressSeam"
 import { readErrorMessage } from "./SeamContext"
 import { createCloudClient } from "./CloudClient"
+import { createRunEpochs } from "./RunEpochs"
 import type { SeamContext } from "./SeamContext"
 
 export const SIGN_OUT_REFUSAL = "Sign in to Smithers Cloud first — /cloud.sign-in."
@@ -57,8 +58,15 @@ const HANDOFF_TIMEOUT_NOTE =
  */
 export const linearSyncPolling = {
   delayMs: 2_000,
-  maxAttempts: 450
+  maxAttempts: 450,
+  networkRetries: 2
 }
+
+/**
+ * The honest sign-off when polling can no longer read the run: the header
+ * keeps the last state it saw, because the run keeps going upstream.
+ */
+export const LINEAR_LOST_STREAM_TRIGGER = "lost the run stream — /linear.sync re-reads it"
 
 /** plue's ops feed page size; `load older` asks for its maximum (100). */
 export const OPS_PAGE_LIMIT = 50
@@ -302,7 +310,7 @@ export const createLinearSeam = (ctx: SeamContext, deps: LinearSeamDeps = {}): L
   const redactSetupError = (message: string, key: string): string => key === "" ? message :
     message.replaceAll(encodeURIComponent(key), "[redacted]").replaceAll(key, "[redacted]")
   /* One tracking loop per integration: a re-run supersedes the loop before it. */
-  const epochs = actorSharedState(ctx, "linear-epochs", () => new Map<string, number>())
+  const epochs = createRunEpochs(ctx, "linear-epochs")
 
   const gate = (): string | void => {
     const session = ctx.store.collections.cloudSessions.get("cloud")
@@ -494,22 +502,36 @@ export const createLinearSeam = (ctx: SeamContext, deps: LinearSeamDeps = {}): L
    * counts stay live while ops arrive. The loop stops when the run settles
    * (`completed`/`failed`), when a newer run supersedes it, or when the
    * budget runs out — never on an ops read that refused, which only leaves
-   * the last rows standing.
+   * the last rows standing, and never on a dropped run read, which is
+   * retried up to `networkRetries` times.
    */
   const trackRun = async (integration: LinearIntegrationRow, runId: string, epoch: number): Promise<void> => {
-    const settle = (): void => {
-      if (epochs.get(integration.id) === epoch) epochs.delete(integration.id)
-    }
+    const settle = (): void => epochs.settle(integration.id, epoch)
+    let drops = 0
     for (let attempt = 0; attempt < linearSyncPolling.maxAttempts; attempt += 1) {
       await wait(linearSyncPolling.delayMs)
-      if (epochs.get(integration.id) !== epoch) return
+      if (!epochs.isLive(integration.id, epoch)) return
       const answer = await getJson(`/linear/${encodeURIComponent(integration.id)}/sync/${encodeURIComponent(runId)}`)
-      if (epochs.get(integration.id) !== epoch) return
+      if (!epochs.isLive(integration.id, epoch)) return
       if ("error" in answer) {
+        /*
+         * A transport drop carries no status: plue's run keeps syncing, so
+         * the read is retried and only a budget spent on drops gives up,
+         * with the header's last state standing (review finding 3). A
+         * server that REFUSED the read is terminal, in its own words.
+         */
+        if (answer.status === null) {
+          drops += 1
+          if (drops <= linearSyncPolling.networkRetries) continue
+          upsertSyncCard(integration, { trigger: LINEAR_LOST_STREAM_TRIGGER })
+          settle()
+          return
+        }
         upsertSyncCard(integration, { error: answer.error })
         settle()
         return
       }
+      drops = 0
       const run = parseRun(answer.body)
       if (run === null) {
         upsertSyncCard(integration, { error: "Smithers Cloud's answer for the Linear sync run was malformed." })
@@ -517,7 +539,7 @@ export const createLinearSeam = (ctx: SeamContext, deps: LinearSeamDeps = {}): L
         return
       }
       const feed = await readOps(integration.id, { limit: OPS_PAGE_LIMIT })
-      if (epochs.get(integration.id) !== epoch) return
+      if (!epochs.isLive(integration.id, epoch)) return
       upsertSyncCard(integration, {
         runState: run.state,
         counts: run.counts,
@@ -800,9 +822,7 @@ export const createLinearSeam = (ctx: SeamContext, deps: LinearSeamDeps = {}): L
       ops: [],
       trigger: `sync started · run ${id}`
     }, { reset: true })
-    const epoch = (epochs.get(row.id) ?? 0) + 1
-    epochs.set(row.id, epoch)
-    void trackRun(row, id, epoch)
+    void trackRun(row, id, epochs.start(row.id))
     return { value: `Sync run ${id} started for Linear ${row.teamKey} ↔ ${linearIntegrationRepo(row)} — the card tracks it.` }
   }
 
@@ -853,7 +873,7 @@ export const createLinearSeam = (ctx: SeamContext, deps: LinearSeamDeps = {}): L
     const removed = await sendJson("DELETE", `/integrations/linear/${encodeURIComponent(row.id)}`)
     if ("error" in removed) return removed.error
     /* A run this card was tracking has nothing left to track. */
-    epochs.delete(row.id)
+    epochs.cancel(row.id)
     await refreshIntegrations()
     /*
      * A disconnected card leaves the transcript: any state it could show now

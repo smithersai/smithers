@@ -1,4 +1,3 @@
-import { actorSharedState } from "../ActorBindings"
 /*
  * The repo-import seam: POST /api/github/import {owner, repo} starts the job;
  * GET /api/github/import/{jobId} polls it; POST /api/github/import/{jobId}/retry
@@ -15,6 +14,7 @@ import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
 import type { GitHubRefusal, SeamContext } from "./SeamContext"
+import { createRunEpochs } from "./RunEpochs"
 import { readGitHubRefusal } from "./SeamContext"
 
 export interface RepoImportSeam {
@@ -156,7 +156,7 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
    * command again) bumps the epoch so a superseded loop stops upserting a
    * card the new run now owns.
    */
-  const epochs = actorSharedState(ctx, "repoimport-epochs", () => new Map<string, number>())
+  const epochs = createRunEpochs(ctx, "repoimport-epochs")
 
   const upsert = (repo: string, ordinal: number, createdAt: number, patch: CardPatch): void => {
     const id = `repo-import-${repo}`
@@ -219,20 +219,18 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
     epoch: number
   ): Promise<void> => {
     /*
-     * The epochs map exists to supersede stale loops; an entry whose loop
-     * has reached a terminal hand-off is dead weight retained per repo for
-     * the session's life. Every terminal branch below settles it, guarded
-     * so a re-run's newer epoch is never deleted out from under it (a
-     * deleted entry reads as !== any stale epoch, which is the same stop
-     * signal the supersede check already relies on).
+     * The fence supersedes stale loops; a loop that has reached a terminal
+     * hand-off retires its own live marker, guarded so a re-run's newer
+     * epoch is never retired out from under it (a retired marker reads as
+     * !== any stale epoch, which is the same stop signal the supersede check
+     * already relies on). The epoch itself is never handed out twice, so a
+     * loop parked in a poll across a re-run can never pass this fence.
      */
-    const settleEpoch = (): void => {
-      if (epochs.get(repo) === epoch) epochs.delete(repo)
-    }
+    const settleEpoch = (): void => epochs.settle(repo, epoch)
     let failures = 0
     for (let attempt = 0; attempt < repoImportPolling.maxAttempts; attempt += 1) {
       await sleep(repoImportPolling.delayMs)
-      if (epochs.get(repo) !== epoch) return
+      if (!epochs.isLive(repo, epoch)) return
       let job: ImportJobAnswer | null = null
       let refusal: GitHubRefusal | null = null
       try {
@@ -242,7 +240,7 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
       } catch {
         // A dropped poll is retried below; the job keeps running upstream.
       }
-      if (epochs.get(repo) !== epoch) return
+      if (!epochs.isLive(repo, epoch)) return
       if (refusal !== null) {
         /*
          * The server refused the read (a 401, a 500, a structured 429): its
@@ -304,8 +302,7 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
   ): Promise<string | void> => {
     const ordinal = options.keepOrdinal?.ordinal ?? ctx.nextOrdinal()
     const createdAt = options.keepOrdinal?.createdAt ?? Date.now()
-    const epoch = (epochs.get(repo) ?? 0) + 1
-    epochs.set(repo, epoch)
+    const epoch = epochs.start(repo)
     /* The job this card already tracks — a 409 "already active" resumes it when the answer names none. */
     const tracked = ctx.store.collections.cards.get(`repo-import-${repo}`)
     const priorJobId = tracked?.kind === "repo-import" ? tracked.payload.jobId : null
@@ -316,9 +313,7 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
      * the loop's own terminal branches do, or one dead entry accumulates
      * per imported repo for the session.
      */
-    const settleEpoch = (): void => {
-      if (epochs.get(repo) === epoch) epochs.delete(repo)
-    }
+    const settleEpoch = (): void => epochs.settle(repo, epoch)
 
     let response: Response
     try {

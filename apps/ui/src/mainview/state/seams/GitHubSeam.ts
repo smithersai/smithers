@@ -1,4 +1,3 @@
-import { actorSharedState } from "../ActorBindings"
 /*
  * The GitHub seam (lane sync, ADR 0005; lane L5 against the live routes),
  * behind the `/api/cloud/*` proxy. Every path was read off plue's own router
@@ -45,6 +44,7 @@ import { actorSharedState } from "../ActorBindings"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
 import type { Card, GitHubAppStatusInput } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
+import { createRunEpochs } from "./RunEpochs"
 import { readGitHubRefusal, trustedHttpsUrl } from "./SeamContext"
 import type { GitHubRefusal, SeamContext } from "./SeamContext"
 
@@ -52,13 +52,21 @@ export const SIGN_OUT_REFUSAL = "Sign in to Smithers Cloud first — /cloud.sign
 
 /**
  * The mirror run poll: one read every `delayMs`, at most `maxAttempts`
- * (fifteen minutes at the production cadence). Module-level so tests
+ * (fifteen minutes at the production cadence), tolerating `networkRetries`
+ * consecutive dropped reads before it stops tracking. Module-level so tests
  * shorten the wait.
  */
 export const mirrorSyncPolling = {
   delayMs: 2_000,
-  maxAttempts: 450
+  maxAttempts: 450,
+  networkRetries: 2
 }
+
+/**
+ * The honest sign-off when polling can no longer read the run: the header
+ * keeps the last state it saw, because the run keeps going upstream.
+ */
+export const MIRROR_LOST_STREAM_TRIGGER = "lost the run stream — /github.sync re-reads it"
 
 /** plue's `github_mirror_sync_runs.state` CHECK words that mean "no longer moving". */
 const RUN_SETTLED = new Set(["succeeded", "failed"])
@@ -174,7 +182,7 @@ const parseMirrorRun = (value: unknown): MirrorRunAnswer | null => {
 export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): GitHubSeam => {
   const cloud = (path: string): string => `${ctx.baseUrl}${CLOUD_ROUTE_PREFIX}api${path}`
   /* One tracking loop per repo: a re-run supersedes the loop before it. */
-  const epochs = actorSharedState(ctx, "github-epochs", () => new Map<string, number>())
+  const epochs = createRunEpochs(ctx, "github-epochs")
 
   const gate = (): string | void => {
     const session = ctx.store.collections.cloudSessions.get("cloud")
@@ -424,21 +432,30 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
    * supersedes it, or the budget runs out.
    */
   const trackMirrorRun = async (repo: string, runId: string, epoch: number): Promise<void> => {
-    const settle = (): void => {
-      if (epochs.get(repo) === epoch) epochs.delete(repo)
-    }
+    const settle = (): void => epochs.settle(repo, epoch)
+    let drops = 0
     for (let attempt = 0; attempt < mirrorSyncPolling.maxAttempts; attempt += 1) {
       await wait(mirrorSyncPolling.delayMs)
-      if (epochs.get(repo) !== epoch) return
+      if (!epochs.isLive(repo, epoch)) return
       let response: Response
       try {
         response = await ctx.http(cloud(`${repoPath(repo, "mirror-sync")}/${encodeURIComponent(runId)}`))
-      } catch (error) {
-        upsertMirrorCard(repo, { error: `Could not reach Smithers Cloud: ${error instanceof Error ? error.message : String(error)}` })
+      } catch {
+        /*
+         * A dropped poll is retried; plue's run keeps pushing refs for up to
+         * fifteen minutes, so one lost connection is not a failed run and
+         * never reads as one (review finding 3). Only a refusal below is
+         * terminal.
+         */
+        if (!epochs.isLive(repo, epoch)) return
+        drops += 1
+        if (drops <= mirrorSyncPolling.networkRetries) continue
+        upsertMirrorCard(repo, { trigger: MIRROR_LOST_STREAM_TRIGGER })
         settle()
         return
       }
-      if (epochs.get(repo) !== epoch) return
+      drops = 0
+      if (!epochs.isLive(repo, epoch)) return
       if (!response.ok) {
         const refusal = await readGitHubRefusal(response, `Reading the mirror run failed (${response.status})`)
         upsertMirrorCard(repo, {
@@ -458,7 +475,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
       if (RUN_SETTLED.has(run.state)) {
         /* The run moved the mirror: re-read the repository's own words and counts for it. */
         const mirror = await readMirrorStatus(repo)
-        if (mirror !== null && epochs.get(repo) === epoch) upsertMirrorCard(repo, mirrorPatch(mirror))
+        if (mirror !== null && epochs.isLive(repo, epoch)) upsertMirrorCard(repo, mirrorPatch(mirror))
         settle()
         return
       }
@@ -483,9 +500,7 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
       error: undefined,
       ...mirror
     })
-    const epoch = (epochs.get(repo) ?? 0) + 1
-    epochs.set(repo, epoch)
-    void trackMirrorRun(repo, runId, epoch)
+    void trackMirrorRun(repo, runId, epochs.start(repo))
   }
 
   const mirrorSync: GitHubSeam["mirrorSync"] = async (explicit) => {

@@ -496,3 +496,61 @@ describe("repo import — lane sync", () => {
     }
   })
 })
+
+/*
+ * The epoch fence between an import's tracking loop and the starts that
+ * supersede it.
+ */
+describe("repo import — the tracking fence", () => {
+  test("a poll parked across two newer imports never writes the job the card stopped tracking", async () => {
+    /*
+     * Review finding 4: the epoch used to be DELETED when a loop settled, so
+     * the third import was handed epoch 1 again and the first job's parked
+     * poll passed the fence and wrote its phase over the card.
+     */
+    let releaseFirst: (response: Response) => void = () => {}
+    const firstPoll = new Promise<Response>((resolve) => {
+      releaseFirst = resolve
+    })
+    const thirdPoll = new Promise<Response>(() => {})
+    let starts = 0
+    let firstPolled = false
+    const services: AppServices = {
+      fetchImpl: async (input, init) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+        const path = new URL(url, "https://app.test").pathname
+        const method = init?.method ?? "GET"
+        if (path === "/api/cloud/api/github/import" && method === "POST") {
+          starts += 1
+          if (starts === 1) return json(202, { ...jobBody("cloning", "resolving"), importJobId: "job-1" })
+          /* The second import is already imported: it settles without ever polling. */
+          if (starts === 2) return json(202, { ...jobBody("ready"), importJobId: "job-2" })
+          return json(202, { ...jobBody("cloning", "resolving"), importJobId: "job-3" })
+        }
+        if (path === "/api/cloud/api/github/import/job-1" && method === "GET") {
+          firstPolled = true
+          return firstPoll
+        }
+        if (path === "/api/cloud/api/github/import/job-3" && method === "GET") return thirdPoll
+        return json(404, { message: `no stub for ${path}` })
+      }
+    }
+    const { store, controller } = await readyStore(services)
+
+    await controller.commands.run("repos.import", "will/flows")
+    await until(() => firstPolled, "job-1's poll to be in flight")
+    await controller.commands.run("repos.import", "will/flows")
+    await until(() => importCard(store)?.payload.phase === "done", "the already-imported hand-off")
+    await controller.commands.run("repos.import", "will/flows")
+    await until(() => importCard(store)?.payload.jobId === "job-3", "the third job to take the card")
+
+    releaseFirst(json(200, jobBody("failed", "cloning_github", "job-1 gave up")))
+    await settled()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    /* The card still tracks job-3 and nothing job-1 answered ever landed. */
+    expect(importCard(store)?.payload.jobId).toBe("job-3")
+    expect(importCard(store)?.payload.phase).toBe("running")
+    expect(importUpserts(store).some((entry) => entry.payload.detail === "job-1 gave up")).toBe(false)
+  })
+})
