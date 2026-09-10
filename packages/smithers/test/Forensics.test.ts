@@ -1,4 +1,5 @@
 import type { ControlSchema } from "@smthrs/control"
+import * as Diagnosis from "@smthrs/gateway/Diagnosis"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -672,5 +673,93 @@ describe("Forensics.renderTranscript boundaries", () => {
     ])
     expect(text).toContain("[+00:00] run.running")
     expect(text).toContain("[+01:30] run.completed")
+  })
+})
+
+describe("Forensics.digest against the gateway's Diagnosis.digest", () => {
+  /**
+   * One journal exercising every fact both folds report, including the three
+   * the two used to disagree on: a CRLF refusal message, a `control.run.*`
+   * kind that names no status, and an event kind neither fold handles.
+   */
+  const journal: ReadonlyArray<ControlSchema.ControlEvent> = [
+    event("control.run.running", { runId: "run-1" }, 1_000),
+    turn(2_000),
+    event("control.agent.model-settled", { text: "t", usage: { inputTokens: 12, outputTokens: 3 } }, 3_000),
+    call("bash", { command: "ls" }, 4_000),
+    refusedCall("Flow bash failed: refused\r\nstack", 5_000),
+    call("edit", { path: "a.py" }, 6_000),
+    settledCall("edit", 7_000),
+    event("control.approval.requested", { question: "May I?", payload: { idempotencyKey: "k", scope: "run" } }, 8_000),
+    event("control.run.lineage", { runId: "run-1" }, 9_000),
+    event("control.agent.resolved", { text: "shipped\r\nrest" }, 10_000),
+    event("control.run.completed", { runId: "run-1" }, 11_000),
+    event("control.agent.cell-produced", { text: "trailing" }, 12_000)
+  ]
+
+  /** The facts both folds claim to report, read off either one. */
+  const shared = (value: Diagnosis.Digest | Forensics.Digest) => ({
+    status: value.status,
+    cause: value.cause,
+    seat: value.seat,
+    turns: value.turns,
+    calls: value.calls,
+    callsFailed: value.callsFailed,
+    editsAttempted: value.editsAttempted,
+    editsSucceeded: value.editsSucceeded,
+    refusals: value.refusals,
+    inputTokens: value.inputTokens,
+    outputTokens: value.outputTokens,
+    finalOutput: value.finalOutput,
+    parkedQuestion: value.parkedQuestion,
+    startedAt: value.startedAt,
+    endedAt: value.endedAt
+  })
+
+  it("reports the same facts the gateway reports for the same events", () => {
+    expect(shared(Forensics.digest(journal))).toEqual(shared(Diagnosis.digest(journal)))
+  })
+
+  it("reads a status only off a kind that names one", () => {
+    // `control.run.lineage` is journaled under the status prefix and names no
+    // status. Read off the prefix alone it became the verdict of every
+    // followed run, which is what a live `smthrs status` printed.
+    expect(
+      Forensics.digest([
+        event("control.run.running", { runId: "run-1" }, 1_000),
+        event("control.run.lineage", { runId: "run-1", parentRunId: "run-0" }, 2_000)
+      ]).status
+    ).toBe("running")
+  })
+
+  it("still reports the declined launch the wire vocabulary does not carry", () => {
+    expect(Forensics.digest([event("control.run.pending", { runId: "run-1" }, 1_000)]).status).toBe("pending")
+  })
+
+  it("cuts a CRLF output at its first line, keeping no carriage return", () => {
+    const card = Forensics.renderDiagnosis(
+      { runId: "run-1" },
+      Forensics.digest([
+        event("control.agent.resolved", { text: "shipped\r\nrest" }, 1_000),
+        event("control.run.completed", { runId: "run-1" }, 2_000)
+      ])
+    )
+    expect(card.split("\n").find((line) => line.startsWith("Output"))).toBe(`${"Output".padEnd(10)}shipped`)
+    expect(card.split("\n").find((line) => line.startsWith("Verdict"))).toBe(
+      `${"Verdict".padEnd(10)}completed: shipped`
+    )
+  })
+
+  it("clips a wide output on code points, never inside an astral character", () => {
+    const card = Forensics.renderDiagnosis(
+      { runId: "run-1" },
+      Forensics.digest([
+        event("control.agent.resolved", { text: "🙂".repeat(200) }, 1_000),
+        event("control.run.completed", { runId: "run-1" }, 2_000)
+      ])
+    )
+    // A `u`-flagged class matches a surrogate only where it stands alone, so
+    // this is exactly "the card carries no half character".
+    expect(/\p{Surrogate}/u.test(card)).toBe(false)
   })
 })

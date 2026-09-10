@@ -18,7 +18,17 @@
  *
  * @since 0.1.0
  */
-import type { ControlSchema } from "@smthrs/control"
+import { ControlSchema } from "@smthrs/control"
+import {
+  asNumber,
+  asRecord,
+  asString,
+  clip,
+  digest as diagnose,
+  duration,
+  firstLine,
+  timeOf
+} from "@smthrs/gateway/Diagnosis"
 import { causeLine } from "./internal/Failure.ts"
 
 /**
@@ -45,7 +55,11 @@ export interface Refusal {
  * @since 0.1.0
  */
 export interface Digest {
-  /** The last `control.run.*` transition seen, or undefined before launch. */
+  /**
+   * The last status transition seen, or undefined before launch. A
+   * `control.run.*` kind that names an operation rather than a status, such as
+   * `control.run.lineage`, is not one.
+   */
   readonly status: string | undefined
   /** The journaled failure cause, when the run failed and recorded one. */
   readonly cause: string | undefined
@@ -73,27 +87,16 @@ export interface Digest {
   readonly endedAt: number | undefined
 }
 
-/** Flows whose calls count as edit attempts. */
-const editFlows: ReadonlySet<string> = new Set(["write", "edit", "apply_patch"])
-
-const asRecord = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
-
-const asString = (value: unknown): string | undefined => typeof value === "string" ? value : undefined
-
-const asNumber = (value: unknown): number | undefined => typeof value === "number" ? value : undefined
-
-/** Occurrence time: the payload's own stamp, else journal admission time. */
-const timeOf = (event: ControlSchema.ControlEvent): number => asNumber(asRecord(event.payload).at) ?? event.occurredAt
-
-const firstLine = (text: string): string => {
-  const index = text.indexOf("\n")
-  return index < 0 ? text : text.slice(0, index)
-}
-
-const clip = (text: string, width: number): string => text.length <= width ? text : `${text.slice(0, width - 1)}…`
+/**
+ * The `control.run.*` suffixes this fold reads a status off: the wire's own
+ * vocabulary, plus the one state only the CLI reports.
+ *
+ * `@smthrs/gateway` `Diagnosis` folds `ControlSchema.RunStatus` alone, because
+ * a client renders a typed status. `control.run.pending` is the executor
+ * declining the launch, which the status card names and the wire does not
+ * carry, so this fold keeps it and nothing else.
+ */
+const cardStatuses: ReadonlySet<string> = new Set([...ControlSchema.RunStatus.literals, "pending"])
 
 const compact = (value: unknown, width: number): string => {
   const rendered = typeof value === "string" ? value : JSON.stringify(value) ?? String(value)
@@ -105,6 +108,12 @@ const compact = (value: unknown, width: number): string => {
  * before rendering status or transcript output so both views share the same
  * counts and final state.
  *
+ * `@smthrs/gateway` `Diagnosis.digest` is the fold; this adds the three facts
+ * a terminal card reports and a served row does not, so `smthrs status` and a
+ * client's run card cannot disagree about one run: how many calls repeated an
+ * earlier call byte for byte, how many calls each flow took, and the approval
+ * payload that unblocks a parked run.
+ *
  * Total on purpose: payloads are wire `Json`, so every field read tolerates
  * absence and the digest of a malformed journal is a sparse digest, never a
  * throw.
@@ -113,111 +122,41 @@ const compact = (value: unknown, width: number): string => {
  * @since 0.1.0
  */
 export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Digest => {
+  const facts = diagnose(events)
   let status: string | undefined
-  let cause: string | undefined
-  let seat: string | undefined
-  let turns = 0
-  let calls = 0
-  let callsFailed = 0
   let duplicateCalls = 0
-  let editsAttempted = 0
-  let editsSucceeded = 0
-  let inputTokens = 0
-  let outputTokens = 0
-  let finalOutput: string | undefined
-  let parkedQuestion: string | undefined
   let parkedApproval: string | undefined
-  let startedAt: number | undefined
-  let endedAt: number | undefined
   const flowCounts = new Map<string, number>()
-  const refusalCounts = new Map<string, number>()
   const seen = new Map<string, number>()
 
   for (const event of events) {
     const payload = asRecord(event.payload)
-    const at = timeOf(event)
-    startedAt = startedAt === undefined ? at : Math.min(startedAt, at)
-    endedAt = endedAt === undefined ? at : Math.max(endedAt, at)
-    switch (event.kind) {
-      case "control.agent.turn-opened": {
-        turns += 1
-        seat = asString(payload.seat) ?? seat
-        break
-      }
-      case "control.agent.model-settled": {
-        const usage = asRecord(payload.usage)
-        inputTokens += asNumber(usage.inputTokens) ?? 0
-        outputTokens += asNumber(usage.outputTokens) ?? 0
-        break
-      }
-      case "control.agent.cell-call-started": {
-        calls += 1
-        const flowName = asString(payload.flowName) ?? "?"
-        flowCounts.set(flowName, (flowCounts.get(flowName) ?? 0) + 1)
-        if (editFlows.has(flowName)) editsAttempted += 1
-        const identity = `${flowName}\u0000${JSON.stringify(payload.input) ?? ""}`
-        const previous = seen.get(identity) ?? 0
-        if (previous > 0) duplicateCalls += 1
-        seen.set(identity, previous + 1)
-        break
-      }
-      case "control.agent.cell-call-settled": {
-        if (asString(payload.outcome) === "failure") {
-          callsFailed += 1
-          const message = firstLine(asString(payload.message) ?? "unknown refusal")
-          refusalCounts.set(message, (refusalCounts.get(message) ?? 0) + 1)
-        } else if (editFlows.has(asString(payload.flowName) ?? "")) {
-          editsSucceeded += 1
-        }
-        break
-      }
-      case "control.agent.resolved": {
-        finalOutput = asString(payload.text)
-        break
-      }
-      case "control.approval.requested": {
-        parkedQuestion = asString(payload.question)
-        const approval = payload.payload
-        parkedApproval = approval === undefined ? undefined : JSON.stringify(approval)
-        break
-      }
-      default: {
-        if (event.kind.startsWith("control.run.")) {
-          status = event.kind.slice("control.run.".length)
-          if (status === "failed") cause = asString(payload.cause)
-        }
-      }
+    if (event.kind === "control.agent.cell-call-started") {
+      const flowName = asString(payload.flowName) ?? "?"
+      flowCounts.set(flowName, (flowCounts.get(flowName) ?? 0) + 1)
+      const identity = `${flowName}\u0000${JSON.stringify(payload.input) ?? ""}`
+      const previous = seen.get(identity) ?? 0
+      if (previous > 0) duplicateCalls += 1
+      seen.set(identity, previous + 1)
+      continue
     }
+    if (event.kind === "control.approval.requested") {
+      const approval = payload.payload
+      parkedApproval = approval === undefined ? undefined : JSON.stringify(approval)
+      continue
+    }
+    if (!event.kind.startsWith("control.run.")) continue
+    const suffix = event.kind.slice("control.run.".length)
+    if (cardStatuses.has(suffix)) status = suffix
   }
 
   return {
+    ...facts,
     status,
-    cause,
-    seat,
-    turns,
-    calls,
-    callsFailed,
     duplicateCalls,
-    editsAttempted,
-    editsSucceeded,
     flows: [...flowCounts.entries()].sort((left, right) => right[1] - left[1]),
-    refusals: [...refusalCounts.entries()]
-      .map(([message, count]) => ({ message, count }))
-      .sort((left, right) => right.count - left.count),
-    inputTokens,
-    outputTokens,
-    finalOutput,
-    parkedQuestion,
-    parkedApproval,
-    startedAt,
-    endedAt
+    parkedApproval
   }
-}
-
-const duration = (d: Digest): string => {
-  if (d.startedAt === undefined || d.endedAt === undefined) return "0s"
-  const seconds = Math.max(0, Math.round((d.endedAt - d.startedAt) / 1000))
-  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`
 }
 
 /**

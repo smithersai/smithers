@@ -10,8 +10,11 @@
  * here opens a database, so a diagnosis read through a relay is the same
  * diagnosis a local reader computes.
  *
- * The vocabulary matches `@smthrs/cli` `Forensics`: this module is that
- * rendering, re-expressed as a served projection rather than a terminal card.
+ * This is the one fold both surfaces read. `@smthrs/cli` `Forensics` calls
+ * `digest` and adds what a terminal card needs on top of it: duplicate calls,
+ * per-flow counts, the parked approval payload, and the declined-launch state
+ * the wire vocabulary does not carry. The counts, the refusal aggregation, and
+ * the clipping are therefore one implementation, not two that drift.
  *
  * @since 1.0.0
  */
@@ -90,22 +93,52 @@ const editFlows: ReadonlySet<string> = new Set(["write", "edit", "apply_patch"])
  * Reads a payload as a record. Wire payloads are `Json`, so every field read
  * tolerates absence and the digest of a malformed journal is a sparse digest,
  * never a throw.
+ *
+ * @param value the payload to read
+ * @since 1.0.0
+ * @category conversions
  */
-const asRecord = (value: unknown): Record<string, unknown> =>
+export const asRecord = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
 
-const asString = (value: unknown): string | undefined => typeof value === "string" ? value : undefined
+/**
+ * Reads a payload field as a string, or nothing when it is not one.
+ *
+ * @param value the field to read
+ * @since 1.0.0
+ * @category conversions
+ */
+export const asString = (value: unknown): string | undefined => typeof value === "string" ? value : undefined
 
-const asNumber = (value: unknown): number | undefined => typeof value === "number" ? value : undefined
+/**
+ * Reads a payload field as a number, or nothing when it is not one.
+ *
+ * @param value the field to read
+ * @since 1.0.0
+ * @category conversions
+ */
+export const asNumber = (value: unknown): number | undefined => typeof value === "number" ? value : undefined
 
-/** Occurrence time: the payload's own stamp, else journal admission time. */
-const timeOf = (event: ControlSchema.ControlEvent): number => asNumber(asRecord(event.payload).at) ?? event.occurredAt
+/**
+ * Occurrence time: the payload's own stamp, else journal admission time.
+ *
+ * @param event the event to time
+ * @since 1.0.0
+ * @category conversions
+ */
+export const timeOf = (event: ControlSchema.ControlEvent): number =>
+  asNumber(asRecord(event.payload).at) ?? event.occurredAt
 
 /**
  * The first line, whichever line ending produced it. Splitting on `\n` alone
- * left the `\r` of a CRLF cause on the wire.
+ * left the `\r` of a CRLF cause on the wire, and every reader of a one-line
+ * field, here and in `@smthrs/cli` `Forensics`, wants the same answer.
+ *
+ * @param text the text to read one line of
+ * @since 1.0.0
+ * @category conversions
  */
-const firstLine = (text: string): string => {
+export const firstLine = (text: string): string => {
   const index = text.search(/[\r\n]/)
   return index < 0 ? text : text.slice(0, index)
 }
@@ -256,11 +289,14 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Diges
 /**
  * The wall-clock span the events cover, rendered for a reader.
  *
- * @param value the digest to measure
+ * Only the span is read, so a caller carrying a wider digest of its own, as
+ * `@smthrs/cli` `Forensics` does, measures it with this rather than a copy.
+ *
+ * @param value the span to measure
  * @since 1.0.0
  * @category rendering
  */
-export const duration = (value: Digest): string => {
+export const duration = (value: Pick<Digest, "startedAt" | "endedAt">): string => {
   if (value.startedAt === undefined || value.endedAt === undefined) return "0s"
   const seconds = Math.max(0, Math.round((value.endedAt - value.startedAt) / 1000))
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`

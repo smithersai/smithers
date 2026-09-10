@@ -45,7 +45,7 @@ to a socket.
 | Export                       | Signature                                                                                            | Meaning                                                                                                         |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `Health`                     | `Schema.Struct` and its type                                                                         | What `GET /health` answers: `GatewaySchema.GatewayHealth` plus the `version` of the package serving it.         |
-| `LayerOptions`               | `{ heartbeatMillis?: number; ingress?: IngressOptions }`                                             | How an assembled gateway is configured. `heartbeatMillis` re-times both the `Watch` and projection keepalives. |
+| `LayerOptions`               | `{ heartbeatMillis?: number; ingress?: IngressOptions }`                                             | How an assembled gateway is configured. `heartbeatMillis` re-times both the `Watch` and projection keepalives.  |
 | `IngressOptions`             | `{ maxRequestBodyBytes?: number; loopbackOnly?: boolean; authorize?: (headers) => Effect<boolean> }` | The ingress policy the RPC mounts run behind.                                                                   |
 | `rpcPaths`                   | `ReadonlyArray<string>`                                                                              | `["/rpc", "/projections", "/sync"]`: the `POST` mounts that carry RPC request messages.                         |
 | `protectedPaths`             | `ReadonlyArray<string>`                                                                              | `["/projections", "/sync", "/rpc/ws", "/projections/ws", "/sync/ws"]`: paths that pass edge authentication.     |
@@ -61,17 +61,17 @@ deliberately unauthenticated. Both decisions, and the alias handling behind
 
 ### Layers
 
-| Export                 | Signature                                                                   | Provides                                                                                                 |
-| ---------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `layer`                | `(health: Health, options?: LayerOptions) => Layer<..., GatewayError, ...>` | The whole surface. Fails with `bind_failed` for a non-positive cadence or body limit.                    |
-| `layerHealth`          | `(health: Health) => Layer<never, never, HttpRouter>`                       | The unauthenticated `GET /health` probe.                                                                 |
-| `layerHandlers`        | `Layer<Handler<...>, never, Control \| Projections>`                        | The gateway's own RPC handlers over the read path and the approval mutation.                             |
-| `layerControlHttp`     | `(millis?: number) => Layer<RpcServer.Protocol, never, ...>`                | `/rpc` and `/rpc/ws`, with the keepalive merged into `watch`.                                            |
-| `layerProjectionsHttp` | `Layer<RpcServer.Protocol, never, ...>`                                     | `/projections` and `/projections/ws`. Both protocols mount together so they cannot disagree.             |
-| `layerSyncHttp`        | `Layer<RpcServer.Protocol, never, ...>`                                     | `/sync` and `/sync/ws`.                                                                                  |
-| `layerIngress`         | `(options?: IngressOptions) => Layer<...>`                                  | The global middleware: local Host/Origin policy, edge authentication, body limit, and RPC-message check. |
-| `layerKeepAlive`       | `(millis?: number) => Layer<Control, never, Control>`                       | Wraps the ambient `Control` so `watch` emits a keepalive when idle.                                      |
-| `layerProjectionsKeepAlive` | `(millis: number) => Layer<Projections, never, Projections>`           | Wraps the ambient `Projections` so a followed subscription beats at the bind's cadence.                  |
+| Export                      | Signature                                                                   | Provides                                                                                                 |
+| --------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `layer`                     | `(health: Health, options?: LayerOptions) => Layer<..., GatewayError, ...>` | The whole surface. Fails with `bind_failed` for a non-positive cadence or body limit.                    |
+| `layerHealth`               | `(health: Health) => Layer<never, never, HttpRouter>`                       | The unauthenticated `GET /health` probe.                                                                 |
+| `layerHandlers`             | `Layer<Handler<...>, never, Control \| Projections>`                        | The gateway's own RPC handlers over the read path and the approval mutation.                             |
+| `layerControlHttp`          | `(millis?: number) => Layer<RpcServer.Protocol, never, ...>`                | `/rpc` and `/rpc/ws`, with the keepalive merged into `watch`.                                            |
+| `layerProjectionsHttp`      | `Layer<RpcServer.Protocol, never, ...>`                                     | `/projections` and `/projections/ws`. Both protocols mount together so they cannot disagree.             |
+| `layerSyncHttp`             | `Layer<RpcServer.Protocol, never, ...>`                                     | `/sync` and `/sync/ws`.                                                                                  |
+| `layerIngress`              | `(options?: IngressOptions) => Layer<...>`                                  | The global middleware: local Host/Origin policy, edge authentication, body limit, and RPC-message check. |
+| `layerKeepAlive`            | `(millis?: number) => Layer<Control, never, Control>`                       | Wraps the ambient `Control` so `watch` emits a keepalive when idle.                                      |
+| `layerProjectionsKeepAlive` | `(millis: number) => Layer<Projections, never, Projections>`                | Wraps the ambient `Projections` so a followed subscription beats at the bind's cadence.                  |
 
 `layerKeepAlive` wraps the service rather than re-declaring handlers, which
 keeps `@smthrs/control` `ControlServer` the single definition of what every
@@ -282,21 +282,28 @@ exactly the one `Control.approve` and `Control.deny` declare. See
 
 ## `Diagnosis`
 
-What happened to a run, computed from that run's own control events. The
-vocabulary matches `@smthrs/cli` `Forensics`: this module is that rendering,
-re-expressed as a served projection rather than a terminal card.
+What happened to a run, computed from that run's own control events. This is
+the one fold both surfaces read: `@smthrs/cli` `Forensics` calls `digest` and
+adds what a terminal card needs on top of it, so the served row and
+[`smthrs status`](/cli/status) cannot disagree about a run's counts, refusals,
+or clipping.
 
-| Export      | Signature                                     | Answers                                                                                                                            |
-| ----------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `Digest`    | interface                                     | Status, cause, seat, turn and call counts, edits, refusals, tokens, final output, pending question, and the span the events cover. |
-| `Refusal`   | `{ message: string; count: number }`          | One refused flow call, aggregated by its message.                                                                                  |
-| `Subject`   | `{ runId: string; flowId?: string }`          | The identity a diagnosis is rendered for.                                                                                          |
-| `RunStatus` | `ControlSchema.RunStatus`                     | The run statuses a digest may report.                                                                                              |
-| `digest`    | `(events) => Digest`                          | The facts. Total: an unknown kind contributes nothing, including its timestamp.                                                    |
-| `verdict`   | `(value: Digest) => string`                   | One line: the status plus the reason that most explains it.                                                                        |
-| `duration`  | `(value: Digest) => string`                   | The wall-clock span the handled events cover, as `12s` or `3m 04s`.                                                                |
-| `render`    | `(subject: Subject, value: Digest) => string` | The whole card: verdict, activity evidence, tokens, refusals, cause, and output.                                                   |
-| `clip`      | `(text: string, width: number) => string`     | Truncation on code points, never on UTF-16 code units, marking the cut with an ellipsis.                                           |
+| Export      | Signature                                                  | Answers                                                                                                                            |
+| ----------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `Digest`    | interface                                                  | Status, cause, seat, turn and call counts, edits, refusals, tokens, final output, pending question, and the span the events cover. |
+| `Refusal`   | `{ message: string; count: number }`                       | One refused flow call, aggregated by its message.                                                                                  |
+| `Subject`   | `{ runId: string; flowId?: string }`                       | The identity a diagnosis is rendered for.                                                                                          |
+| `RunStatus` | `ControlSchema.RunStatus`                                  | The run statuses a digest may report.                                                                                              |
+| `digest`    | `(events) => Digest`                                       | The facts. Total: an unknown kind contributes nothing, including its timestamp.                                                    |
+| `verdict`   | `(value: Digest) => string`                                | One line: the status plus the reason that most explains it.                                                                        |
+| `duration`  | `(span: Pick<Digest, "startedAt" \| "endedAt">) => string` | The wall-clock span the handled events cover, as `12s` or `3m 04s`.                                                                |
+| `render`    | `(subject: Subject, value: Digest) => string`              | The whole card: verdict, activity evidence, tokens, refusals, cause, and output.                                                   |
+| `asRecord`  | `(value: unknown) => Record<string, unknown>`              | A wire payload as a record, or an empty record when it is not one.                                                                 |
+| `asString`  | `(value: unknown) => string \| undefined`                  | A payload field as a string, or nothing.                                                                                           |
+| `asNumber`  | `(value: unknown) => number \| undefined`                  | A payload field as a number, or nothing.                                                                                           |
+| `timeOf`    | `(event) => number`                                        | When an event occurred: its payload's own stamp, else journal admission time.                                                      |
+| `firstLine` | `(text: string) => string`                                 | The first line, whichever line ending produced it, so a CRLF cause loses its carriage return.                                      |
+| `clip`      | `(text: string, width: number) => string`                  | Truncation on code points, never on UTF-16 code units, marking the cut with an ellipsis.                                           |
 
 `RunSummaryRow.verdict` and `RunSummaryRow.diagnosis` are `verdict` and `render`
 already applied, so a client rendering a run card calls neither. See

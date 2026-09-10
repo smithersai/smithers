@@ -9,8 +9,10 @@ Every `run-summary` row already answers "what happened to this run". Two of its
 fields are the whole diagnosis:
 
 - `verdict`: one line, the status plus the reason that most explains it.
-- `diagnosis`: the whole card, the same text
-  [`smthrs ps`](/cli/ps) and the CLI's forensics rendering print.
+- `diagnosis`: the whole card, folded by `Diagnosis.digest`, which is also
+  what [`smthrs status`](/cli/status) folds. The terminal card adds lines a
+  client does not need, such as the command that unblocks a parked run, so the
+  two read the same facts and print different cards.
 
 A client that renders a run card renders those two strings. Nothing else is
 needed, and nothing has to be recomputed.

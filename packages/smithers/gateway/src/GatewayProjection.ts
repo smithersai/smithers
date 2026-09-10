@@ -175,21 +175,6 @@ export const TranscriptRow = Schema.Struct({
  */
 export type TranscriptRow = typeof TranscriptRow.Type
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {}
-
-const asString = (value: unknown): string | undefined => typeof value === "string" ? value : undefined
-
-const asNumber = (value: unknown): number | undefined => typeof value === "number" ? value : undefined
-
-const timeOf = (event: ControlSchema.ControlEvent): number => asNumber(asRecord(event.payload).at) ?? event.occurredAt
-
-/** Text one transcript row can carry without becoming several display rows. */
-const firstLine = (text: string): string => {
-  const index = text.search(/[\r\n]/)
-  return index < 0 ? text : text.slice(0, index)
-}
-
 /** Copies only the optional fields a run summary actually carries. */
 const optional = <A>(key: string, value: A | undefined): Record<string, A> =>
   value === undefined ? {} : { [key]: value }
@@ -291,16 +276,16 @@ export const runTree = (
   let ordinal = 0
 
   for (const event of events) {
-    const payload = asRecord(event.payload)
-    const at = timeOf(event)
+    const payload = Diagnosis.asRecord(event.payload)
+    const at = Diagnosis.timeOf(event)
     if (event.kind === "control.agent.turn-opened") {
-      seat = asString(payload.seat) ?? seat
+      seat = Diagnosis.asString(payload.seat) ?? seat
       continue
     }
     if (event.kind === "control.agent.cell-call-started") {
       ordinal += 1
       const nodeId = `call-${ordinal}`
-      const flowName = asString(payload.flowName) ?? nodeId
+      const flowName = Diagnosis.asString(payload.flowName) ?? nodeId
       const row: RunTreeRow = {
         runId: run.runId,
         nodeId,
@@ -315,11 +300,11 @@ export const runTree = (
       continue
     }
     if (event.kind !== "control.agent.cell-call-settled") continue
-    const settled = takeOpenCall(openCalls, asString(payload.flowName))
+    const settled = takeOpenCall(openCalls, Diagnosis.asString(payload.flowName))
     if (settled === undefined) continue
     rows.set(settled.row.nodeId, {
       ...settled.row,
-      status: asString(payload.outcome) === "failure" ? "failed" : "completed",
+      status: Diagnosis.asString(payload.outcome) === "failure" ? "failed" : "completed",
       endedAt: at
     })
   }
@@ -350,27 +335,27 @@ export const approvals = (
 ): ReadonlyArray<ApprovalRow> => {
   const rows = new Map<string, ApprovalRow>()
   for (const event of events) {
-    const payload = asRecord(event.payload)
+    const payload = Diagnosis.asRecord(event.payload)
     if (event.kind === "control.approval.requested") {
-      const requestId = asString(payload.requestId)
-      const runId = asString(payload.runId) ?? event.runId
+      const requestId = Diagnosis.asString(payload.requestId)
+      const runId = Diagnosis.asString(payload.runId) ?? event.runId
       const submitted = payload.payload
       if (requestId === undefined || runId === undefined || submitted === undefined) continue
-      const question = asString(payload.question) ?? `Approval needed — ${requestId}`
+      const question = Diagnosis.asString(payload.question) ?? `Approval needed — ${requestId}`
       rows.set(requestId, {
         runId,
         requestId,
         title: question,
         request: payload as never,
         payload: submitted as ControlSchema.ApprovalPayload,
-        requestedAt: timeOf(event),
+        requestedAt: Diagnosis.timeOf(event),
         status: "pending"
       })
       continue
     }
     if (event.kind === "control.approval.approved" || event.kind === "control.approval.denied") {
       const decided = event.kind === "control.approval.approved" ? "approved" as const : "denied" as const
-      const tokenId = asString(payload.tokenId) ?? asString(payload.requestId)
+      const tokenId = Diagnosis.asString(payload.tokenId) ?? Diagnosis.asString(payload.requestId)
       if (tokenId !== undefined) {
         const named = rows.get(tokenId)
         if (named === undefined) continue
@@ -403,8 +388,8 @@ export const nodeOutput = (
   let ordinal = 0
 
   for (const event of events) {
-    const payload = asRecord(event.payload)
-    const runId = asString(payload.runId) ?? event.runId
+    const payload = Diagnosis.asRecord(event.payload)
+    const runId = Diagnosis.asString(payload.runId) ?? event.runId
     // The ordinal and the open-call list are kept unconditionally, exactly as
     // `runTree` keeps them. Skipping an event before the ordinal advanced
     // shifted this fold's `call-N` keys relative to that one, so the two folds
@@ -412,24 +397,24 @@ export const nodeOutput = (
     if (event.kind === "control.agent.cell-call-started") {
       ordinal += 1
       const nodeId = `call-${ordinal}`
-      openCalls.push({ nodeId, flowName: asString(payload.flowName) ?? nodeId })
+      openCalls.push({ nodeId, flowName: Diagnosis.asString(payload.flowName) ?? nodeId })
       continue
     }
     if (event.kind !== "control.agent.cell-call-settled") continue
-    const settled = takeOpenCall(openCalls, asString(payload.flowName))
+    const settled = takeOpenCall(openCalls, Diagnosis.asString(payload.flowName))
     if (settled === undefined) continue
     // A row names the run it belongs to. A settlement that names none closes
     // its call without producing one.
     if (runId === undefined) continue
-    const failed = asString(payload.outcome) === "failure"
+    const failed = Diagnosis.asString(payload.outcome) === "failure"
     rows.set(settled.nodeId, {
       runId,
       nodeId: settled.nodeId,
       outcome: failed ? "failure" : "success",
       output: failed
-        ? asString(payload.message) ?? ""
-        : asString(payload.value) ?? JSON.stringify(payload.value ?? null),
-      settledAt: timeOf(event)
+        ? Diagnosis.asString(payload.message) ?? ""
+        : Diagnosis.asString(payload.value) ?? JSON.stringify(payload.value ?? null),
+      settledAt: Diagnosis.timeOf(event)
     })
   }
   return [...rows.values()]
@@ -458,8 +443,8 @@ export const transcript = (
   const rows: Array<TranscriptRow> = []
   let turn = 0
   for (const event of events) {
-    const payload = asRecord(event.payload)
-    const runId = asString(payload.runId) ?? event.runId
+    const payload = Diagnosis.asRecord(event.payload)
+    const runId = Diagnosis.asString(payload.runId) ?? event.runId
     if (runId === undefined) continue
     const reported = event.kind.startsWith("control.run.") ||
       event.kind.startsWith("control.agent.") ||
@@ -470,7 +455,7 @@ export const transcript = (
       runId,
       sequence: event.sequence,
       turn,
-      at: timeOf(event),
+      at: Diagnosis.timeOf(event),
       kind: event.kind,
       text: line(event.kind, payload)
     })
@@ -482,21 +467,23 @@ export const transcript = (
 const line = (kind: string, payload: Record<string, unknown>): string => {
   switch (kind) {
     case "control.agent.turn-opened":
-      return `turn opened · ${firstLine(asString(payload.seat) ?? "")}`
+      return `turn opened · ${Diagnosis.firstLine(Diagnosis.asString(payload.seat) ?? "")}`
     case "control.agent.model-settled": {
-      const usage = asRecord(payload.usage)
-      return `model ${asNumber(usage.inputTokens) ?? 0} in / ${asNumber(usage.outputTokens) ?? 0} out`
+      const usage = Diagnosis.asRecord(payload.usage)
+      return `model ${Diagnosis.asNumber(usage.inputTokens) ?? 0} in / ${
+        Diagnosis.asNumber(usage.outputTokens) ?? 0
+      } out`
     }
     case "control.agent.cell-call-started":
-      return `call ${firstLine(asString(payload.flowName) ?? "?")}`
+      return `call ${Diagnosis.firstLine(Diagnosis.asString(payload.flowName) ?? "?")}`
     case "control.agent.cell-call-settled":
-      return asString(payload.outcome) === "failure"
-        ? `  -> FAIL ${Diagnosis.clip(firstLine(asString(payload.message) ?? ""), 100)}`
+      return Diagnosis.asString(payload.outcome) === "failure"
+        ? `  -> FAIL ${Diagnosis.clip(Diagnosis.firstLine(Diagnosis.asString(payload.message) ?? ""), 100)}`
         : "  -> ok"
     case "control.agent.resolved":
-      return `resolved ${Diagnosis.clip(firstLine(asString(payload.text) ?? ""), 100)}`
+      return `resolved ${Diagnosis.clip(Diagnosis.firstLine(Diagnosis.asString(payload.text) ?? ""), 100)}`
     case "control.approval.requested":
-      return `approval requested: ${firstLine(asString(payload.question) ?? "")}`
+      return `approval requested: ${Diagnosis.firstLine(Diagnosis.asString(payload.question) ?? "")}`
     default:
       return kind.slice("control.".length)
   }
