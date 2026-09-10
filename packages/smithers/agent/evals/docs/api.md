@@ -360,8 +360,9 @@ const make = (
 Validates an in-memory baseline. Every known field is read once, records are
 rebuilt from the validated values, and the array is frozen. Fails with
 `invalid_baseline` carrying the record index and field name in `path` for a
-wrong version, a non-array `records`, a record that is not an object, a
-non-string identity field, or a score that is not finite in [0, 1].
+wrong version, a non-array `records`, a record that is not an object, an
+identity field that is not a string or holds a control character (U+0000
+through U+001F, or U+007F), or a score that is not finite in [0, 1].
 
 ```ts
 const write = (baseline: Baseline): string
@@ -503,7 +504,10 @@ const ciGrade = (verdict: Verdict): { readonly exitCode: 0 | 1 | 5; readonly sum
 Maps a gate verdict to the shared CI convention: a finding is exit code 1, an
 undecidable run is exit code 5, and a clean pass is exit code 0. A pass that
 carries unresolved observations exits 5 as well: the gates it met were met
-over fewer observations than the suite declared.
+over fewer observations than the suite declared. The summary is one log line:
+every C0 control and DEL in it is replaced with a space, so a step key or a
+target failure that reached a verdict reason cannot print its own line or a
+terminal escape.
 
 ## Export index
 

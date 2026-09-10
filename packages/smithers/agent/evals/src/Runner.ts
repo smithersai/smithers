@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { CaseExecutor, type Execution, type Service as CaseExecutorService } from "./CaseExecutor.ts"
 import { EvalError } from "./EvalError.ts"
+import { flattenControlCharacters } from "./internal/controlCharacters.ts"
 import type { Binding, Case, Suite } from "./Suite.ts"
 
 /**
@@ -224,26 +225,36 @@ const casePath = (name: string): string => `cases['${name}']`
 // The executor boundary handles every non-interruption cause, not only typed
 // failures: an executor that wraps a parser in `Effect.sync` dies with a
 // defect, and one case's defect must not abort its siblings or the report.
+// The wrapped message is flattened because a gate prints it to a CI log, where
+// a newline from the target would let it forge a workflow command; the
+// original message survives untouched on `cause`.
 const caseError = (suiteCase: Case, cause: Cause.Cause<unknown>): EvalError => {
   const reason = Cause.squash(cause)
   return reason instanceof EvalError
     ? new EvalError({
       code: reason.code,
-      message: `Target failed for case '${suiteCase.name}': ${reason.message}`,
+      message: flattenControlCharacters(`Target failed for case '${suiteCase.name}': ${reason.message}`),
       path: reason.path ?? casePath(suiteCase.name),
       cause: reason
     })
     : new EvalError({
       code: "executor",
-      message: `Target failed for case '${suiteCase.name}': ${String(reason)}`,
+      message: flattenControlCharacters(`Target failed for case '${suiteCase.name}': ${String(reason)}`),
       path: casePath(suiteCase.name),
       cause: reason
     })
 }
 
+// A step key is a runtime value the target returns, so unlike a suite name it
+// is flattened rather than rejected: it reaches baselines, reports and the
+// gate summary, and a control character in any of them corrupts a CI log line.
 const runCase = (executor: CaseExecutorService, suiteCase: Case): Effect.Effect<CaseResult> =>
   Effect.suspend(() => executor.run(structuredClone(suiteCase))).pipe(
-    Effect.map((execution): CaseResult => ({ case: suiteCase.name, execution, observations: [] })),
+    Effect.map((execution): CaseResult => ({
+      case: suiteCase.name,
+      execution: { ...execution, stepKey: flattenControlCharacters(execution.stepKey) },
+      observations: []
+    })),
     Effect.catchCause((cause) =>
       Cause.hasInterrupts(cause)
         ? Effect.interrupt

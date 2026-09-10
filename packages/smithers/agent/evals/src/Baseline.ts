@@ -11,6 +11,7 @@
 import * as Effect from "effect/Effect"
 import { EvalError } from "./EvalError.ts"
 import { compareText, stringify } from "./internal/canonical.ts"
+import { controlCharacter } from "./internal/controlCharacters.ts"
 import type { Observation, RunResult } from "./Runner.ts"
 
 /**
@@ -58,10 +59,18 @@ const fail = (message: string, path?: string): Effect.Effect<never, EvalError> =
     new EvalError({ code: "invalid_baseline", message, ...(path === undefined ? {} : { path }) })
   )
 
-const stringField = (value: unknown, field: string, path: string): Effect.Effect<string, EvalError> =>
-  typeof value !== "string"
-    ? fail(`Baseline record field '${field}' must be a string, got ${typeof value}`, path)
-    : Effect.succeed(value)
+// A committed record is read by a gate whose summary goes to a CI log, so it
+// follows the same control-character rule as a suite name: rejected where it
+// enters the system, not flattened later.
+const stringField = (value: unknown, field: string, path: string): Effect.Effect<string, EvalError> => {
+  if (typeof value !== "string") {
+    return fail(`Baseline record field '${field}' must be a string, got ${typeof value}`, path)
+  }
+  const control = controlCharacter(value)
+  return control === undefined
+    ? Effect.succeed(value)
+    : fail(`Baseline record field '${field}' must not contain the control character ${control}`, path)
+}
 
 const decodeRecord = (value: unknown, index: number): Effect.Effect<BaselineRecord, EvalError> =>
   Effect.gen(function*() {
@@ -87,12 +96,9 @@ const decodeRecord = (value: unknown, index: number): Effect.Effect<BaselineReco
         `${at}.score`
       )
     }
-    if (rawScorerName !== undefined && typeof rawScorerName !== "string") {
-      return yield* fail(
-        `Baseline record field 'scorerName' must be a string, got ${typeof rawScorerName}`,
-        `${at}.scorerName`
-      )
-    }
+    const scorerName = rawScorerName === undefined
+      ? undefined
+      : yield* stringField(rawScorerName, "scorerName", `${at}.scorerName`)
     // Every record is rebuilt field by field. Keeping the caller's object would
     // carry unknown keys, and any getter among them, straight into a committed
     // artifact.
@@ -100,7 +106,7 @@ const decodeRecord = (value: unknown, index: number): Effect.Effect<BaselineReco
       suite,
       case: caseName,
       scorer,
-      ...(rawScorerName === undefined ? {} : { scorerName: rawScorerName }),
+      ...(scorerName === undefined ? {} : { scorerName }),
       stepKey,
       score: Object.is(score, -0) ? 0 : score
     }
@@ -174,8 +180,8 @@ export const fromRun = (run: RunResult): Effect.Effect<Baseline, EvalError> => {
  *
  * Fails with `invalid_baseline` carrying the record index and field name in
  * `path` for a wrong version, a non-array `records`, a record that is not an
- * object, a non-string identity field, or a score that is not finite in
- * `[0, 1]`.
+ * object, an identity field that is not a string or holds a control
+ * character, or a score that is not finite in `[0, 1]`.
  *
  * @category constructors
  * @since 0.1.0

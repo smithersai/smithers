@@ -74,6 +74,23 @@ describe("Baseline", () => {
     expect(error.message).toBe("Cannot infer baseline suite: legacy records name multiple suites")
   })
 
+  it("rejects a control character in any record string field", async () => {
+    const hostile = "c\n::stop-commands::x\n\u001b[2Kpassed"
+    for (const field of ["suite", "case", "scorer", "scorerName", "stepKey"] as const) {
+      const error = await failure(Baseline.load(JSON.stringify({
+        version: 1,
+        suite: "s",
+        records: [{ ...record, [field]: hostile }]
+      })))
+
+      expect(error.code).toBe("invalid_baseline")
+      expect(error.path).toBe(`records[0].${field}`)
+      expect(error.message).toBe(`Baseline record field '${field}' must not contain the control character U+000A`)
+    }
+    const del = await failure(Baseline.make({ suite: "s", records: [{ ...record, stepKey: "k\u007f" }] }))
+    expect(del.message).toBe("Baseline record field 'stepKey' must not contain the control character U+007F")
+  })
+
   it("rejects an empty suite-less legacy artifact", async () => {
     const error = await failure(Baseline.load("{\"version\":1,\"records\":[]}"))
 
@@ -130,14 +147,16 @@ describe("Baseline", () => {
       records: [
         { suite: "z", case: "c", scorer: "x", stepKey: "k", score: 1 },
         { suite: "é", case: "c", scorer: "x", stepKey: "k", score: 1 },
-        { suite: "a", case: "b\u0000c", scorer: "x", stepKey: "k", score: 1 },
-        { suite: "a", case: "b", scorer: "\u0000c", stepKey: "x", score: 1 }
+        // A delimiter-joined key would collide these two; a control character
+        // can no longer enter a record, so the collision byte is a plain "/".
+        { suite: "a", case: "b/c", scorer: "x", stepKey: "k", score: 1 },
+        { suite: "a", case: "b", scorer: "/c", stepKey: "x", score: 1 }
       ]
     }))
     const suites = JSON.parse(Baseline.write(baseline)).records.map((entry: { case: string; suite: string }) =>
-      `${entry.suite}/${entry.case}`
+      `${entry.suite}|${entry.case}`
     )
-    expect(suites).toEqual(["a/b", "a/b\u0000c", "z/c", "é/c"])
+    expect(suites).toEqual(["a|b", "a|b/c", "z|c", "é|c"])
   })
 
   it("round-trips through write and load byte for byte", async () => {

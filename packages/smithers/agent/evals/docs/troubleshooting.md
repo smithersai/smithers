@@ -55,9 +55,9 @@ artifact and its ownership before regenerating it from a green run.
   `suite`: records disagree on ownership. Recover a baseline for the intended
   suite; do not choose the first record's suite for a mixed artifact.
 - `Baseline records must be an array`, at `records`.
-- A record that is not an object, a non-string identity field, or a score
-  outside [0, 1]: the record index and field are in `path`, as in
-  `records[3].score`.
+- A record that is not an object, an identity field that is not a string or
+  holds a control character, or a score outside [0, 1]: the record index and
+  field are in `path`, as in `records[3].score`.
 - `Baseline belongs to suite '<name>', but the run is suite '<name>'`, at
   `baseline.suite` or `baseline.records`: comparison loaded the wrong file.
   Check the path CI reads.

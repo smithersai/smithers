@@ -171,6 +171,38 @@ describe("Gate", () => {
     expect(Gate.ciGrade(verdict).exitCode).toBe(5)
   })
 
+  it("never lets a verdict reason print its own CI log line", async () => {
+    // A verdict reason is text from a baseline, a step key or a target's failure.
+    // The summary goes to stdout, where a newline is a forged workflow command
+    // on GitHub Actions and an ESC sequence rewrites the visible log.
+    const verdict = await Effect.runPromise(
+      Gate.check({
+        ...report([]),
+        run: {
+          runId: "run",
+          suite: "s",
+          cases: [{
+            case: "d",
+            error: new EvalError({ code: "executor", message: "boom\n::error::forged from target" }),
+            observations: []
+          }],
+          observations: []
+        },
+        missing: [
+          { side: "run" as const, case: "c\n::stop-commands::x\n\u001b[2Kpassed", scorer: "s", stepKey: "k" },
+          { side: "baseline" as const, case: "d", scorer: "s", stepKey: "step\n::warning::forged\u007f" }
+        ]
+      })
+    )
+    const { summary } = Gate.ciGrade(verdict)
+
+    expect(summary).not.toMatch(/[\u0000-\u001F\u007F]/u)
+    expect(summary.split("\n")).toHaveLength(1)
+    expect(summary).toContain("boom ::error::forged from target")
+    expect(summary).toContain("c ::stop-commands::x  [2Kpassed/s/k")
+    expect(summary).toContain("d/s/step ::warning::forged ")
+  })
+
   it("stays undecided on incomplete regression evidence", async () => {
     const missing = await Effect.runPromise(
       Gate.check({ ...report([]), missing: [{ side: "run" as const, case: "c", scorer: "s", stepKey: "k" }] })

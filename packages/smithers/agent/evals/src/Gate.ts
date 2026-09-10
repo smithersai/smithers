@@ -13,6 +13,7 @@ import {
   type Verdict
 } from "@smthrs/scorers/ScoreGate"
 import * as Effect from "effect/Effect"
+import { flattenControlCharacters } from "./internal/controlCharacters.ts"
 import type { Report } from "./Regression.ts"
 
 /**
@@ -113,7 +114,16 @@ export const check = (report: Report, options: Options = {}): Effect.Effect<Verd
  * Maps a gate verdict to the shared CI convention: a finding is exit code 1,
  * an undecidable run is exit code 5.
  *
+ * The summary is one log line: every C0 control and DEL in it becomes a
+ * space, the way a report cell is written, so a value that reached a verdict
+ * reason from a baseline, a step key or a target's failure cannot emit its own
+ * line, which on GitHub Actions would be a workflow command, or a terminal
+ * escape.
+ *
  * @category grading
  * @since 0.1.0
  */
-export const ciGrade = (verdict: Verdict): { readonly exitCode: 0 | 1 | 5; readonly summary: string } => grade(verdict)
+export const ciGrade = (verdict: Verdict): { readonly exitCode: 0 | 1 | 5; readonly summary: string } => {
+  const graded = grade(verdict)
+  return { exitCode: graded.exitCode, summary: flattenControlCharacters(graded.summary) }
+}

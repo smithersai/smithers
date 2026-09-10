@@ -13,6 +13,7 @@ import type * as ScorerBinding from "@smthrs/scorers/Binding"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { EvalError } from "./EvalError.ts"
+import { controlCharacter } from "./internal/controlCharacters.ts"
 
 /**
  * A scorer binding accepted from `@smthrs/scorers`.
@@ -93,18 +94,6 @@ export const limits = {
 
 const invalid = (message: string, path: string, cause?: unknown): EvalError =>
   new EvalError({ code: "invalid_suite", message, path, ...(cause === undefined ? {} : { cause }) })
-
-// A NUL in a name silently collides with the delimiter every tuple key used to
-// be joined on. The keys are injective now, but a control character in a name
-// still corrupts a Markdown report and a CI log line, so it is rejected here,
-// once, where the name enters the system.
-const controlCharacter = (value: string): string | undefined => {
-  for (const character of value) {
-    const code = character.codePointAt(0)!
-    if (code < 0x20 || code === 0x7f) return `U+${code.toString(16).toUpperCase().padStart(4, "0")}`
-  }
-  return undefined
-}
 
 const cloneMessage = "Suite data must be structured-cloneable so the suite cannot change after it is validated"
 

@@ -48,6 +48,26 @@ const failureOf = (effect: Effect.Effect<unknown, EvalError, never>): Promise<Ev
   Effect.runPromise(Effect.flip(effect))
 
 describe("Runner", () => {
+  it("flattens control characters in a returned step key and a wrapped target failure", async () => {
+    const suite = await suiteOf("s", [], [{ name: "one", input: 1 }, { name: "two", input: 2 }])
+    const executor = executorFor((suiteCase) =>
+      suiteCase.name === "one"
+        ? Effect.succeed({
+          output: suiteCase.input,
+          stepKey: "step\n::warning::forged from stepKey\u001b[2K",
+          latencyMs: 0,
+          target
+        })
+        : Effect.fail(new EvalError({ code: "executor", message: "boom\n::error::forged from target\u007f" }))
+    )
+    const result = await Effect.runPromise(Runner.run(suite, runOptions).pipe(Effect.provide(executor)))
+
+    expect(result.cases[0]?.execution?.stepKey).toBe("step ::warning::forged from stepKey [2K")
+    expect(result.cases[1]?.error?.message).toBe("Target failed for case 'two': boom ::error::forged from target ")
+    // The original message stays on the cause for anyone debugging the target.
+    expect((result.cases[1]?.error?.cause as EvalError).message).toBe("boom\n::error::forged from target\u007f")
+  })
+
   it("isolates mutating executors and scorers across sequential and concurrent runs", async () => {
     const executorSeen: unknown[] = []
     const scorerSeen: unknown[] = []
