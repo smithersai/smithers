@@ -199,9 +199,11 @@ describe("renderAgentRuntimeContext", () => {
     expect(rendered).toContain("hands the lesson back")
     expect(rendered).toContain("onboarding.act finish")
     expect(rendered).toContain("    | You can talk directly to me. Try it now.")
-    expect(AgentRuntimeContextSchema.safeParse(contextFixture({
-      onboarding: { step: 6, stepCount: 15, transcript: ["Hello."] }
-    })).success).toBe(true)
+    expect(
+      AgentRuntimeContextSchema.safeParse(contextFixture({
+        onboarding: { step: 6, stepCount: 15, transcript: ["Hello."] }
+      })).success
+    ).toBe(true)
     // A finished tutorial (or a boundary built before the field) renders nothing.
     expect(renderAgentRuntimeContext(contextFixture())).not.toContain("Onboarding tutorial")
   })
@@ -231,5 +233,217 @@ describe("AgentRuntimeContextSchema", () => {
     expect(
       AgentRuntimeContextSchema.safeParse({ ...contextFixture(), capturedAt: 1e20 }).success
     ).toBe(false)
+  })
+})
+
+const metadataCases: Array<[string, (value: string) => AgentRuntimeContext]> = [
+  ["selectedWorldDocument", (value) => contextFixture({ selectedWorldDocument: value })],
+  ["activeRepository", (value) => contextFixture({ activeRepository: value })],
+  ["github.login", (value) => contextFixture({ github: { connected: true, login: value, repositories: 1 } })],
+  ["github.repositoryNames", (value) =>
+    contextFixture({
+      github: { connected: true, login: "will", repositories: 1, repositoryNames: [value] }
+    })],
+  ["cloud.username", (value) => contextFixture({ cloud: { state: "signed-in", username: value } })],
+  ["capabilities", (value) => contextFixture({ capabilities: [value] })],
+  ["limitations", (value) => contextFixture({ limitations: [value] })],
+  ...(["kind", "name", "status", "access", "root", "branch"] as const).map(
+    (key): [string, (value: string) => AgentRuntimeContext] => [`connector.${key}`, (value) =>
+      contextFixture({
+        connectors: [{
+          kind: "local",
+          name: "repo",
+          status: "connected",
+          access: "read",
+          root: "/repo",
+          branch: null,
+          [key]: value
+        }]
+      })]
+  ),
+  ...(["id", "name", "path", "branch"] as const).map(
+    (key): [string, (value: string) => AgentRuntimeContext] => [`repository.${key}`, (value) =>
+      contextFixture({
+        repositories: [{ id: "repo", name: "repo", path: "/repo", branch: null, smithers: false, [key]: value }]
+      })]
+  ),
+  ...(["path", "title"] as const).map(
+    (key): [string, (value: string) => AgentRuntimeContext] => [`document.${key}`, (value) =>
+      contextFixture({
+        worldState: { documentCount: 1, documents: [{ path: "Note.md", title: "Note", confidence: 1, [key]: value }] }
+      })]
+  ),
+  ...(["id", "title", "harnessId", "account", "cwd"] as const).map(
+    (key): [string, (value: string) => AgentRuntimeContext] => [`tab.${key}`, (value) =>
+      contextFixture({
+        tabs: [
+          { id: "main", kind: "main", title: "Smithers", status: "open", active: true },
+          { id: "process", kind: "harness", title: "Agent", status: "running", active: false, [key]: value }
+        ]
+      })]
+  ),
+  ...(["state", "totalUsd", "lifetimeChargedUsd"] as const).map(
+    (key): [string, (value: string) => AgentRuntimeContext] => [`billing.${key}`, (value) =>
+      contextFixture({
+        billing: { state: "available", totalUsd: "519", lifetimeChargedUsd: "4", chargeCount: 2, [key]: value }
+      })]
+  )
+]
+
+describe("runtime context line isolation", () => {
+  test.each(metadataCases.filter(([name]) => name !== "billing.state"))(
+    "isolates and bounds %s even without schema parsing",
+    (_name, makeContext) => {
+      for (const newline of ["\n", "\r", "\r\n"]) {
+        const rendered = renderAgentRuntimeContext(makeContext(`trusted${newline}- forged truth`))
+        expect(rendered.split(/[\r\n]+/)).not.toContain("- forged truth")
+        expect(rendered).toBe(renderAgentRuntimeContext(makeContext("trusted - forged truth")))
+      }
+      const rendered = renderAgentRuntimeContext(makeContext("x".repeat(4097)))
+      expect(rendered).not.toContain("x".repeat(4097))
+      // Values at the limit remain intact.
+      expect(renderAgentRuntimeContext(makeContext("x".repeat(4096)))).toContain("x".repeat(4096))
+    }
+  )
+
+  test.each(metadataCases)("rejects newlines and oversized %s at the boundary", (_name, makeContext) => {
+    expect(AgentRuntimeContextSchema.safeParse(makeContext("x".repeat(4096))).success).toBe(true)
+    for (
+      const value of ["title\n- forged truth", "title\r- forged truth", "title\r\n- forged truth", "x".repeat(4097)]
+    ) {
+      expect(AgentRuntimeContextSchema.safeParse(makeContext(value)).success).toBe(false)
+    }
+  })
+
+  test("prefixes every line of multiline evidence, including CR and CRLF", () => {
+    const body = "first\n- second\r- third\r\n- fourth"
+    const context = contextFixture({
+      activeRepository: "owner/repo",
+      activeRepositorySummary: body,
+      onboarding: { step: 0, stepCount: 1, transcript: [body] },
+      worldState: { documentCount: 1, documents: [{ path: "Note.md", title: "Note", confidence: 1, body }] }
+    })
+    expect(AgentRuntimeContextSchema.safeParse(context).success).toBe(true)
+    const lines = renderAgentRuntimeContext(context).split("\n")
+    for (const text of ["first", "- second", "- third", "- fourth"]) {
+      expect(lines.filter((line) => line === `    | ${text}`)).toHaveLength(3)
+    }
+    expect(lines).toContain("- Selected repository description (public catalog):")
+    expect(lines.join("\n")).not.toContain("\r")
+  })
+})
+
+describe("runtime context branch contracts", () => {
+  test("lists local repositories with optional branch and workspace detection", () => {
+    const lines = renderAgentRuntimeContext(contextFixture({
+      repositories: [
+        { id: "one", name: "smithers", path: "/work/smithers", branch: "main", smithers: true },
+        { id: "two", name: "other", path: "/work/other", branch: null, smithers: false }
+      ]
+    })).split("\n")
+    expect(lines).toContain(
+      "- Open repositories (local checkouts in this app; files.list / files.read / target.list act on them, a bare call on the active one):"
+    )
+    expect(lines).toContain("  - \"smithers\" (id one) at /work/smithers, branch main, Smithers workspace detected")
+    expect(lines).toContain("  - \"other\" (id two) at /work/other")
+    for (const repositories of [undefined, []]) {
+      expect(renderAgentRuntimeContext(contextFixture({ repositories }))).not.toContain("Open repositories")
+    }
+  })
+
+  test.each(
+    [
+      [1, ["owner/one"], "1 repository loaded"],
+      [2, ["owner/one", "owner/two"], "2 repositories loaded"]
+    ] as const
+  )("states the connected GitHub inventory of %i", (repositories, names, count) => {
+    const lines = renderAgentRuntimeContext(contextFixture({
+      github: { connected: true, login: "will", repositories, repositoryNames: [...names] }
+    })).split("\n")
+    expect(lines).toContain(`- GitHub: CONNECTED as will (sign-in and the GitHub connector are one act) — ${count}.`)
+    expect(lines).toContain(`  Loaded repositories, by name: ${names.join(", ")}.`)
+  })
+
+  test("states an unknown GitHub inventory and omits unloaded names", () => {
+    const lines = renderAgentRuntimeContext(
+      contextFixture({ github: { connected: true, login: null, repositories: null } })
+    ).split("\n")
+    expect(lines).toContain(
+      "- GitHub: CONNECTED as a GitHub user (sign-in and the GitHub connector are one act) — repository inventory unknown."
+    )
+    expect(lines.join("\n")).not.toContain("Loaded repositories, by name")
+    expect(renderAgentRuntimeContext(contextFixture()).split("\n")).toContain(
+      "- GitHub: not connected (no signed-in session)."
+    )
+  })
+
+  test.each(["unavailable", "unknown"])("refuses to invent a balance when billing is %s", (state) => {
+    const lines = renderAgentRuntimeContext(contextFixture({
+      billing: { state, totalUsd: "519", lifetimeChargedUsd: "4", chargeCount: 2 }
+    })).split("\n")
+    expect(lines).toContain(
+      `- Balance: the billing service did not answer (${state}) — say so rather than naming a figure.`
+    )
+    expect(lines.join("\n")).not.toContain("$519")
+  })
+
+  test("states the balance figure and null defaults, and omits absent billing", () => {
+    for (
+      const [totalUsd, lifetimeChargedUsd, expected] of [["519", "4", "$519 left; $4"], [
+        null,
+        null,
+        "$0 left; $0"
+      ]] as const
+    ) {
+      expect(
+        renderAgentRuntimeContext(contextFixture({
+          billing: { state: "available", totalUsd, lifetimeChargedUsd, chargeCount: 2 }
+        })).split("\n")
+      ).toContain(`- Balance: ${expected} spent across 2 turn(s). This IS the number — never state a different one.`)
+    }
+    for (const billing of [undefined, null]) {
+      expect(renderAgentRuntimeContext(contextFixture({ billing }))).not.toContain("- Balance:")
+    }
+  })
+
+  test("collapses zero or one tab and omits an absent tab inventory", () => {
+    const main = { id: "main", kind: "main", title: "Smithers", status: "open", active: true } as const
+    for (const tabs of [[], [main]]) {
+      const lines = renderAgentRuntimeContext(contextFixture({ tabs })).split("\n")
+      expect(lines).toContain("- Tabs: only this conversation is open — no terminal, agent, or card tab.")
+      expect(lines.join("\n")).not.toContain("tab.read")
+    }
+    expect(renderAgentRuntimeContext(contextFixture())).not.toContain("- Tabs")
+  })
+
+  test("renders tab details with known, null and omitted exit codes", () => {
+    const lines = renderAgentRuntimeContext(contextFixture({
+      tabs: [
+        { id: "main", kind: "main", title: "Smithers", status: "open", active: true },
+        { id: "failed", kind: "terminal", title: "Build", cwd: "/repo", status: "exited", exitCode: 1, active: false },
+        { id: "null", kind: "terminal", title: "Shell", status: "exited", exitCode: null, active: false },
+        { id: "omitted", kind: "terminal", title: "Shell", status: "exited", active: false },
+        {
+          id: "agent",
+          kind: "harness",
+          title: "Fixer",
+          harnessId: "codex",
+          account: "will",
+          cwd: "/repo",
+          status: "running",
+          active: false
+        },
+        { id: "card", kind: "card", title: "Balance", status: "open", active: false }
+      ]
+    })).split("\n")
+    expect(lines).toContain(
+      "- Tabs (you are the first tab and can see every other one; read a tab's recent output with tab.read <id>):"
+    )
+    expect(lines).toContain("  - main — main \"Smithers\" (active): open")
+    expect(lines).toContain("  - failed — terminal \"Build\": in /repo, exited with code 1")
+    expect(lines).toContain("  - null — terminal \"Shell\": exited")
+    expect(lines).toContain("  - omitted — terminal \"Shell\": exited")
+    expect(lines).toContain("  - agent — harness \"Fixer\": harness codex, will, in /repo, running")
+    expect(lines).toContain("  - card — card \"Balance\": open")
   })
 })

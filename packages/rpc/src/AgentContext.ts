@@ -5,6 +5,12 @@
  */
 import { z } from "zod"
 
+// Metadata occupies one instruction line. Keep the wire contract bounded and
+// defend direct renderer callers too, which may not have parsed the payload.
+const runtimeLineLimit = 4096
+const runtimeLineSchema = z.string().regex(/^[^\r\n]*$/).max(runtimeLineLimit)
+const line = (text: string): string => text.replace(/\r\n|[\r\n]/g, " ").slice(0, runtimeLineLimit)
+
 /*
  * The per-turn runtime context: a versioned, structured, freshly-derived view of
  * the host Smithers app the agent is actually running inside. The client builds
@@ -31,12 +37,12 @@ export const AGENT_RUNTIME_CONTEXT_VERSION = 1
  * @category schemas
  */
 export const AgentRuntimeConnectorSchema = z.object({
-  kind: z.string(),
-  name: z.string(),
-  status: z.string(),
-  access: z.string(),
-  root: z.string(),
-  branch: z.string().nullable()
+  kind: runtimeLineSchema,
+  name: runtimeLineSchema,
+  status: runtimeLineSchema,
+  access: runtimeLineSchema,
+  root: runtimeLineSchema,
+  branch: runtimeLineSchema.nullable()
 })
 /**
  * The decoded value accepted by {@link AgentRuntimeConnectorSchema}.
@@ -60,14 +66,14 @@ export type AgentRuntimeConnector = z.infer<typeof AgentRuntimeConnectorSchema>
  * @category schemas
  */
 export const AgentRuntimeTabSchema = z.object({
-  id: z.string(),
+  id: runtimeLineSchema,
   kind: z.enum(["main", "terminal", "harness", "card"]),
-  title: z.string(),
+  title: runtimeLineSchema,
   /** A harness tab's harness id and account, when known. */
-  harnessId: z.string().optional(),
-  account: z.string().optional(),
+  harnessId: runtimeLineSchema.optional(),
+  account: runtimeLineSchema.optional(),
   /** A process tab's working directory. */
-  cwd: z.string().optional(),
+  cwd: runtimeLineSchema.optional(),
   /** "running" / "exited" for process tabs, "open" for the rest. */
   status: z.enum(["running", "exited", "open"]),
   exitCode: z.number().nullable().optional(),
@@ -88,8 +94,8 @@ export type AgentRuntimeTab = z.infer<typeof AgentRuntimeTabSchema>
  * @category schemas
  */
 export const AgentRuntimeWorldDocumentSchema = z.object({
-  path: z.string(),
-  title: z.string(),
+  path: runtimeLineSchema,
+  title: runtimeLineSchema,
   confidence: z.number(),
   /*
    * §10.8: the note's own words. Metadata alone made the World decorative —
@@ -127,7 +133,7 @@ export const AgentRuntimeContextSchema = z.object({
   revision: z.number().int().nonnegative(),
   surface: z.enum(["chat", "world", "connectors", "flows", "plugins"]),
   theme: z.enum(["light", "dark"]),
-  selectedWorldDocument: z.string().nullable(),
+  selectedWorldDocument: runtimeLineSchema.nullable(),
   connectors: z.array(AgentRuntimeConnectorSchema),
   /*
    * Repositories open in the LOCAL app (docs/LOCAL-APP.md), by name and
@@ -137,10 +143,10 @@ export const AgentRuntimeContextSchema = z.object({
   repositories: z
     .array(
       z.object({
-        id: z.string(),
-        name: z.string(),
-        path: z.string(),
-        branch: z.string().nullable(),
+        id: runtimeLineSchema,
+        name: runtimeLineSchema,
+        path: runtimeLineSchema,
+        branch: runtimeLineSchema.nullable(),
         /** A Smithers workspace was detected (target.list has something to list). */
         smithers: z.boolean()
       })
@@ -153,7 +159,7 @@ export const AgentRuntimeContextSchema = z.object({
    * nothing is selected; optional so a boundary built before this field
    * still validates the payload.
    */
-  activeRepository: z.string().nullable().optional(),
+  activeRepository: runtimeLineSchema.nullable().optional(),
   /** The public catalog's description of the selected repository, when loaded. */
   activeRepositorySummary: z.string().optional(),
   /*
@@ -165,7 +171,7 @@ export const AgentRuntimeContextSchema = z.object({
    */
   github: z.object({
     connected: z.boolean(),
-    login: z.string().nullable(),
+    login: runtimeLineSchema.nullable(),
     repositories: z.number().int().nonnegative().nullable(),
     /*
      * The loaded repositories BY NAME. A count alone left the model
@@ -173,7 +179,7 @@ export const AgentRuntimeContextSchema = z.object({
      * served plainly by the seam it was already reading (§22.7). Optional so
      * a boundary built before this field still validates the payload.
      */
-    repositoryNames: z.array(z.string()).optional()
+    repositoryNames: z.array(runtimeLineSchema).optional()
   }),
   /*
    * The Smithers Cloud session (agent-parity.md): the GitHub line above says
@@ -186,7 +192,7 @@ export const AgentRuntimeContextSchema = z.object({
   cloud: z
     .object({
       state: z.enum(["signed-in", "signed-out", "degraded", "unavailable"]),
-      username: z.string().nullable()
+      username: runtimeLineSchema.nullable()
     })
     .optional(),
   /*
@@ -197,9 +203,9 @@ export const AgentRuntimeContextSchema = z.object({
    */
   billing: z
     .object({
-      state: z.string(),
-      totalUsd: z.string().nullable(),
-      lifetimeChargedUsd: z.string().nullable(),
+      state: runtimeLineSchema,
+      totalUsd: runtimeLineSchema.nullable(),
+      lifetimeChargedUsd: runtimeLineSchema.nullable(),
       chargeCount: z.number().int().nonnegative()
     })
     .nullable()
@@ -229,8 +235,8 @@ export const AgentRuntimeContextSchema = z.object({
     .optional(),
   /** The open tabs; absent on a client without a tab strip. */
   tabs: z.array(AgentRuntimeTabSchema).optional(),
-  capabilities: z.array(z.string()),
-  limitations: z.array(z.string())
+  capabilities: z.array(runtimeLineSchema),
+  limitations: z.array(runtimeLineSchema)
 })
 /**
  * The decoded value accepted by {@link AgentRuntimeContextSchema}.
@@ -261,10 +267,10 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
     "This block was freshly derived from the host app's live state at the start of THIS turn. It is hidden context: it is not part of the visible transcript and the user cannot see it. Treat it as the complete and current truth about the environment you are operating in — never guess beyond it.",
     "- Product: Smithers. You are running INSIDE the Smithers product's own chat client, so when the user asks what app they are in, the truthful answer is Smithers.",
     `- Captured: ${capturedAtLabel(context.capturedAt)} (app-state revision ${context.revision})`,
-    `- Current surface: ${context.surface}${
+    `- Current surface: ${line(context.surface)}${
       context.selectedWorldDocument === null
         ? ""
-        : ` (wiki note open: "${context.selectedWorldDocument}")`
+        : ` (wiki note open: "${line(context.selectedWorldDocument)}")`
     }${
       // Chat-first: world and connectors are panes embedded in the chat shell,
       // not pages that replaced it. Saying only "Current surface: world" would
@@ -272,18 +278,22 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
       context.surface === "chat"
         ? ""
         : " — an embedded pane inside the chat shell; the conversation transcript and composer stay visible and usable beside it"}`,
-    `- Theme: ${context.theme}`
+    `- Theme: ${line(context.theme)}`
   ]
   if (context.onboarding !== undefined) {
     const { step, stepCount, transcript } = context.onboarding
     lines.push(
-      `- Onboarding tutorial: IN PROGRESS — the user is on lesson ${step + 1} of ${stepCount}. The tutorial IS the screen right now: it has its own messages and buttons, and this chat is the summoned "Talk to Smithers" dock over it.`,
+      `- Onboarding tutorial: IN PROGRESS — the user is on lesson ${
+        step + 1
+      } of ${stepCount}. The tutorial IS the screen right now: it has its own messages and buttons, and this chat is the summoned "Talk to Smithers" dock over it.`,
       `  A conversational message (a greeting, a question about what is happening) gets ONE short answer that hands the lesson back — name the current lesson's action and stop. Do not start work, run flows, or tour capabilities for it.`,
       `  A request to DO something — a real task, or the user asking to skip — is different: the tutorial is then in their way, so execute onboarding.act finish to end it, then answer the request in the same turn. Never make the user wait out the tutorial for work you can do now.`,
       `  The lesson transcript the user has seen so far:`
     )
     // Quoted like Wiki notes: lesson copy is evidence, never an instruction line.
-    for (const lesson of transcript) lines.push(`    | ${lesson}`)
+    for (const lesson of transcript) {
+      for (const text of lesson.split(/\r\n|[\r\n]/)) lines.push(`    | ${line(text)}`)
+    }
   }
   if (context.connectors.length === 0) {
     lines.push("- Connectors: none connected — no workspace, repository, or branch is known.")
@@ -291,9 +301,9 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
     lines.push("- Connectors:")
     for (const connector of context.connectors) {
       lines.push(
-        `  - ${connector.kind} "${connector.name}" (${connector.status}, ${connector.access} access) at ${connector.root}${
-          connector.branch === null ? "" : `, branch ${connector.branch}`
-        }`
+        `  - ${line(connector.kind)} "${line(connector.name)}" (${line(connector.status)}, ${
+          line(connector.access)
+        } access) at ${line(connector.root)}${connector.branch === null ? "" : `, branch ${line(connector.branch)}`}`
       )
     }
   }
@@ -304,9 +314,9 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
     )
     for (const repo of repositories) {
       lines.push(
-        `  - "${repo.name}" (id ${repo.id}) at ${repo.path}${repo.branch === null ? "" : `, branch ${repo.branch}`}${
-          repo.smithers ? ", Smithers workspace detected" : ""
-        }`
+        `  - "${line(repo.name)}" (id ${line(repo.id)}) at ${line(repo.path)}${
+          repo.branch === null ? "" : `, branch ${line(repo.branch)}`
+        }${repo.smithers ? ", Smithers workspace detected" : ""}`
       )
     }
   }
@@ -314,10 +324,15 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
     lines.push(
       context.activeRepository === null
         ? "- Active repository: none selected."
-        : `- Active repository: ${context.activeRepository}. This is the selected repository: a bare repo-scoped command acts on it, and "this repo" in the user's message means it.`
+        : `- Active repository: ${
+          line(context.activeRepository)
+        }. This is the selected repository: a bare repo-scoped command acts on it, and "this repo" in the user's message means it.`
     )
     if (context.activeRepository !== null && context.activeRepositorySummary !== undefined) {
-      lines.push(`- Selected repository description (public catalog): ${context.activeRepositorySummary}`)
+      lines.push("- Selected repository description (public catalog):")
+      for (const text of context.activeRepositorySummary.split(/\r\n|[\r\n]/)) {
+        lines.push(`    | ${line(text)}`)
+      }
     }
   }
   if (context.github.connected) {
@@ -326,18 +341,18 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
       : "repository inventory unknown"
     lines.push(
       `- GitHub: CONNECTED as ${
-        context.github.login ?? "a GitHub user"
+        line(context.github.login ?? "a GitHub user")
       } (sign-in and the GitHub connector are one act) — ${loaded}.`
     )
     const names = context.github.repositoryNames ?? []
     if (names.length > 0) {
-      lines.push(`  Loaded repositories, by name: ${names.join(", ")}.`)
+      lines.push(`  Loaded repositories, by name: ${names.map(line).join(", ")}.`)
     }
   } else {
     lines.push("- GitHub: not connected (no signed-in session).")
   }
   if (context.cloud !== undefined) {
-    const who = context.cloud.username ?? "you"
+    const who = line(context.cloud.username ?? "you")
     switch (context.cloud.state) {
       case "signed-in":
         lines.push(`- Smithers Cloud: signed in as ${who}.`)
@@ -361,9 +376,9 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
   if (billing !== undefined && billing !== null) {
     lines.push(
       billing.state === "unavailable" || billing.state === "unknown"
-        ? `- Balance: the billing service did not answer (${billing.state}) — say so rather than naming a figure.`
-        : `- Balance: $${billing.totalUsd ?? "0"} left; $${
-          billing.lifetimeChargedUsd ?? "0"
+        ? `- Balance: the billing service did not answer (${line(billing.state)}) — say so rather than naming a figure.`
+        : `- Balance: $${line(billing.totalUsd ?? "0")} left; $${
+          line(billing.lifetimeChargedUsd ?? "0")
         } spent across ${billing.chargeCount} turn(s). This IS the number — never state a different one.`
     )
   }
@@ -374,7 +389,7 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
       `- Wiki: ${context.worldState.documentCount} note(s). These are workspace notes, not the selected repository's identity or description. Answer from their substantive content when relevant; a blank note or a title alone supplies no repository facts:`
     )
     for (const document of context.worldState.documents) {
-      lines.push(`  - ${document.path} — "${document.title}" (confidence ${document.confidence})`)
+      lines.push(`  - ${line(document.path)} — "${line(document.title)}" (confidence ${document.confidence})`)
       if (document.body === undefined) continue
       const body = document.body.trim()
       if (body === "") {
@@ -387,7 +402,7 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
       }
       // Indented under its own heading so a note's words cannot be read as
       // an instruction line of this block.
-      for (const line of body.split("\n")) lines.push(`    | ${line}`)
+      for (const text of body.split(/\r\n|[\r\n]/)) lines.push(`    | ${line(text)}`)
       if (document.bodyTruncated === true) {
         lines.push("    | … (note truncated here — read the rest in the Wiki pane)")
       }
@@ -402,19 +417,25 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
       )
       for (const tab of context.tabs) {
         const detail = [
-          tab.harnessId === undefined ? undefined : `harness ${tab.harnessId}`,
-          tab.account,
-          tab.cwd === undefined ? undefined : `in ${tab.cwd}`,
-          tab.status === "exited" ? `exited${tab.exitCode == null ? "" : ` with code ${tab.exitCode}`}` : tab.status
+          tab.harnessId === undefined ? undefined : `harness ${line(tab.harnessId)}`,
+          tab.account === undefined ? undefined : line(tab.account),
+          tab.cwd === undefined ? undefined : `in ${line(tab.cwd)}`,
+          tab.status === "exited"
+            ? `exited${tab.exitCode == null ? "" : ` with code ${tab.exitCode}`}`
+            : line(tab.status)
         ].filter((part): part is string => part !== undefined)
-        lines.push(`  - ${tab.id} — ${tab.kind} "${tab.title}"${tab.active ? " (active)" : ""}: ${detail.join(", ")}`)
+        lines.push(
+          `  - ${line(tab.id)} — ${line(tab.kind)} "${line(tab.title)}"${tab.active ? " (active)" : ""}: ${
+            detail.join(", ")
+          }`
+        )
       }
     }
   }
   lines.push("- Capabilities (what you can honestly do in this client):")
-  for (const capability of context.capabilities) lines.push(`  - ${capability}`)
+  for (const capability of context.capabilities) lines.push(`  - ${line(capability)}`)
   lines.push("- Limitations (never claim otherwise):")
-  for (const limitation of context.limitations) lines.push(`  - ${limitation}`)
+  for (const limitation of context.limitations) lines.push(`  - ${line(limitation)}`)
   return lines.join("\n")
 }
 
