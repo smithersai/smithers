@@ -82,9 +82,11 @@ export interface Descriptor {
 /**
  * Builds one boundary record for `descriptor` at `status`.
  *
- * The producer identity is `(sourceId, sourceSeq)` with a distinct sourceSeq
- * per status, so a replay that re-emits the same record collapses into a
- * journal `Duplicate` instead of appending a second boundary row — the same
+ * Every effect and status pair gets its own producer identity: the status is
+ * appended to `descriptor.sourceId`, and every boundary record carries
+ * sourceSeq 0. Re-emitting the same status for the same effect therefore
+ * reuses that `(sourceId, sourceSeq)` pair, so a replay collapses into a
+ * journal `Duplicate` instead of appending a second boundary row, the same
  * convergence the attempt lifecycle records rely on.
  *
  * @since 0.1.0

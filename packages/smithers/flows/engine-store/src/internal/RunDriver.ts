@@ -968,12 +968,16 @@ export const make = (
      * parent and inherits in turn.
      *
      * `requestCancel` is unfenced and first-writer-wins, so a repeated
-     * admission writes nothing the second time; a parent row that is gone
-     * answers `NotFound` and inherits nothing. Only a cancelled parent is
-     * inherited from — `cancel_requested_at_ms`, or a parent already settled
-     * terminally `cancelled` whose request column a compaction could have
-     * cleared — so an ordinary `completed` or `failed` parent never cancels
-     * a child.
+     * admission writes nothing the second time; a parent row that is gone,
+     * or one with no rounds at all, inherits nothing. Both ways a parent can
+     * exit are inherited here, and they differ in whether the child's own
+     * `onParentExit` can spare it. An explicit cancellation in ANY round is
+     * inherited unconditionally, whether it is a pending
+     * `cancel_requested_at_ms` or a round already settled terminally
+     * `cancelled` whose request column a compaction could have cleared. A
+     * parent that instead stopped normally, with EVERY round `completed` or
+     * `failed`, cancels a late child that was admitted attached and leaves an
+     * `onParentExit === "detach"` child to outlive it.
      *
      * The child does not need its own cascade here: it was just created, so
      * it has no descendants of its own, and once it observes the inherited

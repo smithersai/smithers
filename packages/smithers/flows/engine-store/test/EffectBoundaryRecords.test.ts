@@ -203,4 +203,36 @@ describe("effect-boundary records", () => {
       timeTravel: { effectId: "e-2", kind: "billing/Charge", tier: "irreversible", status: "intended" }
     })
   })
+
+  it("gives every effect and status pair its own sourceId at sourceSeq 0", () => {
+    const descriptor = {
+      id: "e-1",
+      kind: "billing/Charge",
+      tier: "irreversible" as const,
+      runId: "run",
+      lineageId: "run/root",
+      sourceId: "src",
+      attempt: 1
+    }
+    const intended = EffectRecords.boundary(descriptor, "intended")
+    const succeeded = EffectRecords.boundary(descriptor, "succeeded", { ok: true })
+    const sibling = EffectRecords.boundary({ ...descriptor, id: "e-2" }, "intended")
+
+    // The status varies the sourceId, not the sequence: the duplicate key is
+    // `(runId, sourceId, sourceSeq)`, so a per-status sequence would let two
+    // statuses of one effect share an identity.
+    expect(intended.sourceId).toBe("src:effect:e-1:intended")
+    expect(succeeded.sourceId).toBe("src:effect:e-1:succeeded")
+    expect(sibling.sourceId).toBe("src:effect:e-2:intended")
+    expect([intended.sourceSeq, succeeded.sourceSeq, sibling.sourceSeq]).toEqual([0, 0, 0])
+
+    // Re-emitting one status for one effect converges on that pair, which is
+    // what makes a replay settle as `Duplicate` rather than append a row.
+    const replayed = EffectRecords.boundary(descriptor, "succeeded", { ok: true })
+    expect([replayed.runId, replayed.sourceId, replayed.sourceSeq]).toEqual([
+      succeeded.runId,
+      succeeded.sourceId,
+      succeeded.sourceSeq
+    ])
+  })
 })
