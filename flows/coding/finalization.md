@@ -1,17 +1,36 @@
 # Vibing and appending to main
 
-This is the implementation plan for the remaining finalization composition.
-It is not a claim that `coding/vibe`, final history cleanup, automatic publication
-or shipment already exists. The existing request outcome stops at validated,
-changes-requested or blocked.
+Finalization admission is implemented as the private `coding/AdmitVibe` flow.
+The public `coding/vibe` descriptor, complete cleanup/publication/append
+composition and shipment are still being integrated. The existing request
+outcome stops at validated, changes-requested or blocked.
 
 ## Reuse the recorded request
 
-The finalization input should identify an existing native Request execution,
-not accept a caller-supplied validated Result. Read its completed result through
-the existing native RunStore and require a validated correction outcome with
-complete current check receipts. Validate its approved repository ownership and
-native JJ tip before any mutation. Missing or ambiguous evidence refuses.
+`VibeInput` accepts only `{ requestExecutionId }`. `ReadVibeRequest` reads the
+completed native Request through the existing RunStore, checks its successful
+domain outcome, and walks at most 1,024 retained executions to one completed
+approved control wrapper in this host. The persisted `coding/request` registry
+bridge must carry the same decoded input as both Request and the approved
+control plan. The approved envelope names `coding/RunRequest`; the registry
+inlines that delegate, so a separate RunRequest row is not required. Ordinary
+spawn edges and trampoline row parents use their existing meanings. A native
+control fork remains eligible when it satisfies the same wrapper checks.
+
+The current finalization owner is read from the per-handler ModuleOwner service;
+an absent owner refuses. Layer construction never installs a dummy authority.
+`VerifyVibe` reuses ValidatePlan, FastGate and Assess rather than adding a weaker
+policy. It rejects duplicate check IDs before those gates, then snapshots and
+checks the native source, retaining a fresh operation fence for the first
+mutation. Missing, collected, conflicting or ambiguous evidence refuses.
+
+These are new private action values in `vibe-schema.ts`: `VibeEvidence` stores
+existing request/control/approval/POC identities, original source and the
+RequestResult; `VibeAdmission` adds the current validated head. There is no new
+database or public package service. Lookup is bounded to 16 MiB per retained
+state and 32 MiB of decoded state in total, checked after RunStore reads; it
+does not scan the global catalog. The unique POC lookup is a filtered two-row
+page from the existing RunCatalogRead. Admission is not cleanup or landing.
 
 The immutable source base is the source captured before this entire request,
 including before any implementation which later steering revised. The final
@@ -40,7 +59,7 @@ acknowledged publication merely because an operation returned successfully.
 
 ## One appended commit through existing landing policy
 
-The proposed new Plue public operation is:
+The new Plue public operation, landed at `fb56b0b53a08`, is:
 
 ```http
 PUT /api/repos/{owner}/{repo}/landings/{number}/land/append
@@ -54,10 +73,11 @@ Content-Type: application/json
 }
 ```
 
-This is a new public API, under implementation in Plue. It delegates to the
-existing LandingService authorization, approval/check policy, durable worker,
-repository lock and JJ transaction, returning the existing accepted-task
-response. The matching native append creates exactly one commit whose sole
+This is a new public API. The existing LandingService authenticates and pins the
+request, returning the existing 202 queued response. Its existing worker checks
+every ownership, human/agent review and required status gate before mutation;
+acceptance does not claim those gates passed. This keeps full-history inspection
+inside the worker's existing budget. The matching native append creates exactly one commit whose sole
 parent is expected main and whose tree equals the immutable source tip. Before
 that write, the original source-base tree must equal the fenced main tree.
 A mismatch requires reconciliation; it must not overwrite newer main changes.
@@ -69,7 +89,12 @@ single-parent native histories to find their shared immutable prefix. Require
 the landing's ordered change IDs to equal the complete current suffix after
 that prefix, including every rewritten descendant. Checking only the latest
 plan or final tip would omit earlier changes from existing review policy.
-Merge histories, incomplete suffixes and ambiguous identity are refusals.
+The previous source anchor must come from an authentic native append receipt
+bound to expected main; caller-supplied source trees cannot erase earlier
+owners. Without that mapping, the first independent history import includes
+every source commit. Merge histories, incomplete suffixes, duplicate native
+identities and ambiguous identity are refusals. Existing landing admission is
+bounded to 1,024 changes; exceeding it refuses without truncation or mutation.
 
 Older Go/Rust decoders ignore unknown fields. Therefore the public append route,
 internal `/land/append` route and `smithers_land_append` ABI marker are distinct
@@ -78,10 +103,11 @@ typed missing-receipt response distinguishes a first attempt from a missing old
 server route. Lost acknowledgements replay the exact existing operation receipt,
 including after main has subsequently moved.
 
-The existing landing task gains the immutable append request metadata and an
+The existing landing task now has immutable `append_request` metadata and an
 `append_pending` state. This is an addition to existing internal task data/state,
-not a new queue or table. Its database constraint and claim/reaper rules must
-prevent older workers from treating an append task as ordinary landing. Existing
+not a new queue or table. Its database constraint and claim/reaper rules
+prevent older workers from treating an append task as ordinary landing. Deploy
+the migration, new worker and repo-host together before enabling the route. Existing
 ordinary task behavior and old native receipt serialization remain compatible.
 
 The existing reserved repository API credentials are

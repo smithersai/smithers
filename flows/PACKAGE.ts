@@ -120,12 +120,14 @@ const codingRuntime = Smithers.NodeTest({
   runtime: node,
   runner: Smithers.testRunner([Smithers.file("//flows/test/coding-planning-authority.test.ts"), Smithers.file("//flows/test/coding-project-config.test.ts"),
     Smithers.file("//flows/test/coding-steering.test.ts"), Smithers.file("//flows/test/coding-request-coordinator.test.ts"),
-    Smithers.file("//flows/test/coding-host-policy.test.ts"), Smithers.file("//flows/test/coding-wiki-registry.test.ts")]),
+    Smithers.file("//flows/test/coding-host-policy.test.ts"), Smithers.file("//flows/test/coding-wiki-registry.test.ts"),
+    Smithers.file("//flows/test/coding-vibe-evidence.test.ts"), Smithers.file("//flows/test/coding-vibe-admission.test.ts")]),
   srcs: codingSources, deps: codingDependencies, cwd
 })
 const codingConfigBun = Smithers.NodeTest({
   runtime: bun,
-  runner: Smithers.testRunner([Smithers.file("//flows/test/coding-project-config.test.ts"), Smithers.file("//flows/test/coding-host-policy.test.ts"), Smithers.file("//flows/test/coding-wiki-registry.test.ts")]),
+  runner: Smithers.testRunner([Smithers.file("//flows/test/coding-project-config.test.ts"), Smithers.file("//flows/test/coding-host-policy.test.ts"), Smithers.file("//flows/test/coding-wiki-registry.test.ts"),
+    Smithers.file("//flows/test/coding-vibe-evidence.test.ts"), Smithers.file("//flows/test/coding-vibe-admission.test.ts")]),
   srcs: codingSources, deps: codingDependencies, cwd
 })
 
