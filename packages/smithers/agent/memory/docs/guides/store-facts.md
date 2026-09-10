@@ -108,7 +108,7 @@ const findings = Effect.gen(function*() {
     namespace: "agent-reviewer",
     status: "any",
     includeSuperseded: true,
-    tagGroup: { tags: ["source:eval"], match: "any" }
+    tagGroups: [{ tags: ["source:eval"], match: "any" }]
   })
   return { accepted, everything }
 })

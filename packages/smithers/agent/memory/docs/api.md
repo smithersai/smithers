@@ -138,11 +138,17 @@ Each tag group is bounded on its own, and the group list is bounded too: every g
 
 ### What a read limit counts
 
-`searchRows.records` optionally restricts the read to at most 64 exact `{ kind, id }` identities, while preserving namespace, TTL, status, supersession, and tag filtering.
+`searchRows.records` and `searchFts.records` optionally restrict the read to at most 64 exact `{ kind, id }` identities, while preserving namespace, TTL, status, supersession, and tag filtering. An empty array selects nothing. Each identity requires kind `fact` or `note` and a nonempty id.
 
 `limit` on `listFacts`, `listNotes`, `listMessages`, `searchRows` and `searchFts` bounds the rows the caller receives, after every status, supersession and tag-group filter on the same input. It is not a bound on the rows the query examines, and a bounded read never under-fills while matching rows remain.
 
 Statuses and supersession are answered in SQL. Tag groups are answered by `Namespace.matches`, the single source of truth for the five match modes, so a tag-filtered read walks the namespace in bounded pages until it has `limit` matches. Working-set memory stays proportional to one page, never to the namespace.
+
+Note and fact pages continue from the last examined timestamp and id, preserving ascending ids within timestamp ties. Inserts or deletes before the cursor do not shift later pages. These reads are not snapshots; updates that move a fact across the cursor may affect results.
+
+FTS rank pages share one transaction because BM25 depends on the corpus, and filtered FTS reads use 512-row pages. The SQLite transaction holds off writers until the scan finishes.
+
+Use `tagGroups: [group]` for one tag predicate. Multiple groups are conjunctive; the singular `tagGroup` input is no longer supported.
 
 ## Failure codes
 
@@ -281,7 +287,7 @@ Model types, all plain interfaces unless noted:
 | `SupersedeInput`       | `{ supersederId, targetId }`.                                                                                                         |
 | `NamespaceInput`       | `Namespace \| string`: a structured namespace or a bank name; explicit prefixes keep their lifetime, unprefixed banks are flow-local. |
 | `StatusFilter`         | `NoteStatus \| "any" \| ReadonlyArray<NoteStatus>`.                                                                                   |
-| `ListNotesInput`       | `{ namespace, prefix?, limit?, tagGroup?, tagGroups?, status?, includeSuperseded? }`.                                                 |
+| `ListNotesInput`       | `{ namespace, prefix?, limit?, tagGroups?, status?, includeSuperseded? }`.                                                            |
 | `SearchRow`            | `{ id, kind: "fact" \| "note", bank, namespace, key, text, tags, updatedAtMs, status? }`: the normalized row recall bindings consume. |
 | `SearchRowsInput`      | `ListNotesInput` with a `limit` that counts merged fact and note rows passing every filter.                                           |
 | `EnableFtsInput`       | `Namespace.Kind`.                                                                                                                     |

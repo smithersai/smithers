@@ -1,8 +1,8 @@
 import * as DurableWriter from "@smthrs/database/DurableWriter"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import { MemoryError } from "../src/MemoryError.ts"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import type * as Namespace from "../src/Namespace.ts"
@@ -20,6 +20,10 @@ const runWithDatabase = <A, E>(
 ) => Effect.runPromise(effect.pipe(Effect.provide(TestMemory.layerWithDatabase)))
 
 describe("MemoryStore", () => {
+  it("exposes only the plural tag-group input", () => {
+    expectTypeOf<MemoryStore.ListNotesInput>().not.toHaveProperty("tagGroup")
+  })
+
   it("applies the authoritative and projection schemas idempotently", async () => {
     const tables = await Effect.runPromise(
       Effect.gen(function*() {
@@ -1232,7 +1236,7 @@ describe("MemoryStore", () => {
       const byGroup = yield* store.listNotes({
         namespace,
         status: "any",
-        tagGroup: { tags: ["branch:main"], match: "all_strict" }
+        tagGroups: [{ tags: ["branch:main"], match: "all_strict" }]
       })
       const byGroups = yield* store.listNotes({
         namespace,
@@ -1302,7 +1306,7 @@ describe("MemoryStore", () => {
       const generous = yield* store.searchRows({ namespace, limit: 99 })
       const single = yield* store.searchRows({
         namespace,
-        tagGroup: { tags: ["scope:project"], match: "all_strict" }
+        tagGroups: [{ tags: ["scope:project"], match: "all_strict" }]
       })
       const negative = yield* Effect.flip(store.searchRows({ namespace, limit: -1 }))
       const fractional = yield* Effect.flip(store.searchRows({ namespace, limit: 1.5 }))
@@ -1410,9 +1414,9 @@ describe("MemoryStore", () => {
       }
       const tagGroup = { tags: ["scope:project"], match: "any_strict" } as const
       return {
-        ascending: yield* store.listNotes({ namespace, tagGroup, limit: 6 }),
-        descending: yield* store.searchRows({ namespace, tagGroup, limit: 6 }),
-        everything: yield* store.listNotes({ namespace, tagGroup })
+        ascending: yield* store.listNotes({ namespace, tagGroups: [tagGroup], limit: 6 }),
+        descending: yield* store.searchRows({ namespace, tagGroups: [tagGroup], limit: 6 }),
+        everything: yield* store.listNotes({ namespace, tagGroups: [tagGroup] })
       }
     }))
 
@@ -1438,7 +1442,7 @@ describe("MemoryStore", () => {
         // An empty namespace ends the tag-filtered page walk on its first page.
         emptyPage: yield* store.listNotes({
           namespace: other,
-          tagGroup: { tags: ["scope:project"] },
+          tagGroups: [{ tags: ["scope:project"] }],
           limit: 2
         })
       }
@@ -1477,13 +1481,185 @@ describe("MemoryStore", () => {
       }
       const tagGroup = { tags: ["scope:project"], match: "any_strict" } as const
       return {
-        limited: yield* store.searchRows({ namespace, tagGroup, limit: 2 }),
-        prefixed: yield* store.searchRows({ namespace, tagGroup, prefix: "fact-0000", limit: 2 })
+        limited: yield* store.searchRows({ namespace, tagGroups: [tagGroup], limit: 2 }),
+        prefixed: yield* store.searchRows({ namespace, tagGroups: [tagGroup], prefix: "fact-0000", limit: 2 })
       }
     }))
 
     expect(result.limited.map((row) => row.key)).toEqual(["fact-0001", "fact-0000"])
     expect(result.prefixed.map((row) => row.key)).toEqual(["fact-0000"])
+  })
+
+  it("returns no FTS matches for an empty record selection", async () => {
+    const rows = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      yield* store.putFact({ namespace, key: "other", value: "needle", provenance: {} })
+      yield* store.enableFts("flow")
+      return yield* store.searchFts({ namespace, query: "needle", records: [], limit: 1 })
+    }))
+    expect(rows).toEqual([])
+  })
+
+  it("refills FTS pages using exact kind and id selections before the limit", async () => {
+    const rows = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      for (let index = 0; index < 520; index++) {
+        yield* store.putFact({ namespace, key: `other-${index}`, value: "needle", provenance: {} })
+      }
+      yield* store.putFact({ namespace, key: "zzzz-note", value: "needle", provenance: {} })
+      yield* store.putNote({ namespace, id: "zzzz-note", text: "needle", tags: [], provenance: {} })
+      yield* store.putFact({ namespace, key: "zzzz-fact", value: "needle", provenance: {} })
+      yield* store.enableFts("flow")
+      return yield* store.searchFts({
+        namespace,
+        query: "needle",
+        records: [{ kind: "note", id: "zzzz-note" }, { kind: "fact", id: "zzzz-fact" }],
+        limit: 2
+      })
+    }))
+    expect(rows.map(({ kind, id }) => ({ kind, id })).sort((a, b) => a.kind.localeCompare(b.kind))).toEqual([
+      { kind: "fact", id: "zzzz-fact" },
+      { kind: "note", id: "zzzz-note" }
+    ])
+  })
+
+  it("reads filtered FTS pages in one transaction with larger rank pages", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const original = yield* MemoryStore.MemoryStore
+        for (let index = 0; index < 520; index++) {
+          yield* original.putFact({
+            namespace,
+            key: `row-${index}`,
+            value: "needle",
+            tags: [index === 519 ? "scope:project" : "scope:other"],
+            provenance: {}
+          })
+        }
+        yield* original.enableFts("flow")
+        const pages: Array<{ readonly size: number; readonly transaction: boolean }> = []
+        const observed = new Proxy(sql, {
+          apply(target, thisArg, argumentsList) {
+            const statement = Array.isArray(argumentsList[0]) ? argumentsList[0].join(" ") : ""
+            const query = Reflect.apply(target, thisArg, argumentsList)
+            if (!statement.includes("AS rank")) return query
+            return (query as Effect.Effect<ReadonlyArray<unknown>>).pipe(Effect.tap((rows) =>
+              Effect.gen(function*() {
+                pages.push({
+                  size: rows.length,
+                  transaction: Option.isSome(yield* Effect.serviceOption(sql.transactionService))
+                })
+              })
+            ))
+          }
+        })
+        const store = yield* MemoryStore.make.pipe(Effect.provideService(SqlClient.SqlClient, observed))
+        const rows = yield* store.searchFts({
+          namespace,
+          query: "needle",
+          limit: 2,
+          tagGroups: [{ tags: ["scope:project"], match: "any_strict" }]
+        })
+        return { rows, pages }
+      }).pipe(Effect.provide(TestMemory.layerWithDatabase))
+    )
+    expect(result.rows.map((row) => row.id)).toEqual(["row-519"])
+    expect(result.pages).toEqual([{ size: 512, transaction: true }, { size: 8, transaction: true }])
+  })
+
+  it.each([
+    { records: Array.from({ length: 65 }, () => ({ kind: "fact", id: "a" })) },
+    { records: [{ kind: "message", id: "a" }] },
+    { records: [{ kind: "fact", id: "" }] }
+  ])("validates FTS record identities %#", async ({ records }) => {
+    const failure = await run(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      yield* store.enableFts("flow")
+      return yield* Effect.flip(store.searchFts({
+        namespace,
+        query: "needle",
+        records: records as MemoryStore.SearchFtsInput["records"]
+      }))
+    }))
+    expect(failure.code).toBe("invalid_argument")
+  })
+
+  it.each(
+    [
+      ["notes ascending", "insert"],
+      ["notes descending", "insert"],
+      ["facts descending", "insert"],
+      ["notes ascending", "delete"],
+      ["notes descending", "delete"],
+      ["facts descending", "delete"]
+    ] as const
+  )("continues %s without duplicates or skips after a concurrent %s", async (mode, mutation) => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const original = yield* MemoryStore.MemoryStore
+        const facts = mode === "facts descending"
+        for (let index = 0; index < 260; index++) {
+          const id = `row-${String(index).padStart(3, "0")}`
+          const tags: Namespace.Tags = [
+            index === 127 || index === 128 || index === 259 ? "scope:project" : "scope:other"
+          ]
+          if (facts) yield* original.putFact({ namespace, key: id, value: "v", tags, provenance: {} })
+          else yield* original.putNote({ namespace, id, text: "v", tags, provenance: {} })
+        }
+        let pages = 0
+        const statements: Array<string> = []
+        const interleaved = new Proxy(sql, {
+          apply(target, thisArg, argumentsList) {
+            const statement = Array.isArray(argumentsList[0]) ? argumentsList[0].join(" ") : ""
+            const query = Reflect.apply(target, thisArg, argumentsList)
+            if (
+              !statement.includes(facts ? "FROM memory_facts" : "FROM memory_notes notes") ||
+              !statement.includes("LIMIT")
+            ) return query
+            statements.push(statement)
+            return query.pipe(Effect.tap(() =>
+              Effect.gen(function*() {
+                pages += 1
+                if (pages !== 1) return
+                if (mutation === "delete") {
+                  if (facts) yield* sql`DELETE FROM memory_facts WHERE fact_key = 'row-000'`
+                  else yield* sql`DELETE FROM memory_notes WHERE id = 'row-000'`
+                } else if (facts) {
+                  yield* original.putFact({
+                    namespace,
+                    key: "row--new",
+                    value: "v",
+                    tags: ["scope:other"],
+                    provenance: {}
+                  })
+                } else {
+                  yield* original.putNote({
+                    namespace,
+                    id: "row--new",
+                    text: "v",
+                    tags: ["scope:other"],
+                    provenance: {}
+                  })
+                }
+              })
+            ))
+          }
+        })
+        const store = yield* MemoryStore.make.pipe(Effect.provideService(SqlClient.SqlClient, interleaved))
+        const input: MemoryStore.ListNotesInput = {
+          namespace,
+          limit: 4,
+          tagGroups: [{ tags: ["scope:project"], match: "any_strict" as const }]
+        }
+        const rows = mode === "notes ascending" ? yield* store.listNotes(input) : yield* store.searchRows(input)
+        return { ids: rows.map((row) => row.id), statements, pages }
+      }).pipe(Effect.provide(TestMemory.layerWithDatabase), Effect.provide(TestClock.layer()))
+    )
+    expect(result.ids).toEqual(["row-127", "row-128", "row-259"])
+    expect(result.pages).toBe(3)
+    expect(result.statements.every((statement) => !statement.includes("OFFSET"))).toBe(true)
   })
 
   it("resolves FTS matches by id so an older match is not lost to a recency window", async () => {
@@ -1521,7 +1697,7 @@ describe("MemoryStore", () => {
         tagged: yield* store.searchFts({
           namespace,
           query: "quokka",
-          tagGroup: { tags: ["scope:project"], match: "any_strict" },
+          tagGroups: [{ tags: ["scope:project"], match: "any_strict" }],
           limit: 10
         }),
         prefixed: yield* store.searchFts({ namespace, query: "quokka", prefix: "fact-", limit: 10 })
@@ -1613,8 +1789,10 @@ describe("MemoryStore", () => {
         limit: 10,
         status: "any",
         includeSuperseded: true,
-        tagGroup: { tags: ["scope:project"], match: "all_strict" },
-        tagGroups: [{ not: { tags: ["scope:secret"], match: "any_strict" } }]
+        tagGroups: [
+          { tags: ["scope:project"], match: "all_strict" },
+          { not: { tags: ["scope:secret"], match: "any_strict" } }
+        ]
       })
       yield* store.deleteFact({ namespace, key: "runbook" })
       const afterDelete = yield* store.searchFts({ namespace, query: "durable", limit: 10 })

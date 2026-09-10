@@ -340,7 +340,6 @@ export interface ListNotesInput {
    * the rows the query examines. An absent limit reads the whole namespace.
    */
   readonly limit?: number | undefined
-  readonly tagGroup?: Namespace.TagGroup | undefined
   readonly tagGroups?: ReadonlyArray<Namespace.TagGroup> | undefined
   readonly status?: StatusFilter | undefined
   readonly includeSuperseded?: boolean | undefined
@@ -696,6 +695,43 @@ const DELETE_EXPIRED_FACTS_CHUNK_SIZE = 256
 const NOTE_PAGE_SIZE = 512
 const MIN_NOTE_PAGE_SIZE = 128
 
+// Continue from the last examined row, including pages that keep no matches.
+const collectUntil = <Row, A>(
+  limit: number,
+  pageSize: number,
+  fetchPage: (pageSize: number, after: Row | undefined) => Effect.Effect<ReadonlyArray<Row>, MemoryError>,
+  keep: (rows: ReadonlyArray<Row>) => Effect.Effect<ReadonlyArray<A>, MemoryError>
+): Effect.Effect<ReadonlyArray<A>, MemoryError> =>
+  Effect.gen(function*() {
+    const collected: Array<A> = []
+    let after: Row | undefined
+    while (collected.length < limit) {
+      const rows = yield* fetchPage(pageSize, after)
+      if (rows.length === 0) break
+      collected.push(...(yield* keep(rows)).slice(0, limit - collected.length))
+      if (rows.length < pageSize) break
+      after = rows[rows.length - 1]!
+    }
+    return collected
+  })
+
+const tagMatcher = (input: Pick<ListNotesInput, "tagGroups">) => (tags: ReadonlyArray<string>): boolean =>
+  input.tagGroups === undefined || input.tagGroups.every((group) => Namespace.matches(group, tags))
+
+const validateRecords = (records: SearchRowsInput["records"], operation: "searchRows" | "searchFts") =>
+  Effect.gen(function*() {
+    if (records === undefined) return
+    if (records.length > 64) {
+      return yield* Effect.fail(error("invalid_argument", `${operation} accepts at most 64 record identities`))
+    }
+    for (const record of records) {
+      if (record.kind !== "fact" && record.kind !== "note") {
+        return yield* Effect.fail(error("invalid_argument", `${operation} record kind must be fact or note`))
+      }
+      yield* validateNonEmpty(record.id, "record id", ["records", "id"])
+    }
+  })
+
 /**
  * A composable SQL condition. `effect/unstable/sql` publishes no entry point
  * for its `Statement` module, so the type is read back off `sql.literal`.
@@ -720,7 +756,7 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
     const readFacts = (
       input: ListFactsInput & { readonly keys?: ReadonlyArray<string> | undefined },
       recentFirst: boolean,
-      offset = 0
+      after?: Fact
     ): Effect.Effect<ReadonlyArray<Fact>, MemoryError> =>
       Effect.gen(function*() {
         const { namespace } = yield* resolveNamespace(input.namespace)
@@ -739,6 +775,11 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
         if (input.keys !== undefined) {
           conditions.push(input.keys.length === 0 ? sql.literal("1 = 0") : sql.in("fact_key", input.keys))
         }
+        if (after !== undefined) {
+          // Recency descends, but keys ascend within a timestamp tie.
+          conditions.push(sql`(updated_at_ms < ${after.updatedAtMs}
+            OR (updated_at_ms = ${after.updatedAtMs} AND fact_key > ${after.key}))`)
+        }
         const where = sql.and(conditions)
         const rows = yield* (limit === undefined
           ? sql<FactRow>`SELECT
@@ -753,7 +794,7 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
               FROM memory_facts
               WHERE ${where}
               ORDER BY ${order}
-              LIMIT ${limit} OFFSET ${offset}`).pipe(Effect.mapError(storeError("could not list memory facts")))
+              LIMIT ${limit}`).pipe(Effect.mapError(storeError("could not list memory facts")))
         return yield* Effect.forEach(rows, decodeFact)
       })
 
@@ -1118,9 +1159,15 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
         const status = statusCondition(input.status)
         if (status !== undefined) conditions.push(status)
         if (input.includeSuperseded !== true) conditions.push(notSupersededCondition)
-        const where = sql.and(conditions)
-        const page = (rowLimit: number | undefined, offset: number) =>
-          (rowLimit === undefined
+        const page = (rowLimit: number | undefined, after?: Note) => {
+          const continuation = after === undefined ? [] : [
+            recentFirst
+              ? sql`(notes.created_at_ms < ${after.createdAtMs}
+                OR (notes.created_at_ms = ${after.createdAtMs} AND notes.id > ${after.id}))`
+              : sql`(notes.created_at_ms, notes.id) > (${after.createdAtMs}, ${after.id})`
+          ]
+          const where = sql.and([...conditions, ...continuation])
+          return (rowLimit === undefined
             ? sql<NoteRow>`SELECT
               notes.namespace_kind, notes.namespace_id, notes.id, notes.text, notes.tags_json,
               notes.provenance_json, notes.status, notes.created_at_ms
@@ -1133,39 +1180,22 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
               FROM memory_notes notes
               WHERE ${where}
               ORDER BY ${order}
-              LIMIT ${rowLimit} OFFSET ${offset}`).pipe(
-              Effect.mapError(storeError("could not list memory notes"))
+              LIMIT ${rowLimit}`).pipe(
+              Effect.mapError(storeError("could not list memory notes")),
+              Effect.flatMap((rows) => Effect.forEach(rows, decodeNote))
             )
+        }
 
-        // `Namespace.matches` stays the single source of truth for the five tag
-        // match modes, so the tag filter is the one predicate left in JS. When
-        // it is active a bounded read pages until it has `limit` matches rather
-        // than overscanning a fixed window and hoping: memory stays O(page) and
-        // the answer is exact.
-        const tagFiltered = input.tagGroup !== undefined || input.tagGroups !== undefined
-        const matchesTags = (note: Note): boolean =>
-          (input.tagGroup === undefined || Namespace.matches(input.tagGroup, note.tags)) &&
-          (input.tagGroups === undefined || input.tagGroups.every((group) => Namespace.matches(group, note.tags)))
+        // Tags stay in JS so Namespace.matches owns all five match modes.
+        const tagFiltered = input.tagGroups !== undefined
+        const matchesTags = tagMatcher(input)
+        const keep = (notes: ReadonlyArray<Note>) => notes.filter((note) => matchesTags(note.tags))
         if (limit === undefined || !tagFiltered) {
-          const notes = yield* Effect.forEach(yield* page(limit, 0), decodeNote)
-          return tagFiltered ? notes.filter(matchesTags) : notes
+          const notes = yield* page(limit)
+          return tagFiltered ? keep(notes) : notes
         }
         const pageSize = Math.min(NOTE_PAGE_SIZE, Math.max(limit, MIN_NOTE_PAGE_SIZE))
-        const collected: Array<Note> = []
-        let offset = 0
-        while (collected.length < limit) {
-          const rows = yield* page(pageSize, offset)
-          if (rows.length === 0) break
-          offset += rows.length
-          for (const note of yield* Effect.forEach(rows, decodeNote)) {
-            if (matchesTags(note)) {
-              collected.push(note)
-              if (collected.length === limit) break
-            }
-          }
-          if (rows.length < pageSize) break
-        }
-        return collected
+        return yield* collectUntil(limit, pageSize, page, (notes) => Effect.succeed(keep(notes)))
       })
 
     const putNote: Service["putNote"] = (input) =>
@@ -1345,14 +1375,6 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
       status: note.status
     })
 
-    const tagMatcher = (input: {
-      readonly tagGroup?: Namespace.TagGroup | undefined
-      readonly tagGroups?: ReadonlyArray<Namespace.TagGroup> | undefined
-    }) =>
-    (tags: ReadonlyArray<string>): boolean =>
-      (input.tagGroup === undefined || Namespace.matches(input.tagGroup, tags)) &&
-      (input.tagGroups === undefined || input.tagGroups.every((group) => Namespace.matches(group, tags)))
-
     // Both sides are read newest-first, so the merge of each side's top `limit`
     // MATCHING rows provably contains the global top `limit`. That only holds
     // when each side really returns `limit` matches, which is why the fact side
@@ -1362,18 +1384,8 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
         const limit = yield* validateLimit(input.limit, "searchRows")
         if (limit === 0) return []
         const { bank, namespace } = yield* resolveNamespace(input.namespace)
-        if (input.records !== undefined) {
-          if (input.records.length > 64) {
-            return yield* Effect.fail(error("invalid_argument", "searchRows accepts at most 64 record identities"))
-          }
-          for (const record of input.records) {
-            if (record.kind !== "fact" && record.kind !== "note") {
-              return yield* Effect.fail(error("invalid_argument", "searchRows record kind must be fact or note"))
-            }
-            yield* validateNonEmpty(record.id, "record id", ["records", "id"])
-          }
-        }
-        const tagFiltered = input.tagGroup !== undefined || input.tagGroups !== undefined
+        yield* validateRecords(input.records, "searchRows")
+        const tagFiltered = input.tagGroups !== undefined
         const matchesTags = tagMatcher(input)
         const toFactRow = (fact: Fact): SearchRow => factSearchRow(bank, fact)
         const factQuery = {
@@ -1393,22 +1405,13 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
             return tagFiltered ? rows.filter((row) => matchesTags(row.tags)) : rows
           }
           const pageSize = Math.min(NOTE_PAGE_SIZE, Math.max(limit, MIN_NOTE_PAGE_SIZE))
-          const collected: Array<SearchRow> = []
-          let offset = 0
-          while (collected.length < limit) {
-            const facts = yield* readFacts({ ...factQuery, limit: pageSize }, true, offset)
-            if (facts.length === 0) break
-            offset += facts.length
-            for (const fact of facts) {
-              const row = toFactRow(fact)
-              if (matchesTags(row.tags)) {
-                collected.push(row)
-                if (collected.length === limit) break
-              }
-            }
-            if (facts.length < pageSize) break
-          }
-          return collected
+          const facts = yield* collectUntil(
+            limit,
+            pageSize,
+            (size, after: Fact | undefined) => readFacts({ ...factQuery, limit: size }, true, after),
+            (facts) => Effect.succeed(facts.filter((fact) => matchesTags(toFactRow(fact).tags)))
+          )
+          return facts.map(toFactRow)
         })
         const [factRows, notes] = yield* Effect.all([
           readFactRows,
@@ -1446,6 +1449,7 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
           )
         }
         const { bank, namespace } = yield* resolveNamespace(input.namespace)
+        yield* validateRecords(input.records, "searchFts")
         const enabled = yield* Sql.isFtsEnabled(database, namespace.kind).pipe(
           Effect.mapError(storeError("could not inspect FTS enablement"))
         )
@@ -1461,7 +1465,7 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
         if (query.length === 0) {
           return []
         }
-        if (limit === 0) {
+        if (limit === 0 || input.records?.length === 0) {
           return []
         }
         // Ranked matches are resolved by id, never through a recency window: a
@@ -1470,54 +1474,70 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
         // filter rejects are refilled from the next page of ranks, so an FTS
         // query for N rows returns N whenever N passing matches exist.
         const matchesTags = tagMatcher(input)
-        const pageSize = Math.min(NOTE_PAGE_SIZE, Math.max(limit, MIN_NOTE_PAGE_SIZE))
-        const ordered: Array<FtsRow> = []
+        const filtered = input.records !== undefined || input.tagGroups !== undefined ||
+          input.prefix !== undefined || input.status !== undefined || input.includeSuperseded !== true
+        const pageSize = filtered ? NOTE_PAGE_SIZE : Math.min(NOTE_PAGE_SIZE, Math.max(limit, MIN_NOTE_PAGE_SIZE))
+        const identities = input.records === undefined ?
+          undefined :
+          new Set(input.records.map((record) => `${record.kind}\0${record.id}`))
         let offset = 0
-        while (ordered.length < limit) {
-          const matches = yield* Sql.searchFts(database, namespace.kind, namespace.id, query, pageSize, offset).pipe(
-            Effect.mapError(storeError("memory FTS query failed"))
-          )
-          if (matches.length === 0) break
-          offset += matches.length
-          const factKeys = matches.filter((match) => match.record_kind === "fact").map((match) => match.record_id)
-          const noteIds = matches.filter((match) => match.record_kind === "note").map((match) => match.record_id)
-          const [facts, notes] = yield* Effect.all([
-            factKeys.length === 0
-              ? Effect.succeed<ReadonlyArray<Fact>>([])
-              : readFacts({
-                namespace,
-                keys: factKeys,
-                ...(input.prefix === undefined ? {} : { prefix: input.prefix })
-              }, true),
-            noteIds.length === 0
-              ? Effect.succeed<ReadonlyArray<Note>>([])
-              : readNotes({
-                namespace,
-                ids: noteIds,
-                ...(input.prefix === undefined ? {} : { prefix: input.prefix }),
-                ...(input.tagGroup === undefined ? {} : { tagGroup: input.tagGroup }),
-                ...(input.tagGroups === undefined ? {} : { tagGroups: input.tagGroups }),
-                ...(input.status === undefined ? {} : { status: input.status }),
-                ...(input.includeSuperseded === undefined ? {} : { includeSuperseded: input.includeSuperseded })
-              }, true)
-          ])
-          const byId = new Map<string, SearchRow>()
-          for (const fact of facts) {
-            const row = factSearchRow(bank, fact)
-            if (matchesTags(row.tags)) byId.set(`fact\0${row.id}`, row)
-          }
-          for (const note of notes) byId.set(`note\0${note.id}`, noteSearchRow(bank, note))
-          for (const match of matches) {
-            const row = byId.get(`${match.record_kind}\0${match.record_id}`)
-            if (row !== undefined) {
-              const rank = Number(match.rank)
-              ordered.push({ ...row, rank, score: -rank })
-              if (ordered.length === limit) break
-            }
-          }
-          if (matches.length < pageSize) break
-        }
-        return ordered
+        // BM25 ranks depend on the corpus. Keep OFFSET rank pages in one
+        // transaction so concurrent writes cannot move matches between pages.
+        return yield* sql.withTransaction(collectUntil(
+          limit,
+          pageSize,
+          (size) =>
+            Sql.searchFts(database, namespace.kind, namespace.id, query, size, offset).pipe(
+              Effect.tap((matches) =>
+                Effect.sync(() => {
+                  offset += matches.length
+                })
+              ),
+              Effect.mapError(storeError("memory FTS query failed"))
+            ),
+          (matches) =>
+            Effect.gen(function*() {
+              const eligible = identities === undefined ?
+                matches :
+                matches.filter((match) => identities.has(`${match.record_kind}\0${match.record_id}`))
+              const factKeys = eligible.filter((match) => match.record_kind === "fact").map((match) => match.record_id)
+              const noteIds = eligible.filter((match) => match.record_kind === "note").map((match) => match.record_id)
+              const [facts, notes] = yield* Effect.all([
+                factKeys.length === 0
+                  ? Effect.succeed<ReadonlyArray<Fact>>([])
+                  : readFacts({
+                    namespace,
+                    keys: factKeys,
+                    ...(input.prefix === undefined ? {} : { prefix: input.prefix })
+                  }, true),
+                noteIds.length === 0
+                  ? Effect.succeed<ReadonlyArray<Note>>([])
+                  : readNotes({
+                    namespace,
+                    ids: noteIds,
+                    ...(input.prefix === undefined ? {} : { prefix: input.prefix }),
+                    ...(input.tagGroups === undefined ? {} : { tagGroups: input.tagGroups }),
+                    ...(input.status === undefined ? {} : { status: input.status }),
+                    ...(input.includeSuperseded === undefined ? {} : { includeSuperseded: input.includeSuperseded })
+                  }, true)
+              ])
+              const byId = new Map<string, SearchRow>()
+              for (const fact of facts) {
+                const row = factSearchRow(bank, fact)
+                if (matchesTags(row.tags)) byId.set(`fact\0${row.id}`, row)
+              }
+              for (const note of notes) byId.set(`note\0${note.id}`, noteSearchRow(bank, note))
+              const ordered: Array<FtsRow> = []
+              for (const match of eligible) {
+                const row = byId.get(`${match.record_kind}\0${match.record_id}`)
+                if (row !== undefined) {
+                  const rank = Number(match.rank)
+                  ordered.push({ ...row, rank, score: -rank })
+                }
+              }
+              return ordered
+            })
+        )).pipe(Effect.mapError(storeError("memory FTS query failed")))
       })
 
     const deleteExpiredFacts: Service["deleteExpiredFacts"] = Clock.currentTimeMillis.pipe(
