@@ -1,11 +1,17 @@
 /**
- * The server-side handlers of {@link BranchRpcs}: a thin, honest projection of
- * the branch services onto the wire.
+ * The server-side handlers of {@link BranchRpcs}: a thin projection of the
+ * branch services onto the wire.
  *
- * There is deliberately no authorization logic here. Every procedure forwards
- * to the service that owns its boundary — {@link BranchShare} for minting,
- * {@link BranchCommands} for admission, {@link BranchPresence} for the roster —
- * so an in-process caller and a remote caller face exactly the same rules.
+ * Five procedures forward to the service that owns their boundary and add
+ * nothing: `Branch.Submit` to {@link BranchCommands}, and `Branch.Announce`,
+ * `Branch.Leave`, `Branch.Roster`, and `Branch.WatchRoster` to
+ * {@link BranchPresence}. Two enforce policy here, on top of what
+ * {@link BranchShare} checks: `Branch.CreateBranch` refuses any principal that
+ * is not an authenticated workspace, and `Branch.MintShare` verifies write
+ * access, refuses an expired parent, and caps the child at the parent's
+ * expiry. `BranchShare.mint` performs none of those checks, so an in-process
+ * host that mints through the service directly must gate the principal and
+ * the parent capability itself.
  *
  * @since 0.1.0
  */

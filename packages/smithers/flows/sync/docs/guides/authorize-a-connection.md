@@ -110,13 +110,15 @@ New capabilities are signed with `activeKid`. Capabilities naming any key in
 lifetime has passed.
 
 Every key is imported when the authority is constructed, so a misconfigured
-keyring fails there rather than at the first request. Three shapes fail:
+keyring fails there rather than at the first request. A malformed keyring
+fails with `invalid_request`:
 
 - an `activeKid` that names no key in the ring;
-- a `kid` listed twice;
-- a secret Web Crypto refuses to import.
+- a `kid` listed twice.
 
-Each fails with `invalid_request`.
+A secret Web Crypto refuses to import fails with `unknown` instead, because
+the refusal is the platform's rather than the request's. The error's `cause`
+carries the rejection text.
 
 ## Close the door entirely
 

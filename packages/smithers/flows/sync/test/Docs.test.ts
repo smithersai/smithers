@@ -61,3 +61,49 @@ describe("scopes and cursors", () => {
     for (const anchor of anchors) expect(headings).toContain(anchor)
   })
 })
+
+describe("keyring failure codes", () => {
+  const guide = read("docs/guides/authorize-a-connection.md")
+  const keyringParagraphs = paragraphs(guide).filter((paragraph) => /keyring|Web Crypto/.test(paragraph))
+
+  it("names the code importHmacKey uses for a rejected secret", () => {
+    const signer = read("src/internal/shareSigner.ts")
+    const importer = signer.slice(signer.indexOf("export const importHmacKey"))
+    const importCode = /code: "(\w+)"/.exec(importer)![1]!
+    expect(importCode).toBe("unknown")
+    const cryptoFailure = keyringParagraphs.find((paragraph) =>
+      /Web Crypto/.test(paragraph) && /fails? with/.test(paragraph)
+    )
+    expect(cryptoFailure).toContain(`\`${importCode}\``)
+  })
+
+  it("does not claim every keyring failure is invalid_request", () => {
+    for (const paragraph of keyringParagraphs) expect(paragraph).not.toMatch(/Each fails with `invalid_request`/)
+  })
+})
+
+describe("branch server authorization", () => {
+  const server = read("src/BranchServer.ts")
+  /** Procedures whose handler body raises its own SyncError or inspects the principal. */
+  const handlers = Array.from(server.matchAll(/^ {6}"(Branch\.\w+)": /gm), (match) => [match[1]!, match.index] as const)
+  const enforcing = handlers
+    .map(([name, start], index) => [name, server.slice(start, handlers[index + 1]?.[1])] as const)
+    .filter(([, body]) => /new SyncError|SyncPrincipal\.isWorkspace/.test(body))
+    .map(([name]) => name)
+
+  it("finds the handlers that enforce adapter policy", () => {
+    expect(enforcing).toEqual(["Branch.CreateBranch", "Branch.MintShare"])
+  })
+
+  it.each(["src/BranchServer.ts", "docs/concepts/branches.md"])("%s does not deny the adapter's own checks", (file) => {
+    expect(read(file)).not.toMatch(/no authorization logic/)
+    expect(read(file)).not.toMatch(/face (?:exactly )?the same rules/)
+  })
+
+  it("names every enforcing procedure where the concept page describes the wire group", () => {
+    const page = read("docs/concepts/branches.md")
+    const wireGroup = page.slice(page.indexOf("## The wire group"), page.indexOf("## Related pages"))
+    for (const name of enforcing) expect(wireGroup).toContain(`\`${name}\``)
+    expect(wireGroup).toMatch(/in-process/)
+  })
+})

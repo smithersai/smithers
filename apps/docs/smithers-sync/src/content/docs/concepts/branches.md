@@ -111,10 +111,16 @@ collaborator. A branch holds at most
 is refused with `backpressure`.
 
 `BranchPresence.list` is authoritative and `changes` is only a low-latency wake.
-Reading the roster is also what drops that branch's expired leases, so expiry
-needs no timer fiber. A watcher re-lists once per lease as well as on every
-change, because a lapsed lease publishes nothing: a watch driven by change
-events alone would never observe the last participant leaving.
+Each announcement or list drops that branch's expired leases and sweeps up to
+16 branch rosters for expired participants, deleting empty maps. The sweep
+resumes where the previous call stopped, so activity on other branches reclaims
+abandoned rosters. An idle registry retains expired storage until activity
+resumes; no timer fiber is needed. Both operations return detached participant
+and cursor values, so callers cannot mutate the stored roster through a result.
+
+A watcher re-lists once per lease as well as on every change, because a lapsed
+lease publishes nothing: a watch driven by change events alone would never
+observe the last participant leaving.
 
 ## The projection converges
 
@@ -147,9 +153,24 @@ is not deterministic.
 `BranchRpcs` carries seven procedures: `Branch.CreateBranch`,
 `Branch.MintShare`, `Branch.Submit`, `Branch.Announce`, `Branch.Leave`,
 `Branch.Roster`, and `Branch.WatchRoster`. `BranchServer.layerHandlers` projects
-the branch services onto them and contains no authorization logic of its own:
-every procedure forwards to the service that owns its boundary, so an in-process
-caller and a remote caller face the same rules.
+the branch services onto them. Five procedures forward to the service that owns
+their boundary and add nothing: `Branch.Submit` to `BranchCommands`,
+`Branch.Announce`, `Branch.Leave`, `Branch.Roster`, and `Branch.WatchRoster`
+to `BranchPresence`. For those, an in-process caller and a remote caller face
+the same rules.
+
+Two procedures enforce policy in the adapter itself, on top of what
+`BranchShare` checks:
+
+- `Branch.CreateBranch` refuses any principal that is not an authenticated
+  workspace with `unauthorized` before it mints the first capability;
+- `Branch.MintShare` verifies the presented capability for write access to the
+  branch, refuses an expired parent with `unauthorized`, and passes the parent's
+  expiry as `maxExpiresAtMs` so the child never outlives it.
+
+`BranchShare.mint` performs none of those checks. An in-process host that
+mints through the service directly must gate the principal and the parent
+capability itself or it hands out branches and links the wire would refuse.
 
 The payload schemas **are** the service schemas rather than copies of them, so
 the wire and the services cannot drift about what a legal message is.
