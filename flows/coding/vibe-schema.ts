@@ -1,5 +1,7 @@
 /** Private browser-safe values projected from ordinary finalization receipts. */
 import { Schema } from "effect"
+import { LandingIdentity } from "./landing-schema.ts"
+import { SourcePublication } from "./native-schema.ts"
 import { RequestResult, Result, Revision } from "./schema.ts"
 
 export const VibeInput = Schema.Struct({ requestExecutionId: Schema.NonEmptyString.check(Schema.isMaxLength(1024)) })
@@ -22,3 +24,8 @@ export type VibeAdmission = typeof VibeAdmission.Type
 export const VibeCleanup = Schema.Struct({ admission: VibeAdmission,
   summary: Schema.NonEmptyString.check(Schema.isMaxLength(16_384)), result: Result, head: Revision })
 export type VibeCleanup = typeof VibeCleanup.Type
+/** One appended main commit verified from the native landing receipt. Shipped is separate. */
+export const VibeLanded = Schema.Struct({ cleanup: VibeCleanup, cleanedSource: SourcePublication, landing: LandingIdentity,
+  taskId: Schema.Int.check(Schema.isGreaterThan(0)), mainCommitId: Revision.fields.commitId,
+  landedCount: Schema.Int.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(1024)) })
+export type VibeLanded = typeof VibeLanded.Type

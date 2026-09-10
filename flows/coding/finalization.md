@@ -1,10 +1,16 @@
 # Vibing and appending to main
 
-Finalization admission and native description cleanup are implemented as private
-`coding/AdmitVibe` and `coding/CleanVibeHistory` flows.
-The public `coding/vibe` descriptor, complete publication/append
-composition and shipment are still being integrated. The existing request
-outcome stops at validated, changes-requested or blocked.
+The public `coding/vibe` descriptor delegates to `coding/RunVibe`, whose
+`coding/Vibe` flow composes three private children in order: `coding/AdmitVibe`,
+`coding/CleanVibeHistory` and `coding/LandVibe`. Each child leaves its own
+source-qualified receipt for the existing cards. Shipment is separate and not
+implemented. The existing request outcome stops at validated, changes-requested
+or blocked.
+
+The host registers `coding/vibe` only when both the prompt route's project
+configuration and a landing binding are present; it then advertises the
+`coding-vibe/v1` capability. Without a binding the workspace stays local-only
+and the descriptor is absent from the catalog.
 
 ## Reuse the recorded request
 
@@ -84,10 +90,10 @@ refuse finalization while retaining the completed rewrites and action receipts;
 there is no rollback or claim of append success.
 
 The private `VibeCleanup` receipt contains its admission, summary, refreshed Result
-and native head. It proves description cleanup and revalidation only. The complete
-Vibe composition must require original-source publication before rewriting, retain
-the cleaned source, and continue through Plue's existing landing policy. Cleanup
-never substitutes a newer main for the original source base.
+and native head. It proves description cleanup and revalidation only. Admission
+already required original-source retention before any rewrite; `LandVibe`
+retains the cleaned source next and continues through Plue's existing landing
+policy. Cleanup never substitutes a newer main for the original source base.
 
 Portable prompt, plan and implementation context in history still needs its
 Plue-owned notes/provenance integration. Current local operation receipts report
@@ -148,10 +154,45 @@ the migration, new worker and repo-host together before enabling the route. Exis
 ordinary task behavior and old native receipt serialization remain compatible.
 
 The existing reserved repository API credentials are
-`SMITHERS_JJHUB_TOKEN` and `SMITHERS_JJHUB_API_URL`. The separate
+`SMITHERS_JJHUB_TOKEN` and `SMITHERS_JJHUB_API_URL`. `landing-config.ts` reads
+them once at the executable boundary, together with the provisioned
+`/etc/smithers/workspace-coding.json` binding (repository slug, ID, workspace ID
+and this exact repository path), and deletes the token from `process.env` before
+the host, model seats or any approved shell tool start. The token is an Effect
+`Redacted` value inside the `coding/Landing` adapter only. The separate
 `SMITHERS_AGENT_TOKEN` is the agent callback credential and must not be used for
 repository API writes. Reuse the established scoped route/client; do not put
 credentials in workflow payloads, notes or model context.
+
+## Append through the landing adapter
+
+`landing.ts` is an opinionated Effect adapter over the existing repository API,
+constructed over the host's selected Node or Bun HttpClient with redirects
+refused, a 90 second deadline, a 2 MiB bounded response body and no remote body
+or credential in any error. `LandVibe` runs, in this order and only after the
+cleaned-source retention receipt:
+
+1. `PrepareAppend` reads the one unambiguous local `main` bookmark through the
+   existing paginated bookmark route, then asks the native
+   `landings/append/prepare` route for the ordered suffix between the immutable
+   original source and the cleaned tip. This request's validated atoms must be
+   that suffix's ordered tail; anything else refuses before creation.
+2. `CreateLanding` PUTs the landing under the flow-derived request ID so a lost
+   acknowledgement replays the identical immutable body. The title is the
+   summary's first line; the body is the cleanup summary.
+3. `QueueAppend` PUTs `landings/{number}/land/append` and records the 202
+   task ID, preparation and exact request.
+4. `AwaitVibeAppend` is a `Poll` of up to 90 durable 10 second rounds over the
+   append observation route. Every observation must match the queued task,
+   stack, source, base and description. A transport failure is an unsatisfied
+   round, never a re-queue. A process restart resumes the wait.
+5. `VerifyLanded` accepts only a `landed` observation whose landed count equals
+   the prepared stack and whose retained cleaned source is the appended tip.
+   `failed` is a typed policy refusal naming the landing; `pending` after the
+   last round is `unavailable`: pending work, not a changed main.
+
+The `VibeLanded` receipt carries the cleanup, the cleaned-source retention, the
+landing identity, task ID, appended main commit and landed count.
 
 ## Separate product states
 

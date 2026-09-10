@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import * as ApprovalAuthority from "@smthrs/control/ApprovalAuthority"
 import * as Model from "@smthrs/model/Model"
 import type * as SeatResolver from "@smthrs/agent/SeatResolver"
@@ -18,6 +18,8 @@ test("coding deployment requires an explicit model and owning gateway before ope
   }
   assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", credential: "operator-key" }))
   assert.doesNotThrow(() => layer(platform, { ...options, implementationModel: "test:model", approvalAuthority: ApprovalAuthority.local }))
+  // A landing binding without the prompt route has no request receipts to vibe.
+  assert.throws(() => layer(platform, { ...options, implementationModel: "test:model", credential: "operator-key", landing: Layer.empty as never }), /Vibe requires the prompt route/)
 })
 
 test("the coding role reuses the existing seat resolver and keeps the approved role identity", async () => {

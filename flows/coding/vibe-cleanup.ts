@@ -94,8 +94,9 @@ export const cleanupLayers = Layer.mergeAll(
   ValidateProposal.toLayer(({ admission, proposal }) => Effect.gen(function*() {
     const atoms = admission.request.outcome.result!.changes.flatMap(change => change.implementation.atoms)
     if (atoms.length > 128 || proposal.atoms.length !== atoms.length ||
-        proposal.atoms.some((atom, index) => atom.changeId !== atoms[index]!.changeId || !subject(atom.description)) || !subject(proposal.summary)) {
-      return yield* new CodingError({ code: "invalid_plan", message: "Final history review must describe the same ordered atoms with conventional commit subjects (maximum 128)" })
+        proposal.atoms.some((atom, index) => atom.changeId !== atoms[index]!.changeId || !subject(atom.description)) || !subject(proposal.summary) ||
+        new TextEncoder().encode(proposal.summary).length > 32_768) {
+      return yield* new CodingError({ code: "invalid_plan", message: "Final history review must describe the same ordered atoms with conventional commit subjects (maximum 128) and a summary within 32 KiB" })
     }
     return proposal
   })),
