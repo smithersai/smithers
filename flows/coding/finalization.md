@@ -20,6 +20,13 @@ control fork remains eligible when it satisfies the same wrapper checks.
 
 The current finalization owner is read from the per-handler ModuleOwner service;
 an absent owner refuses. Layer construction never installs a dummy authority.
+Before any snapshot, AdmitVibe calls the ordinary `coding/PublishVibeSource`
+child with the original source. Its retained cloud acknowledgment must succeed;
+an explicit local-only host or a missing/old publication capability refuses.
+An original source already retained remotely remains eligible after later local
+rewrites. An unretained source that already moved cannot be replaced with a newer
+one. Only after that receipt does admission enter VerifyVibe.
+
 `VerifyVibe` reuses ValidatePlan, FastGate and Assess rather than adding a weaker
 policy. It rejects duplicate check IDs before those gates, then snapshots and
 checks the native source, retaining a fresh operation fence for the first
@@ -32,6 +39,15 @@ database or public package service. Lookup is bounded to 16 MiB per retained
 state and 32 MiB of decoded state in total, checked after RunStore reads; it
 does not scan the global catalog. The unique POC lookup is a filtered two-row
 page from the existing RunCatalogRead. Admission is not cleanup or landing.
+
+The same publication child accepts the cleaned source after final checks. Its
+private `PublicationInput` is `{ source: Revision, phase: "original" | "cleaned" }`.
+It delegates to NativeCoding.publishOriginalSource with a stable per-execution
+request ID and returns the existing SourcePublication receipt. The existing guest
+helper owns authorization, exact-source checks, native transport and ACK recovery.
+No credential is part of either value. Native receipt schemas now live in the
+pure `native-schema.ts` module so the browser can decode the same contracts;
+`native.ts` re-exports its existing names and retains the Effect/process adapter.
 
 The immutable source base is the source captured before this entire request,
 including before any implementation which later steering revised. The final

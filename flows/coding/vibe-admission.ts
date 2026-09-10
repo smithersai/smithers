@@ -10,6 +10,7 @@ import { sameCode } from "./planning.ts"
 import { CodingError, Result, Revision } from "./schema.ts"
 import { ReadVibeRequest, readVibeRequest, VibeEvidence, VibeInput } from "./vibe-evidence.ts"
 import { VibeAdmission } from "./vibe-schema.ts"
+import { PublishVibeSource, publicationLayers } from "./vibe-publication.ts"
 export { VibeAdmission } from "./vibe-schema.ts"
 import { Assess, FastGate, ValidatePlan } from "./workflow.ts"
 
@@ -42,7 +43,9 @@ export const VerifyVibe = Flow.make("coding/VerifyVibe", {
 })
 export const AdmitVibe = Flow.make("coding/AdmitVibe", {
   payload: VibeInput, success: VibeAdmission, error: CodingError,
-  body: input => ReadVibeRequest.call(input).pipe(Node.bindPlanned(evidence => VerifyVibe.child(evidence)))
+  body: input => ReadVibeRequest.call(input).pipe(Node.bindPlanned(evidence =>
+    PublishVibeSource.child({ source: evidence.originalSource, phase: "original" }).pipe(
+      Node.andThen(VerifyVibe.child(evidence)))))
 })
 
 export const fenceVibeSource = ({ evidence, assessment }: typeof FenceVibeSource.payloadSchema.Type) => Effect.gen(function*() {
@@ -66,5 +69,5 @@ export const fenceVibeSource = ({ evidence, assessment }: typeof FenceVibeSource
   code: "unavailable", message: "Finalization could not inspect the current native source"
 })))
 
-export const vibeAdmissionLayers = Layer.mergeAll(Interpreter.layer(AdmitVibe), Interpreter.layer(VerifyVibe),
+export const vibeAdmissionLayers = Layer.mergeAll(publicationLayers, Interpreter.layer(AdmitVibe), Interpreter.layer(VerifyVibe),
   ReadVibeRequest.toLayer(readVibeRequest), FenceVibeSource.toLayer(fenceVibeSource)).pipe(Layer.provideMerge(RunCatalogRead.layer))

@@ -3,6 +3,8 @@ import { Schema } from "effect"
 import { RequestResult, Result, Revision } from "./schema.ts"
 
 export const VibeInput = Schema.Struct({ requestExecutionId: Schema.NonEmptyString.check(Schema.isMaxLength(1024)) })
+/** Original retention gates admission; cleaned retention gates append. */
+export const PublicationInput = Schema.Struct({ source: Revision, phase: Schema.Literals(["original", "cleaned"]) })
 export const VibeEvidence = Schema.Struct({
   requestExecutionId: VibeInput.fields.requestExecutionId,
   controlRunId: Schema.NonEmptyString,

@@ -5,10 +5,11 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
-import { NativeCoding } from "../coding/native.ts"
+import { NativeCoding, NativeCodingError } from "../coding/native.ts"
 import { checkInputDigest, type Plan, type Implementation, type Revision } from "../coding/schema.ts"
-import { VibeEvidence } from "../coding/vibe-evidence.ts"
-import { FenceVibeSource, fenceVibeSource, VerifyVibe } from "../coding/vibe-admission.ts"
+import { ReadVibeRequest, VibeEvidence } from "../coding/vibe-evidence.ts"
+import { AdmitVibe, FenceVibeSource, fenceVibeSource, VerifyVibe } from "../coding/vibe-admission.ts"
+import { publicationLayers, PublishVibeSource } from "../coding/vibe-publication.ts"
 import { policyLayers } from "../coding/workflow.ts"
 
 const revision = (name: string, parent?: string): Revision => ({ changeId: `jj-${name}`, commitId: `commit-${name}`,
@@ -61,6 +62,52 @@ for (const mode of ["valid", "missing-change", "missing-fast", "missing-slow", "
     } else {
       await assert.rejects(host.runPromise(VerifyVibe.execute(input, { executionId: "vibe-policy" })))
       assert.deepEqual([snapshots, reads], mode === "source-moved" ? [1, 1] : [0, 0], "all retained check and atomic policy gates precede final source observation")
+    }
+  })
+}
+
+for (const mode of ["cloud", "local-only", "publication-unavailable", "original-missing", "source-moved"] as const) {
+  test(`vibe retains original source before snapshot: ${mode}`, async t => {
+    const events: string[] = []
+    const original = { changeId: "k".repeat(32), commitId: "a".repeat(40), treeId: "b".repeat(40),
+      operationId: "a".repeat(128), parentCommitIds: ["c".repeat(40)] }
+    const input = { ...evidence, originalSource: original }
+    const leaves = Layer.mergeAll(publicationLayers,
+      ReadVibeRequest.toLayer(() => Effect.sync(() => { events.push("evidence"); return input })),
+      FenceVibeSource.toLayer(fenceVibeSource)).pipe(Layer.provide([
+      Jj.layerNoop({ snapshot: () => Effect.sync(() => { events.push("snapshot"); return { changeId: "fixture" } }) }),
+      Layer.succeed(NativeCoding, {
+        sourcePublication: mode === "local-only" ? "local-only" : "cloud",
+        publishOriginalSource: request => Effect.gen(function*() {
+          events.push("publish")
+          assert.deepEqual(request.source, { ...original, kind: "resolved" }, "retain the POC source, not the later plan or current tip")
+          if (mode === "publication-unavailable") return yield* new NativeCodingError({ code: "source_publication_unavailable", message: "No authoritative ACK" })
+          if (mode === "original-missing") return yield* new NativeCodingError({ code: "revision_conflict", message: "Original source has no retained pin and moved" })
+          const workspaceId = "12345678-1234-1234-1234-123456789abc"
+          return { status: "retained" as const, requestId: request.requestId, workspaceId, repositoryId: 42,
+            ref: `refs/smithers/workspaces/${workspaceId}/sources/${original.commitId}`, source: original }
+        }),
+        read: () => Effect.sync(() => { events.push("read"); return { status: "read" as const, operationId: "fresh",
+          head: { ...implementations[1]!.head, kind: "resolved" as const, operationId: "fresh", ...(mode === "source-moved" ? { treeId: "changed" } : {}) }, revisions: [] } }),
+        apply: () => Effect.die("Admission must not rewrite or land")
+      })
+    ]))
+    const host = ManagedRuntime.make(Layer.mergeAll(Interpreter.layer(AdmitVibe), Interpreter.layer(VerifyVibe), policyLayers, leaves).pipe(
+      Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeCrypto.layer)))
+    t.after(() => host.dispose())
+    if (mode === "cloud") {
+      const result = await host.runPromise(AdmitVibe.execute({ requestExecutionId: "request" }, { executionId: "cloud-admission" }))
+      assert.deepEqual(events, ["evidence", "publish", "snapshot", "read"])
+      assert.deepEqual(await host.runPromise(AdmitVibe.execute({ requestExecutionId: "request" }, { executionId: "cloud-admission" })), result)
+      assert.equal(events.length, 4, "action replay retains the original publication receipt")
+      const cleaned = await host.runPromise(PublishVibeSource.execute({ source: original, phase: "cleaned" }, { executionId: "cleaned-source" }))
+      assert.equal(cleaned.source.commitId, original.commitId)
+      assert.deepEqual(await host.runPromise(PublishVibeSource.execute({ source: original, phase: "cleaned" }, { executionId: "cleaned-source" })), cleaned)
+      assert.deepEqual(events, ["evidence", "publish", "snapshot", "read", "publish"])
+    } else {
+      await assert.rejects(host.runPromise(AdmitVibe.execute({ requestExecutionId: "request" }, { executionId: "cloud-admission" })))
+      assert.deepEqual(events, mode === "local-only" ? ["evidence"] : mode === "publication-unavailable" || mode === "original-missing" ? ["evidence", "publish"]
+        : ["evidence", "publish", "snapshot", "read"])
     }
   })
 }

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { NodeChildProcessSpawner, NodeFileSystem, NodePath } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import * as Jj from "../../packages/smithers/flows/jj/src/Jj.ts"
 import { NativeCoding, NativeCodingError, nativeLayer, requestIdFor, type SourcePublication } from "../coding/native.ts"
@@ -59,7 +59,7 @@ test("Effect native publication validates exact receipts and sends only source i
   const temporary = await mkdtemp(join(tmpdir(), "coding-publication-adapter-"))
   t.after(() => rm(temporary, { recursive: true, force: true }))
   const adapter = join(temporary, "adapter.py"), recorded = join(temporary, "request.json")
-  const platform = NodeChildProcessSpawner.layer.pipe(Layer.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
+  const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
   for (const mode of ["accepted", "missing", "wrong-tree", "wrong-ref", "wrong-request", "local-only"] as const) {
     const output = mode === "missing" ? { status: "retained" } : {
       ...receipt, ...(mode === "wrong-ref" ? { ref: "refs/heads/main" } : {}),
