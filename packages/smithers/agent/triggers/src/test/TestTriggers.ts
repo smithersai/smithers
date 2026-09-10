@@ -4,8 +4,13 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
+import * as Result from "effect/Result"
+import * as Schema from "effect/Schema"
+import * as ClaimDecision from "../ClaimDecision.ts"
 import * as Overlap from "../Overlap.ts"
-import { TriggerError } from "../TriggerError.ts"
+import * as Schedule from "../Schedule.ts"
+import * as Trigger from "../Trigger.ts"
+import { fromSchemaError, TriggerError } from "../TriggerError.ts"
 import {
   type Claim,
   type ClaimFire,
@@ -19,7 +24,6 @@ import {
   type Outcome,
   type Registered,
   reservationId,
-  reservationLeaseMs,
   reservationOccurrence,
   resultRefusal,
   type Service,
@@ -46,8 +50,21 @@ import {
  * `fireErrors` and `heartbeats` are the SQL store's `error` column and its
  * `flows_scheduler_heartbeat` table.
  */
+/**
+ * A registered declaration as this layer keeps it: the SQL store persists
+ * `input` as a JSON string, so holding the same string is what makes every
+ * reading an independent value rather than an alias of the caller's object.
+ */
+interface Stored extends Omit<Registered, "input"> {
+  readonly input: string
+}
+
+const registered = (stored: Stored): Registered => ({ ...stored, input: JSON.parse(stored.input) })
+
+const byId = (left: Stored, right: Stored): number => left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+
 interface State {
-  readonly triggers: ReadonlyMap<string, Registered>
+  readonly triggers: ReadonlyMap<string, Stored>
   readonly fires: ReadonlyMap<string, Outcome | null>
   readonly fireRunIds: ReadonlyMap<string, string>
   readonly fireErrors: ReadonlyMap<string, string>
@@ -78,160 +95,119 @@ const fireRecord = (current: State, fireKey: string, outcome: Outcome | null): F
 const unknown = (triggerId: string) =>
   new TriggerError({ code: "unknown_trigger", message: `unknown trigger ${triggerId}` })
 
-/**
- * The refusals a claim owes before it applies any policy, in the order the SQL
- * store applies them. Returning the same codes is what makes this layer a
- * usable stand-in rather than a second, kinder set of rules. A missing row is
- * refused by the caller, which is where the narrowing belongs.
- */
-const refuseClaim = (
-  trigger: Registered,
-  fire: ClaimFire
-): TriggerError | undefined => {
-  if (trigger.revision !== fire.expectedRevision) {
-    return new TriggerError({
-      code: "revision_mismatch",
-      message: `trigger ${fire.triggerId} is at revision ${trigger.revision}, not the claimed ${fire.expectedRevision}`
-    })
-  }
-  if (!trigger.enabled) {
-    return new TriggerError({ code: "trigger_disabled", message: `trigger ${fire.triggerId} is disabled` })
-  }
-  return undefined
-}
-
-const advanced = (trigger: Registered, occurrence: number): Registered => ({
+const advanced = (trigger: Stored, occurrence: number): Stored => ({
   ...trigger,
   lastFiredAt: Math.max(trigger.lastFiredAt ?? occurrence, occurrence)
 })
 
-type ClaimDecision =
+type Decision =
   | { readonly _tag: "Failure"; readonly error: TriggerError }
   | { readonly _tag: "Success"; readonly claim: Claim; readonly state: State }
 
+const fireSnapshot = (current: State, fireKey: string): ClaimDecision.Fire | undefined => {
+  if (!current.fires.has(fireKey)) return undefined
+  const runId = current.fireRunIds.get(fireKey)
+  return { outcome: current.fires.get(fireKey) ?? null, ...(runId === undefined ? {} : { runId }) }
+}
+
+/**
+ * Gathers the rows {@link ClaimDecision.decide} reads, then applies the writes
+ * it answers. The protocol itself lives in that module, so this layer refuses
+ * and reclaims exactly what the SQL store does rather than restating the rules
+ * over maps.
+ */
 const applyClaim = (
-  trigger: Registered,
+  trigger: Stored,
   fire: ClaimFire,
   current: State,
   claimedAt: number
-): ClaimDecision => {
-  const refusal = refuseClaim(trigger, fire)
-  if (refusal !== undefined) return { _tag: "Failure", error: refusal }
-
+): Decision => {
   const fireKey = key(fire.triggerId, fire.occurrence)
-  const fireExists = current.fires.has(fireKey)
-  const existingOutcome = current.fires.get(fireKey)
-  const existingRunId = current.fireRunIds.get(fireKey)
-  let activeRunId = current.active.get(fire.triggerId)
-  const reservation = reservationId(fire.triggerId, fire.occurrence, globalThis.crypto.randomUUID())
-  const claimTime = current.activeClaimedAt.get(fire.triggerId)
-  const expiredReservation = activeRunId !== undefined && isReservation(activeRunId) &&
-      (claimTime === undefined || claimTime <= claimedAt - reservationLeaseMs)
-    ? activeRunId
+  const existingFire = fireSnapshot(current, fireKey)
+  const activeRunId = current.active.get(fire.triggerId)
+  const activeOccurrence = activeRunId !== undefined && isReservation(activeRunId)
+    ? reservationOccurrence(activeRunId)
     : undefined
-  if (fireExists) {
-    const resumableBuffer = fire.resumeBuffered === true && existingOutcome === "buffered"
-    const resumableReservation = existingOutcome === null &&
-      (activeRunId === undefined ||
-        (activeRunId !== undefined && reservationOccurrence(activeRunId) === fire.occurrence &&
-          expiredReservation !== undefined))
-    const resumableSupersede = fire.resumeBuffered === true && existingOutcome === null &&
-      trigger.overlap === "supersede" && activeRunId !== undefined && existingRunId === activeRunId
-    if (!resumableBuffer && !resumableReservation && !resumableSupersede) {
-      return { _tag: "Success", claim: { claimed: false }, state: current }
+  // The SQL store reads the reservation's row after inserting the claimed
+  // occurrence, so a row this claim creates reads back as unsettled.
+  const activeFire = activeOccurrence === undefined
+    ? undefined
+    : activeOccurrence === fire.occurrence
+    ? existingFire ?? { outcome: null }
+    : fireSnapshot(current, key(fire.triggerId, activeOccurrence))
+  const claimedAtMs = current.activeClaimedAt.get(fire.triggerId)
+  const pendingAt = current.pending.get(fire.triggerId)
+  const decision = ClaimDecision.decide({
+    fire,
+    claimedAt,
+    reservationId: reservationId(fire.triggerId, fire.occurrence, globalThis.crypto.randomUUID()),
+    snapshot: {
+      revision: trigger.revision,
+      enabled: trigger.enabled,
+      overlap: trigger.overlap,
+      ...(activeRunId === undefined ? {} : { activeRunId }),
+      ...(claimedAtMs === undefined ? {} : { activeClaimedAt: claimedAtMs }),
+      ...(pendingAt === undefined ? {} : { pending: pendingAt }),
+      ...(existingFire === undefined ? {} : { existingFire }),
+      ...(activeFire === undefined ? {} : { activeFire })
     }
-  }
-
-  const active = new Map(current.active)
-  const activeOccurrences = new Map(current.activeOccurrences)
-  const activeClaimedAt = new Map(current.activeClaimedAt)
+  })
+  if (decision._tag === "Refused") return { _tag: "Failure", error: decision.error }
+  if (!decision.claim.claimed) return { _tag: "Success", claim: decision.claim, state: current }
+  const triggers = new Map(current.triggers)
   const fires = new Map(current.fires)
   const fireRunIds = new Map(current.fireRunIds)
   const pending = new Map(current.pending)
-  if (expiredReservation !== undefined) {
-    activeClaimedAt.delete(fire.triggerId)
-    const expiredOccurrence = current.activeOccurrences.get(fire.triggerId) as number
-    const expiredOutcome = current.fires.get(key(fire.triggerId, expiredOccurrence))
-    if (expiredOutcome === null || expiredOutcome === "buffered") {
-      if (trigger.overlap === "supersede") {
-        const predecessor = current.fireRunIds.get(key(fire.triggerId, expiredOccurrence))
-        if (predecessor !== undefined) {
-          active.set(fire.triggerId, predecessor)
-          activeOccurrences.set(fire.triggerId, current.runOccurrences.get(predecessor) as number)
-          activeRunId = predecessor
-        } else {
+  const active = new Map(current.active)
+  const activeOccurrences = new Map(current.activeOccurrences)
+  const activeClaimedAt = new Map(current.activeClaimedAt)
+  if (!fires.has(fireKey)) fires.set(fireKey, null)
+  for (const write of decision.writes) {
+    switch (write._tag) {
+      case "SetOutcome": {
+        const target = key(fire.triggerId, write.occurrence)
+        const outcome = fires.get(target)
+        if (!write.whileOpen || outcome === null || outcome === "buffered") fires.set(target, write.outcome)
+        break
+      }
+      case "SetRunId": {
+        fireRunIds.set(key(fire.triggerId, write.occurrence), write.runId)
+        break
+      }
+      case "ReleaseReservation": {
+        if (active.get(fire.triggerId) !== write.expected) break
+        activeClaimedAt.delete(fire.triggerId)
+        if (write.activeRunId === undefined) {
           active.delete(fire.triggerId)
           activeOccurrences.delete(fire.triggerId)
-          activeRunId = undefined
+        } else {
+          active.set(fire.triggerId, write.activeRunId)
+          activeOccurrences.set(fire.triggerId, current.runOccurrences.get(write.activeRunId) as number)
         }
-        if (expiredOccurrence !== fire.occurrence) {
-          fires.set(key(fire.triggerId, expiredOccurrence), "superseded")
-        }
-      } else {
-        active.delete(fire.triggerId)
-        activeOccurrences.delete(fire.triggerId)
-        activeRunId = undefined
-        if (expiredOccurrence !== fire.occurrence) {
-          pending.set(
-            fire.triggerId,
-            Overlap.pendingAfter({ running: false, pending: pending.get(fire.triggerId), due: expiredOccurrence })
-          )
-        }
+        if (write.pending === undefined) pending.delete(fire.triggerId)
+        else pending.set(fire.triggerId, write.pending)
+        break
       }
-    } else {
-      active.delete(fire.triggerId)
-      activeOccurrences.delete(fire.triggerId)
-      activeRunId = undefined
-    }
-  }
-  const overlapState: Overlap.State = {
-    running: activeRunId !== undefined,
-    pending: pending.get(fire.triggerId),
-    due: fire.occurrence
-  }
-  const action = Overlap.decide(trigger.overlap, overlapState)
-  if (!fireExists) fires.set(fireKey, null)
-  // A skip or buffer is complete inside the claim transaction. A fire or
-  // supersede is only reserved here; its cursor advances when `recordResult`
-  // makes the launched run durable, matching the SQL store.
-  const triggers = action === "skip" || action === "buffer"
-    ? new Map(current.triggers).set(fire.triggerId, advanced(trigger, fire.occurrence))
-    : current.triggers
-  if (action === "skip" || action === "buffer") {
-    fires.set(fireKey, action === "skip" ? "skipped" : "buffered")
-    if (action === "buffer") pending.set(fire.triggerId, Overlap.pendingAfter(overlapState))
-    return {
-      _tag: "Success",
-      claim: { claimed: true, action },
-      state: { ...current, fires, fireRunIds, active, activeOccurrences, activeClaimedAt, pending, triggers }
-    }
-  }
-  let supersededRunId = activeRunId
-  if (action === "supersede" && activeRunId !== undefined) {
-    if (isReservation(activeRunId)) {
-      const activeOccurrence = current.activeOccurrences.get(fire.triggerId) as number
-      const predecessor = current.fireRunIds.get(key(fire.triggerId, activeOccurrence))
-      if (predecessor !== undefined) {
-        supersededRunId = predecessor
+      case "AdvanceCursor": {
+        triggers.set(fire.triggerId, advanced(trigger, write.occurrence))
+        break
       }
-      fires.set(key(fire.triggerId, activeOccurrence), "superseded")
-    }
-    if (supersededRunId !== undefined && !isReservation(supersededRunId)) {
-      fireRunIds.set(fireKey, supersededRunId)
+      case "SetPending": {
+        pending.set(fire.triggerId, write.occurrence)
+        break
+      }
+      case "Reserve": {
+        active.set(fire.triggerId, write.reservationId)
+        activeOccurrences.set(fire.triggerId, fire.occurrence)
+        activeClaimedAt.set(fire.triggerId, write.claimedAt)
+        break
+      }
     }
   }
-  active.set(fire.triggerId, reservation)
-  activeOccurrences.set(fire.triggerId, fire.occurrence)
-  activeClaimedAt.set(fire.triggerId, claimedAt)
   return {
     _tag: "Success",
-    claim: {
-      claimed: true,
-      action,
-      reservationId: reservation,
-      ...(supersededRunId === undefined ? {} : { activeRunId: supersededRunId })
-    },
-    state: { ...current, fires, fireRunIds, active, activeOccurrences, activeClaimedAt, pending, triggers }
+    claim: decision.claim,
+    state: { ...current, triggers, fires, fireRunIds, pending, active, activeOccurrences, activeClaimedAt }
   }
 }
 
@@ -258,11 +234,11 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
   const get: Service["get"] = (triggerId) =>
     Ref.get(state).pipe(Effect.map((current) => {
       const trigger = current.triggers.get(triggerId)
-      return trigger === undefined ? Option.none() : Option.some(trigger)
+      return trigger === undefined ? Option.none() : Option.some(registered(trigger))
     }))
   const requireTrigger = <A>(
     triggerId: string,
-    modify: (trigger: Registered, current: State) => readonly [A, State]
+    modify: (trigger: Stored, current: State) => readonly [A, State]
   ): Effect.Effect<A, TriggerError> =>
     Ref.modify(state, (current): readonly [Effect.Effect<A, TriggerError>, State] => {
       const trigger = current.triggers.get(triggerId)
@@ -284,20 +260,60 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
         }).pipe(Effect.flatten)
     )
   return TriggerStore.of({
-    register: (trigger) =>
-      Ref.modify(state, (current) => {
-        const prior = current.triggers.get(trigger.id)
-        const registered: Registered = {
-          ...trigger,
-          revision: (prior?.revision ?? 0) + 1,
-          ...(prior?.lastFiredAt === undefined ? {} : { lastFiredAt: prior.lastFiredAt })
-        }
-        return [registered, { ...current, triggers: new Map(current.triggers).set(trigger.id, registered) }]
-      }),
+    // Registration decodes and serializes at the call boundary, before the
+    // returned Effect runs, so the declaration this layer keeps is the one the
+    // caller passed rather than whatever its object became later. The SQL
+    // store does the same, and its lazy schedule validation runs here too.
+    register: (declaration) => {
+      const decoded = Schema.decodeUnknownResult(Trigger.Trigger)(declaration)
+      if (Result.isFailure(decoded)) {
+        return Effect.fail(fromSchemaError("invalid_trigger", "Trigger declaration is invalid", decoded.failure))
+      }
+      const snapshot = decoded.success
+      let input: string | undefined
+      try {
+        input = JSON.stringify(snapshot.input)
+      } catch (cause) {
+        return Effect.fail(
+          new TriggerError({ code: "store", message: "trigger input is not JSON-serializable", cause })
+        )
+      }
+      if (input === undefined) {
+        return Effect.fail(
+          new TriggerError({
+            code: "invalid_trigger",
+            message: "trigger input has no JSON representation",
+            path: "input"
+          })
+        )
+      }
+      const serialized = input
+      return Effect.suspend(() =>
+        Schedule.validate(snapshot).pipe(
+          Effect.andThen(Ref.modify(state, (current) => {
+            const prior = current.triggers.get(snapshot.id)
+            const stored: Stored = {
+              ...snapshot,
+              input: serialized,
+              revision: (prior?.revision ?? 0) + 1,
+              ...(prior?.lastFiredAt === undefined ? {} : { lastFiredAt: prior.lastFiredAt })
+            }
+            return [registered(stored), { ...current, triggers: new Map(current.triggers).set(snapshot.id, stored) }]
+          }))
+        )
+      )
+    },
     get,
-    list: () => Ref.get(state).pipe(Effect.map((current) => [...current.triggers.values()])),
+    list: () =>
+      Ref.get(state).pipe(
+        Effect.map((current) => [...current.triggers.values()].sort(byId).map(registered))
+      ),
     listEnabled: () =>
-      Ref.get(state).pipe(Effect.map((current) => [...current.triggers.values()].filter((trigger) => trigger.enabled))),
+      Ref.get(state).pipe(
+        Effect.map((current) =>
+          [...current.triggers.values()].filter((trigger) => trigger.enabled).sort(byId).map(registered)
+        )
+      ),
     claimFire,
     claimPending: (fire) =>
       Effect.flatMap(Clock.currentTimeMillis, (claimedAt) =>
@@ -450,43 +466,40 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
       Effect.flatMap(Clock.currentTimeMillis, (now) =>
         requireTrigger(triggerId, (_trigger, current) => {
           const runId = current.active.get(triggerId)
-          if (runId === undefined) return [Option.none(), current]
+          const occurrence = runId !== undefined && isReservation(runId) ? reservationOccurrence(runId) : undefined
+          const unfinished = occurrence === undefined
+            ? undefined
+            : fireSnapshot(current, key(triggerId, occurrence))
           const claimedAt = current.activeClaimedAt.get(triggerId)
-          if (
-            isReservation(runId) &&
-            (claimedAt === undefined || claimedAt <= now - reservationLeaseMs)
-          ) {
-            const active = new Map(current.active)
-            const activeOccurrences = new Map(current.activeOccurrences)
-            const activeClaimedAt = new Map(current.activeClaimedAt)
-            const pending = new Map(current.pending)
-            activeClaimedAt.delete(triggerId)
-            const occurrence = current.activeOccurrences.get(triggerId) as number
-            const outcome = current.fires.get(key(triggerId, occurrence))
-            if (outcome === null || outcome === "buffered") {
-              pending.set(
-                triggerId,
-                Overlap.pendingAfter({
-                  running: false,
-                  pending: pending.get(triggerId),
-                  due: occurrence
-                })
-              )
-              const predecessor = current.fireRunIds.get(key(triggerId, occurrence))
-              if (predecessor !== undefined && !isReservation(predecessor)) {
-                active.set(triggerId, predecessor)
-                activeOccurrences.set(triggerId, current.runOccurrences.get(predecessor) as number)
-                return [
-                  Option.some(predecessor),
-                  { ...current, active, activeOccurrences, activeClaimedAt, pending }
-                ]
-              }
-            }
+          const pendingAt = current.pending.get(triggerId)
+          const lease = ClaimDecision.lease({
+            now,
+            ...(runId === undefined ? {} : { activeRunId: runId }),
+            ...(claimedAt === undefined ? {} : { activeClaimedAt: claimedAt }),
+            ...(pendingAt === undefined ? {} : { pending: pendingAt }),
+            ...(unfinished === undefined || (unfinished.outcome !== null && unfinished.outcome !== "buffered")
+              ? {}
+              : { unfinished })
+          })
+          if (lease._tag === "Idle") return [Option.none(), current]
+          if (lease._tag === "Held") return [Option.some(lease.runId), current]
+          const active = new Map(current.active)
+          const activeOccurrences = new Map(current.activeOccurrences)
+          const activeClaimedAt = new Map(current.activeClaimedAt)
+          const pending = new Map(current.pending)
+          activeClaimedAt.delete(triggerId)
+          if (lease.pending !== undefined) pending.set(triggerId, lease.pending)
+          if (lease.recovered === undefined) {
             active.delete(triggerId)
             activeOccurrences.delete(triggerId)
-            return [Option.none(), { ...current, active, activeOccurrences, activeClaimedAt, pending }]
+          } else {
+            active.set(triggerId, lease.recovered)
+            activeOccurrences.set(triggerId, current.runOccurrences.get(lease.recovered) as number)
           }
-          return [Option.some(runId), current]
+          return [
+            lease.recovered === undefined ? Option.none() : Option.some(lease.recovered),
+            { ...current, active, activeOccurrences, activeClaimedAt, pending }
+          ]
         })),
     activeOccurrence: (triggerId, runId) =>
       requireTrigger(triggerId, (_trigger, current) => {

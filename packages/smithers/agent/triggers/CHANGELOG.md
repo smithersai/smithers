@@ -18,6 +18,25 @@
   store the scheduler writes: last fire, buffered occurrence, active run, the
   next five occurrences, and the newest heartbeat.
 
+### Changed
+
+- Both trigger stores now apply one claim decision. The revision and enabled
+  fences, the expired-reservation reclaim with its supersede predecessor
+  lookup, the three resumable predicates, the cursor advance, and the lease
+  recovery behind `activeRun` were written out once in SQL and again over maps;
+  each store now gathers its snapshot, calls the shared decision, and applies
+  the writes it answers.
+- `test/TestTriggers` registration validates the declaration and serializes its
+  input at the call boundary, the way SQL registration already did, so a
+  declaration mutated after `register` returns cannot change what was stored
+  and an unsatisfiable schedule is refused rather than accepted. Its `list` and
+  `listEnabled` order by id, and every reading is an independent value that
+  cannot be mutated back into stored state.
+- The testing guide, the reference, the claim-protocol concept, and the README
+  state what the in-memory store shares with the SQL store and where it stops:
+  it holds one process's state, reports no `store` write failures, shows no
+  contention between connections, and applies no migrations.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added

@@ -490,9 +490,9 @@ describe("Scheduler", () => {
   })
 
   // The store orders due triggers by id, so an aborting trigger takes every
-  // trigger after it alphabetically down with it. The in-memory store is used
-  // as the durable store's stand-in for a row written before registration
-  // refused an unsatisfiable expression.
+  // trigger after it alphabetically down with it. Every store refuses an
+  // unsatisfiable expression at registration, so the row a downgrade or a
+  // hand-edit left behind is spelled out here as a listing that reads one back.
   it("keeps one failing trigger from silencing the triggers after it", async () => {
     const results: Array<TriggerStore.Result> = []
     const runner = runnerFixture()
@@ -501,11 +501,25 @@ describe("Scheduler", () => {
         Effect.scoped(
           Effect.gen(function*() {
             const store = yield* TriggerStore.TriggerStore
-            yield* store.register({ ...trigger("skip", "none"), id: "a-february-30", cron: "0 0 30 2 *" })
+            yield* store.register({ ...trigger("skip", "none"), id: "a-february-30" })
             yield* store.register({ ...trigger("skip", "none"), id: "b-hourly" })
+            const legacy = TriggerStore.TriggerStore.of({
+              ...store,
+              list: () =>
+                Effect.map(
+                  store.list(),
+                  (registrations) =>
+                    registrations.map((registration) =>
+                      registration.id === "a-february-30"
+                        ? { ...registration, cron: "0 0 30 2 *" }
+                        : registration
+                    )
+                )
+            })
             yield* TestClock.setTime(hour + 30 * 60 * 1_000)
             const scheduler = yield* Scheduler.make().pipe(
-              Effect.provideService(Scheduler.Runner, runner.service)
+              Effect.provideService(Scheduler.Runner, runner.service),
+              Effect.provideService(TriggerStore.TriggerStore, legacy)
             )
             yield* scheduler.runOnce
             yield* TestClock.setTime(2 * hour)

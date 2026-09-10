@@ -48,7 +48,7 @@ export type CatchUp = Schedule.CatchUp
  * `JSON.stringify` into a `NOT NULL` column. The schema refuses `undefined`,
  * `NaN`, a `Date`, and functions at the declaration boundary.
  * Enumerable getters are accepted when their values are JSON. They are
- * evaluated during decoding and again during SQL serialization. SQL registration
+ * evaluated during decoding and again during SQL serialization. Every store
  * takes an eager serialized snapshot before returning its Effect; use plain
  * JSON values for stable input across reads.
  *

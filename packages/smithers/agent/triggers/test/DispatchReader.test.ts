@@ -52,8 +52,9 @@ describe("DispatchReader", () => {
         return yield* reader.list(triggers)
       })
     )
-    expect(summaries.map((summary) => summary.triggerId)).toEqual(["hourly", "daily"])
-    const [first, second] = summaries
+    expect(summaries.map((summary) => summary.triggerId)).toEqual(["daily", "hourly"])
+    const first = summaries.find((summary) => summary.triggerId === "hourly")
+    const second = summaries.find((summary) => summary.triggerId === "daily")
     expect(first).toEqual({
       triggerId: "hourly",
       flowId: "review",

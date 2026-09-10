@@ -94,6 +94,58 @@ export const storeConformance = <LayerError>(
       expect(result.stored).toMatchObject({ _tag: "Some", value: { input: declaration.input } })
     })
 
+    it("snapshots registration input before the returned Effect runs", async () => {
+      const stored = await run(
+        Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          const input = { value: 1 }
+          const registration = store.register({ ...declaration, input })
+          input.value = 2
+          yield* registration
+          return yield* store.get(declaration.id)
+        })
+      )
+      expect(stored).toMatchObject({ _tag: "Some", value: { input: { value: 1 } } })
+    })
+
+    it("hands back readings that cannot be mutated into stored state", async () => {
+      const stored = await run(
+        Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          const registered = yield* store.register({ ...declaration, id: "aliased", input: { nested: [1] } })
+          ;(registered.input as { nested: Array<unknown> }).nested.push("through the registration")
+          const listed = yield* store.list()
+          ;(listed[0]!.input as { nested: Array<unknown> }).nested.push("through the listing")
+          return yield* store.get("aliased")
+        })
+      )
+      expect(stored).toMatchObject({ _tag: "Some", value: { input: { nested: [1] } } })
+    })
+
+    it("refuses a declaration the schedule cannot satisfy", async () => {
+      const error = await run(
+        Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          return yield* Effect.flip(store.register({ ...declaration, id: "february", cron: "0 0 30 2 *" }))
+        })
+      )
+      expect(error.code).toBe("unsatisfiable_cron")
+    })
+
+    it("lists triggers ordered by id", async () => {
+      const listed = await run(
+        Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          yield* store.register({ ...declaration, id: "weekly" })
+          yield* store.register({ ...declaration, id: "hourly" })
+          yield* store.register({ ...declaration, id: "daily", enabled: false })
+          return { all: yield* store.list(), enabled: yield* store.listEnabled() }
+        })
+      )
+      expect(listed.all.map((registered) => registered.id)).toEqual(["daily", "hourly", "weekly"])
+      expect(listed.enabled.map((registered) => registered.id)).toEqual(["hourly", "weekly"])
+    })
+
     it("holds live reservations and reclaims them after the shared lease", async () => {
       const result = await run(
         Effect.gen(function*() {

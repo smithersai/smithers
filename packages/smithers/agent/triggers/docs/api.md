@@ -951,9 +951,15 @@ const layer: Layer.Layer<TriggerStore.TriggerStore>
 ```
 
 An in-memory `TriggerStore` with real claim and overlap semantics and no
-database. It returns the same refusal codes in the same order as the SQL store
-and holds the same reservation lease, so a test that swaps one for the other is
-testing the protocol rather than the implementation.
+database. It applies the same claim decision as the SQL store, so it returns the
+same refusal codes in the same order, holds the same reservation lease, and
+reclaims an expired reservation the same way. Registration validates the
+declaration and serializes its input at the call boundary, `list` and
+`listEnabled` order by id, and every reading is an independent value.
+
+It holds one process's state, so it never reports a `store` failure from a
+write, never shows contention between connections, and applies no migrations.
+A test about a schema or a row shape needs `SqlTriggerStore`.
 
 ## Failure codes
 
@@ -967,7 +973,7 @@ message.
 | `stale_owner`             | A result or compensation no longer owns a permissible fire transition.                                                  |
 | `revision_mismatch`       | `ClaimFire.expectedRevision` differs from the revision read by the claim transaction.                                   |
 | `invalid_schedule`        | `Schedule.make` cannot decode the schedule declaration.                                                                 |
-| `invalid_trigger`         | `Trigger.make` cannot decode a trigger, or SQL registration receives input with no JSON representation.                 |
+| `invalid_trigger`         | `Trigger.make` cannot decode a trigger, or registration receives input with no JSON representation.                     |
 | `invalid_options`         | A cron occurrence limit, a history page limit, or a scheduler interval, deadline, or concurrency violates its contract. |
 | `invalid_cron`            | The Effect cron parser rejects an expression or timezone.                                                               |
 | `unsatisfiable_cron`      | A next, previous, or interval occurrence search exhausts its search bound.                                              |

@@ -54,6 +54,21 @@ describe("documentation contracts", () => {
     }
   })
 
+  it("states what the in-memory store shares with SQL and where it stops (documentation/6)", () => {
+    const guide = read("docs/guides/testing.md")
+    expect(guide).toContain("Both stores apply one shared claim decision")
+    expect(guide).toContain("Registration validates the declaration and serializes its input at the call boundary")
+    expect(guide).toContain("`list` and `listEnabled` order by id in both")
+    expect(guide).toContain("never reports a `store` failure from a write")
+    expect(guide).not.toContain("so a test that passes against this one is testing the protocol")
+    const reference = read("docs/api.md")
+    expect(reference).toContain("It applies the same claim decision as the SQL store")
+    expect(reference).toContain("Registration validates the declaration and serializes its input at the call boundary")
+    expect(reference).toContain("never reports a `store` failure from a write")
+    expect(read("docs/concepts/claim-protocol.md")).toContain("apply one claim decision, not two implementations")
+    expect(read("README.md")).toContain("It keeps no rows and applies no migrations")
+  })
+
   it("documents accepted getters and their two evaluations (documentation/5)", () => {
     for (const path of ["docs/troubleshooting.md", "docs/api.md", "src/Trigger.ts"]) {
       const doc = read(path).replace(/ \* /g, " ")

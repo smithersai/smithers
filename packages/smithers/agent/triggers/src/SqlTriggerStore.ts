@@ -13,13 +13,13 @@ import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as ClaimDecision from "./ClaimDecision.ts"
 import * as Migrations from "./migrations/index.ts"
 import * as Overlap from "./Overlap.ts"
 import * as Schedule from "./Schedule.ts"
 import * as Trigger from "./Trigger.ts"
 import { fromSchemaError, TriggerError } from "./TriggerError.ts"
 import {
-  type Claim,
   type ClaimFire,
   type FireRecord,
   type Heartbeat,
@@ -29,7 +29,6 @@ import {
   type Outcome,
   type Registered,
   reservationId,
-  reservationLeaseMs,
   reservationOccurrence,
   resultRefusal,
   type Service,
@@ -148,6 +147,13 @@ export const make: Effect.Effect<
         rows[0] === undefined ? Effect.succeed(Option.none()) : decode(rows[0]).pipe(Effect.map(Option.some))
       )
     )
+  const fireSnapshot = (
+    row: { readonly outcome: string | null; readonly run_id: string | null } | undefined
+  ): ClaimDecision.Fire | undefined =>
+    row === undefined ? undefined : {
+      outcome: row.outcome as Outcome | null,
+      ...(row.run_id === null ? {} : { runId: row.run_id })
+    }
   const claimInTransaction = (
     fire: ClaimFire,
     claimedAt: number,
@@ -162,148 +168,97 @@ export const make: Effect.Effect<
         FROM flows_triggers WHERE trigger_id = ${fire.triggerId}
       `)[0]
       if (row === undefined) return yield* Effect.fail(unknownTrigger(fire.triggerId))
-      if (row.revision !== fire.expectedRevision) {
-        return yield* Effect.fail(
-          new TriggerError({
-            code: "revision_mismatch",
-            message:
-              `trigger ${fire.triggerId} is at revision ${row.revision}, not the claimed ${fire.expectedRevision}`
-          })
-        )
-      }
-      if (row.enabled !== 1) {
-        return yield* Effect.fail(
-          new TriggerError({
-            code: "trigger_disabled",
-            message: `trigger ${fire.triggerId} is disabled`
-          })
-        )
-      }
+      const activeRunId = row.active_run_id ?? undefined
+      // The fences run before the insert below, so a refused claim leaves no
+      // ledger row behind.
+      const refusal = ClaimDecision.refuse({ enabled: row.enabled === 1, revision: row.revision }, fire)
+      if (refusal !== undefined) return yield* Effect.fail(refusal)
       const insertResult = yield* sql`
         INSERT INTO flows_trigger_fires (trigger_id, occurrence_at_ms)
         VALUES (${fire.triggerId}, ${fire.occurrence})
         ON CONFLICT (trigger_id, occurrence_at_ms) DO NOTHING
       `.raw
       const inserted = yield* affectedRows(insertResult)
-      let existingOutcome: string | null | undefined
-      let existingRunId: string | null | undefined
-      if (inserted === 0) {
-        const existing = yield* sql<{ readonly outcome: string | null; readonly run_id: string | null }>`
+      const existing = inserted === 0
+        ? yield* sql<{ readonly outcome: string | null; readonly run_id: string | null }>`
           SELECT outcome, run_id FROM flows_trigger_fires
           WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${fire.occurrence}
         `
-        existingOutcome = existing[0]?.outcome
-        existingRunId = existing[0]?.run_id
-      }
-      let activeRunId = row.active_run_id ?? undefined
-      let pendingAt = row.pending_at_ms ?? undefined
-      const reservation = reservationId(fire.triggerId, fire.occurrence, globalThis.crypto.randomUUID())
-      // A reservation with no claim timestamp predates the lease column.
-      // Nothing writes that shape now, so treating it as expired is the only
-      // way such a row is ever reclaimed.
-      const expiredReservation = activeRunId !== undefined && isReservation(activeRunId) &&
-          (row.active_claimed_at_ms === null || row.active_claimed_at_ms <= claimedAt - reservationLeaseMs)
-        ? activeRunId
+        : []
+      // Both the expired-reservation reclaim and the supersede predecessor
+      // lookup read the row the reservation holds, so one read serves both.
+      const activeOccurrence = activeRunId !== undefined && isReservation(activeRunId)
+        ? reservationOccurrence(activeRunId)
         : undefined
-      const reservationExpired = expiredReservation !== undefined
-      if (existingOutcome !== undefined) {
-        const resumableBuffer = fire.resumeBuffered === true && existingOutcome === "buffered"
-        const resumableReservation = existingOutcome === null &&
-          (activeRunId === undefined ||
-            (activeRunId !== undefined && reservationOccurrence(activeRunId) === fire.occurrence && reservationExpired))
-        const resumableSupersede = fire.resumeBuffered === true && existingOutcome === null &&
-          row.overlap === "supersede" && activeRunId !== undefined && existingRunId === activeRunId
-        if (!resumableBuffer && !resumableReservation && !resumableSupersede) {
-          return { claimed: false as const }
+      const active = activeOccurrence === undefined
+        ? []
+        : yield* sql<{ readonly outcome: string | null; readonly run_id: string | null }>`
+          SELECT outcome, run_id FROM flows_trigger_fires
+          WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${activeOccurrence}
+        `
+      const existingFire = fireSnapshot(existing[0])
+      const activeFire = fireSnapshot(active[0])
+      const decision = ClaimDecision.decide({
+        fire,
+        claimedAt,
+        reservationId: reservationId(fire.triggerId, fire.occurrence, globalThis.crypto.randomUUID()),
+        snapshot: {
+          revision: row.revision,
+          enabled: row.enabled === 1,
+          overlap: row.overlap,
+          ...(activeRunId === undefined ? {} : { activeRunId }),
+          ...(row.active_claimed_at_ms === null ? {} : { activeClaimedAt: row.active_claimed_at_ms }),
+          ...(row.pending_at_ms === null ? {} : { pending: row.pending_at_ms }),
+          ...(existingFire === undefined ? {} : { existingFire }),
+          ...(activeFire === undefined ? {} : { activeFire })
         }
-      }
-      if (expiredReservation !== undefined) {
-        const expiredOccurrence = reservationOccurrence(expiredReservation)
-        if (expiredOccurrence !== undefined) {
-          const expiredFires = yield* sql<{ readonly outcome: string | null; readonly run_id: string | null }>`
-            SELECT outcome, run_id FROM flows_trigger_fires
-            WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${expiredOccurrence}
-          `
-          const expiredFire = expiredFires[0]
-          if (expiredFire !== undefined && (expiredFire.outcome === null || expiredFire.outcome === "buffered")) {
-            if (row.overlap === "supersede") {
-              const predecessor = expiredFire.run_id
-              activeRunId = predecessor !== null && !isReservation(predecessor) ? predecessor : undefined
-              if (expiredOccurrence !== fire.occurrence) {
-                yield* sql`UPDATE flows_trigger_fires SET outcome = 'superseded'
-                  WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${expiredOccurrence}`
-              }
-            } else {
-              activeRunId = undefined
-              if (expiredOccurrence !== fire.occurrence) {
-                pendingAt = Overlap.pendingAfter({ running: false, pending: pendingAt, due: expiredOccurrence })
-              }
-            }
-          } else {
-            activeRunId = undefined
+      })
+      if (decision._tag === "Refused") return yield* Effect.fail(decision.error)
+      for (const write of decision.writes) {
+        switch (write._tag) {
+          case "SetOutcome": {
+            yield* write.whileOpen
+              ? sql`UPDATE flows_trigger_fires SET outcome = ${write.outcome}
+                WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${write.occurrence}
+                  AND (outcome IS NULL OR outcome = 'buffered')`
+              : sql`UPDATE flows_trigger_fires SET outcome = ${write.outcome}
+                WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${write.occurrence}`
+            break
           }
-        } else {
-          activeRunId = undefined
-        }
-        yield* sql`UPDATE flows_triggers
-          SET active_run_id = ${activeRunId ?? null}, active_claimed_at_ms = NULL, pending_at_ms = ${pendingAt ?? null}
-          WHERE trigger_id = ${fire.triggerId} AND active_run_id = ${expiredReservation}`
-      }
-      const state: Overlap.State = {
-        running: activeRunId !== undefined,
-        pending: pendingAt,
-        due: fire.occurrence
-      }
-      const action = Overlap.decide(row.overlap, state)
-      if (action === "skip") {
-        yield* sql`UPDATE flows_trigger_fires SET outcome = 'skipped'
-          WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${fire.occurrence}`
-        yield* sql`UPDATE flows_triggers
-          SET last_fired_at_ms = MAX(COALESCE(last_fired_at_ms, ${fire.occurrence}), ${fire.occurrence})
-          WHERE trigger_id = ${fire.triggerId}`
-        return { claimed: true as const, action } satisfies Claim
-      }
-      if (action === "buffer") {
-        yield* sql`UPDATE flows_trigger_fires SET outcome = 'buffered'
-          WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${fire.occurrence}`
-        yield* sql`UPDATE flows_triggers
-          SET last_fired_at_ms = MAX(COALESCE(last_fired_at_ms, ${fire.occurrence}), ${fire.occurrence}),
-            pending_at_ms = ${Overlap.pendingAfter(state)}
-          WHERE trigger_id = ${fire.triggerId}`
-        return { claimed: true as const, action } satisfies Claim
-      }
-      let supersededRunId = activeRunId
-      if (action === "supersede" && activeRunId !== undefined) {
-        if (isReservation(activeRunId)) {
-          const activeOccurrence = reservationOccurrence(activeRunId)
-          if (activeOccurrence !== undefined) {
-            const predecessors = yield* sql<{ readonly run_id: string | null }>`
-              SELECT run_id FROM flows_trigger_fires
-              WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${activeOccurrence}
-            `
-            const predecessor = predecessors[0]?.run_id ?? undefined
-            if (predecessor !== undefined && !isReservation(predecessor)) {
-              supersededRunId = predecessor
-            }
-            yield* sql`UPDATE flows_trigger_fires SET outcome = 'superseded'
-              WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${activeOccurrence}
-                AND (outcome IS NULL OR outcome = 'buffered')`
+          case "SetRunId": {
+            yield* sql`UPDATE flows_trigger_fires SET run_id = ${write.runId}
+              WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${write.occurrence}`
+            break
+          }
+          case "ReleaseReservation": {
+            yield* sql`UPDATE flows_triggers
+              SET active_run_id = ${write.activeRunId ?? null}, active_claimed_at_ms = NULL,
+                pending_at_ms = ${write.pending ?? null}
+              WHERE trigger_id = ${fire.triggerId} AND active_run_id = ${write.expected}`
+            break
+          }
+          case "AdvanceCursor": {
+            yield* sql`UPDATE flows_triggers
+              SET last_fired_at_ms = MAX(COALESCE(last_fired_at_ms, ${write.occurrence}), ${write.occurrence})
+              WHERE trigger_id = ${fire.triggerId}`
+            break
+          }
+          case "SetPending": {
+            yield* sql`UPDATE flows_triggers SET pending_at_ms = ${write.occurrence}
+              WHERE trigger_id = ${fire.triggerId}`
+            break
+          }
+          case "Reserve": {
+            yield* sql`UPDATE flows_triggers
+              SET active_run_id = ${write.reservationId}, active_claimed_at_ms = ${write.claimedAt}
+              WHERE trigger_id = ${fire.triggerId}`
+            break
           }
         }
-        if (supersededRunId !== undefined && !isReservation(supersededRunId)) {
-          yield* sql`UPDATE flows_trigger_fires SET run_id = ${supersededRunId}
-            WHERE trigger_id = ${fire.triggerId} AND occurrence_at_ms = ${fire.occurrence}`
-        }
       }
-      yield* sql`UPDATE flows_triggers SET active_run_id = ${reservation}, active_claimed_at_ms = ${claimedAt}
-        WHERE trigger_id = ${fire.triggerId}`
-      return {
-        claimed: true as const,
-        action,
-        reservationId: reservation,
-        ...(supersededRunId === undefined ? {} : { activeRunId: supersededRunId })
-      }
+      return decision.claim
     })
+
   return {
     register: (trigger) => {
       const decoded = Schema.decodeUnknownResult(Trigger.Trigger)(trigger)
@@ -519,41 +474,35 @@ export const make: Effect.Effect<
             FROM flows_triggers WHERE trigger_id = ${triggerId}`
           const row = rows[0]
           if (row === undefined) return yield* Effect.fail(unknownTrigger(triggerId))
-          if (row.active_run_id === null) return Option.none()
-          if (
-            isReservation(row.active_run_id) &&
-            (row.active_claimed_at_ms === null || row.active_claimed_at_ms <= now - reservationLeaseMs)
-          ) {
-            const occurrence = reservationOccurrence(row.active_run_id)
-            const unfinished = occurrence === undefined
-              ? []
-              : yield* sql<{ readonly occurrence_at_ms: number; readonly run_id: string | null }>`
-                SELECT occurrence_at_ms, run_id FROM flows_trigger_fires
-                WHERE trigger_id = ${triggerId} AND occurrence_at_ms = ${occurrence}
-                  AND (outcome IS NULL OR outcome = 'buffered')
-              `
-            if (occurrence !== undefined && unfinished[0] !== undefined) {
-              // A process that died after claiming an occurrence but before
-              // launching it left a reservation. The expired lease releases
-              // that reservation and re-arms both ordinary and buffered work.
-              const pending = Overlap.pendingAfter({
-                running: false,
-                pending: row.pending_at_ms ?? undefined,
-                due: occurrence
-              })
-              const predecessor = unfinished[0].run_id
-              const recovered = predecessor !== null && !isReservation(predecessor) ? predecessor : null
-              yield* sql`UPDATE flows_triggers
-                SET active_run_id = ${recovered}, active_claimed_at_ms = NULL, pending_at_ms = ${pending}
-                WHERE trigger_id = ${triggerId} AND active_run_id = ${row.active_run_id}`
-              if (recovered !== null) return Option.some(recovered)
-            } else {
-              yield* sql`UPDATE flows_triggers SET active_run_id = NULL, active_claimed_at_ms = NULL
-                WHERE trigger_id = ${triggerId} AND active_run_id = ${row.active_run_id}`
-            }
-            return Option.none()
-          }
-          return Option.some(row.active_run_id)
+          const activeRunId = row.active_run_id ?? undefined
+          const occurrence = activeRunId !== undefined && isReservation(activeRunId)
+            ? reservationOccurrence(activeRunId)
+            : undefined
+          const unfinished = occurrence === undefined
+            ? []
+            : yield* sql<{ readonly outcome: string | null; readonly run_id: string | null }>`
+              SELECT outcome, run_id FROM flows_trigger_fires
+              WHERE trigger_id = ${triggerId} AND occurrence_at_ms = ${occurrence}
+                AND (outcome IS NULL OR outcome = 'buffered')
+            `
+          const unfinishedFire = fireSnapshot(unfinished[0])
+          const lease = ClaimDecision.lease({
+            now,
+            ...(activeRunId === undefined ? {} : { activeRunId }),
+            ...(row.active_claimed_at_ms === null ? {} : { activeClaimedAt: row.active_claimed_at_ms }),
+            ...(row.pending_at_ms === null ? {} : { pending: row.pending_at_ms }),
+            ...(unfinishedFire === undefined ? {} : { unfinished: unfinishedFire })
+          })
+          if (lease._tag === "Idle") return Option.none()
+          if (lease._tag === "Held") return Option.some(lease.runId)
+          yield* lease.pending === undefined
+            ? sql`UPDATE flows_triggers SET active_run_id = NULL, active_claimed_at_ms = NULL
+              WHERE trigger_id = ${triggerId} AND active_run_id = ${lease.expected}`
+            : sql`UPDATE flows_triggers
+              SET active_run_id = ${lease.recovered ?? null}, active_claimed_at_ms = NULL,
+                pending_at_ms = ${lease.pending}
+              WHERE trigger_id = ${triggerId} AND active_run_id = ${lease.expected}`
+          return lease.recovered === undefined ? Option.none() : Option.some(lease.recovered)
         }))
       }),
     activeOccurrence: (triggerId, runId) =>

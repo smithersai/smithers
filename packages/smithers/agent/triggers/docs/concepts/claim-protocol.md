@@ -219,7 +219,9 @@ the current occurrence subject to overlap. See [Overlap and catch-up](./policies
 
 ## Both stores obey this contract
 
-`SqlTriggerStore` and the in-memory `TestTriggers` store implement one contract:
-the same refusal codes, the same claim decisions, the same lease timing, the
-same watermark rules. A test that swaps one for the other is testing the
+`SqlTriggerStore` and the in-memory `TestTriggers` store apply one claim
+decision, not two implementations of one contract: the same refusal codes, the
+same fences, the same expired-reservation reclaim, the same lease timing, the
+same watermark rules. Each store reads its own snapshot and applies the writes
+that decision answers. A test that swaps one for the other is testing the
 same protocol. See [Test trigger code](../guides/testing.md).

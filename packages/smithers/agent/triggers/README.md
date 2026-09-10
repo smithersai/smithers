@@ -87,8 +87,11 @@ guarantees, is on the
 | `Webhook`         | A verified webhook door built on `Channel`, dispatching only through Control.                |
 | `TriggerError`    | The one failure type, carrying a stable code and an optional field path.                     |
 
-`@smthrs/triggers/test/TestTriggers` is an in-memory `TriggerStore` for tests,
-with the same refusal codes, lease timing, and watermark rules as the SQL store.
+`@smthrs/triggers/test/TestTriggers` is an in-memory `TriggerStore` for tests.
+It applies the same claim decision as the SQL store, with the same refusal
+codes, lease timing, watermark rules, registration validation, and id-ordered
+listings. It keeps no rows and applies no migrations, so a test about a schema
+or a column shape needs `SqlTriggerStore`.
 
 ## Documentation
 
