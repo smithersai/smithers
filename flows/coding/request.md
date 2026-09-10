@@ -134,12 +134,14 @@ the retained message IDs. A source admission failure also refuses before
 implementation rather than silently updating the plan to a different source.
 Existing native per-operation fences still govern every later mutation.
 
-The final after-correction drain and the control run's completion are currently
-separate transactions. A Message arriving in that interval can remain pending
-after the request completes. It is retained, but does not automatically create
-a new request or prove that a revised plan ran. Atomic closure of that interval
-is an outstanding integration requirement. There is no claim of preemptive
-steering or an implicit human wait after every POC.
+The empty final after-correction receipt is also the coordinator's durable
+closed-for-feedback intent. Message admission checks that existing receipt in
+the same control journal transaction as admission. If a message wins the race,
+the final drain receives it and another planning pass follows. If the empty
+drain wins, a new message is refused and the caller can start another request.
+An exact retry of an earlier accepted message retains its original receipt.
+No extra event, table or closure ledger is introduced. There is no claim of
+preemptive steering or an implicit human wait after every POC.
 
 ## Verification
 

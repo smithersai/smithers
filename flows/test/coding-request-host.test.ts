@@ -184,6 +184,11 @@ test("configured request host verifies wiki, prototypes, consumes steering, repl
   assert.equal(calls.length, 10, "One wiki review, three planning passes, POC draft/review and one implementation; unchanged wiki reviews reuse actual receipts")
   const planningCalls = calls.filter(value => value.includes("Plan one linear mythical coding progression"))
   assert.equal(planningCalls.length, 3)
+  const implementationIndex = calls.findIndex(value => ![
+    "Review a repository wiki page", "Review a coding request", "Plan one linear mythical coding progression",
+    "Draft a small disposable file-level prototype", "Review this actually materialized"
+  ].some(marker => value.includes(marker)))
+  assert(implementationIndex > calls.indexOf(planningCalls[2]!), "native implementation must follow the third, steered plan")
   assert(planningCalls[1]!.includes("Keep the verifier unchanged."))
   assert(planningCalls[1]!.includes("Saved disposable file-level POC: drafted-unvalidated"))
   assert(!planningCalls[1]!.includes(feedbackText), "a root request message must not be consumed by the in-flight model turn")
