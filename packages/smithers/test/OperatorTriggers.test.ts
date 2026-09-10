@@ -60,7 +60,7 @@ describe("trigger CLI", () => {
     const pending = await withTriggers(
       { root: directory },
       Effect.gen(function*() {
-        return Option.getOrNull(yield* (yield* TriggerStore.TriggerStore).takePending("daily"))
+        return (yield* (yield* TriggerStore.TriggerStore).inspect("daily")).pendingAt
       })
     )
     expect(pending).toBe(1000)

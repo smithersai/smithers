@@ -21,7 +21,10 @@ import {
   historyPage,
   isAfterCursor,
   isReservation,
+  type Listed,
+  listed,
   type Outcome,
+  pruneCutoff,
   type Registered,
   reservationId,
   reservationOccurrence,
@@ -306,7 +309,19 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
     get,
     list: () =>
       Ref.get(state).pipe(
-        Effect.map((current) => [...current.triggers.values()].sort(byId).map(registered))
+        Effect.map((current) =>
+          // Nothing writes a declaration this layer cannot read back, so every
+          // listed row decodes. The SQL store is where a corrupt `input_json`
+          // can arrive.
+          [...current.triggers.values()].sort(byId).map((stored): Listed => {
+            const activeRunId = current.active.get(stored.id)
+            const pendingAt = current.pending.get(stored.id)
+            return listed(registered(stored), {
+              ...(activeRunId === undefined ? {} : { activeRunId }),
+              ...(pendingAt === undefined ? {} : { pendingAt })
+            })
+          })
+        )
       ),
     listEnabled: () =>
       Ref.get(state).pipe(
@@ -455,13 +470,6 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
         )
         return [undefined, { ...current, pending }]
       }),
-    takePending: (triggerId) =>
-      requireTrigger(triggerId, (_trigger, current) => {
-        const occurrence = current.pending.get(triggerId)
-        const pending = new Map(current.pending)
-        pending.delete(triggerId)
-        return [occurrence === undefined ? Option.none() : Option.some(occurrence), { ...current, pending }]
-      }),
     activeRun: (triggerId) =>
       Effect.flatMap(Clock.currentTimeMillis, (now) =>
         requireTrigger(triggerId, (_trigger, current) => {
@@ -534,6 +542,32 @@ export const layer: Layer.Layer<TriggerStore> = Layer.effect(TriggerStore)(Effec
             .sort(compareNewestFirst)
           return historyPage(records, limit)
         }))),
+    pruneFires: ({ olderThan }) =>
+      Effect.flatMap(pruneCutoff(olderThan), (cutoff) =>
+        Ref.modify(state, (current) => {
+          const fires = new Map(current.fires)
+          const fireRunIds = new Map(current.fireRunIds)
+          const fireErrors = new Map(current.fireErrors)
+          const runOccurrences = new Map(current.runOccurrences)
+          let removed = 0
+          for (const [fireKey, outcome] of current.fires) {
+            if (
+              outcome !== "completed" && outcome !== "failed" && outcome !== "skipped" && outcome !== "superseded"
+            ) continue
+            const record = fireRecord(current, fireKey, outcome)
+            if (record.occurrence >= cutoff) continue
+            if (current.pending.get(record.triggerId) === record.occurrence) continue
+            if (record.runId !== undefined && current.active.get(record.triggerId) === record.runId) continue
+            fires.delete(fireKey)
+            fireErrors.delete(fireKey)
+            if (record.runId !== undefined) {
+              fireRunIds.delete(fireKey)
+              if (runOccurrences.get(record.runId) === record.occurrence) runOccurrences.delete(record.runId)
+            }
+            removed += 1
+          }
+          return [removed, { ...current, fires, fireRunIds, fireErrors, runOccurrences }]
+        })),
     inspect: (triggerId) =>
       requireTrigger(triggerId, (_trigger, current) => {
         const activeRunId = current.active.get(triggerId)

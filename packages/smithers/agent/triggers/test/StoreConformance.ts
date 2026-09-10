@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Result from "effect/Result"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import { reservationLeaseMs } from "../src/SqlTriggerStore.ts"
@@ -39,7 +40,6 @@ export const storeConformance = <LayerError>(
             Effect.flip(store.recordResult({ triggerId: "absent", occurrence: 1, outcome: "completed" })),
             Effect.flip(store.setPending({ triggerId: "absent", occurrence: 1 })),
             Effect.flip(store.restorePending({ triggerId: "absent", occurrence: 1, reservationId: "absent" })),
-            Effect.flip(store.takePending("absent")),
             Effect.flip(store.activeRun("absent")),
             Effect.flip(store.activeOccurrence("absent", "run-1")),
             Effect.flip(store.claimPending({ triggerId: "absent", expectedRevision: 1 })),
@@ -51,6 +51,73 @@ export const storeConformance = <LayerError>(
         expect(error.code).toBe("unknown_trigger")
         expect(error.message).toBe("unknown trigger absent")
       }
+    })
+
+    it("lists what each row holds beside its decoded declaration", async () => {
+      const listing = await run(
+        Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          const registered = yield* store.register({ ...declaration, overlap: "buffer-one" })
+          const fire = { triggerId: declaration.id, expectedRevision: registered.revision }
+          yield* store.claimFire({ ...fire, occurrence: 1 })
+          yield* store.recordResult({
+            ...fire,
+            occurrence: 1,
+            outcome: "launched",
+            runId: "run-1",
+            reservationId: (yield* store.inspect(declaration.id)).activeRunId!
+          })
+          yield* store.setPending({ triggerId: declaration.id, occurrence: 2 })
+          return yield* store.list()
+        })
+      )
+      // The scheduler decides from this snapshot whether to ask the store
+      // again, so a listing that dropped the held columns cost a write
+      // transaction per trigger per tick to read them back one row at a time.
+      expect(listing).toHaveLength(1)
+      expect(listing[0]).toMatchObject({ triggerId: declaration.id, activeRunId: "run-1", pendingAt: 2 })
+      expect(Result.getOrThrow(listing[0]!.trigger)).toMatchObject({ id: declaration.id, revision: 1 })
+    })
+
+    it("prunes settled fires older than a cutoff and keeps what the scheduler still reads", async () => {
+      const state = await run(
+        Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          const registered = yield* store.register({ ...declaration, overlap: "buffer-one" })
+          const fire = { triggerId: declaration.id, expectedRevision: registered.revision }
+          // Occurrence 1 settles, occurrence 2 launches and stays active, and
+          // occurrence 3 is buffered behind it.
+          yield* store.claimFire({ ...fire, occurrence: 1 })
+          yield* store.recordResult({
+            ...fire,
+            occurrence: 1,
+            outcome: "launched",
+            runId: "run-1",
+            reservationId: (yield* store.inspect(declaration.id)).activeRunId!
+          })
+          yield* store.recordResult({ ...fire, occurrence: 1, outcome: "completed", runId: "run-1" })
+          yield* store.claimFire({ ...fire, occurrence: 2 })
+          yield* store.recordResult({
+            ...fire,
+            occurrence: 2,
+            outcome: "launched",
+            runId: "run-2",
+            reservationId: (yield* store.inspect(declaration.id)).activeRunId!
+          })
+          yield* store.claimFire({ ...fire, occurrence: 3 })
+          const removed = yield* store.pruneFires({ olderThan: 4 })
+          return {
+            removed,
+            items: (yield* store.history()).items,
+            held: yield* store.inspect(declaration.id),
+            refused: yield* Effect.flip(store.pruneFires({ olderThan: 1.5 }))
+          }
+        })
+      )
+      expect(state.removed).toBe(1)
+      expect(state.items.map((item) => item.occurrence)).toEqual([3, 2])
+      expect(state.held).toMatchObject({ activeRunId: "run-2", pendingAt: 3 })
+      expect(state.refused).toMatchObject({ code: "invalid_options", path: "olderThan" })
     })
 
     it("uses exact revision and enabled claim fences", async () => {
@@ -115,7 +182,9 @@ export const storeConformance = <LayerError>(
           const registered = yield* store.register({ ...declaration, id: "aliased", input: { nested: [1] } })
           ;(registered.input as { nested: Array<unknown> }).nested.push("through the registration")
           const listed = yield* store.list()
-          ;(listed[0]!.input as { nested: Array<unknown> }).nested.push("through the listing")
+          ;(Result.getOrThrow(listed[0]!.trigger).input as { nested: Array<unknown> }).nested.push(
+            "through the listing"
+          )
           return yield* store.get("aliased")
         })
       )
@@ -142,7 +211,7 @@ export const storeConformance = <LayerError>(
           return { all: yield* store.list(), enabled: yield* store.listEnabled() }
         })
       )
-      expect(listed.all.map((registered) => registered.id)).toEqual(["daily", "hourly", "weekly"])
+      expect(listed.all.map((row) => row.triggerId)).toEqual(["daily", "hourly", "weekly"])
       expect(listed.enabled.map((registered) => registered.id)).toEqual(["hourly", "weekly"])
     })
 
@@ -308,7 +377,7 @@ export const storeConformance = <LayerError>(
             occurrence: 2,
             expectedRevision: registered.revision
           })
-          return { claim, pending: yield* store.takePending(declaration.id) }
+          return { claim, pending: (yield* store.inspect(declaration.id)).pendingAt }
         })
       )
       expect(result.claim).toMatchObject({
@@ -316,7 +385,7 @@ export const storeConformance = <LayerError>(
         action: "fire",
         reservationId: expect.stringMatching(/^trigger-reservation:daily:[^:]+:2$/)
       })
-      expect(result.pending).toMatchObject({ _tag: "Some", value: 1 })
+      expect(result.pending).toBe(1)
     })
 
     it("restores the predecessor behind an expired supersede reservation", async () => {
@@ -352,7 +421,7 @@ export const storeConformance = <LayerError>(
             first,
             second,
             active,
-            pending: yield* store.takePending(declaration.id),
+            pending: (yield* store.inspect(declaration.id)).pendingAt,
             occurrence: yield* store.activeOccurrence(declaration.id, "run-1")
           }
         })
@@ -360,7 +429,7 @@ export const storeConformance = <LayerError>(
       expect(result.first).toMatchObject({ claimed: true, action: "supersede", activeRunId: "run-1" })
       expect(result.second).toMatchObject({ claimed: true, action: "supersede", activeRunId: "run-1" })
       expect(result.active).toMatchObject({ _tag: "Some", value: "run-1" })
-      expect(result.pending).toMatchObject({ _tag: "Some", value: 3 })
+      expect(result.pending).toBe(3)
       expect(result.occurrence).toMatchObject({ _tag: "Some", value: 1 })
     })
 
@@ -493,11 +562,11 @@ export const storeConformance = <LayerError>(
             triggerId: declaration.id,
             expectedRevision: registered.revision
           })
-          return { claimed, pending: yield* store.takePending(declaration.id) }
+          return { claimed, pending: (yield* store.inspect(declaration.id)).pendingAt }
         })
       )
       expect(result.claimed).toMatchObject({ _tag: "Some", value: { claim: { claimed: false } } })
-      expect(result.pending).toMatchObject({ _tag: "Some", value: 2 })
+      expect(result.pending).toBe(2)
     })
 
     it("holds and then reclaims the reservation for the same occurrence", async () => {
@@ -810,7 +879,7 @@ export const storeConformance = <LayerError>(
             triggerId: declaration.id,
             expectedRevision: registered.revision
           })
-          return { empty, buffered, resumed, pending: yield* store.takePending(declaration.id) }
+          return { empty, buffered, resumed, pending: (yield* store.inspect(declaration.id)).pendingAt }
         })
       )
       expect(result.empty).toMatchObject({ _tag: "None" })
@@ -819,7 +888,7 @@ export const storeConformance = <LayerError>(
         _tag: "Some",
         value: { occurrence: 2, claim: { claimed: true, action: "fire" } }
       })
-      expect(result.pending).toMatchObject({ _tag: "None" })
+      expect(result.pending).toBeUndefined()
     })
 
     it("keeps a pending occurrence when a concurrent run buffers it again", async () => {
@@ -859,14 +928,14 @@ export const storeConformance = <LayerError>(
             triggerId: declaration.id,
             expectedRevision: registered.revision
           })
-          return { claimed, pending: yield* store.takePending(declaration.id) }
+          return { claimed, pending: (yield* store.inspect(declaration.id)).pendingAt }
         })
       )
       expect(result.claimed).toMatchObject({
         _tag: "Some",
         value: { occurrence: 2, claim: { claimed: true, action: "buffer" } }
       })
-      expect(result.pending).toMatchObject({ _tag: "Some", value: 2 })
+      expect(result.pending).toBe(2)
     })
 
     it("keeps pending work when a claim is refused", async () => {
@@ -889,14 +958,14 @@ export const storeConformance = <LayerError>(
             triggerId: declaration.id,
             expectedRevision: registered.revision
           })
-          return { refused, pending: yield* store.takePending(declaration.id) }
+          return { refused, pending: (yield* store.inspect(declaration.id)).pendingAt }
         })
       )
       expect(result.refused).toMatchObject({
         _tag: "Some",
         value: { occurrence: 3, claim: { claimed: false } }
       })
-      expect(result.pending).toMatchObject({ _tag: "Some", value: 3 })
+      expect(result.pending).toBe(3)
     })
 
     it("keeps pending work behind revision and disabled fences", async () => {
@@ -911,7 +980,7 @@ export const storeConformance = <LayerError>(
               expectedRevision: registered.revision + 1
             })
           )
-          const afterStale = yield* store.takePending(declaration.id)
+          const afterStale = (yield* store.inspect(declaration.id)).pendingAt
           yield* store.setPending({ triggerId: declaration.id, occurrence: 5 })
           const disabled = yield* store.register({ ...declaration, enabled: false })
           const off = yield* Effect.flip(
@@ -920,15 +989,15 @@ export const storeConformance = <LayerError>(
               expectedRevision: disabled.revision
             })
           )
-          return { stale, afterStale, off, afterOff: yield* store.takePending(declaration.id) }
+          return { stale, afterStale, off, afterOff: (yield* store.inspect(declaration.id)).pendingAt }
         })
       )
       expect(result.stale.code).toBe("revision_mismatch")
       expect(result.stale.message).toBe("trigger daily is at revision 1, not the claimed 2")
-      expect(result.afterStale).toMatchObject({ _tag: "Some", value: 4 })
+      expect(result.afterStale).toBe(4)
       expect(result.off.code).toBe("trigger_disabled")
       expect(result.off.message).toBe("trigger daily is disabled")
-      expect(result.afterOff).toMatchObject({ _tag: "Some", value: 5 })
+      expect(result.afterOff).toBe(5)
     })
 
     it("re-arms claimed buffered work when its reservation expires", async () => {
@@ -957,11 +1026,11 @@ export const storeConformance = <LayerError>(
           })
           yield* TestClock.adjust(reservationLeaseMs + 1)
           const active = yield* store.activeRun(declaration.id)
-          return { active, pending: yield* store.takePending(declaration.id) }
+          return { active, pending: (yield* store.inspect(declaration.id)).pendingAt }
         })
       )
       expect(result.active).toMatchObject({ _tag: "None" })
-      expect(result.pending).toMatchObject({ _tag: "Some", value: 2 })
+      expect(result.pending).toBe(2)
     })
 
     it("reads the ledger newest first with each occurrence's outcome, run, and error", async () => {

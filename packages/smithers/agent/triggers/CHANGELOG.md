@@ -17,8 +17,29 @@
   `TriggerStore`, so `Control.list` can answer `triggers` and `fires` from the
   store the scheduler writes: last fire, buffered occurrence, active run, the
   next five occurrences, and the newest heartbeat.
+- `TriggerStore.pruneFires({ olderThan })` deletes settled ledger rows older
+  than a cutoff and answers how many it removed, keeping the buffered
+  occurrence and the row naming the active run. Nothing else in the store
+  deletes from `flows_trigger_fires`, so a host that never prunes keeps one row
+  per occurrence for as long as the database lives.
 
 ### Changed
+
+- `TriggerStore.list` answers `Listed` rows: the decode result for each row and
+  the state that row holds. A row whose stored input cannot be decoded is
+  isolated there, with its trigger id in the failure, rather than failing the
+  whole listing, so one corrupt declaration no longer stops every healthy
+  schedule in the store on every tick.
+- A scheduler tick reads the listed row before it asks the store again. A
+  trigger holding neither a run nor a buffered occurrence answers `activeRun`
+  and `claimPending` by itself, which cost two write transactions per idle
+  trigger per tick. `DispatchReader.list` takes each summary's held state from
+  the same listing instead of inspecting per trigger.
+- The guides, the claim-protocol concept, and the `Service` documentation say
+  that a tick polls `list` rather than `listEnabled`, because a trigger
+  disabled while a run was active still has to recover that occurrence, and
+  that only claim, result, pending-state, and active-run methods fail with
+  `unknown_trigger`: `get` answers `None` and `register` creates the row.
 
 - Both trigger stores now apply one claim decision. The revision and enabled
   fences, the expired-reservation reclaim with its supersede predecessor
@@ -36,6 +57,15 @@
   state what the in-memory store shares with the SQL store and where it stops:
   it holds one process's state, reports no `store` write failures, shows no
   contention between connections, and applies no migrations.
+
+### Removed
+
+- `TriggerStore.takePending`. Nothing dispatched through it: the scheduler
+  takes a buffered occurrence with `claimPending`, which applies the claim
+  fences in the same transaction, and reads one without consuming it through
+  `inspect`. A destructive read beside those was one more method every store
+  had to implement and one more way to drop a buffered occurrence with no
+  claim decision behind it.
 
 ## [1.0.0-rc.0] - 2026-09-01
 

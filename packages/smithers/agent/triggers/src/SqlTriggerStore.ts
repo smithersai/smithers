@@ -26,7 +26,9 @@ import {
   historyLimit,
   historyPage,
   isReservation,
+  type Listed,
   type Outcome,
+  pruneCutoff,
   type Registered,
   reservationId,
   reservationOccurrence,
@@ -50,6 +52,8 @@ interface Row {
   readonly enabled: number
   readonly revision: number
   readonly last_fired_at_ms: number | null
+  readonly active_run_id: string | null
+  readonly pending_at_ms: number | null
 }
 
 interface FireRow {
@@ -87,23 +91,36 @@ const storeError = (message: string, cause?: unknown) =>
 const unknownTrigger = (triggerId: string) =>
   new TriggerError({ code: "unknown_trigger", message: `unknown trigger ${triggerId}` })
 
+const declaration = (row: Row): Registered => ({
+  id: row.trigger_id,
+  flowId: row.flow_id,
+  input: JSON.parse(row.input_json) as Registered["input"],
+  cron: row.cron,
+  ...(row.timezone === null ? {} : { timezone: row.timezone }),
+  overlap: row.overlap,
+  catchUp: row.catch_up,
+  maxCatchUp: row.max_catch_up,
+  enabled: row.enabled === 1,
+  revision: row.revision,
+  ...(row.last_fired_at_ms === null ? {} : { lastFiredAt: row.last_fired_at_ms })
+})
+
+// The offending id belongs in the message: a store failure that only says a
+// row would not decode leaves an operator grepping a shared database for it.
+const decodeFailure = (row: Row, cause: unknown) => storeError(`could not decode trigger row ${row.trigger_id}`, cause)
+
 const decode = (row: Row): Effect.Effect<Registered, TriggerError> =>
-  Effect.try({
-    try: () => ({
-      id: row.trigger_id,
-      flowId: row.flow_id,
-      input: JSON.parse(row.input_json) as Registered["input"],
-      cron: row.cron,
-      ...(row.timezone === null ? {} : { timezone: row.timezone }),
-      overlap: row.overlap,
-      catchUp: row.catch_up,
-      maxCatchUp: row.max_catch_up,
-      enabled: row.enabled === 1,
-      revision: row.revision,
-      ...(row.last_fired_at_ms === null ? {} : { lastFiredAt: row.last_fired_at_ms })
-    }),
-    catch: (cause) => storeError("could not decode trigger row", cause)
-  })
+  Effect.try({ try: () => declaration(row), catch: (cause) => decodeFailure(row, cause) })
+
+// A listing decodes row by row. One corrupt `input_json` used to fail the
+// whole read, and because a scheduler tick lists every trigger before it
+// isolates them, that one row stopped every healthy schedule in the store.
+const listedRow = (row: Row): Listed => ({
+  triggerId: row.trigger_id,
+  trigger: Result.try({ try: () => declaration(row), catch: (cause) => decodeFailure(row, cause) }),
+  ...(row.active_run_id === null ? {} : { activeRunId: row.active_run_id }),
+  ...(row.pending_at_ms === null ? {} : { pendingAt: row.pending_at_ms })
+})
 
 /**
  * Builds a {@link TriggerStore.Service} over the ambient SQL client, with
@@ -315,7 +332,7 @@ export const make: Effect.Effect<
     get,
     list: () =>
       read(sql<Row>`SELECT * FROM flows_triggers ORDER BY trigger_id`).pipe(
-        Effect.flatMap((rows) => Effect.all(rows.map(decode)))
+        Effect.map((rows) => rows.map(listedRow))
       ),
     listEnabled: () =>
       read(sql<Row>`SELECT * FROM flows_triggers WHERE enabled = 1 ORDER BY trigger_id`).pipe(
@@ -452,16 +469,6 @@ export const make: Effect.Effect<
         })
         yield* sql`UPDATE flows_triggers SET pending_at_ms = ${pending} WHERE trigger_id = ${fire.triggerId}`
       })).pipe(Effect.asVoid),
-    takePending: (triggerId) =>
-      write(Effect.gen(function*() {
-        const rows = yield* sql<
-          { readonly pending_at_ms: number | null }
-        >`SELECT pending_at_ms FROM flows_triggers WHERE trigger_id = ${triggerId}`
-        const row = rows[0]
-        if (row === undefined) return yield* Effect.fail(unknownTrigger(triggerId))
-        yield* sql`UPDATE flows_triggers SET pending_at_ms = NULL WHERE trigger_id = ${triggerId}`
-        return row.pending_at_ms === null ? Option.none() : Option.some(row.pending_at_ms)
-      })),
     activeRun: (triggerId) =>
       Effect.gen(function*() {
         const now = yield* Clock.currentTimeMillis
@@ -543,6 +550,29 @@ export const make: Effect.Effect<
             ORDER BY occurrence_at_ms DESC, trigger_id DESC
             LIMIT ${limit === undefined ? -1 : limit + 1}
           `).pipe(Effect.map((rows) => historyPage(rows.map(fireRecord), limit)))
+        )
+      ),
+    pruneFires: ({ olderThan }) =>
+      pruneCutoff(olderThan).pipe(
+        Effect.flatMap((cutoff) =>
+          // The trigger row names the state the scheduler still reads: the
+          // buffered occurrence and the run or reservation on `active_run_id`.
+          // An unsettled row carries no outcome, so the outcome filter already
+          // spares a reserved occurrence.
+          write(Effect.gen(function*() {
+            const deleted = yield* sql`
+              DELETE FROM flows_trigger_fires
+              WHERE occurrence_at_ms < ${cutoff}
+                AND outcome IN ('completed', 'failed', 'skipped', 'superseded')
+                AND NOT EXISTS (
+                  SELECT 1 FROM flows_triggers t
+                  WHERE t.trigger_id = flows_trigger_fires.trigger_id
+                    AND (t.pending_at_ms = flows_trigger_fires.occurrence_at_ms
+                      OR t.active_run_id = flows_trigger_fires.run_id)
+                )
+            `.raw
+            return yield* affectedRows(deleted)
+          }))
         )
       ),
     inspect: (triggerId) =>

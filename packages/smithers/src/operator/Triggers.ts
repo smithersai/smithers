@@ -6,7 +6,7 @@ import * as Scheduler from "@smthrs/triggers/Scheduler"
 import * as SqlTriggerStore from "@smthrs/triggers/SqlTriggerStore"
 import * as Trigger from "@smthrs/triggers/Trigger"
 import * as TriggerStore from "@smthrs/triggers/TriggerStore"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer, Option, Result } from "effect"
 import { Cli, z } from "incur"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
@@ -56,7 +56,12 @@ export const createTriggersCli = (runtime: { readonly signal?: AbortSignal | und
           withTriggers(
             context.options,
             Effect.gen(function*() {
-              return yield* (yield* TriggerStore.TriggerStore).list()
+              const listing = yield* (yield* TriggerStore.TriggerStore).list()
+              // The listing isolates a row it could not decode so a scheduler
+              // tick can skip it. An operator asking for the registrations
+              // wants the failure instead, naming the row that needs repair.
+              return yield* Effect.forEach(listing, (row) =>
+                Result.isFailure(row.trigger) ? Effect.fail(row.trigger.failure) : Effect.succeed(row.trigger.success))
             })
           ))
     })

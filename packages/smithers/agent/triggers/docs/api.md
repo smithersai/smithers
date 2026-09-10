@@ -395,7 +395,7 @@ call this helper inside their atomic write before mutating state.
 interface Service {
   readonly register: (trigger: Trigger) => Effect.Effect<Registered, TriggerError>
   readonly get: (triggerId: string) => Effect.Effect<Option.Option<Registered>, TriggerError>
-  readonly list: () => Effect.Effect<ReadonlyArray<Registered>, TriggerError>
+  readonly list: () => Effect.Effect<ReadonlyArray<Listed>, TriggerError>
   readonly listEnabled: () => Effect.Effect<ReadonlyArray<Registered>, TriggerError>
   readonly claimFire: (fire: ClaimFire) => Effect.Effect<Claim, TriggerError>
   readonly claimPending: (fire: {
@@ -405,7 +405,6 @@ interface Service {
   readonly recordResult: (result: Result) => Effect.Effect<void, TriggerError>
   readonly restorePending: (fire: Fire & { readonly reservationId: string }) => Effect.Effect<void, TriggerError>
   readonly setPending: (fire: Fire) => Effect.Effect<void, TriggerError>
-  readonly takePending: (triggerId: string) => Effect.Effect<Option.Option<number>, TriggerError>
   readonly activeRun: (triggerId: string) => Effect.Effect<Option.Option<string>, TriggerError>
   readonly activeOccurrence: (
     triggerId: string,
@@ -413,6 +412,7 @@ interface Service {
   ) => Effect.Effect<Option.Option<number>, TriggerError>
   readonly clearActive: (triggerId: string, runId: string) => Effect.Effect<void, TriggerError>
   readonly history: (query?: HistoryQuery) => Effect.Effect<HistoryPage, TriggerError>
+  readonly pruneFires: (options: { readonly olderThan: number }) => Effect.Effect<number, TriggerError>
   readonly inspect: (triggerId: string) => Effect.Effect<Held, TriggerError>
   readonly heartbeat: (host: string) => Effect.Effect<void, TriggerError>
   readonly lastHeartbeat: () => Effect.Effect<Option.Option<Heartbeat>, TriggerError>
@@ -423,28 +423,34 @@ interface Service {
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `register`         | Upsert. A first write is revision 1; every replacement increments. Re-validates the declaration.                                                                                                                   |
 | `get`              | One trigger, or `None`.                                                                                                                                                                                            |
-| `list`             | Every trigger, ordered by id.                                                                                                                                                                                      |
+| `list`             | Every trigger, ordered by id, as `Listed` rows. This is what a scheduler tick polls. A row that cannot be decoded carries the failure instead of the declaration, so one corrupt row cannot fail the listing.      |
 | `listEnabled`      | Every enabled trigger, ordered by id. Not a due-time query: due-ness is the scheduler's cron computation.                                                                                                          |
 | `claimFire`        | The claim protocol for one occurrence.                                                                                                                                                                             |
 | `claimPending`     | Reads the buffered occurrence, applies the same claim rules, and clears the buffer only when the decision consumes it, in one transaction.                                                                         |
 | `recordResult`     | Records how one occurrence ended and settles the trigger's active run and cursor.                                                                                                                                  |
 | `restorePending`   | Atomically restores pending work and releases the matching unfinished reservation. Retains a predecessor only if its fire is still launched. Stale tokens fail with `stale_owner`; failed writes retain the lease. |
 | `setPending`       | Buffers an occurrence, coalescing with any already pending.                                                                                                                                                        |
-| `takePending`      | Removes and returns the buffered occurrence.                                                                                                                                                                       |
 | `activeRun`        | The run id or launch reservation the trigger currently holds. Expires a stale reservation as a side effect.                                                                                                        |
 | `activeOccurrence` | The occurrence owned by one active run or reservation. `lastFiredAt` cannot answer this, because later skipped and buffered occurrences advance that cursor while an older run remains active.                     |
 | `clearActive`      | Compare-and-swap release of one run id.                                                                                                                                                                            |
 | `history`          | The fire ledger, newest occurrence first, filtered and paged by a `HistoryQuery`. A limit that is not a positive safe integer is refused with `invalid_options` and `path` `"limit"`.                              |
+| `pruneFires`       | Deletes settled ledger rows older than `olderThan` and answers how many. Keeps the buffered occurrence and the row naming the active run. A cutoff that is not a safe integer is refused with `invalid_options`.   |
 | `inspect`          | The run or reservation and the buffered occurrence one trigger holds, read as the row has them. Expires nothing; `activeRun` is the read that expires a stale reservation.                                         |
 | `heartbeat`        | Records that `host` polled the store at the store clock's current time. One row per host; a later poll overwrites.                                                                                                 |
 | `lastHeartbeat`    | The newest heartbeat across every host, or `None` when no scheduler has ever polled. Equal times fall to the lower host name so the answer is one row.                                                             |
 
-Every method addressing one trigger fails with `unknown_trigger` when no such
-row exists, except `clearActive`, whose compare-and-swap cannot tell a missing
-trigger from a run id that no longer matches and so stays a no-op for both, and
-`history`, `heartbeat`, and `lastHeartbeat`, which address the whole store.
+A claim, result, pending-state, or active-run method fails with
+`unknown_trigger` when the row it addresses does not exist. `get` answers
+`None` for an absent row and `register` creates one. `clearActive` is a
+compare-and-swap that cannot tell a missing trigger from a run id that no
+longer matches, so it stays a no-op for both. `history`, `pruneFires`,
+`heartbeat`, and `lastHeartbeat` address the whole store.
 
-### TriggerStore.FireRecord, HistoryQuery, HistoryPage, Held, and Heartbeat
+Nothing else in the store deletes from the fire ledger: every claim inserts a
+row and every result updates it, so a host that never calls `pruneFires` keeps
+one row per occurrence for as long as the database lives.
+
+### TriggerStore.FireRecord, HistoryQuery, HistoryPage, Held, Listed, and Heartbeat
 
 ```ts
 interface FireRecord extends Fire {
@@ -471,6 +477,13 @@ interface Held {
   readonly pendingAt?: number | undefined
 }
 
+interface Listed extends Held {
+  readonly triggerId: string
+  readonly trigger: Result.Result<Registered, TriggerError>
+}
+
+const listed: (trigger: Registered, held?: Held) => Listed
+
 interface Heartbeat {
   readonly host: string
   readonly tickedAt: number
@@ -484,6 +497,13 @@ of the previous page, so the page after it holds only older records; with no
 `limit` the whole ledger answers in one page. `nextCursor` is present only when
 the limit cut the page short. `Held.activeRunId` may be a launch reservation;
 `isReservation` tells the two apart.
+
+A `Listed` row is what `list` answers. `trigger` is an `effect/Result`: narrow
+it with `Result.isFailure` before reading the declaration, because a row whose
+stored input cannot be decoded is isolated there rather than failing the whole
+listing. The held state travels with the row so a scheduler tick reads it once
+instead of asking per trigger for a reservation and a buffered occurrence that
+are not there. `listed(trigger, held)` builds a decoded row.
 
 ### TriggerStore history helpers
 
@@ -966,22 +986,22 @@ A test about a schema or a row shape needs `SqlTriggerStore`.
 `TriggerError.code` is stable. Branch on the code instead of parsing the
 message.
 
-| Code                      | Raised when                                                                                                             |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `unknown_trigger`         | A claim, result, pending-state, active-run, or inspect operation requires a trigger row that does not exist.            |
-| `trigger_disabled`        | A claim reads a disabled trigger inside its transaction.                                                                |
-| `stale_owner`             | A result or compensation no longer owns a permissible fire transition.                                                  |
-| `revision_mismatch`       | `ClaimFire.expectedRevision` differs from the revision read by the claim transaction.                                   |
-| `invalid_schedule`        | `Schedule.make` cannot decode the schedule declaration.                                                                 |
-| `invalid_trigger`         | `Trigger.make` cannot decode a trigger, or registration receives input with no JSON representation.                     |
-| `invalid_options`         | A cron occurrence limit, a history page limit, or a scheduler interval, deadline, or concurrency violates its contract. |
-| `invalid_cron`            | The Effect cron parser rejects an expression or timezone.                                                               |
-| `unsatisfiable_cron`      | A next, previous, or interval occurrence search exhausts its search bound.                                              |
-| `verification_failed`     | Webhook verification fails, including a signature mismatch or typed credential-resolution failure.                      |
-| `catch_up_bound_exceeded` | `maxCatchUp` is invalid, catch-up exceeds its bound, or an unbounded interval exceeds the package cap.                  |
-| `runner`                  | The scheduler cannot plan, launch, inspect, cancel, or finish approval retries for a run.                               |
-| `runner_timeout`          | A `Runner.start`, `isActive`, or `cancel` call exceeded `startTimeout`, `inspectTimeout`, or `cancelTimeout`.           |
-| `store`                   | A migration, persistence, or row-decoding operation fails, or a no-op store method is unavailable.                      |
+| Code                      | Raised when                                                                                                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unknown_trigger`         | A claim, result, pending-state, active-run, or inspect operation requires a trigger row that does not exist. `get` answers `None` instead, and `register` creates the row. |
+| `trigger_disabled`        | A claim reads a disabled trigger inside its transaction.                                                                                                                   |
+| `stale_owner`             | A result or compensation no longer owns a permissible fire transition.                                                                                                     |
+| `revision_mismatch`       | `ClaimFire.expectedRevision` differs from the revision read by the claim transaction.                                                                                      |
+| `invalid_schedule`        | `Schedule.make` cannot decode the schedule declaration.                                                                                                                    |
+| `invalid_trigger`         | `Trigger.make` cannot decode a trigger, or registration receives input with no JSON representation.                                                                        |
+| `invalid_options`         | A cron occurrence limit, a history page limit, or a scheduler interval, deadline, or concurrency violates its contract.                                                    |
+| `invalid_cron`            | The Effect cron parser rejects an expression or timezone.                                                                                                                  |
+| `unsatisfiable_cron`      | A next, previous, or interval occurrence search exhausts its search bound.                                                                                                 |
+| `verification_failed`     | Webhook verification fails, including a signature mismatch or typed credential-resolution failure.                                                                         |
+| `catch_up_bound_exceeded` | `maxCatchUp` is invalid, catch-up exceeds its bound, or an unbounded interval exceeds the package cap.                                                                     |
+| `runner`                  | The scheduler cannot plan, launch, inspect, cancel, or finish approval retries for a run.                                                                                  |
+| `runner_timeout`          | A `Runner.start`, `isActive`, or `cancel` call exceeded `startTimeout`, `inspectTimeout`, or `cancelTimeout`.                                                              |
+| `store`                   | A migration, persistence, or row-decoding operation fails, or a no-op store method is unavailable.                                                                         |
 
 `TriggerError.path` optionally identifies the offending declaration or option
 as a dotted field path. Schema and option failures set it when they can locate

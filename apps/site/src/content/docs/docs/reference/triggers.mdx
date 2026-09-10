@@ -44,7 +44,7 @@ All verbs run against the nearest Smithers project, or the one named by `--root`
 
 The scheduler is `Scheduler.layer` from `@smthrs/triggers/Scheduler` over the SQL trigger store. The CLI supplies the durable Control-backed `TriggerPlans` runner.
 
-On each tick it lists enabled triggers, computes the occurrences due since each trigger's `lastFiredAt` under its catch-up policy, and claims each one in the store. The claim reads the trigger row's current policy and revision inside the same transaction, so a scheduler holding a stale snapshot cannot fire a trigger that was disabled or repointed since it last looked. Claim results are `skip`, `buffer`, `fire`, or `supersede`; only `fire` and `supersede` hand out a reservation, and `supersede` also names the run it displaces.
+On each tick it lists every trigger so an occurrence left running by a trigger that has since been disabled still recovers, skips new claims for the disabled ones, computes the occurrences due since each remaining trigger's `lastFiredAt` under its catch-up policy, and claims each one in the store. The claim reads the trigger row's current policy and revision inside the same transaction, so a scheduler holding a stale snapshot cannot fire a trigger that was disabled or repointed since it last looked. Claim results are `skip`, `buffer`, `fire`, or `supersede`; only `fire` and `supersede` hand out a reservation, and `supersede` also names the run it displaces.
 
 A fired occurrence starts the flow through Control with the idempotency key `<triggerId>:<occurrence ISO instant>`. Two schedulers that notice the same boundary derive the same key, and a retried `fire` with the same `--occurrence` reuses it, so one occurrence never becomes two runs.
 

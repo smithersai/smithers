@@ -69,6 +69,41 @@ describe("documentation contracts", () => {
     expect(read("README.md")).toContain("It keeps no rows and applies no migrations")
   })
 
+  it("names list as the method a scheduler tick polls (documentation/4, maintainability/1)", () => {
+    const declare = read("docs/guides/declare-a-trigger.md")
+    expect(declare).toContain("Every trigger, ordered by id, as `Listed` rows. This is what the scheduler polls.")
+    expect(declare).not.toContain("Every enabled trigger, ordered by id. This is what the scheduler polls.")
+    expect(declare).toContain("A tick polls `list`, not `listEnabled`, because a disabled trigger can still")
+    const host = read("docs/guides/run-the-scheduler.md")
+    expect(host).toContain("Every tick it lists every trigger, recovers the occurrences already running")
+    expect(host).not.toContain("lists the enabled triggers")
+    const testing = read("docs/guides/testing.md")
+    expect(testing).toContain("TriggerStore.layerNoop({ list: () => Effect.succeed([]) })")
+    expect(testing).not.toContain("TriggerStore.layerNoop({ listEnabled:")
+    const protocol = read("docs/concepts/claim-protocol.md")
+    expect(protocol).toContain("`TriggerStore.list` returns every trigger, and nothing more")
+    expect(protocol).not.toContain("`TriggerStore.listEnabled` returns the enabled triggers")
+    expect(read("../../../../apps/site/src/content/docs/docs/reference/triggers.mdx")).not.toContain(
+      "On each tick it lists enabled triggers"
+    )
+  })
+
+  it("limits the missing-row failure to the methods that report it (documentation/7)", () => {
+    for (const path of ["docs/api.md", "docs/concepts/claim-protocol.md", "src/TriggerStore.ts"]) {
+      const doc = read(path).replace(/ \* /g, " ")
+      expect(doc, path).not.toContain("Every method addressing one trigger fails with `unknown_trigger`")
+      expect(doc, path).not.toContain("Every method addressing one trigger reports this")
+      expect(doc, path).toContain("`get` answers `None`")
+    }
+    expect(read("docs/api.md")).toContain("`register` creates the row")
+  })
+
+  it("documents fire ledger growth and the retention rule that bounds it (performance/4)", () => {
+    const reference = read("docs/api.md")
+    expect(reference).toContain("Nothing else in the store deletes from the fire ledger")
+    expect(reference).toContain("Deletes settled ledger rows older than `olderThan` and answers how many")
+  })
+
   it("documents accepted getters and their two evaluations (documentation/5)", () => {
     for (const path of ["docs/troubleshooting.md", "docs/api.md", "src/Trigger.ts"]) {
       const doc = read(path).replace(/ \* /g, " ")

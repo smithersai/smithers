@@ -117,15 +117,17 @@ was mid-decision receives.
 
 ## Read the state back
 
-| Method                 | Answers                                                                 |
-| ---------------------- | ----------------------------------------------------------------------- |
-| `get(triggerId)`       | `Option<Registered>` for one trigger.                                   |
-| `list()`               | Every trigger, ordered by id.                                           |
-| `listEnabled()`        | Every enabled trigger, ordered by id. This is what the scheduler polls. |
-| `activeRun(triggerId)` | `Option<string>`: the run id or launch reservation currently held.      |
+| Method                 | Answers                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| `get(triggerId)`       | `Option<Registered>` for one trigger.                                             |
+| `list()`               | Every trigger, ordered by id, as `Listed` rows. This is what the scheduler polls. |
+| `listEnabled()`        | Every enabled trigger, ordered by id.                                             |
+| `activeRun(triggerId)` | `Option<string>`: the run id or launch reservation currently held.                |
 
-`listEnabled` is not a due-time query. Due-ness is computed by the scheduler
-against the cron expression and its own watermark.
+A tick polls `list`, not `listEnabled`, because a disabled trigger can still
+hold an active occurrence that has to recover; the tick skips only its new
+claims. Neither listing is a due-time query. Due-ness is computed by the
+scheduler against the cron expression and its own watermark.
 
 ## Next
 

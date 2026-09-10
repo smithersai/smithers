@@ -1,6 +1,7 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Result from "effect/Result"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { describe, expect, it } from "vitest"
@@ -194,7 +195,7 @@ describe("TriggerStore", () => {
         return { all: yield* store.list(), enabled: yield* store.listEnabled() }
       }).pipe(Effect.provide(layer))
     )
-    expect(listed.all.map((registered) => registered.id)).toEqual(["a-off", "b-on"])
+    expect(listed.all.map((row) => row.triggerId)).toEqual(["a-off", "b-on"])
     expect(listed.enabled.map((registered) => registered.id)).toEqual(["b-on"])
   })
 
@@ -224,22 +225,23 @@ describe("TriggerStore", () => {
     expect(active.cleared).toMatchObject({ _tag: "None" })
   })
 
-  it("coalesces a buffered occurrence forward and hands it back exactly once", async () => {
+  it("coalesces buffered occurrences forward into the one slot", async () => {
     const pending = await Effect.runPromise(
       Effect.gen(function*() {
         const store = yield* TriggerStore.TriggerStore
         yield* store.register(trigger)
-        const empty = yield* store.takePending(trigger.id)
+        const empty = (yield* store.inspect(trigger.id)).pendingAt
         yield* store.setPending({ triggerId: trigger.id, occurrence: 20 })
         yield* store.setPending({ triggerId: trigger.id, occurrence: 10 })
         yield* store.setPending({ triggerId: trigger.id, occurrence: 30 })
-        const taken = yield* store.takePending(trigger.id)
-        return { empty, taken, drained: yield* store.takePending(trigger.id) }
+        return { empty, buffered: (yield* store.inspect(trigger.id)).pendingAt }
       }).pipe(Effect.provide(layer))
     )
-    expect(pending.empty).toMatchObject({ _tag: "None" })
-    expect(pending.taken).toMatchObject({ _tag: "Some", value: 30 })
-    expect(pending.drained).toMatchObject({ _tag: "None" })
+    expect(pending.empty).toBeUndefined()
+    // One slot: a later occurrence replaces the buffer, an earlier one does
+    // not. `claimPending` is what empties it, and only when a decision
+    // consumes it.
+    expect(pending.buffered).toBe(30)
   })
 
   // The cursor catch-up resumes from only ever moves forward. Settling run 1
@@ -297,13 +299,13 @@ describe("TriggerStore", () => {
           expectedRevision: registered.revision,
           resumeBuffered: true
         })
-        return { buffered, again, resumed, pending: yield* store.takePending(trigger.id) }
+        return { buffered, again, resumed, pending: (yield* store.inspect(trigger.id)).pendingAt }
       }).pipe(Effect.provide(layer))
     )
     expect(claims.buffered).toMatchObject({ claimed: true, action: "buffer" })
     expect(claims.again).toMatchObject({ claimed: false })
     expect(claims.resumed).toMatchObject({ claimed: true, action: "fire" })
-    expect(claims.pending).toMatchObject({ _tag: "Some", value: 2 })
+    expect(claims.pending).toBe(2)
   })
 
   it("reports the run it is superseding", async () => {
@@ -546,8 +548,29 @@ describe("TriggerStore", () => {
       }).pipe(Effect.provide(layerWithSql))
     )
     expect(error.code).toBe("store")
-    expect(error.message).toBe("could not decode trigger row")
+    // The id belongs in the message: a shared database has many rows.
+    expect(error.message).toBe("could not decode trigger row daily")
     expect(error.cause).toBeDefined()
+  })
+
+  // A tick lists every trigger before it isolates them one by one, so a
+  // listing that failed on the first undecodable row stopped every healthy
+  // schedule in the store, including the ones that had nothing wrong.
+  it("isolates a row it cannot decode from the rest of a listing", async () => {
+    const listing = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const store = yield* TriggerStore.TriggerStore
+        yield* store.register({ ...trigger, id: "b-healthy" })
+        yield* store.register({ ...trigger, id: "a-corrupt", enabled: false })
+        yield* sql`UPDATE flows_triggers SET input_json = '{not json' WHERE trigger_id = 'a-corrupt'`
+        return yield* store.list()
+      }).pipe(Effect.provide(layerWithSql))
+    )
+    expect(listing.map((row) => row.triggerId)).toEqual(["a-corrupt", "b-healthy"])
+    const corrupt = listing[0]!.trigger
+    expect(Result.isFailure(corrupt) ? corrupt.failure.message : null).toBe("could not decode trigger row a-corrupt")
+    expect(Result.getOrThrow(listing[1]!.trigger)).toMatchObject({ id: "b-healthy", enabled: true })
   })
 
   // Two stores over one database is the ordinary shape of a restart. The

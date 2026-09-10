@@ -43,8 +43,6 @@ const call = (store: TriggerStore.Service, method: keyof TriggerStore.Service) =
       return store.restorePending({ triggerId: "daily", occurrence: 1, reservationId: "reservation" })
     case "setPending":
       return store.setPending({ triggerId: "daily", occurrence: 1 })
-    case "takePending":
-      return store.takePending("daily")
     case "activeRun":
       return store.activeRun("daily")
     case "activeOccurrence":
@@ -55,6 +53,8 @@ const call = (store: TriggerStore.Service, method: keyof TriggerStore.Service) =
       return store.clearActive("daily", "run-1")
     case "history":
       return store.history()
+    case "pruneFires":
+      return store.pruneFires({ olderThan: 0 })
     case "inspect":
       return store.inspect("daily")
     case "heartbeat":
@@ -73,12 +73,12 @@ const methods: ReadonlyArray<keyof TriggerStore.Service> = [
   "recordResult",
   "restorePending",
   "setPending",
-  "takePending",
   "activeRun",
   "activeOccurrence",
   "claimPending",
   "clearActive",
   "history",
+  "pruneFires",
   "inspect",
   "heartbeat",
   "lastHeartbeat"

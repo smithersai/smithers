@@ -128,13 +128,14 @@ that went all the way.
 
 `TriggerStore.layerNoop` fails every method with `store` and a message naming
 the method. Use it when a composition needs the service in its type but must
-never touch it, and override the one method a test expects to be reached:
+never touch it, and override the one method a test expects to be reached. A
+scheduler tick polls `list`, so that is the override a tick needs:
 
 ```ts
 import * as TriggerStore from "@smthrs/triggers/TriggerStore"
 import * as Effect from "effect/Effect"
 
-const absent = TriggerStore.layerNoop({ listEnabled: () => Effect.succeed([]) })
+const absent = TriggerStore.layerNoop({ list: () => Effect.succeed([]) })
 ```
 
 `Scheduler.layerNoop` is the matching inert scheduler, and

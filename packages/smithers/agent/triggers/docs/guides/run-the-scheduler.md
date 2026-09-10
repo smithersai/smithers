@@ -5,9 +5,10 @@ sidebar:
   order: 2
 ---
 
-The scheduler is a poll loop. Every tick it lists the enabled triggers, works
-out what each one owes, claims what is due, and launches through a `Runner`.
-This guide composes it into a host.
+The scheduler is a poll loop. Every tick it lists every trigger, recovers the
+occurrences already running, skips the disabled ones, works out what each of
+the rest owes, claims what is due, and launches through a `Runner`. This guide
+composes it into a host.
 
 ## Compose the layers
 

@@ -20,6 +20,7 @@ import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as Result from "effect/Result"
 import * as Cron from "./Cron.ts"
 import type { TriggerError } from "./TriggerError.ts"
 import { type FireRecord, type Held, isReservation, type Registered, TriggerStore } from "./TriggerStore.ts"
@@ -106,8 +107,9 @@ export const toFireSummary = (record: FireRecord): FireSummary => ({
 /**
  * Builds the port over the ambient {@link TriggerStore}.
  *
- * `list` answers every trigger the store holds; `fires` pushes the request's
- * filters into the ledger query and answers every matching row newest first.
+ * `list` answers every trigger the store holds, taking each row's held state
+ * from the listing itself; `fires` pushes the request's filters into the
+ * ledger query and answers every matching row newest first.
  * `Control.list` applies the filters again and pages. A store failure is a
  * `PersistenceError` naming the listing that failed.
  *
@@ -122,12 +124,17 @@ export const make: Effect.Effect<Port.Service, never, TriggerStore> = Effect.gen
         const now = yield* Clock.currentTimeMillis
         const heartbeat = yield* store.lastHeartbeat()
         const lastTick = Option.map(heartbeat, (beat) => beat.tickedAt)
-        const triggers = yield* store.list()
-        return yield* Effect.forEach(triggers, (trigger) =>
+        const listing = yield* store.list()
+        return yield* Effect.forEach(listing, (row) =>
           Effect.gen(function*() {
-            const held = yield* store.inspect(trigger.id)
+            // A row the store could not decode fails the listing rather than
+            // being reported as a trigger with invented fields; the failure
+            // names the row. The listing already carries what `inspect` reads,
+            // so a summary costs no second read per trigger.
+            if (Result.isFailure(row.trigger)) return yield* Effect.fail(row.trigger.failure)
+            const trigger = row.trigger.success
             const upcoming = yield* nextOccurrences(trigger, now)
-            return toTriggerSummary(trigger, held, upcoming, lastTick)
+            return toTriggerSummary(trigger, row, upcoming, lastTick)
           }))
       }).pipe(Effect.mapError(persistence("triggers")))
     ),

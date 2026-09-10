@@ -8,11 +8,19 @@
 import * as Control from "@smthrs/control/Control"
 import type { PlanCard, Receipt, RunStatus } from "@smthrs/control/ControlSchema"
 import { Cause, Clock, Context, Deferred, Duration, Effect, Fiber, Layer, Option, Ref, Semaphore } from "effect"
+import * as Result from "effect/Result"
 import type * as Scope from "effect/Scope"
 import * as CatchUp from "./CatchUp.ts"
 import * as Cron from "./Cron.ts"
 import { TriggerError } from "./TriggerError.ts"
-import { type Claim, isReservation, type Registered, reservationOccurrence, TriggerStore } from "./TriggerStore.ts"
+import {
+  type Claim,
+  type Held,
+  isReservation,
+  type Registered,
+  reservationOccurrence,
+  TriggerStore
+} from "./TriggerStore.ts"
 
 /**
  * Arguments used to launch one scheduled flow.
@@ -493,8 +501,21 @@ export const make = (
         ? store.recordResult({ triggerId, occurrence, outcome: "completed", runId })
         : store.clearActive(triggerId, runId)
 
+    // The listed row already answers what the store would: with no run and no
+    // reservation on it, `activeRun` reads an idle lease, writes nothing, and
+    // answers `None`. Asking anyway cost one write transaction per trigger per
+    // tick, on the tick where every trigger is idle.
+    const storedActive = (
+      triggerId: string,
+      held: Held | undefined
+    ): Effect.Effect<Option.Option<string>, TriggerError> =>
+      held !== undefined && held.activeRunId === undefined
+        ? Effect.succeed(Option.none())
+        : store.activeRun(triggerId)
+
     const resolveActive = (
-      trigger: Registered
+      trigger: Registered,
+      held: Held | undefined
     ): Effect.Effect<Active | undefined, TriggerError> =>
       Effect.gen(function*() {
         const local = (yield* Ref.get(active)).get(trigger.id)
@@ -511,7 +532,7 @@ export const make = (
             // A recovered reservation has no monitor that can remove it. Ask
             // the store on every tick so its lease can expire and re-arm the
             // occurrence instead of pinning this local cache forever.
-            const stored = yield* store.activeRun(trigger.id)
+            const stored = yield* storedActive(trigger.id, held)
             if (Option.isNone(stored)) {
               yield* removeActive(trigger.id, local.occurrence)
               return undefined
@@ -528,7 +549,7 @@ export const make = (
             return recovered
           }
         }
-        const stored = yield* store.activeRun(trigger.id)
+        const stored = yield* storedActive(trigger.id, held)
         if (Option.isNone(stored)) return undefined
         const occurrence = yield* occurrenceOf(trigger.id, stored.value)
         if (!(yield* stillRunning(stored.value))) {
@@ -876,35 +897,40 @@ export const make = (
     // The store reads, claims, and clears a buffer in one transaction. A
     // dispatch failure happens after that commit, so this process can safely
     // re-arm the occurrence before it reports the failure.
-    const resumePending = (trigger: Registered): Effect.Effect<void, TriggerError> =>
-      withRevisionRefresh(trigger, (current) =>
-        store.claimPending({
-          triggerId: current.id,
-          expectedRevision: current.revision
-        }).pipe(
-          Effect.flatMap((pending) => {
-            if (Option.isNone(pending)) return Effect.void
-            const occurrence = pending.value.occurrence
-            const claim = pending.value.claim
-            if (!claim.claimed) return Effect.void
-            return dispatchClaimed(
-              current,
-              occurrence,
-              claim,
-              true
-            ).pipe(
-              Effect.onError(() =>
-                isolate(
-                  { triggerId: current.id },
-                  "buffered launch compensation",
-                  claim.action === "fire" || claim.action === "supersede"
-                    ? store.restorePending({ triggerId: current.id, occurrence, reservationId: claim.reservationId })
-                    : store.setPending({ triggerId: current.id, occurrence })
-                ).pipe(Effect.ignore)
+    const resumePending = (trigger: Registered, held?: Held): Effect.Effect<void, TriggerError> =>
+      // A listed row holding neither a buffered occurrence nor a run has
+      // nothing for `claimPending` to take: only expiring a reservation
+      // re-arms a pending occurrence, and there is no reservation to expire.
+      held !== undefined && held.pendingAt === undefined && held.activeRunId === undefined
+        ? Effect.void
+        : withRevisionRefresh(trigger, (current) =>
+          store.claimPending({
+            triggerId: current.id,
+            expectedRevision: current.revision
+          }).pipe(
+            Effect.flatMap((pending) => {
+              if (Option.isNone(pending)) return Effect.void
+              const occurrence = pending.value.occurrence
+              const claim = pending.value.claim
+              if (!claim.claimed) return Effect.void
+              return dispatchClaimed(
+                current,
+                occurrence,
+                claim,
+                true
+              ).pipe(
+                Effect.onError(() =>
+                  isolate(
+                    { triggerId: current.id },
+                    "buffered launch compensation",
+                    claim.action === "fire" || claim.action === "supersede"
+                      ? store.restorePending({ triggerId: current.id, occurrence, reservationId: claim.reservationId })
+                      : store.setPending({ triggerId: current.id, occurrence })
+                  ).pipe(Effect.ignore)
+                )
               )
-            )
-          })
-        ))
+            })
+          ))
 
     // A bound the declaration cannot honour is a statement about how much
     // history to replay, not a reason to stop scheduling: the backlog beyond
@@ -969,17 +995,18 @@ export const make = (
 
     const processTrigger = (
       trigger: Registered,
+      held: Held | undefined,
       refreshed = false
     ): Effect.Effect<void, TriggerError> =>
       Effect.gen(function*() {
         // Each trigger reads the clock itself. One instant captured before the
         // tick fanned out aged by every launch that finished ahead of it.
         const now = yield* Clock.currentTimeMillis
-        const running = yield* resolveActive(trigger)
+        const running = yield* resolveActive(trigger, held)
         // Disable prevents future claims, not recovery of an already active
         // occurrence (including a plan waiting for a human decision).
         if (!trigger.enabled) return
-        if (running === undefined || trigger.overlap === "supersede") yield* resumePending(trigger)
+        if (running === undefined || trigger.overlap === "supersede") yield* resumePending(trigger, held)
         const due = yield* dueOccurrences(trigger, now)
         let dispatched: number | undefined
         let interrupted = false
@@ -1015,7 +1042,9 @@ export const make = (
           if (refreshed) return
           const current = yield* store.get(trigger.id)
           if (Option.isNone(current) || current.value.revision === trigger.revision) return
-          return yield* processTrigger(current.value, true)
+          // The refreshed declaration comes from the store, not the listing,
+          // so the held snapshot no longer describes it.
+          return yield* processTrigger(current.value, undefined, true)
         }
         if (!interrupted) return yield* observe(trigger.id, due.watermark)
         if (dispatched !== undefined) yield* observe(trigger.id, dispatched)
@@ -1029,13 +1058,25 @@ export const make = (
         // record it is logged and the tick goes on, so a listing's "nothing is
         // listening" can never be caused by the row that reports it.
         yield* isolate({ host }, "heartbeat", store.heartbeat(host))
-        const triggers = yield* store.list()
+        // Every trigger, not only the enabled ones: a disabled trigger can
+        // still hold an active occurrence that has to recover, and the enabled
+        // check below it stops the new claims.
+        const listing = yield* store.list()
         // Triggers are independent once claimed: the store fences each claim
         // on its own row. Walking them in series let one launch waiting on a
-        // parked plan hold every trigger after it for the whole wait.
+        // parked plan hold every trigger after it for the whole wait. A row
+        // the store could not decode is one more isolated failure, so one
+        // corrupt declaration cannot stop the healthy schedules beside it.
         yield* Effect.forEach(
-          triggers,
-          (trigger) => isolate({ triggerId: trigger.id }, "tick", processTrigger(trigger)),
+          listing,
+          (row) =>
+            isolate(
+              { triggerId: row.triggerId },
+              "tick",
+              Result.isFailure(row.trigger)
+                ? Effect.fail(row.trigger.failure)
+                : processTrigger(row.trigger.success, row)
+            ),
           { concurrency, discard: true }
         )
       })

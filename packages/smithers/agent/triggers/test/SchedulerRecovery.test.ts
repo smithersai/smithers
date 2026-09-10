@@ -537,13 +537,13 @@ describe("Scheduler recovery", () => {
           yield* scheduler.runOnce
           return {
             active: yield* store.activeRun(registered.id),
-            pending: yield* store.takePending(registered.id)
+            pending: (yield* store.inspect(registered.id)).pendingAt
           }
         })
       )
     )
     expect(state.active).toMatchObject({ _tag: "Some", value: "prior-run" })
-    expect(state.pending).toMatchObject({ _tag: "Some", value: hour })
+    expect(state.pending).toBe(hour)
     expect(runner.starts).toHaveLength(0)
   })
 
@@ -898,7 +898,7 @@ describe("Scheduler revision fencing", () => {
     claims: Array<number>
   ): TriggerStore.Service =>
     TriggerStore.makeNoop({
-      list: () => Effect.succeed([registered(1)]),
+      list: () => Effect.succeed([TriggerStore.listed(registered(1))]),
       get: () => Effect.succeed(stored),
       activeRun: () => Effect.succeed(Option.none()),
       claimPending: () => Effect.succeed(Option.none()),
@@ -1108,12 +1108,19 @@ describe("Scheduler over real SQLite", () => {
 describe("Scheduler dispatch edges", () => {
   const base: TriggerStore.Registered = { ...trigger("skip", "one"), revision: 1, lastFiredAt: 0 }
 
+  // A listing reports what the row holds, and the scheduler reads it before it
+  // asks the store again. A fixture that scripts a stored run or a buffered
+  // occurrence has to list a row holding one, exactly as a store would.
   const scripted = (
     overrides: Partial<TriggerStore.Service>,
-    stored: TriggerStore.Registered = base
+    stored: TriggerStore.Registered = base,
+    held: TriggerStore.Held = {
+      ...(overrides.activeRun === undefined ? {} : { activeRunId: "scripted-run" }),
+      ...(overrides.claimPending === undefined ? {} : { pendingAt: 0 })
+    }
   ): TriggerStore.Service =>
     TriggerStore.makeNoop({
-      list: () => Effect.succeed([stored]),
+      list: () => Effect.succeed([TriggerStore.listed(stored, held)]),
       get: () => Effect.succeed(Option.some(stored)),
       activeRun: () => Effect.succeed(Option.none()),
       activeOccurrence: () => Effect.succeed(Option.none()),

@@ -40,7 +40,7 @@ describe("TestTriggers", () => {
         return { all: yield* store.list(), enabled: yield* store.listEnabled(), replaced }
       })
     )
-    expect(state.all.map((registered) => registered.id).sort()).toEqual(["daily", "other"])
+    expect(state.all.map((row) => row.triggerId).sort()).toEqual(["daily", "other"])
     expect(state.enabled).toHaveLength(2)
     expect(state.replaced).toMatchObject({ revision: 2, flowId: "next", lastFiredAt: 5 })
   })
@@ -98,18 +98,16 @@ describe("TestTriggers", () => {
     expect(state.missing).toMatchObject({ _tag: "None" })
   })
 
-  it("coalesces buffered occurrences forward and drains them once", async () => {
+  it("coalesces buffered occurrences forward into the one slot", async () => {
     const pending = await run(
       Effect.gen(function*() {
         const store = yield* TriggerStore.TriggerStore
         yield* store.register(trigger)
         yield* store.setPending({ triggerId: trigger.id, occurrence: 20 })
         yield* store.setPending({ triggerId: trigger.id, occurrence: 10 })
-        const taken = yield* store.takePending(trigger.id)
-        return { taken, drained: yield* store.takePending(trigger.id) }
+        return { buffered: (yield* store.inspect(trigger.id)).pendingAt }
       })
     )
-    expect(pending.taken).toMatchObject({ _tag: "Some", value: 20 })
-    expect(pending.drained).toMatchObject({ _tag: "None" })
+    expect(pending.buffered).toBe(20)
   })
 })

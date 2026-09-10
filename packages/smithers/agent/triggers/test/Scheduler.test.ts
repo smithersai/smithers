@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as Result from "effect/Result"
 import * as Stream from "effect/Stream"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -508,11 +509,17 @@ describe("Scheduler", () => {
               list: () =>
                 Effect.map(
                   store.list(),
-                  (registrations) =>
-                    registrations.map((registration) =>
-                      registration.id === "a-february-30"
-                        ? { ...registration, cron: "0 0 30 2 *" }
-                        : registration
+                  (rows) =>
+                    rows.map((row) =>
+                      row.triggerId === "a-february-30"
+                        ? {
+                          ...row,
+                          trigger: Result.map(row.trigger, (registration) => ({
+                            ...registration,
+                            cron: "0 0 30 2 *"
+                          }))
+                        }
+                        : row
                     )
                 )
             })
@@ -1307,7 +1314,7 @@ describe("Scheduler tick dispatch", () => {
             return {
               finished: tick.pollUnsafe() !== undefined,
               active: yield* store.activeRun("hourly"),
-              pending: yield* store.takePending("hourly")
+              pending: (yield* store.inspect("hourly")).pendingAt
             }
           })
         )
@@ -1315,7 +1322,7 @@ describe("Scheduler tick dispatch", () => {
     )
     expect(outcome.finished).toBe(true)
     expect(outcome.active).toEqual(Option.some("seed"))
-    expect(outcome.pending).toEqual(Option.some(hour))
+    expect(outcome.pending).toBe(hour)
     expect(fixture.starts).toHaveLength(0)
   })
 
@@ -1359,5 +1366,97 @@ describe("Scheduler tick dispatch", () => {
     )
     expect(claims).toEqual([1, 2])
     expect(fixture.starts.map((start) => start.idempotencyKey)).toEqual([`edited:${new Date(12 * hour).toISOString()}`])
+  })
+})
+
+// What a tick reads before it decides anything: one listing, and the store
+// again only for the rows that say there is something to ask about.
+describe("Scheduler tick reads", () => {
+  const declaration = (id: string): TriggerStore.Registered => ({
+    ...trigger("skip", "one"),
+    id,
+    revision: 1,
+    lastFiredAt: 0
+  })
+
+  // `activeRun` and `claimPending` are left unavailable: a row listed holding
+  // neither a run nor a buffered occurrence answers both of those reads by
+  // itself, and each one the scheduler asked for cost a write transaction.
+  const listing = (
+    rows: ReadonlyArray<TriggerStore.Listed>,
+    stored: TriggerStore.Registered
+  ): TriggerStore.Service =>
+    TriggerStore.makeNoop({
+      heartbeat: () => Effect.void,
+      list: () => Effect.succeed(rows),
+      get: () => Effect.succeed(Option.some(stored)),
+      activeOccurrence: () => Effect.succeed(Option.none()),
+      claimFire: (fire) =>
+        Effect.succeed({
+          claimed: true as const,
+          action: "fire" as const,
+          reservationId: TriggerStore.reservationId(fire.triggerId, fire.occurrence)
+        }),
+      recordResult: () => Effect.void,
+      clearActive: () => Effect.void
+    })
+
+  const tick = (store: TriggerStore.Service, runner: RunnerFixture) =>
+    Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const scheduler = yield* Scheduler.make().pipe(
+            Effect.provideService(TriggerStore.TriggerStore, store),
+            Effect.provideService(Scheduler.Runner, runner.service)
+          )
+          yield* TestClock.setTime(hour)
+          yield* scheduler.runOnce
+          yield* Effect.yieldNow
+        })
+      ).pipe(Effect.provide(TestClock.layer()))
+    )
+
+  it("dispatches a listed idle trigger without asking for its active run or buffered occurrence", async () => {
+    const runner = runnerFixture()
+    const idle = declaration("hourly")
+    await tick(listing([TriggerStore.listed(idle)], idle), runner)
+    expect(runner.starts.map((start) => start.idempotencyKey)).toEqual([`hourly:${new Date(hour).toISOString()}`])
+  })
+
+  it("keeps scheduling the triggers listed beside a row the store could not decode", async () => {
+    const runner = runnerFixture()
+    const healthy = declaration("b-hourly")
+    const corrupt: TriggerStore.Listed = {
+      triggerId: "a-corrupt",
+      trigger: Result.fail(
+        new TriggerError({ code: "store", message: "could not decode trigger row a-corrupt" })
+      )
+    }
+    await tick(listing([corrupt, TriggerStore.listed(healthy)], healthy), runner)
+    expect(runner.starts.map((start) => start.idempotencyKey)).toEqual([`b-hourly:${new Date(hour).toISOString()}`])
+  })
+
+  // The testing guide's no-op example. A tick polls `list`, so a store that
+  // overrode `listEnabled` instead failed the tick with `list is unavailable`.
+  it("takes its triggers from list, so overriding only list supplies a tick", async () => {
+    const runOnce = (overrides: Partial<TriggerStore.Service>) =>
+      Effect.runPromise(
+        Effect.exit(
+          Effect.scoped(
+            Effect.gen(function*() {
+              const scheduler = yield* Scheduler.make().pipe(
+                Effect.provideService(Scheduler.Runner, runnerFixture().service)
+              )
+              yield* scheduler.runOnce
+            })
+          ).pipe(
+            Effect.provide(TriggerStore.layerNoop(overrides)),
+            Effect.provide(TestClock.layer())
+          )
+        )
+      )
+    expect((await runOnce({ list: () => Effect.succeed([]) }))._tag).toBe("Success")
+    const enabledOnly = await runOnce({ listEnabled: () => Effect.succeed([]) })
+    expect(enabledOnly._tag).toBe("Failure")
   })
 })

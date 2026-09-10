@@ -19,10 +19,12 @@ covers accepted launches outside that transaction.
 
 ## The store is asked for candidates, not for due work
 
-`TriggerStore.listEnabled` returns the enabled triggers, and nothing more.
-Due-ness is a cron computation the scheduler performs against its own watermark,
-so there is no due-time query to keep in sync with the policy logic, and no
-index whose staleness could hide a trigger.
+`TriggerStore.list` returns every trigger, and nothing more. Due-ness is a cron
+computation the scheduler performs against its own watermark, so there is no
+due-time query to keep in sync with the policy logic, and no index whose
+staleness could hide a trigger. A tick reads every row rather than only the
+enabled ones because a trigger disabled while a run was active still has to
+recover that occurrence; the enabled check then stops its new claims.
 
 ## A claim is fenced on a revision
 
@@ -66,11 +68,11 @@ flow, and cannot supersede a run the stored declaration says to leave alone.
 
 Three refusals come out of that read, and each names one thing to do:
 
-| Failure             | Meaning                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------ |
-| `unknown_trigger`   | No such row. Every method addressing one trigger reports this, except `clearActive`. |
-| `trigger_disabled`  | The row exists and `enabled` is false.                                               |
-| `revision_mismatch` | Somebody re-registered the trigger. Re-read the row and decide again.                |
+| Failure             | Meaning                                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `unknown_trigger`   | No such row. Claim, result, pending-state and active-run methods report this; `get` answers `None` and `register` creates the row. |
+| `trigger_disabled`  | The row exists and `enabled` is false.                                                                                             |
+| `revision_mismatch` | Somebody re-registered the trigger. Re-read the row and decide again.                                                              |
 
 The scheduler answers `revision_mismatch` by re-reading the row once and
 deciding again from it. The occurrences it was claiming were computed from the

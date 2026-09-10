@@ -9,6 +9,9 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import type * as Option from "effect/Option"
+// `Result` already names the reported end of an occurrence in this module, so
+// the `effect/Result` a listed row decodes to is imported as `Decode`.
+import * as Decode from "effect/Result"
 import type { Action } from "./Overlap.ts"
 import type { Trigger } from "./Trigger.ts"
 import { TriggerError } from "./TriggerError.ts"
@@ -250,6 +253,40 @@ export interface Held {
 }
 
 /**
+ * One row of a listing: what the trigger holds right now, and either the
+ * declaration the row decoded to or the failure it could not be read through.
+ *
+ * `trigger` is an `effect/Result`: narrow it with `Result.isFailure` before
+ * reading the declaration. An undecodable row is isolated here rather than
+ * failing the whole listing,
+ * so one corrupt input cannot stop every other trigger from being scheduled.
+ * The held state travels with the row because a scheduler tick would otherwise
+ * ask for it again per trigger, once to expire a reservation that is not there
+ * and once for a buffered occurrence that is not there either.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface Listed extends Held {
+  readonly triggerId: string
+  readonly trigger: Decode.Result<Registered, TriggerError>
+}
+
+/**
+ * A listed row for a declaration that decoded, holding what the trigger holds
+ * right now. Both stores build their rows through this, so a caller composing
+ * a store or a scheduler fixture of its own does not restate the shape.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const listed = (trigger: Registered, held: Held = {}): Listed => ({
+  triggerId: trigger.id,
+  trigger: Decode.succeed(trigger),
+  ...held
+})
+
+/**
  * The last poll one scheduler host recorded.
  *
  * @category models
@@ -276,6 +313,25 @@ export const historyLimit = (limit: number | undefined): Effect.Effect<number | 
         code: "invalid_options",
         message: `history limit must be a positive safe integer, received ${limit}`,
         path: "limit"
+      })
+    )
+
+/**
+ * Validates a prune cutoff: any safe integer. Both stores apply this before
+ * deleting so swapping one for the other cannot change which cutoffs are
+ * refused.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const pruneCutoff = (olderThan: number): Effect.Effect<number, TriggerError> =>
+  Number.isSafeInteger(olderThan)
+    ? Effect.succeed(olderThan)
+    : Effect.fail(
+      new TriggerError({
+        code: "invalid_options",
+        message: `prune cutoff must be a safe integer, received ${olderThan}`,
+        path: "olderThan"
       })
     )
 
@@ -314,18 +370,22 @@ export const historyPage = (records: ReadonlyArray<FireRecord>, limit: number | 
 }
 
 /**
- * Durable trigger state: registration, enabled-trigger listing, and the claim
- * protocol that keeps two schedulers from firing the same occurrence.
+ * Durable trigger state: registration, listing, and the claim protocol that
+ * keeps two schedulers from firing the same occurrence.
  *
- * `listEnabled` is not a due-time query. Due-ness is a cron computation the
+ * Neither listing is a due-time query. Due-ness is a cron computation the
  * scheduler performs against its own watermark, so the store is asked only for
- * the triggers eligible to be considered.
+ * the rows eligible to be considered. A scheduler tick reads `list`, not
+ * `listEnabled`: a disabled trigger can still hold an active occurrence that
+ * has to recover, and the tick skips only its new claims. `listEnabled`
+ * answers the narrower question for a caller that wants the declarations.
  *
- * Every method addressing one trigger fails with `unknown_trigger` when no
- * such row exists, except `clearActive`, whose compare-and-swap cannot tell a
- * missing trigger from a run id that no longer matches and so stays a no-op
- * for both, and `history`, `heartbeat`, and `lastHeartbeat`, which address the
- * whole store.
+ * A claim, result, pending-state, or active-run method fails with
+ * `unknown_trigger` when the row it addresses does not exist. `get` answers
+ * `None` for an absent row and `register` creates one. `clearActive` is a
+ * compare-and-swap that cannot tell a missing trigger from a run id that no
+ * longer matches, so it stays a no-op for both. `history`, `pruneFires`,
+ * `heartbeat`, and `lastHeartbeat` address the whole store.
  *
  * @category models
  * @since 0.1.0
@@ -333,7 +393,12 @@ export const historyPage = (records: ReadonlyArray<FireRecord>, limit: number | 
 export interface Service {
   readonly register: (trigger: Trigger) => Effect.Effect<Registered, TriggerError>
   readonly get: (triggerId: string) => Effect.Effect<Option.Option<Registered>, TriggerError>
-  readonly list: () => Effect.Effect<ReadonlyArray<Registered>, TriggerError>
+  /**
+   * Every trigger, enabled or not, ordered by id. This is what a scheduler
+   * tick polls: see {@link Listed} for why a row carries its decode result and
+   * its held state rather than a bare declaration.
+   */
+  readonly list: () => Effect.Effect<ReadonlyArray<Listed>, TriggerError>
   readonly listEnabled: () => Effect.Effect<ReadonlyArray<Registered>, TriggerError>
   readonly claimFire: (fire: ClaimFire) => Effect.Effect<Claim, TriggerError>
   /**
@@ -358,7 +423,6 @@ export interface Service {
    */
   readonly restorePending: (fire: Fire & { readonly reservationId: string }) => Effect.Effect<void, TriggerError>
   readonly setPending: (fire: Fire) => Effect.Effect<void, TriggerError>
-  readonly takePending: (triggerId: string) => Effect.Effect<Option.Option<number>, TriggerError>
   readonly activeRun: (triggerId: string) => Effect.Effect<Option.Option<string>, TriggerError>
   /**
    * Returns the occurrence owned by one active run or launch reservation.
@@ -377,6 +441,18 @@ export interface Service {
    * is refused with `invalid_options`.
    */
   readonly history: (query?: HistoryQuery) => Effect.Effect<HistoryPage, TriggerError>
+  /**
+   * Deletes settled fire ledger rows older than `olderThan`, answering how
+   * many it removed. Nothing else in the store deletes from the ledger, so a
+   * host that never calls this keeps one row per occurrence forever.
+   *
+   * A row is settled when its outcome is `completed`, `failed`, `skipped`, or
+   * `superseded`. The occurrence a trigger currently buffers and the row
+   * naming its active run are kept whatever their age, so pruning cannot take
+   * state the scheduler still reads. `olderThan` that is not a safe integer is
+   * refused with `invalid_options`.
+   */
+  readonly pruneFires: (options: { readonly olderThan: number }) => Effect.Effect<number, TriggerError>
   /**
    * Reads what one trigger holds without expiring anything, so a listing can
    * report a reservation or a buffered occurrence exactly as the row has it.
@@ -416,11 +492,11 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service => ({
   recordResult: () => unavailable("recordResult"),
   restorePending: () => unavailable("restorePending"),
   setPending: () => unavailable("setPending"),
-  takePending: () => unavailable("takePending"),
   activeRun: () => unavailable("activeRun"),
   activeOccurrence: () => unavailable("activeOccurrence"),
   clearActive: () => unavailable("clearActive"),
   history: () => unavailable("history"),
+  pruneFires: () => unavailable("pruneFires"),
   inspect: () => unavailable("inspect"),
   heartbeat: () => unavailable("heartbeat"),
   lastHeartbeat: () => unavailable("lastHeartbeat"),
