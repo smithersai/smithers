@@ -10,7 +10,7 @@ import { FsError } from "../src/FsError.ts"
 import * as Incur from "../src/Incur.ts"
 import * as Route from "../src/Route.ts"
 import visible from "./fixtures/command/visible.ts"
-import { makeRoute, recordedImports, recordedModule, refinedModule } from "./helpers.ts"
+import { latchedInvoke, makeRoute, recordedImports, recordedModule, refinedModule } from "./helpers.ts"
 
 const makeCli = async (routes = [makeRoute("review")], invoke?: FlowInvoker.Service["invoke"]) => {
   const seen: Array<FlowInvoker.Invocation> = []
@@ -196,6 +196,105 @@ describe("Incur projection", () => {
     } finally {
       load.mockRestore()
     }
+  })
+
+  describe("request cancellation", () => {
+    it("never invokes a flow for an already aborted request", async () => {
+      const { cli, seen } = await makeCli()
+      const controller = new AbortController()
+      const reason = new Error("cancelled before dispatch")
+      controller.abort(reason)
+      await expect(cli.fetch(new Request("http://localhost/review?number=42", { signal: controller.signal })))
+        .rejects.toBe(reason)
+      await expect(
+        cli.fetch(
+          new Request("http://localhost/mcp", {
+            method: "POST",
+            signal: controller.signal,
+            headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "tools/call",
+              params: { name: "call_write_tool", arguments: { name: "review", arguments: { number: 42 } } }
+            })
+          })
+        )
+      ).rejects.toBe(reason)
+      expect(seen).toEqual([])
+    })
+
+    it("interrupts route selection when the request aborts", async () => {
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const interrupted = vi.fn()
+      const load = vi.spyOn(Route, "load").mockReturnValue(
+        Effect.promise(() => gate).pipe(Effect.as(visible), Effect.onInterrupt(() => Effect.sync(interrupted)))
+      )
+      const { cli, seen } = await makeCli()
+      const controller = new AbortController()
+      const request = cli.fetch(new Request("http://localhost/review?number=42", { signal: controller.signal }))
+      try {
+        await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+        controller.abort(new Error("cancelled during selection"))
+        await expect(within(request, 500)).rejects.toThrow("All fibers interrupted")
+        expect(interrupted).toHaveBeenCalledTimes(1)
+        expect(seen).toEqual([])
+      } finally {
+        release()
+        await Promise.allSettled([request])
+        load.mockRestore()
+      }
+    })
+
+    it.each(["HTTP", "MCP"] as const)(
+      "interrupts an in-flight %s invocation when the request aborts",
+      async (transport) => {
+        const latch = latchedInvoke()
+        const { cli } = await makeCli(undefined, latch.invoke)
+        const controller = new AbortController()
+        const request = transport === "HTTP"
+          ? new Request("http://localhost/review?number=42", { signal: controller.signal })
+          : new Request("http://localhost/mcp", {
+            method: "POST",
+            signal: controller.signal,
+            headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "tools/call",
+              params: { name: "call_write_tool", arguments: { name: "review", arguments: { number: 42 } } }
+            })
+          })
+        const response = cli.fetch(request)
+        const settled = Promise.allSettled([response])
+        try {
+          await within(latch.started, 8_000)
+          controller.abort(new Error("client went away"))
+          // The abort interrupts the invocation fiber, which runs its finalizers
+          // before the request settles.
+          await within(latch.finalized, 500)
+          const [outcome] = await settled
+          if (outcome!.status === "fulfilled") {
+            const result = outcome!.value
+            if (transport === "HTTP") {
+              expect(result.status).toBeGreaterThanOrEqual(400)
+            } else {
+              const payload = await result.json() as {
+                readonly error?: unknown
+                readonly result?: { readonly isError?: boolean }
+              }
+              expect(payload.error !== undefined || payload.result?.isError === true).toBe(true)
+            }
+          }
+        } finally {
+          latch.release()
+          await settled
+        }
+      }
+    )
   })
 
   it("closes the host by interrupting the build before projecting more routes", async () => {
