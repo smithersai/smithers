@@ -3,29 +3,12 @@ import { Cause, Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
 import * as JsonLimits from "../src/internal/JsonLimits.ts"
 import * as McpClient from "../src/McpClient.ts"
-
-const SERVER = String.raw`
-const readline = require("node:readline")
-const mode = process.argv[1]
-const depth = Number(process.argv[2])
-const nested = '{"value":'.repeat(depth) + '{}' + '}'.repeat(depth)
-const schema = '{"type":"object","properties":{"value":'.repeat(depth) + '{}' + '}}'.repeat(depth)
-const reader = readline.createInterface({ input: process.stdin })
-const send = (request, result) => process.stdout.write('{"jsonrpc":"2.0","id":' + request.id + ',"result":' + result + '}\n')
-reader.on("line", (line) => {
-  const request = JSON.parse(line)
-  if (request.method === "initialize") send(request, '{"protocolVersion":"2025-06-18","capabilities":{"tools":{}}}')
-  else if (request.method === "tools/list") send(request,
-    '{"tools":[{"name":"probe","inputSchema":{"type":"object"},"outputSchema":' +
-    (mode === "schema" ? schema : mode === "enum" ? '{"enum":[' + nested + ']}' : '{}') + '}]}')
-  else if (request.method === "tools/call") send(request, '{"content":[],"structuredContent":' + (mode === "echo" ? '{}' : mode === "infinite" ? '{"value":1e999}' : nested) + '}')
-})
-`
+import * as FixtureServer from "./fixtures/FixtureServer.ts"
 
 const options = (mode: string, depth = 10_000): McpClient.ConnectOptions => ({
   server: "json-limits",
   command: process.execPath,
-  args: ["-e", SERVER, mode, String(depth)],
+  args: ["-e", FixtureServer.source, `nested-${mode}`, "", String(depth)],
   handshakeTimeoutMs: 2_000,
   requestTimeoutMs: 2_000
 })

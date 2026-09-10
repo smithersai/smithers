@@ -8,7 +8,9 @@
  * shapes (the initialize reply, the tool catalog) is made once.
  *
  * `process.argv[2]` is an optional path the fixture writes to when it is asked
- * to record its own shutdown.
+ * to record its own shutdown, `process.argv[3]` the container depth the JSON
+ * limit modes nest to, and `MCP_DIAGNOSTIC_TEST_SECRET` the private value the
+ * privacy modes plant in the protocol positions an error may leak from.
  *
  * @since 0.1.0
  */
@@ -17,6 +19,8 @@ const fs = require("node:fs")
 const readline = require("node:readline")
 const mode = process.argv[1] || "normal"
 const closeMarker = process.argv[2]
+const depth = Number(process.argv[3] || 0)
+const secret = process.env.MCP_DIAGNOSTIC_TEST_SECRET
 
 if (closeMarker && mode !== "capture-cancellation") {
   process.on("SIGTERM", () => {
@@ -31,12 +35,17 @@ const startupDiagnostic = mode === "stderr-exit"
   ? { text: "token=x", code: 19 }
   : mode === "stderr-tail-exit"
   ? { text: "DROP-".repeat(400) + "KEEP-THIS-TAIL-1234567890\n", code: 18 }
+  : mode === "private-stderr"
+  ? { text: "API_TOKEN=" + secret + "\n", code: 1 }
   : undefined
 if (startupDiagnostic) {
   process.stderr.write(startupDiagnostic.text, () => process.exit(startupDiagnostic.code))
 }
 
 const send = (message) => process.stdout.write(JSON.stringify(message) + "\n")
+const sendRaw = (request, result) => process.stdout.write('{"jsonrpc":"2.0","id":' + request.id + ',"result":' + result + '}\n')
+const nested = () => '{"value":'.repeat(depth) + '{}' + '}'.repeat(depth)
+const nestedSchema = () => '{"type":"object","properties":{"value":'.repeat(depth) + '{}' + '}}'.repeat(depth)
 const replyId = (request) => mode === "string-reply-id" ? String(request.id) : request.id
 const succeed = (request, result) => send({ jsonrpc: "2.0", id: replyId(request), result })
 const fail = (request, code, message, data) => {
@@ -143,6 +152,8 @@ reader?.on("line", (line) => {
       ? "2024-11-05"
       : mode === "malformed-protocol-version"
       ? 42
+      : mode === "private-version"
+      ? secret
       : "2025-06-18"
     const capabilities = mode === "no-tools-capability"
       ? {}
@@ -163,6 +174,20 @@ reader?.on("line", (line) => {
   }
 
   if (request.method === "tools/list") {
+    if (mode.startsWith("private-")) {
+      const probe = { name: "probe", inputSchema: { type: "object" }, outputSchema: { type: "object", required: [secret] } }
+      succeed(request, mode === "private-duplicate"
+        ? { tools: [{ ...probe, name: secret }, { ...probe, name: secret }] }
+        : mode === "private-cursor"
+        ? { tools: [], nextCursor: secret }
+        : { tools: [probe] })
+      return
+    }
+    if (mode.startsWith("nested-")) {
+      sendRaw(request, '{"tools":[{"name":"probe","inputSchema":{"type":"object"},"outputSchema":' +
+        (mode === "nested-schema" ? nestedSchema() : mode === "nested-enum" ? '{"enum":[' + nested() + ']}' : '{}') + '}]}')
+      return
+    }
     if (mode === "list-rpc-error") {
       fail(request, -32_601, "catalog unavailable")
       return
@@ -269,6 +294,19 @@ reader?.on("line", (line) => {
   }
 
   if (request.method === "tools/call") {
+    if (mode === "private-schema") {
+      succeed(request, { content: [], structuredContent: {} })
+      return
+    }
+    if (mode.startsWith("private-")) {
+      fail(request, -32000, secret, "short-private-pin")
+      return
+    }
+    if (mode.startsWith("nested-")) {
+      sendRaw(request, '{"content":[],"structuredContent":' +
+        (mode === "nested-echo" ? '{}' : mode === "nested-infinite" ? '{"value":1e999}' : nested()) + '}')
+      return
+    }
     if (mode === "server-requests") {
       const probes = [
         { id: request.id, method: "ping" },

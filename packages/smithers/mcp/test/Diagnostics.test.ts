@@ -5,36 +5,9 @@ import * as Diagnostics from "../src/Diagnostics.ts"
 import * as Reporter from "../src/internal/DiagnosticReporter.ts"
 import * as McpClient from "../src/McpClient.ts"
 import { McpError } from "../src/McpError.ts"
+import * as FixtureServer from "./fixtures/FixtureServer.ts"
 
 const secret = "synthetic-private-value-DO-NOT-PUBLISH"
-const SERVER = String.raw`
-const readline = require("node:readline")
-const mode = process.argv[1]
-const secret = process.env.MCP_DIAGNOSTIC_TEST_SECRET
-const send = (message) => process.stdout.write(JSON.stringify(message) + "\n")
-if (mode === "stderr") {
-  process.stderr.write("API_TOKEN=" + secret + "\n", () => process.exit(1))
-} else {
-  const reader = readline.createInterface({ input: process.stdin })
-  reader.on("line", (line) => {
-    const request = JSON.parse(line)
-    if (request.method === "initialize") {
-      send({ jsonrpc: "2.0", id: request.id, result: {
-        protocolVersion: mode === "version" ? secret : "2025-06-18", capabilities: { tools: {} }, serverInfo: {}
-      } })
-    } else if (request.method === "tools/list") {
-      const tool = { name: "probe", inputSchema: { type: "object" }, outputSchema: { type: "object", required: [secret] } }
-      send({ jsonrpc: "2.0", id: request.id, result: mode === "duplicate"
-        ? { tools: [{ ...tool, name: secret }, { ...tool, name: secret }] }
-        : mode === "cursor" ? { tools: [], nextCursor: secret } : { tools: [tool] } })
-    } else if (request.method === "tools/call") {
-      send({ jsonrpc: "2.0", id: request.id, ...(mode === "schema"
-        ? { result: { content: [], structuredContent: {} } }
-        : { error: { code: -32000, message: secret, data: "short-private-pin" } }) })
-    }
-  })
-}
-`
 
 describe("MCP diagnostic privacy", () => {
   it.each(
@@ -56,7 +29,7 @@ describe("MCP diagnostic privacy", () => {
             const client = yield* McpClient.connect({
               server: "private-test",
               command: process.execPath,
-              args: ["-e", SERVER, mode],
+              args: ["-e", FixtureServer.source, `private-${mode}`],
               env: { MCP_DIAGNOSTIC_TEST_SECRET: secret },
               // Truncation can remove the credential prefix. The remainder must
               // still never be attached to an outward error.
