@@ -19,7 +19,7 @@ export const pages: readonly PageSpec[] = [
     flowDocs, runtime, agentDocs, "packages/smithers/build/targets/docs/README.md", ui, bun, node,
     ["packages/smithers/agent/src/AgentAction.ts", [253, 302], [390, 430]],
     ["flows/wiki/operations.ts", [93, 138]], "apps/ui/docs/ONBOARDING.md",
-    ["factory/wiki/catalog.ts", [91, 91], [96, 96], [101, 101], [106, 106], [112, 112], [116, 116], [122, 122], [130, 130]]
+    ["factory/wiki/catalog.ts", [86, 86], [69, 69], [91, 91], [96, 96], [101, 101], [106, 106], [112, 112], [116, 116], [122, 122], [130, 130]]
   ]),
   page({ id: "flows", title: "Flows, actions and replay", purpose: "Declare a typed capability once and attach its Effect implementation.", kind: "current", document: "factory/wiki/pages/flows.md", related: ["runtime", "agent", "build-graph"] }, [
     flowDocs, ["packages/smithers/flows/flow/src/Action/Action.ts", [109, 241]],
@@ -46,7 +46,7 @@ export const pages: readonly PageSpec[] = [
   page({ id: "build-graph", title: "Dependency-bound build targets", purpose: "Declare the exact code and documentation inputs that invalidate an output.", kind: "current", document: "factory/wiki/pages/build-graph.md", related: ["wiki-generation", "flows", "runtime"] }, [
     "packages/smithers/build/targets/docs/reference/filegroup.md", ["packages/smithers/build/targets/src/Filegroup.ts", [25, 91], [185, 283]],
     ["packages/smithers/build/targets/src/Shell.ts", [25, 115], [265, 350]], ".smithers/WORKSPACE.ts", "flows/wiki/PACKAGE.ts",
-    ["factory/wiki/catalog.ts", [1, 15]], "flows/wiki/workflow.ts", operations, "flows/wiki/main.ts",
+    ["factory/wiki/catalog.ts", [1, 15], [134, 134]], "flows/wiki/workflow.ts", operations, "flows/wiki/main.ts",
     "flows/coding/testing.md", "packages/smithers/build/build-cli/src/internal/InputPackage.ts", "flows/PACKAGE.ts", "flows/test/coding-native-gate.mjs",
     ["packages/smithers/build/build-cli/src/internal/PackagePlanner.ts", [1334, 1343]],
     ["packages/smithers/build/build-cli/src/TargetIndex.ts", [150, 164]],
@@ -105,8 +105,8 @@ export const pages: readonly PageSpec[] = [
   ]),
   page({ id: "coding-correction", title: "Bounded owner correction", purpose: "Repair the earliest owning atom and remeasure rewritten descendants while preserving exact native evidence.", kind: "current", document: "factory/wiki/pages/coding-correction.md", related: ["coding-progression", "coding-checks", "coding-request", "coding-ui"] }, [
     "flows/coding/correction.ts", "flows/coding/feedback.ts", "flows/coding/feedback-schema.ts",
-    ["flows/coding/workflow.ts", [1, 70], [110, 139]], "flows/coding/schema.ts", "flows/coding/planning-authority.ts", ["flows/coding/host.ts", [69, 98]],
-    ["flows/test/coding-correction.test.ts", [40, 78], [92, 110], [126, 177]], ["flows/coding/native.ts", [63, 72], [92, 109], [140, 162]], ["flows/coding/atoms.ts", [47, 95], [98, 115]], ["flows/coding/request.ts", [60, 76]],
+    "flows/coding/workflow.ts", "flows/coding/schema.ts", "flows/coding/planning-authority.ts", ["flows/coding/host.ts", [69, 98]],
+    ["flows/test/coding-correction.test.ts", [40, 45], [95, 107], [126, 177], [185, 214]], ["flows/coding/native.ts", [63, 72], [92, 109], [140, 162]], ["flows/coding/atoms.ts", [47, 95], [98, 115]], ["flows/coding/request.ts", [30, 76]],
     ["packages/smithers/flows/flow/src/DurableDeferred.ts", [125, 162], [581, 611]]
   ]),
   page({ id: "coding-checks", title: "Checks against immutable source", purpose: "Measure the pinned revision with declared commands, confined processes and durable receipts.", kind: "current", document: "flows/coding/checks.md", related: ["coding-progression", "coding-correction", "coding-host", "build-graph"] }, [

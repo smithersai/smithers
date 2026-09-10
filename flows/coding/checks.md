@@ -23,9 +23,9 @@ the command changes that digest. The lowered Invocation carries the verified
 body into the action payload, so the command also participates in its durable
 step key. The implementation/check input and existing `checkInputDigest` bind the
 result to the precise revision and check declaration.
-The invocation also contains the registry's absolute resource directory. Moving
-the checkout changes that action key and reruns the check; it cannot make old
-revision evidence validate a different input.
+The invocation also carries the registry's rendered resource context. Changes to
+that context change the action payload; exact receipt matching still binds
+validation to the recorded implementation and check input.
 The registry appends a resource trailer and encoded arguments; the recipe reads
 only that first JSON declaration line, so appended input cannot replace it.
 
@@ -33,8 +33,10 @@ only that first JSON declaration line, so appended input cannot replace it.
 
 The action asks Plue's `smithers-jj-export` to materialize the full commit ID in
 a new temporary directory. It verifies the returned commit, tree and JJ change
-IDs before running the command. The native exporter is the configured read-only
-port; the command runs from its copied source, while the acceptance fixture asserts
+IDs before running the command. The host must supply the intended read-only
+exporter implementation; returned identity checks alone do not establish that an
+arbitrary configured binary honors that contract. The command runs from its
+exported source, while the acceptance fixture asserts
 that the owning JJ operation remains unchanged. Arbitrary command confinement
 still belongs to the host. Slow checks can read their original source while a
 later atom is being edited. A new descendant revision gets a
@@ -65,8 +67,8 @@ in the existing receipt, with truncation disclosed.
 
 ## Close scratch after contained processes
 
-The export directory is scoped to the action and removed after its process
-scope closes, including on cancellation. It is a source snapshot, not a security
+The export directory and contained processes use Effect scopes. The recipe relies
+on the injected runtime's scoped cleanup contract on success, failure and cancellation. It is a source snapshot, not a security
 sandbox: the host must provide its existing process confinement when running
 untrusted project commands. FileSystem, Path and ChildProcessSpawner are Effect
 dependencies; the recipe does not select Node or Bun.
@@ -74,9 +76,9 @@ dependencies; the recipe does not select Node or Bun.
 The private composition supplies its existing trusted `fs` as a service value,
 captured before action workspace guards. Export lifecycle and validation of the exported tree use it; the
 check process still runs through the action's permission-checked, contained
-spawner. POSIX guarded filesystems deliberately cannot create arbitrary system
-temporary directories. The recipe does not weaken that guard or write scratch
-files into the editing checkout. Process evidence is nondeterministic for cache
+spawner. Temporary-directory permissions and process confinement are supplied
+by the host; this recipe requests separate scoped scratch rather than writing
+it into the editing checkout. Process evidence is nondeterministic for cache
 purposes; a completed execution still replays its own recorded result.
 
 New private structures are the JSON command declaration (`argv`, `cwd`,

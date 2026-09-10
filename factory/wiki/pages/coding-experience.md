@@ -1,6 +1,6 @@
 # A linear story with recursive detail
 
-This page records product intent. The detailed interaction study in `flows/coding/design.md` retains the external references and design research; this wiki page defines the Smithers interactions we want to build.
+This page records product intent and defines the Smithers interactions we want to build.
 
 ## Lead with the work people recognize
 

@@ -12,7 +12,7 @@ Unsupported or uncertain prose blocks planning and retains the wiki's needs-chan
 
 `GatherContext` snapshots current working bytes through the native JJ service, reads a bounded linear native history and verifies the wiki publication. The existing keyword scorer selects complete current and intent pages within a memory byte budget. `PlanningContext` records the native head/history, selected pages and digests, verified implementation/check definitions and a canonical memory identity. It is ordinary durable output, not another table.
 
-`ReviewRequest` either proceeds or emits a bundled material clarification. The existing durable HumanTask parks the flow and retains the answer token across restart. `DraftPlan` chooses existing native atoms or predicted new atoms, grouping them into Changes and predicting file reads/writes. Existing atomic IDs come from JJ; a new atom uses null until JJ creates it.
+`ReviewRequest` either proceeds or emits a bundled material clarification. The existing HumanTask call asks the material question and passes its answer into planning. `DraftPlan` chooses existing native atoms or predicted new atoms, grouping them into Changes and predicting file reads/writes. Existing atomic IDs come from JJ; a new atom uses null until JJ creates it.
 
 ## Verify after the model or human wait
 
@@ -24,4 +24,4 @@ The current planner supports append or a complete visible suffix amendment. It d
 
 The host maps the `coding/plan` seat through the existing resolver. Its evidence-only wrapper runs after native authority restoration and supplies an empty callable catalog and capability ceiling, including for plugin declarations. Budgets, observation, model routing and existing steering remain. The existing unmoved completion option allows a planning answer without a file edit. The prompt is not the security boundary.
 
-Feedback is bounded evidence text. Receiving it does not prove a POC ran; the composed [request](coding-request.md) owns the actual [retained POC child](coding-poc.md). Schema-bound results and recorded explanations remain available for recursive inspection, without treating a model rationale as measured success.
+Feedback is bounded evidence text. Receiving it does not prove a POC ran; the composed request calls its POC child before the post-POC planning pass. A model rationale is not measured success.

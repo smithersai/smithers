@@ -18,7 +18,7 @@ Gateway and workspace identity qualify persisted run references. Separate worksp
 
 A completed owned Poc child supplies the saved prototype only when its result names the exact input source. The card displays the drafted-unvalidated finding and expandable full before/after source as escaped text. It does not execute retained HTML. The existing steer form can submit feedback; queue acknowledgement alone does not establish replanning or revision acceptance.
 
-Keyboard-accessible source panels, actor-tagged selection, historical cursor and reload use existing card state. The current shell keeps chat history in the main view and summons only the bottom composer with Command-K or Control-K. The [design study](coding-experience.md) records further recommendations, separately from these implemented projections.
+Keyboard-accessible source panels and historical cursor selection use the existing card projection. The current shell keeps chat history in the main view and summons only the bottom composer with Command-K or Control-K.
 
 ## Keep proof provenance visible
 

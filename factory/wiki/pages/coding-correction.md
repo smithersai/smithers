@@ -1,6 +1,6 @@
 # Repair the earliest owning Change
 
-The private `CorrectPlan` flow composes the existing native coding, agent, check and runtime services. Its configured host supplies these layers. The recipe's owning guide is `flows/coding/correction.md`.
+The private `CorrectPlan` flow composes the existing native coding, agent, check and runtime services. Its configured host supplies these layers.
 
 ## Bound the correction loop
 
@@ -18,4 +18,4 @@ Before and after mutation, the recipe reads the known native IDs and checks thei
 
 An exactly unchanged implementation can retain matching individual receipts. Rewritten source receives fresh revision references and new checks. A missing check is still required even if another check for the same Change passed. Fast checks gate the next Change; slow checks can overlap subsequent work. Final assessment validates every required receipt, its exact input digest and finding ownership.
 
-The native fixture contains assertions for bounded correction, unchanged-prefix receipt reuse, rewritten checks, a refused foreign atom, cancelled checker cleanup and cold-host replay. These are executable test definitions, not evidence that a particular test run or deployment passed. The configured request flow composes planning and disposable POC feedback with correction; final history cleanup and delivery are separate lifecycle work.
+The native fixture contains assertions for bounded correction, unchanged-prefix receipt reuse, rewritten checks, a refused foreign atom, cancelled checker cleanup and cold-host replay. These are executable test definitions, not evidence that a particular test run or deployment passed. The configured request flow composes planning and disposable POC feedback with correction.

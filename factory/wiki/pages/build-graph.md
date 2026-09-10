@@ -4,7 +4,7 @@
 
 ## Declare exact wiki inputs
 
-The wiki catalog names each page's owning Markdown and source files. `flows/wiki/PACKAGE.ts` imports that same catalog and turns its source list into explicit repository-root file inputs. There is one dependency inventory, not a hand-maintained second list of broad globs.
+The catalog's page helper accepts an owning Markdown path and source inputs. Its `sourceFiles` definition unions those paths across the configured pages. `flows/wiki/PACKAGE.ts` imports that list and turns it into explicit repository-root file inputs, alongside the generator's own dependencies.
 
 This matters across package boundaries. File globs are package scoped. A named `Filegroup` is the reusable way to carry another package's set of files into a consumer; explicit file inputs are appropriate for this small curated recipe.
 
