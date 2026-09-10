@@ -1,7 +1,7 @@
 /**
  * Shared declaration helpers for the standard flows.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type * as Capability from "@smthrs/capability/Capability"
 import * as Effects from "@smthrs/core/Effects"
@@ -10,7 +10,7 @@ import * as Effects from "@smthrs/core/Effects"
  * Options accepted by {@link envelope}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface EnvelopeOptions {
   readonly tier: "sealed" | "compensable" | "irreversible"
@@ -26,7 +26,7 @@ export interface EnvelopeOptions {
  * partitioning of its own, so the conservative choice is the safe one.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const envelope = (options: EnvelopeOptions): Effects.Declaration =>
   Effects.make({
@@ -42,7 +42,7 @@ export const envelope = (options: EnvelopeOptions): Effects.Declaration =>
  * flow declaration.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capability = (action: Capability.Action, resource: string): string => `${action}:${resource}`
 
@@ -54,6 +54,6 @@ export const capability = (action: Capability.Action, resource: string): string 
  * make the same search reserve different paths depending on which flow ran it.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const rootSubtree = (root: string): string => root === "/" ? "/**" : `${root.replace(/\/+$/, "")}/**`

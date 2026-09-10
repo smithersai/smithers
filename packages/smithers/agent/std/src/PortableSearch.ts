@@ -1,7 +1,7 @@
 /**
  * The in-process implementation of the ripgrep search contract.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Path from "@smthrs/kernel/Path"
 import { type Context, Effect, Layer, Stream } from "effect"
@@ -320,7 +320,7 @@ const glob = (
  * Captures filesystem and path services in the portable peer.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (services: Context.Context<FileSystem.FileSystem | Path.Path>): Search.Search =>
   Search.make({
@@ -332,7 +332,7 @@ export const make = (services: Context.Context<FileSystem.FileSystem | Path.Path
  * Provides the in-process peer.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer: Layer.Layer<Search.Search, never, FileSystem.FileSystem | Path.Path> = Layer.effect(
   Search.Search,

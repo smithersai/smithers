@@ -1,7 +1,7 @@
 /**
  * Small, dependency-free HTML renderers for web retrieval.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 const comments = /<!--[\s\S]*?-->/g
@@ -56,7 +56,7 @@ const source = (html: string): string => dropSkipped(html.replace(comments, ""))
  * Extracts readable text while dropping executable and presentation-only elements.
  *
  * @category rendering
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const toText = (html: string): string =>
   decode(source(html).replace(/<(br|\/p|\/div|\/li|\/h[1-6]|\/tr)\b[^>]*>/gi, "\n").replace(/<[^>]*>/g, " "))
@@ -66,7 +66,7 @@ export const toText = (html: string): string =>
  * Converts a conservative subset of HTML into readable Markdown.
  *
  * @category rendering
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const toMarkdown = (html: string): string => {
   const markdown = source(html)

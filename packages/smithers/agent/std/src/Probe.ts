@@ -44,7 +44,7 @@
  * changed, which is what stops a broken probe from being cited as a
  * reproduction.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Schema from "effect/Schema"
 
@@ -56,7 +56,7 @@ import * as Schema from "effect/Schema"
  * result and must not depend on the tool library to do it.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const key = "invalidProbe"
 
@@ -67,7 +67,7 @@ export const key = "invalidProbe"
  * rather than adding a member.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Reason = Schema.Literals([
   "unknown-command",
@@ -81,7 +81,7 @@ export const Reason = Schema.Literals([
  * What the invocation named that does not exist.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Reason = typeof Reason.Type
 
@@ -89,7 +89,7 @@ export type Reason = typeof Reason.Type
  * One command's failure, attributed to the command rather than to the tree.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const InvalidProbe = Schema.Struct({
   reason: Reason.annotate({ description: "Which kind of name the command could not resolve" }),
@@ -101,7 +101,7 @@ export const InvalidProbe = Schema.Struct({
  * One command's failure, attributed to the command rather than to the tree.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type InvalidProbe = typeof InvalidProbe.Type
 
@@ -234,7 +234,7 @@ const invalid = (reason: Reason, evidence: string): InvalidProbe => ({
  * quotable from the output the reader can see.
  *
  * @category classification
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const classify = (result: {
   readonly exitCode: number

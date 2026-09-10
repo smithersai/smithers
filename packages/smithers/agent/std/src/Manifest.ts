@@ -1,7 +1,7 @@
 /**
  * Built-in flow declarations and their separately supplied handlers.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as ApplyPatch from "./ApplyPatch.ts"
 import * as Bash from "./Bash.ts"
@@ -25,7 +25,7 @@ import * as Write from "./Write.ts"
  * Frozen name-to-declaration registry for every standard flow.
  *
  * @category registries
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flows = Object.freeze({
   [Read.name]: Read.flow,
@@ -53,7 +53,7 @@ export const flows = Object.freeze({
  * Explore is dynamic and therefore has no handler entry.
  *
  * @category registries
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const handlers = Object.freeze({
   [Read.name]: Read.run,
@@ -85,7 +85,7 @@ export const handlers = Object.freeze({
  * is a declaration a seat can be offered, and its envelope narrows the same way.
  *
  * @category registries
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = Object.freeze({
   [Read.name]: Read.effectsFor,
@@ -111,7 +111,7 @@ export const effectsFor = Object.freeze({
  * Frozen standard flow names in registry order.
  *
  * @category metadata
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const names = Object.freeze(
   [
@@ -145,7 +145,7 @@ export const names = Object.freeze(
  * taxonomy, so it cannot ride in a read-only seat.
  *
  * @category visibility
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const readOnly = Object.freeze(
   [

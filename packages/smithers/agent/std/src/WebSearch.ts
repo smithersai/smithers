@@ -1,8 +1,12 @@
 /**
- * Governing plan:
- * `docs/specs/Research/Agent Ecosystem Plan 2026-07-28.md`.
+ * The `websearch` flow and the provider seam it runs through.
  *
- * @since 0.1.0
+ * The flow is provider-neutral: it hands the query to the bound
+ * {@link WebSearch} service and returns normalized results. A host binds a
+ * provider such as `ExaWebSearch.layer`; {@link layerNoop} fails every search
+ * with `provider_unavailable`.
+ *
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -13,21 +17,21 @@ import * as StdError from "./StdError.ts"
  * The registry name of the `websearch` flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "websearch"
 /**
  * The one-line description the model sees for the `websearch` flow.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description = "Search the web through a configured provider and return normalized results."
 /**
  * What the `websearch` flow accepts.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   query: Schema.NonEmptyString.annotate({ description: "Search query" }),
@@ -39,10 +43,17 @@ export const Input = Schema.Struct({
   })
 })
 /**
+ * Decoded input accepted by the `websearch` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+/**
  * One search hit, normalized across providers.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Result = Schema.Struct({
   title: Schema.String.annotate({ description: "Result title" }),
@@ -56,28 +67,35 @@ export const Result = Schema.Struct({
  * What the `websearch` flow returns.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({ results: Schema.Array(Result) })
+/**
+ * Decoded output returned by the `websearch` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
 /**
  * The declared effect envelope of the `websearch` flow, before any input is known.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "sealed", mode: "expected", reads: [], writes: [] })
 /**
  * Narrows {@link effects} to what this particular input actually touches.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (_input: typeof Input.Type) => effects
 /**
  * The authority the `websearch` flow requires.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("net:post", "*")]
 /**
@@ -85,7 +103,7 @@ export const capabilities = [capability("net:post", "*")]
  * implementation attached separately.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -93,7 +111,7 @@ export const flow = Flow.make({ name, description, input: Input, output: Output,
  * The provider seam a web search is served through.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface WebSearch {
   readonly search: (input: typeof Input.Type) => Effect.Effect<typeof Output.Type, StdError.StdError>
@@ -102,14 +120,14 @@ export interface WebSearch {
  * The {@link WebSearch} service tag.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
-export const WebSearch: Context.Service<WebSearch, WebSearch> = Context.Service("/std/WebSearch")
+export const WebSearch: Context.Service<WebSearch, WebSearch> = Context.Service("@smthrs/std/WebSearch")
 /**
  * Builds a {@link WebSearch} from an implementation of its one method.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (service: WebSearch): WebSearch => WebSearch.of(service)
 /**
@@ -117,7 +135,7 @@ export const make = (service: WebSearch): WebSearch => WebSearch.of(service)
  * for an environment with no provider configured.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeNoop = (): WebSearch =>
   make({
@@ -130,14 +148,14 @@ export const makeNoop = (): WebSearch =>
  * Provides {@link makeNoop}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerNoop: Layer.Layer<WebSearch> = Layer.succeed(WebSearch, makeNoop())
 /**
  * Runs the `websearch` flow: searches the web through the configured provider.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("WebSearch.run")(function*(
   input: typeof Input.Type

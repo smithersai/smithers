@@ -22,7 +22,7 @@
  * table pins one by one, with an expected value that says which behaviour is
  * intended. A generator cannot say that; it can only say the two disagree.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -34,7 +34,7 @@ import type * as StdError from "./StdError.ts"
  * One file the generated tree contains.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GeneratedFile {
   /** Path relative to the tree root, always with `/` separators. */
@@ -46,7 +46,7 @@ export interface GeneratedFile {
  * A generated tree plus the calls to make against it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Plan {
   readonly seed: number
@@ -63,7 +63,7 @@ export interface Plan {
  * bytes that differ rather than saying only that they did.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Divergence {
   readonly call: "grep" | "glob"
@@ -126,7 +126,7 @@ const globPatterns = ["**/*.ts", "*.ts", "**/*", "one/**/*.ts", "**/*.{ts,js}", 
  * reports can be replayed exactly by rerunning that seed.
  *
  * @category generators
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const plan = (options: {
   readonly seed: number
@@ -192,7 +192,7 @@ export const plan = (options: {
  * Writes a plan's tree under its root.
  *
  * @category generators
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const materialize = (
   target: Plan
@@ -229,7 +229,7 @@ const rendered = <A>(
  * has diverged.
  *
  * @category conformance
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const compare = (options: {
   readonly plan: Plan
@@ -255,7 +255,7 @@ export const compare = (options: {
  * Renders divergences as the report a failing conformance run should print.
  *
  * @category conformance
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const report = (divergences: ReadonlyArray<Divergence>): string =>
   divergences.map((divergence) =>

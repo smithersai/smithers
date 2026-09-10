@@ -41,7 +41,7 @@
  * Native and in-process implementations are peers behind `Search.Search`.
  * This module declares and validates the call; it performs no host access.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import { Effect, Schema } from "effect"
@@ -56,14 +56,14 @@ import * as StdError from "./StdError.ts"
  * The registry name for grep.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "grep"
 /**
  * The model-facing grep description.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "Search file contents through the Smithers Ripgrep Subset v1 contract. limit counts matches, each carrying its own context and enclosing definition; fixedStrings searches a literal, and one is retried."
@@ -72,7 +72,7 @@ export const description =
  * Input accepted by {@link flow} and {@link run}.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   pattern: Schema.String.annotate({ description: "Smithers Ripgrep ASCII v1 expression." }),
@@ -110,10 +110,18 @@ export const Input = Schema.Struct({
 })
 
 /**
+ * Decoded input accepted by the `grep` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * One matching or context line.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ContextLine = Schema.Struct({
   line: Schema.Int.annotate({ description: "1-based line number" }),
@@ -124,7 +132,7 @@ export const ContextLine = Schema.Struct({
  * The definition a hit sits inside, when the file's shape says so plainly.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Symbol = Schema.Struct({
   kind: Schema.String.annotate({ description: "The declaration keyword, such as def or class" }),
@@ -139,7 +147,7 @@ export const Symbol = Schema.Struct({
  * One hit and the context that belongs to it.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Match = Schema.Struct({
   file: Schema.String,
@@ -154,7 +162,7 @@ export const Match = Schema.Struct({
  * Output produced by {@link run}.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   matches: Schema.Array(Match),
@@ -169,17 +177,25 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `grep` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * Conservative sealed declaration for all workspace files.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "sealed", mode: "hermetic", reads: ["/**"], writes: [] })
 /**
  * Narrows the read declaration to the requested root subtree.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (input: { readonly root?: string | undefined }) =>
   envelope({ tier: "sealed", mode: "hermetic", reads: [rootSubtree(input.root ?? "/")], writes: [] })
@@ -187,14 +203,14 @@ export const effectsFor = (input: { readonly root?: string | undefined }) =>
  * Capability strings requested by grep.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("fs:read", "/**")]
 /**
  * Declaration-only grep flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -255,7 +271,7 @@ const empty = (output: typeof Output.Type): boolean => output.matches.length ===
  * result says plainly that the answer came from the literal reading.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("Grep.run")(function*(
   input: typeof Input.Type

@@ -1,7 +1,7 @@
 /**
  * Directory listing flow declaration and portable handler.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import * as Path from "@smthrs/kernel/Path"
@@ -16,7 +16,7 @@ import * as StdError from "./StdError.ts"
  * The registry name of the `ls` flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "ls"
 
@@ -24,7 +24,7 @@ export const name = "ls"
  * The one-line description the model sees for the `ls` flow.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "List a directory with directories first, trailing /, and locale-independent UTF-16 code-unit ordering; use 1-based offset and limit to page large listings."
@@ -33,7 +33,7 @@ export const description =
  * What the `ls` flow accepts.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   path: Schema.String.annotate({ description: "Directory path to list" }),
@@ -46,10 +46,18 @@ export const Input = Schema.Struct({
 })
 
 /**
+ * Decoded input accepted by the `ls` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * What the `ls` flow returns.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   entries: Schema.Array(Schema.Struct({
@@ -62,10 +70,18 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `ls` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * The declared effect envelope of the `ls` flow, before any input is known.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "sealed", mode: "hermetic", reads: ["/**"], writes: [] })
 
@@ -73,7 +89,7 @@ export const effects = envelope({ tier: "sealed", mode: "hermetic", reads: ["/**
  * Narrows {@link effects} to what this particular input actually touches.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (input: typeof Input.Type) =>
   envelope({ tier: "sealed", mode: "hermetic", reads: [input.path], writes: [] })
@@ -82,7 +98,7 @@ export const effectsFor = (input: typeof Input.Type) =>
  * The authority the `ls` flow requires.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("fs:read", "/**")]
 
@@ -91,7 +107,7 @@ export const capabilities = [capability("fs:read", "/**")]
  * implementation attached separately.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -104,7 +120,7 @@ const byText = (left: string, right: string): number => (left < right ? -1 : lef
  * as `not_a_directory`.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("Ls.run")(function*(
   input: typeof Input.Type

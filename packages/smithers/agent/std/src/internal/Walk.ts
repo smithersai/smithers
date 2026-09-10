@@ -9,14 +9,14 @@
  * and an explicit root inside a skipped directory still walks, because
  * skipping applies to descent, never to what the caller named.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 /**
  * Directory basenames excluded from recursive descent.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const skippedDirectories: ReadonlySet<string> = new Set([
   ".git",

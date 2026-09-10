@@ -1,14 +1,14 @@
 /**
  * Shared validation for outbound HTTP URLs.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 /**
  * Parses an HTTP or HTTPS URL without admitting credentials or hostless URLs.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parseHttpUrl = (value: string, base?: URL): URL | undefined => {
   if (value.trim() === "") return undefined

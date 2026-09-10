@@ -4,14 +4,14 @@
  * Every limit here is a display budget, not a policy limit: exceeding one is
  * always disclosed to the model rather than silently applied.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 /**
  * Default number of lines or entries returned by a paged flow.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_READ_LIMIT = 2_000
 
@@ -19,7 +19,7 @@ export const DEFAULT_READ_LIMIT = 2_000
  * Maximum number of directory entries or glob paths returned in one call.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_ENTRIES = 1_000
 
@@ -27,7 +27,7 @@ export const MAX_ENTRIES = 1_000
  * Maximum number of grep matches returned in one call.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_GREP_MATCHES = 200
 
@@ -35,7 +35,7 @@ export const MAX_GREP_MATCHES = 200
  * Maximum number of Unicode scalar values displayed for a single line.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_LINE_CHARS = 2_000
 
@@ -43,7 +43,7 @@ export const MAX_LINE_CHARS = 2_000
  * Maximum UTF-8 byte budget for one rendered text payload.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_OUTPUT_BYTES = 60_000
 
@@ -51,7 +51,7 @@ export const MAX_OUTPUT_BYTES = 60_000
  * Maximum UTF-8 byte budget captured per shell output stream.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_SHELL_OUTPUT_BYTES = 30_000
 
@@ -59,7 +59,7 @@ export const MAX_SHELL_OUTPUT_BYTES = 30_000
  * A byte-budgeted rendering of a text value.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Truncation {
   readonly text: string
@@ -72,7 +72,7 @@ export interface Truncation {
  * One page of source lines.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Page {
   readonly lines: ReadonlyArray<string>
@@ -92,7 +92,7 @@ const fatalDecoder = new TextDecoder("utf-8", { fatal: true })
  * overflowing stream is almost always its last lines.
  *
  * @category rendering
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const truncateBytes = (
   text: string,
@@ -130,7 +130,7 @@ export const truncateBytes = (
  * joining a page with LF preserves its bytes except for the final LF.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const sourceLines = (text: string): ReadonlyArray<string> => {
   const lines = text.length === 0 ? [] : text.split("\n")
@@ -142,7 +142,7 @@ export const sourceLines = (text: string): ReadonlyArray<string> => {
  * Selects a 1-based page of lines from a text value.
  *
  * @category paging
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const slice = (
   text: string,
@@ -164,7 +164,7 @@ export const slice = (
  * Renders the disclosure appended whenever output was capped.
  *
  * @category rendering
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const notice = (unit: string, shown: number, total: number): string =>
   `Showing ${shown} of ${total} ${unit}; output was truncated.`

@@ -11,7 +11,7 @@
  * Commands run through the platform shell (`shell: true`), matching the old
  * service: the flows take a command *line*, not an argv.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
@@ -26,7 +26,7 @@ import * as StdError from "../StdError.ts"
  * removed kernel `Shell` used so handler-level mapping is unchanged.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const ExecErrorCode = Schema.Literals(["timeout", "spawn_error", "capture_overflow"])
 
@@ -34,7 +34,7 @@ export const ExecErrorCode = Schema.Literals(["timeout", "spawn_error", "capture
  * Failure codes a buffered execution can report.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type ExecErrorCode = typeof ExecErrorCode.Type
 
@@ -46,9 +46,9 @@ export type ExecErrorCode = typeof ExecErrorCode.Type
  * timeout, or whose captured output exceeded a refusing capture bound.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
-export class ExecError extends Schema.TaggedError<ExecError>()("flows/std/ExecError", {
+export class ExecError extends Schema.TaggedError<ExecError>()("@smthrs/std/ExecError", {
   code: ExecErrorCode,
   message: Schema.String
 }) {}
@@ -57,7 +57,7 @@ export class ExecError extends Schema.TaggedError<ExecError>()("flows/std/ExecEr
  * The buffered result of one command.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ExecResult {
   readonly stdout: string
@@ -73,7 +73,7 @@ export interface ExecResult {
  * Options accepted by {@link exec}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ExecOptions {
   readonly cwd?: string | undefined
@@ -257,7 +257,7 @@ const unbounded = (
  * than leaking it.
  *
  * @category execution
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const exec = (
   command: string,
@@ -285,7 +285,7 @@ export const exec = (
  * retry. Every other way of producing no exit code is a host failure.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const toStdErrorCode = (error: ExecError): StdError.Code =>
   error.code === "timeout" ? "timeout" : "command_failed"
@@ -298,7 +298,7 @@ export const toStdErrorCode = (error: ExecError): StdError.Code =>
  * produced, which already names the command.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const toStdError = (command: string, error: ExecError): StdError.StdError =>
   new StdError.StdError({

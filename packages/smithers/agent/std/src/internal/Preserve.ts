@@ -2,7 +2,7 @@
  * Per-file atomic replacement that preserves permission bits and ownership.
  * The sibling is complete before rename; no crash-durability guarantee is made.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -15,7 +15,7 @@ const permissions = 0o7777
  * Replaces a file's text atomically, preserving its permission bits and owner.
  *
  * @category filesystem
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const writeFileString = (
   fileSystem: FileSystem.FileSystem,
@@ -28,7 +28,7 @@ export const writeFileString = (
  * Replaces a file's bytes with the same atomic boundary used for text writes.
  *
  * @category filesystem
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const writeFile = (
   fileSystem: FileSystem.FileSystem,

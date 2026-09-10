@@ -15,7 +15,7 @@
  * like an anchor and is not one. CRLF lines retain their trailing CR; only
  * the page's final LF is omitted.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import * as Effect from "effect/Effect"
@@ -29,7 +29,7 @@ import * as StdError from "./StdError.ts"
  * Registry name for the read flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "read"
 
@@ -37,7 +37,7 @@ export const name = "read"
  * Model-facing description of the read flow.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "Read a text file by 1-based offset and limit. content is RAW file text with no line-number prefixes, so any line of it is an edit anchor as it stands; the numbers are startLine/endLine."
@@ -46,7 +46,7 @@ export const description =
  * Input schema for the read flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   path: Schema.String.annotate({ description: "Path of the text file to read" }),
@@ -59,10 +59,18 @@ export const Input = Schema.Struct({
 })
 
 /**
+ * Decoded input accepted by the `read` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * Output schema for the read flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   content: Schema.String.annotate({
@@ -78,10 +86,18 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `read` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * Static conservative effect envelope for the read flow.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({
   tier: "sealed",
@@ -94,7 +110,7 @@ export const effects = envelope({
  * Narrows the read effect envelope to one input path.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (input: typeof Input.Type) =>
   envelope({
@@ -108,7 +124,7 @@ export const effectsFor = (input: typeof Input.Type) =>
  * Capabilities required by the read flow.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("fs:read", "/**")]
 
@@ -116,7 +132,7 @@ export const capabilities = [capability("fs:read", "/**")]
  * Declaration-only read flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -145,7 +161,7 @@ const fileError = (path: string) =>
  * so decoding is deliberately fatal to keep binary input in the typed channel.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("Read.run")(function*(
   input: typeof Input.Type

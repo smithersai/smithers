@@ -7,7 +7,7 @@
  * estimate, so ChatGPT-family models see the exact shapes they were
  * posttrained on.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 const APPROX_BYTES_PER_TOKEN = 4
@@ -18,7 +18,7 @@ const decoder = new TextDecoder()
 /**
  * UTF-8 byte length of a string.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const byteLength = (text: string): number => encoder.encode(text).byteLength
@@ -26,7 +26,7 @@ export const byteLength = (text: string): number => encoder.encode(text).byteLen
 /**
  * Approximate token count: ceil(utf8Bytes / 4).
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const approxTokenCount = (text: string): number =>
@@ -35,7 +35,7 @@ export const approxTokenCount = (text: string): number =>
 /**
  * Approximate byte budget for a token budget.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const approxBytesForTokens = (tokens: number): number => tokens * APPROX_BYTES_PER_TOKEN
@@ -43,7 +43,7 @@ export const approxBytesForTokens = (tokens: number): number => tokens * APPROX_
 /**
  * Approximate tokens represented by a byte count: ceil(bytes / 4).
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const approxTokensFromByteCount = (bytes: number): number =>
@@ -120,7 +120,7 @@ const truncateWithByteEstimate = (s: string, maxBytes: number, useTokens: boolea
 /**
  * Middle-truncate to a byte budget with a char-count marker.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const truncateMiddleChars = (s: string, maxBytes: number): string => truncateWithByteEstimate(s, maxBytes, false)
@@ -130,7 +130,7 @@ export const truncateMiddleChars = (s: string, maxBytes: number): string => trun
  * and end. Returns the possibly truncated string and the original token
  * count when truncation occurred.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const truncateMiddleWithTokenBudget = (
@@ -156,7 +156,7 @@ const countLines = (content: string): number => {
  * Codex `format_exec_output_for_model`: exit code, wall time, optional line
  * count disclosure, then the (possibly middle-truncated) output.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const formatExecOutputForModel = (options: {

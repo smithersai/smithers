@@ -9,7 +9,7 @@
  * parameters are deliberately absent: the permission kernel owns
  * sandboxing and escalation in this harness.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
@@ -24,7 +24,7 @@ import type * as StdError from "./StdError.ts"
  * Registry name for the shell_command flow. Matches the Codex CLI tool name.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "shell_command"
 
@@ -33,7 +33,7 @@ export const name = "shell_command"
  * (non-Windows) description.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description = "Runs a shell command and returns its output.\n" +
   "- Always set the `workdir` param when using the shell_command function. Do not use `cd` unless absolutely necessary."
@@ -42,7 +42,7 @@ export const description = "Runs a shell command and returns its output.\n" +
  * Default command timeout in milliseconds, matching Codex.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_TIMEOUT_MS = 10_000
 
@@ -55,7 +55,7 @@ export const DEFAULT_TIMEOUT_MS = 10_000
  * byte as before, while larger output costs the bound instead of its full size.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_CAPTURE_BYTES = 8_000_000
 
@@ -63,7 +63,7 @@ export const MAX_CAPTURE_BYTES = 8_000_000
  * Default output token budget, matching Codex.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_MAX_OUTPUT_TOKENS = 10_000
 
@@ -71,7 +71,7 @@ export const DEFAULT_MAX_OUTPUT_TOKENS = 10_000
  * Timeout exit code reported to the model, matching Codex exec.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const TIMEOUT_EXIT_CODE = 124
 
@@ -79,7 +79,7 @@ export const TIMEOUT_EXIT_CODE = 124
  * Input schema for the shell_command flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   command: Schema.String.annotate({ description: "Shell script to run in the user's default shell." }),
@@ -92,10 +92,18 @@ export const Input = Schema.Struct({
 })
 
 /**
+ * Decoded input accepted by the `shell_command` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * Output schema for the shell_command flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   output: Schema.String.annotate({
@@ -105,10 +113,18 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `shell_command` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * Static conservative effect envelope for the shell_command flow.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "irreversible", mode: "expected", reads: [], writes: [] })
 
@@ -119,7 +135,7 @@ export const effects = envelope({ tier: "irreversible", mode: "expected", reads:
  * the registry-time worst case does not already say.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (_input: typeof Input.Type) => effects
 
@@ -127,7 +143,7 @@ export const effectsFor = (_input: typeof Input.Type) => effects
  * Capabilities required by the shell_command flow.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("proc:spawn", "*")]
 
@@ -135,7 +151,7 @@ export const capabilities = [capability("proc:spawn", "*")]
  * Declaration-only shell_command flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -147,7 +163,7 @@ export const flow = Flow.make({ name, description, input: Input, output: Output,
  * Codex; only host and permission failures use the typed error channel.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("ShellCommand.run")(function*(
   input: typeof Input.Type

@@ -1,8 +1,11 @@
 /**
- * Governing plan:
- * `docs/specs/Research/Agent Ecosystem Plan 2026-07-28.md`.
+ * The Exa provider for the `websearch` flow.
  *
- * @since 0.1.0
+ * {@link layer} binds `WebSearch.WebSearch` to the Exa search API. It reads the
+ * API key from a named credential on every search, calls Exa through the
+ * permission-checked `HttpClient`, and maps each hit onto `WebSearch.Result`.
+ *
+ * @since 1.0.0
  */
 import * as Credential from "@smthrs/control/Credential"
 import * as HttpClient from "@smthrs/kernel/HttpClient"
@@ -37,7 +40,7 @@ const failure = (code: StdError.Code, message: string): StdError.StdError => new
  * key from the named credential.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = (
   credentialId: string

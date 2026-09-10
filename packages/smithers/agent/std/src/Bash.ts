@@ -14,7 +14,7 @@
  * requirement is optional here precisely so a host without containers is not
  * forced to declare one.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
@@ -34,7 +34,7 @@ import * as StdError from "./StdError.ts"
  * Registry name for the bash flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "bash"
 
@@ -46,7 +46,7 @@ export const name = "bash"
  * once, and a result that has one explains itself.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "Run a shell command, or an interpreter over a script passed as data instead of quoted into a line. container routes it through the host's container transport. mode:hermetic pre-checks path tokens."
@@ -58,7 +58,7 @@ export const description =
  * process eventually releases the flow.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_TIMEOUT_MS = 600_000
 
@@ -100,7 +100,7 @@ const TimeoutMs = Schema.optional(
  * the input shape.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Union([
   Schema.Struct({
@@ -139,7 +139,7 @@ export const Input = Schema.Union([
  * Decoded input accepted by the bash handler.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Input = typeof Input.Type
 
@@ -158,7 +158,7 @@ export type Input = typeof Input.Type
  * dropping it when the capture is cut, disarms that guard silently.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   exitCode: Schema.Number.annotate({ description: "Command exit code, including non-zero codes" }),
@@ -190,7 +190,7 @@ export const Output = Schema.Struct({
  * Decoded output returned by the bash handler.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Output = typeof Output.Type
 
@@ -201,7 +201,7 @@ export type Output = typeof Output.Type
  * known until an invocation is decoded.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({
   tier: "irreversible",
@@ -214,7 +214,7 @@ export const effects = envelope({
  * Narrows the effect envelope for a decoded invocation.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (input: Input) =>
   input.mode === "hermetic"
@@ -235,7 +235,7 @@ export const effectsFor = (input: Input) =>
  * Capabilities required by the bash flow.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("proc:spawn", "*")]
 
@@ -243,7 +243,7 @@ export const capabilities = [capability("proc:spawn", "*")]
  * Declaration-only bash flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -387,7 +387,7 @@ const request = (plan: Plan, input: Input): Container.Request => ({
  * and declared-envelope pre-check failures use the typed error channel.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("Bash.run")(function*(
   input: Input

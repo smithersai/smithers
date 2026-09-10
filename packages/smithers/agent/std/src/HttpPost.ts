@@ -1,7 +1,7 @@
 /**
  * HTTP POST flow declaration and portable handler.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import * as HttpClient from "@smthrs/kernel/HttpClient"
@@ -18,7 +18,7 @@ import * as StdError from "./StdError.ts"
  * Registry name for the http-post flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "http-post"
 
@@ -26,7 +26,7 @@ export const name = "http-post"
  * Model-facing description of the http-post flow.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "Post a text body to an absolute URL and return the response; this is irreversible because the remote side may already have acted."
@@ -35,7 +35,7 @@ export const description =
  * Input schema for the http-post flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   url: Schema.String.annotate({ description: "Absolute http or https URL to post to" }),
@@ -52,10 +52,18 @@ export const Input = Schema.Struct({
 })
 
 /**
+ * Decoded input accepted by the `http-post` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * Output schema for the http-post flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   status: Schema.Number.annotate({ description: "HTTP status code, including error statuses" }),
@@ -65,10 +73,18 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `http-post` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * Static effect envelope for the http-post flow.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "irreversible", mode: "expected", reads: [], writes: [] })
 
@@ -79,7 +95,7 @@ export const effects = envelope({ tier: "irreversible", mode: "expected", reads:
  * a post has nothing left to narrow.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (_input: typeof Input.Type) => effects
 
@@ -87,7 +103,7 @@ export const effectsFor = (_input: typeof Input.Type) => effects
  * Capabilities required by the http-post flow.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("net:post", "*")]
 
@@ -95,7 +111,7 @@ export const capabilities = [capability("net:post", "*")]
  * Declaration-only http-post flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -103,7 +119,7 @@ export const flow = Flow.make({ name, description, input: Input, output: Output,
  * Posts a body through the permission-aware kernel HTTP client.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("HttpPost.run")(function*(
   input: typeof Input.Type

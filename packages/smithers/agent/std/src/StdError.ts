@@ -1,7 +1,7 @@
 /**
  * The single typed error returned by every standard flow handler.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Schema } from "effect"
 
@@ -9,7 +9,7 @@ import { Schema } from "effect"
  * Stable, model-facing failure codes shared by the standard flows.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Code = Schema.Literals([
   "not_found",
@@ -38,7 +38,7 @@ export const Code = Schema.Literals([
  * Stable, model-facing failure codes shared by the standard flows.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Code = typeof Code.Type
 
@@ -50,9 +50,9 @@ export type Code = typeof Code.Type
  * see as failures.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
-export class StdError extends Schema.TaggedError<StdError>()("flows/std/StdError", {
+export class StdError extends Schema.TaggedError<StdError>()("@smthrs/std/StdError", {
   code: Code,
   message: Schema.String,
   path: Schema.optional(Schema.String),

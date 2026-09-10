@@ -14,14 +14,14 @@
  * declaration split across lines — it answers `undefined` rather than guessing,
  * because a wrong window is worse than none.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 /**
  * The definition enclosing a line.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Symbol {
   readonly kind: string
@@ -49,7 +49,7 @@ const blank = (line: string): boolean => line.trim() === ""
  * read plainly.
  *
  * @category navigation
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const enclosing = (lines: ReadonlyArray<string>, line: number): Symbol | undefined => {
   const index = line - 1

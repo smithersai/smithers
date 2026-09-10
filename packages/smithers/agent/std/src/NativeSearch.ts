@@ -1,7 +1,7 @@
 /**
  * The `rg`-process implementation of the ripgrep search contract.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as Path from "@smthrs/kernel/Path"
@@ -25,7 +25,7 @@ import * as StdError from "./StdError.ts"
  * 16 MiB in a typical `rg --files` stream.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_CAPTURE_BYTES = 67_108_864
 
@@ -357,7 +357,7 @@ const glob = (
  * Optional environment declarations overlay the host child-process allowlist.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (
   services: Context.Context<FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner>,
@@ -372,7 +372,7 @@ export const make = (
  * Provides the `rg`-driven peer.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer: Layer.Layer<
   Search.Search,

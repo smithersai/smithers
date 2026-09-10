@@ -43,7 +43,7 @@
  * under the root could match reports why through `notice`, so "unsatisfiable"
  * and "searched and found none" stay distinguishable.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import { Effect, Schema } from "effect"
@@ -57,21 +57,21 @@ import * as StdError from "./StdError.ts"
  * The registry name for glob.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "glob"
 /**
  * The model-facing glob description.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description = "Find files through the Smithers Ripgrep Subset v1 contract."
 /**
  * Input accepted by {@link flow} and {@link run}.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   pattern: Schema.NonEmptyString.annotate({
@@ -90,10 +90,17 @@ export const Input = Schema.Struct({
   })
 })
 /**
+ * Decoded input accepted by the `glob` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+/**
  * Output produced by {@link run}.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   paths: Schema.Array(Schema.String),
@@ -102,17 +109,24 @@ export const Output = Schema.Struct({
   notice: Schema.optional(Schema.String)
 })
 /**
+ * Decoded output returned by the `glob` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+/**
  * Conservative sealed declaration for all workspace files.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "sealed", mode: "hermetic", reads: ["/**"], writes: [] })
 /**
  * Narrows the read declaration to the requested root subtree.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (input: { readonly root?: string | undefined }) =>
   envelope({ tier: "sealed", mode: "hermetic", reads: [rootSubtree(input.root ?? "/")], writes: [] })
@@ -120,14 +134,14 @@ export const effectsFor = (input: { readonly root?: string | undefined }) =>
  * Capability strings requested by glob.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("fs:read", "/**")]
 /**
  * Declaration-only glob flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -135,7 +149,7 @@ export const flow = Flow.make({ name, description, input: Input, output: Output,
  * Runs one `rg --files -g` contract call through the selected peer implementation.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("Glob.run")(function*(
   input: typeof Input.Type

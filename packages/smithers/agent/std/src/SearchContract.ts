@@ -8,7 +8,7 @@
  * shared explanation for the one honest empty answer: a pattern no file under
  * the root could ever match.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type * as Path from "@smthrs/kernel/Path"
 import { Effect } from "effect"
@@ -29,7 +29,7 @@ import type * as StdError from "./StdError.ts"
  * compilation boundary; portable matching never backtracks over input.
  *
  * @category validation
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const validatePattern = (pattern: string, fixedStrings: boolean): StdError.StdError | undefined => {
   if (pattern.length > 4096) return invalidPattern(pattern, "patterns must not exceed 4096 bytes")
@@ -101,7 +101,7 @@ export const validatePattern = (pattern: string, fixedStrings: boolean): StdErro
  * Validates the portable `-g` grammar before either peer sees it.
  *
  * @category validation
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const validateGlob = (glob: string): StdError.StdError | undefined => {
   const pattern = glob.startsWith("!") ? glob.slice(1) : glob
@@ -139,7 +139,7 @@ export const validateGlob = (glob: string): StdError.StdError | undefined => {
  * Compiles a pattern after common validation.
  *
  * @category matching
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const expression = (pattern: string, fixedStrings: boolean, insensitive: boolean): RegExp => {
   const input = fixedStrings ? escapeRegex(pattern) : pattern
@@ -221,7 +221,7 @@ const utf8ByteString = (value: string): string =>
  * canonicalize the same way.
  *
  * @category matching
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const canonicalGlob = (glob: string): string => {
   const excluded = glob.startsWith("!")
@@ -267,7 +267,7 @@ const compileGlob = (pattern: string): ReadonlyArray<CompiledGlob> => {
  * at the root, whether or not it carries the optional leading `/`.
  *
  * @category matching
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const matchesGlob = (pattern: string, relative: string, basename: string): boolean =>
   compileGlob(pattern).some((matcher) => matcher.expression.test(utf8ByteString(matcher.byPath ? relative : basename)))
@@ -276,7 +276,7 @@ export const matchesGlob = (pattern: string, relative: string, basename: string)
  * Applies ripgrep `-g` ordering: positive globs include and `!` globs exclude.
  *
  * @category matching
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const includedByGlobs = (globs: ReadonlyArray<string>, relative: string, basename: string): boolean => {
   const positives = globs.filter((glob) => !glob.startsWith("!"))
@@ -349,7 +349,7 @@ const unsatisfiedReason = (
  * changes nothing.
  *
  * @category diagnostics
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const unsatisfiableNotice = (options: {
   readonly fileSystem: FileSystem.FileSystem

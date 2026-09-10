@@ -7,7 +7,7 @@
  * string, so ChatGPT-family models see exactly the behavior they were
  * posttrained on. Pure module: no host access.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { sourceLines } from "./Text.ts"
 
@@ -28,7 +28,7 @@ const ENVIRONMENT_ID_MARKER = "*** Environment ID:"
  * `invalid patch: {message}` for patch-level failures and
  * `invalid hunk at line {line}, {message}` for hunk-level failures.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export class ParseError extends Error {
@@ -44,7 +44,7 @@ export class ParseError extends Error {
 /**
  * One replaced region of an update hunk.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export interface UpdateFileChunk {
@@ -57,7 +57,7 @@ export interface UpdateFileChunk {
 /**
  * A parsed patch hunk.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export type Hunk =
@@ -73,7 +73,7 @@ export type Hunk =
 /**
  * Parsed patch: hunks plus the optional environment id preamble.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export interface ParsedPatch {
@@ -107,7 +107,7 @@ const unexpectedUpdateLine = (line: string, lineNumber: number): ParseError =>
  * Streaming line state machine for the V4A patch grammar; a faithful port of
  * `StreamingPatchParser`.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export class StreamingPatchParser {
@@ -395,7 +395,7 @@ const checkPatchBoundariesLenient = (originalLines: ReadonlyArray<string>): Read
  * Parse a complete patch text; lenient mode (heredoc unwrapping) is always
  * on, matching Codex.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const parsePatch = (patch: string): ParsedPatch => {
@@ -453,7 +453,7 @@ const normalise = (s: string): string =>
  * then unicode-normalised comparison; end-of-file patterns anchor at the end
  * first.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const seekSequence = (
@@ -490,7 +490,7 @@ export const seekSequence = (
 /**
  * Applier failure carrying the Codex message text verbatim.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export class ComputeReplacementsError extends Error {}
@@ -558,7 +558,7 @@ const applyReplacements = (lines: Array<string>, replacements: ReadonlyArray<Rep
  * Derive the new file contents for an update hunk from the original
  * contents, matching Codex `derive_new_contents_from_chunks`.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const deriveNewContents = (
@@ -577,7 +577,7 @@ export const deriveNewContents = (
  * Render the Codex success summary: `Success. Updated the following files:`
  * with `A`/`M`/`D` lines for adds, updates, and deletes in that order.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @private
  */
 export const printSummary = (affected: {

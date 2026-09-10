@@ -65,7 +65,7 @@
  * and {@link relocate} is re-exported here because the harness reaches the whole
  * feature through this one.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { ChildProcessSpawner } from "@smthrs/kernel/ChildProcessSpawner"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -85,7 +85,7 @@ import * as TestRunner from "./TestRunner.ts"
  * for both.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const baseId = "base"
 
@@ -94,7 +94,7 @@ export const baseId = "base"
  * root and therefore also relative to a container's view of it.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const scratchDirectory = ".flows-checkpoints"
 
@@ -128,7 +128,7 @@ export const scratchDirectory = ".flows-checkpoints"
  * lesson that a store cannot enforce.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const configSection = "flows-checkpoint"
 
@@ -139,9 +139,9 @@ export const configSection = "flows-checkpoint"
  * it; it travels so the journal says which tree a checkpointed call read.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
-export class Snapshot extends Schema.Class<Snapshot>("flows/std/Checkpoints/Snapshot")({
+export class Snapshot extends Schema.Class<Snapshot>("@smthrs/std/Checkpoints/Snapshot")({
   id: Schema.String,
   ref: Schema.String
 }) {}
@@ -162,7 +162,7 @@ export class Snapshot extends Schema.Class<Snapshot>("flows/std/Checkpoints/Snap
  * is the one failure a checkpoint exists to make impossible.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Materialized {
   readonly id: string
@@ -178,7 +178,7 @@ export interface Materialized {
  * The two host operations a checkpoint needs.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Checkpoints {
   /** Records the working tree as it stands, under `id`. */
@@ -201,15 +201,15 @@ export interface Checkpoints {
  * The {@link Checkpoints} service tag.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
-export const Checkpoints: Context.Service<Checkpoints, Checkpoints> = Context.Service("/std/Checkpoints")
+export const Checkpoints: Context.Service<Checkpoints, Checkpoints> = Context.Service("@smthrs/std/Checkpoints")
 
 /**
  * Builds a store from its two operations.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (service: Checkpoints): Checkpoints => Checkpoints.of(service)
 
@@ -217,30 +217,31 @@ export const make = (service: Checkpoints): Checkpoints => Checkpoints.of(servic
  * The refusal a host with nowhere to pin a tree answers with.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
-export const unavailable: StdError.StdError = new StdError.StdError({
-  code: "provider_unavailable",
-  message: "This host pins no trees, so it holds no checkpoints. Take the reading on the live tree instead."
-})
+export const unavailable = (id: string): StdError.StdError =>
+  new StdError.StdError({
+    code: "provider_unavailable",
+    message: `This host pins no trees, so it holds no checkpoint "${id}". Take the reading on the live tree instead.`
+  })
 
 /**
  * Builds a store for a host that pins nothing.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeNoop = (): Checkpoints =>
   make({
-    capture: () => Effect.fail(unavailable),
-    materialize: () => Effect.fail(unavailable)
+    capture: (id) => Effect.fail(unavailable(id)),
+    materialize: (id) => Effect.fail(unavailable(id))
   })
 
 /**
  * Provides {@link makeNoop}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerNoop: Layer.Layer<Checkpoints> = Layer.succeed(Checkpoints, makeNoop())
 
@@ -248,7 +249,7 @@ export const layerNoop: Layer.Layer<Checkpoints> = Layer.succeed(Checkpoints, ma
  * What {@link layerGit} needs to know about the repository it pins.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GitOptions {
   /** The host path of the git repository whose trees are pinned. */
@@ -297,7 +298,7 @@ const git = (
  * bits, so the modes recorded are the image's.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeGit = (
   options: GitOptions
@@ -401,7 +402,7 @@ const gitStore = (options: GitOptions, spawner: ChildProcessSpawner["Service"]):
  * Provides {@link makeGit}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerGit = (options: GitOptions): Layer.Layer<Checkpoints, never, ChildProcessSpawner> =>
   Layer.effect(Checkpoints)(makeGit(options))
@@ -413,6 +414,6 @@ export const layerGit = (options: GitOptions): Layer.Layer<Checkpoints, never, C
  * whole checkpoint feature through this module.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export { relocate, type Relocation } from "./Relocate.ts"

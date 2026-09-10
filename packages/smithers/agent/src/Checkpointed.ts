@@ -133,7 +133,7 @@ export const checkpointed = (
       // A store that cannot hand the tree back is a refusal the cell can act
       // on, not a failed run: the reading it wanted is still available on the
       // live tree, and every other call this cell has paid for survives.
-      Effect.catchTag("flows/std/StdError", (error) =>
+      Effect.catchTag("@smthrs/std/StdError", (error) =>
         Effect.succeed(
           refused(
             "checkpoint_unavailable",

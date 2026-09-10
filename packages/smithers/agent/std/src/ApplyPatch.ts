@@ -6,7 +6,7 @@
  * `*** End Patch`), the fuzzy context-matching applier, and Codex's error
  * and summary text, expressed as a flow over the kernel filesystem.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import * as Path from "@smthrs/kernel/Path"
@@ -22,7 +22,7 @@ import * as StdError from "./StdError.ts"
  * Registry name for the apply_patch flow. Matches the Codex CLI tool name.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "apply_patch"
 
@@ -31,7 +31,7 @@ export const name = "apply_patch"
  * freeform tool description.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "The `apply_patch` tool can be used to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON."
@@ -43,17 +43,25 @@ export const description =
  * a single `input` field, which is the shape cloned here.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   input: Schema.String.annotate({ description: "The entire contents of the apply_patch command" })
 })
 
 /**
+ * Decoded input accepted by the `apply_patch` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * Output schema for the apply_patch flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   output: Schema.String.annotate({
@@ -65,10 +73,18 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `apply_patch` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * Static conservative effect envelope for the apply_patch flow.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "compensable", mode: "hermetic", reads: ["/**"], writes: ["/**"] })
 
@@ -81,7 +97,7 @@ export const effects = envelope({ tier: "compensable", mode: "hermetic", reads: 
  * honest answer.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (_input: typeof Input.Type) => effects
 
@@ -89,7 +105,7 @@ export const effectsFor = (_input: typeof Input.Type) => effects
  * Capabilities required by the apply_patch flow.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("fs:read", "/**"), capability("fs:write", "/**")]
 
@@ -97,7 +113,7 @@ export const capabilities = [capability("fs:read", "/**"), capability("fs:write"
  * Declaration-only apply_patch flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -109,7 +125,7 @@ const decoder = new TextDecoder("utf-8", { fatal: true })
  * filesystem, preserving Codex error text.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("ApplyPatch.run")(function*(
   input: typeof Input.Type

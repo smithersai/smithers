@@ -32,8 +32,8 @@ Seventeen modules declare a flow. Every one of them exports the same names:
 | -------------- | ---------------------------------------- | ---------------------------------------- |
 | `name`         | string literal                           | The registry name.                       |
 | `description`  | string                                   | The one line the model sees.             |
-| `Input`        | `Schema`                                 | The input schema.                        |
-| `Output`       | `Schema`                                 | The output schema.                       |
+| `Input`        | `Schema` and the decoded type            | The input schema.                        |
+| `Output`       | `Schema` and the decoded type            | The output schema.                       |
 | `effects`      | `Effects.Declaration`                    | The declared envelope, before any input. |
 | `effectsFor`   | `(input) => Effects.Declaration`         | The envelope narrowed to one input.      |
 | `capabilities` | `ReadonlyArray<string>`                  | `action:resource` strings.               |
@@ -48,7 +48,7 @@ Some of them export more than the common nine:
 
 | Module         | Additional exports                                                                          |
 | -------------- | ------------------------------------------------------------------------------------------- |
-| `Bash`         | `DEFAULT_TIMEOUT_MS`, and `Input` and `Output` as TypeScript types beside the schemas       |
+| `Bash`         | `DEFAULT_TIMEOUT_MS`                                                                        |
 | `Explore`      | `make(options: { model?: string })`, and no `run`                                           |
 | `Grep`         | `ContextLine`, `Symbol`, `Match` schemas                                                    |
 | `ShellCommand` | `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `DEFAULT_MAX_OUTPUT_TOKENS`, `TIMEOUT_EXIT_CODE` |
@@ -79,10 +79,10 @@ Manifest.readOnly // ["read", "ls", "glob", "grep", "fetch", "explore", "webfetc
 
 The single typed failure every handler uses.
 
-| Export     | Type                                    | Meaning                                                  |
-| ---------- | --------------------------------------- | -------------------------------------------------------- |
-| `Code`     | `Schema.Literals` and the matching type | The closed list of failure codes.                        |
-| `StdError` | `Schema.TaggedError` class              | `{ code, message, path?, method?, rpcError?, stderr? }`, tagged `flows/std/StdError`. |
+| Export     | Type                                    | Meaning                                                                                 |
+| ---------- | --------------------------------------- | --------------------------------------------------------------------------------------- |
+| `Code`     | `Schema.Literals` and the matching type | The closed list of failure codes.                                                       |
+| `StdError` | `Schema.TaggedError` class              | `{ code, message, path?, method?, rpcError?, stderr? }`, tagged `@smthrs/std/StdError`. |
 
 ```ts
 import * as StdError from "@smthrs/std/StdError"
@@ -95,6 +95,10 @@ const failure = new StdError.StdError({
 ```
 
 The codes are listed in the [Flow reference](./reference/flows.md#failures).
+
+Every service key, error tag, and class identifier in this package is
+`@smthrs/std/<Name>`, so `Effect.catchTag("@smthrs/std/StdError", ...)` catches
+every handler failure.
 
 ## Probe
 
@@ -156,11 +160,11 @@ binary and is browser-safe.
 
 The peer that drives the `rg` executable through the permission-aware spawner.
 
-| Export              | Type                                                                              | Meaning                                                            |
-| ------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `MAX_CAPTURE_BYTES` | `67_108_864`                                                                      | Bytes captured from either `rg` stream before the call is refused. |
+| Export              | Type                                                                                                                              | Meaning                                                            |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `MAX_CAPTURE_BYTES` | `67_108_864`                                                                                                                      | Bytes captured from either `rg` stream before the call is refused. |
 | `make`              | `(services: Context<FileSystem \| Path \| ChildProcessSpawner>, environment?: Readonly<Record<string, string>>) => Search.Search` |                                                                    |
-| `layer`             | `Layer<Search.Search, never, FileSystem \| Path \| ChildProcessSpawner>`          |                                                                    |
+| `layer`             | `Layer<Search.Search, never, FileSystem \| Path \| ChildProcessSpawner>`                                                          |                                                                    |
 
 An overflow is `command_failed` rather than a truncation, because a partial
 ripgrep stream could make this peer disagree with the portable one. A failure to
@@ -203,17 +207,17 @@ The host's route into a named container, as an injected transport. Nothing here
 spawns: it only decides an argv, which `bash` then spawns through the same
 permission-aware spawner as everything else.
 
-| Export         | Type                                                   | Meaning                                                   |
-| -------------- | ------------------------------------------------------ | --------------------------------------------------------- |
-| `Container`    | interface and `Context.Service` tag                    | `{ exec: (request: Request) => Effect<Plan, StdError> }`. |
-| `Request`      | interface                                              | `container`, `file`, `args`, `cwd?`, `env?`, `stdin`.     |
-| `Plan`         | interface                                              | `file`, `args`, `env?`: argv and environment overrides for the host spawn.                 |
-| `make`         | `(service: Container) => Container`                    |                                                           |
-| `unavailable`  | `(container: string) => StdError`                      | The refusal a host with no route answers with.            |
-| `makeNoop`     | `() => Container`                                      | Fails every request with `unavailable`.                   |
-| `layerNoop`    | `Layer<Container>`                                     |                                                           |
-| `makeCommand`  | `(options?: { program?: string }) => Container`        | A `docker exec` compatible CLI. Defaults to `docker`.     |
-| `layerCommand` | `(options?: { program?: string }) => Layer<Container>` |                                                           |
+| Export         | Type                                                   | Meaning                                                                    |
+| -------------- | ------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `Container`    | interface and `Context.Service` tag                    | `{ exec: (request: Request) => Effect<Plan, StdError> }`.                  |
+| `Request`      | interface                                              | `container`, `file`, `args`, `cwd?`, `env?`, `stdin`.                      |
+| `Plan`         | interface                                              | `file`, `args`, `env?`: argv and environment overrides for the host spawn. |
+| `make`         | `(service: Container) => Container`                    |                                                                            |
+| `unavailable`  | `(container: string) => StdError`                      | The refusal a host with no route answers with.                             |
+| `makeNoop`     | `() => Container`                                      | Fails every request with `unavailable`.                                    |
+| `layerNoop`    | `Layer<Container>`                                     |                                                                            |
+| `makeCommand`  | `(options?: { program?: string }) => Container`        | A `docker exec` compatible CLI. Defaults to `docker`.                      |
+| `layerCommand` | `(options?: { program?: string }) => Layer<Container>` |                                                                            |
 
 `makeCommand` attaches `-i` only when the payload arrives on standard input,
 because a container CLI holding stdin open for a command that never reads it
@@ -240,23 +244,23 @@ How the project under test runs its suite, declared once by the host.
 
 Pinned trees, and the scratch checkouts a call runs against.
 
-| Export             | Type                                                                       | Meaning                                                        |
-| ------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `Checkpoints`      | interface and `Context.Service` tag                                        | `{ capture, materialize }`.                                    |
-| `Snapshot`         | `Schema.Class`                                                             | `{ id, ref }`, identified as `flows/std/Checkpoints/Snapshot`. |
-| `Materialized`     | interface                                                                  | `id`, `host`, `guest`, `root`, `guestRoot`.                    |
-| `baseId`           | `"base"`                                                                   | The id naming the tree the run opened on.                      |
-| `scratchDirectory` | `".flows-checkpoints"`                                                     | Where a checkpoint is materialized, relative to the root.      |
-| `configSection`    | `"flows-checkpoint"`                                                       | The git-config section minted checkpoints are recorded under.  |
-| `make`             | `(service: Checkpoints) => Checkpoints`                                    |                                                                |
-| `unavailable`      | `StdError`                                                                 | The refusal a host that pins nothing answers with.             |
-| `makeNoop`         | `() => Checkpoints`                                                        |                                                                |
-| `layerNoop`        | `Layer<Checkpoints>`                                                       |                                                                |
-| `GitOptions`       | interface                                                                  | `root`, `cwd?`, `baseRef?`.                                    |
-| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>` |                                                                |
-| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`  |                                                                |
-| `Relocation`       | tagged union                                                               | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`. |
-| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`    | Rewrites one call's input onto a checkpoint.                   |
+| Export             | Type                                                                       | Meaning                                                          |
+| ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `Checkpoints`      | interface and `Context.Service` tag                                        | `{ capture, materialize }`.                                      |
+| `Snapshot`         | `Schema.Class`                                                             | `{ id, ref }`, identified as `@smthrs/std/Checkpoints/Snapshot`. |
+| `Materialized`     | interface                                                                  | `id`, `host`, `guest`, `root`, `guestRoot`.                      |
+| `baseId`           | `"base"`                                                                   | The id naming the tree the run opened on.                        |
+| `scratchDirectory` | `".flows-checkpoints"`                                                     | Where a checkpoint is materialized, relative to the root.        |
+| `configSection`    | `"flows-checkpoint"`                                                       | The git-config section minted checkpoints are recorded under.    |
+| `make`             | `(service: Checkpoints) => Checkpoints`                                    |                                                                  |
+| `unavailable`      | `(id: string) => StdError`                                                 | The refusal a host that pins nothing answers with.               |
+| `makeNoop`         | `() => Checkpoints`                                                        | Fails both calls with `unavailable`.                             |
+| `layerNoop`        | `Layer<Checkpoints>`                                                       |                                                                  |
+| `GitOptions`       | interface                                                                  | `root`, `cwd?`, `baseRef?`.                                      |
+| `makeGit`          | `(options: GitOptions) => Effect<Checkpoints, never, ChildProcessSpawner>` |                                                                  |
+| `layerGit`         | `(options: GitOptions) => Layer<Checkpoints, never, ChildProcessSpawner>`  |                                                                  |
+| `Relocation`       | tagged union                                                               | `Relocated`, `UnsupportedFlow`, `AbsolutePath`, `OutsideTree`.   |
+| `relocate`         | `(flow: string, input: Json, materialized: Materialized) => Relocation`    | Rewrites one call's input onto a checkpoint.                     |
 
 `capture(id)` returns a `Snapshot`. `materialize(id, use)` is scoped: it hands
 the tree to `use` and removes the checkout however that effect ends.

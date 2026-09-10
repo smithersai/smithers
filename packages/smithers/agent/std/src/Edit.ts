@@ -15,7 +15,7 @@
  *    with its line range, so a mis-indented edit costs one glance instead of an
  *    investigation (sphinx-7233 lost its verdict to a hunk nobody could see).
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import * as Effect from "effect/Effect"
@@ -31,7 +31,7 @@ import * as StdError from "./StdError.ts"
  * Registry name for the edit flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "edit"
 
@@ -39,7 +39,7 @@ export const name = "edit"
  * Model-facing description of the edit flow.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "Edit a file by exact text (oldString, unique unless replaceAll) or by an earlier hit's line range (startLine/endLine, optional expect). A miss returns the file's real text; a hit returns the hunk."
@@ -48,7 +48,7 @@ export const description =
  * Input schema for the edit flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   path: Schema.String.annotate({ description: "Path of the file to edit" }),
@@ -69,10 +69,18 @@ export const Input = Schema.Struct({
 })
 
 /**
+ * Decoded input accepted by the `edit` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * Output schema for the edit flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   path: Schema.String.annotate({ description: "Path that was edited" }),
@@ -85,10 +93,18 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `edit` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * Static conservative effect envelope for the edit flow.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "compensable", mode: "hermetic", reads: ["/**"], writes: ["/**"] })
 
@@ -96,7 +112,7 @@ export const effects = envelope({ tier: "compensable", mode: "hermetic", reads: 
  * Narrows the edit effect envelope to one input path.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (input: typeof Input.Type) =>
   envelope({ tier: "compensable", mode: "hermetic", reads: [input.path], writes: [input.path] })
@@ -105,7 +121,7 @@ export const effectsFor = (input: typeof Input.Type) =>
  * Capabilities required by the edit flow.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("fs:read", "/**"), capability("fs:write", "/**")]
 
@@ -113,7 +129,7 @@ export const capabilities = [capability("fs:read", "/**"), capability("fs:write"
  * Declaration-only edit flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -171,7 +187,7 @@ const lineSpan = (
  * occurrence sits on so the caller can widen the anchor without re-reading.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("Edit.run")(function*(
   input: typeof Input.Type

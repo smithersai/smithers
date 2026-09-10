@@ -22,7 +22,7 @@
  * has `against: "base"` for exactly this question and would otherwise have two
  * mechanisms that can disagree.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type { Schema } from "effect"
 import type { Materialized } from "./Checkpoints.ts"
@@ -55,7 +55,7 @@ const located: Readonly<Record<string, { readonly field: string; readonly kind: 
  * Why one input could not be pointed at a checkpoint.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Relocation =
   | { readonly _tag: "Relocated"; readonly input: Schema.Json }
@@ -128,7 +128,7 @@ const within = (root: string, declared: string): string | undefined => {
  * taken to avoid.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const relocate = (
   flow: string,

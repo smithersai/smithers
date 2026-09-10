@@ -1,8 +1,12 @@
 /**
- * Governing plan:
- * `docs/specs/Research/Agent Ecosystem Plan 2026-07-28.md`.
+ * The code-intelligence seam behind the `lsp` flow.
  *
- * @since 0.1.0
+ * A host binds {@link LanguageServer} to a client such as
+ * `NodeLanguageServer.layer`. Every method answers one language-server request
+ * with the server's own result; {@link layerNoop} answers every request with
+ * `unsupported`, for a host that runs no server.
+ *
+ * @since 1.0.0
  */
 import { Context, Effect, Layer } from "effect"
 import * as StdError from "./StdError.ts"
@@ -11,7 +15,7 @@ import * as StdError from "./StdError.ts"
  * A point in a file, addressed the way a language server addresses it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Position {
   readonly path: string
@@ -23,7 +27,7 @@ export interface Position {
  * request and reports an unavailable server as a typed failure.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface LanguageServer {
   readonly hover: (position: Position) => Effect.Effect<unknown, StdError.StdError>
@@ -41,16 +45,16 @@ export interface LanguageServer {
  * The {@link LanguageServer} service tag.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const LanguageServer: Context.Service<LanguageServer, LanguageServer> = Context.Service(
-  "/std/LanguageServer"
+  "@smthrs/std/LanguageServer"
 )
 /**
  * Builds a {@link LanguageServer} from an implementation of its methods.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (service: LanguageServer): LanguageServer => LanguageServer.of(service)
 const unsupported = (): Effect.Effect<never, StdError.StdError> =>
@@ -60,7 +64,7 @@ const unsupported = (): Effect.Effect<never, StdError.StdError> =>
  * for an environment with no server configured.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeNoop = (): LanguageServer =>
   make({
@@ -79,6 +83,6 @@ export const makeNoop = (): LanguageServer =>
  * Provides {@link makeNoop}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerNoop: Layer.Layer<LanguageServer> = Layer.succeed(LanguageServer, makeNoop())

@@ -12,6 +12,7 @@ import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildPr
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Checkpoints from "../src/Checkpoints.ts"
+import * as Container from "../src/Container.ts"
 import * as Relocate from "../src/Relocate.ts"
 
 interface Response {
@@ -382,6 +383,14 @@ describe("Checkpoints.makeNoop", () => {
 
     expect(failureOf(captured)?.code).toBe("provider_unavailable")
     expect(failureOf(held)?.message).toContain("Take the reading on the live tree instead")
+  })
+
+  it("names the checkpoint it was asked for, as Container.unavailable names the container", () => {
+    const refusal = Checkpoints.unavailable("cp-0-3")
+
+    expect(refusal.code).toBe("provider_unavailable")
+    expect(refusal.message).toContain(`"cp-0-3"`)
+    expect(Container.unavailable("box").message).toContain(`"box"`)
   })
 
   it("is provided as a layer, for a host with no version control at all", async () => {

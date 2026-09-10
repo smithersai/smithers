@@ -1,8 +1,11 @@
 /**
- * Governing plan:
- * `docs/specs/Research/Agent Ecosystem Plan 2026-07-28.md`.
+ * The `lsp` flow: one code-intelligence query per call.
  *
- * @since 0.1.0
+ * The handler checks the path and 1-based position each operation needs,
+ * forwards the query to the bound `LanguageServer`, and returns the server's
+ * answer unchanged in `result`.
+ *
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import * as Effect from "effect/Effect"
@@ -15,21 +18,21 @@ import * as StdError from "./StdError.ts"
  * The registry name of the `lsp` flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "lsp"
 /**
  * The one-line description the model sees for the `lsp` flow.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description = "Inspect code intelligence through the configured language server."
 /**
  * What the `lsp` flow accepts.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   operation: Schema.Literals([
@@ -61,10 +64,17 @@ export const Input = Schema.Struct({
   })
 })
 /**
+ * Decoded input accepted by the `lsp` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+/**
  * What the `lsp` flow returns.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   result: Schema.Unknown.annotate({
@@ -72,10 +82,17 @@ export const Output = Schema.Struct({
   })
 })
 /**
+ * Decoded output returned by the `lsp` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+/**
  * The declared effect envelope of the `lsp` flow, before any input is known.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({
   tier: "sealed",
@@ -87,14 +104,14 @@ export const effects = envelope({
  * Returns the workspace-wide envelope every language-server query needs.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (_input: typeof Input.Type) => effects
 /**
  * The authority the `lsp` flow requires.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("fs:read", "/**")]
 /**
@@ -102,7 +119,7 @@ export const capabilities = [capability("fs:read", "/**")]
  * implementation attached separately.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({
   name,
@@ -117,7 +134,7 @@ const isAbsolutePath = (path: string): boolean => path.startsWith("/") || /^[A-Z
  * Runs the `lsp` flow: queries the configured language server.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("Lsp.run")(function*(
   input: typeof Input.Type

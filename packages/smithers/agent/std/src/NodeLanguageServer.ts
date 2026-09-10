@@ -6,10 +6,7 @@
  * through `@smthrs/kernel`'s `ChildProcessSpawner`; a terminal is never
  * involved.
  *
- * Governing plan:
- * `docs/specs/Research/Agent Ecosystem Plan 2026-07-28.md`.
- *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
@@ -27,7 +24,7 @@ import * as StdError from "./StdError.ts"
  * unbounded queue or a new hang.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_QUEUED_FRAMES = 256
 
@@ -39,7 +36,7 @@ export const MAX_QUEUED_FRAMES = 256
  * requests without limit.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_PENDING_REQUESTS = 512
 
@@ -50,7 +47,7 @@ export const MAX_PENDING_REQUESTS = 512
  * at most 8 MiB.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Config {
   readonly command: string
@@ -289,7 +286,7 @@ const firstCallHierarchyItem = (value: unknown): unknown | undefined => Array.is
  * Constructs one scoped host language-server client.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (
   config: Config
@@ -537,7 +534,7 @@ export const make = (
  * Provides a scoped host language-server implementation.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = (
   config: Config

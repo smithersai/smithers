@@ -21,7 +21,7 @@
  * and `bash` spawns it through the same permission-aware spawner as everything
  * else.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Context, Effect, Layer } from "effect"
 import * as StdError from "./StdError.ts"
@@ -30,7 +30,7 @@ import * as StdError from "./StdError.ts"
  * One command to run inside a container.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Request {
   readonly container: string
@@ -46,7 +46,7 @@ export interface Request {
  * The argv the host spawns to satisfy a {@link Request}.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Plan {
   readonly file: string
@@ -59,7 +59,7 @@ export interface Plan {
  * The one container transport contract.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Container {
   readonly exec: (request: Request) => Effect.Effect<Plan, StdError.StdError>
@@ -69,15 +69,15 @@ export interface Container {
  * The {@link Container} service tag.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
-export const Container: Context.Service<Container, Container> = Context.Service("/std/Container")
+export const Container: Context.Service<Container, Container> = Context.Service("@smthrs/std/Container")
 
 /**
  * Builds a container transport from its one operation.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (service: Container): Container => Container.of(service)
 
@@ -85,7 +85,7 @@ export const make = (service: Container): Container => Container.of(service)
  * The refusal a host with no container route answers with.
  *
  * @category errors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const unavailable = (container: string): StdError.StdError =>
   new StdError.StdError({
@@ -98,7 +98,7 @@ export const unavailable = (container: string): StdError.StdError =>
  * Builds the transport for a host with no container route.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeNoop = (): Container => make({ exec: (request) => Effect.fail(unavailable(request.container)) })
 
@@ -106,7 +106,7 @@ export const makeNoop = (): Container => make({ exec: (request) => Effect.fail(u
  * Provides {@link makeNoop}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerNoop: Layer.Layer<Container> = Layer.succeed(Container, makeNoop())
 
@@ -122,7 +122,7 @@ export const layerNoop: Layer.Layer<Container> = Layer.succeed(Container, makeNo
  * process so Docker or Podman can forward them into the container.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeCommand = (options?: { readonly program?: string | undefined }): Container => {
   const program = options?.program ?? "docker"
@@ -157,7 +157,7 @@ export const makeCommand = (options?: { readonly program?: string | undefined })
  * Provides {@link makeCommand}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerCommand = (options?: { readonly program?: string | undefined }): Layer.Layer<Container> =>
   Layer.succeed(Container, makeCommand(options))

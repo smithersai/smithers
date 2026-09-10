@@ -2,7 +2,7 @@
  * Thompson matching for the validated ASCII search grammar. Each state is
  * visited once per input position; alternatives never backtrack over input.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 type Term =
   | { readonly kind: "atom"; readonly source: string }
@@ -22,7 +22,7 @@ type State =
  * and interruption even for long lines and expensive linear matches.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const compile = (
   pattern: string,

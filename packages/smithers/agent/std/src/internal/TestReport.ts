@@ -17,14 +17,14 @@
  * the outcomes they contain with `parsed: false`. A wrong failure set is worse
  * than no failure set, because attribution is built on it.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 /**
  * One run's outcome as this module could read it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Report {
   readonly passed: number
@@ -144,7 +144,7 @@ const tap = (text: string): Report | undefined => {
  * Reads one run's report, or says plainly that it could not.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const parse = (text: string): Report => {
   // unittest first: its two signals — a `Ran N tests` tally and `FAIL:`/`ERROR:`
@@ -161,7 +161,7 @@ export const parse = (text: string): Report => {
  * How two runs of the same command differ, which is the whole of attribution.
  *
  * @category parsing
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const attribute = (
   current: Report,

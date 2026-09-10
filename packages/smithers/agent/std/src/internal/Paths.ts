@@ -1,7 +1,7 @@
 /**
  * Path containment checks against a declared effect envelope.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Effects from "@smthrs/core/Effects"
 
@@ -19,7 +19,7 @@ const hasDotSegment = (path: string): boolean => path.split("/").some((segment) 
  * and everything matched by the prefix-glob subset `/core` supports.
  *
  * @category predicates
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const withinEnvelope = (declared: ReadonlyArray<string>, path: string): boolean => {
   const candidate = normalize(path)
@@ -36,6 +36,6 @@ export const withinEnvelope = (declared: ReadonlyArray<string>, path: string): b
  * A path without its trailing slashes, so a root compares and joins as one name.
  *
  * @category conversions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const withoutTrailingSlash = (path: string): string => path.replace(/\/+$/, "")

@@ -15,7 +15,7 @@
  * blaming your own edit, run the same command on the unmodified tree") is only
  * cheap when the tool can do it.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import type * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
@@ -36,7 +36,7 @@ import * as TestRunner from "./TestRunner.ts"
  * Registry name for the test flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "test"
 
@@ -44,7 +44,7 @@ export const name = "test"
  * Model-facing description of the test flow.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "Run this repository's declared test runner and get {passed, failed[ids]}, not raw output. against:'base' also runs it on the pristine base commit, so a pre-existing failure is named, not investigated."
@@ -54,7 +54,7 @@ export const description =
  * repository root, and therefore also relative to the runner's own directory.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const scratchDirectory = ".flows-test-base"
 
@@ -62,7 +62,7 @@ export const scratchDirectory = ".flows-test-base"
  * Default wall-clock budget for one test run.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const DEFAULT_TIMEOUT_MS = 600_000
 
@@ -70,7 +70,7 @@ export const DEFAULT_TIMEOUT_MS = 600_000
  * Maximum bytes retained from each stream while a test run executes.
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_CAPTURE_BYTES = 8_000_000
 
@@ -78,7 +78,7 @@ export const MAX_CAPTURE_BYTES = 8_000_000
  * Input schema for the test flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   selection: Schema.optional(Schema.Array(Schema.String)).annotate({
@@ -92,10 +92,18 @@ export const Input = Schema.Struct({
 })
 
 /**
+ * Decoded input accepted by the `test` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * One run's outcome.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Outcome = Schema.Struct({
   command: Schema.String.annotate({
@@ -123,7 +131,7 @@ export const Outcome = Schema.Struct({
  * Output schema for the test flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   ...Outcome.fields,
@@ -144,10 +152,18 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `test` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * Static conservative effect envelope for the test flow.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "irreversible", mode: "expected", reads: [], writes: [] })
 
@@ -155,7 +171,7 @@ export const effects = envelope({ tier: "irreversible", mode: "expected", reads:
  * Narrows the effect envelope for a decoded invocation.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (_input: typeof Input.Type) => effects
 
@@ -163,7 +179,7 @@ export const effectsFor = (_input: typeof Input.Type) => effects
  * Capabilities required by the test flow.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("proc:spawn", "*")]
 
@@ -171,7 +187,7 @@ export const capabilities = [capability("proc:spawn", "*")]
  * Declaration-only test flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -268,7 +284,7 @@ const execute = (
  * the same way. It is removed when the call ends, however it ends.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("TestRun.run")(function*(
   input: typeof Input.Type

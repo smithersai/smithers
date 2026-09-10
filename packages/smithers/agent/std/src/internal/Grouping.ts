@@ -12,7 +12,7 @@
  * in-process implementations cannot drift on what a limit means or on which
  * match owns a shared context line.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type * as Search from "../Search.ts"
 import * as Symbols from "./Symbols.ts"
@@ -28,7 +28,7 @@ import * as Text from "./Text.ts"
  * file ending in a newline. One definition cannot drift from itself.
  *
  * @category search
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const sourceLines: (content: string) => ReadonlyArray<string> = Text.sourceLines
 
@@ -50,7 +50,7 @@ const owner = (matches: ReadonlyArray<number>, line: number): number => {
  * Groups a peer's flat rows into matches, each carrying its own context.
  *
  * @category search
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const group = (
   lines: ReadonlyArray<Search.GrepLine>
@@ -92,7 +92,7 @@ export const group = (
  * than by what the search covered.
  *
  * @category search
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const annotate = (
   matches: ReadonlyArray<Search.GrepMatch>,

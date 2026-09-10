@@ -1,7 +1,7 @@
 /**
  * Detached checkouts shared by checkpoint reads and baseline test runs.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type { ChildProcessSpawner } from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect, Semaphore } from "effect"
@@ -105,6 +105,6 @@ const withDetachedWorktree = <A, E, R>(
  * Internal Git operations used by both checkpoint and baseline leases.
  *
  * @category utilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const GitWorktree = { resolveCommit, withDetachedWorktree }

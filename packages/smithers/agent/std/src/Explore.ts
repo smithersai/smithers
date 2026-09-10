@@ -1,7 +1,7 @@
 /**
  * Read-only workspace reconnaissance as a dynamic flow.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Flow } from "@smthrs/core"
 import * as Schema from "effect/Schema"
@@ -15,7 +15,7 @@ import * as Read from "./Read.ts"
  * Registry name for the explore flow.
  *
  * @category metadata
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "explore" as const
 
@@ -23,7 +23,7 @@ export const name = "explore" as const
  * Model-facing description of the explore flow.
  *
  * @category metadata
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "Investigate the workspace read-only, cite every finding as file:line, report evidence only, and never propose edits."
@@ -32,7 +32,7 @@ export const description =
  * Input accepted by the explore flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   prompt: Schema.String.annotate({
@@ -41,10 +41,18 @@ export const Input = Schema.Struct({
 })
 
 /**
+ * Decoded input accepted by the `explore` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * Output returned by the explore flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   findings: Schema.String.annotate({
@@ -53,10 +61,18 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `explore` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * Static effect envelope for read-only workspace reconnaissance.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({
   tier: "sealed",
@@ -69,7 +85,7 @@ export const effects = envelope({
  * Narrows the explore effect declaration for one decoded input.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (_input: typeof Input.Type) => effects
 
@@ -86,7 +102,7 @@ const flows = Object.freeze(
  * Transitive capabilities of the read-only flows available to explore.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities: ReadonlyArray<string> = Object.freeze(
   [...new Set(flows.flatMap((flow) => flow.capabilities))].sort()
@@ -98,7 +114,7 @@ export const capabilities: ReadonlyArray<string> = Object.freeze(
  * Model selection remains optional so the invoking seat can inject its model.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (options: {
   readonly model?: string | undefined
@@ -119,6 +135,6 @@ export const make = (options: {
  * Default explore declaration with seat-selected model injection.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = make({})

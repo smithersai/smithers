@@ -1,7 +1,7 @@
 /**
  * Write flow declaration and portable handler.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import * as Path from "@smthrs/kernel/Path"
@@ -16,7 +16,7 @@ import * as StdError from "./StdError.ts"
  * Registry name for the write flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "write"
 
@@ -24,7 +24,7 @@ export const name = "write"
  * Model-facing description of the write flow.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description =
   "Write UTF-8 text to a path, replacing any existing file; parent directories are created. Prefer edit for targeted changes."
@@ -33,7 +33,7 @@ export const description =
  * Input schema for the write flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   path: Schema.String.annotate({ description: "Path of the file to write" }),
@@ -41,10 +41,18 @@ export const Input = Schema.Struct({
 })
 
 /**
+ * Decoded input accepted by the `write` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+
+/**
  * Output schema for the write flow.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   path: Schema.String.annotate({ description: "Path that was written" }),
@@ -53,10 +61,18 @@ export const Output = Schema.Struct({
 })
 
 /**
+ * Decoded output returned by the `write` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+
+/**
  * Static conservative effect envelope for the write flow.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "compensable", mode: "hermetic", reads: [], writes: ["/**"] })
 
@@ -64,7 +80,7 @@ export const effects = envelope({ tier: "compensable", mode: "hermetic", reads: 
  * Narrows the write effect envelope to one input path.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (input: typeof Input.Type) =>
   envelope({ tier: "compensable", mode: "hermetic", reads: [], writes: [input.path] })
@@ -73,7 +89,7 @@ export const effectsFor = (input: typeof Input.Type) =>
  * Capabilities required by the write flow.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("fs:write", "/**")]
 
@@ -81,7 +97,7 @@ export const capabilities = [capability("fs:write", "/**")]
  * Declaration-only write flow.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -92,7 +108,7 @@ const writeError = (path: string, message: string): StdError.StdError =>
  * Replaces a file's contents through the permission-aware kernel filesystem.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("Write.run")(function*(
   input: typeof Input.Type

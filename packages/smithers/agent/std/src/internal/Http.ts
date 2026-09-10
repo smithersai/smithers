@@ -1,7 +1,7 @@
 /**
  * Shared HTTP response limits, error mapping, and request deadlines.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -12,7 +12,7 @@ import * as StdError from "../StdError.ts"
  * Maximum captured response bytes before decoding.
  *
  * @category http
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 
@@ -25,7 +25,7 @@ interface BodyState {
  * Reads a response up to the shared byte limit and finalizes the stream on failure.
  *
  * @category http
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const readBounded = <E, R>(
   stream: Stream.Stream<Uint8Array, E, R>,
@@ -65,7 +65,7 @@ export const readBounded = <E, R>(
  * Maps transport failures while preserving standard HTTP failure codes.
  *
  * @category http
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const requestError = (url: string, error: unknown): StdError.StdError =>
   error instanceof StdError.StdError ? error : new StdError.StdError({
@@ -77,7 +77,7 @@ export const requestError = (url: string, error: unknown): StdError.StdError =>
  * Looks up a response header without depending on transport normalization.
  *
  * @category http
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const header = (headers: Readonly<Record<string, string | undefined>>, name: string): string | undefined => {
   const lower = name.toLowerCase()
@@ -88,7 +88,7 @@ export const header = (headers: Readonly<Record<string, string | undefined>>, na
  * Seconds; the runtime caps valid overrides at 120.
  *
  * @category http
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Timeout = Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))
 
@@ -98,7 +98,7 @@ export const Timeout = Schema.Number.check(Schema.isFinite(), Schema.isGreaterTh
  * finalizes the body reader before returning the timeout failure.
  *
  * @category http
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const withDeadline = <A, E, R>(
   effect: Effect.Effect<A, E, R>,

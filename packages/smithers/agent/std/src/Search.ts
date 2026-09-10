@@ -6,7 +6,7 @@
  * Callers select an implementation by Layer and cannot observe which one was
  * selected from the result.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Context, Effect, Layer } from "effect"
 import * as StdError from "./StdError.ts"
@@ -15,7 +15,7 @@ import * as StdError from "./StdError.ts"
  * Normalized grep input shared by both implementations.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GrepInput {
   readonly pattern: string
@@ -37,7 +37,7 @@ export interface GrepInput {
  * One matching or context line, as a peer produces it before grouping.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GrepLine {
   readonly file: string
@@ -50,7 +50,7 @@ export interface GrepLine {
  * One context line carried inside the match it belongs to.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface ContextLine {
   readonly line: number
@@ -61,7 +61,7 @@ export interface ContextLine {
  * The definition enclosing a hit, when the file's shape says so plainly.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Symbol {
   readonly kind: string
@@ -75,7 +75,7 @@ export interface Symbol {
  * definition it sits in.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GrepMatch {
   readonly file: string
@@ -90,7 +90,7 @@ export interface GrepMatch {
  * Normalized grep output.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GrepOutput {
   readonly matches: ReadonlyArray<GrepMatch>
@@ -105,7 +105,7 @@ export interface GrepOutput {
  * Normalized glob input.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GlobInput {
   readonly pattern: string
@@ -118,7 +118,7 @@ export interface GlobInput {
  * Normalized glob output.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface GlobOutput {
   readonly paths: ReadonlyArray<string>
@@ -131,7 +131,7 @@ export interface GlobOutput {
  * The one search contract implemented by native and portable peers.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Search {
   readonly grep: (input: GrepInput) => Effect.Effect<GrepOutput, StdError.StdError>
@@ -142,15 +142,15 @@ export interface Search {
  * The {@link Search} service tag.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
-export const Search: Context.Service<Search, Search> = Context.Service("/std/Search")
+export const Search: Context.Service<Search, Search> = Context.Service("@smthrs/std/Search")
 
 /**
  * Builds a search service from its two operations.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (service: Search): Search => Search.of(service)
 
@@ -158,7 +158,7 @@ export const make = (service: Search): Search => Search.of(service)
  * Builds an unavailable search service for compositions that deliberately omit search.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeNoop = (): Search => {
   const unavailable = () =>
@@ -175,6 +175,6 @@ export const makeNoop = (): Search => {
  * Provides {@link makeNoop}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerNoop: Layer.Layer<Search> = Layer.succeed(Search, makeNoop())

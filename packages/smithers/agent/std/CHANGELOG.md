@@ -2,7 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Every flow module now exports `Input` and `Output` as the decoded TypeScript types beside the schemas. Only `Bash` did, so every other caller wrote `typeof Read.Input.Type`.
+
 ### Changed
+
+- **Breaking.** Every service key, error tag, and class identifier now carries the package name: `@smthrs/std/<Name>`. `StdError` was tagged `flows/std/StdError`, `Checkpoints.Snapshot` was identified as `flows/std/Checkpoints/Snapshot`, and the `Search`, `Container`, `Checkpoints`, `TestRunner`, `WebSearch`, and `LanguageServer` keys were `/std/<Name>`. An `Effect.catchTag` on the old tag no longer matches; catch `"@smthrs/std/StdError"`.
+- **Breaking.** `Checkpoints.unavailable` is now `(id: string) => StdError` and names the checkpoint it was asked for, the same shape as `Container.unavailable`. It was a shared `StdError` value.
+- The `LanguageServer`, `Lsp`, `NodeLanguageServer`, `WebFetch`, `WebSearch`, and `ExaWebSearch` module headers describe the module instead of citing a plan file that does not exist, the barrel header names `@smthrs/std`, and every `@since` stamp reads `1.0.0` instead of the never-released `0.1.0`.
 
 - `grep` and `glob` now declare `noIgnore` as the literal `true` rather than a boolean. Ignore files are never consulted in v1, so `noIgnore: false` was accepted by the schema and then refused at runtime; the schema now states what it accepts. A caller reaching `run` without decoding still gets the same `invalid_input` refusal.
 

@@ -13,7 +13,7 @@
  * security history: three independent bypasses, each sufficient on its own to
  * defeat it, are closed here.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import type * as Path from "@smthrs/kernel/Path"
 import * as StdError from "../StdError.ts"
@@ -27,7 +27,7 @@ import { withinEnvelope } from "./Paths.ts"
  * make the flow and its pre-check import each other.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Envelope {
   readonly cwd?: string | undefined
@@ -39,7 +39,7 @@ export interface Envelope {
  * How a command touches a path it names.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export type Access = "read" | "write"
 
@@ -47,7 +47,7 @@ export type Access = "read" | "write"
  * One path a command names, and how it touches it.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface PathReference {
   readonly access: Access
@@ -144,7 +144,7 @@ const segmentReferences = (path: Path.Path, tokens: ReadonlyArray<string>): Read
  * Every path token the shell text names, one segment at a time.
  *
  * @category pre-check
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const commandReferences = (path: Path.Path, command: string): ReadonlyArray<PathReference> => {
   const references: Array<PathReference> = []
@@ -183,7 +183,7 @@ const isDeclared = (
  * envelope, or `undefined` when every path it names is declared.
  *
  * @category pre-check
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const outsideEnvelope = (
   input: Envelope,

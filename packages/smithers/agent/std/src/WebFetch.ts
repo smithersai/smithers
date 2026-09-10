@@ -1,8 +1,11 @@
 /**
- * Governing plan:
- * `docs/specs/Research/Agent Ecosystem Plan 2026-07-28.md`.
+ * The `webfetch` flow: an HTTP GET rendered as text, Markdown, or HTML.
  *
- * @since 0.1.0
+ * The handler fetches through the permission-checked `HttpClient`, follows at
+ * most ten redirects, refuses a body over 5 MiB, and returns the final URL,
+ * status, and content type beside the rendered body.
+ *
+ * @since 1.0.0
  */
 import * as Flow from "@smthrs/core/Flow"
 import * as HttpClient from "@smthrs/kernel/HttpClient"
@@ -20,21 +23,21 @@ const maxRedirects = 10
  * The registry name of the `webfetch` flow.
  *
  * @category identifiers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const name = "webfetch"
 /**
  * The one-line description the model sees for the `webfetch` flow.
  *
  * @category descriptions
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const description = "Fetch an HTTP URL and render its content as text, Markdown, or HTML."
 /**
  * What the `webfetch` flow accepts.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Input = Schema.Struct({
   url: Schema.String.annotate({ description: "Absolute http or https URL to retrieve without user information" }),
@@ -46,10 +49,17 @@ export const Input = Schema.Struct({
   })
 })
 /**
+ * Decoded input accepted by the `webfetch` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Input = typeof Input.Type
+/**
  * What the `webfetch` flow returns.
  *
  * @category schemas
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const Output = Schema.Struct({
   url: Schema.String.annotate({ description: "Final URL after redirects" }),
@@ -58,24 +68,31 @@ export const Output = Schema.Struct({
   content: Schema.String.annotate({ description: "Response body rendered in the requested format" })
 })
 /**
+ * Decoded output returned by the `webfetch` flow.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Output = typeof Output.Type
+/**
  * The declared effect envelope of the `webfetch` flow, before any input is known.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effects = envelope({ tier: "sealed", mode: "expected", reads: [], writes: [] })
 /**
  * Narrows {@link effects} to what this particular input actually touches.
  *
  * @category effects
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const effectsFor = (_input: typeof Input.Type) => effects
 /**
  * The authority the `webfetch` flow requires.
  *
  * @category capabilities
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const capabilities = [capability("net:get", "*")]
 /**
@@ -83,7 +100,7 @@ export const capabilities = [capability("net:get", "*")]
  * implementation attached separately.
  *
  * @category flows
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const flow = Flow.make({ name, description, input: Input, output: Output, capabilities, effects })
 
@@ -93,7 +110,7 @@ const error = (code: StdError.Code, message: string, path?: string): StdError.St
  * Runs the `webfetch` flow: fetches one HTTP URL and renders it as text.
  *
  * @category handlers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const run = Effect.fn("WebFetch.run")(function*(
   input: typeof Input.Type

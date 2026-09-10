@@ -17,7 +17,7 @@
  * returns that region's real bytes and line range, so the failing cell can
  * re-anchor from reality inside the same frame rather than buying another one.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 
 import { sourceLines } from "./Text.ts"
@@ -26,7 +26,7 @@ import { sourceLines } from "./Text.ts"
  * One located block: the exact source span the needle matched.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Located {
   readonly start: number
@@ -42,7 +42,7 @@ export interface Located {
  * back as an anchor without editing it first.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Nearest {
   readonly startLine: number
@@ -54,7 +54,7 @@ export interface Nearest {
  * The 1-based line a byte offset falls on.
  *
  * @category matching
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const lineAt = (content: string, offset: number): number => {
   let line = 1
@@ -68,7 +68,7 @@ export const lineAt = (content: string, offset: number): number => {
  * Every byte-exact occurrence of `needle` in `content`.
  *
  * @category matching
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const locate = (content: string, needle: string): ReadonlyArray<Located> => {
   const found: Array<Located> = []
@@ -130,7 +130,7 @@ const matchByLine = (
  * occurs in the file, which is itself the answer: this is the wrong file.
  *
  * @category matching
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const nearest = (content: string, needle: string, pad = 3): Nearest | undefined => {
   const haystack = sourceLines(content)
@@ -160,7 +160,7 @@ export const nearest = (content: string, needle: string, pad = 3): Nearest | und
  * model never saw the hunk it had written.
  *
  * @category matching
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const hunk = (content: string, start: number, end: number, pad = 2): Nearest => {
   const startLine = lineAt(content, start)

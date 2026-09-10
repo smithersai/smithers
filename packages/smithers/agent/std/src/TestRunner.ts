@@ -11,7 +11,7 @@
  * So the invocation is a declaration, not a parameter: a caller of the `test`
  * flow selects *which* tests, never *how* to run them.
  *
- * @since 0.1.0
+ * @since 1.0.0
  */
 import { Context, Effect, Layer } from "effect"
 import * as StdError from "./StdError.ts"
@@ -23,7 +23,7 @@ import * as StdError from "./StdError.ts"
  * reuses what already exists instead of inventing a second notion of "base".
  *
  * @category constants
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const captureBase = "refs/flows/capture-base"
 
@@ -37,7 +37,7 @@ export const captureBase = "refs/flows/capture-base"
  * `<cwd>/<name>` because it is the same directory under two names.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface Runner {
   /** The runner command line, without any test selection. */
@@ -60,7 +60,7 @@ export interface Runner {
  * The declaration service.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
 export interface TestRunner {
   readonly declared: Effect.Effect<Runner, StdError.StdError>
@@ -70,15 +70,15 @@ export interface TestRunner {
  * The {@link TestRunner} service tag.
  *
  * @category services
- * @since 0.1.0
+ * @since 1.0.0
  */
-export const TestRunner: Context.Service<TestRunner, TestRunner> = Context.Service("/std/TestRunner")
+export const TestRunner: Context.Service<TestRunner, TestRunner> = Context.Service("@smthrs/std/TestRunner")
 
 /**
  * Declares one repository's runner.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const make = (runner: Runner): TestRunner => TestRunner.of({ declared: Effect.succeed(runner) })
 
@@ -86,7 +86,7 @@ export const make = (runner: Runner): TestRunner => TestRunner.of({ declared: Ef
  * Declares that this host knows of no runner.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const makeNoop = (): TestRunner =>
   TestRunner.of({
@@ -103,7 +103,7 @@ export const makeNoop = (): TestRunner =>
  * Provides {@link make}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layer = (runner: Runner): Layer.Layer<TestRunner> => Layer.succeed(TestRunner, make(runner))
 
@@ -111,6 +111,6 @@ export const layer = (runner: Runner): Layer.Layer<TestRunner> => Layer.succeed(
  * Provides {@link makeNoop}.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0
  */
 export const layerNoop: Layer.Layer<TestRunner> = Layer.succeed(TestRunner, makeNoop())
