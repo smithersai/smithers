@@ -3,7 +3,6 @@
  */
 import * as Database from "@smthrs/database/node/NodeDatabase"
 import * as Host from "@smthrs/platform-node/NodeHost"
-export type { CompositionRootsAreComplete } from "./internal/NativeRuntimeApi.ts"
 import { makeNative } from "./internal/NativeRuntime.ts"
 import type { NativeRuntimeApi } from "./internal/NativeRuntimeApi.ts"
 

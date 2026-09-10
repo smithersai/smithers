@@ -304,19 +304,6 @@ What it adds over `layer`:
 A program that needs a different host, a different policy, or no signals at all
 composes `layer` itself; nothing here is reachable only through this function.
 
-### `CompositionRootsAreComplete`
-
-```ts
-type CompositionRootsAreComplete
-```
-
-A compile-time assertion type that pins each composition root to its documented
-host boundary: `make` requires `Crypto | FileSystem | Jj | Scope`, `layer`
-requires `Crypto | FileSystem | Jj`, and `layerHost` requires nothing. It has no
-runtime value. It records the boundary each root promises, and a change to one
-of those boundaries stops compiling instead of reaching you as a missing service
-at run time.
-
 ## SandboxedFlow
 
 ```ts
