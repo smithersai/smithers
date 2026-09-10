@@ -64,6 +64,28 @@ describe("S.Package", () => {
     expect(() => Package({ targets: {}, extra: true } as never)).toThrow(/unknown option/)
   })
 
+  it("copies only own enumerable data entries, never reading an accessor", () => {
+    // The contract is object-spread copying: an accessor or a non-enumerable
+    // entry is omitted from the branded map and its metadata keys, and the
+    // getter is never invoked, so a lazy or throwing getter cannot run here.
+    let getterReads = 0
+    const map: Record<string, unknown> = { kept: lint }
+    Object.defineProperty(map, "viaGetter", {
+      enumerable: true,
+      get: () => {
+        getterReads += 1
+        return lint
+      }
+    })
+    Object.defineProperty(map, "hidden", { enumerable: false, value: lint })
+    const value = Package({ targets: map as never })
+    expect(metadata(value).keys).toEqual(["kept"])
+    expect(Object.keys(value)).toEqual(["kept"])
+    expect("viaGetter" in value).toBe(false)
+    expect("hidden" in value).toBe(false)
+    expect(getterReads).toBe(0)
+  })
+
   it("records defaultVisibility: \"public\" and refuses a visibility it cannot honour", () => {
     const stated = Package({ defaultVisibility: "public", targets: { lint } })
     expect(metadata(stated).defaultVisibility).toBe("public")

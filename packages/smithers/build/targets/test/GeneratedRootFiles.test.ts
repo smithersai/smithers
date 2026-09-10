@@ -99,6 +99,30 @@ linkWorkspacePackages: true
 `)
   })
 
+  it("renders settings after the link policy, sorted, with quoted strings and bare booleans", () => {
+    const rendered = PnpmWorkspaceFile.render(PnpmWorkspaceFile.Attrs.make({
+      packageManager,
+      packages: ["packages/*"],
+      settings: {
+        verifyDepsBeforeRun: "install",
+        autoInstallPeers: false,
+        no: true,
+        "1.0": "one",
+        Zebra: "z"
+      }
+    }))
+    expect(rendered).toBe(`packages:
+  - "packages/*"
+
+linkWorkspacePackages: true
+"1.0": "one"
+Zebra: "z"
+autoInstallPeers: false
+"no": true
+verifyDepsBeforeRun: "install"
+`)
+  })
+
   it("sorts allowBuilds so reordering a literal is not drift", () => {
     const one = PnpmWorkspaceFile.render(PnpmWorkspaceFile.Attrs.make({
       packageManager,

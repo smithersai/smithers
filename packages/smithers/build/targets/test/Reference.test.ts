@@ -28,6 +28,48 @@ describe("Mcp.Http", () => {
   })
 })
 
+describe("bounded names", () => {
+  const constructors: ReadonlyArray<[string, (value: string) => unknown, string]> = [
+    ["NodeModule", Reference.NodeModule, "NodeModule package"],
+    ["NodeModule.Bin package", (value) => Reference.NodeModule.Bin(value, "cli"), "NodeModule.Bin package"],
+    ["NodeModule.Bin binary", (value) => Reference.NodeModule.Bin("pkg", value), "NodeModule.Bin binary"],
+    ["hostBin", Reference.hostBin, "Host.bin name"],
+    ["runtimeNpx", Reference.runtimeNpx, "Runtime.npx spec"],
+    ["miseBin", Reference.miseBin, "Mise.bin name"],
+    ["goRun", Reference.goRun, "Go.run spec"],
+    ["nixBin", Reference.nixBin, "Nix.bin name"],
+    ["symlink", Reference.symlink, "symlink path"],
+    ["gitCommit", Reference.gitCommit, "gitCommit ref"]
+  ]
+  const refused: ReadonlyArray<[string, string]> = [
+    ["empty", ""],
+    ["whitespace only", "  "],
+    ["over 512 code units", "x".repeat(513)],
+    ["control character", "a\u0000b"],
+    ["lone surrogate", "\ud800"]
+  ]
+
+  describe.each(constructors)("%s", (_, construct, field) => {
+    it.each(refused)("refuses %s text naming the field", (_, value) => {
+      expect(() => construct(value)).toThrow(new RegExp(field))
+    })
+
+    it("trims surrounding whitespace and keeps 512 code units", () => {
+      const longest = "x".repeat(512)
+      expect(JSON.stringify(construct(`  ${longest}  `))).toContain(JSON.stringify(longest))
+    })
+  })
+
+  it("keeps the binary name only when NodeModule.Bin is given one", () => {
+    expect(Reference.NodeModule.Bin("typescript", " tsc ")).toEqual({
+      _tag: "NodeModuleBin",
+      package: "typescript",
+      bin: "tsc"
+    })
+    expect(Reference.NodeModule.Bin("typescript")).toEqual({ _tag: "NodeModuleBin", package: "typescript" })
+  })
+})
+
 describe("callableReferences", () => {
   it("mints references only for portable, non-reserved, absent string properties", () => {
     const minted: Array<string> = []
