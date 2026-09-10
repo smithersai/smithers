@@ -194,6 +194,15 @@ export const maximumMetadataBytes = 64 * 1024
  */
 export const maximumEventBytes = 256 * 1024
 /**
+ * Maximum milliseconds one grant journal write may take before its reply or
+ * envelope admission fails with `journal_failed`. Journal writes never hold
+ * the store's mutation permit, so a slow write stalls only the admission that
+ * issued it.
+ * @category limits
+ * @since 1.0.0-rc.0
+ */
+export const maximumPersistMillis = 30_000
+/**
  * Maximum length of a run, plan, request, or signature identity.
  * @category limits
  * @since 1.0.0-rc.0
@@ -642,9 +651,18 @@ export const make = (
       // identities and immutable capability snapshots, so encoding cannot
       // observe caller objects or invoke a caller-defined `toJSON` hook.
       const bytes = encoder.encode(JSON.stringify(event)).byteLength
-      return bytes <= maximumEventBytes
-        ? persist(event)
-        : Effect.fail(invalid(`grant event exceeds ${maximumEventBytes} bytes`))
+      return bytes > maximumEventBytes
+        ? Effect.fail(invalid(`grant event exceeds ${maximumEventBytes} bytes`))
+        : Effect.timeoutOrElse(persist(event), {
+          duration: maximumPersistMillis,
+          orElse: () =>
+            Effect.fail(
+              new GrantStoreError({
+                code: "journal_failed",
+                message: `grant journal write exceeded ${maximumPersistMillis}ms`
+              })
+            )
+        })
     }
 
     const invalidRemembered = rememberedRules.findIndex((rule) =>
@@ -660,18 +678,17 @@ export const make = (
       return yield* Effect.fail(invalid(`runRules[${invalidRun}] is outside the workspace envelope`))
     }
 
-    // Both admission paths validate capacity before persistence or activation.
-    // A seeded construction envelope may already have rules installed by replay.
+    // Construction envelopes validate capacity before persistence or
+    // activation. A seeded construction envelope may already have rules
+    // installed by replay. Runtime admission is two-phase in grantEnvelope.
     const admitEnvelope = (
-      envelope: Effect.Success<ReturnType<typeof prepareEnvelope>>,
-      activateSeeded: boolean
+      envelope: Effect.Success<ReturnType<typeof prepareEnvelope>>
     ): Effect.Effect<boolean, GrantStoreError> =>
       Effect.gen(function*() {
         const { patterns, scope } = envelope
         if (patterns.length === 0) return false
         const signature = envelopeSignature(envelope.planDigest, scope, patterns)
         const durable = grantedEnvelopes.has(signature)
-        if (durable && !activateSeeded) return false
         const destination = scope === "remembered" ? rememberedRules : envelopeRules
         const replayed = scope === "remembered"
           ? rememberedRules
@@ -713,7 +730,7 @@ export const make = (
 
     if (options.envelope !== undefined) {
       const envelope = yield* prepareEnvelope(options.envelope, planDigest, workspaceRoot)
-      yield* admitEnvelope(envelope, true)
+      yield* admitEnvelope(envelope)
     }
 
     const rulesets = (capability: Capability): ReadonlyArray<ReadonlyArray<Rule>> => [
@@ -777,45 +794,50 @@ export const make = (
             capability: snapshotCapability(capability),
             meta: metadataSnapshot(meta)
           }))
-          const entry = yield* mutation.withPermit(
-            Effect.gen(function*() {
-              if (closed) {
-                return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
-              }
-              const ceiling = yield* current
-              if (!allows(ceiling, request.capability)) {
-                return yield* Effect.fail(permissionDenied(request.capability, "outside capability ceiling"))
-              }
+          // The permit guards only in-memory state, so acquiring it is
+          // interruptible: a cancelled caller is released instead of queueing
+          // uninterruptibly. The critical section itself stays uninterruptible.
+          const entry = yield* restore(mutation.take(1)).pipe(
+            Effect.andThen(
+              Effect.gen(function*() {
+                if (closed) {
+                  return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
+                }
+                const ceiling = yield* current
+                if (!allows(ceiling, request.capability)) {
+                  return yield* Effect.fail(permissionDenied(request.capability, "outside capability ceiling"))
+                }
 
-              const decision = evaluate(rulesets(request.capability), request.capability)
-              if (decision === "allow") {
-                return undefined
-              }
-              if (decision === "deny") {
-                return yield* Effect.fail(permissionDenied(request.capability, "denied by permission policy"))
-              }
+                const decision = evaluate(rulesets(request.capability), request.capability)
+                if (decision === "allow") {
+                  return undefined
+                }
+                if (decision === "deny") {
+                  return yield* Effect.fail(permissionDenied(request.capability, "denied by permission policy"))
+                }
 
-              const tier = tierOf(request.capability, { workspaceRoot })
-              if (!attended) {
-                const requestId = yield* nextUnattendedRequestId
-                return yield* Effect.fail(
-                  permissionRequired({
-                    requestId,
-                    runId,
-                    capability: request.capability,
-                    tier,
-                    meta: request.meta
-                  })
+                const tier = tierOf(request.capability, { workspaceRoot })
+                if (!attended) {
+                  const requestId = yield* nextUnattendedRequestId
+                  return yield* Effect.fail(
+                    permissionRequired({
+                      requestId,
+                      runId,
+                      capability: request.capability,
+                      tier,
+                      meta: request.meta
+                    })
+                  )
+                }
+
+                return yield* allocateRequest(
+                  request.capability,
+                  tier,
+                  request.meta,
+                  ceiling
                 )
-              }
-
-              return yield* allocateRequest(
-                request.capability,
-                tier,
-                request.meta,
-                ceiling
-              )
-            })
+              }).pipe(Effect.ensuring(mutation.release(1)))
+            )
           )
           if (entry === undefined) {
             return
@@ -855,157 +877,244 @@ export const make = (
       ).pipe(Effect.asVoid)
     )
 
+    // Requests and envelopes with a journal write in flight. The mutation
+    // permit guards only in-memory state: a decision is planned under the
+    // permit, persisted without it, then activated under it again.
+    const resolving = new Set<string>()
+    const granting = new Map<string, Deferred.Deferred<void, GrantStoreError>>()
+
+    type PlannedReply =
+      | {
+        readonly resolution: "once" | "deny"
+        readonly entry: PendingEntry
+        readonly event: GrantEvent
+      }
+      | {
+        readonly resolution: "run" | "remembered"
+        readonly entry: PendingEntry
+        readonly rule: Rule
+        readonly event: GrantEvent
+      }
+
+    const planReply = (
+      requestId: string,
+      resolution: Resolution,
+      suppliedPattern: CapabilityPattern | undefined
+    ): Effect.Effect<PlannedReply, GrantStoreError> =>
+      Effect.gen(function*() {
+        if (closed) {
+          return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
+        }
+        if (!isResolution(resolution)) {
+          // A runtime-invalid resolution must fail the reply, not fall
+          // through the switch below: silently succeeding would strand
+          // the request's waiter on its Deferred forever. The request
+          // stays pending so the caller can still answer it.
+          return yield* Effect.fail(
+            new GrantStoreError({
+              code: "invalid_resolution",
+              message: "unknown grant resolution"
+            })
+          )
+        }
+        const entry = pending.get(requestId)
+        // A request whose decision is already being persisted is decided:
+        // the losing reply fails fast instead of queueing behind the journal.
+        if (entry === undefined || resolving.has(requestId)) {
+          return yield* Effect.fail(new GrantStoreError({ code: "request_not_found" }))
+        }
+        const pattern = yield* attemptSnapshot("grant pattern", () => {
+          if (resolution === "run" || resolution === "remembered") {
+            if (suppliedPattern !== undefined) return snapshotPattern(suppliedPattern)
+            const derived = patternFromCapability(entry.capability)
+            if (Option.isNone(derived)) {
+              throw invalid(
+                "the requested resource contains glob metacharacters; supply an explicit grant pattern or resolve once"
+              )
+            }
+            return snapshotPattern(derived.value)
+          }
+          return snapshotPattern(exactPattern(entry.capability))
+        })
+
+        switch (resolution) {
+          case "once": {
+            resolving.add(requestId)
+            return {
+              resolution,
+              entry,
+              event: new OnceGrant({
+                eventType: "flows.kernel.grant.once.v1",
+                requestId,
+                runId: runId ?? "",
+                ...(planDigest === undefined ? {} : { planDigest }),
+                capability: entry.capability,
+                pattern,
+                scope: "once",
+                tier: entry.tier
+              })
+            }
+          }
+          case "run": {
+            if (planDigest === undefined) {
+              return yield* Effect.fail(
+                new GrantStoreError({
+                  code: "invalid_resolution",
+                  message: "run grants require a plan digest"
+                })
+              )
+            }
+            if (!isValidGrantPattern(pattern, entry.capability, entry.tier, workspaceRoot)) {
+              return yield* Effect.fail(invalid("grant pattern exceeds the requested authority"))
+            }
+            if (
+              configuredRules.length + envelopeRules.length + runRules.length + rememberedRules.length >=
+                maximumRules
+            ) {
+              return yield* Effect.fail(invalid(`rules exceed ${maximumRules} entries`))
+            }
+            resolving.add(requestId)
+            return {
+              resolution,
+              entry,
+              rule: snapshotRule(new Rule({ effect: "allow", pattern })),
+              event: new RunGrant({
+                eventType: "flows.kernel.grant.run.v2",
+                requestId,
+                runId: runId ?? "",
+                planDigest,
+                capability: entry.capability,
+                pattern,
+                ceiling: entry.ceiling.groups,
+                scope: "run",
+                tier: entry.tier
+              })
+            }
+          }
+          case "remembered": {
+            if (!isValidGrantPattern(pattern, entry.capability, entry.tier, workspaceRoot)) {
+              return yield* Effect.fail(invalid("grant pattern exceeds the requested authority"))
+            }
+            if (
+              configuredRules.length + envelopeRules.length + runRules.length + rememberedRules.length >=
+                maximumRules
+            ) {
+              return yield* Effect.fail(invalid(`rules exceed ${maximumRules} entries`))
+            }
+            resolving.add(requestId)
+            return {
+              resolution,
+              entry,
+              rule: snapshotRule(new Rule({ effect: "allow", pattern })),
+              event: new RememberedGrant({
+                eventType: "flows.kernel.grant.remembered.v1",
+                requestId,
+                runId: runId ?? "",
+                ...(planDigest === undefined ? {} : { planDigest }),
+                capability: entry.capability,
+                pattern,
+                scope: "remembered",
+                tier: entry.tier
+              })
+            }
+          }
+          case "deny": {
+            resolving.add(requestId)
+            return {
+              resolution,
+              entry,
+              event: new DeniedGrant({
+                eventType: "flows.kernel.grant.denied.v1",
+                requestId,
+                runId: runId ?? "",
+                ...(planDigest === undefined ? {} : { planDigest }),
+                capability: entry.capability,
+                pattern,
+                scope: "once",
+                tier: entry.tier
+              })
+            }
+          }
+        }
+      })
+
+    const activateReply = (requestId: string, planned: PlannedReply): Effect.Effect<void, GrantStoreError> =>
+      Effect.gen(function*() {
+        resolving.delete(requestId)
+        if (closed) {
+          return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
+        }
+        const entry = pending.get(requestId)
+        switch (planned.resolution) {
+          case "once": {
+            if (entry === undefined) {
+              return yield* Effect.fail(new GrantStoreError({ code: "request_not_found" }))
+            }
+            yield* Deferred.succeed(entry.deferred, undefined)
+            pending.delete(requestId)
+            return
+          }
+          case "deny": {
+            if (entry === undefined) {
+              return yield* Effect.fail(new GrantStoreError({ code: "request_not_found" }))
+            }
+            yield* Deferred.fail(
+              entry.deferred,
+              permissionDenied(entry.capability, "permission request denied")
+            )
+            pending.delete(requestId)
+            return
+          }
+          case "run": {
+            // The decision is already durable, so the rule activates even
+            // when the request's own waiter left while the journal wrote:
+            // replay installs it on the next open and the live store must
+            // not diverge from the journal. Capacity was validated before
+            // persistence.
+            runRules.push({ rule: planned.rule, ceiling: planned.entry.ceiling })
+            yield* resolveCovered
+            return
+          }
+          case "remembered": {
+            rememberedRules.push(planned.rule)
+            yield* resolveCovered
+            return
+          }
+        }
+      })
+
     const reply: Service["reply"] = Effect.fn("GrantStore.reply")((
       requestId,
       resolution,
       suppliedPattern
     ) =>
-      Effect.uninterruptible(
-        mutation.withPermit(
-          Effect.gen(function*() {
-            if (closed) {
-              return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
-            }
-            if (!isResolution(resolution)) {
-              // A runtime-invalid resolution must fail the reply, not fall
-              // through the switch below: silently succeeding would strand
-              // the request's waiter on its Deferred forever. The request
-              // stays pending so the caller can still answer it.
-              return yield* Effect.fail(
-                new GrantStoreError({
-                  code: "invalid_resolution",
-                  message: "unknown grant resolution"
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function*() {
+          const planned = yield* mutation.withPermit(planReply(requestId, resolution, suppliedPattern))
+          // Journal IO never holds the permit: only this reply waits on it,
+          // interruptibly, so the write deadline can fire and a cancelled
+          // reply is released. A failed write clears the in-flight mark so
+          // the request stays retryable.
+          yield* restore(persistEvent(planned.event)).pipe(
+            Effect.onError(() =>
+              mutation.withPermit(
+                Effect.sync(() => {
+                  resolving.delete(requestId)
                 })
               )
-            }
-            const entry = pending.get(requestId)
-            if (entry === undefined) {
-              return yield* Effect.fail(new GrantStoreError({ code: "request_not_found" }))
-            }
-            const pattern = yield* attemptSnapshot("grant pattern", () => {
-              if (resolution === "run" || resolution === "remembered") {
-                if (suppliedPattern !== undefined) return snapshotPattern(suppliedPattern)
-                const derived = patternFromCapability(entry.capability)
-                if (Option.isNone(derived)) {
-                  throw invalid(
-                    "the requested resource contains glob metacharacters; supply an explicit grant pattern or resolve once"
-                  )
-                }
-                return snapshotPattern(derived.value)
-              }
-              return snapshotPattern(exactPattern(entry.capability))
-            })
-
-            switch (resolution) {
-              case "once": {
-                yield* persistEvent(
-                  new OnceGrant({
-                    eventType: "flows.kernel.grant.once.v1",
-                    requestId,
-                    runId: runId ?? "",
-                    ...(planDigest === undefined ? {} : { planDigest }),
-                    capability: entry.capability,
-                    pattern,
-                    scope: "once",
-                    tier: entry.tier
-                  })
-                )
-                yield* Deferred.succeed(entry.deferred, undefined)
-                pending.delete(requestId)
-                return
-              }
-              case "run": {
-                if (planDigest === undefined) {
-                  return yield* Effect.fail(
-                    new GrantStoreError({
-                      code: "invalid_resolution",
-                      message: "run grants require a plan digest"
-                    })
-                  )
-                }
-                if (!isValidGrantPattern(pattern, entry.capability, entry.tier, workspaceRoot)) {
-                  return yield* Effect.fail(invalid("grant pattern exceeds the requested authority"))
-                }
-                if (
-                  configuredRules.length + envelopeRules.length + runRules.length + rememberedRules.length >=
-                    maximumRules
-                ) {
-                  return yield* Effect.fail(invalid(`rules exceed ${maximumRules} entries`))
-                }
-                const rule = snapshotRule(new Rule({ effect: "allow", pattern }))
-                yield* persistEvent(
-                  new RunGrant({
-                    eventType: "flows.kernel.grant.run.v2",
-                    requestId,
-                    runId: runId ?? "",
-                    planDigest,
-                    capability: entry.capability,
-                    pattern,
-                    ceiling: entry.ceiling.groups,
-                    scope: "run",
-                    tier: entry.tier
-                  })
-                )
-                runRules.push({ rule, ceiling: entry.ceiling })
-                yield* resolveCovered
-                return
-              }
-              case "remembered": {
-                if (!isValidGrantPattern(pattern, entry.capability, entry.tier, workspaceRoot)) {
-                  return yield* Effect.fail(invalid("grant pattern exceeds the requested authority"))
-                }
-                if (
-                  configuredRules.length + envelopeRules.length + runRules.length + rememberedRules.length >=
-                    maximumRules
-                ) {
-                  return yield* Effect.fail(invalid(`rules exceed ${maximumRules} entries`))
-                }
-                const rule = snapshotRule(new Rule({ effect: "allow", pattern }))
-                yield* persistEvent(
-                  new RememberedGrant({
-                    eventType: "flows.kernel.grant.remembered.v1",
-                    requestId,
-                    runId: runId ?? "",
-                    ...(planDigest === undefined ? {} : { planDigest }),
-                    capability: entry.capability,
-                    pattern,
-                    scope: "remembered",
-                    tier: entry.tier
-                  })
-                )
-                rememberedRules.push(rule)
-                yield* resolveCovered
-                return
-              }
-              case "deny": {
-                yield* persistEvent(
-                  new DeniedGrant({
-                    eventType: "flows.kernel.grant.denied.v1",
-                    requestId,
-                    runId: runId ?? "",
-                    ...(planDigest === undefined ? {} : { planDigest }),
-                    capability: entry.capability,
-                    pattern,
-                    scope: "once",
-                    tier: entry.tier
-                  })
-                )
-                yield* Deferred.fail(
-                  entry.deferred,
-                  permissionDenied(entry.capability, "permission request denied")
-                )
-                pending.delete(requestId)
-                return
-              }
-            }
-          })
-        )
+            )
+          )
+          yield* mutation.withPermit(activateReply(requestId, planned))
+        })
       )
     )
 
     const list: Service["list"] = Effect.fn("GrantStore.list")(() =>
       mutation.withPermit(
         Effect.sync(() =>
+          // Every entry's meta is already the frozen snapshot taken at check
+          // time; list copies the array and re-wraps identity without
+          // re-walking or re-serializing the metadata graph.
           Object.freeze(Array.from(
             pending.values(),
             ({ requestId, capability, tier, meta }): PendingRequest =>
@@ -1013,28 +1122,129 @@ export const make = (
                 requestId,
                 capability: snapshotCapability(capability),
                 tier,
-                meta: metadataSnapshot(meta)
+                meta
               })
           ))
         )
       )
     )()
 
+    type EnvelopeAdmission =
+      | { readonly _tag: "Durable" }
+      | { readonly _tag: "Wait"; readonly completion: Deferred.Deferred<void, GrantStoreError> }
+      | {
+        readonly _tag: "Fresh"
+        readonly signature: string
+        readonly scope: "run" | "remembered"
+        readonly patterns: ReadonlyArray<CapabilityPattern>
+        readonly completion: Deferred.Deferred<void, GrantStoreError>
+        readonly event: GrantEvent
+      }
+
+    const planEnvelope = (
+      envelope: Effect.Success<ReturnType<typeof prepareEnvelope>>
+    ): Effect.Effect<EnvelopeAdmission, GrantStoreError> =>
+      Effect.gen(function*() {
+        if (closed) {
+          return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
+        }
+        const { patterns, scope } = envelope
+        const signature = envelopeSignature(envelope.planDigest, scope, patterns)
+        if (grantedEnvelopes.has(signature)) return { _tag: "Durable" as const }
+        // A concurrent admission of the same envelope is already persisting;
+        // wait for its outcome rather than writing a duplicate record.
+        const inFlight = granting.get(signature)
+        if (inFlight !== undefined) return { _tag: "Wait" as const, completion: inFlight }
+        if (
+          configuredRules.length + envelopeRules.length + runRules.length + rememberedRules.length +
+              patterns.length > maximumRules
+        ) {
+          return yield* Effect.fail(invalid(`rules exceed ${maximumRules} entries`))
+        }
+        if (grantedEnvelopes.size >= maximumRules) {
+          return yield* Effect.fail(invalid(`grant envelopes exceed ${maximumRules} entries`))
+        }
+        const completion = yield* Deferred.make<void, GrantStoreError>()
+        granting.set(signature, completion)
+        return {
+          _tag: "Fresh" as const,
+          signature,
+          scope,
+          patterns,
+          completion,
+          event: new EnvelopeGrant({
+            eventType: "flows.kernel.grant.envelope.v1",
+            runId: runId ?? "",
+            planDigest: envelope.planDigest,
+            patterns,
+            scope
+          })
+        }
+      })
+
+    const activateEnvelope = (
+      planned: Extract<EnvelopeAdmission, { readonly _tag: "Fresh" }>
+    ): Effect.Effect<void, GrantStoreError> =>
+      Effect.gen(function*() {
+        granting.delete(planned.signature)
+        if (closed) {
+          return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
+        }
+        // The decision is already durable, so its rules activate without
+        // re-checking capacity: replay installs them on the next open and the
+        // live store must not diverge from the journal.
+        grantedEnvelopes.add(planned.signature)
+        const destination = planned.scope === "remembered" ? rememberedRules : envelopeRules
+        for (const pattern of planned.patterns) {
+          destination.push(snapshotRule(new Rule({ effect: "allow", pattern })))
+        }
+        yield* resolveCovered
+      })
+
     const grantEnvelope: Service["grantEnvelope"] = Effect.fn("GrantStore.grantEnvelope")((input) =>
-      Effect.uninterruptible(
-        Effect.gen(function*() {
+      Effect.uninterruptibleMask((restore) => {
+        const admit = (
+          prepared: Effect.Success<ReturnType<typeof prepareEnvelope>>
+        ): Effect.Effect<void, GrantStoreError> =>
+          Effect.gen(function*() {
+            const planned = yield* mutation.withPermit(planEnvelope(prepared))
+            switch (planned._tag) {
+              case "Durable":
+                return
+              case "Wait": {
+                // The identical envelope is mid-flight elsewhere; adopt its
+                // outcome, then re-plan so a failed attempt is retried here.
+                yield* Effect.ignore(restore(Deferred.await(planned.completion)))
+                return yield* admit(prepared)
+              }
+              case "Fresh": {
+                // Journal IO never holds the permit: only this admission
+                // waits on it, interruptibly, so the write deadline can fire.
+                // Concurrent duplicates are released with the same outcome.
+                yield* restore(persistEvent(planned.event)).pipe(
+                  Effect.onError((cause) =>
+                    mutation.withPermit(
+                      Effect.gen(function*() {
+                        granting.delete(planned.signature)
+                        yield* Deferred.failCause(planned.completion, cause)
+                      })
+                    )
+                  )
+                )
+                yield* mutation.withPermit(activateEnvelope(planned)).pipe(
+                  Effect.tap(() => Deferred.succeed(planned.completion, undefined)),
+                  Effect.onError((cause) => Deferred.failCause(planned.completion, cause))
+                )
+                return
+              }
+            }
+          })
+        return Effect.gen(function*() {
           const prepared = yield* prepareEnvelope(input, planDigest, workspaceRoot)
           if (prepared.patterns.length === 0) return
-          yield* mutation.withPermit(
-            Effect.gen(function*() {
-              if (closed) {
-                return yield* Effect.fail(new GrantStoreError({ code: "store_closed" }))
-              }
-              if (yield* admitEnvelope(prepared, false)) yield* resolveCovered
-            })
-          )
+          yield* admit(prepared)
         })
-      )
+      })
     )
 
     return GrantStore.of({ check, reply, list, grantEnvelope })

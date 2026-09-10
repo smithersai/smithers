@@ -322,14 +322,14 @@ describe("GrantStore", () => {
         const secondReply = yield* Effect.flip(store.reply(pending!.requestId, "deny")).pipe(
           Effect.forkChild({ startImmediately: true })
         )
-        yield* Effect.yieldNow
-        expect(secondReply.pollUnsafe()).toBeUndefined()
+        // The losing reply fails fast instead of queueing behind the
+        // suspended journal write.
+        const failure = yield* Fiber.join(secondReply)
+        expect(failure.code).toBe("request_not_found")
 
         yield* Deferred.succeed(releasePersistence, undefined)
         yield* Fiber.join(firstReply)
         yield* Fiber.join(waiter)
-        const failure = yield* Fiber.join(secondReply)
-        expect(failure.code).toBe("request_not_found")
         expect(events.map((event) => event.eventType)).toEqual(["flows.kernel.grant.once.v1"])
       })
     ))

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Capability, CapabilityPattern, format } from "@smthrs/capability/Capability"
 import { Rule } from "@smthrs/capability/Permission"
-import { Deferred, Effect, Fiber } from "effect"
+import { Deferred, Effect, Exit, Fiber, Scope } from "effect"
+import { TestClock } from "effect/testing"
 import { createHash } from "node:crypto"
 import * as GrantStore from "../src/GrantStore.ts"
 import * as Workspace from "../src/Workspace.ts"
@@ -31,6 +32,9 @@ const invalidCheck = (
   store: GrantStore.Service,
   meta: Record<string, unknown>
 ) => Effect.flip(store.check(safe, meta))
+
+const stalled = (persisting: Deferred.Deferred<void>) => () =>
+  Deferred.succeed(persisting, undefined).pipe(Effect.andThen(Effect.never))
 
 describe("GrantStore immutable authority", () => {
   it.effect("does not retain constructor or envelope pattern objects", () =>
@@ -82,6 +86,9 @@ describe("GrantStore immutable authority", () => {
         })
         expect(again).not.toBe(listed)
         expect(again!.capability).not.toBe(listed!.capability)
+        // The metadata snapshot was frozen at allocation; list returns it
+        // without re-walking or re-serializing the graph.
+        expect(again!.meta).toBe(listed!.meta)
 
         yield* store.reply(again!.requestId, "once")
         yield* Fiber.join(waiting)
@@ -90,6 +97,172 @@ describe("GrantStore immutable authority", () => {
         }])
       })
     ))
+})
+
+describe("GrantStore journal stall isolation", () => {
+  it.effect("a suspended reply journal write does not stall checks, list, cancellation, or scope close", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const persisting = yield* Deferred.make<void>()
+        const store = yield* make({
+          rules: [new Rule({ effect: "allow", pattern: safePattern() })],
+          persist: stalled(persisting)
+        })
+        yield* store.check(other).pipe(Effect.forkChild({ startImmediately: true }))
+        const [pending] = yield* awaitPending(store, 1)
+        yield* store.reply(pending!.requestId, "once").pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Deferred.await(persisting)
+
+        // A policy-allowed check needs no journal write and must not queue
+        // behind the suspended one.
+        yield* store.check(safe)
+
+        // list copies the parked requests without waiting on the journal.
+        expect((yield* store.list).map(({ requestId }) => requestId)).toEqual([pending!.requestId])
+
+        // Cancelling a parked check is released without the journal.
+        const parked = yield* store.check(
+          new Capability({ action: "fs:read", resource: "/workspace/parked.txt" })
+        ).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* awaitPending(store, 2)
+        yield* Fiber.interrupt(parked)
+        expect(yield* store.list).toHaveLength(1)
+      })
+      // Scope closure interrupts the suspended reply and fails the waiter.
+    ))
+
+  it.effect("a suspended envelope journal write does not stall checks, list, or scope close", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const persisting = yield* Deferred.make<void>()
+        const store = yield* make({
+          planDigest: "plan-1",
+          rules: [new Rule({ effect: "allow", pattern: safePattern() })],
+          persist: stalled(persisting)
+        })
+        yield* store.grantEnvelope({ planDigest: "plan-1", patterns: [workspacePattern()] }).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Deferred.await(persisting)
+
+        yield* store.check(safe)
+        expect(yield* store.list).toEqual([])
+      })
+    ))
+})
+
+describe("GrantStore journal write boundaries", () => {
+  it.effect("a journal write that outlasts its deadline fails the reply and leaves the request parked", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const persisting = yield* Deferred.make<void>()
+        const store = yield* make({ persist: stalled(persisting) })
+        const waiter = yield* store.check(other).pipe(Effect.forkChild({ startImmediately: true }))
+        const [pending] = yield* awaitPending(store, 1)
+        const reply = yield* Effect.flip(store.reply(pending!.requestId, "once")).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Deferred.await(persisting)
+
+        yield* TestClock.adjust(GrantStore.maximumPersistMillis + 1)
+        expect((yield* Fiber.join(reply)).code).toBe("journal_failed")
+        expect(waiter.pollUnsafe()).toBeUndefined()
+        expect(yield* store.list).toHaveLength(1)
+      })
+    ))
+
+  it.effect("a completed write for a waiter cancelled mid-persist fails with request_not_found", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        for (const resolution of ["once", "deny"] as const) {
+          const started = yield* Deferred.make<void>()
+          const release = yield* Deferred.make<void>()
+          const store = yield* make({
+            persist: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)))
+          })
+          const waiter = yield* store.check(other).pipe(Effect.forkChild({ startImmediately: true }))
+          const [pending] = yield* awaitPending(store, 1)
+          const reply = yield* Effect.flip(store.reply(pending!.requestId, resolution)).pipe(
+            Effect.forkChild({ startImmediately: true })
+          )
+          yield* Deferred.await(started)
+
+          yield* Fiber.interrupt(waiter)
+          expect(yield* store.list).toEqual([])
+          yield* Deferred.succeed(release, undefined)
+          expect((yield* Fiber.join(reply)).code).toBe("request_not_found")
+        }
+      })
+    ))
+
+  it.effect("a concurrent identical envelope admission adopts the in-flight outcome", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const events: Array<unknown> = []
+        const store = yield* make({
+          planDigest: "plan-1",
+          persist: (event) =>
+            Effect.sync(() => events.push(event)).pipe(
+              Effect.andThen(Deferred.succeed(started, undefined)),
+              Effect.andThen(Deferred.await(release))
+            )
+        })
+        const envelope = { planDigest: "plan-1", patterns: [workspacePattern()] }
+        const first = yield* store.grantEnvelope(envelope).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Deferred.await(started)
+        const second = yield* store.grantEnvelope(envelope).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Effect.yieldNow
+        expect(second.pollUnsafe()).toBeUndefined()
+
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(first)
+        yield* Fiber.join(second)
+        expect(events).toHaveLength(1)
+        yield* store.check(other)
+      })
+    ))
+
+  it.effect("an envelope write that completes after scope close fails with store_closed", () =>
+    Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const storeScope = yield* Scope.make()
+      const store = yield* make({
+        planDigest: "plan-1",
+        persist: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)))
+      }).pipe(Scope.provide(storeScope))
+      const admission = yield* Effect.flip(
+        store.grantEnvelope({ planDigest: "plan-1", patterns: [workspacePattern()] })
+      ).pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.await(started)
+
+      yield* Scope.close(storeScope, Exit.void)
+      yield* Deferred.succeed(release, undefined)
+      expect((yield* Fiber.join(admission)).code).toBe("store_closed")
+    }))
+
+  it.effect("a reply write that completes after scope close fails with store_closed", () =>
+    Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const storeScope = yield* Scope.make()
+      const store = yield* make({
+        persist: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)))
+      }).pipe(Scope.provide(storeScope))
+      const waiter = yield* store.check(other).pipe(Effect.forkDetach({ startImmediately: true }))
+      const [pending] = yield* awaitPending(store, 1)
+      const reply = yield* Effect.flip(store.reply(pending!.requestId, "once")).pipe(
+        Effect.forkChild({ startImmediately: true })
+      )
+      yield* Deferred.await(started)
+
+      yield* Scope.close(storeScope, Exit.void)
+      yield* Deferred.succeed(release, undefined)
+      expect((yield* Fiber.join(reply)).code).toBe("store_closed")
+      void waiter
+    }))
 })
 
 describe("GrantStore bounded input", () => {

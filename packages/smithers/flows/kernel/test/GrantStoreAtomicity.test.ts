@@ -183,13 +183,13 @@ describe("GrantStore lifecycle during blocked persistence", () => {
         const cancellation = yield* Fiber.interrupt(waiter).pipe(
           Effect.forkChild({ startImmediately: true })
         )
-        yield* Effect.yieldNow
+        // Cancellation no longer queues behind the suspended journal write.
+        yield* Fiber.join(cancellation)
         expect(reply.pollUnsafe()).toBeUndefined()
-        expect(cancellation.pollUnsafe()).toBeUndefined()
+        expect(yield* store.list).toEqual([])
 
         yield* Deferred.succeed(release, undefined)
         expect((yield* Fiber.join(reply)).code).toBe("journal_failed")
-        yield* Fiber.join(cancellation)
         expect(yield* store.list).toEqual([])
 
         const retry = yield* store.check(readme).pipe(Effect.forkChild({ startImmediately: true }))
@@ -200,7 +200,7 @@ describe("GrantStore lifecycle during blocked persistence", () => {
       })
     ))
 
-  itEffect("closes cleanly after blocked persistence fails without activating it", () =>
+  itEffect("closes cleanly without waiting for a blocked journal write", () =>
     Effect.gen(function*() {
       const started = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
@@ -224,12 +224,8 @@ describe("GrantStore lifecycle during blocked persistence", () => {
       const closing = yield* Scope.close(storeScope, Exit.void).pipe(
         Effect.forkChild({ startImmediately: true })
       )
-      yield* Effect.yieldNow
-      expect(closing.pollUnsafe()).toBeUndefined()
-      expect(waiter.pollUnsafe()).toBeUndefined()
-
-      yield* Deferred.succeed(release, undefined)
-      expect((yield* Fiber.join(reply)).code).toBe("journal_failed")
+      // Scope closure no longer waits on the suspended journal write: it
+      // fails the stranded waiter while the reply is still persisting.
       yield* Fiber.join(closing)
       const denied = yield* Fiber.join(waiter)
       expect(denied).toBeInstanceOf(PermissionDenied)
@@ -237,6 +233,10 @@ describe("GrantStore lifecycle during blocked persistence", () => {
         throw new Error("expected PermissionDenied")
       }
       expect(denied.reason).toBe("grant store closed")
+      expect(reply.pollUnsafe()).toBeUndefined()
+
+      yield* Deferred.succeed(release, undefined)
+      expect((yield* Fiber.join(reply)).code).toBe("journal_failed")
       expect(yield* store.list).toEqual([])
       expect((yield* Effect.flip(store.check(readme))).code).toBe("store_closed")
     }))

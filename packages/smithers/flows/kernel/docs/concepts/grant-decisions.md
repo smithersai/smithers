@@ -110,6 +110,17 @@ Adding a rule wakes every other parked request the new rule now allows, so one
 `run` grant for `/workspace/**` resolves the queue behind it rather than
 asking again per file.
 
+A reply records its decision in the journal before anything activates, but the
+write never holds the store's mutation permit. A slow or dead journal stalls
+only the reply that issued it: checks, `list`, waiter cancellation, and store
+closure all proceed while a write is stuck, and a write that exceeds
+`maximumPersistMillis` (30 seconds) fails the reply with `journal_failed`,
+leaving the request parked for a retry. A second reply to the same request
+while its decision is mid-write fails fast with `request_not_found` rather
+than queueing behind the journal. Envelope admissions follow the same rule,
+and a concurrent identical envelope adopts the in-flight outcome instead of
+writing a duplicate record.
+
 ## Envelope approvals
 
 `grantEnvelope` approves a whole set of patterns at once, which is what a plan

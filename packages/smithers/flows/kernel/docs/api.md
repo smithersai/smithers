@@ -168,8 +168,14 @@ fails `permission_required` on an unattended store and parks the fiber on an
 attended one. `meta` is display metadata for an attended surface and is
 snapshotted, never interpreted.
 
-`list` is a frozen snapshot. `reply` and `grantEnvelope` are uninterruptible
-and serialized against `check`.
+`list` is a frozen snapshot whose `meta` values are the frozen snapshots taken
+at check time. `reply` and `grantEnvelope` persist their decision before
+activating it. The journal write never holds the store's mutation permit: a
+slow or dead journal stalls only the admission that issued it, and a write
+exceeding `maximumPersistMillis` fails with `journal_failed`, leaving the
+request parked for a retry. A concurrent reply to a request whose decision is
+mid-write fails fast with `request_not_found`; a concurrent identical envelope
+admission adopts the in-flight outcome.
 
 ### GrantStore.PendingRequest
 
@@ -214,10 +220,14 @@ A bulk approval. `scope` defaults to `"run"`.
 interface MakeOptions {
   readonly attended?: boolean | undefined
   readonly rules?: ReadonlyArray<Rule> | ReadonlyArray<ReadonlyArray<Rule>> | undefined
-  readonly runRules?: ReadonlyArray<Rule | {
-    readonly rule: Rule
-    readonly ceiling: ReadonlyArray<ReadonlyArray<CapabilityPattern>>
-  }> | undefined
+  readonly runRules?:
+    | ReadonlyArray<
+      Rule | {
+        readonly rule: Rule
+        readonly ceiling: ReadonlyArray<ReadonlyArray<CapabilityPattern>>
+      }
+    >
+    | undefined
   readonly envelope?: EnvelopeGrantOptions | undefined
   readonly envelopeSignatures?: ReadonlyArray<string> | undefined
   readonly runId?: string | undefined
@@ -238,7 +248,9 @@ type Persist = (event: GrantEvent) => Effect.Effect<void, GrantStoreError>
 ```
 
 A hook that durably records a decision **before** it becomes active. A
-persistence failure leaves the decision inactive.
+persistence failure leaves the decision inactive. One write may take at most
+`maximumPersistMillis`; a write that never returns is interrupted at the
+deadline and reported as `journal_failed`.
 
 ### GrantStore.make and GrantStore.layer
 
@@ -326,12 +338,15 @@ const maximumMetadataDepth = 16
 const maximumMetadataMembers = 1_024
 const maximumMetadataBytes = 65_536
 const maximumEventBytes = 262_144
+const maximumPersistMillis = 30_000
 const maximumIdentityLength = 4_096
 const maximumCapabilityResourceLength: number // Capability.maxResourceLength
 ```
 
 Every bound failure uses `invalid_resolution` and occurs before state or
-journal authority changes.
+journal authority changes. `maximumPersistMillis` instead bounds time: a
+journal write that exceeds it fails the admission with `journal_failed`
+without activating the decision.
 
 ## GrantEvent
 
@@ -731,12 +746,12 @@ command that cannot be snapshotted fails with an `InvalidData` `PlatformError`.
 
 Least-authority construction for a child process's replacement environment.
 
-| Export                  | Type                                             | Meaning                                                                                         |
-| ----------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `inheritedNames`        | `ReadonlyArray<string>`                          | `PATH`, `HOME`, `USER`, `LANG`, `TERM`, `TMPDIR`, and `SHELL`; `LC_*` is admitted by prefix.    |
+| Export                  | Type                                             | Meaning                                                                                                                                            |
+| ----------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inheritedNames`        | `ReadonlyArray<string>`                          | `PATH`, `HOME`, `USER`, `LANG`, `TERM`, `TMPDIR`, and `SHELL`; `LC_*` is admitted by prefix.                                                       |
 | `credentialNamePattern` | `RegExp`                                         | The credential-name rule shared with `@smthrs/model/Auth`, including complete or separator-delimited `token`, `key`, `key_id`, and `pat` suffixes. |
-| `isCredentialName`      | `(name: string) => boolean`                      | Tests one name against that rule.                                                               |
-| `make`                  | `(ambient, declared?) => Record<string, string>` | Selects bootstrap names, withholds sensitive ambient names, and overlays explicit declarations. |
+| `isCredentialName`      | `(name: string) => boolean`                      | Tests one name against that rule.                                                                                                                  |
+| `make`                  | `(ambient, declared?) => Record<string, string>` | Selects bootstrap names, withholds sensitive ambient names, and overlays explicit declarations.                                                    |
 
 `make` returns a null-prototype record suitable for `CommandOptions.env` with
 `extendEnv: false`. An explicitly declared name is applied last, even when it
