@@ -14,7 +14,6 @@ import {
   BodyRefMarkdown,
   type DiscoveryWarning,
   type EffectDeclaration,
-  type FlowBody,
   FlowBodyPrompt,
   type FlowBudget,
   FlowDescriptor,
@@ -169,7 +168,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
  * @category constructors
  * @since 0.1.0
  */
-export const loadBody = (text: string, baseDirectory: string): FlowBody =>
+export const loadBody = (text: string, baseDirectory: string): FlowBodyPrompt =>
   new FlowBodyPrompt({
     text: Frontmatter.split(text).body,
     baseDirectory
@@ -181,7 +180,7 @@ export const loadBody = (text: string, baseDirectory: string): FlowBody =>
  * @category rendering
  * @since 0.1.0
  */
-export const renderPrompt = (body: FlowBody & FlowBodyPrompt, input: { readonly args: string }): string =>
+export const renderPrompt = (body: FlowBodyPrompt, input: { readonly args: string }): string =>
   [
     body.text,
     "",

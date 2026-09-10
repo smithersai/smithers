@@ -462,7 +462,7 @@ more cases than that, so a caller reports it either way.
 ### MarkdownFlow.loadBody
 
 ```ts
-const loadBody: (text: string, baseDirectory: string) => FlowBody
+const loadBody: (text: string, baseDirectory: string) => FlowBodyPrompt
 ```
 
 Removes leading frontmatter and returns a `FlowBodyPrompt`. It removes nothing
@@ -472,7 +472,7 @@ else: a body's own markdown, including any later `---` rule, is preserved.
 
 ```ts
 const renderPrompt: (
-  body: FlowBody & FlowBodyPrompt,
+  body: FlowBodyPrompt,
   input: { readonly args: string }
 ) => string
 ```

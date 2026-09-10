@@ -638,11 +638,7 @@ const loadMarkdown = (
 ): Effect.Effect<LoadedBody, ExecutableError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const text = new TextDecoder().decode(yield* sourceBytes(descriptor, path))
-    // `loadBody` is typed over the whole body union but answers `Prompt` for
-    // every markdown source, which is the only kind that reaches here; the
-    // module arm is the branch above. Narrowing by assertion rather than by a
-    // condition keeps an unreachable arm out of the module.
-    const body = MarkdownFlow.loadBody(text, baseDirectory) as Descriptor.FlowBodyPrompt
+    const body = MarkdownFlow.loadBody(text, baseDirectory)
     const prompt = MarkdownFlow.renderPrompt(body, { args: "" })
     const lowered = CoreMarkdown.lowerMarkdown(MarkdownFlow.toCoreFrontmatter(descriptor), prompt)
     return { prompt, annotations: lowered.annotations }

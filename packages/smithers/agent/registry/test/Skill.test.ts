@@ -58,9 +58,6 @@ describe("Skill", () => {
 
     const body = MarkdownFlow.loadBody(text, skillDirectory)
     expect(body._tag).toBe("Prompt")
-    if (body._tag !== "Prompt") {
-      return
-    }
     const registryFlow = Markdown.lowerMarkdown(
       MarkdownFlow.toCoreFrontmatter(descriptor),
       body.text

@@ -755,6 +755,16 @@ describe("MarkdownFlow", () => {
     )
   })
 
+  it("hands a loaded body to renderPrompt without narrowing it first", () => {
+    const rendered = MarkdownFlow.renderPrompt(
+      MarkdownFlow.loadBody("---\ndescription: Review\n---\nLine one", "/flows/review"),
+      { args: "" }
+    )
+
+    expect(rendered).toContain("Line one")
+    expect(rendered).toContain("- Base directory: /flows/review")
+  })
+
   it("renders the resource base directory and appends arguments when present", () => {
     const body = new Descriptor.FlowBodyPrompt({
       text: "Review the pull request.",
