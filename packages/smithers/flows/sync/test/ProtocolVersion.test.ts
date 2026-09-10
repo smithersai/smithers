@@ -2,14 +2,19 @@ import { describe, expect, it } from "@effect/vitest"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
+import * as RunCatalog from "../src/RunCatalog.ts"
 import * as SyncClient from "../src/SyncClient.ts"
-import type * as SyncProtocol from "../src/SyncProtocol.ts"
+import * as SyncPrincipal from "../src/SyncPrincipal.ts"
+import * as SyncProtocol from "../src/SyncProtocol.ts"
 import * as SyncServer from "../src/SyncServer.ts"
 import * as TestSocket from "../src/test/TestSocket.ts"
 import * as TestSync from "../src/test/TestSync.ts"
 
 const runId = "wire-version" as JournalEvent.RunId
+const scope = { _tag: "Run", runId } as const
 const sourceId = "source" as JournalEvent.SourceId
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -176,3 +181,48 @@ for (const generation of [0, 5]) {
       }))
   }
 }
+
+/**
+ * One accepted version, one refusal code.
+ *
+ * Every case here is computed from `SyncProtocol.protocolVersion`, so a bump
+ * that leaves a hard-coded number behind in a schema fails these tests rather
+ * than shipping a path that speaks the old revision.
+ */
+describe("one protocol version", () => {
+  const accepted = SyncProtocol.protocolVersion
+  const request: SyncProtocol.SnapshotRequest = {
+    protocolVersion: accepted,
+    runId,
+    lineageId: "lineage",
+    projection: "counter",
+    projectionVersion: 1,
+    atLeastSeq: 0 as JournalEvent.Seq
+  }
+
+  it("decodes a mismatched request version so the refusal can be typed", () => {
+    expect(Schema.is(SyncProtocol.SnapshotRequest)(request)).toBe(true)
+    expect(Schema.is(SyncProtocol.SnapshotRequest)({ ...request, protocolVersion: accepted + 1 })).toBe(true)
+    expect(Schema.is(SyncProtocol.SnapshotRequest)({ ...request, protocolVersion: 1.5 })).toBe(false)
+    expect(Schema.is(SyncProtocol.ReadRequest)({ protocolVersion: accepted + 1, scope, cursors: [], limit: 1 }))
+      .toBe(true)
+  })
+
+  it.effect("answers protocol_violation on the read, subscribe and snapshot paths alike", () =>
+    Effect.gen(function*() {
+      const server = yield* SyncServer.makeLive.pipe(
+        Effect.provide(Layer.merge(Journal.layerNoop(), RunCatalog.layerStatic([runId])))
+      )
+      const mismatch = { code: "protocol_violation", cause: "protocol_version_mismatch" }
+      const version = accepted + 1
+      expect(yield* Effect.flip(server.read({ protocolVersion: version, scope, cursors: [], limit: 1 })))
+        .toMatchObject(mismatch)
+      expect(
+        yield* Effect.flip(
+          server.subscribe({ protocolVersion: version, scope, cursors: [], credit: 1 }).pipe(Stream.runDrain)
+        )
+      ).toMatchObject(mismatch)
+      expect(yield* Effect.flip(server.snapshot({ ...request, protocolVersion: version })))
+        .toMatchObject(mismatch)
+    }).pipe(Effect.provideService(SyncPrincipal.SyncPrincipal, SyncPrincipal.workspace("versions"))))
+})

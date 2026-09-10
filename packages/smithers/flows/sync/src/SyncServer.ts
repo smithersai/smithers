@@ -12,7 +12,6 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as PubSub from "effect/PubSub"
-import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import type * as Rpc from "effect/unstable/rpc/Rpc"
 import type * as RpcGroup from "effect/unstable/rpc/RpcGroup"
@@ -21,6 +20,7 @@ import * as BranchShare from "./BranchShare.ts"
 import * as Admission from "./internal/admission.ts"
 import { causeCode, journalErrorCode } from "./internal/causeText.ts"
 import { positiveInt, requestCount } from "./internal/options.ts"
+import { requireVersion } from "./internal/protocolVersion.ts"
 import * as SnapshotBoundary from "./internal/snapshot.ts"
 import * as RunCatalog from "./RunCatalog.ts"
 import { SyncError } from "./SyncError.ts"
@@ -36,8 +36,8 @@ import { SyncRpcs } from "./SyncRpcs.ts"
  */
 export interface Service {
   readonly snapshot: (request: SyncProtocol.SnapshotRequest) => Effect.Effect<SyncProtocol.Snapshot, SyncError>
-  readonly read: (request: SyncProtocol.ReadRequest) => Effect.Effect<SyncProtocol.ReadResponse, SyncError>
-  readonly subscribe: (request: SyncProtocol.SubscribeRequest) => Stream.Stream<SyncProtocol.Frame, SyncError>
+  readonly read: (request: SyncProtocol.ReadRequest) => Effect.Effect<SyncProtocol.ServerReadResponse, SyncError>
+  readonly subscribe: (request: SyncProtocol.SubscribeRequest) => Stream.Stream<SyncProtocol.ServerFrame, SyncError>
 }
 
 /**
@@ -81,8 +81,8 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
   make({
     snapshot: () => Effect.fail(new SyncError({ code: "not_found", message: "Public snapshots are unavailable" })),
     read: Effect.fn("SyncServer.read")(() => Effect.succeed({ entries: [], cursors: [], done: true })),
-    subscribe: (): Stream.Stream<SyncProtocol.Frame, SyncError> =>
-      Stream.succeed<SyncProtocol.Frame>({ _tag: "Closed", reason: "Sync server is unavailable" }),
+    subscribe: (): Stream.Stream<SyncProtocol.ServerFrame, SyncError> =>
+      Stream.succeed<SyncProtocol.ServerFrame>({ _tag: "Closed", reason: "Sync server is unavailable" }),
     ...overrides
   })
 
@@ -157,7 +157,7 @@ const frameOf = (
   generation: number,
   previous: number,
   entry: JournalEvent.Entry
-): SyncProtocol.Frame => ({
+): SyncProtocol.ServerFrame => ({
   _tag: "Entries",
   runId,
   generation,
@@ -573,16 +573,6 @@ const makeWith = (
         return { admitted, generation, hasMore: page.hasMore }
       })
 
-    const requireProtocolVersion = (version: number | undefined) =>
-      version === SyncProtocol.protocolVersion
-        ? Effect.void
-        : Effect.fail(
-          new SyncError({
-            code: "protocol_violation",
-            message: `Expected sync protocol version ${SyncProtocol.protocolVersion}; received ${version}`
-          })
-        )
-
     const snapshot = (input: SyncProtocol.SnapshotRequest): Effect.Effect<SyncProtocol.Snapshot, SyncError> =>
       Effect.gen(function*() {
         const request = yield* SnapshotBoundary.request(input)
@@ -606,17 +596,13 @@ const makeWith = (
         return yield* SnapshotBoundary.response(request, supplied, maxFrameBytes)
       })
 
-    const read = (input: SyncProtocol.ReadRequest): Effect.Effect<SyncProtocol.ReadResponse, SyncError> =>
+    const read = (input: SyncProtocol.ReadRequest): Effect.Effect<SyncProtocol.ServerReadResponse, SyncError> =>
       Effect.gen(function*() {
         const request = {
           ...input,
-          ...yield* Admission.decode(
-            Schema.Struct({ scope: SyncProtocol.Scope, cursors: SyncProtocol.WorkspaceCursor }),
-            input,
-            "invalid_request"
-          )
+          ...yield* Admission.decode(SyncProtocol.RequestEnvelope, input, "invalid_request")
         }
-        yield* requireProtocolVersion(request.protocolVersion)
+        yield* requireVersion(request.protocolVersion)
         yield* requireUniqueCursors(request.cursors)
         // The schema bounds `limit` at the wire; this bounds it again for an
         // in-process caller that constructed the request directly, so no path
@@ -731,7 +717,7 @@ const makeWith = (
     const runStream = (
       runId: JournalEvent.RunId,
       cursors: SyncProtocol.WorkspaceCursor
-    ): Stream.Stream<SyncProtocol.Frame, SyncError> =>
+    ): Stream.Stream<SyncProtocol.ServerFrame, SyncError> =>
       Stream.unwrap(Effect.gen(function*() {
         const supplied = cursors.find((cursor) => cursor.runId === runId)
         const after = supplied?.afterSeq
@@ -792,7 +778,7 @@ const makeWith = (
       covering: ReadonlyArray<JournalEvent.RunId>,
       openedUntil: number,
       request: SyncProtocol.SubscribeRequest
-    ): Stream.Stream<SyncProtocol.Frame, SyncError> =>
+    ): Stream.Stream<SyncProtocol.ServerFrame, SyncError> =>
       Stream.unwrap(Effect.gen(function*() {
         // How far each run this subscription has ever covered was served.
         // A run the catalog stops naming keeps its position here and simply
@@ -909,7 +895,7 @@ const makeWith = (
          * slot, the round never completed, and every run behind them was
          * never attached at all rather than merely delayed.
          */
-        const tail = (runId: JournalEvent.RunId): Stream.Stream<SyncProtocol.Frame, SyncError> =>
+        const tail = (runId: JournalEvent.RunId): Stream.Stream<SyncProtocol.ServerFrame, SyncError> =>
           Stream.unwrap(Effect.gen(function*() {
             const after = served.get(runId)
             const { admitted, generation, hasMore } = yield* readPage(
@@ -920,7 +906,7 @@ const makeWith = (
             )
             generations.set(runId, generation)
             yield* guardEntryChunk(admitted)
-            const frames: Array<SyncProtocol.Frame> = []
+            const frames: Array<SyncProtocol.ServerFrame> = []
             let previous = after === undefined ? -1 : after
             for (const accepted of admitted) {
               frames.push(frameOf(runId, generation, previous, accepted))
@@ -972,7 +958,9 @@ const makeWith = (
         })
 
         /** Which pass a tick pays for. */
-        const roundFor = (tick: "wake" | "interval"): Effect.Effect<Stream.Stream<SyncProtocol.Frame, SyncError>> =>
+        const roundFor = (
+          tick: "wake" | "interval"
+        ): Effect.Effect<Stream.Stream<SyncProtocol.ServerFrame, SyncError>> =>
           Effect.map(
             Clock.currentTimeMillis,
             (nowMs) =>
@@ -1075,8 +1063,8 @@ const makeWith = (
      */
     const untilExpiry = (
       expiresAtMs: number,
-      stream: Stream.Stream<SyncProtocol.Frame, SyncError>
-    ): Stream.Stream<SyncProtocol.Frame, SyncError> =>
+      stream: Stream.Stream<SyncProtocol.ServerFrame, SyncError>
+    ): Stream.Stream<SyncProtocol.ServerFrame, SyncError> =>
       Number.isFinite(expiresAtMs)
         ? Stream.interruptWhen(
           stream,
@@ -1087,18 +1075,14 @@ const makeWith = (
         )
         : stream
 
-    const subscribe = (input: SyncProtocol.SubscribeRequest): Stream.Stream<SyncProtocol.Frame, SyncError> =>
+    const subscribe = (input: SyncProtocol.SubscribeRequest): Stream.Stream<SyncProtocol.ServerFrame, SyncError> =>
       Stream.unwrap(
         Effect.gen(function*() {
           const request = {
             ...input,
-            ...yield* Admission.decode(
-              Schema.Struct({ scope: SyncProtocol.Scope, cursors: SyncProtocol.WorkspaceCursor }),
-              input,
-              "invalid_request"
-            )
+            ...yield* Admission.decode(SyncProtocol.RequestEnvelope, input, "invalid_request")
           }
-          yield* requireProtocolVersion(request.protocolVersion)
+          yield* requireVersion(request.protocolVersion)
           yield* requireUniqueCursors(request.cursors)
           // The schema bounds `credit` at the wire; this bounds it again for
           // an in-process caller that constructed the request directly.

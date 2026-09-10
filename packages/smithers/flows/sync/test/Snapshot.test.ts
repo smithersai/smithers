@@ -82,7 +82,6 @@ describe("public snapshot admission", () => {
       const remote = yield* client(snapshot)
       for (
         const invalid of [
-          { ...request, protocolVersion: 2 },
           { ...request, lineageId: "" },
           { ...request, lineageId: "a".repeat(513) },
           { ...request, projection: "x".repeat(129) },
@@ -96,6 +95,14 @@ describe("public snapshot admission", () => {
         expect(yield* Effect.flip(asOwner(service.snapshot(input)))).toMatchObject({ code: "invalid_request" })
         expect(yield* Effect.flip(remote.snapshot(input))).toMatchObject({ code: "invalid_request" })
       }
+      // A version this revision does not speak is a protocol refusal, not a
+      // malformed request: it decodes so every path answers the one code.
+      const mismatched = { ...request, protocolVersion: Protocol.protocolVersion + 1 }
+      expect(yield* Effect.flip(asOwner(service.snapshot(mismatched)))).toMatchObject({
+        code: "protocol_violation",
+        cause: "protocol_version_mismatch"
+      })
+      expect(yield* Effect.flip(remote.snapshot(mismatched))).toMatchObject({ code: "protocol_violation" })
       expect(calls).toBe(0)
     }))
 
@@ -129,11 +136,11 @@ describe("public snapshot admission", () => {
         [undefined, "decode_failed"],
         [cyclic, "decode_failed"],
         [{ ...snapshot, state: 1n }, "decode_failed"],
-        [{ ...snapshot, protocolVersion: 2 }, "decode_failed"],
         [{ ...snapshot, state: { count: Number.NaN } }, "decode_failed"],
         [{ ...snapshot, state: { count: undefined } }, "decode_failed"],
         [{ ...snapshot, state: new Date() }, "decode_failed"],
         [{ ...snapshot, extra: "secret" }, "decode_failed"],
+        [{ ...snapshot, protocolVersion: Protocol.protocolVersion + 1 }, "protocol_violation"],
         [{ ...snapshot, runId: "another-run" }, "protocol_violation"],
         [{ ...snapshot, lineageId: "another-lineage" }, "protocol_violation"],
         [{ ...snapshot, projection: "private" }, "protocol_violation"],

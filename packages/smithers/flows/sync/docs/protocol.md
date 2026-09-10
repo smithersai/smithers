@@ -28,6 +28,28 @@ position and the echoed response state would otherwise disagree. Journal
 sequences may have holes, so a cursor means "read entries after this number",
 not "expect the next number to be exactly one greater".
 
+A read and a subscribe request carry the same envelope, `SyncProtocol.RequestEnvelope`:
+one scope and one cursor set. Server read, server subscribe and client
+subscribe admit a caller-built request against that single schema.
+
+`generation` is asymmetric on purpose. A request may omit it, which is how a
+cursor persisted before rewind support still decodes; a response may not. The
+server-side shapes state that requirement in the type system:
+`SyncProtocol.ServerCursor`, `ServerReadResponse`, `ServerEntriesFrame` and
+`ServerFrame` all require `generation`, and `SyncServer.Service` answers with
+them, so a server that omits one does not compile. The wire schemas stay
+lenient so a non-conforming server is refused with `protocol_violation` naming
+the missing generation rather than a bare decode failure.
+
+## Protocol version
+
+`SyncProtocol.protocolVersion` is the one accepted wire revision, and the only
+place the number is written. Read, subscribe and snapshot requests all decode a
+version this revision does not speak, so the refusal is a typed
+`protocol_violation` with cause `protocol_version_mismatch` on every path,
+in process and over the wire, request and response alike. There is no second
+code for a version mismatch.
+
 ## Read
 
 `Sync.Read` accepts `protocolVersion: 1`, a scope, a cursor set, and a limit, and returns journal
@@ -125,7 +147,8 @@ of that run; raw journal checkpoints are never served automatically. Missing
 providers or unavailable projections fail closed. Credential expiry is checked
 before and after provider work, and provider failures do not expose private text.
 
-Both ends enforce the requested identity and minimum sequence. Both also bound
+Both ends enforce the requested identity, its protocol version, and the
+minimum sequence; each mismatch is a `protocol_violation`. Both also bound
 the entire encoded UTF-8 snapshot response by `maxFrameBytes` (default 2 MiB,
 excluding the outer RPC envelope), and reject non-JSON provider state. The
 response is detached from mutable provider objects.

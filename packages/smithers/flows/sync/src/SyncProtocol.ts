@@ -107,6 +107,56 @@ export const WorkspaceCursor = Schema.Array(RunCursor)
  */
 export type WorkspaceCursor = typeof WorkspaceCursor.Type
 
+/**
+ * One run's delivered position as a SERVER states it.
+ *
+ * Identical to {@link RunCursor} except that `generation` is required: a
+ * request may omit it for a persisted generation-zero cursor, a response may
+ * not. Server positions are typed with this shape so an implementation that
+ * omits a generation fails to compile rather than being refused at run time by
+ * every client that reads it.
+ *
+ * The wire schemas stay lenient on purpose. {@link ReadResponse} and
+ * {@link Frame} decode an absent generation so {@link SyncClient} can answer a
+ * non-conforming server with a typed `protocol_violation` naming the missing
+ * field, rather than a bare decode failure.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const ServerCursor = Schema.Struct({
+  ...RunCursor.fields,
+  generation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+})
+
+/**
+ * One run's delivered position as a server states it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ServerCursor = typeof ServerCursor.Type
+
+/**
+ * The scope and cursor set every read and subscribe request carries.
+ *
+ * Server read, server subscribe and client subscribe each admit a
+ * caller-built request against this one schema, so an envelope field is
+ * declared once and every entry point agrees on what an admitted request is.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const RequestEnvelope = Schema.Struct({ scope: Scope, cursors: WorkspaceCursor })
+
+/**
+ * The scope and cursor set every read and subscribe request carries.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type RequestEnvelope = typeof RequestEnvelope.Type
+
 /** Transport delivery positions. These are never application acknowledgements.
  * @category models
  * @since 1.0.0-rc.0
@@ -182,8 +232,12 @@ export const Resync = Schema.Struct({
  */
 export type Resync = typeof Resync.Type
 
+// `protocolVersion` accepts any integer here for the same reason
+// `ReadRequest` and `SubscribeRequest` do: a mismatch decodes so the boundary
+// can answer it with a typed `protocol_violation` instead of a decode
+// failure, and the accepted number lives only in `protocolVersion`.
 const snapshotIdentity = {
-  protocolVersion: Schema.Literal(1),
+  protocolVersion: Schema.Int,
   runId: JournalEvent.RunId,
   lineageId: Schema.NonEmptyString.check(Schema.isMaxLength(512)),
   projection: Schema.NonEmptyString.check(Schema.isMaxLength(128)),
@@ -304,6 +358,29 @@ export const ReadResponse = Schema.Struct({
 export type ReadResponse = typeof ReadResponse.Type
 
 /**
+ * One page of durable catch-up entries as a SERVER states it.
+ *
+ * Every cursor carries its generation. {@link SyncServer.Service} answers with
+ * this shape; {@link ReadResponse} is the lenient shape a client decodes an
+ * untrusted server's page into before refusing a missing generation.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const ServerReadResponse = Schema.Struct({
+  ...ReadResponse.fields,
+  cursors: Schema.Array(ServerCursor)
+})
+
+/**
+ * One page of durable catch-up entries as a server states it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ServerReadResponse = typeof ServerReadResponse.Type
+
+/**
  * A request to follow committed entries.
  *
  * `capability` authorizes branch runs exactly as on {@link ReadRequest}.
@@ -405,6 +482,49 @@ export const Frame = Schema.Union([EntriesFrame, HeartbeatFrame, ClosedFrame])
  * @since 0.1.0
  */
 export type Frame = typeof Frame.Type
+
+/**
+ * A contiguous batch of committed entries as a SERVER states it.
+ *
+ * `generation` is required here: a server that covers an interval knows the
+ * history it read, so omitting it is a compile error rather than a run-time
+ * refusal. {@link EntriesFrame} is the lenient shape a client decodes an
+ * untrusted server's frame into.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const ServerEntriesFrame = Schema.TaggedStruct("Entries", {
+  runId: JournalEvent.RunId,
+  generation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  fromSeq: JournalEvent.Seq,
+  toSeq: JournalEvent.Seq,
+  entries: Schema.Array(JournalEvent.Entry)
+})
+
+/**
+ * A contiguous batch of committed entries as a server states it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ServerEntriesFrame = typeof ServerEntriesFrame.Type
+
+/**
+ * Any frame a subscription may emit, as a server states it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export const ServerFrame = Schema.Union([ServerEntriesFrame, HeartbeatFrame, ClosedFrame])
+
+/**
+ * Any frame a subscription may emit, as a server states it.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type ServerFrame = typeof ServerFrame.Type
 
 /**
  * Whether a scope covers a run.

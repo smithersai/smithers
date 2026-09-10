@@ -331,7 +331,7 @@ const program = Effect.gen(function*() {
         Effect.provideService(SyncServer.SyncServer, server)
       )
       const failure = yield* Effect.flip(remote.snapshot({ ...identity, atLeastSeq: 0 as JournalEvent.Seq }))
-      assert.equal(failure.code, mismatch === "protocolVersion" ? "decode_failed" : "protocol_violation")
+      assert.equal(failure.code, "protocol_violation")
       assert.equal(typeof failure.cause, "string")
       assert.deepEqual((yield* remote.progress).applied.cursors, [])
     }).pipe(Effect.scoped)

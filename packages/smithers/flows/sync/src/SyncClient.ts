@@ -33,9 +33,10 @@ import {
   type Progress,
   protocolVersion,
   ReadResponse,
+  RequestEnvelope,
   type Resync,
   RunCursor,
-  Scope,
+  type Scope,
   type Snapshot,
   type SnapshotRequest,
   type WorkspaceCursor
@@ -513,11 +514,7 @@ const service = (client: Client, { bootstrapLimit, maxFrameBytes }: Resolved): E
       Stream.unwrap(Effect.gen(function*() {
         const options = {
           ...input,
-          ...yield* Admission.decode(
-            Schema.Struct({ scope: Scope, cursors: Schema.Array(RunCursor) }),
-            input,
-            "invalid_request"
-          )
+          ...yield* Admission.decode(RequestEnvelope, input, "invalid_request")
         }
         // The client's own policy was checked once, by the constructor. What
         // is left is the count this REQUEST carries: the declared type says

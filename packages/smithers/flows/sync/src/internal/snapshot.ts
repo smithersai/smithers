@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema"
 import { SyncError } from "../SyncError.ts"
 import * as Protocol from "../SyncProtocol.ts"
 import { causeCode } from "./causeText.ts"
+import { requireVersion } from "./protocolVersion.ts"
 
 /** Decode a detached request before callbacks can mutate its expected identity.
  * @category validation
@@ -16,7 +17,12 @@ export const request = (value: unknown): Effect.Effect<Protocol.SnapshotRequest,
     try: () => Schema.decodeUnknownSync(Protocol.SnapshotRequest)(value, { onExcessProperty: "error" }),
     catch: (cause) =>
       new SyncError({ code: "invalid_request", message: "Invalid public snapshot request", cause: causeCode(cause) })
-  }).pipe(Effect.map((decoded) => ({ ...decoded })))
+  }).pipe(
+    // The schema admits any integer version so this refusal, not a decode
+    // failure, is what a version mismatch produces here as on every other RPC.
+    Effect.tap((decoded) => requireVersion(decoded.protocolVersion)),
+    Effect.map((decoded) => ({ ...decoded }))
+  )
 
 /** Copy JSON bytes once, bound them, then check the exact requested projection.
  * @category validation
@@ -58,6 +64,7 @@ export const response = (
       catch: (cause) =>
         new SyncError({ code: "decode_failed", message: "Invalid public snapshot response", cause: causeCode(cause) })
     })
+    yield* requireVersion(snapshot.protocolVersion)
     if (
       snapshot.runId !== expected.runId || snapshot.lineageId !== expected.lineageId ||
       snapshot.projection !== expected.projection || snapshot.projectionVersion !== expected.projectionVersion
