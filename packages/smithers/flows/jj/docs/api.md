@@ -411,10 +411,11 @@ Honest divergences from a kernel WASI host, documented rather than hidden:
   this package exercises never hard-link.
 - `path_filestat_set_times` always follows symlinks, because the slice has no
   `lutimesSync`.
-- `fd_readdir` re-lists the directory on each call and uses the entry index as
-  the cookie, so a directory mutated between two reads of one iteration can skip
-  or repeat a name. That is unobservable from the single-threaded module this
-  shim hosts.
+- `fd_readdir` lists the directory once per enumeration. A call at cookie zero
+  takes a snapshot on the descriptor, later pages index it by cookie, and the
+  snapshot is released when a page past the end yields nothing or the
+  descriptor closes. Entries added or removed during an enumeration appear on
+  the next cookie-zero enumeration.
 - A directory file descriptor names a path, not an inode. Renaming the directory
   a descriptor was opened on makes the descriptor follow the name, where POSIX
   would keep naming the moved directory. Remembering the host path at open time

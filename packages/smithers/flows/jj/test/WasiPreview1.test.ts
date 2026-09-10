@@ -1532,6 +1532,79 @@ describe("WasiPreview1 directories", () => {
     expect(h.u32(RET)).toBe(0)
   })
 
+  it("lists a directory once for a full multi-page fd_readdir enumeration", () => {
+    const dirent = (name: string): SyncDirentLike => ({
+      name,
+      isFile: () => true,
+      isDirectory: () => false,
+      isSymbolicLink: () => false
+    })
+    const names = Array.from({ length: 200 }, (_, index) => `entry-${String(index).padStart(3, "0")}`)
+    let listings = 0
+    const h = host({
+      fs: stubFs({
+        readdirSync: () => {
+          listings++
+          return names.map(dirent)
+        }
+      })
+    })
+    const seen: Array<string> = []
+    let cookie = 0n
+    let pages = 0
+    for (;;) {
+      expect(h.sys.fd_readdir!(3, BUF, 128, cookie, RET)).toBe(E.success)
+      const used = h.u32(RET)
+      if (used === 0) break
+      pages++
+      const complete = parseDirents(h.get(BUF, used))
+      for (const entry of complete) seen.push(entry.name)
+      cookie = complete[complete.length - 1]!.next
+    }
+    expect(seen).toEqual(names)
+    expect(pages).toBeGreaterThan(10)
+    expect(listings).toBe(1)
+    // The snapshot is released at EOF: a fresh cookie-zero call lists again.
+    expect(h.sys.fd_readdir!(3, BUF, 128, 0n, RET)).toBe(E.success)
+    expect(listings).toBe(2)
+  })
+
+  it("shows entries added during an enumeration on the next cookie-zero fd_readdir", () => {
+    const dirent = (name: string): SyncDirentLike => ({
+      name,
+      isFile: () => true,
+      isDirectory: () => false,
+      isSymbolicLink: () => false
+    })
+    const names = ["one", "two", "three"]
+    const h = host({ fs: stubFs({ readdirSync: () => names.map(dirent) }) })
+    expect(h.sys.fd_readdir!(3, BUF, 40, 0n, RET)).toBe(E.success)
+    const first = parseDirents(h.get(BUF, h.u32(RET)))
+    expect(first.map((entry) => entry.name)).toEqual(["one"])
+    names.push("four")
+    // Mid-enumeration the snapshot holds: the new entry is not yet visible.
+    expect(h.sys.fd_readdir!(3, BUF, 512, first[0]!.next, RET)).toBe(E.success)
+    expect(parseDirents(h.get(BUF, h.u32(RET))).map((entry) => entry.name)).toEqual(["two", "three"])
+    // A fresh enumeration observes the mutation.
+    expect(h.sys.fd_readdir!(3, BUF, 512, 0n, RET)).toBe(E.success)
+    expect(parseDirents(h.get(BUF, h.u32(RET))).map((entry) => entry.name)).toEqual(["one", "two", "three", "four"])
+  })
+
+  it("drops the fd_readdir snapshot on fd_close so a reopened fd lists afresh", () => {
+    const root = freshDir()
+    fsModule.mkdirSync(join(root, "sub"))
+    fsModule.writeFileSync(join(root, "sub", "a"), "a")
+    const h = host({ root })
+    const fd = open(h, "/sub", { oflags: OFLAG.directory })
+    expect(h.sys.fd_readdir!(fd, BUF, 40, 0n, RET)).toBe(E.success)
+    expect(parseDirents(h.get(BUF, h.u32(RET))).map((entry) => entry.name)).toEqual(["a"])
+    expect(h.sys.fd_close!(fd)).toBe(E.success)
+    fsModule.writeFileSync(join(root, "sub", "b"), "b")
+    const again = open(h, "/sub", { oflags: OFLAG.directory })
+    expect(h.sys.fd_readdir!(again, BUF, 512, 0n, RET)).toBe(E.success)
+    expect(parseDirents(h.get(BUF, h.u32(RET))).map((entry) => entry.name).sort()).toEqual(["a", "b"])
+  })
+
   it("rejects lossy fd_readdir cookies above MAX_SAFE_INTEGER", () => {
     const root = freshDir()
     const h = host({ root })

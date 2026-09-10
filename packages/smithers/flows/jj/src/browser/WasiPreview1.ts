@@ -49,11 +49,13 @@
  *   this package exercises never hard-link (the contract suite proves it).
  * - `path_filestat_set_times` always follows symlinks: the slice has no
  *   `lutimesSync`.
- * - `fd_readdir` re-lists the directory on each call and uses the entry index
- *   as the cookie, so a directory mutated *between* two reads of the same
- *   iteration can skip or repeat a name — unobservable from the
- *   single-threaded module this shim hosts, which finishes each iteration
- *   before it mutates.
+ * - `fd_readdir` lists the directory once per enumeration: a call at cookie
+ *   zero takes a snapshot on the fd, later pages index it by cookie, and it is
+ *   released when a page past the end yields nothing or the fd closes. Entries
+ *   added or removed during an enumeration appear on the next cookie-zero
+ *   enumeration; a cookie that arrives with no snapshot held lists afresh and
+ *   indexes that listing, so a shorter directory ends the iteration early
+ *   rather than failing.
  * - A directory fd names a PATH, not an inode. The slice has no `openat` and no
  *   directory handle to hold, so every use of an open directory fd re-resolves
  *   its namespace path. Rename the directory an fd was opened on and the fd
@@ -242,6 +244,13 @@ interface DirFd {
    */
   readonly nsPath: string
   readonly preopen?: string
+  /**
+   * The listing an in-flight `fd_readdir` enumeration pages through. Taken
+   * when a call starts at cookie zero, indexed directly by the cookie, and
+   * released when a page yields nothing or the fd closes. Without it every page
+   * re-lists and rescans the whole directory: quadratic over a large flat one.
+   */
+  enumeration?: ReadonlyArray<SyncDirentLike> | undefined
 }
 interface StdioFd {
   readonly kind: "stdio"
@@ -625,6 +634,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
   const fdClose = (fd: number): number => {
     const entry = entryOf(fd)
     if (entry.kind === "file") fs.closeSync(entry.osFd)
+    else if (entry.kind === "dir") entry.enumeration = undefined
     fds.delete(fd >>> 0)
     return Errno.success
   }
@@ -769,14 +779,20 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
 
   const fdReaddir = (fd: number, bufPtr: number, bufLen: number, cookie: bigint, retPtr: number): number => {
     const dir = dirOf(fd)
-    const entries = fs.readdirSync(dirTarget(dir).hostPath, { withFileTypes: true })
+    const start = checked(cookie, Errno.inval)
+    // Cookie zero starts a new enumeration; any other cookie continues the one
+    // this fd holds, or, when none is held, indexes a fresh listing.
+    const entries = start === 0 || dir.enumeration === undefined
+      ? fs.readdirSync(dirTarget(dir).hostPath, { withFileTypes: true })
+      : dir.enumeration
+    dir.enumeration = entries
     const len = bufLen >>> 0
     const buf = bytes(bufPtr, len)
-    const start = checked(cookie, Errno.inval)
     let used = 0
-    for (const [index, dirent] of entries.entries()) {
-      if (index < start) continue
+    let index = start
+    for (; index < entries.length; index++) {
       if (used >= len) break
+      const dirent = entries[index]!
       const name = encoder.encode(dirent.name)
       const record = new Uint8Array(24 + name.length)
       const rv = new DataView(record.buffer)
@@ -789,6 +805,9 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
       buf.set(record.subarray(0, n), used)
       used += n
     }
+    // EOF is the page that yields nothing: guests read until an empty page, so
+    // releasing on the last populated one would re-list for that final call.
+    if (start >= entries.length) dir.enumeration = undefined
     view().setUint32(retPtr >>> 0, used, true)
     return Errno.success
   }
