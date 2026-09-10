@@ -2,15 +2,15 @@ import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Clock, Deferred, Effect, Exit, Fiber, Redacted, Schema, Scope, Sink, Stream } from "effect"
 import * as PlatformError from "effect/PlatformError"
 import { TestClock } from "effect/testing"
-import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
+import { ExitCode, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
 import { describe, expect, it } from "vitest"
 import * as Diagnostics from "../src/Diagnostics.ts"
 import * as StdioTransport from "../src/internal/StdioTransport.ts"
 import { McpError } from "../src/McpError.ts"
+import { fakeHandle, type HandleOptions } from "./fixtures/FakeProcess.ts"
 
 const secret = "synthetic-private-value-DO-NOT-PUBLISH"
 const diagnosticBytes = new TextEncoder().encode(`API_TOKEN=${secret}\n`)
-type HandleOptions = Parameters<typeof makeHandle>[0]
 
 const connect = (overrides: Partial<HandleOptions>, released: () => void = () => {}) =>
   StdioTransport.connect({
@@ -27,20 +27,7 @@ const connect = (overrides: Partial<HandleOptions>, released: () => void = () =>
     ChildProcessSpawner.makeNoop({
       spawn: () =>
         Effect.acquireRelease(
-          Effect.succeed(makeHandle({
-            pid: ProcessId(1),
-            exitCode: Effect.never,
-            isRunning: Effect.succeed(true),
-            kill: () => Effect.void,
-            stdin: Sink.drain,
-            stdout: Stream.never,
-            stderr: Stream.empty,
-            all: Stream.empty,
-            getInputFd: () => Sink.drain,
-            getOutputFd: () => Stream.empty,
-            unref: Effect.succeed(Effect.void),
-            ...overrides
-          })),
+          Effect.succeed(fakeHandle({ pid: ProcessId(1), ...overrides })),
           () => Effect.sync(released)
         )
     })

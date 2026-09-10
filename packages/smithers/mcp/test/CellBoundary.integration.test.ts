@@ -31,31 +31,17 @@ import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Option, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as McpFlows from "../src/McpFlows.ts"
+import * as FixtureServer from "./fixtures/FixtureServer.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
 
 /** A real MCP server in its own process: one `add` tool, nothing else. */
-const SERVER = String.raw`
-const readline = require("node:readline")
-const send = (message) => process.stdout.write(JSON.stringify(message) + "\n")
-readline.createInterface({ input: process.stdin }).on("line", (line) => {
-  const request = JSON.parse(line)
-  if (request.method === "initialize") {
-    send({ jsonrpc: "2.0", id: request.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fixture" } } })
-    return
-  }
-  if (request.method === "tools/list") {
-    send({ jsonrpc: "2.0", id: request.id, result: { tools: [{ name: "add", description: "Adds two numbers", inputSchema: { type: "object", properties: { a: {}, b: {} } } }] } })
-    return
-  }
-  if (request.method === "tools/call") {
-    send({ jsonrpc: "2.0", id: request.id, result: { content: [{ type: "text", text: String(request.params.arguments.a + request.params.arguments.b) }], isError: false } })
-  }
-})
-`
-
 const connected = Effect.provide(
-  McpFlows.connected({ server: "fixture", command: process.execPath, args: ["-e", SERVER] }),
+  McpFlows.connected({
+    server: "fixture",
+    command: process.execPath,
+    args: ["-e", FixtureServer.source, "single-tool"]
+  }),
   NodeServices.layer
 )
 

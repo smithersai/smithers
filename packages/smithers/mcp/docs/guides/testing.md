@@ -88,14 +88,18 @@ const connected = Effect.scoped(Effect.gen(function*() {
 })).pipe(Effect.provide(NodeServices.layer))
 ```
 
-`process.execPath` with `-e` keeps the fixture in the test file, which is worth
-more than a tidy separate file: the server's behavior and the assertion about it
-stay in one place. Give these tests a generous timeout; spawning a process and
-completing a handshake takes longer than an assertion.
+`process.execPath` with `-e` keeps the fixture next to the assertion about it
+while one suite spawns it. Give these tests a generous timeout; spawning a
+process and completing a handshake takes longer than an assertion.
 
 Test the failure paths this way too. A server that exits during startup, writes
 an oversized frame, answers the wrong protocol version, or never replies is a
 few lines of fixture each, and those are the paths that break in production.
+
+Once a second suite needs the same server, give every suite one source and
+switch it on `process.argv[1]`, rather than copying it. This package does that:
+`test/fixtures/FixtureServer.ts` holds the only `node -e` server its suites
+spawn, so a change to a shared shape such as the initialize reply is made once.
 
 ## Test the boundary, not your model of it
 
