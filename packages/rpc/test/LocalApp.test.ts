@@ -8,8 +8,13 @@ import {
   CLOUD_WS_NOT_READY_CLOSE_CODE,
   CLOUD_WS_PENDING_CLOSE_CODE,
   CLOUD_WS_SESSION_KINDS,
+  CloudAuthStartResponseSchema,
   CloudLspFragmentSchema,
   CloudLspSessionSchema,
+  CloudSessionSchema,
+  HarnessesResponseSchema,
+  HarnessSchema,
+  LinearAuthSessionSchema,
   LSP_DEFINITION_PATH,
   LSP_DIAGNOSTICS_CAP,
   LSP_DIAGNOSTICS_PATH,
@@ -18,6 +23,7 @@ import {
   LSP_LANGUAGE_SERVER_MISSING,
   LSP_LOCATIONS_CAP,
   LSP_SERVERS_PATH,
+  LSP_SEVERITIES,
   LspDefinitionResponseSchema,
   LspDiagnosticSchema,
   LspDiagnosticsMessageSchema,
@@ -26,15 +32,30 @@ import {
   LspFileRequestSchema,
   LspHoverResponseSchema,
   lspLanguageFor,
+  LspLocationSchema,
   LspPositionRequestSchema,
+  LspRangeSchema,
   LspServersResponseSchema,
+  LspSeveritySchema,
   lspTopic,
+  patternRunTitle,
+  PtyCreateResponseSchema,
+  PtyOutputResponseSchema,
+  PtySessionSchema,
+  RepoFilesRequestSchema,
+  RepoFilesResponseSchema,
   RepoSchema,
   retryAfterOf,
+  splitLabel,
+  TARGET_LABEL,
   TARGET_PATTERN,
+  TARGET_RUN_VERBS,
   TargetRunFrameSchema,
   TargetRunMessageSchema,
+  TargetRunResponseSchema,
+  TargetRunVerbSchema,
   TargetSchema,
+  TargetsQueryResponseSchema,
   withRetryAfter
 } from "../src/LocalApp.ts"
 import { RunReplayResponseSchema, TargetRunEventSchema } from "../src/TargetGraph.ts"
@@ -133,6 +154,22 @@ describe("the code-intelligence wire model", () => {
     })
     expect(LspFileRequestSchema.safeParse({ repoId: "r1", path: "" }).success).toBe(false)
     expect(LspFileRequestSchema.safeParse({ repoId: "r1", path: "a".repeat(4097) }).success).toBe(false)
+  })
+
+  test("a range is four 1-based ordinals, a location is a repository-relative path plus that range, and severity is a closed set", () => {
+    expect(LspRangeSchema.parse(range)).toEqual(range)
+    // Every ordinal is whole and at least 1; column 0 and a fractional line are protocol errors, not "near enough".
+    for (const key of ["line", "character", "endLine", "endCharacter"] as const) {
+      expect(LspRangeSchema.safeParse({ ...range, [key]: 0 }).success).toBe(false)
+      expect(LspRangeSchema.safeParse({ ...range, [key]: 1.5 }).success).toBe(false)
+    }
+    const location = { path: "src/lib.ts", ...range }
+    expect(LspLocationSchema.parse(location)).toEqual(location)
+    expect(LspLocationSchema.safeParse({ ...location, path: "" }).success).toBe(false)
+    expect(LspLocationSchema.safeParse(range).success).toBe(false)
+    expect(LSP_SEVERITIES).toEqual(["error", "warning", "information", "hint"])
+    for (const severity of LSP_SEVERITIES) expect(LspSeveritySchema.parse(severity)).toBe(severity)
+    expect(LspSeveritySchema.safeParse("fatal").success).toBe(false)
   })
 
   test("a hover is the server's markdown cut at the cap and says when it was cut, or null when the server had nothing there", () => {
@@ -329,5 +366,299 @@ describe("TargetRunFrameSchema", () => {
     })
     expect(replay.events[0]).toEqual(frame)
     expect(replay.events[0]).toEqual(envelope.frame)
+  })
+})
+
+/*
+ * The harness table (apps/ui/docs/workbench-lanes/custom-agents.md): a row
+ * says which binary the app found, whether that binary is signed in, and
+ * whether it can be pointed at a model. The account and the model table are
+ * the two facts a row may not have, and they say so differently: `account`
+ * is present and null when nobody is signed in, while `models` is absent
+ * when the app has verified no model flag, so a row persisted before custom
+ * agents still parses.
+ */
+describe("the harness wire model", () => {
+  const harness = {
+    id: "claude" as const,
+    displayName: "Claude Code",
+    binary: "/opt/homebrew/bin/claude",
+    version: "2.0.14",
+    status: "signed-in" as const,
+    account: { email: "will@smithers.sh", label: "Max" },
+    launch: { argv: ["claude", "--print"] },
+    models: { suggestions: ["claude-opus-5"], listable: true }
+  }
+
+  test("a row carries the binary, the sign-in state, the account and the model table", () => {
+    expect(HarnessSchema.parse(harness)).toEqual(harness)
+    expect(HarnessesResponseSchema.parse({ harnesses: [harness] }).harnesses[0]).toEqual(harness)
+  })
+
+  test("a harness with no binary, no account and no verified model flag is a row, not a parse failure", () => {
+    const unavailable = {
+      id: "hermes" as const,
+      displayName: "Hermes",
+      binary: null,
+      version: null,
+      status: "unavailable" as const,
+      account: null,
+      launch: { argv: [] }
+    }
+    const parsed = HarnessSchema.parse(unavailable)
+    expect(parsed).toEqual(unavailable)
+    expect(parsed.models).toBeUndefined()
+  })
+
+  test("an unknown harness id or sign-in state is refused, and a missing account is not the same as no account", () => {
+    expect(HarnessSchema.safeParse({ ...harness, id: "claude-code" }).success).toBe(false)
+    expect(HarnessSchema.safeParse({ ...harness, status: "logged-in" }).success).toBe(false)
+    const { account: _account, ...withoutAccount } = harness
+    expect(HarnessSchema.safeParse(withoutAccount).success).toBe(false)
+    const { launch: _launch, ...withoutLaunch } = harness
+    expect(HarnessSchema.safeParse(withoutLaunch).success).toBe(false)
+    expect(HarnessSchema.safeParse({ ...harness, models: { suggestions: ["x"] } }).success).toBe(false)
+  })
+})
+
+/*
+ * A label names one target (`//pkg:name`, `//:name` for the root package)
+ * and splits back into the package and the name the loader listed. A run is
+ * one of the verbs `smithers-build` executes, and a pattern run reads as the
+ * command a person would type.
+ */
+describe("target labels, run verbs and pattern-run titles", () => {
+  test("a label is `//`, a package that may be empty, and a name after the one colon", () => {
+    for (const label of ["//:ci", "//a/b:c", "//packages/rpc:check"]) {
+      expect(TARGET_LABEL.test(label)).toBe(true)
+    }
+    // No colon, an empty name, a second colon, whitespace or a missing `//` are all not labels.
+    for (const label of ["//a/b", "//a:", "//a:b:c", "//a b:c", "packages/rpc:check", "//..."]) {
+      expect(TARGET_LABEL.test(label)).toBe(false)
+    }
+  })
+
+  test("splitting a label gives back the package and the name; a label with no colon keeps its last segment as the name", () => {
+    expect(splitLabel("//:x")).toEqual({ package: "//", name: "x" })
+    expect(splitLabel("//a/b:c")).toEqual({ package: "//a/b", name: "c" })
+    expect(splitLabel("//packages/rpc:check")).toEqual({ package: "//packages/rpc", name: "check" })
+    expect(splitLabel("//a/b")).toEqual({ package: "//a/b", name: "b" })
+    expect(splitLabel("//pkg")).toEqual({ package: "//pkg", name: "pkg" })
+  })
+
+  test("the run verbs are the six the CLI executes, and a pattern run reads as the command", () => {
+    expect(TARGET_RUN_VERBS).toEqual(["build", "ci", "docs", "lint", "run", "test"])
+    for (const verb of TARGET_RUN_VERBS) expect(TargetRunVerbSchema.parse(verb)).toBe(verb)
+    expect(TargetRunVerbSchema.safeParse("publish").success).toBe(false)
+    expect(patternRunTitle("ci", "//...")).toBe("ci //...")
+    expect(patternRunTitle("test", "//packages/...")).toBe("test //packages/...")
+  })
+})
+
+/*
+ * `POST /api/repo/files` fronts the filesystem, so its request is closed:
+ * only a repository id and a repository-relative path, the path bounded at 4096
+ * characters, and nothing else. The answer is a
+ * discriminated union, because a directory and a file carry different facts:
+ * a directory says whether its listing was cut at the entry cap, a file says
+ * whether its bytes were cut at the read cap, whether they are binary, and
+ * the digest a language-server answer is compared against.
+ */
+describe("the repo-files wire model", () => {
+  test("the request carries a repo id and an optional path and refuses anything else", () => {
+    expect(RepoFilesRequestSchema.parse({ repoId: "r1", path: "src/index.ts" }))
+      .toEqual({ repoId: "r1", path: "src/index.ts" })
+    // Absent path is the repository root, so the route needs no sentinel for it.
+    expect(RepoFilesRequestSchema.parse({ repoId: "r1" })).toEqual({ repoId: "r1" })
+    expect(RepoFilesRequestSchema.parse({ repoId: "r1", path: "" }).path).toBe("")
+    expect(RepoFilesRequestSchema.safeParse({ repoId: "", path: "src" }).success).toBe(false)
+    expect(RepoFilesRequestSchema.safeParse({ path: "src" }).success).toBe(false)
+    // The route is strict: a caller cannot smuggle a root past the repository id.
+    expect(RepoFilesRequestSchema.safeParse({ repoId: "r1", path: "src", cwd: "/" }).success).toBe(false)
+  })
+
+  test("the path is bounded at 4096 characters", () => {
+    expect(RepoFilesRequestSchema.safeParse({ repoId: "r1", path: "a".repeat(4096) }).success).toBe(true)
+    expect(RepoFilesRequestSchema.safeParse({ repoId: "r1", path: "a".repeat(4097) }).success).toBe(false)
+  })
+
+  test("a directory answer lists typed entries and says when the listing was cut at the entry cap", () => {
+    const dir = {
+      kind: "dir" as const,
+      path: "src",
+      entries: [{ name: "index.ts", kind: "file" as const }, { name: "lib", kind: "dir" as const }]
+    }
+    const parsed = RepoFilesResponseSchema.parse(dir)
+    expect(parsed).toEqual(dir)
+    expect(parsed.truncated).toBeUndefined()
+    expect(RepoFilesResponseSchema.parse({ ...dir, truncated: true })).toEqual({ ...dir, truncated: true })
+    expect(RepoFilesResponseSchema.safeParse({ ...dir, entries: [{ name: "sock", kind: "socket" }] }).success)
+      .toBe(false)
+  })
+
+  test("a file answer states the cut, the binary verdict and the digest, and states them rather than leaving them inferred", () => {
+    const file = {
+      kind: "file" as const,
+      path: "src/index.ts",
+      size: 12,
+      content: "export {}\n",
+      truncated: false,
+      binary: false,
+      digest: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    }
+    expect(RepoFilesResponseSchema.parse(file)).toEqual(file)
+    // A peer that predates the digest still parses; the cut and the binary verdict never may be omitted.
+    const { digest: _digest, ...withoutDigest } = file
+    expect(RepoFilesResponseSchema.parse(withoutDigest)).toEqual(withoutDigest)
+    const { truncated: _truncated, ...withoutTruncated } = file
+    expect(RepoFilesResponseSchema.safeParse(withoutTruncated).success).toBe(false)
+    const { binary: _binary, ...withoutBinary } = file
+    expect(RepoFilesResponseSchema.safeParse(withoutBinary).success).toBe(false)
+    expect(RepoFilesResponseSchema.safeParse({ ...file, size: -1 }).success).toBe(false)
+    expect(RepoFilesResponseSchema.safeParse({ ...file, size: 1.5 }).success).toBe(false)
+    expect(RepoFilesResponseSchema.safeParse({ ...file, kind: "symlink" }).success).toBe(false)
+  })
+})
+
+/*
+ * The pty routes (`POST /api/pty`, `GET /api/pty/:id/output`): a session is a
+ * terminal or a harness the app launched, and how it ended is three states,
+ * not two. Absent `exitCode` means still running, a number is the code, and
+ * null is death by signal. The output answer says when the scrollback was
+ * cut, so the renderer never presents a tail as the whole session.
+ */
+describe("the pty wire model", () => {
+  const session = {
+    sessionId: "p1",
+    kind: "harness" as const,
+    harnessId: "codex" as const,
+    cwd: "/work/smithers",
+    pid: 4242,
+    alive: true
+  }
+
+  test("a live harness session names the harness it launched and carries no exit code", () => {
+    const parsed = PtySessionSchema.parse(session)
+    expect(parsed).toEqual(session)
+    expect(parsed.exitCode).toBeUndefined()
+  })
+
+  test("a plain terminal names no harness, and a dead session distinguishes an exit code from a signal", () => {
+    const terminal = { sessionId: "p2", kind: "terminal" as const, cwd: "/work", pid: 7, alive: false, exitCode: 0 }
+    expect(PtySessionSchema.parse(terminal)).toEqual(terminal)
+    expect(PtySessionSchema.parse({ ...terminal, exitCode: null }).exitCode).toBeNull()
+    expect(PtySessionSchema.safeParse({ ...session, kind: "editor" }).success).toBe(false)
+    expect(PtySessionSchema.safeParse({ ...session, harnessId: "vim" }).success).toBe(false)
+    const { alive: _alive, ...withoutAlive } = session
+    expect(PtySessionSchema.safeParse(withoutAlive).success).toBe(false)
+  })
+
+  test("creating a session answers with its id, and reading output says whether the scrollback was cut", () => {
+    expect(PtyCreateResponseSchema.parse({ sessionId: "p1" })).toEqual({ sessionId: "p1" })
+    expect(PtyCreateResponseSchema.safeParse({}).success).toBe(false)
+    const output = { sessionId: "p1", alive: true, output: "$ ls\n", truncated: true }
+    expect(PtyOutputResponseSchema.parse(output)).toEqual(output)
+    const { truncated: _truncated, ...withoutTruncated } = output
+    expect(PtyOutputResponseSchema.safeParse(withoutTruncated).success).toBe(false)
+    const { output: _text, ...withoutOutput } = output
+    expect(PtyOutputResponseSchema.safeParse(withoutOutput).success).toBe(false)
+  })
+})
+
+/*
+ * `POST /api/targets/query` answers with what the loader listed plus what it
+ * complained about and how long it took, so a partially loaded workspace
+ * still renders with its warnings visible. Every listed target carries the
+ * opaque id the local repository authority minted; the browser addresses a
+ * run by that id, never by a path it composed.
+ */
+describe("the targets query and run wire model", () => {
+  const target = {
+    id: "t1",
+    label: "//packages/rpc:check",
+    target: "check",
+    kinds: ["typecheck"],
+    package: "//packages/rpc",
+    name: "check",
+    workspace: ".",
+    summary: "Type-check the contract modules",
+    featured: true
+  }
+
+  test("a query answer carries the targets, the loader's warnings and the elapsed time", () => {
+    const response = { targets: [target], warnings: ["skipped //vendor/..."], durationMs: 812 }
+    expect(TargetsQueryResponseSchema.parse(response)).toEqual(response)
+    // An empty workspace is a successful query, not a failure to parse.
+    expect(TargetsQueryResponseSchema.parse({ targets: [], warnings: [], durationMs: 0 }).targets).toEqual([])
+  })
+
+  test("summary and featured are the declaration's optional presentation, but the minted id is not optional", () => {
+    const { summary: _summary, featured: _featured, ...plain } = target
+    expect(TargetsQueryResponseSchema.parse({ targets: [plain], warnings: [], durationMs: 1 }).targets[0])
+      .toEqual(plain)
+    const { id: _id, ...withoutId } = target
+    expect(TargetsQueryResponseSchema.safeParse({ targets: [withoutId], warnings: [], durationMs: 1 }).success)
+      .toBe(false)
+    expect(
+      TargetsQueryResponseSchema.safeParse({ targets: [{ ...target, id: "" }], warnings: [], durationMs: 1 }).success
+    )
+      .toBe(false)
+    expect(TargetsQueryResponseSchema.safeParse({ targets: [target], durationMs: 1 }).success).toBe(false)
+    expect(TargetsQueryResponseSchema.safeParse({ targets: [target], warnings: [] }).success).toBe(false)
+  })
+
+  test("starting a run answers with the run id the target-run topic is keyed by", () => {
+    expect(TargetRunResponseSchema.parse({ runId: "run-1" })).toEqual({ runId: "run-1" })
+    expect(TargetRunResponseSchema.safeParse({}).success).toBe(false)
+    expect(TargetRunResponseSchema.safeParse({ runId: 1 }).success).toBe(false)
+  })
+})
+
+/*
+ * The sign-in answers on the local origin (apps/ui/docs/decisions/0001-piper-one-truth.md
+ * and apps/ui/docs/decisions/0005-linear-github-sync.md). Neither carries a token: the cloud session carries only what
+ * a person sees, and the Linear session carries the setup key only once the
+ * handoff is authorized. `scopes: "degraded"` is the one word for a legacy
+ * token set that lacks the workspace scopes, so acts that need them can say
+ * "sign in again to enable" instead of failing at the call.
+ */
+describe("the cloud and Linear sign-in wire model", () => {
+  test("a signed-out session is three nulls and no scope verdict", () => {
+    const signedOut = { state: "signed-out" as const, username: null, expiresAt: null }
+    const parsed = CloudSessionSchema.parse(signedOut)
+    expect(parsed).toEqual(signedOut)
+    expect(parsed.scopes).toBeUndefined()
+  })
+
+  test("a signed-in session names the person and its expiry, and says when the token set is degraded", () => {
+    const signedIn = {
+      state: "signed-in" as const,
+      username: "williamcory",
+      expiresAt: "2026-10-01T00:00:00.000Z",
+      scopes: "degraded" as const
+    }
+    expect(CloudSessionSchema.parse(signedIn)).toEqual(signedIn)
+    // "degraded" is the only verdict the wire carries; full scopes are said by leaving it out.
+    expect(CloudSessionSchema.safeParse({ ...signedIn, scopes: "full" }).success).toBe(false)
+    expect(CloudSessionSchema.safeParse({ ...signedIn, state: "expired" }).success).toBe(false)
+    const { username: _username, ...withoutUsername } = signedIn
+    expect(CloudSessionSchema.safeParse(withoutUsername).success).toBe(false)
+    // A bearer never reaches the renderer, so it is stripped rather than carried through.
+    expect(CloudSessionSchema.parse({ ...signedIn, token: "secret" })).toEqual(signedIn)
+  })
+
+  test("starting a browser login answers with the url to open", () => {
+    expect(CloudAuthStartResponseSchema.parse({ url: "https://jjhub.tech/login?x=1" }).url)
+      .toBe("https://jjhub.tech/login?x=1")
+    expect(CloudAuthStartResponseSchema.safeParse({}).success).toBe(false)
+  })
+
+  test("the Linear handoff is three states and carries the setup key only once authorized", () => {
+    expect(LinearAuthSessionSchema.parse({ state: "idle" })).toEqual({ state: "idle" })
+    expect(LinearAuthSessionSchema.parse({ state: "waiting" }).setupKey).toBeUndefined()
+    expect(LinearAuthSessionSchema.parse({ state: "authorized", setupKey: "k1" }))
+      .toEqual({ state: "authorized", setupKey: "k1" })
+    expect(LinearAuthSessionSchema.safeParse({ state: "done" }).success).toBe(false)
+    expect(LinearAuthSessionSchema.safeParse({}).success).toBe(false)
   })
 })
