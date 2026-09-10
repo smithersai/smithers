@@ -1163,3 +1163,31 @@ export const verify = (
  */
 export const generationNodes = (plan: Plan): ReadonlyArray<PlanNode> =>
   plan.nodes.filter((node) => node.generation === plan.generation)
+
+/**
+ * Whether `input` is a compiler-owned immutable snapshot that already passed
+ * {@link verify}: such values take verify's trusted fast path and need no
+ * second schema validation.
+ *
+ * @since 1.0.0
+ * @category guards
+ * @slop
+ */
+export const isVerified = (input: unknown): input is Plan =>
+  typeof input === "object" && input !== null && frozenPlans.has(input as Plan)
+
+/**
+ * The approval digest of every generation before the newest: the digest this
+ * plan carried before its last append. {@link module:PlanStore}'s append
+ * matches it against the stored envelope, so an append proves the recorded
+ * plan's integrity from the already-verified prefix instead of decoding and
+ * re-verifying every stored row.
+ *
+ * @since 1.0.0
+ * @category accessors
+ * @slop
+ */
+export const prefixDigest = (
+  plan: Plan
+): Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
+  digestOf(plan.planId, plan.flow, plan.nodes.filter((node) => node.generation < plan.generation))

@@ -501,4 +501,60 @@ describe("PlanStore", () => {
       )
       expect(failure).toMatchObject({ code: "persistence_failed" })
     }))
+
+  it.effect("reports a stored envelope digest that drifted from its rows as decode_failed on append", () =>
+    Effect.gen(function*() {
+      const base = yield* withCrypto(compile([draft("root")]))
+      const other = yield* withCrypto(compile([draft("other")], "other-plan"))
+      const grown = yield* withCrypto(Plan.append(base, [draft("late")]))
+      const failure = yield* withStore((store) =>
+        Effect.gen(function*() {
+          const sql = yield* SqlClient.SqlClient
+          yield* store.record(base, 1)
+          yield* sql`DROP TRIGGER flows_plans_forward_only`
+          yield* sql`UPDATE flows_plans SET digest = ${other.digest} WHERE plan_id = ${base.planId}`
+          return yield* Effect.flip(store.append(grown))
+        })
+      )
+      expect(failure).toMatchObject({ code: "decode_failed" })
+    }))
+
+  it.effect(
+    "keeps per-append cost flat: the window around append 300 stays within a small multiple of the first 25",
+    () =>
+      Effect.gen(function*() {
+        const { early, late } = yield* withStore((store) =>
+          Effect.gen(function*() {
+            let plan = yield* withCrypto(compile([draft("n0", { writes: ["out/0"] })]))
+            yield* store.record(plan, 1)
+            let early = 0
+            let late = 0
+            for (let generation = 1; generation <= 300; generation++) {
+              plan = yield* withCrypto(
+                Plan.append(plan, [
+                  draft(`n${generation}`, {
+                    writes: [`out/${generation}`],
+                    inputs: [{ _tag: "Pending", from: `n${generation - 1}` }]
+                  })
+                ])
+              )
+              const started = yield* Effect.sync(() => performance.now())
+              yield* store.append(plan)
+              const elapsed = yield* Effect.sync(() => performance.now() - started)
+              if (generation <= 25) early += elapsed
+              if (generation > 275) late += elapsed
+            }
+            return { early: early / 25, late: late / 25 }
+          })
+        )
+        // Append used to re-read, decode, and re-verify the whole stored plan
+        // per append, so the window around append 300 cost roughly fifty
+        // times the first 25 (the review probe measured 2.7 ms growing to
+        // 68.9 ms; this in-memory setup measures ~75 ms against ~1.5 ms).
+        // Matching the stored envelope against the verified prefix's approval
+        // digest keeps the ratio near the cost of one prefix hash.
+        expect(late).toBeLessThan(early * 12)
+      }),
+    300_000
+  )
 })

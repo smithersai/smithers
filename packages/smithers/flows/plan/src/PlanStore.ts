@@ -237,7 +237,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
 
     const append: Service["append"] = Effect.fn("PlanStore.append")((plan) =>
       Effect.gen(function*() {
-        yield* validate(plan)
+        // A verified snapshot passed the persistence contract's schema when
+        // it was frozen; only an imported value needs the guard before its
+        // nodes are read.
+        if (!Plan.isVerified(plan)) yield* validate(plan)
         let appended = Plan.generationNodes(plan)
         if (appended.length === 0) {
           return yield* Effect.fail(
@@ -250,15 +253,33 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         }
         plan = yield* verified(plan)
         appended = Plan.generationNodes(plan)
+        const prefix = plan.nodes.filter((node) => node.generation < plan.generation)
+        // The digest the stored envelope must carry before this append lands:
+        // the approval digest of this append's already-verified prefix.
+        // Matching it in the compare-and-swap proves the recorded prefix is
+        // the caller's — the envelope-integrity guarantee `get` gave the
+        // append — without decoding and re-verifying every stored row.
+        // Verification rebuilt and froze the prefix, so the derivation
+        // cannot fail.
+        const prefixDigest = yield* Plan.prefixDigest(plan).pipe(
+          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.orDie
+        )
         yield* writer.write(
           Effect.gen(function*() {
-            yield* get(plan.planId)
+            // The compare-and-swap matches the whole envelope this append
+            // grew from: the previous generation, the flow, the approved
+            // base digest, and the running prefix digest. A stored plan
+            // whose rows diverge from this append's verified prefix carries
+            // a different digest, so the match also proves the recorded
+            // prefix is the caller's, without reading a single node row.
             const advanced = yield* sql`
             UPDATE flows_plans SET digest = ${plan.digest}, generation = ${plan.generation}
             WHERE plan_id = ${plan.planId}
               AND generation = ${plan.generation - 1}
               AND flow = ${plan.flow}
               AND base_digest = ${plan.baseDigest}
+              AND digest = ${prefixDigest}
           `.raw
             // An elaboration grows a plan that was recorded. Without this the
             // UPDATE matching nothing is silently fine while the node rows land
@@ -267,35 +288,35 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
             // removed. The whole write is one transaction, so refusing here
             // takes them back with it.
             if ((yield* affectedRows(advanced)) === 0) {
+              const envelopes = yield* sql<{ generation: number; flow: string; base_digest: string }>`
+              SELECT generation, flow, base_digest FROM flows_plans WHERE plan_id = ${plan.planId}
+            `
+              const envelope = envelopes[0]
+              if (envelope !== undefined) {
+                // The swap matched nothing although the plan exists. Stored
+                // corruption must report decode_failed rather than read as a
+                // moved or divergent plan, and only the verifying read tells
+                // it apart from a plan that merely grew past this append.
+                yield* get(plan.planId)
+              }
+              const moved = envelope !== undefined &&
+                (envelope.generation !== plan.generation - 1 || envelope.flow !== plan.flow ||
+                  envelope.base_digest !== plan.baseDigest)
               return yield* Effect.fail(
-                error(
-                  "constraint",
-                  `plan ${plan.planId} was never recorded, or generation ${plan.generation} was skipped or moved under the append`,
-                  undefined
-                )
+                moved || envelope === undefined
+                  ? error(
+                    "constraint",
+                    `plan ${plan.planId} was never recorded, or generation ${plan.generation} was skipped or moved under the append`,
+                    undefined
+                  )
+                  : error(
+                    "constraint",
+                    `plan ${plan.planId} recorded plan's nodes diverge from the plan this append was grown from`,
+                    undefined
+                  )
               )
             }
-            const stored = yield* sql<{ node_json: string }>`
-            SELECT node_json
-            FROM flows_plan_nodes
-            WHERE plan_id = ${plan.planId}
-            ORDER BY ordinal
-          `
-            const recordedPrefix = stored.map((row) => row.node_json)
-            const expectedPrefix = yield* Effect.forEach(
-              plan.nodes.filter((node) => node.generation < plan.generation),
-              nodeJson
-            )
-            if (JSON.stringify(recordedPrefix) !== JSON.stringify(expectedPrefix)) {
-              return yield* Effect.fail(
-                error(
-                  "constraint",
-                  `plan ${plan.planId} recorded plan's nodes diverge from the plan this append was grown from`,
-                  undefined
-                )
-              )
-            }
-            yield* insertNodes(plan.planId, appended, stored.length)
+            yield* insertNodes(plan.planId, appended, prefix.length)
           })
         ).pipe(Effect.mapError(mapPersistenceError))
       })

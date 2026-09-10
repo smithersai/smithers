@@ -554,6 +554,24 @@ const verify: (input: unknown) => Effect.Effect<
 
 Reconstructs an imported plan using compiler key, dependency, conflict and generation rules. It verifies both the approval digests and the complete node contract, then returns an immutable snapshot. Compiler-owned immutable plans take a trusted fast path. `Plan.append` verifies imported prefixes through this same boundary. Recorded material-dependency order is checked without sorting inferred edges. Existing ordinals, keys, and approval digests remain unchanged; corrupted records are refused rather than silently rewritten.
 
+### Plan.isVerified
+
+```ts
+const isVerified: (input: unknown) => input is Plan
+```
+
+Whether a value is a compiler-owned immutable snapshot that already passed `verify`. Such values take verify's trusted fast path and need no second schema validation, which is what lets `PlanStore.append` skip re-decoding them.
+
+### Plan.prefixDigest
+
+```ts
+const prefixDigest: (
+  plan: Plan
+) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+```
+
+The approval digest of every generation before the newest: the digest the plan carried before its last append. `PlanStore.append` matches it against the stored envelope, so an append proves the recorded prefix is the caller's from the already-verified prefix instead of decoding and re-verifying every stored row.
+
 ### Plan.generationNodes
 
 ```ts
@@ -1140,7 +1158,7 @@ Compares a plan against the last plan for the same flow. Pure, total, and free o
 
 `record` is first-writer-wins: an identical re-record is not an error, and a different plan under the same id is a `Conflict` carrying the stored digest rather than a silent overwrite. It accepts generation 0 only, whose `baseDigest` equals its `digest` and every one of whose nodes is at generation 0. `get` returns the verified immutable plan with nodes in recorded order. Admission and reads recompute keys, approval digests, topology, effect ordering and generation relationships. A forged incoming plan fails with `invalid_plan` before writes; corrupt stored content fails with `decode_failed`, including on duplicate admission. Envelope and nodes are read in one SQL statement to avoid mixed generations during concurrent appends.
 
-`append` advances the plan row with a compare-and-swap on the previous generation, the flow, and the approved base digest, and refuses an append that adds no nodes. The refusal matters because of the append-only triggers: without it the node rows would land while the plan-row update matched nothing or skipped a generation, leaving rows whose dependencies are missing and that nothing is allowed to delete. The whole append is one transaction, so the refusal takes the rows back with it. Ordinals are derived from the rows already stored, not from the caller's array.
+`append` advances the plan row with a compare-and-swap on the previous generation, the flow, the approved base digest, and the approval digest of the append's already-verified prefix, and it refuses an append that adds no nodes. Matching the prefix digest proves the recorded prefix is the caller's without re-reading the stored rows. The refusal matters because of the append-only triggers: without it the node rows would land while the plan-row update matched nothing or skipped a generation, leaving rows whose dependencies are missing and that nothing is allowed to delete. The whole append is one transaction, so the refusal takes the rows back with it. New ordinals continue the recorded prefix, whose length the matched digest proves equal to the caller's prefix.
 
 Every failure is a `PlanStoreError` whose `code` is one of `invalid_plan`, `constraint`, `decode_failed`, `persistence_failed`, or `unknown`.
 
