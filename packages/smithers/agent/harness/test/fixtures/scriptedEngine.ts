@@ -7,26 +7,6 @@ import { HarnessError } from "../../src/HarnessError.ts"
 import * as Plan from "../../src/Plan.ts"
 
 /**
- * One scripted response to `EngineLike.splice`.
- *
- * @category fixtures
- * @since 0.1.0
- */
-export type SpliceStep =
-  | {
-    readonly _tag: "Results"
-    readonly results: ReadonlyArray<Plan.ChildResult>
-  }
-  | {
-    readonly _tag: "PermissionRequired"
-    readonly request: Permission.PermissionRequired
-  }
-  | {
-    readonly _tag: "Interrupt"
-    readonly startedChildren?: number | undefined
-  }
-
-/**
  * One scripted response to `EngineLike.call`.
  *
  * @category fixtures
@@ -58,14 +38,13 @@ export type CallStep =
  */
 export interface Recorder {
   readonly sealStep: Array<EngineLike.SealedModelStep>
+  /** Every batch handed to `splice`, which the cell-first controller never uses. */
   readonly splice: Array<Plan.Batch>
   readonly calls: Array<Cell.Call>
   readonly records: Array<EngineLike.RecordBoundary<unknown>>
   /** Every checkpoint the run asked this host to pin, with the tree it held. */
   readonly captures: Array<{ readonly id: string; readonly tree: string | undefined }>
   readonly suspend: Array<EngineLike.SuspendReason>
-  readonly startedCallIds: Array<string>
-  readonly abortedCallIds: Array<string>
 }
 
 /**
@@ -93,14 +72,13 @@ export interface Fixture {
 
 /**
  * Constructs an engine recorder. Sealed model steps delegate to the supplied
- * network-free model; child execution remains wholly behind `splice`.
+ * network-free model; flow calls settle from `callScript` in order.
  *
  * @category constructors
  * @since 0.1.0
  */
 export const make = (
   model: Model.Model,
-  spliceScript: ReadonlyArray<SpliceStep> = [],
   callScript: ReadonlyArray<CallStep> = [],
   tree?: string,
   treeComplete = true,
@@ -120,11 +98,8 @@ export const make = (
     calls: [],
     records: [],
     captures: [],
-    suspend: [],
-    startedCallIds: [],
-    abortedCallIds: []
+    suspend: []
   }
-  let spliceIndex = 0
   let callIndex = 0
   const engine = EngineLike.make({
     capture: (request) =>
@@ -140,38 +115,7 @@ export const make = (
     },
     splice: (batch) => {
       recorder.splice.push(batch)
-      const step = spliceScript[spliceIndex++] ?? {
-        _tag: "Results",
-        results: []
-      }
-      switch (step._tag) {
-        case "Results":
-          recorder.startedCallIds.push(...batch.children.map((child) => child.callId))
-          return Stream.fromIterable(
-            step.results.map((result) => new Plan.ChildSettled({ result }))
-          )
-        case "PermissionRequired":
-          return Stream.fail(
-            new HarnessError({
-              code: "engine_failed",
-              message: "Permission required",
-              cause: step.request
-            })
-          )
-        case "Interrupt": {
-          const started = batch.children.slice(0, step.startedChildren ?? 1)
-          recorder.startedCallIds.push(...started.map((child) => child.callId))
-          return Stream.fromEffect(
-            Effect.interrupt.pipe(
-              Effect.onInterrupt(() =>
-                Effect.sync(() => {
-                  recorder.abortedCallIds.push(...started.map((child) => child.callId))
-                })
-              )
-            )
-          )
-        }
-      }
+      return Stream.empty
     },
     call: (request) => {
       recorder.calls.push(request)

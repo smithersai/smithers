@@ -26,66 +26,12 @@ import * as Notifications from "../src/Notifications.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
+import { descriptor, emits, of, pattern, prose } from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
-const descriptor = (
-  name: string,
-  overrides: {
-    readonly tier?: Descriptor.EffectTier
-    readonly capabilities?: ReadonlyArray<string>
-    readonly writes?: ReadonlyArray<string>
-  } = {}
-): Descriptor.FlowDescriptor =>
-  new Descriptor.FlowDescriptor({
-    name,
-    description: `The ${name} flow.`,
-    body: new Descriptor.BodyRefModule({ path: `/flows/${name}/flow.ts` }),
-    input: new Descriptor.SchemaRefNone(),
-    output: new Descriptor.SchemaRefNone(),
-    model: Option.none(),
-    flows: [],
-    capabilities: overrides.capabilities ?? [],
-    effects: {
-      reads: [],
-      writes: overrides.writes ?? [],
-      mode: "hermetic",
-      onConflict: "serialize",
-      tier: overrides.tier ?? "sealed"
-    },
-    placement: Option.none(),
-    modelInvocable: true,
-    path: `/flows/${name}`,
-    frontmatter: {},
-    provenance: new Descriptor.Provenance({ source: "test", root: "/flows" })
-  })
-
 const lister = descriptor("fs/list", { capabilities: ["fs:read:**"] })
 const check = descriptor("bash", { capabilities: ["proc:spawn:*"], tier: "irreversible" })
-
-/** A recorded model frame whose text carries one fenced cell. */
-const emits = (cell: string): ScriptedModel.Step => ({
-  events: [
-    ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" }),
-    ModelEvent.ModelEvent.TextDelta({
-      type: "text-delta",
-      id: "cell",
-      text: "Here is the next step.\n\n```cell\n" + cell + "\n```"
-    }),
-    ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
-    ModelEvent.ModelEvent.Usage({ inputTokens: 8, outputTokens: 4 }),
-    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
-  ]
-})
-
-const prose = (text: string): ScriptedModel.Step => ({
-  events: [
-    ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "prose" }),
-    ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "prose", text }),
-    ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "prose" }),
-    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
-  ]
-})
 
 /** A settled provider step that carries no text at all. */
 const silent: ScriptedModel.Step = {
@@ -123,14 +69,6 @@ const crowded = ContextWindow.make({
     bulk("six", 6_000)
   ]
 })
-
-const pattern = (declared: string): Capability.CapabilityPattern => {
-  const parsed = declared.split(":")
-  return new Capability.CapabilityPattern({
-    action: `${parsed[0]}:${parsed[1]}` as Capability.PatternAction,
-    resource: parsed.slice(2).join(":")
-  })
-}
 
 const state = (
   overrides: {
@@ -218,7 +156,7 @@ const run = async (options: {
   readonly steering?: Layer.Layer<Steering.Source> | undefined
 }): Promise<Run> => {
   const model = ScriptedModel.make(options.script)
-  const engine = ScriptedEngine.make(model.model, [], options.calls ?? [])
+  const engine = ScriptedEngine.make(model.model, options.calls ?? [])
   const observed = await collect(
     {
       state: options.state ?? state(),
@@ -278,12 +216,6 @@ const stubEngine = (
 const valueless = (): Cell.CallResult =>
   Object.assign(new Cell.CallResult({ outcome: "success", value: null }), { value: undefined as never })
 
-const of = <T extends AgentEvent.AgentEvent["_tag"]>(
-  events: ReadonlyArray<AgentEvent.AgentEvent>,
-  tag: T
-): ReadonlyArray<Extract<AgentEvent.AgentEvent, { readonly _tag: T }>> =>
-  events.filter((event): event is Extract<AgentEvent.AgentEvent, { readonly _tag: T }> => event._tag === tag)
-
 const messagesOf = (model: ScriptedModel.Fixture, index: number): string =>
   JSON.stringify(model.recorder.requests[index]?.messages ?? [])
 
@@ -340,7 +272,7 @@ describe("CellTurn frame catalogs", () => {
 var removed = await ctx.call("fs/list", {});
 ctx.done({ names: Object.keys(ctx.flows), original: Object.keys(originalCatalog), frozen: Object.isFrozen(ctx.flows), value, removed })`)
       ])
-      const fixture = ScriptedEngine.make(model.model, [], [{ _tag: "Success", value: null }])
+      const fixture = ScriptedEngine.make(model.model, [{ _tag: "Success", value: null }])
       const result = await collect({
         state: state({ contextWindow: CellTurn.teach(opening(), []), maxFrames: 2 }),
         flows: [],
@@ -915,7 +847,7 @@ describe("CellTurn park without a human", () => {
       parking("which branch?"),
       emits(`ctx.done("done")`)
     ])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     await CellTurn.run({ state: state({ maxFrames: 2 }), flows: [lister] }).pipe(
       Stream.runDrain,
       Effect.provide(engine.layer),
@@ -1142,7 +1074,7 @@ describe("CellTurn steering boundaries", () => {
       emits(`console.log("kept")`),
       emits(`ctx.done("done")`)
     ])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     let drained = false
     const steering = source(() => {
       if (drained) return nothing
@@ -1168,7 +1100,7 @@ describe("CellTurn steering boundaries", () => {
       emits(`console.log("kept")`),
       emits(`ctx.done("done")`)
     ])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     let drained = false
     const steering = source(() => {
       if (drained) return nothing
@@ -1279,7 +1211,7 @@ describe("CellTurn defaults and refusals a shipped binding cannot reach", () => 
       emits(`ctx.park("waiting-input", "which branch?")`),
       emits(`ctx.done("settled it myself")`)
     ])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     const { events } = await collect(
       { state: state({ maxFrames: 3 }), flows: [lister] },
       {
@@ -1315,7 +1247,7 @@ describe("CellTurn defaults and refusals a shipped binding cannot reach", () => 
       emits(`await ctx.call("fs/list", { path: "." })`),
       emits(`ctx.done("recovered")`)
     ])
-    const engine = ScriptedEngine.make(model.model, [], [{ _tag: "Success", value: [] }])
+    const engine = ScriptedEngine.make(model.model, [{ _tag: "Success", value: [] }])
     let frames = 0
     const { events } = await collect(
       { state: state({ maxFrames: 3 }), flows: [lister] },
@@ -1345,7 +1277,7 @@ describe("CellTurn defaults and refusals a shipped binding cannot reach", () => 
 
   it("reports a realm that fails mid-frame as an engine failure, not a model failure", async () => {
     const model = ScriptedModel.make([emits(`ctx.done("unreachable")`)])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     const { failure } = await collect(
       { state: state(), flows: [lister] },
       {
@@ -1527,7 +1459,7 @@ describe("CellTurn record boundaries", () => {
 describe("CellTurn interruption", () => {
   it("reports one well-formed abort when the provider stream is interrupted mid-frame", async () => {
     const model = ScriptedModel.make([{ ...ScriptedModel.midStreamInterrupt }])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     const { events, interrupted } = await collect({ state: state(), flows: [] }, { engine: engine.layer })
 
     expect(interrupted).toBe(true)
@@ -1541,7 +1473,7 @@ describe("CellTurn interruption", () => {
       emits(`console.log("next")`),
       emits(`ctx.done("unreachable")`)
     ])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     const steering = Steering.layer({
       read: () => Effect.succeed(Steering.empty()),
       drain: () => Effect.interrupt
@@ -1743,7 +1675,7 @@ describe("CellTurn recorded observations", () => {
 
     const attempt = async (stalls: boolean) => {
       const model = ScriptedModel.make([emits(cell)])
-      const engine = ScriptedEngine.make(model.model, [], [])
+      const engine = ScriptedEngine.make(model.model, [])
       const stub = EngineLike.make({
         ...engine.engine,
         call: (call) => {
@@ -1894,7 +1826,7 @@ describe("CellTurn recorded observations", () => {
         emits(`ctx.done("unreachable")`),
         emits(`ctx.done("recovered")`)
       ])
-      const engine = ScriptedEngine.make(model.model, [], [])
+      const engine = ScriptedEngine.make(model.model, [])
       return {
         ...await collect(
           { state: state({ maxFrames: 3 }), flows: [lister] },
@@ -1983,7 +1915,7 @@ describe("CellTurn recorded observations", () => {
         emits(`ctx.park("waiting-input", "which branch?")`),
         emits(`ctx.done("answered")`)
       ])
-      const engine = ScriptedEngine.make(model.model, [], [])
+      const engine = ScriptedEngine.make(model.model, [])
       return {
         ...await collect(
           { state: state({ maxFrames: 3, approvalChannel: true }), flows: [lister] },
@@ -2023,7 +1955,7 @@ describe("CellTurn recorded observations", () => {
     const queue = steeringQueue()
     queue.steer("finish up")
     const model = ScriptedModel.make([emits(`ctx.park("waiting-input", "which branch?")`)])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     const { events } = await collect(
       { state: state({ maxFrames: 1, approvalChannel: true }), flows: [lister] },
       { engine: engine.layer, steering: queue.layer }
@@ -2051,7 +1983,7 @@ describe("CellTurn recorded observations", () => {
            ctx.done(listing.entries.join(","))`
         )
       ])
-      const engine = ScriptedEngine.make(model.model, [], [])
+      const engine = ScriptedEngine.make(model.model, [])
       const stub = EngineLike.make({
         ...engine.engine,
         call: () =>
@@ -2087,7 +2019,7 @@ describe("CellTurn recorded observations", () => {
       ),
       emits(`ctx.done("done")`)
     ])
-    const engine = ScriptedEngine.make(model.model, [], [{ _tag: "Success", value: { edited: true } }])
+    const engine = ScriptedEngine.make(model.model, [{ _tag: "Success", value: { edited: true } }])
     const { events } = await collect(
       {
         state: state({
@@ -2109,7 +2041,7 @@ describe("CellTurn recorded observations", () => {
 
   it("takes the shipped per-call ceiling when the binding enforces no call budget", async () => {
     const model = ScriptedModel.make([emits(`ctx.done("done")`)])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     const { events } = await collect(
       { state: state({ maxFrames: 2 }), flows: [lister] },
       {
@@ -2145,7 +2077,7 @@ describe("CellTurn recorded observations", () => {
          ctx.done(pinned.ok === false ? pinned.error.code : "pinned")`
       )
     ])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     const { events } = await collect(
       { state: state({ maxFrames: 2 }), flows: [lister], limits: { callMs: 20 } },
       { engine: EngineLike.layer(EngineLike.make({ ...engine.engine, capture: () => Effect.never })) }

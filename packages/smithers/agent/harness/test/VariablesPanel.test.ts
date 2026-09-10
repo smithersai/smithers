@@ -90,6 +90,18 @@ describe("VariablesPanel.render", () => {
     expect(VariablesPanel.render({ ledger, frame: 0 })).toContain("… and 1 older name not listed here")
   })
 
+  it("lists a ledger of exactly the bound with no count line under it", () => {
+    // One name more prints the line, so a panel that printed it here would be
+    // telling a run that holds everything it can see that something is hidden.
+    const ledger = VariablesPanel.stamp([], many(VariablesPanel.bound, 0), 0)
+    const rendered = VariablesPanel.render({ ledger, frame: 0 })
+
+    expect(rendered).toContain(`Names your realm holds (${VariablesPanel.bound})`)
+    expect(rendered).not.toContain("… and")
+    expect(rendered).not.toContain("not listed here")
+    expect(rendered.split("\n")).toHaveLength(VariablesPanel.bound + 1)
+  })
+
   it("lists least recently bound first, so the newest names sit closest to the cell", () => {
     const first = VariablesPanel.stamp([], [binding("older", "number", "1")], 0)
     const second = VariablesPanel.stamp(first, [binding("older", "number", "1"), binding("newer", "number", "2")], 5)

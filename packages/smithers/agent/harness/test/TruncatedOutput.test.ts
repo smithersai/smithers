@@ -51,6 +51,15 @@ describe("TruncatedOutput.captures", () => {
     expect(TruncatedOutput.captures("bash", shellResult("tail\n"))).toEqual([])
   })
 
+  it("records a payload of exactly the floor, and nothing one byte under it", () => {
+    // The floor is a `<`, so the two sides of it are the only inputs that tell
+    // a kept capture from a dropped one.
+    const atFloor = "z".repeat(TruncatedOutput.minimumBytes)
+
+    expect(TruncatedOutput.captures("bash", shellResult(atFloor))).toHaveLength(1)
+    expect(TruncatedOutput.captures("bash", shellResult(atFloor.slice(1)))).toEqual([])
+  })
+
   it("reports zero dropped bytes when the flow states none, or states a nonsense count", () => {
     const stdout = long("x")
     expect(
@@ -128,6 +137,14 @@ describe("TruncatedOutput.reuse", () => {
 
   it("passes every input while the ledger is empty", () => {
     expect(TruncatedOutput.reuse({ content: stdout }, [])).toBeUndefined()
+  })
+
+  it("finds a capture handed back at exactly the floor, which is the smallest one there is", () => {
+    const atFloor = "z".repeat(TruncatedOutput.minimumBytes)
+    const floorLedger = TruncatedOutput.captures("bash", shellResult(atFloor))
+
+    expect(floorLedger).toHaveLength(1)
+    expect(TruncatedOutput.reuse({ content: atFloor }, floorLedger)?.path).toBe("content")
   })
 
   it("names the position of a capture found inside an array", () => {

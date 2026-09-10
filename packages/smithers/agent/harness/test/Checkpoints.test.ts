@@ -9,20 +9,16 @@
  * shape at the bottom of this file is that instance's frame with checkpoints in
  * it: one edit, one baseline against `ctx.base`, one re-check, zero reverts.
  */
-import { Capability } from "@smthrs/kernel"
-import { ModelEvent, ModelRequest } from "@smthrs/model"
-import { Descriptor } from "@smthrs/registry"
-import { Effect, Layer, Option, Stream } from "effect"
+import { ModelRequest } from "@smthrs/model"
+import { Effect, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import type * as AgentEvent from "../src/AgentEvent.ts"
 import * as Cell from "../src/Cell.ts"
 import * as CellTurn from "../src/CellTurn.ts"
-import * as ContextWindow from "../src/ContextWindow.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
-import * as Steering from "../src/Steering.ts"
+import { descriptor, emits, of, pattern, run, window } from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
-import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
 // ---------------------------------------------------------------------------
 // The sandbox surface, proved against the binding a production host selects.
@@ -262,95 +258,25 @@ describe("ctx.checkpoint in a persistent realm", () => {
 // The controller: identity, the bound, and the two refusals.
 // ---------------------------------------------------------------------------
 
-const descriptor = (
-  name: string,
-  overrides: {
-    readonly tier?: Descriptor.EffectTier
-    readonly capabilities?: ReadonlyArray<string>
-    readonly writes?: ReadonlyArray<string>
-  } = {}
-): Descriptor.FlowDescriptor =>
-  new Descriptor.FlowDescriptor({
-    name,
-    description: `The ${name} flow.`,
-    body: new Descriptor.BodyRefModule({ path: `/flows/${name}/flow.ts` }),
-    input: new Descriptor.SchemaRefNone(),
-    output: new Descriptor.SchemaRefNone(),
-    model: Option.none(),
-    flows: [],
-    capabilities: overrides.capabilities ?? [],
-    effects: {
-      reads: [],
-      writes: overrides.writes ?? [],
-      mode: "hermetic",
-      onConflict: "serialize",
-      tier: overrides.tier ?? "sealed"
-    },
-    placement: Option.none(),
-    modelInvocable: true,
-    path: `/flows/${name}`,
-    frontmatter: {},
-    provenance: new Descriptor.Provenance({ source: "test", root: "/flows" })
-  })
-
-const emits = (cell: string): ScriptedModel.Step => ({
-  events: [
-    ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" }),
-    ModelEvent.ModelEvent.TextDelta({
-      type: "text-delta",
-      id: "cell",
-      text: "Here is the next step.\n\n```cell\n" + cell + "\n```"
-    }),
-    ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
-    ModelEvent.ModelEvent.Usage({ inputTokens: 8, outputTokens: 4 }),
-    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
-  ]
-})
-
-const window = ContextWindow.make({
-  modelId: "test-model",
-  segments: [
-    { kind: "system", zone: "prefix", content: [ModelRequest.SystemPart.make({ text: "cell contract" })] },
-    { kind: "transcript", zone: "tail", content: [ModelRequest.Message.user("start")] }
-  ]
-})
-
 const shell = descriptor("bash", { capabilities: ["proc:spawn:*"], tier: "irreversible" })
 const editor = descriptor("edit", { capabilities: ["fs:write:**"], writes: ["**"], tier: "compensable" })
 const reader = descriptor("read", { capabilities: ["fs:read:**"] })
 
-const envelope = ["fs:write:**", "fs:read:**", "proc:spawn:*"].map((declared) => {
-  const parsed = declared.split(":")
-  return new Capability.CapabilityPattern({
-    action: `${parsed[0]}:${parsed[1]}` as Capability.PatternAction,
-    resource: parsed.slice(2).join(":")
-  })
-})
+const envelope = ["fs:write:**", "fs:read:**", "proc:spawn:*"].map(pattern)
 
-interface Driven {
-  readonly events: ReadonlyArray<AgentEvent.AgentEvent>
-  readonly engine: ScriptedEngine.Fixture
-  readonly model: ScriptedModel.Fixture
-}
-
-const drive = async (options: {
+const drive = (options: {
   readonly cells: ReadonlyArray<string>
   readonly calls?: ReadonlyArray<ScriptedEngine.CallStep>
   readonly checkpointCap?: number
   readonly pins?: boolean
   readonly tree?: string
-}): Promise<Driven> => {
-  const model = ScriptedModel.make(options.cells.map(emits))
-  const engine = ScriptedEngine.make(
-    model.model,
-    [],
-    options.calls ?? [],
-    options.tree ?? "a.py=base",
-    true,
-    options.pins ?? true
-  )
-  const events: Array<AgentEvent.AgentEvent> = []
-  await CellTurn.run({
+}) =>
+  run({
+    script: options.cells.map(emits),
+    calls: options.calls ?? [],
+    flows: [shell, editor, reader],
+    tree: options.tree ?? "a.py=base",
+    pins: options.pins ?? true,
     state: CellTurn.make({
       session: "session-1",
       seat: "anthropic:test-model",
@@ -363,24 +289,8 @@ const drive = async (options: {
       repeatCap: 0,
       narrowingCap: 0,
       ...(options.checkpointCap === undefined ? {} : { checkpointCap: options.checkpointCap })
-    }),
-    flows: [shell, editor, reader]
-  }).pipe(
-    Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-    Effect.provide(engine.layer),
-    Effect.provide(QuickJSSandbox.layer),
-    Effect.provide(Steering.layerNoop()),
-    Effect.result,
-    Effect.runPromise
-  )
-  return { events, engine, model }
-}
-
-const of = <T extends AgentEvent.AgentEvent["_tag"]>(
-  events: ReadonlyArray<AgentEvent.AgentEvent>,
-  tag: T
-): ReadonlyArray<Extract<AgentEvent.AgentEvent, { readonly _tag: T }>> =>
-  events.filter((event): event is Extract<AgentEvent.AgentEvent, { readonly _tag: T }> => event._tag === tag)
+    })
+  })
 
 /**
  * What the frame's cell settled with, as text.

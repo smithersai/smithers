@@ -91,6 +91,17 @@ describe("NarrowedCheck.check", () => {
     expect(NarrowedCheck.check({ flow: "write", signature: "s", input: command(payload), digest: "t" }))
       .toBeUndefined()
   })
+
+  it("records an input carrying exactly the term bound, which is a question and not content", () => {
+    // `command`, `mode` and `unhermetic` are terms of the document itself, so
+    // three fewer words land the input on the bound rather than past it.
+    const payload = Array.from({ length: NarrowedCheck.maxTerms - 3 }, (_, index) => `term${index}`).join(" ")
+    const input = command(payload)
+
+    expect(NarrowedCheck.terms(input)).toHaveLength(NarrowedCheck.maxTerms)
+    expect(NarrowedCheck.check({ flow: "write", signature: "s", input, digest: "t" })?.terms)
+      .toHaveLength(NarrowedCheck.maxTerms)
+  })
 })
 
 describe("NarrowedCheck.narrows", () => {

@@ -6,9 +6,7 @@
  * that has to be proved rather than argued — that a killed run restored from its
  * own journal rebuilds a realm byte-identical to the one it lost.
  */
-import { Capability } from "@smthrs/kernel"
-import { CanonicalJson, ModelEvent, ModelRequest } from "@smthrs/model"
-import { Descriptor } from "@smthrs/registry"
+import { CanonicalJson, ModelRequest } from "@smthrs/model"
 import { Effect, Option, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
@@ -20,41 +18,13 @@ import { HarnessError } from "../src/HarnessError.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
+import { descriptor, emits, of, pattern } from "./fixtures/cellTurn.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
-const descriptor = (name: string, writes: ReadonlyArray<string> = []): Descriptor.FlowDescriptor =>
-  new Descriptor.FlowDescriptor({
-    name,
-    description: `The ${name} flow.`,
-    body: new Descriptor.BodyRefModule({ path: `/flows/${name}/flow.ts` }),
-    input: new Descriptor.SchemaRefNone(),
-    output: new Descriptor.SchemaRefNone(),
-    model: Option.none(),
-    flows: [],
-    capabilities: ["fs:read:**"],
-    effects: { reads: [], writes, mode: "hermetic", onConflict: "serialize", tier: "sealed" },
-    placement: Option.none(),
-    modelInvocable: true,
-    path: `/flows/${name}`,
-    frontmatter: {},
-    provenance: new Descriptor.Provenance({ source: "test", root: "/flows" })
-  })
-
-const flows = [descriptor("fs/list"), descriptor("fs/write", ["**"])]
-
-const emits = (cell: string): ScriptedModel.Step => ({
-  events: [
-    ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" }),
-    ModelEvent.ModelEvent.TextDelta({
-      type: "text-delta",
-      id: "cell",
-      text: "Next step.\n\n```cell\n" + cell + "\n```"
-    }),
-    ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
-    ModelEvent.ModelEvent.Usage({ inputTokens: 8, outputTokens: 4 }),
-    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
-  ]
-})
+const flows = [
+  descriptor("fs/list", { capabilities: ["fs:read:**"] }),
+  descriptor("fs/write", { capabilities: ["fs:read:**"], writes: ["**"] })
+]
 
 const window = ContextWindow.make({
   modelId: "test-model",
@@ -76,9 +46,7 @@ const state = (
     seat: "anthropic:test-model",
     modelParams: ModelRequest.GenerationParams.make(),
     layers: ["layer-a"],
-    capabilityEnvelope: [
-      new Capability.CapabilityPattern({ action: "fs:read", resource: "**" })
-    ],
+    capabilityEnvelope: [pattern("fs:read:**")],
     placement: Option.none(),
     contextWindow: CellTurn.teach(window, flows),
     maxFrames: overrides.maxFrames ?? 6,
@@ -186,12 +154,6 @@ const conversation = (request: ModelRequest.ModelRequest | undefined): string =>
   (request?.messages ?? [])
     .flatMap((message) => message.content.flatMap((part) => part.type === "text" ? [part.text] : []))
     .join("\n---\n")
-
-const of = <T extends AgentEvent.AgentEvent["_tag"]>(
-  events: ReadonlyArray<AgentEvent.AgentEvent>,
-  tag: T
-): ReadonlyArray<Extract<AgentEvent.AgentEvent, { readonly _tag: T }>> =>
-  events.filter((event): event is Extract<AgentEvent.AgentEvent, { readonly _tag: T }> => event._tag === tag)
 
 describe("CellTurn in repl mode", () => {
   it("journals the armed budgets once, before the run's first frame", async () => {

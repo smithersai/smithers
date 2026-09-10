@@ -9,72 +9,25 @@
  * nowhere else to keep a result.
  */
 import { Capability } from "@smthrs/kernel"
-import { ModelEvent, ModelRequest } from "@smthrs/model"
-import { Descriptor } from "@smthrs/registry"
-import { Effect, type Layer, Option, Schema, Stream } from "effect"
+import { ModelRequest } from "@smthrs/model"
+import { Option } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import * as Cell from "../src/Cell.ts"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as CellValidation from "../src/CellValidation.ts"
-import * as ContextWindow from "../src/ContextWindow.ts"
-import * as EngineLike from "../src/EngineLike.ts"
-import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
-import * as Steering from "../src/Steering.ts"
-import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
+import {
+  descriptor,
+  emits,
+  of,
+  type Options as RunOptions,
+  prose,
+  run as runCellTurn,
+  window
+} from "./fixtures/cellTurn.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 
-const descriptor = (name: string, capabilities: ReadonlyArray<string> = []): Descriptor.FlowDescriptor =>
-  new Descriptor.FlowDescriptor({
-    name,
-    description: `The ${name} flow.`,
-    body: new Descriptor.BodyRefModule({ path: `/flows/${name}/flow.ts` }),
-    input: new Descriptor.SchemaRefNone(),
-    output: new Descriptor.SchemaRefNone(),
-    model: Option.none(),
-    flows: [],
-    capabilities,
-    effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
-    placement: Option.none(),
-    modelInvocable: true,
-    path: `/flows/${name}`,
-    frontmatter: {},
-    provenance: new Descriptor.Provenance({ source: "test", root: "/flows" })
-  })
-
-const lister = descriptor("fs/list", ["fs:read:**"])
-
-const emits = (cell: string): ScriptedModel.Step => ({
-  events: [
-    ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" }),
-    ModelEvent.ModelEvent.TextDelta({
-      type: "text-delta",
-      id: "cell",
-      text: "Here is the next step.\n\n```cell\n" + cell + "\n```"
-    }),
-    ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
-    ModelEvent.ModelEvent.Usage({ inputTokens: 8, outputTokens: 4 }),
-    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
-  ]
-})
-
-const prose = (text: string): ScriptedModel.Step => ({
-  events: [
-    ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "prose" }),
-    ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "prose", text }),
-    ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "prose" }),
-    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
-  ]
-})
-
-const window = (): ContextWindow.ContextWindow =>
-  ContextWindow.make({
-    modelId: "test-model",
-    segments: [
-      { kind: "system", zone: "prefix", content: [ModelRequest.SystemPart.make({ text: "cell contract" })] },
-      { kind: "transcript", zone: "tail", content: [ModelRequest.Message.user("start")] }
-    ]
-  })
+const lister = descriptor("fs/list", { capabilities: ["fs:read:**"] })
 
 const state = (
   overrides: { readonly maxFrames?: number; readonly revalidations?: number } = {}
@@ -86,30 +39,14 @@ const state = (
     layers: ["layer-a"],
     capabilityEnvelope: [new Capability.CapabilityPattern({ action: "fs:read", resource: "**" })],
     placement: Option.none(),
-    contextWindow: window(),
+    contextWindow: window,
     maxFrames: overrides.maxFrames ?? 4,
     ...(overrides.revalidations === undefined ? {} : { revalidations: overrides.revalidations })
   })
 
-const run = async (options: {
-  readonly script: ScriptedModel.Script
-  readonly calls?: ReadonlyArray<ScriptedEngine.CallStep> | undefined
-  readonly state?: CellTurn.State | undefined
-}) => {
-  const model = ScriptedModel.make(options.script)
-  const engine = ScriptedEngine.make(model.model, [], options.calls ?? [])
-  const events: Array<AgentEvent.AgentEvent> = []
-  const layers: Layer.Layer<EngineLike.EngineLike> = engine.layer
-  await CellTurn.run({ state: options.state ?? state(), flows: [lister] }).pipe(
-    Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-    Effect.provide(layers),
-    Effect.provide(QuickJSSandbox.layer),
-    Effect.provide(Steering.layerNoop()),
-    Effect.result,
-    Effect.runPromise
-  )
-  return { events, model, engine }
-}
+/** The shared driver, starting from this suite's {@link state} unless a case supplies one. */
+const run = (options: Omit<RunOptions, "state" | "flows"> & { readonly state?: CellTurn.State | undefined }) =>
+  runCellTurn({ ...options, flows: [lister], state: options.state ?? state() })
 
 /** The trailing frame block: the one user message appended after the transcript. */
 const frameBlock = (model: ScriptedModel.Fixture, index: number): string =>
@@ -270,12 +207,6 @@ describe("CellTurn honest observations", () => {
     expect(observations).not.toContain("meant to come from a name an earlier cell bound")
   })
 })
-
-const of = <T extends AgentEvent.AgentEvent["_tag"]>(
-  events: ReadonlyArray<AgentEvent.AgentEvent>,
-  tag: T
-): ReadonlyArray<Extract<AgentEvent.AgentEvent, { readonly _tag: T }>> =>
-  events.filter((event): event is Extract<AgentEvent.AgentEvent, { readonly _tag: T }> => event._tag === tag)
 
 const resolvedText = (events: ReadonlyArray<AgentEvent.AgentEvent>): string => {
   const part = of(events, "resolved")[0]?.message.content[0]

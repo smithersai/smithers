@@ -22,73 +22,19 @@ import * as Sandbox from "../src/Sandbox.ts"
 import * as Steering from "../src/Steering.ts"
 import * as Transcript from "../src/Transcript.ts"
 import { batchedReply } from "./fixtures/batchedReplies.ts"
+import {
+  descriptor,
+  emits,
+  of,
+  type Options as RunOptions,
+  pattern,
+  prose,
+  run as runCellTurn,
+  window
+} from "./fixtures/cellTurn.ts"
 import { entry } from "./fixtures/journal.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
-
-const descriptor = (
-  name: string,
-  overrides: {
-    readonly tier?: Descriptor.EffectTier
-    readonly capabilities?: ReadonlyArray<string>
-    /** Declared write set, which is what makes a call count as a mutation. */
-    readonly writes?: ReadonlyArray<string>
-  } = {}
-): Descriptor.FlowDescriptor =>
-  new Descriptor.FlowDescriptor({
-    name,
-    description: `The ${name} flow.`,
-    body: new Descriptor.BodyRefModule({ path: `/flows/${name}/flow.ts` }),
-    input: new Descriptor.SchemaRefNone(),
-    output: new Descriptor.SchemaRefNone(),
-    model: Option.none(),
-    flows: [],
-    capabilities: overrides.capabilities ?? [],
-    effects: {
-      reads: [],
-      writes: overrides.writes ?? [],
-      mode: "hermetic",
-      onConflict: "serialize",
-      tier: overrides.tier ?? "sealed"
-    },
-    placement: Option.none(),
-    modelInvocable: true,
-    path: `/flows/${name}`,
-    frontmatter: {},
-    provenance: new Descriptor.Provenance({ source: "test", root: "/flows" })
-  })
-
-/** A recorded model frame whose text carries one fenced cell. */
-const emits = (cell: string): ScriptedModel.Step => ({
-  events: [
-    ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" }),
-    ModelEvent.ModelEvent.TextDelta({
-      type: "text-delta",
-      id: "cell",
-      text: "Here is the next step.\n\n```cell\n" + cell + "\n```"
-    }),
-    ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
-    ModelEvent.ModelEvent.Usage({ inputTokens: 8, outputTokens: 4 }),
-    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
-  ]
-})
-
-const prose = (text: string): ScriptedModel.Step => ({
-  events: [
-    ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "prose" }),
-    ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "prose", text }),
-    ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "prose" }),
-    ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
-  ]
-})
-
-const window = ContextWindow.make({
-  modelId: "test-model",
-  segments: [
-    { kind: "system", zone: "prefix", content: [ModelRequest.SystemPart.make({ text: "cell contract" })] },
-    { kind: "transcript", zone: "tail", content: [ModelRequest.Message.user("start")] }
-  ]
-})
 
 const state = (
   overrides: {
@@ -107,6 +53,16 @@ const state = (
      * an in-frame re-ask.
      */
     readonly revalidations?: number
+    readonly contextWindow?: ContextWindow.ContextWindow
+    /**
+     * The demand caps, each omitted to take its armed default. A suite that
+     * exercises one demand disarms the others with zero, so the notice under
+     * test is the only one the run can issue.
+     */
+    readonly repeatCap?: number
+    readonly narrowingCap?: number
+    readonly unmovedCap?: number
+    readonly unresolvedCap?: number
   } = {}
 ) =>
   CellTurn.make({
@@ -114,20 +70,18 @@ const state = (
     seat: "anthropic:test-model",
     modelParams: ModelRequest.GenerationParams.make(),
     layers: ["layer-a"],
-    capabilityEnvelope: (overrides.envelope ?? ["fs:read:**"]).map((pattern) => {
-      const parsed = pattern.split(":")
-      return new Capability.CapabilityPattern({
-        action: `${parsed[0]}:${parsed[1]}` as Capability.PatternAction,
-        resource: parsed.slice(2).join(":")
-      })
-    }),
+    capabilityEnvelope: (overrides.envelope ?? ["fs:read:**"]).map(pattern),
     placement: Option.none(),
-    contextWindow: window,
+    contextWindow: overrides.contextWindow ?? window,
     maxFrames: overrides.maxFrames ?? 4,
     readOnlyCap: overrides.readOnlyCap ?? 0,
     approvalChannel: overrides.approvalChannel ?? false,
     ...(overrides.modelCallMs === undefined ? {} : { modelCallMs: overrides.modelCallMs }),
-    ...(overrides.revalidations === undefined ? {} : { revalidations: overrides.revalidations })
+    ...(overrides.revalidations === undefined ? {} : { revalidations: overrides.revalidations }),
+    ...(overrides.repeatCap === undefined ? {} : { repeatCap: overrides.repeatCap }),
+    ...(overrides.narrowingCap === undefined ? {} : { narrowingCap: overrides.narrowingCap }),
+    ...(overrides.unmovedCap === undefined ? {} : { unmovedCap: overrides.unmovedCap }),
+    ...(overrides.unresolvedCap === undefined ? {} : { unresolvedCap: overrides.unresolvedCap })
   })
 
 /**
@@ -154,59 +108,9 @@ const tickingClock = (stepMillis: number): Clock.Clock => {
   }
 }
 
-interface Run {
-  readonly events: ReadonlyArray<AgentEvent.AgentEvent>
-  readonly engine: ScriptedEngine.Fixture
-  readonly model: ScriptedModel.Fixture
-  readonly failure?: unknown
-}
-
-const run = async (options: {
-  readonly script: ScriptedModel.Script
-  readonly calls?: ReadonlyArray<ScriptedEngine.CallStep>
-  readonly flows?: ReadonlyArray<Descriptor.FlowDescriptor>
-  readonly state?: CellTurn.State
-  readonly clock?: Clock.Clock
-  /**
-   * The workspace the engine can measure, as one string. Omitted means the
-   * host measures nothing, which is what every case written before observed
-   * mutation existed expects.
-   */
-  readonly tree?: string
-  /**
-   * Whether the engine's walk covered the whole tree. False is the bounded
-   * measurement a checkout larger than the host's path bound produces.
-   */
-  readonly treeComplete?: boolean
-  /**
-   * The history the controller records executed cells into. Omitted is the
-   * host that offers no way to save a flow, which binds none.
-   */
-  readonly history?: CellHistory.Service
-}): Promise<Run> => {
-  const model = ScriptedModel.make(options.script)
-  const engine = ScriptedEngine.make(model.model, [], options.calls ?? [], options.tree, options.treeComplete)
-  const events: Array<AgentEvent.AgentEvent> = []
-  // Collected event-by-event so a run that ends in a park or a failure is still
-  // observed through everything it published first.
-  const outcome = await CellTurn.run({
-    state: options.state ?? state(),
-    flows: options.flows ?? [descriptor("fs/list", { capabilities: ["fs:read:**"] })]
-  }).pipe(
-    Stream.runForEach((event) => Effect.sync(() => events.push(event))),
-    Effect.provide(engine.layer),
-    Effect.provide(QuickJSSandbox.layer),
-    Effect.provide(Steering.layerNoop()),
-    (effect) => options.clock === undefined ? effect : Effect.provideService(effect, Clock.Clock, options.clock),
-    (effect) =>
-      options.history === undefined
-        ? effect
-        : Effect.provideService(effect, CellHistory.CellHistory, options.history),
-    Effect.result,
-    Effect.runPromise
-  )
-  return { events, engine, model, failure: outcome._tag === "Failure" ? outcome.failure : undefined }
-}
+/** The shared driver, starting from this suite's {@link state} unless a case supplies one. */
+const run = (options: Omit<RunOptions, "state"> & { readonly state?: CellTurn.State | undefined }) =>
+  runCellTurn({ ...options, state: options.state ?? state() })
 
 /**
  * The frame's own state section: the one trailing user message the controller
@@ -226,12 +130,6 @@ const observationsOf = (model: ScriptedModel.Fixture, index: number): string =>
 const conversation = (
   request: ModelRequest.ModelRequest | undefined
 ): ReadonlyArray<ModelRequest.Message> => request?.messages.slice(0, -1) ?? []
-
-const of = <T extends AgentEvent.AgentEvent["_tag"]>(
-  events: ReadonlyArray<AgentEvent.AgentEvent>,
-  tag: T
-): ReadonlyArray<Extract<AgentEvent.AgentEvent, { readonly _tag: T }>> =>
-  events.filter((event): event is Extract<AgentEvent.AgentEvent, { readonly _tag: T }> => event._tag === tag)
 
 describe("CellTurn", () => {
   it("projects a model-boundary retry as its own control event", async () => {
@@ -583,7 +481,7 @@ console.log(kept)`
          ctx.done(listed.join(","))`
       )
     ])
-    const engine = ScriptedEngine.make(model.model, [], [{ _tag: "Success", value: ["alpha", "beta"] }])
+    const engine = ScriptedEngine.make(model.model, [{ _tag: "Success", value: ["alpha", "beta"] }])
     const events: Array<AgentEvent.AgentEvent> = []
     await CellTurn.run({
       state: state(),
@@ -673,7 +571,7 @@ console.log(kept)`
       emits(`console.log("kept")`),
       emits(`ctx.done("done")`)
     ])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     let drained = false
     const steering = Steering.layer({
       read: () => Effect.succeed(Steering.empty()),
@@ -733,7 +631,7 @@ console.log(kept)`
       emits(`console.log("kept")`),
       emits(`ctx.done("done")`)
     ])
-    const engine = ScriptedEngine.make(model.model, [], [])
+    const engine = ScriptedEngine.make(model.model, [])
     await CellTurn.run({ state: state(), flows: [] }).pipe(
       Stream.runDrain,
       Effect.provide(engine.layer),
@@ -783,7 +681,7 @@ console.log(kept)`
          ctx.done("unreachable")`
       )
     ])
-    const engine = ScriptedEngine.make(model.model, [], [{ _tag: "Interrupt" }])
+    const engine = ScriptedEngine.make(model.model, [{ _tag: "Interrupt" }])
     const events: Array<AgentEvent.AgentEvent> = []
     const outcome = await CellTurn.run({
       state: state(),
@@ -1899,13 +1797,56 @@ describe("CellTurn repeated observation", () => {
     expect(of(events, "repeat-demanded").map((event) => event.nextFrame)).toEqual([5, 9])
   })
 
+  /**
+   * A run that issues `distinct` different commands, re-issues the first of
+   * them, and then calls nothing. The cap is one frame, so the notice lands on
+   * the trailing frame exactly when the ledger still recognises the repeat.
+   */
+  const spinningWithCap = (distinct: number) =>
+    run({
+      state: state({
+        maxFrames: distinct + 2,
+        envelope: ["fs:read:**", "fs:write:**", "proc:spawn:*"],
+        // One repeating frame is enough to demand, so the two runs below
+        // differ only in whether the oldest signature survived the ledger.
+        repeatCap: 1
+      }),
+      flows: [shell, editor],
+      script: [
+        ...Array.from({ length: distinct }, (_, index) => running(`git show ${index}`)),
+        running("git show 0"),
+        `console.log("thinking")`
+      ].map(emits),
+      calls: Array.from({ length: distinct + 1 }, () => ({ _tag: "Success", value: null }) as const),
+      tree: "a.py=fixed"
+    })
+
+  it("still recognises the oldest of exactly as many distinct calls as the ledger retains", async () => {
+    const { events } = await spinningWithCap(64)
+
+    // Frames 0 to 63 fill the ledger to its bound; frame 64 re-issues frame
+    // 0's command, which is still the oldest entry rather than a forgotten one.
+    expect(of(events, "repeat-demanded")).toEqual([
+      expect.objectContaining({ frames: 1, cap: 1, nextFrame: 65 })
+    ])
+  })
+
+  it("reads a repeat of a call the ledger has forgotten as something new", async () => {
+    const { events } = await spinningWithCap(65)
+
+    // One distinct call more than the bound evicts the oldest, so frame 65
+    // re-issues a command the run no longer remembers asking. Forgetting can
+    // cost a demand and must never invent one.
+    expect(of(events, "repeat-demanded")).toEqual([])
+  })
+
   it("leaves a run whose repeat demand is disarmed alone", async () => {
     const disarmed = CellTurn.make({
       session: "session-1",
       seat: "anthropic:test-model",
       modelParams: ModelRequest.GenerationParams.make(),
       layers: ["layer-a"],
-      capabilityEnvelope: [new Capability.CapabilityPattern({ action: "proc:spawn", resource: "*" })],
+      capabilityEnvelope: [pattern("proc:spawn:*")],
       placement: Option.none(),
       contextWindow: window,
       maxFrames: 6,
@@ -1956,13 +1897,7 @@ describe("CellTurn narrowed verification", () => {
         seat: "anthropic:test-model",
         modelParams: ModelRequest.GenerationParams.make(),
         layers: ["layer-a"],
-        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map((declared) => {
-          const parsed = declared.split(":")
-          return new Capability.CapabilityPattern({
-            action: `${parsed[0]}:${parsed[1]}` as Capability.PatternAction,
-            resource: parsed.slice(2).join(":")
-          })
-        }),
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
         placement: Option.none(),
         contextWindow: window,
         maxFrames: overrides.maxFrames ?? cells.length,
@@ -2244,13 +2179,7 @@ describe("CellTurn narrow-only verification", () => {
         seat: "anthropic:test-model",
         modelParams: ModelRequest.GenerationParams.make(),
         layers: ["layer-a"],
-        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map((declared) => {
-          const parsed = declared.split(":")
-          return new Capability.CapabilityPattern({
-            action: `${parsed[0]}:${parsed[1]}` as Capability.PatternAction,
-            resource: parsed.slice(2).join(":")
-          })
-        }),
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
         placement: Option.none(),
         contextWindow: overrides.contextWindow ?? window,
         maxFrames: cells.length,
@@ -2448,13 +2377,7 @@ describe("CellTurn sufficiency", () => {
         seat: "anthropic:test-model",
         modelParams: ModelRequest.GenerationParams.make(),
         layers: ["layer-a"],
-        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map((declared) => {
-          const parsed = declared.split(":")
-          return new Capability.CapabilityPattern({
-            action: `${parsed[0]}:${parsed[1]}` as Capability.PatternAction,
-            resource: parsed.slice(2).join(":")
-          })
-        }),
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
         placement: Option.none(),
         contextWindow: window,
         maxFrames: cells.length,
@@ -2600,13 +2523,7 @@ describe("CellTurn vacuous verification, unwired", () => {
         seat: "anthropic:test-model",
         modelParams: ModelRequest.GenerationParams.make(),
         layers: ["layer-a"],
-        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map((declared) => {
-          const parsed = declared.split(":")
-          return new Capability.CapabilityPattern({
-            action: `${parsed[0]}:${parsed[1]}` as Capability.PatternAction,
-            resource: parsed.slice(2).join(":")
-          })
-        }),
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
         placement: Option.none(),
         contextWindow: window,
         maxFrames: cells.length,
@@ -2947,13 +2864,7 @@ describe("CellTurn unmoved workspace", () => {
         seat: "anthropic:test-model",
         modelParams: ModelRequest.GenerationParams.make(),
         layers: ["layer-a"],
-        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map((declared) => {
-          const parsed = declared.split(":")
-          return new Capability.CapabilityPattern({
-            action: `${parsed[0]}:${parsed[1]}` as Capability.PatternAction,
-            resource: parsed.slice(2).join(":")
-          })
-        }),
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
         placement: Option.none(),
         contextWindow: window,
         maxFrames: overrides.maxFrames ?? cells.length,
@@ -3184,13 +3095,7 @@ describe("CellTurn unanswered failure", () => {
         seat: "anthropic:test-model",
         modelParams: ModelRequest.GenerationParams.make(),
         layers: ["layer-a"],
-        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map((declared) => {
-          const parsed = declared.split(":")
-          return new Capability.CapabilityPattern({
-            action: `${parsed[0]}:${parsed[1]}` as Capability.PatternAction,
-            resource: parsed.slice(2).join(":")
-          })
-        }),
+        capabilityEnvelope: ["fs:write:**", "proc:spawn:*"].map(pattern),
         placement: Option.none(),
         contextWindow: window,
         maxFrames: overrides.maxFrames ?? cells.length,
