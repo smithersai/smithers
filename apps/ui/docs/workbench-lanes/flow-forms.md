@@ -1,4 +1,4 @@
-# Lane: flow forms — missing input renders a form, never a usage sentence (2026-09-03)
+# Lane: flow forms. Missing input renders a form, never a usage sentence (2026-09-03)
 
 Will, in the app at 12:2x, after the agent answered "/agent.create needs an
 id, a harness, and a model (e.g., /agent.create reviewer codex
@@ -30,7 +30,7 @@ flow; `flows/Commands.ts` `settle`/`parseSubmit` turn a parse failure into
 `failed: /<name> needs …` (the composer line and, through `agentTools.ts`, the
 model's tool result). The custom-agents lane built one hand-made form card
 (`agent-form`, `cards/AgentCards.tsx`, fields committed through the hidden
-`agent.form` flow) and a separate `agent.new` flow that renders it — the
+`agent.form` flow) and a separate `agent.new` flow that renders it. The
 agent chose `agent.create` with no args and hit the usage sentence instead.
 
 ## Design

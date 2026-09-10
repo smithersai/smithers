@@ -6,7 +6,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { PALETTES } from "../state/AppState"
 import { createAppStore } from "../state/AppStore"
-import { executeAgentToolCall } from "./agentTools"
+import { agentToolSpecs, executeAgentToolCall } from "./agentTools"
 import { visibleItems } from "./Commands"
 import {
   matches,
@@ -489,6 +489,31 @@ describe("command registry bindings", () => {
     expect(withoutBrowser.controller.commands.all().map((command) => command.name)).not.toContain("browser.open")
     expect((await withoutBrowser.controller.commands.runForAgent("browser.open", "https://example.com")).status).toBe("unavailable")
     local.controller.dispose(); cloud.controller.dispose(); withoutBrowser.controller.dispose()
+  })
+
+  /*
+   * The tool schema is model-facing documentation. An example name the model
+   * copies has to be a name the registry answers, or the turn spends itself on
+   * an unknown-command result; the example said "browser" while the registry
+   * only ever declared "browser.open".
+   */
+  test("every example command name in the model tool schema is a registered flow", async () => {
+    const { controller } = await freshController()
+    const registered = new Set(controller.commands.all().map((command) => command.name))
+    const strings = (value: unknown): ReadonlyArray<string> =>
+      typeof value === "string"
+        ? [value]
+        : typeof value === "object" && value !== null
+        ? Object.values(value as Record<string, unknown>).flatMap(strings)
+        : []
+    const examples = agentToolSpecs
+      .flatMap((spec) => strings(spec))
+      .flatMap((text) => [...text.matchAll(/e\.g\. "([^"]+)"/g)])
+      .map((match) => match[1])
+      .filter((name): name is string => name !== undefined)
+    expect(examples.length).toBeGreaterThan(0)
+    expect(examples.filter((example) => !registered.has(example.replace(/^\//, "")))).toEqual([])
+    controller.dispose()
   })
 
   test("every registered action executes through the one run path", async () => {

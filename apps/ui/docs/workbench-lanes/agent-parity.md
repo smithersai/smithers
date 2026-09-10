@@ -1,4 +1,4 @@
-# Lane: agent parity — anything a button does, the agent can do (2026-09-03)
+# Lane: agent parity. Anything a button does, the agent can do (2026-09-03)
 
 Will, in the app at 11:29, after the agent said "I can't launch a Claude code
 session", then tried `/workspace.terminal` (cloud) for "launch a terminal",

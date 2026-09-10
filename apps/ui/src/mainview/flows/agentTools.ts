@@ -108,7 +108,7 @@ export const commandsToolSpec: AgentToolSpec = {
       name: {
         type: "string",
         description:
-          "The command name (required for execute), e.g. \"browser\" — the catalog's leading slash is accepted too."
+          "The command name (required for execute), e.g. \"browser.open\" — the catalog's leading slash is accepted too."
       },
       args: { type: "string", description: "Optional argument text for commands that accept it." }
     },
