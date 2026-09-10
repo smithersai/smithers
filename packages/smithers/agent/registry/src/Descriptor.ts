@@ -473,6 +473,8 @@ export class FlowDescriptor extends Schema.Class<FlowDescriptor>("flows/registry
   provenance: Provenance
 }) {}
 
+const executionDigests = new WeakMap<FlowDescriptor, string>()
+
 /**
  * The executable identity a host binds into a reviewed plan.
  *
@@ -481,13 +483,24 @@ export class FlowDescriptor extends Schema.Class<FlowDescriptor>("flows/registry
  * A descriptor without measured source bytes has no executable identity; it
  * may still be displayed, but a prompt executor must refuse to run it.
  *
+ * The answer is memoized on descriptor identity. A host maps this over every
+ * descriptor it lists, and one call encodes the descriptor, canonicalizes the
+ * result, and hashes it; a registry hands out frozen copies, so identity is
+ * what the value cannot change behind. A descriptor a caller mutates after
+ * asking for its digest keeps the first answer, which is what mutating a value
+ * a registry already copied does everywhere else.
+ *
  * @category hashing
  * @since 1.0.0
  */
-export const executionDigest = (descriptor: FlowDescriptor): string | undefined =>
-  descriptor.body.contentDigest === undefined
-    ? undefined
-    : Digest.digest(Digest.canonical(Schema.encodeSync(FlowDescriptor)(descriptor)))
+export const executionDigest = (descriptor: FlowDescriptor): string | undefined => {
+  if (descriptor.body.contentDigest === undefined) return undefined
+  const memoized = executionDigests.get(descriptor)
+  if (memoized !== undefined) return memoized
+  const digest = Digest.digest(Digest.canonical(Schema.encodeSync(FlowDescriptor)(descriptor)))
+  executionDigests.set(descriptor, digest)
+  return digest
+}
 
 /**
  * The canonical digest of one flow's complete declaration.

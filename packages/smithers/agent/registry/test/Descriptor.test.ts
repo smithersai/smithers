@@ -85,6 +85,56 @@ describe("FlowDescriptor", () => {
       .not.toBe(identity)
   })
 
+  it("encodes one descriptor once, however many hosts ask for its execution identity", () => {
+    // A host maps `executionDigest` over every descriptor it lists, on every
+    // plan and every listing, so the second ask must not walk the descriptor
+    // again. The counter is the walk: encoding reads every field.
+    const measured = new Descriptor.FlowDescriptor({
+      name: "review/read-pr",
+      description: "Review a pull request",
+      body: new Descriptor.BodyRefMarkdown({
+        path: "/project/flows/review/read-pr/flow.mdx",
+        baseDirectory: "/project/flows/review/read-pr",
+        contentDigest: "b".repeat(64)
+      }),
+      input: new Descriptor.SchemaRefMarkdownArgs({}),
+      output: new Descriptor.SchemaRefNone(),
+      model: Option.none(),
+      flows: [],
+      capabilities: [],
+      effects: {
+        reads: [],
+        writes: [],
+        mode: "hermetic",
+        onConflict: "serialize",
+        tier: "sealed"
+      },
+      placement: Option.none(),
+      modelInvocable: true,
+      path: "/project/flows/review/read-pr/flow.mdx",
+      frontmatter: {},
+      provenance: new Descriptor.Provenance({ source: "project", root: "/project/flows" })
+    })
+    let reads = 0
+    Object.defineProperty(measured, "description", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        reads++
+        return "Review a pull request"
+      }
+    })
+
+    const first = Descriptor.executionDigest(measured)
+    const encoded = reads
+    const second = Descriptor.executionDigest(measured)
+
+    expect(first).toMatch(/^[0-9a-f]{64}$/)
+    expect(encoded).toBeGreaterThan(0)
+    expect(second).toBe(first)
+    expect(reads).toBe(encoded)
+  })
+
   it("retains tagged body and schema reference variants", () => {
     expect(Schema.decodeUnknownSync(Descriptor.BodyRef)({ _tag: "Module", path: "/project/flow.ts" })).toEqual(
       new Descriptor.BodyRefModule({ path: "/project/flow.ts" })

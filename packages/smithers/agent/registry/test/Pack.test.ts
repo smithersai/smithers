@@ -655,19 +655,25 @@ describe("Pack.compatible", () => {
 })
 
 describe("Pack.checkCompatible", () => {
-  const requiring = (range: string): Pack.Installed =>
-    installed("/pack", { ...localManifest, requires: { smithers: range } }, "installed")
+  const requiring = (range: string, dir = "/pack"): Pack.Installed =>
+    installed(dir, { ...localManifest, requires: { smithers: range } }, "installed")
+
+  const check = (pack: Pack.Installed, runtimeVersion: string) =>
+    Effect.gen(function*() {
+      const path = yield* Path.Path
+      return yield* Pack.checkCompatible(pack, path, runtimeVersion)
+    }).pipe(Effect.provide(NodePath.layer))
 
   it.each([">= 1.0.0", ">=1.0", "^1", "1.0.0 - 2.0.0"])(
     "accepts the readable npm range %j",
     async (range) => {
-      await expect(Effect.runPromise(Pack.checkCompatible(requiring(range), "1.0.0-rc.0"))).resolves.toBeUndefined()
+      await expect(Effect.runPromise(check(requiring(range), "1.0.0-rc.0"))).resolves.toBeUndefined()
       expect(Pack.compatible(range, "1.0.0-rc.0")).toBe(true)
     }
   )
 
   it.each(["||", ""])("distinguishes the unreadable range %j", async (range) => {
-    const error = await Effect.runPromise(Effect.flip(Pack.checkCompatible(requiring(range), "1.0.0-rc.0")))
+    const error = await Effect.runPromise(Effect.flip(check(requiring(range), "1.0.0-rc.0")))
 
     expect(error).toMatchObject({ code: "unreadable_pack_range", path: "/pack/pack.json" })
     expect(error.message).toContain(JSON.stringify(range))
@@ -676,10 +682,26 @@ describe("Pack.checkCompatible", () => {
 
   it("reserves incompatible_pack for a readable range the runtime does not satisfy", async () => {
     const error = await Effect.runPromise(
-      Effect.flip(Pack.checkCompatible(requiring(">=2.0.0"), "1.0.0-rc.0"))
+      Effect.flip(check(requiring(">=2.0.0"), "1.0.0-rc.0"))
     )
 
     expect(error).toMatchObject({ code: "incompatible_pack", path: "/pack/pack.json" })
+  })
+
+  it("names the manifest the way Pack.read does, through the same Path service", async () => {
+    const dir = "/packs/./vendor"
+    const [error, read] = await Effect.runPromise(
+      Effect.gen(function*() {
+        const path = yield* Path.Path
+        return [
+          yield* Effect.flip(Pack.checkCompatible(requiring(">=2.0.0", dir), path, "1.0.0-rc.0")),
+          path.join(dir, "pack.json")
+        ] as const
+      }).pipe(Effect.provide(NodePath.layer))
+    )
+
+    expect(read).toBe("/packs/vendor/pack.json")
+    expect(error.path).toBe(read)
   })
 })
 

@@ -1174,6 +1174,7 @@ const compatible: (range: string, runtimeVersion: string) => boolean
 
 const checkCompatible: (
   pack: Installed,
+  path: Path.Path,
   runtimeVersion: string
 ) => Effect.Effect<void, RegistryError>
 ```
@@ -1200,7 +1201,9 @@ An unreadable range returns `false` from `compatible`, and fails
 `unreadable_pack_range` from `checkCompatible`; a readable but unsatisfied one
 fails `incompatible_pack`. The two codes are separate so an operator can tell a
 dialect this runtime cannot parse from a pack that genuinely needs a newer one.
-A pack with no `requires` passes.
+A pack with no `requires` passes. Both failures name the pack's manifest
+through the `Path` service the caller passes, which is the one `Pack.read` and
+`Pack.sources` use.
 
 ### Pack.digest and Pack.File
 

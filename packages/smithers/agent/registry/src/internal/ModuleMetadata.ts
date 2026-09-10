@@ -93,33 +93,39 @@ const skipTrivia = (source: string, start: number): number => {
   return index
 }
 
+/** The keywords a regular expression may follow, rather than a division. */
+const regexPrecedingKeywords = new Set([
+  "await",
+  "case",
+  "delete",
+  "do",
+  "else",
+  "in",
+  "instanceof",
+  "new",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield"
+])
+
+/** The punctuation a regular expression may follow, rather than a division. */
+const regexPrecedingPunctuation = new Set(
+  ["(", "[", "{", ",", ":", ";", "=", "!", "?", "&", "|", "+", "-", "*", "%", "^", "~", "<", ">"]
+)
+
 const canStartRegex = (previous: Token | undefined): boolean => {
   if (previous === undefined) {
     return true
   }
   if (previous.kind === "identifier") {
-    return new Set([
-      "await",
-      "case",
-      "delete",
-      "do",
-      "else",
-      "in",
-      "instanceof",
-      "new",
-      "return",
-      "throw",
-      "typeof",
-      "void",
-      "yield"
-    ])
-      .has(previous.value)
+    return regexPrecedingKeywords.has(previous.value)
   }
   if (previous.kind !== "punctuation") {
     return false
   }
-  return new Set(["(", "[", "{", ",", ":", ";", "=", "!", "?", "&", "|", "+", "-", "*", "%", "^", "~", "<", ">"])
-    .has(previous.value)
+  return regexPrecedingPunctuation.has(previous.value)
 }
 
 const skipRegex = (source: string, start: number): number => {

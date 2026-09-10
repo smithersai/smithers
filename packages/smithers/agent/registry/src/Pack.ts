@@ -145,8 +145,6 @@ export interface File {
 /** The manifest file every pack root carries. */
 const manifestFileName = "pack.json"
 
-const manifestLocation = (dir: string): string => `${dir.replace(/[\\/]+$/, "")}/${manifestFileName}`
-
 const decodeManifest = Schema.decodeUnknownEffect(Manifest)
 
 const manifestRecord = (value: unknown): Record<string, unknown> | undefined =>
@@ -549,26 +547,29 @@ export const merge = (
  * Refuses a pack whose declared runtime range this runtime does not satisfy.
  * The grammar is the one documented by {@link compatible}. An unreadable
  * declaration fails `unreadable_pack_range`; a readable but unsatisfied one
- * fails `incompatible_pack`.
+ * fails `incompatible_pack`. The manifest path a failure names is spelled by
+ * the caller's `Path` service, which is the one {@link read} and
+ * {@link sources} already use.
  *
  * @category refinements
  * @since 0.1.0
  */
 export const checkCompatible = (
   pack: Installed,
+  path: Path.Path,
   runtimeVersion: string
 ): Effect.Effect<void, RegistryError> => {
   if (pack.manifest.requires === undefined) return Effect.void
   const range = pack.manifest.requires.smithers
   const parsed = parseRange(range)
-  const path = manifestLocation(pack.dir)
+  const location = path.join(pack.dir, manifestFileName)
   if (parsed === undefined) {
     return Effect.fail(
       registryError({
         code: "unreadable_pack_range",
         module: "Pack",
         method: "checkCompatible",
-        path,
+        path: location,
         description: `pack "${pack.manifest.name}@${pack.manifest.version}" requires smithers range ${
           JSON.stringify(range)
         }, which could not be parsed`
@@ -583,7 +584,7 @@ export const checkCompatible = (
         code: "incompatible_pack",
         module: "Pack",
         method: "checkCompatible",
-        path,
+        path: location,
         description:
           `pack "${pack.manifest.name}@${pack.manifest.version}" requires smithers ${range}, and this runtime is ${runtimeVersion}`
       })

@@ -226,7 +226,7 @@ const scanPacks = (
     const installed = [...config.installed]
     const scans: Array<Pack.Scan> = []
     for (const pack of installed) {
-      yield* Pack.checkCompatible(pack, config.runtimeVersion)
+      yield* Pack.checkCompatible(pack, path, config.runtimeVersion)
     }
     for (const pack of installed) {
       const entries: Array<FlowDescriptor> = []

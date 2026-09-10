@@ -121,7 +121,7 @@ would refuse every release candidate from a range written against its own
 release.
 
 `Pack.compatible(range, runtimeVersion)` is the same check as a predicate, and
-`Pack.checkCompatible(pack, runtimeVersion)` is the effect that fails naming
+`Pack.checkCompatible(pack, path, runtimeVersion)` is the effect that fails naming
 the pack, its range, and the runtime.
 
 ## A pack contributes only from inside itself
