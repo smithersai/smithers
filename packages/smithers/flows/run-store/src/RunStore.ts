@@ -25,11 +25,12 @@
 import { afterCommit, DatabaseError, DurableWriter, fromSqlError } from "@smthrs/database/DurableWriter"
 import { OwnerId } from "@smthrs/journal/OwnerId"
 import * as ObservabilityMetric from "@smthrs/observability/Metric"
-import { Cause, Clock, Context, Duration, Effect, Layer, Metric, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Metric, Schema } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import type * as SqlError from "effect/unstable/sql/SqlError"
 import { heartbeatSkewAllowance, heartbeatStaleAfter } from "./Heartbeat.ts"
 import * as Boundary from "./internal/Boundary.ts"
+import { observeExit, observeOutcome } from "./internal/SpanOutcome.ts"
 import type { LivenessEvidence } from "./Ownership.ts"
 import * as RunStoreMetrics from "./RunStoreMetrics.ts"
 
@@ -548,49 +549,6 @@ const updated = { _tag: "Updated" } as const
 const fenceLost = { _tag: "FenceLost" } as const
 const transitioned = { _tag: "Transitioned" } as const
 const guardFailed = { _tag: "GuardFailed" } as const
-
-/** Rewrites an outcome tag (`HeartbeatFresh`) as a span attribute value (`heartbeat_fresh`). */
-const outcomeValue = (tag: string): string => tag.replace(/(?<=[a-z0-9])(?=[A-Z])/g, "_").toLowerCase()
-
-/** Classifies a non-success exit for the span `outcome` attribute. */
-const causeOutcome = <E>(cause: Cause.Cause<E>): "failure" | "interrupt" =>
-  Cause.hasInterruptsOnly(cause) ? "interrupt" : "failure"
-
-/**
- * Observes a store operation's exit onto its span, and — when the operation
- * has an outcome-keyed counter — updates it in the same observation: the
- * domain tag (`claimed`, `fence_lost`) on success, `failure` or `interrupt`
- * otherwise, so a span never closes without saying how. `Effect.onExit` only
- * reads the exit; the value, cause, and interruption propagate
- * byte-identically.
- */
-const observeOutcome = <A extends { readonly _tag: string }>(
-  metricOf?: ((outcome: A) => Metric.Metric<number, Metric.CounterState<number>>) | undefined
-) =>
-<E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  effect.pipe(
-    Effect.onExit((exit) =>
-      exit._tag === "Success"
-        ? Effect.annotateCurrentSpan({ outcome: outcomeValue(exit.value._tag) }).pipe(
-          Effect.andThen(metricOf === undefined ? Effect.void : Metric.update(metricOf(exit.value), 1))
-        )
-        : Effect.annotateCurrentSpan({ outcome: causeOutcome(exit.cause) })
-    )
-  )
-
-/**
- * `observeOutcome` for operations whose success carries no domain outcome
- * tag — `create` inserts or fails, `get` returns the row or fails — so the
- * span still closes with `success`, `failure`, or `interrupt`.
- */
-const observeExit = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  effect.pipe(
-    Effect.onExit((exit) =>
-      Effect.annotateCurrentSpan({
-        outcome: exit._tag === "Success" ? "success" : causeOutcome(exit.cause)
-      })
-    )
-  )
 
 /**
  * The staleness cutoff in milliseconds, derived from the one definition rather
@@ -1836,6 +1794,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     Effect.gen(function*() {
       const runId = yield* snapshotRunId("acknowledgeCancel", id)
       const owner = yield* snapshotOwner("acknowledgeCancel", "owner", ownerInput)
+      yield* Effect.annotateCurrentSpan({ runId, ownerHostId: owner.hostId })
       const observedAtMs = yield* snapshotTimestamp("acknowledgeCancel", "nowMs", time)
       const acknowledgement = JSON.stringify({ observedAtMs, owner })
       return yield* write(
@@ -1848,7 +1807,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         RETURNING run_id
       `.pipe(Effect.map((rows) => rows.length > 0))
       )
-    })
+    }).pipe(observeExit)
   )
 
   return RunStore.of({

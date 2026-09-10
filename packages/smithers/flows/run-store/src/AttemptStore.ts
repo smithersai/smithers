@@ -19,6 +19,7 @@ import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as SqlError from "effect/unstable/sql/SqlError"
 import * as Boundary from "./internal/Boundary.ts"
+import { observeExit, observeOutcome } from "./internal/SpanOutcome.ts"
 
 const NonNegativeSafeInt = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(0),
@@ -806,7 +807,8 @@ export const makeWith = (
         yield* Effect.annotateCurrentSpan({
           runId: attempt.runId,
           stepKeyDigest: attempt.stepKeyDigest,
-          attempt: attempt.attempt
+          attempt: attempt.attempt,
+          ownerHostId: owner.hostId
         })
         const checkpoint = yield* putEncodeCheckpoint(attempt.checkpoint)
         const attemptError = yield* putEncodeOptional(attempt.error, "error")
@@ -898,7 +900,7 @@ export const makeWith = (
               : { _tag: "Conflict" } as const
           })
         ).pipe(Effect.mapError(mapPersistenceError("put")))
-      })
+      }).pipe(observeOutcome<PutResult>())
     )
 
     const get: Service["get"] = Effect.fn("AttemptStore.get")((input) =>
@@ -916,7 +918,7 @@ export const makeWith = (
         WHERE run_id = ${id.runId} AND step_key_digest = ${id.stepKeyDigest} AND attempt = ${id.attempt}
       `.pipe(Effect.mapError(mapPersistenceError("get")))
         return rows.length === 0 ? Option.none() : yield* Effect.map(decodeRow("get", rows[0]!), Option.some)
-      })
+      }).pipe(observeExit)
     )
 
     const heartbeat: Service["heartbeat"] = Effect.fn("AttemptStore.heartbeat")((
@@ -928,7 +930,7 @@ export const makeWith = (
       checkpointValue
     ) =>
       Effect.gen(function*() {
-        yield* Effect.annotateCurrentSpan({ runId, stepKeyDigest, attempt })
+        yield* Effect.annotateCurrentSpan({ runId, stepKeyDigest, attempt, ownerHostId: owner.hostId })
         yield* validateId("heartbeat", { runId, stepKeyDigest, attempt })
         if (!Number.isSafeInteger(nowMs) || nowMs < 0) {
           return yield* Effect.fail(
@@ -977,7 +979,7 @@ export const makeWith = (
             return { _tag: "StateChanged" } as const
           })
         ).pipe(Effect.mapError(mapPersistenceError("heartbeat")))
-      })
+      }).pipe(observeOutcome<HeartbeatResult>())
     )
 
     const finish: Service["finish"] = Effect.fn("AttemptStore.finish")((input, owner) =>
@@ -986,7 +988,8 @@ export const makeWith = (
         yield* Effect.annotateCurrentSpan({
           runId: attempt.runId,
           stepKeyDigest: attempt.stepKeyDigest,
-          attempt: attempt.attempt
+          attempt: attempt.attempt,
+          ownerHostId: owner.hostId
         })
         if (
           inProgressStates.includes(attempt.state) ||
@@ -1045,7 +1048,7 @@ export const makeWith = (
             return { _tag: "StateChanged" } as const
           })
         ).pipe(Effect.mapError(mapPersistenceError("finish")))
-      })
+      }).pipe(observeOutcome<FinishResult>())
     )
 
     const patch: Service["patch"] = Effect.fn("AttemptStore.patch")((idInput, patchInput, owner) =>
@@ -1055,7 +1058,8 @@ export const makeWith = (
         yield* Effect.annotateCurrentSpan({
           runId: id.runId,
           stepKeyDigest: id.stepKeyDigest,
-          attempt: id.attempt
+          attempt: id.attempt,
+          ownerHostId: owner.hostId
         })
         const checkpoint = yield* patchEncodeCheckpoint(fields.checkpoint)
         const attemptError = yield* patchEncodeOptional(fields.error, "error")
@@ -1099,7 +1103,7 @@ export const makeWith = (
               : { _tag: "FenceLost" } as const
           })
         ).pipe(Effect.mapError(mapPersistenceError("patch")))
-      })
+      }).pipe(observeOutcome<PatchResult>())
     )
 
     return { put, get, heartbeat, finish, patch }

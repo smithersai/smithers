@@ -9,14 +9,18 @@ import { Effect, Fiber, Layer, Metric, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import type * as SqlClient from "effect/unstable/sql/SqlClient"
 import { describe, expect, it } from "vitest"
+import { AttemptStore } from "../src/AttemptStore.ts"
+import * as AttemptStoreLive from "../src/AttemptStore.ts"
 import * as Migrations from "../src/Migrations.ts"
 import { RunStore } from "../src/RunStore.ts"
 import * as RunStoreLive from "../src/RunStore.ts"
 
-const migrated = <A, E>(effect: Effect.Effect<A, E, DurableWriter.DurableWriter | SqlClient.SqlClient | RunStore>) =>
+const migrated = <A, E>(
+  effect: Effect.Effect<A, E, DurableWriter.DurableWriter | SqlClient.SqlClient | RunStore | AttemptStore>
+) =>
   Effect.runPromise(
     effect.pipe(
-      Effect.provide(RunStoreLive.layer),
+      Effect.provide(Layer.merge(RunStoreLive.layer, AttemptStoreLive.layer)),
       Effect.provide(Migrations.layer),
       Effect.provide(TestDatabase.layer),
       Effect.provide(TestClock.layer()),
@@ -150,5 +154,101 @@ describe("SpanAnnotations", () => {
     expect(failure._tag).toBe("Failure")
     expect(spans.find((span) => span.name === "RunStore.claimAndOwn")!.attributes.get("outcome")).toBe("activated")
     expect(spans.find((span) => span.name === "RunStore.transitionOwned")!.attributes.get("outcome")).toBe("failure")
+  })
+
+  it("annotates every AttemptStore span with the attempt identity, the owner host, and an outcome", async () => {
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const owner = { hostId: "attempt-host", pid: 1, nonce: "attempt-nonce" }
+    const id = { runId: "run-attempt-span", stepKeyDigest: "step-digest", attempt: 1 }
+
+    await migrated(
+      Effect.gen(function*() {
+        const runs = yield* RunStore
+        const attempts = yield* AttemptStore
+        yield* runs.create(id.runId, "{}")
+        const owned = yield* runs.claimAndOwn(
+          id.runId,
+          { status: "pending", owner: null, heartbeatAtMs: null },
+          owner,
+          1
+        )
+        expect(owned._tag).toBe("Activated")
+        const put = yield* attempts.put({ ...id, state: "running", startedAtMs: 1, meta: {} }, owner)
+        expect(put._tag).toBe("Inserted")
+        const beat = yield* attempts.heartbeat(id.runId, id.stepKeyDigest, id.attempt, owner, 2)
+        expect(beat._tag).toBe("Updated")
+        const patched = yield* attempts.patch(id, { meta: { note: "span" } }, owner)
+        expect(patched._tag).toBe("Patched")
+        const finished = yield* attempts.finish({ ...id, state: "completed", finishedAtMs: 3 }, owner)
+        expect(finished._tag).toBe("Finished")
+        yield* attempts.get(id)
+        // A terminal state on `finish` is required, so `running` fails before any write.
+        const failure = yield* Effect.exit(attempts.finish({ ...id, state: "running", finishedAtMs: 4 }, owner))
+        expect(failure._tag).toBe("Failure")
+      }).pipe(Effect.provideService(Tracer.Tracer, tracer))
+    )
+
+    const attributes = spans
+      .filter((span) => span.name.startsWith("AttemptStore."))
+      .map((span) => [span.name, Object.fromEntries(span.attributes)])
+    const identity = { runId: id.runId, stepKeyDigest: id.stepKeyDigest, attempt: id.attempt }
+    expect(attributes).toEqual([
+      ["AttemptStore.put", { ...identity, ownerHostId: owner.hostId, outcome: "inserted" }],
+      ["AttemptStore.heartbeat", { ...identity, ownerHostId: owner.hostId, outcome: "updated" }],
+      ["AttemptStore.patch", { ...identity, ownerHostId: owner.hostId, outcome: "patched" }],
+      ["AttemptStore.finish", { ...identity, ownerHostId: owner.hostId, outcome: "finished" }],
+      ["AttemptStore.get", { ...identity, outcome: "success" }],
+      ["AttemptStore.finish", { ...identity, ownerHostId: owner.hostId, outcome: "failure" }]
+    ])
+  })
+
+  it("annotates acknowledgeCancel with the run id, the owner host, and an outcome", async () => {
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const owner = { hostId: "ack-host", pid: 1, nonce: "ack-nonce" }
+
+    await migrated(
+      Effect.gen(function*() {
+        const runs = yield* RunStore
+        yield* runs.create("run-ack", "{}")
+        const owned = yield* runs.claimAndOwn(
+          "run-ack",
+          { status: "pending", owner: null, heartbeatAtMs: null },
+          owner,
+          1
+        )
+        expect(owned._tag).toBe("Activated")
+        const cancel = yield* runs.requestCancel("run-ack", 2)
+        expect(cancel._tag).toBe("CancelRequested")
+        const acknowledged = yield* runs.acknowledgeCancel("run-ack", owner, 3)
+        expect(acknowledged).toBe(true)
+        const stranger = yield* runs.acknowledgeCancel("run-ack", { ...owner, nonce: "other" }, 4)
+        expect(stranger).toBe(false)
+        const failure = yield* Effect.exit(runs.acknowledgeCancel("run-ack", owner, -1))
+        expect(failure._tag).toBe("Failure")
+      }).pipe(Effect.provideService(Tracer.Tracer, tracer))
+    )
+
+    const attributes = spans
+      .filter((span) => span.name === "RunStore.acknowledgeCancel")
+      .map((span) => Object.fromEntries(span.attributes))
+    expect(attributes).toEqual([
+      { runId: "run-ack", ownerHostId: owner.hostId, outcome: "success" },
+      { runId: "run-ack", ownerHostId: owner.hostId, outcome: "success" },
+      { runId: "run-ack", ownerHostId: owner.hostId, outcome: "failure" }
+    ])
   })
 })

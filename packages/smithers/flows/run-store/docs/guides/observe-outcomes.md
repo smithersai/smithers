@@ -100,14 +100,43 @@ const completedTransitions = Metric.value(
 ## Read the spans
 
 Every store operation runs inside a span named after it, `RunStore.claim`,
-`AttemptStore.finish`, and so on. Two annotations are on all of them:
+`AttemptStore.finish`, and so on. Each span carries the identity it operated
+on, the acting host when the call is owner or claimant fenced, and an `outcome`
+written when the span closes. A success carries its outcome tag in snake case,
+or `success` for operations with no domain outcome. A failed effect carries
+`failure`, and an interrupted one carries `interrupt`, so no span ever closes
+without saying how it ended. Identity attributes are written after the inputs
+are validated, so a call rejected as invalid input closes with `outcome` alone.
 
-- `runId`, and the acting identity's host as `ownerHostId`, `claimantHostId`, or
-  `observerHostId` depending on the operation.
-- `outcome`, written when the span closes. A success carries its outcome tag in
-  snake case, or `success` for `create` and `get`, which have no domain outcome.
-  A failed effect carries `failure`, and an interrupted one carries `interrupt`,
-  so no span ever closes without saying how it ended.
+| Span                            | Identity                            | Acting host      | `outcome` on success                                                               |
+| ------------------------------- | ----------------------------------- | ---------------- | ---------------------------------------------------------------------------------- |
+| `RunStore.create`               | `runId`                             | none             | `success`                                                                          |
+| `RunStore.get`                  | `runId`                             | none             | `success`                                                                          |
+| `RunStore.lineage`              | `runId`                             | none             | `success`                                                                          |
+| `RunStore.latestRound`          | `runId`                             | none             | `success`                                                                          |
+| `RunStore.requestCancel`        | `runId`                             | none             | request-cancel tag                                                                 |
+| `RunStore.requestCancelLineage` | `runId`                             | none             | request-cancel tag                                                                 |
+| `RunStore.acknowledgeCancel`    | `runId`                             | `ownerHostId`    | `success`                                                                          |
+| `RunStore.claim`                | `runId`                             | `claimantHostId` | claim tag                                                                          |
+| `RunStore.claimAndOwn`          | `runId`                             | `ownerHostId`    | claim-and-own tag                                                                  |
+| `RunStore.activate`             | `runId`                             | `claimantHostId` | activate tag                                                                       |
+| `RunStore.abandonClaim`         | `runId`                             | `claimantHostId` | abandon-claim tag                                                                  |
+| `RunStore.recoverClaim`         | `runId`                             | `observerHostId` | recover-claim tag                                                                  |
+| `RunStore.heartbeat`            | `runId`                             | `ownerHostId`    | heartbeat tag                                                                      |
+| `RunStore.transitionOwned`      | `runId`, `to`                       | `ownerHostId`    | transition tag                                                                     |
+| `RunStore.steal`                | `runId`                             | `claimantHostId` | steal tag                                                                          |
+| `AttemptStore.put`              | `runId`, `stepKeyDigest`, `attempt` | `ownerHostId`    | `inserted`, `upserted`, `existing_same`, `conflict`, `fence_lost`, `run_not_found` |
+| `AttemptStore.get`              | `runId`, `stepKeyDigest`, `attempt` | none             | `success`                                                                          |
+| `AttemptStore.heartbeat`        | `runId`, `stepKeyDigest`, `attempt` | `ownerHostId`    | `updated`, `fence_lost`, `not_found`, `state_changed`                              |
+| `AttemptStore.finish`           | `runId`, `stepKeyDigest`, `attempt` | `ownerHostId`    | `finished`, `fence_lost`, `not_found`, `state_changed`                             |
+| `AttemptStore.patch`            | `runId`, `stepKeyDigest`, `attempt` | `ownerHostId`    | `patched`, `not_found`, `fence_lost`                                               |
+
+A `RunStore` outcome tag is the snake case form of the matching result type's
+`_tag`, `cancel_requested` for `requestCancel` or `fence_lost` for `heartbeat`.
+`RunStore.acknowledgeCancel` returns a boolean rather than a tagged result, so
+its span closes with `success` whether or not the guarded update matched. The
+`SpanAnnotations` test in this package asserts the exact attribute set of each
+`AttemptStore` span and of `acknowledgeCancel`; change both together.
 
 Failure causes are published to logs, spans, and telemetry, so they carry field
 names, lengths, and validity flags and never the value that failed. A
