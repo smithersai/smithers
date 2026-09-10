@@ -38,6 +38,7 @@ case "$FLOWS_FAKE_JJ" in
   chained-conflict) printf 'Error: Failed to update the working copy\nCaused by: The merge would leave conflicts\n' 1>&2; exit 1 ;;
   revset-parse) echo "Error: Failed to parse revset: Syntax error" 1>&2; exit 1 ;;
   stdout-only) echo "Error: reported on stdout"; exit 1 ;;
+  silent-exit) exit 3 ;;
   utf8-split) printf 'caf\\303'; /bin/sleep 0.2; printf '\\251 au lait\\n'; exit 0 ;;
   flood) echo $$ > "$FLOWS_FAKE_JJ_MARKER.pid"
     line=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -209,12 +210,26 @@ describe.skipIf(process.platform === "win32")("NodeJj failure classification", (
       expect(error.message).toBe("jj status: Error: reported on stdout")
     }))
 
-  it.live("treats a signal-killed `jj` as a failure with no reported text", () =>
+  it.live("names the signal that killed a `jj` with nothing to report", () =>
     Effect.gen(function*() {
+      // A silent child killed by the OS or an operator used to journal
+      // `jj status: ` — an empty diagnosis for the failure mode that most
+      // needs one, because there is no stderr to classify.
       const error = yield* status("signal")
 
       expect(error.code).toBe("unknown")
-      expect(error.message).toBe("jj status: ")
+      expect(error.message).toBe("jj status: terminated by signal SIGKILL")
+    }))
+
+  it.live("names the exit code of a `jj` that failed with nothing to report", () =>
+    Effect.gen(function*() {
+      // The other empty-stream failure: no signal, no stderr, just a code.
+      // Without the fallback this journaled the same empty `jj status: ` a
+      // signal death did, and the two could not be told apart.
+      const error = yield* status("silent-exit")
+
+      expect(error.code).toBe("unknown")
+      expect(error.message).toBe("jj status: exited with code 3")
     }))
 
   it.live("succeeds and returns stdout when the command exits zero", () =>

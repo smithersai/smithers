@@ -23,8 +23,8 @@ import {
   makeHandle,
   ProcessId
 } from "effect/unstable/process/ChildProcessSpawner"
-import { spawn } from "node:child_process"
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { execFileSync, spawn } from "node:child_process"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Jj } from "../src/Jj.ts"
@@ -35,7 +35,7 @@ case "$1" in
   --version) echo "jj 0.39.0"; exit 0 ;;
   restore) echo "Warning: Refused to snapshot some files:" 1>&2; exit 0 ;;
   status) echo "the working copy is clean"; exit 0 ;;
-  root) echo "/scripted/root"; exit 0 ;;
+  root) pwd; exit 0 ;;
   diff) echo "Error: Revision not found" 1>&2; exit 1 ;;
   *) exit 0 ;;
 esac
@@ -68,6 +68,15 @@ afterEach(() => {
   if (previousJj === undefined) delete process.env.SMITHERS_JJ_PATH
   else process.env.SMITHERS_JJ_PATH = previousJj
 })
+
+const jjInstalled = (() => {
+  try {
+    execFileSync("jj", ["--version"], { stdio: "ignore" })
+    return true
+  } catch {
+    return false
+  }
+})()
 
 const encode = (text: string) => Stream.make(new TextEncoder().encode(text))
 
@@ -274,10 +283,32 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
 
   it.live("passes the working directory through to the spawned command", () =>
     Effect.gen(function*() {
+      // The shim prints its ACTUAL working directory, so this cell goes red
+      // the moment `viaSpawner` stops forwarding the cwd — a fixed scripted
+      // answer would keep passing with the forwarding deleted.
       const root = yield* run(Effect.flatMap(Jj, (jj) => jj.root!(directory)), realSpawner)
-      // Trimmed, exactly as the self-spawning layer trims it.
-      expect(root).toBe("/scripted/root")
+      // Trimmed, exactly as the self-spawning layer trims it. `pwd` resolves
+      // macOS's /var symlink, so compare against the real path.
+      expect(root).toBe(realpathSync(directory))
     }))
+
+  it.live("runs root(from) in its argument directory, not the bound root", () =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => mkdtempSync(join(tmpdir(), "flows-jj-spawner-bound-"))),
+      (bound) =>
+        Effect.gen(function*() {
+          // `root`'s argument names the directory jj must run in, so a bound
+          // layer deliberately does not redirect it — the shim answers with
+          // the directory the child actually ran in.
+          const root = yield* Effect.flatMap(Jj, (jj) => jj.root!(directory)).pipe(
+            Effect.provide(Layer.provide(NodeJj.layerSpawnerAt(bound), realSpawner))
+          )
+
+          expect(root).toBe(realpathSync(directory))
+          expect(root).not.toBe(realpathSync(bound))
+        }),
+      (bound) => Effect.sync(() => rmSync(bound, { recursive: true, force: true }))
+    ))
 
   it.live("builds a repository-bound adapter over the host spawner", () =>
     Effect.gen(function*() {
@@ -287,6 +318,56 @@ describe.skipIf(process.platform === "win32")("NodeJj.layerSpawner", () => {
 
       expect(output).toBe("the working copy is clean\n")
     }))
+
+  it.live.skipIf(!jjInstalled)(
+    "snapshots and restores the bound repository through the host spawner, leaving a second repository untouched",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const bound = mkdtempSync(join(tmpdir(), "flows-jj-spawner-bound-"))
+          const other = mkdtempSync(join(tmpdir(), "flows-jj-spawner-other-"))
+          execFileSync("jj", ["git", "init", bound], { stdio: "ignore" })
+          execFileSync("jj", ["git", "init", other], { stdio: "ignore" })
+          writeFileSync(join(bound, "tracked.txt"), "first\n")
+          writeFileSync(join(other, "tracked.txt"), "other\n")
+          return { bound, other }
+        }),
+        ({ bound, other }) =>
+          Effect.gen(function*() {
+            // The resolver must find the REAL jj, not the scripted stand-in
+            // this suite's beforeEach points SMITHERS_JJ_PATH at.
+            delete process.env.SMITHERS_JJ_PATH
+            const spawner = spawnerWithPath(process.env.PATH ?? "")
+            const layer = Layer.provide(NodeJj.layerSpawnerAt(bound), spawner)
+            const current = (cwd: string) =>
+              execFileSync("jj", ["log", "-r", "@", "--no-graph", "-T", "change_id.short()"], {
+                cwd,
+                encoding: "utf8"
+              })
+            const otherBefore = current(other)
+
+            const { changeId } = yield* Effect.flatMap(Jj, (jj) => jj.snapshot("bound snapshot")).pipe(
+              Effect.provide(layer)
+            )
+            writeFileSync(join(bound, "tracked.txt"), "second\n")
+            yield* Effect.flatMap(Jj, (jj) => jj.restore(changeId)).pipe(Effect.provide(layer))
+
+            // The bound repository was snapshotted and restored. If the
+            // spawner dropped the bound cwd, jj would have run in the CALLER's
+            // directory instead, and this file would still hold the second
+            // write — the shim cannot fake its way past a real repository.
+            expect(readFileSync(join(bound, "tracked.txt"), "utf8")).toBe("first\n")
+            // And nothing the layer ran leaked into the other repository.
+            expect(readFileSync(join(other, "tracked.txt"), "utf8")).toBe("other\n")
+            expect(current(other)).toBe(otherBefore)
+          }),
+        ({ bound, other }) =>
+          Effect.sync(() => {
+            rmSync(bound, { recursive: true, force: true })
+            rmSync(other, { recursive: true, force: true })
+          })
+      )
+  )
 
   it.live("classifies a nonzero exit from jj's own stderr vocabulary", () =>
     Effect.gen(function*() {

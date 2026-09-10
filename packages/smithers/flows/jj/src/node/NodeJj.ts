@@ -70,6 +70,8 @@ interface Output {
   readonly stdout: string
   readonly stderr: string
   readonly exitCode: number
+  /** The signal that terminated the child, when no exit code did. */
+  readonly signal: NodeJS.Signals | null
 }
 
 /**
@@ -126,8 +128,11 @@ const refusedFiles = (stderr: string): boolean => SNAPSHOT_REFUSAL.test(stripVTC
 const classify = (method: string, args: ReadonlyArray<string>, output: Output): JjError => {
   // jj reports on stderr; the stdout fallback is for a build that reports there
   // instead. Concatenating both let one stream's incidental wording outrank the
-  // other's diagnosis.
-  const reported = output.stderr.trim() || output.stdout.trim()
+  // other's diagnosis. A child with NOTHING to report — the OS or an operator
+  // killed it before it printed — still owes the journal how it ended: a signal
+  // death as the signal, a silent nonzero exit as the code.
+  const reported = output.stderr.trim() || output.stdout.trim() ||
+    (output.signal !== null ? `terminated by signal ${output.signal}` : `exited with code ${output.exitCode}`)
   const text = reported.toLowerCase()
   const code: JjError["code"] = refusedFiles(output.stderr)
     ? "snapshot_refused"
@@ -465,8 +470,11 @@ const jj = (binary: Binary): Run => (method, args, cwd) =>
     })
     child.on("error", (error: NodeJS.ErrnoException) =>
       finish(Effect.fail(spawnFailure(method, args, cwd, hint, error, error.code === "ENOENT"))))
-    child.on("close", (exitCode: number | null) =>
-      finish(Effect.succeed({ stdout, stderr, exitCode: exitCode ?? 1 })))
+    child.on("close", (exitCode: number | null, signal: NodeJS.Signals | null) =>
+      // The signal is half the termination diagnosis: a killed child has a null
+      // exit code, and discarding the signal leaves a silent kill with an empty
+      // error message (review finding flows-jj/robustness/2).
+      finish(Effect.succeed({ stdout, stderr, exitCode: exitCode ?? 1, signal })))
     return Effect.callback<void>((done) => {
       settled = true
       // Close our pipes even if a wrapper left a descendant holding its ends.
@@ -524,7 +532,9 @@ const viaSpawner = (spawner: ChildProcessSpawner["Service"]) => (binary: Binary)
           [boundedText(handle.stdout), boundedText(handle.stderr), handle.exitCode],
           { concurrency: 3 }
         )
-        return { stdout, stderr, exitCode }
+        // A `ChildProcessSpawner` handle reports only an exit code, so the
+        // signal half of the diagnosis is not this runner's to name.
+        return { stdout, stderr, exitCode, signal: null }
       })
     ).pipe(
       Effect.catch((error: PlatformError.PlatformError | JjError) =>
