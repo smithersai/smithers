@@ -43,15 +43,17 @@ to a socket.
 
 ### Types and constants
 
-| Export                       | Signature                                                                                            | Meaning                                                                                                     |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `Health`                     | `Schema.Struct` and its type                                                                         | What `GET /health` answers: `GatewaySchema.GatewayHealth` plus the `version` of the package serving it.     |
-| `LayerOptions`               | `{ heartbeatMillis?: number; ingress?: IngressOptions }`                                             | How an assembled gateway is configured.                                                                     |
-| `IngressOptions`             | `{ maxRequestBodyBytes?: number; loopbackOnly?: boolean; authorize?: (headers) => Effect<boolean> }` | The ingress policy the RPC mounts run behind.                                                               |
-| `rpcPaths`                   | `ReadonlyArray<string>`                                                                              | `["/rpc", "/projections", "/sync"]`: the `POST` mounts that carry RPC request messages.                     |
-| `protectedPaths`             | `ReadonlyArray<string>`                                                                              | `["/projections", "/sync", "/rpc/ws", "/projections/ws", "/sync/ws"]`: paths that pass edge authentication. |
-| `defaultMaxRequestBodyBytes` | `number`                                                                                             | 1,048,576. The default maximum request body accepted by an RPC mount.                                       |
-| `watchHeartbeatKind`         | `"control.gateway.heartbeat"`                                                                        | The `ControlEvent` kind a `Watch` keepalive carries.                                                        |
+| Export                       | Signature                                                                                            | Meaning                                                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `Health`                     | `Schema.Struct` and its type                                                                         | What `GET /health` answers: `GatewaySchema.GatewayHealth` plus the `version` of the package serving it.         |
+| `LayerOptions`               | `{ heartbeatMillis?: number; ingress?: IngressOptions }`                                             | How an assembled gateway is configured. `heartbeatMillis` re-times both the `Watch` and projection keepalives.  |
+| `IngressOptions`             | `{ maxRequestBodyBytes?: number; loopbackOnly?: boolean; authorize?: (headers) => Effect<boolean> }` | The ingress policy the RPC mounts run behind.                                                                   |
+| `rpcPaths`                   | `ReadonlyArray<string>`                                                                              | `["/rpc", "/projections", "/sync"]`: the `POST` mounts that carry RPC request messages.                         |
+| `protectedPaths`             | `ReadonlyArray<string>`                                                                              | `["/projections", "/sync", "/rpc/ws", "/projections/ws", "/sync/ws"]`: paths that pass edge authentication.     |
+| `defaultMaxRequestBodyBytes` | `number`                                                                                             | 1,048,576. The default maximum request body accepted by an RPC mount.                                           |
+| `loopbackHostNames`          | `ReadonlyArray<string>`                                                                              | `["127.0.0.1", "localhost", "::1"]`: the names that mean this machine only, as a bind address is spelled.       |
+| `loopbackHostHeaderNames`    | `ReadonlyArray<string>`                                                                              | `["127.0.0.1", "localhost", "[::1]"]`: the same names as a Host header spells them; the default `allowedHosts`. |
+| `watchHeartbeatKind`         | `"control.gateway.heartbeat"`                                                                        | The `ControlEvent` kind a `Watch` keepalive carries.                                                            |
 
 `POST /rpc` is deliberately not in `protectedPaths`, and `GET /health` is
 deliberately unauthenticated. Both decisions, and the alias handling behind
@@ -60,16 +62,17 @@ deliberately unauthenticated. Both decisions, and the alias handling behind
 
 ### Layers
 
-| Export                 | Signature                                                                   | Provides                                                                                                 |
-| ---------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `layer`                | `(health: Health, options?: LayerOptions) => Layer<..., GatewayError, ...>` | The whole surface. Fails with `bind_failed` for a non-positive cadence or body limit.                    |
-| `layerHealth`          | `(health: Health) => Layer<never, never, HttpRouter>`                       | The unauthenticated `GET /health` probe.                                                                 |
-| `layerHandlers`        | `Layer<Handler<...>, never, Control \| Projections>`                        | The gateway's own RPC handlers over the read path and the approval mutation.                             |
-| `layerControlHttp`     | `(millis?: number) => Layer<RpcServer.Protocol, never, ...>`                | `/rpc` and `/rpc/ws`, with the keepalive merged into `watch`.                                            |
-| `layerProjectionsHttp` | `Layer<RpcServer.Protocol, never, ...>`                                     | `/projections` and `/projections/ws`. Both protocols mount together so they cannot disagree.             |
-| `layerSyncHttp`        | `Layer<RpcServer.Protocol, never, ...>`                                     | `/sync` and `/sync/ws`.                                                                                  |
-| `layerIngress`         | `(options?: IngressOptions) => Layer<...>`                                  | The global middleware: local Host/Origin policy, edge authentication, body limit, and RPC-message check. |
-| `layerKeepAlive`       | `(millis?: number) => Layer<Control, never, Control>`                       | Wraps the ambient `Control` so `watch` emits a keepalive when idle.                                      |
+| Export                      | Signature                                                                   | Provides                                                                                                 |
+| --------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `layer`                     | `(health: Health, options?: LayerOptions) => Layer<..., GatewayError, ...>` | The whole surface. Fails with `bind_failed` for a non-positive cadence or body limit.                    |
+| `layerHealth`               | `(health: Health) => Layer<never, never, HttpRouter>`                       | The unauthenticated `GET /health` probe.                                                                 |
+| `layerHandlers`             | `Layer<Handler<...>, never, Control \| Projections>`                        | The gateway's own RPC handlers over the read path and the approval mutation.                             |
+| `layerControlHttp`          | `(millis?: number) => Layer<RpcServer.Protocol, never, ...>`                | `/rpc` and `/rpc/ws`, with the keepalive merged into `watch`.                                            |
+| `layerProjectionsHttp`      | `Layer<RpcServer.Protocol, never, ...>`                                     | `/projections` and `/projections/ws`. Both protocols mount together so they cannot disagree.             |
+| `layerSyncHttp`             | `Layer<RpcServer.Protocol, never, ...>`                                     | `/sync` and `/sync/ws`.                                                                                  |
+| `layerIngress`              | `(options?: IngressOptions) => Layer<...>`                                  | The global middleware: local Host/Origin policy, edge authentication, body limit, and RPC-message check. |
+| `layerKeepAlive`            | `(millis?: number) => Layer<Control, never, Control>`                       | Wraps the ambient `Control` so `watch` emits a keepalive when idle.                                      |
+| `layerProjectionsKeepAlive` | `(millis: number) => Layer<Projections, never, Projections>`                | Wraps the ambient `Projections` so a followed subscription beats at the bind's cadence.                  |
 
 `layerKeepAlive` wraps the service rather than re-declaring handlers, which
 keeps `@smthrs/control` `ControlServer` the single definition of what every
@@ -88,16 +91,17 @@ procedure does, including the principal it stamps on mutations.
 
 The Node host: bind policy, credential policy, and the socket.
 
-| Export                 | Signature                                                                                                                                             | Meaning                                                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `ServerOptions`        | `ListenOptions & { allowedHosts?: readonly string[]; listen?: boolean; credential?: string; heartbeatMillis?: number; maxRequestBodyBytes?: number }` | Bind address, explicitly admitted Host names, authentication, and request limits.                             |
-| `defaultServerOptions` | `ServerOptions`                                                                                                                                       | `{ host: "127.0.0.1", port: 7331 }`: loopback, no credential.                                                 |
-| `isLoopbackHost`       | `(host: string) => boolean`                                                                                                                           | True for `127.0.0.1`, `::1`, and `localhost`, and nothing else.                                               |
-| `bindRefusal`          | `(options: ServerOptions) => GatewayError \| undefined`                                                                                               | The typed `bind_failed` refusal a requested bind earns, or `undefined` when it is allowed.                    |
-| `listenOptions`        | `(options: ServerOptions) => Effect<ListenOptions, GatewayError>`                                                                                     | The admitted `node:net` options, with this module's own fields removed, or that refusal in the error channel. |
-| `layerAuth`            | `(options: ServerOptions) => Layer<ControlRpcs.ControlAuth>`                                                                                          | Bearer authentication when a credential is configured, and the loopback-only local operator when none is.     |
-| `bearerPrincipal`      | `Readonly<{ id: string; kind: string }>`                                                                                                              | The frozen `{ id: "gateway", kind: "bearer" }` identity stamped by shared-bearer authentication.              |
-| `layer`                | `(health: GatewayServer.Health, options?: ServerOptions) => Layer<..., GatewayError, Control \| SyncAuth \| SyncServer \| Projections>`               | The assembled gateway on a Node HTTP server.                                                                  |
+| Export                 | Signature                                                                                                                                             | Meaning                                                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `ServerOptions`        | `ListenOptions & { allowedHosts?: readonly string[]; listen?: boolean; credential?: string; heartbeatMillis?: number; maxRequestBodyBytes?: number }` | Bind address, explicitly admitted Host names, authentication, and request limits.                                         |
+| `defaultServerOptions` | `ServerOptions`                                                                                                                                       | `{ host: "127.0.0.1", port: 7331 }`: loopback, no credential.                                                             |
+| `isLoopbackHost`       | `(host: string) => boolean`                                                                                                                           | True for `127.0.0.1`, `::1`, and `localhost`, and nothing else.                                                           |
+| `bindRefusal`          | `(options: ServerOptions) => GatewayError \| undefined`                                                                                               | The typed `bind_failed` refusal a requested bind earns, or `undefined` when it is allowed.                                |
+| `listenOptions`        | `(options: ServerOptions) => Effect<ListenOptions, GatewayError>`                                                                                     | The admitted `node:net` options, with this module's own fields removed, or that refusal in the error channel.             |
+| `ingressOptions`       | `(options: ServerOptions) => GatewayServer.IngressOptions`                                                                                            | The Host policy for a bind: the loopback names, `allowedHosts`, and the concrete bind host; a wildcard bind adds nothing. |
+| `layerAuth`            | `(options: ServerOptions) => Layer<ControlRpcs.ControlAuth>`                                                                                          | Bearer authentication when a credential is configured, and the loopback-only local operator when none is.                 |
+| `bearerPrincipal`      | `Readonly<{ id: string; kind: string }>`                                                                                                              | The frozen `{ id: "gateway", kind: "bearer" }` identity stamped by shared-bearer authentication.                          |
+| `layer`                | `(health: GatewayServer.Health, options?: ServerOptions) => Layer<..., GatewayError, Control \| SyncAuth \| SyncServer \| Projections>`               | The assembled gateway on a Node HTTP server.                                                                              |
 
 `layer` supplies the bind policy, the shared-credential authentication both RPC
 mounts run under, and newline-delimited JSON as the wire serialization. The
@@ -132,35 +136,33 @@ upgrades before any mount handles them.
 
 The read path, served as bounded snapshots and followed deltas.
 
-| Export                    | Signature                                                                                            | Meaning                                                                                                            |
-| ------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `Projections`             | `Context.Service` tagged `@smthrs/gateway/Projections`                                               | The service tag the mounts read through.                                                                           |
-| `Service`                 | `{ snapshot; subscribe }`                                                                            | Read-path operations served by the gateway.                                                                        |
-| `Service.snapshot`        | `(selector: ProjectionSelector) => Effect<ProjectionSnapshot, GatewayError>`                         | Every row the selector currently projects, and the cursor they were read at.                                       |
-| `Service.subscribe`       | `(selector: ProjectionSelector, after?: ProjectionCursor) => Stream<GatewayFrame, GatewayError>`     | A snapshot followed by deltas and keepalives, or, with `after`, the deltas after that cursor alone.                |
-| `make`                    | `(control: ControlService, options?: { heartbeatMillis?: number }) => Effect<Service, GatewayError>` | Builds the read path over a control plane. Invalid settings are `bind_failed` failures; construction never throws. |
-| `layer`                   | `Layer<Projections, GatewayError, Control>`                                                          | The read path over the ambient control plane, at the default cadence.                                              |
-| `layerWith`               | `(options: { heartbeatMillis?: number }) => Layer<Projections, GatewayError, Control>`               | The same under an explicit keepalive cadence.                                                                      |
-| `heartbeatIntervalMillis` | `30_000`                                                                                             | How often an idle subscription emits a keepalive frame.                                                            |
-| `maxWorkspaceRuns`        | `500`                                                                                                | The most runs one workspace projection folds. Equals `ControlSchema.maxPageSize`.                                  |
-| `maxEventsPerRun`         | `10_000`                                                                                             | The most journal events one run projection admits.                                                                 |
-| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                    | The largest encoded event history, or projected row set, one run admits.                                           |
+| Export                    | Signature                                                                                              | Meaning                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `Projections`             | `Context.Service` tagged `@smthrs/gateway/Projections`                                                 | The service tag the mounts read through.                                                                           |
+| `Service`                 | `{ snapshot; subscribe }`                                                                              | Read-path operations served by the gateway.                                                                        |
+| `Service.snapshot`        | `<S extends ProjectionSelector>(selector: S, after?: ProjectionCursor) => Effect<SnapshotOf<S>, GatewayError>` | Current rows, or the run-events suffix after `after`, with the current cursor.                                     |
+| `Service.subscribe`       | `<S extends ProjectionSelector>(selector: S, after?: ProjectionCursor) => Stream<FrameOf<S>, GatewayError>`    | A snapshot followed by deltas and keepalives, or, with `after`, the deltas after that cursor alone.                |
+| `make`                    | `(control: ControlService, options?: { heartbeatMillis?: number }) => Effect<Service, GatewayError>`   | Builds the read path over a control plane. Invalid settings are `bind_failed` failures; construction never throws. |
+| `layer`                   | `Layer<Projections, GatewayError, Control>`                                                            | The read path over the ambient control plane, at the default cadence.                                              |
+| `layerWith`               | `(options: { heartbeatMillis?: number }) => Layer<Projections, GatewayError, Control>`                 | The same under an explicit keepalive cadence.                                                                      |
+| `heartbeatIntervalMillis` | `30_000`                                                                                               | How often an idle subscription emits a keepalive frame.                                                            |
+| `maxWorkspaceRuns`        | `500`                                                                                                  | The most runs one workspace projection folds. Equals `ControlSchema.maxPageSize`.                                  |
+| `maxEventsPerRun`         | `10_000`                                                                                               | The most journal events one run projection admits.                                                                 |
+| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                      | The largest encoded event history, or projected row set, one run admits.                                           |
 
 `ControlService` is `@smthrs/control` `Control`'s service interface, the shape
 the tag carries.
 
 ## `GatewaySchema`
 
-The wire schemas the read path, its subscriptions, and the singleton lifecycle
-speak. Every entry is an `effect` `Schema` with a same-named type.
+The wire schemas the read path and its subscriptions speak. Every entry is an
+`effect` `Schema` with a same-named type. Every schema here is served: the
+gateway mints, reads, or answers with each one.
 
 ### Identity
 
 | Export          | Fields                                          |
 | --------------- | ----------------------------------------------- |
-| `Workspace`     | `workspaceHash`, `workspacePath`                |
-| `GatewayConfig` | `workspace`, `host`, `port`, `protocolVersion`  |
-| `GatewayStatus` | `running`, `url`, `gatewayId`, `startedAtMs`    |
 | `GatewayHealth` | `workspaceHash`, `gatewayId`, `protocolVersion` |
 
 ### Selectors
@@ -181,10 +183,23 @@ speak. Every entry is an `effect` `Schema` with a same-named type.
 is the approvals inbox. With one it lists that run's gates including the decided
 ones, which is what a run card renders.
 
-`rowSchemaFor(selector: ProjectionSelector)` answers the schema of the rows that
-selector projects, so a client decodes a snapshot instead of casting it.
+`rowSchemaFor<S extends ProjectionSelector>(selector: S)` answers the schema of
+the rows that selector projects, so a client decodes a snapshot instead of
+casting it. A literal selector keeps its own row: `rowSchemaFor({ _tag:
+"approvals" })` is `ApprovalRow`, not the union of every row. `RowOf<S>` is that
+row's type.
 
 ### Cursors, snapshots, and frames
+
+`Projection.Snapshot` accepts optional `after: ProjectionCursor` for
+`run-events` only. It returns rows strictly after that sequence and offset,
+with the current journal cursor. An unchanged journal returns no rows.
+The cursor must belong to the same selector and run and cannot be ahead of
+the journal. Other selectors with `after` return `malformed_request`.
+Omit `after` for the full snapshot and when no journal rows are retained:
+the empty cursor `0:0` also names the first sequence-zero event.
+This bounds transferred rows; the gateway still reconciles the full source
+journal before producing the suffix.
 
 | Export               | Shape                                                                      |
 | -------------------- | -------------------------------------------------------------------------- |
@@ -199,19 +214,16 @@ selector projects, so a client decodes a snapshot instead of casting it.
 
 `ProjectionSnapshot`, `RowFrame`, and `DeltaFrame` are unions correlated on the
 selector, so a payload whose rows do not belong to its selector does not decode.
+One table in `GatewaySchema` pairs each selector with its row, and those three
+unions, `ProjectionName`, and `rowSchemaFor` all derive from it.
 `runId` is `null` for a workspace cursor, whose `value` is always 0, because
 control journal sequences belong to per-run partitions and no workspace-wide
 sequence exists.
 
-### Singleton and tokens
-
-| Export            | Shape                                                                                        |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| `SingletonRecord` | `{ gatewayId, workspaceHash, hostId, pid, url, protocolVersion, startedAtMs, sessionToken }` |
-| `TokenScope`      | `"sync" \| "control" \| "tokens" \| "admin"`                                                 |
-| `TokenRecord`     | `{ id, workspaceHash, label, scopes, digest, createdAtMs, expiresAtMs, revokedAtMs? }`       |
-
-See [Declared but not served](#declared-but-not-served).
+`SnapshotOf<S>` is the snapshot one selector answers with and `FrameOf<S>` the
+frames its subscription emits, so a literal selector keeps its own rows. A
+selector chosen at runtime maps to the full `ProjectionSnapshot` and
+`GatewayFrame` unions, which is what it can be answered with.
 
 ## `GatewayProjection`
 
@@ -248,11 +260,11 @@ The gateway's own remote procedures. Control mutations are not re-declared here:
 it unchanged on `/rpc`. The group shares `ControlRpcs.ControlAuth`, so one
 bearer credential authenticates both mounts.
 
-| Procedure              | Payload                           | Success                | Error                                                                                                                                         |
-| ---------------------- | --------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Projection.Snapshot`  | `{ selector }`                    | `ProjectionSnapshot`   | `GatewayError`                                                                                                                                |
-| `Projection.Subscribe` | `{ selector, after? }`, streaming | `GatewayFrame`         | `GatewayError`                                                                                                                                |
-| `Approval.Submit`      | `SubmitApprovalInput`             | `SubmitApprovalOutput` | `PlanDigestMismatch`, `EnvelopeMismatch`, `AlreadyResolved`, `PlanNotFound`, `RunNotFound`, `InvalidInput`, `PersistenceError`, `Unavailable` |
+| Procedure              | Payload                           | Success                | Error                                                                                                                                                                           |
+| ---------------------- | --------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Projection.Snapshot`  | `{ selector }`                    | `ProjectionSnapshot`   | `GatewayError`                                                                                                                                                                  |
+| `Projection.Subscribe` | `{ selector, after? }`, streaming | `GatewayFrame`         | `GatewayError`                                                                                                                                                                  |
+| `Approval.Submit`      | `SubmitApprovalInput`             | `SubmitApprovalOutput` | `PlanDigestMismatch`, `EnvelopeMismatch`, `AlreadyResolved`, `PlanNotFound`, `RunNotFound`, `InvalidInput`, `Unauthorized`, `PersistenceError`, `Unavailable`, `TransportError` |
 
 | Export                 | Shape                                                     |
 | ---------------------- | --------------------------------------------------------- |
@@ -269,21 +281,28 @@ exactly the one `Control.approve` and `Control.deny` declare. See
 
 ## `Diagnosis`
 
-What happened to a run, computed from that run's own control events. The
-vocabulary matches `@smthrs/cli` `Forensics`: this module is that rendering,
-re-expressed as a served projection rather than a terminal card.
+What happened to a run, computed from that run's own control events. This is
+the one fold both surfaces read: `@smthrs/cli` `Forensics` calls `digest` and
+adds what a terminal card needs on top of it, so the served row and
+[`smthrs status`](https://smithers.sh/docs/reference/cli/status/) cannot disagree about a run's counts, refusals,
+or clipping.
 
-| Export      | Signature                                     | Answers                                                                                                                            |
-| ----------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `Digest`    | interface                                     | Status, cause, seat, turn and call counts, edits, refusals, tokens, final output, pending question, and the span the events cover. |
-| `Refusal`   | `{ message: string; count: number }`          | One refused flow call, aggregated by its message.                                                                                  |
-| `Subject`   | `{ runId: string; flowId?: string }`          | The identity a diagnosis is rendered for.                                                                                          |
-| `RunStatus` | `ControlSchema.RunStatus`                     | The run statuses a digest may report.                                                                                              |
-| `digest`    | `(events) => Digest`                          | The facts. Total: an unknown kind contributes nothing, including its timestamp.                                                    |
-| `verdict`   | `(value: Digest) => string`                   | One line: the status plus the reason that most explains it.                                                                        |
-| `duration`  | `(value: Digest) => string`                   | The wall-clock span the handled events cover, as `12s` or `3m 04s`.                                                                |
-| `render`    | `(subject: Subject, value: Digest) => string` | The whole card: verdict, activity evidence, tokens, refusals, cause, and output.                                                   |
-| `clip`      | `(text: string, width: number) => string`     | Truncation on code points, never on UTF-16 code units, marking the cut with an ellipsis.                                           |
+| Export      | Signature                                                  | Answers                                                                                                                            |
+| ----------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `Digest`    | interface                                                  | Status, cause, seat, turn and call counts, edits, refusals, tokens, final output, pending question, and the span the events cover. |
+| `Refusal`   | `{ message: string; count: number }`                       | One refused flow call, aggregated by its message.                                                                                  |
+| `Subject`   | `{ runId: string; flowId?: string }`                       | The identity a diagnosis is rendered for.                                                                                          |
+| `RunStatus` | `ControlSchema.RunStatus`                                  | The run statuses a digest may report.                                                                                              |
+| `digest`    | `(events) => Digest`                                       | The facts. Total: an unknown kind contributes nothing, including its timestamp.                                                    |
+| `verdict`   | `(value: Digest) => string`                                | One line: the status plus the reason that most explains it.                                                                        |
+| `duration`  | `(span: Pick<Digest, "startedAt" \| "endedAt">) => string` | The wall-clock span the handled events cover, as `12s` or `3m 04s`.                                                                |
+| `render`    | `(subject: Subject, value: Digest) => string`              | The whole card: verdict, activity evidence, tokens, refusals, cause, and output.                                                   |
+| `asRecord`  | `(value: unknown) => Record<string, unknown>`              | A wire payload as a record, or an empty record when it is not one.                                                                 |
+| `asString`  | `(value: unknown) => string \| undefined`                  | A payload field as a string, or nothing.                                                                                           |
+| `asNumber`  | `(value: unknown) => number \| undefined`                  | A payload field as a number, or nothing.                                                                                           |
+| `timeOf`    | `(event) => number`                                        | When an event occurred: its payload's own stamp, else journal admission time.                                                      |
+| `firstLine` | `(text: string) => string`                                 | The first line, whichever line ending produced it, so a CRLF cause loses its carriage return.                                      |
+| `clip`      | `(text: string, width: number) => string`                  | Truncation on code points, never on UTF-16 code units, marking the cut with an ellipsis.                                           |
 
 `RunSummaryRow.verdict` and `RunSummaryRow.diagnosis` are `verdict` and `render`
 already applied, so a client rendering a run card calls neither. See
@@ -313,9 +332,9 @@ the set those paths produce.
 | `run_not_found`     | none   | the read path, for a run the control plane does not have, identically for every run-scoped selector                                                      |
 
 `GatewayError.cause` carries only a redacted summary of an internal failure: its
-tag and its stable code. The whole cause is logged server-side instead, because
-this error is the RPC error schema, so anything left on it is serialized to
-every bearer holder and forwarded to a browser by a relay.
+tag and its stable code. Projection warnings log an allowlisted operation
+identifier and known control error tag/code pairs. Backend messages, nested
+causes, SQL, and file paths are omitted from projection logs.
 
 ## `SuperviseRuntime`
 
@@ -368,13 +387,3 @@ A controllable in-memory supervision runtime for tests.
 | `layer`                       | `(options?: TestSuperviseRuntimeOptions, onReady?: (t: TestSuperviseRuntime) => void) => Layer<SuperviseRuntime>` | Provides one and hands the controls to `onReady`.      |
 
 See [Test against a real gateway](/guides/testing/).
-
-## Declared but not served
-
-`GatewaySchema.Workspace`, `GatewayConfig`, `GatewayStatus`, `SingletonRecord`,
-`TokenScope`, and `TokenRecord` describe a workspace singleton handshake this
-release has no route for. No code here mints, reads, persists, or serves one.
-Read them as a proposal, not as a contract a client can call.
-
-Everything else the schema declares is served. `ProjectionName` in particular
-equals the set the read path answers.

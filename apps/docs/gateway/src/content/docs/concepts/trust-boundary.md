@@ -39,9 +39,8 @@ not distinguish a human from a local agent that can make its own HTTP requests.
 Use authenticated, independently authorized access and restrict that local
 endpoint when human approval must be independent of the agent.
 
-`GatewaySchema.TokenScope` and `TokenRecord` describe a scoped-token model this
-release has no route for. See
-[Declared but not served](/reference/api/#declared-but-not-served).
+This release has no scoped-token model. A bearer credential is one
+credential, and it grants everything the gateway serves.
 
 ## Two rules gate a bind, and both fail closed
 
@@ -197,8 +196,8 @@ recover.
 
 `GatewayError.cause` carries a redacted summary of an internal failure: its tag
 and its stable code, never its message, its nested cause, or the SQL and file
-paths a `PersistenceError` carries. The whole cause is logged server-side
-instead.
+paths a `PersistenceError` carries. Projection logs contain only an
+allowlisted operation identifier and known control error tag/code pairs.
 
 The reason is the error's reach. `GatewayError` is the RPC error schema, so
 anything left on it is serialized to every bearer holder and forwarded to a

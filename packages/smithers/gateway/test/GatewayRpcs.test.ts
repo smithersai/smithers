@@ -173,8 +173,8 @@ describe("Approval.Submit", () => {
       const kinds = events.map((event) => event.kind)
       expect(kinds.filter((kind) => kind === "control.run.resumed")).toHaveLength(1)
       expect(kinds).not.toContain("control.run.resume")
-      const summary = ((yield* (yield* Projections).snapshot({ _tag: "run-summary", runId }))
-        .rows as ReadonlyArray<GatewayProjection.RunSummaryRow>)[0]
+      const summary = (yield* (yield* Projections).snapshot({ _tag: "run-summary", runId }))
+        .rows[0]
       const resumed = yield* runtime.getRun(runId)
       expect(summary?.status).toBe(resumed.status)
       expect(summary?.verdict).toContain(resumed.status)
@@ -505,9 +505,7 @@ describe("run visibility", () => {
       // would fail the listing rather than exercise the listing.
       yield* runs.create(`${parentRunId}:child`, JSON.stringify({ flowName: "system/test" }), { parentRunId })
 
-      const rows = (yield* projections.snapshot({ _tag: "workspace-runs" })).rows as ReadonlyArray<
-        GatewayProjection.RunSummaryRow
-      >
+      const rows = (yield* projections.snapshot({ _tag: "workspace-runs" })).rows
       const child = rows.find((row) => row.runId === `${parentRunId}:child`)
       expect(rows.map((row) => row.runId)).toContain(parentRunId)
       expect(child).toBeDefined()
@@ -521,9 +519,7 @@ describe("run visibility", () => {
       // The noop executor takes nothing, so the run stays pending rather than
       // running. It is still a run, still listed, and still diagnosable. A
       // refused launch must not leave a hole where a run should be.
-      const rows = (yield* projections.snapshot({ _tag: "run-summary", runId })).rows as ReadonlyArray<
-        GatewayProjection.RunSummaryRow
-      >
+      const rows = (yield* projections.snapshot({ _tag: "run-summary", runId })).rows
       expect(rows[0]?.runId).toBe(runId)
       expect(rows[0]?.diagnosis).toContain("Verdict")
     }).pipe(Effect.provide(served)))

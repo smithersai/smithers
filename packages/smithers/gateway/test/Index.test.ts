@@ -4,7 +4,7 @@ import * as Gateway from "../src/index.ts"
 
 describe("/gateway", () => {
   it("exports its canonical schemas, supervision port, and sync package", () => {
-    expect(Gateway.GatewaySchema.GatewayConfig).toBeDefined()
+    expect(Gateway.GatewaySchema.ProjectionSnapshot).toBeDefined()
     expect(Gateway.SuperviseRuntime.SuperviseRuntime).toBeDefined()
     expect(Gateway.Sync.SyncClient.Sync).toBeDefined()
   })

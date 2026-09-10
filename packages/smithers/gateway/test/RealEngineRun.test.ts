@@ -76,8 +76,8 @@ describe("the read path over a run the engine executed", () => {
       const run = yield* settled(runId)
       expect(run.status).toBe("completed")
 
-      const summary = ((yield* projections.snapshot({ _tag: "run-summary", runId }))
-        .rows as ReadonlyArray<GatewayProjection.RunSummaryRow>)[0]
+      const summary = (yield* projections.snapshot({ _tag: "run-summary", runId }))
+        .rows[0]
       expect(summary?.flowId).toBe(flowId)
       expect(summary?.status).toBe("completed")
       // The verdict reads a status, never an operation name.
@@ -88,14 +88,14 @@ describe("the read path over a run the engine executed", () => {
       // included: the executor wrote the status under the run's fence and
       // journaled it, the way `AgentSession.settle` does.
       const events = (yield* projections.snapshot({ _tag: "run-events", runId }))
-        .rows as ReadonlyArray<{ readonly kind: string }>
+        .rows
       const kinds = events.map((event) => event.kind)
       expect(kinds).toContain("control.run.accepted")
       expect(kinds).toContain("control.run.running")
       expect(kinds).toContain("control.run.completed")
 
       const transcript = (yield* projections.snapshot({ _tag: "transcript", runId }))
-        .rows as ReadonlyArray<GatewayProjection.TranscriptRow>
+        .rows
       expect(transcript.map((row) => row.text)).toContain("run.completed")
       expect(transcript.every((row) => row.runId === runId)).toBe(true)
 
@@ -111,8 +111,8 @@ describe("the read path over a run the engine executed", () => {
       const run = yield* settled(runId)
       expect(run.status).toBe("failed")
 
-      const summary = ((yield* projections.snapshot({ _tag: "run-summary", runId }))
-        .rows as ReadonlyArray<GatewayProjection.RunSummaryRow>)[0]
+      const summary = (yield* projections.snapshot({ _tag: "run-summary", runId }))
+        .rows[0]
       expect(summary?.status).toBe("failed")
       expect(summary?.verdict.startsWith("failed")).toBe(true)
       expect(summary?.diagnosis).toContain("the action refused")
@@ -138,7 +138,7 @@ describe("the read path over a run the engine executed", () => {
       // run's partition of the control journal. This is why the projections
       // fold `control.*` records and nothing else.
       const events = (yield* projections.snapshot({ _tag: "run-events", runId }))
-        .rows as ReadonlyArray<{ readonly kind: string }>
+        .rows
       expect(events.length).toBeGreaterThan(0)
       expect(events.filter((event) => event.kind.startsWith("flows."))).toEqual([])
     }).pipe(Effect.provide(stack((path) => Effect.succeed(`wrote ${path}`)))))

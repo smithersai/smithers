@@ -521,6 +521,9 @@ describe("Projections subscriptions", () => {
           const snapshotSequences = frames.flatMap((frame) =>
             frame._tag === "row" ? [(frame.row as ControlEvent).sequence] : []
           )
+          // The loop's selector is one of five tags, so this subscription's
+          // frames carry the union of those five rows; only the run-events
+          // arm of the loop reads a sequence.
           const deltaSequences = deltas.flatMap((frame) =>
             (frame.delta as ReadonlyArray<ControlEvent>).map((item) => item.sequence)
           )
@@ -533,7 +536,7 @@ describe("Projections subscriptions", () => {
     Effect.gen(function*() {
       const moving = movingLog()
       const snapshot = yield* make(moving.service).snapshot({ _tag: "run-events", runId: "run-1" })
-      const rows = snapshot.rows as ReadonlyArray<ControlEvent>
+      const rows = snapshot.rows
       expect(moving.reads()).toBe(1)
       expect(snapshot.cursor.value).toBe(rows.at(-1)?.sequence)
     }))
@@ -1185,7 +1188,7 @@ describe("Projections subscriptions", () => {
       const frames = yield* Stream.runCollect(projections.subscribe(selector, issuedCursor(selector, 0, 0)))
       expect(frames.flatMap((frame) => frame._tag === "delta" ? [[frame.cursor.value, frame.cursor.offset]] : []))
         .toEqual([[0, 1], [1, 0]])
-      expect(frames.flatMap((frame) => frame._tag === "delta" ? frame.delta as ReadonlyArray<ControlEvent> : []))
+      expect(frames.flatMap((frame) => frame._tag === "delta" ? frame.delta : []))
         .toEqual([
           history[1],
           history[2]

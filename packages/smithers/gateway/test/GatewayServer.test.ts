@@ -1420,9 +1420,7 @@ describe("the assembled gateway over a real loopback bind", () => {
       })
       if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected a run")
 
-      const rows = (yield* projections.snapshot({ _tag: "workspace-runs" })).rows as ReadonlyArray<
-        { readonly runId: string; readonly parentRunId?: string }
-      >
+      const rows = (yield* projections.snapshot({ _tag: "workspace-runs" })).rows
       // The ordinary listing is what every run surface renders. A parent that
       // spawns children must not be the only run it shows.
       expect(rows.map((row) => row.runId)).toContain(receipt.runId)

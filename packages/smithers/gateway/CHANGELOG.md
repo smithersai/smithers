@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `GatewaySchema.SnapshotOf`, `FrameOf`, and `RowOf`, and made
+  `Projections.Service.snapshot`, `subscribe`, and `GatewaySchema.rowSchemaFor`
+  generic in their selector, so a literal selector keeps its own row type and a
+  caller reads `requestId` or `nodeId` without an assertion. A selector chosen
+  at runtime still maps to the `ProjectionSnapshot` and `GatewayFrame` unions.
+
+### Changed
+
+- `GatewaySchema` derives `ProjectionSelector`, `ProjectionName`,
+  `rowSchemaFor`, `ProjectionSnapshot`, `RowFrame`, and `DeltaFrame` from one
+  selector-to-row table instead of five hand-kept lists. The wire format is
+  unchanged.
+
+### Removed
+
+- Removed `GatewaySchema.Workspace`, `GatewayConfig`, `GatewayStatus`,
+  `SingletonRecord`, `TokenScope`, and `TokenRecord`, and the API and
+  trust-boundary passages that had to disclaim them: nothing minted, read,
+  persisted, or served one, and a first release has nothing to be compatible
+  with. A singleton handshake lands with its route and its tests.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 ### Added

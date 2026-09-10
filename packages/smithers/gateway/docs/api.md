@@ -135,35 +135,33 @@ upgrades before any mount handles them.
 
 The read path, served as bounded snapshots and followed deltas.
 
-| Export                    | Signature                                                                                              | Meaning                                                                                                            |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `Projections`             | `Context.Service` tagged `@smthrs/gateway/Projections`                                                 | The service tag the mounts read through.                                                                           |
-| `Service`                 | `{ snapshot; subscribe }`                                                                              | Read-path operations served by the gateway.                                                                        |
-| `Service.snapshot`        | `(selector: ProjectionSelector, after?: ProjectionCursor) => Effect<ProjectionSnapshot, GatewayError>` | Current rows, or the run-events suffix after `after`, with the current cursor.                                     |
-| `Service.subscribe`       | `(selector: ProjectionSelector, after?: ProjectionCursor) => Stream<GatewayFrame, GatewayError>`       | A snapshot followed by deltas and keepalives, or, with `after`, the deltas after that cursor alone.                |
-| `make`                    | `(control: ControlService, options?: { heartbeatMillis?: number }) => Effect<Service, GatewayError>`   | Builds the read path over a control plane. Invalid settings are `bind_failed` failures; construction never throws. |
-| `layer`                   | `Layer<Projections, GatewayError, Control>`                                                            | The read path over the ambient control plane, at the default cadence.                                              |
-| `layerWith`               | `(options: { heartbeatMillis?: number }) => Layer<Projections, GatewayError, Control>`                 | The same under an explicit keepalive cadence.                                                                      |
-| `heartbeatIntervalMillis` | `30_000`                                                                                               | How often an idle subscription emits a keepalive frame.                                                            |
-| `maxWorkspaceRuns`        | `500`                                                                                                  | The most runs one workspace projection folds. Equals `ControlSchema.maxPageSize`.                                  |
-| `maxEventsPerRun`         | `10_000`                                                                                               | The most journal events one run projection admits.                                                                 |
-| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                      | The largest encoded event history, or projected row set, one run admits.                                           |
+| Export                    | Signature                                                                                                      | Meaning                                                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Projections`             | `Context.Service` tagged `@smthrs/gateway/Projections`                                                         | The service tag the mounts read through.                                                                           |
+| `Service`                 | `{ snapshot; subscribe }`                                                                                      | Read-path operations served by the gateway.                                                                        |
+| `Service.snapshot`        | `<S extends ProjectionSelector>(selector: S, after?: ProjectionCursor) => Effect<SnapshotOf<S>, GatewayError>` | Current rows, or the run-events suffix after `after`, with the current cursor.                                     |
+| `Service.subscribe`       | `<S extends ProjectionSelector>(selector: S, after?: ProjectionCursor) => Stream<FrameOf<S>, GatewayError>`    | A snapshot followed by deltas and keepalives, or, with `after`, the deltas after that cursor alone.                |
+| `make`                    | `(control: ControlService, options?: { heartbeatMillis?: number }) => Effect<Service, GatewayError>`           | Builds the read path over a control plane. Invalid settings are `bind_failed` failures; construction never throws. |
+| `layer`                   | `Layer<Projections, GatewayError, Control>`                                                                    | The read path over the ambient control plane, at the default cadence.                                              |
+| `layerWith`               | `(options: { heartbeatMillis?: number }) => Layer<Projections, GatewayError, Control>`                         | The same under an explicit keepalive cadence.                                                                      |
+| `heartbeatIntervalMillis` | `30_000`                                                                                                       | How often an idle subscription emits a keepalive frame.                                                            |
+| `maxWorkspaceRuns`        | `500`                                                                                                          | The most runs one workspace projection folds. Equals `ControlSchema.maxPageSize`.                                  |
+| `maxEventsPerRun`         | `10_000`                                                                                                       | The most journal events one run projection admits.                                                                 |
+| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The largest encoded event history, or projected row set, one run admits.                                           |
 
 `ControlService` is `@smthrs/control` `Control`'s service interface, the shape
 the tag carries.
 
 ## `GatewaySchema`
 
-The wire schemas the read path, its subscriptions, and the singleton lifecycle
-speak. Every entry is an `effect` `Schema` with a same-named type.
+The wire schemas the read path and its subscriptions speak. Every entry is an
+`effect` `Schema` with a same-named type. Every schema here is served: the
+gateway mints, reads, or answers with each one.
 
 ### Identity
 
 | Export          | Fields                                          |
 | --------------- | ----------------------------------------------- |
-| `Workspace`     | `workspaceHash`, `workspacePath`                |
-| `GatewayConfig` | `workspace`, `host`, `port`, `protocolVersion`  |
-| `GatewayStatus` | `running`, `url`, `gatewayId`, `startedAtMs`    |
 | `GatewayHealth` | `workspaceHash`, `gatewayId`, `protocolVersion` |
 
 ### Selectors
@@ -184,8 +182,11 @@ speak. Every entry is an `effect` `Schema` with a same-named type.
 is the approvals inbox. With one it lists that run's gates including the decided
 ones, which is what a run card renders.
 
-`rowSchemaFor(selector: ProjectionSelector)` answers the schema of the rows that
-selector projects, so a client decodes a snapshot instead of casting it.
+`rowSchemaFor<S extends ProjectionSelector>(selector: S)` answers the schema of
+the rows that selector projects, so a client decodes a snapshot instead of
+casting it. A literal selector keeps its own row: `rowSchemaFor({ _tag:
+"approvals" })` is `ApprovalRow`, not the union of every row. `RowOf<S>` is that
+row's type.
 
 ### Cursors, snapshots, and frames
 
@@ -212,19 +213,16 @@ journal before producing the suffix.
 
 `ProjectionSnapshot`, `RowFrame`, and `DeltaFrame` are unions correlated on the
 selector, so a payload whose rows do not belong to its selector does not decode.
+One table in `GatewaySchema` pairs each selector with its row, and those three
+unions, `ProjectionName`, and `rowSchemaFor` all derive from it.
 `runId` is `null` for a workspace cursor, whose `value` is always 0, because
 control journal sequences belong to per-run partitions and no workspace-wide
 sequence exists.
 
-### Singleton and tokens
-
-| Export            | Shape                                                                                        |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| `SingletonRecord` | `{ gatewayId, workspaceHash, hostId, pid, url, protocolVersion, startedAtMs, sessionToken }` |
-| `TokenScope`      | `"sync" \| "control" \| "tokens" \| "admin"`                                                 |
-| `TokenRecord`     | `{ id, workspaceHash, label, scopes, digest, createdAtMs, expiresAtMs, revokedAtMs? }`       |
-
-See [Declared but not served](#declared-but-not-served).
+`SnapshotOf<S>` is the snapshot one selector answers with and `FrameOf<S>` the
+frames its subscription emits, so a literal selector keeps its own rows. A
+selector chosen at runtime maps to the full `ProjectionSnapshot` and
+`GatewayFrame` unions, which is what it can be answered with.
 
 ## `GatewayProjection`
 
@@ -388,13 +386,3 @@ A controllable in-memory supervision runtime for tests.
 | `layer`                       | `(options?: TestSuperviseRuntimeOptions, onReady?: (t: TestSuperviseRuntime) => void) => Layer<SuperviseRuntime>` | Provides one and hands the controls to `onReady`.      |
 
 See [Test against a real gateway](./guides/testing.md).
-
-## Declared but not served
-
-`GatewaySchema.Workspace`, `GatewayConfig`, `GatewayStatus`, `SingletonRecord`,
-`TokenScope`, and `TokenRecord` describe a workspace singleton handshake this
-release has no route for. No code here mints, reads, persists, or serves one.
-Read them as a proposal, not as a contract a client can call.
-
-Everything else the schema declares is served. `ProjectionName` in particular
-equals the set the read path answers.

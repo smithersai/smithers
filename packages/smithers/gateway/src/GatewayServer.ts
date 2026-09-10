@@ -213,18 +213,18 @@ export const layerProjectionsKeepAlive = (millis: number): Layer.Layer<Projectio
   )
 
 /** Replaces a subscription's keepalive channel with one at the given cadence. */
-const keptAliveSubscription = (
+const keptAliveSubscription = <F extends GatewaySchema.GatewayFrame>(
   millis: number,
-  frames: Stream.Stream<GatewaySchema.GatewayFrame, GatewayError>
-): Stream.Stream<GatewaySchema.GatewayFrame, GatewayError> => {
+  frames: Stream.Stream<F, GatewayError>
+): Stream.Stream<F | GatewaySchema.HeartbeatFrame, GatewayError> => {
   // The first tick is dropped for the same reason `Projections` drops it: an
   // immediate keepalive would arrive before the snapshot it keeps alive.
-  const beats: Stream.Stream<GatewaySchema.GatewayFrame> = Stream.tick(millis).pipe(
+  const beats: Stream.Stream<GatewaySchema.HeartbeatFrame> = Stream.tick(millis).pipe(
     Stream.drop(1),
     Stream.mapEffect(() =>
       Effect.map(
         Effect.clockWith((clock) => clock.currentTimeMillis),
-        (atMs): GatewaySchema.GatewayFrame => ({ _tag: "heartbeat", atMs })
+        (atMs): GatewaySchema.HeartbeatFrame => ({ _tag: "heartbeat", atMs })
       )
     )
   )

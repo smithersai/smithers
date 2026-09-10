@@ -125,7 +125,7 @@ describe("gateway projections over a real SQLite control plane", () => {
       yield* parkOnApproval(runId, "gate-1", "Ship it?")
 
       const rows = (yield* projections.snapshot({ _tag: "approvals", runId }))
-        .rows as ReadonlyArray<GatewayProjection.ApprovalRow>
+        .rows
       expect(rows).toHaveLength(1)
       expect(rows[0]).toMatchObject({ runId, requestId: "gate-1", title: "Ship it?", status: "pending" })
       // The row carries the submit-ready envelope, so a client decides the
@@ -138,7 +138,7 @@ describe("gateway projections over a real SQLite control plane", () => {
       // The workspace inbox is the same gate, reached the way an operator
       // reaches it: over every run the control plane reports as parked.
       const inbox = (yield* projections.snapshot({ _tag: "approvals" }))
-        .rows as ReadonlyArray<GatewayProjection.ApprovalRow>
+        .rows
       expect(inbox).toMatchObject([{ runId, requestId: "gate-1", title: "Ship it?", status: "pending" }])
     }).pipe(Effect.provide(stack())))
 
@@ -152,17 +152,17 @@ describe("gateway projections over a real SQLite control plane", () => {
       yield* parkOnApproval(second, "gate-b", "Deploy?")
 
       const before = (yield* projections.snapshot({ _tag: "approvals" }))
-        .rows as ReadonlyArray<GatewayProjection.ApprovalRow>
+        .rows
       expect(before.map((row) => row.requestId).sort()).toEqual(["gate-a", "gate-b"])
 
       yield* control.approve(decided)
       const after = (yield* projections.snapshot({ _tag: "approvals" }))
-        .rows as ReadonlyArray<GatewayProjection.ApprovalRow>
+        .rows
       // The decided gate leaves the inbox; the other run is still waiting.
       expect(after.map((row) => row.requestId)).toEqual(["gate-b"])
 
       const closed = (yield* projections.snapshot({ _tag: "approvals", runId: first }))
-        .rows as ReadonlyArray<GatewayProjection.ApprovalRow>
+        .rows
       // `ControlLive` journals the decision with `tokenId`, which for a Node
       // target is the request id, so the row it closed is the row it named.
       expect(closed).toMatchObject([{ requestId: "gate-a", status: "approved", title: "Merge?" }])
@@ -178,9 +178,7 @@ describe("gateway projections over a real SQLite control plane", () => {
         question: "Ship it?",
         payload: askPayload(runId, "gate-2")
       })
-      const pending = (yield* projections.snapshot({ _tag: "approvals", runId })).rows as ReadonlyArray<
-        GatewayProjection.ApprovalRow
-      >
+      const pending = (yield* projections.snapshot({ _tag: "approvals", runId })).rows
       expect(pending.map((row) => row.status)).toEqual(["pending"])
 
       yield* emit(runId, "control.approval.approved", {
@@ -190,9 +188,7 @@ describe("gateway projections over a real SQLite control plane", () => {
         envelope: { capabilities: ["model:call"], flows: ["ask"], budget: {} },
         principal: { id: "operator", kind: "cli", stampedAt: 1 }
       })
-      const decided = (yield* projections.snapshot({ _tag: "approvals", runId })).rows as ReadonlyArray<
-        GatewayProjection.ApprovalRow
-      >
+      const decided = (yield* projections.snapshot({ _tag: "approvals", runId })).rows
       expect(decided.map((row) => row.status)).toEqual(["approved"])
       // The decision event carries no question, so the projection kept the
       // request rather than nulling it.
@@ -247,9 +243,7 @@ describe("gateway projections over a real SQLite control plane", () => {
         principal: { id: "operator", kind: "cli", stampedAt: 1 }
       })
 
-      const rows = (yield* projections.snapshot({ _tag: "run-summary", runId })).rows as ReadonlyArray<
-        GatewayProjection.RunSummaryRow
-      >
+      const rows = (yield* projections.snapshot({ _tag: "run-summary", runId })).rows
       expect(rows[0]?.cancellation).toMatchObject({
         source: "control",
         reason: "worker received SIGTERM",
@@ -285,9 +279,7 @@ describe("gateway projections over a real SQLite control plane", () => {
       yield* runtime.writeStatus(runId, fence, "completed")
       yield* emit(runId, "control.run.completed", { runId, status: "completed" })
 
-      const summary = ((yield* projections.snapshot({ _tag: "run-summary", runId })).rows as ReadonlyArray<
-        GatewayProjection.RunSummaryRow
-      >)[0]
+      const summary = (yield* projections.snapshot({ _tag: "run-summary", runId })).rows[0]
       expect(summary?.seat).toBe("opus")
       expect(summary?.turns).toBe(1)
       expect(summary?.editsSucceeded).toBe(1)
@@ -296,18 +288,14 @@ describe("gateway projections over a real SQLite control plane", () => {
       expect(summary?.diagnosis).toContain("Verdict")
       expect(summary?.diagnosis).toContain(runId)
 
-      const tree = (yield* projections.snapshot({ _tag: "run-tree", runId })).rows as ReadonlyArray<
-        GatewayProjection.RunTreeRow
-      >
+      const tree = (yield* projections.snapshot({ _tag: "run-tree", runId })).rows
       expect(tree).toMatchObject([{ nodeId: "call-1", label: "write", status: "completed", seat: "opus" }])
 
       const output = (yield* projections.snapshot({ _tag: "node-output", runId, nodeId: "call-1" }))
-        .rows as ReadonlyArray<GatewayProjection.NodeOutputRow>
+        .rows
       expect(output).toMatchObject([{ nodeId: "call-1", outcome: "success", output: "wrote src/index.ts" }])
 
-      const transcript = (yield* projections.snapshot({ _tag: "transcript", runId })).rows as ReadonlyArray<
-        GatewayProjection.TranscriptRow
-      >
+      const transcript = (yield* projections.snapshot({ _tag: "transcript", runId })).rows
       expect(transcript.map((row) => row.kind)).toContain("control.agent.turn-opened")
       expect(transcript.every((row) => row.runId === runId)).toBe(true)
     }).pipe(Effect.provide(stack())))
@@ -331,9 +319,7 @@ describe("gateway projections over a real SQLite control plane", () => {
       // same credential-shaped key is still refused by the journal.
       expect(settled?.payload.usage).toEqual({ inputTokens: 120, outputTokens: 34 })
 
-      const summary = ((yield* projections.snapshot({ _tag: "run-summary", runId })).rows as ReadonlyArray<
-        GatewayProjection.RunSummaryRow
-      >)[0]
+      const summary = (yield* projections.snapshot({ _tag: "run-summary", runId })).rows[0]
       expect(summary?.inputTokens).toBe(120)
       expect(summary?.outputTokens).toBe(34)
     }).pipe(Effect.provide(stack())))
@@ -392,9 +378,7 @@ describe("gateway projections over a real SQLite control plane", () => {
     Effect.gen(function*() {
       const projections = yield* Projections
       const runId = yield* launch
-      const rows = (yield* projections.snapshot({ _tag: "workspace-runs" })).rows as ReadonlyArray<
-        GatewayProjection.RunSummaryRow
-      >
+      const rows = (yield* projections.snapshot({ _tag: "workspace-runs" })).rows
       expect(rows.map((row) => row.runId)).toEqual([runId])
       expect(rows[0]?.flowId).toBe("system/test")
     }).pipe(Effect.provide(stack())))
@@ -439,7 +423,7 @@ describe("gateway projections over a real SQLite control plane", () => {
       const delta = frames[0]
       expect(delta?._tag).toBe("delta")
       if (delta?._tag !== "delta") return
-      const rows = delta.delta as ReadonlyArray<{ readonly runId?: string; readonly kind: string }>
+      const rows = delta.delta
       expect(rows).toHaveLength(1)
       expect(rows[0]).toMatchObject({ runId, kind: "control.run.completed" })
 

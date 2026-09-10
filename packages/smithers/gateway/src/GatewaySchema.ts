@@ -9,68 +9,6 @@ import { Schema } from "effect"
 import * as GatewayProjection from "./GatewayProjection.ts"
 
 /**
- * Workspace identity served by a gateway.
- *
- * @since 0.1.0
- * @category models
- */
-export const Workspace = Schema.Struct({
-  workspaceHash: Schema.String,
-  workspacePath: Schema.String
-})
-
-/**
- * A workspace identity.
- *
- * @since 0.1.0
- * @category models
- */
-export type Workspace = typeof Workspace.Type
-
-/**
- * Gateway process configuration.
- *
- * @since 0.1.0
- * @category models
- */
-export const GatewayConfig = Schema.Struct({
-  workspace: Workspace,
-  host: Schema.String,
-  port: Schema.Number,
-  protocolVersion: Schema.String,
-  capabilities: Schema.optionalKey(Schema.Array(Schema.String))
-})
-
-/**
- * Gateway process configuration.
- *
- * @since 0.1.0
- * @category models
- */
-export type GatewayConfig = typeof GatewayConfig.Type
-
-/**
- * Runtime status of a gateway process.
- *
- * @since 0.1.0
- * @category models
- */
-export const GatewayStatus = Schema.Struct({
-  running: Schema.Boolean,
-  url: Schema.NullOr(Schema.String),
-  gatewayId: Schema.NullOr(Schema.String),
-  startedAtMs: Schema.NullOr(Schema.Number)
-})
-
-/**
- * Runtime status of a gateway process.
- *
- * @since 0.1.0
- * @category models
- */
-export type GatewayStatus = typeof GatewayStatus.Type
-
-/**
  * Health response used to prove a singleton belongs to this workspace.
  *
  * @since 0.1.0
@@ -90,30 +28,6 @@ export const GatewayHealth = Schema.Struct({
  * @category models
  */
 export type GatewayHealth = typeof GatewayHealth.Type
-
-/**
- * Projection names served by the gateway read path.
- *
- * @since 0.1.0
- * @category models
- */
-export const ProjectionName = Schema.Literals([
-  "workspace-runs",
-  "run-summary",
-  "run-events",
-  "transcript",
-  "run-tree",
-  "approvals",
-  "node-output"
-])
-
-/**
- * A gateway projection name.
- *
- * @since 0.1.0
- * @category models
- */
-export type ProjectionName = typeof ProjectionName.Type
 
 /**
  * A selector for a workspace-wide run list.
@@ -237,21 +151,61 @@ export const NodeOutputSelector = Schema.TaggedStruct("node-output", {
  */
 export type NodeOutputSelector = typeof NodeOutputSelector.Type
 
+/** A schema for a tagged selector, whose tag names its projection. */
+interface SelectorSchema extends Schema.Top {
+  readonly Type: { readonly _tag: string }
+}
+
+/** The shape of the served table: one selector paired with one row schema. */
+type ServedTable = ReadonlyArray<readonly [SelectorSchema, Schema.Top]>
+
+/**
+ * The row schema each served selector answers with.
+ *
+ * This table is the selector-to-row pairing, and it exists once. The selector
+ * union, the projection names, `rowSchemaFor`, `ProjectionSnapshot`,
+ * `RowFrame`, and `DeltaFrame` all derive from it, so serving one more
+ * projection is one more entry here rather than five mirrored lists that can
+ * disagree with each other.
+ */
+const served = [
+  [WorkspaceRunsSelector, GatewayProjection.RunSummaryRow],
+  [RunSummarySelector, GatewayProjection.RunSummaryRow],
+  [RunEventsSelector, ControlSchema.ControlEvent],
+  [TranscriptSelector, GatewayProjection.TranscriptRow],
+  [RunTreeSelector, GatewayProjection.RunTreeRow],
+  [ApprovalsSelector, GatewayProjection.ApprovalRow],
+  [NodeOutputSelector, GatewayProjection.NodeOutputRow]
+] as const satisfies ServedTable
+
+/** The served table as the type every derivation below maps over. */
+type Served = typeof served
+
+/**
+ * Maps the served table into a tuple whose members keep their own types.
+ *
+ * `Array.prototype.map` widens a tuple to an array of its element union, which
+ * would collapse each derived union into an uncorrelated cross product of
+ * every selector with every row. The mapped tuple type each caller names is
+ * that correlation, and this restates it for the value.
+ */
+const overServed = <M>(map: (pair: Served[number]) => unknown): M => served.map(map) as unknown as M
+
+/** The selector schema of each served pair, in table order. */
+type SelectorsOf<T extends ServedTable> = { readonly [K in keyof T]: T[K][0] }
+
+/** The projection name of each served pair, in table order. */
+type NamesOf<T extends ServedTable> = { readonly [K in keyof T]: T[K][0]["Type"]["_tag"] }
+
 /**
  * A projection selected for a snapshot or watch subscription.
  *
  * @since 0.1.0
  * @category models
  */
-export const ProjectionSelector = Schema.Union([
-  WorkspaceRunsSelector,
-  RunSummarySelector,
-  RunEventsSelector,
-  TranscriptSelector,
-  RunTreeSelector,
-  ApprovalsSelector,
-  NodeOutputSelector
-])
+export const ProjectionSelector = Schema.Union(
+  overServed<SelectorsOf<Served>>(([selector]) => selector)
+)
 
 /**
  * A projection selected for a snapshot or watch subscription.
@@ -262,30 +216,51 @@ export const ProjectionSelector = Schema.Union([
 export type ProjectionSelector = typeof ProjectionSelector.Type
 
 /**
- * The row schema each selector answers with, so a client decodes a snapshot
+ * Projection names served by the gateway read path.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export const ProjectionName = Schema.Literals(
+  overServed<NamesOf<Served>>(([selector]) => selector.fields._tag.schema.literal)
+)
+
+/**
+ * A gateway projection name.
+ *
+ * @since 0.1.0
+ * @category models
+ */
+export type ProjectionName = typeof ProjectionName.Type
+
+/** Each served row schema, keyed by the name of the selector it answers. */
+type RowSchemas = { readonly [P in Served[number] as P[0]["Type"]["_tag"]]: P[1] }
+
+const rowSchemas = Object.fromEntries(
+  served.map(([selector, row]) => [selector.fields._tag.schema.literal, row])
+) as RowSchemas
+
+/**
+ * The row schema one selector answers with, so a client decodes a snapshot
  * instead of casting it.
+ *
+ * A literal selector keeps its own row schema: `rowSchemaFor({ _tag:
+ * "approvals" })` decodes to `ApprovalRow`, not to the union of every row.
  *
  * @param selector the selector whose row schema the client needs
  * @since 1.0.0
  * @category schemas
  */
-export const rowSchemaFor = (selector: ProjectionSelector) => {
-  switch (selector._tag) {
-    case "workspace-runs":
-    case "run-summary":
-      return GatewayProjection.RunSummaryRow
-    case "run-events":
-      return ControlSchema.ControlEvent
-    case "transcript":
-      return GatewayProjection.TranscriptRow
-    case "run-tree":
-      return GatewayProjection.RunTreeRow
-    case "approvals":
-      return GatewayProjection.ApprovalRow
-    case "node-output":
-      return GatewayProjection.NodeOutputRow
-  }
-}
+export const rowSchemaFor = <S extends ProjectionSelector>(selector: S): RowSchemas[S["_tag"]] =>
+  rowSchemas[selector._tag] as RowSchemas[S["_tag"]]
+
+/**
+ * The row type one selector's projection is made of.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type RowOf<S extends ProjectionSelector> = RowSchemas[S["_tag"]]["Type"]
 
 /**
  * A monotonic cursor for one projection and optional run scope.
@@ -321,6 +296,30 @@ export const ProjectionCursor = Schema.Struct({
  */
 export type ProjectionCursor = typeof ProjectionCursor.Type
 
+/** One snapshot member: every row one selector projects, at one cursor. */
+const snapshotMember = <S extends Schema.Top, R extends Schema.Top>(selector: S, row: R) =>
+  Schema.Struct({ selector, cursor: ProjectionCursor, rows: Schema.Array(row) })
+
+/** One row frame: a single row of one selector's projection. */
+const rowMember = <S extends Schema.Top, R extends Schema.Top>(selector: S, row: R) =>
+  Schema.TaggedStruct("row", { selector, cursor: ProjectionCursor, row })
+
+/** One delta frame: the rows one selector's projection changed by. */
+const deltaMember = <S extends Schema.Top, R extends Schema.Top>(selector: S, row: R) =>
+  Schema.TaggedStruct("delta", { selector, cursor: ProjectionCursor, delta: Schema.Array(row) })
+
+type SnapshotMembersOf<T extends ServedTable> = {
+  readonly [K in keyof T]: ReturnType<typeof snapshotMember<T[K][0], T[K][1]>>
+}
+
+type RowMembersOf<T extends ServedTable> = {
+  readonly [K in keyof T]: ReturnType<typeof rowMember<T[K][0], T[K][1]>>
+}
+
+type DeltaMembersOf<T extends ServedTable> = {
+  readonly [K in keyof T]: ReturnType<typeof deltaMember<T[K][0], T[K][1]>>
+}
+
 /**
  * Every row one selector currently projects, and the cursor they were read
  * at. A client that follows the same selector from this cursor sees each
@@ -329,43 +328,9 @@ export type ProjectionCursor = typeof ProjectionCursor.Type
  * @since 1.0.0
  * @category models
  */
-export const ProjectionSnapshot = Schema.Union([
-  Schema.Struct({
-    selector: WorkspaceRunsSelector,
-    cursor: ProjectionCursor,
-    rows: Schema.Array(GatewayProjection.RunSummaryRow)
-  }),
-  Schema.Struct({
-    selector: RunSummarySelector,
-    cursor: ProjectionCursor,
-    rows: Schema.Array(GatewayProjection.RunSummaryRow)
-  }),
-  Schema.Struct({
-    selector: RunEventsSelector,
-    cursor: ProjectionCursor,
-    rows: Schema.Array(ControlSchema.ControlEvent)
-  }),
-  Schema.Struct({
-    selector: TranscriptSelector,
-    cursor: ProjectionCursor,
-    rows: Schema.Array(GatewayProjection.TranscriptRow)
-  }),
-  Schema.Struct({
-    selector: RunTreeSelector,
-    cursor: ProjectionCursor,
-    rows: Schema.Array(GatewayProjection.RunTreeRow)
-  }),
-  Schema.Struct({
-    selector: ApprovalsSelector,
-    cursor: ProjectionCursor,
-    rows: Schema.Array(GatewayProjection.ApprovalRow)
-  }),
-  Schema.Struct({
-    selector: NodeOutputSelector,
-    cursor: ProjectionCursor,
-    rows: Schema.Array(GatewayProjection.NodeOutputRow)
-  })
-])
+export const ProjectionSnapshot = Schema.Union(
+  overServed<SnapshotMembersOf<Served>>(([selector, row]) => snapshotMember(selector, row))
+)
 
 /**
  * A projection snapshot and the cursor it was read at.
@@ -400,43 +365,9 @@ export type SnapshotStartFrame = typeof SnapshotStartFrame.Type
  * @since 0.1.0
  * @category models
  */
-export const RowFrame = Schema.Union([
-  Schema.TaggedStruct("row", {
-    selector: WorkspaceRunsSelector,
-    cursor: ProjectionCursor,
-    row: GatewayProjection.RunSummaryRow
-  }),
-  Schema.TaggedStruct("row", {
-    selector: RunSummarySelector,
-    cursor: ProjectionCursor,
-    row: GatewayProjection.RunSummaryRow
-  }),
-  Schema.TaggedStruct("row", {
-    selector: RunEventsSelector,
-    cursor: ProjectionCursor,
-    row: ControlSchema.ControlEvent
-  }),
-  Schema.TaggedStruct("row", {
-    selector: TranscriptSelector,
-    cursor: ProjectionCursor,
-    row: GatewayProjection.TranscriptRow
-  }),
-  Schema.TaggedStruct("row", {
-    selector: RunTreeSelector,
-    cursor: ProjectionCursor,
-    row: GatewayProjection.RunTreeRow
-  }),
-  Schema.TaggedStruct("row", {
-    selector: ApprovalsSelector,
-    cursor: ProjectionCursor,
-    row: GatewayProjection.ApprovalRow
-  }),
-  Schema.TaggedStruct("row", {
-    selector: NodeOutputSelector,
-    cursor: ProjectionCursor,
-    row: GatewayProjection.NodeOutputRow
-  })
-])
+export const RowFrame = Schema.Union(
+  overServed<RowMembersOf<Served>>(([selector, row]) => rowMember(selector, row))
+)
 
 /**
  * A row emitted during a selector snapshot.
@@ -476,43 +407,9 @@ export type SnapshotEndFrame = typeof SnapshotEndFrame.Type
  * @since 0.1.0
  * @category models
  */
-export const DeltaFrame = Schema.Union([
-  Schema.TaggedStruct("delta", {
-    selector: WorkspaceRunsSelector,
-    cursor: ProjectionCursor,
-    delta: Schema.Array(GatewayProjection.RunSummaryRow)
-  }),
-  Schema.TaggedStruct("delta", {
-    selector: RunSummarySelector,
-    cursor: ProjectionCursor,
-    delta: Schema.Array(GatewayProjection.RunSummaryRow)
-  }),
-  Schema.TaggedStruct("delta", {
-    selector: RunEventsSelector,
-    cursor: ProjectionCursor,
-    delta: Schema.Array(ControlSchema.ControlEvent)
-  }),
-  Schema.TaggedStruct("delta", {
-    selector: TranscriptSelector,
-    cursor: ProjectionCursor,
-    delta: Schema.Array(GatewayProjection.TranscriptRow)
-  }),
-  Schema.TaggedStruct("delta", {
-    selector: RunTreeSelector,
-    cursor: ProjectionCursor,
-    delta: Schema.Array(GatewayProjection.RunTreeRow)
-  }),
-  Schema.TaggedStruct("delta", {
-    selector: ApprovalsSelector,
-    cursor: ProjectionCursor,
-    delta: Schema.Array(GatewayProjection.ApprovalRow)
-  }),
-  Schema.TaggedStruct("delta", {
-    selector: NodeOutputSelector,
-    cursor: ProjectionCursor,
-    delta: Schema.Array(GatewayProjection.NodeOutputRow)
-  })
-])
+export const DeltaFrame = Schema.Union(
+  overServed<DeltaMembersOf<Served>>(([selector, row]) => deltaMember(selector, row))
+)
 
 /**
  * A projection mutation after snapshot completion.
@@ -561,73 +458,33 @@ export const GatewayFrame = Schema.Union([
 export type GatewayFrame = typeof GatewayFrame.Type
 
 /**
- * On-disk state proving which gateway owns a workspace singleton.
+ * The snapshot one selector answers with.
  *
- * The session token is process-local capability material; it is never part of
- * a health response or token listing.
+ * A literal selector keeps its own rows: `SnapshotOf<ApprovalsSelector>` has
+ * `ApprovalRow` rows, so a caller reads `requestId` without an assertion. A
+ * selector union maps to the snapshot union, which is what a caller holding a
+ * selector chosen at runtime still gets.
  *
- * @since 0.1.0
+ * @since 1.0.0
  * @category models
  */
-export const SingletonRecord = Schema.Struct({
-  gatewayId: Schema.String,
-  workspaceHash: Schema.String,
-  hostId: Schema.String,
-  pid: Schema.Number,
-  url: Schema.String,
-  protocolVersion: Schema.String,
-  startedAtMs: Schema.Number,
-  sessionToken: Schema.String
-})
+export type SnapshotOf<S extends ProjectionSelector> = Extract<
+  ProjectionSnapshot,
+  { readonly selector: { readonly _tag: S["_tag"] } }
+>
 
 /**
- * On-disk workspace gateway singleton state.
+ * The frames one selector's subscription emits.
  *
- * @since 0.1.0
+ * Snapshot brackets and keepalives carry no rows and belong to every
+ * selector; the row and delta frames are the selector's own.
+ *
+ * @since 1.0.0
  * @category models
  */
-export type SingletonRecord = typeof SingletonRecord.Type
-
-/**
- * Gateway token permissions.
- *
- * @since 0.1.0
- * @category models
- */
-export const TokenScope = Schema.Literals(["sync", "control", "tokens", "admin"])
-
-/**
- * A gateway token permission.
- *
- * @since 0.1.0
- * @category models
- */
-export type TokenScope = typeof TokenScope.Type
-
-/**
- * An at-rest gateway token grant.
- *
- * `digest` is the one-way digest of the raw token. Raw bearer tokens must
- * never be persisted or returned after issuance.
- *
- * @since 0.1.0
- * @category models
- */
-export const TokenRecord = Schema.Struct({
-  id: Schema.String,
-  workspaceHash: Schema.String,
-  label: Schema.String,
-  scopes: Schema.Array(TokenScope),
-  digest: Schema.String,
-  createdAtMs: Schema.Number,
-  expiresAtMs: Schema.Number,
-  revokedAtMs: Schema.optional(Schema.Number)
-})
-
-/**
- * An at-rest gateway token grant containing only a digest.
- *
- * @since 0.1.0
- * @category models
- */
-export type TokenRecord = typeof TokenRecord.Type
+export type FrameOf<S extends ProjectionSelector> =
+  | SnapshotStartFrame
+  | SnapshotEndFrame
+  | HeartbeatFrame
+  | Extract<RowFrame, { readonly selector: { readonly _tag: S["_tag"] } }>
+  | Extract<DeltaFrame, { readonly selector: { readonly _tag: S["_tag"] } }>

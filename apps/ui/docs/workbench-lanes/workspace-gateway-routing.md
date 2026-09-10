@@ -31,7 +31,7 @@ shape. Gateway credentials stay in the existing per-user Worker Durable Object.
 Its existing record key now includes the optional workspace; no new store is
 introduced. Legacy records retain their old key.
 
-The gateway's existing `GatewayHealth` and `GatewayConfig` schemas accept optional
+The gateway's existing `GatewayHealth` schema accepts optional
 `capabilities: string[]`. This schema addition alone does not advertise a coding
 host. The configured host must validate its native binding and registered
 `Executable.Catalog` before advertising `coding-plan/v1`; Plue refuses an ordinary

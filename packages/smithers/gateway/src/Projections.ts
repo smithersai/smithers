@@ -102,19 +102,28 @@ const workspaceDeltaBatchSize = 1_024
  * @category models
  */
 export interface Service {
-  /** Current rows, or only run-events rows after an issued cursor. */
-  readonly snapshot: (
-    selector: GatewaySchema.ProjectionSelector,
+  /**
+   * Current rows, or only run-events rows after an issued cursor.
+   *
+   * A literal selector keeps its own row type, so an approvals reader reads
+   * `requestId` and a run-tree reader reads `nodeId` without an assertion. A
+   * selector chosen at runtime still answers with the snapshot union.
+   */
+  readonly snapshot: <S extends GatewaySchema.ProjectionSelector>(
+    selector: S,
     after?: GatewaySchema.ProjectionCursor | undefined
-  ) => Effect.Effect<GatewaySchema.ProjectionSnapshot, GatewayError>
+  ) => Effect.Effect<GatewaySchema.SnapshotOf<S>, GatewayError>
   /**
    * A snapshot followed by recomputed deltas and keepalive frames, or, when
    * `after` names a cursor this selector issued, the deltas after it alone.
+   *
+   * The row and delta frames are the selector's own, on the same rule as
+   * `snapshot`.
    */
-  readonly subscribe: (
-    selector: GatewaySchema.ProjectionSelector,
+  readonly subscribe: <S extends GatewaySchema.ProjectionSelector>(
+    selector: S,
     after?: GatewaySchema.ProjectionCursor | undefined
-  ) => Stream.Stream<GatewaySchema.GatewayFrame, GatewayError>
+  ) => Stream.Stream<GatewaySchema.FrameOf<S>, GatewayError>
 }
 
 /**
@@ -1008,7 +1017,14 @@ const makeService = (control: ControlService, heartbeatMillis: number): Service 
       { haltStrategy: "left" }
     )
 
-  return { snapshot, subscribe }
+  /*
+   * The service is generic in its selector; the implementation folds every
+   * selector through one code path and is not. The correlation the signature
+   * promises is enforced at runtime rather than assumed: `boundedRows`
+   * decodes each fold against `GatewaySchema.rowSchemaFor(selector)` and
+   * fails the read when a row does not belong to the selector that asked.
+   */
+  return { snapshot, subscribe } as Service
 }
 
 /**

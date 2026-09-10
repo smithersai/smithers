@@ -38,9 +38,8 @@ not distinguish a human from a local agent that can make its own HTTP requests.
 Use authenticated, independently authorized access and restrict that local
 endpoint when human approval must be independent of the agent.
 
-`GatewaySchema.TokenScope` and `TokenRecord` describe a scoped-token model this
-release has no route for. See
-[Declared but not served](../api.md#declared-but-not-served).
+This release has no scoped-token model. A bearer credential is one
+credential, and it grants everything the gateway serves.
 
 ## Two rules gate a bind, and both fail closed
 
