@@ -1,94 +1,80 @@
-# A prompt through the existing native host
+# Prompt requests and coordinator feedback
 
-`coding/request` is a private repository declaration, backed by the existing
-registered `coding/RunRequest` delegate and `coding/Request` flow. It accepts
-`{ prompt, feedback?, maxRounds? }`; the correction limit defaults to three and
-admits one through eight passes. The first implementation counts as a pass.
+The private `coding/request` executable keeps its existing input: a prompt,
+optional initial feedback and an optional correction limit of one to eight.
+`RequestResult` remains `{plan, outcome}`. A request completing in the engine
+means its result is available; inspect the domain outcome for `validated`,
+`changes-requested` or `blocked`. It does not mean vibed, landed or shipped.
 
-```ts
-import { Request } from "./request.ts"
+## One disposable POC, then current planning
 
-// In the configured Effect runtime, using its existing journal and database:
-const result = yield* Request.execute({
-  prompt: "Add the query using the current storage layer.",
-  maxRounds: 3
-})
-// result.plan: the measured, prepared Plan
-// result.outcome.status: validated | changes-requested | blocked
-```
+`Request` first calls `PrepareWithWiki`, verifies that its captured native JJ
+source still matches, runs the retained disposable `Poc` child, and verifies that
+the original source still matches after the POC. The POC's complete measured
+source and before/after result remain in its own child history. The coordinator
+uses its bounded findings as feedback, preserving the original user feedback.
+This is the existing file-level POC; it does not claim an executed browser build.
 
-This is a new private flow entry and internal result shape, not a new public
-Smithers package API. The gateway continues to use its existing plan, approval,
-run and watch operations. There is no additional endpoint, database, queue or
-executor. The host advertises `coding-request/v1` only when its operator has
-provided the owning planning configuration and its verified declaration is
-available in the catalog.
+The coordinator receives queued request messages after the POC, then starts
+`CoordinateRequest`. Each pass calls `PrepareWithWiki` again. Wiki publication
+and semantic review precede planning, and planning captures the current native
+head. The second plan therefore has both the initial constraints and POC
+findings. Later passes can also inspect the history produced by earlier
+implementation and correction work.
 
-The composition refreshes the verified engineering wiki, prepares a first plan,
-admits its observed native source, and runs the disposable file-level POC. It
-checks that source again before refreshing memory and planning a second time
-with both the user's feedback and the measured POC findings. The second plan
-is admitted before the bounded correction workflow implements it. Any material
-planning question uses the existing durable HumanTask.
+## Feedback at safe boundaries
 
-Each stage and its output belong to ordinary native execution records. The
-complete POC source preview stays in its child result; the request result does
-not duplicate its bounded file contents in every ancestor. Only its bounded
-feedback feeds the second planning pass. The private planning input allows
-65,538 characters so a valid 32,768-character user message and 32,768-character
-POC feedback both survive with their separating newlines. The request's external
-feedback limit remains 32,768 characters.
+The configured native host installs the private `routeMessages` decorator and
+`feedbackLayer` over its existing control notification queue. The routing,
+approved-owner proof and exact durable receipts are described in
+[steering.md](steering.md). Every Message addressed to the approved request root
+uses the coordinator lineage. Explicit leaf messages and model settings keep
+their existing behavior. There is no separate feedback store or transport.
 
-The correction result's product status is distinct from the surrounding engine's
-completion: `blocked` carries the actual failed execution ID and does not assert
-validation. A discarded POC is `drafted-unvalidated`; its source preview is not
-an executed browser, passing test, vibed state or delivery receipt.
+`ReceiveFeedback` runs after the POC, after each prepared plan but before
+implementation, and after each completed correction pass. A message delivered
+before implementation causes another planning pass before any plan mutation.
+A message delivered during implementation waits for `CorrectPlan` to settle,
+then causes a new plan against freshly gathered source and wiki evidence. The
+coordinator never edits an executing plan or interrupts a writer mid-operation.
+The next plan can select existing JJ atoms under the usual ownership policy.
+The POC is not repeated on these later planning passes.
 
-`Options.planning` configures the existing memory action with the repository's
-public engineering wiki pages and registered implementation/check names.
-The required `reviewer` identifies the wiki review policy. Optional
-`planningModel`, `pocModel` and `wikiModel` select existing authorized provider
-routes; each defaults to the explicitly selected `implementationModel`. This
-allows a cheap prototype model without introducing another model client. The
-wiki reuse identity includes the operator's reviewer policy, selected review
-model and owning gateway. These are private operator options. The prompt cannot
-select a different source directory, reviewer, check executable, model credential
-or implementation digest.
+The Message receipt is an ordinary completed native Action result. Its exact
+notification IDs, text and attribution remain available even if combining the
+feedback exceeds the existing 65,538-character planning limit. Nothing is
+silently truncated. Queue capacity refusal is returned through the existing
+notification error. A receipt that says queued is not evidence that a revised
+plan completed: the subsequent actual Plan child is that evidence.
 
-The host builds its verified executable catalog before providing that exact
-catalog to the planning and coding action layers. Declared source bytes are
-loaded using the host filesystem during startup. Host-owned wiki generation and
-memory verification also use that same injected filesystem for their configured
-paths, retaining the wiki's canonical source/output checks and semantic checks.
-The private wiki/memory recipes accept that filesystem explicitly at the operation
-boundary: native action execution can override construction-time layer context.
-These deterministic actions receive an operator-owned catalog; they do not offer
-filesystem access to a model. Agent tools continue to use the existing guarded
-filesystem and native file eligibility rules. The private native registration
-type exposes the injected JJ, SQL and attempt-store services already present in
-that runtime; it constructs neither another service nor connection. Wiki reuse
-reads the native execution journal and attempt store, not the Control stores.
+## Bounded ordinary Flow state
 
-The private source-admission action returns the existing plan fields with a
-required observed head. Legacy plans remain readable elsewhere, but cannot enter
-this composed request without a freshly observed source. Admission compares JJ
-change/commit/tree/parent facts; the existing operation-level fences continue to
-guard later mutations. An admission check is not a lock for the whole run.
+A private `CoordinateRequest` cursor contains
+`{prompt, feedback, maxRounds, revision}`. `maxRounds` is the existing correction
+limit; `revision` counts the coordinator's post-POC planning passes. The cursor
+is ordinary durable Flow payload and uses the existing trampoline rather than
+a second run loop or ledger. The result does not acquire a duplicated transcript,
+POC artifact or collection of earlier plans.
 
-Planning, owner-repair selection and review actions are composed with the
-captured-evidence authority helper. They retain model routing, budget,
-steering and observation, while receiving no tool authority. The existing
-agent `unmovedCap: 0` option avoids demanding a code edit from a planning
-answer. Actual implementation continues through native JJ, guarded agent
-tools, fast gates and asynchronous immutable-source slow checks.
+There are at most eight planning passes after the POC, in addition to the
+initial POC plan. Repeated messages at that limit produce a typed refusal naming
+the retained message IDs. A source admission failure also refuses before
+implementation rather than silently updating the plan to a different source.
+Existing native per-operation fences still govern every later mutation.
 
-The configured-host acceptance fixture drives the actual gateway host's
-Control API with scripted models, real QuickJS cells, Plue JJ, SQLite and
-process checks. It starts without a published wiki and asserts generation before
-planning, unchanged-page review reuse before the second pass, retained user and
-POC feedback, and actual native implementation. Evidence-only model steps cannot
-write. Implementation uses Write/Edit/ApplyPatch; ignored files are refused.
-The persisted request result identifies the original observed source and the
-validated native atom. The same source and bundle fixture selects either Node
-or Bun platform services. Scripted output is not a live-provider quality
-evaluation. Final commit cleanup, vibed state and delivery are later stages.
+The final after-correction drain and the control run's completion are currently
+separate transactions. A Message arriving in that interval can remain pending
+after the request completes. It is retained, but does not automatically create
+a new request or prove that a revised plan ran. Atomic closure of that interval
+is an outstanding integration requirement. There is no claim of preemptive
+steering or an implicit human wait after every POC.
+
+## Verification
+
+The coordinator regression suite uses the real Flow engine and interpreter with
+explicitly scripted planning, prototype and correction children. It verifies
+constraint and attribution retention, feedback before mutation, replanning from
+the source left by correction, bounded continual steering, stale source refusal
+and completed execution replay. These tests do not measure model quality, native
+JJ mutation or operating-system process containment. Those remain covered by
+the separate native request, correction and notification host acceptance tests.

@@ -24,6 +24,7 @@ import { planningWikiLayers } from "./planning-wiki.ts"
 import { ReviewPage } from "../wiki/workflow.ts"
 import { pocModels, pocPolicy } from "./poc.ts"
 import { pocSource } from "./poc-source.ts"
+import { feedbackLayer, routeMessages } from "./steering.ts"
 
 /** Operator configuration, never accepted from a workflow or gateway request. */
 export interface Options extends NativeOptions {
@@ -76,7 +77,8 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     )
   }, environment => Layer.effect(SeatResolver.SeatResolver)(
     Effect.map(SeatResolver.SeatResolver, base => roleResolver(base, options.implementationModel, options))
-  ).pipe(Layer.provide(suppliedSeats === undefined ? NativeEquipment.layerSeatResolver(environment) : SeatResolver.layer(suppliedSeats))))
+  ).pipe(Layer.provide(suppliedSeats === undefined ? NativeEquipment.layerSeatResolver(environment) : SeatResolver.layer(suppliedSeats))),
+  options.planning === undefined ? undefined : routeMessages)
   return Layer.suspend(() => Layer.unwrap(Effect.gen(function*() {
     // Host-owned immutable wiki publication and scratch cleanup use the trusted
     // FS. Model actions and check processes retain the native host's guards.
@@ -86,7 +88,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
       planningWikiLayers({ ...options.planning, repositoryPath: options.repositoryPath,
         reviewer: Digest.canonical({ policy: options.planning.reviewer, model: options.wikiModel ?? options.implementationModel,
           gateway: options.gatewayId }) }, fs),
-      planningPolicy, Interpreter.layer(PreparePlan), HumanTask.layer, correctionLayers, sourceAdmission, requestRegistration,
+      planningPolicy, Interpreter.layer(PreparePlan), HumanTask.layer, correctionLayers, sourceAdmission, requestRegistration, feedbackLayer,
       pocPolicy, pocModels, pocSource({ ...options, fs }),
       evidenceOnly(Layer.mergeAll(ReviewRequest.layer, DraftPlan.layer, SelectRepair.layer, ReviewPage.layer))
     )
