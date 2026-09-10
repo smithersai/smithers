@@ -117,6 +117,33 @@ itself. Write `**` whenever a pattern has to prove coverage.
 Action selectors follow the same shape: `*` covers everything, `fs:*` covers
 every `fs:` action and `fs:*` itself, and an exact action covers only itself.
 
+`Capability.mayOverlap` asks the converse question: can these two patterns
+select a common capability. It is conservative in the other direction and
+answers `true` for anything it cannot prove disjoint, so a `deny` rule keeps
+applying to a claim whose overlap the grammar cannot settle. Only literal text
+proves disjointness, from two literal resources that differ or from literal
+prefixes that disagree before the first `*` or `?`:
+
+```ts
+const claimed = new Capability.CapabilityPattern({ action: "fs:read", resource: "a/b/**" })
+
+Capability.subsumes(
+  new Capability.CapabilityPattern({ action: "fs:read", resource: "a/*/x" }),
+  claimed
+)
+// false, coverage is unprovable
+Capability.mayOverlap(
+  new Capability.CapabilityPattern({ action: "fs:read", resource: "a/*/x" }),
+  claimed
+)
+// true, disjointness is unprovable
+Capability.mayOverlap(
+  new Capability.CapabilityPattern({ action: "fs:read", resource: "vendor/*" }),
+  claimed
+)
+// false, the literal prefixes disagree
+```
+
 ## Cost and the bound
 
 Matching costs O(pattern length times resource length) in the worst case. Both

@@ -1,7 +1,7 @@
 import { CapabilityPattern, format, parse } from "@smthrs/capability/Capability"
 import { evaluate, Rule } from "@smthrs/capability/Permission"
 import { Effect, Layer, Option } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import * as Event from "../src/Event.ts"
 // The barrel is the advertised surface: the seam's own suite reaches the
 // author claim the way a host must, not through the `./*` deep subpath.
@@ -498,6 +498,43 @@ describe("Authorize", () => {
     // are both provable, so failing closed must not swallow them.
     expect(await verdictOf([allowRead, denyWrite], "fs:read:src/**")).toBe("allow")
     expect(await verdictOf([allowSrc, denyVendor], "fs:read:src/**")).toBe("allow")
+  })
+
+  it("takes the resource overlap decision from the capability package, not a chain-side copy", async () => {
+    // The seam owns the ORDER of rules; `@smthrs/capability` owns the glob
+    // grammar. Teaching the owner that these two resources are provably
+    // disjoint must change the verdict here with no edit in this package,
+    // which is what keeps a metacharacter added there from failing open.
+    vi.resetModules()
+    vi.doMock("@smthrs/capability/Capability", async (importOriginal) => ({
+      ...await importOriginal<typeof import("@smthrs/capability/Capability")>(),
+      mayOverlap: () => false
+    }))
+    try {
+      const reloaded = await import("../src/Authorize.ts")
+      const verdict = await Effect.runPromise(
+        Effect.flatMap(
+          reloaded.Authorize,
+          (seam) =>
+            seam.authorize({
+              capabilities: ["fs:read:a/b/**"],
+              name: "probe",
+              slot: { chain: "", link: 0, ordinal: 0 }
+            })
+        ).pipe(
+          Effect.as("allowed" as const),
+          Effect.catchTag("/chain/AuthorizeError", (error) => Effect.succeed(error.code)),
+          Effect.provide(reloaded.layerRules([allowRead, denyMiddleStar])),
+          Effect.orDie
+        )
+      )
+      expect(verdict).toBe("allowed")
+    } finally {
+      vi.doUnmock("@smthrs/capability/Capability")
+      vi.resetModules()
+    }
+    // The real grammar cannot prove that disjointness, so the deny stands.
+    expect(await seamOutcomeOf([allowRead, denyMiddleStar], "fs:read:a/b/**")).toBe("denied")
   })
 
   it("parses claims into patterns", () => {

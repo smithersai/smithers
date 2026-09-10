@@ -275,6 +275,38 @@ describe("Capability", () => {
     expect(Capability.subsumes(left, right)).toBe(expected)
   })
 
+  it("reads a resource as literal only when no metacharacter selects other text", () => {
+    expect(Capability.isLiteralResource("src/a.ts")).toBe(true)
+    expect(Capability.isLiteralResource("")).toBe(true)
+    expect(Capability.isLiteralResource("src/*")).toBe(false)
+    expect(Capability.isLiteralResource("secre?")).toBe(false)
+  })
+
+  it.each([
+    [pattern("fs:read", "secret"), pattern("fs:read", "secret"), true],
+    [pattern("fs:read", "secret"), pattern("fs:read", "public"), false],
+    [pattern("fs:read", "secret"), pattern("fs:*", "secre?"), true],
+    [pattern("fs:read", "a/*/x"), pattern("fs:read", "a/b/**"), true],
+    [pattern("fs:read", "src/**"), pattern("fs:read", "vendor/*"), false],
+    [pattern("fs:read", "a?b*c"), pattern("fs:read", "a*b"), true],
+    [pattern("fs:read", "a?b"), pattern("fs:read", "b*"), false],
+    [pattern("fs:read", "**"), pattern("*", "secret"), true],
+    [pattern("fs:write", "**"), pattern("fs:read", "src/**"), false],
+    [pattern("jj:*", "repository"), pattern("net:get", "repository"), false]
+  ])("conservatively checks overlap", (left, right, expected) => {
+    expect(Capability.mayOverlap(left, right)).toBe(expected)
+    // Overlap is a symmetric question, unlike subsumption.
+    expect(Capability.mayOverlap(right, left)).toBe(expected)
+  })
+
+  it("proves disjointness only from literal text, so an unexpandable glob keeps the overlap alive", () => {
+    // `subsumes` cannot prove that `a/*/x` covers any member of `a/b/**`,
+    // and reading "cannot prove" as "does not apply" is the fail-open a
+    // `deny` rule must never take. `mayOverlap` answers the other question.
+    expect(Capability.subsumes(pattern("fs:read", "a/*/x"), pattern("fs:read", "a/b/**"))).toBe(false)
+    expect(Capability.mayOverlap(pattern("fs:read", "a/*/x"), pattern("fs:read", "a/b/**"))).toBe(true)
+  })
+
   it("records the `*`-crosses-separators asymmetry between matches and subsumes (D10)", () => {
     // `*` compiles to `.*`, so it crosses path separators and `matches` accepts
     // a nested path. `resourceSubsumes` recognises only `**` as recursive, so

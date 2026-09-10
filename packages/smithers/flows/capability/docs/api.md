@@ -172,6 +172,18 @@ Capability.parsePattern("fs:read")
 // Option.none()
 ```
 
+### Capability.isLiteralResource
+
+```ts
+const isLiteralResource: (resource: string) => boolean
+```
+
+Reports whether the grammar reads a resource as literal text, so it selects
+that resource and nothing else. Returns `false` for any resource carrying `*`
+or `?`. Ask here instead of scanning for those two characters: this predicate
+is where the set of metacharacters is defined, so a caller cannot fall behind
+the grammar.
+
 ### Capability.patternFromCapability
 
 ```ts
@@ -215,6 +227,26 @@ namespace family covering `right`. A resource is subsumed when the two are
 equal, `left` is `**`, or `left` ends in `/**` and `right` starts with that
 prefix and a separator. A single `*` proves only the identical resource, so an
 envelope entry that must prove coverage of any other resource is written `**`.
+
+### Capability.mayOverlap
+
+```ts
+const mayOverlap: (left: CapabilityPattern, right: CapabilityPattern) => boolean
+```
+
+Conservatively determines whether the two patterns can select a common
+capability. Returns `false` only when disjointness is provable: actions no
+capability satisfies at once, two literal resources that differ, or literal
+prefixes that disagree over their shared span. Every relationship the syntactic
+checks cannot settle answers `true`, and the question is symmetric in its
+arguments.
+
+The unprovable case answers the opposite way from
+[`subsumes`](#capabilitysubsumes), which is the point. Ask `subsumes` before
+widening a grant, where an unprovable answer must not grant. Ask `mayOverlap`
+before dropping a restriction, where an unprovable answer must keep the
+restriction. Reading "cannot prove coverage" as "does not apply" is how a
+`deny` rule falls through to a later `allow`.
 
 ### Capability.withinMatchBudget
 

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added `Capability.mayOverlap`, the conservative converse of `subsumes`: it
+  answers `false` only when two patterns are PROVABLY disjoint, so a caller
+  deciding whether a `deny` rule still applies keeps the restriction for any
+  relationship the grammar cannot settle. Added `Capability.isLiteralResource`
+  so callers ask the grammar whether a resource carries a metacharacter
+  instead of scanning for `*` and `?` themselves. `@smthrs/chain`'s
+  authorization seam had both rules copied locally.
 - Fixed permission-error boundary validation to reject optional accessors and
   inherited fields, and inspect metadata descriptors at every depth without
   invoking getters. Cyclic metadata is rejected; shared JSON references remain

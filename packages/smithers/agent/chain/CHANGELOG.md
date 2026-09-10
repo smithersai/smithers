@@ -26,6 +26,15 @@
 
 ### Fixed
 
+- `Authorize` derived its own resource-glob grammar: a private `literalPrefix`
+  hard-coded that `*` and `?` are the only metacharacters, and a private
+  `resourcesMayOverlap` decided disjointness from those prefixes, so the
+  grammar lived in two packages and a metacharacter added to
+  `@smthrs/capability` would have left the seam reading a glob as a literal
+  and dropping a `deny`. The seam now calls `Capability.mayOverlap` and
+  `Capability.isLiteralResource`; it still owns rule ORDER and no longer owns
+  any part of the grammar. Verdicts are unchanged.
+
 - `Chain.run` re-read and rescanned the whole shared journal before every
   append, then mirrored it with an argument spread, so a run cost
   O(events x journal) and threw `RangeError: Maximum call stack size

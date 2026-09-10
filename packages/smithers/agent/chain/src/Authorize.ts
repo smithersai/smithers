@@ -132,53 +132,9 @@ const decodeCapability = Schema.decodeUnknownOption(Capability.Capability)
  * decides one capability at a time, so those stay on the pattern path.
  */
 const exactCapability = (claim: Capability.CapabilityPattern): Option.Option<Capability.Capability> =>
-  claim.resource.includes("*") || claim.resource.includes("?")
-    ? Option.none()
-    : decodeCapability({ action: claim.action, resource: claim.resource })
-
-const anyResource = (action: Capability.CapabilityPattern["action"]): Capability.CapabilityPattern =>
-  new Capability.CapabilityPattern({ action, resource: "**" })
-
-/**
- * Whether two action selectors can name a common action. Selectors are `*`,
- * `ns:*`, or an exact action, and for those three shapes overlap is exactly
- * subsumption in one direction or the other, so this reuses the capability
- * package's predicate over a resource both sides cover rather than
- * re-deriving the action grammar.
- */
-const actionsMayOverlap = (
-  left: Capability.CapabilityPattern["action"],
-  right: Capability.CapabilityPattern["action"]
-): boolean =>
-  Capability.subsumes(anyResource(left), anyResource(right)) ||
-  Capability.subsumes(anyResource(right), anyResource(left))
-
-/** The leading run of a resource glob that matches itself literally. */
-const literalPrefix = (resource: string): string => {
-  const star = resource.indexOf("*")
-  const question = resource.indexOf("?")
-  const end = Math.min(star < 0 ? resource.length : star, question < 0 ? resource.length : question)
-  return resource.slice(0, end)
-}
-
-/**
- * Whether two resource globs can select a common resource. The answer is
- * `false` only when disjointness is PROVABLE — two literals that differ, or
- * literal prefixes that disagree on their shared span — and `true`
- * otherwise. That asymmetry is the point: this predicate only ever decides
- * whether a `deny` rule applies, so an unprovable relationship must keep
- * the deny alive rather than fall through to a later allow.
- */
-const resourcesMayOverlap = (left: string, right: string): boolean => {
-  const leftPrefix = literalPrefix(left)
-  const rightPrefix = literalPrefix(right)
-  if (leftPrefix === left && rightPrefix === right) return left === right
-  const shared = Math.min(leftPrefix.length, rightPrefix.length)
-  return leftPrefix.slice(0, shared) === rightPrefix.slice(0, shared)
-}
-
-const mayOverlap = (rule: Capability.CapabilityPattern, claim: Capability.CapabilityPattern): boolean =>
-  actionsMayOverlap(rule.action, claim.action) && resourcesMayOverlap(rule.resource, claim.resource)
+  Capability.isLiteralResource(claim.resource)
+    ? decodeCapability({ action: claim.action, resource: claim.resource })
+    : Option.none()
 
 /**
  * How restrictive an effect is. A rule that covers only PART of a claimed
@@ -197,6 +153,11 @@ const restriction: Record<Permission.RuleEffect, number> = { allow: 0, ask: 1, d
  * `Permission.evaluate` orders rules for one capability. A `deny` or `ask`
  * that only may overlap part of the claim can only raise the verdict; it
  * cannot lower a restriction that still governs another member.
+ *
+ * Both questions are the capability package's to answer: `subsumes` for
+ * coverage and `mayOverlap` for the conservative converse. The seam decides
+ * the ORDER of rules and never the glob grammar, so a metacharacter added to
+ * `@smthrs/capability` reaches this loop without an edit here.
  */
 const evaluatePattern = (
   rules: ReadonlyArray<Permission.Rule>,
@@ -213,7 +174,7 @@ const evaluatePattern = (
     }
     // An `allow` that cannot prove it covers the whole set grants nothing.
     if (
-      rule.effect !== "allow" && mayOverlap(rule.pattern, claim) &&
+      rule.effect !== "allow" && Capability.mayOverlap(rule.pattern, claim) &&
       restriction[rule.effect] > restriction[verdict]
     ) {
       verdict = rule.effect
