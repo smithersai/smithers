@@ -119,25 +119,21 @@ export const createWorkflowController = (
   /**
    * The loaded repositories are the universe (lane piper): an explicit
    * `owner/repo` names the target; otherwise one loaded repository is the
-   * target, none is the honest "load one first", and several — when the
-   * caller opts in (wave 12 §2) — is the genuine question of WHICH loaded
-   * repository. One loaded repository is not a question; more than one, with
-   * no argument, is.
+   * target, none is the honest "load one first", and several (wave 12 §2) is
+   * the genuine question of WHICH loaded repository. One loaded repository is
+   * not a question; more than one, with no argument, is. Callers that reject
+   * ambiguity use the two-way `workflowTargetRepo` below.
    */
   const NO_REPO_LOADED =
     "No repository is loaded yet — sign in with /cloud.sign-in, or name one as owner/repo"
 
   const workflowTargetRepoOrAsk = (
-    preferred: string | undefined,
-    askWhenAmbiguous: boolean
+    preferred: string | undefined
   ): { readonly repo: string } | { readonly error: string } | { readonly ask: ReadonlyArray<string> } => {
     if (preferred !== undefined || store.session().activeRepoKey != null) return resolveTargetRepo(store, preferred)
     const loaded = [...store.collections.repositories.values()].map((repository) => repository.id)
     if (loaded.length === 0) return { error: NO_REPO_LOADED }
-    if (loaded.length > 1 && askWhenAmbiguous) return { ask: loaded }
-    if (loaded.length > 1) {
-      return { error: `Several repositories are loaded (${loaded.join(", ")}) — name one as owner/repo` }
-    }
+    if (loaded.length > 1) return { ask: loaded }
     return { repo: loaded[0] ?? "" }
   }
 
@@ -166,7 +162,9 @@ export const createWorkflowController = (
   }
 
   const provisionWorkspaceImpl = async (repo: string, binding: GatewayWorkspaceBinding): Promise<true | string> => {
-    // A 409 means mid-provision: poll to a bounded deadline, never stampede.
+    // The Worker absorbs the upstream 409 and answers 200 `{ status: "provisioning" }`
+    // while a workspace is mid-provision (apps/server/src/index.ts): poll that
+    // body to a bounded deadline, never stampede. Any non-2xx here is a failure.
     const deadline = Date.now() + RUN_POLL_MS * 36
     for (;;) {
       let body: { status?: unknown; message?: unknown } | undefined
@@ -371,7 +369,7 @@ export const createWorkflowController = (
       : { description: rawDescription.trim(), repo: repoArg }
     const description = split.description
     if (description === "") return "flow.create needs a description of what the flow should do"
-    const target = workflowTargetRepoOrAsk(split.repo, true)
+    const target = workflowTargetRepoOrAsk(split.repo)
     if ("error" in target) return target.error
     if ("ask" in target) return askWhichRepo(description, target.ask)
     const repo = target.repo
