@@ -25,6 +25,49 @@ describe("version comparison", () => {
   it("orders unequal non-numeric segments lexically", () => {
     expect(Update.isNewer("1.0.0-rc.0", "1.0.0-beta.0")).toBe(true)
   })
+
+  // The precedence chain from SemVer 2.0.0 section 11, oldest first.
+  const chain = [
+    "1.0.0-alpha",
+    "1.0.0-alpha.1",
+    "1.0.0-alpha.beta",
+    "1.0.0-beta",
+    "1.0.0-beta.2",
+    "1.0.0-beta.11",
+    "1.0.0-rc.1",
+    "1.0.0-rc.1.1",
+    "1.0.0"
+  ]
+
+  it.each(chain.flatMap((older, index) => chain.slice(index + 1).map((newer) => [newer, older])))(
+    "orders %s after %s",
+    (newer, older) => {
+      expect(Update.isNewer(newer, older)).toBe(true)
+      expect(Update.isNewer(older, newer)).toBe(false)
+    }
+  )
+
+  it("ranks a longer prerelease above its own prefix", () => {
+    expect(Update.isNewer("1.0.0-rc.1.1", "1.0.0-rc.1")).toBe(true)
+    expect(Update.isNewer("1.0.0-rc.1", "1.0.0-rc.1.1")).toBe(false)
+  })
+
+  it("ranks a numeric identifier below any non-numeric one", () => {
+    expect(Update.isNewer("1.0.0-rc.1a", "1.0.0-rc.2")).toBe(true)
+    expect(Update.isNewer("1.0.0-rc.2", "1.0.0-rc.1a")).toBe(false)
+  })
+
+  it("keeps a hyphen inside a prerelease identifier", () => {
+    expect(Update.isNewer("1.0.0-rc-1", "1.0.0-rc.1")).toBe(true)
+    expect(Update.isNewer("1.0.0-rc.1", "1.0.0-rc-1")).toBe(false)
+  })
+
+  it("ignores build metadata", () => {
+    expect(Update.isNewer("1.0.0+build.2", "1.0.0+build.1")).toBe(false)
+    expect(Update.isNewer("1.0.0-rc.1+build.9", "1.0.0-rc.1")).toBe(false)
+    expect(Update.isNewer("1.0.0-rc.1", "1.0.0-rc.1+build.9")).toBe(false)
+    expect(Update.isNewer("1.0.0-rc.2+build.1", "1.0.0-rc.1+build.9")).toBe(true)
+  })
 })
 
 describe("the status", () => {
@@ -38,6 +81,12 @@ describe("the status", () => {
   it("falls through to latest when the next tag has nothing newer", () => {
     expect(Update.compare("1.0.0-rc.0", { latest: "1.0.0", next: "1.0.0-rc.0" }))
       .toMatchObject({ available: "1.0.0", tag: "latest" })
+  })
+
+  it("never recommends a shared-prefix prerelease that is older", () => {
+    expect(Update.compare("1.0.0-rc.1.1", { next: "1.0.0-rc.1" })).toMatchObject({ upToDate: true })
+    expect(Update.compare("1.0.0-rc.1", { next: "1.0.0-rc.1.1" }))
+      .toMatchObject({ available: "1.0.0-rc.1.1", tag: "next", upToDate: false })
   })
 
   it("reports up to date when neither tag is newer", () => {

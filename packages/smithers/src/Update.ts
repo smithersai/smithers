@@ -44,36 +44,63 @@ export interface Status {
   readonly install: string | undefined
 }
 
-const parts = (version: string): ReadonlyArray<string> => version.split(/[.-]/)
+// Build metadata after `+` never affects precedence, and the prerelease starts
+// at the first `-`: later hyphens belong to its identifiers.
+const parse = (version: string) => {
+  const [precedence = ""] = version.split("+", 1)
+  const dash = precedence.indexOf("-")
+  return dash === -1
+    ? { core: precedence.split("."), prerelease: [] }
+    : { core: precedence.slice(0, dash).split("."), prerelease: precedence.slice(dash + 1).split(".") }
+}
+
+const numeric = /^\d+$/
+
+// Numeric identifiers compare numerically and rank below every non-numeric
+// identifier, which compares lexically.
+const compareIdentifiers = (a: string, b: string): number => {
+  const aNumeric = numeric.test(a)
+  const bNumeric = numeric.test(b)
+  if (aNumeric && bNumeric) return Number(a) - Number(b)
+  if (aNumeric !== bNumeric) return aNumeric ? -1 : 1
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+// A longer list outranks a shorter one whose identifiers it shares: rc.1.1
+// beats rc.1.
+const compareLists = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): number => {
+  const length = Math.max(left.length, right.length)
+  for (let index = 0; index < length; index++) {
+    const a = left[index]
+    const b = right[index]
+    if (a === undefined) return -1
+    if (b === undefined) return 1
+    const order = compareIdentifiers(a, b)
+    if (order !== 0) return order
+  }
+  return 0
+}
 
 /**
- * Whether `candidate` is a later version than `current`.
+ * Whether `candidate` is a later version than `current`, by SemVer 2.0.0
+ * precedence.
  *
- * Numeric segments compare numerically and everything else lexically, which is
- * enough to order `1.0.0-rc.0` before `1.0.0-rc.10` and both before `1.0.0`.
+ * The core compares first. On an equal core a release outranks its own
+ * prereleases, so `1.0.0` beats `1.0.0-rc.0`, and two prereleases compare
+ * identifier by identifier, so `1.0.0-rc.10` beats `1.0.0-rc.9` and
+ * `1.0.0-rc.1.1` beats `1.0.0-rc.1`. Build metadata is ignored.
  *
  * @category predicates
  * @since 1.0.0
  */
 export const isNewer = (candidate: string, current: string): boolean => {
-  const left = parts(candidate)
-  const right = parts(current)
-  const length = Math.max(left.length, right.length)
-  for (let index = 0; index < length; index++) {
-    const a = left[index]
-    const b = right[index]
-    // Both versions come from npm dist-tags, so both carry major, minor, and
-    // patch. Running out of segments therefore means one of them has no
-    // prerelease suffix, and the release is newer: 1.0.0 beats 1.0.0-rc.0.
-    if (a === undefined) return true
-    if (b === undefined) return false
-    if (a === b) continue
-    const numeric = Number(a)
-    const other = Number(b)
-    if (Number.isFinite(numeric) && Number.isFinite(other)) return numeric > other
-    return a > b
-  }
-  return false
+  const left = parse(candidate)
+  const right = parse(current)
+  const core = compareLists(left.core, right.core)
+  if (core !== 0) return core > 0
+  if (left.prerelease.length === 0) return right.prerelease.length > 0
+  if (right.prerelease.length === 0) return false
+  return compareLists(left.prerelease, right.prerelease) > 0
 }
 
 /**
