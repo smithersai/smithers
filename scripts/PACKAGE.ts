@@ -344,6 +344,23 @@ const dependencyBoundaries = Smithers.NodeTest({
 })
 
 /**
+ * The literal-blanking step of the dependency-boundaries gate.
+ *
+ * The gate sweeps each source for dynamic imports with string and template
+ * literals blanked out. This pins that the single-pass blanking matches the
+ * reduce it replaced byte for byte, and that its cost stays linear in the
+ * file size rather than literals times size.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const dependencyBoundariesUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/check-dependency-boundaries.test.mjs")]),
+  srcs: sources,
+  deps: []
+})
+
+/**
  * Internal scripts execute the Smithers working tree, never an installed copy.
  *
  * A published-CLI invocation inside this repository silently runs a release
@@ -505,6 +522,7 @@ export const Package = Smithers.Package({
     webBundleContract,
     changelog,
     dependencyBoundaries,
+    dependencyBoundariesUnit,
     effectVersion,
     githubTriage,
     localSmithers,

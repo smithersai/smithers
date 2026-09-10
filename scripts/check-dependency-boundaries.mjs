@@ -226,6 +226,33 @@ function scriptKindForPath(path) {
   return ts.ScriptKind.JS;
 }
 
+/**
+ * Replaces every character inside any of `ranges` with a space, in one pass.
+ *
+ * Ranges may nest or overlap: a template expression's range contains the
+ * ranges of the literals in its substitutions. Walking them by start and
+ * clamping each to the cursor blanks their union once and keeps the length.
+ * The cost stays at the file's size rather than literals times size, which a
+ * reduce that rebuilt the whole string per literal paid (135 MB of copies for
+ * one 109 KB source).
+ *
+ * @param {string} text
+ * @param {readonly (readonly [number, number])[]} ranges
+ */
+export function blankLiteralRanges(text, ranges) {
+  /** @type {string[]} */
+  const parts = [];
+  let cursor = 0;
+  for (const [start, end] of [...ranges].sort((a, b) => a[0] - b[0])) {
+    if (end <= cursor) continue;
+    const from = Math.max(start, cursor);
+    parts.push(text.slice(cursor, from), " ".repeat(end - from));
+    cursor = end;
+  }
+  parts.push(text.slice(cursor));
+  return parts.join("");
+}
+
 /** @param {string} file */
 function importSpecifiersForFile(file) {
   const absFile = join(repoRoot, file);
@@ -284,10 +311,7 @@ function importSpecifiersForFile(file) {
   // copy with string and template literals blanked out. Without that, a dynamic
   // import quoted *inside* a string literal (a doc assertion needle, or the
   // workflow sources embedded in the generated pack) reads as a real import.
-  const outsideLiterals = literalRanges.reduce(
-    (acc, [start, end]) => acc.slice(0, start) + " ".repeat(end - start) + acc.slice(end),
-    text,
-  );
+  const outsideLiterals = blankLiteralRanges(text, literalRanges);
   for (const match of outsideLiterals.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)) {
     specifiers.add(match[1]);
   }
