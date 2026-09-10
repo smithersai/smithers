@@ -68,12 +68,4 @@ describe("Names", () => {
     expect(result.name).toBe("review-pr")
     expect(result.warnings).toContainEqual(expect.objectContaining({ code: "directory_name_mismatch" }))
   })
-
-  it("validates path-derived name segments", () => {
-    expect(Names.isValidSegment("review")).toBe(true)
-    expect(Names.isValidSegment("")).toBe(false)
-    expect(Names.isValidSegment(".")).toBe(false)
-    expect(Names.isValidSegment("..")).toBe(false)
-    expect(Names.isValidSegment("review/read-pr")).toBe(false)
-  })
 })

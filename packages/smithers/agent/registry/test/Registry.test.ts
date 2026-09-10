@@ -1,7 +1,7 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Digest from "@smthrs/core/Digest"
-import { Deferred, Effect, Fiber, FileSystem, Layer, Option } from "effect"
+import { Deferred, Duration, Effect, Fiber, FileSystem, Layer, Option } from "effect"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
@@ -319,6 +319,58 @@ describe("Registry", () => {
 
     expect(names).toEqual(["configured"])
     expect(seen).toEqual([{ source: "original", root: fixtures, naming: "path" }])
+  })
+
+  it("scans sources concurrently and folds them in caller order", async () => {
+    const record = { inFlight: 0, peak: 0 }
+    const finished: Array<string> = []
+    // Reverse of the caller order, so the fold cannot be reading completion order.
+    const delays: Record<string, Duration.Input> = { a: "40 millis", b: "20 millis", c: "1 millis" }
+    const discovery = Discovery.makeNoop({
+      scan: (source) =>
+        Effect.gen(function*() {
+          record.inFlight += 1
+          record.peak = Math.max(record.peak, record.inFlight)
+          yield* Effect.sleep(delays[source.source]!)
+          record.inFlight -= 1
+          finished.push(source.source)
+          return new SourceScan({
+            entries: [descriptor(`${source.source}-flow`)],
+            warnings: [
+              new DiscoveryWarning({
+                code: "unreadable",
+                path: `${fixtures}/${source.source}`,
+                message: source.source
+              })
+            ]
+          })
+        })
+    })
+
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const registry = yield* Registry.Registry
+        return { entries: yield* registry.list(), warnings: yield* registry.warnings() }
+      }).pipe(
+        Effect.provide(Registry.layer({
+          sources: ["a", "b", "c"].map((source) => ({
+            source,
+            root: `${fixtures}/${source}`,
+            naming: "path" as const
+          }))
+        })),
+        Effect.provide(Layer.succeed(Discovery.Discovery)(discovery)),
+        Effect.provide(platformLayer)
+      )
+    )
+
+    // A sequential loop awaits each scan before issuing the next, so its peak
+    // is one and the scans finish in caller order.
+    expect(record.peak).toBeGreaterThan(1)
+    expect(record.inFlight).toBe(0)
+    expect(finished).toEqual(["c", "b", "a"])
+    expect(result.entries.map((entry) => entry.name)).toEqual(["a-flow", "b-flow", "c-flow"])
+    expect(result.warnings.map((item) => item.message)).toEqual(["a", "b", "c"])
   })
 
   it("checks every pack before an earlier pack source can fail", async () => {
@@ -722,7 +774,8 @@ describe("Registry", () => {
                 yield* Deferred.await(releaseA)
               }
               if (refreshing && source.source === "b") {
-                // Reaching B proves A returned and was folded into the pending scan.
+                // Reaching B proves A's scan was issued; the snapshot assertions
+                // below prove neither source is published before both return.
                 yield* Deferred.succeed(bPending, undefined)
                 yield* Deferred.await(releaseB)
                 if (failB) {

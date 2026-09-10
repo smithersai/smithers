@@ -72,12 +72,3 @@ export const deriveFromFrontmatter = (
     }]
   }
 }
-
-/**
- * Determines whether a string can form one path-derived flow-name segment.
- *
- * @since 0.1.0
- * @category validation
- */
-export const isValidSegment = (segment: string): boolean =>
-  segment.length > 0 && segment !== "." && segment !== ".." && !segment.includes("/")

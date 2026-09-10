@@ -1,5 +1,5 @@
 import * as NodePath from "@effect/platform-node/NodePath"
-import { Effect, FileSystem, Layer, Path } from "effect"
+import { Effect, FileSystem, Layer, Path, Result } from "effect"
 import { describe, expect, it } from "vitest"
 import type { Source } from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
@@ -555,5 +555,83 @@ describe("Registry over a virtual host", () => {
       message:
         `Directory "${root}/review" resolves to already visited directory "${root}/review"; skipping recursive traversal`
     })])
+  })
+})
+
+describe("Discovery concurrency", () => {
+  /**
+   * Records how many `stat` calls the traversal keeps in flight, and holds each
+   * one open for a host round trip. Without the delay every stat settles inside
+   * the calling microtask and a concurrent pass is indistinguishable from a
+   * sequential one.
+   */
+  const countingStats = (nodes: Map<string, Node>, record: { inFlight: number; peak: number }) => {
+    const base = virtualFileSystem(nodes)
+    return FileSystem.makeNoop({
+      exists: base.exists,
+      readDirectory: base.readDirectory,
+      readFile: base.readFile,
+      readFileString: base.readFileString,
+      stat: (path: string) =>
+        Effect.gen(function*() {
+          record.inFlight += 1
+          record.peak = Math.max(record.peak, record.inFlight)
+          const settled = yield* Effect.result(Effect.delay(base.stat(path), "10 millis"))
+          record.inFlight -= 1
+          if (Result.isFailure(settled)) return yield* Effect.fail(settled.failure)
+          return settled.success
+        })
+    })
+  }
+
+  const shuffled = (listing: ReadonlyArray<string>) =>
+    tree({
+      [root]: { kind: "directory", entries: listing },
+      [`${root}/review`]: { kind: "directory", entries: ["SKILL.md"] },
+      [`${root}/review/SKILL.md`]: skill("Reviews a change."),
+      [`${root}/apply`]: { kind: "directory", entries: ["SKILL.md"] },
+      [`${root}/apply/SKILL.md`]: skill("Applies a change."),
+      [`${root}/bisect`]: { kind: "directory", entries: ["SKILL.md"] },
+      [`${root}/bisect/SKILL.md`]: skill("Bisects a regression."),
+      [`${root}/deploy`]: { kind: "directory", entries: ["SKILL.md"] },
+      [`${root}/deploy/SKILL.md`]: skill("Deploys a build."),
+      [`${root}/triage`]: { kind: "directory", entries: ["SKILL.md"] },
+      [`${root}/triage/SKILL.md`]: skill("Triages an issue."),
+      [`${root}/opaque`]: { kind: "unstattable" },
+      [`${root}/sealed`]: { kind: "unstattable" }
+    })
+
+  const listing = ["triage", "opaque", "apply", "deploy", "sealed", "bisect", "review"] as const
+
+  const scanWith = (nodes: Map<string, Node>, fs: FileSystem.FileSystem) =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const path = yield* Path.Path
+        return yield* Discovery.make(fs, path).scan({ source: "virtual", root, naming: "path" })
+      }).pipe(Effect.provide(NodePath.layer))
+    )
+
+  it("keeps several directory stats in flight at once", async () => {
+    const record = { inFlight: 0, peak: 0 }
+    const nodes = shuffled(listing)
+    const result = await scanWith(nodes, countingStats(nodes, record))
+
+    // A sequential traversal awaits each stat before issuing the next, so its
+    // peak is exactly one.
+    expect(record.peak).toBeGreaterThan(1)
+    expect(record.inFlight).toBe(0)
+    expect(result.entries.map((entry) => entry.name)).toEqual(["apply", "bisect", "deploy", "review", "triage"])
+  })
+
+  it("reports the same entries and warnings however the host orders a directory", async () => {
+    const reversed = [...listing].reverse()
+    const plain = await scanWith(shuffled(listing), virtualFileSystem(shuffled(listing)))
+    const record = { inFlight: 0, peak: 0 }
+    const nodes = shuffled(reversed)
+    const concurrent = await scanWith(nodes, countingStats(nodes, record))
+
+    expect(concurrent.entries).toEqual(plain.entries)
+    expect(concurrent.warnings).toEqual(plain.warnings)
+    expect(concurrent.warnings.map((item) => item.path)).toEqual([`${root}/opaque`, `${root}/sealed`])
   })
 })

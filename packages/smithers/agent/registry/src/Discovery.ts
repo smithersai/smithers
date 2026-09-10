@@ -57,6 +57,26 @@ export const Discovery: Context.Service<Discovery, Discovery> = Context.Service(
 
 const entryPrecedence = ["flow.ts", "flow.mdx", "SKILL.md"] as const
 
+/**
+ * Root directories a path-named source never reads as flows.
+ *
+ * At a project root `channels` and `connections` are the host's own
+ * directories rather than flow directories, so a path-named scan skips them.
+ * See `docs/concepts/sources.md`.
+ */
+const hostReservedRootDirectories = new Set(["channels", "connections"])
+
+/**
+ * Directory entries whose `stat` is in flight at once.
+ *
+ * Every entry costs one host round trip, so statting them one at a time makes
+ * a scan pay a full round trip per file, including every resource file under a
+ * skill directory that can never be an entry. Sixteen overlaps a directory's
+ * round trips without spending a deep tree's descriptor budget; the results are
+ * folded in sorted order, so what the scan reports is unchanged.
+ */
+const statConcurrency = 16
+
 const warning = (
   code: DiscoveryWarning["code"],
   path: string,
@@ -253,6 +273,102 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           )
         )
 
+        /**
+         * Projects one selected entry file's already-read metadata into a
+         * descriptor, or into the warnings that refuse it.
+         *
+         * Reading the bytes, refusing an oversized entry, and confinement stay
+         * with the caller, so what is left here is the naming and metadata
+         * rules of the two entry kinds. Both spell the path-derived name as
+         * `Names.deriveFromPath`, so the naming rule lives in one place.
+         */
+        const projectEntry = (
+          directory: string,
+          location: string,
+          selected: (typeof entryPrecedence)[number],
+          contents: Extract<EntryMetadata, { readonly _tag: "Metadata" }>,
+          segments: ReadonlyArray<string>
+        ): {
+          readonly descriptor: Option.Option<FlowDescriptor>
+          readonly warnings: ReadonlyArray<DiscoveryWarning>
+        } => {
+          const pathName = Names.deriveFromPath(segments)
+          if (selected !== "flow.ts") {
+            return MarkdownFlow.fromMarkdown({
+              text: contents.text,
+              contentDigest: contents.contentDigest,
+              path: location,
+              baseDirectory: directory,
+              naming: source.naming,
+              name: pathName,
+              dirBasename: path.basename(directory),
+              provenance
+            })
+          }
+
+          const metadata = ModuleMetadata.parse(contents.text)
+          // A root-level entry in a path-named source is refused before the
+          // read, so a module reaching here always has a path name; a
+          // frontmatter-named source names it after its directory instead.
+          const name = Option.getOrElse(
+            source.naming === "path" ? pathName : Option.none<string>(),
+            () => path.basename(directory)
+          )
+          const warnings: Array<DiscoveryWarning> = []
+          for (const item of metadata.warnings) {
+            warnings.push(warning("unsupported_module_metadata", location, item.message, name))
+          }
+          if (metadata.declaresName && source.naming === "path") {
+            warnings.push(
+              warning(
+                "name_field_ignored",
+                location,
+                "Ignoring Flow.make name because this source uses path-derived names",
+                name
+              )
+            )
+          }
+          if (metadata.description === undefined) {
+            warnings.push(
+              warning(
+                "missing_description",
+                location,
+                "Module flows require a literal description in the default Flow.make or Flow.agent value",
+                name
+              )
+            )
+            return { descriptor: Option.none(), warnings }
+          }
+          return {
+            descriptor: Option.some(
+              new FlowDescriptor({
+                name,
+                description: metadata.description,
+                body: new BodyRefModule({
+                  path: location,
+                  contentDigest: contents.contentDigest
+                }),
+                input: metadata.hasInput
+                  ? new SchemaRefModule({ path: location, field: "input" })
+                  : new SchemaRefNone({}),
+                output: metadata.hasOutput
+                  ? new SchemaRefModule({ path: location, field: "output" })
+                  : new SchemaRefNone({}),
+                model: metadata.model,
+                flows: metadata.flows,
+                capabilities: metadata.capabilities,
+                effects: metadata.effects,
+                placement: metadata.placement,
+                modelInvocable: metadata.modelInvocable,
+                path: location,
+                frontmatter: {},
+                provenance
+              })
+            ),
+            warnings
+          }
+        }
+
         const visit: (
           directory: string,
           segments: ReadonlyArray<string>,
@@ -296,15 +412,24 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
               return
             }
 
+            const stats = yield* Effect.forEach(
+              [...directoryEntries.success].sort(),
+              (entry) =>
+                Effect.map(
+                  Effect.result(fs.stat(path.join(directory, entry))),
+                  (info) => [entry, info] as const
+                ),
+              { concurrency: statConcurrency }
+            )
+
             const files = new Map<string, FileSystem.File.Info>()
             const directories: Array<{
               readonly name: string
               readonly location: string
               readonly identity: string
             }> = []
-            for (const entry of [...directoryEntries.success].sort()) {
+            for (const [entry, info] of stats) {
               const location = path.join(directory, entry)
-              const info = yield* Effect.result(fs.stat(location))
               if (Result.isFailure(info)) {
                 warnings.push(
                   warning("unreadable", location, `Could not inspect "${location}"`, undefined, info.failure)
@@ -319,12 +444,11 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                 continue
               }
               if (
-                entry === ".git" ||
                 entry === "node_modules" ||
                 entry.startsWith(".") ||
                 (segments.length === 0 &&
                   source.naming === "path" &&
-                  (entry === "channels" || entry === "connections"))
+                  hostReservedRootDirectories.has(entry))
               ) {
                 continue
               }
@@ -379,77 +503,10 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                   warnings.push(
                     warning("entry_too_large", location, oversizedEntry(location, contents.success.size))
                   )
-                } else if (selected === "flow.ts") {
-                  const metadata = ModuleMetadata.parse(contents.success.text)
-                  const name = source.naming === "path"
-                    // Root-level path-named entries were refused above, so a
-                    // module reaching this branch has at least one segment.
-                    ? segments.join("/")
-                    : path.basename(directory)
-                  for (const item of metadata.warnings) {
-                    warnings.push(
-                      warning("unsupported_module_metadata", location, item.message, name)
-                    )
-                  }
-                  if (metadata.declaresName && source.naming === "path") {
-                    warnings.push(
-                      warning(
-                        "name_field_ignored",
-                        location,
-                        "Ignoring Flow.make name because this source uses path-derived names",
-                        name
-                      )
-                    )
-                  }
-                  if (metadata.description === undefined) {
-                    warnings.push(
-                      warning(
-                        "missing_description",
-                        location,
-                        "Module flows require a literal description in the default Flow.make or Flow.agent value",
-                        name
-                      )
-                    )
-                  } else {
-                    entries.push(
-                      new FlowDescriptor({
-                        name,
-                        description: metadata.description,
-                        body: new BodyRefModule({
-                          path: location,
-                          contentDigest: contents.success.contentDigest
-                        }),
-                        input: metadata.hasInput
-                          ? new SchemaRefModule({ path: location, field: "input" })
-                          : new SchemaRefNone({}),
-                        output: metadata.hasOutput
-                          ? new SchemaRefModule({ path: location, field: "output" })
-                          : new SchemaRefNone({}),
-                        model: metadata.model,
-                        flows: metadata.flows,
-                        capabilities: metadata.capabilities,
-                        effects: metadata.effects,
-                        placement: metadata.placement,
-                        modelInvocable: metadata.modelInvocable,
-                        path: location,
-                        frontmatter: {},
-                        provenance
-                      })
-                    )
-                  }
                 } else {
-                  const result = MarkdownFlow.fromMarkdown({
-                    text: contents.success.text,
-                    contentDigest: contents.success.contentDigest,
-                    path: location,
-                    baseDirectory: directory,
-                    naming: source.naming,
-                    name: Names.deriveFromPath(segments),
-                    dirBasename: path.basename(directory),
-                    provenance
-                  })
-                  warnings.push(...result.warnings)
-                  Option.match(result.descriptor, {
+                  const projected = projectEntry(directory, location, selected, contents.success, segments)
+                  warnings.push(...projected.warnings)
+                  Option.match(projected.descriptor, {
                     onNone: () => undefined,
                     onSome: (descriptor) => entries.push(descriptor)
                   })

@@ -9,6 +9,7 @@
  */
 import { Context, Effect, Layer, Option, Path, Ref } from "effect"
 import * as FileSystem from "effect/FileSystem"
+import * as Result from "effect/Result"
 import {
   DiscoveryWarning,
   executionDigest,
@@ -205,6 +206,17 @@ const snapshotFrom = (
 }
 
 /**
+ * Source scans in flight at once.
+ *
+ * Each scan is an independent directory walk, so a cold start otherwise pays
+ * every source's latency end to end. Four overlaps the walks a configuration
+ * realistically declares. Every scan is reduced to a `Result` and folded in
+ * caller order afterwards, so first-found precedence, warning order, and which
+ * failure is reported are exactly what the sequential fold reported.
+ */
+const sourceScanConcurrency = 4
+
+/**
  * Scans every pack in a {@link PackConfig} and merges the results.
  *
  * Compatibility is checked for every pack before anything is scanned, and a
@@ -231,21 +243,26 @@ const scanPacks = (
     for (const pack of installed) {
       const entries: Array<FlowDescriptor> = []
       const warnings: Array<DiscoveryWarning> = []
-      for (const source of yield* Pack.sources(pack, path)) {
-        const scan = yield* discovery.scan(source).pipe(
-          Effect.mapError((cause) =>
+      const sourceScans = yield* Effect.forEach(
+        yield* Pack.sources(pack, path),
+        (source) => Effect.map(Effect.result(discovery.scan(source)), (scan) => ({ source, scan })),
+        { concurrency: sourceScanConcurrency }
+      )
+      for (const { scan, source } of sourceScans) {
+        if (Result.isFailure(scan)) {
+          return yield* Effect.fail(
             registryError({
               code: "invalid_pack",
               method: "make",
               path: source.root,
               description:
                 `pack "${pack.manifest.name}@${pack.manifest.version}" declares a source at "${source.root}" that could not be scanned`,
-              cause
+              cause: scan.failure
             })
           )
-        )
-        entries.push(...scan.entries)
-        warnings.push(...scan.warnings)
+        }
+        entries.push(...scan.success.entries)
+        warnings.push(...scan.success.warnings)
       }
       scans.push({ pack, entries, warnings })
     }
@@ -296,10 +313,15 @@ const scanSources = (
         }
       })
 
-    for (const source of config.sources) {
-      const scan = yield* discovery.scan(source)
-      registryWarnings.push(...scan.warnings)
-      yield* fold(scan.entries, source.system === true)
+    const sourceScans = yield* Effect.forEach(
+      config.sources,
+      (source) => Effect.map(Effect.result(discovery.scan(source)), (scan) => ({ source, scan })),
+      { concurrency: sourceScanConcurrency }
+    )
+    for (const { scan, source } of sourceScans) {
+      if (Result.isFailure(scan)) return yield* Effect.fail(scan.failure)
+      registryWarnings.push(...scan.success.warnings)
+      yield* fold(scan.success.entries, source.system === true)
     }
 
     // A pack's flows are scanned AFTER the caller's own sources and folded in
