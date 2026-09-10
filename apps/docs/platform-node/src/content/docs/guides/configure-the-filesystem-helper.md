@@ -58,6 +58,10 @@ guarded filesystem call with `PermissionDenied`.
 `request` and `response` are larger than `content` because base64 expands
 16 MiB to 22369624 bytes, which has to fit.
 
+A binary `writeFile` over the `content` ceiling never reaches the helper.
+The kernel checks the advertised limit before encoding anything and fails
+with a typed `BadArgument`; the helper's own ceiling is the backstop.
+
 `request` and `response` count UTF-8 JSON payload bytes; each frame also has a
 separately bounded header. A batch shares those same ceilings. `content`
 continues to apply separately to every file, including digest-only reads, so

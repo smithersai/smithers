@@ -450,7 +450,12 @@ describe("atomic helper limits", () => {
       )
 
       expect(outcome.text).toMatchObject({ reason: { _tag: "BadResource" } })
-      expect(outcome.bytes).toMatchObject({ reason: { _tag: "BadResource" } })
+      // The guarded binary `writeFile` is refused earlier than the string
+      // one: the kernel checks the payload against the content limit this
+      // host advertises and fails with a typed BadArgument before encoding,
+      // so the helper's own BadResource ceiling is now the backstop.
+      expect(outcome.bytes).toMatchObject({ reason: { _tag: "BadArgument" } })
+      expect(described(outcome.bytes)).toContain("exceeds the 8 byte limit")
       // Measured before the open, so the target was never truncated.
       expect(yield* Effect.promise(() => readFile(target, "utf8"))).toBe("seed")
     }))

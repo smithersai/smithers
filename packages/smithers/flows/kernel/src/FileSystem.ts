@@ -100,6 +100,14 @@ export interface AtomicFileSystem {
   readonly isolated?: EffectFileSystem.FileSystem | undefined
   /** Advertised only by executors implementing the bounded batch protocol. */
   readonly batchLimits?: { readonly size: number; readonly response: number } | undefined
+  /**
+   * Advertised byte ceiling for one serialized `writeFile` payload. The kernel
+   * refuses a larger payload with a typed `BadArgument` before base64-encoding
+   * it, so an executor that frames requests across a serialized host boundary
+   * never asks its runtime for a string it cannot represent. Hosts delegating
+   * through `isolated` receive the bytes directly and advertise nothing.
+   */
+  readonly contentLimit?: number | undefined
 }
 
 /** An Effect filesystem carrying the atomic host extension.
@@ -772,6 +780,31 @@ export const layer: Layer.Layer<
         writeFile: Effect.fn("FileSystem.writeFile")((value, data, options) => {
           const captured = snapshotOptions(options)
           const bytes = data.slice()
+          // An isolated host shares this address space, so the detached
+          // snapshot crosses no serialization boundary: hand it straight to
+          // the delegate rather than base64 round-tripping it through the
+          // serializable request shape.
+          if (atomic?.isolated !== undefined) {
+            return isolatedOne(
+              "fs:write",
+              value,
+              "writeFile",
+              (host) => host.writeFile(normalize(value), bytes, captured)
+            )
+          }
+          // A serialized executor frames the base64 payload as one JS string.
+          // Refuse what its runtime cannot represent before encoding, so an
+          // oversized artifact is a typed BadArgument and not a defect out of
+          // the encoder.
+          const limit = atomic?.contentLimit
+          if (limit !== undefined && bytes.byteLength > limit) {
+            return Effect.fail(PlatformError.badArgument({
+              module: "FileSystem",
+              method: "writeFile",
+              description:
+                `writeFile payload of ${bytes.byteLength} bytes exceeds the ${limit} byte limit advertised by the host`
+            }))
+          }
           return atomicOne<void>("fs:write", value, "writeFile", {
             operation: "writeFile",
             path: normalize(value),

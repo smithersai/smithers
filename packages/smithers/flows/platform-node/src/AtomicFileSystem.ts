@@ -2094,7 +2094,8 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
           batchLimits: {
             size: "invalid" in settings ? defaultLimits.batchSize : settings.limits.batchSize,
             response: "invalid" in settings ? defaultLimits.response : settings.limits.response
-          }
+          },
+          contentLimit: "invalid" in settings ? defaultLimits.content : settings.limits.content
         })
     )
   ).pipe(Layer.provide(NodeFileSystem.layer))

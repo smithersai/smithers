@@ -4,6 +4,7 @@ import * as Permission from "@smthrs/capability/Permission"
 import {
   Deferred,
   Effect,
+  Encoding,
   Fiber,
   FileSystem as EffectFileSystem,
   Option,
@@ -724,6 +725,152 @@ describe("FileSystem", () => {
       }),
       host,
       scriptedStore(new Set(["fs:write:/workspace/linked"]), checks)
+    )
+  })
+})
+
+describe("FileSystem binary writes", () => {
+  const bytes = (length: number) => {
+    const data = new Uint8Array(length)
+    for (let index = 0; index < length; index++) data[index] = index % 251
+    return data
+  }
+  const stat = () =>
+    Effect.succeed({
+      type: "File",
+      nlink: Option.none(),
+      ino: Option.none()
+    } as unknown as EffectFileSystem.File.Info)
+
+  itEffect("hands an isolated host the detached bytes without a serialized round trip", () => {
+    const checks: Array<Capability.Capability> = []
+    const requests: Array<FileSystem.AtomicRequest> = []
+    let written: { readonly path: string; readonly data: Uint8Array } | undefined
+    const inner = EffectFileSystem.makeNoop({
+      realPath: (path) => Effect.succeed(path),
+      stat,
+      writeFile: (path, data) =>
+        Effect.sync(() => {
+          written = { path, data }
+        })
+    })
+    const attested = FileSystem.withIsolatedFileSystem(inner)[FileSystem.AtomicFileSystemTypeId]
+    const host = FileSystem.withAtomicFileSystem(inner, {
+      ...attested,
+      execute: (request) => {
+        requests.push(request)
+        return attested.execute(request)
+      }
+    })
+    const source = bytes(256 * 1024)
+
+    return provide(
+      Effect.gen(function*() {
+        const fileSystem = yield* EffectFileSystem.FileSystem
+        yield* fileSystem.writeFile("artifact.bin", source)
+        expect(written?.path).toBe("/workspace/artifact.bin")
+        expect(written?.data).toEqual(source)
+        // The snapshot is detached: later mutation of the caller's buffer
+        // cannot reach what the host received.
+        expect(written?.data).not.toBe(source)
+        // An isolated host shares this address space, so no base64 request
+        // crosses a serialization boundary to reach it.
+        expect(requests.map((request) => request.operation)).not.toContain("writeFile")
+      }),
+      host,
+      scriptedStore(new Set(["fs:write:/workspace/artifact.bin"]), checks)
+    )
+  })
+
+  itEffect("still honors a serialized writeFile request reaching an isolated executor", () => {
+    let written: { readonly path: string; readonly data: Uint8Array } | undefined
+    const host = FileSystem.withIsolatedFileSystem(EffectFileSystem.makeNoop({
+      realPath: (path) => Effect.succeed(path),
+      writeFile: (path, data) =>
+        Effect.sync(() => {
+          written = { path, data }
+        })
+    }))
+    const source = bytes(64)
+
+    // A caller holding the executor directly can still cross the serialized
+    // boundary; the kernel fast path does not remove that contract.
+    return Effect.gen(function*() {
+      yield* host[FileSystem.AtomicFileSystemTypeId].execute({
+        operation: "writeFile",
+        path: "/workspace/artifact.bin",
+        data: Encoding.encodeBase64(source)
+      })
+      expect(written).toEqual({ path: "/workspace/artifact.bin", data: source })
+    })
+  })
+
+  itEffect("base64-encodes the detached bytes for an executor without an isolated surface", () => {
+    const checks: Array<Capability.Capability> = []
+    const requests: Array<FileSystem.AtomicRequest> = []
+    const host = FileSystem.withAtomicFileSystem(
+      EffectFileSystem.makeNoop({
+        realPath: (path) => Effect.succeed(path),
+        stat
+      }),
+      {
+        execute: (request) =>
+          Effect.sync(() => {
+            requests.push(request)
+          }) as Effect.Effect<never>
+      }
+    )
+    const source = bytes(1024)
+
+    return provide(
+      Effect.gen(function*() {
+        const fileSystem = yield* EffectFileSystem.FileSystem
+        yield* fileSystem.writeFile("artifact.bin", source)
+        expect(requests).toHaveLength(1)
+        expect(requests[0]).toMatchObject({
+          operation: "writeFile",
+          path: "/workspace/artifact.bin",
+          data: Encoding.encodeBase64(source)
+        })
+      }),
+      host,
+      scriptedStore(new Set(["fs:write:/workspace/artifact.bin"]), checks)
+    )
+  })
+
+  itEffect("refuses a payload over the advertised content limit before the executor runs", () => {
+    const checks: Array<Capability.Capability> = []
+    const requests: Array<FileSystem.AtomicRequest> = []
+    const host = FileSystem.withAtomicFileSystem(
+      EffectFileSystem.makeNoop({
+        realPath: (path) => Effect.succeed(path),
+        stat
+      }),
+      {
+        contentLimit: 1024,
+        execute: (request) =>
+          Effect.sync(() => {
+            requests.push(request)
+          }) as Effect.Effect<never>
+      }
+    )
+
+    return provide(
+      Effect.gen(function*() {
+        const fileSystem = yield* EffectFileSystem.FileSystem
+        // One byte over the advertised limit is a typed BadArgument, not a
+        // RangeError defect out of the base64 encoder.
+        const error = yield* Effect.flip(fileSystem.writeFile("artifact.bin", bytes(1025)))
+        expect(error).toMatchObject({ reason: { _tag: "BadArgument", method: "writeFile" } })
+        expect((error as PlatformError.PlatformError).message).toContain("1025")
+        expect(requests).toEqual([])
+        expect(checks).toEqual([])
+        // The limit itself still fits.
+        yield* fileSystem.writeFile("artifact.bin", bytes(1024))
+        expect(requests.map((request) => request.operation)).toEqual(["writeFile"])
+      }),
+      host,
+      scriptedStore(new Set(["fs:write:/workspace/artifact.bin"]), checks)
     )
   })
 })
