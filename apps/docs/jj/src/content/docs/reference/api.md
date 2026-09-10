@@ -212,14 +212,14 @@ values are not interpreted as CLI flags.
 
 Node and Bun require **jj 0.39.0 or newer**, pinned by the exported
 `NodeJj.minimumVersion` constant. Before exposing `Jj`, all CLI layers await a
-local `jj --version` probe through `node:child_process`, outside the host's
-process spawner and crash-reaping journal. The probe does not use or require the
-repository directory: bound layers can be built before runtime storage creates
-that directory. Repository operations still require a valid working directory.
-Concurrent and subsequent layer builds share the probe result per resolved
-executable path for the lifetime of the process. Restart the process after replacing a binary at the same path.
-Repository commands still use the layer's chosen process runner. An older or
-unrecognized version fails construction with `JjError.code = "unsupported_version"`
+`jj --version` probe through the same runner used for operations. The probe
+uses the absolute host executable selected at layer construction and does not
+require the repository directory. Bound layers can be built before runtime
+storage creates that directory; operations still require a valid working directory.
+Probe results are shared per absolute path and runner for the process lifetime.
+Each host spawner has its own probe cache. Restart the process after replacing a
+binary at the same path. Operations keep using the verified path even if the
+host or spawner PATH changes. An older or unrecognized version fails construction with `JjError.code = "unsupported_version"`
 and the required minimum; a missing binary fails construction with `not_installed`.
 All four CLI layers therefore have `JjError` in their layer error channel.
 
@@ -273,16 +273,18 @@ Decides which file `jj` is, and explains the answer.
 an existing file stays authoritative even when it cannot be executed, so a
 broken explicit path is reported instead of a different binary being quietly
 substituted. An override that names nothing falls through to `PATH`, and the
-fall-through is reported in `describe()` rather than passing silently. A
-resolution that came from `PATH` is spawned as the bare name `jj`, so a host
-spawner that hands the child a different `PATH` still decides for itself.
+fall-through is reported in `describe()`. Existing overrides and executable
+PATH candidates resolve to absolute host paths. Relative paths resolve against
+the host cwd at layer construction. Preflight and operations use the same path
+through the same runner, including when the host spawner changes PATH.
 `smthrs doctor` prints `describe()`.
 
 `resolveJjBinary` always returns a command: when jj is genuinely absent it
 answers the bare name `jj` with `executable: false` and a hint, which keeps
-every caller's soft-failure behavior while giving `doctor` something specific
-to print. The package vendors no `jj` binaries and downloads none, so there is
-no bundled-package branch to fall back to.
+the typed `not_installed` failure while giving `doctor` something specific
+to print. `NodeJj` never spawns this unresolved fallback. The package vendors no
+`jj` binaries and downloads none, so there is no bundled-package branch to fall
+back to.
 
 Every probe in `Options` is injectable, so a test pins the resolution order
 without staging a filesystem. `isExecutable` checks the execute bit on POSIX and
@@ -299,12 +301,14 @@ hand-written WASI preview 1 shim in this package. The mount and the compiled
 module are arguments rather than dependencies, so the library never picks a
 storage backend for its host, and persistence stays the page's concern.
 
-| Export             | Signature                                  |
-| ------------------ | ------------------------------------------ |
-| `make(options)`    | `(options: BrowserJjOptions) => Jj`        |
-| `layer(options)`   | `(options: BrowserJjOptions) => Layer<Jj>` |
-| `layerUnsupported` | `Layer<Jj>`                                |
-| `BrowserJjOptions` | `interface` (below)                        |
+| Export                 | Signature                                                 |
+| ---------------------- | --------------------------------------------------------- |
+| `make(options)`        | `(options: BrowserJjOptions) => Jj`                       |
+| `layer(options)`       | `(options: BrowserJjOptions) => Layer<Jj>`                |
+| `makeScoped(options)`  | `(options: BrowserJjOptions) => Effect<Jj, never, Scope>` |
+| `layerScoped(options)` | `(options: BrowserJjOptions) => Layer<Jj>`                |
+| `layerUnsupported`     | `Layer<Jj>`                                               |
+| `BrowserJjOptions`     | `interface` (below)                                       |
 
 | `BrowserJjOptions` field | Type                                 | Meaning                                                            |
 | ------------------------ | ------------------------------------ | ------------------------------------------------------------------ |
@@ -320,6 +324,13 @@ page hand over bytes it is still loading. Raw bytes are copied at that read, so
 the executable authority cannot be swapped between a failed operation and a
 retry. Instantiation is lazy, and every operation runs under a single-permit
 semaphore, because the wasm instance is single-threaded mutable state.
+
+A reactor that traps (a Rust panic, `proc_exit`, a response outside memory) is
+discarded: the shim closes every host descriptor the guest still held, and the
+next operation instantiates a fresh reactor. `layerScoped` and `makeScoped`
+close the live reactor the same way when their scope closes, after which every
+operation fails with `unknown`. `layer` and `make` have no end of life beyond a
+trap; the live reactor's descriptors last as long as the page.
 
 `BrowserJj.layerUnsupported` is the layer for a host that ships no module. Every
 operation reports `not_installed`, the same code the Node adapter reports for a
@@ -345,7 +356,7 @@ because the frozen wasm ABI has no operation or field for it:
 - `root(from)` answers the configured slice root, and fails when `from` is not
   inside it rather than answering for an unrelated tree.
 
-Every other divergence, including initialization and symlink degradation,
+Every other divergence, including initialization and real symlink rejection,
 is in [Run jj in a browser tab](/guides/run-jj-in-a-browser/#where-the-wasm-backend-answers-differently).
 
 ### @smthrs/jj/browser/WasiPreview1
@@ -391,8 +402,10 @@ budget returns `ELOOP`. No-follow rejects stable final symlinks with `ELOOP`.
 
 Honest divergences from a kernel WASI host, documented rather than hidden:
 
-- `fd_sync` and `fd_datasync` are no-ops, because a synchronous slice is durable
-  the moment each call returns.
+- `fd_sync` and `fd_datasync` only validate the descriptor and report success.
+  The slice has no flush operation and provides no durability barrier. After
+  operations that must survive a reload, await the host mount's `sync` as
+  described in [Durability is the mount's job](/guides/run-jj-in-a-browser/#durability-is-the-mounts-job).
 - `poll_oneoff` reports every subscription complete immediately: clock waits
   become yields, and a synchronous filesystem is always ready.
 - `path_link` is `notsup`: the slice has no `linkSync`, and the jj code paths
@@ -416,11 +429,11 @@ Honest divergences from a kernel WASI host, documented rather than hidden:
 Names the synchronous filesystem shape the shim runs over, and imports nothing,
 so the browser bundle decides which backend is mounted.
 
-| Export           | Meaning                                                                                                                                                                                                                                                                           |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SyncFsLike`     | The filesystem surface: `openSync`, `closeSync`, `readSync`, `writeSync`, `fstatSync`, `ftruncateSync`, `futimesSync`, `statSync`, `lstatSync`, `mkdirSync`, `readdirSync`, `renameSync`, `unlinkSync`, `rmdirSync`, `readlinkSync`, `symlinkSync`, `utimesSync`, `truncateSync`. |
-| `SyncStatsLike`  | The `Stats` subset the shim reads: `size`, `atimeMs`, `mtimeMs`, `ctimeMs`, optional `ino`, and the three `is*` predicates.                                                                                                                                                       |
-| `SyncDirentLike` | The `Dirent` subset `fd_readdir` needs: `name` and the three `is*` predicates.                                                                                                                                                                                                    |
+| Export           | Meaning                                                                                                                                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SyncFsLike`     | The filesystem surface: `openSync`, `closeSync`, `readSync`, `writeSync`, `fstatSync`, `ftruncateSync`, `futimesSync`, `statSync`, `lstatSync`, `mkdirSync`, `readdirSync`, `renameSync`, `unlinkSync`, `rmdirSync`, `readlinkSync`, `symlinkSync`, `utimesSync`. |
+| `SyncStatsLike`  | The `Stats` subset the shim reads: `size`, `atimeMs`, `mtimeMs`, `ctimeMs`, optional `ino`, and the three `is*` predicates.                                                                                                                                       |
+| `SyncDirentLike` | The `Dirent` subset `fd_readdir` needs: `name` and the three `is*` predicates.                                                                                                                                                                                    |
 
 Both ZenFS's sync API and Node's `node:fs` satisfy the shape structurally. Two
 deliberate consequences: `openSync` takes Node string flags (`"r"`, `"r+"`,
@@ -429,8 +442,12 @@ and live on a module this slice refuses to import; and errors must be thrown
 with a Node-style string `code` property (`"ENOENT"`, `"EEXIST"`, `"ENOTDIR"`),
 which the shim maps onto WASI errno values.
 
-There is deliberately no `fsyncSync`: a synchronous backend is durable the
-moment a call returns. `ftruncateSync` and `futimesSync` are required, because
+The slice has no flush operation such as `fsyncSync`, so `fd_sync` and
+`fd_datasync` provide no durability barrier. Synchronous completion does not
+establish persistence. The host must await its mount's `sync` after operations
+that must survive a reload; see [Durability is the mount's job](/guides/run-jj-in-a-browser/#durability-is-the-mounts-job).
+
+`ftruncateSync` is the sole truncation member. It and `futimesSync` are required because
 the descriptor-addressed WASI calls must follow the open file even after a
 rename, which is the shape of jj's tempfile-persist path.
 

@@ -61,6 +61,29 @@ executable authority cannot be swapped between a failed operation and a retry.
 
 `fs` itself stays a live service the page continues to own.
 
+### Traps discard the reactor
+
+A guest that panics or calls `proc_exit` never runs its own cleanup, so the
+host does it: the operation fails with `unknown`, the shim closes every host
+descriptor the guest still held, and the next operation instantiates a fresh
+reactor from the bytes captured at the first read. A host-side refusal before
+the reactor is entered, such as the symlink scan, keeps the live reactor.
+
+### Scoped disposal
+
+`layer` and `make` never dispose a reactor that did not trap; its descriptors
+last as long as the page. When the service has a shorter life than the page,
+use `layerScoped` or `makeScoped`. Both close the live reactor's descriptors
+when the scope closes, and every operation on the service after that fails
+with `unknown`.
+
+```ts
+const program = Effect.gen(function*() {
+  const jj = yield* Jj
+  return yield* jj.status()
+}).pipe(Effect.provide(BrowserJj.layerScoped({ fs, wasm, root: "/repo" })))
+```
+
 ## Durability is the mount's job
 
 ZenFS fronts OPFS or IndexedDB with a synchronous mirror and writes back
@@ -91,24 +114,11 @@ you assume parity with the CLI.
 
 The compiled ABI has no revert operation, so `BrowserJj.layer` defines `revert`
 and fails it with `not_installed` and the message "jj is not available in the
-browser". Calling it is how you find that out: the method stays defined so that
-feature detection never depends on an optional property disappearing. A host
-that offers an "undo this attempt" affordance should call `revert` once and hide
-the affordance on `not_installed`, rather than branching on which layer it
-provided.
-
-`restore` is unaffected, so rewinding a run to a recorded change id works here
-exactly as it does on the CLI.
-
-### `revert` is not available
-
-The compiled ABI has no revert operation, so `BrowserJj.layer` defines `revert`
-and fails it with `not_installed` and the message "jj is not available in the
-browser". Calling it is how you find that out: the method stays defined so that
-feature detection never depends on an optional property disappearing. A host
-that offers an "undo this attempt" affordance should call `revert` once and hide
-the affordance on `not_installed`, rather than branching on which layer it
-provided.
+browser". For advance capability checks, use host configuration or non-mutating
+capability metadata maintained by the host. Property presence does not establish
+support, and a revert probe mutates repositories on Node and Bun. Handle
+`not_installed` only when executing a user-requested undo, as shown in
+[Handle a requested revert](/guides/testing/#handle-a-requested-revert).
 
 `restore` is unaffected, so rewinding a run to a recorded change id works here
 exactly as it does on the CLI.
@@ -151,18 +161,25 @@ inside it and fails for a path that is not. Answering for an unrelated tree
 would be a wrong answer rather than a missing one. Containment is computed in
 namespace coordinates, so `/repo/../outside` is correctly outside `/repo`.
 
-### Symlinks degrade to regular files
+### Real symlinks are rejected
 
-jj-lib on `wasm32-wasip1` reports symlinks unsupported, the same posture as jj
-on Windows without developer mode. Two consequences:
+The shipped `wasm32-wasip1` reactor cannot safely snapshot real symlinks: its
+fallback reads target bytes instead of link text. `BrowserJj` rejects real
+symlinks with a `JjError` (`code: "unknown"`) before `snapshot`, `status`,
+`diff`, `restore`, or `workspaceAdd` enters the reactor. All five operations
+can snapshot the working copy, including reads of existing revisions.
 
-- Checking out a tree symlink materializes a regular file, not a link.
-- Snapshotting a real on-disk symlink stores the **linked file's content** as
-  the symlink target, because the library reads the path with a call that
-  follows the link.
+The check walks the workspace using link metadata without opening targets.
+It includes ignored directories and dangling links, skips `.jj` and `.git`
+contents, and rejects links at those metadata names. A rejected operation
+writes no repository state, including on the first snapshot. Remove real
+symlinks before retrying. The scan and reactor call run synchronously under
+the layer's operation permit; the host must prevent concurrent filesystem
+mutation by other workers during an operation.
 
-The degraded representation is stable: re-snapshotting reproduces an identical
-tree entry, so state does not drift across further snapshot and restore cycles.
+Checking out an existing tree symlink still materializes a regular file
+containing link text. Native symlink snapshots require a future reactor fix.
+Direct consumers of the WASM ABI do not receive the `BrowserJj` guard.
 
 ### Synchronous, single threaded, and our own output text
 
@@ -188,6 +205,12 @@ side, either from `revert` or from `layerUnsupported`.
 any wasm module: `make` returns plain functions over memory, a filesystem, and
 a file-descriptor table, so a test constructs a `WebAssembly.Memory`, calls the
 syscalls directly, and asserts errno values.
+
+`path_open` applies `O_TRUNC` even with `APPEND`, then appends subsequent
+writes to the current end of file. It validates the four-byte result region
+before allocating a descriptor. If post-open truncation fails, it attempts to
+close the host descriptor and returns the original truncation error, even if
+closing also fails.
 
 ### Namespace ownership is required
 
