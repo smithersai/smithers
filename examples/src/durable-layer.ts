@@ -34,9 +34,6 @@ export const stubJj = Layer.succeed(
   })
 )
 
-/** The migrated production storage context over one SQLite file. */
-export const storesLayer = (filename: string) => NodeRuntime.storage(filename)
-
 /**
  * Everything `EngineStore` requires, minus the engine itself.
  *
@@ -65,7 +62,7 @@ export const requirements = (filename: string) =>
     WorkspaceSandbox.layerFileSystem(),
     stubJj
   ).pipe(
-    Layer.provideMerge(storesLayer(filename)),
+    Layer.provideMerge(NodeRuntime.storage(filename)),
     Layer.provideMerge(NodeCrypto.layer),
     Layer.provideMerge(NodeFileSystem.layer)
   )
