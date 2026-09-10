@@ -10,22 +10,24 @@
  */
 import * as Canonical from "@smthrs/canonical/Canonical"
 import { Control as ControlService, ControlError, ControlSchema } from "@smthrs/control"
-import type { Service as ControlServiceShape } from "@smthrs/control/Control"
 import * as Sha256 from "@smthrs/crypto/Sha256"
-import * as UnsupportedBackend from "@smthrs/database/UnsupportedBackend"
-import * as ResolveJj from "@smthrs/jj/node/resolveJjBinary"
 import * as MigrateCommand from "@smthrs/migrate/flow/Command"
-import * as Registry from "@smthrs/registry/Registry"
 import { Ownership } from "@smthrs/run-store"
 import { Clock, Console, Effect, Option, Schema, SchemaIssue, Stream } from "effect"
 import { Argument, CliError as ParserError, Command, Flag, Prompt } from "effect/unstable/cli"
 import { randomUUID } from "node:crypto"
 import { hostname } from "node:os"
 import { resolve } from "node:path"
-import * as Bug from "./Bug.ts"
 import * as ClaudeMirror from "./ClaudeMirror.ts"
 import * as RunProgress from "./cli/RunProgress.ts"
 import * as CliError from "./CliError.ts"
+import * as BugCmd from "./commands/Bug.ts"
+import * as DoctorCmd from "./commands/Doctor.ts"
+import * as FlowCatalog from "./commands/FlowCatalog.ts"
+import * as GcCmd from "./commands/Gc.ts"
+import * as Globals from "./commands/Globals.ts"
+import * as MigrateCmd from "./commands/Migrate.ts"
+import * as UpdateCmd from "./commands/Update.ts"
 import * as Detached from "./Detached.ts"
 import * as Doctor from "./Doctor.ts"
 import * as Environment from "./Environment.ts"
@@ -37,7 +39,6 @@ import * as CommandStatus from "./internal/CommandStatus.ts"
 import { causeLine } from "./internal/Failure.ts"
 import * as FeaturedFlows from "./internal/FeaturedFlows.ts"
 import * as History from "./internal/History.ts"
-import * as Legacy from "./Legacy.ts"
 import * as NodeOutput from "./NodeOutput.ts"
 import { Output, renderValue } from "./Output.ts"
 import * as Project from "./Project.ts"
@@ -45,7 +46,6 @@ import * as Ui from "./Ui.ts"
 import * as Unsupported from "./Unsupported.ts"
 import * as Update from "./Update.ts"
 import * as Verb from "./Verb.ts"
-import { packageVersion } from "./Version.ts"
 
 const global = {
   credential: Flag.string("credential").pipe(
@@ -188,43 +188,13 @@ const refuseRemoved = (
  * a 0.x project, because the first invocation writes `.flows/` and the sample
  * treats that as proof the project has moved on.
  */
-const noticeIgnoredBackends = Effect.sync(() => {
-  for (const name of UnsupportedBackend.ignoredNames(process.env)) {
-    process.stderr.write(`${UnsupportedBackend.ignoredNotice(name)}\n`)
-  }
-})
+const globalsOf = Effect.map(rootCommand, (root): Globals.Options => ({
+  credential: Option.getOrUndefined(root.credential),
+  backend: Option.getOrUndefined(root.backend),
+  environment: process.env
+}))
 
-const noticeCredentialFlag = Effect.gen(function*() {
-  const root = yield* rootCommand
-  if (Option.isSome(root.credential)) {
-    yield* Console.error(
-      "Warning: --credential exposes secrets in process listings and shell history; SMITHERS_API_KEY is the preferred channel."
-    )
-  }
-})
-
-const guardGlobals = Effect.gen(function*() {
-  yield* noticeCredentialFlag
-  const root = yield* rootCommand
-  // A 0.x PostgreSQL or PGlite project still exports its connection strings.
-  // rc.0 ignores them and says so, once per invocation, because a silently
-  // ignored connection string is how a project ends up running against SQLite
-  // while believing it runs against PostgreSQL. A notice, not a refusal: the
-  // exit code and the command's result do not move (the SQLite-only runtime
-  // names and the sentence are @smthrs/database's, pinned per name in
-  // packages/smithers/flows/database/test/UnsupportedBackend.test.ts).
-  yield* noticeIgnoredBackends
-  const backend = Option.getOrUndefined(root.backend)
-  const refusal = Environment.unsupportedBackend(backend)
-  if (refusal !== undefined) return yield* Effect.fail(new CliError.UnsupportedError({ message: refusal }))
-  // `SMITHERS_BACKEND` reaches the same refusal: a script that exports the
-  // variable must not be told everything is fine because it omitted the flag.
-  const fromEnvironment = Environment.unsupportedBackend(Environment.read(process.env, "SMITHERS_BACKEND"))
-  if (fromEnvironment !== undefined) {
-    return yield* Effect.fail(new CliError.UnsupportedError({ message: fromEnvironment }))
-  }
-  yield* noticeLegacyState
-})
+const guardGlobals = Effect.flatMap(globalsOf, Globals.guard)
 
 const malformedJson = (label: string): CliError.UsageError =>
   new CliError.UsageError({ message: `${label} must be valid JSON` })
@@ -552,17 +522,6 @@ const requireRun = (control: ControlService.Service, runId: string) =>
     Effect.flatMap((run) => run === undefined ? Effect.fail(missingRun(runId)) : Effect.succeed(run))
   )
 
-/** A digest of one 0.x notice, printed once per invocation. */
-const noticeLegacyState = Effect.gen(function*() {
-  // The snapshot, not a fresh walk: this invocation's own control database
-  // has created `<root>/.flows` by now, and `Project.legacyState` reads that
-  // directory as proof the project already moved on.
-  const found = yield* Project.LegacyState
-  const first = found[0]
-  if (first === undefined) return
-  yield* Effect.sync(() => process.stderr.write(`${Project.legacyNotice(first)}\n`))
-})
-
 // == the shipped-command contract verbs
 
 const plan = Command.make(
@@ -862,59 +821,7 @@ const steer = Command.make("steer", {
     )
   })).pipe(Command.withDescription(Verb.find("steer")!.help))
 
-type FlowPage = Extract<ControlSchema.ListResponse, { readonly _tag: "flows" }>
-
-const flowCatalog = (control: ControlServiceShape) =>
-  Effect.gen(function*() {
-    const items: Array<FlowPage["items"][number]> = []
-    const warnings: Array<NonNullable<FlowPage["warnings"]>[number]> = []
-    const warningKeys = new Set<string>()
-    const cursors = new Set<string>()
-    let bytes = 0
-    let cursor: string | undefined
-    for (;;) {
-      const listed = yield* control.list({
-        _tag: "flows",
-        limit: ControlSchema.maxPageSize,
-        ...(cursor === undefined ? {} : { cursor })
-      })
-      if (listed._tag !== "flows") {
-        return yield* Effect.fail(
-          new CliError.UnsupportedError({ message: "the control plane returned a run page for a flow listing" })
-        )
-      }
-      for (const item of listed.items) {
-        bytes += History.encodedBytes(item)
-        if (items.length >= History.maximumEvents || bytes > History.maximumBytes) {
-          return yield* Effect.fail(
-            new CliError.ResourceLimitError({
-              operation: "flow listing",
-              subject: "the discovered registry",
-              limit: bytes > History.maximumBytes ? History.maximumBytes : History.maximumEvents,
-              unit: bytes > History.maximumBytes ? "bytes" : "events"
-            })
-          )
-        }
-        items.push(item)
-      }
-      for (const warning of listed.warnings ?? []) {
-        const key = `${warning.code}\0${warning.path}\0${warning.message}`
-        if (!warningKeys.has(key)) {
-          warningKeys.add(key)
-          warnings.push(warning)
-        }
-      }
-      if (listed.nextCursor === undefined) break
-      if (cursors.has(listed.nextCursor)) {
-        return yield* Effect.fail(
-          new CliError.UnsupportedError({ message: "the control plane repeated a flow-listing cursor" })
-        )
-      }
-      cursors.add(listed.nextCursor)
-      cursor = listed.nextCursor
-    }
-    return { items, warnings }
-  })
+const flowCatalog = FlowCatalog.read
 
 const listFlows = Effect.gen(function*() {
   yield* guardGlobals
@@ -1255,77 +1162,44 @@ const migrate = Command.make("migrate", {
   ...migrateFlags
 }, (config) =>
   Effect.gen(function*() {
-    yield* guardGlobals
     yield* refuseRemoved("migrate", { to: config.to })
-    // The 0.x project, not the rc.0 one. `Project.ProjectRoot` anchors its
-    // walk on `.flows/`, which a 0.x project does not have, so a project
-    // nested under an rc.0 one was scanned and, with `--apply`, rewritten,
-    // at the ancestor instead of itself.
     const migrationRoot = yield* Project.MigrationRoot
     const target = Option.getOrElse(config.path, () => migrationRoot)
-    // `legacyDatabases`, not `legacyState`: the 0.x-project guard is not
-    // gated on `.flows/` being absent, and the project being migrated has
-    // one by definition.
-    const databases = Project.legacyDatabases(target).map(Legacy.read)
-    const refusal = Legacy.refusal(databases)
-    if (refusal !== undefined) return yield* Effect.fail(new CliError.UnsupportedError({ message: refusal }))
-    // The flow ships inside `@smthrs/migrate`, which is where a 0.x project can
-    // reach it: such a project has no `flows/` directory by definition, so
-    // looking for `flows/**/migrate-smithers-v1` made the verb unreachable for
-    // every project it exists for. This is the same entry `smithers-migrate`
-    // runs, so the two spellings are one implementation.
-    const options = MigrateCommand.optionsOf(
-      {
-        root: target,
-        scan: config.scan,
-        apply: config.apply,
-        seat: Option.getOrUndefined(config.seat),
-        allowUnsafe: Option.getOrUndefined(config.allowUnsafe),
-        acknowledgeRunState: config.acknowledgeRunState,
-        allowNoVcs: config.allowNoVcs,
-        keepOldSources: config.keepOldSources,
-        unit: Option.getOrUndefined(config.unit),
-        maxRepairRounds: Option.getOrUndefined(config.maxRepairRounds),
-        reportDir: Option.getOrUndefined(config.reportDir),
-        flowsDir: Option.getOrUndefined(config.flowsDir),
-        verifyInstall: Option.getOrUndefined(config.verifyInstall),
-        verifyFormat: Option.getOrUndefined(config.verifyFormat),
-        verifyTypecheck: config.verifyTypecheck,
-        verifyTest: Option.getOrUndefined(config.verifyTest)
-      },
-      target,
-      process.env
-    )
     const root = yield* rootCommand
-    const outcome = yield* Effect.result(MigrateCommand.runNode(options, { environment: process.env }))
-    if (outcome._tag === "Failure") {
-      const error = outcome.failure
-      // A refused gate is not a crash: it prints the operator's own
-      // instructions and leaves the project untouched. Operator gates and an
-      // existing apply owner exit 3, matching the standalone migration CLI.
-      const message = `smthrs migrate: ${error.message}${error.details === undefined ? "" : `\n${error.details}`}`
-      if (error.code === "run-state-blocked" || error.code === "unsafe-blocked" || error.code === "apply-in-progress") {
-        if (root.json) {
-          yield* Console.log(JSON.stringify({
-            code: error.code,
-            message: error.message,
-            root: target,
-            ...(error.details === undefined ? {} : { details: error.details })
-          }))
-        } else yield* Console.error(message)
-        return yield* CommandStatus.set(3)
+    const outcome = yield* MigrateCmd.run({
+      target,
+      scan: config.scan,
+      apply: config.apply,
+      seat: Option.getOrUndefined(config.seat),
+      allowUnsafe: Option.getOrUndefined(config.allowUnsafe),
+      acknowledgeRunState: config.acknowledgeRunState,
+      allowNoVcs: config.allowNoVcs,
+      keepOldSources: config.keepOldSources,
+      unit: Option.getOrUndefined(config.unit),
+      maxRepairRounds: Option.getOrUndefined(config.maxRepairRounds),
+      reportDir: Option.getOrUndefined(config.reportDir),
+      flowsDir: Option.getOrUndefined(config.flowsDir),
+      verifyInstall: Option.getOrUndefined(config.verifyInstall),
+      verifyFormat: Option.getOrUndefined(config.verifyFormat),
+      verifyTypecheck: config.verifyTypecheck,
+      verifyTest: Option.getOrUndefined(config.verifyTest)
+    }, yield* globalsOf)
+    if (outcome._tag === "Parked") {
+      const { _tag: _, ...document } = outcome
+      if (root.json) yield* Console.log(JSON.stringify(document))
+      else {
+        yield* Console.error(
+          `smthrs migrate: ${outcome.message}${outcome.details === undefined ? "" : `\n${outcome.details}`}`
+        )
       }
-      return yield* Effect.fail(new CliError.UnsupportedError({ message }))
+      return yield* CommandStatus.set(3)
     }
-    const report = outcome.success
-    yield* Console.log(
-      MigrateCommand.render(report, root.json ? "json" : "human", MigrateCommand.reportDirectory(options))
-    )
+    yield* Console.log(MigrateCommand.render(outcome.report, root.json ? "json" : "human", outcome.reportDirectory))
     // The migration's own status, the way `smithers-migrate` reports it: 3 is
     // "parked, the operator has a decision", not a failure. `bin.ts` hands a
     // successful exit whatever `process.exitCode` holds, which is also how
     // `NodeControl.layerOutput` transfers a rendered status.
-    yield* CommandStatus.set(MigrateCommand.exitCode(report))
+    yield* CommandStatus.set(MigrateCommand.exitCode(outcome.report))
   })).pipe(Command.withDescription(Verb.find("migrate")!.help))
 
 const claudeSession = Flag.string("session").pipe(
@@ -1491,18 +1365,8 @@ const claude = Command.make("claude").pipe(
 
 const update = Command.make("update", {}, () =>
   Effect.gen(function*() {
-    yield* guardGlobals
-    const tags = yield* Effect.tryPromise({
-      try: async () => {
-        const response = await fetch(Update.registryUrl, { signal: AbortSignal.timeout(10_000) })
-        return await response.json() as Record<string, string>
-      },
-      catch: (error) =>
-        new CliError.UnsupportedError({
-          message: `Could not reach the npm registry: ${error instanceof Error ? error.message : String(error)}`
-        })
-    })
-    yield* render(Update.render(Update.compare(packageVersion, tags)))
+    const status = yield* UpdateCmd.check(yield* globalsOf)
+    yield* render(Update.render(status))
   })).pipe(Command.withDescription(Verb.find("update")!.help))
 
 const bug = Command.make("bug", {
@@ -1519,94 +1383,20 @@ const bug = Command.make("bug", {
   )
 }, (config) =>
   Effect.gen(function*() {
-    yield* guardGlobals
-    const summary = [config.summary, ...config.rest].join(" ").trim()
-    if (summary === "") {
-      return yield* Effect.fail(new CliError.UsageError({ message: "smthrs bug needs a one-line summary" }))
-    }
-    const control = yield* ControlService.Control
-    const listed = Option.isNone(config.runId)
-      ? undefined
-      : yield* control.list({ _tag: "runs", filters: { runId: config.runId.value } })
-    const digest = Option.isNone(config.runId)
-      ? undefined
-      : Forensics.digest(yield* eventsOf(control, config.runId.value))
-    const body = Bug.report({
-      summary,
-      version: packageVersion,
-      platform: `${process.platform}-${process.arch}`,
-      node: process.versions.node,
-      runs: listed?._tag === "runs"
-        ? listed.items.filter((run) => run.runId === Option.getOrUndefined(config.runId))
-        : [],
-      ...(digest === undefined ? {} : { digest })
-    })
-    const endpoint = Environment.read(process.env, "SMITHERS_BUG_ENDPOINT") ?? Bug.defaultEndpoint
-    const payload = JSON.stringify(body)
-    yield* Console.error(endpoint)
-    yield* Console.error(payload)
-    if (config.dryRun) {
-      yield* render({ reported: false, endpoint, payload: body })
-      return
-    }
-    const ui = yield* Ui.current
-    const confirmed = config.yes || (ui.interactive && (yield* ui.confirm({
-      message: `Post this report to ${endpoint}?`,
-      initialValue: false,
-      nonInteractive: false
-    })))
-    if (!confirmed) {
-      return yield* Effect.fail(
-        new CliError.UsageError({
-          message: "Report not sent. Use --yes to post the previewed payload, or --dry-run to inspect it."
-        })
-      )
-    }
-    const posted = yield* Effect.tryPromise({
-      try: async () => {
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: payload,
-          signal: AbortSignal.timeout(Bug.timeoutMs)
-        })
-        return { status: response.status, ok: response.ok }
-      },
-      catch: (error) =>
-        new CliError.UnsupportedError({
-          message: `Could not reach ${endpoint}: ${error instanceof Error ? error.message : String(error)}`
-        })
-    })
-    if (!posted.ok) {
-      return yield* Effect.fail(
-        new CliError.UnsupportedError({ message: `${endpoint} answered ${posted.status}` })
-      )
-    }
-    yield* render({ reported: true, endpoint })
+    const outcome = yield* BugCmd.submit({
+      summary: [config.summary, ...config.rest].join(" "),
+      runId: Option.getOrUndefined(config.runId),
+      yes: config.yes,
+      dryRun: config.dryRun,
+      preview: (line) => Console.error(line)
+    }, yield* globalsOf)
+    yield* render(outcome)
   })).pipe(Command.withDescription(Verb.find("bug")!.help))
 
-const doctorReport = (catalog: Pick<FlowPage, "items" | "warnings">) =>
+const doctor = Command.make("doctor", {}, () =>
   Effect.gen(function*() {
-    yield* noticeCredentialFlag
-    // Doctor owns the unsupported-backend check. The shared guard would fail
-    // before the report exists, so this handler keeps its notices and lets
-    // `Doctor.failed` decide the command status from the complete report.
-    yield* noticeIgnoredBackends
-    yield* noticeLegacyState
     const root = yield* rootCommand
-    const projectRoot = yield* Project.ProjectRoot
-    const jj = ResolveJj.resolveJjBinary()
-    const configuredBackend = Option.getOrUndefined(root.backend)
-    const report = Doctor.inspect({
-      root: projectRoot,
-      environment: configuredBackend === undefined
-        ? process.env
-        : { ...process.env, SMITHERS_BACKEND: configuredBackend },
-      jj,
-      legacyPaths: yield* Project.LegacyState,
-      discoveredFlows: catalog.items.filter((item) => !Unsupported.isReservedFlow(item.flowId)),
-      discoveryWarnings: catalog.warnings
-    })
+    const report = yield* DoctorCmd.fromControl(yield* globalsOf)
     // `--json` prints the report verbatim. The human rendering goes through
     // `Ui`: clack symbols and a verdict line on a terminal, and on a pipe the
     // same one-line-per-check text `Doctor.render` has always produced.
@@ -1619,22 +1409,6 @@ const doctorReport = (catalog: Pick<FlowPage, "items" | "warnings">) =>
     if (Doctor.failed(report)) {
       yield* Effect.fail(new CliError.UnsupportedError({ message: "doctor found a blocking problem" }))
     }
-  })
-
-const doctor = Command.make("doctor", {}, () =>
-  Effect.gen(function*() {
-    const control = yield* ControlService.Control
-    return yield* doctorReport(yield* flowCatalog(control))
-  })).pipe(Command.withDescription(Verb.find("doctor")!.help))
-
-const localDoctor = Command.make("doctor", {}, () =>
-  Effect.gen(function*() {
-    const registry = yield* Registry.Registry
-    const [descriptors, warnings] = yield* Effect.all([registry.list(), registry.warnings()])
-    return yield* doctorReport({
-      items: descriptors.map((descriptor) => ({ flowId: descriptor.name, description: descriptor.description })),
-      warnings
-    })
   })).pipe(Command.withDescription(Verb.find("doctor")!.help))
 
 const gc = Command.make("gc", {
@@ -1647,13 +1421,8 @@ const gc = Command.make("gc", {
   ).pipe(Flag.withDefault(false))
 }, (config) =>
   Effect.gen(function*() {
-    yield* guardGlobals
-    const projectRoot = yield* Project.ProjectRoot
-    const swept = yield* Gc.sweep(projectRoot, { olderThan: config.olderThan, dryRun: config.dryRun })
+    const swept = yield* GcCmd.sweep({ olderThan: config.olderThan, dryRun: config.dryRun }, yield* globalsOf)
     yield* render(swept)
-    // The report is rendered either way, so a `--json` caller still sees what
-    // the readable databases held; the status is what tells a script that the
-    // sweep was partial.
     if (swept.failures.length > 0) {
       return yield* Effect.fail(new CliError.UnsupportedError({ message: Gc.failureMessage(swept.failures) }))
     }
@@ -1723,19 +1492,3 @@ export const cli = rootCommand.pipe(
     ...removedCommands
   ])
 )
-
-/**
- * The migration command uses filesystem inspection without acquiring the local execution databases.
- *
- * @category commands
- * @since 1.0.0
- */
-export const migrationCli = rootCommand.pipe(Command.withSubcommands([migrate]))
-
-/**
- * Local diagnostics use the discovery snapshot without opening execution databases.
- *
- * @category commands
- * @since 1.0.0
- */
-export const doctorCli = rootCommand.pipe(Command.withSubcommands([localDoctor]))

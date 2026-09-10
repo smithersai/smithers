@@ -6,11 +6,20 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeCli } from "../src/Cli.ts"
+import * as Project from "../src/Project.ts"
 import * as Suggest from "../src/Suggest.ts"
 
 const ports = vi.hoisted(() => ({
   invoke: vi.fn(),
+  local: vi.fn(),
+  query: vi.fn(),
   host: vi.fn(),
+  doctorFromRegistry: vi.fn(),
+  doctorFromControl: vi.fn(),
+  sweep: vi.fn(),
+  migrate: vi.fn(),
+  update: vi.fn(),
+  bug: vi.fn(),
   initialize: vi.fn(),
   suggest: vi.fn(),
   isDirectory: vi.fn()
@@ -18,8 +27,23 @@ const ports = vi.hoisted(() => ({
 vi.mock("../src/cli/ControlBridge.ts", async (load) => ({
   ...await load<typeof import("../src/cli/ControlBridge.ts")>(),
   invoke: ports.invoke,
+  local: ports.local,
+  query: ports.query,
   host: ports.host
 }))
+vi.mock("../src/commands/Doctor.ts", () => ({
+  fromRegistry: ports.doctorFromRegistry,
+  fromControl: ports.doctorFromControl
+}))
+vi.mock("../src/commands/Gc.ts", () => ({ sweep: ports.sweep }))
+vi.mock("../src/commands/Migrate.ts", async (load) => ({
+  ...await load<typeof import("../src/commands/Migrate.ts")>(),
+  run: ports.migrate,
+  // The report encoding is the migrate package's; this suite pins the routing.
+  document: (report: unknown) => report
+}))
+vi.mock("../src/commands/Update.ts", () => ({ check: ports.update }))
+vi.mock("../src/commands/Bug.ts", () => ({ submit: ports.bug }))
 vi.mock("../src/cli/Generate.ts", async (load) => ({
   ...await load<typeof import("../src/cli/Generate.ts")>(),
   initialize: ports.initialize
@@ -33,8 +57,27 @@ vi.mock("../src/Suggest.ts", async (load) => ({
 const directory = mkdtempSync(join(tmpdir(), "smithers-root-commands-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
+const healthy = { root: "/fixture", checks: [] }
+const failing = { root: "/fixture", checks: [{ id: "node", level: "fail", message: "too old" }] }
+const cleanSweep = { olderThan: "12h", dryRun: false, reports: [], failures: [] }
+const migrated = { exitCode: 0, units: [] }
+
 beforeEach(() => {
   ports.invoke.mockReset().mockResolvedValue({ result: "invoked" })
+  // The runners execute the typed operation they were handed, so a test sees
+  // exactly what the handler passed to the command module.
+  ports.local.mockReset().mockImplementation((operation: Effect.Effect<unknown>) => Effect.runPromise(operation))
+  ports.query.mockReset().mockImplementation((operation: Effect.Effect<unknown>) => Effect.runPromise(operation))
+  ports.doctorFromRegistry.mockReset().mockReturnValue(Effect.succeed(healthy))
+  ports.doctorFromControl.mockReset().mockReturnValue(Effect.succeed(healthy))
+  ports.sweep.mockReset().mockReturnValue(Effect.succeed(cleanSweep))
+  ports.migrate.mockReset().mockReturnValue(
+    Effect.succeed({ _tag: "Reported", report: migrated, reportDirectory: "/r" })
+  )
+  ports.update.mockReset().mockReturnValue(
+    Effect.succeed({ current: "1.0.0", available: undefined, tag: undefined, upToDate: true, install: undefined })
+  )
+  ports.bug.mockReset().mockReturnValue(Effect.succeed({ reported: true, endpoint: "https://bug.invalid" }))
   ports.host.mockReset().mockResolvedValue({ result: "hosting" })
   ports.initialize.mockReset().mockResolvedValue({ result: "initialized" })
   ports.suggest.mockReset().mockReturnValue(Effect.succeed({ status: "listed", implemented: [] }))
@@ -90,6 +133,8 @@ describe("unified root command dispatch", () => {
       expect(result.stdout).toContain(command)
     }
     expect(ports.invoke).not.toHaveBeenCalled()
+    expect(ports.local).not.toHaveBeenCalled()
+    expect(ports.query).not.toHaveBeenCalled()
     expect(ports.host).not.toHaveBeenCalled()
     expect(ports.initialize).not.toHaveBeenCalled()
     expect(ports.suggest).not.toHaveBeenCalled()
@@ -114,13 +159,52 @@ describe("unified root command dispatch", () => {
     expect(ports.initialize.mock.calls[0]![1].length).toBeGreaterThan(0)
   })
 
-  it.each(["doctor", "update"])("routes %s with explicit connection options", async (command) => {
-    const result = await invoke([command, "--root", "/fixture", "--quiet", "--json"])
-    expect(ports.invoke).toHaveBeenCalledExactlyOnceWith([command], { root: "/fixture", quiet: true }, result.config)
+  it("routes local doctor through the project runner with explicit connection options", async () => {
+    const result = await invoke(["doctor", "--root", "/fixture", "--quiet", "--json"])
+    expect(ports.local).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      { root: "/fixture", quiet: true },
+      result.config
+    )
+    expect(ports.query).not.toHaveBeenCalled()
+    expect(ports.doctorFromRegistry).toHaveBeenCalledExactlyOnceWith({ credential: undefined, environment: {} })
+    expect(ports.invoke).not.toHaveBeenCalled()
     const output = JSON.parse(result.stdout)
-    expect(output).toMatchObject({ result: "invoked" })
-    expect(output.cta?.commands.map((action: { command: string }) => action.command) ?? [])
-      .toEqual(command === "doctor" ? ["smthrs info --root /fixture"] : [])
+    expect(output).toMatchObject(healthy)
+    expect(output.cta.commands.map((action: { command: string }) => action.command))
+      .toEqual(["smthrs info --root /fixture"])
+    expect(result.codes).not.toContain(1)
+  })
+
+  it("routes remote doctor through the selected control transport", async () => {
+    const result = await invoke(["doctor", "--remote", "https://fixture.invalid", "--credential", "k", "--json"])
+    expect(ports.query).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      { remote: "https://fixture.invalid", credential: "k", quiet: false },
+      result.config
+    )
+    expect(ports.local).not.toHaveBeenCalled()
+    expect(ports.doctorFromControl).toHaveBeenCalledExactlyOnceWith({ credential: "k", environment: {} })
+    expect(JSON.parse(result.stdout)).toMatchObject(healthy)
+  })
+
+  it("keeps a failing doctor report available to scripts on its nonzero exit", async () => {
+    ports.doctorFromRegistry.mockReturnValue(Effect.succeed(failing))
+    const result = await invoke(["doctor", "--json"])
+    expect(result.codes).toEqual([1])
+    expect(JSON.parse(result.stdout)).toMatchObject(failing)
+  })
+
+  it("routes update through the project runner and prints the rendered sentence", async () => {
+    const result = await invoke(["update", "--root", "/fixture", "--quiet", "--json"])
+    expect(ports.local).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      { root: "/fixture", quiet: true },
+      result.config
+    )
+    expect(ports.update).toHaveBeenCalledExactlyOnceWith({ credential: undefined, environment: {} })
+    expect(JSON.parse(result.stdout)).toBe("@smthrs/cli 1.0.0 is current.")
+    expect(result.codes).not.toContain(1)
   })
 
   it("starts hosting with explicit connection credentials before environment fallback", async () => {
@@ -165,21 +249,36 @@ describe("unified root command dispatch", () => {
       ...(dryRun ? ["--dry-run"] : []),
       "--json"
     ])
-    expect(ports.invoke).toHaveBeenCalledExactlyOnceWith(
-      ["gc", "--older-than", "12h", ...(dryRun ? ["--dry-run"] : [])],
+    expect(ports.local).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
       expect.objectContaining({ olderThan: "12h", dryRun }),
       result.config
     )
+    expect(ports.sweep).toHaveBeenCalledExactlyOnceWith({ olderThan: "12h", dryRun }, {
+      credential: undefined,
+      environment: {}
+    })
+    expect(JSON.parse(result.stdout)).toMatchObject(cleanSweep)
+    expect(result.codes).not.toContain(1)
+  })
+
+  it("keeps a partial sweep report available to scripts on its nonzero exit", async () => {
+    const partial = { ...cleanSweep, failures: [{ path: "/db", message: "locked" }] }
+    ports.sweep.mockReturnValue(Effect.succeed(partial))
+    const result = await invoke(["gc", "--root", directory, "--json"])
+    expect(result.codes).toEqual([1])
+    expect(JSON.parse(result.stdout)).toMatchObject(partial)
   })
 
   it.each(["gc", "migrate"])("refuses remote %s before dispatch", async (command) => {
     const result = await invoke([command, "--remote", "https://fixture.invalid", "--json"])
     expect(result.codes).toContain(1)
     expect(result.stdout).toContain("requires the host")
-    expect(ports.invoke).not.toHaveBeenCalled()
+    expect(ports.local).not.toHaveBeenCalled()
+    expect(ports.query).not.toHaveBeenCalled()
   })
 
-  it("translates migration booleans, numbers, repeated lists and names without forwarding connection flags twice", async () => {
+  it("passes migration booleans, numbers, repeated lists and names as typed options", async () => {
     const result = await invoke([
       "migrate",
       "/source",
@@ -197,40 +296,64 @@ describe("unified root command dispatch", () => {
       "tsc -p test",
       "--json"
     ])
-    const args = ports.invoke.mock.calls[0]![0] as Array<string>
-    expect(args.slice(0, 2)).toEqual(["migrate", "/source"])
-    expect(args).toContain("--scan")
-    expect(args).toContain("--allow-no-vcs")
-    expect(args.slice(args.indexOf("--max-repair-rounds"), args.indexOf("--max-repair-rounds") + 2)).toEqual([
-      "--max-repair-rounds",
-      "0"
-    ])
-    expect(args.slice(args.indexOf("--report-dir"), args.indexOf("--report-dir") + 2)).toEqual([
-      "--report-dir",
-      "/reports"
-    ])
-    expect(args.filter((argument) => argument === "--verify-typecheck")).toHaveLength(2)
-    expect(args).toContain("tsc --noEmit")
-    expect(args).toContain("tsc -p test")
-    expect(args).not.toContain("--root")
-    expect(args).not.toContain("--apply")
-    expect(ports.invoke.mock.calls[0]![1]).toMatchObject({ root: directory, scan: true })
-    expect(result.codes).not.toContain(1)
+    expect(ports.local).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      expect.objectContaining({ root: directory, scan: true }),
+      result.config
+    )
+    expect(ports.migrate).toHaveBeenCalledExactlyOnceWith({
+      target: "/source",
+      scan: true,
+      apply: false,
+      seat: undefined,
+      allowUnsafe: undefined,
+      acknowledgeRunState: false,
+      allowNoVcs: true,
+      keepOldSources: false,
+      unit: undefined,
+      maxRepairRounds: 0,
+      reportDir: "/reports",
+      flowsDir: undefined,
+      verifyInstall: undefined,
+      verifyFormat: undefined,
+      verifyTypecheck: ["tsc --noEmit", "tsc -p test"],
+      verifyTest: undefined
+    }, { credential: undefined, environment: {} })
+    expect(JSON.parse(result.stdout)).toMatchObject({ exitCode: 0, units: [] })
+    expect(result.codes).toEqual([0])
   })
 
-  it("supports migration defaults without inventing a positional path", async () => {
+  it("targets the 0.x root when no positional path is given", async () => {
     await invoke(["migrate", "--json"])
-    expect(ports.invoke.mock.calls[0]![0]).toEqual(["migrate"])
+    expect(ports.migrate.mock.calls[0]![0]).toMatchObject({ target: Project.legacyRoot(undefined, process.cwd()) })
+  })
+
+  it("exits 3 with the parked document when a migration gate refuses", async () => {
+    ports.migrate.mockReturnValue(Effect.succeed({
+      _tag: "Parked",
+      code: "run-state-blocked",
+      message: "runs are live",
+      root: "/source",
+      details: "finish them"
+    }))
+    const result = await invoke(["migrate", "/source", "--json"])
+    expect(result.codes).toEqual([3])
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      code: "run-state-blocked",
+      message: "runs are live",
+      root: "/source",
+      details: "finish them"
+    })
+    expect(JSON.parse(result.stdout)).not.toHaveProperty("_tag")
   })
 
   it.each([undefined, "run-123"])("preserves bug summary words and optional run attribution (%s)", async (run) => {
     await invoke(["bug", "first", "second", ...(run === undefined ? [] : ["--run", run]), "--json"])
-    expect(ports.invoke.mock.calls[0]![0]).toEqual([
-      "bug",
-      "first",
-      "second",
-      ...(run === undefined ? [] : ["--run", run])
-    ])
+    expect(ports.query).toHaveBeenCalledOnce()
+    expect(ports.bug).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ summary: "first second", runId: run, yes: false, dryRun: false }),
+      { credential: undefined, environment: {} }
+    )
   })
 
   it.each([
@@ -240,11 +363,26 @@ describe("unified root command dispatch", () => {
   ])("forwards explicit bug consent and preview flags (%j)", async (...flags) => {
     const result = await invoke(["bug", "a failure", ...flags, "--json"])
     expect(result.codes).not.toContain(1)
-    expect(ports.invoke.mock.calls[0]![0]).toEqual(["bug", "a failure", ...flags])
+    expect(ports.bug.mock.calls[0]![0]).toMatchObject({
+      summary: "a failure",
+      yes: flags.includes("--yes"),
+      dryRun: flags.includes("--dry-run")
+    })
+    expect(JSON.parse(result.stdout)).toMatchObject({ reported: true, endpoint: "https://bug.invalid" })
+  })
+
+  it("previews the bug endpoint and payload on the session stderr even under quiet", async () => {
+    ports.bug.mockImplementation((options: { preview: (line: string) => Effect.Effect<void> }) =>
+      Effect.andThen(options.preview("https://bug.invalid"), options.preview("{\"summary\":\"a failure\"}"))
+        .pipe(Effect.as({ reported: false, endpoint: "https://bug.invalid", payload: {} }))
+    )
+    const result = await invoke(["bug", "a failure", "--dry-run", "--quiet", "--json"])
+    expect(result.stderr).toBe("https://bug.invalid\n{\"summary\":\"a failure\"}\n")
+    expect(JSON.parse(result.stdout)).toMatchObject({ reported: false })
   })
 
   it("redacts bridge failure credentials in structured command errors", async () => {
-    ports.invoke.mockRejectedValue(new Error("Authorization: Bearer private-fixture"))
+    ports.local.mockRejectedValue(new Error("Authorization: Bearer private-fixture"))
     const result = await invoke(["doctor", "--json"])
     expect(result.codes).toContain(1)
     expect(result.stdout).toContain("[REDACTED_TOKEN]")

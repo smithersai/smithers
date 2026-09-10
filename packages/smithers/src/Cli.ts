@@ -5,6 +5,7 @@
  */
 import { makeCli as makeBuildCli } from "@smthrs/build-cli/Cli"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
+import * as MigrateCommand from "@smthrs/migrate/flow/Command"
 import { Effect, Logger } from "effect"
 import { Cli, z } from "incur"
 import { resolve } from "node:path"
@@ -16,6 +17,13 @@ import { createGenerateCli, initialize } from "./cli/Generate.ts"
 import { appendHistoryCommands } from "./cli/HistoryCommands.ts"
 import * as Presentation from "./cli/Presentation.ts"
 import * as CliError from "./CliError.ts"
+import * as BugCmd from "./commands/Bug.ts"
+import * as DoctorCmd from "./commands/Doctor.ts"
+import * as GcCmd from "./commands/Gc.ts"
+import type * as Globals from "./commands/Globals.ts"
+import * as MigrateCmd from "./commands/Migrate.ts"
+import * as UpdateCmd from "./commands/Update.ts"
+import * as Doctor from "./Doctor.ts"
 import { createEvalCli } from "./evaluation/Cli.ts"
 import * as Init from "./Init.ts"
 import { createCredentialsCli } from "./operator/Credentials.ts"
@@ -23,13 +31,21 @@ import { createIntegrationsCli } from "./operator/Integrations.ts"
 import { createMemoryCli } from "./operator/Memory.ts"
 import { localRoot } from "./operator/Store.ts"
 import { createTriggersCli } from "./operator/Triggers.ts"
+import * as Project from "./Project.ts"
 import * as Serve from "./Serve.ts"
 import * as Suggest from "./Suggest.ts"
 import * as Ui from "./Ui.ts"
 import * as Unsupported from "./Unsupported.ts"
+import * as Update from "./Update.ts"
 import { packageVersion } from "./Version.ts"
 
 const options = Bridge.connectionOptions
+
+/** The shared guard's inputs, read from the typed connection options. */
+const globalsOf = (connection: Bridge.ConnectionOptions, config: Bridge.Runtime): Globals.Options => ({
+  credential: connection.credential,
+  environment: config.environment ?? process.env
+})
 
 /**
  * Construct the public command tree without opening stores or evaluating declarations.
@@ -105,7 +121,18 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
     .command("doctor", {
       description: "Check project discovery, providers, tools, and durable-state compatibility",
       options,
-      run: (c) => safe(c, () => Bridge.invoke(["doctor"], c.options, config))
+      run: (c) =>
+        safe(c, async () => {
+          const globals = globalsOf(c.options, config)
+          // Local diagnostics read the discovery snapshot without opening
+          // execution databases; a remote host answers with its own catalog.
+          const report = c.options.remote === undefined
+            ? await Bridge.local(DoctorCmd.fromRegistry(globals), c.options, config)
+            : await Bridge.query(DoctorCmd.fromControl(globals), c.options, config)
+          // The complete report stays available to scripts on a nonzero exit.
+          if (Doctor.failed(report)) config.exit?.(1)
+          return report
+        })
     })
     .command("serve", {
       aliases: ["gateway"],
@@ -137,13 +164,16 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
       destructive: true,
       options: options.extend({ olderThan: z.string().default("30d"), dryRun: z.boolean().default(false) }),
       run: (c) =>
-        safe(c, () => {
+        safe(c, async () => {
           localRoot(c.options)
-          return Bridge.invoke(
-            ["gc", "--older-than", c.options.olderThan, ...(c.options.dryRun ? ["--dry-run"] : [])],
+          const swept = await Bridge.local(
+            GcCmd.sweep({ olderThan: c.options.olderThan, dryRun: c.options.dryRun }, globalsOf(c.options, config)),
             c.options,
             config
           )
+          // A partial sweep still reports what the readable databases held.
+          if (swept.failures.length > 0) config.exit?.(1)
+          return swept
         })
     })
     .command("suggest", {
@@ -208,22 +238,51 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         verifyTest: z.string().optional()
       }),
       run: (c) =>
-        safe(c, () => {
+        safe(c, async () => {
           localRoot(c.options)
-          const args = ["migrate", ...(c.args.path === undefined ? [] : [c.args.path])]
-          for (const [key, value] of Object.entries(c.options)) {
-            if (key in options.shape || value === undefined || value === false) continue
-            const flag = `--${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`
-            if (Array.isArray(value)) { for (const item of value) args.push(flag, item) }
-            else args.push(flag, ...(value === true ? [] : [String(value)]))
+          const outcome = await Bridge.local(
+            Effect.gen(function*() {
+              const migrationRoot = yield* Project.MigrationRoot
+              return yield* MigrateCmd.run({
+                target: c.args.path ?? migrationRoot,
+                scan: c.options.scan,
+                apply: c.options.apply,
+                seat: c.options.seat,
+                allowUnsafe: c.options.allowUnsafe,
+                acknowledgeRunState: c.options.acknowledgeRunState,
+                allowNoVcs: c.options.allowNoVcs,
+                keepOldSources: c.options.keepOldSources,
+                unit: c.options.unit,
+                maxRepairRounds: c.options.maxRepairRounds,
+                reportDir: c.options.reportDir,
+                flowsDir: c.options.flowsDir,
+                verifyInstall: c.options.verifyInstall,
+                verifyFormat: c.options.verifyFormat,
+                verifyTypecheck: c.options.verifyTypecheck,
+                verifyTest: c.options.verifyTest
+              }, globalsOf(c.options, config))
+            }),
+            c.options,
+            config
+          )
+          if (outcome._tag === "Parked") {
+            config.exit?.(3)
+            const { _tag: _, ...document } = outcome
+            return document
           }
-          return Bridge.invoke(args, c.options, config)
+          config.exit?.(MigrateCommand.exitCode(outcome.report))
+          return MigrateCmd.document(outcome.report)
         })
     })
     .command("update", {
       description: "Check the registry for newer CLI versions; does not install them",
       options,
-      run: (c) => safe(c, () => Bridge.invoke(["update"], c.options, config))
+      run: (c) =>
+        safe(
+          c,
+          async () =>
+            Update.render(await Bridge.local(UpdateCmd.check(globalsOf(c.options, config)), c.options, config))
+        )
     })
     .command("bug", {
       description: "Submit a redacted bug report to the configured endpoint",
@@ -234,21 +293,25 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         dryRun: z.boolean().default(false).describe("Preview the redacted report without posting")
       }),
       run: (c) =>
-        safe(
-          c,
-          () =>
-            Bridge.invoke(
-              [
-                "bug",
-                ...c.args.summary,
-                ...(c.options.run ? ["--run", c.options.run] : []),
-                ...(c.options.yes ? ["--yes"] : []),
-                ...(c.options.dryRun ? ["--dry-run"] : [])
-              ],
-              c.options,
-              config
-            )
-        )
+        safe(c, () =>
+          Bridge.query(
+            BugCmd.submit({
+              summary: c.args.summary.join(" "),
+              runId: c.options.run,
+              yes: c.options.yes,
+              dryRun: c.options.dryRun,
+              // The endpoint and the already-redacted consent document go to
+              // stderr even under quiet, so the operator can inspect
+              // everything a subsequent POST will send.
+              preview: (line) =>
+                Effect.sync(() => {
+                  const stderr = Presentation.current()?.stderr ?? process.stderr
+                  stderr.write(`${line}\n`)
+                })
+            }, globalsOf(c.options, config)),
+            c.options,
+            config
+          ))
     })
   // Incur 0.5 intercepts `mcp` before looking up registered commands. Dispatch
   // the mounted subtree directly so registration uses Agents.addMcp as documented.

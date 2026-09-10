@@ -8,12 +8,13 @@ import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
 import { ApprovalAuthority, Control } from "@smthrs/control"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
+import type * as Registry from "@smthrs/registry/Registry"
 import { Cause, Console, Effect, Exit, Layer, Logger, References, Stream } from "effect"
 import { Command } from "effect/unstable/cli"
 import { z } from "incur"
 import { format } from "node:util"
 import * as CliError from "../CliError.ts"
-import { cli as legacyCli, doctorCli, migrationCli } from "../Command.ts"
+import { cli as legacyCli } from "../Command.ts"
 import * as HistoryWorkspace from "../history/History.ts"
 import * as LegacyHistory from "../history/Legacy.ts"
 import * as CommandStatus from "../internal/CommandStatus.ts"
@@ -119,6 +120,48 @@ export const configuration = (options: ConnectionOptions, runtime: Runtime) => {
   }
 }
 
+/** The display policy one invocation renders progress and prompts under. */
+const display = (options: ConnectionOptions, runtime: Runtime) => {
+  const session = Presentation.current()
+  const explicit = session?.policy ?? runtime.presentation
+  const policy = explicit ?? Audience.resolve({ env: runtime.environment })
+  return {
+    policy: options.quiet ? { ...policy, progress: "silent" as const, interactive: false } : policy,
+    // Only an explicit or quiet silence lowers the log floor; the ambient
+    // audience fallback keeps operator-facing logs visible.
+    logLevel: options.quiet || explicit?.progress === "silent" ? "Error" as const : "Info" as const,
+    output: session?.stderr ?? process.stderr
+  }
+}
+
+/**
+ * The per-invocation services every typed verb reads, whichever host it runs
+ * against: the prompt surface, the progress sink, and the redacting logger.
+ */
+const provideServices = <A, E, R>(
+  operation: Effect.Effect<A, E, R>,
+  options: ConnectionOptions,
+  runtime: Runtime
+): Effect.Effect<A, E, Exclude<R, Ui.Ui>> => {
+  const { logLevel, output, policy } = display(options, runtime)
+  return operation.pipe(
+    Effect.provideService(RunProgress.Configuration, { policy, output }),
+    Effect.provideService(References.MinimumLogLevel, logLevel),
+    Effect.provideService(
+      Ui.Ui,
+      Ui.make({ output, input: process.stdin, interactive: policy.interactive })
+    ),
+    Effect.provideService(Logger.LogToStderr, true),
+    Effect.provide(RedactedLogger.layer())
+  )
+}
+
+const settle = async <A, E>(operation: Effect.Effect<A, E>, runtime: Runtime): Promise<A> => {
+  const result = await Effect.runPromiseExit(operation, { signal: runtime.signal })
+  if (Exit.isFailure(result)) throw Cause.squash(result.cause)
+  return result.value
+}
+
 /**
  * Reuses the tested flow control handlers without starting a second process.
  * @category constructors
@@ -129,10 +172,7 @@ export const invoke = async (
   options: ConnectionOptions,
   runtime: Runtime = {}
 ): Promise<unknown> => {
-  const session = Presentation.current()
-  const policy = session?.policy ?? runtime.presentation ?? Audience.resolve({ env: runtime.environment })
-  const display = options.quiet ? { ...policy, progress: "silent" as const, interactive: false } : policy
-  const progressOutput = session?.stderr ?? process.stderr
+  const { output: progressOutput, policy } = display(options, runtime)
   let config = configuration(options, runtime)
   if (config.remote === undefined && runtime.executionRoot === undefined) {
     // The same extraction the legacy executable uses, so a flat alias binds
@@ -145,12 +185,7 @@ export const invoke = async (
   const values: Array<unknown> = []
   const outputConsole: Console.Console = Object.assign(Object.create(console), {
     error: (...items: ReadonlyArray<unknown>) => {
-      if (args[0] === "bug") {
-        // The bug handler emits its endpoint and already-redacted consent
-        // document here. Preserve the exact report even under quiet output so
-        // the operator can inspect everything a subsequent POST will send.
-        progressOutput.write(`${format(...items)}\n`)
-      } else if (display.progress !== "silent") progressOutput.write(`${RunProgress.text(format(...items), 500)}\n`)
+      if (policy.progress !== "silent") progressOutput.write(`${RunProgress.text(format(...items), 500)}\n`)
     },
     log: (...items: ReadonlyArray<unknown>) => {
       for (const item of items) {
@@ -172,80 +207,69 @@ export const invoke = async (
     ...connectionArguments({ ...options, quiet: false }),
     ...args
   ]
-  const command = args[0] === "migrate"
-    ? Command.runWith(migrationCli, { version: packageVersion })(commandArguments).pipe(
-      Effect.provide(
-        Project.layer(
-          config.root ?? process.cwd(),
-          config.migrationRoot ?? Project.legacyRoot(undefined, config.root ?? process.cwd())
-        )
-      )
-    )
-    : args[0] === "doctor" && config.remote === undefined
-    ? Command.runWith(doctorCli, { version: packageVersion })(commandArguments).pipe(
-      Effect.provide([
-        Project.layer(
-          config.root ?? process.cwd(),
-          config.migrationRoot ?? Project.legacyRoot(undefined, config.root ?? process.cwd())
-        ),
-        NodeControl.layerRegistry(config.root ?? process.cwd()),
-        NodeControl.layerOutput
-      ])
-    )
-    : Command.runWith(legacyCli, { version: packageVersion })(commandArguments).pipe(
-      Effect.provide(NodeControl.layer(config))
-    )
-  const run = command.pipe(
+  const run: Effect.Effect<void, unknown, Ui.Ui> = Command.runWith(legacyCli, { version: packageVersion })(
+    commandArguments
+  ).pipe(
+    Effect.provide(NodeControl.layer(config)),
     Effect.provide(NodeServices.layer),
     Effect.provideService(Console.Console, outputConsole),
-    Effect.provideService(CommandStatus.CommandStatus, (code) => runtime.exit?.(code)),
-    Effect.provideService(RunProgress.Configuration, { policy: display, output: progressOutput }),
-    Effect.provideService(References.MinimumLogLevel, display.progress === "silent" ? "Error" : "Info"),
-    Effect.provideService(
-      Ui.Ui,
-      Ui.make({ output: progressOutput, input: process.stdin, interactive: display.interactive })
-    ),
-    Effect.provideService(Logger.LogToStderr, true),
-    Effect.provide(RedactedLogger.layer())
+    Effect.provideService(CommandStatus.CommandStatus, (code) => runtime.exit?.(code))
   )
-  const result = await Effect.runPromiseExit(run, { signal: runtime.signal })
-  if (Exit.isFailure(result)) {
-    const error = Cause.squash(result.cause)
-    // These inspections deliberately render a complete report before failing.
-    // Keep that document available to scripts, including on a nonzero exit.
-    if (
-      (args[0] === "doctor" || args[0] === "gc") && values.length > 0 &&
-      typeof error === "object" && error !== null && "_tag" in error && error._tag === "/cli/UnsupportedError"
-    ) runtime.exit?.(1)
-    else throw error
-  }
+  const result = await Effect.runPromiseExit(provideServices(run, options, runtime), { signal: runtime.signal })
+  if (Exit.isFailure(result)) throw Cause.squash(result.cause)
   return values.length === 1 ? values[0] : values
 }
 
 /**
- * Runs a control query against the same local or remote host as flow commands.
+ * Runs a typed verb against the same local or remote host as flow commands.
+ *
+ * The host layer also carries the project references, so a verb that reads
+ * `Project.ProjectRoot` or the 0.x snapshot sees the host's answer.
  * @category constructors
  * @since 1.0.0
  */
 export const query = async <A, E>(
-  operation: Effect.Effect<A, E, Control.Control>,
+  operation: Effect.Effect<A, E, Control.Control | Ui.Ui>,
+  options: ConnectionOptions,
+  runtime: Runtime = {}
+): Promise<A> =>
+  settle(
+    provideServices(
+      operation.pipe(Effect.provide(NodeControl.layer(configuration(options, runtime)))),
+      options,
+      runtime
+    ),
+    runtime
+  )
+
+/**
+ * Runs a typed verb on the project alone, without opening the control host:
+ * the 0.x migration, garbage collection, the registry check, and local
+ * diagnostics. The project references and the flow registry are the host's.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const local = async <A, E>(
+  operation: Effect.Effect<A, E, Registry.Registry | Ui.Ui>,
   options: ConnectionOptions,
   runtime: Runtime = {}
 ): Promise<A> => {
-  const result = await Effect.runPromiseExit(
-    operation.pipe(
-      Effect.provide(NodeControl.layer(configuration(options, runtime))),
-      Effect.provideService(Logger.LogToStderr, true),
-      Effect.provideService(
-        References.MinimumLogLevel,
-        (Presentation.current()?.policy ?? runtime.presentation)?.progress === "silent" ? "Error" : "Info"
+  const config = configuration(options, runtime)
+  const root = config.root ?? process.cwd()
+  return settle(
+    provideServices(
+      operation.pipe(
+        Effect.provide([
+          Project.layer(root, config.migrationRoot ?? Project.legacyRoot(undefined, root)),
+          NodeControl.layerRegistry(root),
+          NodeServices.layer
+        ])
       ),
-      Effect.provide(RedactedLogger.layer())
+      options,
+      runtime
     ),
-    { signal: runtime.signal }
+    runtime
   )
-  if (Exit.isFailure(result)) throw Cause.squash(result.cause)
-  return result.value
 }
 
 /**

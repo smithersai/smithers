@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative, resolve } from "node:path"
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { makeCli } from "../src/Cli.ts"
 import * as Bridge from "../src/cli/ControlBridge.ts"
 import { createRunsCli } from "../src/cli/ControlCommands.ts"
 import * as Presentation from "../src/cli/Presentation.ts"
@@ -26,9 +27,9 @@ const ports = vi.hoisted(() => ({
 }))
 
 // Host transports are bounded doubles, so these tests never open a database,
-// worktree, or listener. The bug consent cases opt into the actual command
-// parser, handler and output layer; routing-only cases use a bounded handler.
-vi.mock("../src/Command.ts", () => ({ cli: "legacy", doctorCli: "doctor", migrationCli: "migration" }))
+// worktree, or listener. The bug consent cases drive the unified `bug` verb
+// through its typed command; routing-only cases use a bounded handler.
+vi.mock("../src/Command.ts", () => ({ cli: "legacy" }))
 vi.mock("effect/unstable/cli", async (load) => {
   const actual = await load<typeof import("effect/unstable/cli")>()
   return { ...actual, Command: { ...actual.Command, runWith: ports.runWith } }
@@ -48,7 +49,10 @@ vi.mock("../src/Project.ts", async (load) => ({
   ...await load<typeof import("../src/Project.ts")>(),
   layer: ports.project
 }))
-vi.mock("../src/operator/Triggers.ts", () => ({ layerTriggerScheduler: ports.scheduler }))
+vi.mock("../src/operator/Triggers.ts", async (load) => ({
+  ...await load<typeof import("../src/operator/Triggers.ts")>(),
+  layerTriggerScheduler: ports.scheduler
+}))
 vi.mock("../src/Serve.ts", async (load) => ({
   ...await load<typeof import("../src/Serve.ts")>(),
   host: ports.serve
@@ -288,22 +292,36 @@ describe("control bridge configuration and routing", () => {
     expect(ports.control.mock.calls[1]![0].executionRoot).toBe("/provided-snapshot")
   })
 
-  it.each(["migrate", "doctor"])("composes %s without starting the durable control host", async (verb) => {
-    handler = Console.log(JSON.stringify({ report: verb }))
-    expect(await Bridge.invoke([verb], local, runtime)).toEqual({ report: verb })
-    expect(ports.runWith.mock.calls[0]![0]).toBe(verb === "migrate" ? "migration" : "doctor")
+  it("composes a project verb without starting the durable control host", async () => {
+    const failure = new Error("project verb failed")
+    const seen = await Bridge.local(
+      Effect.gen(function*() {
+        expect((yield* RunProgress.Configuration)?.policy.progress).toBe("silent")
+        expect(yield* References.MinimumLogLevel).toBe("Error")
+        return (yield* Ui.Ui).interactive
+      }),
+      { ...local, quiet: true },
+      runtime
+    )
+    expect(seen).toBe(false)
     expect(ports.project).toHaveBeenCalledExactlyOnceWith(local.root, local.root)
+    expect(ports.registry).toHaveBeenCalledExactlyOnceWith(local.root)
     expect(ports.control).not.toHaveBeenCalled()
-    expect(ports.readOnly.mock.calls.map(([name]) => name).sort())
-      .toEqual(verb === "migrate" ? ["project"] : ["output", "project", "registry"])
-    expect(ports.registry.mock.calls).toEqual(verb === "doctor" ? [[local.root]] : [])
+    expect(ports.readOnly.mock.calls.map(([name]) => name).sort()).toEqual(["project", "registry"])
+    await expect(Bridge.local(Effect.fail(failure), local, runtime)).rejects.toBe(failure)
   })
 
-  it("routes remote doctor through the selected control transport", async () => {
-    await Bridge.invoke(["doctor"], { ...local, remote: "https://control.invalid" }, runtime)
-    expect(ports.runWith.mock.calls[0]![0]).toBe("legacy")
-    expect(ports.control).toHaveBeenCalledWith(expect.objectContaining({ remote: "https://control.invalid" }))
-    expect(ports.readOnly).not.toHaveBeenCalled()
+  it("hands a typed query the host's control service and prompt surface", async () => {
+    const interactive = await Bridge.query(
+      Effect.gen(function*() {
+        expect(yield* Control.Control).toBe(service)
+        return (yield* Ui.Ui).interactive
+      }),
+      local,
+      { ...runtime, presentation: { ...plain, interactive: true } }
+    )
+    expect(interactive).toBe(true)
+    expect(ports.control).toHaveBeenCalledWith(expect.objectContaining({ root: local.root }))
   })
 })
 
@@ -364,27 +382,19 @@ describe("control bridge result and progress contract", () => {
     await Bridge.invoke(["list"], { ...local, quiet: true })
   })
 
-  it.each(["doctor", "gc"])("retains a completed %s report when its unsupported status exits nonzero", async (verb) => {
-    const exit = vi.fn()
-    handler = Console.log("{\"healthy\":false}").pipe(Effect.andThen(Effect.fail({ _tag: "/cli/UnsupportedError" })))
-    expect(await Bridge.invoke([verb], local, { ...runtime, exit })).toEqual({ healthy: false })
-    expect(exit).toHaveBeenCalledExactlyOnceWith(1)
-    expect(await Bridge.invoke([verb], local, runtime)).toEqual({ healthy: false })
-  })
-
   it.each([
-    { command: "doctor", output: false, failure: { _tag: "/cli/UnsupportedError" } },
-    { command: "list", output: true, failure: { _tag: "/cli/UnsupportedError" } },
-    { command: "gc", output: true, failure: { _tag: "other" } },
-    { command: "gc", output: true, failure: new Error("transport failed") },
-    { command: "gc", output: true, failure: null },
-    { command: "gc", output: true, failure: "failure" }
-  ])("preserves the original failure outside a completed inspection ($command/$failure)", async (fixture) => {
+    { output: false, failure: { _tag: "/cli/UnsupportedError" } },
+    { output: true, failure: { _tag: "/cli/UnsupportedError" } },
+    { output: true, failure: { _tag: "other" } },
+    { output: true, failure: new Error("transport failed") },
+    { output: true, failure: null },
+    { output: true, failure: "failure" }
+  ])("preserves the original failure identity ($failure)", async (fixture) => {
     const exit = vi.fn()
     handler = (fixture.output ? Console.log("partial") : Effect.void).pipe(
       Effect.andThen(Effect.fail(fixture.failure))
     )
-    await expect(Bridge.invoke([fixture.command], local, { ...runtime, exit })).rejects.toBe(fixture.failure)
+    await expect(Bridge.invoke(["list"], local, { ...runtime, exit })).rejects.toBe(fixture.failure)
     expect(exit).not.toHaveBeenCalled()
   })
 })
@@ -392,48 +402,72 @@ describe("control bridge result and progress contract", () => {
 describe("control bridge bug report consent", () => {
   const endpoint = "https://preview.invalid/report"
   const summary = `${"two  spaces of diagnostic context; ".repeat(30)}Authorization: Bearer private-preview-token`
-  const useRealHandler = async () => {
-    const { cli } = await vi.importActual<typeof import("../src/Command.ts")>("../src/Command.ts")
-    const { Command } = await vi.importActual<typeof import("effect/unstable/cli")>("effect/unstable/cli")
-    const { layerOutput } = await vi.importActual<typeof import("../src/NodeControl.ts")>("../src/NodeControl.ts")
-    ports.runWith.mockImplementation(() => (args: ReadonlyArray<string>) =>
-      Command.runWith(cli, { version: "1.0.0-test" })(args).pipe(Effect.provide(layerOutput))
-    )
-    vi.stubEnv("SMITHERS_BUG_ENDPOINT", endpoint)
-  }
-  const capturePreview = () => {
-    let stderr = ""
-    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-      stderr += String(chunk)
-      return true
-    })
-    return () => {
-      const [shownEndpoint, payload] = stderr.trimEnd().split("\n")
-      expect(shownEndpoint).toBe(endpoint)
-      expect(payload!.length).toBeGreaterThan(500)
-      expect(payload).not.toContain("private-preview-token")
-      expect(JSON.parse(payload!).summary).toContain("two  spaces")
-      return payload!
+  /** Drives the unified `bug` verb the way `bin` does, with a captured session stderr. */
+  const bug = async (flags: ReadonlyArray<string>, overrides: Partial<Bridge.Runtime> = {}) => {
+    const captured = { stdout: "", stderr: "", codes: [] as Array<number> }
+    const stderr = {
+      isTTY: false,
+      columns: 80,
+      write: (text: string) => {
+        captured.stderr += text
+        return true
+      }
     }
+    const config = {
+      environment: { SMITHERS_BUG_ENDPOINT: endpoint },
+      presentation: plain,
+      stderr,
+      ...overrides
+    }
+    const argv = ["bug", summary, "--root", local.root, ...flags, "--json"]
+    await makeCli(config).serve(Audience.incurArguments(argv, config.presentation ?? plain), {
+      env: config.environment,
+      stdout: (text) => {
+        captured.stdout += text
+      },
+      exit: (code) => {
+        captured.codes.push(code)
+      }
+    })
+    return captured
+  }
+  const preview = (stderr: string) => {
+    const [shownEndpoint, payload] = stderr.trimEnd().split("\n")
+    expect(shownEndpoint).toBe(endpoint)
+    expect(payload!.length).toBeGreaterThan(500)
+    expect(payload).not.toContain("private-preview-token")
+    expect(JSON.parse(payload!).summary).toContain("two  spaces")
+    return payload!
   }
 
   it.each([true, false])("shows the complete redacted payload before interactive consent (%s)", async (accepted) => {
-    await useRealHandler()
-    const preview = capturePreview()
     const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 202 }))
     let shownBeforeConsent = ""
+    let stderrSoFar = () => ""
     const ui = Ui.make({ output: process.stderr, input: process.stdin, interactive: true })
     const confirm = vi.fn(() =>
       Effect.sync(() => {
         expect(fetch).not.toHaveBeenCalled()
-        shownBeforeConsent = preview()
+        shownBeforeConsent = preview(stderrSoFar())
         return accepted
       })
     )
     vi.spyOn(Ui, "make").mockReturnValue({ ...ui, confirm })
-    const result = Bridge.invoke(["bug", summary], local, { ...runtime, presentation: { ...plain, interactive: true } })
+    const captured = { stderr: "" }
+    stderrSoFar = () => captured.stderr
+    const result = await bug([], {
+      presentation: { ...plain, interactive: true },
+      stderr: {
+        isTTY: false,
+        columns: 80,
+        write: (text: string) => {
+          captured.stderr += text
+          return true
+        }
+      }
+    })
     if (accepted) {
-      expect(await result).toEqual({ reported: true, endpoint })
+      expect(JSON.parse(result.stdout)).toMatchObject({ reported: true, endpoint })
       expect(fetch).toHaveBeenCalledExactlyOnceWith(
         endpoint,
         expect.objectContaining({
@@ -442,7 +476,8 @@ describe("control bridge bug report consent", () => {
         })
       )
     } else {
-      await expect(result).rejects.toThrow("Report not sent")
+      expect(result.stdout).toContain("Report not sent")
+      expect(result.codes).toContain(2)
       expect(fetch).not.toHaveBeenCalled()
     }
     expect(confirm).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
@@ -452,32 +487,33 @@ describe("control bridge bug report consent", () => {
   })
 
   it("quiet explicit consent still shows the complete payload before posting", async () => {
-    await useRealHandler()
-    const preview = capturePreview()
+    let shown = ""
     const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, options) => {
-      expect(options?.body).toBe(preview())
+      shown = String(options?.body)
       return new Response("{}", { status: 202 })
     })
-    expect(await Bridge.invoke(["bug", summary, "--yes"], { ...local, quiet: true }, runtime))
-      .toEqual({ reported: true, endpoint })
+    const result = await bug(["--yes", "--quiet"])
+    expect(JSON.parse(result.stdout)).toMatchObject({ reported: true, endpoint })
+    expect(preview(result.stderr)).toBe(shown)
     expect(fetch).toHaveBeenCalledOnce()
   })
 
   it("dry-run wins over explicit consent and quiet without posting", async () => {
-    await useRealHandler()
-    const preview = capturePreview()
     const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 202 }))
-    const result = await Bridge.invoke(["bug", summary, "--yes", "--dry-run"], { ...local, quiet: true }, runtime)
-    expect(result).toEqual({ reported: false, endpoint, payload: JSON.parse(preview()) })
+    const result = await bug(["--yes", "--dry-run", "--quiet"])
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      reported: false,
+      endpoint,
+      payload: JSON.parse(preview(result.stderr))
+    })
     expect(fetch).not.toHaveBeenCalled()
   })
 
   it("quiet without consent previews the report and refuses to post", async () => {
-    await useRealHandler()
-    const preview = capturePreview()
     const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 202 }))
-    await expect(Bridge.invoke(["bug", summary], { ...local, quiet: true }, runtime)).rejects.toThrow("Report not sent")
-    preview()
+    const result = await bug(["--quiet"])
+    expect(result.stdout).toContain("Report not sent")
+    preview(result.stderr)
     expect(fetch).not.toHaveBeenCalled()
   })
 })
@@ -486,24 +522,32 @@ describe("control bridge transport scope", () => {
   it("keeps one acquired Control alive through bulk listing and cancellation", async () => {
     service = {
       ...service,
-      list: () => Effect.sync(() => {
-        lifecycle.push("list")
-        return {
-          _tag: "runs" as const,
-          items: ["first", "second"].map((runId) => ({
-            runId, flowId: "demo/ship", status: "parked" as const, createdAt: 1, updatedAt: 1
-          }))
-        }
-      }),
-      cancel: ({ runId, idempotencyKey }) => Effect.sync(() => {
-        lifecycle.push(`cancel:${runId}`)
-        return { _tag: "Accepted" as const, runId, receiptId: idempotencyKey }
-      })
+      list: () =>
+        Effect.sync(() => {
+          lifecycle.push("list")
+          return {
+            _tag: "runs" as const,
+            items: ["first", "second"].map((runId) => ({
+              runId,
+              flowId: "demo/ship",
+              status: "parked" as const,
+              createdAt: 1,
+              updatedAt: 1
+            }))
+          }
+        }),
+      cancel: ({ runId, idempotencyKey }) =>
+        Effect.sync(() => {
+          lifecycle.push(`cancel:${runId}`)
+          return { _tag: "Accepted" as const, runId, receiptId: idempotencyKey }
+        })
     }
     const codes: Array<number> = []
     await createRunsCli(runtime).serve(["cancel-all", "--remote", "https://control.invalid", "--json"], {
       stdout: () => {},
-      exit: (code) => { codes.push(code) }
+      exit: (code) => {
+        codes.push(code)
+      }
     })
     expect(codes).toEqual([])
     expect(ports.control).toHaveBeenCalledTimes(1)
