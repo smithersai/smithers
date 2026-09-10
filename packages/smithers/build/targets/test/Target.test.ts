@@ -373,6 +373,119 @@ describe("Target implementation contract", () => {
   })
 })
 
+describe("Target declaration bounds", () => {
+  const Bounded = Target.make("RuleTestDeclarationBounds", {
+    attrs: Schema.Struct({ value: Schema.Unknown }),
+    kinds: ["build"],
+    implementation: () => Target.notImplemented("RuleTestDeclarationBounds")
+  })
+
+  // The author's object is walked at depth 0, so `nest(levels)` places its
+  // innermost object at exactly `levels`.
+  const nest = (levels: number): { readonly value: unknown } => {
+    let value: unknown = {}
+    for (let index = 1; index < levels; index += 1) value = { value }
+    return { value }
+  }
+
+  // One member per own enumerable key, counted across the whole tree: the
+  // `value` key plus every element of the array under it.
+  const members = (count: number): { readonly value: unknown } => ({
+    value: Array.from({ length: count - 1 }, () => 0)
+  })
+
+  it("accepts attrs nested to the depth bound", () => {
+    expect(() => Bounded(nest(Target.maximumAttrsDepth - 1))).not.toThrow()
+  })
+
+  it("refuses attrs nested one level past the depth bound", () => {
+    expect(() => Bounded(nest(Target.maximumAttrsDepth)))
+      .toThrow(/attrs nest deeper than the declaration bound/)
+  })
+
+  it("accepts attrs carrying the member bound", () => {
+    expect(() => Bounded(members(Target.maximumAttrsMembers))).not.toThrow()
+  })
+
+  it("refuses attrs carrying one member past the bound", () => {
+    expect(() => Bounded(members(Target.maximumAttrsMembers + 1)))
+      .toThrow(/attrs carry more members than the declaration bound/)
+  })
+})
+
+describe("Target verb gate and kind mapping", () => {
+  it("resolves a function verb gate against the declared attrs", () => {
+    const Gated = Target.make("RuleTestVerbGateFunction", {
+      attrs: Schema.Struct({ reviewed: Schema.Boolean }),
+      kinds: ["build", "review"],
+      verbGate: (attrs) => attrs.reviewed ? ["review", "review"] : undefined,
+      implementation: () => Target.notImplemented("RuleTestVerbGateFunction")
+    })
+
+    expect(Target.metadata(Gated({ reviewed: true })).verbGate).toEqual(["review"])
+    expect(Target.metadata(Gated({ reviewed: false })).verbGate).toBeUndefined()
+  })
+
+  it("digests the verb gate function, so changing it changes implementation identity", () => {
+    const definition = (gate: () => ReadonlyArray<Target.Kind>) =>
+      Target.make("RuleTestVerbGateIdentity", {
+        attrs: Schema.Struct({}),
+        kinds: ["build", "review"],
+        verbGate: gate,
+        implementation: () => Target.notImplemented("RuleTestVerbGateIdentity")
+      })
+
+    expect(Target.metadata(definition(() => ["build"])({})).implementationDigest)
+      .not.toBe(Target.metadata(definition(() => ["review"])({})).implementationDigest)
+  })
+
+  it("names the verb when an attrsForKind mapping fails the attrs schema", () => {
+    const Mapped = Target.make("RuleTestKindMappingRejected", {
+      attrs: Schema.Struct({ mode: Schema.String }),
+      kinds: ["build", "lint"],
+      attrsForKind: (kind, attrs) => kind === "lint" ? { mode: 1 } as never : attrs,
+      implementation: () => Target.notImplemented("RuleTestKindMappingRejected")
+    })
+    const metadata = Target.metadata(Mapped({ mode: "write" }))
+
+    expect(metadata.forKind("build").attrs).toEqual({ mode: "write" })
+    expect(() => metadata.forKind("lint")).toThrow(/RuleTestKindMappingRejected \(lint\) declaration/)
+  })
+})
+
+describe("Target plan attrs", () => {
+  const planned = () => {
+    const seen: Array<string> = []
+    const Planned = Target.make("RuleTestPlanAttrs", {
+      attrs: Schema.Struct({ label: Schema.String }),
+      kinds: ["build"],
+      implementation: (attrs) => {
+        seen.push(attrs.label)
+        return Target.notImplemented("RuleTestPlanAttrs")
+      }
+    })
+    return { seen, target: Planned({ label: "declared" }) }
+  }
+
+  it("plans the declared attrs when none are supplied", () => {
+    const { seen, target } = planned()
+    Target.plan(target)
+    expect(seen).toEqual(["declared"])
+  })
+
+  it("plans explicit attrs in place of the declared ones", () => {
+    const { seen, target } = planned()
+    Target.plan(target, { label: "override" })
+    expect(seen).toEqual(["override"])
+  })
+
+  it("refuses explicit plan attrs carrying an unknown key", () => {
+    const { seen, target } = planned()
+    expect(() => Target.plan(target, { label: "override", typo: true } as never)).toThrow()
+    expect(seen).toEqual([])
+  })
+})
+
 // Compiled by tsconfig.test.json without executing invalid declarations.
 const implementationContract = () => {
   Target.make("MismatchedSuccess", {

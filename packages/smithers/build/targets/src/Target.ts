@@ -301,12 +301,17 @@ export const splitPresentation = (
  * checks drift, returns re-derived inputs, outputs, and cacheability for the
  * mapped attrs. `implementationDigest` identifies the implementation and every
  * optional function that derives attrs, inputs, outputs, or cacheability. It
- * is a within-process identity only: a callback not built with `Node.capture`
- * has a function identity carrying a per-process nonce, and every built-in
- * target passes ordinary closures, so the digest differs on every process
- * start. It tells one target apart from another inside one run and must never
- * be key material for anything replayed across processes; the package
- * executor and the agent verdict cache both leave it out for that reason.
+ * hashes each callback's source text, so the same definition evaluated by two
+ * processes agrees; a callback built with `Node.capture` hashes its captured
+ * values too, so changing a captured tool or version changes the digest.
+ * Source text is not the whole implementation: an ordinary closure over a
+ * value JavaScript cannot inspect keeps one digest across every value it
+ * closes over, and a helper the callback calls is not hashed at all. The
+ * digest is therefore stable enough to key on but too coarse to be a complete
+ * content key on its own. Consumers that need one, the package executor and
+ * the agent verdict cache, leave it out and key on an ambient fingerprint of
+ * the shipped sources instead.
+ *
  * `outputs` is the declared output tree, undefined for a target that promises
  * none. Dependencies are re-derived from verb-effective attrs and may vary by
  * verb. `verbGate`, when present, is the complete set of verbs

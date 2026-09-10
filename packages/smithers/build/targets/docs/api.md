@@ -48,9 +48,14 @@ after the checks that validated them.
 
 `Target.metadata` is the planner's view: the rule id, the schema identity, the
 decoded attrs, the declared inputs, the dependency targets and selectors, the
-declared output tree, and the verbs. `implementationDigest` is also there, and
-is deliberately not identity: it digests function identity, which carries
-per-process entropy for any callback not built with `Node.capture`.
+declared output tree, and the verbs. `implementationDigest` is also there. It
+hashes the source text of every callback the declaration passes in, so two
+processes evaluating one definition agree on it; a callback built with
+`Node.capture` folds in its captured values as well. It is not a complete
+implementation identity: an ordinary closure hides the values it closes over,
+and helpers the callback calls are never hashed. Key a cache on the ambient
+source fingerprint instead, which is what the package executor and the agent
+verdict cache do.
 
 ## Declared inputs and outputs
 
