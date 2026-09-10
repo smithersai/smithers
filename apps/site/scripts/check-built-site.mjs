@@ -162,8 +162,7 @@ export async function releaseReferences(repoRoot) {
  * rule: an asset-layer redirect under that prefix would never run, and the
  * pre-Starlight /api/<package> docs URLs it used to recover now belong to the
  * catalog and app endpoints. Each catalog repository's app at /<owner>/<name>
- * and each coming-soon repository's page at the same shape are pages of this
- * build (src/pages/[owner]/[repo].astro), so they are checked like every other
+ * is a page of this build (src/pages/[owner]/[repo].astro), so they are checked like every other
  * page.
  */
 export function checkBuiltSite(root, requiredReferences = [], appPaths = []) {
@@ -263,7 +262,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   // The landing page reads the catalog at the same origin; the app Worker
   // (apps/server) answers it, not this build. Each catalog repository's app
   // page is this build's, so its link is checked like any other.
-  const { AVAILABLE_REPOS, COMING_SOON_REPOS, PUBLIC_REPOS_PATH } = await import(
+  const { AVAILABLE_REPOS, PUBLIC_REPOS_PATH } = await import(
     pathToFileURL(resolve(siteRoot, "../server/src/publicRepoCatalog.ts"))
   )
   const result = checkBuiltSite(
@@ -275,11 +274,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     [PUBLIC_REPOS_PATH]
   )
   // The files the app Worker's assets need beyond the pages: one prerendered
-  // app page per catalog repository, one coming-soon page per nominated
-  // repository (the Worker serves both by these paths), the 404 page the asset
+  // app page per available catalog repository, the 404 page the asset
   // host serves for an unknown path, and the build stamp apps/server's canary
   // build probe reads.
-  const repoPages = [...AVAILABLE_REPOS, ...COMING_SOON_REPOS].map((repo) => `${repo.name}/index.html`)
+  const repoPages = AVAILABLE_REPOS.map((repo) => `${repo.name}/index.html`)
   for (const file of [...repoPages, "404.html", "__build.json"]) {
     if (!existsSync(join(root, file))) result.failures.push(`${file}: missing from the build`)
   }

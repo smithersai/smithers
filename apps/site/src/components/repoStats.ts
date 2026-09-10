@@ -1,12 +1,7 @@
 /*
  * Fills the GitHub stats slots of the given repository cards from the public
- * catalog (apps/server, PUBLIC_REPOS_PATH). Shared by the landing page's card
- * grid (AvailableRepos.astro) and the coming-soon repository page
- * (ComingSoonRepo.astro), so both read one response shape and fail the same way.
- *
- * The caller passes the cards and the catalog URL: the grid's cards are
- * descendants of its section, while the coming-soon page's only card is the
- * page's own article, which no descendant query returns.
+ * catalog (apps/server, PUBLIC_REPOS_PATH) for AvailableRepos.astro.
+ * The caller passes the cards and the catalog URL.
  *
  * A card is an element with `data-repo="<owner>/<name>"` holding a
  * `[data-stats]` list with `[data-stat="stars|forks|openIssuesAndPulls"]`

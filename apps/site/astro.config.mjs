@@ -11,8 +11,7 @@ import project from "./src/data/project.json" with { type: "json" }
  * smithers.sh: the landing page at `/` (src/pages/index.astro), the demo
  * request page at `/demo`, the Starlight documentation at `/docs/**` with
  * the release changelogs under `/changelogs/**`, and the product app at
- * `/<owner>/<repo>` for every catalog repository, with a coming-soon page at
- * the same shape for every nominated repository (src/pages/[owner]/[repo].astro).
+ * `/<owner>/<repo>` for every available catalog repository (src/pages/[owner]/[repo].astro).
  *
  * Starlight content is authored under src/content/docs/docs/ so every route
  * carries the /docs prefix and the root stays a plain Astro page. Add a page

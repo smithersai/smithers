@@ -1,45 +1,20 @@
 ---
-/*
- * One page per catalog repository, prerendered at /<owner>/<repo>.
- *
- * An available repository's page is the product app, so
- * https://smithers.sh/smithersai/smithers is a page of this site and the
- * address bar keeps that path for the page's life. The app itself renders
- * only in the browser (`client:only`): it reads the session, the repository
- * and the chat from the app Worker (apps/server), which serves this build's
- * dist as its assets and answers /api/* first.
- *
- * A coming-soon repository's page (COMING_SOON_REPOS) is a page of the site
- * on the Base layout (ComingSoonRepo.astro): the repository, that it opens as
- * its maintainers claim it, and the nomination form pre-filled with it. The
- * Worker serves the app document only for AVAILABLE_REPOS and lets these
- * pages through as the assets layer serves them.
- */
+/* One app page per available catalog repository, prerendered at /<owner>/<repo>. */
 import AppIsland from "../../AppIsland"
 import AppShell from "../../layouts/AppShell.astro"
-import ComingSoonRepo from "../../components/ComingSoonRepo.astro"
-import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "../../../../server/src/publicRepoCatalog"
+import { AVAILABLE_REPOS } from "../../../../server/src/publicRepoCatalog"
 
-type Props =
-  | { readonly page: "app"; readonly title: string }
-  | { readonly page: "coming-soon"; readonly repo: { readonly name: string; readonly title: string; readonly url: string } }
+interface Props {
+  readonly title: string
+}
 
 export function getStaticPaths() {
-  const params = (name: string) => {
-    const [owner, repo] = name.split("/")
-    return { owner, repo }
-  }
-  return [
-    ...AVAILABLE_REPOS.map((repo) => ({ params: params(repo.name), props: { page: "app", title: repo.title } satisfies Props })),
-    ...COMING_SOON_REPOS.map((repo) => ({
-      params: params(repo.name),
-      props: { page: "coming-soon", repo: { name: repo.name, title: repo.title, url: repo.url } } satisfies Props
-    }))
-  ]
+  return AVAILABLE_REPOS.map((repo) => {
+    const [owner, name] = repo.name.split("/")
+    return { params: { owner, repo: name }, props: { title: repo.title } satisfies Props }
+  })
 }
-const props = Astro.props as Props
+const { title } = Astro.props
 ---
 
-{props.page === "app"
-  ? <AppShell title={props.title}><div id="root"><AppIsland client:only="react" /></div></AppShell>
-  : <ComingSoonRepo repo={props.repo} />}
+<AppShell title={title}><div id="root"><AppIsland client:only="react" /></div></AppShell>

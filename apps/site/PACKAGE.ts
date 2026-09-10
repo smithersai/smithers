@@ -295,14 +295,13 @@ const docsTextTest = Smithers.Shell.Test({
   ]
 })
 
-/** Fill repository cards from the public catalog: the parse, the count validation, the status fallback, and both call sites. */
+/** Fill repository cards from the public catalog: the parse, the count validation, the status fallback, and the landing grid. */
 const repoStatsTest = Smithers.Shell.Test({
   shell: "node --test --test-concurrency=1 apps/site/scripts/repo-stats.test.mjs",
   data: [
     Smithers.file("scripts/repo-stats.test.mjs"),
     Smithers.file("src/components/repoStats.ts"),
-    Smithers.file("src/components/AvailableRepos.astro"),
-    Smithers.file("src/components/ComingSoonRepo.astro")
+    Smithers.file("src/components/AvailableRepos.astro")
   ]
 })
 

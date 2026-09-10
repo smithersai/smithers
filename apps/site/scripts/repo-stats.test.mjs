@@ -3,11 +3,8 @@
  * fetch, the count validation, the status fallback, and what it writes into a
  * card's slots.
  *
- * The helper takes its cards from the caller, so both surfaces are exercised
- * here: the landing grid passes the section's descendant cards
- * (AvailableRepos.astro) and the coming-soon page passes the page's own
- * article (ComingSoonRepo.astro), which no descendant query returns. The last
- * test keeps the catalog contract in that one file.
+ * The helper takes its cards from the caller. The final test keeps the
+ * catalog contract in that one file.
  */
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
@@ -92,19 +89,6 @@ test("fills every card the caller passes from the catalog", async () => {
   })
 })
 
-test("fills a lone card that is the page's own article", async () => {
-  /* The coming-soon page carries data-repo on the article it passes; nothing
-     under that article carries it, so a descendant query returns no cards. */
-  const soon = card("evanw/esbuild")
-  soon.querySelectorAll = () => []
-  catalog({ repos: [], comingSoon: [{ name: "evanw/esbuild", stats: { stars: 39500, forks: 1200, openIssuesAndPulls: 50, language: "Go", license: "MIT" } }] })
-
-  await fillRepoStats("https://smithers.sh/api/public-repos", [soon])
-
-  assert.equal(stats(soon).stars, "39.5K")
-  assert.equal(stats(soon).status, "")
-})
-
 test("reports stats unavailable for a repository the catalog omits", async () => {
   const missing = card("evanw/esbuild")
   catalog({ repos: [{ name: "evmts/smithers", stats: { stars: 1, forks: 1, openIssuesAndPulls: 1 } }] })
@@ -150,7 +134,7 @@ test("falls back on a failed response, unparsable body, or missing repos array",
 })
 
 test("keeps the catalog contract in repoStats.ts alone", () => {
-  for (const component of ["AvailableRepos.astro", "ComingSoonRepo.astro"]) {
+  for (const component of ["AvailableRepos.astro"]) {
     const source = readFileSync(join(componentsDir, component), "utf8")
     assert.match(source, /import \{ fillRepoStats \} from "\.\/repoStats"/, `${component} renders stats without the shared helper`)
     assert.ok(!source.includes("fetch("), `${component} fetches the catalog itself`)

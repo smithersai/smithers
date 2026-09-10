@@ -90,43 +90,8 @@ const cards = [
 </style>
 
 <script>
-  import type { PublicRepoCatalog } from "../../../server/src/publicRepoCatalog"
+  import { fillRepoStats } from "./repoStats"
 
   const root = document.querySelector<HTMLElement>("[data-available-repos]")
-  const number = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
-  const validCount = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-
-  if (root) {
-    const cards = [...root.querySelectorAll<HTMLElement>("[data-repo]")]
-    const showUnavailable = () => {
-      for (const card of cards) {
-        card.querySelector("[data-stats]")?.setAttribute("aria-busy", "false")
-        card.querySelector<HTMLElement>("[data-stats-status]")!.textContent = "Stats unavailable"
-      }
-    }
-    void (async () => {
-      try {
-        const response = await fetch(root.dataset.endpoint!, { credentials: "omit", signal: AbortSignal.timeout(15_000) })
-        if (!response.ok) throw new Error()
-        const data = await response.json() as PublicRepoCatalog
-        if (!Array.isArray(data.repos)) throw new Error()
-        // A catalog served before comingSoon shipped leaves those cards at "Stats unavailable".
-        const entries = [...data.repos, ...(Array.isArray(data.comingSoon) ? data.comingSoon : [])]
-        showUnavailable()
-        for (const card of cards) {
-          const stats = entries.find((repo) => repo.name === card.dataset.repo)?.stats
-          if (!stats || !validCount(stats.stars) || !validCount(stats.forks) || !validCount(stats.openIssuesAndPulls)) continue
-          for (const key of ["stars", "forks", "openIssuesAndPulls"] as const) {
-            const value = card.querySelector<HTMLElement>(`[data-stat="${key}"]`)!
-            value.textContent = number.format(stats[key])
-            value.title = stats[key].toLocaleString("en")
-          }
-          card.querySelector<HTMLElement>("[data-meta]")!.textContent = [stats.language, stats.license].filter((value) => typeof value === "string" && value).join(" · ")
-          card.querySelector<HTMLElement>("[data-stats-status]")!.textContent = ""
-        }
-      } catch {
-        showUnavailable()
-      }
-    })()
-  }
+  if (root) void fillRepoStats(root.dataset.endpoint!, [...root.querySelectorAll<HTMLElement>("[data-repo]")])
 </script>
