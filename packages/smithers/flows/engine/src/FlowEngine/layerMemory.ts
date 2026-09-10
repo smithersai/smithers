@@ -15,9 +15,29 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import { ExecutionIdentityConflict, FlowNotRegistered } from "./Errors.ts"
 import { makeInstance } from "./FlowInstance.ts"
 import { makeUnsafe } from "./make.ts"
+import { FlowNotRegistered } from "./Trampoline.ts"
+
+/**
+ * A caller reused an execution id for different persisted run identity.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class ExecutionIdentityConflict extends Schema.TaggedError<ExecutionIdentityConflict>()(
+  "@smthrs/engine/ExecutionIdentityConflict",
+  {
+    code: Schema.Literal("execution_identity_conflict").pipe(
+      Schema.withConstructorDefault(Effect.succeed("execution_identity_conflict"))
+    ),
+    executionId: Schema.String,
+    field: Schema.Literals(["flow", "payload", "lineage", "round", "parent"]),
+    expected: Schema.String,
+    actual: Schema.String,
+    message: Schema.String
+  }
+) {}
 
 /**
  * Layer that provides an in-memory `FlowRuntime`.

@@ -12,9 +12,9 @@
     `DurableDeferred.ts`, `DurableQueue.ts`, and `index.ts`
   - in `@smthrs/engine`: `FlowEngine/` (`FlowEngine.ts`, split into
     `Encoded.ts`, `make.ts`, `layerMemory.ts`, `ActionKey.ts`,
-    `FlowInstance.ts`, `SnapshotBoundary.ts`, `Errors.ts`, `Lineage.ts`,
-    `Round.ts`, and the barrel), `FlowProxy.ts`, `FlowProxyServer.ts`, and
-    `index.ts`
+    `FlowInstance.ts`, `SnapshotBoundary.ts`, `Trampoline.ts`, `Dispatch.ts`,
+    `Lineage.ts`, `Round.ts`, and the barrel), `FlowProxy.ts`,
+    `FlowProxyServer.ts`, and `index.ts`
 
 The vendored source now spans two packages. `@smthrs/flow` carries the
 authoring half (`Flow`, `Action`, `DurableClock`, `DurableDeferred`,

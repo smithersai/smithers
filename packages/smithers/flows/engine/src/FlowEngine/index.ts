@@ -7,7 +7,6 @@
  * @since 0.1.0
  */
 export * from "./Encoded.ts"
-export * from "./Errors.ts"
 export * from "./FlowInstance.ts"
 export * from "./layerMemory.ts"
 /**
@@ -24,3 +23,11 @@ export * from "./make.ts"
  */
 export * as Round from "./Round.ts"
 export * from "./SnapshotBoundary.ts"
+/**
+ * The trampoline hosts the loop that raises these two refusals; the loop
+ * itself is engine-private, so only the refusals are published.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export { FlowNotRegistered, SuspendedResumeGaveUp } from "./Trampoline.ts"
