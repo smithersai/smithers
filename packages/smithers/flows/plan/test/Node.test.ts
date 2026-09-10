@@ -1059,6 +1059,22 @@ describe("Node.isNode", () => {
     expect(Node.isNode(Node.TypeId)).toBe(false)
   })
 
+  // The closed unions the walk checks are declared once, as schemas, so an
+  // algorithm or a mode added to a union cannot be missed by the guard: this
+  // enumerates each literal the schema carries and rehydrates an AST for it.
+  it("accepts every algorithm and every call mode the schemas declare", () => {
+    for (const algorithm of internal.IdentityAlgorithm.literals) {
+      const ast = { _tag: "Map", first: leaf, mapper: { ...identity, algorithm } }
+      expect(internal.isNodeAst(ast), algorithm).toBe(true)
+      expect(Node.isNode(rehydrate(ast)), algorithm).toBe(true)
+    }
+    for (const mode of internal.CallMode.literals) {
+      const ast = { _tag: "FlowCall", flow: "child", mode, payload: { n: 1 } }
+      expect(internal.isNodeAst(ast), mode).toBe(true)
+      expect(Node.isNode(rehydrate(ast)), mode).toBe(true)
+    }
+  })
+
   it("refuses every impostor in every combinator that admits a node", () => {
     for (const [label, impostor] of impostors) {
       const forged = impostor as Node.Any

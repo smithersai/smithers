@@ -180,6 +180,19 @@ inheriting it from a node, and one whose `ast` is missing, malformed, or cyclic
 are all refused with the same `GraphBuildError` as any other non-node. A proxy
 is judged by the shape it forwards.
 
+## How a flow call joins the plan
+
+`Node.flowCall` takes a mode. `inline` splices the callee's body into the
+caller's plan, `boundary` makes the call one child execution, and `handoff`
+names the next trampoline round.
+
+The child call is `FlowCall{mode: "boundary"}` rather than a second AST tag
+beside `FlowCall`. The three modes are one authoring construct, a call to a
+named flow with a payload, differing only in how the plan joins it, and every
+consumer (`Graph.build`'s expansion test, key material, the interpreter's
+dispatch) already switches on `mode`. A parallel `ChildCall` tag would duplicate
+the flow tag, payload, and declaration side table in every one of them.
+
 ## The engine members
 
 `Node.flowCall`, `actionCall`, `declaration`, `continuation`, `mapper`,

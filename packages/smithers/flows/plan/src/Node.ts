@@ -20,10 +20,10 @@
  * the real value. {@link map} is transformation only. The rule the authoring
  * note states, and this module encodes: **map transforms; branch decides.**
  *
- * Adapted from the agent repo's `@smthrs/core` `Node.ts`. `Dynamic` is gone —
- * a model call is an ordinary action, and nothing model-shaped belongs in
- * this package — and node annotations are gone with it, because the AST has to
- * stay JSON serializable.
+ * Adapted from `@smthrs/core` (`packages/smithers/flows/core`) `Node.ts`.
+ * `Dynamic` is gone — a model call is an ordinary action, and nothing
+ * model-shaped belongs in this package — and node annotations are gone with
+ * it, because the AST has to stay JSON serializable.
  *
  * @since 0.1.0
  */
@@ -588,7 +588,7 @@ export const declaredPriority = (ast: Ast): number | undefined => ast.priority
 export const flowCall = <A = unknown, E = never, R = never>(
   declaration: unknown,
   flow: string,
-  mode: "inline" | "boundary" | "handoff",
+  mode: internal.CallMode,
   payload: unknown
 ): Node<A, E, R> => internal.makeNode<A, E, R>(internal.flowCall(declaration, flow, mode, payload))
 

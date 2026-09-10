@@ -1,11 +1,10 @@
 /**
  * The key-material contract: what a planner hands the step-key compiler.
  *
- * Revived from the module deleted at `f5f3dda` (then
- * `packages/smithers/flows/keys/src/KeyMaterial.ts`). It does NOT return to `@smthrs/keys`:
- * that package owns generic derivation and stored-key validation, while
- * material is a *plan-shaped* concept. It lives here, above `@smthrs/keys`,
- * so the key package stays a leaf.
+ * Revived from the deleted `packages/smithers/flows/keys/src/KeyMaterial.ts`.
+ * It does NOT return to `@smthrs/keys`: that package owns generic derivation
+ * and stored-key validation, while material is a *plan-shaped* concept. It
+ * lives here, above `@smthrs/keys`, so the key package stays a leaf.
  *
  * Governing contract: the step-key rules at
  * https://smithers.sh/docs/concepts/content-addressing. Material is computed with no I/O,

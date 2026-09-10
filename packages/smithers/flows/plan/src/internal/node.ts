@@ -14,10 +14,10 @@
  * `WeakMap` is what the run reaches for when it has the real value in hand, and
  * it drops with the AST it is keyed by.
  *
- * Adapted from the agent repo's `@smthrs/core` `internal/node.ts`. `Dynamic`
- * does not come across — a model call is an ordinary action here — and
- * neither do annotations, which are `Context` values and would break
- * serializability. Scheduling priority is the one thing that does cross, as
+ * Adapted from `@smthrs/core` (`packages/smithers/flows/core`)
+ * `internal/node.ts`. `Dynamic` does not come across — a model call is an
+ * ordinary action here — and neither do annotations, which are `Context`
+ * values and would break serializability. Scheduling priority is the one thing that does cross, as
  * the plain JSON field {@link Scheduled.priority} rather than as an
  * annotation, because the scheduler has to read it out of a stored plan.
  *
@@ -147,16 +147,14 @@ export interface Branch extends Scheduled {
 /**
  * A protected graph and its statically planned typed-failure continuation.
  *
- * DECIDED (2026-08-11, pending review): the symbolic error `subject` is minted
- * per catch node rather than shared, mirroring {@link Branch}. Failure arms are
- * built before the graph assigns ids, so a nested arm that captured an outer
- * error would resolve it to the inner catch's protected node under one shared
- * token.
+ * The symbolic error `subject` is minted per catch node rather than shared,
+ * mirroring {@link Branch}. Failure arms are built before the graph assigns
+ * ids, so a nested arm that captured an outer error would resolve it to the
+ * inner catch's protected node under one shared token.
  *
- * DECIDED (2026-08-11, pending review): an absent filter catches the entire
- * typed error channel, while a present schema catches only values it accepts.
- * This mirrors Effect's typed-error boundary and keeps defects outside normal
- * recovery. The serializable AST carries the schema identity; the live schema
+ * An absent filter catches the entire typed error channel, while a present
+ * schema catches only values it accepts. This mirrors Effect's typed-error
+ * boundary and keeps defects outside normal recovery. The serializable AST carries the schema identity; the live schema
  * remains in a side table beside the AST.
  *
  * @since 0.1.0
@@ -175,21 +173,23 @@ export interface Catch extends Scheduled {
 /**
  * How a flow call joins the caller's plan: `inline` splices the callee's body
  * in, `boundary` makes it one child execution, and `handoff` names the next
- * trampoline round.
- *
- * DECIDED (2026-08-11, pending review): the child-call variant is
- * `FlowCall{mode: "boundary"}`, not a second AST tag beside `FlowCall`. The
- * three modes are one authoring construct — a call to a named flow with a
- * payload — differing only in how the plan joins it, and every consumer
- * (`Graph.build`'s expansion test, key material, the interpreter's dispatch)
- * already switches on `mode`. A parallel `ChildCall` tag would duplicate the
- * flow tag, payload, and declaration side table in every one of them.
+ * trampoline round. Why the child call is a mode rather than a second AST tag
+ * is in `docs/concepts/authoring-ast.md`.
  *
  * @since 0.1.0
  * @private
  * @slop
  */
-export type CallMode = "inline" | "boundary" | "handoff"
+export const CallMode = Schema.Literals(["inline", "boundary", "handoff"])
+
+/**
+ * How a flow call joins the caller's plan.
+ *
+ * @since 0.1.0
+ * @private
+ * @slop
+ */
+export type CallMode = typeof CallMode.Type
 
 /**
  * A call to another flow. The AST keeps the callee's tag and the payload;
@@ -222,13 +222,35 @@ export interface ActionCall extends Scheduled {
 }
 
 /**
+ * The algorithms a {@link FunctionIdentity} may name. The tag is versioned so a
+ * change to identity semantics re-keys everything derived from one, rather than
+ * colliding with it.
+ *
+ * @since 0.1.0
+ * @private
+ * @slop
+ */
+export const IdentityAlgorithm = Schema.Literals([
+  "sha256-source-ephemeral/v4",
+  "sha256-source-captures/v4",
+  "static-node/v1"
+])
+
+/**
+ * The algorithms a {@link FunctionIdentity} may name.
+ *
+ * @since 0.1.0
+ * @private
+ * @slop
+ */
+export type IdentityAlgorithm = typeof IdentityAlgorithm.Type
+
+/**
  * The serializable stand-in for a function. Captured functions digest their
  * exact source and declared inert captures. Unannotated functions additionally
  * carry process-local, per-object entropy so indistinguishable closure sources
- * fail closed instead of sharing a cache key.
- *
- * The algorithm tag is versioned so a change to identity semantics re-keys
- * everything derived from one, rather than colliding with it.
+ * fail closed instead of sharing a cache key. The tag it names is
+ * {@link IdentityAlgorithm}.
  *
  * @since 0.1.0
  * @private
@@ -236,7 +258,7 @@ export interface ActionCall extends Scheduled {
  */
 export interface FunctionIdentity {
   readonly _tag: "FunctionIdentity"
-  readonly algorithm: "sha256-source-ephemeral/v4" | "sha256-source-captures/v4" | "static-node/v1"
+  readonly algorithm: IdentityAlgorithm
   readonly digest: string
 }
 
@@ -573,21 +595,15 @@ export const NodeProto = {
  */
 const liveNodes = new WeakSet<object>()
 
-/** The algorithms a {@link FunctionIdentity} may name. */
-const identityAlgorithms: ReadonlySet<unknown> = new Set<FunctionIdentity["algorithm"]>([
-  "sha256-source-ephemeral/v4",
-  "sha256-source-captures/v4",
-  "static-node/v1"
-])
+/** Recognizes the algorithms {@link IdentityAlgorithm} declares, and nothing else. */
+const isIdentityAlgorithm = Schema.is(IdentityAlgorithm)
 
-/** The modes a {@link FlowCall} may name. */
-const callModes: ReadonlySet<unknown> = new Set<CallMode>(["inline", "boundary", "handoff"])
-
-/** @private */
+/** Recognizes the modes {@link CallMode} declares, and nothing else. */
+const isCallMode = Schema.is(CallMode)
 
 /** @private */
 const isFunctionIdentity = (value: unknown): value is FunctionIdentity =>
-  isRecord(value) && value._tag === "FunctionIdentity" && identityAlgorithms.has(value.algorithm) &&
+  isRecord(value) && value._tag === "FunctionIdentity" && isIdentityAlgorithm(value.algorithm) &&
   typeof value.digest === "string"
 
 /** One position of the {@link isNodeAst} walk: an AST to check, or one whose children are all checked. @private */
@@ -649,7 +665,7 @@ export const isNodeAst = (value: unknown): value is NodeAst => {
         break
       }
       case "FlowCall": {
-        if (typeof ast.flow !== "string" || !callModes.has(ast.mode)) return false
+        if (typeof ast.flow !== "string" || !isCallMode(ast.mode)) return false
         break
       }
       case "ActionCall": {

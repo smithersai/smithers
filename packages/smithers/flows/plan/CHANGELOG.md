@@ -32,9 +32,9 @@
 
 - The persisted plan: `Plan` (compile, append, conflict annotation),
   `PlanStore` (append-only SQL, migration block `4000`), `PlanDiff`, and the
-  `KeyMaterial` to `StepKey` compiler revived from the module deleted at
-  `f5f3dda`, now producing `@smthrs/keys` `Key` values rather than a second
-  digest format.
+  `KeyMaterial` to `StepKey` compiler revived from the deleted
+  `packages/smithers/flows/keys` modules, now producing `@smthrs/keys` `Key`
+  values rather than a second digest format.
 - Added `Node.priority`, which attaches a scheduling priority to a node, and
   `Node.declaredPriority`, which reads one back. The value is a plain JSON
   field on the AST rather than a `Context` annotation, so a stored plan keeps

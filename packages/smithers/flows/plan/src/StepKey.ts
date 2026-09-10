@@ -1,8 +1,8 @@
 /**
  * The KeyMaterial → step-key compiler.
  *
- * Revived from the module deleted at `f5f3dda` (then
- * `packages/smithers/flows/keys/src/StepKey.ts`). Two deliberate deviations from the original:
+ * Revived from the deleted `packages/smithers/flows/keys/src/StepKey.ts`. Two
+ * deliberate deviations from the original:
  *
  * 1. **It lives here, not in `@smthrs/keys`.** That package owns generic
  *    derivation and stored-key validation; a compiler that understands plan

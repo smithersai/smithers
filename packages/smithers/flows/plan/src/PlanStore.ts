@@ -7,8 +7,8 @@
  * digest a run's approval binds to. The store verifies the compiler's keys,
  * digests, and graph invariants on admission and read before returning a plan.
  *
- * Growth is append-only and the SQL enforces it (see
- * `internal/migrations/0001_initial` for the triggers). {@link Service.append} inserts the newest generation's
+ * Growth is append-only and the SQL enforces it (see `Migrations`, whose current
+ * trigger is `0003_forward_only_identity`). {@link Service.append} inserts the newest generation's
  * rows and advances the plan row's digest; nothing rewrites a node.
  *
  * @since 0.1.0

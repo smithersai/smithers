@@ -12,7 +12,7 @@
  * whose `Symbol.toPrimitive`, `valueOf`, `toString`, `toJSON`, and call traps
  * throw {@link module:GraphBuildError.GraphBuildError} rather than let a plan be
  * built around `NaN` or `"[object Object]"`. The lenient proxy this adapts
- * (the agent repo's `Graph.plannedValue`) answered `toPrimitive` with a
+ * (`@smthrs/core`'s `Graph.plannedValue`) answered `toPrimitive` with a
  * readable string, which is exactly the silent-wrong-plan path this module
  * exists to close.
  *
