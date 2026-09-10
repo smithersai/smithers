@@ -17,6 +17,7 @@ const publishJsr = Smithers.JsrPublish({
   sources: [Smithers.glob("//packages/greeter/src/**/*.ts")],
   deps: [publish],
   package: "@smthrs/flow",
+  cliVersion: "0.13.4",
   allowDirty: false,
   dryRun: true
 })
@@ -35,20 +36,23 @@ export const Package = Smithers.Package({
 | `sources`        | `Array<Input.Declared>`         | required | Source declarations digested as key material.                                              |
 | `deps`           | `Array<Target.Target>`          | required | Dependency targets, usually the npm publish target.                                        |
 | `package`        | `string`                        | required | The published identity. Key material only; jsr reads the name from the config file.        |
+| `cliVersion`     | `string`                        | required | One exact `jsr` CLI release, run as `jsr@<cliVersion>`. Ranges and dist-tags are refused.  |
 | `allowDirty`     | `boolean`                       | required | Append `--allow-dirty`.                                                                    |
 | `dryRun`         | `boolean`                       | `true`   | Append `--dry-run`. A real publish is always an explicit opt-out.                          |
 
-There is no `cwd`. The publish directory is the directory of `config.path`, with
-a leading `//` stripped.
+There is no `cwd`. The publish directory is `Input.declaredDirectory` of
+`config.path`: a `//` path yields its workspace-relative directory, and a
+package-relative path resolves from the declaring package directory.
 
 ## Command
 
 Through the irreversible exec action, because publication changes external
 registry state. The argv is `PackageManager.dlx` of the declared package
-manager. With the pnpm declaration:
+manager. `cliVersion` pins the release `dlx` fetches, so no publish, dry run
+included, executes an unpinned download. With the pnpm declaration:
 
 ```text
-pnpm dlx jsr publish [--allow-dirty] [--dry-run]
+pnpm dlx jsr@<cliVersion> publish [--allow-dirty] [--dry-run]
 ```
 
 ## Inputs

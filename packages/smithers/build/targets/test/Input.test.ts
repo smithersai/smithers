@@ -585,6 +585,28 @@ describe("Input.rootRelative", () => {
   })
 })
 
+describe("Input.declaredDirectory", () => {
+  it("renders a workspace-rooted file's directory relative to the workspace", () => {
+    expect(Input.declaredDirectory("//packages/x/package.json", { packageDirectory: undefined })).toBe("packages/x")
+    expect(Input.declaredDirectory("//package.json", { packageDirectory: undefined })).toBe(".")
+    // The declaring package never moves a rooted path.
+    expect(Input.declaredDirectory("//packages/x/jsr.json", { packageDirectory: "/workspace/packages/app" }))
+      .toBe("packages/x")
+  })
+
+  it("resolves a package-relative file from the declaring package directory", () => {
+    expect(Input.declaredDirectory("package.json", { packageDirectory: "/workspace/packages/app" }))
+      .toBe(NodePath.resolve("/workspace/packages/app"))
+    expect(Input.declaredDirectory("dist/jsr.json", { packageDirectory: "/workspace/packages/app" }))
+      .toBe(NodePath.resolve("/workspace/packages/app/dist"))
+  })
+
+  it("falls back to the process working directory outside a PACKAGE.ts", () => {
+    expect(Input.declaredDirectory("package.json", { packageDirectory: undefined })).toBe(process.cwd())
+    expect(Input.declaredDirectory("dist/jsr.json", { packageDirectory: undefined })).toBe(NodePath.resolve("dist"))
+  })
+})
+
 describe("Input.gitDiff", () => {
   it.each(["", "--output=outside", "\uD800", "\uD800x", "\uDC00", "HEAD\0other"])(
     "refuses the unsafe base %j",

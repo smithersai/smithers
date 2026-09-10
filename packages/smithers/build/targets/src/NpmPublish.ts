@@ -5,7 +5,6 @@
  */
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as NodePath from "node:path"
 import { ExecIrreversible } from "./Changesets.ts"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
@@ -39,12 +38,6 @@ export const Attrs = Schema.Struct({
  */
 export type Attrs = typeof Attrs.Type
 
-/** Resolves a manifest from the same package base as its declared input. */
-const publishDirectory = (path: string, context: Target.ImplementationContext): string =>
-  path.startsWith("//")
-    ? NodePath.dirname(path.slice(2))
-    : NodePath.resolve(context.packageDirectory ?? ".", NodePath.dirname(path))
-
 /**
  * Plans npm publication after versioning, build, and package validation deps.
  *
@@ -53,8 +46,10 @@ const publishDirectory = (path: string, context: Target.ImplementationContext): 
  * registry state, so it is irreversible tier and never cacheable. Registry,
  * access, and dist-tag come from attrs and land on argv; they mirror the
  * generated manifest's publishConfig, which pnpm reads from the manifest
- * itself. Provenance rides `npm_config_provenance` in the environment so the
- * attr wins over a stale manifest. Git checks are disabled: tree policy
+ * itself. Provenance rides the environment so the attr wins over a stale
+ * manifest or an inherited configuration: `false` is spelled out, never left
+ * to the manager's default, and both `npm_config_provenance` (npm, pnpm 10)
+ * and `pnpm_config_provenance` (pnpm 11) carry it. Git checks are disabled: tree policy
  * belongs to the release pipeline, not the publish step. `dryRun` defaults
  * to true and appends `--dry-run`. Key material records the manifest and
  * artifact digests, dependency keys, registry, access, provenance, tag, and
@@ -85,10 +80,11 @@ export const NpmPublish = Target.make("NpmPublish", {
       "--no-git-checks"
     ])
     if (attrs.dryRun) argv.push("--dry-run")
+    const provenance = String(attrs.provenance)
     return ExecIrreversible.call({
-      cwd: publishDirectory(attrs.packageJson.path, context),
+      cwd: Input.declaredDirectory(attrs.packageJson.path, context),
       argv,
-      env: attrs.provenance ? { npm_config_provenance: "true" } : {}
+      env: { npm_config_provenance: provenance, pnpm_config_provenance: provenance }
     })
   }
 })

@@ -380,6 +380,27 @@ export const rootRelative = (cwd: string, value: string): string => {
   return rendered === "" ? "." : rendered
 }
 
+/**
+ * Resolves the directory of one declared file for a rule that runs there.
+ *
+ * A `//` path is workspace-rooted and yields the workspace-relative posix
+ * directory: `//packages/x/package.json` is `packages/x` and `//package.json`
+ * is `.`. A package-relative path resolves from the declaring package's
+ * absolute `packageDirectory`; outside a PACKAGE.ts that base is the process
+ * working directory. Exec resolves either shape against the workspace root
+ * and refuses a directory that leaves it.
+ *
+ * @category expansion
+ * @since 0.1.0
+ */
+export const declaredDirectory = (
+  path: string,
+  context: { readonly packageDirectory: string | undefined }
+): string =>
+  path.startsWith("//")
+    ? posix(NodePath.dirname(path.slice(2)))
+    : NodePath.resolve(context.packageDirectory ?? ".", NodePath.dirname(path))
+
 interface IgnoreScope {
   readonly base: string
   readonly matcher: ReturnType<typeof createIgnore>

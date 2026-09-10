@@ -5,6 +5,7 @@
  * this file proved that `strict` becomes `--strict` or that a `version`
  * changeset run reaches the irreversible action rather than the ordinary one.
  */
+import * as NodePath from "node:path"
 import { describe, expect, it } from "vitest"
 import { DepsLint } from "../src/DepsLint.ts"
 import { Dev } from "../src/Dev.ts"
@@ -50,18 +51,51 @@ describe("PackageLint", () => {
 })
 
 describe("publication rules", () => {
-  it("JsrPublish renders allowDirty and dryRun through dlx", () => {
+  it("JsrPublish runs the pinned CLI and renders allowDirty and dryRun through dlx", () => {
     const base = {
       packageManager,
       config: Input.file("jsr.json"),
       sources: [],
       deps: [],
-      package: "@scope/name"
+      package: "@scope/name",
+      cliVersion: "0.13.4"
     }
     expect(plannedArgv(JsrPublish({ ...base, allowDirty: false, dryRun: false })))
-      .toEqual(["pnpm", "dlx", "jsr", "publish"])
+      .toEqual(["pnpm", "dlx", "jsr@0.13.4", "publish"])
     expect(plannedArgv(JsrPublish({ ...base, allowDirty: true, dryRun: true })))
-      .toEqual(["pnpm", "dlx", "jsr", "publish", "--allow-dirty", "--dry-run"])
+      .toEqual(["pnpm", "dlx", "jsr@0.13.4", "publish", "--allow-dirty", "--dry-run"])
+  })
+
+  it("JsrPublish refuses a CLI pin that is not one exact release", () => {
+    const base = {
+      packageManager,
+      config: Input.file("jsr.json"),
+      sources: [],
+      deps: [],
+      package: "@scope/name",
+      allowDirty: false
+    }
+    for (const cliVersion of ["latest", "^0.13.0", "0.13", "0.13.4 ", "0.13.4 && echo"]) {
+      expect(() => JsrPublish({ ...base, cliVersion })).toThrow()
+    }
+  })
+
+  it("JsrPublish publishes from the directory of the declared config", () => {
+    const base = {
+      packageManager,
+      sources: [],
+      deps: [],
+      package: "@scope/name",
+      cliVersion: "0.13.4",
+      allowDirty: false
+    }
+    const rooted = plannedCalls(JsrPublish({ ...base, config: Input.file("//packages/x/jsr.json") }))[0]
+    expect(rooted?.action).toBe("smithers-build/exec-irreversible")
+    expect(rooted?.payload["cwd"]).toBe("packages/x")
+    // Declared outside a PACKAGE.ts there is no package directory, so a
+    // package-relative config resolves from the process working directory.
+    const relative = plannedCalls(JsrPublish({ ...base, config: Input.file("dist/jsr.json") }))[0]
+    expect(relative?.payload["cwd"]).toBe(NodePath.resolve("dist"))
   })
 
   it("NpmPublish renders the registry contract and provenance as an environment fact", () => {
@@ -88,10 +122,31 @@ describe("publication rules", () => {
       "--no-git-checks",
       "--dry-run"
     ])
-    expect(dry?.payload["env"]).toEqual({})
+    // `false` is spelled out so the attr overrides a manifest or inherited
+    // configuration that enables provenance; npm and pnpm 10 read the
+    // npm_config_ key, pnpm 11 reads the pnpm_config_ key.
+    expect(dry?.payload["env"]).toEqual({ npm_config_provenance: "false", pnpm_config_provenance: "false" })
     const live = plannedCalls(NpmPublish({ ...base, provenance: true, dryRun: false }))[0]
     expect(live?.payload["argv"]).not.toContain("--dry-run")
-    expect(live?.payload["env"]).toEqual({ npm_config_provenance: "true" })
+    expect(live?.payload["env"]).toEqual({ npm_config_provenance: "true", pnpm_config_provenance: "true" })
+  })
+
+  it("NpmPublish publishes from the directory of the declared manifest", () => {
+    const base = {
+      packageManager,
+      artifacts: [],
+      deps: [],
+      registry: "https://registry.npmjs.org",
+      access: "public" as const,
+      provenance: false,
+      tag: "latest"
+    }
+    const rooted = plannedCalls(NpmPublish({ ...base, packageJson: Input.file("//packages/x/package.json") }))[0]
+    expect(rooted?.payload["cwd"]).toBe("packages/x")
+    const root = plannedCalls(NpmPublish({ ...base, packageJson: Input.file("//package.json") }))[0]
+    expect(root?.payload["cwd"]).toBe(".")
+    const relative = plannedCalls(NpmPublish({ ...base, packageJson: Input.file("package.json") }))[0]
+    expect(relative?.payload["cwd"]).toBe(process.cwd())
   })
 })
 

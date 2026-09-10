@@ -38,12 +38,13 @@ export const Package = Smithers.Package({
 | `deps`           | `Array<Target.Target>`          | required | Dependency targets: the build, the package lint, and versioning.                           |
 | `registry`       | `string`                        | required | Passed as `--registry`.                                                                    |
 | `access`         | `"public" \| "restricted"`      | required | Passed as `--access`.                                                                      |
-| `provenance`     | `boolean`                       | required | When true, sets `npm_config_provenance=true` in the environment.                           |
+| `provenance`     | `boolean`                       | required | Spelled into the environment as `npm_config_provenance` and `pnpm_config_provenance`.      |
 | `tag`            | `string`                        | required | The dist-tag, passed as `--tag`.                                                           |
 | `dryRun`         | `boolean`                       | `true`   | Append `--dry-run`. A real publish is always an explicit opt-out.                          |
 
-There is no `cwd`. The publish directory is the directory of `packageJson.path`,
-with a leading `//` stripped.
+There is no `cwd`. The publish directory is `Input.declaredDirectory` of
+`packageJson.path`: a `//` path yields its workspace-relative directory, and a
+package-relative path resolves from the declaring package directory.
 
 ## Command
 
@@ -55,8 +56,11 @@ manager. With the pnpm declaration:
 pnpm publish --registry <registry> --access <access> --tag <tag> --no-git-checks [--dry-run]
 ```
 
-Environment: `npm_config_provenance=true` when `provenance` is true, otherwise
-nothing.
+Environment: `npm_config_provenance` and `pnpm_config_provenance`, both set to
+`true` or `false` from the `provenance` attribute. npm and pnpm 10 read the
+`npm_config_` key; pnpm 11 reads the `pnpm_config_` key. `false` is always
+spelled out, so a manifest or inherited configuration that enables provenance
+cannot override the declaration.
 
 `--no-git-checks` is always passed. Tree policy belongs to the release pipeline,
 not the publish step.

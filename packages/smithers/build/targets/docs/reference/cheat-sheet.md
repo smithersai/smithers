@@ -1114,6 +1114,7 @@ const jsrPublish = S.JsrPublish({
   sources: [sources],
   deps: [build, directNpmPublish],
   package: "@acme/widget",
+  cliVersion: "0.13.4",
   allowDirty: false,
   dryRun: true
 })
