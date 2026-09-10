@@ -14,4 +14,4 @@ These are private host composition boundaries. The product continues to use exis
 
 ## Observe execution without replacing its result
 
-EngineJournalSupervisor wraps accepted launch and resume operations, starts native observation in the host scope, and recovers active observations on restart. It projects native journal evidence into the Control journal and records observation-started and observation-settled markers. Those markers describe the reader; they do not replace the underlying execution result.
+EngineJournalSupervisor wraps accepted launch and resume operations, starts native observation in the host scope, and recovers active observations on restart. It starts the existing EngineJournalProjection follower and records observation-started and observation-settled markers. Those markers describe the reader; they do not replace the underlying execution result.

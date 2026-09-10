@@ -7,7 +7,7 @@ const page = (spec: Omit<PageSpec, "inputs" | "excerpts">, inputs: readonly Inpu
   excerpts: Object.fromEntries(inputs.filter((input): input is Exclude<Input, string> => typeof input !== "string").map(([path, ...ranges]) => [path, ranges.map(([start, end]) => ({ start, end }))]))
 })
 const runtime: Input = ["packages/smithers/flows/src/Runtime.ts", [150, 223]]
-const operations: Input = ["flows/wiki/operations.ts", [37, 176]]
+const operations: Input = ["flows/wiki/operations.ts", [37, 182]]
 const ui = "apps/ui/AGENTS.md"
 const flowDocs = "packages/smithers/flows/flow/docs/README.md"
 const agentDocs = "packages/smithers/agent/docs/README.md"
@@ -18,8 +18,8 @@ export const pages: readonly PageSpec[] = [
   page({ id: "start-here", title: "Start here", purpose: "Find the owning layer and follow work through Smithers.", kind: "current", document: "factory/wiki/pages/start-here.md", related: ["flows", "runtime", "build-graph", "product-ui", "coding-request", "coding-direction"] }, [
     flowDocs, runtime, agentDocs, "packages/smithers/build/targets/docs/README.md", ui, bun, node,
     ["packages/smithers/agent/src/AgentAction.ts", [253, 302], [390, 430]],
-    ["flows/wiki/operations.ts", [93, 138]], "apps/ui/docs/ONBOARDING.md",
-    ["factory/wiki/catalog.ts", [86, 86], [69, 69], [91, 91], [96, 96], [101, 101], [106, 106], [112, 112], [116, 116], [122, 122], [130, 130]]
+    ["flows/wiki/operations.ts", [99, 144]], "apps/ui/docs/ONBOARDING.md",
+    ["factory/wiki/catalog.ts", [86, 86], [69, 69], [91, 91], [96, 96], [101, 101], [106, 106], [112, 112], [116, 116], [122, 122], [130, 130], [134, 134]]
   ]),
   page({ id: "flows", title: "Flows, actions and replay", purpose: "Declare a typed capability once and attach its Effect implementation.", kind: "current", document: "factory/wiki/pages/flows.md", related: ["runtime", "agent", "build-graph"] }, [
     flowDocs, ["packages/smithers/flows/flow/src/Action/Action.ts", [109, 241]],
@@ -41,7 +41,7 @@ export const pages: readonly PageSpec[] = [
   page({ id: "storage", title: "Journal and durable stores", purpose: "Use existing persisted execution facts instead of another coding ledger.", kind: "current", document: "factory/wiki/pages/storage.md", related: ["runtime", "flows", "wiki-generation"] }, [
     runtime, bun, node, "packages/smithers/flows/journal/docs/README.md", "packages/smithers/flows/run-store/docs/README.md",
     ["packages/smithers/flows/database/src/DurableWriter.ts", [64, 106], [208, 310]],
-    ["packages/smithers/flows/flow/src/Action/Action.ts", [109, 241]], ["flows/wiki/operations.ts", [93, 144]]
+    ["packages/smithers/flows/flow/src/Action/Action.ts", [109, 241]], ["flows/wiki/operations.ts", [99, 150]]
   ]),
   page({ id: "build-graph", title: "Dependency-bound build targets", purpose: "Declare the exact code and documentation inputs that invalidate an output.", kind: "current", document: "factory/wiki/pages/build-graph.md", related: ["wiki-generation", "flows", "runtime"] }, [
     "packages/smithers/build/targets/docs/reference/filegroup.md", ["packages/smithers/build/targets/src/Filegroup.ts", [25, 91], [185, 283]],
@@ -61,10 +61,10 @@ export const pages: readonly PageSpec[] = [
     ["apps/ui/src/mainview/cards/RunTraceCard.tsx", [1, 19], [69, 98], [101, 140], [197, 242], [250, 285], [329, 345]],
     "apps/ui/src/mainview/runtime/FrameHistory.ts", "apps/ui/docs/workbench-lanes/runs.md",
     ["apps/ui/docs/workbench-lanes/coding-plans.md", [1, 137]], "apps/ui/docs/workbench-lanes/native-engine-evidence.md",
-    ["flows/wiki/operations.ts", [93, 144]]
+    ["flows/wiki/operations.ts", [99, 150]]
   ]),
   page({ id: "wiki-generation", title: "How this wiki stays accountable", purpose: "Separate source freshness, semantic review and human intent.", kind: "current", document: "factory/wiki/pages/wiki-generation.md", related: ["build-graph", "runtime", "coding-direction"] }, [
-    "flows/wiki/schema.ts", "flows/wiki/workflow.ts", "flows/wiki/evidence.ts", "flows/wiki/operations.ts", "flows/wiki/runtime.ts", "flows/wiki/PACKAGE.ts", ["factory/wiki/catalog.ts", [1, 15], [138, 138]], "flows/wiki/reuse.ts", ["flows/coding/request.ts", [30, 75]], "flows/coding/wiki-check.ts", ["flows/coding/immutable-source.ts", [49, 90]], ["flows/coding/planning.ts", [123, 143]], "factory/coding/project.ts"
+    "flows/wiki/schema.ts", "flows/wiki/workflow.ts", "flows/wiki/evidence.ts", "flows/wiki/operations.ts", "flows/wiki/runtime.ts", "flows/wiki/PACKAGE.ts", ["factory/wiki/catalog.ts", [1, 15], [138, 138]], "flows/wiki/reuse.ts", ["flows/wiki/main.ts", [10, 14], [18, 18], [29, 43], [51, 58]], ["flows/coding/request.ts", [60, 75]], ["flows/coding/planning-wiki.ts", [26, 48], [122, 138]], "flows/coding/wiki-check.ts", ["flows/coding/immutable-source.ts", [49, 90]], ["flows/coding/planning.ts", [123, 143]], "factory/coding/project.ts"
   ]),
   page({ id: "coding-direction", title: "Mythical coding product contract", purpose: "Read the intended lifecycle without confusing it with shipped behavior.", kind: "intent", document: "factory/wiki/pages/coding-direction.md", related: ["product-ui", "wiki-generation", "runtime", "coding-request", "coding-experience"] }, [
     "packages/smithers/flows/docs/concepts/runtime-portability.md", ui
@@ -86,11 +86,11 @@ export const pages: readonly PageSpec[] = [
   page({ id: "coding-host", title: "Configured coding host", purpose: "Compose the native host and operator policy without a new product service.", kind: "current", document: "factory/wiki/pages/coding-host.md", related: ["native-control", "coding-request", "coding-checks", "runtime"] }, [
     "flows/coding/host.ts", "flows/coding/host.md", "flows/coding/serve.ts", "flows/coding/project-config.ts", "flows/coding/project-config.md",
     "flows/coding/build.mjs", "flows/coding/planning-authority.ts", "flows/coding/wiki-policy.ts", "flows/coding/wiki-output.ts", "flows/coding/wiki-registry.ts", "factory/coding/project.ts", "flows/checks/wiki/flow.ts", "packages/smithers/NATIVE-CONTROL.md",
-    "flows/test/coding-host.test.ts", "flows/test/coding-host-bundle.mjs", ["flows/coding/planning-wiki.ts", [111, 138]], ["flows/wiki/operations.ts", [129, 140]]
+    "flows/test/coding-host.test.ts", "flows/test/coding-host-bundle.mjs", ["flows/coding/planning-wiki.ts", [111, 138]], ["flows/wiki/operations.ts", [135, 146]]
   ]),
   page({ id: "coding-request", title: "Prompt to coding outcome", purpose: "Follow verified wiki, planning, saved prototype and owner correction through ordinary native children.", kind: "current", document: "factory/wiki/pages/coding-request.md", related: ["coding-planning", "coding-poc", "coding-correction", "coding-host", "coding-ui"] }, [
     "flows/coding/request.ts", "flows/coding/request.md", "flows/coding/request/flow.ts", "flows/coding/schema.ts",
-    "flows/coding/source-admission.ts", ["flows/coding/host.ts", [84, 148]], "flows/coding/planning-wiki.md", "flows/coding/poc.md",
+    "flows/coding/source-admission.ts", ["flows/coding/host.ts", [95, 119], [129, 148]], "flows/coding/planning-wiki.md", "flows/coding/poc.md",
     ["flows/test/coding-request-host.test.ts", [22, 40], [77, 81], [128, 135], [147, 173], [175, 225]], "flows/coding/steering.ts", ["flows/coding/correction.ts", [153, 174], [206, 228]], "apps/ui/src/mainview/cards/CodingPlan.ts"
   ]),
   page({ id: "coding-planning", title: "Planning from repository memory", purpose: "Gather verified memory, ask material questions and bind the Plan to native source and catalog definitions.", kind: "current", document: "factory/wiki/pages/coding-planning.md", related: ["wiki-generation", "coding-request", "coding-progression", "coding-poc"] }, [
@@ -100,13 +100,13 @@ export const pages: readonly PageSpec[] = [
   ]),
   page({ id: "coding-poc", title: "Saved disposable source prototypes", purpose: "Retain measured source changes for hindsight without claiming an executable prototype or mutating the original.", kind: "current", document: "flows/coding/poc.md", related: ["coding-request", "coding-planning", "coding-ui"] }, [
     "flows/coding/poc.ts", "flows/coding/poc-source.ts", "flows/coding/poc-schema.ts", "flows/coding/planning-authority.ts",
-    "flows/coding/request.ts", "flows/coding/source-admission.ts", "flows/test/coding-poc.test.ts", ["flows/coding/host.ts", [84, 148]], "flows/coding/steering.ts", "apps/ui/src/mainview/cards/CodingPoc.ts",
+    "flows/coding/request.ts", "flows/coding/source-admission.ts", "flows/test/coding-poc.test.ts", ["flows/coding/host.ts", [95, 119]], "flows/coding/steering.ts", "apps/ui/src/mainview/cards/CodingPoc.ts",
     "apps/ui/src/mainview/cards/CodingPocCard.tsx", ["apps/ui/src/mainview/cards/EngineTrace.ts", [64, 75], [335, 371]], ["packages/smithers/flows/flow/docs/README.md", [1, 25], [94, 118]]
   ]),
   page({ id: "coding-correction", title: "Bounded owner correction", purpose: "Repair the earliest owning atom and remeasure rewritten descendants while preserving exact native evidence.", kind: "current", document: "factory/wiki/pages/coding-correction.md", related: ["coding-progression", "coding-checks", "coding-request", "coding-ui"] }, [
     "flows/coding/correction.ts", "flows/coding/feedback.ts", "flows/coding/feedback-schema.ts",
     "flows/coding/workflow.ts", "flows/coding/schema.ts", "flows/coding/planning-authority.ts", ["flows/coding/host.ts", [84, 148]],
-    ["flows/test/coding-correction.test.ts", [40, 45], [95, 107], [126, 177], [185, 214]], ["flows/coding/native.ts", [63, 72], [92, 109], [140, 162]], ["flows/coding/atoms.ts", [47, 95], [98, 115]], ["flows/coding/request.ts", [30, 76]],
+    ["flows/test/coding-correction.test.ts", [40, 45], [95, 107], [126, 177], [185, 214]], ["flows/coding/native.ts", [69, 82], [106, 123], [171, 193]], ["flows/coding/atoms.ts", [47, 95], [98, 115]], ["flows/coding/request.ts", [30, 76]],
     ["packages/smithers/flows/flow/src/DurableDeferred.ts", [125, 162], [581, 611]]
   ]),
   page({ id: "coding-checks", title: "Checks against immutable source", purpose: "Measure the pinned revision with declared commands, confined processes and durable receipts.", kind: "current", document: "flows/coding/checks.md", related: ["coding-progression", "coding-correction", "coding-host", "build-graph"] }, [

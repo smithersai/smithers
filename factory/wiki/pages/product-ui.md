@@ -1,6 +1,6 @@
 # Embedded UI and recursive inspection
 
-The UI interaction contract calls for shared registered flows, persisted state, cards and frames across presentation modes. The current onboarding brief supersedes the older always-visible-composer rule: the UI and chat history occupy the main view, while Command-K / Control-K summons only a solid bottom-docked composer that pushes content upward. The owning onboarding document distinguishes local rehearsal from live backend work. Under the interaction contract, maximizing a card is a presentation change of the same component and state.
+The UI interaction contract calls for shared registered flows, persisted state, cards and frames across presentation modes. The current onboarding brief supersedes the older always-visible-composer rule: the UI and chat history occupy the main view, while Command-K / Control-K summons only a solid bottom-docked composer that pushes content upward. Under the interaction contract, maximizing a card is a presentation change of the same component and state.
 
 ## One flow, three doors
 

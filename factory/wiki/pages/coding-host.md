@@ -22,7 +22,7 @@ Deterministic wiki publication, source capture and scratch cleanup retain the ex
 
 ## Bind the running reviewer to approval
 
-The private host hashes its actual source reviewer recipe or exact deployed artifact bytes. Reviewer identity includes that host policy, the operator's policy label, selected model and gateway. A target repository does not need to carry the Smithers reviewer implementation.
+The private host hashes its actual source reviewer recipe or compiled artifact bytes before the digest declaration is inserted. Reviewer identity includes that host policy, the operator's policy label, selected model and gateway. A target repository does not need to carry the Smithers reviewer implementation.
 
 Only declarations that delegate to `coding/WikiCheck` receive a derived policy identity covering the configured pages and reviewer. A model-written frontmatter value cannot override it. The same Registry layer supplies planning, approval, native module authority and executable loading. Its derived execution digest must match before the original registry verifies the exact original body bytes. Changing host policy invalidates old approval and review reuse; ordinary descriptors keep their identity.
 

@@ -10,7 +10,7 @@ The complete `Poc` result remains in that child's durable output. Only its measu
 
 ## Fence the inspected source
 
-A prepared Plan includes its full native `observedHead` as well as its base. Those may differ when the plan amends earlier ownership. `AdmitSource` snapshots current bytes through the injected JJ service and compares the measured head and base to that Plan. A changed source refuses the dependent stage instead of silently refreshing its premise. Legacy manually supplied plans without the observation cannot pass this request admission.
+A prepared Plan includes its full native `observedHead` as well as its base. Those may differ when the plan amends earlier ownership. `AdmitSource` first reads and compares the native head and base. In cloud publication mode it calls `publishOriginalSource` with its durable request identity before taking the admission snapshot. The explicit local-only mode skips that publication call. It then snapshots current bytes through the injected JJ service and compares the measured source again. A changed source refuses the dependent stage instead of silently refreshing its premise. Legacy manually supplied plans without the observation cannot pass this request admission.
 
 Admission is a boundary check, not a lock covering every future instruction. Actual native mutations and checks retain their own parent, operation, commit and executable fences. The host owns exclusive editing coordination; the request does not invent a new locking protocol.
 

@@ -4,7 +4,7 @@ Finalization begins with the completed request's retained evidence. The private 
 
 ## Read the approved request
 
-`VibeInput` contains only `requestExecutionId`. Admission requires the per-handler owner of an approved `coding/vibe` execution. It reads a successful native `coding/Request`, its matching descriptor bridge and one completed approved control wrapper. Missing, ambiguous, cancelled or collected ancestry refuses. Lookup walks at most 1,024 executions and bounds decoded state; it does not scan the global run catalog.
+`VibeInput` contains only `requestExecutionId`. Admission requires the per-handler `coding/vibe` owner. It reads a successful native `coding/Request`, its matching descriptor bridge and one completed approved control wrapper. Missing, ambiguous, cancelled or collected ancestry refuses. Lookup walks at most 1,024 executions and bounds decoded state; it does not scan the global run catalog.
 
 The original source comes from exactly one completed POC directly owned by that Request. Its retained result must match its captured input. Later steering can move a plan's starting point, so the final plan alone cannot identify the source before the whole request. `VibeEvidence` retains that original source, request result and existing request, control, approval and POC identities.
 
