@@ -30,6 +30,7 @@ import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as BoundedOutput from "./internal/boundedOutput.ts"
 import * as Diagnostics from "./internal/diagnostic.ts"
+import { normalizePlatform } from "./internal/platform.ts"
 import * as Validate from "./internal/validate.ts"
 
 /**
@@ -422,20 +423,7 @@ const normalizeOptions = (value: Options, extraKeys: ReadonlyArray<string> = [])
   if (!Validate.usableText(requirement, 256)) {
     throw new TypeError("runtime requirement must be non-empty usable text no longer than 256 bytes")
   }
-  const platformRecord = Validate.plainRecord(
-    Validate.ownData(options, "platform", "runtime options"),
-    "runtime platform"
-  )
-  Validate.exactKeys(platformRecord, new Set(["os", "arch", "libc"]), "runtime platform")
-  const os = Validate.ownData(platformRecord, "os", "runtime platform")
-  const arch = Validate.ownData(platformRecord, "arch", "runtime platform")
-  const libc = Validate.ownData(platformRecord, "libc", "runtime platform")
-  if (!Validate.usableText(os, 256) || !Validate.usableText(arch, 256)) {
-    throw new TypeError("runtime platform os and arch must be non-empty usable text no longer than 256 bytes")
-  }
-  if (libc !== null && !Validate.usableText(libc, 256)) {
-    throw new TypeError("runtime platform libc must be non-empty usable text no longer than 256 bytes, or null")
-  }
+  const platform = normalizePlatform(Validate.ownData(options, "platform", "runtime options"), "runtime platform")
   const executable = Validate.ownData(options, "executable", "runtime options")
   if (executable !== undefined && !Validate.usableText(executable, 32 * 1024)) {
     throw new TypeError("runtime executable must be usable non-empty text")
@@ -444,7 +432,6 @@ const normalizeOptions = (value: Options, extraKeys: ReadonlyArray<string> = [])
   if (typeof timeout !== "number" || !Number.isSafeInteger(timeout) || timeout < 1 || timeout > probeTimeoutMs) {
     throw new TypeError(`runtime probe timeout must be an integer from 1 to ${probeTimeoutMs}`)
   }
-  const platform = Object.freeze<Platform>({ os, arch, libc })
   const environment = Validate.ownData(options, "environment", "runtime options")
   return Object.freeze({
     requirement,

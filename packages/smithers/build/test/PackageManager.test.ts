@@ -1,6 +1,7 @@
 import { NodeServices } from "@effect/platform-node"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
+import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { execFileSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
@@ -95,6 +96,69 @@ describe("PackageManager.storeRoot", () => {
     )
   })
 
+  /**
+   * `layerBun` advertised `ChildProcessSpawner` and `FileSystem` alongside
+   * `Runtime`, the pnpm layer's requirements, while `makeBun` only ever reads
+   * the runtime and returns the refusing service. A composition that selected
+   * the unsupported manager had to plumb two host services nothing consumed.
+   */
+  it("builds the Bun layer over the runtime alone", async () => {
+    const layer: Layer.Layer<PackageManager.PackageManager, never, Runtime.Runtime> = PackageManager.layerBun({
+      requirement: "1.2.0",
+      projectRoot: "/workspace"
+    })
+    const bun = await Effect.runPromise(
+      Effect.gen(function*() {
+        return yield* PackageManager.PackageManager
+      }).pipe(Effect.provide(layer.pipe(Layer.provide(runtimeLayer))))
+    )
+    expect(bun.name).toBe("bun")
+    expect(bun.platformSensitive).toBe(true)
+    await expect(Effect.runPromise(bun.fetch)).rejects.toThrow(/no bun implementation/)
+  })
+
+  /**
+   * Three construction seams take a caller's `Platform`, and each validated
+   * it with its own copy of the rules. The store-manifest copy had dropped the
+   * NUL check the two service constructors enforce, so a manifest accepted the
+   * exact platform both services refused and serialized the NUL into the
+   * store's identity. One validator now answers for all three.
+   */
+  it("refuses the same unusable platform on every construction seam", () => {
+    const digest = "0".repeat(64) as PackageManager.Digest
+    const manifest = (member: string) =>
+      PackageManager.storeManifestText({
+        manager: "pnpm",
+        managerVersion: "10.10.0",
+        platform: { ...platform, os: member },
+        lockfileDigest: digest,
+        npmrcDigest: null
+      })
+    for (const member of ["linux\0", "", "\ud800", "a".repeat(257)]) {
+      expect(() =>
+        Runtime.makeNoop("node", { requirement: ">=22.19.0", version: "24.9.0", platform: { ...platform, os: member } })
+      )
+        .toThrow(/os and arch must be non-empty usable text/)
+      expect(() =>
+        PackageManager.makeNoop("pnpm", { requirement: "11.21.0", projectRoot: "/workspace" }, {
+          ...platform,
+          os: member
+        })
+      ).toThrow(/os and arch must be non-empty usable text/)
+      expect(() => manifest(member)).toThrow(/os and arch must be non-empty usable text/)
+    }
+    expect(() => manifest("a".repeat(256))).not.toThrow()
+    expect(() =>
+      PackageManager.storeManifestText({
+        manager: "pnpm",
+        managerVersion: "10.10.0",
+        platform: { ...platform, libc: "glibc\0" },
+        lockfileDigest: digest,
+        npmrcDigest: null
+      })
+    ).toThrow(/libc must be non-empty usable text/)
+  })
+
   it("validates manager construction options before exposing a service", () => {
     expect(() => PackageManager.makeNoop("bun", { requirement: "11.21.0", projectRoot: "relative" }, platform))
       .toThrow(/absolute path/)
@@ -105,6 +169,11 @@ describe("PackageManager.storeRoot", () => {
         timeoutMs: 0
       }, platform)
     ).toThrow(/timeout must be an integer/)
+    const timeoutOf = (timeoutMs: number) =>
+      PackageManager.makeNoop("bun", { requirement: "11.21.0", projectRoot: "/workspace", timeoutMs }, platform)
+    expect(timeoutOf(PackageManager.maximumCommandTimeoutMs).name).toBe("bun")
+    expect(() => timeoutOf(PackageManager.maximumCommandTimeoutMs + 1)).toThrow(/timeout must be an integer/)
+    expect(() => timeoutOf(1.5)).toThrow(/timeout must be an integer/)
     expect(() =>
       PackageManager.makeNoop("bun", {
         requirement: "11.21.0",
@@ -769,6 +838,12 @@ describe("PackageManager.storeRoot", () => {
       await Fs.writeFile(NodePath.join(root, ".npmrc"), Buffer.from([0xff]))
       const fresh = await makePnpm(root, executable)
       await expect(Effect.runPromise(fresh.version)).rejects.toThrow(/not valid UTF-8/)
+
+      const atBound = `# ${"a".repeat(PackageManager.maximumNpmrcBytes - 3)}\n`
+      expect(Buffer.byteLength(atBound, "utf8")).toBe(PackageManager.maximumNpmrcBytes)
+      await Fs.writeFile(NodePath.join(root, ".npmrc"), atBound, "utf8")
+      const bounded = await makePnpm(root, executable)
+      expect(await Effect.runPromise(bounded.version)).toBe("9.15.0")
     })
   })
 
@@ -1251,10 +1326,10 @@ describe("PackageManager manifests", () => {
     expect(() => PackageManager.storeManifestText({ ...validInput, extra: 1 } as never))
       .toThrow(/unknown property/)
     expect(() => PackageManager.storeManifestText({ ...validInput, platform: { os: "linux", arch: "" } as never }))
-      .toThrow(/bounded non-empty usable text or null/)
+      .toThrow(/os and arch must be non-empty usable text/)
     expect(() =>
       PackageManager.storeManifestText({ ...validInput, platform: { os: null, arch: "x64", libc: null } as never })
-    ).toThrow(/string os and arch fields/)
+    ).toThrow(/os and arch must be non-empty usable text/)
   })
 
   it("renders one frozen linked-tree digest and refuses anything but three digests", async () => {

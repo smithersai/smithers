@@ -1,11 +1,16 @@
 import { NodeServices } from "@effect/platform-node"
-import { Flow, Graph } from "@smthrs/flow"
+import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
 import * as FileSet from "@smthrs/plan/FileSet"
 import * as Plan from "@smthrs/plan/Plan"
+import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import type * as FileSystem from "effect/FileSystem"
+import * as Layer from "effect/Layer"
+import * as Result from "effect/Result"
+import * as Schema from "effect/Schema"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
@@ -13,6 +18,7 @@ import { describe, expect, it } from "vitest"
 import * as Install from "../src/Install.ts"
 import * as PackageManager from "../src/PackageManager.ts"
 import * as Runtime from "../src/Runtime.ts"
+import { type JournalEntry, layerMemory } from "./MemoryFlowRuntime.ts"
 
 const platform = { os: "linux", arch: "x64", libc: null }
 
@@ -662,5 +668,81 @@ describe("Install", () => {
     expect(measureOf("pnpm")).toEqual([{ _tag: "Literal", value: { manager: "pnpm" } }])
     expect(measureOf("bun")).toEqual([{ _tag: "Literal", value: { manager: "bun" } }])
     expect(measureOf("pnpm")).not.toEqual(measureOf("bun"))
+  })
+
+  /**
+   * Every other case drives `executeMeasure`, `executeFetch`, and
+   * `executeLink` directly, so `MeasureLive`, the two fetch layers, `LinkLive`,
+   * and `layer` were exported and composed by nothing under test. A layer
+   * dropped from `Layer.mergeAll`, or wired to the wrong body, surfaced only
+   * in build-cli. This runs the flow the way an executor does: through
+   * `Install.layer`, an interpreter registration, and a `FlowRuntime` that
+   * journals each action's encoded exit.
+   */
+  it("runs the flow through Install.layer and journals JSON-encodable outcomes", async () => {
+    await withFixture(async (root) => {
+      const evidence = await packageJsonDigest(root)
+      const run = async (service: PackageManager.Service) => {
+        const journal: Array<JournalEntry> = []
+        const runtime = Layer.mergeAll(Install.layer, Interpreter.layer(Install.Install)).pipe(
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(layerMemory(journal)),
+          Layer.provideMerge(
+            Layer.mergeAll(
+              Layer.succeed(PackageManager.PackageManager)(service),
+              Layer.succeed(Runtime.Runtime)(runtimeService()),
+              NodeServices.layer
+            )
+          )
+        )
+        const exit = await Effect.runPromise(
+          Install.Install.execute({ manager: "pnpm" }, { executionId: `install-layer-${journal.length}` }).pipe(
+            Effect.exit,
+            Effect.provide(runtime)
+          )
+        )
+        for (const entry of journal) {
+          const payload = Exit.isSuccess(entry.exit)
+            ? entry.exit.value
+            : Result.getOrThrow(Cause.findFail(entry.exit.cause)).error
+          expect(JSON.parse(JSON.stringify(payload))).toEqual(payload)
+        }
+        return { exit, journal }
+      }
+
+      const linked = await run(managerService({ root, evidence }))
+      expect(linked.journal.map((entry) => entry.action)).toEqual([
+        "smithers-build/install/measure",
+        "smithers-build/install/fetch/pnpm",
+        "smithers-build/install/link"
+      ])
+      expect(Exit.isSuccess(linked.exit)).toBe(true)
+      const manifest = Exit.isSuccess(linked.exit) ? linked.exit.value : undefined
+      expect(manifest).toMatchObject({ linked: true, store: expect.stringMatching(/^[0-9a-f]{64}$/) })
+      expect(manifest).toMatchObject({ manifest: expect.stringMatching(/^[0-9a-f]{64}$/) })
+      const journaledLink = linked.journal[2]!.exit
+      expect(Exit.isSuccess(journaledLink)).toBe(true)
+      expect(
+        Schema.decodeUnknownSync(Install.LinkManifest)(Exit.isSuccess(journaledLink) ? journaledLink.value : undefined)
+      )
+        .toEqual(manifest)
+
+      await Fs.rm(NodePath.join(root, "pnpm-lock.yaml"))
+      const refused = await run(managerService({ root, evidence }))
+      expect(refused.journal.map((entry) => entry.action)).toEqual(["smithers-build/install/measure"])
+      const journaledFailure = refused.journal[0]!.exit
+      if (!Exit.isFailure(journaledFailure)) throw new Error("expected measure to fail without a lockfile")
+      const encoded = Cause.findFail(journaledFailure.cause)
+      if (!Result.isSuccess(encoded)) {
+        throw new Error(`expected a typed failure: ${Cause.pretty(journaledFailure.cause)}`)
+      }
+      const decoded = Schema.decodeUnknownSync(PackageManager.PackageManagerError)(encoded.success.error)
+      expect(decoded).toBeInstanceOf(PackageManager.PackageManagerError)
+      expect(decoded.message).toContain("pnpm-lock.yaml")
+      expect(Exit.isFailure(refused.exit)).toBe(true)
+      const surfaced = Exit.isFailure(refused.exit) ? Cause.findFail(refused.exit.cause) : undefined
+      expect(surfaced !== undefined && Result.isSuccess(surfaced) ? surfaced.success.error : undefined)
+        .toMatchObject({ _tag: "smithers-build/PackageManagerError", code: decoded.code, message: decoded.message })
+    })
   })
 })

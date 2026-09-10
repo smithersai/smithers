@@ -1106,6 +1106,24 @@ describe("content-addressed storage", () => {
     expect(response.status).toBe(201)
   })
 
+  test("accepts a declared content-length exactly at the bound and refuses one byte past it", async () => {
+    const handler = makeHandler({ maxArtifactBytes: 8 })
+    const bytes = new TextEncoder().encode("87654321")
+    const put = (declared) =>
+      handler(
+        request(`/cas/${digestOf("87654321")}`, {
+          method: "PUT",
+          headers: { "content-type": "application/octet-stream", "content-length": declared },
+          body: chunked([bytes]),
+          duplex: "half"
+        })
+      )
+    const overBound = await put("9")
+    expect(overBound.status).toBe(413)
+    const atBound = await put("8")
+    expect(atBound.status).toBe(201)
+  })
+
   test("bounds simultaneous artifact uploads and cancels excess bodies", async () => {
     let releaseUploads
     const gate = new Promise((resolve) => {

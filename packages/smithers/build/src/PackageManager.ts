@@ -36,6 +36,7 @@ import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as BoundedOutput from "./internal/boundedOutput.ts"
 import * as Diagnostics from "./internal/diagnostic.ts"
+import { normalizePlatform } from "./internal/platform.ts"
 import * as Validate from "./internal/validate.ts"
 import * as Runtime from "./Runtime.ts"
 
@@ -529,34 +530,7 @@ const normalizeOptions = (value: Options, hostPlatform: Platform): NormalizedOpt
   ) {
     throw new TypeError("package-manager requirement must be non-empty usable text no longer than 256 bytes")
   }
-  const platformRecord = Validate.plainRecord(hostPlatform, "package-manager platform")
-  Validate.exactKeys(platformRecord, new Set(["os", "arch", "libc"]), "package-manager platform")
-  const platform = {
-    os: Validate.ownData(platformRecord, "os", "package-manager platform"),
-    arch: Validate.ownData(platformRecord, "arch", "package-manager platform"),
-    libc: Validate.ownData(platformRecord, "libc", "package-manager platform")
-  }
-  for (
-    const [name, value] of [
-      ["platform.os", platform.os],
-      ["platform.arch", platform.arch],
-      ["platform.libc", platform.libc]
-    ] as const
-  ) {
-    if (
-      value !== null &&
-      (typeof value !== "string" || value.length === 0 || value.includes("\0") ||
-        !Validate.isWellFormedText(value) || Buffer.byteLength(value, "utf8") > 256)
-    ) {
-      throw new TypeError(`package-manager ${name} must be non-empty usable text no longer than 256 bytes`)
-    }
-  }
-  if (typeof platform.os !== "string" || typeof platform.arch !== "string") {
-    throw new TypeError("package-manager platform os and arch must be strings")
-  }
-  if (platform.libc !== null && typeof platform.libc !== "string") {
-    throw new TypeError("package-manager platform libc must be a string or null")
-  }
+  const normalizedPlatform = normalizePlatform(hostPlatform, "package-manager platform")
   const executable = Validate.ownData(options, "executable", "package-manager options")
   if (
     executable !== undefined &&
@@ -580,11 +554,6 @@ const normalizeOptions = (value: Options, hostPlatform: Platform): NormalizedOpt
     throw new TypeError("package-manager storeDirectory must be outside the project root")
   }
   const timeoutMs = timeoutOf(Validate.ownData(options, "timeoutMs", "package-manager options"))
-  const normalizedPlatform = Object.freeze<Platform>({
-    os: platform.os,
-    arch: platform.arch,
-    libc: platform.libc
-  })
   return Object.freeze({
     projectRoot: root,
     platform: normalizedPlatform,
@@ -1095,11 +1064,7 @@ export const makeBun = (options: Options): Effect.Effect<
  */
 export const layerBun = (
   options: Options
-): Layer.Layer<
-  PackageManager,
-  never,
-  ChildProcessSpawner | FileSystem.FileSystem | Runtime.Runtime
-> => Layer.effect(PackageManager)(makeBun(options))
+): Layer.Layer<PackageManager, never, Runtime.Runtime> => Layer.effect(PackageManager)(makeBun(options))
 
 /** The lockfile each supported manager writes. */
 const lockfileNames: Readonly<Record<Name, string>> = {
@@ -1171,27 +1136,6 @@ interface NormalizedStoreManifestInput {
 
 const digestPattern = /^[0-9a-f]{64}$/
 
-const normalizedPlatform = (value: unknown, what: string): Platform => {
-  const record = Validate.plainRecord(value, what)
-  Validate.exactKeys(record, new Set(["os", "arch", "libc"]), what)
-  const os = Validate.ownData(record, "os", what)
-  const arch = Validate.ownData(record, "arch", what)
-  const libc = Validate.ownData(record, "libc", what)
-  for (const [name, member] of [["os", os], ["arch", arch], ["libc", libc]] as const) {
-    if (
-      member !== null &&
-      (typeof member !== "string" || member.length === 0 || !Validate.isWellFormedText(member) ||
-        Buffer.byteLength(member, "utf8") > 256)
-    ) {
-      throw new TypeError(`${what}.${name} must be bounded non-empty usable text or null`)
-    }
-  }
-  if (typeof os !== "string" || typeof arch !== "string" || (libc !== null && typeof libc !== "string")) {
-    throw new TypeError(`${what} must contain string os and arch fields and a string-or-null libc field`)
-  }
-  return Object.freeze({ os, arch, libc })
-}
-
 const normalizeStoreManifestInput = (value: {
   readonly manager: Name
   readonly managerVersion: string
@@ -1249,7 +1193,7 @@ const normalizeStoreManifestInput = (value: {
   return Object.freeze({
     manager,
     managerVersion,
-    platform: platformValue === null ? null : normalizedPlatform(platformValue, "store manifest platform"),
+    platform: platformValue === null ? null : normalizePlatform(platformValue, "store manifest platform"),
     lockfileDigest,
     npmrcDigest,
     pnpmfileDigest: optionalDigest("pnpmfileDigest"),

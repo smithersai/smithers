@@ -463,13 +463,25 @@ describe("Runtime measurement", () => {
     })
   })
 
+  /**
+   * The child ignores EPIPE on purpose. Once the reader refuses the bound and
+   * closes its end, the next write raises `error` on `process.stdout`, and an
+   * unhandled one exits the child on its own. A child that died that way
+   * never wrote the marker whether or not anything killed it, so the earlier
+   * form of this test passed against a spawner that dropped the kill. The
+   * child records its pid first, and the test polls that pid to a deadline
+   * for the positive evidence: the process is gone.
+   */
   it("kills a producer that keeps writing after the bound is refused", async () => {
     await withFixture(async (root) => {
       const executable = NodePath.join(root, "runaway.mjs")
       const marker = NodePath.join(root, "kept-running")
+      const pidFile = NodePath.join(root, "pid")
       await writeExecutable(
         executable,
         `import { writeFileSync } from "node:fs"\n` +
+          `writeFileSync(${JSON.stringify(pidFile)}, String(process.pid))\n` +
+          `process.stdout.on("error", () => {})\n` +
           `const write = () => process.stdout.write("a".repeat(4096))\n` +
           `for (let index = 0; index < ${
             Math.ceil(Runtime.maximumVersionOutputBytes / 4096) + 8
@@ -483,7 +495,19 @@ describe("Runtime measurement", () => {
         )
       )
       expect(error.message).toMatch(/version output exceeds/)
-      await new Promise((resolve) => setTimeout(resolve, 900))
+      const pid = Number(await Fs.readFile(pidFile, "utf8"))
+      expect(Number.isSafeInteger(pid) && pid > 0).toBe(true)
+      const alive = () => {
+        try {
+          process.kill(pid, 0)
+          return true
+        } catch (cause) {
+          return (cause as NodeJS.ErrnoException).code !== "ESRCH"
+        }
+      }
+      const deadline = Date.now() + 5_000
+      while (alive() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25))
+      expect(alive()).toBe(false)
       await expect(Fs.stat(marker)).rejects.toMatchObject({ code: "ENOENT" })
     })
   })

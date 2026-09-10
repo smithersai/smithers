@@ -89,7 +89,7 @@ const label = (value: unknown, limit: number): string | undefined =>
 export const diagnostic = (cause: unknown): Diagnostic | undefined => {
   if (cause === undefined) return undefined
   if (typeof cause !== "object" && typeof cause !== "function") {
-    if (typeof cause === "symbol") return { name: "symbol", message: cause.toString() }
+    if (typeof cause === "symbol") return { name: "symbol", message: cause.toString().slice(0, maximumMessageLength) }
     return { name: typeof cause, message: String(cause).slice(0, maximumMessageLength) }
   }
   if (cause === null) return { name: "null", message: "null" }

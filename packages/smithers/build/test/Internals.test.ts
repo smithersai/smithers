@@ -57,6 +57,22 @@ describe("diagnostic", () => {
     expect(diagnostic(new Error("a".repeat(10_000)))?.message.length).toBe(2_048)
   })
 
+  /**
+   * The symbol branch returned `cause.toString()` unsliced while every other
+   * branch sliced to the bound, so a Symbol whose description ran past the
+   * bound produced a Diagnostic its own schema refused to encode.
+   */
+  it("bounds a symbol's rendering and keeps it inside the schema", () => {
+    const described = diagnostic(Symbol("s".repeat(2_048)))
+    expect(described?.message.length).toBe(2_048)
+    expect(described?.message.startsWith("Symbol(s")).toBe(true)
+    expect(Schema.encodeUnknownSync(Diagnostic)(described)).toEqual(described)
+    expect(Schema.encodeUnknownSync(Diagnostic)(diagnostic(Symbol("boom")))).toEqual({
+      name: "symbol",
+      message: "Symbol(boom)"
+    })
+  })
+
   it("refuses an over-long field at the schema, not only at the construction site", () => {
     expect(Schema.decodeUnknownSync(Diagnostic)({ name: "PlatformError", message: "refused" })).toEqual({
       name: "PlatformError",
@@ -105,6 +121,13 @@ describe("normalizeEnvironment", () => {
     expect(normalize(Object.fromEntries(Array.from({ length: 4_097 }, (_, index) => [`N${index}`, "x"]))))
       .toThrow(/more than 4096 entries/)
     expect(normalize({ PATH: "x".repeat(256 * 1024 + 1) })).toThrow(/exceeds 262144 bytes/)
+  })
+
+  it("accepts an environment exactly at each bound", () => {
+    const atEntryBound = Object.fromEntries(Array.from({ length: 4_096 }, (_, index) => [`N${index}`, "x"]))
+    expect(normalizeEnvironment(atEntryBound, false, "environment").size).toBe(4_096)
+    const atByteBound = { PATH: "x".repeat(256 * 1024 - "PATH".length) }
+    expect(normalizeEnvironment(atByteBound, false, "environment").get("PATH")?.length).toBe(262_140)
     expect(normalize(Object.defineProperty({}, "PATH", { enumerable: true, get: () => "/bin" })))
       .toThrow(/must be an enumerable data property/)
   })
@@ -124,6 +147,7 @@ describe("validation helpers", () => {
     expect(usableText(`a${nul}b`, 8)).toBe(false)
     expect(usableText(loneLowSurrogate, 8)).toBe(false)
     expect(usableText("\u{1f600}", 8)).toBe(true)
+    expect(usableText("aaaaaaaa", 8)).toBe(true)
     expect(usableText("aaaaaaaaa", 8)).toBe(false)
     expect(usableText(7, 8)).toBe(false)
   })
