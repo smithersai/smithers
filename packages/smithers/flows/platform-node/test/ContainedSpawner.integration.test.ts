@@ -24,24 +24,11 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
+import { waitForExit } from "./helpers/waitForExit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-contained-"))
 
 const cleanup = () => rmSync(directory, { recursive: true, force: true })
-
-/** Waits for a pid to disappear, or gives up after `budgetMs`. */
-const waitForExit = async (pid: number, budgetMs: number): Promise<boolean> => {
-  const deadline = Date.now() + budgetMs
-  for (;;) {
-    try {
-      process.kill(pid, 0)
-    } catch {
-      return true
-    }
-    if (Date.now() > deadline) return false
-    await new Promise<void>((resolve) => setTimeout(resolve, 10))
-  }
-}
 
 /** Waits for the child to report something through a file. */
 const waitForFile = async (path: string): Promise<string> => {

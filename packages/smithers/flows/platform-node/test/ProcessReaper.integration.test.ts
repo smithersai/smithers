@@ -19,6 +19,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
+import { waitForExit } from "./helpers/waitForExit.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-reaper-"))
 
@@ -26,20 +27,6 @@ const run = <A, E>(effect: Effect.Effect<A, E, Journal | Scope.Scope>) =>
   effect.pipe(Effect.provide(TestJournal.layer()), Effect.scoped)
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-
-/** Waits for a pid to disappear, or gives up after `budgetMs`. */
-const waitForExit = async (pid: number, budgetMs: number): Promise<boolean> => {
-  const deadline = Date.now() + budgetMs
-  for (;;) {
-    try {
-      process.kill(pid, 0)
-    } catch {
-      return true
-    }
-    if (Date.now() > deadline) return false
-    await sleep(10)
-  }
-}
 
 /** Reads a pid a child wrote to a file. */
 const readPid = async (path: string): Promise<number> => {
