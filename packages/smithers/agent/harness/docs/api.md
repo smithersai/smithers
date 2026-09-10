@@ -874,6 +874,19 @@ segment, failing with a `ContextWindowError` when the declared prefix does not
 match. `render` projects the window into the `ModelRequest` of
 [`@smthrs/model`](/api/model).
 
+`appendTurn` and `compact` are dual, so each one takes the window first or
+returns a function of it, and a `ContextWindow` is `Pipeable`. The direct and
+the piped forms are the same call:
+
+```ts
+const request = ContextWindow.render(ContextWindow.appendTurn(window, assistant))
+
+const piped = window.pipe(
+  ContextWindow.appendTurn(assistant),
+  ContextWindow.render
+)
+```
+
 `ModelCatalog.contextWindowTokensFor(modelId)` of
 [`@smthrs/model`](/api/model) supplies the shared context-limit catalog used by
 seat resolution and seat steering (128,000 tokens for unknown models). A

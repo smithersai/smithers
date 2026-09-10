@@ -166,7 +166,69 @@ export class ContextWindow extends Schema.Class<ContextWindow>("flows/harness/Co
 }) implements Pipeable {
   readonly [TypeId] = TypeId
 
-  pipe() {
+  /** Threads this window through the data-last combinators of this module.
+   *
+   * `window.pipe(appendTurn(message), render)` is `render(appendTurn(window, message))`.
+   *
+   * @category combinators
+   * @since 0.1.0
+   */
+  pipe<A>(this: A): A
+  pipe<A, B>(this: A, ab: (_: A) => B): B
+  pipe<A, B, C>(this: A, ab: (_: A) => B, bc: (_: B) => C): C
+  pipe<A, B, C, D>(this: A, ab: (_: A) => B, bc: (_: B) => C, cd: (_: C) => D): D
+  pipe<A, B, C, D, E>(this: A, ab: (_: A) => B, bc: (_: B) => C, cd: (_: C) => D, de: (_: D) => E): E
+  pipe<A, B, C, D, E, F>(
+    this: A,
+    ab: (_: A) => B,
+    bc: (_: B) => C,
+    cd: (_: C) => D,
+    de: (_: D) => E,
+    ef: (_: E) => F
+  ): F
+  pipe<A, B, C, D, E, F, G>(
+    this: A,
+    ab: (_: A) => B,
+    bc: (_: B) => C,
+    cd: (_: C) => D,
+    de: (_: D) => E,
+    ef: (_: E) => F,
+    fg: (_: F) => G
+  ): G
+  pipe<A, B, C, D, E, F, G, H>(
+    this: A,
+    ab: (_: A) => B,
+    bc: (_: B) => C,
+    cd: (_: C) => D,
+    de: (_: D) => E,
+    ef: (_: E) => F,
+    fg: (_: F) => G,
+    gh: (_: G) => H
+  ): H
+  pipe<A, B, C, D, E, F, G, H, I>(
+    this: A,
+    ab: (_: A) => B,
+    bc: (_: B) => C,
+    cd: (_: C) => D,
+    de: (_: D) => E,
+    ef: (_: E) => F,
+    fg: (_: F) => G,
+    gh: (_: G) => H,
+    hi: (_: H) => I
+  ): I
+  pipe<A, B, C, D, E, F, G, H, I, J>(
+    this: A,
+    ab: (_: A) => B,
+    bc: (_: B) => C,
+    cd: (_: C) => D,
+    de: (_: D) => E,
+    ef: (_: E) => F,
+    fg: (_: F) => G,
+    gh: (_: G) => H,
+    hi: (_: H) => I,
+    ij: (_: I) => J
+  ): J
+  pipe(this: unknown, ..._operators: ReadonlyArray<(input: never) => unknown>): unknown {
     // eslint-disable-next-line prefer-rest-params -- matches Effect's Pipeable implementation
     return pipeArguments(this, arguments)
   }

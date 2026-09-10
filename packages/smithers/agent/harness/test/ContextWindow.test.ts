@@ -2,7 +2,7 @@ import * as Digest from "@smthrs/core/Digest"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Request from "@smthrs/model/ModelRequest"
 import * as Result from "effect/Result"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as Tokens from "../src/Tokens.ts"
 
@@ -468,10 +468,22 @@ describe("ContextWindow", () => {
       )
     })
 
+    it("threads the data-last combinators through the instance pipe", () => {
+      const value = base()
+      const assistant = Request.Message.assistant("working", { stopReason: "stop" })
+
+      const request = value.pipe(ContextWindow.appendTurn(assistant), ContextWindow.render)
+
+      // Pins the inferred output: a regression to a `pipe` declared with no
+      // operators and an `unknown` result fails the typecheck here.
+      expectTypeOf(request).toEqualTypeOf<Request.ModelRequest>()
+      expect(request).toEqual(ContextWindow.render(ContextWindow.appendTurn(value, assistant)))
+      expect(request.messages.at(-1)).toEqual(assistant)
+    })
+
     it("returns itself from an empty pipe", () => {
       const value = base()
-      // `pipe` is declared with no parameters and an `unknown` result, so the
-      // empty pipe is the only form the type checker accepts on this class.
+      expectTypeOf(value.pipe()).toEqualTypeOf<ContextWindow.ContextWindow>()
       expect(value.pipe()).toBe(value)
     })
 
