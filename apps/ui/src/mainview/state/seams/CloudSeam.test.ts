@@ -130,6 +130,17 @@ describe("cloud session seam", () => {
     expect(requests.filter((request) => request.url === CLOUD_AUTH_START_PATH)).toEqual([])
   })
 
+  test("sign-in mirrors and answers when already signed in with an unknown username", async () => {
+    const { store, seam, requests } = await harness((path) =>
+      path === CLOUD_AUTH_SESSION_PATH
+        ? json(200, { state: "signed-in", username: null, expiresAt: "2027-01-01T00:00:00Z" })
+        : json(404, {}))
+    const refusal = await seam.signIn()
+    expect(refusal).toBe("Already signed in to Smithers Cloud.")
+    expect(sessionRow(store)).toMatchObject({ state: "signed-in", username: null, expiresAt: "2027-01-01T00:00:00Z" })
+    expect(requests.filter((request) => request.url === CLOUD_AUTH_START_PATH)).toEqual([])
+  })
+
   for (const failure of ["network", "http", "malformed"] as const) {
     test(`sign-in stops at its deadline when session polls fail (${failure})`, async () => {
       let started = false

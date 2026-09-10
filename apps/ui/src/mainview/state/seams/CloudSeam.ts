@@ -81,9 +81,9 @@ export const createCloudSeam = (ctx: SeamContext, deps: CloudSeamDeps = {}): Clo
     signIn: async () => {
       const current = await readSession()
       if (current?.state === "signed-in") {
-        if (current.username !== null) mirror(current)
+        mirror(current)
         return current.username === null
-          ? undefined
+          ? "Already signed in to Smithers Cloud."
           : `Already signed in to Smithers Cloud as ${current.username}.`
       }
       let response: Response
