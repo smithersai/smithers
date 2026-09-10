@@ -8,9 +8,9 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/docs/api.md) · [package docs](https://plan.smithers.sh)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/)
 
-`@smthrs/plan` exports ten modules from its root entry point, and each is also
+`@smthrs/plan` exports eleven modules from its root entry point, and each is also
 importable from `@smthrs/plan/<Module>`:
 
 ```ts
@@ -33,6 +33,7 @@ import * as Plan from "@smthrs/plan/Plan"
 | `Plan`            | `compile`, `append`, the node and conflict schemas, and the digest an approval binds to.                  |
 | `PlanDiff`        | A plan comparison as a value: added, removed, re-keyed with attribution, unchanged.                       |
 | `PlanStore`       | Append-only SQL persistence, enforced by triggers rather than by convention.                              |
+| `Scheduling`      | The pure admission policy a scheduler consults: concurrency, priority order, and the halt rule.           |
 | `Migrations`      | The namespaced migration set that owns the three plan tables in id block `4000`.                          |
 
 The shortest composition that reaches every layer:
@@ -417,7 +418,9 @@ Stable failures while resolving graph-local dependency references.
 
 [src/Plan.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/Plan.ts)
 
-`compile` puts drafts in topological order, substitutes dependency digests, annotates write-set overlaps, and derives the plan digest. `append` adds a pre-keyed subgraph at the next generation, and `generationNodes` reads back the nodes the newest generation added.
+`compile` puts drafts in topological order of material dependencies, substitutes dependency digests, annotates write-set overlaps, and derives the plan digest. `append` adds a pre-keyed subgraph at the next generation, and `generationNodes` reads back the nodes the newest generation added.
+
+Inferred edges extend `dependsOn` without reordering `plan.nodes`, so a reader can precede its writer in the array. Schedule nodes from the complete `dependsOn` graph.
 
 `PlanNode.kind` is `step`, `agent`, or `merge`. `dependsOn` is the edge set: material references, ordering edges from `serialize`, and inferred reader-after-writer edges. Explicit `Ref`/`Pending` dependency paths select the version being read: a read before a writer consumes the initial source or an earlier producer's output, not that later writer's output. Otherwise, the compiler orders a reader after overlapping writers. A contradictory inferred ordering still fails with `cycle`; the diagnostic names both nodes, overlapping paths, and the dependency chain. Ordering edges are deliberately not key material: file content enters dispatch identity through boundary digests. `NodeEffects` carries `reads`, `writes`, optional `removes`, and `boundaryMode` (`hard` or `expected`). Removals participate in ordering just like writes.
 
@@ -532,9 +535,9 @@ const compile: (options: {
 }) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
 ```
 
-Compiles drafts into a plan: topological order, dependency-digest substitution, overlap annotation, reader-after-writer ordering, and the plan digest. No I/O. The options are snapshotted before anything else happens, and the result is deep-frozen at generation 0 with `baseDigest` equal to `digest`.
+Compiles drafts into a plan: topological order of material dependencies, dependency-digest substitution, overlap annotation, reader-after-writer ordering, and the plan digest. No I/O. The options are snapshotted before anything else happens, and the result is deep-frozen at generation 0 with `baseDigest` equal to `digest`. Array order follows material dependencies; scheduling follows the complete `dependsOn` graph.
 
-Traversal uses explicit stacks. Because the conflict and reader-after-writer passes consider a quadratic number of node pairs, plans are bounded by `maximumPlanNodes` and fail with `graph_too_large` above that limit.
+Traversal uses explicit stacks. Because the conflict and reader-after-writer passes consider a quadratic number of node pairs, plans are bounded by `maximumPlanNodes` and fail with `graph_too_large` above that limit or the effect-analysis work budget. Analysis yields periodically.
 
 ### Plan.append
 
@@ -545,7 +548,7 @@ const append: (
 ) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
 ```
 
-Appends an elaborated subgraph at the next generation. Nodes already in the plan keep their id, key, edges, and generation byte for byte, and the new nodes arrive pre-keyed against them. `baseDigest` does not move; `digest` does. An append with no drafts fails as `invalid_node`.
+Appends an elaborated subgraph at the next generation. Nodes already in the plan keep their id, key, edges, and generation byte for byte, and the new nodes arrive pre-keyed against them. `baseDigest` does not move; `digest` does. New nodes retain material-dependency order after the recorded prefix, including when inferred edges point to later entries. An append with no drafts fails as `invalid_node`.
 
 ### Plan.verify
 
@@ -557,7 +560,25 @@ const verify: (input: unknown) => Effect.Effect<
 >
 ```
 
-Reconstructs an imported plan using compiler key, dependency, conflict and generation rules. It verifies both the approval digests and the complete node contract, then returns an immutable snapshot. Compiler-owned immutable plans take a trusted fast path. `Plan.append` verifies imported prefixes through this same boundary. Existing key and digest formats remain unchanged; corrupted records are refused rather than silently rewritten.
+Reconstructs an imported plan using compiler key, dependency, conflict and generation rules. It verifies both the approval digests and the complete node contract, then returns an immutable snapshot. Compiler-owned immutable plans take a trusted fast path. `Plan.append` verifies imported prefixes through this same boundary. Recorded material-dependency order is checked without sorting inferred edges. Existing ordinals, keys, and approval digests remain unchanged; corrupted records are refused rather than silently rewritten.
+
+### Plan.isVerified
+
+```ts
+const isVerified: (input: unknown) => input is Plan
+```
+
+Whether a value is a compiler-owned immutable snapshot that already passed `verify`. Such values take verify's trusted fast path and need no second schema validation, which is what lets `PlanStore.append` skip re-decoding them.
+
+### Plan.prefixDigest
+
+```ts
+const prefixDigest: (
+  plan: Plan
+) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+```
+
+The approval digest of every generation before the newest: the digest the plan carried before its last append. `PlanStore.append` matches it against the stored envelope, so an append proves the recorded prefix is the caller's from the already-verified prefix instead of decoding and re-verifying every stored row.
 
 ### Plan.generationNodes
 
@@ -586,13 +607,14 @@ class PlanError extends Schema.TaggedError<PlanError>()("@smthrs/plan/PlanError"
     "overlap_forbidden",
     "invalid_effects",
     "invalid_node",
+    "invalid_plan",
     "graph_too_large"
   ])
   message: Schema.String
 })
 ```
 
-A graph the compiler refuses. The code set is closed, so a caller may switch on it.
+A graph the compiler refuses, or a stored plan `verify` cannot accept. The code set is closed, so a caller may switch on it.
 
 | `code`               | Meaning                                                                                                                                                                                                                                            |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -602,9 +624,10 @@ A graph the compiler refuses. The code set is closed, so a caller may switch on 
 | `overlap_forbidden`  | a `fail` pair genuinely overlaps and no dependency path orders it                                                                                                                                                                                  |
 | `invalid_effects`    | one path is declared as both a write and a removal                                                                                                                                                                                                 |
 | `invalid_node`       | an empty plan id, flow, or node id, a priority that is not a safe integer, a `kind` or strategy outside its literal set, or key material or an effect declaration this release cannot decode, which includes a path that is not workspace-relative |
-| `graph_too_large`    | a plan contains more than `Plan.maximumPlanNodes` nodes                                                                                                                                                                                            |
+| `invalid_plan`       | `Plan.verify` decoded a plan whose generations, approval digest, keys, effects, or ordering do not match its content; raised on `PlanStore.record`, `append`, and `get`, never by `compile`                                                        |
+| `graph_too_large`    | a plan exceeds `Plan.maximumPlanNodes` or the effect-analysis work budget                                                                                                                                                                          |
 
-Compilation walks with explicit stacks and never recurses per edge. The conflict and reader-after-writer passes compare node pairs, so pair comparison is quadratic in node count, and each pair whose write sets actually overlap adds one on-demand reachability walk over the edge set. A plan whose write sets barely overlap costs about `n²` comparisons; one whose writers overlap densely costs more than quadratic. `Plan.maximumPlanNodes` bounds that work, because a plan above it is refused with `graph_too_large` before any pair is compared.
+Compilation walks with explicit stacks and never recurses per edge. Effect analysis caches transitive reachability in bitsets, updates it when inferring ordering edges, and yields periodically for interruption. It refuses more than 250,000 candidate pairs or 10,000,000 work units with `graph_too_large`. Work includes overlap comparisons, bitset merges and graph traversal. `verify` shares this budget and one effect expansion map and candidate index across all replayed generations. Plans above `Plan.maximumPlanNodes` are refused before effect analysis.
 
 ### Conflict annotations
 
@@ -626,7 +649,7 @@ The pure, pipeable authoring AST. Building a node records an inspectable, closur
 
 Map transforms; branch decides. Both branch arms are evaluated once, symbolically, so the exit condition and the handoff site are visible topology before anything runs. A plan is always a DAG, so there is no loop node: repetition lives one level up, in what a flow settles with.
 
-A payload is stored as its inert JSON mirror. A data-valued callable `toJSON` is honoured, so a `Date` or a `URL` keys as the value it serializes to rather than as an empty object; a function or symbol member is dropped from an object and becomes `null` in an array; shared references and cycles clone as they were written. Accessors and unsupported prototypes without `toJSON` fail as `invalid_payload`, and a `toJSON` that returns its own receiver fails as `cyclic_payload` rather than collapsing to an empty object the way it once did. The clone and the input therefore key identically or refuse together.
+A payload is stored as its inert JSON mirror, and that mirror is identity material: it is hashed into the step key and persisted verbatim as plaintext in `node_json` and in the approval card. Nothing in this package redacts it, and redaction after hashing would break `Plan.verify`. Keep credentials out of payloads; a secret belongs in a layer, a capability, or the environment, resolved at dispatch. A data-valued callable `toJSON` is honoured, so a `Date` or a `URL` keys as the value it serializes to rather than as an empty object; a function or symbol member is dropped from an object and becomes `null` in an array; shared references and cycles clone as they were written. Accessors and unsupported prototypes without `toJSON` fail as `invalid_payload`, and a `toJSON` that returns its own receiver fails as `cyclic_payload` rather than collapsing to an empty object the way it once did. The clone and the input therefore key identically or refuse together.
 
 `isNode` recognizes a node this package built by registration at construction, and a rehydrated node, an object sharing the node prototype whose own `ast` is a well-formed AST, by that shape, because `@smthrs/flow` hands an AST that crossed a serialization boundary back as a node. The `TypeId` marker is a public string any object can carry and counts for nothing on its own. Every combinator that admits a node reads its `ast` as trusted topology, so an object carrying the marker on any other prototype, one inheriting it from a node, and one whose `ast` is missing, malformed, or cyclic are all refused with the same `GraphBuildError` as any other non-node. A proxy is judged by the shape it forwards.
 
@@ -686,10 +709,10 @@ Checks whether a value is a node, by construction registration or by the shape a
 ### Node.succeed
 
 ```ts
-const succeed: <A>(value: A) => Node<A>
+const succeed: <A>(value: A) => Node<Succeed<A>>
 ```
 
-A node that succeeds with a constant.
+A node that succeeds with the constant’s inert JSON projection, typed as `Succeed<A>`. Dates produce `string | null` (an invalid date produces `null`); URLs produce strings. Callable `toJSON` results are projected recursively. Function and symbol members are omitted from objects and become `null` in arrays. Planned references resolve to their referenced result types. Use `Node.map` to reconstruct a domain value explicitly.
 
 ### Node.all
 
@@ -779,7 +802,7 @@ const branch: {
 }
 ```
 
-Decides between two arms, both of them static topology. Both arms contribute their requirements, because a run has to be able to take either. An arm that does not return a node throws `invalid_continuation`.
+Decides between two arms, both of them static topology. The predicate function is snapshotted at construction; replacing `options.if` later does not change the chosen arm. Both arms contribute their requirements, because a run has to be able to take either. An arm that does not return a node throws `invalid_continuation`.
 
 ### Node.CatchOptions
 
@@ -798,14 +821,14 @@ The statically planned recovery arm and the optional schema selecting which type
 const catch: {
   <Handled, B, E2, R2>(
     options: CatchOptions<unknown, B, E2, R2, Handled> & { readonly error: Schema.Schema<Handled> }
-  ): <A, E, R>(self: Node<A, E, R>) => Node<A | B, Exclude<E, Handled> | E2, R | R2>
+  ): <A, E, R>(self: Node<A, E, R>) => Node<A | B, E | E2, R | R2>
   <E, B, E2, R2>(
     options: CatchOptions<E, B, E2, R2> & { readonly error?: undefined }
   ): <A, R>(self: Node<A, E, R>) => Node<A | B, E2, R | R2>
   <A, E, R, Handled, B, E2, R2>(
     self: Node<A, E, R>,
     options: CatchOptions<E, B, E2, R2, Handled> & { readonly error: Schema.Schema<Handled> }
-  ): Node<A | B, Exclude<E, Handled> | E2, R | R2>
+  ): Node<A | B, E | E2, R | R2>
   <A, E, R, B, E2, R2>(
     self: Node<A, E, R>,
     options: CatchOptions<E, B, E2, R2> & { readonly error?: undefined }
@@ -813,7 +836,7 @@ const catch: {
 }
 ```
 
-Recovers from matching typed failures with static failure topology. With no schema the whole typed error channel is handled; a schema handles only the values it accepts and preserves the remainder in the resulting error type.
+Recovers from matching typed failures with static failure topology. With no schema the whole typed error channel is handled. A schema handles only values it accepts, so schema-filtered overloads retain `E | E2`: refinements can reject values without narrowing their TypeScript type. The filter’s JSON Schema and runtime function identities both enter the catch key. Uncaptured schema callbacks have process-local identity and cannot enter a stable graph. For stable custom checks, construct `SchemaAST.Filter` with a `Node.capture`-annotated `run` function and declare all semantic captures; `Schema.makeFilter` wraps its predicate in an opaque closure.
 
 ### Node.priority
 
@@ -844,6 +867,8 @@ const capture: <Args extends ReadonlyArray<unknown>, A>(
 ```
 
 Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. The capture record is canonicalized into function identity and deeply frozen immediately. Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
+
+Plan uses the capture and function-identity implementation from `@smthrs/core/Node`. Capturing an already-captured function preserves its original source and folds both capture sets into the identity. Wrappers can be captured and identified interchangeably by either package. A non-function operation throws `TypeError("Node.capture requires a function operation")`.
 
 ### Node.plannedReference
 
@@ -1045,6 +1070,11 @@ const matchesGlob: (glob: Glob, path: string) => boolean
 
 Bazel's `*` and `**` path semantics without permitting traversal: `*` matches within one segment, `**` matches segments, and a trailing `**` matches the rest of the path. `matchesGlob` honours the glob's `exclude` list.
 
+Matching consumes the entire path, including Unicode line separators. Compiled
+matchers are cached by canonical pattern spelling. Segment matching is linear
+in the segment and pattern lengths; recursive matching visits each pattern/path
+segment pair once, without regex backtracking.
+
 ### FileSet.overlaps
 
 ```ts
@@ -1087,14 +1117,15 @@ class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smthrs/pla
 | `duplicate_node`              | two structural graph addresses resolve to one durable node id                                  |
 | `invalid_priority`            | `Node.priority` received a value that is not a safe integer                                    |
 | `invalid_payload`             | a payload member cannot be captured as inert JSON without executing code or losing identity    |
+| `unstable_callback`           | a callback has process-local identity in a build that requires stable callbacks                |
 
-`GraphBuildErrorCode` is a closed schema literal, so a caller may switch on it and a new refusal is a deliberate addition rather than a new free-form string. This package raises `planned_value_computed`, `invalid_all_member`, `invalid_continuation`, `invalid_priority`, `invalid_payload`, and `cyclic_payload`; the rest come from [`@smthrs/flow`](/docs/reference/api/flow/)'s graph walk, which shares the vocabulary.
+`GraphBuildErrorCode` is a closed schema literal, so a caller may switch on it and a new refusal is a deliberate addition rather than a new free-form string. This package raises `planned_value_computed`, `invalid_all_member`, `invalid_continuation`, `invalid_priority`, `invalid_payload`, and `cyclic_payload`; the rest come from [`@smthrs/flow`](/docs/reference/api/flow/)'s graph walk, which shares the vocabulary. `unstable_callback` is raised by that walk when `Graph.build` runs with `callbackIdentity: "stable"` and a callback carries no `Node.capture` declaration; declare its complete inert captures, including the version of any imported implementation, so the callback keys by content instead of by process.
 
 ## PlanDiff
 
 [src/PlanDiff.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/src/PlanDiff.ts)
 
-The verdict is the key: two nodes with the same id and the same key are the same step. The attribution, `changed: ["body", "input[1]"]`, is a report for a human, derived by comparing declarations field by field, and is deliberately part of no digest. Labels mirror the fields the hashed material body folds: `body`, `layers`, `capabilities`, `effects`, `version`, `nondeterministic`, `placement`, and `input[n]`, including `input[n]` entries whose declaration is unchanged but whose referenced node itself re-keyed. A node re-keyed purely by an upstream edit is therefore attributed to the input position that references it, even behind an unprojected `Pending`, rather than reported as nothing changed.
+The verdict is the key: two nodes with the same id and the same key are the same step. The attribution, `changed: ["body", "input[1]"]`, is a report for a human, derived by comparing declarations field by field, and is deliberately part of no digest. Labels mirror the hashed declaration: `kind` (the effect tier, which selects the key namespace), `body`, `layers`, `capabilities`, `effects`, `version`, `nondeterministic`, `placement`, and `input[n]`, including `input[n]` entries whose declaration is unchanged but whose referenced node itself re-keyed. A node re-keyed purely by an upstream edit is therefore attributed to the input position that references it, even behind an unprojected `Pending`, rather than reported as nothing changed.
 
 Each compared field is projected through the same JSON mirror the keys are derived from, so two `Date` bodies a generation apart attribute to `body` rather than to nothing. The projection runs no accessor, and a field it refuses compares by an identity token scoped to that node and field, so `diff` stays a total function even for a value canonical serialization would reject.
 
@@ -1138,7 +1169,7 @@ Compares a plan against the last plan for the same flow. Pure, total, and free o
 
 `record` is first-writer-wins: an identical re-record is not an error, and a different plan under the same id is a `Conflict` carrying the stored digest rather than a silent overwrite. It accepts generation 0 only, whose `baseDigest` equals its `digest` and every one of whose nodes is at generation 0. `get` returns the verified immutable plan with nodes in recorded order. Admission and reads recompute keys, approval digests, topology, effect ordering and generation relationships. A forged incoming plan fails with `invalid_plan` before writes; corrupt stored content fails with `decode_failed`, including on duplicate admission. Envelope and nodes are read in one SQL statement to avoid mixed generations during concurrent appends.
 
-`append` advances the plan row with a compare-and-swap on the previous generation, the flow, and the approved base digest, and refuses an append that adds no nodes. The refusal matters because of the append-only triggers: without it the node rows would land while the plan-row update matched nothing or skipped a generation, leaving rows whose dependencies are missing and that nothing is allowed to delete. The whole append is one transaction, so the refusal takes the rows back with it. Ordinals are derived from the rows already stored, not from the caller's array.
+`append` advances the plan row with a compare-and-swap on the previous generation, the flow, the approved base digest, and the approval digest of the append's already-verified prefix, and it refuses an append that adds no nodes. Matching the prefix digest proves the recorded prefix is the caller's without re-reading the stored rows. The refusal matters because of the append-only triggers: without it the node rows would land while the plan-row update matched nothing or skipped a generation, leaving rows whose dependencies are missing and that nothing is allowed to delete. The whole append is one transaction, so the refusal takes the rows back with it. New ordinals continue the recorded prefix, whose length the matched digest proves equal to the caller's prefix.
 
 Every failure is a `PlanStoreError` whose `code` is one of `invalid_plan`, `constraint`, `decode_failed`, `persistence_failed`, or `unknown`.
 

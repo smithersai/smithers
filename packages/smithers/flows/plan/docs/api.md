@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/plan: the authoring AST, the planned placeholder, key material, the step-key compiler, the plan value, its diff, its append-only store, and its migrations."
 ---
 
-`@smthrs/plan` exports ten modules from its root entry point, and each is also
+`@smthrs/plan` exports eleven modules from its root entry point, and each is also
 importable from `@smthrs/plan/<Module>`:
 
 ```ts
@@ -26,6 +26,7 @@ import * as Plan from "@smthrs/plan/Plan"
 | `Plan`            | `compile`, `append`, the node and conflict schemas, and the digest an approval binds to.                  |
 | `PlanDiff`        | A plan comparison as a value: added, removed, re-keyed with attribution, unchanged.                       |
 | `PlanStore`       | Append-only SQL persistence, enforced by triggers rather than by convention.                              |
+| `Scheduling`      | The pure admission policy a scheduler consults: concurrency, priority order, and the halt rule.           |
 | `Migrations`      | The namespaced migration set that owns the three plan tables in id block `4000`.                          |
 
 The shortest composition that reaches every layer:
@@ -599,13 +600,14 @@ class PlanError extends Schema.TaggedError<PlanError>()("@smthrs/plan/PlanError"
     "overlap_forbidden",
     "invalid_effects",
     "invalid_node",
+    "invalid_plan",
     "graph_too_large"
   ])
   message: Schema.String
 })
 ```
 
-A graph the compiler refuses. The code set is closed, so a caller may switch on it.
+A graph the compiler refuses, or a stored plan `verify` cannot accept. The code set is closed, so a caller may switch on it.
 
 | `code`               | Meaning                                                                                                                                                                                                                                            |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -615,6 +617,7 @@ A graph the compiler refuses. The code set is closed, so a caller may switch on 
 | `overlap_forbidden`  | a `fail` pair genuinely overlaps and no dependency path orders it                                                                                                                                                                                  |
 | `invalid_effects`    | one path is declared as both a write and a removal                                                                                                                                                                                                 |
 | `invalid_node`       | an empty plan id, flow, or node id, a priority that is not a safe integer, a `kind` or strategy outside its literal set, or key material or an effect declaration this release cannot decode, which includes a path that is not workspace-relative |
+| `invalid_plan`       | `Plan.verify` decoded a plan whose generations, approval digest, keys, effects, or ordering do not match its content; raised on `PlanStore.record`, `append`, and `get`, never by `compile`                                                        |
 | `graph_too_large`    | a plan exceeds `Plan.maximumPlanNodes` or the effect-analysis work budget                                                                                                                                                                          |
 
 Compilation walks with explicit stacks and never recurses per edge. Effect analysis caches transitive reachability in bitsets, updates it when inferring ordering edges, and yields periodically for interruption. It refuses more than 250,000 candidate pairs or 10,000,000 work units with `graph_too_large`. Work includes overlap comparisons, bitset merges and graph traversal. `verify` shares this budget and one effect expansion map and candidate index across all replayed generations. Plans above `Plan.maximumPlanNodes` are refused before effect analysis.
@@ -639,7 +642,7 @@ The pure, pipeable authoring AST. Building a node records an inspectable, closur
 
 Map transforms; branch decides. Both branch arms are evaluated once, symbolically, so the exit condition and the handoff site are visible topology before anything runs. A plan is always a DAG, so there is no loop node: repetition lives one level up, in what a flow settles with.
 
-A payload is stored as its inert JSON mirror. A data-valued callable `toJSON` is honoured, so a `Date` or a `URL` keys as the value it serializes to rather than as an empty object; a function or symbol member is dropped from an object and becomes `null` in an array; shared references and cycles clone as they were written. Accessors and unsupported prototypes without `toJSON` fail as `invalid_payload`, and a `toJSON` that returns its own receiver fails as `cyclic_payload` rather than collapsing to an empty object the way it once did. The clone and the input therefore key identically or refuse together.
+A payload is stored as its inert JSON mirror, and that mirror is identity material: it is hashed into the step key and persisted verbatim as plaintext in `node_json` and in the approval card. Nothing in this package redacts it, and redaction after hashing would break `Plan.verify`. Keep credentials out of payloads; a secret belongs in a layer, a capability, or the environment, resolved at dispatch. A data-valued callable `toJSON` is honoured, so a `Date` or a `URL` keys as the value it serializes to rather than as an empty object; a function or symbol member is dropped from an object and becomes `null` in an array; shared references and cycles clone as they were written. Accessors and unsupported prototypes without `toJSON` fail as `invalid_payload`, and a `toJSON` that returns its own receiver fails as `cyclic_payload` rather than collapsing to an empty object the way it once did. The clone and the input therefore key identically or refuse together.
 
 `isNode` recognizes a node this package built by registration at construction, and a rehydrated node, an object sharing the node prototype whose own `ast` is a well-formed AST, by that shape, because `@smthrs/flow` hands an AST that crossed a serialization boundary back as a node. The `TypeId` marker is a public string any object can carry and counts for nothing on its own. Every combinator that admits a node reads its `ast` as trusted topology, so an object carrying the marker on any other prototype, one inheriting it from a node, and one whose `ast` is missing, malformed, or cyclic are all refused with the same `GraphBuildError` as any other non-node. A proxy is judged by the shape it forwards.
 
@@ -1107,8 +1110,9 @@ class GraphBuildError extends Schema.TaggedError<GraphBuildError>()("@smthrs/pla
 | `duplicate_node`              | two structural graph addresses resolve to one durable node id                                  |
 | `invalid_priority`            | `Node.priority` received a value that is not a safe integer                                    |
 | `invalid_payload`             | a payload member cannot be captured as inert JSON without executing code or losing identity    |
+| `unstable_callback`           | a callback has process-local identity in a build that requires stable callbacks                |
 
-`GraphBuildErrorCode` is a closed schema literal, so a caller may switch on it and a new refusal is a deliberate addition rather than a new free-form string. This package raises `planned_value_computed`, `invalid_all_member`, `invalid_continuation`, `invalid_priority`, `invalid_payload`, and `cyclic_payload`; the rest come from [`@smthrs/flow`](/api/flow)'s graph walk, which shares the vocabulary.
+`GraphBuildErrorCode` is a closed schema literal, so a caller may switch on it and a new refusal is a deliberate addition rather than a new free-form string. This package raises `planned_value_computed`, `invalid_all_member`, `invalid_continuation`, `invalid_priority`, `invalid_payload`, and `cyclic_payload`; the rest come from [`@smthrs/flow`](/api/flow)'s graph walk, which shares the vocabulary. `unstable_callback` is raised by that walk when `Graph.build` runs with `callbackIdentity: "stable"` and a callback carries no `Node.capture` declaration; declare its complete inert captures, including the version of any imported implementation, so the callback keys by content instead of by process.
 
 ## PlanDiff
 

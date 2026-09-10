@@ -179,8 +179,12 @@ covers both passes in full.
 `Plan.compile` and `Plan.append` fail with a `PlanError` carrying one of seven
 stable codes: `cycle`, `unknown_dependency`, `duplicate_node`,
 `overlap_forbidden`, `invalid_effects`, `invalid_node`, and `graph_too_large`.
-A plan-time build refuses through `GraphBuildError`, whose closed code set
-names the site and the fix. `PlanStore.record` answers with a `RecordResult`
+`Plan.verify`, which every store read and write runs, adds an eighth,
+`invalid_plan`: the plan decoded but its generations, approval digest, keys,
+effects, or ordering do not match its content. A plan-time build refuses
+through `GraphBuildError`, whose closed code set names the site and the fix;
+`unstable_callback` in that set is raised by `@smthrs/flow` when a stable build
+meets a callback without a `Node.capture` declaration. `PlanStore.record` answers with a `RecordResult`
 (`Recorded`, `ExistingSame`, or `Conflict` carrying the digest already stored),
 and every store failure is a `PlanStoreError` coded `invalid_plan`,
 `constraint`, `decode_failed`, `persistence_failed`, or `unknown`.
@@ -198,7 +202,10 @@ NFC, and `FileSet.workspaceRelative` refuses absolute paths, drive letters,
 A node payload is stored as its inert JSON mirror, so a data-valued `toJSON` is
 honoured while an accessor or an unsupported prototype fails with
 `invalid_payload` rather than executing author code or collapsing distinct
-values onto `{}`. `Node.succeed(input)` returns `Node<Succeed<typeof input>>`:
+values onto `{}`. That mirror is identity material: it is hashed into the step
+key and persisted verbatim as plaintext in `node_json` and in the approval card,
+and this package never redacts it. Keep credentials out of payloads. A secret
+belongs in a layer, a capability, or the environment, resolved at dispatch. `Node.succeed(input)` returns `Node<Succeed<typeof input>>`:
 the success type describes that projection. Dates become `string | null`, URLs
 become strings, and callable object members disappear. Planned references
 resolve to their result types. Reconstruct domain objects explicitly in

@@ -94,10 +94,22 @@ identically.
 ### The codes this package does not raise
 
 `GraphBuildErrorCode` also carries `recursion_requires_boundary`,
-`placement_requires_boundary`, `graph_too_deep`, `duplicate_node`, and
-`payload_too_deep`. Those come from [`@smthrs/flow`](/api/flow)'s graph walk,
-which shares this vocabulary. The code set is closed so a caller can switch on
-it across both packages.
+`placement_requires_boundary`, `graph_too_deep`, `duplicate_node`,
+`payload_too_deep`, and `unstable_callback`. Those come from
+[`@smthrs/flow`](/api/flow)'s graph walk, which shares this vocabulary. The
+code set is closed so a caller can switch on it across both packages.
+
+`unstable_callback` deserves its own note because the fix lives in your flow
+body. `Graph.build` with `callbackIdentity: "stable"` refuses a callback whose
+identity is process-local:
+
+```text
+Callback run at "review" has process-local identity and cannot enter a stable graph.
+```
+
+Wrap the callback in `Node.capture` and declare every semantic capture,
+including the version of any imported implementation, so it keys by content
+instead of by process.
 
 ## PlanError
 
@@ -198,6 +210,23 @@ A plan may contain at most 10000 nodes, received 12000
 **What to change.** Split the work across flow boundaries. The node ceiling is checked
 before effect analysis. A separate work budget bounds dense conflicts and
 reachability updates, and applies across generations during verification.
+
+### invalid_plan
+
+**What happened.** `Plan.verify` decoded a plan whose content does not hold
+together. Every `PlanStore` read and write runs it, so this surfaces from
+`record`, `append`, and `get`, never from `compile`:
+
+```text
+Plan approval digest does not match its compiled content
+Plan nodes do not match their compiled keys, effects, ordering, or generations
+Node run-tests has an invalid or out-of-order generation
+```
+
+**What to change.** Pass the value `Plan.compile` or `Plan.append` returned.
+A plan that fails here was assembled by hand, mutated after compiling, or
+edited in the database. The `PlanStoreError` of the same name covers the store's
+own preconditions.
 
 ## KeyMaterialError
 

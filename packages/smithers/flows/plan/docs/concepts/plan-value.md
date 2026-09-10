@@ -77,7 +77,7 @@ Each entry of `plan.nodes` is a `PlanNode`:
 | `key`        | The computed step key, in the same `key1_` format the engine dispatches under. |
 | `material`   | The declaration the key was derived from.                                      |
 | `effects`    | The reads, writes, removals, and boundary mode this node declares.             |
-| `dependsOn`  | The scheduling edge set, including dependencies on later array entries.         |
+| `dependsOn`  | The scheduling edge set, including dependencies on later array entries.        |
 | `conflicts`  | One annotation per overlapping writer no dependency path already orders.       |
 | `strategy`   | This declaration's preferred plan-time verdict for an overlap.                 |
 | `runtime`    | This declaration's preferred response when a predicted overlap actually bites. |
@@ -133,6 +133,14 @@ A material accessor, or a prototype with no JSON representation, is refused as
 `invalid_node` naming the node and the payload path rather than stored by
 reference. A `Planned` placeholder is left intact so canonical serialization
 still refuses it.
+
+## Payloads are plaintext
+
+Material is identity: the body and inputs of a node are hashed into its step
+key and written verbatim as plaintext into `node_json` and the approval card an
+operator reads. This package never redacts them, and redacting after hashing
+would break `Plan.verify`. Keep credentials out of payloads. A secret belongs in
+a layer, a capability, or the environment, resolved at dispatch.
 
 ## Where a plan comes from
 
