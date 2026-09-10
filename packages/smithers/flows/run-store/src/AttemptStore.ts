@@ -497,10 +497,33 @@ const snapshotJson = (
     : { ok: false, error: error(method, "invalid_attempt", `${field} ${admitted.complaint}`) }
 }
 
+/**
+ * Structural admission for an attempt identity. `Attempt` and `FinishAttempt`
+ * extend `AttemptId`, so a stored attempt must pass wherever an id is typed:
+ * extra own data fields are ignored, while a non-plain prototype, any
+ * enumerable accessor, or a missing or inherited required field is refused.
+ */
+const inspectIdRecord = (input: unknown, field: string): Readonly<Record<string, unknown>> => {
+  if (typeof input !== "object" || input === null) throw new TypeError(field)
+  const prototype = Object.getPrototypeOf(input)
+  if (prototype !== Object.prototype && prototype !== null) throw new TypeError(field)
+  for (const key of Reflect.ownKeys(input)) {
+    const descriptor = Object.getOwnPropertyDescriptor(input, key)
+    if (descriptor !== undefined && descriptor.enumerable && !("value" in descriptor)) throw new TypeError(field)
+  }
+  const output = Object.create(null) as Record<string, unknown>
+  for (const name of ["runId", "stepKeyDigest", "attempt"]) {
+    const descriptor = Object.getOwnPropertyDescriptor(input, name)
+    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) throw new TypeError(field)
+    output[name] = descriptor.value
+  }
+  return output
+}
+
 const snapshotId = (method: AttemptStoreMethod, input: AttemptId): Effect.Effect<AttemptId, AttemptStoreError> =>
   Effect.suspend(() => {
     try {
-      const values = inspectRecord(input, ["runId", "stepKeyDigest", "attempt"], [], "attempt id")
+      const values = inspectIdRecord(input, "attempt id")
       const id = Object.freeze({
         runId: values.runId,
         stepKeyDigest: values.stepKeyDigest,

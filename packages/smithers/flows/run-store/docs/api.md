@@ -283,9 +283,12 @@ interface RunSnapshot {
 }
 ```
 
-The exact triple every claim guards. `running` requires both an owner and a
-heartbeat; every other status requires neither. Extra properties are refused as
-invalid input.
+The triple every claim guards. `running` requires both an owner and a
+heartbeat; every other status requires neither. Admission is structural: the
+store reads only these three fields as own enumerable data properties and
+copies them, so a `RunRow` from `get` passes directly as `expected`. Other own
+data fields are ignored. A non-plain prototype, an enumerable accessor on any
+key, or a missing or inherited required field is refused as invalid input.
 
 #### RunRow
 
@@ -434,6 +437,13 @@ const get: (id: AttemptId) => Effect<Option<Attempt>, AttemptStoreError>
 
 The one unfenced operation. Absent optional columns come back as absent keys
 rather than nulls, and every value is re-validated on the way out.
+
+Every `AttemptId` parameter (`get`, `patch`) is admitted structurally: the store
+reads only `runId`, `stepKeyDigest`, and `attempt` as own enumerable data
+properties and ignores other own data fields, so an `Attempt` from `put` or
+`get` passes directly as the id. A non-plain prototype, an enumerable accessor
+on any key, or a missing or inherited id field is refused with
+`invalid_attempt`.
 
 #### heartbeat
 

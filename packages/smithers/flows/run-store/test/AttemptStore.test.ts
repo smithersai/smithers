@@ -795,3 +795,58 @@ describe("AttemptStore", () => {
       ])
     }))
 })
+
+describe("AttemptStore structural id admission", () => {
+  // [flows-run-store/api-design/1] Attempt extends AttemptId, so a stored
+  // attempt must be accepted wherever an id is typed.
+  it.effect("accepts an Attempt from put or get as the id of get and patch", () =>
+    migrated(Effect.gen(function*() {
+      yield* createRun()
+      const store = yield* AttemptStore
+      const attempt = {
+        runId: "run-1",
+        stepKeyDigest: "digest-structural",
+        attempt: 0,
+        state: "running",
+        startedAtMs: 10,
+        heartbeatAtMs: 11,
+        checkpoint: { cursor: 1 },
+        meta: {}
+      }
+      expect(yield* store.put(attempt, owner)).toEqual({ _tag: "Inserted" })
+      const stored = Option.getOrThrow(yield* store.get(attempt))
+      expect(stored.stepKeyDigest).toBe("digest-structural")
+      expect(yield* store.patch(stored, { checkpoint: { cursor: 2 } }, owner)).toEqual({ _tag: "Patched" })
+      expect(Option.getOrThrow(yield* store.get(stored)).checkpoint).toEqual({ cursor: 2 })
+    })))
+
+  it.effect("still rejects accessors, prototype-carried fields, and missing id fields", () =>
+    migrated(Effect.gen(function*() {
+      yield* createRun()
+      const store = yield* AttemptStore
+      let calls = 0
+      const id = { runId: "run-1", stepKeyDigest: "digest-structural", attempt: 0 }
+      const accessor = Object.defineProperty({ ...id }, "attempt", {
+        enumerable: true,
+        get: () => {
+          calls++
+          return 0
+        }
+      })
+      const extraAccessor = Object.defineProperty({ ...id, state: "running" }, "meta", {
+        enumerable: true,
+        get: () => {
+          calls++
+          return {}
+        }
+      })
+      const inherited = Object.create(id) as typeof id
+      const { attempt: _attempt, ...missing } = id
+      const candidates = [accessor, extraAccessor, inherited, missing, new Date()]
+      for (const [index, candidate] of candidates.entries()) {
+        const failure = yield* Effect.flip(store.get(candidate as never))
+        expect(failure.code, `candidate ${index}`).toBe("invalid_attempt")
+      }
+      expect(calls).toBe(0)
+    })))
+})

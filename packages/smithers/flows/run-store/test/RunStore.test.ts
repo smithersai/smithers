@@ -1571,3 +1571,68 @@ describe("run-store fencing gaps", () => {
       expect(result.absent).toEqual({ _tag: "NotFound" })
     }))
 })
+
+describe("RunStore structural snapshot admission", () => {
+  // [flows-run-store/api-design/1] RunRow extends RunSnapshot, so a row from
+  // `get` must be accepted wherever an expected snapshot is typed.
+  it.effect("accepts a RunRow from get as the expected snapshot of claim, claimAndOwn, activate, and steal", () =>
+    migrated(Effect.gen(function*() {
+      const store = yield* RunStore
+      yield* store.create("row-claim-and-own", "{}")
+      const pendingRow = yield* store.get("row-claim-and-own")
+      expect(yield* store.claimAndOwn("row-claim-and-own", pendingRow, ownerA, 0)).toEqual({ _tag: "Activated" })
+
+      yield* store.create("row-claim-activate", "{}")
+      const claimRow = yield* store.get("row-claim-activate")
+      expect(yield* store.claim("row-claim-activate", claimRow, ownerA, 1)).toEqual({ _tag: "Claimed", claimedAtMs: 1 })
+      expect(yield* store.activate("row-claim-activate", ownerA, 1, claimRow)).toEqual({ _tag: "Activated" })
+
+      yield* TestClock.adjust(Duration.seconds(31))
+      const runningRow = yield* store.get("row-claim-and-own")
+      const staleNow = yield* Clock.currentTimeMillis
+      const stolen = yield* store.steal(
+        "row-claim-and-own",
+        runningRow,
+        ownerC,
+        staleNow,
+        staleEvidence(ownerA, ownerC, staleNow)
+      )
+      expect(stolen).toEqual({ _tag: "Claimed", claimedAtMs: staleNow })
+    })))
+
+  it.effect("still rejects accessors, prototype-carried fields, and missing required fields", () =>
+    migrated(Effect.gen(function*() {
+      const store = yield* RunStore
+      yield* store.create("row-hostile", "{}")
+      const row = yield* store.get("row-hostile")
+      let calls = 0
+      const accessor = Object.defineProperty({ ...row }, "status", {
+        enumerable: true,
+        get: () => {
+          calls++
+          return "pending"
+        }
+      })
+      const extraAccessor = Object.defineProperty({ ...row }, "unrelated", {
+        enumerable: true,
+        get: () => {
+          calls++
+          return true
+        }
+      })
+      const inherited = Object.create({ status: "pending", owner: null, heartbeatAtMs: null }) as RunSnapshot
+      const { status: _status, ...missing } = row
+      const classInstance = new (class Row {
+        status = "pending"
+        owner = null
+        heartbeatAtMs = null
+      })()
+      const candidates = [accessor, extraAccessor, inherited, missing, classInstance]
+      for (const [index, candidate] of candidates.entries()) {
+        const failure = yield* Effect.flip(store.claimAndOwn("row-hostile", candidate as never, ownerA, 0))
+        expect(failure.code, `candidate ${index}`).toBe("invalid_run")
+      }
+      expect(calls).toBe(0)
+      expect((yield* store.get("row-hostile")).status).toBe("pending")
+    })))
+})

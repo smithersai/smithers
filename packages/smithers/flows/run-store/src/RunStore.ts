@@ -816,13 +816,39 @@ const snapshotCreateOptions = (
     return Effect.succeed(Object.freeze({ parentRunId, lineageId, roundOrdinal }))
   })
 
+/**
+ * Structural admission for a value typed as a required-field record. `RunRow`
+ * extends `RunSnapshot`, so a row from `get` must pass wherever an expected
+ * snapshot is typed: extra own data fields are ignored, while a non-plain
+ * prototype, any enumerable accessor, or a missing or inherited required field
+ * is still refused. Only the required fields are read, and only as own data.
+ */
+const inertFields = (input: unknown, required: ReadonlyArray<string>): input is object => {
+  if (typeof input !== "object" || input === null) return false
+  try {
+    const prototype = Object.getPrototypeOf(input)
+    if (prototype !== Object.prototype && prototype !== null) return false
+    for (const key of Reflect.ownKeys(input)) {
+      const descriptor = Object.getOwnPropertyDescriptor(input, key)
+      if (descriptor !== undefined && descriptor.enumerable && !("value" in descriptor)) return false
+    }
+    for (const key of required) {
+      const descriptor = Object.getOwnPropertyDescriptor(input, key)
+      if (descriptor === undefined || !descriptor.enumerable) return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
 const snapshotExpected = (
   method: string,
   input: unknown
 ): Effect.Effect<RunSnapshot, RunStoreError> =>
   Effect.gen(function*() {
-    if (!inertRecord(input, new Set(["status", "owner", "heartbeatAtMs"]))) {
-      return yield* Effect.fail(invalidRunError(method, "expected", "must be an inert exact snapshot"))
+    if (!inertFields(input, ["status", "owner", "heartbeatAtMs"])) {
+      return yield* Effect.fail(invalidRunError(method, "expected", "must be an inert snapshot record"))
     }
     const status = ownData(input, "status")
     const rawOwner = ownData(input, "owner")
