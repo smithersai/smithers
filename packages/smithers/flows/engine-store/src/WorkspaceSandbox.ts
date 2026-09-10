@@ -26,15 +26,13 @@
  * through a service this module does not seed (a spawned native process, an
  * undecorated socket) is outside the transaction. Actually denying that
  * ambient access requires a machine boundary such as the providers in
- * `docs/pages/api/sandbox.md`. The one host
+ * `packages/smithers/flows/sandbox/docs/api.md`. The one host
  * write this module *does* perform is confined, however: copy-back resolves
  * symlinks before it lands a byte and refuses any target whose canonical
  * location escapes the workspace root.
  *
- * `docs/pages/release/known-limitations.md` documents that settled bundles
- * reach the host without a human review gate. Governing designs:
- * `docs/pages/concepts/action-graph.md` and
- * `docs/pages/concepts/effect-integration.md`.
+ * Settled bundles reach the host without a human review gate. Governing
+ * design: `docs/concepts/workspace-transactions.md`.
  *
  * @since 0.1.0
  */
@@ -346,9 +344,8 @@ export class WorkspaceError extends Schema.TaggedError<WorkspaceError>()(
  * base snapshot was taken.
  *
  * The engine answers this by retrying the attempt from a fresh base a bounded
- * number of times. This local retry is rebase-shaped. The removed worktree-lane
- * surface is documented in `docs/pages/release/known-limitations.md`; this
- * error does not recreate it.
+ * number of times. This local retry is rebase-shaped. The worktree-lane
+ * surface was removed; this error does not recreate it.
  *
  * @category errors
  * @since 0.1.0
@@ -481,7 +478,7 @@ export const layer = (service: Service): Layer.Layer<Service> => Layer.succeed(W
  * world when its execution turns out to be invalid, and has reached it twice
  * when copy-back loses a race and the body re-runs. Deduplication is by
  * {@link QueuedEffect.idempotencyKey}, which is the same key
- * `docs/pages/concepts/actions.md` requires before an irreversible
+ * `docs/concepts/workspace-transactions.md` requires before an irreversible
  * effect may be retried at all.
  *
  * @category services
@@ -550,7 +547,7 @@ const normalizePath = (root: string, path: string, allowRoot = false): Result.Re
  * Whether a declared write-set entry covers an observed path. Entries are
  * ordinarily literal paths (what `StepBoundary` captures); `*` and `**` are
  * honored so a declaration written as a glob per
- * `docs/pages/api/plan.md` still means what it says.
+ * `packages/smithers/flows/plan/docs/api.md` still means what it says.
  */
 const covers = (entry: FileSet.Entry, path: string): boolean =>
   typeof entry === "string"
@@ -1240,8 +1237,8 @@ const escapesWorkspace = (path: string, resolved: string): WorkspaceError =>
  * Builds the filesystem-backed workspace sandbox.
  *
  * **Copy-in, not overlay.** The transaction is seeded with exactly the
- * declared read set and nothing else, which is the sandboxed tier in
- * `docs/pages/concepts/action-graph.md`. Bazel uses the same strategy, which
+ * declared read set and nothing else
+ * (`docs/concepts/workspace-transactions.md`). Bazel uses the same strategy, which
  * is why whole-tree write observation is structural here. Re-rooting a
  * body onto a bare host tree instead would leave every undeclared file
  * readable and reduce enforcement to the taxonomy's weakest, post-hoc

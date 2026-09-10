@@ -119,10 +119,12 @@ journal record proves the opposite verdict only when an exact retry of that
 opposite record returns `Duplicate`. An incompatible TTL or copied history
 with different lineage metadata instead fails with `JournalError` code
 `idempotency_conflict`, before output replay, cache eviction, or body dispatch.
-Restore the original policy and history identity, or choose a new action
-identity. No persisted keys or journal producer identities are rewritten.
-Changing TTL before a decision exists remains allowed; removing `ttlMs`
-retains the existing unbounded path and is not covered by this conflict check.
+Changing TTL before a decision exists remains allowed. Omitting `ttlMs` is
+unbounded only before a durable age verdict exists for this run and step.
+Removing `ttlMs` after a recorded verdict fails with `idempotency_conflict`,
+even if the cache head was evicted or replaced. Recovery must retain the
+original TTL and history identity, or use a new action or run identity as
+appropriate. No persisted keys or journal producer identities are rewritten.
 
 Durable cancellation is observed, not just recorded: while a run executes, the
 driver polls `cancel_requested_at_ms` on the heartbeat cadence and cancels the
@@ -171,9 +173,10 @@ only after the mutation returns.
 | Member                   | Signature                                                                                    |
 | ------------------------ | -------------------------------------------------------------------------------------------- |
 | `deferred`               | `(address: DeferredAddress) => Effect<Option<DeferredRow>>`                                  |
+| `consumeDeferred`        | `(address: DeferredAddress, consumedAtMs: number) => Effect<void>`                           |
 | `completeDeferred`       | `(row: DeferredRow) => Effect<CompleteDeferredOutcome>`                                      |
 | `clock`                  | `(address: ClockAddress) => Effect<Option<ClockRow>>`                                        |
-| `scheduleClock`          | `(row: ClockRow, owner?: OwnerId) => Effect<ScheduleClockOutcome>`                           |
+| `scheduleClock`          | `(row: ClockRow, owner: OwnerId) => Effect<ScheduleClockOutcome>`                            |
 | `completeClock`          | `(address: ClockAddress, completedAtMs: number) => Effect<CompleteClockOutcome>`             |
 | `dueClocks`              | `(nowMs: number) => Effect<ReadonlyArray<ClockRow>>`                                         |
 | `completeRunClocks`      | `(executionId: string, completedAtMs: number) => Effect<void>`                               |
@@ -191,11 +194,26 @@ only after the mutation returns.
 | `runChildren`            | `(parentId: string) => Effect<ReadonlyArray<RunParentEdge>>`                                 |
 | `transaction`            | `<A, E, R>(effect: Effect<A, E, R>) => Effect<A, E, R>`                                      |
 
+`scheduleClock` requires the execution's ownership token. Creation succeeds
+only while the run is running under that owner. An existing clock wins unchanged,
+even after ownership is lost. If no clock exists and the ownership fence fails,
+the effect self-interrupts.
+
+`recordRunParent` allocates `MAX(seq) + 1` in the serialized write transaction.
+Migration 0007 indexes `seq` so allocation does not scan retained parent history.
+
 `completeRunClocks` closes every uncompleted clock row of one run in a single
 statement, which a terminal transition does in its own transaction.
 `pendingClocks` and `completedDeferreds` never list a row whose run has settled,
 so a registration sweep re-arms timers and replays completions for runs that can
-still make progress and for no others. `attemptSurvivors` is optional because
+still make progress and for no others. `completedDeferreds` also excludes
+completions marked observed by `consumeDeferred`. The engine marks a completion
+before `deferredResult` serves it; `deferred` remains a read-only lookup and keeps
+returning the original result for replay. Duplicate completion writes do not
+clear the marker. Migration 0008 leaves existing completions unconsumed until
+the upgraded engine first serves them.
+
+`attemptSurvivors` is optional because
 only storage that can range-scan `flows_attempts` implements it; when absent the
 engine falls back to per-attempt point reads against `AttemptStore`.
 
@@ -213,8 +231,11 @@ writers whose edges jointly close a cycle, exactly one fails. `transaction`
 makes several store operations atomic; nested store writes become savepoints.
 Serialized write transactions are a documented requirement of the
 `DurableWriter.write` contract, not a SQLite artifact: a Postgres-backed
-implementation must use `SERIALIZABLE`. The in-memory twin runs the effect
-directly, having no crash windows to close.
+implementation must use `SERIALIZABLE`. The in-memory twin serializes every
+store operation behind one permit, snapshots its state on entry, rolls back to
+that snapshot when the effect fails or dies, and treats a nested call on the
+same fiber as a savepoint. It is not durable: a process crash loses the whole
+in-memory state, not only the uncommitted part.
 
 ### Addresses, rows, and outcomes
 
@@ -354,6 +375,20 @@ interface Service {
   ) => Effect<void, MaterializationConflict | WorkspaceError, Crypto>
 }
 ```
+
+`materialize` checks confinement, digests, and retained bytes before changing
+files. The filesystem host serializes cooperating commits through preflight,
+apply, and rollback, using a workspace-root semaphore and the exclusively
+created `.smithers-workspace-lock` advisory directory. The directory and its
+children are reserved. Hosts must support exclusive non-recursive directory
+creation and removal; writers that ignore the lock are outside this guarantee.
+
+Rollback uses in-memory file pre-images. Copy-back is not crash-atomic, and
+rollback can fail. A compound cause preserves the apply failure plus a
+`WorkspaceError` (`host_unavailable`) carrying the rollback cause. The caller
+must reconcile host files after a crash or failed rollback before resuming.
+A crash can leave a stale lock; remove it only after confirming the owner has
+stopped and reconciling the workspace. Lock waits are interruptible.
 
 | Export                      | Signature                                                                                                                          | Meaning                                                                                                                     |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |

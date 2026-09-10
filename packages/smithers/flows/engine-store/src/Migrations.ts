@@ -10,8 +10,8 @@
  * cache, {@link sets} is also the full durable schema an engine needs, and
  * {@link layer} installs it in dependency order.
  *
- * Derived contracts: `docs/pages/architecture/package-map.md` and
- * `docs/pages/concepts/journal.md`.
+ * Derived contracts: `docs/api.md` ("Migrations") and
+ * `packages/smithers/flows/journal/docs/api.md`.
  *
  * @since 0.1.0
  */

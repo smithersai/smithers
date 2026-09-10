@@ -1,9 +1,9 @@
 /**
  * Durable `FlowEngine.Encoded` composition over `@smthrs/journal`.
  *
- * Governing designs: `docs/pages/internals.md`,
- * `docs/pages/concepts/step-keys.md`, and
- * `docs/pages/concepts/action-graph.md`.
+ * Governing designs: `docs/concepts/ownership-and-fencing.md`,
+ * `docs/concepts/attempts-and-replay.md`, and
+ * `apps/site/src/content/docs/docs/concepts/flows-actions-plans.mdx`.
  *
  * @since 0.1.0
  */
@@ -87,7 +87,7 @@ type PublicRequirements =
   // The run driver derives each trampoline round's execution id from
   // (lineage, ordinal) with the injected SHA-256, on the coordinator's own
   // fiber rather than a caller's, so hashing is a construction-time
-  // requirement of the composition (`docs/pages/api/engine.md`).
+  // requirement of the composition (`packages/smithers/flows/engine/docs/api.md`).
   | Crypto.Crypto
   | DurableEngineState.DurableEngineState
   | Journal.Journal

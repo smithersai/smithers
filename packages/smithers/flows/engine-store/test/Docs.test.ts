@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import * as ts from "typescript"
 import { describe, expect, it } from "vitest"
 
@@ -46,5 +46,36 @@ describe("documentation contracts", () => {
     }
     expect(names).toEqual(expect.arrayContaining(["Action", "Flow", "Interpreter"]))
     expect(names.filter((name, index) => names.indexOf(name) !== index)).toEqual([])
+  })
+})
+
+describe("source documentation pointers", () => {
+  const sourceDir = new URL("../src/", import.meta.url)
+  const sources = readdirSync(sourceDir).filter((name) => name.endsWith(".ts"))
+  const read = (name: string): string => readFileSync(new URL(name, sourceDir), "utf8")
+
+  it("every relative docs pointer in a public module resolves to a file", () => {
+    const missing: Array<string> = []
+    for (const name of sources) {
+      for (const match of read(name).matchAll(/`((?:\.\.\/)*(?:docs|packages|apps)\/[^`\s]+\.(?:md|mdx))`/g)) {
+        const pointer = match[1]!
+        const target = pointer.startsWith("docs/")
+          ? new URL(`../${pointer}`, import.meta.url)
+          : new URL(`../../../../../${pointer}`, import.meta.url)
+        if (!existsSync(target)) missing.push(`${name}: ${pointer}`)
+      }
+    }
+    expect(missing).toEqual([])
+  })
+
+  it("names the run statuses the schema admits and the real memory transaction", () => {
+    const header = read("DurableEngineState.ts")
+    expect(header).not.toMatch(/one `waiting` status/)
+    expect(header).toContain("`suspended`")
+    expect(header).toContain("`waiting_reason`")
+    expect(header).not.toContain("runs the effect directly")
+    const api = readDoc("api.md").replace(/\s+/g, " ")
+    expect(api).not.toContain("runs the effect directly")
+    expect(api).toContain("rolls back")
   })
 })

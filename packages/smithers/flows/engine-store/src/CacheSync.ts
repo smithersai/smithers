@@ -27,7 +27,7 @@
  * journaled by the caller instead, which is the same treatment an unverified
  * read set gets — visible, not silent.
  *
- * Governing design: `docs/pages/api/step-cache.md`.
+ * Governing design: `packages/smithers/flows/step-cache/docs/api.md`.
  *
  * @since 0.1.0
  */

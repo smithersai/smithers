@@ -2,9 +2,11 @@
  * Durable deferred-completion and clock-deadline state used by the flow
  * engine adapter.
  *
- * The waiting-reason taxonomy uses one `waiting` status plus
- * `reason`/`wakeAt`/`token` columns. See
- * `docs/pages/concepts/durable-execution-model.md`.
+ * A parked run keeps the `suspended` status the run store admits; there is
+ * no `waiting` status. The waiting taxonomy lives beside it on the run row
+ * in the `waiting_reason`, `waiting_wake_at_ms`, and `waiting_token`
+ * columns, written by `park` and cleared by `wake`. See
+ * `docs/concepts/durable-waits.md`.
  *
  * @since 0.1.0
  */
@@ -524,7 +526,8 @@ export interface Service {
    * way to find the runs a cancelled parent linked to itself. Cancellation
    * cascade reads it rather than an in-process instance map, so a
    * cross-process cancel observed by a driver that never spawned the children
-   * still reaches them (`docs/pages/concepts/subflows.md`). Served by the
+   * still reaches them (`docs/concepts/durable-waits.md`, "The run DAG").
+   * Served by the
    * `flows_run_parents_parent_idx` index.
    */
   readonly runChildren: (parentId: string) => Effect.Effect<ReadonlyArray<RunParentEdge>>
@@ -536,8 +539,12 @@ export interface Service {
    * Nested store writes become savepoints of this transaction. Storage
    * failures are defects, matching the store methods' own posture.
    *
-   * The in-memory twin runs the effect directly: it has no crash windows to
-   * close and therefore nothing to roll back.
+   * The in-memory twin honors the same contract: it serializes every store
+   * operation behind one permit, snapshots its state maps on entry, restores
+   * them when the effect fails or dies, and treats a nested call on the same
+   * fiber as a savepoint of the outer one. What it cannot offer is
+   * durability: a process crash mid-transaction loses the whole state, not
+   * only the uncommitted part.
    */
   readonly transaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }

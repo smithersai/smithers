@@ -169,7 +169,7 @@ only after the mutation returns.
 | `consumeDeferred`        | `(address: DeferredAddress, consumedAtMs: number) => Effect<void>`                           |
 | `completeDeferred`       | `(row: DeferredRow) => Effect<CompleteDeferredOutcome>`                                      |
 | `clock`                  | `(address: ClockAddress) => Effect<Option<ClockRow>>`                                        |
-| `scheduleClock`          | `(row: ClockRow, owner: OwnerId) => Effect<ScheduleClockOutcome>`                           |
+| `scheduleClock`          | `(row: ClockRow, owner: OwnerId) => Effect<ScheduleClockOutcome>`                            |
 | `completeClock`          | `(address: ClockAddress, completedAtMs: number) => Effect<CompleteClockOutcome>`             |
 | `dueClocks`              | `(nowMs: number) => Effect<ReadonlyArray<ClockRow>>`                                         |
 | `completeRunClocks`      | `(executionId: string, completedAtMs: number) => Effect<void>`                               |
@@ -224,8 +224,11 @@ writers whose edges jointly close a cycle, exactly one fails. `transaction`
 makes several store operations atomic; nested store writes become savepoints.
 Serialized write transactions are a documented requirement of the
 `DurableWriter.write` contract, not a SQLite artifact: a Postgres-backed
-implementation must use `SERIALIZABLE`. The in-memory twin runs the effect
-directly, having no crash windows to close.
+implementation must use `SERIALIZABLE`. The in-memory twin serializes every
+store operation behind one permit, snapshots its state on entry, rolls back to
+that snapshot when the effect fails or dies, and treats a nested call on the
+same fiber as a savepoint. It is not durable: a process crash loses the whole
+in-memory state, not only the uncommitted part.
 
 ### Addresses, rows, and outcomes
 

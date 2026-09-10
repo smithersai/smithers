@@ -2,7 +2,7 @@
  * The reconciliation seam: what happens when the world disagrees with the
  * declaration.
  *
- * `docs/pages/release/support-matrix.md` describes expected sets as the soft
+ * `docs/guides/drive-a-plan.md` ("Install a reconciler") describes expected sets as the soft
  * mode: going outside them is allowed, journaled, and "triggers a
  * **reconciliation flow** — pluggable, a flow like everything else". The
  * deviation events have been emitted since the isolated-execution lane landed

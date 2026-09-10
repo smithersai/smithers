@@ -2,7 +2,7 @@
  * The probabilistic-selection seam: guesses may schedule work; only real
  * dependencies decide truth.
  *
- * `docs/pages/selection.md` describes learning, from run
+ * `docs/guides/defer-work-with-selection.md` describes learning, from run
  * history, which changes *tend to* affect which flows, and letting those
  * guesses do exactly three things: suggest extra work, postpone work that
  * almost never fails, and order the queue. This module is the engine-store

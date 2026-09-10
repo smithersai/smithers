@@ -13,8 +13,8 @@
  *
  * The core default is strict so an invariant violation cannot pass silently.
  *
- * Governing designs: `docs/pages/concepts/step-keys.md` and
- * `docs/pages/concepts/action-graph.md`.
+ * Governing designs: `docs/concepts/attempts-and-replay.md` and
+ * `apps/site/src/content/docs/docs/concepts/flows-actions-plans.mdx`.
  *
  * @since 0.1.0
  */

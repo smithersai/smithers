@@ -9,8 +9,8 @@
  * barrel-exported surface so that `internal/` never has to be imported by
  * consumers.
  *
- * Related documentation: `docs/pages/internals.md`,
- * `docs/pages/release/support-matrix.md`.
+ * Related documentation: `docs/troubleshooting.md` names every code and
+ * what to change; `docs/api.md` carries the schemas.
  *
  * @since 0.1.0
  */
