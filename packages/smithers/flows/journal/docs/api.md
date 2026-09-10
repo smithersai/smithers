@@ -177,15 +177,15 @@ declare const layer: (
 ) => Layer.Layer<Journal, JournalError, DurableWriter | SqlClient.SqlClient>
 ```
 
-| Option             | Type                 | Default            | Meaning                                                                       |
-| ------------------ | -------------------- | ------------------ | ----------------------------------------------------------------------------- |
-| `capacity`         | `number`             | required           | entries held in the lossy admission queue and in the sliding `changes` buffer |
-| `overflow`         | `OverflowPolicy`     | required           | what a full admission queue does                                              |
-| `batchSize`        | `number`             | unset              | entries the queued writer commits per transaction                             |
-| `sourceEventCache` | `number`             | `4096`             | upper bound on the in-process producer-idempotency index                      |
-| `maxEntryBytes`    | `number`             | unset              | largest single entry, in UTF-8 bytes of encoded `payload` plus `meta`         |
-| `redact`           | `Redaction.Redactor` | `Redaction.make()` | scrub applied before encoding                                                 |
-| `compaction`       | `CompactionPolicy`   | unset              | automatic checkpoint-and-compact policy                                       |
+| Option             | Type                 | Default             | Meaning                                                                                                      |
+| ------------------ | -------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `capacity`         | `number`             | required            | entries held in the lossy admission queue and in the sliding `changes` buffer                                |
+| `overflow`         | `OverflowPolicy`     | required            | what a full admission queue does                                                                             |
+| `batchSize`        | `number`             | `min(capacity, 64)` | entries the queued writer commits per transaction; `stream` reads pages of `min(batchSize, maxEntriesLimit)` |
+| `sourceEventCache` | `number`             | `4096`              | upper bound on the in-process producer-idempotency index                                                     |
+| `maxEntryBytes`    | `number`             | unset               | largest single entry, in UTF-8 bytes of encoded `payload` plus `meta`                                        |
+| `redact`           | `Redaction.Redactor` | `Redaction.make()`  | scrub applied before encoding                                                                                |
+| `compaction`       | `CompactionPolicy`   | unset               | automatic checkpoint-and-compact policy                                                                      |
 
 `CompactionPolicy` is `{ entryThreshold: number, capture: (runId: RunId, upTo: Seq) => Effect<unknown, unknown> }`.
 Once a run's committed entry count reaches `entryThreshold`, the journal asks

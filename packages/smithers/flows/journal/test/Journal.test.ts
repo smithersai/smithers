@@ -19,6 +19,7 @@ import {
 } from "../src/JournalEvent.ts"
 import * as Migrations from "../src/Migrations.ts"
 import type { OwnerId } from "../src/OwnerId.ts"
+import * as Projection from "../src/Projection.ts"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
 const runId = (value: string): RunId => value as RunId
@@ -936,6 +937,41 @@ describe("Journal", () => {
         expect(new Set(sequences).size).toBe(work.length)
       }),
       { capacity: 128, overflow: "reject", batchSize: 8 }
+    )
+  })
+
+  effect("streams and projects with a batchSize above the read page ceiling", () => {
+    const run = runId("wide-batch")
+    const source = sourceId("producer")
+    const count = maxEntriesLimit + 1
+    const counter = Projection.make({
+      name: "count",
+      initial: 0,
+      reduce: (state: number) => Effect.succeed(state + 1)
+    })
+
+    return runJournal(
+      Effect.gen(function*() {
+        const journal = yield* Journal
+        // `batchSize` governs the writer's transaction size. It must not leak
+        // into `entries` as a read limit, where anything above
+        // `maxEntriesLimit` is refused: an empty run has to stream at all.
+        const empty = yield* journal.stream({ runId: run }).pipe(Stream.take(0), Stream.runCollect)
+        expect(empty).toHaveLength(0)
+
+        yield* Effect.forEach(
+          Array.from({ length: count }, (_, index) => index),
+          (value) => journal.emitLossy(input(run, source, "event", { value })),
+          { discard: true }
+        )
+        yield* journal.flush
+        const entries = yield* journal.stream({ runId: run }).pipe(Stream.take(count), Stream.runCollect)
+        expect(entries.map((entry) => entry.seq)).toEqual(Array.from({ length: count }, (_, index) => index))
+
+        const states = yield* journal.project(counter, { runId: run }).pipe(Stream.take(count + 1), Stream.runCollect)
+        expect(states.at(-1)).toBe(count)
+      }),
+      { capacity: count, overflow: "reject", batchSize: 16_384 }
     )
   })
 

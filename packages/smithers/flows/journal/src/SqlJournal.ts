@@ -47,6 +47,7 @@ import {
   Journal,
   JournalError,
   make as makeJournal,
+  maxEntriesLimit,
   type OverflowPolicy,
   type Service,
   StreamOptions
@@ -560,6 +561,12 @@ export const layer = (
     Journal,
     Effect.gen(function*() {
       const { batchSize, maxEntryBytes, redact, sourceEventCache } = yield* validateOptions(options)
+      // `batchSize` sizes the writer's transactions. `stream` pages the durable
+      // tail through `entries`, whose `limit` is bounded by `maxEntriesLimit`,
+      // so a larger batch must not leak into the read boundary: a layer that
+      // was accepted with `batchSize: 16384` streamed nothing but
+      // `invalid_event` before this clamp.
+      const readPageSize = Math.min(batchSize, maxEntriesLimit)
       const sql = yield* Effect.service(SqlClient.SqlClient)
       const writer = yield* DurableWriter
       yield* JournalGeneration.initialize.pipe(
@@ -1353,7 +1360,7 @@ export const layer = (
                     : readPage({
                       runId: streamOptions.runId,
                       ...(cursor < 0 ? {} : { after: cursor as Seq }),
-                      limit: batchSize
+                      limit: readPageSize
                     })
                 ).pipe(
                   Effect.map((page) => {
