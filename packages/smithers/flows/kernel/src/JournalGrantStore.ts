@@ -98,30 +98,45 @@ const validId = (value: unknown): value is string => {
 
 const encodeGrantEvent = Schema.encodeSync(GrantEventSchema)
 
+// Replay reads two runs (`policyRunId` and `runId`) and journal sequences are
+// per run, so every refusal names the run it was replaying: the operator then
+// knows which journal run to inspect or compact.
 const decodeTrustedEntry = (
   entry: JournalEvent.Entry,
-  sourceId: string
+  sourceId: string,
+  runId: string
 ): Effect.Effect<GrantEvent | undefined, GrantStoreError> => {
   if (entry.sourceId !== sourceId || !knownEventTypes.has(entry.eventType)) {
     return Effect.succeed(undefined)
   }
   if (entry.eventType === "flows.kernel.grant.run.v1") {
-    return Effect.fail(invalidReplay(`legacy run grant has no captured ceiling at journal sequence ${entry.seq}`))
+    return Effect.fail(
+      invalidReplay(`legacy run grant has no captured ceiling in run ${runId} at journal sequence ${entry.seq}`)
+    )
   }
   const event = decode(entry.payload)
   if (event._tag === "Failure") {
-    return Effect.fail(invalidReplay(`invalid grant payload at journal sequence ${entry.seq}`))
+    return Effect.fail(invalidReplay(`invalid grant payload in run ${runId} at journal sequence ${entry.seq}`))
   }
   if (event.success.eventType !== entry.eventType) {
-    return Effect.fail(invalidReplay(`grant envelope/payload type mismatch at journal sequence ${entry.seq}`))
+    return Effect.fail(
+      invalidReplay(`grant envelope/payload type mismatch in run ${runId} at journal sequence ${entry.seq}`)
+    )
   }
   return Effect.succeed(event.success)
 }
 
-// One construction-envelope critical section per journal instance.
-// Two concurrent constructors against the same journal can both replay the
+// One construction-envelope critical section per Journal service instance.
+// Two concurrent constructors sharing one service object can both replay the
 // envelope's absence before either persists it; the lock serializes the
 // re-check-then-append so exactly one construction envelope lands.
+//
+// The guarantee stops at the service object. The lock is a WeakMap keyed by
+// the in-memory `Journal.Service`, and the persisted Input carries no
+// `sourceSeq` or `dedupe` key, so two service objects over one backing journal
+// (two processes, or two connections in one process) each hold their own
+// permit and can both append the envelope. Replay tolerates the duplicate:
+// the signature set collapses it and the rules are identical.
 const constructionLocks = new WeakMap<JournalModule.Service, Semaphore.Semaphore>()
 
 const constructionLock = (journal: JournalModule.Service): Semaphore.Semaphore => {
@@ -157,29 +172,37 @@ const replayRememberedRules = (
         // A page that does not advance past the cursor it was asked for is
         // corrupt journal output. Following it would replay the same events
         // forever; accepting it would double-apply them. Refuse construction.
-        return yield* Effect.fail(invalidReplay(`non-advancing journal page at sequence ${last.seq}`))
+        return yield* Effect.fail(
+          invalidReplay(`non-advancing journal page in run ${policyRunId} at sequence ${last.seq}`)
+        )
       }
       for (const entry of page.entries) {
-        const event = yield* decodeTrustedEntry(entry, sourceId)
+        const event = yield* decodeTrustedEntry(entry, sourceId, policyRunId)
         if (event === undefined) {
           continue
         }
         if (event.eventType === "flows.kernel.grant.remembered.v1") {
           if (!GrantStore.isValidGrantPattern(event.pattern, event.capability, event.tier, workspaceRoot)) {
-            return yield* Effect.fail(invalidReplay(`unsafe remembered grant event: ${entry.seq}`))
+            return yield* Effect.fail(
+              invalidReplay(`unsafe remembered grant event in run ${policyRunId} at sequence ${entry.seq}`)
+            )
           }
           appendReplayedRule(rules, seenRules, event.pattern)
           continue
         }
         if (event.eventType === "flows.kernel.grant.envelope.v1" && event.scope === "remembered") {
           if (event.patterns.some((pattern) => !GrantStore.isValidEnvelopePattern(pattern, workspaceRoot))) {
-            return yield* Effect.fail(invalidReplay(`unsafe remembered envelope event: ${entry.seq}`))
+            return yield* Effect.fail(
+              invalidReplay(`unsafe remembered envelope event in run ${policyRunId} at sequence ${entry.seq}`)
+            )
           }
           for (const pattern of event.patterns) appendReplayedRule(rules, seenRules, pattern)
           envelopeSignatures.add(GrantStore.envelopeSignature(event.planDigest, event.scope, event.patterns))
           continue
         }
-        return yield* Effect.fail(invalidReplay(`run-scoped event found in policy journal: ${entry.seq}`))
+        return yield* Effect.fail(
+          invalidReplay(`run-scoped event found in policy journal run ${policyRunId} at sequence ${entry.seq}`)
+        )
       }
       after = last?.seq
       if (!page.hasMore) {
@@ -212,15 +235,17 @@ const replayRunRules = (
       const last = page.entries.at(-1)
       if (last !== undefined && after !== undefined && last.seq <= after) {
         // See the identical guard in `replayRememberedRules`.
-        return yield* Effect.fail(invalidReplay(`non-advancing journal page at sequence ${last.seq}`))
+        return yield* Effect.fail(invalidReplay(`non-advancing journal page in run ${runId} at sequence ${last.seq}`))
       }
       for (const entry of page.entries) {
-        const event = yield* decodeTrustedEntry(entry, sourceId)
+        const event = yield* decodeTrustedEntry(entry, sourceId, runId)
         if (event === undefined) {
           continue
         }
         if (event.runId !== runId) {
-          return yield* Effect.fail(invalidReplay(`grant payload run mismatch at journal sequence ${entry.seq}`))
+          return yield* Effect.fail(
+            invalidReplay(`grant payload run mismatch in run ${runId} at journal sequence ${entry.seq}`)
+          )
         }
         if (event.eventType === "flows.kernel.grant.once.v1" || event.eventType === "flows.kernel.grant.denied.v1") {
           continue
@@ -230,7 +255,7 @@ const replayRunRules = (
             continue
           }
           if (!GrantStore.isValidGrantPattern(event.pattern, event.capability, event.tier, workspaceRoot)) {
-            return yield* Effect.fail(invalidReplay(`unsafe run grant event: ${entry.seq}`))
+            return yield* Effect.fail(invalidReplay(`unsafe run grant event in run ${runId} at sequence ${entry.seq}`))
           }
           const key = `run:${JSON.stringify([event.pattern, event.ceiling])}`
           if (!seenRules.has(key)) {
@@ -244,13 +269,17 @@ const replayRunRules = (
             continue
           }
           if (event.patterns.some((pattern) => !GrantStore.isValidEnvelopePattern(pattern, workspaceRoot))) {
-            return yield* Effect.fail(invalidReplay(`unsafe run envelope event: ${entry.seq}`))
+            return yield* Effect.fail(
+              invalidReplay(`unsafe run envelope event in run ${runId} at sequence ${entry.seq}`)
+            )
           }
           for (const pattern of event.patterns) appendReplayedRule(rules, seenRules, pattern)
           envelopeSignatures.add(GrantStore.envelopeSignature(event.planDigest, event.scope, event.patterns))
           continue
         }
-        return yield* Effect.fail(invalidReplay(`remembered event found in run journal: ${entry.seq}`))
+        return yield* Effect.fail(
+          invalidReplay(`remembered event found in run journal ${runId} at sequence ${entry.seq}`)
+        )
       }
       after = last?.seq
       if (!page.hasMore) {
@@ -406,9 +435,10 @@ export const make = (options: JournalGrantStoreOptions) =>
       return yield* build()
     }
     // The envelope was absent when this constructor replayed, but a concurrent
-    // constructor may persist it before we do. Re-replay the target journal
-    // inside the per-journal critical section, so exactly one constructor
-    // appends the envelope and every other one replays it instead.
+    // constructor sharing this Journal service may persist it before we do.
+    // Re-replay the target run inside the per-service critical section, so
+    // exactly one such constructor appends the envelope and every other one
+    // replays it instead.
     return yield* constructionLock(journal).withPermit(
       Effect.gen(function*() {
         if (scope === "remembered") {

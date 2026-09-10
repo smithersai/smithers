@@ -188,7 +188,8 @@ unsupported.
 
 **What happened.** A journal page did not advance past the cursor it was asked
 for. Following it would replay the same events forever; accepting it would
-double-apply them, so construction is refused.
+double-apply them, so construction is refused. The message names the run
+(`policyRunId` or `runId`) whose page failed to advance, and the sequence.
 
 **What to change.** This is corrupt journal output, not a policy problem.
 Investigate the journal implementation or the store beneath it.
@@ -197,8 +198,12 @@ Investigate the journal implementation or the store beneath it.
 
 **What happened.** Replay found an event in the wrong run: a run-scoped event
 in the policy run, or a remembered event in the operational run. The sibling
-failures are `"grant payload run mismatch"`, `"invalid grant payload"`, and
-`"grant envelope/payload type mismatch"`, each naming a journal sequence.
+failures are `"grant payload run mismatch"`, `"invalid grant payload"`,
+`"grant envelope/payload type mismatch"`, and the `"unsafe ... event"`
+refusals. Sequences are per run and the store replays two runs, so every one
+of these names the run it was replaying and the sequence within it, for
+example `invalid grant payload in run kernel-policy at journal sequence 7`.
+That row is the one to inspect or compact.
 
 **What to change.** Check that `runId`, `policyRunId`, and `sourceId` are the
 ones this store has always used. Reusing an operational run id as a policy run

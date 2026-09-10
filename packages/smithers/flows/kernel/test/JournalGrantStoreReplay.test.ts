@@ -231,7 +231,7 @@ describe("JournalGrantStore replay rejection", () => {
         yield* journal.flush
         const failure = yield* Effect.flip(JournalGrantStore.make(options))
         expect(failure.code).toBe("invalid_resolution")
-        expect(failure.message).toContain("invalid grant payload at journal sequence")
+        expect(failure.message).toContain("invalid grant payload in run policy at journal sequence 0")
       })
     ))
 
@@ -240,7 +240,7 @@ describe("JournalGrantStore replay rejection", () => {
       Effect.gen(function*() {
         yield* emit(options.policyRunId, rememberedGrant(unsafePattern))
         const failure = yield* Effect.flip(JournalGrantStore.make(options))
-        expect(failure.message).toContain("unsafe remembered grant event")
+        expect(failure.message).toContain("unsafe remembered grant event in run policy at sequence 0")
       })
     ))
 
@@ -273,7 +273,7 @@ describe("JournalGrantStore replay rejection", () => {
       Effect.gen(function*() {
         yield* emit(options.policyRunId, envelopeGrant("remembered", [insidePattern, unsafePattern]))
         const failure = yield* Effect.flip(JournalGrantStore.make(options))
-        expect(failure.message).toContain("unsafe remembered envelope event")
+        expect(failure.message).toContain("unsafe remembered envelope event in run policy at sequence 0")
       })
     ))
 
@@ -300,7 +300,7 @@ describe("JournalGrantStore replay rejection", () => {
       Effect.gen(function*() {
         yield* emit(options.runId, runGrant(insidePattern, { runId: "someone-elses-run" }))
         const failure = yield* Effect.flip(JournalGrantStore.make(options))
-        expect(failure.message).toContain("grant payload run mismatch at journal sequence")
+        expect(failure.message).toContain("grant payload run mismatch in run run at journal sequence 0")
       })
     ))
 
@@ -586,6 +586,65 @@ describe("JournalGrantStore construction envelopes", () => {
       })
     ))
 
+  // The construction lock is keyed by the Journal service object, and the
+  // persisted envelope carries no dedupe key. Two service objects over one
+  // backing journal (two processes, or two connections) therefore hold
+  // separate permits and can both append. This pins the documented limit of
+  // the guarantee; replay collapses the duplicate into one signature.
+  itEffect("does not serialize construction envelopes across two Journal services over one journal", () =>
+    run(
+      Effect.gen(function*() {
+        const base = yield* Journal
+        const arrivals = yield* Ref.make(0)
+        // Both constructors read the envelope's absence before the lock, then
+        // again inside their own lock. Each pair of empty reads waits for its
+        // sibling, so neither constructor appends before the other has also
+        // seen the run empty from inside its critical section.
+        const beforeLock = yield* Deferred.make<void>()
+        const insideLock = yield* Deferred.make<void>()
+        const connection = () =>
+          JournalModule.makeNoop({
+            entries: (entriesOptions) =>
+              base.entries(entriesOptions).pipe(
+                Effect.tap((page) => {
+                  if (entriesOptions.runId !== options.runId || page.entries.length !== 0) {
+                    return Effect.void
+                  }
+                  return Ref.updateAndGet(arrivals, (value) => value + 1).pipe(
+                    Effect.flatMap((count) => {
+                      const barrier = count <= 2 ? beforeLock : insideLock
+                      const release = count === 2 || count === 4 ? Deferred.succeed(barrier, undefined) : Effect.void
+                      return release.pipe(Effect.andThen(Deferred.await(barrier)))
+                    })
+                  )
+                })
+              ),
+            emitDurableUnfenced: base.emitDurableUnfenced
+          })
+        const withEnvelope = {
+          ...options,
+          envelope: { patterns: [insidePattern], scope: "run" as const }
+        }
+
+        yield* Effect.all([
+          JournalGrantStore.make(withEnvelope).pipe(Effect.provideService(Journal, connection())),
+          JournalGrantStore.make(withEnvelope).pipe(Effect.provideService(Journal, connection()))
+        ], { concurrency: "unbounded" })
+
+        const page = yield* base.entries({ runId: runId(options.runId), limit: 10 })
+        expect(page.entries).toHaveLength(2)
+        expect(page.entries.map((entry) => entry.eventType)).toEqual([
+          "flows.kernel.grant.envelope.v1",
+          "flows.kernel.grant.envelope.v1"
+        ])
+
+        const resumed = yield* JournalGrantStore.make(withEnvelope)
+        yield* resumed.check(insideWrite)
+        const after = yield* base.entries({ runId: runId(options.runId), limit: 10 })
+        expect(after.entries).toHaveLength(2)
+      })
+    ))
+
   itEffect("skips a runtime envelope that repeats a replayed construction envelope", () =>
     run(
       Effect.gen(function*() {
@@ -831,7 +890,7 @@ describe("JournalGrantStore paging and journal failures", () => {
     return Effect.gen(function*() {
       const failure = yield* Effect.flip(JournalGrantStore.make(options))
       expect(failure.code).toBe("invalid_resolution")
-      expect(failure.message).toContain("non-advancing journal page at sequence 1")
+      expect(failure.message).toContain("non-advancing journal page in run policy at sequence 1")
       expect(calls).toBe(2)
     }).pipe(
       Effect.provide(journal),
@@ -856,7 +915,7 @@ describe("JournalGrantStore paging and journal failures", () => {
     return Effect.gen(function*() {
       const failure = yield* Effect.flip(JournalGrantStore.make(options))
       expect(failure.code).toBe("invalid_resolution")
-      expect(failure.message).toContain("non-advancing journal page at sequence 1")
+      expect(failure.message).toContain("non-advancing journal page in run run at sequence 1")
       expect(calls).toBe(2)
     }).pipe(
       Effect.provide(journal),

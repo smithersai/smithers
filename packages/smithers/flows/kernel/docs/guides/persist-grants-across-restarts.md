@@ -106,13 +106,21 @@ envelope is refused rather than persisted once the replayed signatures already
 fill the ceiling, so the history a later process must replay cannot outgrow
 what it will accept.
 
-## Concurrent construction is safe
+## Concurrent construction on one Journal service
 
-Two processes building a store with the same construction envelope could both
-replay its absence and both persist it. A per-journal critical section
-re-replays the target run inside the lock, so exactly one constructor appends
-the envelope and every other one replays it instead. An envelope whose
-signature is already durable activates its rules without persisting again.
+Two constructors sharing one `Journal` service instance could both replay the
+absence of the same construction envelope and both persist it. A critical
+section per service instance re-replays the target run inside the lock, so
+exactly one of those constructors appends the envelope and the others replay
+it instead. An envelope whose signature is already durable activates its rules
+without persisting again.
+
+The lock stops at the service object. Two processes, or two `Journal` services
+over one backing journal in one process, hold separate locks, and the envelope
+event carries no journal dedupe key, so both can append it. The duplicate is
+harmless to authority: replay collapses identical envelopes into one signature
+and the same rules. It costs one extra row per race, so build the store once
+per process and share the service where construction can overlap.
 
 ## Related
 
