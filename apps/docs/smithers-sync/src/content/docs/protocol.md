@@ -58,20 +58,6 @@ private record contents. Unknown event namespaces remain open JSON values.
 Known branch commands must decode; existing defaults for absent `args` and
 `target` remain unchanged. No stored row is rewritten or silently skipped.
 
-There is no application acknowledgement RPC. Response cursors and
-`SyncClient.cursors` are delivery bookmarks. `SyncClient.progress` separately
-reports `DeliveredProgress` and `AppliedProgress`, tagged `Delivered` and
-`Applied`. Only successful `apply` and snapshot-restore callbacks advance the
-applied map. An applying subscription never inherits delivery-only progress.
-
-Both server and client validate complete admitted batches before serving or
-applying them. A malformed envelope or non-JSON payload fails `decode_failed`;
-foreign runs, foreign branch identities, and non-monotonic sequences fail
-`protocol_violation`. Causes retain a bounded classification without publishing
-private record contents. Unknown event namespaces remain open JSON values.
-Known branch commands must decode; existing defaults for absent `args` and
-`target` remain unchanged. No stored row is rewritten or silently skipped.
-
 ## Subscribe
 
 `Sync.Subscribe` requires the same `protocolVersion: 1` and streams `Entries` frames, each carrying one run's entries and
