@@ -88,9 +88,6 @@ export interface Exhausted<A, Review> {
  */
 export type Settled<A, Review> = Approved<A> | Exhausted<A, Review>
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 /**
  * Reads an accepted decision: `true`, `"approved"`, `{ approved: true }`, or
  * `{ accepted: true }`.
@@ -130,18 +127,18 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
       { maxRounds },
       (input) =>
         Node.andThen(
-          call(stages.produce, input),
+          Compose.call(stages.produce, input),
           Node.capture({ maxRounds }, (initial) => {
             const visit = (output: unknown, round: number): Node.Node<unknown, unknown> =>
               Node.andThen(
-                call(stages.review, output),
+                Compose.call(stages.review, output),
                 Node.capture({ maxRounds, round }, (review) => {
                   if (accepted(review)) return Node.succeed({ _tag: "Approved", output })
                   if (round >= maxRounds) {
                     return Node.succeed({ _tag: "Exhausted", output, review })
                   }
                   return Node.andThen(
-                    call(stages.revise, { output, review, round }),
+                    Compose.call(stages.revise, { output, review, round }),
                     Node.capture({ maxRounds, round }, (revised) => visit(revised, round + 1))
                   )
                 })

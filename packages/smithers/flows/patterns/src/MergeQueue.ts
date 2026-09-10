@@ -147,9 +147,6 @@ export interface Position<M> {
   readonly member: M
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 const merge = (left: unknown, right: unknown): Record<string, unknown> => ({
   ...(left as Record<string, unknown>),
   ...(right as Record<string, unknown>)
@@ -302,7 +299,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     body: Node.capture(captures, (input) => {
       const landing = (entry: Position<Member>): Node.Node<unknown, unknown> => {
         const declared = Node.priority(
-          call(entry.member.flow, {
+          Compose.call(entry.member.flow, {
             id: entry.id,
             position: entry.position,
             input

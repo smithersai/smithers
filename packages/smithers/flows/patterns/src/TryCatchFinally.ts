@@ -55,9 +55,6 @@ export interface RuntimeOptions<I, A, E, R, B = A, E2 = never, R2 = never, E3 = 
   readonly finally?: ((input: I) => Effect.Effect<unknown, E3, R3>) | undefined
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 /**
  * Declares the boundary: the protected call, the filtered recovery arm, and a
  * finalizer call on the settled arm and on the unhandled-failure arm.
@@ -109,13 +106,13 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         const settle = (value: unknown): Node.Node<unknown, unknown> =>
           finalize === undefined
             ? Node.succeed(value)
-            : Node.map(call(finalize, { input }), Node.capture({ settled: true }, () => value))
-        const attempt = call(arms.try, input)
+            : Node.map(Compose.call(finalize, { input }), Node.capture({ settled: true }, () => value))
+        const attempt = Compose.call(arms.try, input)
         const handler = arms.catch
         const recover = (handled: Flow.Any) => {
           const onFailure = Node.capture(
             { handled: true },
-            (error: unknown): Node.Node<unknown, unknown> => call(handled, { error, input })
+            (error: unknown): Node.Node<unknown, unknown> => Compose.call(handled, { error, input })
           )
           const filter = arms.catchSchema as Schema.Schema<unknown> | undefined
           return filter === undefined
@@ -138,7 +135,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
                 // error instead, which is the opposite of what `run` does. The
                 // finalizer call is its own step, so the absorbed failure still
                 // stands in the journal.
-                Node.catch(call(finalize, { input }), {
+                Node.catch(Compose.call(finalize, { input }), {
                   onFailure: Node.capture({ cleanupFailed: true }, () => Node.succeed(null))
                 }),
                 Node.capture({ rethrow: true }, () => Node.fail(error))

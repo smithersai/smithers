@@ -98,9 +98,6 @@ interface Round<Issue> {
   readonly resolved: boolean
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 /**
  * Reads the signals a verifier uses to report that nothing is left to fix.
  *
@@ -166,7 +163,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     body: Node.capture(captures, (input) => {
       const visit = (iteration: number): Node.Node<unknown, unknown> =>
         Node.andThen(
-          call(stages.scan, { input, iteration }),
+          Compose.call(stages.scan, { input, iteration }),
           Node.capture({ ...captures, iteration }, (issues) => {
             const found = issues as ReadonlyArray<unknown>
             let fixes: Node.Node<ReadonlyArray<unknown>, unknown> = Node.succeed([])
@@ -174,7 +171,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
               const members: Record<string, Node.Node<unknown, unknown>> = {}
               const last = Math.min(offset + concurrency, maxIssues)
               for (let index = offset; index < last; index++) {
-                members[`fix-${index}`] = call(stages.fix, { issue: found[index], index, iteration })
+                members[`fix-${index}`] = Compose.call(stages.fix, { issue: found[index], index, iteration })
               }
               fixes = Node.andThen(
                 fixes,
@@ -194,7 +191,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
               fixes,
               Node.capture({ ...captures, iteration }, (fixed) =>
                 Node.andThen(
-                  call(stages.verify, { input, issues, fixes: fixed, iteration }),
+                  Compose.call(stages.verify, { input, issues, fixes: fixed, iteration }),
                   Node.capture({ ...captures, iteration }, (verification) =>
                     iteration >= maxRetries
                       ? Node.succeed({

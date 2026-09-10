@@ -117,9 +117,6 @@ export interface RuntimeOptions<I, P, S, E, R, E2, R2, E3 = never, R3 = never> {
     | undefined
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 // Reads one field of a joined value. During planning the value is symbolic and
 // the read answers a reference the plan records; during execution it answers
 // the field. Both directions matter: the plan must show which half of the join
@@ -211,7 +208,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     body: Node.capture({ scores: score !== undefined }, (input) => {
       const shadow: Node.Node<unknown, unknown> = Node.catch(
         Node.map(
-          call(declared.shadow, input),
+          Compose.call(declared.shadow, input),
           Node.capture({ shadow: "settled" }, (value: unknown) => ({ quarantined: false, value }))
         ),
         {
@@ -225,7 +222,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         score === undefined ? Node.succeed(both) : Node.map(
           // The scorer sees the same pair `run` hands it: the primary's value
           // and the shadow's, not the shadow's quarantine wrapper.
-          call(score, { primary: field(both, "primary"), shadow: field(field(both, "shadow"), "value") }),
+          Compose.call(score, { primary: field(both, "primary"), shadow: field(field(both, "shadow"), "value") }),
           Node.capture({ scores: true }, (scores: unknown) => ({
             primary: field(both, "primary"),
             shadow: field(both, "shadow"),
@@ -233,7 +230,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
           }))
         )
       return Node.andThen(
-        Node.all({ primary: call(declared.primary, input), shadow }),
+        Node.all({ primary: Compose.call(declared.primary, input), shadow }),
         Node.capture({ scores: score !== undefined }, scored)
       )
     })

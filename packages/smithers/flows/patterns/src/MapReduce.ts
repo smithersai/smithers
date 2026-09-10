@@ -62,9 +62,6 @@ export interface RuntimeOptions<I, Shard, Mapped, Reduced, E, R, E2, R2> {
   readonly onEmpty: OnEmpty
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 /**
  * Makes a map-reduce flow.
  *
@@ -114,7 +111,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         }
         return onEmpty === "succeed"
           ? Node.succeed([])
-          : call(stages.reduce, { input, mapped: [] })
+          : Compose.call(stages.reduce, { input, mapped: [] })
       }
       let mapped: Node.Node<ReadonlyArray<unknown>, unknown> = Node.succeed([])
       for (let offset = 0; offset < shards.length; offset += concurrency) {
@@ -122,7 +119,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         const batch = shards.slice(offset, offset + concurrency)
         batch.forEach((shard, batchIndex) => {
           const index = offset + batchIndex
-          members[`shard-${index}`] = call(stages.map, { shard, index, input })
+          members[`shard-${index}`] = Compose.call(stages.map, { shard, index, input })
         })
         mapped = Node.andThen(
           mapped,
@@ -142,7 +139,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         mapped,
         Node.capture(
           { concurrency, onEmpty },
-          (values) => call(stages.reduce, { input, mapped: values })
+          (values) => Compose.call(stages.reduce, { input, mapped: values })
         )
       )
     })

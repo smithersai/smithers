@@ -79,9 +79,6 @@ export interface MakeOptions {
   readonly rounds: number
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 const invalidRounds = (rounds: number): never => {
   throw new PatternError({
     code: "invalid_decorator",
@@ -118,10 +115,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
           current,
           Node.capture({ round }, (state) =>
             Node.andThen(
-              call(participants.proponent, state),
+              Compose.call(participants.proponent, state),
               Node.capture({ round }, (proponent) =>
                 Node.map(
-                  call(participants.opponent, { ...state, proponent }),
+                  Compose.call(participants.opponent, { ...state, proponent }),
                   Node.capture({ round }, (opponent) => ({
                     input: state.input,
                     transcript: [...state.transcript, { proponent, opponent }]
@@ -130,7 +127,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
             ))
         )
       }
-      return Node.andThen(current, Node.capture({ rounds }, (state) => call(participants.judge, state)))
+      return Node.andThen(current, Node.capture({ rounds }, (state) => Compose.call(participants.judge, state)))
     })
   })
 }

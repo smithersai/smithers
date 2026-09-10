@@ -95,9 +95,6 @@ export interface Result<Snapshot, Comparison, Alert> {
   readonly alert?: Alert | undefined
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 /**
  * Reads the drift signals a comparison may carry.
  *
@@ -142,15 +139,15 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     flows: alert === undefined ? [capture, compare] : [capture, compare, alert],
     body: Node.capture({ baseline, alerts: alert !== undefined }, (input) =>
       Node.andThen(
-        call(capture, { input, baseline }),
+        Compose.call(capture, { input, baseline }),
         Node.capture({ baseline }, (snapshot) =>
           Node.andThen(
-            call(compare, { snapshot, baseline }),
+            Compose.call(compare, { snapshot, baseline }),
             Node.capture({ baseline }, (comparison) =>
               alert === undefined
                 ? Node.succeed({ snapshot, comparison })
                 : Node.map(
-                  call(alert, { comparison, snapshot, baseline }),
+                  Compose.call(alert, { comparison, snapshot, baseline }),
                   Node.capture({ baseline }, (raised) => ({ snapshot, comparison, alert: raised }))
                 ))
           ))

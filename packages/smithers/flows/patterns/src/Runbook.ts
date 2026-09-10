@@ -130,9 +130,6 @@ export interface Result<Out> {
   readonly skipped: ReadonlyArray<string>
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 type Approved = typeof WithApproval.Approved.Type
 
 const decide = Schema.decodeUnknownEffect(WithApproval.Approved)
@@ -228,7 +225,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         previous
       })
       const walk = (index: number, previous: unknown): Node.Node<unknown, unknown> => {
-        const current = call(declared[index]!.flow, envelope(index, previous))
+        const current = Compose.call(declared[index]!.flow, envelope(index, previous))
         if (index + 1 >= declared.length) return current
         return Node.andThen(
           current,

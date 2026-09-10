@@ -112,9 +112,6 @@ export interface Result<A> {
   readonly exhausted: boolean
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 /**
  * Reads the completion signals a loop predicate may return.
  *
@@ -186,7 +183,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     body: Node.capture(captures, (input) => {
       const visit = (previous: unknown, iteration: number): Node.Node<unknown, unknown> =>
         Node.andThen(
-          call(declared.body, { input, previous, iteration }),
+          Compose.call(declared.body, { input, previous, iteration }),
           Node.capture({ ...captures, iteration }, (produced) => {
             const settle = (verdict: unknown): Node.Node<unknown, unknown> =>
               done(verdict)
@@ -195,7 +192,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
                 ? Node.succeed({ value: produced, iterations: iteration, exhausted: true })
                 : visit(produced, iteration + 1)
             return declared.until === undefined ? settle(produced) : Node.andThen(
-              call(declared.until, { value: produced, iteration }),
+              Compose.call(declared.until, { value: produced, iteration }),
               Node.capture({ ...captures, iteration }, settle)
             )
           })

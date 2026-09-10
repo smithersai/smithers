@@ -134,9 +134,6 @@ export interface RuntimeOptions<It extends Item, Out, E, R, E2 = never, R2 = nev
   readonly maxIterations?: number | undefined
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 const merge = (left: unknown, right: unknown): Record<string, unknown> => ({
   ...(left as Record<string, unknown>),
   ...(right as Record<string, unknown>)
@@ -249,7 +246,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
       const members = Object.fromEntries(
         items.slice(offset, offset + concurrency).map((item) => [
           item.id,
-          call(declared.flow, {
+          Compose.call(declared.flow, {
             column: declared.name,
             item,
             previous: previous === undefined ? undefined : (previous as Record<string, unknown>)[item.id]
@@ -314,7 +311,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         if (onComplete === undefined) return current
         return Node.andThen(
           Node.map(current, Node.capture(captures, (values) => completionBoard([...history, values], ids, names))),
-          Node.capture(captures, (board) => call(onComplete, { items, board }))
+          Node.capture(captures, (board) => Compose.call(onComplete, { items, board }))
         )
       }
       return walk(0, undefined, [])

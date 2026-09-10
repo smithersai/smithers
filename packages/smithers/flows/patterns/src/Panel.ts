@@ -55,9 +55,6 @@ export interface RuntimeOptions<I, A, E, R, B, E2, R2> {
   readonly concurrency?: number | undefined
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 const payload = (input: unknown, role: string | undefined): unknown => role === undefined ? input : { input, role }
 
 // The refusal is minted once, as a value. `make` throws it, because a
@@ -123,13 +120,13 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     flows: [...panelists.map(([, flow]) => flow), moderator],
     body: Node.capture(material, (input) => {
       const nodes = Object.fromEntries(
-        panelists.map(([name, panelist]) => [name, call(panelist, payload(input, roles?.get(name)))])
+        panelists.map(([name, panelist]) => [name, Compose.call(panelist, payload(input, roles?.get(name)))])
       ) as Record<string, Node.Any>
       return Node.andThen(
         concurrency === undefined ? Node.all(nodes) : Bounded.all(nodes, { concurrency }),
         Node.capture(
           { panelists: names },
-          (opinions) => call(moderator, { input, opinions })
+          (opinions) => Compose.call(moderator, { input, opinions })
         )
       )
     })

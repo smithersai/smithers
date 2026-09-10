@@ -142,9 +142,6 @@ export interface Exhausted<Review> {
   readonly review: Review
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 const merge = (left: unknown, right: unknown): Record<string, unknown> => ({
   ...(left as Record<string, unknown>),
   ...(right as Record<string, unknown>)
@@ -267,7 +264,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         }
       }
       return Node.andThen(
-        call(boss.plan, { phase: "plan", input }),
+        Compose.call(boss.plan, { phase: "plan", input }),
         Node.capture({ ...captures, tasks: ids }, (plan) => {
           const work = (task: Task, round: number, review: unknown): Record<string, unknown> =>
             round === 1
@@ -277,7 +274,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
             const members = Object.fromEntries(
               tasks.slice(offset, offset + concurrency).map((task) => [
                 task.id,
-                call(routes[task.workerType]!, work(task, round, review))
+                Compose.call(routes[task.workerType]!, work(task, round, review))
               ])
             )
             return Node.all(members)
@@ -301,10 +298,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
               delegate(round, previous),
               Node.capture({ ...captures, round }, (results) =>
                 Node.andThen(
-                  call(boss.review, { phase: "review", round, plan, results, input }),
+                  Compose.call(boss.review, { phase: "review", round, plan, results, input }),
                   Node.capture({ ...captures, round }, (review) =>
                     done(review) || round >= maxRounds
-                      ? call(boss.finalize, {
+                      ? Compose.call(boss.finalize, {
                         phase: "finalize",
                         rounds: round,
                         plan,

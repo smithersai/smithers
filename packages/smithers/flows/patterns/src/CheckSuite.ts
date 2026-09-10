@@ -90,9 +90,6 @@ export interface RuntimeOptions<I, Out, E, R> {
   readonly continueOnFail: boolean
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 const merge = (left: unknown, right: unknown): Record<string, unknown> => ({
   ...(left as Record<string, unknown>),
   ...(right as Record<string, unknown>)
@@ -240,7 +237,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         const members = Object.fromEntries(
           declared.slice(offset, offset + concurrency).map(([id, flow]) => [
             id,
-            call(flow, { check: id, input })
+            Compose.call(flow, { check: id, input })
           ])
         ) as Record<string, Node.Any>
         return continueOnFail

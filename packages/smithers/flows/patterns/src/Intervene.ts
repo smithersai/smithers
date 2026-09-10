@@ -81,9 +81,6 @@ export interface RuntimeOptions<I, Context, Proposal, Applied, Report, E, R, E2,
     | undefined
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 const decide = Schema.decodeUnknownEffect(WithApproval.Approved)
 
 /**
@@ -117,13 +114,13 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     flows: [stages.read, stages.propose, apply, stages.report],
     body: Node.capture(captures, (input) =>
       Node.andThen(
-        call(stages.read, { phase: "read", input }),
+        Compose.call(stages.read, { phase: "read", input }),
         Node.capture(captures, (context) =>
           Node.andThen(
-            call(stages.propose, { phase: "propose", input, context }),
+            Compose.call(stages.propose, { phase: "propose", input, context }),
             Node.capture(captures, (proposal) =>
               dryRun
-                ? call(stages.report, {
+                ? Compose.call(stages.report, {
                   phase: "report",
                   input,
                   proposal,
@@ -131,9 +128,9 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
                   dryRun: true
                 })
                 : Node.andThen(
-                  call(apply, { phase: "apply", input, proposal }),
+                  Compose.call(apply, { phase: "apply", input, proposal }),
                   Node.capture(captures, (applied) =>
-                    call(stages.report, {
+                    Compose.call(stages.report, {
                       phase: "report",
                       input,
                       proposal,

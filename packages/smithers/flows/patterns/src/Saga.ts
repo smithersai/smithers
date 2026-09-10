@@ -143,9 +143,6 @@ interface Unwind {
 
 const CleanUnwind = Schema.Struct({ failure: Schema.Unknown, residue: Schema.Tuple([]) })
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 // The refusal is minted once, as a value. `make` throws it, because a
 // declaration is built eagerly and a broken one is a programming error. `run`
 // FAILS with it, because `PatternError` is in its declared error channel and a
@@ -235,7 +232,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
       const visit = (index: number, completed: Readonly<Record<string, unknown>>): Node.Node<unknown, unknown> => {
         const step = steps[index]
         if (step === undefined) return Node.succeed({ _tag: "Completed", values: completed })
-        const action = call(step.action, { input, completed })
+        const action = Compose.call(step.action, { input, completed })
         const guarded = policy === "fail" ? action : Node.catch(action, {
           onFailure: Node.capture(
             { step: step.id, forward: true },
@@ -254,7 +251,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
                   const unwind = error as Unwind
                   const undo = Node.catch(
                     Node.map(
-                      call(step.compensation, { id: step.id, input, value }),
+                      Compose.call(step.compensation, { id: step.id, input, value }),
                       Node.capture({ step: step.id }, () => unwind)
                     ),
                     {

@@ -147,9 +147,6 @@ const validate = (options: {
   return undefined
 }
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 // What one iteration hands the next: the attempt just scored, which the
 // following generation reads, and the standing best, which the result reports.
 // The pair is the whole memory of the search, so the only candidates alive at
@@ -205,10 +202,10 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
     body: Node.capture(captures, (input) => {
       const visit = (previous: unknown, iteration: number): Node.Node<unknown, unknown> =>
         Node.andThen(
-          call(stages.generate, { input, previous, iteration }),
+          Compose.call(stages.generate, { input, previous, iteration }),
           Node.capture({ ...captures, iteration }, (candidate) =>
             Node.andThen(
-              call(stages.evaluate, { value: candidate, iteration }),
+              Compose.call(stages.evaluate, { value: candidate, iteration }),
               Node.capture({ ...captures, iteration }, (evaluation) => {
                 const scored = evaluation as { readonly score: number; readonly feedback: unknown }
                 const attempt = {

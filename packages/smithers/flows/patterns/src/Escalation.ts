@@ -127,9 +127,6 @@ export interface Exhausted<A> {
  */
 export type Settled<A, F = A> = Reached<A> | Reached<F> | Exhausted<A>
 
-const call = (flow: Flow.Any, input: unknown): Node.Node<unknown, unknown> =>
-  (flow as unknown as (input: unknown) => Node.Node<unknown, unknown>)(input)
-
 /**
  * Reads an accepted decision: `true`, `"approved"`, `{ approved: true }`, or
  * `{ accepted: true }`.
@@ -208,7 +205,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         fallback === undefined
           ? Node.succeed({ level, result: last, accepted: false, exhausted: true })
           : Node.andThen(
-            call(fallback, input),
+            Compose.call(fallback, input),
             Node.capture(
               { level: rungs.length },
               (result) => Node.succeed({ level: rungs.length, result, exhausted: false })
@@ -218,12 +215,12 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
         const rung = rungs[index]
         if (rung === undefined) return exhausted(last, index - 1)
         return Node.andThen(
-          call(rung.flow, input),
+          Compose.call(rung.flow, input),
           Node.capture({ rung: index }, (result) => {
             const settle = Node.succeed({ level: index, result, exhausted: false })
             if (rung.escalateIf !== undefined) {
               return Node.andThen(
-                call(rung.escalateIf, { result, level: index }),
+                Compose.call(rung.escalateIf, { result, level: index }),
                 Node.capture(
                   { rung: index },
                   (decision) => decision === false ? settle : visit(index + 1, result)
@@ -232,7 +229,7 @@ export const make = (options: MakeOptions): Flow.Flow<typeof Schema.Unknown, typ
             }
             if (accept === undefined) return visit(index + 1, result)
             return Node.andThen(
-              call(accept, result),
+              Compose.call(accept, result),
               Node.capture({ rung: index }, (decision) => accepted(decision) ? settle : visit(index + 1, result))
             )
           })
