@@ -78,7 +78,8 @@ export const repair: Effect.Effect<{
 
 /**
  * Compares the repaired config to the baseline an operator recorded, and pages
- * only when it moved.
+ * only when it moved: a changed value, a missing setting, or one the baseline
+ * never approved.
  * The baseline is the config as last recorded, so the repair is exactly what
  * the detector reports: two settings moved away from what the operator
  * approved, and the alert names them.
@@ -93,12 +94,15 @@ export const audit = (
   Effect.gen(function*() {
     const paged: Array<string> = []
     const result = yield* DriftDetector.run(settled, {
-      baseline: { retries: 9, timeoutMs: 90_000, concurrency: 4 },
+      baseline: { retries: 9, timeoutMs: 90_000, concurrency: 4 } as Record<string, number>,
       capture: ({ input }) => Effect.succeed(Object.fromEntries(input.map((s) => [s.key, s.value]))),
+      // Walk the union of both key sets: a setting the operator never approved
+      // is drift just as much as an approved one that moved or went missing.
       compare: ({ baseline, snapshot }) =>
-        Effect.succeed({
-          drifted: Object.entries(baseline).some(([key, value]) => snapshot[key] !== value),
-          changed: Object.entries(baseline).filter(([key, value]) => snapshot[key] !== value).map(([key]) => key)
+        Effect.sync(() => {
+          const keys = new Set([...Object.keys(baseline), ...Object.keys(snapshot)])
+          const changed = [...keys].filter((key) => baseline[key] !== snapshot[key])
+          return { drifted: changed.length > 0, changed }
         }),
       alert: ({ comparison }) => Effect.sync(() => (paged.push(...comparison.changed), comparison.changed.length))
     })

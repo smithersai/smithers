@@ -37,6 +37,42 @@ it.effect("skips the alert when the config matches the baseline", () =>
     expect(result.paged).toEqual([])
   }))
 
+it.effect("pages when the snapshot carries a setting the baseline never approved", () =>
+  Effect.gen(function*() {
+    const result = yield* audit([
+      { key: "retries", value: 9 },
+      { key: "timeoutMs", value: 90_000 },
+      { key: "concurrency", value: 4 },
+      { key: "unapprovedSetting", value: 100 }
+    ])
+
+    expect(result.drifted).toBe(true)
+    expect(result.paged).toEqual(["unapprovedSetting"])
+  }))
+
+it.effect("pages when an approved setting is missing from the snapshot", () =>
+  Effect.gen(function*() {
+    const result = yield* audit([
+      { key: "retries", value: 9 },
+      { key: "timeoutMs", value: 90_000 }
+    ])
+
+    expect(result.drifted).toBe(true)
+    expect(result.paged).toEqual(["concurrency"])
+  }))
+
+it.effect("pages only the setting whose value changed", () =>
+  Effect.gen(function*() {
+    const result = yield* audit([
+      { key: "retries", value: 9 },
+      { key: "timeoutMs", value: 60_000 },
+      { key: "concurrency", value: 4 }
+    ])
+
+    expect(result.drifted).toBe(true)
+    expect(result.paged).toEqual(["timeoutMs"])
+  }))
+
 it.effect("keeps the best summary rather than the last one", () =>
   Effect.gen(function*() {
     const result = yield* tune
