@@ -144,6 +144,44 @@ const cursorOf = (
 ): JournalEvent.Seq | undefined => cursors.find((cursor) => cursor.runId === runId)?.afterSeq
 
 /**
+ * The one shape a live path emits: one entry, with the gap it closes.
+ *
+ * Every subscription frame carries exactly one entry, so `fromSeq` is not the
+ * entry's own sequence — it is one past the last sequence this run SERVED,
+ * which is how a follower learns that the journal skipped compacted or
+ * filtered sequences instead of losing them. The run-scoped stream and the
+ * workspace tail both emit it, so both build it here.
+ */
+const frameOf = (
+  runId: JournalEvent.RunId,
+  generation: number,
+  previous: number,
+  entry: JournalEvent.Entry
+): SyncProtocol.Frame => ({
+  _tag: "Entries",
+  runId,
+  generation,
+  fromSeq: (previous + 1) as JournalEvent.Seq,
+  toSeq: entry.seq,
+  entries: [entry]
+})
+
+/**
+ * What one run's share did to a read page.
+ *
+ * `more` and `drained` describe the RUN: it has unserved entries left, or the
+ * page took all of them. {@link PageStop} describes the PAGE and ends it.
+ */
+type ServeOutcome = { readonly _tag: "more" } | { readonly _tag: "drained" } | PageStop
+
+/**
+ * The two ways one run ends a read page: the page's byte budget was reached,
+ * or a single entry alone outgrows the frame ceiling and no page can ever
+ * carry it.
+ */
+type PageStop = { readonly _tag: "truncated" } | { readonly _tag: "oversized"; readonly bytes: number }
+
+/**
  * Largest number of journal reads one workspace subscription keeps open at
  * once.
  *
@@ -497,6 +535,44 @@ const makeWith = (
         return current.generation
       })
 
+    /**
+     * One generation-fenced page of one run's unserved entries.
+     *
+     * This is the whole of the rewind invariant for both paged paths: the
+     * generation is compared BEFORE the read, so a cursor from a superseded
+     * lineage is refused rather than served, and again AFTER it, so a rewind
+     * that lands mid-read cannot deliver the replacement history's sequences
+     * as if they continued the old one. The two comparisons only mean
+     * anything together, so they live in one place rather than at each call
+     * site. The page read and the paged read (see {@link read} and the
+     * workspace tail in {@link workspaceStream}) differ in nothing but the
+     * page size and where they keep the expected generation.
+     */
+    const readPage = (
+      runId: JournalEvent.RunId,
+      after: JournalEvent.Seq | undefined,
+      expectedGeneration: number | undefined,
+      limit: number
+    ): Effect.Effect<
+      {
+        readonly admitted: ReadonlyArray<JournalEvent.Entry>
+        readonly generation: number
+        readonly hasMore: boolean
+      },
+      SyncError
+    > =>
+      Effect.gen(function*() {
+        const generation = yield* generationOf(runId, expectedGeneration)
+        const page = yield* journal.entries({
+          runId,
+          ...(after === undefined ? {} : { after }),
+          limit
+        }).pipe(Effect.mapError(journalFailure(runId)))
+        yield* generationOf(runId, generation)
+        const admitted = yield* Admission.entries(page.entries, runId, after ?? -1)
+        return { admitted, generation, hasMore: page.hasMore }
+      })
+
     const requireProtocolVersion = (version: number | undefined) =>
       version === SyncProtocol.protocolVersion
         ? Effect.void
@@ -557,10 +633,7 @@ const makeWith = (
         const entries: Array<JournalEvent.Entry> = []
         const cursors = new Map(request.cursors.map((cursor) => [cursor.runId, cursor.afterSeq]))
         const generations = new Map(request.cursors.map((cursor) => [cursor.runId, cursor.generation ?? 0]))
-        let done = true
         let frameBytes = 0
-        let oversized: number | undefined
-        let truncated = false
         // Runs that still had more when their share ran out, in the order the
         // page visited them. They get the budget the page did not spend.
         const behind: Array<JournalEvent.RunId> = []
@@ -578,28 +651,15 @@ const makeWith = (
          * reports `done: false`; only an entry that alone outgrows the
          * ceiling still refuses, because no page can ever carry it.
          */
-        const serve = (runId: JournalEvent.RunId, cap: number) =>
+        const serve = (runId: JournalEvent.RunId, cap: number): Effect.Effect<ServeOutcome, SyncError> =>
           Effect.gen(function*() {
             const after = cursors.get(runId)
-            const generation = yield* generationOf(runId, generations.get(runId))
+            const { admitted, generation, hasMore } = yield* readPage(runId, after, generations.get(runId), cap)
             generations.set(runId, generation)
-            const page = yield* journal.entries({
-              runId,
-              ...(after === undefined ? {} : { after }),
-              limit: cap
-            }).pipe(Effect.mapError(journalFailure(runId)))
-            yield* generationOf(runId, generation)
-            const admitted = yield* Admission.entries(page.entries, runId, after ?? -1)
             for (const accepted of admitted) {
               const bytes = SyncProtocol.encodedByteLength(accepted)
-              if (bytes > maxFrameBytes) {
-                oversized = bytes
-                return false
-              }
-              if (frameBytes + bytes > maxFrameBytes) {
-                truncated = true
-                return false
-              }
+              if (bytes > maxFrameBytes) return { _tag: "oversized", bytes }
+              if (frameBytes + bytes > maxFrameBytes) return { _tag: "truncated" }
               frameBytes += bytes
               entries.push(accepted)
               // Cursors track what was SERVED, not what was read, so the next
@@ -607,7 +667,35 @@ const makeWith = (
               // skipped and none is served twice.
               cursors.set(runId, accepted.seq)
             }
-            return page.hasMore
+            return hasMore ? { _tag: "more" } : { _tag: "drained" }
+          })
+
+        /**
+         * Serves runs in the given order until one of them ends the page.
+         *
+         * Returns what ended it, or `undefined` when the pass reached the end
+         * of its runs with the page still open. A full page ends the pass but
+         * is not an outcome of any one run, so it reads as `undefined` too and
+         * is answered by `entries.length` below.
+         *
+         * `more` collects the runs that still had entries left. It is an
+         * argument rather than the return value because the second pass reads
+         * the list the first one filled, and appending to the array being
+         * iterated would serve a run twice in one page.
+         */
+        const pass = (
+          runs: Iterable<JournalEvent.RunId>,
+          cap: () => number,
+          more: Array<JournalEvent.RunId>
+        ): Effect.Effect<PageStop | undefined, SyncError> =>
+          Effect.gen(function*() {
+            for (const runId of runs) {
+              if (entries.length >= limit) return undefined
+              const outcome = yield* serve(runId, cap())
+              if (outcome._tag === "more") more.push(runId)
+              if (outcome._tag === "truncated" || outcome._tag === "oversized") return outcome
+            }
+            return undefined
           })
 
         // Serve the least advanced cursors first, with stable run-id ties.
@@ -619,17 +707,12 @@ const makeWith = (
         // even when clients reorder cursors or requests hit another server.
         const pending = [...runIds].sort((left, right) => (cursors.get(left) ?? -1) - (cursors.get(right) ?? -1))
         const share = Math.max(1, Math.floor(limit / Math.max(runIds.length, 1)))
-        for (const runId of pending) {
-          if (oversized !== undefined || truncated || entries.length >= limit) break
-          if (yield* serve(runId, Math.min(share, limit - entries.length))) behind.push(runId)
-        }
+        const shares = yield* pass(pending, () => Math.min(share, limit - entries.length), behind)
         // The budget the shares did not spend, offered back in the same order.
-        for (const runId of behind) {
-          if (oversized !== undefined || truncated || entries.length >= limit) break
-          yield* serve(runId, limit - entries.length)
-        }
-        if (oversized !== undefined) return yield* frameTooLarge(oversized)
-        if (truncated || entries.length >= limit || behind.length > 0) done = false
+        // What this pass leaves behind is discarded: one run reported more, so
+        // the page is already unfinished however much of it this pass drains.
+        const stop = shares ?? (yield* pass(behind, () => limit - entries.length, []))
+        if (stop?._tag === "oversized") return yield* frameTooLarge(stop.bytes)
         return {
           entries,
           cursors: Array.from(cursors, ([runId, afterSeq]) => ({
@@ -637,7 +720,11 @@ const makeWith = (
             afterSeq,
             generation: generations.get(runId)!
           })),
-          done
+          // A run that reported more keeps the read unfinished even when the
+          // second pass then drained it: the page is a snapshot of a journal
+          // that is still being written, and only an untruncated pass over
+          // runs that all reported drained can promise there is nothing left.
+          done: stop === undefined && behind.length === 0 && entries.length < limit
         }
       })
 
@@ -666,19 +753,7 @@ const makeWith = (
           Stream.flattenArray,
           Stream.mapAccum(
             () => after === undefined ? -1 : after,
-            (previous, entry) => [
-              entry.seq,
-              [
-                {
-                  _tag: "Entries",
-                  runId,
-                  generation,
-                  fromSeq: (previous + 1) as JournalEvent.Seq,
-                  toSeq: entry.seq,
-                  entries: [entry]
-                } satisfies SyncProtocol.Frame
-              ]
-            ]
+            (previous, entry) => [entry.seq, [frameOf(runId, generation, previous, entry)]]
           )
         )
         if (journal.generation === undefined) return entries
@@ -837,27 +912,18 @@ const makeWith = (
         const tail = (runId: JournalEvent.RunId): Stream.Stream<SyncProtocol.Frame, SyncError> =>
           Stream.unwrap(Effect.gen(function*() {
             const after = served.get(runId)
-            const generation = yield* generationOf(runId, generations.get(runId))
-            generations.set(runId, generation)
-            const page = yield* journal.entries({
+            const { admitted, generation, hasMore } = yield* readPage(
               runId,
-              ...(after === undefined ? {} : { after }),
-              limit: tailBatchSize
-            }).pipe(Effect.mapError(journalFailure(runId)))
-            yield* generationOf(runId, generation)
-            const admitted = yield* Admission.entries(page.entries, runId, after ?? -1)
+              after,
+              generations.get(runId),
+              tailBatchSize
+            )
+            generations.set(runId, generation)
             yield* guardEntryChunk(admitted)
             const frames: Array<SyncProtocol.Frame> = []
             let previous = after === undefined ? -1 : after
             for (const accepted of admitted) {
-              frames.push({
-                _tag: "Entries",
-                runId,
-                generation,
-                fromSeq: (previous + 1) as JournalEvent.Seq,
-                toSeq: accepted.seq,
-                entries: [accepted]
-              })
+              frames.push(frameOf(runId, generation, previous, accepted))
               previous = accepted.seq
             }
             const last = admitted.at(-1)
@@ -868,7 +934,7 @@ const makeWith = (
             // A backlog costs another round, not another slot. The wake makes
             // that round start at once rather than at the next interval, and
             // it reads this run and the other dirty ones, not the workspace.
-            if (page.hasMore) {
+            if (hasMore) {
               dirty.add(runId)
               yield* PubSub.publish(wake, undefined)
             }
@@ -907,10 +973,13 @@ const makeWith = (
 
         /** Which pass a tick pays for. */
         const roundFor = (tick: "wake" | "interval"): Effect.Effect<Stream.Stream<SyncProtocol.Frame, SyncError>> =>
-          Effect.map(Clock.currentTimeMillis, (nowMs) =>
-            tick === "interval" || announced || nowMs - reconciledAtMs >= tailIntervalMs
-              ? fullRound
-              : dirtyRound)
+          Effect.map(
+            Clock.currentTimeMillis,
+            (nowMs) =>
+              tick === "interval" || announced || nowMs - reconciledAtMs >= tailIntervalMs
+                ? fullRound
+                : dirtyRound
+          )
 
         // An announcement is a WAKE and nothing else: the round that follows
         // reads the catalog itself and authorizes what it finds. Covering the
@@ -981,8 +1050,7 @@ const makeWith = (
             Stream.merge(
               Stream.concat(
                 fullRound,
-                Stream.flatMap(ticks, (tick) =>
-                  Stream.unwrap(roundFor(tick)))
+                Stream.flatMap(ticks, (tick) => Stream.unwrap(roundFor(tick)))
               ),
               announcements
             ),
