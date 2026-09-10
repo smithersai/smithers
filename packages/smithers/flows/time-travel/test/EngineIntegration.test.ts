@@ -15,16 +15,19 @@ import { describe, expect, it } from "@effect/vitest"
 import type * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
+import * as EngineStoreExports from "@smthrs/engine-store"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as EngineMigrations from "@smthrs/engine-store/Migrations"
 import * as OwnerIdentity from "@smthrs/engine-store/OwnerIdentity"
+import * as PlanScheduler from "@smthrs/engine-store/PlanScheduler"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as Jj from "@smthrs/jj"
 import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
+import { KeyMaterial, Plan, PlanStore } from "@smthrs/plan"
 import * as AttemptStore from "@smthrs/run-store/AttemptStore"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
@@ -36,6 +39,7 @@ import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as CompensationHandlers from "../src/CompensationHandlers.ts"
+import * as EffectBoundary from "../src/EffectBoundary.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { TimeTravel } from "../src/TimeTravel.ts"
 import type { TimeTravelError } from "../src/TimeTravelError.ts"
@@ -231,6 +235,106 @@ const seqOf = (
 ): number => committed.filter((entry) => entry.eventType === eventType)[nth - 1]!.seq
 
 describe("time travel over an engine-written journal", () => {
+  it("exports the engine record names consumed by time travel", () => {
+    expect(EngineStoreExports).toHaveProperty("EventTypes", {
+      runDecision: "flows.engine.run-decision",
+      attemptStarted: "flows.engine.attempt-started",
+      snapshotIdentified: "flows.engine.snapshot-identified",
+      planRecorded: "flows.engine.plan-recorded",
+      subgraphAppended: "flows.engine.subgraph-appended",
+      deferredCompleted: "flows.engine.deferred-completed",
+      clockScheduled: "flows.engine.clock-scheduled",
+      childSpawnKind: "flows/engine-store/child-spawn"
+    })
+  })
+
+  it.effect("writes every shared time-travel record name through the real engine", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const engine = yield* FlowRuntime.FlowRuntime
+        yield* Ledger.execute({}, { executionId: "ledger-1", discard: true })
+        yield* engine.deferredDone(Settled, {
+          flowName: Ledger._tag,
+          executionId: "ledger-1",
+          deferredName: Settled.name,
+          exit: Exit.succeed("settled")
+        })
+
+        const started = yield* Deferred.make<void>()
+        const child = Flow.make("time-travel/ContractChild", {
+          payload: {},
+          success: Schema.String,
+          body: () => Post.call({})
+        })
+        const parent = Flow.make("time-travel/ContractParent", {
+          payload: {},
+          success: Schema.String,
+          body: () => Post.call({})
+        })
+        yield* engine.register(child, () => Deferred.succeed(started, undefined).pipe(Effect.as("done")))
+        yield* engine.register(parent, () =>
+          Effect.gen(function*() {
+            yield* engine.execute(child, { executionId: "contract-child", payload: {}, discard: true }).pipe(
+              Effect.forkIn(scope)
+            )
+            yield* Deferred.await(started)
+            yield* DurableClock.sleep({ name: "contract-clock", duration: 1000, inMemoryThreshold: 0 })
+            return "done"
+          }))
+        yield* engine.execute(parent, { executionId: "contract-parent", payload: {}, discard: true })
+
+        const runs = yield* RunStore.RunStore
+        const owner = { hostId: "contract-test", pid: 1, nonce: "contract-test" }
+        yield* runs.create("contract-plan", "{}")
+        const row = yield* runs.get("contract-plan")
+        yield* runs.claimAndOwn(
+          "contract-plan",
+          {
+            status: row.status,
+            owner: row.owner,
+            heartbeatAtMs: row.heartbeatAtMs
+          },
+          owner,
+          0
+        )
+        const draft = (id: string): Plan.NodeDraft => ({
+          id,
+          material: {
+            version: KeyMaterial.version,
+            kind: "sealed",
+            body: id,
+            inputs: [],
+            layers: [],
+            capabilities: []
+          },
+          effects: { reads: [], writes: [], boundaryMode: "hard" }
+        })
+        const plan = yield* Plan.compile({ planId: "contract-plan", flow: "contract", nodes: [draft("root")] })
+        const scheduler = PlanScheduler.make({ runId: "contract-plan", owner, sourceId: "contract-test" })
+        yield* scheduler.record(plan)
+        yield* scheduler.append(yield* Plan.append(plan, [draft("child")]))
+
+        const journal = yield* Journal.Journal
+        yield* journal.flush
+        const names = new Set<string>()
+        for (const runId of ["ledger-1", "contract-parent", "contract-plan"]) {
+          const page = yield* journal.entries({ runId: runId as JournalEvent.RunId, limit: 200 })
+          for (const entry of page.entries) {
+            names.add(entry.eventType)
+            if (entry.eventType === EffectBoundary.eventType) {
+              const kind = (entry.payload as { effect?: { kind?: string } }).effect?.kind
+              if (kind !== undefined) names.add(kind)
+            }
+          }
+        }
+        expect([...names]).toEqual(expect.arrayContaining(Object.values(EngineStoreExports.EventTypes)))
+      }).pipe(
+        Effect.provide(PlanStore.layer),
+        Effect.provide(engineLayer({ notifications: [], jjCalls: [] }, []))
+      )
+    ))
+
   it.effect("blocks rewind past a real detached spawn while the child is running", () =>
     Effect.scoped(
       Effect.gen(function*() {

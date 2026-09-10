@@ -17,6 +17,7 @@
  *
  * @since 0.1.0
  */
+import { EventTypes } from "@smthrs/engine-store/EventTypes"
 import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import type * as Projection from "@smthrs/journal/Projection"
@@ -100,9 +101,9 @@ export const projection = (
   initial,
   reduce: (state, entry) =>
     Effect.gen(function*() {
-      const isPlan = entry.eventType === "flows.engine.plan-recorded" ||
-        entry.eventType === "flows.engine.subgraph-appended"
-      if (!isPlan && entry.eventType !== "flows.engine.snapshot-identified") return state
+      const isPlan = entry.eventType === EventTypes.planRecorded ||
+        entry.eventType === EventTypes.subgraphAppended
+      if (!isPlan && entry.eventType !== EventTypes.snapshotIdentified) return state
       // Both facts are keyed by the lineage the record carries, so a record
       // that carries none is corrupt evidence for either: the engine stamps
       // the lineage on every record it writes.

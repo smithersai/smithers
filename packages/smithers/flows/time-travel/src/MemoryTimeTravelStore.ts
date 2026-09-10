@@ -14,6 +14,7 @@
  *
  * @since 0.1.0
  */
+import { EventTypes } from "@smthrs/engine-store/EventTypes"
 import type { OwnerId } from "@smthrs/journal/OwnerId"
 import { isTerminalRunStatus, type RunStatus } from "@smthrs/run-store/RunStore"
 import * as Clock from "effect/Clock"
@@ -318,7 +319,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
       Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
         Effect.sync(() => {
           let state: unknown = undefined
-          for (const record of framed(runId, frame, "flows.engine.run-decision")) {
+          for (const record of framed(runId, frame, EventTypes.runDecision)) {
             const payload = record.payload as { readonly state?: unknown } | null
             if (payload !== null && payload !== undefined && payload.state !== undefined) state = payload.state
           }
@@ -330,7 +331,7 @@ export const make = (options: Options = {}): TimeTravelStore.Service & { readonl
       Effect.annotateCurrentSpan({ runId, lineageId: frame.lineageId, seq: frame.seq }).pipe(Effect.andThen(
         Effect.gen(function*() {
           const refs = new Map<string, TimeTravelStore.AttemptRef>()
-          for (const record of framed(runId, frame, "flows.engine.attempt-started")) {
+          for (const record of framed(runId, frame, EventTypes.attemptStarted)) {
             const payload = yield* Schema.decodeUnknownEffect(TimeTravelStore.AttemptRef)(record.payload).pipe(
               Effect.mapError((cause) => error("invalid", `attempt-started at seq ${record.seq} is malformed`, cause))
             )

@@ -23,6 +23,7 @@ import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as DurableEngineState from "../DurableEngineState.ts"
 import * as EngineStoreMetrics from "../EngineStoreMetrics.ts"
+import { EventTypes } from "../EventTypes.ts"
 import { type OnParentExit, RunState } from "../RunState.ts"
 import * as WakeBus from "../WakeBus.ts"
 import * as ActionPersistence from "./ActionPersistence.ts"
@@ -146,7 +147,7 @@ interface Registration {
  * @since 0.1.0
  * @category constants
  */
-export const spawnEffectKind = "flows/engine-store/child-spawn"
+export const spawnEffectKind = EventTypes.childSpawnKind
 
 const snapshot = (row: RunStore.RunRow): RunStore.RunSnapshot => ({
   status: row.status,

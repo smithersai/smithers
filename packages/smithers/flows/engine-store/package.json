@@ -65,7 +65,8 @@
     "./WakeBus": "./src/WakeBus.ts",
     "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
     "./index": "./src/index.ts",
-    "./test/TestStores": "./src/test/TestStores.ts"
+    "./test/TestStores": "./src/test/TestStores.ts",
+    "./EventTypes": "./src/EventTypes.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -231,6 +232,11 @@
         "types": "./dist/esm/test/TestStores.d.ts",
         "import": "./dist/esm/test/TestStores.js",
         "require": "./dist/cjs/test/TestStores.js"
+      },
+      "./EventTypes": {
+        "types": "./dist/esm/EventTypes.d.ts",
+        "import": "./dist/esm/EventTypes.js",
+        "require": "./dist/cjs/EventTypes.js"
       }
     }
   },

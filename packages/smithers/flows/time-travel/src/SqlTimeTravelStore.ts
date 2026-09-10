@@ -26,6 +26,7 @@
  */
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
+import { EventTypes } from "@smthrs/engine-store/EventTypes"
 import { RunState } from "@smthrs/engine-store/RunState"
 import * as JournalGeneration from "@smthrs/journal/JournalGeneration"
 import { isTerminalRunStatus, type RunStatus } from "@smthrs/run-store/RunStore"
@@ -34,6 +35,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
+import * as EffectBoundary from "./EffectBoundary.ts"
 import { forkCreatedEventType, Frame, type LineageEdge } from "./Frame.ts"
 import * as Migrations from "./Migrations.ts"
 import { error, TimeTravelError } from "./TimeTravelError.ts"
@@ -150,7 +152,7 @@ const descendantsFrom = (
  *
  * @private
  */
-const spawnEffectKind = "flows/engine-store/child-spawn"
+const spawnEffectKind = EventTypes.childSpawnKind
 
 /**
  * The decision a trampoline round records when it hands off to the next one.
@@ -164,7 +166,7 @@ const spawnEffectKind = "flows/engine-store/child-spawn"
  *
  * @private
  */
-const handoffEventType = "flows.engine.run-decision"
+const handoffEventType = EventTypes.runDecision
 
 /** @private */
 const DecisionPayload = Schema.Struct({ state: Schema.Unknown })
@@ -246,7 +248,7 @@ export const make: Effect.Effect<
         SELECT json_extract(payload_json, '$.effect.output.childRunId')
         FROM reachable CROSS JOIN flows_journal_events
         WHERE flows_journal_events.run_id = reachable.run_id
-          AND event_type = 'flows.time-travel.effect-boundary'
+          AND event_type = ${sql.literal(`'${EffectBoundary.eventType}'`)}
           AND json_extract(payload_json, '$.effect.kind') = ${sql.literal(`'${spawnEffectKind}'`)}
           AND json_extract(payload_json, '$.effect.status') = 'succeeded'
           AND json_extract(payload_json, '$.effect.output.childRunId') IS NOT NULL
@@ -269,7 +271,7 @@ export const make: Effect.Effect<
              CASE WHEN json_extract(payload_json, '$.effect.output.attached') = 1 THEN 1 ELSE 0 END AS attached
       FROM reachable CROSS JOIN flows_journal_events
       WHERE flows_journal_events.run_id = reachable.run_id
-        AND event_type = 'flows.time-travel.effect-boundary'
+        AND event_type = ${sql.literal(`'${EffectBoundary.eventType}'`)}
         AND json_extract(payload_json, '$.effect.kind') = ${sql.literal(`'${spawnEffectKind}'`)}
         AND json_extract(payload_json, '$.effect.status') = 'succeeded'
         AND json_extract(payload_json, '$.effect.output.childRunId') IS NOT NULL
@@ -322,7 +324,7 @@ export const make: Effect.Effect<
       runId: string,
       frame: TimeTravelStore.Snapshot["frame"]
     ): Effect.Effect<string | undefined, TimeTravelError> =>
-      prefix(runId, frame, "flows.engine.run-decision").pipe(
+      prefix(runId, frame, EventTypes.runDecision).pipe(
         Effect.flatMap((rows) =>
           Effect.gen(function*() {
             let state: unknown = undefined
@@ -346,7 +348,7 @@ export const make: Effect.Effect<
       runId: string,
       frame: TimeTravelStore.Snapshot["frame"]
     ): Effect.Effect<ReadonlyArray<TimeTravelStore.AttemptRef>, TimeTravelError> =>
-      prefix(runId, frame, "flows.engine.attempt-started").pipe(
+      prefix(runId, frame, EventTypes.attemptStarted).pipe(
         Effect.flatMap((rows) =>
           Effect.gen(function*() {
             const refs = new Map<string, TimeTravelStore.AttemptRef>()
@@ -390,7 +392,7 @@ export const make: Effect.Effect<
               SELECT 1 FROM flows_journal_events AS event
               WHERE event.run_id = ${runId}
                 AND event.seq > ${afterSeq}
-                AND event.event_type = 'flows.engine.deferred-completed'
+                AND event.event_type = ${EventTypes.deferredCompleted}
                 AND json_extract(event.payload_json, '$.flowName') = flows_deferred_completions.flow_name
                 AND json_extract(event.payload_json, '$.executionId') = flows_deferred_completions.execution_id
                 AND json_extract(event.payload_json, '$.deferredName') = flows_deferred_completions.deferred_name
@@ -403,7 +405,7 @@ export const make: Effect.Effect<
               SELECT 1 FROM flows_journal_events AS event
               WHERE event.run_id = ${runId}
                 AND event.seq > ${afterSeq}
-                AND event.event_type = 'flows.engine.clock-scheduled'
+                AND event.event_type = ${EventTypes.clockScheduled}
                 AND json_extract(event.payload_json, '$.flowName') = flows_clock_deadlines.flow_name
                 AND json_extract(event.payload_json, '$.executionId') = flows_clock_deadlines.execution_id
                 AND json_extract(event.payload_json, '$.clockName') = flows_clock_deadlines.clock_name

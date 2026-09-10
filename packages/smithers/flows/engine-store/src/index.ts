@@ -153,3 +153,9 @@ export * as Retention from "./Retention.ts"
  * @category services
  */
 export * as RunCatalogRead from "./RunCatalogRead.ts"
+
+/**
+ * @since 1.0.0
+ * @category constants
+ */
+export { EventTypes } from "./EventTypes.ts"

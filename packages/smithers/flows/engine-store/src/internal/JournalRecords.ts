@@ -5,6 +5,7 @@
  */
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
+import { EventTypes } from "../EventTypes.ts"
 
 /**
  * The addressing every engine record shares: which run wrote it, which source
@@ -70,8 +71,7 @@ const event = (options: EventOptions, eventType: string, payload: unknown): Jour
  * @since 0.1.0
  * @category events
  */
-export const runDecision = (options: EventOptions, payload: unknown) =>
-  event(options, "flows.engine.run-decision", payload)
+export const runDecision = (options: EventOptions, payload: unknown) => event(options, EventTypes.runDecision, payload)
 /**
  * An action attempt was admitted and its body is about to run. Paired with
  * {@link attemptFinished}; an unmatched one is crash evidence.
@@ -80,7 +80,7 @@ export const runDecision = (options: EventOptions, payload: unknown) =>
  * @category events
  */
 export const attemptStarted = (options: EventOptions, payload: unknown) =>
-  event(options, "flows.engine.attempt-started", payload)
+  event(options, EventTypes.attemptStarted, payload)
 /**
  * An action attempt settled, successfully or not. Closes the span opened by
  * {@link attemptStarted}.
@@ -99,7 +99,7 @@ export const attemptFinished = (options: EventOptions, payload: unknown) =>
  * @category events
  */
 export const deferredCompleted = (options: EventOptions, payload: unknown) =>
-  event(options, "flows.engine.deferred-completed", payload)
+  event(options, EventTypes.deferredCompleted, payload)
 /**
  * A durable timer was armed. Journaling the schedule rather than the firing is
  * what lets a resumed run re-arm the same deadline instead of restarting the
@@ -109,7 +109,7 @@ export const deferredCompleted = (options: EventOptions, payload: unknown) =>
  * @category events
  */
 export const clockScheduled = (options: EventOptions, payload: unknown) =>
-  event(options, "flows.engine.clock-scheduled", payload)
+  event(options, EventTypes.clockScheduled, payload)
 /**
  * The run was interrupted — cancelled, fenced out, or torn down — as opposed
  * to failing. Recorded so a later reader can tell a cancelled run from a
@@ -129,7 +129,7 @@ export const interrupted = (options: EventOptions, payload: unknown) =>
  * @category events
  */
 export const snapshotIdentified = (options: EventOptions, payload: unknown) =>
-  event(options, "flows.engine.snapshot-identified", payload)
+  event(options, EventTypes.snapshotIdentified, payload)
 /**
  * A hard-mode step wrote outside its declared write set, so its result was
  * refused. The record is the forensic trail for a declaration that does not
@@ -188,7 +188,7 @@ export const copyBackSettled = (options: EventOptions, payload: unknown) =>
  * @category events
  */
 export const planRecorded = (options: EventOptions, payload: unknown) =>
-  event(options, "flows.engine.plan-recorded", payload)
+  event(options, EventTypes.planRecorded, payload)
 /**
  * An elaboration appended a pre-keyed subgraph to the SAME plan. The plan
  * grows; it is never invalidated, so this record names the new generation, the
@@ -198,7 +198,7 @@ export const planRecorded = (options: EventOptions, payload: unknown) =>
  * @category events
  */
 export const subgraphAppended = (options: EventOptions, payload: unknown) =>
-  event(options, "flows.engine.subgraph-appended", payload)
+  event(options, EventTypes.subgraphAppended, payload)
 /**
  * A plan node was admitted to the scheduler: its caps and seats allowed it,
  * and its effective priority selected it. Paired with `node-settled`, this is
