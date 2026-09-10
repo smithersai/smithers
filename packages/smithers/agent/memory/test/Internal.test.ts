@@ -2,6 +2,7 @@ import * as Digest from "@smthrs/core/Digest"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Bank from "../src/internal/Bank.ts"
+import * as Namespace from "../src/Namespace.ts"
 import * as Text from "../src/internal/Text.ts"
 
 describe("memory internal helpers", () => {
@@ -69,5 +70,18 @@ describe("memory internal helpers", () => {
     ])
     expect(empty.code).toBe("invalid_namespace")
     expect(invalid.code).toBe("invalid_namespace")
+  })
+
+  it("formats and parses banks with one pair the validating resolver reuses", async () => {
+    for (const kind of Namespace.Kind.literals) {
+      const namespace = { kind, id: "id" } as const
+      const bank = Bank.bankForNamespace(namespace)
+      expect(bank).toBe(`${kind}-id`)
+      expect(Bank.namespaceForBank(bank)).toEqual(namespace)
+      expect(await Effect.runPromise(Bank.resolveNamespace(bank))).toEqual({ namespace, bank })
+      expect(await Effect.runPromise(Bank.resolveNamespace(namespace))).toEqual({ namespace, bank })
+    }
+    expect(Bank.namespaceForBank("plain")).toEqual({ kind: "flow", id: "plain" })
+    expect(Bank.namespaceForBank("user-")).toEqual({ kind: "flow", id: "user-" })
   })
 })

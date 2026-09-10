@@ -1,6 +1,8 @@
 import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as Bank from "../src/Bank.ts"
+import * as BankInternal from "../src/internal/Bank.ts"
+import * as Namespace from "../src/Namespace.ts"
 import * as Recall from "../src/Recall.ts"
 
 describe("Recall", () => {
@@ -137,6 +139,16 @@ describe("Recall", () => {
     // flow-local rather than a parse failure.
     expect(Recall.namespaceForBank("plain")).toEqual({ kind: "flow", id: "plain" })
     expect(Recall.namespaceForBank("agent-")).toEqual({ kind: "flow", id: "agent-" })
+    // One parser and one formatter: Recall re-exports the internal pair rather
+    // than keeping a second kind list, and the syntactic parser agrees with the
+    // validating one for every declared kind.
+    expect(Recall.namespaceForBank).toBe(BankInternal.namespaceForBank)
+    expect(Recall.bankForNamespace).toBe(BankInternal.bankForNamespace)
+    for (const kind of Namespace.Kind.literals) {
+      const bank = `${kind}-id`
+      expect(Recall.namespaceForBank(bank)).toEqual(await Effect.runPromise(Bank.parse(bank)))
+      expect(Recall.bankForNamespace({ kind, id: "id" })).toBe(bank)
+    }
     await expect(Effect.runPromise(Effect.flip(Bank.parse("")))).resolves.toMatchObject({
       code: "invalid_namespace"
     })

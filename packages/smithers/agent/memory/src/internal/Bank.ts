@@ -9,6 +9,37 @@ import { MemoryError } from "../MemoryError.ts"
 import * as Namespace from "../Namespace.ts"
 
 /**
+ * Maps a structured namespace to the public bank name recall accepts.
+ * {@link namespaceForBank} is its inverse for every prefixed bank.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const bankForNamespace = (namespace: Namespace.Namespace): string => `${namespace.kind}-${namespace.id}`
+
+/**
+ * Performs the unvalidated syntactic inverse of {@link bankForNamespace}.
+ * Prefixes preserve explicit lifetimes; an unprefixed bank is flow-local.
+ * The returned `id` is intentionally typed as `string`, not
+ * `Namespace.NonEmptyString`. Use {@link resolveNamespace} at every I/O
+ * boundary.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const namespaceForBank = (
+  bank: string
+): { readonly kind: Namespace.Kind; readonly id: string } => {
+  for (const kind of Namespace.Kind.literals) {
+    const prefix = `${kind}-`
+    if (bank.startsWith(prefix) && bank.length > prefix.length) {
+      return { kind, id: bank.slice(prefix.length) }
+    }
+  }
+  return { kind: "flow", id: bank }
+}
+
+/**
  * Resolves a structured namespace or public bank name.
  *
  * @category constructors
@@ -25,25 +56,13 @@ export const resolveNamespace = (
           message: "memory namespace is invalid"
         })
       ),
-      Effect.map((namespace) => ({ namespace, bank: `${namespace.kind}-${namespace.id}` }))
+      Effect.map((namespace) => ({ namespace, bank: bankForNamespace(namespace) }))
     )
   }
   if (input.length === 0) {
     return Effect.fail(new MemoryError({ code: "invalid_namespace", message: "memory bank must not be empty" }))
   }
-  for (const kind of Namespace.Kind.literals) {
-    const prefix = `${kind}-`
-    if (input.startsWith(prefix) && input.length > prefix.length) {
-      return Effect.succeed({
-        namespace: { kind, id: input.slice(prefix.length) },
-        bank: input
-      })
-    }
-  }
-  return Effect.succeed({
-    namespace: { kind: "flow", id: input },
-    bank: input
-  })
+  return Effect.succeed({ namespace: namespaceForBank(input), bank: input })
 }
 
 /**

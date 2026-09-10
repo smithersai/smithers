@@ -17,7 +17,7 @@ import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import type { DatabaseService } from "./Database.ts"
 import * as Embedding from "./Embedding.ts"
-import { resolveBanks, resolveNamespace } from "./internal/Bank.ts"
+import { bankForNamespace, resolveBanks, resolveNamespace } from "./internal/Bank.ts"
 import { compareText, digest, searchableText, vectorBytes } from "./internal/Text.ts"
 import * as MemoryError from "./MemoryError.ts"
 import * as MemoryStore from "./MemoryStore.ts"
@@ -484,7 +484,7 @@ export const decorateStore = (
                 fact === undefined
                   ? Effect.void
                   : project({
-                    bank: `${fact.namespace.kind}-${fact.namespace.id}`,
+                    bank: bankForNamespace(fact.namespace),
                     key: fact.key,
                     text: searchableText(fact.value),
                     updatedAtMs: fact.updatedAtMs,
@@ -501,7 +501,7 @@ export const decorateStore = (
         Effect.tap((note) =>
           superviseAfterCommit(
             project({
-              bank: `${note.namespace.kind}-${note.namespace.id}`,
+              bank: bankForNamespace(note.namespace),
               key: note.id,
               text: note.text,
               updatedAtMs: note.createdAtMs,

@@ -14,6 +14,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import type * as MemoryError from "./MemoryError.ts"
+import * as Bank from "./internal/Bank.ts"
 import * as Namespace from "./Namespace.ts"
 
 /**
@@ -292,7 +293,7 @@ export type NamespaceValue = Namespace.Namespace
  * @category constructors
  * @since 0.1.0
  */
-export const bankForNamespace = (namespace: Namespace.Namespace): string => `${namespace.kind}-${namespace.id}`
+export const bankForNamespace: (namespace: Namespace.Namespace) => string = Bank.bankForNamespace
 
 /**
  * Performs the unvalidated syntactic inverse of {@link bankForNamespace}.
@@ -304,14 +305,5 @@ export const bankForNamespace = (namespace: Namespace.Namespace): string => `${n
  * @since 0.1.0
  * @slop
  */
-export const namespaceForBank = (
-  bank: string
-): { readonly kind: Namespace.Kind; readonly id: string } => {
-  for (const kind of ["flow", "agent", "user", "global"] as const) {
-    const prefix = `${kind}-`
-    if (bank.startsWith(prefix) && bank.length > prefix.length) {
-      return { kind, id: bank.slice(prefix.length) }
-    }
-  }
-  return { kind: "flow", id: bank }
-}
+export const namespaceForBank: (bank: string) => { readonly kind: Namespace.Kind; readonly id: string } =
+  Bank.namespaceForBank
