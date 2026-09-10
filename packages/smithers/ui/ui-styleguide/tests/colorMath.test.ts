@@ -104,6 +104,27 @@ describe("contrastRatioOf", () => {
     expect(() => contrastRatioOf("#ffffff" as unknown as Rgb, white)).toThrow(TypeError);
   });
 
+  for (const [label, channels] of [
+    ["fully sparse", new Array<number>(3)],
+    ["missing red", [, 0, 0]],
+    ["missing green", [0, , 0]],
+    ["missing blue", [0, 0, ,]],
+  ] as const) {
+    for (const role of ["foreground", "background"] as const) {
+      test(`rejects ${label} ${role} channels`, () => {
+        const sparse = channels as unknown as Rgb;
+        const white: Rgb = [255, 255, 255];
+        const score = () => role === "foreground"
+          ? contrastRatioOf(sparse, white)
+          : contrastRatioOf(white, sparse);
+        expect(score).toThrow(TypeError);
+        expect(score).toThrow(
+          `contrastRatioOf needs three finite 0-255 ${role} channels, received ${JSON.stringify(channels)}`,
+        );
+      });
+    }
+  }
+
   test("keeps every answer inside the WCAG range", () => {
     for (const pair of PAINTED_PAIRS) {
       for (const theme of Object.values(themeRegistry)) {

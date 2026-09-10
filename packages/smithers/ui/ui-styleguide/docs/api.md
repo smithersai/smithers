@@ -127,9 +127,9 @@ else throws `TypeError` quoting the offending value:
 `contrastRatioOf` scores an already-parsed pair. It takes numbers, so the hex
 parser that guards `contrastRatio` never sees its input: it checks that each
 argument is three finite channels from 0 to 255 and throws `TypeError`
-otherwise. Unrounded values are legal; negative, `NaN`, `Infinity`, and
-over-255 ones are not, because each of those returns a number outside the
-documented 1-to-21 range instead of an error.
+otherwise. Unrounded values are legal; sparse arrays and negative, `NaN`,
+`Infinity`, or over-255 channels are rejected. Missing channels would otherwise
+produce `NaN`, which silently fails every contrast threshold comparison.
 
 `mixColors` is the srgb mix the house recipes use, matching
 `color-mix(in srgb, fg <amount>%, bg)` with `amount` as a 0-1 fraction. It drops

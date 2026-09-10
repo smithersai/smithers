@@ -14,7 +14,9 @@ export type Rgb = readonly [number, number, number];
  */
 function checkedChannels(channels: Rgb, role: string): Rgb {
   const valid = Array.isArray(channels) && channels.length === 3
-    && channels.every((channel) => typeof channel === "number" && channel >= 0 && channel <= 255);
+    && Number.isFinite(channels[0]) && channels[0] >= 0 && channels[0] <= 255
+    && Number.isFinite(channels[1]) && channels[1] >= 0 && channels[1] <= 255
+    && Number.isFinite(channels[2]) && channels[2] >= 0 && channels[2] <= 255;
   if (!valid) {
     throw new TypeError(
       `contrastRatioOf needs three finite 0-255 ${role} channels, received ${JSON.stringify(channels)}`,
