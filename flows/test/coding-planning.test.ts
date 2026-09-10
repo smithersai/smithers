@@ -37,6 +37,30 @@ const atom = (changeId: string | null) => ({ changeId, message: "✨ feat: small
 const draft = (base: string, ids: ReadonlyArray<string | null>): Draft => ({ rationale: "Use captured evidence.", baseChangeId: base,
   changes: [{ id: "feature", title: "Feature", intent: "Add feature", atoms: ids.map(atom), checks: ["fast", "slow"] }] })
 
+test("planning retains every operator-required check even when the model selects another slow check", () => {
+  const check = (id: string, required: boolean, tier: "slow" | "delivery" = "slow") => ({
+    id, target: `//:${id}`, flow: `checks/${id}`, flowDigest: `sha256:${id}`, tier, required
+  })
+  const configured: PlanningContext = { ...context,
+    checks: [...context.checks, check("wiki", true), check("canary", true, "delivery"),
+      check("optional", false), check("unused", false)] }
+  const proposed = draft("native-3", [null])
+  const first = proposed.changes[0]!
+  const plan = finalize(input, configured, { ...proposed, changes: [
+    { ...first, checks: [...first.checks, "optional"] },
+    { ...first, id: "next", checks: [...first.checks, "wiki"] }
+  ] })
+  assert.deepEqual(plan.changes.map(change => change.checks.map(check => check.id)), [
+    ["fast", "slow", "optional", "wiki", "canary"],
+    ["fast", "slow", "wiki", "canary"]
+  ])
+  for (const change of plan.changes) {
+    for (const required of configured.checks.filter(check => check.required)) {
+      assert.equal(change.checks.find(check => check.id === required.id), required)
+    }
+  }
+})
+
 test("planning binds catalog facts and preserves the entire native suffix before new atoms", () => {
   const append = finalize(input, context, draft("native-3", [null]))
   assert.deepEqual(append.base, context.head)

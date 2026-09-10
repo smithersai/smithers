@@ -54,7 +54,9 @@ bundled clarification. A nonempty question calls the existing durable
 resume without asking the model to reconstruct its earlier reasoning.
 
 `DraftPlan` chooses native atoms and predicts reads and writes. It selects
-implementation/check names only from measured host catalog entries. Its
+implementation/check names only from measured host catalog entries. Finalization
+always includes every operator-required check on every Change; the model can
+add available optional checks. Delivery checks retain their later delivery tier. Its
 rationale and the request review remain separate recorded outputs, available
 for the UI's explanation and detailed execution views.
 
@@ -96,8 +98,8 @@ atom. An append uses the current head as base. An amendment chooses a visible
 earlier base and retains every existing descendant in native order before
 adding new atoms. Missing context, omitted/reordered descendants, duplicate
 ownership, unknown checks, and paths escaping the repository or entering native
-metadata are refused. Each Change needs a required fast and required slow
-check. This pass does not yet insert new atoms between existing ones or reorder
+metadata are refused. Each Change receives all configured required checks and
+needs a required fast and required slow check. This pass does not yet insert new atoms between existing ones or reorder
 history. The model is instructed to use small emoji conventional commits;
 final history cleanup is a separate later lifecycle step.
 
