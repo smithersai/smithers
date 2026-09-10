@@ -14,10 +14,12 @@ handle, or an open file.
 ## Discovery is metadata-only
 
 Scanning a source never evaluates a module and never reads a prompt body into
-the result. For each entry file the scan reads only far enough to find the
+the result. The scan reads and hashes each entry file whole, up to
+`Discovery.entrySizeLimit`, then parses at most its first 64 KiB looking for the
 metadata: the closing frontmatter fence for markdown, the end of the default
-`Flow.make` value for a module. A catalog of a thousand flows therefore costs a
-thousand frontmatter parses and no imports.
+`Flow.make` value for a module. The 64 KiB ceiling bounds parsing, not the read.
+A catalog of a thousand flows therefore costs a thousand reads and hashes, a
+thousand frontmatter parses, and no imports.
 
 That rule is what makes a catalog cheap enough to build at startup, and it is
 also what makes it safe. A `flows/` directory is a directory a person edits and
@@ -44,8 +46,22 @@ A `BodyRef` also records `contentDigest`, the SHA-256 of the complete entry
 file measured during the scan. That digest is what makes a lazily loaded body
 honest. `Registry.loadBody` and `Executable.fromDescriptor` rehash the bytes
 they read and refuse with `body_unavailable` when the file changed after
-discovery, rather than running a body whose declaration the catalog no longer
-describes. Adopting the new bytes is what `refresh` is for.
+discovery or `contentDigest` is absent. Older journaled descriptors still decode
+and can be listed, but their unmeasured bodies cannot be loaded or run. Refresh
+the registry to measure the current bytes before loading them. The default
+executable loader evaluates those verified entry bytes under a fresh,
+digest-qualified module identity, so refresh adopts edited priority, cache,
+and placement annotations even after an earlier load in the same process.
+The entry digest does not cover imported dependencies; those retain the host's
+normal module cache.
+
+Body paths may be filesystem paths or `file:` URLs. Verification decodes file
+URLs, including percent-encoded filenames, through the host `Path` service.
+Custom module loaders receive the original URL plus the verified bytes and
+digest. The default loader imports a private temporary sibling of the source,
+preserving its directory for relative imports. See
+[Executable.Options](/reference/api/#executableoptions) for loader requirements and
+catalog deadlines.
 
 ## What a descriptor carries
 
@@ -87,10 +103,11 @@ delegating node's durable identity. Freezing them is what keeps the envelope a
 delegate reads and the key material the engine recorded from diverging.
 
 The guarantee costs one traversal per descriptor per `refresh`, through a
-single identity map, over metadata the scan already parsed. No file is read and
-no body is loaded, so a refresh still costs one frontmatter parse per flow plus
-one copy of what that parse produced. The single map is also what keeps a value
-two fields reference from coming back as two objects.
+single identity map, over metadata the scan already parsed. That traversal
+reads no file and loads no body, so a refresh costs what a scan costs, one
+read, hash, and frontmatter parse per flow, plus one copy of what that parse
+produced. The single map is also what keeps a value two fields reference from
+coming back as two objects.
 
 ## Reading it back
 

@@ -128,9 +128,9 @@ the staged diff
 
 ## What just happened
 
-The scan read each entry file only far enough to find its metadata, hashed the
-whole file, and built a serializable descriptor with the body left behind a
-reference. `capabilities: ["fs:read:**"]` is why `review` came back as
+The scan read and hashed each entry file whole, parsed at most its first 64 KiB
+to find the metadata, and built a serializable descriptor with the body left
+behind a reference. `capabilities: ["fs:read:**"]` is why `review` came back as
 `tier=sealed`: reading files is reversible, so nothing has to be undone, and
 the tier is inferred from the authority the flow declared. The flow with no
 description contributed two `DiscoveryWarning` values instead of an entry: one

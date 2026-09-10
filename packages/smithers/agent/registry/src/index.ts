@@ -3,11 +3,13 @@
  * scanned off a filesystem, disclosed to an agent in a compact form, and
  * resolved back to a runnable body on demand.
  *
- * Discovery is metadata-only. Scanning a source parses markdown frontmatter
- * and module metadata without evaluating a module or reading a prompt body, so
- * a catalog of a thousand flows costs a thousand frontmatter parses and no
- * imports. A body is loaded when a flow is actually invoked, and its bytes are
- * checked against the content address discovery recorded.
+ * Discovery is metadata-only. Scanning a source reads and hashes each entry
+ * file whole, up to `Discovery.entrySizeLimit`, then parses at most its first
+ * 64 KiB for markdown frontmatter or module metadata, so a catalog of a
+ * thousand flows costs a thousand reads and frontmatter parses and no imports.
+ * No module is evaluated and no prompt body reaches the result. A body is
+ * loaded when a flow is actually invoked, and its bytes are checked against the
+ * content address discovery recorded.
  *
  * Governing contract: `packages/smithers/agent/registry/docs/api.md`, published as
  * https://smithers.sh/docs/reference/api/registry.

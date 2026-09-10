@@ -13,10 +13,12 @@ handle, or an open file.
 ## Discovery is metadata-only
 
 Scanning a source never evaluates a module and never reads a prompt body into
-the result. For each entry file the scan reads only far enough to find the
+the result. The scan reads and hashes each entry file whole, up to
+`Discovery.entrySizeLimit`, then parses at most its first 64 KiB looking for the
 metadata: the closing frontmatter fence for markdown, the end of the default
-`Flow.make` value for a module. A catalog of a thousand flows therefore costs a
-thousand frontmatter parses and no imports.
+`Flow.make` value for a module. The 64 KiB ceiling bounds parsing, not the read.
+A catalog of a thousand flows therefore costs a thousand reads and hashes, a
+thousand frontmatter parses, and no imports.
 
 That rule is what makes a catalog cheap enough to build at startup, and it is
 also what makes it safe. A `flows/` directory is a directory a person edits and
@@ -100,10 +102,11 @@ delegating node's durable identity. Freezing them is what keeps the envelope a
 delegate reads and the key material the engine recorded from diverging.
 
 The guarantee costs one traversal per descriptor per `refresh`, through a
-single identity map, over metadata the scan already parsed. No file is read and
-no body is loaded, so a refresh still costs one frontmatter parse per flow plus
-one copy of what that parse produced. The single map is also what keeps a value
-two fields reference from coming back as two objects.
+single identity map, over metadata the scan already parsed. That traversal
+reads no file and loads no body, so a refresh costs what a scan costs, one
+read, hash, and frontmatter parse per flow, plus one copy of what that parse
+produced. The single map is also what keeps a value two fields reference from
+coming back as two objects.
 
 ## Reading it back
 

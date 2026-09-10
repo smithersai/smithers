@@ -14,9 +14,10 @@ list a catalog, show it to a model, and execute one entry by name.
 A flow lives on disk as a directory holding one entry file: a markdown
 `flow.mdx`, its Agent Skills spelling `SKILL.md`, or a TypeScript `flow.ts`.
 Scanning one produces a `FlowDescriptor`, a plain value you can journal, send
-over a wire, or compare against another. The scan reads each entry file only far
-enough to find its declaration, so it imports nothing, and the body stays behind
-a path plus the SHA-256 digest measured during the scan.
+over a wire, or compare against another. The scan reads and hashes each entry
+file whole and parses at most its first 64 KiB to find the declaration, so it
+imports nothing, and the body stays behind a path plus the SHA-256 digest
+measured during the scan.
 
 ## Install
 
