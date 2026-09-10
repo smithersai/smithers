@@ -45,7 +45,7 @@ to a socket.
 | Export                       | Signature                                                                                            | Meaning                                                                                                         |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `Health`                     | `Schema.Struct` and its type                                                                         | What `GET /health` answers: `GatewaySchema.GatewayHealth` plus the `version` of the package serving it.         |
-| `LayerOptions`               | `{ heartbeatMillis?: number; ingress?: IngressOptions }`                                             | How an assembled gateway is configured.                                                                         |
+| `LayerOptions`               | `{ heartbeatMillis?: number; ingress?: IngressOptions }`                                             | How an assembled gateway is configured. `heartbeatMillis` re-times both the `Watch` and projection keepalives. |
 | `IngressOptions`             | `{ maxRequestBodyBytes?: number; loopbackOnly?: boolean; authorize?: (headers) => Effect<boolean> }` | The ingress policy the RPC mounts run behind.                                                                   |
 | `rpcPaths`                   | `ReadonlyArray<string>`                                                                              | `["/rpc", "/projections", "/sync"]`: the `POST` mounts that carry RPC request messages.                         |
 | `protectedPaths`             | `ReadonlyArray<string>`                                                                              | `["/projections", "/sync", "/rpc/ws", "/projections/ws", "/sync/ws"]`: paths that pass edge authentication.     |
@@ -71,6 +71,7 @@ deliberately unauthenticated. Both decisions, and the alias handling behind
 | `layerSyncHttp`        | `Layer<RpcServer.Protocol, never, ...>`                                     | `/sync` and `/sync/ws`.                                                                                  |
 | `layerIngress`         | `(options?: IngressOptions) => Layer<...>`                                  | The global middleware: local Host/Origin policy, edge authentication, body limit, and RPC-message check. |
 | `layerKeepAlive`       | `(millis?: number) => Layer<Control, never, Control>`                       | Wraps the ambient `Control` so `watch` emits a keepalive when idle.                                      |
+| `layerProjectionsKeepAlive` | `(millis: number) => Layer<Projections, never, Projections>`           | Wraps the ambient `Projections` so a followed subscription beats at the bind's cadence.                  |
 
 `layerKeepAlive` wraps the service rather than re-declaring handlers, which
 keeps `@smthrs/control` `ControlServer` the single definition of what every

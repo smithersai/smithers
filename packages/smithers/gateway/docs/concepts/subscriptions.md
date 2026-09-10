@@ -112,6 +112,12 @@ deltas after that cursor alone. The read still happens, because a folded
 projection cannot be recomputed from the events after the cursor alone. What
 the client skips is receiving rows it already has.
 
+Every frame of one snapshot carries the same cursor, the position the read
+reached, so a cursor from a row proves nothing about which rows arrived. A
+client commits a snapshot and its cursor together, at `snapshot-end`. A
+connection cut before `snapshot-end` leaves no cursor to resume from: the
+client re-subscribes without `after`.
+
 A cursor is refused with `malformed_request` when it:
 
 - names a different projection than the subscription's selector;
@@ -149,8 +155,10 @@ An idle subscription emits a `HeartbeatFrame` every
 `Projections.heartbeatIntervalMillis`, which is 30 seconds. A relay cuts an
 idle tunnel at 600 seconds, so a quiet run has to produce a frame well inside
 that window or every follower is disconnected and reconnects. Thirty seconds
-leaves twenty heartbeats of margin. `Projections.layerWith` and
-`ServerOptions.heartbeatMillis` shorten it for a relay that cuts sooner.
+leaves twenty heartbeats of margin. `Projections.layerWith({ heartbeatMillis })`
+shortens it for a relay that cuts sooner. `ServerOptions.heartbeatMillis` at
+the bind re-times both this keepalive and the `Watch` keepalive below, so one
+option governs every followed socket the gateway serves.
 
 The first tick is dropped, so the cadence is what it says it is: an immediate
 keepalive would arrive before the snapshot it is meant to keep alive.

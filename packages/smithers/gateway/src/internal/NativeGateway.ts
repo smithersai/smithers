@@ -40,8 +40,10 @@ export interface ServerOptions extends ListenOptions {
   /** The shared bearer credential, required for a non-loopback bind. */
   readonly credential?: string | undefined
   /**
-   * How often an idle followed `Watch` emits a keepalive frame on `/rpc/ws`,
-   * defaulting to `Projections.heartbeatIntervalMillis`. A relay with an idle
+   * How often an idle followed `Watch` on `/rpc/ws` and an idle followed
+   * `Projection.Subscribe` on `/projections/ws` emit a keepalive frame. Unset,
+   * both run at `Projections.heartbeatIntervalMillis` unless the supplied
+   * `Projections` service was built with its own cadence. A relay with an idle
    * cut shorter than that one needs a shorter cadence here.
    */
   readonly heartbeatMillis?: number | undefined

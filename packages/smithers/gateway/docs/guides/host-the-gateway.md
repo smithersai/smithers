@@ -54,9 +54,11 @@ Provide it last, from `ControlLive.layer` over your control runtime. See
 [Serve the control plane over RPC](/pkg/control/guides/serve-over-rpc).
 
 `GatewayProjections.layer` reads through the ambient `Control`, so it inherits
-whatever you provide. Use `GatewayProjections.layerWith({ heartbeatMillis })`
-instead when a relay in front of you cuts idle connections sooner than 600
-seconds.
+whatever you provide. When a relay in front of you cuts idle connections sooner
+than 600 seconds, set `heartbeatMillis` at the bind, which re-times both the
+projection heartbeat and the `Watch` keepalive, or use
+`GatewayProjections.layerWith({ heartbeatMillis })` to shorten the projection
+heartbeat alone.
 
 ## The health identity
 

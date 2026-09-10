@@ -190,6 +190,52 @@ export const layerKeepAlive = (
   )
 
 /**
+ * The read path the `/projections` mounts serve through: the ambient one, with
+ * a followed subscription's keepalive re-timed to the bind's cadence.
+ *
+ * `Projections.make` already merges a `heartbeat` frame at the cadence it was
+ * built with. A host that supplies `Projections.layer` and sets the cadence at
+ * the bind expects one option to govern both keepalives, so this replaces the
+ * service's beats with beats at the bind's cadence rather than adding a second
+ * channel. Snapshot reads are left alone: they have to end.
+ *
+ * @param millis how often an idle followed subscription emits a keepalive
+ * @since 1.0.0
+ * @category layers
+ */
+export const layerProjectionsKeepAlive = (millis: number): Layer.Layer<Projections, never, Projections> =>
+  Layer.effect(Projections)(
+    Effect.map(Projections, (projections) =>
+      Projections.of({
+        ...projections,
+        subscribe: (selector, after) => keptAliveSubscription(millis, projections.subscribe(selector, after))
+      }))
+  )
+
+/** Replaces a subscription's keepalive channel with one at the given cadence. */
+const keptAliveSubscription = (
+  millis: number,
+  frames: Stream.Stream<GatewaySchema.GatewayFrame, GatewayError>
+): Stream.Stream<GatewaySchema.GatewayFrame, GatewayError> => {
+  // The first tick is dropped for the same reason `Projections` drops it: an
+  // immediate keepalive would arrive before the snapshot it keeps alive.
+  const beats: Stream.Stream<GatewaySchema.GatewayFrame> = Stream.tick(millis).pipe(
+    Stream.drop(1),
+    Stream.mapEffect(() =>
+      Effect.map(
+        Effect.clockWith((clock) => clock.currentTimeMillis),
+        (atMs): GatewaySchema.GatewayFrame => ({ _tag: "heartbeat", atMs })
+      )
+    )
+  )
+  return Stream.merge(
+    Stream.filter(frames, (frame) => frame._tag !== "heartbeat"),
+    beats,
+    { haltStrategy: "left" }
+  )
+}
+
+/**
  * Mounts the control plane on `POST /rpc` and `/rpc/ws`, with the keepalive.
  *
  * @param millis how often an idle followed watch emits one, defaulting to
@@ -623,8 +669,10 @@ export const layerIngress = (options: IngressOptions = {}) => {
  */
 export interface LayerOptions {
   /**
-   * How often an idle followed `Watch` emits a keepalive, defaulting to
-   * `Projections.heartbeatIntervalMillis`.
+   * How often an idle followed `Watch` on `/rpc/ws` and an idle followed
+   * `Projection.Subscribe` on `/projections/ws` emit a keepalive. Unset, the
+   * `Watch` keepalive runs at `Projections.heartbeatIntervalMillis` and the
+   * supplied `Projections` service keeps the cadence it was built with.
    */
   readonly heartbeatMillis?: number | undefined
   /** The ingress policy the RPC mounts run behind. */
@@ -653,7 +701,9 @@ export const layer = (health: Health, options: LayerOptions = {}) => {
   if (refusal !== undefined) return Layer.effectDiscard(Effect.fail(refusal))
   return Layer.mergeAll(
     layerControlHttp(options.heartbeatMillis),
-    layerProjectionsHttp,
+    options.heartbeatMillis === undefined
+      ? layerProjectionsHttp
+      : layerProjectionsHttp.pipe(Layer.provide(layerProjectionsKeepAlive(options.heartbeatMillis))),
     layerSyncHttp,
     layerHealth(health),
     layerIngress(options.ingress)

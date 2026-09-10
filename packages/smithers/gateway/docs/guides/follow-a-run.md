@@ -63,8 +63,9 @@ Three rules make the tail easy to consume:
 
 ## Resume after a disconnect
 
-Keep the cursor from the last frame you processed and pass it as `after`. The
-subscription skips the snapshot and answers only the deltas past it:
+Keep the cursor from the last frame of a complete snapshot, or from the last
+delta, and pass it as `after`. The subscription skips the snapshot and answers
+only the deltas past it:
 
 ```ts
 const resumed = projections.subscribe({ _tag: "run-summary", runId }, lastCursor)
@@ -95,6 +96,15 @@ refused with `malformed_request` rather than quietly resuming the wrong thing.
 The full refusal list is in
 [Subscriptions and cursors](../concepts/subscriptions.md#resuming).
 
+Every snapshot frame carries the same cursor: the position the whole read
+reached, not progress through delivery. Buffer the rows from `snapshot-start`
+and commit them, and the cursor, only when `snapshot-end` arrives. If the
+connection drops before `snapshot-end`, discard the partial snapshot and
+re-subscribe without `after`. Resuming from a row you received before the cut
+is accepted, because the cursor is valid, and answers only the deltas past the
+snapshot, so the rows you never received are gone from your view until you
+take a fresh snapshot.
+
 A workspace subscription cannot resume. Re-subscribe without `after` and take
 the snapshot again.
 
@@ -110,6 +120,13 @@ import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 
 const gateway = NodeGateway.layer(health, { host: "127.0.0.1", port: 7331, heartbeatMillis: 10_000 })
 ```
+
+One option governs both keepalives: the `Projection.Subscribe` heartbeat on
+`/projections/ws` and the `Watch` keepalive on `/rpc/ws`. Unset, `Watch` beats
+every 30 seconds and the projection socket beats at whatever cadence the
+supplied `Projections` service was built with, which is also 30 seconds for
+`Projections.layer`. To shorten the projection cadence alone, build the read
+path with `Projections.layerWith({ heartbeatMillis: 10_000 })` instead.
 
 `heartbeatMillis` must be a positive safe integer. Zero would turn the
 keepalive into a tight loop, so a composition that asks for it is refused with

@@ -248,8 +248,10 @@ with no error from the gateway.
 sooner than the keepalive cadence. The default is one frame every 30 seconds,
 sized for a relay that cuts at 600 seconds.
 
-**Fix** Shorten the cadence at the bind with `heartbeatMillis`, or with
-`Projections.layerWith({ heartbeatMillis })` for the read path alone.
+**Fix** Shorten the cadence at the bind with `heartbeatMillis`, which re-times
+both the `/projections/ws` heartbeat and the `/rpc/ws` `Watch` keepalive, or
+build the read path with `Projections.layerWith({ heartbeatMillis })` to
+shorten the projection heartbeat alone.
 
 ### A followed Watch delivers events nothing emitted
 

@@ -1272,6 +1272,45 @@ describe("Projections subscriptions", () => {
       expect(follows).toBe(0)
     }))
 
+  it.effect("a snapshot row's cursor is the read position, so a cut mid-snapshot cannot resume the rest", () =>
+    Effect.gen(function*() {
+      // docs/guides/follow-a-run.md: buffer snapshot rows until snapshot-end
+      // and commit the cursor only with the complete snapshot. This pins the
+      // contract that makes the rule necessary: every snapshot frame carries
+      // the position the whole read reached, not progress through delivery,
+      // so a client that resumes from a row it received before the socket
+      // dropped is answered with the deltas past the snapshot and never sees
+      // the rows it missed.
+      const history = [1, 2, 3].map((sequence) => event(sequence, "control.run.accepted", { runId: "run-1" }))
+      const selector = { _tag: "run-events" as const, runId: "run-1" }
+      const projections = make(
+        control({
+          list: () => Effect.succeed({ _tag: "runs", items: [run] }),
+          watch: (filter) =>
+            filter.follow === true
+              ? Stream.fromIterable(history.filter((item) => item.sequence > (filter.afterSequence ?? -1)))
+              : Stream.fromIterable(history)
+        }),
+        { heartbeatMillis: 60_000 }
+      )
+
+      const cut = yield* Stream.runCollect(Stream.take(projections.subscribe(selector), 2))
+      const start = cut[0]
+      const firstRow = cut[1]
+      if (start?._tag !== "snapshot-start" || firstRow?._tag !== "row") return yield* Effect.die("expected a row")
+      expect((firstRow.row as ControlEvent).sequence).toBe(1)
+      expect(firstRow.cursor).toEqual(start.cursor)
+      expect(firstRow.cursor.value).toBe(3)
+
+      const resumed = yield* Stream.runCollect(projections.subscribe(selector, firstRow.cursor))
+      expect(resumed.map((frame) => frame._tag)).toEqual([])
+
+      const whole = yield* Stream.runCollect(Stream.take(projections.subscribe(selector), 5))
+      expect(whole.map((frame) => frame._tag)).toEqual(["snapshot-start", "row", "row", "row", "snapshot-end"])
+      const end = whole.at(-1)
+      expect(end?._tag === "snapshot-end" ? end.cursor : undefined).toEqual(firstRow.cursor)
+    }))
+
   it.effect("accepts the zero origin and refuses a position the run never issued", () =>
     Effect.gen(function*() {
       const history = [event(1, "control.run.accepted", { runId: "run-1" })]
@@ -1526,9 +1565,12 @@ describe("Projections delta failures", () => {
 })
 
 describe("Projections keepalive cadence", () => {
-  it("stays under the relay's idle cut with margin", () => {
-    // the deployed relay behavior: the relay drops an idle tunnel at 600 s.
-    expect(Projections.heartbeatIntervalMillis).toBeLessThan(600_000 / 2)
+  it("is the documented 30 seconds, twenty heartbeats inside the relay's idle cut", () => {
+    // docs/api.md and docs/concepts/subscriptions.md publish both numbers: a
+    // host sizing a relay's idle cut to them must not find the gateway
+    // elsewhere. The relay drops an idle tunnel at 600 s.
+    expect(Projections.heartbeatIntervalMillis).toBe(30_000)
+    expect(600_000 / Projections.heartbeatIntervalMillis).toBeGreaterThanOrEqual(20)
   })
 })
 

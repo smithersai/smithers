@@ -33,16 +33,17 @@ import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import { type ApprovalPayload, type PlanCard, RunStatus } from "@smthrs/control/ControlSchema"
 import { SyncAuth as SyncAuthTag } from "@smthrs/sync/SyncRpcs"
 import * as SyncServer from "@smthrs/sync/SyncServer"
-import { Effect, Fiber, Layer, Logger, type Scope, Stream } from "effect"
+import { Deferred, Effect, Fiber, Layer, Logger, type Scope, Stream } from "effect"
 import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { RpcSerialization } from "effect/unstable/rpc"
+import { RpcClient, RpcSerialization } from "effect/unstable/rpc"
 import { createServer } from "node:http"
 import { connect } from "node:net"
 import { GatewayError, GatewayErrorCode, type GatewayErrorCode as GatewayErrorCodeValue } from "../src/GatewayError.ts"
+import { GatewayRpcs } from "../src/GatewayRpcs.ts"
 import * as GatewayServer from "../src/GatewayServer.ts"
 import * as NodeGateway from "../src/node/NodeGateway.ts"
 import { make as makeProjections, maxProjectionBytes, Projections } from "../src/Projections.ts"
-import { emit, stack } from "./GatewayStack.ts"
+import { defaultCadenceStack, emit, stack } from "./GatewayStack.ts"
 
 const health: GatewayServer.Health = {
   workspaceHash: "workspace-hash",
@@ -264,6 +265,31 @@ const client = (url: string, credential?: string | undefined) =>
       RpcSerialization.layerNdjson
     ])
   )
+
+/** A projections client speaking to the served `/projections/ws` mount. */
+const projectionsClient = (url: string) =>
+  RpcClient.layerProtocolSocket().pipe(
+    Layer.provide([
+      NodeSocket.layerWebSocket(`${url.replace("http://", "ws://")}/projections/ws`),
+      RpcSerialization.layerNdjson
+    ])
+  )
+
+/** A run that will never move again unless a test emits for it. */
+const launched = Effect.gen(function*() {
+  const control = yield* Control
+  const card = yield* control.plan({ flowId: "system/test", input: {} })
+  yield* control.approve(approvalOf(card))
+  const receipt = yield* control.run({
+    _tag: "Plan",
+    planId: card.planId,
+    digest: card.digest,
+    envelope: card.envelope,
+    idempotencyKey: `run:${card.planId}`
+  })
+  if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected a run")
+  return receipt.runId
+})
 
 describe("approval authority across every served mutation mount", () => {
   const delegatedOnce = Effect.runSync(ApprovalAuthority.make([
@@ -1295,32 +1321,88 @@ describe("the assembled gateway over a real loopback bind", () => {
       expect(exit.exit.value).toEqual(yield* projections.snapshot(selector))
     }).pipe(Effect.provide(served({ host: "127.0.0.1", port: 0, credential: "edge-secret" }))))
 
-  test("streams a projection snapshot and keeps the connection alive between changes", () =>
+  test("streams a projection over /projections/ws: snapshot, keepalive, then a delta above the snapshot cursor", () =>
     Effect.gen(function*() {
-      const projections = yield* Projections
-      const control = yield* Control
-      const card = yield* control.plan({ flowId: "system/test", input: {} })
-      yield* control.approve(approvalOf(card))
-      const receipt = yield* control.run({
-        _tag: "Plan",
-        planId: card.planId,
-        digest: card.digest,
-        envelope: card.envelope,
-        idempotencyKey: `run:${card.planId}`
-      })
-      if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected a run")
-      const runId = receipt.runId
+      const url = yield* baseUrl
+      const runId = yield* launched
+      const selector = { _tag: "run-summary" as const, runId }
+      const idle = yield* Deferred.make<void>()
 
-      const frames = yield* Stream.runCollect(
-        Stream.take(projections.subscribe({ _tag: "run-summary", runId }), 4)
+      // The relay and the quickstart's follower speak to this mount, so the
+      // proof has to cross the served WebSocket composition: the protocol
+      // layer, the NDJSON framing and the fresh RPC server, not the service.
+      const observed = yield* Effect.gen(function*() {
+        const rpc = yield* RpcClient.make(GatewayRpcs)
+        const following = yield* Effect.forkChild(
+          Stream.runCollect(
+            rpc["Projection.Subscribe"]({ selector }).pipe(
+              Stream.tap((frame) => frame._tag === "heartbeat" ? Deferred.succeed(idle, undefined) : Effect.void),
+              Stream.takeUntil((frame) => frame._tag === "delta")
+            )
+          )
+        )
+        // Nothing has changed since the snapshot, so the first frame after
+        // snapshot-end is the keepalive that stops a relay cutting an idle
+        // tunnel. Only then does the run move.
+        yield* Deferred.await(idle)
+        yield* emit(runId, "control.run.completed", { runId })
+        return yield* Fiber.join(following)
+      }).pipe(Effect.provide(projectionsClient(url)))
+
+      const tags = observed.map((frame) => frame._tag)
+      expect(tags.slice(0, 3)).toEqual(["snapshot-start", "row", "snapshot-end"])
+      expect(tags.slice(3, -1).every((tag) => tag === "heartbeat")).toBe(true)
+      expect(tags.slice(3, -1).length).toBeGreaterThan(0)
+      expect(tags.at(-1)).toBe("delta")
+      const snapshotEnd = observed[2]
+      const delta = observed.at(-1)
+      if (snapshotEnd?._tag !== "snapshot-end" || delta?._tag !== "delta") return yield* Effect.die("expected frames")
+      expect(delta.cursor.value).toBeGreaterThan(snapshotEnd.cursor.value)
+    }).pipe(Effect.provide(served())))
+
+  test("the bind's heartbeatMillis governs the /projections/ws keepalive as well as Watch", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      const runId = yield* launched
+      // The read path here is the shipped `Projections.layer` at its 30 s
+      // cadence. A host that shortens the cadence at the bind, as the guide
+      // says to, expects the projection socket to beat at that cadence too.
+      const frames = yield* Effect.gen(function*() {
+        const rpc = yield* RpcClient.make(GatewayRpcs)
+        return yield* Stream.runCollect(
+          Stream.take(rpc["Projection.Subscribe"]({ selector: { _tag: "run-summary", runId } }), 4)
+        )
+      }).pipe(Effect.provide(projectionsClient(url)), Effect.timeoutOption("5 seconds"))
+      expect(frames._tag).toBe("Some")
+      if (frames._tag !== "Some") return
+      expect(frames.value.map((frame) => frame._tag)).toEqual(["snapshot-start", "row", "snapshot-end", "heartbeat"])
+    }).pipe(Effect.provide(
+      NodeGateway.layer(health, { host: "127.0.0.1", port: 0, heartbeatMillis: 25 }).pipe(
+        Layer.provideMerge(defaultCadenceStack)
       )
-      expect(frames[0]?._tag).toBe("snapshot-start")
-      expect(frames[1]?._tag).toBe("row")
-      expect(frames[2]?._tag).toBe("snapshot-end")
-      // Nothing has changed since the snapshot, so the fourth frame is the
-      // keepalive that stops a relay cutting an idle tunnel.
-      expect(frames[3]?._tag).toBe("heartbeat")
-      yield* emit(runId, "control.run.completed", { runId })
+    )))
+
+  test("refuses a body one byte over the documented default limit", () =>
+    Effect.gen(function*() {
+      const url = yield* baseUrl
+      // The documented default, pinned exactly: a host sizing its relay's
+      // request limit to this number must not find the gateway elsewhere.
+      expect(GatewayServer.defaultMaxRequestBodyBytes).toBe(1024 * 1024)
+      const post = (size: number) =>
+        Effect.promise(() =>
+          fetch(`${url}/rpc`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: `${exactBody}${" ".repeat(size - exactBody.length)}`
+          })
+        )
+      const atLimit = yield* post(GatewayServer.defaultMaxRequestBodyBytes)
+      const overLimit = yield* post(GatewayServer.defaultMaxRequestBodyBytes + 1)
+      expect(atLimit.status).not.toBe(413)
+      expect(overLimit.status).toBe(413)
+      expect(yield* Effect.promise(() => overLimit.json() as Promise<unknown>)).toMatchObject({
+        code: "request_too_large"
+      })
     }).pipe(Effect.provide(served())))
 
   test("lists a child run beside the parent it came from", () =>
