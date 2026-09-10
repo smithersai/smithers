@@ -181,6 +181,19 @@ describe("SmithersError", () => {
     })
   })
 
+  it("limits JSON to the enumerable fields while inspection prints the stack and a supplied cause", () => {
+    const error = new SmithersError("INTEGRATION_ERROR", "poll failed", { reason: "poll-failed" }, {
+      cause: new Error("cause marker")
+    })
+
+    expect(Object.keys(JSON.parse(JSON.stringify(error)))).toEqual(["code", "summary", "docsUrl", "details"])
+    const rendered = inspect(error)
+    expect(rendered.startsWith(`SmithersError: ${error.message}`)).toBe(true)
+    expect(rendered).toMatch(/\n\s+at /)
+    expect(rendered).toContain("code: 'INTEGRATION_ERROR'")
+    expect(rendered).toContain("[cause]: Error: cause marker")
+  })
+
   it("keeps subclass names out of enumerable fields and at the start of the stack", () => {
     class Sub extends SmithersError {
       constructor() {
@@ -468,6 +481,15 @@ describe("error codes", () => {
       )
     expect(smithersErrorDefinitions.TELEGRAM_INIT_DATA_INVALID.details)
       .toBe("`{ authDate }` on the expiry failures, otherwise none")
+  })
+})
+
+describe("API reference", () => {
+  it("limits the enumerable-fields guarantee to Object.keys and JSON.stringify", () => {
+    const api = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8").replaceAll(/\s+/g, " ")
+    expect(api).not.toContain("`JSON.stringify` and `util.inspect` therefore show")
+    expect(api).toContain("`Object.keys` and `JSON.stringify` therefore show those and nothing else.")
+    expect(api).toContain("and a `[cause]` entry when a cause is supplied.")
   })
 })
 

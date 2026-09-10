@@ -67,8 +67,11 @@ Fields:
 | `cause`   | `unknown`                                          | Inherited from `Error`, and an own property only when `options.cause` is not `undefined`. Stored verbatim.                                                       |
 
 Enumerable own properties are `code`, `summary`, `docsUrl`, and, when supplied,
-`details`, in that order. `JSON.stringify` and `util.inspect` therefore show
-those and nothing else.
+`details`, in that order. `Object.keys` and `JSON.stringify` therefore show
+those and nothing else. `util.inspect`, and so `console.log`, formats the
+instance as an `Error`: the stack headed by `name` and `message`, the
+enumerable fields, and a `[cause]` entry when a cause is supplied. Redact a
+cause before attaching it.
 
 The constructor restores the subclass prototype through `new.target`, so
 `instanceof` holds for a subclass under a transpiled target.
@@ -114,6 +117,11 @@ when all four hold:
    codes.
 3. `value.summary` and `value.docsUrl` are both strings.
 4. `value.details` is absent, or is a non-null object that is not an array.
+
+Every inspection runs inside a `try`. A throwing property getter on any of the
+four fields, or a proxy whose prototype lookup throws, answers `false` rather
+than escaping the refinement, so classifying a hostile value cannot replace the
+failure being handled.
 
 Narrows `value.code` to `SmithersErrorCode`, so an exhaustive `switch` type
 checks after the call. Use it for a value that crossed a module-instance

@@ -64,8 +64,11 @@ Fields:
 | `cause`   | `unknown`                                          | Inherited from `Error`, and an own property only when `options.cause` is not `undefined`. Stored verbatim.                                                       |
 
 Enumerable own properties are `code`, `summary`, `docsUrl`, and, when supplied,
-`details`, in that order. `JSON.stringify` and `util.inspect` therefore show
-those and nothing else.
+`details`, in that order. `Object.keys` and `JSON.stringify` therefore show
+those and nothing else. `util.inspect`, and so `console.log`, formats the
+instance as an `Error`: the stack headed by `name` and `message`, the
+enumerable fields, and a `[cause]` entry when a cause is supplied. Redact a
+cause before attaching it.
 
 The constructor restores the subclass prototype through `new.target`, so
 `instanceof` holds for a subclass under a transpiled target.
