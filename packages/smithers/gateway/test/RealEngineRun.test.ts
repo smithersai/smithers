@@ -20,7 +20,7 @@ import type { ApprovalPayload, PlanCard, RunSummary } from "@smthrs/control/Cont
 import { Effect, type Scope } from "effect"
 import type * as GatewayProjection from "../src/GatewayProjection.ts"
 import { Projections } from "../src/Projections.ts"
-import { EngineRun, flowId, stack } from "./RealEngineRun.ts"
+import { Drives, EngineRun, flowId, stack } from "./RealEngineRun.ts"
 
 const approvalOf = (card: PlanCard): ApprovalPayload => ({
   target: { _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope },
@@ -30,15 +30,22 @@ const approvalOf = (card: PlanCard): ApprovalPayload => ({
 
 const terminal: ReadonlySet<string> = new Set(["completed", "failed", "cancelled"])
 
-/** The run, once the control plane reports it as finished one way or another. */
-const settled = (runId: string, attempts = 2_000): Effect.Effect<RunSummary, never, Control> =>
+/**
+ * The run, once its drive has finished: the terminal status is written AND
+ * the `control.run.<status>` record is journaled. Polling the status row
+ * would return between those two writes, and the assertions over the journal
+ * below would race the executor. A drive that died fails this with its cause.
+ */
+const settled = (runId: string): Effect.Effect<RunSummary, never, Control | Drives> =>
   Effect.gen(function*() {
+    yield* (yield* Drives).settled(runId)
     const control = yield* Control
     const listed = yield* Effect.orDie(control.list({ _tag: "runs", filters: { runId } }))
     const run = listed._tag === "runs" ? listed.items[0] : undefined
-    if (run !== undefined && terminal.has(run.status)) return run
-    if (attempts <= 0) return yield* Effect.die(`run ${runId} never settled: ${run?.status ?? "missing"}`)
-    return yield* Effect.andThen(Effect.sleep("2 millis"), settled(runId, attempts - 1))
+    if (run === undefined || !terminal.has(run.status)) {
+      return yield* Effect.die(`run ${runId} drive finished but the run is ${run?.status ?? "missing"}`)
+    }
+    return run
   })
 
 /** Plans, approves, and runs the flow the engine executes; returns its run id. */

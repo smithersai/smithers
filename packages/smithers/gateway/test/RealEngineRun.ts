@@ -37,6 +37,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import type * as ControlError from "@smthrs/control/ControlError"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
@@ -52,7 +53,7 @@ import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import * as RunCatalog from "@smthrs/sync/RunCatalog"
 import * as WorkspaceShare from "@smthrs/sync/WorkspaceShare"
-import { Cause, Context, Effect, Exit, Layer, Schema } from "effect"
+import { Cause, Context, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { dirname, join } from "node:path"
 import * as Projections from "../src/Projections.ts"
 import { databaseFile, storage } from "./GatewayStack.ts"
@@ -155,25 +156,70 @@ const layerEngineRun = (filename: string, implementation: (path: string) => Effe
   ).pipe(Layer.provideMerge(engineLayer(filename, implementation)))
 
 /**
+ * The run never reached `running` before the driver gave up waiting.
+ *
+ * Carries the status the driver last observed so a suite that joins the
+ * drive reads why it never executed, instead of a run that "never settled".
+ */
+export class RunNeverRunning extends Schema.TaggedError<RunNeverRunning>()("gateway/test/RunNeverRunning", {
+  runId: Schema.String,
+  status: Schema.String
+}) {}
+
+/**
  * Waits until the control plane has recorded the run as running.
  *
  * `Control.run` writes that status only after the executor has accepted, so a
  * driver that settled first would overwrite a status it never saw. This is the
  * same ordering guard `AgentSession.driver` applies.
+ *
+ * Fails, never silently returns: a run that never reaches `running` must not
+ * be driven, and the reason must reach whoever joins the drive.
  */
 const waitForRunning = (
   runtime: ControlRuntime["Service"],
   runId: string,
   attempts: number
-): Effect.Effect<void> =>
-  attempts <= 0 ? Effect.void : runtime.getRun(runId).pipe(
+): Effect.Effect<void, RunNeverRunning | ControlError.RunNotFound | ControlError.PersistenceError> =>
+  runtime.getRun(runId).pipe(
     Effect.flatMap((run) =>
       run.status === "running"
         ? Effect.void
+        : attempts <= 1
+        ? Effect.fail(new RunNeverRunning({ runId, status: run.status }))
         : Effect.andThen(Effect.sleep("1 millis"), waitForRunning(runtime, runId, attempts - 1))
-    ),
-    Effect.catchCause(() => Effect.void)
+    )
   )
+
+/**
+ * The drives the executor forked, one fiber per accepted run.
+ *
+ * `drive` writes the terminal status and THEN journals `control.run.<status>`;
+ * a suite that polled the status row would read the terminal status before
+ * the journal record exists. Joining the drive fiber waits for both writes,
+ * and surfaces the defect the drive died on instead of a run that never
+ * settled.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export class Drives extends Context.Service<Drives, {
+  /** The drive fiber of each accepted run, keyed by run id. */
+  readonly fibers: Map<string, Fiber.Fiber<void>>
+  /** Waits for the drive of `runId` to finish; dies with its cause if it died. */
+  readonly settled: (runId: string) => Effect.Effect<void>
+}>()("gateway/test/Drives") {
+  static readonly layer = Layer.sync(Drives)(() => {
+    const fibers = new Map<string, Fiber.Fiber<void>>()
+    return {
+      fibers,
+      settled: (runId: string) => {
+        const fiber = fibers.get(runId)
+        return fiber === undefined ? Effect.die(`no drive was forked for run ${runId}`) : Fiber.join(fiber)
+      }
+    }
+  })
+}
 
 /** Everything the driver needs, named so the executor layer can capture it. */
 type DriverServices = ControlRuntime | Journal.Journal | EngineRun
@@ -209,13 +255,14 @@ const drive = (runId: string, path: string): Effect.Effect<void, never, DriverSe
 const executor = Layer.effect(ControlExecutor.ControlExecutor)(
   Effect.gen(function*() {
     const services = yield* Effect.context<DriverServices>()
+    const drives = yield* Drives
     // `makeNoop` supplies the cancel, signal, and resume ports this suite does
     // not drive; only the acceptance port is this double's subject.
     return ControlExecutor.makeNoop({
       launch: (input) =>
         Effect.sync(() => {
           const path = (input.plan.decodedInput as { readonly path?: string } | undefined)?.path ?? "unknown"
-          Effect.runForkWith(services)(drive(input.run.runId, path))
+          drives.fibers.set(input.run.runId, Effect.runForkWith(services)(drive(input.run.runId, path)))
           return "accepted" as const
         })
     })
@@ -236,14 +283,16 @@ export const stack = (implementation: (path: string) => Effect.Effect<string>) =
         Layer.provideMerge(ControlLive.layer),
         // The executor reads the control plane it settles: the runtime for the
         // fenced status write and the CONTROL journal for the record a client
-        // watching the run reads.
+        // watching the run reads. `Drives` is merged out so a suite can join
+        // the drive it forked.
         Layer.provideMerge(
           executor.pipe(
             Layer.provideMerge(
               Layer.mergeAll(
                 SqlControlRuntime.layer({ flows: [durableFlow] }).pipe(Layer.orDie),
                 NotificationQueue.layer,
-                Registry.layerNoop()
+                Registry.layerNoop(),
+                Drives.layer
               ).pipe(Layer.provideMerge(Layer.merge(storage(filename), NodeCrypto.layer)))
             )
           )
