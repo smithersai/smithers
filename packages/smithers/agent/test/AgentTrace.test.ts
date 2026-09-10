@@ -571,7 +571,7 @@ describe("trace", () => {
       }),
       new AgentEvent.TransitionApplied({
         eventType: "flows.harness.transition-applied.v1",
-        transition: new Cell.Continue({ context: [], state: null })
+        transition: new Cell.Continue({})
       })
     ]
 
