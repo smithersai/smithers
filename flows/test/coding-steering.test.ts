@@ -6,7 +6,8 @@ import { RunNotFound } from "@smthrs/control/ControlError"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect, Layer, ManagedRuntime, Schema } from "effect"
+import { Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
+import * as SqlClient from "effect/unstable/sql/SqlClient"
 import assert from "node:assert/strict"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -52,7 +53,7 @@ const journalLayer = async (filename: string) => {
     : await import("../../packages/smithers/flows/database/src/node/NodeDatabase.ts")
   const db = DurableWriter.layer().pipe(Layer.provideMerge(database.layer({ filename })))
   return SqlJournal.layer({ capacity: 128, overflow: "reject" }).pipe(
-    Layer.provide(Migrations.layer.pipe(Layer.provideMerge(db)))
+    Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(db)))
   )
 }
 
@@ -287,6 +288,70 @@ test("closure reads refuse non-advancing or unbounded journal pages before admis
       }
     }))
   } finally { await host.dispose() }
+})
+
+test("closure reads only promotion receipts beyond 100,000 projected engine events", { timeout: 60_000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), "coding-steering-noise-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const host = ManagedRuntime.make(Layer.mergeAll(controlLayer,
+    NotificationQueue.layer.pipe(Layer.provideMerge(await journalLayer(join(root, "control.db"))))))
+  t.after(() => host.dispose())
+  const measurement = await host.runPromise(Effect.gen(function*() {
+    const control = yield* ControlRuntime.ControlRuntime, journal = yield* Journal.Journal
+    const sql = yield* SqlClient.SqlClient, native = yield* NotificationQueue.NotificationQueue
+    const owner = yield* launch(control)
+    // Bulk fixture loading models the existing projection's event type/volume.
+    // These rows are valid journal evidence, not a second production write path.
+    yield* journal.transact(sql`WITH RECURSIVE noise(seq) AS (
+      SELECT 0 UNION ALL SELECT seq + 1 FROM noise WHERE seq < 100004
+    ) INSERT INTO flows_journal_events (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
+      SELECT ${owner.runId}, seq, 'fixture-engine-' || seq, '/fixture/engine-projection', seq, 0,
+        'control.engine.event', ${JSON.stringify({ executionId: "native-child", kind: "flows.engine.run-decision", payload: { decision: "updated", status: "running" } })}, '{}'
+      FROM noise`)
+    const reads: Array<{ count: number; ms: number }> = []
+    const filtered = Journal.make({ ...journal, entries: options => Effect.gen(function*() {
+      assert.deepEqual(options.eventTypes, [NotificationEvent.PromotedEventType])
+      const start = performance.now()
+      const page = yield* journal.entries(options)
+      reads.push({ count: page.entries.length, ms: performance.now() - start })
+      assert.ok(page.entries.every(row => row.eventType === NotificationEvent.PromotedEventType))
+      return page
+    }) })
+    const queue = routeMessages(native, control, filtered)
+    // Reproduce the former cold fold with a separate queue/cache over the
+    // same rows, stripping only the query filter. Roll its admission back.
+    let beforeReadRows = 0
+    const priorContext = yield* Layer.build(NotificationQueue.layerWith().pipe(Layer.provide(Layer.succeed(Journal.Journal,
+      Journal.make({ ...journal, entries: ({ eventTypes: _ignored, ...options }) => journal.entries(options).pipe(
+        Effect.tap(page => Effect.sync(() => { beforeReadRows += page.entries.length }))
+      ) }))), Layer.fresh))
+    const priorQueue = Context.get(priorContext, NotificationQueue.NotificationQueue)
+    let beforeColdAdmissionMs = 0
+    const before = performance.now()
+    const rolledBack = yield* journal.transact(routeMessages(priorQueue, control, journal).admit(owner.runId, message("prior-cold-fold", owner.runId)).pipe(
+      Effect.flatMap(() => Effect.sync(() => { beforeColdAdmissionMs = performance.now() - before })),
+      Effect.andThen(Effect.fail("measurement-rollback" as const))
+    )).pipe(Effect.flip)
+    assert.equal(rolledBack, "measurement-rollback")
+    assert.ok(beforeReadRows >= 100005, "baseline really used a separate cold unfiltered queue fold")
+    const admissionMs: number[] = []
+    for (let index = 0; index < 5; index++) {
+      const start = performance.now()
+      assert.equal((yield* queue.admit(owner.runId, message(`after-noise-${index}`, owner.runId))).decision, "admitted")
+      admissionMs.push(performance.now() - start)
+    }
+    const targetLineageId = JSON.stringify(["coding/request", owner.runId])
+    yield* queue.drain({ runId: owner.runId, targetLineageId, wouldIdle: true,
+      boundary: feedbackBoundary("coordinator", { boundary: "after-correction", revision: 0 }) })
+    yield* queue.drain({ runId: owner.runId, targetLineageId, wouldIdle: true,
+      boundary: feedbackBoundary("coordinator", { boundary: "after-correction", revision: 1 }) })
+    const refused = yield* queue.admit(owner.runId, message("after-close", owner.runId)).pipe(Effect.flip)
+    assert.match(refused.message, /start a new request/)
+    assert.equal(reads.length, 6, "one filtered page per steer, regardless of projected engine volume")
+    assert.deepEqual(reads.map(read => read.count), [0, 0, 0, 0, 0, 2])
+    return { projectedEngineRows: 100005, filteredReads: reads, beforeReadRows, beforeColdAdmissionMs, admissionMs }
+  }).pipe(Effect.scoped))
+  t.diagnostic(JSON.stringify(measurement))
 })
 
 test("actual feedback action needs a proved owner and retains attributed overflow before refusing planning", { timeout: 60_000 }, async t => {

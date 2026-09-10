@@ -3,6 +3,7 @@
  *
  * @since 0.1.0
  */
+import type { NotificationError } from "@smthrs/notifications/NotificationQueue"
 import { Context, Effect, Layer, Stream } from "effect"
 import type {
   AlreadyResolved,
@@ -210,7 +211,7 @@ export interface Service {
     input: SteerInput
   ) => Effect.Effect<
     Receipt,
-    RunNotFound | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized
+    RunNotFound | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized | NotificationError
   >
   readonly signal: (
     input: SignalInput

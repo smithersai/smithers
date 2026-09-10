@@ -612,7 +612,7 @@ describe("ControlLive mutations", () => {
     expect((error as PersistenceError).message).toBe("Failed to persist control.plan.created")
   })
 
-  it("reports a refusing notification queue as a persistence failure, not a lost steer", async () => {
+  it("preserves a refusing notification queue's typed reason without accepting a lost steer", async () => {
     const error = await run(
       Effect.gen(function*() {
         const control = yield* Control
@@ -626,8 +626,8 @@ describe("ControlLive mutations", () => {
       live({ runtime: memoryRuntime({ flows }), notifications: NotificationQueue.layerNoop() })
     )
 
-    expect(error).toBeInstanceOf(PersistenceError)
-    expect((error as PersistenceError).operation).toBe("control.steer.notification")
+    expect(error).toBeInstanceOf(NotificationQueue.NotificationError)
+    expect(error.code).toBe("notification_unavailable")
   })
 
   it("refuses a steer whose embedded run id disagrees before admitting anything", async () => {

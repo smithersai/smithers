@@ -62,6 +62,180 @@ const recording = (reads: Array<Read>) =>
       }))
   ).pipe(Layer.provide(TestJournal.layer()))
 
+it("ignores noise-only tails while retaining canonical admission and promotion cursors", async () => {
+  const reads: Read[] = []
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const queue = yield* NotificationQueue.NotificationQueue, journal = yield* Journal.Journal
+      const runId = JournalEvent.RunId.make("filtered-notifications")
+      const first = yield* queue.admit(runId, item("first", "steer", runId))
+      for (let index = 0; index < 20; index++) {
+        yield* journal.emitDurableUnfenced(
+          new JournalEvent.Input({
+            runId,
+            sourceId: JournalEvent.SourceId.make("engine"),
+            eventType: "control.engine.event",
+            payload: { index }
+          })
+        )
+      }
+      reads.length = 0
+      expect((yield* queue.pending(runId)).map((note) => note.id)).toEqual(["first"])
+      expect((yield* queue.pending(runId)).map((note) => note.id)).toEqual(["first"])
+      expect(reads.map((read) => [read.after, read.entries])).toEqual([[first.seq, 0], [first.seq, 0]])
+      const second = yield* queue.admit(runId, item("second", "steer", runId))
+      expect(second.seq).toBe(first.seq! + 21)
+      reads.length = 0
+      expect((yield* queue.pending(runId)).map((note) => note.id)).toEqual(["first", "second"])
+      expect(reads.map((read) => [read.after, read.entries])).toEqual([[second.seq, 0]])
+      expect((yield* queue.admit(runId, item("first", "steer", runId))).seq).toBe(first.seq)
+      const drain = { runId, targetLineageId: runId, boundary: "complete", wouldIdle: true }
+      expect((yield* queue.drain(drain)).notifications.map((note) => note.id)).toEqual(["first", "second"])
+      expect((yield* queue.drain(drain)).duplicate).toBe(true)
+      expect(yield* queue.pending(runId)).toEqual([])
+    }).pipe(Effect.provide(NotificationQueue.layer), Effect.provide(recording(reads)), Effect.scoped)
+  )
+})
+
+it("recovers promotion identities across multiple filtered pages", async () => {
+  const reads: Read[] = []
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const queue = yield* NotificationQueue.NotificationQueue, journal = yield* Journal.Journal
+      const runId = JournalEvent.RunId.make("paged-notifications")
+      yield* journal.transact(Effect.forEach(
+        Array.from({ length: 513 }, (_, index) => index),
+        (index) =>
+          journal.emitDurableUnfenced(
+            new JournalEvent.Input({
+              runId,
+              sourceId: JournalEvent.SourceId.make("history"),
+              sourceSeq: JournalEvent.SourceSeq.make(index),
+              eventType: "flows/notifications/Promoted",
+              payload: { targetLineageId: runId, boundary: `past-${index}`, ids: [] }
+            })
+          ),
+        { discard: true }
+      ))
+      expect(yield* queue.pending(runId)).toEqual([])
+      expect(reads.map((read) => read.entries)).toEqual([512, 1])
+      expect((yield* queue.drain({ runId, targetLineageId: runId, boundary: "past-512", wouldIdle: true })).duplicate)
+        .toBe(true)
+    }).pipe(Effect.provide(NotificationQueue.layerWith()), Effect.provide(recording(reads)), Effect.scoped)
+  )
+})
+
+it.each(
+  (["legacy-admission", "promotion"] as const).flatMap((kind) =>
+    (["missing", "malformed", "other-kind"] as const).map((response) => ({ kind, response }))
+  )
+)("refuses an unreadable saved $kind ($response)", async ({ kind, response }) => {
+  let hideExact = false
+  const journal = Layer.effect(
+    Journal.Journal,
+    Effect.map(Journal.Journal, (underlying) =>
+      Journal.make({
+        ...underlying,
+        entries: (options) =>
+          underlying.entries(options).pipe(Effect.map((page) => {
+            if (!hideExact || options.limit !== 1) return page
+            if (response === "missing") return { entries: [], hasMore: false }
+            return {
+              ...page,
+              entries: page.entries.map((entry) =>
+                new JournalEvent.Entry({
+                  ...entry,
+                  eventType: kind === "legacy-admission"
+                    ? "flows/notifications/Promoted"
+                    : "flows/notifications/Admitted",
+                  payload: response === "malformed" ? {} : kind === "legacy-admission"
+                    ? { boundary: "other", targetLineageId: "run/root", ids: [] }
+                    : { notification: item("other", "steer"), decision: "admitted" }
+                })
+              )
+            }
+          }))
+      }))
+  ).pipe(Layer.provide(TestJournal.layer()))
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const queue = yield* NotificationQueue.NotificationQueue, log = yield* Journal.Journal
+      const notification = item("legacy", "steer"), runId = JournalEvent.RunId.make("unreadable")
+      yield* log.emitDurableUnfenced(
+        new JournalEvent.Input({
+          runId,
+          sourceId: JournalEvent.SourceId.make("legacy"),
+          eventType: "flows/notifications/Admitted",
+          payload: { notification, decision: "admitted" }
+        })
+      )
+      expect((yield* queue.pending(runId)).map((note) => note.id)).toEqual(["legacy"])
+      const boundary = { runId, targetLineageId: notification.targetLineageId, boundary: "saved", wouldIdle: true }
+      if (kind === "promotion") yield* queue.drain(boundary)
+      hideExact = true
+      const refused = yield* (kind === "legacy-admission"
+        ? queue.admit(runId, notification).pipe(Effect.flip)
+        : queue.drain(boundary).pipe(Effect.flip))
+      expect(refused.code).toBe("notification_unavailable")
+      expect(refused.message).toContain("no longer readable")
+    }).pipe(Effect.provide(NotificationQueue.layerWith()), Effect.provide(journal), Effect.scoped)
+  )
+})
+
+it("ignores malformed historical payloads without losing later valid notifications", async () => {
+  await run(Effect.gen(function*() {
+    const queue = yield* NotificationQueue.NotificationQueue, journal = yield* Journal.Journal
+    for (const eventType of ["flows/notifications/Admitted", "flows/notifications/Promoted"]) {
+      yield* journal.emitDurableUnfenced(
+        new JournalEvent.Input({
+          runId: JournalEvent.RunId.make("malformed-history"),
+          sourceId: JournalEvent.SourceId.make("historical"),
+          eventType,
+          payload: {}
+        })
+      )
+    }
+    expect(yield* queue.pending("malformed-history")).toEqual([])
+    yield* queue.admit("malformed-history", item("valid", "steer"))
+    expect((yield* queue.pending("malformed-history")).map((note) => note.id)).toEqual(["valid"])
+  }))
+})
+
+it("replays an acknowledged duplicate promotion from its committed identity", async () => {
+  const journal = Layer.effect(
+    Journal.Journal,
+    Effect.map(Journal.Journal, (underlying) =>
+      Journal.make({
+        ...underlying,
+        emitDurableUnfenced: (input) =>
+          Effect.map(underlying.emitDurableUnfenced(input), (receipt) =>
+            input.eventType === "flows/notifications/Promoted"
+              ? {
+                _tag: "Duplicate" as const,
+                seq: receipt.seq,
+                sourceSeq: receipt.sourceSeq,
+                status: "committed" as const
+              }
+              : receipt)
+      }))
+  ).pipe(Layer.provide(TestJournal.layer()))
+  await Effect.runPromise(
+    Effect.gen(function*() {
+      const queue = yield* NotificationQueue.NotificationQueue
+      yield* queue.admit("duplicate-ack", item("delivered", "steer"))
+      const receipt = yield* queue.drain({
+        runId: "duplicate-ack",
+        targetLineageId: "run/root",
+        boundary: "same",
+        wouldIdle: true
+      })
+      expect(receipt.duplicate).toBe(true)
+      expect(receipt.notifications.map((note) => note.id)).toEqual(["delivered"])
+      expect(yield* queue.pending("duplicate-ack")).toEqual([])
+    }).pipe(Effect.provide(NotificationQueue.layerWith()), Effect.provide(journal), Effect.scoped)
+  )
+})
+
 /** Folds `runs` runs, then sweeps them all again and reports the second sweep. */
 const sweep = (
   runs: number,

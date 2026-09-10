@@ -1289,7 +1289,7 @@ export const layer: Layer.Layer<
               // message that has no boundary left to deliver it.
               if (terminal(run.status)) return { _tag: "Terminal", runId: run.runId, status: run.status }
               const item = steerItem(input.message)
-              yield* notifications.admit(input.runId, {
+              const admission = yield* notifications.admit(input.runId, {
                 _tag: "human-steer",
                 id: input.message.messageId,
                 delivery: "steer",
@@ -1303,13 +1303,22 @@ export const layer: Layer.Layer<
                 payload: SteerPayload.encode(item) as ControlEvent["payload"]
               }).pipe(
                 Effect.mapError((cause) =>
-                  new PersistenceError({
+                  cause instanceof NotificationQueue.NotificationError ? cause : new PersistenceError({
                     operation: "control.steer.notification",
                     message: "Failed to admit steering notification",
                     cause
                   })
                 )
               )
+              if (admission.decision === "rejected-full") {
+                return yield* Effect.fail(
+                  new NotificationQueue.NotificationError({
+                    code: "notification_full",
+                    notificationId: input.message.messageId,
+                    message: "Steering queue is full; retry after pending notifications are delivered"
+                  })
+                )
+              }
               // `createdAt` is the caller's own stated time, and the enqueue
               // entry is the one place it is kept: `steerItem` strips the control
               // envelope before the message reaches the queue, so a field the

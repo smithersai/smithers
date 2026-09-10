@@ -1,7 +1,8 @@
 # Coordinator-owned request feedback
 
 `steering.ts` is private repository configuration over the existing notification
-queue. It adds no public package API, table, event type, or message transport.
+queue. It adds no coding table, event type, or message transport. The two small
+public library extensions used by this recipe are called out below.
 The gateway keeps its existing `Control.steer` operation and actor attribution.
 
 The configured request host supplies a queue decorator to the private native
@@ -25,7 +26,9 @@ type NotificationDecorator = (
 ```
 
 The third decorator parameter is the already materialized **control journal**,
-which is separate from the native engine's execution journal. The default
+which is separate from the native engine's execution journal but contains its
+mirrored `control.engine.event` records. A long native run therefore creates a
+large control history too. The default
 composition is unchanged. One decorated queue instance is shared by ControlLive
 and the native executor. Admission runs in the caller's fiber and joins the
 existing journal transaction; it opens no second database or transaction system.
@@ -38,7 +41,7 @@ explicit leaf addresses, Seat, Thinking and Tools retain their existing routes.
 This is an all-Message coding policy: a provenance string is not proof that the
 sender is a human. Cancellation and approvals keep their established paths.
 The configured Message route also turns the queue's `rejected-full` decision
-into an existing NotificationError, so Control cannot acknowledge feedback that
+into `NotificationError(notification_full)`, so Control cannot acknowledge feedback that
 the queue did not retain. The caller can retry after a coordinator boundary.
 
 `ModuleOwner` is new private invocation data containing `{rootId, flowId}`. It
@@ -93,21 +96,85 @@ source ID, source sequence zero, and an empty ID list prove closure. Non-final
 boundaries and nonempty final receipts stay open. Other lineages do not close
 this coordinator. Unreadable proof in its own lineage refuses admission.
 
-The read is scoped to the control run, not the native engine's full execution
-history. It reads at most 100 pages of 1,000 entries and rejects an oversized or
-non-advancing page. There is no additional index, projection cache or store.
-These limits bound work while holding the existing writer transaction; reaching
-them refuses feedback instead of accepting it without trustworthy closure
-state. Measurements using a 500-row synthetic control history required one page
-per admission. Those measurements are diagnostic only: host contention affected
-both query and total admission latency, so they are not a release latency
-promise.
+**New public API: `Journal.entries` has an optional `eventTypes` filter.**
+The nonempty list accepts up to 64 exact types. Filtering runs before pagination and uses the journal's new
+`(run_id, event_type, seq)` index. The recipe calls it as follows:
+
+```ts
+const page = yield* journal.entries({
+  runId: JournalEvent.RunId.make(rootId),
+  eventTypes: [NotificationEvent.PromotedEventType],
+  limit: 1000
+})
+```
+
+The read remains inside the existing writer transaction, keeps canonical run
+sequence cursors, and refuses compacted history. It reads at most 100 pages of
+1,000 **promotion** entries and rejects oversized or non-advancing pages.
+Projected engine records no longer consume that bound or get decoded for this
+closure query. Other lineages' promotion receipts still undergo the normal
+lineage check. The index is over the existing journal table; there is no new
+store or projection cache. Custom journal adapters must implement the new
+option before this configuration relies on it.
+
+The existing notification queue also filters its cold/warm fold to Admitted and
+Promoted events. Its 64-run cache retains the same pending state, historical
+admission/promotion identity maps, and post-commit publication rules. Its cursor
+is the last matching canonical sequence; a noise-only tail leaves it unchanged.
+Saved-receipt `entryAt` reads still use the original exact sequence semantics.
+No notification identity, duplicate proof, or promotion receipt is discarded.
+If a future compaction policy advances the floor past that matching cursor, a
+warm queue conservatively refuses the next read with `compacted`; it cannot
+reconstruct notification identities from a deleted prefix. Current production
+compositions do not enable compaction. Enabling it requires a queue-aware
+retention or checkpoint policy first.
+
+A synthetic SQLite fixture with 100,005 `control.engine.event` rows exercises
+both the closure query and a full cold admission. The earlier 500-row benchmark
+and query-only timings did not establish whole-admission latency. The regression
+measures a separate cold queue using the former unfiltered fold, rolls that
+measurement's admission back, and compares a fresh production queue with the
+new filter. It also verifies one closure page per steer, and retained typed
+refusal after the final empty receipt. Measurements are local diagnostics, not
+a production latency promise. Final local runs recorded:
+
+| Runtime | Prior cold admission with unfiltered queue fold | Cold admission with both filters |
+| --- | ---: | ---: |
+| Node | 14,675 ms | 5.9 ms |
+| Bun | 7,117 ms | 40.3 ms |
+
+Both baseline folds actually read 200,011 rows across their pre/post-write reads.
+The prior-path measurement includes the same closure policy and rolls back its
+admission; the production measurement commits. Concurrent compilation/coverage
+load varied between runs, so the row counts and index plans are the stronger
+scaling evidence. The tests assert correctness and bounded reads, not a latency
+threshold.
+
+**New public error channel: `Control.steer` preserves `NotificationError`.**
+The existing notification error schema gains stable `notification_closed` and
+`notification_full` codes. Closing this coordinator returns the former;
+capacity refusal returns the latter. A closed receiver requires a new request.
+A full receiver permits retry after pending work drains. Ordinary Control
+steering also checks `rejected-full`, so it cannot accept an unretained message.
+Journal I/O errors still become `PersistenceError`.
+The existing `notification_unavailable`, `notification_id_reused`, and
+`notification_invalid` codes also now reach Control callers as
+`NotificationError`, replacing the previous `PersistenceError` wrapper with
+operation `control.steer.notification`.
+
+The public service type, `ControlErrorSchema`, and the authenticated Steer RPC
+declaration carry this existing error class. Deploy updated clients/UI with the
+server: an older exhaustive RPC decoder can reject the unfamiliar variant, so
+this is not fully wire-compatible with old error decoders. Successful receipts,
+older error codes and source event shapes stay unchanged. See the owning
+[control API](../../packages/smithers/control/docs/api.md) for an Effect example
+branching on these codes without parsing messages.
 
 Validation covers real SQLite queue reopen, repeated and empty boundaries,
 mixed Message/Seat/Thinking/Tools delivery, unrelated roots and leaf lineages,
 lookup/digest/approval refusal, rollback inside the caller's transaction, an
 actual Action execution requiring invocation ownership, capacity refusal and
-attributed overflow. Node and Bun both pass the seven focused cases, including
+attributed overflow. Node and Bun both pass the eight focused cases, including
 independent SQLite connections racing final drains with new admissions,
 malformed closure evidence, and bounded pagination. The native module host test
 asserts each executed child's actual approved root identity; its latest bounded

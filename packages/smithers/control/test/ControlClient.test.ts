@@ -1,6 +1,8 @@
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeSocket from "@effect/platform-node/NodeSocket"
+import { Journal } from "@smthrs/journal"
+import { NotificationQueue } from "@smthrs/notifications"
 import { Cause, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { HttpClient, HttpRouter, HttpServer } from "effect/unstable/http"
 import { RpcSerialization } from "effect/unstable/rpc"
@@ -11,7 +13,7 @@ import ts from "typescript"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import * as ControlClient from "../src/ControlClient.ts"
-import { type ControlError, RunNotFound, TransportError, Unauthorized } from "../src/ControlError.ts"
+import { type ControlError, PersistenceError, RunNotFound, TransportError, Unauthorized } from "../src/ControlError.ts"
 import * as ControlRpcs from "../src/ControlRpcs.ts"
 import * as ControlServer from "../src/ControlServer.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
@@ -25,7 +27,10 @@ const auth = ControlRpcs.layerBearerAuth({
   now: () => 1
 })
 
-const served = (authentication: Layer.Layer<ControlRpcs.ControlAuth> = auth) =>
+const served = (
+  authentication: Layer.Layer<ControlRpcs.ControlAuth> = auth,
+  notifications?: Layer.Layer<NotificationQueue.NotificationQueue>
+) =>
   HttpRouter.serve(
     ControlServer.layerHttp.pipe(
       Layer.provide(authentication),
@@ -36,6 +41,7 @@ const served = (authentication: Layer.Layer<ControlRpcs.ControlAuth> = auth) =>
     Layer.provideMerge(NodeHttpServer.layer(createServer, { host: "127.0.0.1", port: 0 })),
     Layer.provideMerge(
       TestStack.live({
+        ...(notifications === undefined ? {} : { notifications }),
         runtime: TestStack.memoryRuntime({
           approvalAuthority: delegateApproval({ id: "remote-operator", kind: "bearer" })
         })
@@ -268,6 +274,65 @@ describe("ControlClient", () => {
     expect(error).toBeInstanceOf(RunNotFound)
     expect((error as RunNotFound).runId).toBe("missing-run")
   })
+
+  it.each(["notification_closed", "notification_full", "storage"] as const)(
+    "preserves %s steering refusal through the authenticated HTTP RPC",
+    async (code) => {
+      const notifications = NotificationQueue.layerNoop({
+        admit: (_runId, notification) =>
+          Effect.fail(
+            code === "storage"
+              ? new Journal.JournalError({ code: "read_failed", message: "storage unavailable" })
+              : new NotificationQueue.NotificationError({
+                code,
+                notificationId: notification.id,
+                message: code === "notification_closed"
+                  ? "Receiver finished; start a new request"
+                  : "Queue full; retry after drain"
+              })
+          )
+      })
+      const error = await Effect.runPromise(
+        Effect.gen(function*() {
+          const url = yield* baseUrl
+          return yield* withClient(url, token, (control) =>
+            Effect.gen(function*() {
+              const card = yield* control.plan({ flowId: "system/test", input: {} })
+              yield* control.approve(card.approval)
+              const launched = yield* control.run({
+                _tag: "Plan",
+                planId: card.planId,
+                digest: card.digest,
+                envelope: card.envelope,
+                idempotencyKey: `launch-${code}`
+              })
+              if (launched._tag !== "Accepted" || launched.runId === undefined) {
+                return yield* Effect.die("expected launched run")
+              }
+              return yield* control.steer({
+                runId: launched.runId,
+                idempotencyKey: `steer-${code}`,
+                message: {
+                  runId: launched.runId,
+                  messageId: "safe-notification-id",
+                  body: "private submitted feedback",
+                  createdAt: 0,
+                  principal: { kind: "test", id: "untrusted-client", stampedAt: 0 }
+                }
+              }).pipe(Effect.flip)
+            }))
+        }).pipe(Effect.provide(served(auth, notifications)), Effect.scoped)
+      )
+      expect(error).toBeInstanceOf(code === "storage" ? PersistenceError : NotificationQueue.NotificationError)
+      expect(error.code).toBe(code === "storage" ? "persistence_failed" : code)
+      expect(ControlClient.isControlError(error)).toBe(true)
+      if (error instanceof NotificationQueue.NotificationError) {
+        expect(error.notificationId).toBe("safe-notification-id")
+      }
+      expect(JSON.stringify(error)).not.toContain(token)
+      expect(JSON.stringify(error)).not.toContain("private submitted feedback")
+    }
+  )
 
   it.each(["approve", "deny"] as const)(
     "does not elevate an agent %s through operator RPC credentials",

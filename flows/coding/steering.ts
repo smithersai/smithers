@@ -48,13 +48,13 @@ export const routeMessages = (queue: NotificationQueue.Service, control: Control
       // final empty receipt rolls back with this transaction, including the
       // queue's sequence allocation and after-commit publication.
       if (closed) return yield* Effect.fail(new NotificationQueue.NotificationError({
-        code: "notification_unavailable", notificationId: notification.id,
+        code: "notification_closed", notificationId: notification.id,
         message: "The request coordinator has finished receiving feedback; start a new request with this message"
       }))
-      // Control.steer currently ignores rejected-full. In this configured route
+      // Preserve the same typed refusal for direct configured queue callers:
       // an accepted request message must actually have a retained notification.
       if (receipt.decision === "rejected-full") return yield* Effect.fail(new NotificationQueue.NotificationError({
-        code: "notification_unavailable", notificationId: notification.id,
+        code: "notification_full", notificationId: notification.id,
         message: "Request feedback queue is full; retry after the coordinator receives pending messages"
       }))
       return receipt
@@ -83,7 +83,7 @@ const isClosed = (journal: Journal.Service, rootId: string) => Effect.gen(functi
   // Refuse implausibly large or non-terminating adapters while holding the
   // writer transaction; a feedback admission must not lock the database forever.
   for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
-    const page = yield* journal.entries({ runId: JournalEvent.RunId.make(rootId), limit: 1000,
+    const page = yield* journal.entries({ runId: JournalEvent.RunId.make(rootId), eventTypes: [NotificationEvent.PromotedEventType], limit: 1000,
       ...(after === undefined ? {} : { after }) })
     if (page.entries.length > 1000) return yield* Effect.fail(unreadable())
     let previous = after ?? -1

@@ -230,14 +230,14 @@ mechanisms, and a run that was never planned still has steps worth gating.
 
 For a new decision, the adapter contract follows this order:
 
-| Step                          | Plan target                                                                  | Node target                                               |
-| ----------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Authenticate and authorize    | Authenticate the principal; `authorizeApproval` before reads or receipt replay | same                                                      |
-| Look the token up             | `lookupApproval` refuses an unknown or already-resolved token                  | same                                                      |
-| Resolve the token             | `resolveApproval` exactly once, with an authority recheck                      | same                                                      |
-| Install the grant, on approval | `installBulkGrant` with the submitted envelope and scope                      | same                                                      |
-| Journal the decision          | `control.approval.approved` or `.denied` on `plan:<planId>`                     | the same kinds, on the run                                |
-| Record the restart            | nothing to restart                                                           | records a resume delegation, journals `control.run.resumed` |
+| Step                           | Plan target                                                                    | Node target                                                 |
+| ------------------------------ | ------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| Authenticate and authorize     | Authenticate the principal; `authorizeApproval` before reads or receipt replay | same                                                        |
+| Look the token up              | `lookupApproval` refuses an unknown or already-resolved token                  | same                                                        |
+| Resolve the token              | `resolveApproval` exactly once, with an authority recheck                      | same                                                        |
+| Install the grant, on approval | `installBulkGrant` with the submitted envelope and scope                       | same                                                        |
+| Journal the decision           | `control.approval.approved` or `.denied` on `plan:<planId>`                    | the same kinds, on the run                                  |
+| Record the restart             | nothing to restart                                                             | records a resume delegation, journals `control.run.resumed` |
 
 Commit the decision, grant, journal entry, receipt, and any node resume delegation
 atomically. Resolution must not require an installed grant or a flushed journal

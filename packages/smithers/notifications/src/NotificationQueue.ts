@@ -21,7 +21,10 @@ import * as NotificationState from "./NotificationState.ts"
  * stable id was admitted once already with different content, which is a
  * producer bug rather than a storage failure; `notification_invalid` says the
  * value is not a notification, and `path` names the field inside it that failed.
- * Neither the message nor `path` ever carries the offending value.
+ * `notification_closed` means the receiver has finished and the caller must
+ * start a new request; `notification_full` means nothing was retained and the
+ * same notification may be retried after pending work drains. Neither the
+ * message nor `path` ever carries the offending value.
  *
  * @category errors
  * @since 0.1.0
@@ -31,6 +34,8 @@ export class NotificationError extends Schema.TaggedError<NotificationError>()(
   {
     code: Schema.Literals([
       "notification_unavailable",
+      "notification_closed",
+      "notification_full",
       "notification_id_reused",
       "notification_invalid"
     ]).pipe(
@@ -470,7 +475,12 @@ export const layerWith = (
           while (true) {
             // `after` is an exact-optional property upstream, so an explicit
             // `undefined` is not the same as an absent key.
-            const page = yield* journal.entries({ runId, ...(after === undefined ? {} : { after }), limit: 512 })
+            const page = yield* journal.entries({
+              runId,
+              eventTypes: [NotificationEvent.AdmittedEventType, NotificationEvent.PromotedEventType],
+              ...(after === undefined ? {} : { after }),
+              limit: 512
+            })
             fresh.push(...page.entries)
             if (!page.hasMore || page.entries.length === 0) break
             after = page.entries.at(-1)!.seq

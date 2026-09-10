@@ -3,6 +3,7 @@
  *
  * @since 0.1.0
  */
+import { NotificationError } from "@smthrs/notifications/NotificationQueue"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc"
 import {
@@ -138,7 +139,15 @@ export const ControlRpcs = RpcGroup.make(
   Rpc.make("Steer", {
     payload: SteerInputSchema,
     success: Receipt,
-    error: Schema.Union([RunNotFound, InvalidInput, PersistenceError, Unavailable, TransportError, Unauthorized])
+    error: Schema.Union([
+      RunNotFound,
+      InvalidInput,
+      PersistenceError,
+      Unavailable,
+      TransportError,
+      Unauthorized,
+      NotificationError
+    ])
   }),
   Rpc.make("Signal", {
     payload: SignalInputSchema,

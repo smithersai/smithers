@@ -12,6 +12,7 @@
  * same change that adds it to `ControlErrorSchema`, or the membership assertion
  * at the end fails.
  */
+import { NotificationError } from "@smthrs/notifications/NotificationQueue"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { isControlError } from "../src/ControlClient.ts"
@@ -78,10 +79,26 @@ const table: ReadonlyArray<{
     tag: "/control/CredentialConflict",
     code: "credential_conflict",
     error: new ControlError.CredentialConflict({ id: "exa", expectedVersion: 2, actualVersion: 3 })
+  },
+  {
+    tag: "/notifications/NotificationError",
+    code: "notification_unavailable",
+    error: new NotificationError({ code: "notification_unavailable", message: "notification unavailable" })
   }
 ]
 
 describe("stable control error codes", () => {
+  it.each(["notification_closed", "notification_full"] as const)(
+    "round trips %s as a declared control refusal",
+    (code) => {
+      const error = new NotificationError({ code, message: "notification refused", notificationId: "notification-1" })
+      const encoded = Schema.encodeSync(ControlError.ControlErrorSchema)(error)
+      const decoded = Schema.decodeUnknownSync(ControlError.ControlErrorSchema)(JSON.parse(JSON.stringify(encoded)))
+      expect(decoded).toBeInstanceOf(NotificationError)
+      expect(decoded.code).toBe(code)
+      expect(isControlError(decoded)).toBe(true)
+    }
+  )
   it.each(table)("$tag answers $code", ({ code, error, tag }) => {
     expect(error._tag).toBe(tag)
     expect(error.code).toBe(code)

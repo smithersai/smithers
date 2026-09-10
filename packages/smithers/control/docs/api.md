@@ -41,7 +41,7 @@ and authentication failures.
 | `run`     | `(input: RunInput) => Effect<Receipt, RunNotFound \| PlanNotFound \| PlanDenied \| PlanDigestMismatch \| EnvelopeMismatch \| ClaimLost \| InvalidInput \| LaunchFailed \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>` | `Accepted`, `AlreadyApplied`, `Conflict`, or `Parked` for a plan; a resume answers as `resume` does. |
 | `approve` | `(input: ApprovalInput) => Effect<Receipt, PlanDigestMismatch \| EnvelopeMismatch \| AlreadyResolved \| PlanNotFound \| RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
 | `deny`    | same as `approve`                                                                                                                                                                                                                             | same as `approve`.                                                                                   |
-| `steer`   | `(input: SteerInput) => Effect<Receipt, RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                                    | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
+| `steer`   | `(input: SteerInput) => Effect<Receipt, NotificationError \| RunNotFound \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                               | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
 | `signal`  | `(input: SignalInput) => Effect<Receipt, RunNotFound \| NoMatchingWait \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                 | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
 | `cancel`  | `(input: RunMutationInput) => Effect<Receipt, RunNotFound \| ClaimLost \| InvalidInput \| PersistenceError \| Unavailable \| TransportError \| Unauthorized>`                                                                                 | `Accepted` or `Terminal`. Never replays its recorded receipt.                                        |
 | `resume`  | same as `cancel`                                                                                                                                                                                                                              | `Accepted`, `AlreadyApplied`, `Conflict`, or `Terminal`.                                             |
@@ -189,24 +189,25 @@ alias of it, so cancellation's public contract stays explicit.
 Every stable failure the plane emits. Each class carries a constant `code` a
 client may branch on.
 
-| Class                | `code`                 | Fields                                   | Meaning                                                     |
-| -------------------- | ---------------------- | ---------------------------------------- | ----------------------------------------------------------- |
-| `RunNotFound`        | `run_not_found`        | `runId`                                  | No run with this id exists.                                 |
-| `PlanNotFound`       | `plan_not_found`       | `planId`                                 | No plan with this id. Carries an operator-facing `message`. |
-| `PlanDenied`         | `plan_denied`          | `planId`                                 | The plan was denied. Carries an operator-facing `message`.  |
-| `FlowNotFound`       | `flow_not_found`       | `flowId`                                 | No flow with this id is registered.                         |
-| `PlanDigestMismatch` | `plan_digest_mismatch` | `planId`, `expected`, `actual`           | The submitted plan does not hash to the declared digest.    |
-| `EnvelopeMismatch`   | `envelope_mismatch`    | `planId`, `expected`, `actual`           | The plan's effect envelope differs from the declared one.   |
-| `ClaimLost`          | `claim_lost`           | `runId`                                  | The caller's claim lapsed or was fenced by a newer owner.   |
-| `AlreadyResolved`    | `already_resolved`     | `requestId`                              | This request was already answered.                          |
-| `InvalidInput`       | `invalid_input`        | `issue`                                  | The request missed its schema or a stated precondition.     |
-| `Unauthorized`       | `unauthorized`         | `message`                                | No usable credential for this operation.                    |
-| `Unavailable`        | `unavailable`          | `feature`, `ticket`                      | Not implemented in this deployment.                         |
-| `TransportError`     | `transport_error`      | `message`, `retryable`, `cause?`         | The request failed before a declared response arrived.      |
-| `PersistenceError`   | `persistence_failed`   | `operation`, `message`, `cause?`         | A store operation failed.                                   |
-| `LaunchFailed`       | `launch_failed`        | `runId`, `message`, `cause?`             | The executor refused or could not start the run.            |
-| `NoMatchingWait`     | `no_matching_wait`     | `runId`, `waitName`                      | A signal named a wait point the run does not have open.     |
-| `CredentialConflict` | `credential_conflict`  | `id`, `expectedVersion`, `actualVersion` | A credential write lost a compare-and-set race.             |
+| Class                | `code`                                                                      | Fields                                   | Meaning                                                                               |
+| -------------------- | --------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------- |
+| `RunNotFound`        | `run_not_found`                                                             | `runId`                                  | No run with this id exists.                                                           |
+| `PlanNotFound`       | `plan_not_found`                                                            | `planId`                                 | No plan with this id. Carries an operator-facing `message`.                           |
+| `PlanDenied`         | `plan_denied`                                                               | `planId`                                 | The plan was denied. Carries an operator-facing `message`.                            |
+| `FlowNotFound`       | `flow_not_found`                                                            | `flowId`                                 | No flow with this id is registered.                                                   |
+| `PlanDigestMismatch` | `plan_digest_mismatch`                                                      | `planId`, `expected`, `actual`           | The submitted plan does not hash to the declared digest.                              |
+| `EnvelopeMismatch`   | `envelope_mismatch`                                                         | `planId`, `expected`, `actual`           | The plan's effect envelope differs from the declared one.                             |
+| `ClaimLost`          | `claim_lost`                                                                | `runId`                                  | The caller's claim lapsed or was fenced by a newer owner.                             |
+| `AlreadyResolved`    | `already_resolved`                                                          | `requestId`                              | This request was already answered.                                                    |
+| `InvalidInput`       | `invalid_input`                                                             | `issue`                                  | The request missed its schema or a stated precondition.                               |
+| `Unauthorized`       | `unauthorized`                                                              | `message`                                | No usable credential for this operation.                                              |
+| `Unavailable`        | `unavailable`                                                               | `feature`, `ticket`                      | Not implemented in this deployment.                                                   |
+| `TransportError`     | `transport_error`                                                           | `message`, `retryable`, `cause?`         | The request failed before a declared response arrived.                                |
+| `PersistenceError`   | `persistence_failed`                                                        | `operation`, `message`, `cause?`         | A store operation failed.                                                             |
+| `LaunchFailed`       | `launch_failed`                                                             | `runId`, `message`, `cause?`             | The executor refused or could not start the run.                                      |
+| `NoMatchingWait`     | `no_matching_wait`                                                          | `runId`, `waitName`                      | A signal named a wait point the run does not have open.                               |
+| `CredentialConflict` | `credential_conflict`                                                       | `id`, `expectedVersion`, `actualVersion` | A credential write lost a compare-and-set race.                                       |
+| `NotificationError`  | `notification_closed`, `notification_full`, and existing notification codes | `message`, `notificationId?`, `path?`    | Existing notification error class, now preserved by steering locally and through RPC. |
 
 | Export               | Kind   | Meaning                                                                                                              |
 | -------------------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
@@ -220,6 +221,45 @@ every renderer in the tree reads.
 `TransportError.retryable` classifies the transport phase alone. Resend a
 retryable mutation only when its idempotency key makes replay safe; a keyless
 request can have reached the server even when its response was lost.
+
+### New public steering refusal channel
+
+`Control.steer` now preserves the existing notifications package's
+`NotificationError`, including new `notification_closed` and `notification_full`
+codes. This is an extension to the public error union and the Steer RPC schema;
+it does not introduce a new error class or change successful receipts.
+Existing `notification_unavailable`, `notification_id_reused`, and
+`notification_invalid` failures also now retain this tag, replacing their former
+`PersistenceError` wrapper with operation `control.steer.notification`. Update
+callers that matched that wrapper to handle `NotificationError` directly.
+
+```ts
+import { Effect } from "effect"
+
+const outcome = yield* control.steer(input).pipe(
+  Effect.map(receipt => ({ kind: "receipt" as const, receipt })),
+  Effect.catchTag("/notifications/NotificationError", error => Effect.gen(function*() {
+    if (error.code === "notification_closed") return { kind: "start-new-request" as const }
+    if (error.code === "notification_full") return { kind: "retry-after-drain" as const }
+    return yield* Effect.fail(error)
+  }))
+)
+```
+
+A closed receiver cannot accept a new message, even if its surrounding run is
+still finishing. A full queue has retained nothing; after a boundary drains it,
+the caller can retry the same notification and idempotency key. Control records
+no accepted mutation for a capacity refusal. Duplicate accepted messages retain
+the existing `AlreadyApplied` behavior. Journal I/O failures still become
+`PersistenceError`; their diagnostic cause is retained separately from the fixed
+operator-facing message.
+
+Deploy updated clients/UI and server together. Older RPC decoders do not know
+this error variant and may report a decode or transport failure instead of the
+closed/full reason. The change is additive in the source API but is **not fully
+wire-compatible with older exhaustive error decoders**. Do not retry an unknown
+decode failure as if it proved the request was never admitted. Existing error
+codes, successful response shapes, and notification events are unchanged.
 
 ## ControlLive
 

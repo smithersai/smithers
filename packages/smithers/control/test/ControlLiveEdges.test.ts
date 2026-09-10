@@ -239,6 +239,42 @@ describe("ControlLive listings", () => {
   })
 })
 
+describe("ControlLive steering refusal", () => {
+  it("does not acknowledge a full queue and can retry the same keyed message after drain", async () => {
+    const journal = Layer.orDie(TestJournal.layer())
+    const notifications = NotificationQueue.layerWith({ capacity: 1 }).pipe(Layer.provide(journal))
+    await run(
+      Effect.gen(function*() {
+        const control = yield* Control, queue = yield* NotificationQueue.NotificationQueue
+        const runId = yield* start("full-steering")
+        const submit = (id: string) =>
+          control.steer({
+            runId,
+            idempotencyKey: id,
+            message: {
+              runId,
+              messageId: id,
+              body: "private submitted feedback",
+              createdAt: 0,
+              principal: { kind: "test", id: "operator", stampedAt: 0 }
+            }
+          })
+        expect((yield* submit("first"))._tag).toBe("Accepted")
+        const rejected = yield* submit("second").pipe(Effect.flip)
+        expect(rejected).toBeInstanceOf(NotificationQueue.NotificationError)
+        expect(rejected.code).toBe("notification_full")
+        expect(rejected.message).not.toContain("private submitted feedback")
+        expect((yield* queue.pending(runId)).map((note) => note.id)).toEqual(["first"])
+        yield* queue.drain({ runId, targetLineageId: runId, boundary: "release", wouldIdle: true })
+        expect((yield* submit("second"))._tag).toBe("Accepted")
+        expect((yield* submit("second"))._tag).toBe("AlreadyApplied")
+        expect((yield* queue.pending(runId)).map((note) => note.id)).toEqual(["second"])
+      }),
+      live({ journal, notifications, runtime: memoryRuntime({ flows }) })
+    )
+  })
+})
+
 describe("ControlLive without an executor", () => {
   const headless = () => live({ executor: "absent", runtime: memoryRuntime({ flows }) })
 
