@@ -194,6 +194,19 @@ describe("versioned envelopes and quarantine", () => {
     expect([...host.data]).toEqual(before)
   })
 
+  test("every version above this build's refuses open instead of quarantining a copy", async () => {
+    // Quarantine only ever labels an older stamp `unsupported`: the version
+    // pre-check refuses newer envelopes first, including the one just above.
+    for (const version of [ENVELOPE_VERSION + 1, ENVELOPE_VERSION + 2, 99]) {
+      const host = scriptableHost()
+      host.setItem(ENVELOPE_STORAGE_KEY, JSON.stringify({ version, entries: { newer: "kept" } }))
+      const before = [...host.data]
+      await expect(open(host)).rejects.toBeInstanceOf(UnsupportedStorageEnvelopeError)
+      expect([...host.data]).toEqual(before)
+      expect([...host.data.keys()].filter((key) => key.startsWith(ENVELOPE_QUARANTINE_PREFIX))).toEqual([])
+    }
+  })
+
   test("a future envelope with a changed payload shape is refused before recovery", async () => {
     const host = scriptableHost()
     host.setItem(ENVELOPE_STORAGE_KEY, JSON.stringify({ version: 1, entries: {} }))

@@ -87,7 +87,7 @@ export interface TransactionalStorage {
   readonly batch: <T>(work: () => T) => T
   /** How the boot recovered the interrupted commit it found, if any. */
   readonly recovery: RecoveryOutcome
-  /** The quarantine keys this open wrote for unreadable or future shapes. */
+  /** The quarantine keys this open wrote for unreadable or unsupported shapes. */
   readonly quarantinedKeys: ReadonlyArray<string>
 }
 
@@ -207,9 +207,10 @@ export const openTransactionalStorage = async (
       const quarantineKey = `${ENVELOPE_QUARANTINE_PREFIX}corrupt`
       quarantineWrites.push({ key: quarantineKey, raw })
     } else if (envelope.version !== ENVELOPE_VERSION && envelope.version !== 0) {
+      // Newer envelopes never reach here: the pre-check above refuses every
+      // version over ENVELOPE_VERSION, so this is an unsupported older stamp.
       if (protectedCollection !== undefined) throw new AuthoritativeStorageError(protectedCollection.id)
-      const direction = envelope.version > ENVELOPE_VERSION ? "future" : "unsupported"
-      const quarantineKey = `${ENVELOPE_QUARANTINE_PREFIX}${direction}.${envelope.version}`
+      const quarantineKey = `${ENVELOPE_QUARANTINE_PREFIX}unsupported.${envelope.version}`
       quarantineWrites.push({ key: quarantineKey, raw })
     } else {
       entries = { ...envelope.entries }
@@ -217,7 +218,7 @@ export const openTransactionalStorage = async (
   }
 
   // Version zero was the per-collection layout. A present current, corrupt,
-  // or future envelope is authoritative: never resurrect older host keys.
+  // or unsupported envelope is authoritative: never resurrect older host keys.
   const adoptLegacy = raw === null || parseStorageEnvelope(raw)?.version === 0
   let normalized = false
   for (const collection of options.collections) {
