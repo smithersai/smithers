@@ -23,6 +23,7 @@ import { roleMenuEntries } from "./AgentRoleMenu"
 import { useController } from "./ControllerContext"
 import { actionForKey } from "./flows/SearchQuery"
 import { SELECT_REPO_LABEL } from "./Onboarding"
+import { rovingKeyDown } from "./RovingKeyDown"
 import { paletteKey, PaletteOverlay, paletteRows } from "./SearchPalette"
 import type { PaletteDecision, PaletteRow } from "./SearchPalette"
 import { activeRepoOf, parseRepoSelection, repoKeyOf, WIKI_DISPLAY_NAME } from "./state/AppState"
@@ -161,19 +162,15 @@ function ComposerMenu({
   }
 
   const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === "Escape") {
-      event.preventDefault()
+    const move = rovingKeyDown(event.key, { count: entries.length, current: highlighted, escape: true })
+    if (move.kind === "ignore") return
+    event.preventDefault()
+    if (move.kind === "escape") {
       closeMenu()
       return
     }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault()
-      const next = event.key === "ArrowDown"
-        ? (highlighted + 1) % entries.length
-        : (highlighted + entries.length - 1) % entries.length
-      setHighlighted(next)
-      itemRefs.current[next]?.focus()
-    }
+    setHighlighted(move.index)
+    itemRefs.current[move.index]?.focus()
   }
 
   return (
@@ -388,21 +385,17 @@ function ComposerAdd({
 
 
   const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === "Escape") {
-      event.preventDefault()
+    /* The ring walks the enabled entries alone, so a disabled row is never landed on. */
+    const current = enabledEntries.findIndex((index) => itemRefs.current[index] === document.activeElement)
+    const move = rovingKeyDown(event.key, { count: enabledEntries.length, current, escape: true })
+    if (move.kind === "ignore") return
+    event.preventDefault()
+    if (move.kind === "escape") {
       controller.closeAddMenu()
       triggerRef.current?.focus()
       return
     }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault()
-      if (enabledEntries.length === 0) return
-      const current = enabledEntries.findIndex((index) => itemRefs.current[index] === document.activeElement)
-      const next = event.key === "ArrowDown"
-        ? (current + 1) % enabledEntries.length
-        : (current - 1 + enabledEntries.length) % enabledEntries.length
-      itemRefs.current[enabledEntries[next] ?? -1]?.focus()
-    }
+    itemRefs.current[enabledEntries[move.index] ?? -1]?.focus()
   }
 
   return (
@@ -697,23 +690,19 @@ function ComposerConnect({
   }
 
   const onMenuKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === "Escape") {
-      event.preventDefault()
+    /* The ring walks the enabled entries alone, so a disabled row is never landed on. */
+    const current = enabledEntries.findIndex(
+      (index) => itemRefs.current[index] === document.activeElement
+    )
+    const move = rovingKeyDown(event.key, { count: enabledEntries.length, current, escape: true })
+    if (move.kind === "ignore") return
+    event.preventDefault()
+    if (move.kind === "escape") {
       controller.closeConnectMenu()
       triggerRef.current?.focus()
       return
     }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault()
-      if (enabledEntries.length === 0) return
-      const current = enabledEntries.findIndex(
-        (index) => itemRefs.current[index] === document.activeElement
-      )
-      const next = event.key === "ArrowDown"
-        ? (current + 1) % enabledEntries.length
-        : (current - 1 + enabledEntries.length) % enabledEntries.length
-      itemRefs.current[enabledEntries[next] ?? -1]?.focus()
-    }
+    itemRefs.current[enabledEntries[move.index] ?? -1]?.focus()
   }
 
   return (

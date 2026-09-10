@@ -4,6 +4,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { BookOpen, ChevronRight, Download, FolderGit2, History, KeyRound, Moon, Pencil, Plus, RotateCcw, Sun, Timer, UserRound, Workflow, X } from "lucide-react"
 import { roleMenuEntries } from "../AgentRoleMenu"
 import { useController } from "../ControllerContext"
+import { rovingKeyDown } from "../RovingKeyDown"
 import { DEFAULT_WORKSPACE_NAME, MAIN_TAB_ID, parseRepoSelection } from "../state/AppState"
 import type { Repo, RepoTreeRow, TabRow, WorkingCopy } from "../state/AppState"
 import { isReadOnlyCopy, workingCopyLabel } from "../state/WorkspaceViews"
@@ -328,18 +329,14 @@ export function ChromeBar() {
           data-testid="tab-strip"
           onKeyDown={(event) => {
             // A vertical tablist: ArrowUp/ArrowDown (Home/End) move between the heading and the sessions, across every repo group, and select the one reached.
-            const step = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0
-            if (step === 0 && event.key !== "Home" && event.key !== "End") return
             const tabs = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
             const current = tabs.findIndex((tab) => tab === document.activeElement)
-            if (tabs.length === 0 || current === -1) return
+            // The ring is the tabs' own: the inline rename input sits inside the strip, so with focus off a tab the keys belong to whatever has it.
+            if (current === -1) return
+            const move = rovingKeyDown(event.key, { count: tabs.length, current, ends: true })
+            if (move.kind !== "move") return
             event.preventDefault()
-            const next = event.key === "Home"
-              ? 0
-              : event.key === "End"
-              ? tabs.length - 1
-              : (current + step + tabs.length) % tabs.length
-            const target = tabs[next]
+            const target = tabs[move.index]
             if (target === undefined) return
             target.focus()
             const id = target.dataset.tabId

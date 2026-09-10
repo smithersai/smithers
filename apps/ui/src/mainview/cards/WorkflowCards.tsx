@@ -11,6 +11,7 @@ import { useState } from "react"
 import type { KeyboardEvent } from "react"
 import type { Card } from "../state/AppState"
 import { timeLabel as clockLabel } from "../Timestamps"
+import { rovingKeyDown } from "../RovingKeyDown"
 import type { CardFamily, RunCommand } from "./CardFamily"
 import { defaultPill, settledPill } from "./CardFamily"
 import { RunTraceBody } from "./RunTraceCard"
@@ -363,12 +364,10 @@ const WorkflowRepoCardBody = ({
     return <p className="smithers-card-note">Creating it on {chosen}.</p>
   }
   const onKeyDown = (event: KeyboardEvent<HTMLUListElement>): void => {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    const move = rovingKeyDown(event.key, { count: repos.length, current: index })
+    if (move.kind === "move") {
       event.preventDefault()
-      if (repos.length === 0) return
-      setHighlighted(
-        event.key === "ArrowDown" ? (index + 1) % repos.length : (index + repos.length - 1) % repos.length
-      )
+      setHighlighted(move.index)
       return
     }
     if (event.key === "Enter" || event.key === " ") {

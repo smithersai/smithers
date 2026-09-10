@@ -3,6 +3,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { FolderGit2, GitPullRequest, HardDrive, Plug, RefreshCw, Server, Trash2 } from "lucide-react"
 import type { KeyboardEvent } from "react"
 import { useController } from "./ControllerContext"
+import { rovingKeyDown } from "./RovingKeyDown"
 import { ConfirmDialog, SurfaceHeader } from "./SurfaceChrome"
 import { ageLabel } from "./Timestamps"
 
@@ -153,7 +154,6 @@ export function ConnectorsSurface() {
       <Server size={16} aria-hidden="true" />
 
   const onRowsKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return
     /*
      * Buttons only: a status Badge also carries data-row-action (it is the
      * row's action slot) but is deliberately not a control — roving onto it
@@ -162,13 +162,13 @@ export function ConnectorsSurface() {
     const items = Array.from(
       event.currentTarget.querySelectorAll<HTMLElement>(".connect-store-row button[data-row-action]")
     )
-    if (items.length === 0) return
+    const move = rovingKeyDown(event.key, {
+      count: items.length,
+      current: items.indexOf(document.activeElement as HTMLElement)
+    })
+    if (move.kind !== "move") return
     event.preventDefault()
-    const current = items.indexOf(document.activeElement as HTMLElement)
-    const next = event.key === "ArrowDown"
-      ? (current + 1) % items.length
-      : (current - 1 + items.length) % items.length
-    items[next]?.focus()
+    items[move.index]?.focus()
   }
 
   return (

@@ -302,6 +302,76 @@ describe("featured, starred, and grouped rows", () => {
  * with failures first once settled and each failure expandable to what it
  * printed — and the raw stream is folded away under "Raw output".
  */
+/*
+ * The rows' roving keyboard (§ review ui-cards-tabs/maintainability/5, now the
+ * shared rovingKeyDown): the table clamps at its ends rather than wrapping —
+ * a repository's targets run to the hundreds, so the last row is the end of
+ * the list, not a lap — and Home and End jump to them.
+ */
+describe("the targets table's rows walk under the arrows", () => {
+  const rowsOf = (host: HTMLElement): Array<HTMLTableRowElement> => [
+    ...host.querySelectorAll<HTMLTableRowElement>("tr[data-target-row]")
+  ]
+
+  const press = (row: HTMLTableRowElement, key: string): void => {
+    flushSync(() => {
+      row.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }))
+    })
+  }
+
+  const focused = (): string | null => (document.activeElement as HTMLElement | null)?.getAttribute("data-target-row") ?? null
+
+  test("ArrowDown and ArrowUp step a row at a time and stop at both ends", () => {
+    const { host } = render(targetsCard)
+    const rows = rowsOf(host)
+    expect(rows.length).toBe(3)
+    const labels = rows.map((row) => row.getAttribute("data-target-row"))
+
+    rows[0]?.focus()
+    press(rows[0] as HTMLTableRowElement, "ArrowDown")
+    expect(focused()).toBe(labels[1] ?? null)
+    press(rows[1] as HTMLTableRowElement, "ArrowDown")
+    expect(focused()).toBe(labels[2] ?? null)
+    /* The end stops the ring: ArrowDown off the last row stays on it. */
+    press(rows[2] as HTMLTableRowElement, "ArrowDown")
+    expect(focused()).toBe(labels[2] ?? null)
+
+    press(rows[2] as HTMLTableRowElement, "ArrowUp")
+    expect(focused()).toBe(labels[1] ?? null)
+    press(rows[1] as HTMLTableRowElement, "ArrowUp")
+    expect(focused()).toBe(labels[0] ?? null)
+    /* And the top stops it too, rather than wrapping onto the last row. */
+    press(rows[0] as HTMLTableRowElement, "ArrowUp")
+    expect(focused()).toBe(labels[0] ?? null)
+  })
+
+  test("End and Home jump to the ends, and Enter opens the row's drawer", () => {
+    const { host, calls } = render(targetsCard)
+    const rows = rowsOf(host)
+    const labels = rows.map((row) => row.getAttribute("data-target-row"))
+
+    rows[0]?.focus()
+    press(rows[0] as HTMLTableRowElement, "End")
+    expect(focused()).toBe(labels[2] ?? null)
+    press(rows[2] as HTMLTableRowElement, "Home")
+    expect(focused()).toBe(labels[0] ?? null)
+
+    press(rows[0] as HTMLTableRowElement, "Enter")
+    expect(calls).toEqual([["target.select", `force ${labels[0] ?? ""}`]])
+  })
+
+  test("a key the table does not own is left to the browser", () => {
+    const { host, calls } = render(targetsCard)
+    const rows = rowsOf(host)
+    rows[1]?.focus()
+    const event = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })
+    flushSync(() => void rows[1]?.dispatchEvent(event))
+    expect(event.defaultPrevented).toBe(false)
+    expect(focused()).toBe(rows[1]?.getAttribute("data-target-row") ?? null)
+    expect(calls).toEqual([])
+  })
+})
+
 describe("the target-run card", () => {
   const runCard = (overrides: Partial<Extract<Card, { kind: "target-run" }>["payload"]> = {}): Extract<Card, { kind: "target-run" }> => ({
     id: "target-run-1",

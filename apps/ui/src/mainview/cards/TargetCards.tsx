@@ -5,6 +5,7 @@ import type { RunRecord } from "@smthrs/rpc/TargetGraph"
 import { Fragment, useMemo } from "react"
 import type { KeyboardEvent, ReactNode } from "react"
 import { durationLabel, timeLabel } from "../Timestamps"
+import { rovingKeyDown } from "../RovingKeyDown"
 import type { Card } from "../state/AppState"
 import {
   filterRows,
@@ -310,20 +311,19 @@ export const TargetsCardBody = ({
       onRunCommand("target.select", flowArgs("target.select", { repoId, label }))
       return
     }
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Home" && event.key !== "End") return
-    event.preventDefault()
     const body = event.currentTarget.parentElement
     if (body === null) return
     const rowsInDom = [...body.querySelectorAll<HTMLTableRowElement>("tr[data-target-row]")]
-    const index = rowsInDom.indexOf(event.currentTarget)
-    const next = event.key === "ArrowDown"
-      ? rowsInDom[Math.min(index + 1, rowsInDom.length - 1)]
-      : event.key === "ArrowUp"
-      ? rowsInDom[Math.max(index - 1, 0)]
-      : event.key === "Home"
-      ? rowsInDom[0]
-      : rowsInDom[rowsInDom.length - 1]
-    next?.focus()
+    /* The table's ends stop the ring rather than wrap it: a repository's targets run to the hundreds, so the last row is the end of the list, not a lap. */
+    const move = rovingKeyDown(event.key, {
+      count: rowsInDom.length,
+      current: rowsInDom.indexOf(event.currentTarget),
+      loop: false,
+      ends: true
+    })
+    if (move.kind !== "move") return
+    event.preventDefault()
+    rowsInDom[move.index]?.focus()
   }
 
   if (status === "pending") {
