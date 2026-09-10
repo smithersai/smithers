@@ -71,9 +71,15 @@ records and the view configuration; it does not clear a historical selection
 while the next network read is pending.
 
 The pump requests journal rows after the last retained sequence and offset.
-Unchanged summary cursors skip journal reads; unchanged card projections skip
-transitions. Failed reads retain the prefix and retry without advancing the
-cursor. Summary status, approval discovery and reconnect recovery still run
+Unchanged summary cursors skip journal reads unless the recorded native projection
+is still pending. A control verdict can settle before its engine suffix arrives;
+empty suffixes keep the retained cursor until the projection-settled marker,
+an explicit read refusal, or the existing quiet bound. New rows at a higher
+offset of the same sequence count as progress; an empty suffix does not.
+Quiet or unavailable
+observation preserves the actual terminal verdict and offers the existing retry.
+Unchanged card projections skip transitions. Failed reads retain the prefix and
+retry without advancing the cursor. Summary status, approval discovery and reconnect recovery still run
 when the journal is unchanged. `/runs.events` omits the cursor to read the
 full journal for explicit inspection.
 

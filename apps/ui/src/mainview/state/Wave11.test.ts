@@ -80,6 +80,8 @@ const relay = (options: {
   readonly readsFail?: () => boolean
   readonly events?: () => ReadonlyArray<Record<string, unknown>>
   readonly eventReadsFail?: () => boolean
+  /** Exercise the current cursor contract instead of the legacy cursorless fallback. */
+  readonly typedCursors?: boolean
   /** Make provisioning slow enough to cross the toast debounce (the 300ms law). */
   readonly provisionDelayMs?: number
 } = {}) => {
@@ -120,7 +122,8 @@ const relay = (options: {
   })
 
   const snapshot = (rows: ReadonlyArray<unknown>, projection: string): Response =>
-    json(200, { ok: true, payload: { cursor: { projection, runId: "run-w11", value: 1 }, rows } })
+    json(200, { ok: true, payload: { cursor: { projection, runId: "run-w11", value: 1,
+      ...(options.typedCursors ? { selector: { _tag: projection, runId: "run-w11" }, offset: 0 } : {}) }, rows } })
 
   const procedure = (name: string, payload: Record<string, unknown>): Response => {
     switch (name) {
@@ -179,9 +182,17 @@ const relay = (options: {
         }
         const selector = (payload.selector ?? {}) as { _tag?: string }
         if (selector._tag === "approvals") return snapshot(approvals, "approvals")
-        if (selector._tag === "run-events") return options.eventReadsFail?.() === true
-          ? json(200, { ok: false, error: { message: "engine evidence unavailable" } })
-          : snapshot(options.events?.() ?? [], "run-events")
+        if (selector._tag === "run-events") {
+          if (options.eventReadsFail?.() === true) return json(200, { ok: false, error: { message: "engine evidence unavailable" } })
+          const after = options.typedCursors ? payload.after as { value: number; offset: number } | undefined : undefined
+          const offsets = new Map<number, number>()
+          const events = (options.events?.() ?? []).filter(event => {
+            const seq = Number(event.sequence), offset = (offsets.get(seq) ?? -1) + 1
+            offsets.set(seq, offset)
+            return after === undefined || seq > after.value || seq === after.value && offset > after.offset
+          })
+          return snapshot(events, "run-events")
+        }
         return snapshot([summaryRow()], "run-summary")
       }
       default:
@@ -498,7 +509,7 @@ describe("wave 11 — the run card never silently stalls", () => {
       sequence: 1, occurredAt: 1, kind: "control.engine.projection-started",
       payload: { version: 1, executionId: "run-w11", generation: 0 }
     }]
-    const double = relay({ events: () => events })
+    const double = relay({ events: () => events, typedCursors: true })
     const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
     await signIn(store)
     double.finish()
@@ -514,10 +525,36 @@ describe("wave 11 — the run card never silently stalls", () => {
     events.push({ sequence: 2, occurredAt: 2, kind: "control.engine.projection-settled", payload: { version: 1, executionId: "run-w11", generation: 0 } })
     await settle(20)
     expect(runCard(store)?.payload.events?.at(-1)?.kind).toBe("control.engine.projection-settled")
+    expect(runCard(store)?.payload.events?.map(event => event.sequence)).toEqual([1, 2])
+    const suffixReads = double.calls.flatMap(call => {
+      const body = call.body as { payload?: { selector?: { _tag?: string }; after?: unknown } }
+      return body?.payload?.selector?._tag === "run-events" && body.payload.after !== undefined ? [body.payload.after] : []
+    })
+    expect(suffixReads.length).toBeGreaterThan(1)
+    expect(suffixReads).toEqual(suffixReads.map(() => ({ selector: { _tag: "run-events", runId: "run-w11" },
+      projection: "run-events", runId: "run-w11", value: 1, offset: 0 })))
     const finishedReads = reads()
     await settle(15)
     expect(reads()).toBe(finishedReads)
     expect([...store.collections.messages.values()].filter((message) => message.text === double.state.verdict)).toHaveLength(1)
+  })
+
+  test("an empty pending native suffix reaches the quiet bound without changing a completed verdict", async () => {
+    const store = await webStore()
+    const double = relay({ typedCursors: true, events: () => [{ sequence: 1, occurredAt: 1,
+      kind: "control.engine.projection-started", payload: { version: 1, executionId: "run-w11", generation: 0 } }] })
+    const controller = createAppController(store, unavailableRepositories, silentAgent(), { ...double.services, workflowQuietMs: 40 })
+    await signIn(store)
+    double.finish()
+    await controller.commands.run("flow.run", "review-pr")
+    await settle(70)
+    expect(runCard(store)?.payload.phase).toBe("completed")
+    expect(runCard(store)?.payload.result).toBe(double.state.verdict)
+    expect(runCard(store)?.payload.observationError).toContain("has not finished synchronizing")
+    expect(runCard(store)?.payload.events).toHaveLength(1)
+    const reads = double.calls.length
+    await settle(15)
+    expect(double.calls.length).toBe(reads)
   })
 
   test("reload resumes incomplete terminal observations and a read refusal preserves the real terminal phase", async () => {
@@ -525,7 +562,7 @@ describe("wave 11 — the run card never silently stalls", () => {
     let store = await createAppStore({ kind: "localStorage", storage })
     let unavailable = false
     const events = [{ sequence: 1, occurredAt: 1, kind: "control.engine.projection-started", payload: { version: 1, executionId: "run-w11", generation: 0 } }]
-    const double = relay({ events: () => events, eventReadsFail: () => unavailable })
+    const double = relay({ events: () => events, eventReadsFail: () => unavailable, typedCursors: true })
     const controller = createAppController(store, unavailableRepositories, silentAgent(), double.services)
     await signIn(store)
     double.state.turns = 2

@@ -174,8 +174,9 @@ export const createWorkflowPumpController = (
         const card = store.collections.cards.get(cardId)
         if (card === undefined || card.kind !== "run-trace") return
         const alreadyTerminal = TERMINAL_PHASES.has(card.payload.phase)
+        const projectionPending = engineProjectionPending(card.payload.events)
         if (
-          (alreadyTerminal && !observeOnce && !engineProjectionPending(card.payload.events)) ||
+          (alreadyTerminal && !observeOnce && !projectionPending) ||
           card.payload.phase === "no-capacity" ||
           card.payload.phase === "quiet" ||
           card.payload.phase === "stopped"
@@ -286,7 +287,9 @@ export const createWorkflowPumpController = (
          */
         let events: Extract<Card, { kind: "run-trace" }>["payload"]["events"]
         let eventReadError: string | undefined
-        if (revision === undefined || revision !== journalRevision) {
+        // A native projection can append after its control verdict settled,
+        // without changing the summary cursor. Its own marker closes this read.
+        if (revision === undefined || revision !== journalRevision || projectionPending) {
           const journal = await gateway.runEvents(repo, runId, binding, journalCursor)
           if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return
           const current = store.collections.cards.get(cardId)
@@ -310,7 +313,9 @@ export const createWorkflowPumpController = (
             }
           } else if (journal.status !== "ok") eventReadError = journal.message
         }
-        if (events !== undefined && (events.at(-1)?.sequence ?? -1) !== (card.payload.events?.at(-1)?.sequence ?? -1)) lastProgressAt = Date.now()
+        // Only a nonempty, prefix-matched suffix assigns events. A higher
+        // offset at the same sequence is also actual observation progress.
+        if (events !== undefined) lastProgressAt = Date.now()
 
         /*
          * Why the run is not moving, in the control plane's word. `accepted`
@@ -351,7 +356,7 @@ export const createWorkflowPumpController = (
             )
             if (!alreadyTerminal) store.dispatch({ type: "message.appended", actor: "system", text: message })
           }
-          if (events !== undefined && engineProjectionPending(events)) {
+          if (eventReadError === undefined && (events === undefined ? projectionPending : engineProjectionPending(events))) {
             previous = row
             await pokeableWait(cardId, RUN_POLL_MS)
             continue

@@ -1070,6 +1070,13 @@ describe("workspace-bound run cards", () => {
       expect(double.state.signaled.at(-1)?.signal).toEqual({ name: "go", payload: { text: "a  b sourceCard=literal" } })
       expect((await controller.commands.run("runs.logs", source)).status).toBe("executed")
       expect(runCardInScope(store, card.payload)?.payload.transcriptRows?.[0]?.text).toBe(seat)
+      const other = double === a ? b : a
+      const otherReads = other.calls.length
+      const snapshots = () => double.calls.filter(call => (call.body as { procedure?: string })?.procedure === "Projection.Snapshot").length
+      const beforeRetry = snapshots()
+      expect((await controller.commands.run("flow.run.retry", card.id)).status).toBe("executed")
+      await waitFor(() => snapshots() >= beforeRetry + 2)
+      expect(other.calls.length).toBe(otherReads)
       expect((await controller.commands.run("approvals.open", source)).status).toBe("executed")
       const approvalId = approvalCardIdFor(store, card.payload, "same-gate")
       expect((await controller.commands.run("approval.approve", approvalId)).status).toBe("executed")
