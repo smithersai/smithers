@@ -3,6 +3,7 @@
  * notification, and what a harness reads back out of one.
  */
 import { describe, expect, it } from "vitest"
+import type * as Notification from "../src/Notification.ts"
 import * as SteerPayload from "../src/SteerPayload.ts"
 
 describe("SteerPayload.decode", () => {
@@ -93,5 +94,23 @@ describe("SteerPayload.encode", () => {
     toolNames.push("write")
 
     expect(encoded).toEqual({ kind: "Tools", toolNames: ["grep"] })
+  })
+
+  it("populates a notification payload without an assertion", () => {
+    // The payload field is typed as JSON, and `encode` exists to fill it. This
+    // is a compile-time check under `tsc -p tsconfig.test.json`: a result
+    // typed as a record of `unknown` is not JSON, so every admission had to
+    // cast around it, and a cast accepts a payload that is not JSON too.
+    const item: SteerPayload.SteerPayload = { kind: "Tools", toolNames: ["grep"] }
+    const notification: Notification.HumanSteer = {
+      _tag: "human-steer",
+      id: "steer-1",
+      delivery: "steer",
+      targetLineageId: "run/root",
+      provenance: { sourceRunId: "run", sourceLineageId: "run/root", sourceTurn: 0, sourceActor: "human:will" },
+      payload: SteerPayload.encode(item)
+    }
+
+    expect(SteerPayload.decode(notification.payload)).toEqual(item)
   })
 })

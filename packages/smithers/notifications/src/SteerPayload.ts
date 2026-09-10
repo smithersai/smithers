@@ -173,6 +173,9 @@ export const decode = (payload: unknown): SteerPayload | undefined => {
  * Every item is written with its `kind`, including a message: the body-only
  * form is read as a convenience and never written.
  *
+ * The result is typed as the item itself. Every item is JSON, so it is
+ * assignable to `Notification.payload` without an assertion.
+ *
  * The returned record shares no mutable structure with `item`. A caller hands
  * the result to an admission that serializes it later, so an array still
  * aliased to the caller could change what is durably journaled after the call
@@ -182,5 +185,5 @@ export const decode = (payload: unknown): SteerPayload | undefined => {
  * @category conversions
  * @since 0.1.0
  */
-export const encode = (item: SteerPayload): Readonly<Record<string, unknown>> =>
+export const encode = (item: SteerPayload): SteerPayload =>
   item.kind === "Tools" ? { ...item, toolNames: [...item.toolNames] } : { ...item }

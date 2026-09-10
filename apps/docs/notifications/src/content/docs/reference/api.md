@@ -260,10 +260,10 @@ other, so the shape they have to agree on belongs beneath both.
 | `ToolsPayload`    | `{ kind: "Tools"; toolNames: ReadonlyArray<string> }`. Non-empty, of non-empty strings. Additive only: steering can widen the active tool set and cannot narrow it.                           |
 | `SteerPayload`    | The union of the four.                                                                                                                                                                        |
 
-| Export   | Signature                                                   | Returns                                                                                                                                           |
-| -------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `decode` | `(payload: unknown) => SteerPayload \| undefined`           | The steering item a stored payload carries, or `undefined` when it is not one. A record with a `body` string and no `kind` reads as a message.    |
-| `encode` | `(item: SteerPayload) => Readonly<Record<string, unknown>>` | The record the item is stored as. Every item is written with its `kind`, including a message. The result shares no mutable structure with `item`. |
+| Export   | Signature                                         | Returns                                                                                                                                                                                       |
+| -------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `decode` | `(payload: unknown) => SteerPayload \| undefined` | The steering item a stored payload carries, or `undefined` when it is not one. A record with a `body` string and no `kind` reads as a message.                                                |
+| `encode` | `(item: SteerPayload) => SteerPayload`            | The record the item is stored as. Every item is written with its `kind`, including a message. The result is assignable to `Notification.payload` and shares no mutable structure with `item`. |
 
 ## Alerts
 

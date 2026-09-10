@@ -28,8 +28,9 @@ should continue.
 
 ## Encode it and admit it
 
-`SteerPayload.encode` writes the item as the record the journal stores, and
-returns a value that shares no mutable structure with the item you gave it:
+`SteerPayload.encode` writes the item as the record the journal stores. The
+result is typed as the item, so it fills the JSON `payload` field without an
+assertion, and it shares no mutable structure with the item you gave it:
 
 ```ts
 import { NotificationQueue } from "@smthrs/notifications"
@@ -53,8 +54,7 @@ const steerNotification = (
     sourceTurn: 0,
     sourceActor: `human:${operator}`
   },
-  // `encode` returns an ordinary record; the payload field is typed as JSON.
-  payload: SteerPayload.encode(item) as Notification["payload"]
+  payload: SteerPayload.encode(item)
 })
 
 export const steer = (runId: string, messageId: string, body: string) =>

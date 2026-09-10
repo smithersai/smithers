@@ -1323,7 +1323,7 @@ export const layer: Layer.Layer<
                   sourceTurn: 0,
                   sourceActor: `${input.message.principal.kind}:${input.message.principal.id}`
                 },
-                payload: SteerPayload.encode(item) as ControlEvent["payload"]
+                payload: SteerPayload.encode(item)
               }).pipe(
                 Effect.mapError((cause) =>
                   cause instanceof NotificationQueue.NotificationError ? cause : new PersistenceError({
