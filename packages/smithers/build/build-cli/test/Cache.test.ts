@@ -614,16 +614,19 @@ describe("openCache", () => {
       await cache.close()
     })
 
-    it("refuses an entry path that is a FIFO instead of blocking on it", async () => {
-      // Opening a FIFO for reading blocks until a writer appears. A run that
-      // blocked there would never finish and would never report why.
-      await Fs.mkdir(NodePath.dirname(entryPath()), { recursive: true })
-      execFileSync("mkfifo", [entryPath()])
+    it.skipIf(process.platform === "win32")(
+      "refuses an entry path that is a FIFO instead of blocking on it",
+      async () => {
+        // Opening a FIFO for reading blocks until a writer appears. A run that
+        // blocked there would never finish and would never report why.
+        await Fs.mkdir(NodePath.dirname(entryPath()), { recursive: true })
+        execFileSync("mkfifo", [entryPath()])
 
-      const cache = await openCache({ workspaceRoot: root })
-      expect(await cache.get("alpha")).toBeNull()
-      await cache.close()
-    })
+        const cache = await openCache({ workspaceRoot: root })
+        expect(await cache.get("alpha")).toBeNull()
+        await cache.close()
+      }
+    )
 
     it("refuses an entry path that is a directory", async () => {
       await Fs.mkdir(entryPath(), { recursive: true })

@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it } from "vitest"
 import * as AnvilExec from "../src/AnvilExec.ts"
 import { makeCli, normalizeArgv } from "../src/Cli.ts"
 import * as DockerExec from "../src/DockerExec.ts"
+import * as PackageTree from "../src/PackageTree.ts"
 import { executionPresentation } from "./fixtures/presentation.ts"
 
 const fixture = NodePath.resolve(import.meta.dirname, "fixtures/chain-exec")
@@ -166,7 +167,21 @@ const portOpen = (port: number): Promise<boolean> =>
     socket.once("error", () => resolve(false))
   })
 
-describe.sequential("Foundry package execution", () => {
+/**
+ * Whether the host has Foundry, looked up the way the exec boundary does.
+ *
+ * The fixture declares `forge` in `S.Host({ bins: ... })`, and the cases below
+ * build, test, and format real Solidity, so a runner without Foundry turns the
+ * tool's absence into red cases that say nothing about this package. The Docker
+ * suite already skips for the same reason; this one asserted the toolchain's
+ * presence implicitly.
+ */
+const hasForge = PackageTree.findOnPath("forge") !== undefined
+if (!hasForge) {
+  console.warn("Foundry package execution tests SKIPPED: no `forge` on PATH")
+}
+
+describe.skipIf(!hasForge).sequential("Foundry package execution", () => {
   it("builds and tests for real, caches both, and reports fmt drift", async () => {
     const root = await workspace()
     const built = await serve(root, ["//:foundryBuild"])
@@ -603,6 +618,16 @@ describe("Docker build, bake, and push plans", () => {
   })
 })
 
+/**
+ * Whether the host has Anvil. `AnvilExec.serviceSpec` reaches its argv only
+ * through `resolveAnvil`, so both cases below that assert on a spec need the
+ * real binary; the Mise case arranges its own absence and needs none.
+ */
+const hasAnvil = PackageTree.findOnPath("anvil") !== undefined
+if (!hasAnvil) {
+  console.warn("Anvil boundary tests SKIPPED: no `anvil` on PATH")
+}
+
 describe("host refusals and Anvil secret boundaries", () => {
   it("plans a typed Mise refusal from the declared config when mise is absent", async () => {
     const root = await workspace()
@@ -635,7 +660,7 @@ export const Package = S.Package({ targets: { tool } })
     expect(result.output).toContain("2.53.6")
   })
 
-  it("keeps the RPC URL out of Anvil argv and resolves it only at egress", async () => {
+  it.skipIf(!hasAnvil)("keeps the RPC URL out of Anvil argv and resolves it only at egress", async () => {
     const port = await freePort()
     const secretUrl = "https://secret.example.invalid/rpc-token"
     process.env["CHAIN_TEST_RPC"] = secretUrl
@@ -659,7 +684,7 @@ export const Package = S.Package({ targets: { tool } })
     }
   })
 
-  it("forks a local Anvil, readiness-gates a CLI consumer, and releases it", async () => {
+  it.skipIf(!hasAnvil)("forks a local Anvil, readiness-gates a CLI consumer, and releases it", async () => {
     const tool = await AnvilExec.resolveAnvil()
     expect(tool.ok).toBe(true)
     if (!tool.ok) return

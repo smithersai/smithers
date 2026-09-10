@@ -5,13 +5,11 @@
  * resolver runs with canned output, so the contract is exercised without a
  * Nix store: refusals are typed, resolution is memoized, declared versions
  * are asserted against the closure, and the planner folds the closure into
- * every spawning target's key. One case runs the real `nix` when the host has
- * it.
+ * every spawning target's key. No case runs the real `nix`.
  */
 import * as Input from "@smthrs/targets/Input"
 import * as Nix from "@smthrs/targets/Nix"
 import { execFileSync } from "node:child_process"
-import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
@@ -19,15 +17,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as NixExec from "../src/NixExec.ts"
 
 const rulesModule = NodePath.resolve(import.meta.dirname, "../../targets/src/Smithers.ts")
-const nixPresent = process.platform !== "win32" &&
-  (process.env["PATH"] ?? "").split(NodePath.delimiter).some((entry) => {
-    try {
-      return entry !== "" && NodeFs.statSync(NodePath.join(entry, "nix")).isFile()
-    } catch {
-      return false
-    }
-  })
-
 /** A 32-character store hash from the Nix base-32 alphabet. */
 const hash = "0123456789abcdfghijklmnpqrsvwxyz"
 
