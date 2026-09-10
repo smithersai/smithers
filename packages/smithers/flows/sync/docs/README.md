@@ -8,8 +8,12 @@ carries three things: a wire protocol, a server that serves that protocol over
 [Effect](https://effect.website) RPC, and a browser-safe client that replays a
 run's durable history and then follows it live through one stream.
 
-The history it replicates is a [`@smthrs/journal`](/api/journal) run. Nothing in
-this package writes to a journal, so a follower cannot corrupt what it reads.
+The history it replicates is a [`@smthrs/journal`](/api/journal) run. The read
+path, `SyncRpcs` served by `SyncServer` and followed by `SyncClient`, never
+writes to a journal, so a follower cannot corrupt what it reads.
+`BranchCommands` is the separate write surface: it appends admitted branch
+commands to a branch's journal run after verifying a write-scoped
+`BranchShare` capability.
 
 The 1.0 release candidate is not on npm yet, and publishes under the `next` tag
 rather than `latest`. The examples here import `@smthrs/journal` and `effect`

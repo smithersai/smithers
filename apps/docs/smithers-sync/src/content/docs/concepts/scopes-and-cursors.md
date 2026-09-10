@@ -28,7 +28,14 @@ built it.
 
 ## A cursor is per run, and exclusive
 
-`RunCursor` is `{ runId, afterSeq }`. A `WorkspaceCursor` is an array of them.
+`RunCursor` is `{ runId, afterSeq, generation }`. A `WorkspaceCursor` is an
+array of them. `generation` names the run's current history: a rewind
+increments it, and sequence order is meaningful only within one generation.
+Server cursors always carry it; a persisted request cursor may omit it for
+generation zero. Persist it with `afterSeq`, because a cursor whose generation
+differs from the run's fails with `lineage_changed`. See
+[Rewind generations](/reference/api/#rewind-generations).
+
 `afterSeq` means "entries after this number". It never means "expect the next
 number to be exactly one greater".
 
