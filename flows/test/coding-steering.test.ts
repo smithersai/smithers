@@ -15,17 +15,19 @@ import { test } from "node:test"
 import * as Notifications from "../../packages/smithers/agent/harness/src/Notifications.ts"
 import * as DurableWriter from "../../packages/smithers/flows/database/src/DurableWriter.ts"
 import * as Journal from "../../packages/smithers/flows/journal/src/Journal.ts"
+import * as JournalEvent from "../../packages/smithers/flows/journal/src/JournalEvent.ts"
 import * as Migrations from "../../packages/smithers/flows/journal/src/Migrations.ts"
 import * as SqlJournal from "../../packages/smithers/flows/journal/src/SqlJournal.ts"
 import type { Notification } from "../../packages/smithers/notifications/src/Notification.ts"
+import * as NotificationEvent from "../../packages/smithers/notifications/src/NotificationEvent.ts"
 import * as NotificationQueue from "../../packages/smithers/notifications/src/NotificationQueue.ts"
 import { ModuleOwner } from "../../packages/smithers/src/internal/ModuleOwner.ts"
 import * as LocalControl from "../../packages/smithers/src/internal/LocalControl.ts"
-import { appendFeedback, feedbackLayer, FeedbackReceipt, ReceiveFeedback, routeMessages } from "../coding/steering.ts"
+import { appendFeedback, feedbackBoundary, feedbackLayer, FeedbackReceipt, ReceiveFeedback, routeMessages } from "../coding/steering.ts"
 
 const controlLayer = ControlRuntime.layerMemory({ flows: ["coding/request", "other"].map(flowId => ({
   flowId, description: "Steering fixture", deployClass: false, executionDigest: "sha256:fixture",
-  envelope: { capabilities: [], flows: ["coding/RunRequest"] }
+  envelope: { capabilities: [], flows: ["coding/RunRequest"], budget: {} }
 })) }).pipe(Layer.provide(NodeCrypto.layer))
 
 const launch = (control: ControlRuntime.Service, flowId = "coding/request") => Effect.gen(function*() {
@@ -63,7 +65,7 @@ test("messages use coordinator receipts while settings, other roots and explicit
   const captured = await host.runPromise(Effect.gen(function*() {
     const control = yield* ControlRuntime.ControlRuntime
     const native = yield* NotificationQueue.NotificationQueue
-    const queue = routeMessages(native, control)
+    const queue = routeMessages(native, control, yield* Journal.Journal)
     const owner = yield* launch(control), other = yield* launch(control, "other")
     const note = message("prototype-feedback", owner.runId, { body: "Keep the retained prototype's compact layout." })
     const admitted = yield* queue.admit(owner.runId, note)
@@ -89,7 +91,7 @@ test("messages use coordinator receipts while settings, other roots and explicit
     assert.equal(pending.length, 1)
     assert.notEqual(pending[0]!.targetLineageId, owner.runId)
     assert.deepEqual(pending[0]!.provenance, note.provenance)
-    return { runId: owner.runId, notification: pending[0]! }
+    return { runId: owner.runId, notification: pending[0]!, control }
   }))
   // Close the real SQLite services. A fresh queue must recover the same
   // committed admission and the same boundary receipt, including an empty one.
@@ -97,33 +99,38 @@ test("messages use coordinator receipts while settings, other roots and explicit
   const reopened = ManagedRuntime.make(NotificationQueue.layer.pipe(Layer.provideMerge(await journalLayer(join(root, "control.db")))))
   t.after(() => reopened.dispose())
   await reopened.runPromise(Effect.gen(function*() {
-    const queue = yield* NotificationQueue.NotificationQueue
-    const input = { runId: captured.runId, targetLineageId: captured.notification.targetLineageId, boundary: "coordinator/after-poc/0", wouldIdle: true }
+    const queue = routeMessages(yield* NotificationQueue.NotificationQueue, captured.control, yield* Journal.Journal)
+    const input = { runId: captured.runId, targetLineageId: captured.notification.targetLineageId,
+      boundary: feedbackBoundary("coordinator", { boundary: "after-poc", revision: 0 }), wouldIdle: true }
     const first = yield* queue.drain(input)
     assert.deepEqual(first.notifications, [captured.notification])
     assert.equal(first.duplicate, false)
-    yield* queue.admit(captured.runId, { ...captured.notification, id: "later-feedback" })
+    yield* queue.admit(captured.runId, message("later-feedback", captured.runId))
     const replay = yield* queue.drain(input)
     assert.equal(replay.duplicate, true)
     assert.deepEqual(replay.notifications, first.notifications)
     assert.deepEqual((yield* queue.pending(captured.runId)).map(n => n.id), ["later-feedback"])
-    const next = yield* queue.drain({ ...input, boundary: "coordinator/before-implementation/1" })
+    const next = yield* queue.drain({ ...input, boundary: feedbackBoundary("coordinator", { boundary: "before-implementation", revision: 1 }) })
     assert.deepEqual(next.notifications.map(n => n.id), ["later-feedback"])
-    assert.equal((yield* queue.drain({ ...input, boundary: "after-correction" })).notifications.length, 0)
-    // Closing the last safe boundary is not an atomic close of the control
-    // run. A later admission remains pending; replay must not pretend it ran.
-    yield* queue.admit(captured.runId, { ...captured.notification, id: "after-final-boundary" })
-    assert.equal((yield* queue.drain({ ...input, boundary: "after-correction" })).notifications.length, 0)
+    const final = { ...input, boundary: feedbackBoundary("coordinator", { boundary: "after-correction", revision: 1 }) }
+    assert.equal((yield* queue.drain(final)).notifications.length, 0)
+    const closed = yield* queue.admit(captured.runId, message("after-final-boundary", captured.runId)).pipe(Effect.flip)
+    assert.match(closed.message, /finished receiving feedback/)
+    assert.equal((yield* queue.drain(final)).notifications.length, 0)
   }))
   await reopened.dispose()
-  const cold = ManagedRuntime.make(NotificationQueue.layer.pipe(Layer.provide(await journalLayer(join(root, "control.db")))))
+  const cold = ManagedRuntime.make(NotificationQueue.layer.pipe(Layer.provideMerge(await journalLayer(join(root, "control.db")))))
   t.after(() => cold.dispose())
   await cold.runPromise(Effect.gen(function*() {
-    const queue = yield* NotificationQueue.NotificationQueue
-    const input = { runId: captured.runId, targetLineageId: captured.notification.targetLineageId, boundary: "coordinator/after-poc/0", wouldIdle: true }
+    const queue = routeMessages(yield* NotificationQueue.NotificationQueue, captured.control, yield* Journal.Journal)
+    const input = { runId: captured.runId, targetLineageId: captured.notification.targetLineageId,
+      boundary: feedbackBoundary("coordinator", { boundary: "after-poc", revision: 0 }), wouldIdle: true }
     assert.deepEqual((yield* queue.drain(input)).notifications, [captured.notification])
-    assert.equal((yield* queue.drain({ ...input, boundary: "after-correction" })).duplicate, true)
-    assert.deepEqual((yield* queue.pending(captured.runId)).map(n => n.id), ["after-final-boundary"])
+    assert.equal((yield* queue.drain({ ...input, boundary: feedbackBoundary("coordinator", { boundary: "after-correction", revision: 1 }) })).duplicate, true)
+    assert.deepEqual(yield* queue.pending(captured.runId), [])
+    assert.equal((yield* queue.admit(captured.runId, { ...captured.notification, targetLineageId: captured.runId })).duplicate, true)
+    const closed = yield* queue.admit(captured.runId, message("cold-late", captured.runId)).pipe(Effect.flip)
+    assert.match(closed.message, /finished receiving feedback/)
   }))
 })
 
@@ -145,11 +152,11 @@ test("routing refuses absent, stale or unapproved coding owners and preserves th
       { ...control, getPlan: (id: string) => control.getPlan(id).pipe(Effect.map(plan => ({ ...plan, card: { ...plan.card, digest: "stale" } }))) },
       { ...control, getPlan: (id: string) => control.getPlan(id).pipe(Effect.map(plan => ({ ...plan, card: { ...plan.card, envelope: { ...plan.card.envelope, flows: [] } } }))) }
     ]) {
-      const refused = yield* routeMessages(native, altered).admit(owner.runId, message("refused", owner.runId)).pipe(Effect.flip)
+      const refused = yield* routeMessages(native, altered, journal).admit(owner.runId, message("refused", owner.runId)).pipe(Effect.flip)
       assert.equal(refused._tag, "/notifications/NotificationError")
     }
     assert.deepEqual(yield* native.pending(owner.runId), [])
-    const queue = routeMessages(native, control)
+    const queue = routeMessages(native, control, journal)
     yield* journal.transact(Effect.gen(function*() {
       yield* queue.admit(owner.runId, message("rolled-back", owner.runId))
       return yield* Effect.fail("rollback")
@@ -163,6 +170,126 @@ test("routing refuses absent, stale or unapproved coding owners and preserves th
   }))
 })
 
+test("independent SQLite writers serialize final feedback closure with new admissions", { timeout: 60_000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), "coding-steering-final-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const filename = join(root, "control.db")
+  const writer = ManagedRuntime.make(Layer.mergeAll(controlLayer,
+    NotificationQueue.layer.pipe(Layer.provideMerge(await journalLayer(filename)))))
+  const closer = ManagedRuntime.make(NotificationQueue.layer.pipe(Layer.provideMerge(await journalLayer(filename))))
+  t.after(() => writer.dispose())
+  t.after(() => closer.dispose())
+  const control = await writer.runPromise(ControlRuntime.ControlRuntime)
+  const queue = await writer.runPromise(Effect.gen(function*() {
+    return routeMessages(yield* NotificationQueue.NotificationQueue, control, yield* Journal.Journal)
+  }))
+  const native = await closer.runPromise(NotificationQueue.NotificationQueue)
+  for (let iteration = 0; iteration < 8; iteration++) {
+    const owner = await writer.runPromise(launch(control))
+    const targetLineageId = JSON.stringify(["coding/request", owner.runId])
+    const note = message(`simultaneous-${iteration}`, owner.runId)
+    const input = { runId: owner.runId, targetLineageId, wouldIdle: true,
+      boundary: feedbackBoundary("coordinator", { boundary: "after-correction", revision: 0 }) }
+    // Neither writer has a process-local lock in common. The same database's
+    // transaction must decide whether this boundary consumes the message or
+    // the admission refuses; a committed message may never be left behind.
+    const admission = () => writer.runPromise(queue.admit(owner.runId, note))
+    const closure = () => closer.runPromise(native.drain(input))
+    const [admitted, drained] = iteration % 2 === 0
+      ? await Promise.allSettled([admission(), closure()])
+      : await (async () => {
+        const [closed, accepted] = await Promise.allSettled([closure(), admission()])
+        return [accepted, closed] as const
+      })()
+    assert.equal(drained.status, "fulfilled")
+    if (drained.status !== "fulfilled") throw drained.reason
+    if (admitted.status === "fulfilled") {
+      assert.deepEqual(drained.value.notifications.map(note => note.id), [note.id])
+    } else {
+      assert.match(String(admitted.reason), /finished receiving feedback/)
+      assert.deepEqual(drained.value.notifications, [])
+    }
+    assert.deepEqual(await writer.runPromise(queue.pending(owner.runId)), [])
+  }
+})
+
+test("only canonical native final receipts close the coordinator; malformed closure evidence refuses", { timeout: 60_000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), "coding-steering-proof-"))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const host = ManagedRuntime.make(Layer.mergeAll(controlLayer,
+    NotificationQueue.layer.pipe(Layer.provideMerge(await journalLayer(join(root, "control.db"))))))
+  t.after(() => host.dispose())
+  await host.runPromise(Effect.gen(function*() {
+    const control = yield* ControlRuntime.ControlRuntime
+    const native = yield* NotificationQueue.NotificationQueue
+    const journal = yield* Journal.Journal
+    const queue = routeMessages(native, control, journal)
+    const owner = yield* launch(control)
+    const target = JSON.stringify(["coding/request", owner.runId])
+    const final = feedbackBoundary("coordinator", { boundary: "after-correction", revision: 0 })
+    // A real, empty final-looking receipt in somebody else's lineage has no
+    // authority over the request coordinator.
+    yield* native.drain({ runId: owner.runId, targetLineageId: "another-lineage", boundary: final, wouldIdle: true })
+    yield* native.drain({ runId: owner.runId, targetLineageId: target,
+      boundary: feedbackBoundary("coordinator", { boundary: "after-poc", revision: 0 }), wouldIdle: true })
+    yield* queue.admit(owner.runId, message("still-open", owner.runId))
+    const consumed = yield* native.drain({ runId: owner.runId, targetLineageId: target, boundary: final, wouldIdle: true })
+    assert.equal(consumed.notifications.length, 1)
+    assert.equal((yield* queue.admit(owner.runId, message("after-nonempty-final", owner.runId))).decision, "admitted")
+
+    for (const fault of ["source", "sequence", "boundary", "noncanonical", "payload"] as const) {
+      const owner = yield* launch(control)
+      const target = JSON.stringify(["coding/request", owner.runId])
+      const boundary = fault === "boundary" ? "after-correction" : fault === "noncanonical"
+        ? '[ "coordinator", "after-correction", 0 ]' : final
+      yield* journal.emitDurableUnfenced(new JournalEvent.Input({
+        runId: JournalEvent.RunId.make(owner.runId),
+        sourceId: JournalEvent.SourceId.make(fault === "source" ? "forged-drain" :
+          `/notifications/drain/${encodeURIComponent(target)}/${encodeURIComponent(boundary)}`),
+        sourceSeq: JournalEvent.SourceSeq.make(fault === "sequence" ? 1 : 0),
+        eventType: NotificationEvent.PromotedEventType,
+        payload: { targetLineageId: target, boundary, ids: fault === "payload" ? "invalid" : [] }
+      }))
+      const refused = yield* queue.admit(owner.runId, message(`refused-${fault}`, owner.runId)).pipe(Effect.flip)
+      assert.match(refused.message, /closure evidence is unreadable/)
+      assert.deepEqual(yield* native.pending(owner.runId), [])
+    }
+  }))
+})
+
+test("closure reads refuse non-advancing or unbounded journal pages before admission", async () => {
+  const host = ManagedRuntime.make(controlLayer)
+  try {
+    await host.runPromise(Effect.gen(function*() {
+      const control = yield* ControlRuntime.ControlRuntime
+      const owner = yield* launch(control)
+      let admissions = 0
+      const queue = NotificationQueue.makeNoop({ admit: () => Effect.sync(() => {
+        admissions++
+        return { notificationId: "never", decision: "admitted", duplicate: false, seq: 0 } as const
+      }) })
+      const row = (seq: number) => new JournalEvent.Entry({
+        runId: JournalEvent.RunId.make(owner.runId), seq: JournalEvent.Seq.make(seq),
+        eventId: `fixture-${seq}`, sourceId: JournalEvent.SourceId.make("fixture"),
+        sourceSeq: JournalEvent.SourceSeq.make(seq), emittedAtMs: 0, eventType: "test.foreign", payload: {}, meta: {}
+      })
+      for (const fault of ["empty", "repeated", "unordered", "oversized", "unbounded"] as const) {
+        let pages = 0
+        const journal = Journal.makeNoop({ entries: ({ after }) => Effect.sync(() => {
+          pages++
+          return { hasMore: true, entries: fault === "empty" ? [] : fault === "repeated" ? [row(0)] :
+            fault === "unordered" ? [row(1), row(0)] : fault === "oversized" ? Array.from({ length: 1001 }, (_, i) => row(i)) :
+            [row((after ?? -1) + 1)] }
+        }) })
+        const error = yield* routeMessages(queue, control, journal).admit(owner.runId, message(fault, owner.runId)).pipe(Effect.flip)
+        assert.match(error.message, /closure evidence is unreadable/)
+        assert.equal(pages, fault === "unbounded" ? 100 : fault === "repeated" ? 2 : 1)
+        assert.equal(admissions, 0)
+      }
+    }))
+  } finally { await host.dispose() }
+})
+
 test("actual feedback action needs a proved owner and retains attributed overflow before refusing planning", { timeout: 60_000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), "coding-steering-action-"))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -171,7 +298,7 @@ test("actual feedback action needs a proved owner and retains attributed overflo
   t.after(() => parent.dispose())
   const { queue, owner } = await parent.runPromise(Effect.gen(function*() {
     const control = yield* ControlRuntime.ControlRuntime
-    return { owner: yield* launch(control), queue: routeMessages(yield* NotificationQueue.NotificationQueue, control) }
+    return { owner: yield* launch(control), queue: routeMessages(yield* NotificationQueue.NotificationQueue, control, yield* Journal.Journal) }
   }))
   await parent.runPromise(queue.admit(owner.runId, message("oversized", owner.runId, { kind: "Message", body: "x".repeat(65_539) })))
   const Probe = Flow.make("test/ReceiveFeedback", {
@@ -188,6 +315,8 @@ test("actual feedback action needs a proved owner and retains attributed overflo
     const runtime = build(identity)
     try {
       const error = await runtime.runPromise(Probe.execute({}).pipe(Effect.flip, Effect.scoped))
+      assert.equal(error._tag, "coding/Error")
+      assert.ok("code" in error)
       assert.equal(error.code, "unavailable")
     } finally { await runtime.dispose() }
   }
@@ -220,10 +349,10 @@ test("private host composition shares one decorated queue with Control and the e
     return ControlExecutor.makeNoop()
   }))
   const host = ManagedRuntime.make(LocalControl.layer(Registry.layerNoop(), {
-    runtime: controlLayer, journal: await journalLayer(join(root, "control.db"))
-  }, executor, (queue, control) => {
+    runtime: controlLayer, journal: (await journalLayer(join(root, "control.db"))).pipe(Layer.orDie)
+  }, executor, (queue, control, journal) => {
     decorations++
-    decorated = routeMessages(queue, control)
+    decorated = routeMessages(queue, control, journal)
     return decorated
   }).pipe(Layer.provideMerge(controlLayer)))
   t.after(() => host.dispose())

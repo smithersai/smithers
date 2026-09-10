@@ -3,7 +3,7 @@
  */
 import type { Control, ControlExecutor } from "@smthrs/control"
 import { ControlLive, ControlRuntime } from "@smthrs/control"
-import type { Journal } from "@smthrs/journal"
+import { Journal } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import type { Registry } from "@smthrs/registry"
 import { Effect, Layer } from "effect"
@@ -13,7 +13,8 @@ import * as ExecutorOwnership from "../ExecutorOwnership.ts"
 /** Private host policy over the same durable queue and runtime. */
 export type NotificationDecorator = (
   queue: NotificationQueue.Service,
-  control: ControlRuntime.Service
+  control: ControlRuntime.Service,
+  journal: Journal.Service
 ) => NotificationQueue.Service
 
 /** Composes local control with its owned executor and durable notification queue.
@@ -36,9 +37,10 @@ export const layer = (
   const notifications = decorateNotifications === undefined ? queue : Layer.effect(
     NotificationQueue.NotificationQueue,
     Effect.gen(function*() {
-      return decorateNotifications(yield* NotificationQueue.NotificationQueue, yield* ControlRuntime.ControlRuntime)
+      return decorateNotifications(yield* NotificationQueue.NotificationQueue, yield* ControlRuntime.ControlRuntime,
+        yield* Journal.Journal)
     })
-  ).pipe(Layer.provide([queue, engine.runtime]))
+  ).pipe(Layer.provide([queue, engine.runtime, engine.journal]))
   return Layer.merge((executor === undefined ? ControlLive.layer : ControlLive.layer.pipe(Layer.provide(executor))).pipe(
     Layer.provide([
       engine.runtime,

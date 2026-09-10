@@ -2,7 +2,10 @@
 import type * as ControlRuntime from "@smthrs/control/ControlRuntime"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Effect, Option, Schema } from "effect"
+import type * as Journal from "../../packages/smithers/flows/journal/src/Journal.ts"
+import * as JournalEvent from "../../packages/smithers/flows/journal/src/JournalEvent.ts"
 import * as Notification from "../../packages/smithers/notifications/src/Notification.ts"
+import * as NotificationEvent from "../../packages/smithers/notifications/src/NotificationEvent.ts"
 import * as NotificationQueue from "../../packages/smithers/notifications/src/NotificationQueue.ts"
 import { defaultCapacity } from "../../packages/smithers/notifications/src/NotificationState.ts"
 import * as SteerPayload from "../../packages/smithers/notifications/src/SteerPayload.ts"
@@ -20,35 +23,92 @@ const unavailable = (notificationId: string) => new NotificationQueue.Notificati
  * the original admit Effect preserves the enclosing control transaction.
  * All Message payloads use this policy; provenance strings are not identity roles.
  */
-export const routeMessages = (queue: NotificationQueue.Service, control: ControlRuntime.Service): NotificationQueue.Service => ({
+export const routeMessages = (queue: NotificationQueue.Service, control: ControlRuntime.Service,
+  journal: Journal.Service): NotificationQueue.Service => ({
   ...queue,
-  admit: (runId, notification) => Effect.gen(function*() {
+  admit: (runId, notification) => Effect.suspend(() => {
     if (notification.targetLineageId !== runId || SteerPayload.decode(notification.payload)?.kind !== "Message") {
-      return yield* queue.admit(runId, notification)
+      return queue.admit(runId, notification)
     }
-    const run = yield* control.getRun(runId).pipe(Effect.mapError(() => unavailable(notification.id)))
-    if (run.flowId !== flowId) return yield* queue.admit(runId, notification)
-    if (run.planId === undefined || run.status === "cancelled" || run.status === "failed" || run.status === "completed") {
-      return yield* Effect.fail(unavailable(notification.id))
-    }
-    const plan = yield* control.getPlan(run.planId).pipe(Effect.mapError(() => unavailable(notification.id)))
-    if (plan.decision !== "approved" || plan.card.flowId !== flowId || run.planDigest !== plan.card.digest ||
-        plan.card.executionDigest === undefined || !plan.card.envelope.flows.includes("coding/RunRequest")) {
-      return yield* Effect.fail(unavailable(notification.id))
-    }
-    const receipt = yield* queue.admit(runId, { ...notification, targetLineageId: lineage(runId) })
-    // Control.steer currently ignores rejected-full. In this configured route
-    // an accepted request message must actually have a retained notification.
-    if (receipt.decision === "rejected-full") return yield* Effect.fail(new NotificationQueue.NotificationError({
-      code: "notification_unavailable", notificationId: notification.id,
-      message: "Request feedback queue is full; retry after the coordinator receives pending messages"
+    return journal.transact(Effect.gen(function*() {
+      const run = yield* control.getRun(runId).pipe(Effect.mapError(() => unavailable(notification.id)))
+      if (run.flowId !== flowId) return yield* queue.admit(runId, notification)
+      if (run.planId === undefined || run.status === "cancelled" || run.status === "failed" || run.status === "completed") {
+        return yield* Effect.fail(unavailable(notification.id))
+      }
+      const plan = yield* control.getPlan(run.planId).pipe(Effect.mapError(() => unavailable(notification.id)))
+      if (plan.decision !== "approved" || plan.card.flowId !== flowId || run.planDigest !== plan.card.digest ||
+          plan.card.executionDigest === undefined || !plan.card.envelope.flows.includes("coding/RunRequest")) {
+        return yield* Effect.fail(unavailable(notification.id))
+      }
+      const closed = yield* isClosed(journal, runId)
+      const receipt = yield* queue.admit(runId, { ...notification, targetLineageId: lineage(runId) })
+      if (receipt.duplicate) return receipt
+      // A duplicate keeps its original acceptance; a new admission after the
+      // final empty receipt rolls back with this transaction, including the
+      // queue's sequence allocation and after-commit publication.
+      if (closed) return yield* Effect.fail(new NotificationQueue.NotificationError({
+        code: "notification_unavailable", notificationId: notification.id,
+        message: "The request coordinator has finished receiving feedback; start a new request with this message"
+      }))
+      // Control.steer currently ignores rejected-full. In this configured route
+      // an accepted request message must actually have a retained notification.
+      if (receipt.decision === "rejected-full") return yield* Effect.fail(new NotificationQueue.NotificationError({
+        code: "notification_unavailable", notificationId: notification.id,
+        message: "Request feedback queue is full; retry after the coordinator receives pending messages"
+      }))
+      return receipt
     }))
-    return receipt
   })
 })
 
 const Boundary = Schema.Literals(["after-poc", "before-implementation", "after-correction"])
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const BoundaryTuple = Schema.Tuple([Schema.NonEmptyString, Boundary, Revision])
+const decodeBoundary = Schema.decodeUnknownOption(Schema.fromJsonString(BoundaryTuple))
+/** The queue treats this as an opaque durable key; only this recipe interprets it. */
+export const feedbackBoundary = (executionId: string, input: typeof ReceiveFeedback.payloadSchema.Type) =>
+  JSON.stringify([executionId, input.boundary, input.revision])
+
+const unreadable = () => new NotificationQueue.NotificationError({
+  code: "notification_unavailable", message: "Request feedback closure evidence is unreadable"
+})
+/** Read the existing promotion receipts, never a follow stream or another
+ * ledger. The caller's writer transaction serializes this scan/admission with
+ * the coordinator's final drain. A finite snapshot must advance every page.
+ */
+const isClosed = (journal: Journal.Service, rootId: string) => Effect.gen(function*() {
+  let after: JournalEvent.Seq | undefined
+  const target = lineage(rootId)
+  // Refuse implausibly large or non-terminating adapters while holding the
+  // writer transaction; a feedback admission must not lock the database forever.
+  for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
+    const page = yield* journal.entries({ runId: JournalEvent.RunId.make(rootId), limit: 1000,
+      ...(after === undefined ? {} : { after }) })
+    if (page.entries.length > 1000) return yield* Effect.fail(unreadable())
+    let previous = after ?? -1
+    for (const entry of page.entries) {
+      if (entry.runId !== rootId || entry.seq <= previous) return yield* Effect.fail(unreadable())
+      previous = entry.seq
+      if (entry.eventType !== NotificationEvent.PromotedEventType) continue
+      const decoded = NotificationEvent.fromEntry(entry)
+      if (Option.isNone(decoded) || !NotificationEvent.isPromoted(decoded.value)) return yield* Effect.fail(unreadable())
+      const receipt = decoded.value
+      if (receipt.targetLineageId !== target) continue
+      const boundary = decodeBoundary(receipt.boundary)
+      if (Option.isNone(boundary) || JSON.stringify(boundary.value) !== receipt.boundary || entry.sourceSeq !== 0 ||
+          entry.sourceId !== `/notifications/drain/${encodeURIComponent(target)}/${encodeURIComponent(receipt.boundary)}`) {
+        return yield* Effect.fail(unreadable())
+      }
+      if (boundary.value[1] === "after-correction" && receipt.ids.length === 0) return true
+    }
+    if (!page.hasMore) return false
+    const next = page.entries.at(-1)?.seq
+    if (next === undefined || next <= (after ?? -1)) return yield* Effect.fail(unreadable())
+    after = next
+  }
+  return yield* Effect.fail(unreadable())
+})
 export const FeedbackReceipt = Schema.Struct({
   boundary: Schema.NonEmptyString,
   messages: Schema.Array(Notification.Notification).check(Schema.isMaxLength(defaultCapacity))
@@ -71,7 +131,7 @@ export const receiveFeedback = (input: typeof ReceiveFeedback.payloadSchema.Type
   }))
   const instance = yield* FlowRuntime.FlowInstance
   const queue = yield* NotificationQueue.NotificationQueue
-  const boundary = JSON.stringify([instance.executionId, input.boundary, input.revision])
+  const boundary = feedbackBoundary(instance.executionId, input)
   const receipt = yield* queue.drain({
     runId: owner.value.rootId, targetLineageId: lineage(owner.value.rootId), boundary, wouldIdle: true
   }).pipe(Effect.mapError(() => new CodingError({ code: "unavailable", message: `Request feedback at ${boundary} could not be read` })))
