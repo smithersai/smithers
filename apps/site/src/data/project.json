@@ -6,7 +6,7 @@
     "uiCoverage": "Offline Chromium tests cover the included web UI.",
     "separateAcceptance": "Packaged desktop and hosted deployments require separate acceptance evidence."
   },
-  "tagline": "Build smart workflows for your codebase. Enable agents to work smarter, faster, and cheaper.",
+  "tagline": "The codebase maintainer agent",
   "animation": {
     "dark": "/images/how-smithers-works.gif",
     "light": "/images/how-smithers-works-light.gif",
