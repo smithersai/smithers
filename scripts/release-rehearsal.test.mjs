@@ -386,7 +386,9 @@ test("release rebuilds and byte-compares the committed wasm before packing", () 
   const install = step("Install pinned Rust toolchain")
   assert.ok(install, "release must install the pinned Rust toolchain")
   assert.deepEqual(install, ci.jobs["wasm-repro"].steps.find((entry) => entry.name === install.name))
-  for (const expected of ci.jobs["wasm-repro"].steps.filter((entry) => entry.run?.includes("smithers-build"))) {
+  const mirrored = ci.jobs["wasm-repro"].steps.filter((entry) => /pnpm exec (?:smithers-build|smthrs) /.test(entry.run ?? ""))
+  assert.equal(mirrored.length, 2, "the wasm mirror must cover both smthrs steps; an executable rename must not empty it")
+  for (const expected of mirrored) {
     const actual = step(expected.name)
     assert.deepEqual(actual, expected)
     assert.ok(steps.indexOf(install) < steps.indexOf(actual))
@@ -424,6 +426,46 @@ test("a colocated rehearsal skips initialization and continues to the next gate"
     rmSync(root, { recursive: true, force: true })
   }
 })
+test("the driver switches PATH to the toolchain each setup-node step pins", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "release-toolchain-switch-")))
+  try {
+    mkdirSync(join(root, "scripts"))
+    cpSync(join(repoRoot, "scripts/release-rehearsal.mjs"), join(root, "scripts/release-rehearsal.mjs"))
+    const toolchain = (version) => {
+      const bin = join(root, `node-${version}`, "bin")
+      mkdirSync(bin, { recursive: true })
+      writeFileSync(join(bin, "node"), `#!/bin/sh\n[ "$1" = --version ] || exit 90\nprintf 'v${version}\\n'\n`)
+      chmodSync(join(bin, "node"), 0o755)
+      return bin
+    }
+    writeFileSync(join(root, "workflow.yml"), [
+      "name: Fixture", "jobs:", "  publish:", "    steps:",
+      "      - uses: actions/setup-node@v4",
+      "        with:",
+      "          node-version: 22.19.0",
+      "      - name: Gate on the default line",
+      "        run: test \"$(node --version)\" = 'v22.19.0'",
+      "      - name: Install the supported Node 24 floor",
+      "        uses: actions/setup-node@v4",
+      "        with:",
+      "          node-version: 24.11.0",
+      "      - name: Gate on the floor line",
+      "        run: test \"$(node --version)\" = 'v24.11.0'"
+    ].join("\n"))
+    const result = spawnSync(process.execPath, [
+      join(root, "scripts/release-rehearsal.mjs"), "--workflow", "workflow.yml",
+      "--transcript", join(root, "transcript.json"),
+      "--node", `22.19.0=${toolchain("22.19.0")}`, "--node", `24.11.0=${toolchain("24.11.0")}`
+    ], { encoding: "utf8", timeout: 30_000 })
+    assert.equal(result.status, 0, result.stdout + result.stderr)
+    const transcript = JSON.parse(readFileSync(join(root, "transcript.json"), "utf8"))
+    assert.deepEqual(transcript.steps.map((entry) => entry.status), ["skipped", "passed", "skipped", "passed"])
+    assert.match(result.stdout, /PATH now resolves Node 24\.11\.0/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test("release checks out the requested candidate, serializes its tag, and archives before publication", () => {
   const contexts = { github: { ref: "refs/heads/main", ref_name: "main" }, inputs: { releaseTag: "v1.0.0-rc.0" } }
   const steps = release.jobs.publish.steps

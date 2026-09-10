@@ -313,9 +313,21 @@ gh workflow run release.yml -f releaseTag=v<version> -f dryRun=true
 ```
 
 `node scripts/release-rehearsal.mjs --tag v<version>` runs the same workflow's
-`run:` bodies locally, against the tree you have. `--only` and `--skip` select
-steps by name; `--skip Pack --skip Build` is the fast pass over the validation
-half.
+`run:` bodies locally, against the tree you have. The workflow pins two Node
+lines, 22.19.0 for the gates and 24.11.0 for the floor smoke test, and each
+`setup-node` step switches PATH to the toolchain pinned for its version, so
+pass a bin directory for each:
+
+```sh
+node scripts/release-rehearsal.mjs --tag v<version> \
+  --node 22.19.0=/path/to/node-22.19.0/bin \
+  --node 24.11.0=/path/to/node-24.11.0/bin
+```
+
+A version with no `--node` pin keeps the toolchain already on PATH, and the
+step's own `node --version` assertion fails when that toolchain is the wrong
+line. `--only` and `--skip` select steps by name; `--skip Pack --skip Build`
+is the fast pass over the validation half.
 
 ### 2. Cut
 

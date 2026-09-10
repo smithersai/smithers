@@ -381,11 +381,13 @@ jobs:
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: Rebuild and byte-compare flows_jj.wasm
         run: pnpm exec smthrs test '//crates/flows-jj:wasmReproducibility' --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: Build all workspaces from clean artifacts
         if: env.CANDIDATE_RUN_ID == ''
         run: node scripts/build-release.mjs

@@ -25,6 +25,10 @@
  *                       SMTHRS_ALLOW_PUBLISH=1 is also set
  *   --only <name>       run only steps whose name contains <name> (repeatable)
  *   --skip <name>       skip a step whose name contains <name> (repeatable)
+ *   --node <spec>       pin a Node toolchain bin directory the way setup-node
+ *                       would: `<version>=<dir>` puts <dir> on PATH when a
+ *                       setup-node step asks for <version>, and a bare <dir>
+ *                       applies until the first pinned switch (repeatable)
  *   --runner-temp <dir> reuse this directory as runner.temp, so a targeted run
  *                       can read the artifacts an earlier run produced
  *   --keep-going        run every remaining step after a failure instead of
@@ -381,7 +385,7 @@ export const localEquivalents = {
   "actions/checkout": "this checkout is the tree under test",
   "docker://rhysd/actionlint": "the installed actionlint binary validates workflow syntax",
   "pnpm/action-setup": "pnpm on PATH",
-  "actions/setup-node": "the Node and registry pin applied to PATH by --node",
+  "actions/setup-node": "the Node toolchain bin directory pinned by --node <version>=<dir>",
   "oven-sh/setup-bun": "bun on PATH",
   "actions/setup-go": "the Go toolchain already installed on PATH",
   "foundry-rs/foundry-toolchain": "forge and anvil already installed on PATH",
@@ -435,7 +439,7 @@ const parseArguments = (argv) => {
     runnerTemp: undefined,
     transcript: undefined,
     log: undefined,
-    node: undefined
+    node: { fallback: undefined, byVersion: new Map() }
   }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
@@ -469,9 +473,13 @@ const parseArguments = (argv) => {
       case "--log":
         options.log = next()
         break
-      case "--node":
-        options.node = next()
+      case "--node": {
+        const spec = next()
+        const separator = spec.indexOf("=")
+        if (separator === -1) options.node.fallback = spec
+        else options.node.byVersion.set(spec.slice(0, separator), spec.slice(separator + 1))
         break
+      }
       case "--publish":
         options.publish = true
         break
@@ -513,7 +521,7 @@ export const main = async (argv) => {
     contexts.env[key] = interpolate(value, contexts)
   }
 
-  const pathPrefix = options.node === undefined ? [] : [resolve(options.node)]
+  let pathPrefix = options.node.fallback === undefined ? [] : [resolve(options.node.fallback)]
   const results = []
   let failed = false
   for (const step of job.steps) {
@@ -539,6 +547,17 @@ export const main = async (argv) => {
       continue
     }
     if (step.uses !== undefined) {
+      if (step.uses.split("@")[0] === "actions/setup-node") {
+        const version = interpolate(String(step.with?.["node-version"] ?? ""), contexts)
+        const pinned = options.node.byVersion.get(version)
+        if (pinned === undefined) {
+          announce("skipped", `GitHub action, locally: no --node ${version}=<dir> pin; PATH keeps the current toolchain`)
+        } else {
+          pathPrefix = [resolve(pinned)]
+          announce("skipped", `GitHub action, locally: PATH now resolves Node ${version} from ${pathPrefix[0]}`)
+        }
+        continue
+      }
       announce("skipped", `GitHub action, locally: ${localEquivalent(step.uses)}`)
       continue
     }
