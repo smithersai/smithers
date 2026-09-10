@@ -20,11 +20,13 @@ listing the commands runs arbitrary user code and pays for every dependency in
 the tree. Skip the import, and you advertise hand-written descriptions that
 drift away from what each flow actually accepts.
 
-This package refuses the trade. Discovery reads metadata only, so a flow whose
-module throws at import time still appears in the listing. Dispatch imports one
-module, the one being called, and decodes the arguments through that flow's real
-Effect schema. `--help`, `--schema`, the OpenAPI document, and the MCP tool list
-publish that same schema, so the advertised input is the accepted input.
+This package refuses the trade. The scan and the agent's list operation read
+metadata only, so a flow whose module throws at import time still appears in
+the listing. Dispatch imports one module, the one being called, and decodes the
+arguments through that flow's real Effect schema. `--help`, `--schema`, the
+OpenAPI document, and the MCP tool list publish that same schema, so the
+advertised input is the accepted input; the first such discovery imports every
+visible module once and caches the projection.
 
 Two halves share one immutable route model:
 

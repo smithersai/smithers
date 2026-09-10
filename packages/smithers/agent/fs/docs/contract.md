@@ -183,9 +183,11 @@ keys are refused without executing user code.
 | Invocation JSON string   |     65536 encoded bytes |
 | Invocation JSON key      |      1024 encoded bytes |
 
-Exact limits succeed. One-over inputs fail with `resource_limit` or
-`invalid_route`, depending on whether the bound belongs to the container or
-to one route declaration.
+Exact limits succeed. Route, tree, and command bounds fail with
+`resource_limit` or `invalid_route`, depending on whether the bound belongs
+to the container or to one route declaration. Invocation values above the
+JSON bounds are admission failures instead: input fails `decode_failed` and
+output fails `encode_failed`.
 
 ## Error codes
 
@@ -199,12 +201,12 @@ to one route declaration.
 | `unknown_command`        | No visible route, or no exact route, matched.                    |
 | `duplicate_route`        | Two routes claimed one command identity, `self` included.        |
 | `invalid_route`          | Route metadata violated its immutable contract.                  |
-| `resource_limit`         | A bounded command, scan, trie, or value exceeded its limit.      |
+| `resource_limit`         | A bounded command, scan, or trie exceeded its limit.             |
 | `load_failed`            | The selected module could not be imported or exports no flow.    |
 | `unsupported_body`       | A non-module route was sent to the loader.                       |
 | `unsupported_schema`     | A schema locator or schema cannot describe command input.        |
-| `decode_failed`          | Input failed descriptor or Effect schema decoding.               |
-| `encode_failed`          | Output failed Effect schema encoding.                            |
+| `decode_failed`          | Input failed schema decoding or exceeded the JSON bounds.        |
+| `encode_failed`          | Output failed schema encoding or exceeded the JSON bounds.       |
 | `invocation_unavailable` | Execution is unavailable or failed unexpectedly.                 |
 
 For cause-by-cause remedies, see [Troubleshooting](./troubleshooting.md).

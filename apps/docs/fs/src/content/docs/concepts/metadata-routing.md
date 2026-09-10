@@ -11,19 +11,23 @@ becomes a set of immutable routes without a single flow module being
 imported. Understanding why discovery avoids imports, and where route names
 come from, explains every surface the package projects later.
 
-## Discovery never runs user code
+## Scanning never runs user code
 
 Listing available commands must not execute them. If learning a flow's name
 required importing its module, every scan would run arbitrary user code and
-pay the cost of every dependency in the tree. So discovery is metadata-only:
+pay the cost of every dependency in the tree. So the scan is metadata-only:
 the [registry](https://registry.smithers.sh/reference/api/) reads entries statically, owning entry
 precedence, metadata parsing, directive detection, and bounded reads, and
 `FileRouter.scan` projects the resulting descriptors into routes.
+`Command.list` reads that same metadata and imports nothing.
 
 The proof is in the failure modes. A flow whose module throws at import time
 still scans: the route appears in `ScanResult.routes` because the module body
-never ran. The module is imported only when a command naming its route
-dispatches, and only that module is imported.
+never ran. Beyond scan and list, imports are deliberate and narrow. A
+dispatch imports only the one module its command names. The first Incur help,
+OpenAPI, or MCP discovery imports every visible module once, because
+publishing each flow's real input schema requires loading it, and caches the
+projection for the lifetime of the CLI.
 
 ## Route identity comes from paths
 

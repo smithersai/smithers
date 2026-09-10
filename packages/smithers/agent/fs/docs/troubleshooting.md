@@ -43,10 +43,11 @@ Inspect the flows tree for entries the registry cannot parse, and see the
 ### `resource_limit`
 
 A bounded container exceeded its limit: more than 256 routes from one scan,
-an oversized command string or token, an overlong route name in a resolution
-request, or an invocation value above the JSON bounds. Exact limits succeed;
-one over fails. For the full table, see
-[Resource limits](./contract.md#resource-limits).
+an oversized command string or token, or an overlong route name in a
+resolution request. Exact limits succeed; one over fails. Invocation values
+above the JSON bounds are admission failures instead, reported as
+`decode_failed` for input and `encode_failed` for output. For the full table,
+see [Resource limits](./contract.md#resource-limits).
 
 ## Route identity failures
 
@@ -136,7 +137,9 @@ route's input locator at a module field or an inline document instead.
 
 ### `decode_failed`
 
-Input failed descriptor or Effect schema decoding. The advertised JSON Schema
+Input failed descriptor or Effect schema decoding, or the input value
+exceeded the JSON admission bounds on encoded bytes, depth, members, nodes,
+string length, or key length. The advertised JSON Schema
 refuses wrong shapes before the flow runs, and the authoritative Effect
 decoder refuses what JSON Schema cannot express, such as refinements (a
 non-empty string), non-finite numbers, and values outside inert JSON. A
@@ -147,8 +150,9 @@ without echoing the offending value.
 
 ### `encode_failed`
 
-Output failed Effect schema encoding. The invoker returned a value the flow's
-output schema rejects, so the run's result never crossed the boundary. Fix
+Output failed Effect schema encoding, or the output value exceeded the JSON
+admission bounds. The invoker returned a value the flow's output schema
+rejects or cannot carry, so the run's result never crossed the boundary. Fix
 the invoker (in tests, the stub) to return the declared output shape.
 
 ## Invocation failures

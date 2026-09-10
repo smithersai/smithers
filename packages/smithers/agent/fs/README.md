@@ -7,10 +7,13 @@ agents, shells, HTTP clients, and MCP tools.
 
 `@smthrs/fs` reads a flows tree without importing a single flow module, records
 what it finds as immutable path-named routes, and projects the runnable ones
-onto four surfaces. Discovery stays metadata-only, so listing the commands never
-runs user code and a flow whose module throws at import time still appears.
-Dispatch imports one module, the one being called, and that flow's own Effect
-schema decodes the input and encodes the output. `Command.make` exposes routes
+onto four surfaces. `FileRouter.scan` and `Command.list` stay metadata-only, so
+listing the commands through them never runs user code and a flow whose module
+throws at import time still appears. The first Incur help, OpenAPI, or MCP
+discovery is the one exception: publishing each flow's real input schema
+requires loading it, so that discovery imports every visible module once and
+caches the projection. Dispatch imports one module, the one being called, and
+that flow's own Effect schema decodes the input and encodes the output. `Command.make` exposes routes
 to an agent as list, parse, execute, and typed call operations; `Incur.createCli`
 serves the same routes as a CLI and as HTTP, OpenAPI, and MCP. Neither surface
 runs a flow: both dispatch through the injected `FlowInvoker` seam, and every
