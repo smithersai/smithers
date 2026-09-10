@@ -55,6 +55,7 @@ import * as WorkspaceToolchain from "../WorkspaceToolchain.ts"
 import { collectTargets } from "./Attrs.ts"
 import * as CoreRuleSelection from "./CoreRuleSelection.ts"
 import { gitPathspecBatches } from "./GitPathspecBatches.ts"
+import * as HostProbes from "./HostProbes.ts"
 import { inputPackage } from "./InputPackage.ts"
 import type { CrateRow, Mode, PackageNode, PackagePlan, RunOptions, TestOperandPlan } from "./PackageOptions.ts"
 import * as Path from "./Path.ts"
@@ -244,6 +245,12 @@ interface PlanContext {
   /** One plan's byte reads only; every invocation allocates a fresh map. */
   readonly toolBytes: Map<string, Promise<string>>
   readonly probes: Map<string, PackageTree.Probe>
+  /**
+   * Host facts the native planners (Docker, Foundry, Anvil, mise) share across
+   * every target of this invocation; keyed by executable, arguments and
+   * environment, so a target env override never aliases the workspace probe.
+   */
+  readonly hostProbes: HostProbes.HostProbes
   readonly nodes: Map<string, PackageNode>
   readonly privateLabels: WeakMap<Target.AnyTarget, string>
   privateCounter: number
@@ -1029,7 +1036,8 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
       context.root,
       context.index.workspace,
       String(reference["name"]),
-      context.environment
+      context.environment,
+      context.hostProbes
     )
     outcome = resolved.ok
       ? { _tag: "resolved", tool: { path: resolved.path, identity: resolved.identity } }
@@ -1861,6 +1869,7 @@ const visit = async (
       rule,
       mode: plannedMode,
       environment: context.environment,
+      probes: context.hostProbes,
       attrs: attrs as never
     })
     toolchain.push(planned.toolchain)
@@ -1877,7 +1886,8 @@ const visit = async (
       rule,
       packagePath,
       attrs: attrs as never,
-      environment: context.environment
+      environment: context.environment,
+      probes: context.hostProbes
     })
     toolchain.push(planned.toolchain)
     outDirs.push(...planned.outDirs)
@@ -1887,14 +1897,14 @@ const visit = async (
   }
 
   if (rule === "Anvil.Fork") {
-    const resolved = await AnvilExec.resolveAnvil()
+    const resolved = await AnvilExec.resolveAnvil(context.hostProbes)
     toolchain.push(resolved.identity)
     sandbox = { network: true }
     if (!resolved.ok) noteRefusal(resolved.refusal)
   }
 
   if (rule === "Docker.Serve" || rule === "Docker.Service") {
-    const resolved = await DockerExec.resolveDocker(context.environment)
+    const resolved = await DockerExec.resolveDocker(context.environment, context.hostProbes)
     toolchain.push(resolved.identity)
     sandbox = "none"
     if (!resolved.ok) noteRefusal(resolved.refusal)
@@ -3135,6 +3145,7 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
     tools: new Map(),
     toolBytes: new Map(),
     probes: new Map(),
+    hostProbes: HostProbes.make(),
     nodes: new Map(),
     privateLabels: new WeakMap(),
     privateCounter: 0,

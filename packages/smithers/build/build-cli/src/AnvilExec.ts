@@ -11,16 +11,20 @@
  * @since 0.1.0
  */
 import type * as Anvil from "@smthrs/targets/Anvil"
+import * as HostProbes from "./internal/HostProbes.ts"
 import * as PackageTree from "./PackageTree.ts"
 import type * as ServiceSupervisor from "./ServiceSupervisor.ts"
 
 /**
  * Resolves anvil and returns the identity used by the package key.
  *
+ * `probes` is the invocation's host-probe cache, so every fork target of one
+ * plan shares a single `anvil --version`.
+ *
  * @category planning
  * @since 0.1.0
  */
-export const resolveAnvil = async () => {
+export const resolveAnvil = async (probes: HostProbes.HostProbes = HostProbes.none()) => {
   const path = PackageTree.findOnPath("anvil")
   if (path === undefined) {
     return {
@@ -29,7 +33,7 @@ export const resolveAnvil = async () => {
       identity: { tag: "Anvil", absent: true }
     }
   }
-  const probe = await PackageTree.probeVersion(path)
+  const probe = await probes.once(["anvil", path, ["--version"], "ambient"], () => PackageTree.probeVersion(path))
   return { ok: true as const, path, identity: { tag: "Anvil", path, probe } }
 }
 
@@ -43,8 +47,9 @@ export const serviceSpec = async (options: {
   readonly label: string
   readonly cwd: string
   readonly attrs: (typeof Anvil.ForkAttrs)["Type"]
+  readonly probes?: HostProbes.HostProbes | undefined
 }): Promise<ServiceSupervisor.ServiceSpec | { readonly error: string }> => {
-  const tool = await resolveAnvil()
+  const tool = await resolveAnvil(options.probes)
   if (!tool.ok) return { error: tool.refusal }
   const forkUrlIndex = 6
   const argv: Array<string> = [

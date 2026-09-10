@@ -772,6 +772,12 @@ though they use the same executable; identical executable/argument probes are
 shared within a plan. This measures a changed reported implementation version
 behind an unchanged launcher, without claiming to hash every transitive import.
 
+Docker, Foundry, Anvil and `Mise.bin` host facts share one probe cache per
+plan invocation: N Docker targets run one `docker --version`, one `docker
+info` and one `docker buildx ls`, keyed by the resolved executable and the
+probe environment. Project facts such as `forge config` are keyed by
+directory, config path and profile, so they never alias a host probe.
+
 ## Modules outside the barrel
 
 Every one of these is importable as `@smthrs/build-cli/<Module>`. The barrel

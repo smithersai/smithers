@@ -16,6 +16,7 @@ import * as Input from "@smthrs/targets/Input"
 import type * as WorkspaceDeclaration from "@smthrs/targets/WorkspaceDeclaration"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
+import * as HostProbes from "./internal/HostProbes.ts"
 import * as PackageTree from "./PackageTree.ts"
 
 /**
@@ -79,7 +80,8 @@ export const resolveMiseBin = async (
   root: string,
   workspace: WorkspaceDeclaration.WorkspaceDeclaration,
   name: string,
-  environment: Readonly<Record<string, string | undefined>>
+  environment: Readonly<Record<string, string | undefined>>,
+  probes: HostProbes.HostProbes = HostProbes.none()
 ): Promise<ResolvedTool> => {
   const mise = toolchainsOf(workspace).find((entry) => entry["_tag"] === "Mise")
   const config = mise?.["config"]
@@ -103,7 +105,10 @@ export const resolveMiseBin = async (
       identity: { ...identity, absent: true }
     }
   }
-  const probe = await PackageTree.probeVersion(path, { environment })
+  const probe = await probes.once(
+    ["mise", path, ["--version"], HostProbes.environmentKey(environment)],
+    () => PackageTree.probeVersion(path, { environment })
+  )
   return {
     ok: true,
     path,
@@ -111,24 +116,30 @@ export const resolveMiseBin = async (
   }
 }
 
-const resolveForge = async (
-  environment: Readonly<Record<string, string | undefined>>
-): Promise<ResolvedTool> => {
-  const candidates = PackageTree.findAllOnPath("forge", environment)
-  for (const path of candidates) {
-    const probe = await PackageTree.probeVersion(path, { environment })
-    if (/^forge Version:/m.test(probe.output)) {
-      return { ok: true, path, identity: { tag: "FoundryForge", path, probe } }
+/**
+ * Every Foundry target of one plan shares one forge resolution: the PATH walk
+ * and the `--version` probe of each candidate run once per environment.
+ */
+const resolveForge = (
+  environment: Readonly<Record<string, string | undefined>>,
+  probes: HostProbes.HostProbes
+): Promise<ResolvedTool> =>
+  probes.once(["forge", HostProbes.environmentKey(environment)], async () => {
+    const candidates = PackageTree.findAllOnPath("forge", environment)
+    for (const path of candidates) {
+      const probe = await PackageTree.probeVersion(path, { environment })
+      if (/^forge Version:/m.test(probe.output)) {
+        return { ok: true, path, identity: { tag: "FoundryForge", path, probe } }
+      }
     }
-  }
-  return {
-    ok: false,
-    refusal: candidates.length === 0
-      ? "host binary \"forge\" is not present on PATH"
-      : "the PATH entries named \"forge\" are not Foundry forge executables",
-    identity: { tag: "FoundryForge", candidates, absent: true }
-  }
-}
+    return {
+      ok: false,
+      refusal: candidates.length === 0
+        ? "host binary \"forge\" is not present on PATH"
+        : "the PATH entries named \"forge\" are not Foundry forge executables",
+      identity: { tag: "FoundryForge", candidates, absent: true }
+    }
+  })
 
 /**
  * The reduced plan fields a Foundry target contributes to PackageExec.
@@ -168,12 +179,15 @@ export const plan = async (options: {
   readonly rule: "Foundry.Build" | "Foundry.Test" | "Foundry.Fmt"
   readonly mode: "execute" | "check" | "write"
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  /** The invocation's host-probe cache; a fresh one when planning a single target directly. */
+  readonly probes?: HostProbes.HostProbes | undefined
   readonly attrs:
     | (typeof Foundry.BuildAttrs)["Type"]
     | (typeof Foundry.TestAttrs)["Type"]
     | (typeof Foundry.FmtAttrs)["Type"]
 }): Promise<Plan> => {
-  const resolved = await resolveForge(options.environment ?? process.env)
+  const probes = options.probes ?? HostProbes.none()
+  const resolved = await resolveForge(options.environment ?? process.env, probes)
   const foundry = toolchainsOf(options.workspace).find((entry) => entry["_tag"] === "FoundryToolchain")
   const configValue = (options.attrs as { readonly config?: unknown }).config ?? foundry?.["config"]
   const configAuthority = await digestDeclared(
@@ -218,11 +232,15 @@ export const plan = async (options: {
   const projectRoot = configAuthority === null
     ? options.packagePath
     : (NodePath.posix.dirname(configAuthority.path) === "." ? "" : NodePath.posix.dirname(configAuthority.path))
-  const forgeConfig = await effectiveConfig(
-    resolved.path,
-    NodePath.join(options.root, ...cwd.split("/").filter((segment) => segment !== ".")),
-    configAuthority === null ? undefined : argv[argv.indexOf("--config-path") + 1],
-    { ...options.environment, ...env }
+  // A project fact, not a host fact: keyed by the directory, the config path
+  // and the profile-bearing environment, so two targets of one project share
+  // it and a distinct profile or project asks forge itself.
+  const configCwd = NodePath.join(options.root, ...cwd.split("/").filter((segment) => segment !== "."))
+  const configPath = configAuthority === null ? undefined : argv[argv.indexOf("--config-path") + 1]
+  const configEnvironment = { ...options.environment, ...env }
+  const forgeConfig = await probes.once(
+    ["forge config", resolved.path, configCwd, configPath ?? null, HostProbes.environmentKey(configEnvironment)],
+    () => effectiveConfig(resolved.path, configCwd, configPath, configEnvironment)
   )
   if (typeof forgeConfig === "string") {
     return { argv, cwd, env, outDirs, writeSet: [], toolchain, refusal: forgeConfig }

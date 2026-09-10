@@ -3,8 +3,8 @@
  *
  * Every Docker rule needs the same host facts before it can plan: the CLI
  * on PATH, a daemon that answers `docker info`, and a buildx builder that
- * supports the OCI exporter. This module resolves those once per target
- * and turns the declarations into argv: `docker run --rm` for supervised
+ * supports the OCI exporter. This module resolves those once per plan
+ * invocation through the shared host-probe cache and turns the declarations into argv: `docker run --rm` for supervised
  * services, `buildx build`/`buildx bake` writing an OCI archive into the
  * captured output directory, and an approval-gated `docker push` for the
  * outward effect. A silent daemon is a typed refusal, never a green no-op.
@@ -16,6 +16,7 @@ import * as Input from "@smthrs/targets/Input"
 import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
+import * as HostProbes from "./internal/HostProbes.ts"
 import * as PackageTree from "./PackageTree.ts"
 import type * as ServiceSupervisor from "./ServiceSupervisor.ts"
 
@@ -38,11 +39,16 @@ export type DockerTool =
  * and any PATH-resolved impostor of the name -- read credentials every later
  * spawn withholds.
  *
+ * `probes` is the invocation's host-probe cache: every Docker target of one
+ * plan shares one `--version`, one `info`, and one `buildx ls` under the same
+ * resolved path and environment. Without it each call probes afresh.
+ *
  * @category planning
  * @since 0.1.0
  */
 export const resolveDocker = async (
-  environment?: Readonly<Record<string, string | undefined>> | undefined
+  environment?: Readonly<Record<string, string | undefined>> | undefined,
+  probes: HostProbes.HostProbes = HostProbes.none()
 ): Promise<DockerTool> => {
   const path = PackageTree.findOnPath("docker", environment)
   if (path === undefined) {
@@ -53,11 +59,12 @@ export const resolveDocker = async (
     }
   }
   const probeOptions = environment === undefined ? undefined : { environment }
-  const version = await PackageTree.probeVersion(path, probeOptions)
-  const daemon = await PackageTree.probeCommand(path, ["info", "--format", "{{.ServerVersion}}"], probeOptions)
-  const builders = daemon.exitCode === 0
-    ? await PackageTree.probeCommand(path, ["buildx", "ls"], probeOptions)
-    : undefined
+  const context = HostProbes.environmentKey(environment)
+  const probe = (args: ReadonlyArray<string>): Promise<PackageTree.Probe> =>
+    probes.once(["docker", path, args, context], () => PackageTree.probeCommand(path, args, probeOptions))
+  const version = await probe(["--version"])
+  const daemon = await probe(["info", "--format", "{{.ServerVersion}}"])
+  const builders = daemon.exitCode === 0 ? await probe(["buildx", "ls"]) : undefined
   const builder = builders?.output.match(/^(\S+)\s+docker-container\s*$/m)?.[1]?.replace(/\*$/, "")
   const identity = { tag: "Docker", path, version, daemon, builder: builder ?? null }
   return daemon.exitCode === 0
@@ -124,8 +131,9 @@ export const plan = async (options: {
     | (typeof Docker.BakeAttrs)["Type"]
     | (typeof Docker.PushAttrs)["Type"]
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  readonly probes?: HostProbes.HostProbes | undefined
 }): Promise<Plan> => {
-  const tool = await resolveDocker(options.environment)
+  const tool = await resolveDocker(options.environment, options.probes)
   if (!tool.ok) return { outDirs: [], toolchain: tool.identity, refusal: tool.refusal }
   if (options.rule === "Docker.Push") {
     const attrs = options.attrs as (typeof Docker.PushAttrs)["Type"]
@@ -222,8 +230,9 @@ export const serviceSpec = async (options: {
   readonly cwd: string
   readonly attrs: (typeof Docker.ServeAttrs)["Type"]
   readonly environment?: Readonly<Record<string, string | undefined>> | undefined
+  readonly probes?: HostProbes.HostProbes | undefined
 }): Promise<ServiceSupervisor.ServiceSpec | { readonly error: string }> => {
-  const tool = await resolveDocker(options.environment)
+  const tool = await resolveDocker(options.environment, options.probes)
   if (!tool.ok) return { error: tool.refusal }
   const name = containerName(options.label)
   const attrs = options.attrs
