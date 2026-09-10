@@ -1,5 +1,5 @@
-const testDirPattern = /(^|\/)(tests?|__tests__|e2e|spec)\//;
-const testNamePattern = /(\.(test|spec|e2e)\.[a-z]+|_test\.[a-z]+|_spec\.[a-z]+)$/;
+import { isTestPath } from "../text/isTestPath.ts";
+
 const docsDirPattern = /(^|\/)(docs?|specs)\//;
 const docsExtPattern = /\.(md|mdx|txt|rst|adoc)$/;
 const configNamePattern =
@@ -11,7 +11,7 @@ export function classifyChangeRole(path: string): "code" | "config" | "tests" | 
   const lower = path.toLowerCase();
   const name = lower.split("/").pop() ?? lower;
   if (docsDirPattern.test(lower) || docsExtPattern.test(name)) return "docs";
-  if (testDirPattern.test(lower) || testNamePattern.test(name)) return "tests";
+  if (isTestPath(lower)) return "tests";
   if (lower.startsWith(".github/")) return "config";
   if (name.startsWith(".") || configNamePattern.test(name) || configExtPattern.test(name)) return "config";
   if (/\.config\.[a-z]+$/.test(name)) return "config";

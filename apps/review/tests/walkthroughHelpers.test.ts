@@ -171,6 +171,19 @@ describe("buildNarratePrompt", () => {
     expect(prompt.indexOf("big-diff")).toBeLessThan(prompt.indexOf("small-diff"));
   });
 
+  test("truncates an oversized excerpt with the shared trimDiff marker", () => {
+    // One file gets the 30,000-character cap from perFileExcerptLimit.
+    const prompt = buildNarratePrompt({
+      files: [file("huge.ts", 1, 0, "x".repeat(30_001))],
+      comments: [] as never,
+      background: "",
+      mode: "diff",
+      ref: "HEAD",
+    });
+    expect(prompt).toContain(`${"x".repeat(30_000)}\n[diff truncated for prompt size]`);
+    expect(prompt).not.toContain("x".repeat(30_001));
+  });
+
   test("notes when there are no findings", () => {
     const prompt = buildNarratePrompt({
       files: [file("a.ts", 1, 1)],

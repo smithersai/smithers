@@ -1,5 +1,6 @@
 import type { ReviewRunOutput } from "../workflow/openCodeReview.ts";
 import { fenceFor } from "../text/fenceFor.ts";
+import { trimDiff } from "../text/trimDiff.ts";
 import type { ChangedFile } from "./changedFileSchema.ts";
 import { perFileExcerptLimit } from "./perFileExcerptLimit.ts";
 
@@ -24,8 +25,7 @@ function findingBlock(comment: ReviewRunOutput["comments"][number]): string {
 
 function excerptOf(file: ChangedFile, limit: number): string {
   if (!file.diff.trim()) return "";
-  if (file.diff.length <= limit) return file.diff;
-  return `${file.diff.slice(0, limit)}\n[diff truncated]`;
+  return trimDiff(file.diff, limit);
 }
 
 /**

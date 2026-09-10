@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import * as Schema from "effect/Schema";
 import { arrayOf, withDefault } from "../schema/withDefault.ts";
+import { isTestPath } from "../text/isTestPath.ts";
+import { trimDiff } from "../text/trimDiff.ts";
 
 const DIFF_CONTEXT_LINES = 3;
 
@@ -1118,14 +1120,9 @@ const testFileReviewChecklist = [
   "Flakiness: check for time, ordering, shared-state, or concurrency dependence that makes the test pass or fail nondeterministically.",
 ].join("\n");
 
-function isTestFilePath(path: string) {
-  const lower = path.toLowerCase();
-  return /\.(test|spec)\.[^/]+$/.test(lower) || /(^|\/)tests\//.test(lower) || /(^|\/)__tests__\//.test(lower);
-}
-
 function reviewChecklistForPath(path: string) {
   const lower = path.toLowerCase();
-  if (isTestFilePath(lower)) {
+  if (isTestPath(path)) {
     return testFileReviewChecklist;
   }
   if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(lower)) {
@@ -1137,10 +1134,9 @@ function reviewChecklistForPath(path: string) {
   return defaultReviewChecklist;
 }
 
-function trimForPrompt(value: string, limit = 60_000) {
-  if (value.length <= limit) return value;
-  return `${value.slice(0, limit)}\n[diff truncated for prompt size]`;
-}
+// One file per prompt, so the reviewer affords far more of it than the prompts
+// that carry the whole change set.
+const reviewDiffLimit = 60_000;
 
 function reviewableDiffs(diffs: DiffRecord[], filter: FileFilter | null) {
   // Mirrors previewOpenCodeReview: deletions with removed content are reviewable.
@@ -1200,7 +1196,7 @@ function renderFileReviewPrompt(
   const focusLines = diff.isDeleted
     ? [
         "- This file is DELETED. Review the impact of the removal, not the removed code's style.",
-        "- Grep the repository for remaining references to this file's exports, routes, or side effects; deleting code that still has callers is a critical finding.",
+        "- Name the exports, routes, or side effects the removal takes away and say which callers a maintainer must re-check; deleting code that still has callers is a critical finding.",
         "- Deleted files have no new side; leave startLine and endLine at 0 for every finding.",
       ]
     : [
@@ -1218,17 +1214,17 @@ function renderFileReviewPrompt(
     "- Prefer high-signal correctness, security, data-loss, crash, performance, and maintainability findings.",
     "- Avoid style-only comments unless there is concrete impact.",
     "",
-    "Use your tools before emitting a finding:",
-    "- Your working directory is the repository; read the full current file before commenting on any part of it.",
-    "- When a finding depends on callers or callees, grep the repository for them and confirm the failure path actually exists.",
-    "- Drop any finding that the surrounding code contradicts.",
+    "What you can see:",
+    "- You have no repository access and no tools. Your inputs are this file's unified diff and the list of other changed files below.",
+    "- Judge every finding from that diff; never claim to have read the whole file or searched for callers.",
+    "- Drop any finding that the diff itself contradicts.",
     "",
     "Severity calibration (fill severity, category, and confidence honestly):",
     "- critical: the merge must stop; data loss, a security hole, or a guaranteed crash on a main path.",
     "- major: a real bug users will hit.",
     "- minor: a correctness risk, an edge case, or misleading behavior.",
     "- info: style or docs, and only with concrete impact.",
-    '- confidence "confirmed" means you traced a concrete failure path; "plausible" means reasoned but not traced.',
+    '- confidence "confirmed" means the diff below shows the whole failure path; "plausible" means reasoned from the diff but not fully visible in it.',
     "- Omit any finding you cannot honestly call at least plausible.",
     "",
     "Untrusted content:",
@@ -1261,7 +1257,7 @@ function renderFileReviewPrompt(
     "",
     "Unified diff:",
     "```diff",
-    trimForPrompt(diff.diff),
+    trimDiff(diff.diff, reviewDiffLimit),
     "```",
   ].join("\n");
 }

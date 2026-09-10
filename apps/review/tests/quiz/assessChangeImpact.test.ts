@@ -188,6 +188,14 @@ describe("assessChangeImpact", () => {
       });
     });
 
+    test("an e2e-directory file counts as a test for the deletion signal", () => {
+      const impact = assessChangeImpact([file("e2e/parse.ts", { status: "deleted" }), file("src/parse.ts")], []);
+      expect(impact.reasons).toContainEqual({
+        signal: "test file deleted while sibling source changed",
+        path: "e2e/parse.ts",
+      });
+    });
+
     test("test deletion without a changed sibling source does not fire", () => {
       const impact = assessChangeImpact([file("src/parse.test.ts", { status: "deleted" }), file("src/render.ts")], []);
       expect(impact.score).toBe(0);

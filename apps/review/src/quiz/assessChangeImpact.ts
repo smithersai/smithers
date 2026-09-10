@@ -1,3 +1,4 @@
+import { isTestPath } from "../text/isTestPath.ts";
 import type { QuizImpact } from "./quizSchema.ts";
 
 export type ImpactLevel = QuizImpact["level"];
@@ -92,11 +93,6 @@ function addedLines(diff: string) {
     .split("\n")
     .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
     .join("\n");
-}
-
-function isTestPath(path: string) {
-  const lower = path.toLowerCase();
-  return /\.(test|spec)\.[^/]+$/.test(lower) || /(^|\/)tests?\//.test(lower) || /(^|\/)__tests__\//.test(lower);
 }
 
 function fileStem(path: string) {

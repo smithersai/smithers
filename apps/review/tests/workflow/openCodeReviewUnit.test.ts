@@ -224,10 +224,11 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     // Untracked files across languages/kinds to exercise checklist selection.
     write(join(dir, "src/util.ts"), "export const util = () => 42;\n");
     write(join(dir, "src/tests/helper.ts"), "export const help = 1;\n"); // reviewable test-dir file → test checklist
+    write(join(dir, "e2e/flow.ts"), "export const flow = 1;\n"); // e2e dir is a test path for every consumer
     write(join(dir, "src/app.test.ts"), "test('x', () => {});\n"); // test-file checklist + default exclude
     write(join(dir, "config.json"), '{"a":1}\n'); // json/yaml checklist
     write(join(dir, "notes.md"), "# notes\n"); // unsupported ext → excluded, default checklist path
-    write(join(dir, "src/big.ts"), `export const big = "${"x".repeat(70_000)}";\n`); // trimForPrompt truncation
+    write(join(dir, "src/big.ts"), `export const big = "${"x".repeat(70_000)}";\n`); // trimDiff truncation at the reviewer limit
     // node_modules provider-excluded path.
     write(join(dir, "node_modules/dep.js"), "module.exports = 1;\n");
     // .gitignore with negation, dir, no-slash, and slash patterns (all non-matching for src/app.ts).
@@ -251,6 +252,9 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     expect(prompt.files.length).toBe(preview.reviewableCount);
     const appFile = prompt.files.find((f) => f.path === "src/app.ts");
     expect(appFile?.prompt).toContain("Review checklist:");
+    // The seat gets a noop registry, so the prompt states the diff-only contract.
+    expect(appFile?.prompt).toContain("You have no repository access and no tools");
+    expect(appFile?.prompt).not.toContain("Your working directory is the repository");
     // "Other changed files" lists the sibling reviewable files.
     expect(appFile?.prompt).toContain("Other changed files:");
     const bigFile = prompt.files.find((f) => f.path === "src/big.ts");
@@ -259,9 +263,12 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     const deleted = prompt.files.find((f) => f.path === "src/keep.ts");
     expect(deleted?.status).toBe("deleted");
     expect(deleted?.prompt).toContain("This file is DELETED");
+    expect(deleted?.prompt).not.toContain("Grep the repository");
     // The test-dir file selects the test-quality checklist.
     const helper = prompt.files.find((f) => f.path === "src/tests/helper.ts");
     expect(helper?.prompt).toContain("Test quality:");
+    const e2e = prompt.files.find((f) => f.path === "e2e/flow.ts");
+    expect(e2e?.prompt).toContain("Test quality:");
   });
 
   test("buildNativeReviewPrompt reports no reviewable files when a stale preview disagrees", async () => {

@@ -35,8 +35,10 @@ describe("buildVerifyFindingsPrompt", () => {
       ]),
     });
 
-    expect(prompt).toContain("actively try to REFUTE it against the diff and the repository");
-    expect(prompt).toContain("Your working directory is the repository");
+    expect(prompt).toContain("actively try to REFUTE it against the diffs below");
+    // The verifier gets no tools, so the prompt must not order repository reads.
+    expect(prompt).toContain("You have no repository access and no tools");
+    expect(prompt).not.toContain("working directory is the repository");
     expect(prompt).toContain("index is the 0-based finding number shown below");
     expect(prompt).toContain("Finding 0: [major/correctness/plausible] src/app.ts lines 3-4");
     expect(prompt).toContain("Finding 1: [major/correctness/plausible] src/other.ts");

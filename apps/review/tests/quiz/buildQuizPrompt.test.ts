@@ -122,6 +122,11 @@ describe("fenceFor and trimDiff", () => {
     expect(trimmed).toBe(`${"x".repeat(20_000)}\n[diff truncated for prompt size]`);
   });
 
+  test("trimDiff honours a caller-supplied limit with the same marker", () => {
+    expect(trimDiff("x".repeat(10), 10)).toBe("x".repeat(10));
+    expect(trimDiff("x".repeat(11), 10)).toBe(`${"x".repeat(10)}\n[diff truncated for prompt size]`);
+  });
+
   test("fenceFor is max(longest backtick run + 1, 3)", () => {
     expect(fenceFor("no backticks")).toBe("```");
     expect(fenceFor("inline `code` only")).toBe("```");
