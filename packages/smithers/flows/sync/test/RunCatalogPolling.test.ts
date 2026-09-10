@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import type { JournalEvent } from "@smthrs/journal"
-import { Deferred, Effect, Exit, Fiber, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Logger, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import * as RunCatalog from "../src/RunCatalog.ts"
 
@@ -101,6 +101,41 @@ describe("polling run catalog", () => {
       yield* TestClock.adjust(intervalMs)
       expect(Array.from(yield* Fiber.join(follower))).toEqual([runId("run-b")])
       expect(yield* catalog.list).toEqual([runId("run-a"), runId("run-b")])
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())))
+
+  // With the default one-second interval an unreadable workspace database
+  // produced one identical warning per second per catalog for the length of
+  // the outage. The log now follows the transitions: the first failure with
+  // its cause, silence while the outage lasts, and one line when a read
+  // succeeds again. The poll cadence is unchanged.
+  it.effect("logs an outage when it starts and when it ends, not on every failed poll", () =>
+    Effect.gen(function*() {
+      const logs: Array<{ level: string; message: unknown; cause: Cause.Cause<unknown> }> = []
+      const capture = Logger.make((options) => {
+        logs.push({ level: options.logLevel, message: options.message, cause: options.cause })
+      })
+      const source = workspace(["run-a"])
+      const catalog = yield* RunCatalog.makePolling({ read: source.read, intervalMs }).pipe(
+        Effect.provide(Logger.layer([capture]))
+      )
+      const readsBefore = source.reads
+
+      source.failNext(5)
+      yield* TestClock.adjust(intervalMs * 5)
+      expect(source.reads - readsBefore).toBe(5)
+      expect(logs.map((log) => log.level)).toEqual(["Warn"])
+      expect(Cause.pretty(logs[0]!.cause)).toContain("read failed")
+
+      source.write("run-b")
+      yield* TestClock.adjust(intervalMs * 3)
+      expect(yield* catalog.list).toEqual([runId("run-a"), runId("run-b")])
+      expect(logs.map((log) => log.level)).toEqual(["Warn", "Info"])
+      expect(String(logs[1]!.message)).toContain("5")
+
+      // A second outage is a new transition, and is logged again.
+      source.failNext(1)
+      yield* TestClock.adjust(intervalMs * 2)
+      expect(logs.map((log) => log.level)).toEqual(["Warn", "Info", "Warn", "Info"])
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())))
 
   it.effect("drops a run retention collected", () =>

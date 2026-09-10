@@ -89,6 +89,8 @@ Four behaviors are worth knowing before you rely on it:
   composition instead of serving an empty run set.
 - **A failed read is a warning and nothing else.** The previous view stands,
   the interval holds, and no subscription attached to the catalog is torn down.
+  The warning is logged once per outage with the first failure's cause, and one
+  info line marks the read that ends it; the failed polls in between are silent.
 - **A run is announced once**, when it first appears. A run the read stops
   naming, which is what retention collecting it looks like, leaves the view.
   `list` is the workspace's run set, not a log of every run it ever had.

@@ -134,7 +134,7 @@ export const makeMemory = (options: MemoryOptions = {}): Effect.Effect<{
     )
     return {
       catalog: make({
-        list: Effect.fn("RunCatalog.list")(() => Effect.sync(() => Array.from(known)))(),
+        list: Effect.sync(() => Array.from(known)).pipe(Effect.withSpan("RunCatalog.list")),
         changes: Stream.fromPubSub(changes)
       }),
       register: Effect.fn("RunCatalog.register")((runId) =>
@@ -196,6 +196,8 @@ export interface PollingOptions<E, R> {
  * the composition instead of serving an empty run set. After that a failed
  * read is a warning and nothing else: the previous view stands, the interval
  * holds, and no subscription attached to the catalog is torn down for it.
+ * The warning is written once per outage, with the first failure's cause, and
+ * one info line marks the read that ends it; the polls in between are silent.
  *
  * A run is announced once, when it first appears. A run the read stops
  * naming, which is what retention collecting it looks like, leaves the view;
@@ -234,17 +236,33 @@ export const makePolling = <E, R>(
     })
 
     yield* refresh
-    yield* refresh.pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("The workspace run catalog could not be read; the previous view stands", cause)
-      ),
+    // The log follows the outage's transitions, not the poll cadence. With
+    // the default interval a workspace that stays unreadable would otherwise
+    // write one identical warning per second per catalog for as long as it
+    // lasts, and the line that says it ended would never be written.
+    const consecutiveFailures = yield* Ref.make(0)
+    const poll = refresh.pipe(
+      Effect.matchCauseEffect({
+        onFailure: (cause) =>
+          Effect.flatMap(Ref.updateAndGet(consecutiveFailures, (count) => count + 1), (count) =>
+            count === 1
+              ? Effect.logWarning("The workspace run catalog could not be read; the previous view stands", cause)
+              : Effect.void),
+        onSuccess: () =>
+          Effect.flatMap(Ref.getAndSet(consecutiveFailures, 0), (count) =>
+            count === 0
+              ? Effect.void
+              : Effect.logInfo(`The workspace run catalog is readable again after ${count} failed reads`))
+      })
+    )
+    yield* poll.pipe(
       Effect.delay(options.intervalMs ?? defaultPollIntervalMs),
       Effect.forever,
       Effect.forkScoped
     )
 
     return make({
-      list: Effect.fn("RunCatalog.list")(() => Effect.map(Ref.get(snapshot), (ids) => [...ids]))(),
+      list: Effect.map(Ref.get(snapshot), (ids) => [...ids]).pipe(Effect.withSpan("RunCatalog.list")),
       changes: Stream.fromPubSub(changes)
     })
   })
