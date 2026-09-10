@@ -8,6 +8,25 @@ import * as SchemaBridge from "../src/internal/SchemaBridge.ts"
 import * as Route from "../src/Route.ts"
 import { makeRoute } from "./helpers.ts"
 
+const encoder = new TextEncoder()
+
+/**
+ * Builds a command of exactly `totalBytes` UTF-8 bytes from `tokenCount`
+ * space-separated tokens. Each token repeats a three-byte and a four-byte
+ * character, so the command stays far below `maximumCommandBytes` when measured
+ * as UTF-16 code units and every token stays far below `maximumTokenLength`.
+ * That leaves the aggregate byte bound as the only bound the fixture can reach.
+ */
+const multibyteCommand = (totalBytes: number, tokenCount: number): string => {
+  const contentBytes = totalBytes - (tokenCount - 1)
+  const runs = Math.floor(contentBytes / (7 * tokenCount))
+  const filler = "x".repeat(contentBytes - 7 * runs * tokenCount)
+  return Array.from(
+    { length: tokenCount },
+    (_, index) => `${"漢𝄞".repeat(runs)}${index === tokenCount - 1 ? filler : ""}`
+  ).join(" ")
+}
+
 describe("Command", () => {
   it.each([0, 4_097, 16_384])("parses a %i-character flag value through the public surface", async (length) => {
     const surface = await Effect.runPromise(Command.make([makeRoute("review")]))
@@ -166,6 +185,37 @@ describe("Command", () => {
       }
     })
     expect((await Effect.runPromise(Effect.exit(CommandLine.parseFlags(hostile))))._tag).toBe("Failure")
+  })
+
+  it("bounds command bytes independently of the token bounds", async () => {
+    const tokenCount = 8
+    const exact = multibyteCommand(CommandLine.maximumCommandBytes, tokenCount)
+    const overBy1 = multibyteCommand(CommandLine.maximumCommandBytes + 1, tokenCount)
+
+    // Both fixtures must be reachable by the byte bound alone: the token count
+    // and every token length stay inside their own bounds, and the UTF-16 length
+    // stays below the byte bound so a length-for-bytes guard admits both.
+    for (const command of [exact, overBy1]) {
+      const tokens = command.split(" ")
+      expect(tokens).toHaveLength(tokenCount)
+      expect(tokenCount).toBeLessThan(CommandLine.maximumCommandTokens)
+      expect(Math.max(...tokens.map((token) => token.length))).toBeLessThan(CommandLine.maximumTokenLength)
+      expect(command.length).toBeLessThan(CommandLine.maximumCommandBytes)
+    }
+    expect(encoder.encode(exact).byteLength).toBe(CommandLine.maximumCommandBytes)
+    expect(encoder.encode(overBy1).byteLength).toBe(CommandLine.maximumCommandBytes + 1)
+
+    expect(await Effect.runPromise(CommandLine.lex(exact))).toEqual(exact.split(" "))
+
+    const exit = await Effect.runPromise(Effect.exit(CommandLine.lex(overBy1)))
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
+        code: "resource_limit",
+        method: "CommandLine.lex",
+        description: `A command may contain at most ${CommandLine.maximumCommandBytes} UTF-8 bytes`
+      })
+    }
   })
 
   it("classifies output schema failures as encoding failures", async () => {
