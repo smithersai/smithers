@@ -421,13 +421,52 @@ describe("public repository requests", () => {
     ]);
     expect(repos.slice(2).every((repo: { nominations: number }) => repo.nominations === 1)).toBe(true);
     expect(JSON.stringify(repos)).not.toContain("example.com");
-    // Listing reads the leaderboard and each entry's readiness only, never the whole catalog.
+    // Listing reads the throttle bucket and the materialized leaderboard only: no
+    // per-entry readiness lookups and never the whole catalog.
     let reads = 0;
     const get = f.env.BUGS.get.bind(f.env.BUGS);
     f.env.BUGS.get = async (key: string) => { reads++; return get(key); };
     f.env.BUGS.list = async () => { throw new Error("list must not be used"); };
     expect((await f.call()).status).toBe(200);
-    expect(reads).toBe(21);
+    expect(reads).toBe(2);
+  });
+  test("completion rebuilds the materialized list so readiness costs no extra read", async () => {
+    const f = fixture();
+    await f.call({ repo: "owner/repo" });
+    await f.call({ repo: "owner/other" }, "", false, "10.0.0.2");
+    expect((await f.complete()).status).toBe(200);
+    let reads = 0;
+    const get = f.env.BUGS.get.bind(f.env.BUGS);
+    f.env.BUGS.get = async (key: string) => { reads++; return get(key); };
+    const { repos } = await (await f.call()).json();
+    expect(reads).toBe(2);
+    expect(repos).toMatchObject([
+      { name: "owner/other", status: "smithering", appUrl: null, nominations: 1 },
+      { name: "owner/repo", status: "ready", appUrl: "https://app.smithers.sh/repos/owner/repo", nominations: 1 },
+    ]);
+    // A later nomination keeps the published readiness in the rebuilt entry.
+    expect(await (await f.call({ repo: "owner/repo" }, "", false, "10.0.0.3")).json()).toMatchObject({ repo: { status: "ready" } });
+    expect((await (await f.call()).json()).repos[0]).toMatchObject({ name: "owner/repo", status: "ready", appUrl: "https://app.smithers.sh/repos/owner/repo", nominations: 2 });
+  });
+  test("leaderboard entries written before readiness was materialized still resolve it", async () => {
+    const f = fixture();
+    await f.env.BUGS.put("repo-request:owner/old", JSON.stringify({ name: "owner/old", url: "https://github.com/owner/old" }));
+    await f.env.BUGS.put("repo-nominations:owner/old", "4");
+    await f.env.BUGS.put("repo-nominations-top", JSON.stringify([{ name: "owner/old", count: 4 }]));
+    await f.env.BUGS.put("repo-ready:owner/old", JSON.stringify({ appUrl: "https://app.smithers.sh/repos/owner/old", completedAt: "2026-09-01T00:00:00Z" }));
+    expect((await (await f.call()).json()).repos).toMatchObject([{ name: "owner/old", status: "ready", appUrl: "https://app.smithers.sh/repos/owner/old", nominations: 4 }]);
+  });
+  test("throttles public catalog reads per IP without spending the nomination budget", async () => {
+    const f = fixture();
+    for (let i = 0; i < 100; i++) expect((await f.call()).status).toBe(200);
+    const limited = await f.call();
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("cache-control")).toBe("no-store");
+    expect((await f.call(undefined, "?repo=owner/repo")).status).toBe(429);
+    expect((await f.call(undefined, "", false, "203.0.113.2")).status).toBe(200);
+    expect((await f.call({ repo: "owner/repo" })).status).toBe(200);
+    f.setNow(1788500000000 + 3_600_000);
+    expect((await f.call()).status).toBe(200);
   });
   test("limits payloads, throttles submissions, and reports storage failures", async () => {
     const f = fixture();

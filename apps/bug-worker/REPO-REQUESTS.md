@@ -26,9 +26,14 @@ Each public record has `name`, `url`, `status` (`smithering` or `ready`),
 `GET /api/repo-requests` returns `{ repos }`: the 20 most nominated
 repositories, most nominated first, ties by name, exact at any catalog size.
 The response carries `cache-control: public, max-age=60`, so a browser reuses
-it for a minute; the page bypasses that cache after a submission.
+it for a minute; the page bypasses that cache after a submission. Readiness
+in the list is materialized when a repository is nominated or completed, so
+the list is fresh as soon as the completion call returns and stale for at
+most that one-minute browser cache plus KV propagation.
 `GET /api/repo-requests?repo=owner/repo` returns `{ repo }` for one
 repository, 404 when nobody has requested it, and 400 for an invalid name.
+Public `GET` reads share a per-IP throttle of 100 per hour, on a bucket
+separate from the nomination throttle, and answer `429` above it.
 The upcoming app can consume this same public catalog and use ready entries
 as its supported repositories.
 
@@ -43,12 +48,16 @@ public and informational, so that undercount is accepted rather than adding a
 Durable Object.
 
 The same `POST` then rewrites one leaderboard key, `repo-nominations-top`: a
-JSON array of `{ "name", "count" }` sorted by count, then name, capped at 20.
-It replaces the repository's own entry with the new count and drops anything
-past 20. The list endpoint reads that one key plus each listed repository's
-readiness, 21 KV reads at most, and never scans the catalog. The leaderboard
-shares the counter's read-modify-write, so the same concurrent-write
-undercount applies to it and nothing else.
+JSON array of `{ "name", "count", "appUrl" }` sorted by count, then name,
+capped at 20. It replaces the repository's own entry with the new count and
+its current readiness (`appUrl` is null while smithering) and drops anything
+past 20. `POST /api/repo-requests/complete` writes the published `appUrl`
+into the repository's entry when it is listed. The list endpoint reads the
+throttle bucket and that one key, two KV reads at any catalog size, and never
+scans the catalog. Entries written before readiness was materialized have no
+`appUrl` field and cost one readiness read each until their next nomination
+or completion. The leaderboard shares the counter's read-modify-write, so the
+same concurrent-write undercount applies to it and nothing else.
 
 Once the app supports a repository **and its repository view works for an
 anonymous visitor**, call `POST /api/repo-requests/complete` with the existing

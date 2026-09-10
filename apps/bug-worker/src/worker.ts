@@ -65,11 +65,11 @@ export async function isOperator(request: Request, env: BugWorkerEnv): Promise<b
  * floods, not a hard security boundary. For a strict limit, back the counter
  * with a Durable Object or a Cloudflare Rate Limiting binding.
  */
-export async function checkRateLimit(env: BugWorkerEnv, ip: string, now: number): Promise<boolean> {
+export async function checkRateLimit(env: BugWorkerEnv, ip: string, now: number, limit = RATE_LIMIT_PER_HOUR): Promise<boolean> {
   const hourBucket = Math.floor(now / 3_600_000);
   const key = `ratelimit:${ip}:${hourBucket}`;
   const count = Number((await env.BUGS.get(key)) ?? "0");
-  if (count >= RATE_LIMIT_PER_HOUR) return false;
+  if (count >= limit) return false;
   await env.BUGS.put(key, String(count + 1), { expirationTtl: 3600 });
   return true;
 }

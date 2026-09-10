@@ -11,12 +11,23 @@ const cors = {
 const json = (status: number, body: unknown, headers = cors) => new Response(JSON.stringify(body), { status, headers });
 type Repo = { name: string; url: string };
 type Ready = { appUrl: string; completedAt: string };
-type Leader = { name: string; count: number };
-/** One key holds the ranked leaderboard, so listing costs one read plus one readiness read per entry. */
+/**
+ * A leaderboard entry carries the app URL published for it (null while
+ * smithering), so the public list is one read. Entries written before readiness
+ * was materialized have no `appUrl` field and fall back to a readiness read.
+ */
+type Leader = { name: string; count: number; appUrl?: string | null };
+/** One key holds the ranked leaderboard with readiness, so listing costs one read at any catalog size. */
 const leaderboardKey = "repo-nominations-top";
 const listTop = 20;
 /** Browsers reuse a list for this long; KV is eventually consistent over the same window. */
 const listCache = { ...cors, "cache-control": "public, max-age=60" };
+/**
+ * Public reads per IP per hour, separate from the nomination budget. A browser
+ * that honours max-age needs at most 60 list reads an hour plus one uncached
+ * read per submission, so a well-behaved visitor never meets this bound.
+ */
+const readsPerIpPerHour = 100;
 
 /** Accept repository roots only; never fetch a user-supplied host. */
 export function repoName(value: unknown): string | null {
@@ -68,17 +79,29 @@ async function publicRepo(env: BugWorkerEnv, repo: Repo, count?: number) {
     nominations: count ?? await nominations(env, repo.name),
   };
 }
-/** Rewrite the leaderboard with one repository's new count; ties break on name. */
-async function rank(env: BugWorkerEnv, name: string, count: number) {
+/** Rewrite the leaderboard with one repository's new count and readiness; ties break on name. */
+async function rank(env: BugWorkerEnv, name: string, count: number, appUrl: string | null) {
   const leaders = (await read<Leader[]>(env, leaderboardKey) ?? []).filter((leader) => leader.name !== name);
-  leaders.push({ name, count });
+  leaders.push({ name, count, appUrl });
   leaders.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   await env.BUGS.put(leaderboardKey, JSON.stringify(leaders.slice(0, listTop)));
+}
+/** Publish readiness into the materialized list; a repository outside the top entries needs no rewrite. */
+async function rankReady(env: BugWorkerEnv, name: string, appUrl: string) {
+  const leaders = await read<Leader[]>(env, leaderboardKey) ?? [];
+  const leader = leaders.find((entry) => entry.name === name);
+  if (!leader || leader.appUrl === appUrl) return;
+  leader.appUrl = appUrl;
+  await env.BUGS.put(leaderboardKey, JSON.stringify(leaders));
 }
 /** Repositories ranked by nominations, most nominated first, exact at any catalog size. */
 async function mostNominated(env: BugWorkerEnv) {
   const leaders = await read<Leader[]>(env, leaderboardKey) ?? [];
-  return Promise.all(leaders.map((leader) => publicRepo(env, { name: leader.name, url: `https://github.com/${leader.name}` }, leader.count)));
+  return Promise.all(leaders.map((leader) => {
+    const repo = { name: leader.name, url: `https://github.com/${leader.name}` };
+    if (leader.appUrl === undefined) return publicRepo(env, repo, leader.count);
+    return { ...repo, status: leader.appUrl ? "ready" : "smithering", appUrl: leader.appUrl, nominations: leader.count };
+  }));
 }
 async function list(env: BugWorkerEnv, keyPrefix: string, cursor?: string, limit = 50) {
   if (!env.BUGS.list) throw new Error("KV listing unavailable");
@@ -215,6 +238,11 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
     const url = new URL(request.url);
     const route = url.pathname.slice("/api/repo-requests".length);
     if (request.method === "GET" && route === "") {
+      // Public reads are throttled on their own bucket so a list refresh never
+      // spends the nomination budget, and abuse cannot amplify into KV reads.
+      if (!(await checkRateLimit(env, `repos-read:${request.headers.get("cf-connecting-ip") ?? "unknown"}`, deps.now(), readsPerIpPerHour))) {
+        return json(429, { error: "Too many requests. Please try again later." });
+      }
       const query = url.searchParams.get("repo");
       if (query === null) return json(200, { repos: await mostNominated(env) }, listCache);
       const name = repoName(query);
@@ -266,6 +294,7 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
           await env.BUGS.put(`repo-ready:${name}`, JSON.stringify(winner));
         }
         ready = winner;
+        await rankReady(env, name, winner.appUrl);
       }
       if (!ready) return json(409, { error: "Repository is still smithering." });
       // Publishing and delivery are separate: notification failure cannot undo readiness.
@@ -306,8 +335,8 @@ export async function handleRepoRequests(request: Request, env: BugWorkerEnv, de
     // and the leaderboard rewritten beside the counter shares the same trade-off.
     const count = await nominations(env, name) + 1;
     await env.BUGS.put(`repo-nominations:${name}`, String(count));
-    await rank(env, name, count);
     const result = await publicRepo(env, repo, count);
+    await rank(env, name, count, result.appUrl);
     // Consent first: the address stays a pending token, and `subscribed` only
     // means the confirmation email left; delivery starts after the recipient
     // confirms. Without provider configuration no consent email can be sent,
