@@ -8,7 +8,6 @@ import { Entry, Input, type RunId, type Seq, type SourceId } from "@smthrs/journ
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Fiber, Layer, Ref } from "effect"
 import type * as Scope from "effect/Scope"
-import { spawnSync } from "node:child_process"
 import { attenuate } from "../src/CapabilitySet.ts"
 import * as GrantEvent from "../src/GrantEvent.ts"
 import { GrantStore, maximumRules } from "../src/GrantStore.ts"
@@ -40,68 +39,6 @@ const options = {
   planDigest: "plan-1",
   attended: false
 } as const
-
-const journalGrantStoreModuleUrl = new URL("../src/JournalGrantStore.ts", import.meta.url).href
-const grantEventModuleUrl = new URL("../src/GrantEvent.ts", import.meta.url).href
-const workspaceModuleUrl = new URL("../src/Workspace.ts", import.meta.url).href
-
-const repeatedCursorProgram = `
-  import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
-  import * as JournalModule from "@smthrs/journal/Journal"
-  import { Entry } from "@smthrs/journal/JournalEvent"
-  import { Effect } from "effect"
-  import * as GrantEvent from ${JSON.stringify(grantEventModuleUrl)}
-  import * as JournalGrantStore from ${JSON.stringify(journalGrantStoreModuleUrl)}
-  import * as Workspace from ${JSON.stringify(workspaceModuleUrl)}
-
-  const capability = new Capability({ action: "fs:write", resource: "/workspace/file.txt" })
-  const pattern = new CapabilityPattern({ action: "fs:write", resource: "/workspace/**" })
-  const event = new GrantEvent.RememberedGrant({
-    eventType: "flows.kernel.grant.remembered.v1",
-    requestId: "request",
-    runId: "run",
-    planDigest: "plan-1",
-    capability,
-    pattern,
-    scope: "remembered",
-    tier: "compensable"
-  })
-  const encoded = GrantEvent.encode(event)
-  if (encoded._tag === "Failure") throw new Error("could not encode event")
-  const repeated = new Entry({
-    runId: "policy",
-    seq: 1,
-    eventId: "event-1",
-    sourceId: "kernel",
-    sourceSeq: 1,
-    emittedAtMs: 0,
-    eventType: event.eventType,
-    payload: encoded.success,
-    meta: undefined
-  })
-  let calls = 0
-  const journal = JournalModule.layerNoop({
-    entries: (options) => {
-      if (options.runId !== "policy") return Effect.succeed({ entries: [], hasMore: false })
-      calls += 1
-      return Effect.succeed({ entries: [repeated], hasMore: true })
-    }
-  })
-  const failure = await Effect.runPromise(
-    Effect.flip(JournalGrantStore.make({
-      runId: "run",
-      policyRunId: "policy",
-      sourceId: "kernel",
-      planDigest: "plan-1",
-      attended: false
-    })).pipe(
-      Effect.provide(journal),
-      Effect.provide(Workspace.layer("/workspace")),
-      Effect.scoped
-    )
-  )
-  process.stdout.write(failure.code + ":" + calls)
-`
 
 const run = <A, E>(effect: Effect.Effect<A, E, Journal | Scope.Scope | Workspace.Workspace>) =>
   effect.pipe(
@@ -878,22 +815,6 @@ describe("JournalGrantStore replayed envelope limits", () => {
 })
 
 describe("JournalGrantStore paging and journal failures", () => {
-  it("fails closed when a page repeats its last sequence with hasMore", () => {
-    // The subprocess exists to bound the regression case — an unfixed replay
-    // loops forever, which would hang an in-process assertion. Node boot plus
-    // TS-stripped effect imports take seconds under coverage-instrumented
-    // parallel workers, so the kill budget is generous but finite and stays
-    // inside the suite's 30 s test budget.
-    const replay = spawnSync(process.execPath, ["--input-type=module", "--eval", repeatedCursorProgram], {
-      encoding: "utf8",
-      timeout: 25_000
-    })
-
-    expect(replay.error).toBeUndefined()
-    expect(replay.status).toBe(0)
-    expect(replay.stdout).toBe("invalid_resolution:2")
-  })
-
   itEffect("refuses a non-advancing policy page instead of looping", () => {
     let calls = 0
     const journal = JournalModule.layerNoop({

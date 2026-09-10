@@ -306,6 +306,15 @@ describe("GrantStore bounded input", () => {
       })
     ))
 
+  it.effect("accepts store identities at exactly the identity length limit", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const exact = "x".repeat(GrantStore.maximumIdentityLength)
+        const store = yield* make({ runId: exact, planDigest: exact })
+        expect(yield* store.list).toEqual([])
+      })
+    ))
+
   it.effect("rejects malformed, cyclic, deep, wide, and oversized metadata", () =>
     Effect.scoped(
       Effect.gen(function*() {

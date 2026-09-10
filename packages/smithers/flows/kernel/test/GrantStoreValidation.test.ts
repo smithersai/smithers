@@ -202,21 +202,14 @@ describe("GrantStore.reply", () => {
         const waiter = yield* store.check(read).pipe(Effect.forkChild({ startImmediately: true }))
         const [pending] = yield* awaitPending(store, 1)
         const invalid = "allow-forever" as unknown as GrantStore.Resolution
-        const result = yield* store.reply(pending!.requestId, invalid).pipe(
-          Effect.map(() => ({ _tag: "Success" as const })),
-          Effect.catch((error) => Effect.succeed({ _tag: "Failure" as const, error }))
-        )
+        const failure = yield* Effect.flip(store.reply(pending!.requestId, invalid))
 
-        if (result._tag === "Failure") {
-          expect(result.error.code).toBe("invalid_resolution")
-          yield* Fiber.interrupt(waiter)
-          return
-        }
-
-        // A successful reply is also allowed by the boundary contract, but
-        // only if it settles the request instead of abandoning the waiter.
-        yield* Fiber.await(waiter).pipe(Effect.timeout("100 millis"))
-        expect(yield* store.list).toEqual([])
+        // An unknown verb must never be read as an authorization: the reply
+        // fails, the request stays parked, and the waiter is still pending.
+        expect(failure.code).toBe("invalid_resolution")
+        expect((yield* store.list).map((request) => request.requestId)).toEqual([pending!.requestId])
+        expect(waiter.pollUnsafe()).toBeUndefined()
+        yield* Fiber.interrupt(waiter)
       })
     ))
 

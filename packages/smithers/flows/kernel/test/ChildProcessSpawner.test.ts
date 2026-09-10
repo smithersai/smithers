@@ -412,6 +412,36 @@ describe("ChildProcessSpawner", () => {
     )
   })
 
+  itEffect("reports exactly 64 environment names in full without an omitted-count marker", () => {
+    const seen: Array<unknown> = []
+    const environment = Object.fromEntries(
+      Array.from({ length: 64 }, (_, index) => [`NAME_${String(index).padStart(2, "0")}`, `value-${index}`])
+    )
+    const store = GrantStore.of({
+      check: (_capability, context) => {
+        seen.push(context)
+        return Effect.void
+      },
+      reply: () => Effect.die("not used by decorator tests"),
+      list: Effect.succeed([]),
+      grantEnvelope: () => Effect.void
+    })
+
+    return Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      yield* spawner.string(ChildProcess.make("tool", [], { env: environment }))
+      expect(seen).toEqual([{
+        cwd: undefined,
+        env: Array.from({ length: 64 }, (_, index) => `NAME_${String(index).padStart(2, "0")}`)
+      }])
+      expect(JSON.stringify(seen)).not.toContain("more")
+    }).pipe(
+      Effect.provide(ChildProcessSpawner.layer),
+      Effect.provideService(HostChildProcessSpawner, hostSpawner({ stdout: "out" })),
+      Effect.provideService(GrantStore, store)
+    )
+  })
+
   itEffect("checks a shell command under the exact unquoted line the shell executes", () => {
     const checks: Array<Capability.Capability> = []
     const line = "echo safe; run privileged"

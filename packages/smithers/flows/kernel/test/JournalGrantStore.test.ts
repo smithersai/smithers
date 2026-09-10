@@ -87,6 +87,8 @@ describe("JournalGrantStore", () => {
           planDigest: "plan-😀"
         })
         expect(yield* unicode.list).toEqual([])
+        const exact = yield* JournalGrantStore.make({ ...options, sourceId: "x".repeat(4_096) })
+        expect(yield* exact.list).toEqual([])
       })
     ))
 

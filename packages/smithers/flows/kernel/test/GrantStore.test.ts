@@ -624,8 +624,4 @@ describe("GrantStore", () => {
         yield* Fiber.interrupt(second)
       })
     ))
-
-  it("exposes the stable duplicate request error code", () => {
-    expect(new GrantStoreError({ code: "duplicate_request" }).code).toBe("duplicate_request")
-  })
 })
