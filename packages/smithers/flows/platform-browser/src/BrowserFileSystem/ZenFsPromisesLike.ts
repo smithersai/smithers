@@ -1,7 +1,7 @@
 /**
  * The structural slice of a ZenFS promises API.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import type { ZenFsFileHandleLike } from "./ZenFsFileHandleLike.ts"
 import type { ZenFsStatsLike } from "./ZenFsStatsLike.ts"
@@ -16,7 +16,7 @@ import type { ZenFsStatsLike } from "./ZenFsStatsLike.ts"
  * it to us.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 export interface ZenFsPromisesLike {
   readonly open: (path: string, flags: "r") => Promise<ZenFsFileHandleLike>

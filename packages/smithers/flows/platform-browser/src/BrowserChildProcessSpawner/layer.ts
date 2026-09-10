@@ -1,7 +1,7 @@
 /**
  * The `ChildProcessSpawner` layer over a just-bash interpreter.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -20,7 +20,7 @@ import { make } from "./make.ts"
  * about what exists.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const layer = (

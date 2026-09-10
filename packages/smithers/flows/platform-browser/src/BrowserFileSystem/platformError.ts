@@ -1,7 +1,7 @@
 /**
  * Error mapping from thrown ZenFS/Node errors onto `PlatformError`.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import * as PlatformError from "effect/PlatformError"
 
@@ -44,7 +44,7 @@ const tags: Readonly<Record<string, PlatformError.SystemErrorTag>> = {
  * and method that failed, the path, and the original `cause` kept intact.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const platformError = (method: string, path: string) => (cause: unknown): PlatformError.PlatformError =>

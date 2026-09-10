@@ -1,7 +1,7 @@
 /**
  * Constructs a `FileSystem` over a ZenFS-shaped backend.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -177,7 +177,7 @@ const denied = (path: string): PlatformError.PlatformError =>
  * is the composition that makes that claim.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const make = (fs: ZenFsPromisesLike): FileSystem.FileSystem =>

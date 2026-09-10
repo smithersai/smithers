@@ -1,7 +1,7 @@
 /**
  * Replay of captured interpreter output under the caller's stream handling.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import type * as PlatformError from "effect/PlatformError"
 import * as Sink from "effect/Sink"
@@ -27,7 +27,7 @@ const encoder = new TextEncoder()
  * Node transduces the readable it wrapped.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const captured = (

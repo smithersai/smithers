@@ -16,7 +16,7 @@
  * re-exporting it here would add one. Compose it alongside this layer if you
  * need it.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import type { FileSystem } from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -31,7 +31,7 @@ import * as BrowserFileSystem from "./BrowserFileSystem/index.ts"
  * process spawning, filesystem, and path services.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export type BrowserServices = ChildProcessSpawner | FileSystem | EffectPath.Path
@@ -41,7 +41,7 @@ export type BrowserServices = ChildProcessSpawner | FileSystem | EffectPath.Path
  * and path services.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const layer = (options: {

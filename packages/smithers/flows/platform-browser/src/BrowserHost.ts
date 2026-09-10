@@ -30,7 +30,7 @@
  * Only `layer` is exposed; there are no layerAt or contained factories.
  * Crypto is not bundled: provide a browser Crypto layer alongside this host.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import type { Jj } from "@smthrs/jj"
 import * as BrowserJj from "@smthrs/jj/browser/BrowserJj"
@@ -49,7 +49,7 @@ import * as BrowserServices from "./BrowserServices.ts"
  * The complete closed Host service union provided by a browser tab.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export type BrowserHost =
@@ -78,7 +78,7 @@ const layerHttpClient: Layer.Layer<HttpClient> = Layer.provide(
  * async-mirror ZenFS mount, call the mount's `sync()` after jj writes.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const layer = (options: {

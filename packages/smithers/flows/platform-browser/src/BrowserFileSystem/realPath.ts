@@ -3,7 +3,7 @@
  * `realpath` when it has one, and a refusal when it does not, because a
  * lexical collapse cannot prove where a symlink resolves.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
@@ -16,7 +16,7 @@ import type { ZenFsPromisesLike } from "./ZenFsPromisesLike.ts"
  *
  * @private
  * @category utilities
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 const rootPath = (path: string): string => path.startsWith("/") ? path : `/${path}`
 
@@ -35,7 +35,7 @@ const rootPath = (path: string): string => path.startsWith("/") ? path : `/${pat
  *
  * @private
  * @category utilities
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const realPath = (

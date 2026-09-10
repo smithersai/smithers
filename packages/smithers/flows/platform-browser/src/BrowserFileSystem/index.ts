@@ -12,7 +12,7 @@
  * dependency list — {@link ZenFsPromisesLike} is a structural slice, and Node's
  * own `node:fs/promises` satisfies it, which is what the tests use.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 export * from "./layer.ts"
 export * from "./make.ts"

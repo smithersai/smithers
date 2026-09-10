@@ -1,7 +1,7 @@
 /**
  * Directory listing, flat or recursive, over a ZenFS-shaped backend.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
@@ -127,7 +127,7 @@ const collect = (
  * array it stores is neither changed through a result nor able to change one.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const readDirectory = (

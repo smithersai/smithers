@@ -1,7 +1,7 @@
 /**
  * Bounded-chunk file streaming over a ZenFS file handle.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -92,7 +92,7 @@ const misreported = (path: string): PlatformError.PlatformError =>
  * file, honouring `offset`, `bytesToRead`, and `chunkSize`.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const streamFile = (

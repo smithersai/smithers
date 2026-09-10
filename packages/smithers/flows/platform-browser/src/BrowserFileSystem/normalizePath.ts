@@ -2,7 +2,7 @@
  * Lexical canonicalization of a path against the volume root, for a walk
  * that needs a stable identity and has no `realpath` to ask.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 
 /**
@@ -19,7 +19,7 @@
  *
  * @private
  * @category utilities
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 export const normalizePath = (path: string): string => {
   const resolved: Array<string> = []

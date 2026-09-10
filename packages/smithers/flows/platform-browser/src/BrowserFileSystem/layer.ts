@@ -1,7 +1,7 @@
 /**
  * The `FileSystem` layer over a ZenFS-shaped backend.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import { withIsolatedFileSystem } from "@smthrs/kernel/FileSystem"
 import * as Effect from "effect/Effect"
@@ -24,7 +24,7 @@ import type { ZenFsPromisesLike } from "./ZenFsPromisesLike.ts"
  * caller that wants effect's `FileSystem` and no kernel claim attached.
  *
  * @category layers
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const layer = (

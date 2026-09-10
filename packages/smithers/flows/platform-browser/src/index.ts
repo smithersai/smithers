@@ -21,7 +21,7 @@
  * Everything in this package is browser-bundleable; `scripts/browser-check.mjs`
  * at the repository root pins that property.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 
 /**

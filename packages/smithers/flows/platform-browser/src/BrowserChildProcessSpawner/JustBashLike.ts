@@ -1,7 +1,7 @@
 /**
  * The structural slice of a just-bash interpreter.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 
 /**
@@ -28,7 +28,7 @@
  * `BrowserFileSystem` adapts — and so tests can hand us a stub.
  *
  * @category models
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export interface JustBashLike {

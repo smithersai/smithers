@@ -1,7 +1,7 @@
 /**
  * The just-bash-backed `ChildProcessSpawner` adapter.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import * as CommandLine from "@smthrs/kernel/CommandLine"
 import * as Deferred from "effect/Deferred"
@@ -112,7 +112,7 @@ type Settled = { readonly ok: true; readonly value: Awaited<ReturnType<JustBashL
  * going through a `Layer`. `layer` is the ordinary route.
  *
  * @category constructors
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const make = (bash: JustBashLike) =>

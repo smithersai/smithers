@@ -1,7 +1,7 @@
 /**
  * Mapping from ZenFS/Node `Stats` onto effect's `File.Info`.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
@@ -21,7 +21,7 @@ const fileType = (stats: ZenFsStatsLike): FileSystem.File.Type =>
  * real; everything the slice cannot know is `Option.none` or zero.
  *
  * @private
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  * @slop
  */
 export const fileInfo = (stats: ZenFsStatsLike): FileSystem.File.Info => ({

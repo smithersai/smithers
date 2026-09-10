@@ -47,7 +47,7 @@
  *   adapter asks for it whenever the caller did not set `extendEnv: true`,
  *   which is Effect's replacement default.
  *
- * @since 0.1.0
+ * @since 1.0.0-rc.0
  */
 export * from "./JustBashLike.ts"
 export * from "./layer.ts"
