@@ -790,6 +790,30 @@ describe("FlowEngine.layerMemory resume and wake contract", () => {
       expect(caller.pollUnsafe()).toEqual(Exit.succeed("approved"))
     }).pipe(Effect.provide(ParkedLayer)))
 
+  effect("wakes every caller parked on the same execution from one completion", () =>
+    Effect.gen(function*() {
+      const executionId = "wake-two-callers"
+      // Two callers of one idempotency key await the same execution, so both
+      // park on the same pending wake. A wake completes the deferred every
+      // current subscriber holds, so one completion has to return both: the
+      // second caller must not be left on its backoff ladder.
+      const first = yield* Parked.execute({ id: executionId }, { executionId }).pipe(Effect.forkChild)
+      yield* settle
+      const second = yield* Parked.execute({ id: executionId }, { executionId }).pipe(Effect.forkChild)
+      yield* settle
+      expect(Option.isSome(yield* pollSuspended(Parked.poll(executionId)))).toBe(true)
+      expect(first.pollUnsafe()).toBeUndefined()
+      expect(second.pollUnsafe()).toBeUndefined()
+
+      const token = DurableDeferred.tokenFromExecutionId(gate, { flow: Parked, executionId })
+      yield* DurableDeferred.succeed(gate, { token, value: "approved" })
+      yield* settle
+      // No clock movement since the completion: both callers returned on the
+      // wake, not at the end of a backoff sleep.
+      expect(first.pollUnsafe()).toEqual(Exit.succeed("approved"))
+      expect(second.pollUnsafe()).toEqual(Exit.succeed("approved"))
+    }).pipe(Effect.provide(ParkedLayer)))
+
   effect("re-arming a scheduled clock keeps the running timer's deadline", () =>
     Effect.gen(function*() {
       const engine = yield* FlowRuntime.FlowRuntime
