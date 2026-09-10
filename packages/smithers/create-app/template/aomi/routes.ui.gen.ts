@@ -21,6 +21,8 @@ import * as page8 from "./app/page.tsx"
 import * as page9 from "./app/projects/page.tsx"
 import * as page10 from "./app/providers/page.tsx"
 import * as page11 from "./app/settings/page.tsx"
+import * as flow0 from "./flows/build/flow.ts"
+import * as flow1 from "./flows/chat/flow.ts"
 
 export const layout = layoutModule.default
 
@@ -47,3 +49,8 @@ export const panes = {
   "chain-contract": pane4.Pane,
   "chain-tx": pane5.Pane,
 } as const
+
+export const flowSummaries = [
+  { id: "build", file: "flows/build/flow.ts", chat: flow0.Flow.chat === true },
+  { id: "chat", file: "flows/chat/flow.ts", chat: flow1.Flow.chat === true },
+] as const

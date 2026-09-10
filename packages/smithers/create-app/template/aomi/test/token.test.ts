@@ -6,7 +6,7 @@ vi.mock("virtual:smthrs-app/brand.css", () => ({}))
 vi.mock("@smthrs/ui", () => ({ SmithersUiStyles: () => null }))
 vi.mock("react-dom/client", () => ({ createRoot: () => ({ render: vi.fn() }) }))
 vi.mock("../routes.gen.ts", () => ({ flows: [] }))
-vi.mock("../routes.ui.gen.ts", () => ({ layout: undefined, pages: [], panes: {} }))
+vi.mock("../routes.ui.gen.ts", () => ({ layout: undefined, pages: [], panes: {}, flowSummaries: [] }))
 vi.mock("../src/shell/keys.ts", () => ({ startShortcuts: vi.fn() }))
 
 const KEY = "aomi.api-token"

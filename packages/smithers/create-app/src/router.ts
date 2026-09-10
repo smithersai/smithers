@@ -284,8 +284,14 @@ export const render = (routes: AppRoutes): string => {
 }
 
 /**
- * Renders `routes.ui.gen.ts`: the shell layout, the pages, and the pane
- * components the browser bundle needs.
+ * Renders `routes.ui.gen.ts`: the shell layout, the pages, the pane
+ * components, and the flow summaries the browser bundle needs.
+ *
+ * `flowSummaries` is each flow's `id`, `file`, and `chat` flag, read from the
+ * flow file alone. The browser table imports no layer file and no tool
+ * module: a browser entry that read `flows` from `routes.gen.ts` for those
+ * three values pulled every layer, every tool module, and the harness into
+ * its bundle.
  *
  * @category constructors
  * @since 0.1.0
@@ -298,6 +304,9 @@ export const renderUi = (routes: AppRoutes): string => {
   if (routes.layout !== undefined) lines.push(`import * as layoutModule from ${specifier(routes.layout)}`)
   for (const [position, page] of routes.pages.entries()) {
     lines.push(`import * as ${binding("page", position)} from ${specifier(page.file)}`)
+  }
+  for (const [position, flow] of routes.flows.entries()) {
+    lines.push(`import * as ${binding("flow", position)} from ${specifier(flow.file)}`)
   }
   lines.push("")
   lines.push(`export const layout = ${routes.layout === undefined ? "undefined" : "layoutModule.default"}`)
@@ -317,6 +326,16 @@ export const renderUi = (routes: AppRoutes): string => {
     lines.push(`  ${JSON.stringify(pane.name)}: ${binding("pane", position)}.Pane,`)
   }
   lines.push("} as const")
+  lines.push("")
+  lines.push("export const flowSummaries = [")
+  for (const [position, flow] of routes.flows.entries()) {
+    lines.push(
+      `  { id: ${JSON.stringify(flow.id)}, file: ${JSON.stringify(flow.file)}, chat: ${
+        binding("flow", position)
+      }.Flow.chat === true },`
+    )
+  }
+  lines.push("] as const")
   lines.push("")
   return lines.join("\n")
 }

@@ -5,6 +5,7 @@
 import * as pane0 from "./app/panes/message.tsx"
 import * as layoutModule from "./app/layout.tsx"
 import * as page0 from "./app/page.tsx"
+import * as flow0 from "./flows/chat/flow.ts"
 
 export const layout = layoutModule.default
 
@@ -15,3 +16,7 @@ export const pages = [
 export const panes = {
   "message": pane0.Pane,
 } as const
+
+export const flowSummaries = [
+  { id: "chat", file: "flows/chat/flow.ts", chat: flow0.Flow.chat === true },
+] as const

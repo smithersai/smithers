@@ -1,9 +1,12 @@
 /**
  * Browser entry point.
  *
- * The generated `routes.gen.ts` is the only route table: `pages` maps a path
- * to a component, `panes` is the pane registry the agent renders into, and
- * `layout` wraps everything. Nothing here hard-codes a path.
+ * The generated `routes.ui.gen.ts` is the only route table: `pages` maps a
+ * path to a component, `panes` is the pane registry the agent renders into,
+ * `flowSummaries` names each flow and whether it is a chat, and `layout` wraps
+ * everything. Nothing here hard-codes a path, and nothing here imports
+ * `routes.gen.ts`: that is the Worker's table, and it reaches every layer
+ * file, every tool module, and the harness.
  */
 import "virtual:smthrs-app/brand.css"
 import "./styles.css"
@@ -12,10 +15,9 @@ import { SmithersUiStyles } from "@smthrs/ui"
 import type { ReactNode } from "react"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
-import { flows } from "../routes.gen.ts"
-import { layout, pages, panes } from "../routes.ui.gen.ts"
+import { flowSummaries, layout, pages, panes } from "../routes.ui.gen.ts"
 import { startShortcuts } from "./shell/keys.ts"
-import type { AppRegistry, RoutedFlowSummary } from "./shell/registry.ts"
+import type { AppRegistry } from "./shell/registry.ts"
 import { RegistryContext } from "./shell/registry.ts"
 import { redirect, startRouter } from "./shell/router.ts"
 import { actions, useRoute } from "./shell/store.ts"
@@ -28,10 +30,7 @@ readToken()
 /** Where `/` sends the browser. The root page renders Build either way. */
 const HOME = "/build"
 
-const registry: AppRegistry = {
-  panes,
-  flows: flows.map((flow): RoutedFlowSummary => ({ id: flow.id, file: flow.file, chat: flow.spec.chat === true }))
-}
+const registry: AppRegistry = { panes, flows: flowSummaries }
 
 const Layout = layout ?? (({ children }: { children: ReactNode }) => <>{children}</>)
 

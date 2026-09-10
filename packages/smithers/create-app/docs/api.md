@@ -508,7 +508,10 @@ including exit codes and the shim's entry-point choice, is in
 `smithers-routes` writes two files at the app root and never anything else.
 `routes.gen.ts` holds every flow with its three resolved layers plus the pane
 names, and imports no React and no virtual module. `routes.ui.gen.ts` holds the
-shell layout, the pages, and the pane components.
+shell layout, the pages, the pane components, and `flowSummaries`: each flow's
+`id`, `file`, and `chat` flag, read from the flow file alone. A browser entry
+reads its flow list from there and never from `routes.gen.ts`, which imports
+every layer file and every tool module.
 
 ```bash
 smithers-routes           # write; exit 2 on a flag given no value

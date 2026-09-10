@@ -44,12 +44,13 @@ without pulling the components into its bundle.
 
 ## routes.ui.gen.ts
 
-The shell layout, the pages, and the pane components:
+The shell layout, the pages, the pane components, and the flow summaries:
 
 ```ts
+import * as pane0 from "./app/panes/message.tsx"
 import * as layoutModule from "./app/layout.tsx"
 import * as page0 from "./app/page.tsx"
-import * as pane0 from "./app/panes/message.tsx"
+import * as flow0 from "./flows/chat/flow.ts"
 
 export const layout = layoutModule.default
 
@@ -60,10 +61,20 @@ export const pages = [
 export const panes = {
   "message": pane0.Pane
 } as const
+
+export const flowSummaries = [
+  { id: "chat", file: "flows/chat/flow.ts", chat: flow0.Flow.chat === true }
+] as const
 ```
 
 `layout` is `undefined` when the app has no `app/layout.tsx`, so a shell can
 branch on it rather than guess.
+
+`flowSummaries` is what a browser shell needs of a flow: its id, its file, and
+whether it is a chat. It reaches only the flow files, which import
+`defineFlow` and a schema. The browser never reads `routes.gen.ts` for this:
+that table imports every layer file and every tool module, and the aomi
+template's chain tools build an EVM client at module scope.
 
 The browser entry point reads this file and never imports a page itself. The
 generated module already imports every page, so a page that imported it back

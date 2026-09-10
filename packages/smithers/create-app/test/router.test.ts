@@ -414,6 +414,8 @@ describe("render", () => {
       "",
       "import * as pane0 from \"./app/panes/balances.tsx\"",
       "import * as page0 from \"./app/page.tsx\"",
+      "import * as flow0 from \"./flows/build/flow.ts\"",
+      "import * as flow1 from \"./flows/chat/flow.ts\"",
       "",
       "export const layout = undefined",
       "",
@@ -424,6 +426,11 @@ describe("render", () => {
       "export const panes = {",
       "  \"balances\": pane0.Pane,",
       "} as const",
+      "",
+      "export const flowSummaries = [",
+      "  { id: \"build\", file: \"flows/build/flow.ts\", chat: flow0.Flow.chat === true },",
+      "  { id: \"chat\", file: \"flows/chat/flow.ts\", chat: flow1.Flow.chat === true },",
+      "] as const",
       ""
     ].join("\n")
 
@@ -431,6 +438,31 @@ describe("render", () => {
     expect(render(routes)).toBe(expectedRuntime)
     expect(renderUi(routes)).toBe(expectedUi)
     expect(renderAll(routes)).toEqual({ "routes.gen.ts": expectedRuntime, "routes.ui.gen.ts": expectedUi })
+  })
+
+  it("summarizes every flow in routes.ui.gen.ts without importing a layer or tool module", () => {
+    // create-app/performance/3: the aomi browser entry imported `flows` from
+    // routes.gen.ts for three strings per flow, and with it every layer file,
+    // every tool module, and the harness. The browser table carries the
+    // summary itself and reaches only the flow files.
+    const root = appTree({
+      ...layers,
+      "app/page.tsx": "export default () => null\n",
+      "flows/build/AGENT.ts": "export const Agent = {}\n",
+      "flows/build/flow.ts": "export const Flow = { chat: false }\n",
+      "flows/chat/flow.ts": "export const Flow = { chat: true }\n",
+      "tools/ui.ts": "export const ui = {}\n"
+    })
+    const ui = renderUi(discover({ root, dirs }))
+    expect(ui).toContain("export const flowSummaries = [")
+    expect(ui).toContain("{ id: \"build\", file: \"flows/build/flow.ts\", chat: flow0.Flow.chat === true }")
+    expect(ui).toContain("{ id: \"chat\", file: \"flows/chat/flow.ts\", chat: flow1.Flow.chat === true }")
+    const specifiers = importsOf(ui).map((entry) => entry.specifier)
+    expect(specifiers).toEqual(expect.arrayContaining(["./flows/build/flow.ts", "./flows/chat/flow.ts"]))
+    for (const specifier of specifiers) {
+      expect(specifier, `${specifier} is a layer file`).not.toMatch(/\/(?:AGENT|SANDBOX|TOOLS)\.ts$/)
+      expect(specifier, `${specifier} is a tool module`).not.toMatch(/^\.\/tools\//)
+    }
   })
 
   it("gives two routes that differ only in their separator two distinct bindings", () => {
@@ -473,7 +505,7 @@ describe("render", () => {
     // and no `import "./evil.ts"` statement of its own.
     const expected = {
       runtime: ["./AGENT.ts", "./SANDBOX.ts", "./TOOLS.ts", `./${hostile}`],
-      ui: [`./${hostile}`, `./${hostile}`]
+      ui: [`./${hostile}`, `./${hostile}`, `./${hostile}`]
     }
     for (const [kind, source] of [["runtime", render(routes)], ["ui", renderUi(routes)]] as const) {
       const declared = importsOf(source)

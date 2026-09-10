@@ -104,7 +104,9 @@ Node half.
 
 - `routes.gen.ts`: every flow with its three resolved layers, plus the pane
   names. No React import, so the Worker and a plain Vitest run both load it.
-- `routes.ui.gen.ts`: the layout, the pages, and the pane components.
+- `routes.ui.gen.ts`: the layout, the pages, the pane components, and
+  `flowSummaries` (each flow's `id`, `file`, and `chat` flag). The browser
+  reads its flow list here, never from `routes.gen.ts`.
 
 ```sh
 smithers-routes           # write; exit 2 on a flag given no value
