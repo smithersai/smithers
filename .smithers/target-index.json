@@ -599,18 +599,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/agent/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/agent/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/agent/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/agent/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/agent/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/agent/PACKAGE.ts"
     }
@@ -631,16 +642,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/agent/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/agent/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/agent/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/agent/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/agent/PACKAGE.ts"
     }
@@ -689,18 +711,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/artifacts/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/artifacts/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/artifacts/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/artifacts/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/artifacts/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/artifacts/PACKAGE.ts"
     }
@@ -721,16 +754,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/artifacts/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/artifacts/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/artifacts/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/artifacts/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/artifacts/PACKAGE.ts"
     }
@@ -779,18 +823,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/canonical/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/canonical/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/canonical/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/canonical/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/canonical/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/canonical/PACKAGE.ts"
     }
@@ -811,16 +866,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/canonical/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/canonical/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/canonical/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/canonical/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/canonical/PACKAGE.ts"
     }
@@ -869,18 +935,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/capability/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/capability/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/capability/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/capability/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/capability/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/capability/PACKAGE.ts"
     }
@@ -901,16 +978,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/capability/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/capability/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/capability/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/capability/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/capability/PACKAGE.ts"
     }
@@ -959,18 +1047,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/chain/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/chain/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/chain/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/chain/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/chain/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/chain/PACKAGE.ts"
     }
@@ -991,16 +1090,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/chain/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/chain/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/chain/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/chain/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/chain/PACKAGE.ts"
     }
@@ -1049,18 +1159,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/cli/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/cli/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/cli/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/cli/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/cli/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/cli/PACKAGE.ts"
     }
@@ -1081,16 +1202,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/cli/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/cli/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/cli/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/cli/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/cli/PACKAGE.ts"
     }
@@ -1139,18 +1271,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/control/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/control/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/control/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/control/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/control/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/control/PACKAGE.ts"
     }
@@ -1171,16 +1314,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/control/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/control/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/control/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/control/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/control/PACKAGE.ts"
     }
@@ -1229,18 +1383,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/core/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/core/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/core/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/core/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/core/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/core/PACKAGE.ts"
     }
@@ -1261,16 +1426,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/core/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/core/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/core/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/core/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/core/PACKAGE.ts"
     }
@@ -1319,18 +1495,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/create-app/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/create-app/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/create-app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/create-app/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/create-app/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/create-app/PACKAGE.ts"
     }
@@ -1351,16 +1538,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/create-app/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/create-app/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/create-app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/create-app/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/create-app/PACKAGE.ts"
     }
@@ -1409,18 +1607,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/crypto/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/crypto/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/crypto/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/crypto/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/crypto/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/crypto/PACKAGE.ts"
     }
@@ -1441,16 +1650,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/crypto/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/crypto/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/crypto/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/crypto/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/crypto/PACKAGE.ts"
     }
@@ -1499,18 +1719,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/database/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/database/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/database/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/database/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/database/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/database/PACKAGE.ts"
     }
@@ -1531,16 +1762,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/database/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/database/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/database/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/database/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/database/PACKAGE.ts"
     }
@@ -1589,18 +1831,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/engine-store/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/engine-store/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/engine-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/engine-store/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/engine-store/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/engine-store/PACKAGE.ts"
     }
@@ -1621,16 +1874,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/engine-store/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/engine-store/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/engine-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/engine-store/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/engine-store/PACKAGE.ts"
     }
@@ -1679,18 +1943,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/engine/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/engine/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/engine/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/engine/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/engine/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/engine/PACKAGE.ts"
     }
@@ -1711,16 +1986,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/engine/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/engine/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/engine/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/engine/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/engine/PACKAGE.ts"
     }
@@ -1769,18 +2055,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/errors/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/errors/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/errors/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/errors/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/errors/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/errors/PACKAGE.ts"
     }
@@ -1801,16 +2098,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/errors/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/errors/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/errors/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/errors/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/errors/PACKAGE.ts"
     }
@@ -1859,18 +2167,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/evals/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/evals/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/evals/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/evals/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/evals/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/evals/PACKAGE.ts"
     }
@@ -1891,16 +2210,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/evals/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/evals/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/evals/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/evals/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/evals/PACKAGE.ts"
     }
@@ -1949,18 +2279,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/flow/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/flow/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/flow/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/flow/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/flow/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/flow/PACKAGE.ts"
     }
@@ -1981,16 +2322,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/flow/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/flow/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/flow/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/flow/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/flow/PACKAGE.ts"
     }
@@ -2039,18 +2391,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/flows/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/flows/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/flows/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/flows/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/flows/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/flows/PACKAGE.ts"
     }
@@ -2071,16 +2434,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/flows/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/flows/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/flows/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/flows/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/flows/PACKAGE.ts"
     }
@@ -2129,18 +2503,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/fs/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/fs/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/fs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/fs/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/fs/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/fs/PACKAGE.ts"
     }
@@ -2161,16 +2546,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/fs/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/fs/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/fs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/fs/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/fs/PACKAGE.ts"
     }
@@ -2219,18 +2615,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/gateway/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/gateway/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/gateway/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/gateway/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/gateway/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/gateway/PACKAGE.ts"
     }
@@ -2251,16 +2658,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/gateway/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/gateway/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/gateway/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/gateway/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/gateway/PACKAGE.ts"
     }
@@ -2309,18 +2727,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/harness/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/harness/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/harness/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/harness/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/harness/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/harness/PACKAGE.ts"
     }
@@ -2341,16 +2770,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/harness/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/harness/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/harness/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/harness/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/harness/PACKAGE.ts"
     }
@@ -2399,18 +2839,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/integrations/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/integrations/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/integrations/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/integrations/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/integrations/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/integrations/PACKAGE.ts"
     }
@@ -2431,16 +2882,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/integrations/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/integrations/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/integrations/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/integrations/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/integrations/PACKAGE.ts"
     }
@@ -2489,18 +2951,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/jj/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/jj/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/jj/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/jj/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/jj/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/jj/PACKAGE.ts"
     }
@@ -2521,16 +2994,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/jj/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/jj/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/jj/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/jj/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/jj/PACKAGE.ts"
     }
@@ -2579,18 +3063,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/journal/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/journal/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/journal/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/journal/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/journal/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/journal/PACKAGE.ts"
     }
@@ -2611,16 +3106,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/journal/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/journal/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/journal/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/journal/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/journal/PACKAGE.ts"
     }
@@ -2669,18 +3175,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/kernel/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/kernel/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/kernel/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/kernel/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/kernel/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/kernel/PACKAGE.ts"
     }
@@ -2701,16 +3218,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/kernel/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/kernel/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/kernel/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/kernel/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/kernel/PACKAGE.ts"
     }
@@ -2759,18 +3287,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/keys/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/keys/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/keys/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/keys/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/keys/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/keys/PACKAGE.ts"
     }
@@ -2791,16 +3330,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/keys/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/keys/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/keys/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/keys/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/keys/PACKAGE.ts"
     }
@@ -2849,18 +3399,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/mcp/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/mcp/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/mcp/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/mcp/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/mcp/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/mcp/PACKAGE.ts"
     }
@@ -2881,16 +3442,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/mcp/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/mcp/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/mcp/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/mcp/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/mcp/PACKAGE.ts"
     }
@@ -2939,18 +3511,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/memory/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/memory/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/memory/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/memory/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/memory/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/memory/PACKAGE.ts"
     }
@@ -2971,16 +3554,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/memory/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/memory/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/memory/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/memory/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/memory/PACKAGE.ts"
     }
@@ -3029,18 +3623,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/migrate/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/migrate/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/migrate/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/migrate/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/migrate/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/migrate/PACKAGE.ts"
     }
@@ -3061,16 +3666,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/migrate/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/migrate/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/migrate/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/migrate/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/migrate/PACKAGE.ts"
     }
@@ -3119,18 +3735,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/model/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/model/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/model/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/model/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/model/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/model/PACKAGE.ts"
     }
@@ -3151,16 +3778,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/model/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/model/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/model/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/model/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/model/PACKAGE.ts"
     }
@@ -3209,18 +3847,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/notifications/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/notifications/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/notifications/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/notifications/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/notifications/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/notifications/PACKAGE.ts"
     }
@@ -3241,16 +3890,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/notifications/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/notifications/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/notifications/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/notifications/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/notifications/PACKAGE.ts"
     }
@@ -3299,18 +3959,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/observability/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/observability/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/observability/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/observability/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/observability/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/observability/PACKAGE.ts"
     }
@@ -3331,16 +4002,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/observability/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/observability/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/observability/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/observability/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/observability/PACKAGE.ts"
     }
@@ -3389,18 +4071,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/plan/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/plan/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/plan/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/plan/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/plan/PACKAGE.ts"
     }
@@ -3421,16 +4114,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/plan/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/plan/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/plan/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/plan/PACKAGE.ts"
     }
@@ -3479,18 +4183,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/platform-browser/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/platform-browser/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/platform-browser/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-browser/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/platform-browser/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/platform-browser/PACKAGE.ts"
     }
@@ -3511,16 +4226,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/platform-browser/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/platform-browser/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/platform-browser/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-browser/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/platform-browser/PACKAGE.ts"
     }
@@ -3569,18 +4295,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/platform-bun/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/platform-bun/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/platform-bun/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-bun/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/platform-bun/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/platform-bun/PACKAGE.ts"
     }
@@ -3601,16 +4338,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/platform-bun/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/platform-bun/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/platform-bun/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-bun/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/platform-bun/PACKAGE.ts"
     }
@@ -3659,18 +4407,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/platform-node/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/platform-node/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/platform-node/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-node/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/platform-node/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/platform-node/PACKAGE.ts"
     }
@@ -3691,16 +4450,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/platform-node/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/platform-node/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/platform-node/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-node/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/platform-node/PACKAGE.ts"
     }
@@ -3749,18 +4519,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/plugin/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/plugin/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/plugin/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plugin/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/plugin/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/plugin/PACKAGE.ts"
     }
@@ -3781,16 +4562,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/plugin/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/plugin/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/plugin/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plugin/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/plugin/PACKAGE.ts"
     }
@@ -3839,18 +4631,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/registry/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/registry/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/registry/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/registry/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/registry/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/registry/PACKAGE.ts"
     }
@@ -3871,16 +4674,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/registry/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/registry/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/registry/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/registry/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/registry/PACKAGE.ts"
     }
@@ -3929,18 +4743,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/run-store/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/run-store/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/run-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/run-store/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/run-store/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/run-store/PACKAGE.ts"
     }
@@ -3961,16 +4786,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/run-store/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/run-store/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/run-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/run-store/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/run-store/PACKAGE.ts"
     }
@@ -4019,18 +4855,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/sandbox/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/sandbox/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/sandbox/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/sandbox/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/sandbox/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/sandbox/PACKAGE.ts"
     }
@@ -4051,16 +4898,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/sandbox/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/sandbox/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/sandbox/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/sandbox/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/sandbox/PACKAGE.ts"
     }
@@ -4109,18 +4967,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/scorers/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/scorers/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/scorers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/scorers/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/scorers/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/scorers/PACKAGE.ts"
     }
@@ -4141,16 +5010,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/scorers/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/scorers/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/scorers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/scorers/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/scorers/PACKAGE.ts"
     }
@@ -4184,6 +5064,104 @@
     }
   },
   {
+    "label": "//apps/docs/shared:sources",
+    "package": "apps/docs/shared",
+    "name": "sources",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/starlight.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/starlight.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/release-notice.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/manifest.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/manifest.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/alchemy-site.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/alchemy-site.d.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/starlight.css"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/docs/shared/assets/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/docs/shared/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/docs/shared:tests",
+    "package": "apps/docs/shared",
+    "name": "tests",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/gen-sites.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/gen-sites.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/sync-content.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/sync-content.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/starlight.css"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/docs/shared/assets/**/*",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/docs/shared/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/docs/smithers-patterns:build",
     "package": "apps/docs/smithers-patterns",
     "name": "build",
@@ -4199,18 +5177,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/smithers-patterns/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/smithers-patterns/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/smithers-patterns/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smithers-patterns/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/smithers-patterns/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/smithers-patterns/PACKAGE.ts"
     }
@@ -4231,16 +5220,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/smithers-patterns/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/smithers-patterns/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/smithers-patterns/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smithers-patterns/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/smithers-patterns/PACKAGE.ts"
     }
@@ -4289,18 +5289,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/smithers-sync/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/smithers-sync/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/smithers-sync/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smithers-sync/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/smithers-sync/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/smithers-sync/PACKAGE.ts"
     }
@@ -4321,16 +5332,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/smithers-sync/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/smithers-sync/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/smithers-sync/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smithers-sync/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/smithers-sync/PACKAGE.ts"
     }
@@ -4379,18 +5401,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/smthrs/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/smthrs/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/smthrs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smthrs/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/smthrs/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/smthrs/PACKAGE.ts"
     }
@@ -4411,16 +5444,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/smthrs/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/smthrs/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/smthrs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smthrs/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/smthrs/PACKAGE.ts"
     }
@@ -4469,18 +5513,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/std/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/std/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/std/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/std/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/std/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/std/PACKAGE.ts"
     }
@@ -4501,16 +5556,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/std/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/std/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/std/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/std/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/std/PACKAGE.ts"
     }
@@ -4559,18 +5625,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/step-cache/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/step-cache/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/step-cache/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/step-cache/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/step-cache/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/step-cache/PACKAGE.ts"
     }
@@ -4591,16 +5668,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/step-cache/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/step-cache/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/step-cache/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/step-cache/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/step-cache/PACKAGE.ts"
     }
@@ -4649,18 +5737,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/testing/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/testing/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/testing/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/testing/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/testing/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/testing/PACKAGE.ts"
     }
@@ -4681,16 +5780,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/testing/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/testing/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/testing/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/testing/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/testing/PACKAGE.ts"
     }
@@ -4739,18 +5849,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/time-travel/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/time-travel/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/time-travel/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/time-travel/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/time-travel/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/time-travel/PACKAGE.ts"
     }
@@ -4771,16 +5892,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/time-travel/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/time-travel/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/time-travel/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/time-travel/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/time-travel/PACKAGE.ts"
     }
@@ -4829,18 +5961,29 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/triggers/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/triggers/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/triggers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/triggers/tsconfig.json"
       }
     ],
     "outputs": [
       "apps/docs/triggers/dist"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/triggers/PACKAGE.ts"
     }
@@ -4861,16 +6004,27 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/docs/triggers/public/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/docs/triggers/astro.config.mjs"
       },
       {
         "kind": "file",
         "path": "apps/docs/triggers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/triggers/tsconfig.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//apps/docs/shared:sources"
+    ],
     "source": {
       "file": "apps/docs/triggers/PACKAGE.ts"
     }
@@ -5263,10 +6417,520 @@
       "apps/site/dist"
     ],
     "dependencies": [
+      "//apps/docs/shared:sources",
       "//apps/ui:devkit",
       "//apps/ui:webSources",
       "//packages/smithers:docsSources"
     ],
+    "source": {
+      "file": "apps/site/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/site:catalogPublicationTest",
+    "package": "apps/site",
+    "name": "catalogPublicationTest",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/catalog-publication.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/catalog-publication.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/src/content/docs/docs/reference/subpackages.mdx"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/pack-release.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/workspace-packages.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/bug-worker/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/agent/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/artifacts/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/canonical/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/capability/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/chain/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/cli/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/control/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/core/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/create-app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/crypto/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/database/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/engine/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/engine-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/errors/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/evals/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/flow/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/flows/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/fs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/gateway/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/harness/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/integrations/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/jj/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/journal/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/kernel/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/keys/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/mcp/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/memory/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/migrate/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/model/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/notifications/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/observability/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plan/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-browser/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-bun/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/platform-node/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/plugin/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/registry/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/run-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/sandbox/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/scorers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/shared/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smithers-patterns/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smithers-sync/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/smthrs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/std/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/step-cache/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/testing/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/time-travel/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/docs/triggers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/review/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/status-site/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/agent/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/authoring/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/recommend/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/review-seeded-bugs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/swebench/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "examples/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "flows/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/errors/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/rpc/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/chain/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/evals/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/fs/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/integrations/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/memory/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/plugin/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/registry/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/scorers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/std/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/triggers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/control/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/create-app/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/artifacts/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/canonical/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/capability/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/core/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/crypto/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/engine/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/engine-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/jj/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/journal/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/kernel/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/keys/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/observability/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/patterns/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/plan/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-browser/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-bun/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/sandbox/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/step-cache/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/sync/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/time-travel/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/gateway/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/mcp/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/migrate/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/notifications/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smthrs-deprecation/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/testing/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
     "source": {
       "file": "apps/site/PACKAGE.ts"
     }
@@ -5315,6 +6979,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//apps/docs/shared:sources",
       "//apps/ui:webSources"
     ],
     "source": {
@@ -5384,6 +7049,14 @@
       {
         "kind": "file",
         "path": "apps/site/src/data/versions.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/site/scripts/catalog-publication.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/pack-release.mjs"
       }
     ],
     "outputs": [],
@@ -6843,12 +8516,12 @@
       },
       {
         "kind": "glob",
-        "pattern": "apps/ui/scripts/**/*.ts",
+        "pattern": "apps/ui/scripts/**/*",
         "exclude": []
       },
       {
         "kind": "glob",
-        "pattern": "apps/ui/e2e/**/*.ts",
+        "pattern": "apps/ui/e2e/**/*",
         "exclude": []
       },
       {
@@ -6904,12 +8577,12 @@
       },
       {
         "kind": "glob",
-        "pattern": "apps/ui/scripts/**/*.ts",
+        "pattern": "apps/ui/scripts/**/*",
         "exclude": []
       },
       {
         "kind": "glob",
-        "pattern": "apps/ui/e2e/**/*.ts",
+        "pattern": "apps/ui/e2e/**/*",
         "exclude": []
       },
       {
@@ -7010,10 +8683,70 @@
         "kind": "glob",
         "pattern": "apps/ui/src/**/*.css",
         "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/ui/e2e/contracts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/ui/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/ui/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/tailwind.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/postcss.config.js"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/ui/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "packages/rpc/fixtures/force/graph.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/rpc/fixtures/force/plan-typeCheck.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/rpc:check",
+      "//packages/smithers/gateway:check",
+      "//packages/smithers/ui:check"
+    ],
     "source": {
       "file": "apps/ui/PACKAGE.ts"
     }
@@ -7616,6 +9349,138 @@
     }
   },
   {
+    "label": "//evals/swebench:offline",
+    "package": "evals/swebench",
+    "name": "offline",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "summary": "Run the token-free SWE-bench fixtures serially, without Docker or a CLI build.",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "evals/swebench/verify.sh"
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/swebench/*.{ts,mjs,sh,md}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/swebench/lib/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/swebench/fixtures/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/swebench/baseline/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/test/fixtures/wave10Journals.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/swebench/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/bin/smithers.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".github/workflows/ci.yml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "evals/swebench/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//evals/swebench:prerequisites",
+    "package": "evals/swebench",
+    "name": "prerequisites",
+    "rule": "Shell.Run",
+    "kinds": [
+      "run"
+    ],
+    "summary": "Check the subject and evaluator after preflight.sh and bootstrap.sh.",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "evals/swebench/verify.sh"
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/swebench/*.{ts,mjs,sh,md}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/swebench/lib/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/swebench/fixtures/**",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/swebench/baseline/**",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/test/fixtures/wave10Journals.json"
+      },
+      {
+        "kind": "file",
+        "path": "evals/swebench/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/bin/smithers.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": ".github/workflows/ci.yml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "evals/swebench/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//examples:check",
     "package": "examples",
     "name": "check",
@@ -7713,6 +9578,1979 @@
     }
   },
   {
+    "label": "//flows/wiki:freshness",
+    "package": "flows/wiki",
+    "name": "freshness",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": ".smithers/WORKSPACE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/AGENTS.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/ONBOARDING.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/coding-plans.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/runs.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/wiki-collaboration.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPlan.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPlan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPlanCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPoc.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPoc.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPocCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingVibe.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingVibeCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/ConversationCards.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/EngineTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/RunTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/RunTraceCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/flows/entries/runs.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/flows/entries/wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/runtime/FrameHistory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/RunReference.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/controller/cloud-wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/controller/runs.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/controller/workflow-pump.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/CloudWiki.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/CloudWiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/CloudWikiState.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/coding/project.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/catalog.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/agent.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/build-graph.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/cloud-wiki.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-direction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-experience.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-host.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-progression.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-request.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-ui.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/flows.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-control.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/product-ui.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/start-here.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/storage.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/wiki-generation.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/checks/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/atoms.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/build.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/catalog.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/feedback-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/feedback.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/host.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/immutable-source.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/native.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-authority.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-memory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-wiki.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-source.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/project-config.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/project-config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/registration.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/serve.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/source-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/steering.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/testing.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-cleanup.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-evidence.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-check.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-check.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-output.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-registry.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-checks.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-correction.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host-bundle.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-native-gate.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-poc.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-request-host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/evidence.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/main.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/operations.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/reuse.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/NATIVE-CONTROL.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/registry/src/Executable.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/registry/src/MarkdownFlow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/src/AgentAction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/Affected.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/TargetIndex.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/internal/InputPackage.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/internal/PackagePlanner.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/docs/reference/filegroup.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/src/Filegroup.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/src/Shell.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/core/src/Digest.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/DurableWriter.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/bun/BunDatabase.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/internal/SqliteOpen.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/node/NodeDatabase.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Action/Action.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Action/make.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/DurableDeferred.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Flow/make.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/journal/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/src/AtomicFileSystem.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/test/AtomicFileSystemRuntimeParity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/test/fixtures/atomic-helper-identity.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/BunRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/NodeRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/Runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/internal/NativeRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntime.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntimeContainment.integration.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntimeSignals.integration.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntimeStartup.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/fixtures/native-runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/BunControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/EngineJournalProjection.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/EngineJournalSupervisor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAuthority.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NativeControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NodeControlHost.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/release-support/runtime.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//flows/wiki:preview"
+    ],
+    "source": {
+      "file": "flows/wiki/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows/wiki:preview",
+    "package": "flows/wiki",
+    "name": "preview",
+    "rule": "Shell.Build",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": ".smithers/WORKSPACE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/AGENTS.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/ONBOARDING.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/coding-plans.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/runs.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/wiki-collaboration.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPlan.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPlan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPlanCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPoc.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPoc.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPocCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingVibe.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingVibeCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/ConversationCards.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/EngineTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/RunTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/RunTraceCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/flows/entries/runs.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/flows/entries/wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/runtime/FrameHistory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/RunReference.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/controller/cloud-wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/controller/runs.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/controller/workflow-pump.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/CloudWiki.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/CloudWiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/CloudWikiState.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/coding/project.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/catalog.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/agent.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/build-graph.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/cloud-wiki.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-direction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-experience.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-host.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-progression.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-request.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-ui.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/flows.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-control.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/product-ui.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/start-here.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/storage.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/wiki-generation.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/checks/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/atoms.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/build.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/catalog.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/feedback-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/feedback.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/host.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/immutable-source.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/native.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-authority.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-memory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-wiki.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-source.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/project-config.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/project-config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/registration.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/serve.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/source-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/steering.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/testing.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-cleanup.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-evidence.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-check.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-check.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-output.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-registry.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-checks.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-correction.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host-bundle.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-native-gate.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-poc.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-request-host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/evidence.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/main.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/operations.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/reuse.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/NATIVE-CONTROL.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/registry/src/Executable.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/registry/src/MarkdownFlow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/src/AgentAction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/Affected.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/TargetIndex.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/internal/InputPackage.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/internal/PackagePlanner.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/docs/reference/filegroup.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/src/Filegroup.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/src/Shell.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/core/src/Digest.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/DurableWriter.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/bun/BunDatabase.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/internal/SqliteOpen.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/node/NodeDatabase.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Action/Action.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Action/make.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/DurableDeferred.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Flow/make.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/journal/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/src/AtomicFileSystem.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/test/AtomicFileSystemRuntimeParity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/test/fixtures/atomic-helper-identity.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/BunRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/NodeRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/Runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/internal/NativeRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntime.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntimeContainment.integration.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntimeSignals.integration.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntimeStartup.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/fixtures/native-runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/BunControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/EngineJournalProjection.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/EngineJournalSupervisor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAuthority.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NativeControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NodeControlHost.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/release-support/runtime.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/wiki/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows/wiki:verify",
+    "package": "flows/wiki",
+    "name": "verify",
+    "rule": "Shell.Run",
+    "kinds": [
+      "run"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": ".smithers/WORKSPACE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/AGENTS.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/ONBOARDING.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/coding-plans.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/native-engine-evidence.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/runs.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/docs/workbench-lanes/wiki-collaboration.md"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPlan.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPlan.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPlanCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPoc.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPoc.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingPocCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingVibe.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/CodingVibeCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/ConversationCards.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/EngineTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/RunTrace.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/cards/RunTraceCard.tsx"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/flows/entries/runs.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/flows/entries/wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/runtime/FrameHistory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/RunReference.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/controller/cloud-wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/controller/runs.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/state/controller/workflow-pump.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/CloudWiki.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/CloudWiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/CloudWikiState.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/ui/src/mainview/wiki/fixtures/yrs-deletion-ack.json"
+      },
+      {
+        "kind": "file",
+        "path": "factory/coding/project.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/catalog.ts"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/agent.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/build-graph.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/cloud-wiki.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-correction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-direction.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-experience.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-host.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-planning.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-progression.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-request.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/coding-ui.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/flows.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/native-control.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/product-ui.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/start-here.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/storage.md"
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/pages/wiki-generation.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/checks/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/atoms.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/build.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/catalog.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/checks.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/correction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/feedback-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/feedback.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/finalization.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/host.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/host.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/immutable-source.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/native.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-authority.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-memory.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-wiki.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning-wiki.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/planning.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc-source.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/poc.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/project-config.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/project-config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/registration.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/request/flow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/serve.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/source-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/steering.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/testing.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-admission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-cleanup.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-evidence.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/vibe-schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-check.md"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-check.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-output.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-policy.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/wiki-registry.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/coding/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-checks.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-correction.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host-bundle.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-native-gate.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-poc.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-request-host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/evidence.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/main.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/operations.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/reuse.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/schema.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/workflow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/NATIVE-CONTROL.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/registry/src/Executable.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/registry/src/MarkdownFlow.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/src/AgentAction.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/Affected.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/TargetIndex.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/internal/InputPackage.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/internal/PackagePlanner.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/docs/reference/filegroup.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/src/Filegroup.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/src/Shell.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/core/src/Digest.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/DurableWriter.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/bun/BunDatabase.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/internal/SqliteOpen.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/database/src/node/NodeDatabase.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/docs/concepts/runtime-portability.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Action/Action.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Action/make.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/DurableDeferred.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/flow/src/Flow/make.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/journal/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/src/AtomicFileSystem.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/test/AtomicFileSystemRuntimeParity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/platform-node/test/fixtures/atomic-helper-identity.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/run-store/docs/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/BunRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/NodeRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/Runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/src/internal/NativeRuntime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NativeRuntimeParity.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntime.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntimeContainment.integration.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntimeSignals.integration.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/NodeRuntimeStartup.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/flows/test/fixtures/native-runtime.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/BunControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/EngineJournalProjection.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/EngineJournalSupervisor.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAdmission.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/ModuleAuthority.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NativeControl.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/src/internal/NodeControlHost.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/release-support/runtime.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/wiki/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//flows:check",
     "package": "flows",
     "name": "check",
@@ -7731,6 +11569,426 @@
         "kind": "glob",
         "pattern": "scripts/*.mjs",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:coding",
+    "package": "flows",
+    "name": "coding",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/coding.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:codingBundle",
+    "package": "flows",
+    "name": "codingBundle",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:codingBundleBun",
+    "package": "flows",
+    "name": "codingBundleBun",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:codingConfigBun",
+    "package": "flows",
+    "name": "codingConfigBun",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/coding-project-config.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host-policy.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-wiki-registry.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-vibe-evidence.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-vibe-admission.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:codingNative",
+    "package": "flows",
+    "name": "codingNative",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:codingNativeBun",
+    "package": "flows",
+    "name": "codingNativeBun",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:codingPolicy",
+    "package": "flows",
+    "name": "codingPolicy",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-gates.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-planning-wiki-prior.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "flows/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:codingRuntime",
+    "package": "flows",
+    "name": "codingRuntime",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/coding-planning-authority.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-project-config.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-steering.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-request-coordinator.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-host-policy.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-wiki-registry.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-vibe-evidence.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/coding-vibe-admission.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/coding/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "pnpm-workspace",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
       },
       {
         "kind": "file",
@@ -7774,6 +12032,32 @@
       {
         "kind": "file",
         "path": ".smithers/home.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:provider",
+    "package": "flows",
+    "name": "provider",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/provider-runtime.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
       }
     ],
     "outputs": [],
@@ -7843,6 +12127,36 @@
       {
         "kind": "file",
         "path": "pnpm-workspace.yaml"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "flows/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//flows:wiki",
+    "package": "flows",
+    "name": "wiki",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "flows/test/wiki.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "flows/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "factory/wiki/catalog.ts"
       }
     ],
     "outputs": [],
@@ -8783,6 +13097,47 @@
       {
         "kind": "file",
         "path": "packages/smithers/agent/fs/tsconfig.test.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/agent/fs:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/agent/fs/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/fs:checkTypes",
+    "package": "packages/smithers/agent/fs",
+    "name": "checkTypes",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/fs/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/fs/type-tests/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/fs/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/fs/tsconfig.test.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/fs/tsconfig.types.json"
       }
     ],
     "outputs": [],
@@ -10203,6 +14558,16 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/plugin/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/plugin/test/fixtures/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/plugin/test/fixtures/*.cjs",
         "exclude": []
       },
       {
@@ -11855,6 +16220,57 @@
     }
   },
   {
+    "label": "//packages/smithers/build/infra:fmt",
+    "package": "packages/smithers/build/infra",
+    "name": "fmt",
+    "rule": "Dprint",
+    "kinds": [
+      "lint"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/infra/worker/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/infra/scripts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/deployment.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/eslint.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/dprint.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/dprint.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/build/infra/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/build/infra:lint",
     "package": "packages/smithers/build/infra",
     "name": "lint",
@@ -11866,8 +16282,21 @@
     "inputs": [
       {
         "kind": "glob",
-        "pattern": "packages/smithers/build/infra/infra/**/*.ts",
+        "pattern": "packages/smithers/build/infra/worker/**/*.ts",
         "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/infra/scripts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/deployment.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/alchemy.run.ts"
       },
       {
         "kind": "file",
@@ -11876,10 +16305,6 @@
       {
         "kind": "file",
         "path": "eslint.jsdoc.js"
-      },
-      {
-        "kind": "file",
-        "path": "eslint.invariants.js"
       }
     ],
     "outputs": [],
@@ -11980,6 +16405,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/build/targets/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/targets/test-support/**/*.ts",
         "exclude": []
       },
       {
@@ -12117,6 +16547,11 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/build/targets/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/targets/test-support/**/*.ts",
         "exclude": []
       },
       {
@@ -12423,8 +16858,29 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//packages/smithers/build/targets:lib"
+      "//packages/smithers/build/targets:lib",
+      "//packages/smithers/build/targets:testSupport"
     ],
+    "source": {
+      "file": "packages/smithers/build/targets/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/build/targets:testSupport",
+    "package": "packages/smithers/build/targets",
+    "name": "testSupport",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/targets/test-support/**/*.ts",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
     "source": {
       "file": "packages/smithers/build/targets/PACKAGE.ts"
     }
@@ -12451,9 +16907,60 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/build/terraform/modules/cache/migrations/0001_initial.sql"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/build/infra/worker/protocol.ts"
       }
     ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/build/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/build:cacheServicePostgres",
+    "package": "packages/smithers/build",
+    "name": "cacheServicePostgres",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/terraform/modules/cache/migrations/0001_initial.sql"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/terraform/modules/cache/service/storage.js"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/terraform/modules/cache/service/test/postgres_test.js"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/build:cacheServicePostgresDatabase"
+    ],
+    "source": {
+      "file": "packages/smithers/build/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/build:cacheServicePostgresDatabase",
+    "package": "packages/smithers/build",
+    "name": "cacheServicePostgresDatabase",
+    "rule": "Docker.Service",
+    "kinds": [
+      "run"
+    ],
+    "cacheable": false,
+    "inputs": [],
     "outputs": [],
     "dependencies": [],
     "source": {
@@ -12656,12 +17163,26 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/build/terraform/modules/cache/service/**/*.js",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/build/eslint.config.js"
       },
       {
         "kind": "file",
         "path": "eslint.jsdoc.js"
+      },
+      {
+        "kind": "file",
+        "path": "eslint.invariants.js"
       }
     ],
     "outputs": [],
@@ -12708,11 +17229,27 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/build/package.json"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/build/README.md"
       },
       {
         "kind": "file",
         "path": "packages/smithers/build/DESIGN.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/WIRING.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/API-REVIEW.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/CHANGELOG.md"
       },
       {
         "kind": "glob",
@@ -12730,11 +17267,47 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/build/infra/deployment.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/infra/worker/protocol.ts"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/build/terraform/modules/cache/service/config.js"
       },
       {
         "kind": "file",
+        "path": "packages/smithers/build/terraform/modules/cache/service/protocol.js"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/build/build-cli/src/Cli.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/PackageLoader.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/build-cli/src/TargetExecution.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/src/ChangesetsTarget.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/src/ExecSandbox.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/build/targets/src/Target.ts"
       },
       {
         "kind": "file",
@@ -17644,6 +22217,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/core:lib",
       "//packages/smithers/flows/plan:lib"
     ],
     "source": {
@@ -17792,7 +22366,9 @@
       "packages/smithers/flows/plan/dist/cjs",
       "packages/smithers/flows/plan/dist/esm"
     ],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers/flows/core:lib"
+    ],
     "source": {
       "file": "packages/smithers/flows/plan/PACKAGE.ts"
     }
@@ -17854,6 +22430,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/smithers/flows/core:lib",
       "//packages/smithers/flows/plan:lib"
     ],
     "source": {
@@ -21266,6 +25843,93 @@
     }
   },
   {
+    "label": "//packages/smithers/ui/ui-styleguide:shikiThemes",
+    "package": "packages/smithers/ui/ui-styleguide",
+    "name": "shikiThemes",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/index.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/night-owl.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/night-owl-light.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/one-dark-pro.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/one-light.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/github-dark.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/github-light.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/catppuccin-mocha.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/catppuccin-latte.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/solarized-dark.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/solarized-light.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/gruvbox-dark-medium.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/gruvbox-light-medium.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/rose-pine.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/rose-pine-dawn.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/ui/ui-styleguide/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/ui/ui-styleguide:unitTests",
     "package": "packages/smithers/ui/ui-styleguide",
     "name": "unitTests",
@@ -21287,7 +25951,7 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/ui/ui-styleguide/docs/*.md",
+        "pattern": "packages/smithers/ui/ui-styleguide/docs/**/*.md",
         "exclude": []
       },
       {
@@ -21299,8 +25963,9 @@
         "path": "packages/smithers/ui/ui-styleguide/bunfig.toml"
       },
       {
-        "kind": "file",
-        "path": "packages/smithers/ui/ui-styleguide/scripts/generate-theme-registry.ts"
+        "kind": "glob",
+        "pattern": "packages/smithers/ui/ui-styleguide/scripts/**/*.ts",
+        "exclude": []
       },
       {
         "kind": "file",
@@ -21308,7 +25973,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/smithers/ui/ui-styleguide:shikiThemes"
+    ],
     "source": {
       "file": "packages/smithers/ui/ui-styleguide/PACKAGE.ts"
     }
@@ -22716,6 +27383,42 @@
     }
   },
   {
+    "label": "//scripts:conformanceCheck",
+    "package": "scripts",
+    "name": "conformanceCheck",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/fixtures/**/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "scripts/tsconfig.conformance.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//scripts:dependencyBoundaries",
     "package": "scripts",
     "name": "dependencyBoundaries",
@@ -23396,6 +28099,68 @@
     ],
     "outputs": [],
     "dependencies": [],
+    "source": {
+      "file": "scripts/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//scripts:repositoryConformance",
+    "package": "scripts",
+    "name": "repositoryConformance",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/test/repositoryConformance.test.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/fixtures/**/*.json",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "scripts/test/ci.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/test/publication.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/test/coverage.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/test/spawnContainment.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/test/workspaceInventory.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "scripts/test/conformanceOwnership.test.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//scripts:conformanceCheck"
+    ],
     "source": {
       "file": "scripts/PACKAGE.ts"
     }
