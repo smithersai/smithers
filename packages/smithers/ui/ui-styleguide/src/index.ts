@@ -14,8 +14,8 @@ import { paletteThemeCss, type PaletteThemeCssOptions } from "./paletteThemeCss.
  * block per selected palette, in the source order the cascade depends on.
  *
  * A host that pins a single palette can emit a subset instead of paying for
- * all eight (roughly 2.9 KB of CSS each). `workflowUiThemeCss` is this with the
- * primitive element and component rules appended.
+ * all eight (roughly 2.9 KB of CSS each). `workflowUiThemeCss` is this joined
+ * with `workflowUiPrimitiveCss`, the element and component rules.
  *
  * @throws {RangeError} when `palettes` names an unregistered key.
  */
@@ -23,8 +23,19 @@ export function themeCss(options: PaletteThemeCssOptions = {}): string {
   return paletteThemeCss("'", options).join("\n");
 }
 
-export const workflowUiThemeCss = [
-  themeCss(),
+/**
+ * The element and component rules alone: every line `workflowUiThemeCss` adds
+ * on top of `themeCss()`, in cascade order and ending with the reduced-motion
+ * guard. Every declaration resolves through a token, so the block themes
+ * nothing until a token sheet is composed in front of it.
+ *
+ * A host that pins one palette joins `themeCss({ palettes })` with this and
+ * `workflowUiLayoutCss` rather than slicing the combined sheet. See
+ * `docs/guides/pin-a-palette.md`.
+ *
+ * @since 1.0.0-rc.0
+ */
+export const workflowUiPrimitiveCss = [
   "* { box-sizing:border-box; }",
   "body { min-width:320px; min-height:100vh; margin:0; background:var(--bg); color:var(--text); font-size:var(--fs-3); line-height:var(--lh-body); font-synthesis:none; text-rendering:optimizeLegibility; -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }",
   // No `::selection` rule. The 0.x sheet washed the selection with 24% brand and
@@ -122,6 +133,8 @@ export const workflowUiThemeCss = [
   "@media (max-width: 760px) { .top,.topbar { align-items:flex-start; flex-direction:column; padding:10px var(--sp-3); } .toolbar,.actions { width:100%; justify-content:flex-start; } .button,.primary,.secondary,.danger { min-width:0; } }",
   reducedMotionCss,
 ].join("\n");
+
+export const workflowUiThemeCss = [themeCss(), workflowUiPrimitiveCss].join("\n");
 
 export const workflowUiLayoutCss = [
   ".workflow-shell { height:100vh; width:100%; max-width:100vw; overflow:hidden; display:grid; grid-template-rows:auto 1fr; background:var(--bg); color:var(--text); }",

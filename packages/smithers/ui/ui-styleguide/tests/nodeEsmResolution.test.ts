@@ -62,6 +62,7 @@ describe("node ESM resolution", () => {
       "themeCss",
       "themeRegistry",
       "workflowUiLayoutCss",
+      "workflowUiPrimitiveCss",
       "workflowUiStyles",
       "workflowUiThemeCss",
     ]);

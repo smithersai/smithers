@@ -1,6 +1,6 @@
 ---
 title: "Pin a palette"
-description: "Ship the tokens for one palette instead of all eight, and keep the primitive and layout rules, using themeCss and the prefix relationship the tests pin."
+description: "Ship the tokens for one palette instead of all eight, and keep the primitive and layout rules, using themeCss and workflowUiPrimitiveCss."
 sidebar:
   order: 3
 ---
@@ -34,31 +34,32 @@ That is 7.7 KB instead of 24.9 KB. Three properties hold whatever you pass:
 
 ## Keep the primitive rules
 
-`workflowUiThemeCss` is `themeCss()` followed by a newline and the primitive
-element and component rules. The package's test suite asserts that prefix
-relationship, so you can swap the prefix:
+`workflowUiPrimitiveCss` is the element and component half of
+`workflowUiThemeCss` with no tokens in it, so it composes with whatever subset
+you emitted:
 
 ```ts
-import { themeCss, workflowUiLayoutCss, workflowUiThemeCss } from "@smthrs/ui-styleguide"
-
-const primitives = workflowUiThemeCss.slice(themeCss().length + 1)
+import { themeCss, workflowUiLayoutCss, workflowUiPrimitiveCss } from "@smthrs/ui-styleguide"
 
 export const pinnedStyles = [
   themeCss({ palettes: ["gruvbox"] }),
-  primitives,
+  workflowUiPrimitiveCss,
   workflowUiLayoutCss
 ].join("\n")
 ```
 
 18 KB instead of 35 KB, with the same buttons, badges, tables, and workflow
-grid. The primitive block on its own is 8.4 KB and mentions no color literal:
-every rule in it resolves through a token.
+grid. The primitive block on its own is 8.5 KB and mentions no color literal:
+every rule in it resolves through a token, so it themes nothing until a token
+sheet precedes it. `workflowUiThemeCss` is that same block joined to
+`themeCss()` with a newline, and the package's test suite pins the two
+compositions to the same bytes.
 
 ## The standalone sheet has no subset form
 
 `standaloneThemeCss()` is prebuilt at module evaluation with all eight palettes,
 and it quotes its attribute selectors with `"` while `themeCss()` quotes with
-`'`. The prefix trick above does not transfer. A host that wants a pinned
+`'`. It has no primitive-only half to compose with. A host that wants a pinned
 standalone sheet composes `themeCss(subset)` with its own base element rules.
 
 ## Check what you saved
@@ -68,7 +69,7 @@ console.log(themeCss().length, themeCss({ palettes: ["gruvbox"] }).length)
 ```
 
 ```text
-24933 7707
+24928 7707
 ```
 
 ## Related

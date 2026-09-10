@@ -5,6 +5,7 @@ import {
   themeCss,
   themeRegistry,
   workflowUiLayoutCss,
+  workflowUiPrimitiveCss,
   workflowUiStyles,
   workflowUiThemeCss,
 } from "../src/index.ts";
@@ -138,5 +139,28 @@ describe("themeCss", () => {
       forward.indexOf(":root[data-palette='github'] {"),
     );
     expect(forward.match(/:root\[data-palette='one'\] \{/g)).toHaveLength(1);
+  });
+});
+
+describe("workflowUiPrimitiveCss", () => {
+  test("is the half of workflowUiThemeCss that carries no tokens", () => {
+    expect(workflowUiThemeCss).toBe(`${themeCss()}\n${workflowUiPrimitiveCss}`);
+    expect(workflowUiPrimitiveCss).toContain("* { box-sizing:border-box; }");
+    expect(workflowUiPrimitiveCss).not.toContain(":root {");
+    expect(workflowUiPrimitiveCss).not.toContain("data-palette");
+  });
+
+  test("pins a palette without slicing the combined sheet", () => {
+    // The recipe `docs/guides/pin-a-palette.md` used to document: derive the
+    // primitives from a character offset into the combined sheet. The export
+    // has to reproduce it byte for byte, or a host that follows the old guide
+    // and a host that follows the new one ship different CSS.
+    const palettes = ["gruvbox"];
+    const sliced = [
+      themeCss({ palettes }),
+      workflowUiThemeCss.slice(themeCss().length + 1),
+      workflowUiLayoutCss,
+    ].join("\n");
+    expect([themeCss({ palettes }), workflowUiPrimitiveCss, workflowUiLayoutCss].join("\n")).toBe(sliced);
   });
 });

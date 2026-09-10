@@ -17,8 +17,9 @@ export is missing from it, so nothing below can fall behind the code.
 | Export                 | Type                                          | What it is                                                                     |
 | ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
 | `workflowUiThemeCss`   | `string`                                      | Theme tokens plus the base element and primitive rules. 33 KB.                   |
+| `workflowUiPrimitiveCss` | `string`                                    | The element and component rules alone, with no tokens, for composing with a `themeCss` subset. 8.5 KB. |
 | `workflowUiLayoutCss`  | `string`                                      | The `.workflow-*` shell and dashboard grid classes. 2 KB.                        |
-| `workflowUiStyles`     | `string`                                      | The two above joined with a newline, for one-tag embedding. 35 KB.               |
+| `workflowUiStyles`     | `string`                                      | The theme and layout sheets joined with a newline, for one-tag embedding. 35 KB. |
 | `standaloneThemeCss()` | `() => string`                                | A complete theme for HTML rendered outside a Smithers UI shell. 26 KB.           |
 | `themeCss(options?)`   | `(options?: PaletteThemeCssOptions) => string` | The token rules alone, optionally for a subset of palettes. 25 KB for all eight. |
 | `reducedMotionCss`     | `string`                                      | The document-wide reduced-motion guard, already composed into both sheets above. |
