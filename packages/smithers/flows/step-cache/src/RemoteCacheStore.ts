@@ -411,16 +411,15 @@ export const make = (
         // The wire bytes are the canonical form itself. Besides refusing
         // values JSON cannot represent, this gives structurally equal entries
         // identical bytes on every host regardless of object insertion order.
-        // Validate the two unknown fields before encoding the struct because
-        // a struct encoder may omit an `undefined` member.
-        yield* CacheStore.encodeCanonical(entry.result, "result")
-        yield* CacheStore.encodeCanonical(entry.meta, "meta")
-        // The whole entry is encoded under the envelope-aware policy, not the
-        // per-field one: each field keeps its own node and depth budget, the
-        // envelope adds one nesting level and a fixed node allowance, and the
-        // whole-entry byte bound is enforced on the encoding itself. `get`
-        // admits an entry field-by-field under the same byte bound, so a
-        // publication never refuses an entry a lookup could have returned.
+        // `snapshotEntry` has already admitted `result` and `meta` under the
+        // per-field policy (an `undefined` member, a bigint or a cycle fails
+        // there), so this is the one encoding a publication performs: the
+        // whole entry under the envelope-aware policy, not the per-field one.
+        // Each field keeps its own node and depth budget, the envelope adds
+        // one nesting level and a fixed node allowance, and the whole-entry
+        // byte bound is enforced on the encoding itself. `get` admits an entry
+        // field-by-field under the same byte bound, so a publication never
+        // refuses an entry a lookup could have returned.
         const body = yield* CacheStore.encodeEntryCanonical(entry)
         const response = yield* send(
           "a publication",

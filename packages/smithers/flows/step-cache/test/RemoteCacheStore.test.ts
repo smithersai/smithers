@@ -2,7 +2,7 @@
  * The dumb-HTTP action-cache protocol: `GET`/`PUT`/`DELETE /ac/{keyDigest}`,
  * mirroring `remote/http/HttpCacheClient.java` in bazelbuild/bazel.
  */
-import { describe, expect, it } from "@effect/vitest"
+import { describe, expect, it, vi } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -724,6 +724,28 @@ describe("publications", () => {
       const exit = yield* Effect.flatMap(tier.store, (store) => store.put(over)).pipe(Effect.exit)
       expect(errorOf(exit).code).toBe("invalid_cache")
       expect(tier.calls).toEqual([])
+    }))
+
+  it.effect("canonicalizes each field exactly once: the wire body is the single whole-entry encoding", () =>
+    Effect.gen(function*() {
+      // `snapshotEntry` has already admitted and frozen `result` and `meta`
+      // under the per-field policy, so the only encoding a publication needs
+      // is the whole-entry one whose bytes go on the wire. Any extra per-field
+      // encoding is repeated work whose string is discarded, measured at
+      // 10,000 records as most of the publication's CPU time.
+      const fieldEncodings = vi.spyOn(CacheStore, "encodeCanonical")
+      const entryEncodings = vi.spyOn(CacheStore, "encodeEntryCanonical")
+      try {
+        const tier = tierOf(() => new Response(null, { status: 201 }))
+        expect(yield* Effect.flatMap(tier.store, (store) => store.put(entry))).toEqual({ _tag: "Inserted" })
+        expect(fieldEncodings).not.toHaveBeenCalled()
+        expect(entryEncodings).toHaveBeenCalledTimes(1)
+        const encoding = entryEncodings.mock.results[0]!.value as Effect.Effect<string, CacheStore.CacheStoreError>
+        expect(tier.calls[0]!.body).toBe(yield* encoding)
+      } finally {
+        fieldEncodings.mockRestore()
+        entryEncodings.mockRestore()
+      }
     }))
 })
 
